@@ -140,10 +140,12 @@ void SceneIOController::beginSceneReplace(FrameContext& ctx, EditorState& state)
 
     // The play snapshot is a copy of the scene going away. Left behind, the
     // transport still reads as playing and Stop would restore the outgoing
-    // scene over whatever replaced it. Pausing goes with it: dropping the
-    // snapshot ends the session, and a session that has ended is Edit mode.
+    // scene over whatever replaced it. The clock goes with it: dropping the
+    // snapshot ends the session, and a session that has ended is Edit mode -
+    // paused, and back at 1x whatever a script scaled it to.
     m_playSnapshot.clear();
     ctx.clock.setPaused(true);
+    ctx.clock.setTimeScale(1.0f);
 
     afterSceneReplace(ctx, state, /*priorSelectionName*/ {}, /*eventPath*/ {});
 }

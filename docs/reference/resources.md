@@ -30,6 +30,13 @@ Each handle wraps a `StorageIndex` (index + generation), so stale handles
 are detected automatically; using a destroyed handle returns nothing
 without crashing.
 
+A handle is a *runtime* identity: it names a slot in one session's
+`ResourceManager`, which is why serialization stores names instead. The authored
+counterpart is `AssetRef<Asset>` (`resource/asset_ref.h`) - a name plus the
+asset kind it names - which is how a behavior field points at an asset and how
+that asset ends up in the scene's assets block. See
+[scripting.md](system/scripting.md#naming-an-asset).
+
 ## API
 
 ```cpp
@@ -413,13 +420,16 @@ one bad vertex.
 See [IO and serialization](system/io.md) for the full flow.
 `AssetSerializer::saveAssetsForScene` emits only the assets actually
 referenced by the scene - `Mesh` (mesh + material), `LOD` (every level's
-mesh), `Decal` (its material), `Animator` (its rig and clip) and
-`AudioSource` (its sound), plus the textures those materials
-reference. `emitDescriptor` is the single gate every one of those goes
-through, so a hidden or unnamed asset cannot be written as a reference by
-any emitter, present or future. A component that writes an
-asset name into the scene file has to be walked there, or the name has
-nothing to resolve against on load. On load,
+mesh), `Decal` (its material), `Animator` (its rig and clip),
+`AudioSource` (its sound) and every `AssetRef` field on a behavior, plus
+the textures those materials reference. `emitDescriptor` gates every
+reference a component holds as a handle, so a hidden or unnamed asset can
+never be written from one. A behavior's `AssetRef` fields are walked with
+them and go out through `emitNamedRef`: an authored name has no handle to
+inspect, so it is written exactly as authored, and a name the library does
+not hold is reported by `loadAssetSection` on load rather than dropped at
+save. A component that writes an asset name into the scene file has to be
+walked there, or the name has nothing to resolve against on load. On load,
 assets with the same `name` already in the manager are skipped (loads
 are idempotent), and new assets go through the `AssetFactory` dispatch
 by `kind`.

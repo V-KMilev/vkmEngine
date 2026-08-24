@@ -415,11 +415,19 @@ class BehaviorJsonWriter : public BehaviorFieldVisitor {
         void field(const char* name, int& v)   override { cur()[name] = v; }
         void field(const char* name, bool& v)  override { cur()[name] = v; }
         void field(const char* name, glm::vec3& v) override { cur()[name] = vec3ToJson(v); }
+        void field(const char* name, std::string& v) override { cur()[name] = v; }
 
         void enumField(const char* name, int& index, const char* const* names, std::size_t count) override {
             // By name, not the raw index: reordering enum values without renaming
             // then leaves existing scenes valid (matches Reflect::enumName).
             if (index >= 0 && static_cast<std::size_t>(index) < count) cur()[name] = names[index];
+        }
+
+        // An asset reference is a name, and a name is a string. Which section of
+        // the assets block that name has to appear in is the asset serializer's
+        // job (it walks the same fields); the component only records it.
+        void assetField(const char* name, std::string& assetName, AssetType type) override {
+            field(name, assetName);
         }
 
         bool beginStruct(const char* name) override {
@@ -453,6 +461,17 @@ class BehaviorJsonReader : public BehaviorFieldVisitor {
         void field(const char* name, glm::vec3& v) override {
             // The current value goes in as the fallback: a malformed node keeps it.
             if (cur().contains(name)) v = jsonToVec3(cur()[name], v);
+        }
+        void field(const char* name, std::string& v) override {
+            // Type-checked, following enumField's keep-current rule rather than
+            // the numeric leaves' bare get<>(): free text is the field a
+            // hand-edited scene is likeliest to have got wrong, and a throw here
+            // costs the whole load rather than one value.
+            if (cur().contains(name) && cur()[name].is_string()) v = cur()[name].get<std::string>();
+        }
+
+        void assetField(const char* name, std::string& assetName, AssetType type) override {
+            field(name, assetName);
         }
 
         void enumField(const char* name, int& index, const char* const* names, std::size_t count) override {

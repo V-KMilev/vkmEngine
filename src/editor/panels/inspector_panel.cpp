@@ -12,6 +12,7 @@
 
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <misc/cpp/imgui_stdlib.h>
 
 #include "ecs/component/animation/animation.h"
 #include "ecs/component/animation/bone_socket.h"
@@ -39,6 +40,7 @@
 #include "framework/prefab_overrides.h"
 #include "generator/light_generators.h"
 #include "generator/lod_generator.h"
+#include "io/asset/asset_library.h"
 #include "io/project_paths.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/skeleton_asset.h"
@@ -79,11 +81,56 @@ class BehaviorFieldInspector : public BehaviorFieldVisitor {
             ImGui::SetNextItemWidth(-1.0f);
             if (ImGui::DragFloat3(widgetId(name), glm::value_ptr(v), 0.1f)) changed = true;
         }
+        void field(const char* name, std::string& v) override {
+            drawPropertyLabel(name);
+            ImGui::SetNextItemWidth(-1.0f);
+            if (ImGui::InputText(widgetId(name), &v)) changed = true;
+        }
 
         void enumField(const char* name, int& index, const char* const* names, std::size_t count) override {
             drawPropertyLabel(name);
             ImGui::SetNextItemWidth(-1.0f);
             if (ImGui::Combo(widgetId(name), &index, names, static_cast<int>(count))) changed = true;
+        }
+
+        // Asset reference: a combo over what the project's library holds of that
+        // kind. Deliberately the library and not what is loaded, which is what
+        // pickAsset lists: the name chosen here goes into the scene's assets
+        // block on save, which is what makes the asset load in the first place.
+        void assetField(const char* name, std::string& assetName, AssetType type) override {
+            drawPropertyLabel(name);
+            ImGui::SetNextItemWidth(-1.0f);
+            if (ImGui::BeginCombo(widgetId(name), assetName.empty() ? "(none)" : assetName.c_str())) {
+                // Built inside the combo, like pickAsset's: closed, it costs
+                // nothing; open, it is the library as it stands this frame.
+                static char s_assetFilter[48] = {};
+                if (ImGui::IsWindowAppearing()) {
+                    s_assetFilter[0] = '\0';
+                    ImGui::SetKeyboardFocusHere();
+                }
+                ImGui::SetNextItemWidth(-1.0f);
+                ImGui::InputTextWithHint("##assetFilter", "Search...", s_assetFilter, sizeof(s_assetFilter));
+                ImGui::Separator();
+
+                if (ImGui::Selectable("(none)", assetName.empty())) {
+                    assetName.clear();
+                    changed = true;
+                }
+                for (const std::string& candidate : AssetLibrary::get().namesOf(type)) {
+                    if (!matchesFilter(candidate.c_str(), s_assetFilter)) continue;
+                    if (ImGui::Selectable(candidate.c_str(), candidate == assetName)) {
+                        assetName = candidate;
+                        changed   = true;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            // The list offers only names the library has, so one that is missing
+            // from it was deleted under the field or came from another project.
+            // It will fail the next load; saying so here is earlier than that.
+            if (!assetName.empty() && !AssetLibrary::get().find(type, assetName)) {
+                ImGui::TextColored(EditorStyle::DANGER, "Not in this project's library.");
+            }
         }
 
         // Nested struct: a collapsing tree node. When open it pushes an ID scope,

@@ -64,6 +64,11 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         if (iconButton("vpStop", EditorIcon::Stop, false, playing,
                        "Stop - restore the scene and return to Edit mode", BTN())) {
             clock.setPaused(true);
+            // Edit mode is the authored clock. A script's slow-motion belongs
+            // to the session that set it, and nothing else can undo it: there
+            // is no time-scale UI, so a leftover 0 would leave every later
+            // session running with nothing happening in it.
+            clock.setTimeScale(1.0f);
             sceneIO.restoreSnapshot(ctx, ec.state);
         }
 

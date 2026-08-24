@@ -13,6 +13,7 @@
 
 namespace Vkm::Engine {
 
+class Clock;
 class ResourceManager;
 class BehaviorSystem;
 class BehaviorFieldVisitor;
@@ -26,16 +27,19 @@ class BehaviorFieldVisitor;
  * hook pass that created them has returned.
  *
  * This is also the gameplay capability surface: a field belongs here exactly
- * when behaviors are meant to use it (which is why the Clock, for example, is
- * absent - a behavior that pauses the sim stops ticking and can never
- * unpause).
+ * when behaviors are meant to use it. The Clock qualifies because
+ * onRealtimeUpdate outlives a pause: a behavior may pause, resume, scale time
+ * and read any delta, and still be ticking afterwards to undo it. What it must
+ * not call is beginFrame() or consumeFixedStep() - those belong to the main
+ * loop, and driving them from a hook corrupts the frame the hook is in.
  */
 struct BehaviorContext {
-    Scene*                 scene          = nullptr;
-    ResourceManager*       resources      = nullptr;
-    WindowManager*         window         = nullptr;
-    EventBus*              events         = nullptr;
-    InputMap*              input          = nullptr;
+    Scene*                 scene            = nullptr;
+    ResourceManager*       resources        = nullptr;
+    WindowManager*         window           = nullptr;
+    EventBus*              events           = nullptr;
+    InputMap*              input            = nullptr;
+    Clock*                 clock            = nullptr;
     std::vector<EntityId>* pendingDestroy   = nullptr;
     std::string*           pendingSceneLoad = nullptr;
 };
@@ -75,21 +79,49 @@ class Behavior {
 
     public:
         /**
-         * @brief Called on the first tick this instance runs in play mode.
+         * @brief Called on the first simulation tick this instance runs in play mode.
+         *
+         * Always a simulation tick: onRealtimeUpdate never starts a behavior, so
+         * an entity spawned while paused waits for time to flow again, and a
+         * scene merely sitting open in the editor runs nothing at all.
          */
         virtual void onStart() {}
 
         /**
-         * @brief Called every variable-step frame while play mode runs.
+         * @brief Called every variable-step frame on which simulation time advanced.
          *
-         * @param dt Elapsed simulation time this frame, in seconds.
+         * Simulation time is the timeline gameplay lives on. While the game is
+         * paused - which in the editor is also Edit mode - this does not run at
+         * all, rather than run with a zero delta, so a per-frame counter or an
+         * input edge written here cannot tick while the world is frozen. Work
+         * that must continue through a pause goes in onRealtimeUpdate.
+         *
+         * @param dt Elapsed simulation time this frame, in seconds; always > 0.
          */
         virtual void onUpdate(float dt) {}
+
+        /**
+         * @brief Called every frame on real time, paused or not.
+         *
+         * The hook for what a frozen world must not freeze: a pause menu's
+         * animation, an unscaled timer, ducking the music, holding a key to
+         * quit. @p dt is the real frame delta, so setTimeScale() does not reach
+         * it either.
+         *
+         * Only behaviors that have already started receive it, and it starts
+         * none itself - so a pause menu is built in onStart and shown by
+         * toggling UIElement::visible, not spawned when the pause happens.
+         *
+         * @param dt Elapsed real time this frame, in seconds; always > 0.
+         */
+        virtual void onRealtimeUpdate(float dt) {}
 
         /**
          * @brief Called on each fixed-step tick (opt-in).
          *
          * Only invoked for behaviors that override it; left empty otherwise.
+         * The accumulator behind it is fed from simulation time, so pause and
+         * time-scale reach these steps with no gate of their own.
          *
          * @param dt Fixed timestep (fixedDeltaTime), in seconds.
          */
@@ -168,7 +200,8 @@ class Behavior {
         /**
          * @brief Destroy @p entity (and its subtree) - deferred until after the current
          * hook pass, so destroying your own entity is safe. Fires onDestroy on
-         * the affected behaviors. Routed through HierarchyOperations.
+         * the affected behaviors. Routed through HierarchyOperations. Drained
+         * on a paused frame too, so onRealtimeUpdate may use it.
          */
         void destroy(EntityId entity) { m_ctx->pendingDestroy->push_back(entity); }
 
@@ -179,7 +212,11 @@ class Behavior {
          * destroys every entity including the one whose behavior asked for it,
          * so doing it inline would free this object mid-call. Requesting twice
          * in one pass keeps the last request - the scene can only become one
-         * thing.
+         * thing. The drain runs on paused frames as well, so a pause menu's
+         * "quit to the main menu" works while the world is frozen - but nothing
+         * in the scene that arrives starts until simulation time flows, and
+         * this behavior is destroyed by the load, so a paused caller resumes
+         * the clock itself or loads a world that can never run.
          *
          * @param scenePath Scene file, relative to the project root.
          */

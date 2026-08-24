@@ -27,9 +27,10 @@ it (events -> gameplay -> animation -> physics). It opts into `fixedUpdate`.
 ```cpp
 class Behavior {
     public:
-        virtual void onStart()                   {}  // first tick in play mode
-        virtual void onUpdate(float dt)          {}  // variable step; dt = simDeltaTime
-        virtual void onFixedUpdate(float dt)     {}  // fixed step; dt = fixedDeltaTime
+        virtual void onStart()                   {}  // first SIMULATION tick in play mode
+        virtual void onUpdate(float dt)          {}  // variable step; dt = simDelta, > 0
+        virtual void onRealtimeUpdate(float dt)  {}  // every frame, paused or not; dt = real delta, > 0
+        virtual void onFixedUpdate(float dt)     {}  // fixed step; dt = fixedStep
         virtual void onCollision(EntityId other) {}  // non-trigger contact this tick
         virtual void onTrigger(EntityId other)   {}  // trigger overlap this tick
         virtual void onDestroy()                 {}  // teardown
@@ -39,7 +40,7 @@ class Behavior {
         virtual std::unique_ptr<Behavior> clone() const = 0;      // deep copy for duplication
 
     protected:
-        BehaviorContext& context();     // scene / resources / window / events
+        BehaviorContext& context();     // scene / resources / window / events / input / clock
         EntityId spawn();               // create a new entity
         void     destroy(EntityId);     // deferred until after the hook pass
         void     loadScene(const std::string& scenePath);  // deferred until the tick ends
@@ -55,6 +56,8 @@ struct BehaviorContext {
     ResourceManager*       resources;
     WindowManager*         window;
     EventBus*              events;
+    InputMap*              input;
+    Clock*                 clock;
     std::vector<EntityId>* pendingDestroy;
     std::string*           pendingSceneLoad;
 };
@@ -78,6 +81,9 @@ safely too. Growing the capability surface is one field on `BehaviorContext`;
 - `subscribe<E>()` registers an `EventBus` listener bound to the behavior's
   lifetime - it auto-unsubscribes on destroy, so there is nothing to clean up by
   hand (a raw subscribe on the bus would dangle once the instance dies).
+
+Which hook runs when, and what its `dt` means, is
+[Time and pause](#time-and-pause) below - read it before writing the first one.
 
 ### ReflectedBehavior - the no-boilerplate path
 
@@ -107,8 +113,64 @@ VKM_REFLECT_END()
 
 `BehaviorFieldVisitor` is the type-erased bridge that lets code holding only a
 `Behavior*` (the inspector, the serializer) read/write a concrete behavior's
-fields without knowing its type. It supports `float`, `int`, `bool`, and
-`glm::vec3`; reflecting an unsupported type is a compile error.
+fields without knowing its type. The leaf types it supports are `float`, `int`,
+`bool`, `glm::vec3` and `std::string`, plus any `VKM_ENUM_NAMES` enum, any
+`AssetRef<Asset>`, and any `VKM_REFLECT`-ed struct (descended into). Reflecting
+anything else is a compile error that names the ways out: add a `field()`
+overload, register the enum or struct, or drop the field.
+
+A `std::string` field is free text - a label, a tag, a bone name. It serializes
+as a JSON string and edits as a text box, and like every leaf it keeps its
+current value when the key is missing; unlike the numeric leaves it also keeps
+it when the key is present but is not a string, because free text is what a
+hand-edited scene most often gets wrong and a throw there costs the whole load.
+
+### Naming an asset
+
+A field that points at an asset declares an `AssetRef<Asset>`
+(`resource/asset_ref.h`) - never a bare string:
+
+```cpp
+class Footsteps : public ReflectedBehavior<Footsteps> {
+    public:
+        static constexpr const char* TYPE_NAME = "Footsteps";
+
+        void onStart() override {
+            m_clip = context().resources->findByName<AudioClipAsset>(step.name);
+        }
+
+        AssetRef<AudioClipAsset> step;   // authored, reflected: VKM_F(step)
+
+    private:
+        AudioClipHandle m_clip;
+};
+```
+
+**The type argument is what makes it work, and `std::string step` would not.** A
+scene's `assets` block is built by walking what the scene references, and a name
+that block never lists is a name the loader never recreates - so `findByName`
+would answer null and the sound would never play. `AssetRef` carries the asset
+kind through `BehaviorFieldVisitor::assetField`, which is what lets that walk
+list the name in the right section. Prefabs get the same treatment: a prefab
+writes its own assets block from the same walk, so an instance brings the clip
+with it.
+
+It holds a *name* because a name is the engine's serializable identity for an
+asset, while a `Handle<T>` names a slot in one session's `ResourceManager`.
+Resolving is the behavior's own job, once, as above; nothing resolves it for
+you. An empty name means "none".
+
+In the inspector the field is a combo over what the project's asset library
+holds of that kind, plus `(none)`. That is deliberately the *library* and not
+what is currently loaded: picking a name is what pulls the asset into the
+scene's assets block on the next save. A stored name the library does not have -
+an asset renamed or deleted under the field, or a scene from another project -
+is flagged under the combo rather than left to fail at load. Nothing rewrites
+the name for you: it is authored text, not a handle the editor can follow.
+
+Only asset kinds with an `ASSET_TYPE` (`resource/asset_type.h`) can be
+referenced; `AssetRef<FontAsset>` is a compile error, because the library holds
+no fonts and the assets block has no section to put one in.
 
 ## ScriptComponent
 
@@ -122,6 +184,142 @@ The one ECS component that is **not** a plain aggregate: it owns `unique_ptr`s,
 so it is move-only (the documented exception in the code-style guide). `SparseSet`
 stores it through its `std::move` path; per-behavior deep copy for entity
 duplication goes through `Behavior::clone()`. See [ecs.md](../ecs.md).
+
+### Authored fields inside a prefab instance
+
+`ScriptComponent` is deliberately absent from `PrefabOverrides::COMPONENT_KEY`,
+and **1.7 did not change that.** A behavior's authored values - the asset
+references included - are the prefab's, identically, on every instance of it:
+edit them in the prefab, not in an instance. The inspector says so on the card
+while it is open.
+
+The mechanical reason is that the component serializes as a single field holding
+the whole behavior list, so a per-field delta on it would be the whole list.
+Making one behavior field overridable is therefore not a change to the reference
+encoding; it is an override *address* that reaches inside a list - (uid,
+component, behavior index or type, field) - which the prefab format does not
+have. Nothing has asked for it yet: the case that wants it (this barrel, that
+door) also wants an authored entity reference, which is deferred for the same
+reason. Design the two together when one is needed, or the format grows twice.
+
+The loader enforces it, so the rule is the format's and not just the editor's: a
+hand-written `"Script"` override is reported as drift and not applied, the way
+one on the root's `Transform` is. Both are addresses a file could carry and must
+not take effect - the Transform because it could never work, this one because it
+would, wholesale and invisibly, leaving content authored against an address the
+format has not decided yet.
+
+## Time and pause
+
+Three tick hooks, two timelines. **Which timeline a hook is on is legible in the
+hook you are writing**, not in a flag set somewhere else - so this section is the
+whole contract, and a behavior never has to read `BehaviorSystem` to learn what
+`dt` means.
+
+| Hook | Timeline | Runs | `dt` is |
+|------|----------|------|---------|
+| `onUpdate(dt)` | simulation | only on frames where simulation time advanced | `getSimDelta()`, always `> 0` |
+| `onFixedUpdate(dt)` | simulation | once per fixed step, from an accumulator fed by the sim delta | `getFixedStep()` |
+| `onRealtimeUpdate(dt)` | real | every frame, paused or not | `getDeltaTime()`, always `> 0` |
+
+1. **`onUpdate` is simulation time.** While the game is paused, stopped, or
+   scaled to zero it **does not run at all**, rather than running with a zero
+   delta. That distinction is the point: a per-frame counter, an input edge or a
+   state machine written in `onUpdate` cannot tick while the world is frozen, and
+   the failure mode where it silently could is invisible. Nothing written against
+   this hook before 1.7 changed meaning.
+2. **`onFixedUpdate` is simulation time too**, and needs no gate of its own - the
+   accumulator behind it is filled from the sim delta, so pause and time-scale
+   already reach it.
+3. **`onRealtimeUpdate` is real time.** It runs every frame, paused or not, and
+   `setTimeScale()` does not reach it either. Menu animation, unscaled timers,
+   ducking the music, holding a key to quit - all of it lives here.
+4. **"Started" is the play session.** A behavior starts on its first *simulation*
+   tick and never in the realtime pass, so `onRealtimeUpdate` begins nothing.
+   In the editor, paused is also Edit mode - the transport pauses the clock to
+   leave it, and Stop restores the authored scene - so a scene merely open in the
+   editor runs **nothing at all**, over a world that has no snapshot to undo.
+5. **An entity spawned while paused starts when simulation time next flows.** The
+   idiomatic pause menu is therefore built at `onStart` and shown by toggling
+   `UIElement::visible`, which is what that field is for.
+6. **`destroy()` and `loadScene()` drain on the realtime pass as well**, so a
+   pause menu's "quit to the main menu" works while the world is frozen. The
+   scene that arrives is still subject to rule 4: nothing in it starts until
+   simulation time flows, and the behavior that asked is destroyed by the load,
+   so a quit-to-menu resumes the clock as well as asking for the scene - or it
+   loads a world that renders and can never run. The engine writes a warning
+   when a load lands on a frozen clock, because there is no other symptom. A
+   request belongs to the session that made it: ending one - Stop, a scene
+   replace, shutdown - discards whatever its `onDestroy` hooks queued on the way
+   out, because that request named the world being torn down and the next frame
+   to drain it would be an Edit-mode frame over the authored scene.
+7. **Queued contacts are dropped while paused.** Physics did not run, so a
+   `CollisionEvent` still sitting in the queue describes a world older than the
+   pause; delivering it late would be worse than losing it.
+8. **`onUpdate` runs before `onRealtimeUpdate`** within a frame, so a realtime
+   hook reading world state sees what the simulation produced *this* frame.
+9. **`context().clock` is the Clock**, so a game can pause and resume itself: the
+   behavior that paused keeps getting realtime ticks and can undo it. Read any
+   delta, call `setPaused()` / `setTimeScale()` / `requestStep()`; do **not** call
+   `beginFrame()` or `consumeFixedStep()`, which belong to the main loop and
+   would corrupt the frame the hook is running in. A game that pauses itself
+   inside the editor simply lights the transport's Pause button, which is true,
+   and Stop still works: ending the session returns the clock to Edit mode -
+   paused, at 1x - so neither a pause nor a time scale outlives the session
+   that set it.
+
+```cpp
+void PauseMenu::onStart() {
+    m_root = buildMenuEntities();   // built once, while time is running
+    show(false);
+}
+
+void PauseMenu::onUpdate(float dt) {
+    // Simulation time: only reached while the world is actually running, which
+    // is the only state you can open a pause menu FROM.
+    if (context().input->pressed("Cancel")) {
+        show(true);
+        context().clock->setPaused(true);
+    }
+}
+
+void PauseMenu::onRealtimeUpdate(float dt) {
+    // Real time: still ticking with the world frozen, which is what lets the
+    // panel animate in and what lets this behavior undo the pause it made.
+    m_fade = std::min(1.0f, m_fade + dt * 4.0f);
+    if (m_resumeClicked) {
+        m_resumeClicked = false;
+        show(false);
+        context().clock->setPaused(false);
+    }
+    if (m_quitClicked) {
+        // Resuming is not optional: the loaded scene's behaviors start on a
+        // simulation tick, and this one is destroyed by the load.
+        context().clock->setPaused(false);
+        loadScene("scenes/main_menu.json");                  // drains while paused
+    }
+}
+
+void PauseMenu::show(bool on) {
+    context().scene->get<UIElement>(m_root).visible = on;
+}
+```
+
+**The engine-wide rule this follows:** *a system reads the timeline its
+responsibility lives on*, not the timeline of the stage it sits in. Simulation
+state - animation, particles, physics, gameplay's `onUpdate` - reads
+`getSimDelta()`. Presentation and services - input, camera, the editor, async
+loading, [audio](audio.md#time-pause-and-the-editor), gameplay's
+`onRealtimeUpdate` - run every frame regardless of the sim delta, on the real
+delta where they need one at all. Which is why
+pausing does not cut the music: `AudioSystem` keeps mixing, 3D positions simply
+stop changing because nothing moved.
+
+**Deliberately still impossible:** per-entity or per-layer time scales, a nested
+pause stack, pausing individual systems, and running behaviors in Edit mode
+without pressing Play. `EventBus::flush` also stays unconditional - a paused game
+can still *receive* a UI click, and rule 3 is what finally gives it a hook to
+answer one in.
 
 ## BehaviorRegistry
 
@@ -141,17 +339,26 @@ game module is unloaded on hot-reload, since the factories close over module cod
 
 ## BehaviorSystem
 
-Drives the lifecycle of every entity's `ScriptComponent` behaviors. It ticks
-only while the `Clock` is running (`ctx.clock.getSimDelta() > 0`), so pause /
-step / Stop apply uniformly:
+Drives the lifecycle of every entity's `ScriptComponent` behaviors. One `update`
+does, in this order:
 
-1. On an instance's first tick, inject context and call `onStart()`.
-2. `onUpdate(getSimDelta())` every frame; `onFixedUpdate(getFixedStep())` every
-   fixed tick.
-3. Dispatch physics `CollisionEvent` / `TriggerEvent` (collected via
-   subscriptions) to the involved entities' `onCollision` / `onTrigger` hooks.
-4. Drain the deferred-`destroy()` queue after the hook pass (so a self-destroy
-   can't free its own `ScriptComponent` mid-iterate).
+1. If `getSimDelta() > 0`: tick `onUpdate(simDelta)`, starting (context inject +
+   `onStart()`) any instance whose first tick this is; then dispatch the physics
+   `CollisionEvent` / `TriggerEvent` collected via subscriptions to the involved
+   entities' `onCollision` / `onTrigger`. Otherwise: drop those queues, because
+   physics did not run either.
+2. Tick `onRealtimeUpdate(getDeltaTime())` on the behaviors that have **already**
+   started - never starting one, which is what keeps Edit mode inert.
+3. Drain the deferred `destroy()` and `loadScene()` requests, after both passes,
+   so a self-destroy can't free its own `ScriptComponent` mid-iterate and a
+   paused game can still quit to its menu. `endSession()` empties both queues,
+   so a request an outgoing `onDestroy` made cannot drain into the scene that
+   replaced it - an entity id does not go dead across a scene swap, it re-aims
+   at whatever took its slot.
+
+`fixedUpdate` ticks `onFixedUpdate(getFixedStep())` and starts instances too; its
+accumulator is fed from the sim delta, so it needs no pause gate.
+[Time and pause](#time-and-pause) is the contract those two paragraphs implement.
 
 Every hook runs under a catch net: a behavior that throws is reported via
 `reportError()` (logged, and captured by the editor-owned `EngineErrorLog`) and
@@ -219,9 +426,11 @@ untouched - only the behavior C++ objects are rebuilt, and they start fresh
 
 ## Serialization
 
-`ScriptComponent` is in the scene save/load set (key `"Script"`). The scene
-serializer stores each behavior by its registered type name and recreates it
-through `BehaviorRegistry` on load, dropping any behavior whose type is not
-registered. Note: the **scene** path persists type names only - per-behavior
-field values are not yet written to the scene file (the in-memory hot-reload
-path above does round-trip fields). See [io.md](io.md).
+`ScriptComponent` is in the scene save/load set (key `"Script"`). Each behavior
+is stored as its registered type name plus a `properties` object holding every
+reflected field, walked through `visitFields` - the same visitor the inspector
+and the hot-reload path use, so the three cannot drift. On load
+`BehaviorRegistry` recreates the instance by name and the reader fills the
+fields back in, dropping any behavior whose type is not registered and keeping a
+field's constructed default wherever the file has no value for it. See
+[io.md](io.md).
