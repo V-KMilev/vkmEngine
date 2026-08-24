@@ -17,6 +17,11 @@ class SceneIOController;
  *    one fixed tick while paused; Stop restores the snapshot and returns to
  *    Edit mode - undoing every transform/spawn the simulation made.
  *
+ * Pause and Resume also hold and release the voices the mixer is playing,
+ * which the Clock cannot do for them: audio runs off the frame rather than off
+ * simulation time, so that a shipped game's pause menu keeps its music. Here
+ * the world was frozen to be looked at, so the bar reaches the device itself.
+ *
  * The snapshot + restore live on SceneIOController (a restore is just an
  * in-memory reload), so the bar drives play mode through it.
  */

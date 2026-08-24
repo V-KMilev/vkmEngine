@@ -109,6 +109,11 @@ class InspectorPanel {
         // replaces it rather than layering a second copy over the first.
         VoiceId m_previewVoice = 0;
 
+        // Which card started it. The audition is stopped when the selection
+        // leaves that entity, so the transport on the card always drives the
+        // voice the card is showing.
+        EntityId m_previewOwner;
+
         int m_colliderFitDetail = 4;  ///< Voxel resolution for the Collider "Fit to Mesh" button.
         int m_lodGenLevels      = 2;  ///< Levels the LOD card's Generate button builds below the source.
 };

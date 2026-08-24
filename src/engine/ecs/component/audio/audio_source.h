@@ -18,11 +18,26 @@ namespace Vkm::Engine {
  * overlapping copies of the same footstep want a source each. That is the
  * simple shape, and it is the one the ECS already gives: an entity per voice.
  *
+ * There is no playback position here, and that is a decision rather than an
+ * omission. A voice's cursor is advanced by the mixer thread between frames, so
+ * a field mirroring it would be a copy of a number that changes without the
+ * scene; AudioDevice::voiceCursor carries both the reasoning and the read, and
+ * the editor's card scrubs through it.
+ *
  * `spatial` decides whether the entity's world position is heard at all. A 3D
  * source is positioned and attenuated by distance to the listener; a 2D one is
- * mixed flat, which is what music, narration and UI clicks want. Spatializing a
- * stereo clip is meaningless (its two channels already encode a position), so a
- * spatial source wants a mono clip.
+ * mixed flat, which is what music, narration and UI clicks want.
+ *
+ * A spatial source wants a MONO clip, and the reason is sharper than "stereo is
+ * already positioned". The mixer routes each of a voice's channels to the
+ * output channel it was authored for and attenuates it there, so nothing
+ * crosses: a two-channel clip with sound in its first channel only is silent
+ * out of the second output channel wherever the emitter is put, while the mono
+ * equivalent swings across the pair as it passes the listener. A stereo clip
+ * whose channels are identical is indistinguishable from mono, which is what
+ * makes the mistake quiet - it is the wide ones that lose half their field.
+ * The Inspector says so on the card, and AudioSystem says so once per clip for
+ * the request path, which has no card.
  */
 struct AudioSource {
     AudioClipHandle clip;

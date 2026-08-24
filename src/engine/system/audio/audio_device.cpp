@@ -86,6 +86,18 @@ void forwardBackendLog(void* userData, ma_uint32 level, const char* message) {
  */
 struct AudioDevice::Backend {
     struct Voice {
+        // Who is holding a voice at its cursor, if anyone. One field and not a
+        // held flag beside an owner flag, because a pair can disagree and the
+        // disagreement is expensive: a voice no longer held but still
+        // remembered as the bulk pause's comes back on the next
+        // resumeAllVoices, and find() hides it, so nothing above is left able
+        // to stop it again.
+        enum class Hold {
+            None,
+            Own,   ///< Asked for by pauseVoice; only resumeVoice lets it go.
+            Bulk,  ///< Taken by pauseAllVoices; resumeAllVoices gives it back.
+        };
+
         ma_sound            sound;
         ma_audio_buffer_ref buffer;
         // Keeps the PCM the buffer points at alive for as long as this voice is.
@@ -93,6 +105,10 @@ struct AudioDevice::Backend {
         // Ramping to silence, waiting for the reap. Hidden from find(), so an
         // id whose voice is fading behaves exactly as one whose voice is gone.
         bool retiring = false;
+        // Held at its cursor, and by whom. Kept here because the mixer cannot
+        // say it: a held sound is a stopped node, which is also what a voice
+        // that ran out looks like, and only one of the two should be reaped.
+        Hold hold = Hold::None;
     };
 
     ma_log    log;
@@ -147,6 +163,36 @@ struct AudioDevice::Backend {
         ma_sound_set_position(&voice.sound, params.position.x, params.position.y, params.position.z);
         ma_sound_set_min_distance(&voice.sound, std::max(0.0f, params.minDistance));
         ma_sound_set_max_distance(&voice.sound, params.maxDistance);
+    }
+
+    /**
+     * @brief Ramp @p voice to silence and hold its cursor there.
+     *
+     * Ramped rather than cut for the reason STOP_FADE_MS exists: a pause is a
+     * cut at whatever sample the cursor is on, and measured across the phases
+     * of a tone it steps by the signal's full amplitude both going in and
+     * coming out. The sound therefore keeps playing through its own fade, so
+     * the hold lands a few milliseconds after it is asked for.
+     */
+    static void pauseSound(Voice& voice, Voice::Hold hold) {
+        voice.hold = hold;
+        ma_sound_stop_with_fade_in_milliseconds(&voice.sound, STOP_FADE_MS);
+    }
+
+    /**
+     * @brief Undo pauseSound and let @p voice play on from where it was held.
+     *
+     * The ramped pause leaves two things behind that would keep the sound
+     * silent however loud it is asked to be: a stop time now in the past,
+     * which the node reads as stopped whatever its state says, and a fader
+     * sitting at zero. Both are cleared here, and the ramp back in is the
+     * same length as the ramp out for the same reason.
+     */
+    static void resumeSound(Voice& voice) {
+        ma_sound_set_stop_time_in_pcm_frames(&voice.sound, ~static_cast<ma_uint64>(0));
+        ma_sound_set_fade_in_milliseconds(&voice.sound, 0.0f, 1.0f, STOP_FADE_MS);
+        voice.hold = Voice::Hold::None;
+        ma_sound_start(&voice.sound);
     }
 
     /**
@@ -322,10 +368,64 @@ void AudioDevice::updateVoice(VoiceId voice, const VoiceParams& params) {
     if (Backend::Voice* v = m_backend->find(voice)) Backend::apply(*v, params);
 }
 
-bool AudioDevice::isVoicePlaying(VoiceId voice) const {
+bool AudioDevice::isVoiceActive(VoiceId voice) const {
     if (!m_open) return false;
     const Backend::Voice* v = m_backend->find(voice);
+    // Deliberately not ma_sound_is_playing: a held voice is a stopped node
+    // and it has not finished, so what is asked here is whether the clip has
+    // run out. isVoicePaused is the other half.
     return v != nullptr && ma_sound_at_end(&v->sound) == MA_FALSE;
+}
+
+void AudioDevice::pauseVoice(VoiceId voice) {
+    if (!m_open) return;
+    Backend::Voice* v = m_backend->find(voice);
+    if (v == nullptr) return;
+
+    // Whoever asks for the hold owns it, and asking is the claim - a voice the
+    // transport is already holding becomes this caller's, so the world resuming
+    // underneath it leaves it where it was put. What must not be repeated is
+    // the ramp, which would restart a fade already halfway down.
+    const bool alreadyHeld = v->hold != Backend::Voice::Hold::None;
+    v->hold = Backend::Voice::Hold::Own;
+    if (!alreadyHeld) Backend::pauseSound(*v, Backend::Voice::Hold::Own);
+}
+
+void AudioDevice::resumeVoice(VoiceId voice) {
+    if (!m_open) return;
+    Backend::Voice* v = m_backend->find(voice);
+    if (v == nullptr || v->hold == Backend::Voice::Hold::None) return;
+    Backend::resumeSound(*v);
+}
+
+bool AudioDevice::isVoicePaused(VoiceId voice) const {
+    if (!m_open) return false;
+    const Backend::Voice* v = m_backend->find(voice);
+    return v != nullptr && v->hold != Backend::Voice::Hold::None;
+}
+
+float AudioDevice::voiceCursor(VoiceId voice) const {
+    if (!m_open) return 0.0f;
+    const Backend::Voice* v = m_backend->find(voice);
+    if (v == nullptr) return 0.0f;
+
+    float cursor = 0.0f;
+    ma_sound_get_cursor_in_seconds(&v->sound, &cursor);
+    return cursor;
+}
+
+void AudioDevice::seekVoice(VoiceId voice, float seconds) {
+    if (!m_open) return;
+    Backend::Voice* v = m_backend->find(voice);
+    if (v == nullptr) return;
+
+    const double at = std::isfinite(seconds) ? std::max(0.0, static_cast<double>(seconds)) : 0.0;
+    const ma_uint64 frame = static_cast<ma_uint64>(at * static_cast<double>(v->buffer.sampleRate));
+    // Clamped rather than passed through: miniaudio refuses a seek past the
+    // end at the data source and moves the sound's own clock to the position
+    // it refused anyway, leaving the voice playing from where it was with a
+    // clock nine seconds ahead of it. The clip's length is right here.
+    ma_sound_seek_to_pcm_frame(&v->sound, std::min(frame, v->buffer.sizeInFrames));
 }
 
 void AudioDevice::stopVoice(VoiceId voice) {
@@ -339,11 +439,17 @@ void AudioDevice::stopVoice(VoiceId voice) {
     // wherever it had got to, restarting a fade that is halfway done.
     if (stopping.retiring) return;
 
+    // A stopped voice is held by nobody. It is already silent if it was held,
+    // so it needs no ramp of its own; leaving it marked held would keep it out
+    // of every future reap, since the hold is exactly why it reads as not
+    // playing, and would leave resumeAllVoices a stopped voice to start again.
+    stopping.hold = Backend::Voice::Hold::None;
+
     // Ramped rather than cut, and therefore not released here: the mixer needs
     // the sound for as long as the ramp lasts. reapFinishedVoices takes it
     // once the scheduled stop has passed, and until then find() hides it, so
     // the id behaves exactly as it did when this released outright - unknown
-    // to updateVoice, finished to isVoicePlaying.
+    // to updateVoice, finished to isVoiceActive.
     stopping.retiring = true;
     ma_sound_stop_with_fade_in_milliseconds(&stopping.sound, STOP_FADE_MS);
 }
@@ -355,9 +461,16 @@ void AudioDevice::reapFinishedVoices() {
         // Two ways to be finished: the clip ran out, or a ramped stop reached
         // the end of its fade. A looping voice satisfies neither until someone
         // stops it, which is what keeps an ambience alive here.
-        const ma_sound& sound = it->second->sound;
+        //
+        // A held voice looks like the second one and is not it: holding one
+        // stops the node, so the only thing separating a sound that is waiting
+        // from one that is over is who has it. stopVoice hands it back, so a
+        // voice stopped while held is still swept.
+        const Backend::Voice& voice = *it->second;
+        const ma_sound& sound = voice.sound;
         const bool finished = ma_sound_at_end(&sound) == MA_TRUE
-                           || ma_sound_is_playing(&sound) == MA_FALSE;
+                           || (ma_sound_is_playing(&sound) == MA_FALSE
+                               && voice.hold == Backend::Voice::Hold::None);
         if (!finished) {
             ++it;
             continue;
@@ -377,6 +490,26 @@ void AudioDevice::stopAllVoices() {
     // the meantime, to smooth an edge under a load that is not quiet anyway.
     for (auto& entry : m_backend->voices) m_backend->release(*entry.second);
     m_backend->voices.clear();
+}
+
+void AudioDevice::pauseAllVoices() {
+    if (!m_backend) return;
+    for (auto& entry : m_backend->voices) {
+        Backend::Voice& voice = *entry.second;
+        // A voice on its way out is not held back to be resumed later, and one
+        // already held keeps the hold it has rather than changing hands - which
+        // is what lets an audition held on purpose survive a Resume.
+        if (voice.retiring || voice.hold != Backend::Voice::Hold::None) continue;
+        Backend::pauseSound(voice, Backend::Voice::Hold::Bulk);
+    }
+}
+
+void AudioDevice::resumeAllVoices() {
+    if (!m_backend) return;
+    for (auto& entry : m_backend->voices) {
+        Backend::Voice& voice = *entry.second;
+        if (voice.hold == Backend::Voice::Hold::Bulk) Backend::resumeSound(voice);
+    }
 }
 
 size_t AudioDevice::voiceCount() const {

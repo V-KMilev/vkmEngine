@@ -221,7 +221,7 @@ Do not re-define these values in a shader; include the generated file.
 
 ## Editor integration
 
-- The **light gizmo** (in `editor/overlays/gizmo_overlay.cpp`) draws
+- The **light gizmo** (in `editor/overlays/gizmo_overlay_draw.cpp`) draws
   a directional ray for directional lights, a cone for spotlights, a
   sphere for points, and the rect / disk outline for area lights.
 - The **inspector** exposes the relevant fields per light type. Area

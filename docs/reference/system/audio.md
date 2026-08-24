@@ -51,7 +51,7 @@ and reads it back to find out when the sound ended:
 
 ```cpp
 void onUpdate(float dt) override {
-    if (!m_scene->get<AudioSource>(m_door).playing) openTheDoor();
+    if (!context().scene->get<AudioSource>(m_door).playing) openTheDoor();
 }
 ```
 
@@ -72,7 +72,7 @@ a declick, not a fade-out.
 ```cpp
 VoiceParams params;
 params.volume   = 0.55f;
-params.position = m_scene->get<Transform>(m_player).position;
+params.position = context().scene->get<Transform>(m_player).position;
 context().events->emit(PlaySoundEvent{m_footstep, params});
 ```
 
@@ -83,9 +83,9 @@ and neither can be expressed as a component:
 - A **footstep** at the runner's top cadence. The stride announces footfalls
   138 ms apart against a 130 ms clip, so one speaker has 8 ms - under half a
   frame - to finish and retrigger in. Measured through the component: 0%
-  dropped at walking cadence, **19% at cadence 1.875 and 48% at 2.0**, which
-  the runner reaches 33 seconds into a run. Through the request path: 0% at
-  every cadence.
+  dropped at walking cadence, **19% at cadence 1.875 and 48% at 2.0** - which a
+  run reaches 33 and 40 seconds in, the second being the top speed its ramp
+  clamps at. Through the request path: 0% at every cadence.
 - A **coin**, which pays out in runs: coins are laid down in lanes of four
   3.6 m apart, so at top speed one run's chimes start 83 ms apart against a
   180 ms clip and a source on the player would swallow every ping after the
@@ -135,6 +135,9 @@ a script, an animation or a contact asked for starts on that same frame.
 AudioSystem::update(FrameContext)
   |-- ResourceManager epoch moved? stop every voice - they belong to a world
   |     that no longer exists (scene load, editor Stop)
+  |-- reap every voice that played to its end - one-shots, editor auditions,
+  |     and stops that have finished ramping out, but never one the editor's
+  |     transport is holding
   |-- findActiveListener: first entity with an enabled AudioListener and a
   |     Transform, storage order breaking ties
   |     |-- found: push its world pose + master gain
@@ -148,7 +151,7 @@ AudioSystem::update(FrameContext)
   |     not playing and voice  -> stop it
   |-- any voice whose source was not visited (component or entity gone) is stopped
   `-- start every PlaySoundEvent collected since the last frame: one voice
-        each, tracked by nobody, released by the reap above once it ends
+        each, tracked by nobody, released by the next frame's reap once it ends
 ```
 
 ## Time, pause and the editor
@@ -170,6 +173,48 @@ nothing moved. The single thing pause holds back is `playOnStart`, which waits
 for simulation time to advance - which is what keeps an unplayed scene sitting
 open in the editor quiet, since in the editor "paused" and "not playing" are
 the same state.
+
+### Two pauses wearing one word
+
+The rule above is a **game's** pause, and it is the right rule: a pause menu
+that cut its own music, swallowed the click that opened it and silenced the
+menu behind it would be a bug. The **editor's transport** is a different pause
+wearing the same word. There the world was frozen deliberately, to be looked
+at, and the level's ambience playing on underneath it is noise nobody asked
+for - which is exactly what pressing Pause used to do.
+
+Nothing in `AudioSystem` knows about the second one, and that is the point. The
+editor holds the voices itself:
+
+- `PlaybackBar`'s Pause calls `AudioDevice::pauseAllVoices()`, and Resume
+  `resumeAllVoices()`, through the `AudioSystem::device()` handle the editor
+  already uses to audition clips. The system's contract is untouched, so a game
+  that ships never inherits the editor's rule.
+- A held voice is *held*, not stopped. The mixer keeps the sound and only its
+  clock stops, so Resume continues from the sample the pause landed on rather
+  than starting the clip again.
+- The hold is ramped over the same five milliseconds a stop is, because a pause
+  is also a cut at whatever sample the cursor is on. Swept across the phases of
+  a 220 Hz tone at gain 0.8, cutting outright steps by **0.80** - thirty-five
+  times the waveform's own steepest step - at the pause and again at the
+  resume; ramped, both stay inside that own step. The cost is that the hold
+  lands about ten milliseconds late, the sound playing through its own fade.
+- Only what was sounding when the button was pressed is held, and only what
+  that press held is let go. So a clip auditioned while the world is frozen is
+  audible - being unable to hear a file because the world is paused would be
+  the same mistake pointing the other way - and an audition somebody paused on
+  purpose stays paused when the world resumes.
+- `reapFinishedVoices` had to learn the difference. Pausing stops the node, and
+  a stopped node is also what a voice that ran out looks like; the only thing
+  separating them is the voice's `hold`, one field naming who is holding it -
+  nobody, the caller that asked for this voice, or the transport. One field and
+  not a held flag beside an owner flag, because the two can disagree and the
+  disagreement is expensive: a voice that has been stopped but is still
+  remembered as the transport's comes back on the next Resume, playing on with
+  `find()` hiding it, which leaves nothing above the device able to stop it
+  again. `stopVoice` hands the hold back, so a voice stopped while it was held
+  is swept rather than resurrected, and asking to hold a voice the transport
+  already holds takes it over rather than ramping it twice.
 
 Pressing Stop restores the play snapshot, which replaces the asset graph; the
 epoch check above stops every voice on the next frame.
@@ -203,9 +248,42 @@ always answered this way - `std::max` keeps its first argument when a comparison
 against a NaN comes back false - and infinity now is too.
 
 `spatial = false` bypasses all of it and mixes the clip flat - what music,
-narration and UI clicks want. Spatializing a stereo clip is close to
-meaningless, since its two channels already encode a position, so a spatial
-source wants a mono clip; the inspector says so on the card.
+narration and UI clicks want.
+
+### A positioned source wants a mono clip
+
+The reason is sharper than "stereo already encodes a position", and it is worth
+stating exactly because the loose version led to a warning that named the fix
+without the failure. The mixer routes each of a voice's channels to the output
+channel it was authored for and attenuates it there. Nothing crosses. Measured
+against the offline mixer, with a listener at the origin facing `+Z` and an
+emitter walked across it:
+
+| emitter at | mono clip | 2ch clip, sound in channel 0 only |
+|---|---|---|
+| `x = -8` | L 0.1371  R 0.6857 | L 0.1371  R **0.0000** |
+| `x =  0` | L 0.8000  R 0.8000 | L 0.8000  R **0.0000** |
+| `x = +8` | L 0.6857  R 0.1371 | L 0.6857  R **0.0000** |
+
+The mono clip swings across the pair as it passes. The stereo one never reaches
+the second output channel from any position at all - half its field is
+unreachable, and no placement in the world recovers it. Distance attenuation
+still applies to both, which is what keeps the failure quiet: the sound gets
+nearer and further correctly, it just cannot move sideways.
+
+Quieter still: a stereo clip whose two channels are *identical* is
+indistinguishable from the mono one - measured, L 0.1437 R 0.7183 for both at
+`x = -6`. So testing the pairing with a centred recording passes and proves
+nothing. It is wide clips that lose, and they lose silently.
+
+Hence a warning rather than a conversion, in two places. The Inspector's card
+says it where the mistake is being made, and `AudioSystem` says it once per clip
+when a positioned voice starts, because a project that plays entirely through
+`PlaySoundEvent` owns no `AudioSource` and so has no card for it to be said on -
+the same pairing the missing-listener line already has. Per clip rather than per
+world, which is where it parts from that line: two stereo clips are two
+mistakes, and one message would hide the second. See [Not
+implemented](#not-implemented) for why nothing downmixes the file for you.
 
 A `Transform` is what a spatial source is positioned by, but it is not what
 makes the source run. Every source is reconciled whether or not its entity has
@@ -234,17 +312,20 @@ the same one `findActiveCamera` gives for the eye: the first enabled one wins,
 storage order breaking the tie.
 
 That rule is stated once, in `findActiveListener` beside the component, because
-three places have to agree on it: the system placing the ear, and the two
-Inspector cards that say which listener is heard from and warn a positioned
-source that there is no ear at all. It takes no cached-entity hint -
+everything that answers "which listener" has to agree on it: the system placing
+the ear, the two Inspector cards that say which listener is heard from and warn
+a positioned source that there is no ear at all, and the viewport, which dims
+every listener icon except the one it picks. It takes no cached-entity hint -
 `findActiveCamera` has one because two systems each keep a cached camera entity,
 and nothing on the audio side caches one.
 
 With **no** active listener there is nothing for a distance to be measured
 from, so spatial sources go silent while non-spatial ones play on untouched.
-The engine says so once - and only when a positioned sound actually tries to
-start, because a project with no audio in it should not be told it is missing
-an ear.
+The engine says so once per world - and only when a positioned sound actually
+tries to start, a source's voice or a request's, because a project with no audio
+in it should not be told it is missing an ear. The world that replaces this one
+earns the line again: the flag is cleared with the voices, by the same
+`stopEverything` a scene load and the editor's Stop go through.
 
 ## The clip asset
 
@@ -276,7 +357,7 @@ Same shape as every other asset kind:
 | Stage | What happens |
 |-------|--------------|
 | Import | `loadAudioClip("assets/audio/step.wav")` decodes wav / mp3 / flac to s16 at the file's own rate. The project-relative path is the clip's name. |
-| Recipe | `{"kind": "file", "path": "assets/audio/step.wav"}`, written to `library/sounds/<uid>.json` |
+| Recipe | `{"kind": "file", "path": "assets/audio/step.wav"}`, written to `library/sounds/<uid>.json` - by the cook, not by the import. A clip that has been imported and not yet baked exists in memory only, and nothing that reads the library can find it |
 | Cook | `AssetCook::writeAudioClip` -> `cooked/sounds/<uid>.vkmc` (header + rate + channels + sample count + the PCM) |
 | Reference | The scene's `assets.sounds` block lists the clip by name; `AudioSource` resolves it through `findByName` on load |
 | Runtime | `loadCookedAudioClip` reads the binary synchronously - the cooked file is already the PCM the mixer wants, so there is nothing to decode off-thread |
@@ -369,7 +450,7 @@ left to write one: a source's entity destroyed, its component removed, the
 editor's audition stopped, and every `playing = false` that did not think of it.
 
 Above `AudioDevice` nothing changes. A ramping id answers exactly as a released
-one did - unknown to `updateVoice`, finished to `isVoicePlaying` - so there is
+one did - unknown to `updateVoice`, finished to `isVoiceActive` - so there is
 no second state for `AudioSystem` or the editor to know about. `voiceCount()`
 does count a ramping voice, because that is what the mixer is holding. A source
 restarted on the next frame overlaps the tail of the one it replaced by under a
@@ -384,6 +465,11 @@ every frame at 60 Hz holds at most five voices at once rather than one. None of
 them is heard and none of them leaks - `stopAllVoices` and `close()` still free
 on the spot - but it is why `voiceCount()` reads higher than the number of
 audible sounds while things are stopping.
+
+The editor's transport pause borrows the ramp for the same reason, in both
+directions - see [Two pauses wearing one
+word](#two-pauses-wearing-one-word) - and a held voice is the one thing
+`reapFinishedVoices` must not mistake for a finished one.
 
 `stopAllVoices` is the one exception and stays a hard cut. It is the teardown
 path: `close()` uninitialises the mixer on the very next line, so a ramp
@@ -408,29 +494,47 @@ that lends the offline mixer a thread of its own must join it before closing
 the device. A lock here would put a mutex in the frame's hot path to serve a
 caller the engine does not have.
 
-### The two known races are miniaudio's
+### The known races are miniaudio's
 
 ThreadSanitizer reports the same two data races on every run that mixes while
-the main thread pushes voice parameters, and both are inside the backend:
+the main thread pushes voice parameters, and both are inside the backend. A
+third joins them only while something reads a playback cursor, which is the
+Inspector's audition card and nothing else:
 
 | Field | Written from | Read from |
 |---|---|---|
 | `ma_gainer::masterVolume` (plain `float`) | `AudioDevice::Backend::apply` -> `ma_sound_set_volume`, every frame per voice | `ma_gainer_process_pcm_frames_internal`, on the mixer thread |
 | `ma_spatializer_listener::isEnabled` (plain `ma_bool32`) | `AudioDevice::setListenerActive`, every frame | `ma_spatializer_listener_is_enabled`, on the mixer thread |
+| `ma_audio_buffer_ref::cursor` (plain `ma_uint64`) | the mixer thread, advancing as it reads | `AudioDevice::voiceCursor`, while an audition card is on screen |
 
-No engine-owned state races: the voice table, the clip's samples and every
-`AudioSource` field are touched from the main thread alone, and
+Seeking is **not** one of them. `ma_sound_seek_to_pcm_frame` hands the target
+to the mixer through an atomic and lets the audio thread perform the seek
+before its next read - it is written for exactly this call from exactly this
+thread - which is why `seekVoice` is safe and why a scrubbed position reads
+back immediately rather than a buffer later.
+
+Measured rather than reasoned: a run that starts, updates, holds, scrubs, stops
+and sweeps voices against a live PulseAudio device reports those and nothing
+else, with the cursor race named on both sides - `AudioDevice::voiceCursor`
+reading it on the main thread and `ma_audio_buffer_ref_read_pcm_frames`
+advancing it on the mixer's. Holding a
+voice and scrubbing one add no race of their own, and no engine-owned state
+races in any of it: the voice table, the clip's samples and every `AudioSource`
+field are touched from the main thread alone.
+
 AddressSanitizer over the same run is clean.
 
-Both racing fields are single aligned scalars with no invariant spanning them,
+Every racing field is a single aligned scalar with no invariant spanning it,
 and miniaudio uses `ma_atomic_float` for exactly this kind of field elsewhere -
 `ma_engine_node::volume` and `ma_device::masterVolumeFactor` are both atomic -
-so these two read as upstream oversights rather than a design. They are left
-alone on purpose: patching them means carrying a fork of the backend, and
-quieting one of them from this side (the listener flag has a change signal the
-system already computes; per-voice volume does not) would hide the other. This
-is the cost the version accepted when it chose a vendored single-header
-backend, written down rather than discovered later.
+so they read as upstream oversights rather than a design. They are left alone
+on purpose: patching them means carrying a fork of the backend, and quieting
+one of them from this side (the listener flag has a change signal the system
+already computes; per-voice volume does not) would hide the rest. What the
+cursor costs if it is ever read torn or stale is a slider a pixel behind for
+one frame, which is why it is read by a scrubber and by nothing the engine
+believes. This is the cost the version accepted when it chose a vendored
+single-header backend, written down rather than discovered later.
 
 ### No device is a normal state
 
@@ -486,6 +590,38 @@ importing sounds into - it would be silent, and in one whose ear stands
 somewhere else it would play at whatever the world origin sounds like from
 there. An audition is a request to hear the file, so it is heard flat.
 
+The Inspector's card carries a transport for it - play, pause, stop and a
+position slider - and the Sounds tab the first three, because it remembers one
+voice for the whole tab and not which clip it came from, so it has no length to
+scrub against. Both follow the undo rule the two animation cards set: play,
+stop and scrub preview a clip and never dirty the scene, since dirtying it every
+time somebody listens to something would make the unsaved-changes prompt mean
+nothing. Only edits that round-trip with the scene push a command.
+
+### The cursor is the device's, not the component's
+
+`Animator::time` is component state, and its card's scrubber writes it
+directly. That works because nothing advances it but the system that reads it,
+both on the main thread. A voice's cursor is not that: the mixer advances it
+between our frames, at the device's own rate, so `AudioSource` deliberately has
+no field mirroring it and the card asks `AudioDevice::voiceCursor` instead.
+
+Mirroring it would have been a synchronisation problem with no good side.
+Pushing device to component each frame throws a scrub away the moment it is
+made; pushing component to device re-seeks the mixer to a frame-old position
+sixty times a second, which is a stutter rather than a sound. Telling the two
+apart needs a dirty flag, and that flag would outlive whoever added it.
+
+It also answers what a scrub means with nothing playing: there is no cursor, so
+the slider is disabled rather than inventing a start offset that lives in the
+panel and is forgotten when the selection moves. Which it does: an audition is
+the sound of the clip in front of you, so selecting anything else stops it, and
+the card can never show a cursor running against another entity's clip.
+
+Scrubbing a **held** voice works and is the point of holding one - the seek is
+kept and playback resumes from it - and scrubbing to the very end finishes the
+voice, which is what playing to the end does.
+
 ## What a harness can prove, and what it cannot
 
 The audio harness measures, off a real mix:
@@ -515,6 +651,14 @@ The audio harness measures, off a real mix:
   that asked for it and is still reaped when it ends
 - the retrigger gap: what a source drops at each cadence, and that the request
   path drops none of it
+- that a held voice is silent while it is held, survives every reap that runs
+  under it, and resumes from the sample the hold landed on rather than from the
+  start of the clip
+- that the transport's hold takes only what was sounding when it was asked for,
+  so a clip auditioned under a frozen world is audible, and gives back only what
+  it took, so an audition held on purpose stays held
+- that a scrub reads back at once, lands in the part of the clip it names,
+  carries across a hold, and finishes the voice when it reaches the end
 
 It cannot say whether any of it **sounds right**. Nothing there hears clipping,
 a resampler artefact, a click at a loop point, panning that is technically
@@ -543,7 +687,10 @@ To hear a clip of your own, put a wav, mp3 or flac anywhere under a project's
    source, tick Loop, press Play on the transport.
 3. Drag the source around the listener with the gizmo. It should cross the
    stereo field, hold full volume until it leaves the inner sphere, and be
-   inaudible once it passes the outer one.
+   inaudible once it passes the outer one. Use a **mono** clip for this: a
+   stereo one holds still in the field however far you drag it, for the reason
+   in [A positioned source wants a mono
+   clip](#a-positioned-source-wants-a-mono-clip), and the card says so.
 
 Both are drawn: selecting a spatial source puts a solid sphere at `Min
 Distance` and a faint one at `Max Distance` around it, which is the whole
@@ -572,7 +719,19 @@ by itself, so use a deliberately loopable one before blaming the mixer.
 
 ## Not implemented
 
-Deliberately, with the reasoning rather than a shrug:
+**Read this as a register of decisions taken, not as the boundary of what is
+missing.** Each entry below is something that was considered and turned down,
+with the reasoning kept so the next person can disagree with it on the merits.
+It is not an inventory: something absent from the engine and absent from this
+list has simply never come up, and nothing here should be cited as evidence
+that the rest of the subsystem is complete.
+
+One rejection in particular is worth not repeating. An entry that reads "no
+caller" is a claim about the world, and it expires: pause was once turned down
+that way while the editor's own transport already had a Pause button that froze
+the world and left every sound in it running. **The tool's existing UI is a
+caller.** So is a shipped example. Before leaning on any "nothing asks for it"
+below, go and look - preferably by opening the editor and pressing the button.
 
 - **Streaming.** See the clip asset above; additive later, no caller today. A
   three-minute stereo bed at 44.1 kHz is 30 MiB resident, which is the number
@@ -602,3 +761,30 @@ Deliberately, with the reasoning rather than a shrug:
   content aims a sound.
 - **Editing a clip's samples.** `samples` is `const` by type: two threads read
   it, and nothing may change it out from under a voice.
+- **Downmixing a stereo file to mono, on import or anywhere else.** A positioned
+  source wants a mono clip and [the engine now says so
+  twice](#a-positioned-source-wants-a-mono-clip), which raises the obvious
+  question of why it does not just fix the file. Not
+  because the bytes are precious - `loadAudioClip` opens the wav read-only and
+  the cook writes a separate `.vkmc`, so nothing on disk is ever overwritten -
+  but because **import is the moment of least information**. Nobody has said yet
+  whether the clip is going on an emitter: `loadAudioClip` hands back the
+  existing handle for a path already imported, so one `AudioClipAsset` serves
+  every reference to that file, and the same recording is correct as stereo on a
+  music bed and wrong on a footstep. The mistake being warned about is a
+  *pairing*, and a pairing cannot be fixed from one half of it.
+
+  It would also be one-way and invisible in the tool. The asset records only
+  `channels`, so "this file is mono" and "we made it mono" read identically in
+  the Asset Browser, and re-importing would downmix again - the author's width
+  would be gone from everything downstream with nothing on screen admitting it.
+
+  If it is ever wanted, the **cook** is the right home, not the importer: a cook
+  is a build product, the wav stays the source of truth, and deleting `cooked/`
+  rebuilds. The cost is what stops it today rather than the principle. Somebody
+  still has to say *which* clips want it, which means an authored per-clip flag,
+  which means a new field in the recipe - and a recipe is hashed by
+  `hashRecipe` and written into `cooked/`, so it freezes on merge. And even
+  there it cannot be decided from the clip alone, because one clip can sit on a
+  spatial source and a flat one in the same scene. Warning costs nothing, is
+  reversible, and points at the half that is actually wrong.

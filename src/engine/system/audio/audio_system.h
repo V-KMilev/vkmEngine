@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "core/event/bus.h"
@@ -32,6 +33,16 @@ struct AudioSource;
  * AudioSource::playOnStart, which waits for simulation time to advance so that
  * an unplayed scene open in the editor stays quiet.
  *
+ * THE EDITOR'S PAUSE IS A DIFFERENT PAUSE, and reading the rule above as
+ * covering both is what left the transport's Pause button silent about audio:
+ * it froze the world and the sound played on. The rule is right for a shipped
+ * game, whose pause menu wants its music kept; it is wrong for the transport,
+ * where the world was frozen deliberately to be looked at and a level's
+ * ambience running on underneath is noise nobody asked for. Nothing in here
+ * learns about it. The editor holds the voices itself, through the device()
+ * handle it already auditions clips with, so this system keeps exactly the
+ * contract written above and a game that ships never inherits the editor's.
+ *
  * A source's voice is owned here rather than on the component, so that
  * duplicating an entity, undoing a delete or instancing a prefab copies the
  * intent to play and never a live voice two entities would then fight over.
@@ -53,11 +64,14 @@ class AudioSystem : public System {
         void shutdown() override;
 
         /**
-         * @brief The device, for the editor's clip audition.
+         * @brief The device, for the editor.
          *
-         * The one place outside this system that plays a sound, and it plays a
-         * clip rather than an entity - there is no component to reconcile, so
-         * routing it through the component path would mean inventing one.
+         * Two uses, both of them the editor's and neither of them a game's. It
+         * auditions a clip, which plays a file rather than an entity - there is
+         * no component to reconcile, so routing it through the component path
+         * would mean inventing one - and its transport holds every voice while
+         * the world is frozen, which is the pause this system deliberately does
+         * not have.
          */
         AudioDevice& device() { return m_device; }
 
@@ -65,8 +79,8 @@ class AudioSystem : public System {
         /**
          * @brief Point the ear at the scene's active listener, or turn it off.
          *
-         * Which listener that is comes from findActiveListener, so the editor's
-         * cards and the mixer cannot disagree about which one is heard from.
+         * Which listener that is comes from findActiveListener, so the editor
+         * and the mixer cannot disagree about which one is heard from.
          *
          * @param ctx Frame context supplying the scene to search.
          */
@@ -98,6 +112,63 @@ class AudioSystem : public System {
          * @param ctx Frame context supplying the asset graph the clips live in.
          */
         void startPendingRequests(FrameContext& ctx);
+
+        /**
+         * @brief Say once per world that a positioned sound has no ear to hear it.
+         *
+         * Called from both start paths, a source's voice and a request's,
+         * because either can be the only positioned sound a project has: one
+         * that plays entirely through requests owns no AudioSource, so the
+         * Inspector's card has nothing to warn on and this line is all that
+         * would explain the silence.
+         *
+         * Not said from the listener pass, because a project with no audio in
+         * it at all should not be told it is missing an ear - what makes the
+         * absence a problem is a sound that wanted to be positioned by one.
+         * Once per world rather than once per voice, since the failure is the
+         * scene's and does not read better repeated per footstep. Per world
+         * and not per run because stopEverything clears the flag along with
+         * the voices, so the scene that replaces this one - a load, or the
+         * editor's Stop - is diagnosed on its own account rather than
+         * inheriting a line written about a world it never shared.
+         *
+         * @param spatial Whether the voice about to start is positioned; a flat
+         *        one is unaffected by the absence, so nothing is said for it.
+         */
+        void warnIfNoListener(bool spatial);
+
+        /**
+         * @brief Warn once that a positioned voice plays a clip whose channels cannot cross.
+         *
+         * The backend mixes a voice's channels one-to-one into the output and
+         * attenuates each by the direction gain for the speaker it landed on,
+         * so a clip with more than one channel keeps whatever image the file
+         * was authored with: nothing crosses. Measured, a two-channel clip
+         * carrying sound in its first channel only is silent out of the second
+         * output channel at every position an emitter can be put in, while the
+         * mono equivalent swings across the pair. A clip whose channels happen
+         * to be identical is indistinguishable from mono, which is what makes
+         * the mistake quiet enough to need saying.
+         *
+         * The Inspector's card says the same thing at edit time, where the
+         * mistake is being made, and this is not a second opinion: a project
+         * that plays entirely through PlaySoundEvent owns no AudioSource, so
+         * there is no card to carry it. The pairing is the same one
+         * warnIfNoListener already has with the card's missing-ear line.
+         *
+         * Once per clip rather than once per world, which is where it parts
+         * company with warnIfNoListener: a scene has one ear and the absence of
+         * it is one fact, while two stereo clips on two sources are two
+         * separate authoring mistakes and collapsing them would leave the
+         * second unreported. Per world all the same, since stopEverything
+         * empties the set with the voices.
+         *
+         * @param clip Handle the warning is remembered against.
+         * @param asset The clip itself, read for its channel count and name.
+         * @param spatial Whether the voice about to start is positioned; a flat
+         *        voice is mixed without a spatializer, so stereo is correct there.
+         */
+        void warnIfStereoSpatial(AudioClipHandle clip, const AudioClipAsset& asset, bool spatial);
 
         /**
          * @brief Stop every voice and forget them.
@@ -170,8 +241,11 @@ class AudioSystem : public System {
         /// Whether the last listener pass found one; read when a voice starts.
         bool m_hasListener = false;
 
-        /// Whether the missing-listener warning has already been written.
+        /// Whether the missing-listener warning has been written for this world.
         bool m_warnedNoListener = false;
+
+        /// Clips already reported as multi-channel on a positioned voice, by handle id.
+        std::unordered_set<uint32_t> m_warnedStereoClips;
 };
 
 } // namespace Vkm::Engine

@@ -48,14 +48,15 @@ struct AudioListener {
 /**
  * @brief The scene's active listener: the first entity whose AudioListener::active is set.
  *
- * The one definition of a rule three places have to agree on - AudioSystem
- * places the ear through it, and the Inspector uses it to say which of two
- * listeners is the one being heard from and to warn a positioned source that
- * there is no ear at all. A Transform is required as well as an AudioListener,
- * because a listener with no pose has nowhere to measure a distance from. Ties
- * go to storage order; an empty result means the scene has no ear, which is a
- * normal state rather than an error - spatial sources go silent and 2D ones
- * play on.
+ * The one definition of a rule everything that answers "which listener" has to
+ * agree on - AudioSystem places the ear through it, the Inspector uses it to
+ * say which of two listeners is the one being heard from and to warn a
+ * positioned source that there is no ear at all, and the viewport draws every
+ * listener icon but that one dim. A Transform is required as well as an
+ * AudioListener, because a listener with no pose has nowhere to measure a
+ * distance from. Ties go to storage order; an empty result means the scene has
+ * no ear, which is a normal state rather than an error - spatial sources go
+ * silent and 2D ones play on.
  *
  * Deliberately without findActiveCamera's cached-hint parameter: that exists
  * because two systems each keep a cached camera entity, and nothing on the

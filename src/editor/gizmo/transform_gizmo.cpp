@@ -6,11 +6,17 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
 
+#include "overlays/wire_draw.h"
+
 namespace Vkm::Engine {
 
 ImVec2 TransformGizmo::worldToScreen(const glm::vec3& worldPos) const {
     glm::vec4 clip = m_viewProj * glm::vec4(worldPos, 1.0f);
-    if (clip.w <= 1e-7f) return ImVec2(-10000, -10000);
+    // The near plane, not a positive w. A perspective w is the view depth, so
+    // testing it alone still passes a point nearer than the plane and divides
+    // by a sliver; an orthographic w is 1 for every point in the world, so it
+    // passes everything, the half of the world behind the camera included.
+    if (nearPlaneSide(clip) <= 0.0f) return ImVec2(-10000, -10000);
 
     glm::vec3 ndc = glm::vec3(clip) / clip.w;
     float x = m_vpMin.x + (ndc.x * 0.5f + 0.5f) * m_vpWidth;
@@ -35,10 +41,13 @@ glm::vec3 TransformGizmo::screenToRay(ImVec2 screenPos) const {
 
 float TransformGizmo::computeScreenFactor(const glm::vec3& gizmoOrigin) const {
     glm::vec4 clipOrigin = m_viewProj * glm::vec4(gizmoOrigin, 1.0f);
-    if (clipOrigin.w <= 1e-7f) return 1.0f;
+    if (nearPlaneSide(clipOrigin) <= 0.0f) return 1.0f;
 
+    // The sample point is a world unit sideways, so it can be behind the plane
+    // while the origin is in front of it - close in, that is the one whose
+    // divisor blows the measured length up and the gizmo with it.
     glm::vec4 clipRight = m_viewProj * glm::vec4(gizmoOrigin + m_cameraRight, 1.0f);
-    if (clipRight.w <= 1e-7f) return 1.0f;
+    if (nearPlaneSide(clipRight) <= 0.0f) return 1.0f;
 
     glm::vec2 ndcOrigin = glm::vec2(clipOrigin) / clipOrigin.w;
     glm::vec2 ndcRight  = glm::vec2(clipRight) / clipRight.w;
@@ -154,9 +163,9 @@ bool TransformGizmo::manipulate(
 
     m_gizmoOrigin = glm::vec3(model[3]);
 
-    // Don't draw/interact when entity is behind camera
+    // Don't draw/interact when the entity is behind the near plane
     glm::vec4 clipOrigin = m_viewProj * glm::vec4(m_gizmoOrigin, 1.0f);
-    if (clipOrigin.w <= 1e-7f) {
+    if (nearPlaneSide(clipOrigin) <= 0.0f) {
         m_hovered = GizmoElement::None;
         // Cancel exactly as the release path does, m_dragRotation included: a
         // rotation drag interrupted by the entity going behind the camera would
