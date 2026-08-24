@@ -31,8 +31,8 @@ class GLOcclusionCullPass : public GLPass {
         GLOcclusionCullPass(const GLOcclusionCullPass& other) = delete;
         GLOcclusionCullPass& operator=(const GLOcclusionCullPass& other) = delete;
 
-        GLOcclusionCullPass(GLOcclusionCullPass&& other) = delete;
-        GLOcclusionCullPass& operator=(GLOcclusionCullPass&& other) = delete;
+        GLOcclusionCullPass(GLOcclusionCullPass && other) = delete;
+        GLOcclusionCullPass& operator=(GLOcclusionCullPass && other) = delete;
 
     public:
         void execute(GLFrameContext& ctx) override;

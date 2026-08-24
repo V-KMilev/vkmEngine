@@ -259,6 +259,10 @@ void load(const nlohmann::json& j, Mesh& m, const ResourceManager& resources) {
     m.visible     = j.value("visible",     m.visible);
     m.castShadows = j.value("castShadows", m.castShadows);
 }
+void emitAssetRefs(const Mesh& m, AssetRefs& refs) {
+    if (m.mesh)     refs.meshes.push_back(m.mesh);
+    if (m.material) refs.materials.push_back(m.material);
+}
 
 nlohmann::json save(const Animator& a, const ResourceManager& resources) {
     return {
@@ -277,6 +281,12 @@ void load(const nlohmann::json& j, Animator& a, const ResourceManager& resources
     a.speed       = j.value("speed",       a.speed);
     a.playOnStart = j.value("playOnStart", a.playOnStart);
     a.looping     = j.value("looping",     a.looping);
+}
+void emitAssetRefs(const Animator& a, AssetRefs& refs) {
+    // fadeFrom is runtime state that no save writes, so it names nothing a
+    // file has to carry.
+    if (a.skeleton) refs.skeletons.push_back(a.skeleton);
+    if (a.clip)     refs.clips.push_back(a.clip);
 }
 
 nlohmann::json save(const BoneSocket& s)          { return saveReflected(s); }
@@ -303,6 +313,11 @@ void load(const nlohmann::json& j, LOD& l, const ResourceManager& resources) {
         l.levels.push_back({mesh, entry.value("maxDistance", 0.0f)});
     }
 }
+void emitAssetRefs(const LOD& l, AssetRefs& refs) {
+    for (const LODLevel& level : l.levels) {
+        if (level.mesh) refs.meshes.push_back(level.mesh);
+    }
+}
 
 nlohmann::json save(const Decal& d, const ResourceManager& resources) {
     return {
@@ -315,6 +330,9 @@ void load(const nlohmann::json& j, Decal& d, const ResourceManager& resources) {
     d.material  = resolveAssetRef<MaterialAsset>(resources, j.value("material", std::string{}), "material", "material");
     d.angleFade = j.value("angleFade", d.angleFade);
     d.opacity   = j.value("opacity",   d.opacity);
+}
+void emitAssetRefs(const Decal& d, AssetRefs& refs) {
+    if (d.material) refs.materials.push_back(d.material);
 }
 
 nlohmann::json save(const ParticleEmitter& e)          { return saveReflected(e); }
@@ -344,6 +362,9 @@ void load(const nlohmann::json& j, AudioSource& s, const ResourceManager& resour
     s.playOnStart = j.value("playOnStart", s.playOnStart);
     s.minDistance = j.value("minDistance", s.minDistance);
     s.maxDistance = j.value("maxDistance", s.maxDistance);
+}
+void emitAssetRefs(const AudioSource& s, AssetRefs& refs) {
+    if (s.clip) refs.sounds.push_back(s.clip);
 }
 
 nlohmann::json save(const AudioListener& l)          { return saveReflected(l); }

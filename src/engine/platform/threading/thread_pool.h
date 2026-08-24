@@ -207,10 +207,9 @@ template<class Function>
 void parallelFor(size_t count, Function && function) {
     auto& pool = ThreadPool::get();
 
-    // Below this many items the pool's dispatch cost (mutex + notify_all wake
-    // of every worker + done-CV round trip) dwarfs the per-item work, so run
-    // the range inline: grain == count makes the call below submit zero tasks
-    // and sweep serially on the calling thread.
+    // Below this many items the pool's dispatch cost (mutex, a notify_all wake
+    // of every worker, a done-CV round trip) dwarfs the per-item work, so grain
+    // == count makes the call below sweep serially on the calling thread.
     constexpr size_t MIN_PARALLEL = 2048;
 
     // The +1 is for the main thread.

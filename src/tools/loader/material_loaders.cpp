@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <cctype>
 #include <optional>
+#include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -59,8 +61,14 @@ bool nameMatchesPattern(const std::string& filename, const std::string& pattern)
     return false;
 }
 
-// First file matching one of the patterns (case-insensitive) and carrying one
-// of the extensions: "color" finds "PavingStones_Color.jpg" or "brick_color.png".
+// The file matching the earliest of @p patterns, among those carrying one of
+// @p extensions: "color" finds "PavingStones_Color.jpg" or "brick_color.png".
+//
+// Patterns are tried outermost and the candidate list is sorted, so a folder
+// holding both X_Color.png and X_BaseColor.png always yields the same map. Both
+// orders would otherwise be directory_iterator's, which is unspecified - and the
+// answer becomes the material's cooked recipe, so a filesystem's idea of order
+// would be frozen into the version-controlled library.
 std::optional<std::string> findTexture(
     const std::string& folderPath,
     const std::vector<std::string>& patterns,
@@ -71,31 +79,25 @@ std::optional<std::string> findTexture(
         return std::nullopt;
     }
 
+    std::vector<std::filesystem::path> candidates;
     for (const auto& entry : std::filesystem::directory_iterator(folder)) {
         if (!entry.is_regular_file()) continue;
-
-        std::string filename = entry.path().filename().string();
-        std::string extension = entry.path().extension().string();
-
-        std::string extensionLower = toLower(extension);
-        bool hasValidExtension = false;
+        const std::string extensionLower = toLower(entry.path().extension().string());
         for (const auto& ext : extensions) {
-            if (extensionLower == toLower(ext)) {
-                hasValidExtension = true;
-                break;
-            }
+            if (extensionLower != toLower(ext)) continue;
+            candidates.push_back(entry.path());
+            break;
         }
-        if (!hasValidExtension) continue;
+    }
+    std::sort(candidates.begin(), candidates.end());
 
-        std::string filenameLower = toLower(filename);
-        for (const auto& pattern : patterns) {
-            std::string patternLower = toLower(pattern);
-
-            if (nameMatchesPattern(filenameLower, patternLower)) {
-                // The reference, not the walked absolute: it becomes the
-                // texture's name and its recipe path.
-                return ProjectPaths::toProjectRelative(entry.path().string());
-            }
+    for (const auto& pattern : patterns) {
+        const std::string patternLower = toLower(pattern);
+        for (const std::filesystem::path& candidate : candidates) {
+            if (!nameMatchesPattern(toLower(candidate.filename().string()), patternLower)) continue;
+            // The reference, not the walked absolute: it becomes the texture's
+            // name and its recipe path.
+            return ProjectPaths::toProjectRelative(candidate.string());
         }
     }
 

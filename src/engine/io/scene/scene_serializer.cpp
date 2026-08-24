@@ -51,50 +51,6 @@ constexpr int FILE_FORMAT_VERSION = 2;
 // Roughly 300x the benchmark scene.
 constexpr uint32_t MAX_ENTITY_SLOT = 1u << 22;
 
-/**
- * @brief Every component the scene format round-trips, one row each.
- *
- * P is a component whose save and load take only the component; R is one that
- * references assets by name, so both take the ResourceManager as well
- * (resolution happens against the staging RM on load).
- *
- * The key is written out rather than derived from the type name, because it is
- * the format: ScriptComponent is stored as "Script", and a stringified type
- * name would change that silently.
- *
- * Saving, loading and the known-key set all expand from this one list, so the
- * three cannot drift: a component saved but never loaded is silent round-trip
- * data loss, and the unknown-key warning cannot catch it - the key is known.
- *
- * Hierarchy is not a row: it is written by saveComponents explicitly and read
- * by the caller's pass 2, not by a loader.
- */
-#define VKM_SCENE_COMPONENTS(P, R)              \
-    P(Name,             "Name")                 \
-    P(Transform,        "Transform")            \
-    P(Camera,           "Camera")               \
-    P(Light,            "Light")                \
-    P(Rigidbody,        "Rigidbody")            \
-    P(Collider,         "Collider")             \
-    P(CharacterController, "CharacterController") \
-    R(Mesh,             "Mesh")                 \
-    R(LOD,              "LOD")                  \
-    R(Decal,            "Decal")                \
-    P(ParticleEmitter,  "ParticleEmitter")      \
-    R(AudioSource,      "AudioSource")          \
-    P(AudioListener,    "AudioListener")        \
-    P(IrradianceVolume, "IrradianceVolume")     \
-    P(ReflectionProbe,  "ReflectionProbe")      \
-    P(Animation,        "Animation")            \
-    R(Animator,         "Animator")             \
-    P(BoneSocket,       "BoneSocket")           \
-    P(ScriptComponent,  "Script")               \
-    P(UICanvas,         "UICanvas")             \
-    P(UIElement,        "UIElement")            \
-    P(UIImage,          "UIImage")              \
-    P(UIText,           "UIText")               \
-    P(UIButton,         "UIButton")
-
 // Every JSON key written by saveComponents, for unknown-key detection on load.
 // Order is incidental here (membership test only).
 #define VKM_SCENE_KEY(Type, Key) Key,

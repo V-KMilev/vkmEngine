@@ -106,8 +106,8 @@ GLPreview::Entry& GLPreview::ensureEntry(uint64_t key, uint32_t size) {
 
 uint32_t GLPreview::render(Vkm::GL::Context& gl, GLView& glView, const GLIBL& ibl,
                            const PreviewRequest& req, const ResourceManager& resources) {
-    if (!m_pbr) return 0;  // init() not run
     if (!req.mesh || !req.material || req.size == 0) return 0;
+    if (!m_pbr) init();
 
     // Mirror the request's assets onto the GPU. The tables are shared with the
     // main frame and version-gated, so this is cheap when nothing changed.

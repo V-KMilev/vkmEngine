@@ -137,7 +137,9 @@ backend-agnostic.
   `m_fog` (froxel volumes, lazily allocated), `m_irradiance` + its baker, the
   reflection-probe manager `m_probes`
 - `m_preview` - a separate minimal forward+composite path for editor thumbnails
-  (it does **not** run the full pass list)
+  (it does **not** run the full pass list). Like `m_fog` it builds itself on
+  first use, so the runtime host never compiles its programs or allocates its
+  scratch target
 
 Post passes do not blit results back into `m_sceneHDR`: the frame context
 carries a colour chain (`colorSrc`/`colorDst` + `flipColor()`). A pass samples

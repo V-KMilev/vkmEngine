@@ -606,15 +606,24 @@ Two localised edits, no registry table, no virtual dispatch:
 
 1. A `save` / `load` overload pair in `component_serializer.h` (+ `.cpp`). If the
    component has nothing but plain reflected fields, both bodies are one call to
-   `saveReflected` / `loadReflected`.
-2. A row in `VKM_SCENE_COMPONENTS` in `scene_serializer.cpp` - `P(Type, "Key")`,
-   or `R(Type, "Key")` when the component references assets and its save/load
-   take the `ResourceManager`. Saving, loading and the known-key set behind the
-   "unknown component key" drift warning all expand from that one list.
+   `saveReflected` / `loadReflected`. A component that references assets by name
+   adds a third overload beside them, `emitAssetRefs(const T&, AssetRefs&)`,
+   which records the handles it holds without writing anything.
+2. A row in `VKM_SCENE_COMPONENTS`, at the top of `component_serializer.h` -
+   `P(Type, "Key")`, or `R(Type, "Key")` when the component references assets
+   and its save/load take the `ResourceManager`. Saving, loading, the known-key
+   set behind the "unknown component key" drift warning, and the `assets` block
+   `saveAssetsForEntities` builds all expand from that one list.
 
-Those were three hand-kept lists, and the failure was silent: a key that was
-saved and registered but never loaded round-tripped to nothing, while the drift
-warning that exists to catch it stayed quiet, because the key was still known.
+Those were four hand-kept lists, and the failure was silent in both directions:
+a key that was saved and registered but never loaded round-tripped to nothing,
+while the drift warning that exists to catch it stayed quiet because the key was
+still known; and a component whose assets the hand-written walk forgot saved its
+handle as a name that the `assets` block never listed, so the next load resolved
+it to nothing - which is how every decal material and every LOD level above the
+first were lost for a time. An `R` row with no `emitAssetRefs` overload now
+fails to compile at the walk, naming the component that needs one.
+
 The key is spelled out in the row rather than derived from the type name, since
 it is the format - `ScriptComponent` is stored as `"Script"`. `Hierarchy` is not
 a row: it is written explicitly and read by the loader's second pass.

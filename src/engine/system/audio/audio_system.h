@@ -34,15 +34,13 @@ struct AudioSource;
  * AudioSource::playOnStart, which waits for simulation time to advance so that
  * an unplayed scene open in the editor stays quiet.
  *
- * THE EDITOR'S PAUSE IS A DIFFERENT PAUSE, and reading the rule above as
- * covering both is what left the transport's Pause button silent about audio:
- * it froze the world and the sound played on. The rule is right for a shipped
- * game, whose pause menu wants its music kept; it is wrong for the transport,
- * where the world was frozen deliberately to be looked at and a level's
- * ambience running on underneath is noise nobody asked for. Nothing in here
- * learns about it. The editor holds the voices itself, through the device()
- * handle it already auditions clips with, so this system keeps exactly the
- * contract written above and a game that ships never inherits the editor's.
+ * The editor's transport pause is a different pause, and nothing in here learns
+ * about it. The rule above is right for a shipped game, whose pause menu wants
+ * its music kept; it is wrong for the transport, where the world was frozen
+ * deliberately to be looked at and a level's ambience running on underneath is
+ * noise nobody asked for. The editor holds the voices itself, through the
+ * device() handle it already auditions clips with, so this system keeps exactly
+ * the contract written above and a game that ships never inherits the editor's.
  *
  * A source's voice is owned here rather than on the component, so that
  * duplicating an entity, undoing a delete or instancing a prefab copies the

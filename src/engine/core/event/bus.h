@@ -45,15 +45,16 @@ class Bus : public IBus {
     public:
         /**
          * @brief Append a listener and return its new id.
+         *
+         * Subscribing from inside a listener is legitimate - a spawned object
+         * registering itself - but the entry only joins the live list once the
+         * outermost dispatch has unwound. Appending to a list a dispatch is
+         * walking can reallocate it, which moves-then-destroys the
+         * std::function whose operator() is on the stack at that moment.
          */
         ListenerId subscribe(std::function<void(const EventT&)> cb) {
             const ListenerId id = m_nextId++;
 
-            // Appending to m_listeners while a dispatch is walking it can
-            // reallocate, which moves-then-destroys the std::function whose
-            // operator() is on the stack at that moment. Subscribing from a
-            // listener is legitimate - a spawned object registering itself -
-            // so the entry waits in m_pending and joins after the walk.
             if (m_flushDepth > 0) m_pending.push_back({id, std::move(cb)});
             else                  m_listeners.push_back({id, std::move(cb)});
             return id;
@@ -61,14 +62,16 @@ class Bus : public IBus {
 
         /**
          * @brief Erase the listener with @p id.
+         *
+         * Not callable from inside a listener during emit/flush, and asserts on
+         * it: making mid-flush removal legal means dispatching from a snapshot
+         * copy of the listener list, which every frame on a hot bus would pay
+         * for a case nothing has needed. A listener that must unsubscribe
+         * itself enqueues an event and removes on the next flush.
+         *
          * @return true if it was found.
          */
         bool remove(ListenerId id) {
-            // Mid-flush unsubscribe would invalidate the iteration. The
-            // snapshot dance is paid every frame on hot buses; banning it
-            // lets emit/flush walk m_listeners by index without copying.
-            // Listeners that need self-unsubscribe should enqueue an event
-            // to be processed after the current flush returns.
             VKM_ASSERT(m_flushDepth == 0,
                 "EventBus: unsubscribe is not allowed from inside a "
                 "listener callback during emit/flush");
@@ -101,16 +104,18 @@ class Bus : public IBus {
 
         /**
          * @brief Deliver all queued events to listeners, then clear the queue.
+         *
+         * The queue is swapped aside before the walk, so an event a listener
+         * enqueues lands in fresh storage and fires next frame instead of
+         * extending the batch being delivered. It swaps with a retained member
+         * rather than a local because a local would take the queue's buffer and
+         * free it at scope exit, so every flush on a hot bus paid an allocation
+         * to rebuild what it had just thrown away. Two buffers ping-pong, and a
+         * steady frame allocates nothing.
          */
         void flush() override {
             if (m_queue.empty()) return;
 
-            // Swap the queue aside so re-entrant enqueues land in fresh storage
-            // and fire next frame. Swapping with a retained member rather than a
-            // local: a local would take the queue's buffer and free it on scope
-            // exit, so every flush on a hot bus paid an allocation to rebuild
-            // what it had just thrown away. Two buffers ping-pong instead, and a
-            // steady frame allocates nothing.
             m_dispatch.clear();
             m_dispatch.swap(m_queue);
 

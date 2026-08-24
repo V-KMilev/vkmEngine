@@ -152,13 +152,15 @@ Three parts:
 1. **Reflect it.** `VKM_REFLECT_BEGIN(::Vkm::Engine::T)` / `VKM_F(field)` /
    `VKM_REFLECT_END()`, at global scope after the header's namespace close
    ([code-style.md](code-style.md#21-reflected-types-close-the-namespace-first)).
-2. **Give it a `save` / `load` pair** in `io/scene/component_serializer.{h,cpp}`.
-   For a reflected component both are one line into the reflection driver.
+2. **Give it a `save` / `load` pair** in `io/scene/component_serializer.{h,cpp}`,
+   plus an `emitAssetRefs` overload beside them if it names an asset. For a
+   reflected component the first two are one line each into the reflection
+   driver.
 3. **Add its row to `VKM_SCENE_COMPONENTS`**
-   (`io/scene/scene_serializer.cpp:72`). Saving, loading and the known-key set
-   all expand from that one list, which is why it is a list: a component saved
-   but never loaded is silent round-trip loss that the unknown-key warning
-   cannot catch, because the key is known.
+   (`io/scene/component_serializer.h:63`). Saving, loading, the known-key set
+   and the scene's `assets` block all expand from that one list, which is why it
+   is a list: a component saved but never loaded is silent round-trip loss that
+   the unknown-key warning cannot catch, because the key is known.
 
 Step 1 is the one with a boundary. 17 of the 24 components in the scene format
 are reflected; the other seven are hand-written on purpose, and the reasons are
@@ -167,7 +169,8 @@ in source at `component_serializer.cpp:125-133`:
 - **It references an asset by name.** `Mesh`, `LOD`, `Decal`, `AudioSource`,
   `Animator` - these are the `R` rows, whose save and load take the
   `ResourceManager` as well so a `Handle<T>` can be written as a name and
-  resolved back on load.
+  resolved back on load, and which carry a third overload, `emitAssetRefs`,
+  saying which assets the component names without writing them anywhere.
 - **Its persisted surface is narrower than the struct.** `Animator` again: blend
   state is transient by design.
 - **It holds something field iteration cannot reach.** `Animation`, whose
@@ -181,16 +184,14 @@ Getting *that* one wrong is loud, not silent: `Reflect::Traits<T>` is left
 unspecialised deliberately, so calling the generic driver on an unreflected type
 is a compile error telling you to add the markup.
 
-There is a fourth step **only for a component that names an asset**, and it is
-the one the reference page does not have: the scene's `assets` block is emitted
-by a hand-written walk, one `if` per component, at
-`io/asset/asset_serializer.cpp:287-301`. Miss the line and the component saves
-its handle as a name while the block that lists what the scene needs never
-mentions it - so the next load resolves nothing, and nothing warns, because the
-component's own key was written correctly.
+`emitAssetRefs` is what keeps the scene's `assets` block on the list rather than
+beside it. That block says which assets the file needs, and a reference it does
+not name is one the next load resolves to nothing with nothing said at either
+end, because the component's own key was written correctly. The walk that fills
+it expands from the `R` rows (`io/asset/asset_serializer.cpp:290-296`), so an
+`R` row with no overload is a compile error naming the component that needs one.
 [../reference/system/io.md](../reference/system/io.md#adding-a-component-to-the-round-trip)
-covers the first three steps and calls them "two localised edits"; that is the
-serializer's half, not the whole save.
+covers the same ground from the format's side.
 
 None of this gives you authoring. The inspector card, the Create-menu entry and
 the hierarchy badge are hand-written under `src/editor/`, and two more macro

@@ -43,17 +43,16 @@ constexpr std::array<ma_backend, 12> PLAYBACK_BACKENDS = {
 // not audibly overlap the tail of the one it replaced.
 constexpr uint32_t STOP_FADE_MS = 5;
 
-// miniaudio speaks from its own thread as well as ours - a device disconnecting
-// is reported from the mixer - so this trims into a stack buffer rather than a
-// string: there is no reason to reach the allocator from that thread on the way
-// to a log line. vkmLog serialises the rest, the way it already does for the
-// lines the asset loaders write from ThreadPool workers.
+// Carries what miniaudio cannot say for itself: why a device declined, or that
+// one has just disconnected. It speaks from its own thread as well as ours - a
+// disconnect is reported from the mixer - so this trims into a stack buffer
+// rather than a string: there is no reason to reach the allocator from that
+// thread on the way to a log line. vkmLog serialises the rest, the way it
+// already does for the lines the asset loaders write from ThreadPool workers.
 void forwardBackendLog(void* userData, ma_uint32 level, const char* message) {
-    // Warnings and errors only. Below that miniaudio writes a ninety-line dump
-    // of the device's capabilities on every launch, and the one line of it
-    // worth having - which backend, at what rate and layout - open() already
-    // writes for itself. What it cannot say for itself is why a device
-    // declined, or that one has just disconnected, and that is what this is for.
+    // Warnings and errors only: below that miniaudio dumps ninety lines of device
+    // capabilities on every launch, and the one line worth having - backend, rate
+    // and layout - open() writes for itself.
     if (message == nullptr || (level != MA_LOG_LEVEL_WARNING && level != MA_LOG_LEVEL_ERROR)) return;
 
     char text[512];

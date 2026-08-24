@@ -378,10 +378,18 @@ editor-only path; the shipped game and the edited game run the same binary.
 
 The host `dlopen`s the module and calls the `extern "C"` entry points it finds:
 
-| Entry | Required? | Purpose |
-|-------|-----------|---------|
-| `vkmRegisterBehaviors` | Yes | Registers the project's behavior types into the engine's `BehaviorRegistry` |
-| `vkmBuildScene` | Optional | Builds the project's world in code. Projects whose scene is generated rather than authored use this instead of `entryScene` |
+| Entry | Signature | Required? | Purpose |
+|-------|-----------|-----------|---------|
+| `vkmModuleEngineVersion` | `const char* ()` | Yes | Reports the engine the module was built against; the host refuses a mismatch |
+| `vkmRegisterBehaviors` | `void ()` | Yes | Registers the project's behavior types into the engine's `BehaviorRegistry` |
+| `vkmBuildScene` | `void (Scene&)` | Optional | Builds the project's world in code. Projects whose scene is generated rather than authored use this instead of `entryScene` |
+
+**The signatures are the contract, and nothing enforces them.** These are
+`extern "C"`, so there is no mangling for the linker to disagree about: the host
+looks the symbol up by name, `reinterpret_cast`s it to the type above and calls
+it. A module that declares an extra parameter compiles, links and loads, and
+reads whatever the calling convention left in that register. Copy the signature
+from this table exactly.
 
 The module **links `vkm_core`** - `vkm_add_gameplay_module()` does it for every
 project - and that is not a second copy of the engine. `vkm_core` is a shared

@@ -191,12 +191,17 @@ class SceneIOController {
         void stopPlaySession(FrameContext& ctx, EditorState& state);
 
         /**
-         * @brief Whether a play-mode snapshot is currently held.
+         * @brief Whether a play session is live.
          *
-         * @return true once captureSnapshot() has stored a snapshot (i.e. while
-         *         in play mode), false after restoreSnapshot() clears it.
+         * True from Play until Stop. Everything that must not run against the
+         * simulation's copy of the scene - a save, a scene swap, marking the
+         * authored scene dirty - asks this rather than the clock, which is
+         * paused in Edit mode as well.
+         *
+         * @return true while the authored scene is held aside and the world on
+         *         screen belongs to the simulation.
          */
-        bool hasSnapshot() const { return !m_playSnapshot.empty(); }
+        bool isPlaying() const { return !m_playSnapshot.empty(); }
 
         /**
          * @brief Take @p path as the file the scene already in the world came from.

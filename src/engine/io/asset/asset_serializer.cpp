@@ -24,6 +24,7 @@
 #include "io/asset/asset_library.h"
 #include "io/json_file.h"
 #include "io/json_vec.h"
+#include "io/scene/component_serializer.h"
 #include "system/script/behavior.h"
 #include "system/script/behavior_field_visitor.h"
 #include "system/script/script_component.h"
@@ -217,6 +218,10 @@ class BehaviorAssetRefs : public BehaviorFieldVisitor {
 
 } // namespace
 
+#define VKM_SCENE_SKIP_P(Type, Key)
+#define VKM_SCENE_EMIT_R(Type, Key) \
+    if (scene.has<Type>(id)) ComponentSerializer::emitAssetRefs(scene.get<Type>(id), refs);
+
 nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<EntityId>& entities,
                                      const ResourceManager& resources) {
     nlohmann::json meshes    = nlohmann::json::array();
@@ -274,31 +279,22 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
         emitDescriptor(sounds, resources.get(h));
     };
 
-    // Every component that writes an asset name into the document has to be
-    // walked here: a name the assets block never lists is a name loadAssets
-    // never recreates, and the component's reference resolves to nothing.
     BehaviorAssetRefs behaviorRefs;
 
     // The references with a name and no handle behind them. A behavior's
     // authored field is one; so is one the last load could not resolve, which
     // the entity kept precisely so this document can still name it.
     std::vector<std::pair<AssetType, std::string>> namedRefs;
+
+    // Every component that writes an asset name into the document has to be
+    // walked, and which ones those are is the R rows of VKM_SCENE_COMPONENTS -
+    // the same list the save and the load expand from, so the three cannot
+    // disagree about the set. A row with no emitAssetRefs overload stops the
+    // build here rather than shipping a name this block never lists.
+    ComponentSerializer::AssetRefs refs;
     for (EntityId id : entities) {
-        if (scene.has<Mesh>(id)) {
-            const Mesh& m = scene.get<Mesh>(id);
-            emitMesh(m.mesh);
-            emitMaterial(m.material);
-        }
-        if (scene.has<LOD>(id)) {
-            for (const LODLevel& level : scene.get<LOD>(id).levels) emitMesh(level.mesh);
-        }
-        if (scene.has<Decal>(id)) emitMaterial(scene.get<Decal>(id).material);
-        if (scene.has<Animator>(id)) {
-            const Animator& a = scene.get<Animator>(id);
-            emitSkeleton(a.skeleton);
-            emitClip(a.clip);
-        }
-        if (scene.has<AudioSource>(id)) emitSound(scene.get<AudioSource>(id).clip);
+        VKM_SCENE_COMPONENTS(VKM_SCENE_SKIP_P, VKM_SCENE_EMIT_R)
+
         // What the load could not resolve has no handle to emit from, and the
         // component's slot is empty - but the name is the author's, and the
         // scene write puts it back into the field it came from. Listing it here
@@ -325,6 +321,12 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
             }
         }
     }
+
+    for (const MeshHandle& h : refs.meshes)             emitMesh(h);
+    for (const MaterialHandle& h : refs.materials)      emitMaterial(h);
+    for (const SkeletonHandle& h : refs.skeletons)      emitSkeleton(h);
+    for (const AnimationClipHandle& h : refs.clips)     emitClip(h);
+    for (const AudioClipHandle& h : refs.sounds)        emitSound(h);
 
     // Emitted flat, by name: an authored reference has a name and no handle, so
     // there is nothing to walk into beside it. A material named this way
@@ -358,6 +360,9 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
     out["sounds"]    = std::move(sounds);
     return out;
 }
+
+#undef VKM_SCENE_SKIP_P
+#undef VKM_SCENE_EMIT_R
 
 namespace {
 

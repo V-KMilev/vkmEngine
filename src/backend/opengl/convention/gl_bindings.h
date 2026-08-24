@@ -20,7 +20,7 @@ namespace GLBindings {
         constexpr uint32_t Camera   = 2;  ///< Per-frame camera (viewProjection, position).
         constexpr uint32_t Shadow   = 3;  ///< Shadow casters (cascades / spot / cube).
         constexpr uint32_t Probes   = 4;  ///< Reflection-probe boxes + layers (ProbeBlock).
-    }
+    } // namespace UBOBindingPoints
 
     // SSBO binding points - match `layout(std430, binding = N)` in the shaders.
     // A separate namespace from the UBO points (GL binds them independently).
@@ -50,14 +50,14 @@ namespace GLBindings {
         constexpr uint32_t InstanceModels  = 10;  ///< Per-instance model matrices, batch order.
         // 11 is free: the index buffer reaches the vertex stage as an attribute.
         constexpr uint32_t InstanceNormals = 12;  ///< Per-instance normal matrices, batch order.
-    }
+    } // namespace SSBOBindingPoints
 
     // Texture units above the material maps (0-10), for the shadow pass outputs.
     // The cube samplers occupy CubeBase .. CubeBase+MAX_CUBE-1.
     namespace ShadowTextureSlots {
         constexpr uint32_t Atlas2D  = 11;  ///< Tiled 2D depth atlas (sampler2DShadow).
         constexpr uint32_t CubeBase = 12;  ///< First point-light depth cube (samplerCube[]).
-    }
+    } // namespace ShadowTextureSlots
 
     // Image-based lighting textures, above the shadow slots (11-13). Bound by
     // the forward pass (ambient) and the skybox pass (EnvCube).
@@ -66,17 +66,17 @@ namespace GLBindings {
         constexpr uint32_t Prefilter  = 15;  ///< Roughness-prefiltered specular cubemap (samplerCube).
         constexpr uint32_t BrdfLUT    = 16;  ///< Split-sum BRDF/DFG LUT (sampler2D).
         constexpr uint32_t EnvCube    = 17;  ///< Sharp environment cubemap (skybox; samplerCube).
-    }
+    } // namespace IBLTextureSlots
 
     // The low slots the composite + bloom shaders sample directly (their
     // samplers default to binding 0/1).
     namespace CompositeTextureSlots {
         constexpr uint32_t Scene = 0;  ///< Final post-chain colour (u_hdr).
         constexpr uint32_t Bloom = 1;  ///< Bloom mip 0 (u_bloom).
-    }
+    } // namespace CompositeTextureSlots
     namespace BloomTextureSlots {
         constexpr uint32_t Source = 0;  ///< Downsample/upsample source (u_src).
-    }
+    } // namespace BloomTextureSlots
 
     // Post-process inputs above the IBL slots.
     namespace PostTextureSlots {
@@ -86,7 +86,7 @@ namespace GLBindings {
         constexpr uint32_t SSAO       = 21;  ///< GTAO occlusion factor, sampled by the forward pass.
         constexpr uint32_t FogVolume  = 24;  ///< Integrated froxel fog (sampler3D), sampled by the fog-apply pass.
         constexpr uint32_t HiZ        = 30;  ///< Hierarchical depth pyramid: reduced by the HiZ pass, tested by the occlusion cull.
-    }
+    } // namespace PostTextureSlots
 
     // Baked irradiance volume: SH-L1 coefficients, one sampler3D each.
     namespace IrradianceVolumeSlots {
@@ -94,7 +94,7 @@ namespace GLBindings {
         constexpr uint32_t SH1 = 27;
         constexpr uint32_t SH2 = 28;
         constexpr uint32_t SH3 = 29;
-    }
+    } // namespace IrradianceVolumeSlots
 
     // Reflection-probe cube-map arrays, above the post slots. Two samplers hold
     // every probe (layer = probe index), so the count is bounded by layers + the
@@ -104,7 +104,7 @@ namespace GLBindings {
         constexpr uint32_t MAX_PROBES = 32;  ///< Probe-array capacity + per-fragment loop cap.
         constexpr uint32_t Irradiance = 22;  ///< samplerCubeArray (all probes' irradiance).
         constexpr uint32_t Prefilter  = 23;  ///< samplerCubeArray (all probes' prefilter).
-    }
+    } // namespace ProbeTextureSlots
 
     // Texture unit slots for material maps - match the sampler bindings in the
     // fragment shader. A material binds only the maps it actually has. The
@@ -121,7 +121,7 @@ namespace GLBindings {
         constexpr uint32_t Metallic            = 8;
         constexpr uint32_t Roughness           = 9;
         constexpr uint32_t AOMetallicRoughness = 10;
-    }
+    } // namespace TextureSlots
 
     // Bits packed into MaterialUBO.textureFlags: which maps are bound, so the
     // shader knows which to sample. Bit position == the map's texture slot.
@@ -138,7 +138,7 @@ namespace GLBindings {
         constexpr int Metallic            = 1 << TextureSlots::Metallic;
         constexpr int Roughness           = 1 << TextureSlots::Roughness;
         constexpr int AOMetallicRoughness = 1 << TextureSlots::AOMetallicRoughness;
-    }
+    } // namespace MaterialTextureFlags
 
 } // namespace GLBindings
 
