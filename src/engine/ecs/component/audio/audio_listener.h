@@ -31,6 +31,12 @@ struct AudioListener {
      * Lives here rather than in the Environment because it is a property of who
      * is listening, not of the world: a volume slider writes it, and it goes
      * away with the listener rather than outliving it in the scene settings.
+     *
+     * A LINEAR GAIN, not a slider position - it is multiplied into the mix as
+     * written, so 0.5 is half the amplitude and roughly two thirds as loud, not
+     * half as loud. A player-facing slider is perceptual and owes the
+     * conversion: drive this with position^2 or a decibel curve, or most of the
+     * useful range hides in the slider's top quarter.
      */
     float volume = 1.0f;
 };

@@ -249,14 +249,17 @@ is no `Behavior` hook, because the event names the rig rather than the listener:
 subscribe<AnimationEvent>([this](const AnimationEvent& e) {
     if (e.entity != m_player || e.marker != "footstep") return;
     if (!m_grounded) return;                       // gameplay decides, not the clip
-    m_scene->get<AudioSource>(m_footstep).playing = true;
+    context().events->emit(PlaySoundEvent{m_footstep, params});
 });
 ```
 
 That is the point of the whole feature: the footstep fires from the animation
 rather than from a timer beside it, so it stays in step when the stride speeds
 up, slows down, or is retimed by whoever authored the walk. The clip says
-*when*; gameplay says *whether* and *what it sounds like*. Markers are authored
+*when*; gameplay says *whether* and *what it sounds like*. A request rather
+than an `AudioSource` because a fast stride asks for the next footfall before
+the last one has finished, and a source is a speaker rather than a queue - see
+[Starting a sound with no entity](audio.md#starting-a-sound-with-no-entity). Markers are authored
 in the clip's recipe - see
 [AnimationClipAsset](../resources.md#animationclipasset).
 

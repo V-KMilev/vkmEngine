@@ -7,6 +7,7 @@
 #include "logger.h"
 
 #include "core/clock.h"
+#include "core/event/event_bus.h"
 #include "core/math/rotation.h"
 #include "debug/profiler.h"
 #include "ecs/component/audio/audio_listener.h"
@@ -27,6 +28,13 @@ void AudioSystem::init(FrameContext& ctx) {
     // A host with no sound card, no driver, or no permission to open one is a
     // host the engine still runs on. open() says which it was.
     m_device.open();
+
+    // Collect here, start in update(): emit() is synchronous and arrives from
+    // whatever stage gameplay runs in, and a voice must not be created from
+    // the middle of another system's walk.
+    m_events = &ctx.events;
+    m_playListener = m_events->subscribe<PlaySoundEvent>(
+        [this](const PlaySoundEvent& request) { m_pending.push_back(request); });
 }
 
 void AudioSystem::update(FrameContext& ctx) {
@@ -82,9 +90,16 @@ void AudioSystem::update(FrameContext& ctx) {
         m_device.stopVoice(it->second.voice);
         it = m_voices.erase(it);
     }
+
+    startPendingRequests(ctx);
 }
 
 void AudioSystem::shutdown() {
+    if (m_events != nullptr) {
+        m_events->unsubscribe<PlaySoundEvent>(m_playListener);
+        m_events = nullptr;
+        m_playListener = 0;
+    }
     stopEverything();
     m_device.close();
 }
@@ -181,9 +196,25 @@ void AudioSystem::reconcileSource(FrameContext& ctx, EntityId entity, AudioSourc
     m_voices.emplace(entity.index, ActiveVoice{entity, voice, m_frame});
 }
 
+void AudioSystem::startPendingRequests(FrameContext& ctx) {
+    for (const PlaySoundEvent& request : m_pending) {
+        // Asked for with nothing to play. Silent rather than refused: a
+        // request has no id to report a failure through, and the alternative
+        // is a log line once per coin.
+        if (!ctx.resources.isAlive(request.clip)) continue;
+
+        VoiceParams params = request.params;
+        // A request cannot be stopped, so it must be able to end by itself.
+        params.loop = false;
+        m_device.play(ctx.resources.get(request.clip), params);
+    }
+    m_pending.clear();
+}
+
 void AudioSystem::stopEverything() {
     m_device.stopAllVoices();
     m_voices.clear();
+    m_pending.clear();
     m_warnedNoListener = false;
     m_hasListener      = false;
 }

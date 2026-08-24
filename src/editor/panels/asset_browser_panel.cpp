@@ -319,6 +319,17 @@ void AssetBrowserPanel::drawSounds(EditorContext& ec) {
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Decode a wav / mp3 / flac into the project's assets");
     ImGui::SameLine();
+    // The other half of the row's Play buttons, which until now had none:
+    // nothing stopped an audition on a tab switch, on closing the panel or at
+    // shutdown. This tab imports mp3 and flac, which is how a ninety-second
+    // ambience arrives, and the Inspector's audition already has both halves -
+    // two surfaces disagreeing about what auditioning means is the drift.
+    if (iconButton("abSoundStop", EditorIcon::Stop, false, m_previewVoice != 0,
+                   "Stop the audition", ImGui::GetFrameHeight())) {
+        device.stopVoice(m_previewVoice);
+        m_previewVoice = 0;
+    }
+    ImGui::SameLine();
     if (!device.isOpen()) {
         ImGui::TextColored(EditorStyle::WARNING, "No audio device - clips import but cannot be heard.");
     } else {

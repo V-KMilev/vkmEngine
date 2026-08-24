@@ -2,13 +2,17 @@
 
 #include <cstdint>
 #include <unordered_map>
+#include <vector>
 
+#include "core/event/bus.h"
 #include "core/system.h"
 #include "ecs/entity.h"
 #include "system/audio/audio_device.h"
+#include "system/audio/audio_events.h"
 
 namespace Vkm::Engine {
 
+class EventBus;
 struct AudioSource;
 
 /**
@@ -83,12 +87,28 @@ class AudioSystem : public System {
                              const glm::vec3& worldPosition, bool simRunning);
 
         /**
+         * @brief Start every PlaySoundEvent collected since the last frame.
+         *
+         * Run after the component walk and after the sweep for voices whose
+         * source vanished, so a request's voice is never mistaken for an
+         * abandoned one. The voice is deliberately not recorded: nothing can
+         * stop it, so nothing has to, and reapFinishedVoices() releases it
+         * once it ends.
+         *
+         * @param ctx Frame context supplying the asset graph the clips live in.
+         */
+        void startPendingRequests(FrameContext& ctx);
+
+        /**
          * @brief Stop every voice and forget them.
          *
          * Used when the asset graph is replaced under the system, and at
          * shutdown. Voices hold their clip's samples alive, so this is about
          * stopping sounds that belong to a world that no longer exists rather
          * than about safety.
+         *
+         * Requests waiting to start go too: they named a world that is being
+         * replaced, and a sound nobody can stop must not outlive it.
          */
         void stopEverything();
 
@@ -112,6 +132,20 @@ class AudioSystem : public System {
 
         /// Keyed by entity slot index; one voice per source, at most.
         std::unordered_map<uint32_t, ActiveVoice> m_voices;
+
+        /// Requests collected since the last update, drained at the end of it.
+        std::vector<PlaySoundEvent> m_pending;
+
+        /**
+         * @brief The bus subscribed to, kept because shutdown() takes no ctx.
+         *
+         * Session-stable: the Engine owns one EventBus by value for the life
+         * of the run, which is the same guarantee BehaviorContext relies on.
+         */
+        EventBus* m_events = nullptr;
+
+        /// Subscription to drop at shutdown; 0 when nothing is subscribed.
+        ListenerId m_playListener = 0;
 
         /**
          * @brief Asset-graph identity, watched for replacement.

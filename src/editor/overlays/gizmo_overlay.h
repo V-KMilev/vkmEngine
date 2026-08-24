@@ -62,6 +62,18 @@ class GizmoOverlay {
         void drawEffectGizmos(EditorContext& ec);
 
         /**
+         * @brief Draw a billboard icon per audio source and listener, plus the
+         * selected source's two falloff spheres and the listener's facing.
+         *
+         * A sound is the one authored thing in the engine with nothing to look
+         * at, so without this an AudioSource is invisible in the viewport. The
+         * icon says where; the spheres say how far, and are drawn for the
+         * selection only because a scene's worth of 60-unit wireframes buries
+         * everything else.
+         */
+        void drawAudioGizmos(EditorContext& ec);
+
+        /**
          * @brief Draw a wireframe of every entity's physics Collider (its set
          * of boxes) so the user sees what the solver collides against.
          *
@@ -97,9 +109,10 @@ class GizmoOverlay {
          * @brief Ray-cast pick on left-click in the viewport, updating the
          * editor selection.
          *
-         * Tests the culled visible set (meshes) and enabled lights; nearest hit
-         * wins, an empty-space click deselects. No-op while the gizmo is hovered
-         * or being dragged. Selection is UI state only - it never dirties the scene.
+         * Tests the culled visible set (meshes), enabled lights and audio
+         * sources; nearest hit wins, an empty-space click deselects. No-op
+         * while the gizmo is hovered or being dragged. Selection is UI state
+         * only - it never dirties the scene.
          */
         void handleViewportPick(EditorContext& ec);
         bool isGizmoOver() const  { return m_gizmo.isOver(); }

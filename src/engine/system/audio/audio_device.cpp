@@ -31,6 +31,17 @@ constexpr std::array<ma_backend, 12> PLAYBACK_BACKENDS = {
     ma_backend_alsa,   ma_backend_jack,   ma_backend_aaudio, ma_backend_opensl,
 };
 
+// How long a stopped voice takes to reach silence. Releasing a sound outright
+// cuts its waveform at whatever sample the cursor happens to be on, and a
+// vertical edge is a click: measured against a 220 Hz tone at gain 0.8, the
+// worst cut across one cycle is a step of 0.63 - the signal's full amplitude -
+// where its own steepest sample-to-sample step is 0.018, thirty-five times
+// smaller. Five milliseconds spreads that over 240 frames at 48 kHz, which
+// puts every step of the ramp an order of magnitude below the waveform's own
+// slope, and is short enough that a source restarted on the next frame does
+// not audibly overlap the tail of the one it replaced.
+constexpr uint32_t STOP_FADE_MS = 5;
+
 // miniaudio speaks from its own thread as well as ours - a device disconnecting
 // is reported from the mixer - so this trims into a stack buffer rather than a
 // string: there is no reason to reach the allocator from that thread on the way
@@ -78,6 +89,9 @@ struct AudioDevice::Backend {
         ma_audio_buffer_ref buffer;
         // Keeps the PCM the buffer points at alive for as long as this voice is.
         std::shared_ptr<const std::vector<int16_t>> samples;
+        // Ramping to silence, waiting for the reap. Hidden from find(), so an
+        // id whose voice is fading behaves exactly as one whose voice is gone.
+        bool retiring = false;
     };
 
     ma_log    log;
@@ -97,7 +111,8 @@ struct AudioDevice::Backend {
 
     Voice* find(VoiceId id) const {
         auto it = voices.find(id);
-        return it == voices.end() ? nullptr : it->second.get();
+        if (it == voices.end() || it->second->retiring) return nullptr;
+        return it->second.get();
     }
 
     void release(Voice& voice) const {
@@ -308,15 +323,31 @@ void AudioDevice::stopVoice(VoiceId voice) {
     auto it = m_backend->voices.find(voice);
     if (it == m_backend->voices.end()) return;
 
-    m_backend->release(*it->second);
-    m_backend->voices.erase(it);
+    Backend::Voice& stopping = *it->second;
+    // Already on its way out. Asking again would re-schedule the ramp from
+    // wherever it had got to, restarting a fade that is halfway done.
+    if (stopping.retiring) return;
+
+    // Ramped rather than cut, and therefore not released here: the mixer needs
+    // the sound for as long as the ramp lasts. reapFinishedVoices takes it
+    // once the scheduled stop has passed, and until then find() hides it, so
+    // the id behaves exactly as it did when this released outright - unknown
+    // to updateVoice, finished to isVoicePlaying.
+    stopping.retiring = true;
+    ma_sound_stop_with_fade_in_milliseconds(&stopping.sound, STOP_FADE_MS);
 }
 
 void AudioDevice::reapFinishedVoices() {
     if (!m_backend) return;
 
     for (auto it = m_backend->voices.begin(); it != m_backend->voices.end(); ) {
-        if (ma_sound_at_end(&it->second->sound) == MA_FALSE) {
+        // Two ways to be finished: the clip ran out, or a ramped stop reached
+        // the end of its fade. A looping voice satisfies neither until someone
+        // stops it, which is what keeps an ambience alive here.
+        const ma_sound& sound = it->second->sound;
+        const bool finished = ma_sound_at_end(&sound) == MA_TRUE
+                           || ma_sound_is_playing(&sound) == MA_FALSE;
+        if (!finished) {
             ++it;
             continue;
         }
@@ -327,6 +358,12 @@ void AudioDevice::reapFinishedVoices() {
 
 void AudioDevice::stopAllVoices() {
     if (!m_backend) return;
+    // Cut, not ramped, unlike stopVoice. This is the teardown path: close()
+    // uninitialises the mixer on the next line, so a ramp scheduled here would
+    // never be mixed, and the scene load that calls it has already replaced
+    // the world the sounds belonged to. Waiting for a fade would mean holding
+    // the frame open for it or inventing somewhere for the voices to live in
+    // the meantime, to smooth an edge under a load that is not quiet anyway.
     for (auto& entry : m_backend->voices) m_backend->release(*entry.second);
     m_backend->voices.clear();
 }

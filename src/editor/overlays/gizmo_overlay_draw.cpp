@@ -13,6 +13,8 @@
 #include "system/animation/pose_buffer.h"
 #include "system/camera/camera_controller_system.h"
 #include "ecs/component/animation/animator.h"
+#include "ecs/component/audio/audio_listener.h"
+#include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/world_transform.h"
 #include "ecs/component/physics/collider.h"
 #include "ecs/component/render/decal.h"
@@ -47,6 +49,20 @@ constexpr ImU32 AXIS_COLS[3] = {
 
 constexpr ImU32 DECAL_COL   = IM_COL32(200, 120, 220, 200);  // decal violet
 constexpr ImU32 EMITTER_COL = IM_COL32(240, 200, 90, 200);   // particle amber
+
+// Accent::Audio, the magenta the Inspector's two audio cards already wear, so
+// the same subject reads the same on the card and in the viewport - with the
+// green dropped a little from the card's 97 to hold it clear of DECAL_COL's
+// violet, which is its nearest neighbour in this file.
+constexpr ImU32 AUDIO_COL = IM_COL32(232, 62, 208, 220);  // audio magenta
+// Same hue, faded: the outer falloff sphere, and anything present but not
+// contributing - a source with no clip, a listener that is not the ear.
+constexpr ImU32 AUDIO_COL_DIM = IM_COL32(232, 62, 208, 80);
+
+// Billboard radius for the source and listener glyphs - the same 8px the light
+// and camera markers use, because an entity marker is the same size whatever
+// it marks.
+constexpr float AUDIO_ICON_RADIUS = 8.0f;
 
 // A dense volume would bury the viewport under thousands of dots, so past this
 // the box alone has to speak for it.
@@ -353,6 +369,98 @@ void GizmoOverlay::drawEffectGizmos(EditorContext& ec) {
                                   ec.viewportPos, ec.viewportSize, tip))
                 dl->AddLine(sp, tip, col, selected ? 2.0f : 1.5f);
         }
+    });
+}
+
+void GizmoOverlay::drawAudioGizmos(EditorContext& ec) {
+    ViewportOverlayScope scope(ec);
+    if (!scope.valid()) return;
+
+    const glm::mat4 vp     = scope.vp;
+    const ImVec2    vpMin  = scope.vpMin;
+    const ImVec2    vpSize = scope.vpSize;
+    ImDrawList*     dl     = scope.dl;
+
+    Scene&                 scene     = ec.frame.scene;
+    const ResourceManager& resources = ec.frame.resources;
+
+    // Joined on Transform, unlike the reconcile in AudioSystem: a source with
+    // no pose is heard at the world origin, and drawing it there would put a
+    // marker on a place the author never picked. The Inspector names that case
+    // where it can be fixed.
+    scene.forEach<AudioSource, Transform>([&](EntityId id, const AudioSource& source,
+                                              const Transform& tf) {
+        const bool selected = ec.state.isSelected(id);
+        // A source with no clip is not a quiet source, it is a broken one, and
+        // the two are indistinguishable in a viewport unless one draws dimmer.
+        const bool armed = source.clip && resources.isAlive(source.clip);
+        const ImU32 col  = selected ? EditorStyle::HIGHLIGHT_U32
+                         : armed    ? AUDIO_COL
+                                    : AUDIO_COL_DIM;
+
+        const glm::vec3 pos = resolvedWorldPosition(scene, id, tf);
+
+        ImVec2 sp;
+        if (projectToViewport(vp, pos, vpMin, vpSize, sp)) {
+            const float r = AUDIO_ICON_RADIUS;
+            // Dim disc behind the glyph so the icon reads on any background.
+            dl->AddCircleFilled(sp, r + 1.0f, IM_COL32(15, 15, 18, 180), 16);
+            drawEditorIcon(dl, EditorIcon::Audio, sp, r * 0.85f, col);
+            // The third state, and the only one that changes while nobody is
+            // editing: this source has a voice in the mixer right now.
+            if (source.playing) dl->AddCircle(sp, r + 3.0f, col, 0, 1.5f);
+        }
+
+        // The falloff pair is what an author tunes, and tuning is something
+        // done to the selected entity. minDistance defaults to 1 but
+        // maxDistance defaults to 50, so drawing every source's would bury the
+        // viewport under 100-unit wireframes - the same reason drawProbeGizmos
+        // keeps an IrradianceVolume's probe grid to the selection.
+        if (!selected || !source.spatial) return;
+
+        // Deliberately not clamped against each other. A maxDistance at or
+        // under minDistance disables attenuation entirely, and an outer sphere
+        // drawn INSIDE the inner one is the picture behind the Inspector's
+        // warning for exactly that: a degenerate setup has to draw
+        // degenerately or the gizmo is lying about what the mixer will do.
+        wireSphere(dl, vp, pos, std::max(0.05f, source.minDistance), 24,
+                   vpMin, vpSize, AUDIO_COL, 1.0f);
+        wireSphere(dl, vp, pos, std::max(0.05f, source.maxDistance), 24,
+                   vpMin, vpSize, AUDIO_COL_DIM, 1.0f);
+    });
+
+    const EntityId ear      = findActiveListener(scene);
+    const EntityId flownCam = ec.cameraController.getCameraEntity();
+
+    scene.forEach<AudioListener, Transform>([&](EntityId id, const AudioListener&,
+                                                const Transform& tf) {
+        // The flown editor camera *is* the viewer - the same reason
+        // drawCameraGizmos skips it. A marker there sits inside the user's eye.
+        if (id == flownCam) return;
+
+        const bool  selected = ec.state.isSelected(id);
+        // Full only for the one findActiveListener picked. Every other
+        // listener is inert until that one goes, which is what the card says
+        // in words and this says without being opened.
+        const ImU32 col = selected    ? EditorStyle::HIGHLIGHT_U32
+                        : (id == ear) ? AUDIO_COL
+                                      : AUDIO_COL_DIM;
+
+        const glm::vec3 pos = resolvedWorldPosition(scene, id, tf);
+        const glm::quat rot = resolvedWorldRotation(scene, id, tf);
+
+        ImVec2 sp;
+        if (projectToViewport(vp, pos, vpMin, vpSize, sp)) {
+            const float r = AUDIO_ICON_RADIUS;
+            dl->AddCircleFilled(sp, r + 1.0f, IM_COL32(15, 15, 18, 180), 16);
+            drawEditorIcon(dl, EditorIcon::Listener, sp, r * 0.85f, col);
+        }
+
+        // Which way the ear faces decides which speaker a source lands in, and
+        // forward here is +Z. That is the engine's one convention whose wrong
+        // answer looks plausible instead of failing, so the arrow is the check.
+        arrowLine(dl, vp, pos, pos + Math::computeForward(rot) * 0.8f,
+                  vpMin, vpSize, col, 1.5f, 8.5f, 4.0f);
     });
 }
 
