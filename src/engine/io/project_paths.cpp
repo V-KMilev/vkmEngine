@@ -1,5 +1,6 @@
 #include "io/project_paths.h"
 
+#include <cstdlib>
 #include <system_error>
 
 #if defined(_WIN32)
@@ -57,6 +58,50 @@ std::filesystem::path& projectOverride() {
     return path;
 }
 
+// Folder the engine keeps its per-user files under, inside whichever directory
+// the platform names for them.
+constexpr const char* USER_DIR_NAME = "vkmEngine";
+
+// An environment variable as a path, or empty when it is unset or blank. Wide on
+// Windows because a user directory contains a user name, and the narrow
+// environment mangles any that is not ANSI.
+#if defined(_WIN32)
+std::filesystem::path envPath(const wchar_t* name) {
+    const wchar_t* value = ::_wgetenv(name);
+    return (value && *value) ? std::filesystem::path(value) : std::filesystem::path{};
+}
+#else
+std::filesystem::path envPath(const char* name) {
+    const char* value = std::getenv(name);
+    return (value && *value) ? std::filesystem::path(value) : std::filesystem::path{};
+}
+#endif
+
+// The platform's directory for per-user configuration, empty if it names none.
+std::filesystem::path userConfigBase() {
+#if defined(_WIN32)
+    return envPath(L"APPDATA");
+#else
+    const std::filesystem::path xdg = envPath("XDG_CONFIG_HOME");
+    if (!xdg.empty()) return xdg;
+    const std::filesystem::path home = envPath("HOME");
+    return home.empty() ? std::filesystem::path{} : home / ".config";
+#endif
+}
+
+// The platform's directory for per-user state - logs, caches of work in
+// progress - which is a different place from configuration on both platforms.
+std::filesystem::path userStateBase() {
+#if defined(_WIN32)
+    return envPath(L"LOCALAPPDATA");
+#else
+    const std::filesystem::path xdg = envPath("XDG_STATE_HOME");
+    if (!xdg.empty()) return xdg;
+    const std::filesystem::path home = envPath("HOME");
+    return home.empty() ? std::filesystem::path{} : home / ".local" / "state";
+#endif
+}
+
 } // namespace
 
 std::filesystem::path engineRoot() {
@@ -76,6 +121,35 @@ std::filesystem::path projectRoot() {
     // executable.
     if (!projectOverride().empty()) return projectOverride();
     return engineRoot();
+}
+
+std::filesystem::path userRoot() {
+    // Resolved once, and created with it: the caller that asks for this root is
+    // about to write in it, and a root that does not exist is a save that fails
+    // at shutdown where nobody is looking.
+    static const std::filesystem::path resolved = [] {
+        const std::filesystem::path base = userConfigBase();
+        // No home directory to speak of - a service account, a stripped
+        // container. The engine root is where these files used to live, so
+        // falling back there is no worse than before, and in a dev checkout it
+        // is writable.
+        if (base.empty()) return engineRoot();
+
+        const std::filesystem::path dir = base / USER_DIR_NAME;
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+        return ec ? engineRoot() : dir;
+    }();
+    return resolved;
+}
+
+std::filesystem::path userLogs() {
+    static const std::filesystem::path resolved = [] {
+        const std::filesystem::path base = userStateBase();
+        if (base.empty()) return engineRoot() / "logs";
+        return base / USER_DIR_NAME / "logs";
+    }();
+    return resolved;
 }
 
 std::filesystem::path resolveProjectPath(const std::string& path) {

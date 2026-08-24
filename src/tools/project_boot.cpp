@@ -2,11 +2,14 @@
 
 #include "project_boot.h"
 
+#include <cstdio>
 #include <filesystem>
+#include <fstream>
 
 #include "logger.h"
 
 #include "debug/build_info.h"
+#include "debug/engine_error_log.h"
 #include "ecs/scene.h"
 #include "io/project.h"
 #include "io/project_paths.h"
@@ -17,6 +20,23 @@
 #include "generator/default_scene.h"
 
 namespace Vkm::Engine {
+
+namespace {
+
+// Whether a log file can actually be created at @p path.
+//
+// Logger::init cannot answer this: it reports only whether a logger already
+// existed, and its stream failing to open is silent - every later line turns
+// into a "Failed to open log file" notice on stdout with the message itself
+// dropped. So the probe happens here, before the logger is handed a path.
+bool logFileWritable(const std::filesystem::path& path) {
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+    if (ec) return false;
+    return std::ofstream(path, std::ios::app).good();
+}
+
+} // namespace
 
 bool bootHost(int argc, char** argv, const char* logFileName, const char* loggerTag) {
     std::error_code ec;
@@ -40,11 +60,24 @@ bool bootHost(int argc, char** argv, const char* logFileName, const char* logger
     // launched from the engine root.
     std::filesystem::current_path(ProjectPaths::engineRoot(), ec);
 
-    // A shipped game has no logs/ yet, and Logger::init fails if it cannot open
-    // the file.
+    // Beside the project when the project can hold it: that is where a developer
+    // looks, and a shipped game simply has no logs/ yet. An installed game's
+    // directory is read-only, though, so the log falls back to the user's own
+    // state directory rather than being lost - named after the project, because
+    // one directory serves every game this engine ships.
     const std::filesystem::path root = ProjectPaths::projectRoot();
-    std::filesystem::create_directories(root / "logs", ec);
-    if (!Vkm::Log::Logger::init((root / "logs" / logFileName).string(), loggerTag, Vkm::Log::LogLevel::TRACE))
+    std::filesystem::path logPath = root / "logs" / logFileName;
+    if (!logFileWritable(logPath)) {
+        logPath = ProjectPaths::userLogs() / root.filename() / logFileName;
+        // Neither place will take it. Nothing can be logged, so stderr is the
+        // only channel left to say why the host is not starting.
+        if (!logFileWritable(logPath)) {
+            std::fprintf(stderr, "vkm: cannot open a log file at %s\n",
+                         logPath.string().c_str());
+            return false;
+        }
+    }
+    if (!Vkm::Log::Logger::init(logPath.string(), loggerTag, Vkm::Log::LogLevel::TRACE))
         return false;
 
     // Deferred until the logger exists: a mistyped path would otherwise look
@@ -58,7 +91,7 @@ bool bootHost(int argc, char** argv, const char* logFileName, const char* logger
     return true;
 }
 
-void bootProjectScene(
+SceneBoot bootProjectScene(
     const Project& project,
     ScriptModule& module,
     Scene& scene,
@@ -70,18 +103,23 @@ void bootProjectScene(
 
         if (SceneSerializer::load(scene, resources, path.string())) {
             LOG_INFO("Opened scene '%s'", path.string().c_str());
-            return;
+            return SceneBoot::Project;
         }
-        LOG_ERROR("Entry scene '%s' failed to load; opening the default scene",
-                  path.string().c_str());
-    } else if (module.buildScene(scene)) {
+        reportError("Scene", path.string(),
+                    "entry scene failed to load; the default scene stands in");
+        buildDefaultScene(scene, resources);
+        return SceneBoot::Failed;
+    }
+
+    if (module.buildScene(scene)) {
         LOG_INFO("Scene built by the project's module");
-        return;
+        return SceneBoot::Project;
     }
 
     buildDefaultScene(scene, resources);
     LOG_INFO("Project '%s' supplies no scene of its own; opened the default scene",
              project.name.c_str());
+    return SceneBoot::Default;
 }
 
 } // namespace Vkm::Engine

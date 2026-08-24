@@ -40,6 +40,9 @@ bool loadProject(const std::filesystem::path& projectRoot, Project& out);
  * Accepts either the project directory itself or any file inside it, and walks
  * up looking for project.json - so passing a scene finds the project owning it.
  *
+ * The answer is absolute and normalised, so one project is named one way however
+ * it was reached: callers compose on it and compare it as a string.
+ *
  * @param start Directory or file to search from.
  * @return The project root, or empty when no project.json is found above @p start.
  */

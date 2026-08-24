@@ -5,7 +5,7 @@ name through a cooked asset database. The IO layer is three serializers that
 compose - scene, component, asset - plus the library that maps an asset name to
 the files holding it.
 
-## Projects and the two roots
+## Projects and the three roots
 
 The engine runs *projects*: a directory becomes one by containing a
 `project.json`. That file is what lets a game live nowhere near the engine's own
@@ -26,12 +26,13 @@ looking for `project.json`, so passing a scene finds the project owning it.
 ### Which root owns a path
 
 `ProjectPaths` (`src/engine/io/project_paths.h`) splits on-disk locations by who
-owns them, because two different things live on disk:
+owns them, because three different things live on disk:
 
 | Root | Owns | Helpers |
 |------|------|---------|
 | `engineRoot()` | What ships with the engine, read-only to a game. One copy serves every project | `engineShaders()`, `engineAssets()`, `engineFonts()` |
-| `projectRoot()` | The game being made: its content, its code, its asset database | `assets()`, `scenes()`, `envs()`, `screenshots()`, `library()`, `cooked()`, `projectBin()` |
+| `projectRoot()` | The game being made: its content, its code, its asset database | `assets()`, `scenes()`, `prefabs()`, `envs()`, `screenshots()`, `library()`, `cooked()`, `projectBin()` |
+| `userRoot()` | How one person likes their tools, across every project and every engine install | `userLogs()`, a sibling under the platform's *state* directory rather than a child of this root |
 
 `engineRoot()` resolves once at first use. `projectRoot()` returns the override
 when one is set and falls back to `engineRoot()` otherwise, so `setProjectRoot()`
@@ -39,6 +40,33 @@ takes effect immediately - but call it before anything composes a project path,
 because a path already built from the old root is a plain string by then and will
 not follow. The editor re-roots in that order when it opens a project (see
 [editor.md](../editor.md#opening-a-project)).
+
+`userRoot()` is the newest of the three and exists because the first two can
+both be read-only. An SDK installed to `/usr/local` or `Program Files` is; so is
+a game installed there. Anything the engine *writes* that is not a project's own
+content therefore goes here:
+
+| File | Where | Why not the project |
+|------|-------|---------------------|
+| `editor_recents.json` | `userRoot()` | A list of the projects you have opened is how you get from one to the next; inside a project it could only ever list itself |
+| `imgui.ini` | `userRoot()` | Window positions and column widths are one person's layout, not something a project hands the next person |
+| `logs/<project>/log.log` (`cook.log` for `vkm_cook`) | `userLogs()`, **only** when the project cannot hold a `logs/` | A developer looks beside the project, so that stays the first choice |
+
+The platform decides the actual directory, and configuration and state are
+different places on both: `$XDG_CONFIG_HOME` (or `~/.config`) and
+`$XDG_STATE_HOME` (or `~/.local/state`) on Linux, `%APPDATA%` and
+`%LOCALAPPDATA%` on Windows, each under a `vkmEngine` folder. With no home
+directory at all - a service account, a stripped container - or with one the
+engine cannot create its folder inside, both fall back to the engine root, which
+is where these files lived before this root existed. That fallback is why the
+repository still ignores `imgui.ini` and `editor_recents.json` at its root.
+`userRoot()` creates its directory when first asked for; `userLogs()` does not,
+because `bootHost` creates the per-project subdirectory it writes into.
+
+`editor_settings.json` is the deliberate exception: it stays in the project root,
+because most of what it holds (panel widths for this project's layout, recent
+scenes, the render tuning this project is authored against) is per-project. A
+project you are authoring is writable by definition.
 
 Two consequences worth knowing before you add a path:
 
@@ -51,6 +79,61 @@ Two consequences worth knowing before you add a path:
   those would hand a project content it never asked for, so a missing one is
   reported and the scene goes without. The default Environment is a procedural
   sky precisely so a project needs no file at all.
+
+### Opening a project's world
+
+All three hosts open a project by one rule, in `bootProjectScene`
+(`src/tools/project_boot.h`), because they have to agree on it: the authored
+`entryScene`, else the world the project's module builds through `vkmBuildScene`,
+else the engine's default scene. **Exactly one** of them runs - seeding a scene
+first would leave a stray camera, light and cube under whatever the project then
+builds.
+
+A scene is always standing afterwards, so the return value says *whose* it is
+rather than whether there is one:
+
+| `SceneBoot` | Meaning |
+|-------------|---------|
+| `Project` | The project's own world opened - its entry scene, or one its module built |
+| `Default` | The project names no world of its own; the default scene stands in |
+| `Failed` | The project names an entry scene that did not load; the default scene stands in |
+
+### What each host does when a project will not open
+
+The exit code is the only answer a shell gets, so each host has to spend it on
+what is actually fatal *for that host*. The split is not arbitrary: the runtime
+plays a finished game, the editor is the tool you repair one with.
+
+| Condition | `vkm_runtime` | `vkm_editor` | `vkm_cook` |
+|-----------|---------------|--------------|------------|
+| Log file cannot be opened | exit 1 | exit 1 | exit 1 |
+| Window / GL context cannot be created | exit 1 (throws) | exit 1 (throws) | n/a - headless |
+| No gameplay module in the project's `bin/` | exit 1 | opens, logs INFO | n/a |
+| Module present but will not load (version, entry, unreadable) | exit 1 | opens, logs WARNING | n/a |
+| Entry scene named but will not load (`SceneBoot::Failed`) | exit 1 | opens on the default scene; error toast and a Bottom > Errors entry | exit 1 |
+| No entry scene and no `vkmBuildScene` (`SceneBoot::Default`) | exit 1 | opens on the default scene | exit 0 - nothing to cook |
+| No entry scene, module builds the world (`SceneBoot::Project`) | plays it | opens it | exit 0 - nothing to cook |
+| An asset fails to cook | n/a | reported, the session continues | exit 1 |
+
+The cooker reaches the last three rows by its own path rather than through
+`bootProjectScene` - it has no `Scene` to boot into and no module to ask, so it
+reads `entryScene` and loads that file directly.
+
+Two judgments behind that table:
+
+- **A game is its module.** Behaviors are created through the registry the module
+  fills, so with no module `ComponentSerializer` drops every behavior in the
+  scene - one `[SCRIPT] [ERROR]` line each - and the runtime plays a world that
+  draws and does nothing. Exit 0 would report that as a game that played, which
+  is what the exit code is spent on here. The editor warns instead, because a
+  module that will not load is fixed by rebuilding it and reloading, and you
+  need the editor open to do that.
+- **A broken entry scene is not fatal to the editor**, which is the thing you
+  open a broken scene in. The default scene stands in carrying no save path, so
+  a save cannot overwrite the file that failed to load; the reason is in the log
+  and, because `bootProjectScene` reports it through `reportError` rather than
+  logging it itself, in the Errors tab and a toast however the project was
+  opened.
 
 ## Components
 
@@ -289,6 +372,15 @@ logs nothing and the caller reports what the miss meant. In a host that links no
 importers (the runtime) the fallback still happens, the dispatch refuses the
 recipe kind it gets, and the pair of log lines names the asset and the reason: a
 shipped build cannot rebuild a cache, it needs one cooked for it.
+
+Which is why **a packaged game carries no recipes but its materials.** `vkm
+package` ships `_manifest.json` and `library/materials/` and leaves the other
+four kinds behind: their recipes describe an import the runtime has no code to
+perform, so a stale cache is equally unrecoverable with or without them - the
+error just reads "recipe missing" instead of "no dispatch for kind". Both mean
+re-cook and re-package. A material is the exception because its recipe is not an
+import record at all: it *is* the runtime form, read straight back by
+`loadLibrarySource`.
 
 The one thing this does not recover is a recipe whose **source art is gone**. The
 cook then has a recipe and nothing to bake from, which is an error rather than a

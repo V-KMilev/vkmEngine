@@ -134,6 +134,13 @@ target_compile_definitions(vkm_build_info INTERFACE
     VKM_LOG_COMMIT_HASH="${VKM_LOG_COMMIT_HASH}"
 )
 
+# ctest, for the whole tree. Testing has to be enabled in the *top-level*
+# directory or CMake writes no test file beside it, and `ctest` in build/ reports
+# zero tests however many `add_test` calls the subdirectories make. That is how
+# vkmGL's suite stayed invisible across nine tags. Enabling it here also means
+# the engine's first test is an `add_test` line rather than a decision.
+enable_testing()
+
 add_subdirectory(modules)
 
 add_subdirectory(src/engine)

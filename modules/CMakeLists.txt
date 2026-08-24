@@ -63,6 +63,13 @@ if(NOT TARGET stb)
 endif()
 
 # vkmGL: the OpenGL layer. Adds glew, and defers to the targets above.
+#
+# Its test suite defaults to "on only when vkm_gl is the top-level project",
+# which as a submodule here means never - so the one suite in the tree had never
+# been compiled. Asked for explicitly instead: it covers what runs without a GL
+# context (vertex layout arithmetic, the shader preprocessor), so it costs one
+# small translation unit and passes on a machine with no GPU.
+set(VKM_GL_BUILD_TESTS ON CACHE BOOL "" FORCE)
 if(NOT TARGET vkm_gl)
     add_subdirectory(vkmGL)
 endif()
