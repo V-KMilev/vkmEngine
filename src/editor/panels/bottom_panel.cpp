@@ -7,6 +7,7 @@
 #include <ctime>
 #include <memory>
 
+#include "core/clock.h"
 #include "debug/engine_error_log.h"
 #include "framework/component_edit.h"
 #include "framework/editor_commands.h"
@@ -139,7 +140,7 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
         ImGui::SameLine(0, GAP);
         // Value-embedded prefix, matching the Inspector's hidden-label rows.
         ImGui::SetNextItemWidth(EditorStyle::px(110.0f));
-        changed |= ImGui::DragFloat("##animSpeed", &anim.speed, 0.005f, 0.0f, 10.0f, "Speed %.2fx");
+        changed |= ImGui::DragFloat("##animSpeed", &anim.speed, 0.005f, 0.0f, 10.0f, "Speed %.2fx", PROP_CLAMP);
         ImGui::SameLine(0, GAP);
         ImGui::SetNextItemWidth(EditorStyle::px(110.0f));
         float lengthEdit = anim.length;
@@ -151,6 +152,15 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             ImGui::SetTooltip("Animation length in seconds (0 = auto from the last keyframe)");
 
         const float dur = Animation::computeDuration(anim);
+
+        // The transport sets a flag AnimationSystem acts on, and that system
+        // returns on a zero sim delta - so in Edit mode the button flips to
+        // Pause and the playhead never moves. Say which of the two states this
+        // is, the way the Audio Source card reads its own transport off the
+        // mixer rather than off the scene's word for it.
+        if (anim.playing && ctx.clock.getSimDelta() <= 0.0f) {
+            ImGui::TextDisabled("Held at %.2fs - it advances while the world runs.", anim.time);
+        }
 
         ImGui::Spacing();
         {
@@ -391,12 +401,16 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
 
         ImVec2 ovStart = ImGui::GetCursorScreenPos();
         float ovW = ImGui::GetContentRegionAvail().x;
+        // Measured before the ghost is drawn: the ghost editor is taller than
+        // the panel at its shipped height, so centring the button on the ghost
+        // parks the one control this state exists to offer below the fold.
+        float visibleH = ImGui::GetContentRegionAvail().y;
 
         ImGui::BeginDisabled();
         editor(preview);
         ImGui::EndDisabled();
 
-        float ovEndY = ImGui::GetCursorScreenPos().y;
+        float ovEndY = std::min(ImGui::GetCursorScreenPos().y, ovStart.y + visibleH);
         float bw = EditorStyle::px(240.0f);
         float bh = ImGui::GetFrameHeight() + 10.0f;
         ImVec2 bpos(ovStart.x + (ovW - bw) * 0.5f,

@@ -3,8 +3,11 @@
 #include <cstdint>
 
 #include "core/reflect.h"
+#include "ecs/entity.h"
 
 namespace Vkm::Engine {
+
+class Scene;
 
 /**
  * @brief Root of a screen-space UI layer.
@@ -32,6 +35,29 @@ struct UICanvas {
     int32_t   sortOrder       = 0;                           ///< Draw order across canvases; higher draws on top.
     bool      visible         = true;                        ///< Skip the canvas and its whole subtree when false.
 };
+
+/**
+ * @brief Whether a UICanvas sits strictly above @p id in the hierarchy.
+ *
+ * The one definition of the rule that decides whether a UI entity is drawn at
+ * all. UISystem seeds its layout walk from each canvas and descends through
+ * HierarchyOperations::forEachChild, so it reaches a canvas's descendants and
+ * never the canvas entity itself: an element outside every canvas gets no
+ * screen rect, no draw command and no hit test, and so does a UIElement placed
+ * on the canvas entity. Strictly above, for that second case - answering "yes"
+ * for the canvas's own entity would call drawable a thing the walk never
+ * visits.
+ *
+ * Both the Inspector's UI Element card and the interactive reparent ask it, and
+ * they have to agree: one says the element will not appear and the other says
+ * nothing, over the same entity. Bounded by HierarchyOperations::MAX_DEPTH, the
+ * depth the resolve pass itself stops at.
+ *
+ * @param scene The scene to walk.
+ * @param id Entity to answer for.
+ * @return true when some ancestor of @p id carries a UICanvas.
+ */
+bool hasCanvasAncestor(const Scene& scene, EntityId id);
 
 } // namespace Vkm::Engine
 

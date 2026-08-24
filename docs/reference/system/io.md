@@ -230,9 +230,8 @@ reaches disk and the file format is untouched; it is the session's half of the
 snapshot, and the cook above is what makes it restorable.
 
 **Opening a scene answers this the other way, on purpose.** Stop promises to put
-one session back; an open is leaving that world for another, and it already
-drops the undo stack, the selection and the material previews on the way
-through. So the strays go with the session that imported them - carrying them
+one session back; an open is leaving that world for another, and it drops the
+undo stack, the selection and the material previews on the way through. So the strays go with the session that imported them - carrying them
 would grow the graph by a scene's worth of assets per open and cook every one of
 them into the library at the next save - and the editor names them in the log
 and counts them into a toast rather than letting them vanish quietly. See
@@ -250,17 +249,57 @@ and counts them into a toast rather than letting them vanish quietly. See
    expand each prefab instance into it, wire the parent links, then read the
    `environment` and `physics` blocks. All of it sits inside one guard, so a
    drifted field anywhere - a string where a number belongs - fails the load
-   instead of unwinding out of it. An asset *name* step 2 did not bring in is
+   instead of unwinding out of it. **The abort names the record it was standing
+   on**: `loadInto` catches, prefixes the component key and rethrows, and the
+   entity loop keeps the id it is reading, so a single mistyped field reports
+   `Aborted while reading entity 17 of 'scene.json': component 'UIButton': type
+   must be string, but is number` rather than a file name and a JSON error. The
+   thrower knows neither half - nlohmann names the type mismatch and nothing
+   about where in the file it is - and without them a one-character drift costs
+   a bisection of the file. An asset *name* step 2 did not bring in is
    not a drifted field and does not fail the load: the component's slot is
    left empty and the miss goes through `reportError`, so the editor toasts it
    and keeps it in Bottom > Errors rather than burying it in a log the editor
    has no view of. By design there are no benign cases - the `assets` block is
-   built by walking exactly what the scene references.
+   built by walking exactly what the scene references. **A prefab that will not
+   open goes through the same seam**, and costs more: an unresolved name loses a
+   component's field, while a prefab whose file `Prefab::instantiateInto` cannot
+   read loses the whole authored subtree, leaving a childless entity in the
+   viewport. The instance is not dropped with it - the reference and its
+   overrides stay on the entity and survive the next save - so restoring the
+   file and loading again brings the subtree back, which is what the report
+   says and what the Inspector's Prefab card repeats on the empty instance.
 4. On full success, swap both staging containers in one step:
    `Scene::swap` for the scene, and `ResourceManager::swap` for the assets. The
    font slot swaps *back* (`swapSlot<FontAsset>`): fonts are baked at startup
    and never enter a scene file, so the staging RM has none, and without that
    step every `UIText` loses its font on load.
+
+### A reference that did not resolve is kept, not erased
+
+An asset name the load cannot answer leaves the component's slot empty, and an
+empty slot is indistinguishable from one nobody ever filled - so the save wrote
+`""` over the name and dropped the entry from the `assets` block, and reported
+it as an ordinary successful save. Opening a scene whose gitignored `library/`
+a teammate never committed and pressing Ctrl+S out of habit was enough to lose
+every reference in it, permanently.
+
+The name is the author's work, so the load keeps it: `resolveAssetRef` records
+what it could not resolve, `SceneSerializer` attaches it to the entity as a
+`MissingAssets` component (present only on the entities that have one, never
+written as a component of its own), and the save puts it back in two places -
+
+- the **field it came from**, but only when the save has just left that field
+  as an empty string, so a slot the author has since filled keeps what they
+  chose; and
+- the **assets block**, as the name-only entry a behavior's authored reference
+  already gets, because a field naming an asset the block does not declare stays
+  unresolved even once the library holding it is back.
+
+With both, restoring the library and reopening the scene brings the reference
+back to life. The editor also names them on the entity: the Inspector heads a
+selection that has any with the component, field and name it could not load,
+which is what separates "the mesh is gone" from "I never assigned one".
 
 `Scene::createEntityAt(slotIndex)` is what makes step 3 possible:
 entities recreate at their saved slot, so `Hierarchy::parent` indices

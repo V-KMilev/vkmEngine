@@ -6,6 +6,7 @@
 #include <charconv>
 #include <limits>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -19,6 +20,7 @@
 #include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/entity.h"
+#include "ecs/component/core/missing_assets.h"
 #include "io/asset/asset_serializer.h"
 #include "io/scene/component_serializer.h"
 #include "io/json_file.h"
@@ -99,6 +101,29 @@ constexpr std::array COMPONENT_KEYS = { VKM_SCENE_COMPONENTS(VKM_SCENE_KEY, VKM_
 #undef VKM_SCENE_KEY
 
 /**
+ * @brief Move whatever the component just loaded could not resolve onto @p e.
+ *
+ * The loader knows the name it failed on; only here is it known whose it was
+ * and which component it was read from, which is the address a save needs to
+ * put it back. Drained on every component, not only the ones that reference
+ * assets, so nothing is left over to attach to the next entity.
+ *
+ * @param s Scene holding the entity.
+ * @param e Entity the component was read into.
+ * @param key Scene-format key the component was stored under.
+ */
+void recordUnresolved(Scene& s, EntityId e, const char* key) {
+    std::vector<CS::UnresolvedRef> missed = CS::takeUnresolvedRefs();
+    if (missed.empty()) return;
+
+    if (!s.has<MissingAssets>(e)) s.add(e, MissingAssets{});
+    MissingAssets& record = s.get<MissingAssets>(e);
+    for (CS::UnresolvedRef& ref : missed) {
+        record.refs.push_back({key, std::move(ref.field), std::move(ref.name), ref.type});
+    }
+}
+
+/**
  * @brief Read one component from @p src, when @p key is present, into @p e.
  *
  * Overwrites the component the entity already carries rather than adding a
@@ -121,9 +146,30 @@ void loadInto(const json& src, const char* key, Scene& s, EntityId e, Args&&... 
     if (it == src.end()) return;
 
     T component;
-    CS::load(*it, component, std::forward<Args>(args)...);
+    try {
+        CS::load(*it, component, std::forward<Args>(args)...);
+    } catch (const std::exception& error) {
+        // Whatever this loader resolved before it threw is dropped here, and
+        // dropping it is the point: the component is not being added, the load
+        // is about to be abandoned, and the collector is a free list shared by
+        // every load in the process. Left standing, the next scene opened
+        // drains it into its own first component and records names that scene
+        // never wrote - which the save then puts into that field and into its
+        // assets block, so one malformed file that failed to open makes the
+        // next healthy one reference assets nothing can answer for.
+        CS::takeUnresolvedRefs();
+
+        // A loader throws from inside nlohmann, which names the type mismatch
+        // and nothing about where in the file it happened. The key is in hand
+        // right here and the entity id one level up, so both are attached on
+        // the way out - otherwise one mistyped field reports a file name and a
+        // JSON error, and finding it is a bisection of the file.
+        throw std::runtime_error(std::string("component '") + key + "': " + error.what());
+    }
     if (s.has<T>(e)) s.get<T>(e) = std::move(component);
     else             s.add(e, std::move(component));
+
+    recordUnresolved(s, e, key);
 }
 
 } // namespace
@@ -137,6 +183,29 @@ void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager&
     // Written here, but read by the caller's second pass rather than by a
     // loader: the parent it names may not exist yet when this entity is read.
     if (s.has<Hierarchy>(id)) c["Hierarchy"] = CS::save(s.get<Hierarchy>(id));
+
+    // What the last load could not resolve goes back exactly as it came. A
+    // component holds a handle, and a handle for an asset the load never
+    // brought in is empty, so the block above has just written "" over the name
+    // the author wrote - which is the whole of what the file remembered about
+    // that reference. Opening a scene whose cooked library a teammate did not
+    // commit and pressing Ctrl+S out of habit is enough; nothing warns, because
+    // by save time the empty slot is indistinguishable from one nobody ever
+    // filled.
+    //
+    // Only a field the save has just left as an empty string takes its name
+    // back: a slot the author has since filled keeps what they chose, and a
+    // field that is not a plain name - LOD's array of levels - is not something
+    // a name can be put back into, that ramp's holes being its own decision.
+    if (!s.has<MissingAssets>(id)) return;
+    for (const MissingAssetRef& ref : s.get<MissingAssets>(id).refs) {
+        const auto component = c.find(ref.component);
+        if (component == c.end()) continue;
+        const auto field = component->find(ref.field);
+        if (field == component->end()) continue;
+        if (!field->is_string() || !field->get<std::string>().empty()) continue;
+        *field = ref.name;
+    }
 }
 
 #undef VKM_SCENE_SAVE
@@ -285,9 +354,17 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
     std::set<std::string> unknownKeys;  // dedup warnings - one per drift, not per entity
     const json noComponents = json::object();   // stand-in for an entity that has none
 
+    // Where the read is standing, for the catch below. The entity id is the
+    // useful half and is zero outside the entity loop, where the block name is
+    // all there is to say. Both are plain scalars rather than a formatted
+    // string: this is updated once per entity on every load.
+    uint32_t    entityBeingRead = 0;
+    const char* blockBeingRead  = "entities";
+
     try {
         for (const auto& entry : doc["entities"]) {
             const uint32_t id = entry.value("id", 0u);
+            entityBeingRead = id;
             if (id == 0 || id > MAX_ENTITY_SLOT) {
                 ++unusableIds;
                 continue;
@@ -402,6 +479,8 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             LOG_WARNING("%s (kept, not applied)", message.c_str());
         }
 
+        entityBeingRead = 0;
+
         // Pass 2: wire up Hierarchy::parent now that every entity exists at its
         // saved slot. setParent rebuilds the sibling links on both sides and
         // seeds the WorldTransform the first HierarchySystem tick fills in.
@@ -419,15 +498,22 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
         // Missing scene-global fields keep the staging scene's defaults; a
         // mistyped one throws, and is caught here like any other malformed
         // block rather than unwinding out of load().
+        blockBeingRead = "environment";
         if (auto it = doc.find("environment"); it != doc.end() && it->is_object()) {
             ComponentSerializer::load(*it, staging.environment());
         }
+        blockBeingRead = "physics";
         if (auto it = doc.find("physics"); it != doc.end() && it->is_object()) {
             ComponentSerializer::load(*it, staging.physics());
         }
     } catch (const std::exception& e) {
-        LOG_ERROR("Aborted while reading '%s': %s (live scene unchanged)",
-            source, e.what());
+        if (entityBeingRead != 0) {
+            LOG_ERROR("Aborted while reading entity %u of '%s': %s (live scene unchanged)",
+                entityBeingRead, source, e.what());
+        } else {
+            LOG_ERROR("Aborted while reading the %s block of '%s': %s (live scene unchanged)",
+                blockBeingRead, source, e.what());
+        }
         return false;
     }
 

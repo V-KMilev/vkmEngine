@@ -424,6 +424,14 @@ behaviors from the saved type + fields. Entities and all other components are
 untouched - only the behavior C++ objects are rebuilt, and they start fresh
 (`onStart` runs again).
 
+**A reload that fails goes through `reportError`, not `LOG_ERROR`.** By then the
+old behaviors are already destroyed and the new module would not load, so the
+scene keeps its entities and loses their code - the most destructive outcome the
+reload has, and the only record of it used to be a toast that expired in a few
+seconds pointing at a log the editor has no view of. It now leaves a named entry
+in **Bottom > Errors**, the way an unresolved asset reference does, and the
+toast points there instead.
+
 ## Serialization
 
 `ScriptComponent` is in the scene save/load set (key `"Script"`). Each behavior

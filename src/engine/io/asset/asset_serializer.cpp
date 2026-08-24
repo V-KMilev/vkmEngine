@@ -17,6 +17,7 @@
 #include "ecs/component/render/lod.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/scene.h"
+#include "ecs/component/core/missing_assets.h"
 #include "resource/resource_manager.h"
 #include "io/asset/asset_cook.h"
 #include "io/asset/asset_factory.h"
@@ -277,6 +278,11 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
     // walked here: a name the assets block never lists is a name loadAssets
     // never recreates, and the component's reference resolves to nothing.
     BehaviorAssetRefs behaviorRefs;
+
+    // The references with a name and no handle behind them. A behavior's
+    // authored field is one; so is one the last load could not resolve, which
+    // the entity kept precisely so this document can still name it.
+    std::vector<std::pair<AssetType, std::string>> namedRefs;
     for (EntityId id : entities) {
         if (scene.has<Mesh>(id)) {
             const Mesh& m = scene.get<Mesh>(id);
@@ -293,6 +299,18 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
             emitClip(a.clip);
         }
         if (scene.has<AudioSource>(id)) emitSound(scene.get<AudioSource>(id).clip);
+        // What the load could not resolve has no handle to emit from, and the
+        // component's slot is empty - but the name is the author's, and the
+        // scene write puts it back into the field it came from. Listing it here
+        // is the other half of that: without an entry the next load never asks
+        // the library for it, so the reference stays broken even once the
+        // library holding it is restored.
+        if (scene.has<MissingAssets>(id)) {
+            for (const MissingAssetRef& ref : scene.get<MissingAssets>(id).refs) {
+                if (ref.type == AssetType::Count) continue;   // not a kind the library files
+                namedRefs.emplace_back(ref.type, ref.name);
+            }
+        }
         if (scene.has<ScriptComponent>(id)) {
             // A behavior names its assets in authored fields rather than through
             // handles, so the reference lives behind visitFields and this is the
@@ -318,7 +336,8 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
     // loadAssetSection to report: a component's name comes from an asset that
     // exists, but a behavior's was typed against a library that may since have
     // lost it, and dropping it here would turn a broken reference into silence.
-    for (const auto& [type, name] : behaviorRefs.refs()) {
+    namedRefs.insert(namedRefs.end(), behaviorRefs.refs().begin(), behaviorRefs.refs().end());
+    for (const auto& [type, name] : namedRefs) {
         switch (type) {
             case AssetType::Mesh:          emitNamedRef(meshes,    name); break;
             case AssetType::Texture:       emitNamedRef(textures,  name); break;

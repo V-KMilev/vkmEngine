@@ -68,22 +68,6 @@ void setTransformFromMatrix(Transform& t, const glm::mat4& m) {
         t.scale.z != 0.0f ? cz / t.scale.z : glm::vec3(0.0f, 0.0f, 1.0f));
     t.rotation = glm::normalize(glm::quat_cast(basis));
 }
-
-// Does a UICanvas sit anywhere above `id`? UISystem answers the same question
-// by walking down from each canvas; this walks up, because what the reparent
-// needs to know is whether one entity is covered rather than which entities a
-// canvas covers.
-bool hasCanvasAncestor(const Scene& scene, EntityId id) {
-    EntityId at = id;
-    for (uint32_t depth = 0; depth < HierarchyOperations::MAX_DEPTH; ++depth) {
-        if (!scene.has<Hierarchy>(at)) return false;
-        const EntityId parent = scene.get<Hierarchy>(at).parent;
-        if (!parent || !scene.isAlive(parent)) return false;
-        if (scene.has<UICanvas>(parent)) return true;
-        at = parent;
-    }
-    return false;
-}
 } // namespace
 
 void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
@@ -290,7 +274,11 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
         case EntityKind::Cone:     addMesh(generateCone());     break;
         case EntityKind::Camera: {
             Camera cam;
-            cam.active = false;
+            // Inactive so a new camera cannot hijack the view from the one the
+            // author is working through - except when there is no such camera,
+            // which is the one case where creating one is the recovery and an
+            // inactive result looks like the menu item did nothing.
+            cam.active = !findActiveCamera(scene);
             scene.add(entity, cam);
             break;
         }

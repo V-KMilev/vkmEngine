@@ -57,12 +57,24 @@ struct Animation {
     float length  = 0.0f;   // explicit minimum length (0 = auto from last keyframe)
     float time    = 0.0f;   // current playback time
     float speed   = 1.0f;   // playback multiplier
-    bool  playing = false;
     bool  looping = true;
+
+    bool  playOnStart = true;   // authored: start on the first simulated frame
+    bool  playing     = false;  // runtime: advancing right now (not serialized)
+    bool  started     = false;  // runtime: playOnStart already honoured
 
     static float computeDuration(const Animation&);  // = max(each track's last keyframe, length)
 };
 ```
+
+**`playOnStart` is the authored flag and `playing` is the session's**, split the
+way `AudioSource` splits the same pair. Only `playOnStart` is serialized: a
+scene that came back from disk halfway through a clip would resume a motion
+nobody saw begin, and the editor's Play / Pause buttons are a preview transport
+rather than a decision about what a shipped scene does. The first update with a
+non-zero simulation delta turns `playOnStart` into `playing` once and latches
+`started`, so a one-shot that ends does not restart every frame - and so nothing
+moves while a scene is merely open, since the editor is paused until Play.
 
 The effective duration is derived on read, never stored: `computeDuration()` is
 three O(1) reads and a `max`, so editing keyframes, tracks, or `length` cannot

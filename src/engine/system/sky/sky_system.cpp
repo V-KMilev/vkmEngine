@@ -51,14 +51,16 @@ void SkySystem::update(FrameContext& ctx) {
     const float     intensity = moonOwns ? env.night.moonlightIntensity * moonUp
                                          : env.sky.lightIntensity * sunUp;
 
-    bool pointed = false;
-    ctx.scene.forEach<Light, Transform>([&](EntityId, Light& light, Transform& transform) {
-        if (pointed || light.type != LightType::Directional) return;
-        transform.rotation = rotation;
-        light.color        = color;
-        light.intensity    = intensity;
-        pointed = true;
-    });
+    // Whose light this is, asked rather than decided here: the editor greys the
+    // fields written just below, and it can only do that against the same rule.
+    const EntityId key = findKeyLight(ctx.scene);
+    if (!key) return;
+
+    Transform& transform = ctx.scene.get<Transform>(key);
+    Light&     light     = ctx.scene.get<Light>(key);
+    transform.rotation = rotation;
+    light.color        = color;
+    light.intensity    = intensity;
 }
 
 } // namespace Vkm::Engine

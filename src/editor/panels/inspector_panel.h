@@ -63,11 +63,17 @@ class InspectorPanel {
         void drawLightSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawRigidbodySection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawColliderSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawCameraSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        // The Camera card takes the whole context for the same reason the audio
+        // cards do: which camera is rendered from is the camera controller's
+        // answer, and it is not reachable from the scene alone.
+        void drawCameraSection(EditorContext& ec, EntityId id);
         void drawReflectionProbeSection(Scene& scene, ResourceManager& resources,
                                         EditorState& state, EntityId id);
         void drawDecalSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawParticleSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        // Particles and Animation take it for the clock: both cards report on a
+        // simulation that only advances while the world runs, and the clock is
+        // what separates "nothing to show" from "not running".
+        void drawParticleSection(EditorContext& ec, EntityId id);
         // The audio cards take the whole context: the clip preview button plays
         // through the editor's audio device, which is not reachable from the
         // scene or the asset graph.
@@ -77,7 +83,7 @@ class InspectorPanel {
                                          EditorState& state, EntityId id);
         void drawWorldInspector(EditorContext& ec);
         void drawLODSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawAnimationSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        void drawAnimationSection(EditorContext& ec, EntityId id);
         void drawAnimatorSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawBoneSocketSection(Scene& scene, ResourceManager& resources,
                                    EditorState& state, EntityId id);

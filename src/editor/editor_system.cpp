@@ -252,6 +252,21 @@ void syncWindowTitle(WindowManager& window, const std::string& project,
 
 void EditorSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("EditorSystem");
+
+    // Flying the viewport moves the scene's own Camera entity - the editor has
+    // no camera of its own, which is what makes "you move what you see" true -
+    // and that entity's Transform is a value the scene file stores. So looking
+    // around is an edit to authored data, and saying nothing about it left the
+    // title clean and the unsaved-changes guard quiet while the pose in the
+    // world and the pose on disk drifted apart: a save made minutes later for
+    // an unrelated reason wrote wherever the viewport happened to be parked
+    // over the framing somebody had chosen. Asked every frame either way, so a
+    // session's own flying does not sit in the flag and get reported as an edit
+    // at the next Stop - inside one the world is the simulation's copy, and
+    // Stop puts the camera back with the rest of it.
+    const bool cameraMoved = m_cameraController.takeCameraMoved();
+    if (cameraMoved && !m_sceneIO.hasSnapshot()) m_state.markSceneDirty();
+
     syncWindowTitle(ctx.window, m_state.projectName, m_sceneIO.path(), m_state.sceneDirty);
 
     m_materialPreviews.onFrameBegin();
@@ -293,8 +308,10 @@ void EditorSystem::update(FrameContext& ctx) {
         if (m_scriptModule.reload(ctx.scene)) {
             m_state.pushToast(EditorState::ToastKind::Info, "Reloaded scripts");
         } else {
+            // The durable record is the Errors tab entry ScriptModule::reload
+            // reports; this is the glance-level notice that points at it.
             m_state.pushToast(EditorState::ToastKind::Error,
-                "Script reload failed - see log. Fix the build and reload again.");
+                "Script reload failed - see Bottom > Errors. Fix the build and reload again.");
         }
     }
 
@@ -602,6 +619,7 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
                 static_cast<uint32_t>(std::max(1.0f, centerW * vpScale)),
                 static_cast<uint32_t>(std::max(1.0f, mainH   * vpScale)));
             m_state.viewportHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
+            m_viewportOverlay.drawNoCameraNotice(ec);
             m_viewportOverlay.drawNavigationGizmo(ec);
             m_gizmoOverlay.drawLightGizmos(ec);
             m_gizmoOverlay.drawCameraGizmos(ec);
