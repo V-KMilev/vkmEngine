@@ -10,6 +10,7 @@
 #include "logger.h"
 
 #include "core/clock.h"
+#include "core/event/event_bus.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/component/animation/animator.h"
@@ -20,6 +21,7 @@
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
 #include "resource/resource_manager.h"
+#include "system/animation/animation_events.h"
 #include "system/animation/pose_evaluator.h"
 #include "system/hierarchy/hierarchy_operations.h"
 
@@ -55,6 +57,7 @@ void SkeletalAnimationSystem::update(FrameContext& ctx) {
 
     FaultsSeen seen;
     poseRigs(ctx, seen);
+    publishMarkers(ctx);
 
     // Each latch holds only while its fault is still there, so fixing one is
     // reported again if it comes back - which is why poseRigs reports into seen
@@ -121,13 +124,13 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen) {
         // point - the same argument AnimationSystem's parallel pass makes.
         PROFILE_SCOPE("SkeletalAnimation/Evaluate");
         parallelFor(m_work.size(), grain, [&](size_t i) {
-            const RigWork& work = m_work[i];
-            Animator& animator  = animators->dataAt(work.animatorIndex);
+            RigWork& work      = m_work[i];
+            Animator& animator = animators->dataAt(work.animatorIndex);
 
-            advancePlayback(animator,
-                            work.clip     ? work.clip->duration     : 0.0f,
-                            work.fadeClip ? work.fadeClip->duration : 0.0f,
-                            simDelta);
+            work.step = advancePlayback(animator,
+                                        work.clip     ? work.clip->duration     : 0.0f,
+                                        work.fadeClip ? work.fadeClip->duration : 0.0f,
+                                        simDelta);
 
             PoseSample sample;
             sample.clip     = work.clip;
@@ -142,6 +145,24 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen) {
 
             composePose(*work.skeleton, sample, m_poses.writeTo(work.slice));
         });
+    }
+}
+
+void SkeletalAnimationSystem::publishMarkers(FrameContext& ctx) {
+    for (const RigWork& work : m_work) {
+        if (!work.clip || work.clip->markers.empty()) continue;
+
+        const EntityId rig = ctx.scene.entityAt(work.entityIndex);
+        for (const ClipMarker& marker : work.clip->markers) {
+            if (!crossesMarker(work.step, marker.time, work.clip->duration)) continue;
+            // Enqueued rather than emitted: the bus delivers at the top of the
+            // next Simulation stage, which is the one point in the frame where
+            // nothing is mid-walk over the storage a listener may edit. The
+            // frame that costs is the same one a contact already costs, and
+            // AudioSystem runs in the Transform stage after it, so the sound
+            // still starts on the frame the event lands.
+            ctx.events.enqueue(AnimationEvent{rig, marker.name});
+        }
     }
 }
 

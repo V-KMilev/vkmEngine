@@ -322,7 +322,15 @@ a substitute.
 
 ### Hearing it
 
-Put a wav, mp3 or flac anywhere under a project's `assets/`, then in the editor:
+The quickest way is to run one: `./build/bin/vkm_runtime examples/potion_runner`
+plays a footstep on every marker its stride clip announces, and the whole chain
+- clip, marker, event, source, listener - is built in code with no asset file
+anywhere (see [Animation events](animation.md#animation-events)). What to listen
+for there is that the footsteps stay in step as the run accelerates, stop in
+mid-air, and come back on landing.
+
+To hear a clip of your own, put a wav, mp3 or flac anywhere under a project's
+`assets/`, then in the editor:
 
 1. Window > Asset Browser > Sounds > `Import Sound...`, pick it, press play.
    That is the decoder and the device, with no scene involved.

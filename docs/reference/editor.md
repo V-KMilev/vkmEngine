@@ -131,8 +131,12 @@ in Add Component like every other component.
   play, stop and the scrubber do not. Scrubbing works while paused because the
   pose system composes every frame. A clip cooked against a different rig is
   called out in red on the card, where the pairing is being made, rather than
-  only in the log. Blend state is deliberately absent: a crossfade is started
-  from code through `Animator::crossFadeTo` and is never serialized.
+  only in the log. The clip's markers are listed read-only beneath the scrubber
+  the way the Animation card lists its keyframe counts - a marker belongs to the
+  clip and is authored in the clip's recipe, so what the card owes an author is
+  the ability to see what the clip they just picked will announce and when.
+  Blend state is deliberately absent: a crossfade is started from code through
+  `Animator::crossFadeTo` and is never serialized.
 - **Bone Socket** - the bone picker, over the rig resolved from the entity's
   *parent* - the only rig a socket can address, because it is placed relative to
   that parent's world matrix. The list is the skeleton's own bone array indented

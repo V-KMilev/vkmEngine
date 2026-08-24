@@ -1607,6 +1607,20 @@ void InspectorPanel::drawAnimatorSection(Scene& scene, ResourceManager& resource
             ImGui::TextDisabled("No clip: holding the bind pose.");
         }
 
+        // Read-only, like the Animation card's keyframe digest: a marker belongs
+        // to the clip, not to this entity, and its authored home is the clip's
+        // recipe. What the card owes an author is the ability to see what the
+        // clip they just picked will announce, and at what time to expect it.
+        if (clip && !clip->markers.empty()) {
+            ImGui::Spacing();
+            ImGui::TextUnformatted("Markers");
+            for (const ClipMarker& marker : clip->markers) {
+                ImGui::BulletText("%s at %.2fs", marker.name.c_str(),
+                                  static_cast<double>(marker.time));
+            }
+            ImGui::TextDisabled("Fired as AnimationEvent; edit them in the clip's recipe.");
+        }
+
         // Blend state is deliberately absent, here and in the scene file: a
         // crossfade is started from code through Animator::crossFadeTo.
         return changed;

@@ -265,11 +265,13 @@ ranges into them.
 ```cpp
 struct ClipChannel { uint32_t first, count; };  // count 0 = channel absent
 struct ClipBone    { ClipChannel position, rotation, scale; };
+struct ClipMarker  { std::string name; float time; };  // an instant the clip announces
 
 struct AnimationClipAsset : Resource {
     std::string skeleton;          // rig whose bone order `bones` addresses
     float       duration = 0.0f;   // seconds, stored rather than derived
-    std::vector<ClipBone>  bones;  // parallel to that rig's bones
+    std::vector<ClipBone>   bones;    // parallel to that rig's bones
+    std::vector<ClipMarker> markers;  // in time order; empty for an unmarked clip
     std::vector<float> positionTimes;  std::vector<glm::vec3> positions;
     std::vector<float> rotationTimes;  std::vector<glm::quat> rotations;
     std::vector<float> scaleTimes;     std::vector<glm::vec3> scales;
@@ -287,6 +289,27 @@ keeps `AnimationTrack<T>` and is untouched (see
 
 A clip is bound to its rig **at cook time**: `bones` is parallel to the named
 skeleton's bone array, so nothing resolves a bone name at runtime.
+
+**Markers** are what the clip announces as it plays - a footstep, the frame a
+swing connects. They live on the clip and not on the `Animator` that plays it,
+because a footstep belongs to the walk: every character playing that walk gets
+the same footsteps without authoring them again, and retiming the walk moves
+them with it. Crossing one publishes an `AnimationEvent` on the `EventBus`; see
+[Animation](system/animation.md#animation-events).
+
+Nothing in glTF or FBX carries an animation event, so a marker is **authored in
+the clip's recipe** rather than imported, beside the path and the clip index:
+
+```json
+{ "kind": "model", "path": "assets/hero.glb", "clip": 2,
+  "markers": [ { "name": "footstep", "time": 0.12 },
+               { "name": "footstep", "time": 0.42 } ] }
+```
+
+The loader drops a marker with no name or a time outside the clip (it could
+never fire at the instant it names), sorts what is left by time, and writes it
+back into the clip's own `source` - which is what stops the next cook from
+regenerating the recipe without the markers it just read.
 
 ### AudioClipAsset
 

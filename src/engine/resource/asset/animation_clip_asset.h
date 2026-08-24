@@ -30,6 +30,21 @@ struct ClipBone {
 };
 
 /**
+ * @brief A named instant in a clip: what the animation announces as its
+ *        playback head reaches this time.
+ *
+ * The name is the marker's whole identity, for the reason a BoneSocket names
+ * its bone rather than indexing it: gameplay matches on it, it survives a
+ * re-export that renumbers everything around it, and it is legible in a log.
+ * Nothing addresses a marker by position, so a clip may carry two of the same
+ * name - a footstep is a footstep at either end of the stride.
+ */
+struct ClipMarker {
+    std::string name;
+    float       time = 0.0f;  ///< Seconds into the clip; within [0, duration].
+};
+
+/**
  * @brief A baked animation: every bone's keys, in six flat arrays.
  *
  * `AnimationTrack<T>` is deliberately not reused here. Three tracks over a
@@ -55,6 +70,17 @@ struct AnimationClipAsset : public Resource {
     float duration = 0.0f;
 
     std::vector<ClipBone> bones;  ///< Parallel to the skeleton's bones.
+
+    /**
+     * @brief Instants the clip announces as the head passes them, in time order.
+     *
+     * Authored on the clip rather than on the Animator playing it, because a
+     * footstep belongs to the walk and not to the character: every rig that
+     * plays that walk gets the same footsteps without authoring them again, and
+     * retiming the walk moves them with it. A clip nobody has marked carries an
+     * empty vector, which costs it nothing.
+     */
+    std::vector<ClipMarker> markers;
 
     std::vector<float>     positionTimes;
     std::vector<glm::vec3> positions;

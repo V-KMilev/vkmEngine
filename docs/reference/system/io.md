@@ -221,8 +221,8 @@ a hash of the recipe. Every asset is its own file:
 - `library/<type>/<uid>.json` - the recipe (and, for materials, the canonical
   `inline` form). The version-controlled source of truth.
 - `cooked/<type>/<uid>.vkmc` - the derived binary blob (mesh vertices/indices;
-  decoded texture pixels; a rig's bones and bind data; a clip's keys; a sound's
-  PCM).
+  decoded texture pixels; a rig's bones and bind data; a clip's keys and
+  markers; a sound's PCM).
   Regenerable; git-ignored.
 - `library/_manifest.json` - maps each asset `name` to its type and recipe hash,
   under a `manifestVersion` the loader checks. `AssetLibrary`
@@ -277,7 +277,7 @@ startup, with plain switch dispatch on the `kind` field:
 | `cooked`               | runtime + editor | A mesh/texture read from its cooked binary (async), or a skeleton/clip read from its own (synchronously) |
 | `inline`               | runtime + editor | A `MaterialAsset` from PBR scalars + texture refs   |
 | `generator` / `decimate` | editor only    | Procedural / LOD meshes (run by the cooker)         |
-| `file` / `model` / `model-image` | editor only | stb / Assimp texture, mesh, rig and clip import |
+| `file` / `model` / `model-image` | editor only | stb / Assimp texture, mesh, rig and clip import (a clip recipe also carries its authored `markers`) |
 | `folder` / `model` / `default` / `builtin` / `solid` | editor only | material + texture recipes |
 
 The runtime wires only the cooked dispatch (`registerCookedAssetFactories` sets
@@ -305,7 +305,7 @@ guarded by the `static_assert` in `asset_library.cpp`.
 | Mesh | Bounds, the four counts, the skin radius, then bulk vertices, indices and skin, then the rig name |
 | Texture | The `TextureParams` fields, then the decoded pixels |
 | Skeleton | Bone count, a `{parent, nameLen}` record per bone, bulk inverse-bind matrices, bulk bind-pose TRS, then the concatenated names |
-| Animation clip | Bone count, duration, the six key-array counts, the skeleton name length, then the bulk `ClipBone` table, the six key arrays and the name |
+| Animation clip | Bone count, duration, the six key-array counts, the skeleton name length, the marker count and marker-name length, then the bulk `ClipBone` table, the six key arrays, the rig name, a `{time, nameLen}` record per marker and the concatenated marker names |
 | Audio clip | Sample rate, channel count, sample count, then the interleaved 16-bit PCM |
 
 Fixed-size records come first and variable-length names last in both new
@@ -322,6 +322,10 @@ get wrong, because nothing downstream re-checks:
 - A clip's key times and values must pair up, its duration must be finite, and
   every channel range must land inside the array it addresses - the sampler
   indexes those arrays directly, once per bone per frame.
+- Every clip marker's time must be finite and inside `[0, duration]`. Where a
+  marker fires is the whole of what it says, and a time outside the timeline
+  never arrives at the instant it names - a looping head wraps it to some other
+  moment and a clamped one never reaches it at all.
 - A bone count past `MAX_SKELETON_BONES` is refused. It is a corruption
   threshold rather than a capability limit: raising it later accepts strictly
   more files, so it starts tight. `MAX_AUDIO_CHANNELS` and

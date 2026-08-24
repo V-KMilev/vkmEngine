@@ -17,7 +17,8 @@ time-scale / single-step apply uniformly. They do not overlap:
 - `src/engine/core/math/easing.h` - easing functions (interpolation curves)
 - `src/engine/ecs/component/animation/animation.h` - Animation component
 - `src/engine/system/animation/skeletal_animation_system.h` - SkeletalAnimationSystem
-- `src/engine/system/animation/pose_evaluator.h` - `advancePlayback` + `composePose`
+- `src/engine/system/animation/pose_evaluator.h` - `advancePlayback` + `crossesMarker` + `composePose`
+- `src/engine/system/animation/animation_events.h` - AnimationEvent (the marker crossing)
 - `src/engine/system/animation/pose_buffer.h` - PoseSlice, PoseWrite, PoseBuffer
 - `src/engine/ecs/component/animation/animator.h` - Animator component
 - `src/engine/ecs/component/animation/bone_socket.h` - BoneSocket component
@@ -229,6 +230,119 @@ when it is not.
 three interpolations above are skipped entirely at weight 1 - which is every
 frame that is not mid-fade.
 
+## Animation events
+
+A clip carries **markers** - named instants it announces as the head passes
+them. Crossing one enqueues an `AnimationEvent` on the `EventBus`:
+
+```cpp
+struct AnimationEvent {
+    EntityId    entity;  // the entity carrying the Animator
+    std::string marker;  // the crossed ClipMarker's name
+};
+```
+
+Gameplay listens for it the way it listens for a contact or a UI click - there
+is no `Behavior` hook, because the event names the rig rather than the listener:
+
+```cpp
+subscribe<AnimationEvent>([this](const AnimationEvent& e) {
+    if (e.entity != m_player || e.marker != "footstep") return;
+    if (!m_grounded) return;                       // gameplay decides, not the clip
+    m_scene->get<AudioSource>(m_footstep).playing = true;
+});
+```
+
+That is the point of the whole feature: the footstep fires from the animation
+rather than from a timer beside it, so it stays in step when the stride speeds
+up, slows down, or is retimed by whoever authored the walk. The clip says
+*when*; gameplay says *whether* and *what it sounds like*. Markers are authored
+in the clip's recipe - see
+[AnimationClipAsset](../resources.md#animationclipasset).
+
+### Once per crossing, and only once
+
+A marker is announced when the playback head **passes the instant it names**.
+The sweep a frame makes is closed at the end it arrived at and open at the end
+it left, in both directions, which is what makes that exact:
+
+| The head... | Announces |
+|-------------|-----------|
+| lands exactly on the marker | yes - the arrival end is closed |
+| moves off it again, either way | no - the departure end is open |
+| wraps past the end of a looping clip | yes, on the lap it wraps into |
+| runs backwards over it (negative `speed`) | yes, once |
+| steps over several whole loops in one frame | once, not once per lap |
+
+The last row is the hitch case. A frame that swallowed two seconds of a
+half-second clip drew **one** pose, so it makes one sound; replaying four laps'
+worth of footsteps into a single frame is a burst nobody authored.
+
+`PlaybackStep` is what makes the once-ness hold across frames rather than only
+within one. It records where the head was, where it now *is*, and how far it
+signed-travelled - and the `to` it records is the exact float the `Animator`
+now carries, so it is bit-for-bit the next frame's `from`. The arrival end of
+one sweep and the departure end of the next are the same value, so no rounding
+step and no wrap can put a marker in both or in neither.
+
+Three things deliberately announce nothing:
+
+- **A paused frame.** `advancePlayback` returns before it moves anything when
+  the simulation delta is zero, so nothing travels and nothing is crossed. Nor
+  is anything stored up: the next running frame advances by that frame's delta,
+  not by the length of the pause, so there is no burst on resume.
+- **Scrubbing an `Animator::time` by hand** - in the inspector, or from code.
+  That is a teleport, not a sweep; the head is somewhere else next frame with no
+  travel recorded, so no marker between the two fires.
+- **A crossfade's outgoing clip.** Two heads advance during a blend, and only
+  the one the `Animator` is *playing* speaks. Letting both would fire the run's
+  footstep and the walk's at once, which is the double the whole shape is built
+  to prevent. The incoming clip owns its events from the moment `crossFadeTo`
+  names it - so a marker at time 0 is not announced when a clip starts (the head
+  begins there, it never crossed it), only when a loop wraps round to it.
+
+Publishing is **serial, after the parallel evaluate pass**: the `EventBus` is
+main-thread only, and a `PlaybackStep` on each rig's work record is three floats
+that make deferring it free. The events are `enqueue`d, not `emit`ted, so they
+deliver at the top of the next Simulation stage - the same one-frame latency a
+contact already has, and `AudioSystem` runs in the Transform stage after it, so
+the sound still starts on the frame the event lands.
+
+### What a harness proves about it, and what it cannot
+
+Every claim above is a statement about how many events landed on a bus over a
+run of frames, so `scratchpad/markers/marker_check.cpp` counts them off a real
+`SkeletalAnimationSystem` posing a real `Scene`. It drives the `Clock` through
+`requestStep()` - the editor's own single-step path - so each frame is exactly
+one fixed step and the expected counts are arithmetic rather than a tolerance:
+
+- a looping clip announces each of three markers exactly as often as its laps
+  say, over hundreds of frames, with no marker twice in a row and no frame
+  announcing more than the one marker it crossed
+- a negative `speed` comes back over them the same number of times
+- a non-looping clip announces the marker on its very last frame when the head
+  lands there, and nothing after it stops
+- a crossfade whose incoming and outgoing clips both carry markers announces
+  **only** the incoming clip's, with the fade verifiably still in flight
+- three hundred paused frames announce nothing and move nothing, and the frame
+  that resumes announces the one marker one step reaches
+- a head scrubbed past a marker announces nothing, and neither does a stopped
+  `Animator` over three hundred running frames
+- two characters on one clip, half a lap apart, each announce for themselves and
+  each on their own phase's schedule
+- markers survive the cook byte for byte, a time outside the clip is refused by
+  both the writer and the reader, and a recipe's authored markers are dropped
+  when nameless or out of range, sorted, and written back into the clip's source
+- and the shipped example's own rig, clip and footstep sound - compiled straight
+  out of `examples/potion_runner/src` - place four limbs on their joints, fire
+  two footsteps per stride at cadence 1 and four at cadence 2, and produce
+  measurable signal in a real offline mix
+
+What it cannot say is whether a footstep lands where the eye says the foot does.
+Nothing there watches a heel meet the ground, hears a step arrive early against
+the pose, or judges whether a marker at the quarter point is where an animator
+would have put it. That needs a person watching the runner with the sound on.
+
 ## The pose, and the palette derived from it
 
 `SkeletalAnimationSystem` publishes a `PoseBuffer` on `FrameContext::poses`, the
@@ -269,7 +383,7 @@ posed skin deletes it.
 
 ## Update model
 
-Four phases, only the third parallel:
+Five phases, only the third parallel:
 
 1. **Allocate** (serial). Walk `storage<Animator>()`, resolve each handle, drop
    any rig whose skeleton is gone, and hand out a slice per rig. Serial because
@@ -277,8 +391,11 @@ Four phases, only the third parallel:
    never touch the `ResourceManager`.
 2. **Map** (serial). Stamp each rig's entity and its subtree with its slice.
 3. **Evaluate** (`parallelFor`). Advance the playback head - and the outgoing
-   one, and the fade countdown - then compose.
-4. **Publish**. `ctx.poses` points at the system's own buffer.
+   one, and the fade countdown - then compose. Each rig records the
+   `PlaybackStep` its own head made.
+4. **Announce** (serial). Walk those steps and enqueue an `AnimationEvent` per
+   marker crossed. Serial because the `EventBus` is main-thread only.
+5. **Publish**. `ctx.poses` points at the system's own buffer.
 
 Composition is **one forward loop with no recursion, no visited set and no
 intermediate array of local transforms**:
@@ -634,3 +751,18 @@ clip picker, and a transport whose scrub works while paused, for the same reason
 the overlay does - composition runs every frame whether or not time advanced. A
 clip cooked against another rig is named on the card, beside the pickers that
 made the pairing. See [editor.md](../editor.md).
+
+### Hearing it
+
+`examples/potion_runner` runs the whole chain, built in code with no asset file
+anywhere. `runner_rig.h` makes a five-bone rig and one looping stride clip; the
+runner's four limbs hang off its bones through `BoneSocket`s; the clip carries a
+`footstep` marker at each instant a leg is vertical, which is when that foot is
+on the ground. The behaviour subscribes to `AnimationEvent` and plays a
+synthesized footstep (`proc_audio.h`) - but only while alive and grounded,
+because what a marker *means* is gameplay's decision and not the clip's.
+
+`./build/bin/vkm_runtime examples/potion_runner`. The footsteps should stay in
+step as the run accelerates (one `Animator::speed` drives both the swing and the
+markers, because they are the same timeline), stop in mid-air, and come back on
+landing.
