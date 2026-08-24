@@ -42,7 +42,6 @@ struct EditorState {
     bool showPreferences = false;   ///< Preferences window (Ctrl+,)
     bool showMaterialEditor = false;            ///< Material Editor window
     MaterialHandle materialEditorTarget{};      ///< Which material it edits (else: selected entity's)
-    bool showAssetBrowser   = false;            ///< Asset Browser window (material/mesh thumbnail grid)
     bool showRenderSettings = false;            ///< Render Settings window (pass toggles + per-effect tuning)
     bool showColliders      = false;            ///< Draw physics collider wireframes in the viewport (View menu)
     bool showBounds         = false;            ///< Draw per-entity world AABBs in the viewport (View menu)
@@ -51,7 +50,12 @@ struct EditorState {
     // Layout dimensions (pixels)
     float leftPanelWidth    = 260.0f;
     float rightPanelWidth   = 340.0f;
-    float bottomPanelHeight = 200.0f;
+    // Tall enough for one whole row of default-size asset tiles - face, name
+    // and detail line - because the panel's first tab is a grid and a row cut
+    // across the middle reads as a broken tile rather than as a short panel.
+    // Persisted per project, so this is what a project with no saved layout
+    // opens at.
+    float bottomPanelHeight = 250.0f;
 
     bool viewportHovered = false;    ///< Whether mouse is over viewport
     bool hierarchyDirty  = true;     ///< Set by entity ops, consumed by HierarchyPanel

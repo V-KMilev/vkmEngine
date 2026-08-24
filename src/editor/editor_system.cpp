@@ -535,10 +535,6 @@ void EditorSystem::update(FrameContext& ctx) {
         PROFILE_SCOPE("Panel/MaterialEditor");
         m_materialEditor.draw(ec);
     }
-    if (m_state.showAssetBrowser) {
-        PROFILE_SCOPE("Panel/AssetBrowser");
-        m_assetBrowser.draw(ec);
-    }
     if (m_state.showRenderSettings) {
         PROFILE_SCOPE("Panel/RenderSettings");
         m_renderSettings.draw(ec);

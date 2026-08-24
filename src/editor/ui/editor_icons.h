@@ -24,7 +24,7 @@ enum class EditorIcon {
     UICanvas, UIText, UIImage, UIButton,
     LightRect, LightDisk,
     Cube, Sphere, Plane, Pyramid, Cone, Triangle,
-    Empty, Import, Colliders,
+    Empty, Import, Colliders, Material, Texture, Skeleton,
     FrameAll
 };
 

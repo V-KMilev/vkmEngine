@@ -231,6 +231,9 @@ void RenameAssetCommand<HandleType>::undo(Scene&, EditorState& state) {
 
 template class RenameAssetCommand<MaterialHandle>;
 template class RenameAssetCommand<MeshHandle>;
+template class RenameAssetCommand<TextureHandle>;
+template class RenameAssetCommand<AnimationClipHandle>;
+template class RenameAssetCommand<AudioClipHandle>;
 
 std::string ScriptEditCommand::capture(const Scene& scene, EntityId id) {
     if (!scene.isAlive(id) || !scene.has<ScriptComponent>(id)) return {};

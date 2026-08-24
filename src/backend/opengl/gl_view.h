@@ -121,6 +121,19 @@ class GLView {
         void setTextureFiltering(TextureFiltering mode, float maxAnisotropy);
 
         /**
+         * @brief Upload @p handle's texture outside of a sync(), for a caller
+         *        that wants to look at it rather than draw with it.
+         *
+         * sync() reaches a texture only through the material that binds it,
+         * which is right for a frame and wrong for a tool showing the whole
+         * library. Version-gated like every other upload here.
+         *
+         * @param handle Texture to upload; an empty handle does nothing.
+         * @param resources Resolves the handle to its pixels.
+         */
+        void ensureTexture(const TextureHandle& handle, const ResourceManager& resources);
+
+        /**
          * @brief Resolve a handle to its synced GPU object; null if the handle is empty
          * or its asset has not been sync()'d into the table yet. The returned
          * pointer is owned by this table - do not store it across a sync().

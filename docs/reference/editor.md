@@ -20,7 +20,7 @@ aggregate, so panels do not reach into each other.
 |  [Hierarchy panel docked left]                 |              |
 |                                                |              |
 +---------------------------------------------------------------+
-|             Bottom panel (Animation / Errors tabs)            |
+|        Bottom panel (Assets / Animation / Errors tabs)        |
 +---------------------------------------------------------------+
 |                          Status bar                           |
 +---------------------------------------------------------------+
@@ -52,10 +52,10 @@ overlays drawn on top.
 |---------------------|---------------------------------------|-----------------------------------------------------------------------------|
 | Hierarchy           | `panels/hierarchy_panel.cpp`          | Entity tree; drag a node onto another to reparent (cycle-safe); context-menu Unparent |
 | Inspector           | `panels/inspector_panel.cpp`          | Component editor; animation easing/keyframes; Camera "Set as Main"; Hierarchy Unparent; prefab-instance overrides |
-| Bottom              | `panels/bottom_panel.cpp`             | Two tabs: Animation (keyframe editor) and Errors (recoverable engine failures) |
+| Bottom              | `panels/bottom_panel.cpp`             | Three tabs: Assets (the Asset Browser), Animation (keyframe editor) and Errors (recoverable engine failures) |
 | Render Settings     | `panels/render_settings_panel.cpp`    | Render quality tuning: `RenderSettings` (debug view / grid / MSAA, texture filtering, GTAO, bloom, shadows, probes) plus the `VisibilitySystem` culling thresholds; opened from Window > Render Settings |
 | Material Editor     | `panels/material_editor_panel.cpp`          | Per-material PBR inspector with live preview (renders the real pipeline)    |
-| Asset Browser       | `panels/asset_browser_panel.cpp`            | Thumbnail grid of materials / meshes / textures, plus a Sounds list with import and audition; pickable into the inspector|
+| Asset Browser       | `panels/asset_browser_panel.cpp`            | The bottom panel's Assets tab. One library for all six asset kinds: a kind rail, a uniform tile grid, and one verb slot per kind (import / create). Materials and meshes render thumbnails, a texture *is* its thumbnail, sounds audition from the tile |
 | Preferences         | `panels/preferences_panel.cpp`        | Floating editor/app settings window (Edit > Preferences, Ctrl+,)            |
 | Viewport Overlay    | `overlays/viewport_overlay.cpp`       | The axis navigation gizmo, top-right of the viewport (click an axis to snap the camera) |
 | Gizmo Overlay       | `overlays/gizmo_overlay.cpp`          | The transform gizmo's drawing and drag, and the viewport's click-to-pick     |
@@ -92,7 +92,9 @@ The editor separates **per-scene working data** from **editor/app
 preferences**:
 
 - **Bottom panel** is a tab bar over per-scene working surfaces:
-  **Animation** (the keyframe editor below) and **Errors**. The Errors
+  **Assets** (the Asset Browser below), **Animation** (the keyframe editor
+  below) and **Errors**. Assets leads because it is the surface an author
+  reaches for most often and the one that wants the width. The Errors
   tab is where recoverable engine failures surface - a script hook that
   throws does not kill the frame, it lands here, and so does an asset
   reference a scene load could not resolve, named by kind and by asset,
@@ -420,7 +422,9 @@ Available commands (in `framework/editor_commands.h`):
   the asset's identity (name, uid, source) is deliberately left as it is, since
   the name is renamed through its own command.
 - `RenameAssetCommand<HandleType>`: undoable asset rename (routes through
-  `ResourceManager::rename` so the name index stays consistent).
+  `ResourceManager::rename` so the name index stays consistent). Instantiated
+  once per asset kind the Asset Browser lets an author rename, so that list and
+  the browser's `KINDS[]` table say the same thing.
 
 Templated commands are emitted out of line via `extern template` in the
 header and instantiated once in `editor_commands.cpp` so each
@@ -583,6 +587,40 @@ graph does not already hold - two scenes sharing a sound are not a loss.
 
 ## Material preview / Asset browser
 
+### A texture is its own thumbnail
+
+Materials and meshes get a rendered preview (below). A texture does not: the
+tile draws the GPU mirror the renderer already samples, at tile size, and the
+GPU minifies it. Nothing is rendered, nothing is copied, and a 4K map costs a
+tile no more than a 64px one.
+
+What it does cost is *residency*. `GLView::sync` reaches a texture only through
+a material something draws, so a texture no drawable, caster or decal binds has
+no mirror at all - which is right for a frame and wrong for a library that shows
+every texture the project holds. `EditorRenderHooks` therefore has two calls,
+and the difference between them is the whole point:
+
+- `textureId(handle)` - reports the mirror, or 0. Never uploads.
+- `ensureTexture(handle, resources)` - uploads if there is no mirror, then
+  reports. Idempotent and version-gated, but the first call per texture pays a
+  full upload.
+
+The grid asks the first, and only spends `TEXTURE_UPLOADS_PER_FRAME` (3) calls
+to the second per frame, so opening a rail of 4K maps fills in over the next few
+frames instead of stalling one. That is the same bargain `MaterialPreviewSession`
+strikes for thumbnail bakes.
+
+**Known: an sRGB texture's thumbnail draws darker than the file.** ImGui samples
+a `GL_SRGB8_ALPHA8` mirror - which linearises - and writes the result straight to
+a framebuffer that is not sRGB-encoded, so the transfer function is applied once
+and never undone. Linear maps (normal, roughness, AO) are unaffected and read
+exactly as authored. The Material Editor's slot thumbnails take the identical
+path and have always done the same thing; correcting it needs a per-image ImGui
+draw callback, since the material and mesh thumbnails come out of the composite
+pass already display-encoded and must *not* be converted.
+
+### Live PBR previews
+
 Both the Material Editor and the Asset Browser show live PBR previews.
 These are rendered by the backend's dedicated preview path
 (`RenderBackend::renderPreview`, backed by `GLPreview`) - **not** the full
@@ -591,56 +629,348 @@ a preview mesh into a small offscreen target, kept separate from the main
 19-pass path. Results are cached per asset (keyed by handle + version) with a
 small per-frame bake budget, so the Asset Browser grid amortizes thumbnail
 generation across frames while the Material Editor's live view re-renders each
-frame.
+frame. Each kind gets its own key space (`previewKey`), and none of them is 0 -
+that one is reserved for the Material Editor's live pane.
 
-Right-clicking any of the three tabs' entries assigns it to the selected
-entity, and that assignment is the same edit the Inspector's asset dropdown
-makes - so it takes the same road, `pushEdit`, which is what gives it an undo
+Right-clicking a tile assigns it to the selected entity - a material or mesh to
+its `Mesh`, a sound to its `AudioSource`, a skeleton or a clip to its `Animator`
+- and that assignment is the same edit the Inspector's asset dropdown makes - so it takes the same road, `pushEdit`, which is what gives it an undo
 step and what turns it into a prefab override when the entity is an instance.
 Writing the component directly here instead left the instance's override list
 empty while the viewport showed the new asset, and the next save wrote the
 prefab's own back over it with nothing said.
 
-The Asset Browser's third tab is a **list**, not a grid, because a sound has no
-picture. What it has is a length, a layout and a sound, so the row shows the
-first two and a transport gives the third - hearing a clip is what previewing
-one means. That transport is the Inspector card's, drawn by the same
-`auditionTransport`: Play on every row, and on the row that is sounding a Pause
-that holds it, a Stop that cuts it short and a position slider that moves it.
-The slider takes the Length column over while the row sounds, because a
-position measured against a length belongs in the column that states the
-length; every other row keeps its length as text.
+### The Assets tab has no window of its own
 
-One voice serves the whole tab, so a Play replaces whatever was sounding rather
-than layering over it - and the tab now remembers **which clip** that voice came
-from, which is what lets one row own the transport instead of the tab owning a
-Pause and a Stop for all of them. That single remembered voice was the whole
-reason the controls sat beside `Import Sound...`, and a slider there had no
-length to measure against; both were an implementation showing through into the
-UI. The remembered clip is a full handle rather than an id, so a slot recycled
-by a remove and an add cannot hand a different clip a running transport; a graph
-swapped underneath it cannot either, since `AudioSystem` stops every voice when
-the asset epoch moves.
+The browser is drawn by `BottomPanel` as its first tab and opens nothing. It
+was a floating `Window > Asset Browser` (Ctrl+6) until it was docked, and the
+window went in the same change rather than surviving beside the tab: two ways
+into one panel is the half-finished refactor `implementation.md` s7.3 names,
+and it costs an author a second answer to "where is my library" and every
+future fix a second place to land. The menu item, the `showAssetBrowser` flag
+and the keybind went with it.
 
-An audition still does not follow the user out of the tab: leave it and a
-ninety-second ambience plays on, because this tab is the only thing holding the
-voice's id - come back and the row is still sounding, with its Stop lit. Pause,
-Stop and the slider are lit off the device rather than off a remembered id,
-here and on the Inspector's copy of them: an id outlives the voice it named, so
-a clip that ran to its end would otherwise leave a Stop offering to cut
-something that already stopped.
-The tab's own status line carries the two ways a clip goes unheard with nothing
-here wrong: a host with no audio device, and an `AudioListener` at volume 0,
-which silences the mix an audition plays through as surely as an absent device
-does.
-`Import Sound...` decodes a wav / mp3 / flac into the project, which is the
-only way a clip enters one; right-clicking a row assigns it to the selected
-entity's `AudioSource` as an undoable edit. Picking a file the project already
-holds is answered with a toast saying so and nothing else: `loadAudioClip` keys
-on the project-relative name and hands back the clip it already has, so there
-is no new row to look for, and the scene is not dirtied for an import that did
-not happen. On a host with no audio device the tab says so, since clips still
-import and cook there - they just cannot be heard.
+The bottom panel's default height grew with the tab, to what one whole row of
+default-size tiles needs. A grid clipped mid-tile reads as a broken tile
+rather than as a panel that wants dragging - which is not true of a timeline
+clipped mid-track, and is why a height that suited the Animation tab does not
+suit this one.
+
+### The browser is a table of kinds, not a template over two of them
+
+The panel used to be a template parameterised on the asset type, with
+`static_assert`s admitting `MaterialAsset` and `MeshAsset` and nothing else -
+because a thumbnail needs a type to render. Everything that arrived afterwards
+had to work around that: audio got a tab of its own with its own import button
+and its own row shape, and the skeletons and animation clips that landed in 1.6
+got no surface at all. The toolbar showed the cost. `Import Model...` and
+`New Material` were drawn at panel scope while `Import Sound...` sat inside the
+Sounds tab, so on that tab the panel's most prominent row - the two buttons
+top-left where the eye lands, plus a thumbnail-size slider - was entirely dead.
+
+It is now a `KINDS[]` table of `AssetKind` descriptors, and the body that draws
+the rail, the tiles and the menus names no asset type at all. A descriptor
+carries a label, a glyph, an `Accent::` colour, its primary verb, and a handful
+of function pointers: enumerate, describe, preview, assign, rename, delete,
+and the walk that proves a delete is safe. The only place a C++ asset type
+appears is `KindOps<Asset>`, a three-method template the table's entries
+instantiate.
+
+**All six of `AssetType`'s kinds are in the table** - materials, textures,
+meshes, skeletons, clips and sounds - and the three that joined last are what
+settled which of the table's slots were real. Three nullable slots earned their
+keep and two did not:
+
+- `thumb` null - sounds, skeletons and clips have no picture, so the tile draws
+  the kind's glyph on the same square.
+- `assign` / `assignLabel` null - a texture has no entity target, because it
+  goes into one of a material's eleven slots and no entity can say which. The
+  context menu omits the item rather than offering a greyed one.
+- `rename` null - **skeletons only**. A skinned `MeshAsset` and an
+  `AnimationClipAsset` each carry the rig's name as a *string*, and
+  `SkeletalAnimationSystem` refuses a clip whose `skeleton` no longer matches
+  the rig it is handed. Renaming a rig therefore unbinds every mesh and clip
+  bound to it, silently; putting them back means editing assets the author did
+  not select. The menu item is greyed with `noRename` as the reason.
+- `used` was nullable and is not any more: all six kinds can be walked, so the
+  null branch and the `noDelete` string that explained it were dead and went.
+- `undoLabel` went with them - every assignment passed its own literal to
+  `pushEdit`, so the field was written six times and read never.
+
+**`FontAsset` is deliberately not a kind.** It is a `Resource`, but `AssetType`
+leaves it out (`ASSET_TYPE<FontAsset>` is `Count`) because the library does not
+hold it, and every slot in the table agrees: a font is baked once at startup,
+referenced by name rather than by handle, has no importer, has no entity slot
+to be assigned to, and renaming one would orphan every `UIText` naming it. It
+would join as a row that only counts - and only after `AssetKind` stopped being
+keyed by `AssetType`, since the rail row, the rename target and the preview key
+space are all keyed on that tag. That is a wider table bought for a row that
+does nothing.
+
+`AssetLibrary::namesOf(type)` is the second tier of the same seam - names per
+kind with no concrete type needed - but the browser stays on `ResourceManager`,
+because thumbnails and assignment need handles and the library only has names.
+The two disagree on purpose: the library is what a *saved* name resolves
+against, the manager is what is *loaded*.
+
+### Each kind is a colour, and the strip says use
+
+A rail row wears its own kind's hue, thinned with alpha until white text sits on
+it, rather than the editor's one blue for whichever row is selected. Six rows
+highlighted in the same blue read as one list whose entries happened to have
+different words in them, and the accent strip beside them is three pixels wide
+and cannot carry the difference alone.
+
+| Rail row  | `EditorStyle::Accent::` | Why |
+|-----------|-------------------------|-----|
+| Materials | `MatBase`   | warm orange; the Material Editor's own base group |
+| Textures  | `MatSurface`| teal |
+| Meshes    | `Mesh`      | green; the Mesh card's hue |
+| Skeletons | `Transform` | deep blue (`AXIS_Z`) |
+| Clips     | `Anim`      | purple; the Animator card's hue, and a clip is half that card |
+| Sounds    | `Audio`     | magenta; the Audio Source card's hue |
+
+Every hue is already in the registry - nothing was added for the browser, and
+no panel-local colour exists. Two constraints picked the three new ones.
+`Accent::MatTexture` is the obvious name for Textures and is **not usable**: it
+is defined as `AXIS_Y`, which is exactly `Accent::Mesh`, so it would put the
+identical green on two adjacent rows. And none of the six may be `WARNING`,
+`SUCCESS` or `DANGER`, which stay status colours so that no asset kind can read
+as an error. Skeletons and Clips both belong to the Animator card and cannot
+share its one hue, so the rig takes the registry's deep blue.
+
+The rail order is neither `AssetType` order nor alphabetical: it pairs the kinds
+that are about each other. A material is made of textures; a rig poses a mesh; a
+clip drives a rig; a sound belongs to none of them and goes last. That also puts
+maximum hue distance between neighbours.
+
+The tile keeps the same strip, and how solid it is says whether **anything in
+the project** uses the asset. On a grid showing one kind at a time the strip was
+identical on every tile - sixty bars repeating what the rail had already said -
+while the one thing a library is actually asked about its rows was legible only
+as a greyed-out Delete. It is the same `used` walk behind both, so the strip
+claims exactly what the delete guard claims and no more. The hover tooltip
+spells it out: *"Nothing in this project uses it"*.
+
+#### What "in use" walks, per kind
+
+The walk takes the scene **and** the `ResourceManager`, because the scene is not
+the whole project. Half of these references are not on any entity, and a walk
+that missed them would offer a Delete that breaks something far from where it
+was pressed.
+
+| Kind      | Referenced by |
+|-----------|---------------|
+| Materials | `Mesh::material`, `Decal::material` |
+| Textures  | all eleven `TextureHandle` slots on **every** `MaterialAsset`, drawn or not |
+| Meshes    | `Mesh::mesh`, every `LODLevel::mesh` |
+| Skeletons | `Animator::skeleton`, plus `MeshAsset::skeleton` and `AnimationClipAsset::skeleton` resolved back from their **name** strings |
+| Clips     | `Animator::clip` and `Animator::fadeFrom` (a fading clip is still being sampled) |
+| Sounds    | `AudioSource::clip` |
+
+`MaterialAsset`'s eleven texture members are now enumerated in a fourth place
+(`MATERIAL_TEXTURE_SLOTS` in the panel, beside the serializer's `TexField`
+table, `GLMaterial`'s binding table and the Material Editor's rows). Each of the
+other three pairs the member with something of its own - a JSON key, a binding
+point and flag, a row label and colour space - so there is nothing to borrow;
+the day a fifth appears is the day the bare list belongs on `MaterialAsset`.
+
+### One tile, whatever the kind
+
+A tile is a square face, a name and a one-line detail. The face is one square
+whatever fills it: `FramePadding` is zeroed under it, because an `ImageButton`
+frames its picture with that padding and a `Button` sized by hand does not, so
+on the theme's `(8, 4)` a thumbnail tile stood eight pixels shorter than a
+glyph tile - no two kinds' name lines could share a baseline, and inside one
+kind the tiles waiting on a bake sat off it too. The same zero puts the
+picture's left edge on the name's left edge instead of eight pixels right of
+it. The face is a rendered thumbnail where the kind has one and the kind's
+glyph, in the kind's accent, where it does not. That is not a new idea - it is the rule `editor_icons.h`
+already states for viewport markers: the marker says something is there and the
+glyph inside says what, so a sound does not need a picture invented for it to
+sit beside a mesh. A kind that *has* thumbnails but has not had its bake turn
+yet draws the same glyph faintly, so "there is no picture for this" and "the
+picture is coming" do not look alike.
+
+The name is clipped to one line with the full name in the tooltip, and the cut
+lands in the **middle**. These lines share their starts and differ at their ends
+- a clip named by its project-relative path, the sixtieth material out of one
+file - so a tail cut left the two sounds in a test project both reading
+`assets/audio/to...`, and `BrainStem:mat10` indistinguishable from
+`BrainStem:mat11`. One line is the older half of the rule: the name used to be
+`snprintf`'d to 20 characters inside a `PushTextWrapPos`, so a long name was
+truncated *and* wrapped, and the second line pushed every tile after it off the
+baseline.
+
+The detail line is where the missing picture goes, and it comes in two forms:
+a short one for the tile, which has about fourteen characters to live in, and a
+verbose one for the hover tooltip. That is how the Sounds table's Format and
+Size survive losing their columns - `0.50s . mono` on the tile,
+`0.50s . mono 44100 Hz . 0.0 MB` on hover. A mesh says `926 tris . skinned`,
+and `skinned` is doing real work there: the preview draws bind-pose vertices
+with no rig behind them, so a skinned mesh's thumbnail can look like nothing
+recognisable, and the tile says why rather than leaving it to be guessed at.
+(The framing itself is not the problem - `GLPreview` already centres on the
+mesh bounds and measures `PreviewRequest::distance` in bounding radii, so every
+mesh is framed alike.)
+
+A material's short line is its roughness, or its render path when that is not
+Opaque: the thumbnail already shows colour and gloss, so the line says the
+thing the picture cannot, and a transparent material looks like an opaque one
+on a preview sphere while behaving nothing like it.
+
+The three kinds added last follow the same rule - the short form carries the one
+fact that separates assets of that kind, the verbose one carries the rest:
+
+| Kind      | Tile | Hover |
+|-----------|------|-------|
+| Textures  | `2048x2048` (or `decoding...` while an async import is in flight) | `2048x2048 . 4 ch . sRGB . 16.0 MB` |
+| Skeletons | `24 bones` (or `no bones`) | `24 bones . root 'Armature'` - the root bone is what an author recognises a rig by, and two rigs out of one file differ there before they differ in count |
+| Clips     | `2.00s . 57 ch`, or **`2.00s . no rig`** | `2.00s . 57 channels . rig 'X'`, `. N markers` when it has any |
+
+**`no rig` is the diagnostic the Clips rail exists for.** A clip names its
+skeleton by string, and `SkeletalAnimationSystem` throws out a clip whose name
+does not answer - so a clip bound to a rig the project no longer holds animates
+nothing while looking exactly like one that works. The tile reports the rig it
+*resolved*, not the name it carries, and the tooltip names the rig that is
+missing: `rig 'CesiumMan:skeleton' is not in this project`. It is text and not
+`WARNING` for the reason the Mesh card's `Skinned: rig 'x' not loaded` is text:
+`WARNING` / `SUCCESS` / `DANGER` are status colours, and a mis-bound clip is a
+fact about the asset, not a failure of the frame.
+
+A multi-channel sound's hover carries the equivalent for its kind: *"Each
+channel sticks to one ear - positioning wants mono."* The mixer routes each of a
+voice's channels to the output channel it was authored for and attenuates it
+there, so a wide clip put on a spatial source loses half its field wherever the
+emitter goes, and a stereo file whose channels happen to be identical behaves
+exactly like the mono equivalent - which is what makes the mistake quiet. It is
+said here because the browser is where a clip is *picked*; the Inspector's Audio
+Source card says it again where one is *put on a source*, and `AudioSystem` logs
+it once per clip for the request path that has no card.
+
+### What a tile answers to
+
+Hovering a tile draws a two-pixel border in the kind's own hue, over a thumbnail
+and a glyph alike. The theme's button accent cannot be that signal: both
+`ImageButton` and `Button` paint it *behind* what fills them, so it is a flat
+blue slab under a glyph and invisible under a thumbnail - one gesture with two
+answers. The face's hovered and active colours are pushed back to the idle one
+and the border carries it instead.
+
+The pointer, not a selection, is what an operation acts on: **F2** renames the
+tile under the cursor, exactly as the Hierarchy renames the row under its own.
+Delete is deliberately **not** bound beside it - `deleteEntity` already owns that
+key, and `EditorShortcuts::process` reads it before any panel draws, so a second
+meaning would destroy an entity and open this dialog in one keystroke.
+
+The context menu names its target before it offers anything. It covers the tiles
+either side of the one it belongs to, and a grid of one kind is a row of
+near-identical squares, so `Delete` without a name is a guess.
+
+**Rename** opens the shared dialog with the field focused and the old name
+selected, so the gesture is F2, type, Enter with no reach back for the mouse.
+`ResourceManager::rename` keeps names unique per type by suffixing a taken one,
+which used to happen in silence - an author typed `Rock`, got `Rock (2)`, and
+nothing said so. It is now a toast, and the undo command records the name that
+was **assigned** rather than the one that was asked for, so redo repeats what
+happened rather than what was requested. (The Material Editor has a second
+rename modal of its own, a near-copy of this one; it now shares the keyboard
+half, but the two are still two implementations of one operation.)
+
+**Delete asks first**, and it asks rather than offering an undo because an asset
+cannot come back: re-adding one takes a new slot, so every handle that named the
+old one - including the ones already on the undo stack - would still be dead.
+`RenameAssetCommand` guards `isAlive` for exactly that case. The dialog names the
+asset and states the consequence: *"Undo cannot bring it back."* Deleting the
+clip that is auditioning stops the voice first - `AudioSystem` holds the samples
+by `shared_ptr`, so the sound would otherwise play on with no tile left anywhere
+to stop it.
+
+### One verb slot
+
+The first control in the toolbar is always the chosen kind's primary action, at
+the same place whatever kind that is. The label is the verb alone - `Import...`
+for five kinds, `New` for materials - because the rail two inches to its left
+already says which kind is showing and `Import Sound...` spent half a button
+saying it twice. What the noun carried, the formats behind an import, moved to
+the button's tooltip and reads fuller there than it ever did on the face:
+*"Import a model - glTF, GLB, OBJ, FBX, DAE, STL, PLY or 3DS"*.
+
+Five of the six say `Import` and the sixth says `New`, and that difference is
+the kinds', not the panel's: everything else arrives from a file, a material is
+authored, and there is no material file to import. It is a value in the
+descriptor table like every other per-kind fact, not a branch in the toolbar,
+and `New` is what the Material Editor has always called the same action. Search
+and the tile size sit to the button's right, always. Nothing in the toolbar is
+ever inert.
+
+Search narrows the rail's counts and the grid together, so a kind with nothing
+matching reads `0` rather than offering an empty grid to walk into. Escape
+empties the box: ImGui's default is to revert a field to what it held when it
+took focus, which on a search field puts back the needle the author is trying to
+drop.
+
+Three verbs stand behind the six buttons. Materials create; meshes, skeletons
+and clips all raise `EditorState::requestModelImport`, because all three come
+out of one model import and the tooltip narrows the formats to the ones that
+carry a rig or an animation; textures and sounds each run a panel-owned
+`AssetPicker` of their own, so their popup ids stay unique and one import in
+flight cannot be handed the other's file.
+
+**A texture is imported as colour (sRGB).** A file picked by hand off a picker
+is art; the data maps that want linear arrive with the model that uses them, or
+through the Material Editor slot, which knows which of the eleven it is filling
+and passes the colour space for it. The import refuses a file the project
+already holds and says so in a toast, because `loadTexture` decodes and adds
+without looking and `ResourceManager` keeps names unique - so a repeat import
+would otherwise leave two assets for one file. (The Material Editor's own `Set`
+button does *not* guard this, and setting one file into two slots does produce
+two assets; that is its bug to fix, in its panel.)
+
+### Auditioning, from the tile
+
+Hearing a clip is what previewing one means, so the transport sits on the
+sound tile's face the way a play control sits on a video thumbnail - the tile
+keeps every other kind's height and gains no row of its own. It is the
+Inspector card's transport, drawn by the same `auditionTransport`: Play on
+every tile, and on the tile that is sounding a Pause that holds it and a Stop
+that cuts it short. The face is submitted with `SetNextItemAllowOverlap()`,
+without which the face button would hold the mouse over the whole square and
+the transport drawn on top of it would never register a click.
+
+While a tile owns the voice its detail line becomes the position slider, for
+the reason the old table put the slider in the Length column: a position
+measured against a length belongs where the length was stated. Every other tile
+keeps its detail as text.
+
+One voice serves the whole panel, so a Play replaces whatever was sounding
+rather than layering over it, and the panel remembers **which clip** that voice
+came from - that is what lets one tile own the transport instead of the panel
+owning a Pause and a Stop for all of them. The remembered clip is a full handle
+rather than an id, so a slot recycled by a remove and an add cannot hand a
+different clip a running transport; a graph swapped underneath it cannot
+either, since `AudioSystem` stops every voice when the asset epoch moves.
+
+An audition does not follow the user out of the panel: leave it and a
+ninety-second ambience plays on, because this panel is the only thing holding
+the voice's id - come back and the tile is still sounding, with its Stop lit.
+Pause, Stop and the slider are lit off the device rather than off a remembered
+id, here and on the Inspector's copy of them: an id outlives the voice it
+named, so a clip that ran to its end would otherwise leave a Stop offering to
+cut something that already stopped.
+
+The toolbar carries the two ways a clip goes unheard with nothing here wrong -
+a host with no audio device, and an `AudioListener` at volume 0, which silences
+the mix an audition plays through as surely as an absent device does - and only
+while the Sounds rail row is the one showing, since that is the only kind they
+are about.
+
+The Sounds `Import` decodes a wav / mp3 / flac into the project, which is the
+only way a clip enters one. Picking a file the project already holds is
+answered with a toast saying so and nothing else: `loadAudioClip` keys on the
+project-relative name and hands back the clip it already has, so there is no
+new tile to look for, and the scene is not dirtied for an import that did not
+happen.
 
 ### What Create > Primitive puts in the asset graph
 
@@ -661,7 +991,7 @@ way, so `Edit Material` on one cube reached a copy the others did not use.
 `addGeneratedMesh` and `generateDefaultMaterial` both reuse what the graph holds
 under the name they would have taken - the rule the built-in 1x1 textures beside
 them already followed. Nothing edits a generated mesh, and a material meant to
-be its own is made by **Duplicate** or **New Material**, which copies the
+be its own is made by **Duplicate** or **New**, which copies the
 default rather than renaming it: renaming it would take `material:default` out
 from under everything that resolves that name, including a cold-start load.
 
