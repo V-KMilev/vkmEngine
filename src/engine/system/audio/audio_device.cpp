@@ -529,12 +529,14 @@ void AudioDevice::setListenerActive(bool active) {
 }
 
 void AudioDevice::setMasterVolume(float volume) {
-    if (!m_open) return;
     // The same guard the per-voice gain carries, for the same measured reason:
     // an infinite master takes the entire mix non-finite, and this one is
     // authored - AudioListener::volume is a serialized field a slider writes.
-    ma_engine_set_volume(&m_backend->engine,
-                         std::isfinite(volume) ? std::max(0.0f, volume) : 0.0f);
+    // Kept rather than only pushed, so masterVolume() answers what the mixer
+    // was given instead of making every caller sanitise the number again.
+    m_masterVolume = std::isfinite(volume) ? std::max(0.0f, volume) : 0.0f;
+    if (!m_open) return;
+    ma_engine_set_volume(&m_backend->engine, m_masterVolume);
 }
 
 } // namespace Vkm::Engine

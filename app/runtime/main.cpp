@@ -92,7 +92,7 @@ int main(int argc, char** argv) {
         // names none and its module builds none, and both leave the runtime
         // sitting on the engine's default scene under the game's own title.
         if (Vkm::Engine::bootProjectScene(project, scriptModule,
-                engine.getScene(), engine.getResources()) != Vkm::Engine::SceneBoot::Project) {
+                engine.getScene(), engine.getResources()).source != Vkm::Engine::SceneBoot::Project) {
             LOG_ERROR("Project '%s' has no world of its own to play", project.name.c_str());
             return EXIT_FAILURE;
         }

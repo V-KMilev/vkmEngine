@@ -106,6 +106,12 @@ void AudioSystem::shutdown() {
     m_device.close();
 }
 
+VoiceId AudioSystem::voiceOf(EntityId entity) const {
+    const auto it = m_voices.find(entity.index);
+    if (it == m_voices.end() || it->second.entity != entity) return 0;
+    return it->second.voice;
+}
+
 void AudioSystem::updateListener(FrameContext& ctx) {
     Scene& scene = ctx.scene;
 
@@ -113,7 +119,18 @@ void AudioSystem::updateListener(FrameContext& ctx) {
 
     m_hasListener = static_cast<bool>(entity);
     m_device.setListenerActive(m_hasListener);
-    if (!m_hasListener) return;
+    if (!m_hasListener) {
+        // Unity, because the gain belonged to the ear rather than to the world -
+        // AudioListener::volume says so. Turning the listener off only silences
+        // the spatial voices; the master multiplies the 2D ones too, so a
+        // listener at half volume that is deleted, or merely unticked, would
+        // otherwise leave the music and the UI at half volume with nothing on
+        // screen still holding the slider that set it. A scene load does not
+        // undo it either - the epoch flip stops voices, not gains - so the
+        // quiet outlives the world it was set in.
+        m_device.setMasterVolume(1.0f);
+        return;
+    }
 
     const Transform& pose     = scene.get<Transform>(entity);
     const glm::quat  rotation = resolvedWorldRotation(scene, entity, pose);
@@ -183,7 +200,7 @@ void AudioSystem::reconcileSource(FrameContext& ctx, EntityId entity, AudioSourc
 
     const AudioClipAsset& clip = ctx.resources.get(source.clip);
     warnIfNoListener(params.spatial);
-    warnIfStereoSpatial(source.clip, clip, params.spatial);
+    warnIfStereoSpatial(clip, params.spatial);
 
     const VoiceId voice = m_device.play(clip, params);
     if (voice == 0) {
@@ -215,7 +232,7 @@ void AudioSystem::startPendingRequests(FrameContext& ctx) {
 
         const AudioClipAsset& clip = ctx.resources.get(request.clip);
         warnIfNoListener(params.spatial);
-        warnIfStereoSpatial(request.clip, clip, params.spatial);
+        warnIfStereoSpatial(clip, params.spatial);
         m_device.play(clip, params);
     }
 }
@@ -228,10 +245,9 @@ void AudioSystem::warnIfNoListener(bool spatial) {
                 "is silent until one exists (non-spatial sources are unaffected)");
 }
 
-void AudioSystem::warnIfStereoSpatial(AudioClipHandle clip, const AudioClipAsset& asset,
-                                      bool spatial) {
+void AudioSystem::warnIfStereoSpatial(const AudioClipAsset& asset, bool spatial) {
     if (!spatial || asset.channels <= 1) return;
-    if (!m_warnedStereoClips.insert(clip.id()).second) return;
+    if (!m_warnedStereoClips.insert(asset.name).second) return;
 
     LOG_WARNING("A positioned sound is playing the %u-channel clip '%s' - the mixer routes each "
                 "channel to the output channel it was authored for and attenuates it there, so "

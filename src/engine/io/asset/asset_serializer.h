@@ -43,6 +43,28 @@ namespace AssetSerializer {
                                          const ResourceManager& resources);
 
     nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& resources);
+
+    /**
+     * @brief The assets block for everything @p resources holds, referenced or not.
+     *
+     * The counterpart to saveAssetsForScene, and the difference is the whole
+     * point of it. A scene file lists what the scene names, because that is
+     * what a file is for: an asset nothing points at has no business being
+     * written into somebody's document. A session is not a file. An asset
+     * imported and not yet assigned to anything is in the Asset Browser and in
+     * every picker, and it is work somebody did - so the editor's play
+     * snapshot, which promises to put the session back exactly as it found it,
+     * needs the list a scene save deliberately leaves out.
+     *
+     * Hidden and unnamed assets are skipped by the same rule the scene save
+     * follows: a private preview asset is not the author's, and a name is what
+     * loadAssets has to find it by.
+     *
+     * @param resources The asset graph to enumerate.
+     * @return An object with the same section keys loadAssets reads.
+     */
+    nlohmann::json saveAllAssets(const ResourceManager& resources);
+
     bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources);
 
     /**

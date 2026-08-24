@@ -31,6 +31,22 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PAD(), PAD()));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(GAP(), 0.0f));
 
+    // A stepped tick is one tick of world, so it is one tick of sound: the
+    // voices it started are held here, on the first draw after it ran. Held
+    // rather than never started, because what starts them is AudioSystem
+    // reconciling Play-On-Start sources against a simulation that did advance,
+    // and the whole seam is that no system in the engine learns an editor
+    // exists. So the transport does to a step what it already does to a pause -
+    // reaches the device itself - and the world sounds for exactly as long as
+    // it moved, instead of the source running on for as long as nobody presses
+    // Pause. Everything sounding is held, deliberately: a step is the Pause the
+    // author is already in, and Pause holds an audition it finds running too.
+    AudioDevice& audio = ec.audioSystem.device();
+    if (m_stepPending) {
+        m_stepPending = false;
+        audio.pauseAllVoices();
+    }
+
     if (ImGui::BeginChild("##PlaybackBar", ImVec2(barW, barH), ImGuiChildFlags_Borders)) {
         // In Edit mode this is "Play": snapshot the authored scene (so Stop can
         // restore it), then run the clock. In a play session it toggles it.
@@ -54,7 +70,6 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
             // device it auditions clips with. A clip auditioned while the
             // world is frozen is still heard: only what was already sounding
             // is held, and only what this held is let go again.
-            AudioDevice& audio = ec.audioSystem.device();
             if (running) audio.pauseAllVoices();
             else         audio.resumeAllVoices();
         }
@@ -62,9 +77,7 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         ImGui::SameLine();
         // Step one fixed tick (physics + animation + scripts). Meaningful only
         // while paused; from Edit mode it begins a paused play session first so
-        // the step never mutates the authored scene irreversibly. The held
-        // voices stay held through it: a tick is sixteen milliseconds of sound,
-        // and starting the mixer for it would be a click rather than a sound.
+        // the step never mutates the authored scene irreversibly.
         if (iconButton("vpStep", EditorIcon::Step, false, paused,
                        "Step one fixed tick (while paused)", BTN())) {
             if (!playing) {
@@ -72,6 +85,7 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
                 clock.setPaused(true);
             }
             clock.requestStep(1);
+            m_stepPending = true;
         }
 
         ImGui::SameLine();

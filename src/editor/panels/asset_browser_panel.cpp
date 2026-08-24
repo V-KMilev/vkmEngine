@@ -18,6 +18,7 @@
 #include "generator/mesh_generators.h"
 #include "loader/audio_loaders.h"
 #include "io/project_paths.h"
+#include "ui/audition_transport.h"
 #include "ui/editor_dialogs.h"
 
 namespace Vkm::Engine {
@@ -319,40 +320,15 @@ void AssetBrowserPanel::drawSounds(EditorContext& ec) {
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Decode a wav / mp3 / flac into the project's assets");
     ImGui::SameLine();
-    // The other half of the row's Play buttons, which until now had none: an
-    // audition ran to its end and nothing here could cut it short, and this
-    // tab imports mp3 and flac, which is how a ninety-second ambience arrives.
-    // One button for the whole tab because one voice is remembered for the
-    // whole tab. It does not follow the user out - leaving the tab still
-    // leaves the clip playing, since this is the only place holding its id -
-    // so it is a way to stop an audition rather than a lifetime for one. The
-    // Inspector's audition has had both halves all along, and two surfaces
-    // disagreeing about what auditioning means is the drift. Enabled off the
-    // device rather than off a remembered id, because an id outlives the voice
-    // it named: a one-shot ends on its own and nothing here is told.
-    const bool livePreview = device.isVoiceActive(m_previewVoice);
-    const bool heldPreview = livePreview && device.isVoicePaused(m_previewVoice);
-    // Pause, because a ninety-second ambience is auditioned to hear one moment
-    // in it and holding it is how you stay on that moment. No scrubber beside
-    // it, unlike the Inspector's card: this tab remembers one voice for the
-    // whole tab and not which clip it came from, so a position slider would
-    // have no length to measure against.
-    if (iconButton("abSoundPause", heldPreview ? EditorIcon::Play : EditorIcon::Pause,
-                   livePreview && !heldPreview, livePreview,
-                   heldPreview ? "Resume the audition" : "Pause the audition",
-                   ImGui::GetFrameHeight())) {
-        if (heldPreview) device.resumeVoice(m_previewVoice);
-        else             device.pauseVoice(m_previewVoice);
-    }
-    ImGui::SameLine();
-    if (iconButton("abSoundStop", EditorIcon::Stop, false, livePreview,
-                   "Stop the audition", ImGui::GetFrameHeight())) {
-        device.stopVoice(m_previewVoice);
-        m_previewVoice = 0;
-    }
-    ImGui::SameLine();
+    // Both ways a clip can be inaudible with nothing on this tab wrong, said
+    // where the tab already says the first one. A muted mix is the quieter of
+    // the two: the row shows a Pause and a cursor running against the clip's
+    // length, so the audition looks exactly like one that is working.
     if (!device.isOpen()) {
         ImGui::TextColored(EditorStyle::WARNING, "No audio device - clips import but cannot be heard.");
+    } else if (device.masterVolume() <= 0.0f) {
+        ImGui::TextColored(EditorStyle::WARNING,
+                           "Audio Listener volume is 0 - an audition is silent too.");
     } else {
         ImGui::TextDisabled("Play a clip to hear it; auditioning changes nothing in the scene.");
     }
@@ -372,8 +348,23 @@ void AssetBrowserPanel::drawSounds(EditorContext& ec) {
         m_requestSoundImport = false;
     }
     if (std::string picked; m_soundPicker.draw(picked)) {
-        if (loadAudioClip(picked, resources)) state.markSceneDirty();
-        else state.pushToast(EditorState::ToastKind::Error, "Could not decode " + picked);
+        // Asked before the import, because loadAudioClip answers a name it
+        // already holds with the clip it already has and decodes nothing. The
+        // three outcomes then read apart: a file that would not decode, one
+        // that is already here, and a clip that is new. Picking a file and
+        // being told nothing at all is how the second one looked, and it was
+        // the one that also dirtied the scene - an unsaved-changes prompt for
+        // an import that did not happen is the prompt meaning less.
+        const std::string ref = ProjectPaths::toProjectRelative(picked);
+        const bool alreadyHeld = static_cast<bool>(resources.findByName<AudioClipAsset>(ref));
+
+        if (!loadAudioClip(picked, resources)) {
+            state.pushToast(EditorState::ToastKind::Error, "Could not decode " + picked);
+        } else if (alreadyHeld) {
+            state.pushToast(EditorState::ToastKind::Info, ref + " is already imported");
+        } else {
+            state.markSceneDirty();
+        }
     }
 
     // Assigning needs somewhere to assign to. A source with no clip is the
@@ -386,9 +377,16 @@ void AssetBrowserPanel::drawSounds(EditorContext& ec) {
         ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp;
     if (!ImGui::BeginTable("##sounds", 5, TABLE_FLAGS)) return;
 
-    ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight() * 2.4f);
+    // Two buttons wide, and wide enough for two even on the rows that show one:
+    // a column that grew with the sounding row would shift every name sideways
+    // whenever an audition started.
+    ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed,
+                            ImGui::GetFrameHeight() * 2.0f + EditorStyle::px(24.0f));
     ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
-    ImGui::TableSetupColumn("Length", ImGuiTableColumnFlags_WidthFixed, EditorStyle::px(58.0f));
+    // Wide enough for the scrubber that takes this cell over while the row is
+    // sounding, because a position measured against a length belongs in the
+    // column that states the length.
+    ImGui::TableSetupColumn("Length", ImGuiTableColumnFlags_WidthFixed, EditorStyle::px(150.0f));
     ImGui::TableSetupColumn("Format", ImGuiTableColumnFlags_WidthFixed, EditorStyle::px(96.0f));
     ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, EditorStyle::px(64.0f));
     ImGui::TableHeadersRow();
@@ -401,22 +399,18 @@ void AssetBrowserPanel::drawSounds(EditorContext& ec) {
         ImGui::TableNextRow();
         ImGui::PushID(static_cast<int>(h.id()));
 
+        // The row that is sounding carries the whole transport - hold it, let it
+        // go, cut it short - and every other row a Play that replaces it. That
+        // is the Inspector card's transport, drawn from the same place, because
+        // two surfaces disagreeing about what auditioning means is the drift
+        // this tab used to have: it answered the missing half with one button
+        // for the whole tab, which is an implementation's single remembered
+        // voice showing through into the UI.
         ImGui::TableNextColumn();
-        const float ih = ImGui::GetFrameHeight();
-        ImGui::BeginDisabled(!device.isOpen());
-        if (iconButton("abSoundPlay", EditorIcon::Play, false, device.isOpen(), "Audition", ih)) {
-            device.stopVoice(m_previewVoice);
-            // Flat, not positioned. A default VoiceParams is spatial, and a
-            // spatial voice is measured against the scene's listener: in a
-            // project that has none yet - which is exactly the project someone
-            // is importing sounds into - it is silent, and in one that has an
-            // ear somewhere it plays at whatever the world origin sounds like
-            // from there. An audition is asking to hear the file.
-            VoiceParams audition;
-            audition.spatial = false;
-            m_previewVoice = device.play(clip, audition);
-        }
-        ImGui::EndDisabled();
+        const float ih   = ImGui::GetFrameHeight();
+        const bool  mine = m_previewClip == h;
+        if (auditionTransport("abSound", device, m_previewVoice, mine, &clip, ih))
+            m_previewClip = h;
 
         ImGui::TableNextColumn();
         ImGui::AlignTextToFramePadding();
@@ -436,13 +430,29 @@ void AssetBrowserPanel::drawSounds(EditorContext& ec) {
             ImGui::EndPopup();
         }
 
+        // The length, until this row is the one being heard: then the same
+        // column says how far into that length the audition has got, and moves
+        // it. An audition still does not follow the user out of the tab - it is
+        // the only place holding the voice's id, so leaving one playing and
+        // coming back finds the row still sounding, with its Stop lit.
         ImGui::TableNextColumn();
-        ImGui::AlignTextToFramePadding();
-        ImGui::Text("%.2fs", static_cast<double>(clip.duration()));
+        if (mine && device.isVoiceActive(m_previewVoice)) {
+            auditionScrubber("SndPos", device, m_previewVoice, clip.duration(), -1.0f);
+        } else {
+            ImGui::AlignTextToFramePadding();
+            ImGui::Text("%.2fs", static_cast<double>(clip.duration()));
+        }
 
         ImGui::TableNextColumn();
         ImGui::AlignTextToFramePadding();
-        ImGui::Text("%s %u Hz", clip.channels == 1 ? "mono" : "stereo", clip.sampleRate);
+        // Named for one and two channels, counted past that. The cooker accepts
+        // up to eight - 7.1 source material is the outer edge it draws - so
+        // "stereo" against a six-channel file is this column reporting a format
+        // the file does not have, and it is the only place in the tab that says
+        // what a clip is.
+        if      (clip.channels == 1) ImGui::Text("mono %u Hz",   clip.sampleRate);
+        else if (clip.channels == 2) ImGui::Text("stereo %u Hz", clip.sampleRate);
+        else                         ImGui::Text("%u ch %u Hz",  clip.channels, clip.sampleRate);
 
         ImGui::TableNextColumn();
         ImGui::AlignTextToFramePadding();

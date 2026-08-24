@@ -72,6 +72,21 @@ class EditorSystem : public System {
 
         void update(FrameContext& ctx) override;
 
+        /**
+         * @brief Tell the editor which file the scene already in the world came from.
+         *
+         * The startup path opens a project's world through bootProjectScene
+         * before the editor's first frame, so the scene on screen is one this
+         * system never read. Handing the path over is what makes it the scene's
+         * own file: Save writes it back instead of asking for a name, and the
+         * title stops calling a file it just read untitled. See
+         * SceneIOController::adoptPath for what an empty path means.
+         *
+         * @param path Absolute path of the scene file, or empty for a world
+         *        with no file behind it.
+         */
+        void adoptScenePath(const std::string& path) { m_sceneIO.adoptPath(m_state, path); }
+
     private:
         // Shader hot reload polls the shader directory on this interval rather
         // than every frame; a save is a human action, so a second of latency is

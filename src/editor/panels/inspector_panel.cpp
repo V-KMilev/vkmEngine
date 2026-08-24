@@ -50,6 +50,7 @@
 #include "system/script/behavior_field_visitor.h"
 #include "system/script/behavior_registry.h"
 #include "system/script/script_component.h"
+#include "ui/audition_transport.h"
 #include "core/math/bounds.h"
 
 namespace Vkm::Engine {
@@ -1220,9 +1221,17 @@ void InspectorPanel::drawAudioSourceSection(EditorContext& ec, EntityId id) {
             // lets the fix be implied, which is what its three neighbours do,
             // and stays inside the width they set - unwrapped, per the rule
             // the listener card's wrapped warning states.
+            //
+            // Counted rather than called stereo, because "stereo" is only true
+            // of one of the clips this fires on: a six-channel file was told it
+            // was stereo two rows under a summary reading "6 channels", which
+            // sends the author looking for a second channel that is not the
+            // thing hurting them. The count is what the Asset Browser's column
+            // and AudioSystem's log twin both say, so all three now agree.
             if (clip && clip->channels > 1) {
                 ImGui::TextColored(EditorStyle::WARNING,
-                                   "This clip is stereo - each channel sticks to one ear.");
+                                   "This clip has %u channels - each sticks to one ear.",
+                                   clip->channels);
             }
             // The same thing the listener card says, for the same reason: the
             // sound is heard at the world origin rather than where the author
@@ -1241,81 +1250,53 @@ void InspectorPanel::drawAudioSourceSection(EditorContext& ec, EntityId id) {
             }
         }
 
-        ImGui::Spacing();
-        // Auditioning goes through the device rather than through `playing`,
-        // deliberately. Setting the component's flag would be an edit to the
-        // scene - undoable, dirtying, and audible again on the next Play - when
-        // all that was asked for was to hear the file. That is also the undo
-        // rule the two animation cards follow: play, stop and scrub preview a
-        // clip and never touch the scene, because dirtying it every time
-        // someone listens to something would make the unsaved-changes prompt
-        // mean nothing.
-        AudioDevice& device = ec.audioSystem.device();
-        const bool   live   = device.isVoiceActive(m_previewVoice);
-        const bool   held   = live && device.isVoicePaused(m_previewVoice);
+        // Outside the spatial block above, because a muted mix is not a
+        // positioning mistake: it silences a 2D source, a positioned one and
+        // the audition below alike, and the transport would still show a
+        // cursor running against a clip nothing can hear.
+        if (ec.audioSystem.device().masterVolume() <= 0.0f) {
+            ImGui::TextColored(EditorStyle::WARNING,
+                               "Audio Listener volume is 0 - nothing is heard, audition included.");
+        }
 
-        const float ih = ImGui::GetFrameHeight();
-        // One button carrying all three states, the way both animation cards
-        // do it: the glyph is what pressing it will do next.
-        ImGui::BeginDisabled(clip == nullptr && !live);
-        if (iconButton("inspSoundPreview", live && !held ? EditorIcon::Pause : EditorIcon::Play,
-                       live && !held, clip != nullptr || live,
-                       !live ? "Audition the clip (does not change the scene)"
-                             : held ? "Resume the audition" : "Pause the audition", ih)) {
-            if (live && !held) {
-                device.pauseVoice(m_previewVoice);
-            } else if (held) {
-                device.resumeVoice(m_previewVoice);
-            } else if (clip) {
-                device.stopVoice(m_previewVoice);
-                // Flat, for the reason the Asset Browser's audition states: a
-                // default VoiceParams is spatial, and a spatial audition is
-                // inaudible in a scene with no listener and arbitrary in one
-                // that has an ear standing somewhere else.
-                VoiceParams audition;
-                audition.spatial = false;
-                m_previewVoice = device.play(*clip, audition);
-                m_previewOwner = id;
-            }
-        }
-        ImGui::EndDisabled();
-        ImGui::SameLine(0, 8.0f);
-        // Enabled off the device rather than off a remembered id, which is the
-        // one thing on this row that speaks for the mixer: the label beside it
-        // reports `playing`, the scene's state, and says nothing about whether
-        // the file is being heard right now. A held voice still stops here -
-        // it is a place in a clip, not a finished sound.
-        if (iconButton("inspSoundPreviewStop", EditorIcon::Stop, false, live,
-                       "Stop the audition", ih)) {
-            device.stopVoice(m_previewVoice);
-            m_previewVoice = 0;
-        }
+        ImGui::Spacing();
+        // The transport is the Asset Browser's, drawn from one place: the two
+        // surfaces are auditioning the same kind of thing, and what an audition
+        // plays, what it refuses to touch and why are stated on
+        // auditionTransport rather than argued twice.
+        AudioDevice& device = ec.audioSystem.device();
+        const float  ih     = ImGui::GetFrameHeight();
+        if (auditionTransport("inspSound", device, m_previewVoice, m_previewOwner == id, clip, ih))
+            m_previewOwner = id;
+
         ImGui::SameLine(0, 8.0f);
         ImGui::AlignTextToFramePadding();
-        // Named, now that the row beside it has a transport of its own: the
-        // audition and the source are two different things to be playing, and
-        // an unlabelled "Playing" would look like it belonged to the buttons.
-        ImGui::TextDisabled(source.playing ? "Source: playing" : "Source: idle");
-
-        // The scrubber, mirroring the animation cards' - and reading the cursor
-        // off the device rather than off a field on the component, because the
-        // mixer advances it between our frames. AudioDevice::voiceCursor has
-        // the reasoning. Disabled with nothing playing rather than hidden: it
-        // keeps the card's height steady, and it answers what a scrub means
-        // when there is no voice - there is no cursor to move, so it is not
-        // offered. Starting the audition from a scrubbed-to position instead
-        // would need an offset living in this panel that nothing else can see.
-        const float duration = clip ? clip->duration() : 0.0f;
-        if (duration > 0.0f) {
-            char timeFmt[32];
-            snprintf(timeFmt, sizeof(timeFmt), "%%.2f / %.2f s", static_cast<double>(duration));
-            float cursor = live ? device.voiceCursor(m_previewVoice) : 0.0f;
-            ImGui::BeginDisabled(!live);
-            ImGui::SetNextItemWidth(-1);
-            if (ImGui::SliderFloat("##SndTime", &cursor, 0.0f, duration, timeFmt))
-                device.seekVoice(m_previewVoice, cursor);
-            ImGui::EndDisabled();
+        // Named, because the buttons beside it are a transport of their own:
+        // the audition and the source are two different things to be playing,
+        // and an unlabelled "Playing" would look like it belonged to them.
+        //
+        // Read off the mixer rather than off `playing` alone, which is the
+        // scene's word and not the sound's: a voice the transport is holding
+        // keeps that flag true while nothing is audible, so every card in a
+        // paused world used to claim its source was playing - the same
+        // disagreement the transport's own glyph had. What the device knows,
+        // this now says: held rather than playing, and how far into the clip
+        // the source has actually got, which is the thing the row beside it
+        // cannot show because that slider belongs to the audition.
+        const VoiceId sourceVoice = ec.audioSystem.voiceOf(id);
+        if (device.isVoiceActive(sourceVoice)) {
+            ImGui::TextDisabled("Source: %s %.2fs",
+                                device.isVoicePaused(sourceVoice) ? "held" : "playing",
+                                static_cast<double>(device.voiceCursor(sourceVoice)));
+        } else {
+            ImGui::TextDisabled(source.playing ? "Source: playing" : "Source: idle");
         }
+
+        // Full width and on its own line, which is where the animation cards
+        // put theirs. Disabled rather than hidden with nothing playing, so the
+        // card does not change height when an audition ends.
+        auditionScrubber("SndTime", device, m_previewVoice,
+                         clip != nullptr ? clip->duration() : 0.0f, -1.0f);
 
         return changed;
     });

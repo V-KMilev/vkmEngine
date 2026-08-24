@@ -36,7 +36,7 @@ namespace Vkm::Engine {
  */
 struct AudioClipAsset : public Resource {
     uint32_t sampleRate = 0;  ///< Frames per second, as authored; the mixer resamples if it differs.
-    uint32_t channels   = 0;  ///< 1 = mono, 2 = stereo. Only a mono clip can be meaningfully positioned.
+    uint32_t channels   = 0;  ///< 1 = mono, 2 = stereo, up to MAX_AUDIO_CHANNELS; only a mono clip positions.
 
     /**
      * @brief Interleaved PCM, shared rather than owned outright.

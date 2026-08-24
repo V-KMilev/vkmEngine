@@ -3,8 +3,11 @@
 #include "framework/scene_io_controller.h"
 
 #include <filesystem>
+#include <set>
 #include <string>
 #include <system_error>
+#include <utility>
+#include <vector>
 
 #include <imgui.h>
 
@@ -18,6 +21,7 @@
 #include "ecs/scene.h"
 #include "framework/editor_state.h"
 #include "framework/material_preview_session.h"
+#include "io/asset/asset_serializer.h"
 #include "io/scene/scene_serializer.h"
 #include "io/project_paths.h"
 #include "cook/asset_cooker.h"
@@ -29,6 +33,64 @@
 #include "ui/editor_dialogs.h"
 
 namespace Vkm::Engine {
+
+namespace {
+
+// One asset's serializable identity: the section it was written under and the
+// name it is found by. The section is carried because names are only unique
+// within one - a mesh and a texture may share a name - and this is a set the
+// whole assets block goes into at once.
+using AssetKey = std::pair<std::string, std::string>;
+
+// Every identity an assets block holds. Reads whatever sections the block
+// happens to have rather than a list of them, so a new asset kind is counted
+// here the day AssetSerializer starts writing it.
+std::set<AssetKey> assetKeysOf(const nlohmann::json& block) {
+    std::set<AssetKey> keys;
+    if (!block.is_object()) return keys;
+    for (auto section = block.begin(); section != block.end(); ++section) {
+        if (!section.value().is_array()) continue;
+        for (const nlohmann::json& entry : section.value()) {
+            const std::string name = entry.value("name", std::string{});
+            if (!name.empty()) keys.emplace(section.key(), name);
+        }
+    }
+    return keys;
+}
+
+// Say which of the session's imports the open just left behind. Takes the two
+// sets read before the swap - everything the graph held, and the subset the
+// outgoing scene named - and reads the third off the graph the load produced.
+void reportDroppedImports(
+    FrameContext& ctx,
+    EditorState& state,
+    const std::set<AssetKey>& beforeAll,
+    const std::set<AssetKey>& beforeNamed
+) {
+    // Only what the outgoing scene never named can be an import left behind;
+    // everything else went with the scene that owned it, which is not news. And
+    // only what the new graph does not already hold is gone: two scenes sharing
+    // a sound would otherwise be reported as a loss that never happened.
+    const std::set<AssetKey> nowHeld =
+        assetKeysOf(AssetSerializer::saveAllAssets(ctx.resources));
+
+    std::vector<std::string> dropped;
+    for (const AssetKey& key : beforeAll) {
+        if (beforeNamed.count(key) || nowHeld.count(key)) continue;
+        dropped.push_back(key.first + " '" + key.second + "'");
+    }
+    if (dropped.empty()) return;
+
+    // The log names them so they can be imported again from the message alone;
+    // the toast carries the count, because a list is not what a toast is for.
+    for (const std::string& what : dropped) {
+        LOG_INFO("Open left an unused import behind: %s", what.c_str());
+    }
+    state.pushToast(EditorState::ToastKind::Info,
+        std::to_string(dropped.size()) + " unused import(s) stayed with the previous scene");
+}
+
+} // namespace
 
 SceneIOController::SceneIOController(
     CameraControllerSystem& cameraController,
@@ -78,6 +140,14 @@ void SceneIOController::loadPath(FrameContext& ctx, EditorState& state, const st
     load(ctx, state);
 }
 
+void SceneIOController::adoptPath(EditorState& state, const std::string& path) {
+    m_currentScenePath = path;
+    // A scene that opened is a scene you have opened, so it belongs in the
+    // list that takes you back to it - the same entry load() makes. Guarded
+    // because the two worlds with no file must not put an empty name there.
+    if (!path.empty()) pushRecentPath(state.recentScenes, path);
+}
+
 void SceneIOController::requestSaveAs() {
     m_openSaveAsPopup = true;
 }
@@ -116,6 +186,27 @@ void SceneIOController::load(FrameContext& ctx, EditorState& state) {
     // before the swap discards them.
     BehaviorSystem::endSession(ctx.scene);
 
+    // WHAT AN OPEN DOES TO THE SESSION'S IMPORTS, stated because the answer is
+    // not the one Stop gives and the difference has to be a decision rather
+    // than an omission. Stop promises to put the session back exactly as Play
+    // found it, so captureSnapshot records the whole asset list and
+    // restoreSnapshot feeds it back. An open makes no such promise: it is the
+    // editor's clean break, and it already drops the undo stack, the selection,
+    // the material previews and the camera binding on the way through. An asset
+    // nothing in the outgoing scene pointed at belongs to that session the same
+    // way those do, and carrying it forward would grow the graph by a whole
+    // scene's worth of assets per open and cook every one of them into the
+    // project library at the next save.
+    //
+    // So they go - and are counted first, because the one thing that made this
+    // a defect rather than a rule was that nothing said it. The source files
+    // are still on disk and importing them again is one dialog; not knowing
+    // they left is what costs an afternoon.
+    const std::set<AssetKey> beforeAll =
+        assetKeysOf(AssetSerializer::saveAllAssets(ctx.resources));
+    const std::set<AssetKey> beforeNamed =
+        assetKeysOf(AssetSerializer::saveAssetsForScene(ctx.scene, ctx.resources));
+
     if (!SceneSerializer::load(ctx.scene, ctx.resources, m_currentScenePath)) {
         LOG_ERROR("SceneIOController::load: failed to load %s - editor state preserved",
             m_currentScenePath.c_str());
@@ -124,10 +215,35 @@ void SceneIOController::load(FrameContext& ctx, EditorState& state) {
         return;
     }
 
+    reportDroppedImports(ctx, state, beforeAll, beforeNamed);
+
+    // Opening a scene replaces the world a running session was taken from, so
+    // it ends that session for the same reason New Scene does. Done after the
+    // load rather than before it, because a load that fails leaves the outgoing
+    // scene live and its session is still the session it belongs to.
+    endPlaySession(ctx);
+
     afterSceneReplace(ctx, state, priorSelectionName, m_currentScenePath);
 
     state.sceneDirty = false;
     pushRecentPath(state.recentScenes, m_currentScenePath);
+}
+
+void SceneIOController::endPlaySession(FrameContext& ctx) {
+    // The play snapshot is a copy of the scene going away. Left behind, the
+    // transport still reads as playing and Stop would restore the outgoing
+    // scene over whatever replaced it - measured, opening a scene mid-session
+    // and pressing Stop put the previous world back under the new scene's name,
+    // with the title bar still naming the file Save would then overwrite. The
+    // asset list goes with the snapshot, being the other half of it. The clock
+    // goes too: dropping the snapshot ends the session, and a session that has
+    // ended is Edit mode - paused, and back at 1x whatever a script scaled it
+    // to.
+    m_playSnapshot.clear();
+    m_playAssets.clear();
+    m_playSnapshotDirty = false;
+    ctx.clock.setPaused(true);
+    ctx.clock.setTimeScale(1.0f);
 }
 
 void SceneIOController::beginSceneReplace(FrameContext& ctx, EditorState& state) {
@@ -138,14 +254,7 @@ void SceneIOController::beginSceneReplace(FrameContext& ctx, EditorState& state)
     ctx.scene.clear();
     m_currentScenePath.clear();
 
-    // The play snapshot is a copy of the scene going away. Left behind, the
-    // transport still reads as playing and Stop would restore the outgoing
-    // scene over whatever replaced it. The clock goes with it: dropping the
-    // snapshot ends the session, and a session that has ended is Edit mode -
-    // paused, and back at 1x whatever a script scaled it to.
-    m_playSnapshot.clear();
-    ctx.clock.setPaused(true);
-    ctx.clock.setTimeScale(1.0f);
+    endPlaySession(ctx);
 
     afterSceneReplace(ctx, state, /*priorSelectionName*/ {}, /*eventPath*/ {});
 }
@@ -239,8 +348,16 @@ void SceneIOController::captureSnapshot(FrameContext& ctx, EditorState& state) {
         LOG_ERROR("SceneIOController::captureSnapshot: failed to serialize scene");
         state.pushToast(EditorState::ToastKind::Error,
             "Play: could not snapshot scene (Stop will not restore)");
+        m_playAssets.clear();
         return;
     }
+    // The scene document names the assets the scene uses and nothing else, which
+    // is right for a file and not enough for a restore. A sound imported and not
+    // yet assigned to a source is in the Asset Browser and in every picker, and
+    // no component points at it - so the scene never mentions it and the
+    // restoring swap throws it away with the manager that held it. Recording the
+    // session's whole list here is what makes Stop put back what Play found.
+    m_playAssets = AssetSerializer::saveAllAssets(ctx.resources).dump();
     // A partial cook does not stop Play, by the same rule the save follows: the
     // session is still worth entering, and the toast names what Stop may lose.
     if (!cooked) {
@@ -269,7 +386,18 @@ void SceneIOController::restoreSnapshot(FrameContext& ctx, EditorState& state) {
         return;  // Keep the snapshot so the live (played) scene is untouched.
     }
 
+    // The load brought back the assets the scene names; this brings back the
+    // ones it does not. loadAssets skips every name already present, so it
+    // recreates exactly what the swap dropped, from the library entries the
+    // cook at capture guaranteed each of them. It runs before the housekeeping
+    // below so the panels' first draw after Stop sees the whole graph.
+    if (nlohmann::json assets = nlohmann::json::parse(m_playAssets, nullptr, false);
+        !assets.is_discarded()) {
+        AssetSerializer::loadAssets(assets, ctx.resources);
+    }
+
     m_playSnapshot.clear();
+    m_playAssets.clear();
     afterSceneReplace(ctx, state, priorSelectionName, m_currentScenePath);
     state.sceneDirty = m_playSnapshotDirty;
 }

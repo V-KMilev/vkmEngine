@@ -340,6 +340,39 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
     return out;
 }
 
+namespace {
+
+/**
+ * @brief Every live asset of one type, as the name-only descriptors a section holds.
+ *
+ * @tparam Asset Asset type to enumerate.
+ * @param resources The graph to walk.
+ * @return An array of descriptors, empty when the graph holds none.
+ */
+template<typename Asset>
+nlohmann::json everyAssetOfType(const ResourceManager& resources) {
+    nlohmann::json section = nlohmann::json::array();
+    resources.forEachOfType<Asset>([&section](Handle<Asset>, const Asset& asset) {
+        emitDescriptor(section, asset);
+    });
+    return section;
+}
+
+} // namespace
+
+nlohmann::json saveAllAssets(const ResourceManager& resources) {
+    nlohmann::json out;
+    // No dependency order to keep: these are names, and loadAssets reads the
+    // sections in the order it needs them whatever order they were written in.
+    out["textures"]  = everyAssetOfType<TextureAsset      >(resources);
+    out["materials"] = everyAssetOfType<MaterialAsset     >(resources);
+    out["skeletons"] = everyAssetOfType<SkeletonAsset     >(resources);
+    out["clips"]     = everyAssetOfType<AnimationClipAsset>(resources);
+    out["meshes"]    = everyAssetOfType<MeshAsset         >(resources);
+    out["sounds"]    = everyAssetOfType<AudioClipAsset    >(resources);
+    return out;
+}
+
 nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& resources) {
     // Including the entities inside prefab instances, which the scene file does
     // not describe and the prefab file now carries its own block for. They stay

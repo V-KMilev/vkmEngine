@@ -142,6 +142,7 @@ AudioSystem::update(FrameContext)
   |     Transform, storage order breaking ties
   |     |-- found: push its world pose + master gain
   |     `-- none:  disable the ear - spatial voices go silent, 2D ones play on
+  |                at unity, the departed listener's gain going with it
   |-- for each AudioSource, posed by its Transform if it has one:
   |     playOnStart and simulation time has run? -> playing = true, once
   |     playing and no voice   -> start one from the clip (a closed device
@@ -590,12 +591,25 @@ importing sounds into - it would be silent, and in one whose ear stands
 somewhere else it would play at whatever the world origin sounds like from
 there. An audition is a request to hear the file, so it is heard flat.
 
-The Inspector's card carries a transport for it - play, pause, stop and a
-position slider - and the Sounds tab the first three, because it remembers one
-voice for the whole tab and not which clip it came from, so it has no length to
-scrub against. Both follow the undo rule the two animation cards set: play,
-stop and scrub preview a clip and never dirty the scene, since dirtying it every
-time somebody listens to something would make the unsaved-changes prompt mean
+An audition is heard flat but it is not heard *outside the mix*: the master gain
+`AudioListener::volume` sets multiplies it like every other voice, so a scene
+whose ear is at zero silences the editor's preview too. That is right - there is
+one mixer - and it is invisible, because the transport still shows a Pause and a
+cursor running against the clip's length. So both surfaces say it where they
+already say the mix cannot be heard: the Sounds tab beside `Import Sound...`,
+next to its no-audio-device line, and the Audio Source card above its transport,
+outside the spatial warnings because a muted mix is not a positioning mistake.
+`AudioDevice::masterVolume` is what they read - the gain the mixer was given,
+already sanitised - rather than each of them re-deriving it from the listener.
+
+Both carry the same transport - play, pause / resume on one button, stop and a
+position slider - and they carry it because it is one widget, the editor's
+`auditionTransport`, and not two implementations of the same idea. The Sounds
+tab draws it per row, on the row whose clip the voice came from; every other
+row offers Play alone, so a row can never hold or cut short a sound it is not
+showing. Both follow the undo rule the two animation cards set: play, stop and
+scrub preview a clip and never dirty the scene, since dirtying it every time
+somebody listens to something would make the unsaved-changes prompt mean
 nothing. Only edits that round-trip with the scene push a command.
 
 ### The cursor is the device's, not the component's
