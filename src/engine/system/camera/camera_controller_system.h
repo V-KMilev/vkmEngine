@@ -15,6 +15,10 @@ struct Transform;
 
 /**
  * @brief Camera controller used in the editor, supporting free-fly and look controls.
+ *
+ * Disabled until something enables it (see @ref setEnabled), because right-drag
+ * hides and grabs the pointer and only an authoring viewport has any business
+ * doing that.
  */
 class CameraControllerSystem : public System {
     public:
@@ -66,10 +70,15 @@ class CameraControllerSystem : public System {
         /**
          * @brief Enable or disable the fly controls entirely.
          *
-         * The controller is an authoring tool: the editor keeps it on, but a
-         * shipped game owns its camera and cursor (gameplay drives both), so
-         * the runtime turns it off at bootstrap. Disabled, update() is a no-op
-         * - no camera writes, no cursor-mode changes.
+         * The controller is an authoring tool, so it starts OFF and the editor
+         * is what turns it on - the safe way round, because a host that never
+         * asks gets a controller that does nothing rather than one that takes
+         * the cursor. A shipped game owns its camera and cursor (gameplay
+         * drives both), and it has no way to reach this switch: BehaviorContext
+         * carries no systems. Disabled, update() is a no-op - no camera writes,
+         * no cursor-mode changes.
+         *
+         * @param enabled Whether the fly controls run.
          */
         void setEnabled(bool enabled) { m_enabled = enabled; }
 
@@ -159,7 +168,14 @@ class CameraControllerSystem : public System {
 
         bool m_editorWantsMouse    = false;
         bool m_editorWantsKeyboard = false;
-        bool m_enabled             = true;
+        /**
+         * @brief Whether the fly controls run; off until an editor asks.
+         *
+         * Right-button-down puts the window in CursorMode::Disabled - hidden,
+         * grabbed and re-centred every frame - which is what an authoring
+         * viewport wants and what a game that never asked for it must not get.
+         */
+        bool m_enabled             = false;
 };
 
 } // namespace Vkm::Engine

@@ -47,6 +47,10 @@ class SceneIOController {
         /**
          * @brief Save to the current path, or pop the Save-As prompt if none yet.
          * Clears EditorState::sceneDirty on success.
+         *
+         * Refused while a play session is live, for the reason writeScene()
+         * gives - the scene in the world during a session is not the one the
+         * author wrote.
          */
         void save(FrameContext& ctx, EditorState& state);
 
@@ -137,8 +141,10 @@ class SceneIOController {
          * playing, but the pause is visible and is worth expecting.
          *
          * @param ctx Frame context supplying the scene and resources to snapshot.
-         * @param state Editor state whose dirty flag is remembered for Stop to put
-         *              back, and which receives a toast if the cook or the
+         * @param state Editor state whose dirty flag and history revision are
+         *              remembered for Stop - the first to put back, the second
+         *              to tell a session that edited from one that only ran -
+         *              and which receives a toast if the cook or the
          *              serialization failed.
          */
         void captureSnapshot(FrameContext& ctx, EditorState& state);
@@ -150,11 +156,33 @@ class SceneIOController {
          * A failed restore keeps the snapshot rather than dropping it, so the
          * played scene is left alone instead of being half-replaced.
          *
+         * Every panel stays live during a session, so the world it throws away
+         * may hold entities and edits the author made inside one. Those are
+         * said out loud, because the editor called them authored work while
+         * they were being made: it pushed an undo step and raised the dirty
+         * flag for each, and withdrawing both without a word is what made the
+         * loss invisible.
+         *
          * @param ctx Frame context supplying the scene and resources to restore into.
          * @param state Editor state whose selection, dirty flag and toasts are
          *              updated to match the restored scene.
          */
         void restoreSnapshot(FrameContext& ctx, EditorState& state);
+
+        /**
+         * @brief End the play session: stop the clock and restore the authored
+         * scene. No-op outside a session.
+         *
+         * What Stop is, in one place. The transport's button is one caller and
+         * the unsaved-changes guard is the other - a save cannot run inside a
+         * session, so answering Save on quit has to end one first - and two
+         * spellings of Stop would drift the moment either grew a step.
+         *
+         * @param ctx Frame context owning the clock and the scene.
+         * @param state Editor state the restore updates.
+         */
+        void stopPlaySession(FrameContext& ctx, EditorState& state);
+
         /**
          * @brief Whether a play-mode snapshot is currently held.
          *
@@ -214,12 +242,26 @@ class SceneIOController {
          * flow waits on it dropping, so a failed save must not look like a
          * successful one.
          *
+         * Refused outright while a play session is live: the scene in the world
+         * is then the simulation's, Stop is about to replace it with the
+         * snapshot, and writing it over the file would store a scene nobody
+         * authored - under a cleared dirty flag Stop then restores, so the
+         * editor would go on reporting the file as current.
+         *
          * @param ctx Frame context supplying the scene and resources to write.
          * @param state Editor state whose dirty flag, recents and toasts are updated.
          * @param path Absolute path of the scene file to write.
          * @return Whether the scene reached disk.
          */
         bool writeScene(FrameContext& ctx, EditorState& state, const std::string& path);
+        /**
+         * @brief Whether a live play session forbids the save being asked for,
+         * saying so through a toast when it does.
+         *
+         * @param state Editor state receiving the toast.
+         * @return true when a session is live and the caller must not write.
+         */
+        bool refusedDuringPlay(EditorState& state) const;
         /**
          * @brief Load m_currentScenePath: stashes/restores selection, then runs
          * afterSceneReplace() housekeeping (camera rebind done inline).
@@ -288,6 +330,14 @@ class SceneIOController {
          * session leaves the dirty flag exactly as the user left it.
          */
         bool        m_playSnapshotDirty = false;
+        /**
+         * @brief CommandStack::revision() at capture time.
+         *
+         * The same number on Stop means the session left the history exactly as
+         * Play found it, which is what lets the restore keep it: the scene it
+         * puts back is the one those steps were made against, at the same ids.
+         */
+        unsigned long long m_playSnapshotHistory = 0;
         bool        m_openSaveAsPopup = false;
         char        m_saveAsBuffer[256] = "scene.json";
 

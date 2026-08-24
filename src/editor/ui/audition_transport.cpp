@@ -6,6 +6,7 @@
 
 #include "resource/asset/audio_clip_asset.h"
 #include "ui/editor_icons.h"
+#include "ui/editor_widgets.h"
 
 namespace Vkm::Engine {
 
@@ -70,7 +71,7 @@ void auditionScrubber(const char* idStr, AudioDevice& device, VoiceId voice,
     float cursor = live ? device.voiceCursor(voice) : 0.0f;
     ImGui::BeginDisabled(!live);
     ImGui::SetNextItemWidth(width);
-    if (ImGui::SliderFloat(label, &cursor, 0.0f, duration, timeFmt))
+    if (ImGui::SliderFloat(label, &cursor, 0.0f, duration, timeFmt, PROP_CLAMP))
         device.seekVoice(voice, cursor);
     ImGui::EndDisabled();
 }

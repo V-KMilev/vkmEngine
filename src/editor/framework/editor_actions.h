@@ -226,9 +226,20 @@ void commitHierarchyMutation(EditorState& state);
  * by the old/new parent's world contribution. Decomposes the preserved world
  * matrix into the new parent's space (same math the transform gizmo uses).
  *
+ * An entity with no Transform is moved all the same, with the re-base skipped:
+ * a UI element is placed in screen space by its canvas and has no world pose to
+ * keep. The move is then reported when it leaves the element with no UICanvas
+ * ancestor, because that is what stops it being drawn.
+ *
  * A move that crosses into or out of a prefab instance is refused with a toast
  * instead: the instance's interior is the prefab's, and the scene stores none
  * of it, so either move would be lost on the next load without a word.
+ *
+ * @param scene     Scene holding both entities.
+ * @param state     Editor state receiving the history entry and any toast.
+ * @param child     Entity being moved.
+ * @param newParent New parent, or a null EntityId to unparent to the root.
+ * @param label     History entry text.
  */
 void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
                           EntityId newParent, const char* label);

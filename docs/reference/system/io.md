@@ -119,6 +119,14 @@ The exit code is the only answer a shell gets, so each host has to spend it on
 what is actually fatal *for that host*. The split is not arbitrary: the runtime
 plays a finished game, the editor is the tool you repair one with.
 
+`SceneSerializer::load` returns true after a load in which every reference went
+unresolved - each one is a component slot left empty, not a parse failure - so
+the last row is not something the loader can answer for. The cooker installs an
+`EngineErrorLog` sink around the load and counts what `reportError` puts in it,
+because a scene whose references resolved to nothing is exactly the state that
+gets packaged and ships a world with empty slots. `vkm package` needs no rule of
+its own: it already returns on a non-zero cook.
+
 | Condition | `vkm_runtime` | `vkm_editor` | `vkm_cook` |
 |-----------|---------------|--------------|------------|
 | Log file cannot be opened | exit 1 | exit 1 | exit 1 |
@@ -129,6 +137,7 @@ plays a finished game, the editor is the tool you repair one with.
 | No entry scene and no `vkmBuildScene` (`SceneBoot::Default`) | exit 1 | opens on the default scene | exit 0 - nothing to cook |
 | No entry scene, module builds the world (`SceneBoot::Project`) | plays it | opens it | exit 0 - nothing to cook |
 | An asset fails to cook | n/a | reported, the session continues | exit 1 |
+| Entry scene loads, but a reference in it goes unresolved | plays it with empty slots | reported, the session continues | exit 1 |
 
 The cooker reaches the last three rows by its own path rather than through
 `bootProjectScene` - it has no `Scene` to boot into and no module to ask, so it

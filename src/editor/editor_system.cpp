@@ -103,6 +103,13 @@ EditorSystem::EditorSystem(
 
     applyEditorTheme();
 
+    // The fly controls are an authoring tool and start off, so the editor is
+    // what asks for them. Off by default rather than turned off by the runtime:
+    // right-drag hides, grabs and re-centres the pointer, and a shipped game
+    // that never asked for that cannot switch it back - a behavior reaches the
+    // scene, the resources and the window, never a system.
+    m_cameraController.setEnabled(true);
+
     // The grid defaults off engine-wide (it is an editor aid); the editor
     // wants it on out of the box. Set before the load so a persisted value
     // still wins. A missing/invalid settings file is non-fatal.
@@ -359,6 +366,12 @@ void EditorSystem::update(FrameContext& ctx) {
 
             switch (dialogButtons(want, "Save", "Don't Save")) {
                 case DialogResult::Confirm:
+                    // A play session owns the scene, and a save cannot run
+                    // inside one, so end it first: the scene this save is for
+                    // is the authored one Stop puts back, not the simulation's
+                    // copy. Without this the save would refuse and the action
+                    // waiting on the dirty flag would quietly be abandoned.
+                    m_sceneIO.stopPlaySession(ctx, m_state);
                     // save() opens Save-As if there's no current path; the
                     // deferred action fires once sceneDirty drops to false.
                     m_sceneIO.save(ctx, m_state);
@@ -512,6 +525,17 @@ void EditorSystem::update(FrameContext& ctx) {
     if (m_state.showRenderSettings) {
         PROFILE_SCOPE("Panel/RenderSettings");
         m_renderSettings.draw(ec);
+    }
+
+    // The gesture boundary, after every panel has had its chance to push: a
+    // press, a motion and a release is one undo step, and only the editor can
+    // see where one ends. Both halves are needed - a gizmo drag holds the mouse
+    // without an ImGui item being active, while a slider tweaked with the
+    // keyboard keeps its item active with the mouse up. Asked at the end of the
+    // frame rather than the start so the push a drag makes on its release frame
+    // still lands inside the gesture it belongs to.
+    if (!ImGui::IsAnyMouseDown() && !ImGui::IsAnyItemActive()) {
+        m_state.commands.endGesture();
     }
 
     {

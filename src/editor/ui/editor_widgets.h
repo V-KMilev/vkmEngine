@@ -57,29 +57,41 @@ inline bool propRow(const char* label, const char* tooltip, Widget&& widget) {
     return changed;
 }
 
+/**
+ * @brief The bounds a prop row passes are a constraint, not a hint.
+ *
+ * A Drag/Slider clamps the mouse to its lo/hi, but Ctrl+click turns the widget
+ * into a text field that ImGui leaves unbounded by default - so every bound in
+ * the inspector was advisory on the one input path that can type an arbitrary
+ * number. ClampOnInput closes that, and is used rather than AlwaysClamp because
+ * AlwaysClamp also clamps a lo == hi == 0 range, which is how the rows with no
+ * meaningful limit spell "unbounded".
+ */
+inline constexpr ImGuiSliderFlags PROP_CLAMP = ImGuiSliderFlags_ClampOnInput;
+
 inline bool propSlider(const char* label, float* v, float lo, float hi,
                        const char* fmt = "%.3f", const char* tooltip = nullptr) {
-    return propRow(label, tooltip, [&] { return ImGui::SliderFloat("##v", v, lo, hi, fmt); });
+    return propRow(label, tooltip, [&] { return ImGui::SliderFloat("##v", v, lo, hi, fmt, PROP_CLAMP); });
 }
 
 inline bool propSliderInt(const char* label, int* v, int lo, int hi,
                           const char* tooltip = nullptr) {
-    return propRow(label, tooltip, [&] { return ImGui::SliderInt("##v", v, lo, hi); });
+    return propRow(label, tooltip, [&] { return ImGui::SliderInt("##v", v, lo, hi, "%d", PROP_CLAMP); });
 }
 
 inline bool propDrag(const char* label, float* v, float speed, float lo, float hi,
                      const char* fmt = "%.3f", const char* tooltip = nullptr) {
-    return propRow(label, tooltip, [&] { return ImGui::DragFloat("##v", v, speed, lo, hi, fmt); });
+    return propRow(label, tooltip, [&] { return ImGui::DragFloat("##v", v, speed, lo, hi, fmt, PROP_CLAMP); });
 }
 
 inline bool propDragInt(const char* label, int* v, float speed, int lo, int hi,
                         const char* tooltip = nullptr) {
-    return propRow(label, tooltip, [&] { return ImGui::DragInt("##v", v, speed, lo, hi); });
+    return propRow(label, tooltip, [&] { return ImGui::DragInt("##v", v, speed, lo, hi, "%d", PROP_CLAMP); });
 }
 
 inline bool propDrag3(const char* label, float* v, float speed, float lo, float hi,
                       const char* fmt = "%.3f", const char* tooltip = nullptr) {
-    return propRow(label, tooltip, [&] { return ImGui::DragFloat3("##v", v, speed, lo, hi, fmt); });
+    return propRow(label, tooltip, [&] { return ImGui::DragFloat3("##v", v, speed, lo, hi, fmt, PROP_CLAMP); });
 }
 
 inline bool propColor3(const char* label, float* v,

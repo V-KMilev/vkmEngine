@@ -582,10 +582,16 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
 
         // Live edit (shared by handle; commit bumps version -> preview +
         // viewport refresh next frame). Materials are scene assets - any
-        // edit is unsaved work.
+        // edit is unsaved work, so it is an undo step like every other edit
+        // the editor calls authored. The pre-edit copy is taken every frame
+        // because a widget only reports the change after it has already made
+        // it, and there is nowhere earlier to ask.
         auto& mat = resources.edit(target);
+        const MaterialAsset before = mat;
         if (drawMaterialBody(resources, editorRenderHooks(ec.renderSystem.backend()), target, mat)) {
             resources.commit(target);
+            state.commands.push(std::make_unique<MaterialEditCommand>(
+                resources, target, before, mat, "Edit Material"));
             state.markSceneDirty();
         }
 
@@ -598,8 +604,15 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
             if (resources.isAlive(m_pendingMaterial)) {
                 TextureHandle h = loadTexture(pickedTex, resources, m_pendingTextureSrgb, true);
                 if (h) {
+                    // Binding a map is a material edit like any other, so it
+                    // takes the same undo step rather than being the one field
+                    // on the panel that cannot be taken back.
+                    const MaterialAsset beforeTex = resources.get(m_pendingMaterial);
                     resources.edit(m_pendingMaterial).*m_pendingSlot = h;
                     resources.commit(m_pendingMaterial);
+                    state.commands.push(std::make_unique<MaterialEditCommand>(
+                        resources, m_pendingMaterial, beforeTex,
+                        resources.get(m_pendingMaterial), "Bind Texture"));
                     state.markSceneDirty();
                 }
             }

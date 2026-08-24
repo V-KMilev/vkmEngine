@@ -4,6 +4,7 @@
 #include "framework/editor_common.h"
 #include "framework/scene_io_controller.h"
 #include "system/audio/audio_system.h"
+#include "ui/editor_style.h"
 
 namespace Vkm::Engine {
 
@@ -13,6 +14,31 @@ float BTN() { return EditorStyle::px(26.0f); }
 float GAP() { return EditorStyle::px(4.0f);  }
 float PAD() { return EditorStyle::px(5.0f);  }
 constexpr int   CONTROLS = 3;  // play/pause, step, stop
+
+// Frame the viewport and name the mode while a session runs. Every panel stays
+// live inside one and Stop throws the world away, so a scene edited in play
+// mode is a scratch copy - and the only thing on screen that said so was a
+// 20px glyph changing shape. That is not something an author notices before
+// typing into a field the next Stop will discard.
+void drawSessionMarker(EditorContext& ec, float barBottom) {
+    const ImU32 accent = ImGui::GetColorU32(EditorStyle::WARNING);
+    ImVec2 min = ec.viewportPos;
+    ImVec2 max(min.x + ec.viewportSize.x, min.y + ec.viewportSize.y);
+    // Inset by the stroke so the whole border lands inside the viewport rect
+    // rather than half of it under the neighbouring panel.
+    const float stroke = EditorStyle::px(2.0f);
+    min.x += stroke * 0.5f; min.y += stroke * 0.5f;
+    max.x -= stroke * 0.5f; max.y -= stroke * 0.5f;
+    ImGui::GetWindowDrawList()->AddRect(min, max, accent, 0.0f, 0, stroke);
+
+    const char* label = "PLAY MODE - edits are discarded on Stop";
+    const float width = ImGui::GetWindowSize().x;
+    ImGui::SetCursorPos(ImVec2((width - ImGui::CalcTextSize(label).x) * 0.5f,
+                               barBottom + GAP()));
+    ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::WARNING);
+    ImGui::TextUnformatted(label);
+    ImGui::PopStyleColor();
+}
 } // namespace
 
 void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
@@ -93,13 +119,9 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         // made) and return to Edit mode. Disabled when not in a play session.
         if (iconButton("vpStop", EditorIcon::Stop, false, playing,
                        "Stop - restore the scene and return to Edit mode", BTN())) {
-            clock.setPaused(true);
-            // Edit mode is the authored clock. A script's slow-motion belongs
-            // to the session that set it, and nothing else can undo it: there
-            // is no time-scale UI, so a leftover 0 would leave every later
-            // session running with nothing happening in it.
-            clock.setTimeScale(1.0f);
-            sceneIO.restoreSnapshot(ctx, ec.state);
+            // The whole of Stop lives on the controller, because the quit guard
+            // has to perform one too - a save cannot run inside a session.
+            sceneIO.stopPlaySession(ctx, ec.state);
         }
 
         m_hovered = ImGui::IsWindowHovered(
@@ -111,6 +133,8 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
 
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
+
+    if (playing) drawSessionMarker(ec, 8.0f + barH);
 }
 
 } // namespace Vkm::Engine

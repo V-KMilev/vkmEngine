@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <system_error>
+#include <vector>
 
 #include <imgui.h>
 #include <glm/glm.hpp>
@@ -29,6 +30,8 @@
 #include "ecs/component/render/mesh.h"
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/component/render/reflection_probe.h"
+#include "ecs/component/ui/ui_canvas.h"
+#include "ecs/component/ui/ui_element.h"
 #include "io/scene/prefab.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "resource/resource_manager.h"
@@ -65,11 +68,34 @@ void setTransformFromMatrix(Transform& t, const glm::mat4& m) {
         t.scale.z != 0.0f ? cz / t.scale.z : glm::vec3(0.0f, 0.0f, 1.0f));
     t.rotation = glm::normalize(glm::quat_cast(basis));
 }
+
+// Does a UICanvas sit anywhere above `id`? UISystem answers the same question
+// by walking down from each canvas; this walks up, because what the reparent
+// needs to know is whether one entity is covered rather than which entities a
+// canvas covers.
+bool hasCanvasAncestor(const Scene& scene, EntityId id) {
+    EntityId at = id;
+    for (uint32_t depth = 0; depth < HierarchyOperations::MAX_DEPTH; ++depth) {
+        if (!scene.has<Hierarchy>(at)) return false;
+        const EntityId parent = scene.get<Hierarchy>(at).parent;
+        if (!parent || !scene.isAlive(parent)) return false;
+        if (scene.has<UICanvas>(parent)) return true;
+        at = parent;
+    }
+    return false;
+}
 } // namespace
 
 void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
                           EntityId newParent, const char* label) {
-    if (!scene.isAlive(child) || !scene.has<Transform>(child)) return;
+    if (!scene.isAlive(child)) return;
+
+    // A UI element carries no Transform - it is laid out in screen space by its
+    // canvas - and there is no world pose to preserve for one. That is a step
+    // to skip, not a move to refuse: the create path nests UI elements through
+    // setParent already, so an element made before its canvas existed had no
+    // way back under one, and the drag that asked said nothing.
+    const bool hasTransform = scene.has<Transform>(child);
 
     // An instance's interior belongs to its prefab: the scene stores the
     // instance as a reference and rebuilds the subtree from the file, so an
@@ -94,8 +120,10 @@ void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
     if (scene.has<Hierarchy>(child)) oldParent = scene.get<Hierarchy>(child).parent;
 
     // The world matrix is what stays fixed across the move; `before` is for undo.
-    const Transform before = scene.get<Transform>(child);
-    const glm::mat4 world   = HierarchyOperations::computeWorldMatrix(scene, child);
+    const Transform before = hasTransform ? scene.get<Transform>(child) : Transform{};
+    const glm::mat4 world  = hasTransform
+        ? HierarchyOperations::computeWorldMatrix(scene, child)
+        : glm::mat4(1.0f);
 
     const bool toParent = newParent && scene.isAlive(newParent);
     if (toParent) {
@@ -104,18 +132,33 @@ void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
         HierarchyOperations::removeFromParent(scene, child);
     }
 
-    // Re-express the preserved world matrix in the new parent's space so the
-    // entity stays put. Unparenting to root leaves local == world.
-    glm::mat4 local = world;
-    if (toParent && scene.has<Transform>(newParent)) {
-        local = glm::inverse(HierarchyOperations::computeWorldMatrix(scene, newParent)) * world;
+    Transform after = before;
+    if (hasTransform) {
+        // Re-express the preserved world matrix in the new parent's space so the
+        // entity stays put. Unparenting to root leaves local == world.
+        glm::mat4 local = world;
+        if (toParent && scene.has<Transform>(newParent)) {
+            local = glm::inverse(HierarchyOperations::computeWorldMatrix(scene, newParent)) * world;
+        }
+        Transform& t = scene.get<Transform>(child);
+        setTransformFromMatrix(t, local);
+        after = t;
     }
-    Transform& t = scene.get<Transform>(child);
-    setTransformFromMatrix(t, local);
 
     state.commands.push(std::make_unique<ReparentCommand>(
-        child, oldParent, toParent ? newParent : EntityId{}, before, t, label));
+        child, oldParent, toParent ? newParent : EntityId{}, before, after, label));
     commitHierarchyMutation(state);
+
+    // A UI element is laid out and drawn by the canvas above it, so one that
+    // lands outside every canvas stops drawing and nothing else says so. The
+    // move still happens - it is a legitimate step on the way to somewhere -
+    // but the author hears about it while the element is still where they put
+    // it.
+    if (scene.has<UIElement>(child) && !hasCanvasAncestor(scene, child)) {
+        state.pushToast(EditorState::ToastKind::Warning,
+                        "UI elements are drawn by the canvas above them - this one has no "
+                        "canvas ancestor now, so it will not appear");
+    }
 }
 
 void commitStructureChange(EditorState& state) {
@@ -525,10 +568,22 @@ bool saveAsPrefab(Scene& scene, const ResourceManager& resources, EditorState& s
         return false;
     }
 
-    // The subtree is stored as a reference now, and its entities are rebuilt
-    // from the file on the next load - so nothing already on the command stack
-    // still describes the scene, the same reason a scene load clears it.
-    state.commands.clear();
+    // The subtree is the prefab's now: the scene keeps a reference and the
+    // overrides against it, so a step that assigns a component in there would
+    // undo to a value the scene has stopped storing. Every step addressing an
+    // entity in the subtree is therefore dropped - and only those. The rest of
+    // the history was never about this subtree, its entities are not rebuilt
+    // from anything, and an author who moved the sun an hour ago can still take
+    // that back. (A scene load clears the whole stack for a reason that does
+    // not hold here: it replaces every entity, and this replaces none.)
+    std::vector<uint32_t> subtreeSlots{entity.index};
+    for (size_t i = 0; i < subtreeSlots.size(); ++i) {
+        HierarchyOperations::forEachChild(scene, scene.entityAt(subtreeSlots[i]),
+            [&](EntityId child) {
+                if (scene.isAlive(child)) subtreeSlots.push_back(child.index);
+            });
+    }
+    state.commands.forget(subtreeSlots);
     state.markSceneDirty();
     state.pushToast(EditorState::ToastKind::Info, "Saved prefab '" + shown + "'");
     return true;

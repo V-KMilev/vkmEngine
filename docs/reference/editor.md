@@ -61,7 +61,7 @@ overlays drawn on top.
 | Gizmo Overlay       | `overlays/gizmo_overlay.cpp`          | The transform gizmo's drawing and drag, and the viewport's click-to-pick     |
 | Gizmo Drawing       | `overlays/gizmo_overlay_draw.cpp`     | Every `draw*Gizmos` body, plus the selection outline: lights, cameras, probes, volumes, decals, emitters, audio, colliders, skeletons, bounds |
 | Viewport Toolbar    | `overlays/viewport_toolbar.cpp`       | In-viewport icon tool box: tool/space/snap + selection actions              |
-| Playback Bar        | `overlays/playback_bar.cpp`           | Top-centre Play / Pause / Step / Stop transport for the simulation; Pause and Step also hold the mixer's voices |
+| Playback Bar        | `overlays/playback_bar.cpp`           | Top-centre Play / Pause / Step / Stop transport for the simulation; Pause and Step also hold the mixer's voices; frames and captions the viewport while a session runs |
 
 ### Where world settings live
 
@@ -98,10 +98,21 @@ whole editor is shown disabled (preview of the UI) with a single
 centered **Add Animation Component** button. New animations default to
 a 5 s `length` so the timeline is immediately usable.
 
+The button is centred on **what is on screen**, not on the ghost behind it. The
+disabled editor is taller than the panel at its shipped height, so centring on
+the ghost parked the one control the empty state exists to offer below the fold:
+the panel looked fully populated and ready, the transport's tooltips answered on
+hover, and clicking any of them did nothing. It is measured against
+`GetContentRegionAvail().y` taken before the ghost is drawn, which is the same
+thing the Inspector's own empty state does.
+
 Controls (icon buttons, shared `editor_icons.{h,cpp}`):
 
 - Playback: Play/Pause, Stop (rewind), global **Set Key** (add/replace
-  a keyframe on all three tracks at the current time), Loop, Speed.
+  a keyframe on all three tracks at the current time), Loop, Speed. Play/Pause
+  is a *preview* transport writing the runtime `Animation::playing`; what a
+  shipped scene does is the Inspector card's **Play On Start**, which is the
+  serialized flag - the same split the Audio Source card makes.
 - **Length** (`Animation::length`, serialized): explicit animation
   duration in seconds; `0` means auto from the last keyframe. The
   timeline spans `max(last keyframe, length)`, so you can set a length
@@ -232,6 +243,90 @@ Sound** when it is not spatial, which is the same split by kind a `Light` makes
 between Dir / Point / Spot - and one carrying an `AudioListener` is a
 **Listener**; the tooltip digest lists both.
 
+### A card names what its component is waiting for
+
+A component that cannot work is the editor's worst failure to report, because
+the card goes on rendering in full - every field live, every value plausible -
+in front of a viewport where nothing happens. Where the engine holds both halves
+of the diagnosis, the card says it, in `EditorStyle::DANGER` for "this does
+nothing at all" and `EditorStyle::WARNING` for "this is not what you think it
+is". It is said on the card because that is where the mistake is being made; the
+log is where it is found afterwards, which is too late and, in the editor, not
+visible at all.
+
+- **Collider** with no `Rigidbody` - *"No Rigidbody: nothing collides with
+  this."* `PhysicsSystem::gatherBodies` walks the `Rigidbody` storage and reads
+  a `Collider` off the entities it finds there, so a lone collider is in no
+  broadphase: it stops nothing and, `Trigger` ticked or not, fires nothing.
+- **Rigidbody** with no `Collider` - *"No Collider: it falls through
+  everything."* Scoped to a **dynamic** body, which is the one this ruins: it
+  integrates gravity with nothing to land on and leaves the world. A static or
+  kinematic body with no shape is inert rather than lost, and is not warned
+  about. Both are the sentence the Character Controller card has always printed
+  for the same two absences.
+- **Decal** with no material - *"No material: this projects nothing."* Harsher
+  than the Mesh card's "No material assigned" because the consequence is: a mesh
+  with no material still draws with the shader's defaults, while
+  `GLDecalPass` skips a decal whose material is null outright. It is also the
+  state `Entity > Create > Decal` hands you.
+- **UI Element** with no `UICanvas` above it - *"No UI Canvas above this:
+  nothing draws"*, plus where to drag it. `UISystem` lays out only what it
+  reaches walking down from a canvas, so an element outside every canvas is
+  never visited: no rect, no draw, no hit test. This is the default outcome of
+  `Entity > Create > UI > Text` with nothing selected.
+- **UI Image / UI Text / UI Button** with no `UIElement` - *"No UI Element:
+  nothing to give it a rect"*. `resolveElement` returns before it looks for any
+  of the three, so all three cards render in full for a component that is never
+  reached. One helper, `warnNoUIElement`, says it for all three.
+- **UI Text** whose font name does not resolve - *"No font named 'x' is
+  loaded"*. The font is reached by name every frame and an unresolved one draws
+  nothing, which looks exactly like an element that is hidden or off-screen.
+  Every other asset reference on the panel reports a name the project cannot
+  answer; this one is a plain text box, so the card has to.
+- **Camera** that is active but not the one being rendered from - *"Not the eye:
+  'X' is rendered from."* The eye's half of what the Audio Listener card says
+  for the ear. Named from `CameraControllerSystem::getCameraEntity()` rather
+  than from storage order: the controller and the visibility pass each keep the
+  camera they resolved and hold it while it stays active, so "the first one
+  wins" is a rule that is often not what happened, and printing it would hand
+  the author a false reason. The hierarchy's **Set as Main Camera** stays
+  offered while any other camera also claims Active, for the same reason -
+  greying it on `cam.active` alone said "already main" about a camera that may
+  well not be the one on screen.
+- **Particle Emitter** in Edit mode - *"The world is not running - press Play to
+  see them."* `ParticleSystem` returns on a zero sim delta, so the card's `Live:
+  N` readout is structurally `0` there however well the emitter is set up, and
+  an author reading "Emitting, Rate 20, Live: 0" is being told the opposite of
+  what is true.
+- **Animation** whose transport says it is playing while the world is not -
+  *"Held at 1.20s - it advances while the world runs."* Both surfaces that own
+  an animation transport print it (the card and the Bottom panel), because both
+  toggle `Animation::playing`, which only `AnimationSystem` advances and which
+  only advances on a non-zero sim delta. The button still sets the flag - it is
+  the serialized "plays when the simulation starts" - it just no longer implies
+  a playhead that is moving.
+
+### Property rows clamp what is typed into them
+
+`propDrag` / `propSlider` / `propDragInt` / `propDrag3` pass
+`ImGuiSliderFlags_ClampOnInput` (`PROP_CLAMP` in `ui/editor_widgets.h`). A
+Drag/Slider clamps the *mouse* to its bounds, but Ctrl+click turns the widget
+into a text field that ImGui leaves unbounded by default, so every bound in the
+inspector was advisory on the one input path that can type an arbitrary number -
+`5000` into a Near Clip whose declared max is the Far Clip, and the camera
+renders nothing. `ClampOnInput` rather than `AlwaysClamp`, because `AlwaysClamp`
+also clamps a `lo == hi == 0` range, which is how the rows with no meaningful
+limit spell "unbounded". The Camera card holds its two clip planes
+`CLIP_PLANE_SEPARATION` apart rather than merely ordered: equal planes divide by
+zero in the projection and the cluster pass takes `log(zFar / zNear)`.
+
+`pickAsset` offers a **(none)** row above the list. An empty slot is a state the
+editor hands you (`Create > Audio Source` and `Create > Decal` both arrive with
+one), it is what the combo previews, and it round-trips through the scene file -
+so a combo listing everything except the value it is showing could only be left
+by deleting the component and authoring it again. The same row the script
+behavior field and the bone picker have always drawn.
+
 ## Undo / redo
 
 Every editor mutation goes through a `Command` that captures the
@@ -242,8 +337,9 @@ component topology are not comparable across a swap).
 Available commands (in `framework/editor_commands.h`):
 
 - `TransformChangeCommand`: position / rotation / scale on an entity.
-  Coalesces consecutive edits on the same entity, so a gizmo drag or a
-  stream of inspector micro-edits collapses to one undo step.
+  Coalesces consecutive edits on the same entity *within one gesture*, so a
+  gizmo drag or a stream of inspector micro-edits collapses to one undo step
+  while the next drag starts a new one.
 - `ComponentEditCommand<T>`: a generic field edit on an existing component
   (snapshots before/after), the inspector's catch-all undo step.
 - `AddComponentCommand<T>` / `RemoveComponentCommand<T>`, instantiated for
@@ -274,6 +370,10 @@ Available commands (in `framework/editor_commands.h`):
   the component from the file; it coalesces a drag the same way. It names its
   target by prefab uid rather than by slot, because redoing a placement pins
   only the root's slot and rebuilds the rest into whatever is free.
+- `MaterialEditCommand`: a PBR field edit in the Material Editor. Restores the
+  parameters and re-commits so the previews and the viewport re-read the asset;
+  the asset's identity (name, uid, source) is deliberately left as it is, since
+  the name is renamed through its own command.
 - `RenameAssetCommand<HandleType>`: undoable asset rename (routes through
   `ResourceManager::rename` so the name index stays consistent).
 
@@ -283,7 +383,18 @@ translation unit doesn't recompile the bodies. Both blocks expand from
 the single `VKM_EDITOR_COMMAND_COMPONENTS` list, so they cannot drift.
 
 `CommandStack::push` calls `Command::tryMerge` against the top of the
-undo stack first; that is where transform drag coalescing happens.
+undo stack first; that is where transform drag coalescing happens - but only
+while the gesture is still open. `EditorSystem` calls `CommandStack::endGesture`
+at the end of every frame in which no mouse button is held and no ImGui item is
+active, which seals the top of the stack. A gesture is a press, a motion and a
+release, and it is one undo step; identity alone cannot tell the micro-edits
+inside one drag apart from two separate drags of the same field, and without the
+seal the second drag was swallowed by the first.
+
+`Command::addresses(slot)` is the other half: the steps that name an entity say
+so, and `CommandStack::forget` drops exactly those. It is the narrow half of
+`clear()`, for an operation that outlives part of the history rather than all of
+it - see Save as Prefab below.
 
 ## Opening a project
 
@@ -336,17 +447,70 @@ path is composed. See [system/io.md](system/io.md#projects-and-the-three-roots).
 - Maintains a recent-scenes list cached when the Open dialog is opened
   (so re-opening doesn't re-scan disk every frame).
 
+### A play session owns the scene
+
+Play snapshots the authored scene and hands the world to the simulation, so
+what the ECS holds during a session is the simulation's copy of one. Every
+panel stays live inside a session, which is useful - and used to be silent.
+
+- **Save is refused while a session is live.** File > Save Scene and Save Scene
+  As are greyed under a "Stop the play session to save" line, and Ctrl+S answers
+  with a toast. Writing the played scene over the authored file stores a scene
+  nobody wrote, and then clears a dirty flag that Stop restores to its pre-Play
+  value - so the editor would go on reporting the file as current while the
+  authored scene was gone, with an ordinary INFO line as the only word said.
+- **The viewport says which mode it is in.** A live session frames the viewport
+  in the warning colour and captions it PLAY MODE - edits are discarded on Stop.
+  Before, the only thing separating the two modes on screen was a 20px transport
+  glyph changing shape.
+- **Stop says what it discarded.** A session that moved the undo history, or
+  dirtied a scene that was clean when Play began, has authored work in it; Stop
+  warns rather than withdrawing the undo step and the dirty marker it raised for
+  that work without a word.
+
+`SceneIOController::stopPlaySession` is the whole of Stop in one place, because
+the transport's button is not its only caller: answering **Save** to the
+unsaved-changes prompt ends the session first, the scene that save is for being
+the authored one Stop puts back.
+
+**File > Exit** asks the unsaved-changes question itself rather than raising the
+window's close flag for the frame's close-intercept to catch. That intercept is
+right where it runs - the top of the UI stage, after the window has reported a
+titlebar close - but a menu item raises the flag from inside that same stage,
+and the frame loop reads it before the next frame begins. So the X prompted and
+Exit, the same intent said another way, quit without asking.
+
 ### What an open does to the session's imports
 
-An open is the editor's clean break: it already drops the undo stack, the
+An open is the editor's clean break: it drops the undo stack, the
 selection, the material previews and the camera binding. The asset graph is
 replaced by the swap too, so an asset the *outgoing* scene never named - a
 sound imported and not yet assigned to a source - has no name in the new
 document to be recreated from, and goes with the session that imported it.
 
+**New Scene and Open Project answer this the same way**, through
+`beginSceneReplace`: it swaps a fresh `ResourceManager` in (keeping the font
+slot, which is engine-owned and never written to a scene) and counts the strays
+into the same toast. They throw a whole world away, so the reasoning above
+applies to them at least as strongly - and left in place, the outgoing graph
+collided with the seed scene the next New Scene builds: `buildDefaultScene` adds
+its cube and default material unconditionally, `ensureUniqueName` gave them a
+`" (2)"` suffix, and names being the serializable identity, that suffix became
+the new scene's frozen identity in the file and in the cooked manifest. A scene
+authored after two New Scenes in one session named `material:default (3)` and
+had no `(1)` or `(2)` anywhere in it.
+
 That is deliberately the opposite of what **Stop** does. Stop promises to put
-one session back exactly as Play found it, so `captureSnapshot` records
-`saveAllAssets` beside the scene document and `restoreSnapshot` feeds it back
+one session back exactly as Play found it - the undo history included. The
+snapshot is written from these entities at these slot indices and read back
+through `createEntityAt`, so every step on the stack still names what it named
+before Play, and edit / Play to check / Stop / undo the bad edit is a loop that
+works. `captureSnapshot` records `CommandStack::revision()`; if the session
+moved the history - a panel is live in play mode, so an edit made during one
+addresses the world about to be discarded - that half of the open's reasoning
+does apply, and the stack is dropped with a toast saying so. `captureSnapshot`
+also records `saveAllAssets` beside the scene document and `restoreSnapshot`
+feeds it back
 (see [IO and serialization](system/io.md)). An open makes no such promise - it
 is leaving that world for another one - and carrying the strays forward would
 grow the graph by a scene's worth of assets per open and cook every one of them
@@ -410,6 +574,22 @@ on the project-relative name and hands back the clip it already has, so there
 is no new row to look for, and the scene is not dirtied for an import that did
 not happen. On a host with no audio device the tab says so, since clips still
 import and cook there - they just cannot be heard.
+
+### When the scene has no camera
+
+The editor has no camera of its own: `CameraControllerSystem` retargets each
+frame onto whichever entity holds an active `Camera`, so unticking Active on the
+last one - or deleting it - empties the viewport and freezes navigation, and
+`VisibilitySystem`'s "No active camera found for visibility" goes to a log file
+the editor cannot show. `ViewportOverlay::drawNoCameraNotice` puts it on screen
+instead, centred in the viewport it is explaining: **"No active camera - nothing
+to render from"**, with the two routes back under it.
+
+`Entity > Create > Camera` is one of those routes, so it activates the camera it
+creates **when the scene has no active one**. Inactive is right when another
+camera already owns the view - it stops a new camera hijacking it - and wrong in
+the one case where creating one is the recovery, where an inactive result looks
+like the menu item did nothing.
 
 ## CameraControllerSystem
 
@@ -555,7 +735,12 @@ as a reference from then on. Two consequences to know before reaching for it:
   `Enemy 2`, ...). Overwriting a stranger's file would re-point every instance of
   it at a different subtree, so the toast names the file that was actually
   written.
-- **A successful save drops the undo history.** The subtree's entities are
-  rebuilt from the file on the next load, so nothing already on the stack
-  describes the scene any more - the same reason a scene load clears it. A
-  refused save leaves the history alone.
+- **A successful save drops the history entries that describe the subtree, and
+  only those.** The subtree is the prefab's from then on: the scene keeps a
+  reference and the overrides against it, so a step that assigns a component in
+  there would undo to a value the scene has stopped storing. Everything else in
+  the history is untouched - an entity elsewhere in the scene is not rebuilt
+  from anything, and an edit to it an hour ago can still be taken back. (A
+  scene load clears the whole stack for a reason that does not hold here: it
+  replaces every entity, and this replaces none.) A refused save leaves the
+  history alone.
