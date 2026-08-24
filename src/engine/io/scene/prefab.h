@@ -47,10 +47,13 @@ class ResourceManager;
  *
  * **When the prefab changes underneath an override** the override is kept,
  * reported once, and not applied. The cases are: the uid is gone, the component
- * is gone, the field is gone, the value's type no longer matches, and the
- * root's Transform (which is the instance's own pose and could never have taken
- * effect). Keeping the entry means renaming a field and renaming it back does
- * not lose the user's edit.
+ * is gone, the field is gone, the value's type no longer matches, the root's
+ * Transform (which is the instance's own pose and could never have taken
+ * effect), and Script (a behavior's authored values are the prefab's on every
+ * instance - the component is one field holding the whole list, so the only
+ * override the format can spell is a wholesale replacement of it). Keeping the
+ * entry means renaming a field and renaming it back does not lose the user's
+ * edit.
  */
 namespace Prefab {
 

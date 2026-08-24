@@ -125,14 +125,12 @@ bool GLBackend::init(WindowManager& window) {
     // Forward+ cluster light grid: allocate its SSBO now the context is live.
     m_clusterGrid.init();
 
-    // Froxel fog volumes allocate lazily - the fog pass inits them on the first
-    // fog-enabled frame, so scenes that never enable fog never pay the ~15 MB.
+    // Froxel fog volumes and the editor preview rig allocate lazily - the fog
+    // pass inits its volumes on the first fog-enabled frame, GLPreview on the
+    // first request - so a host that uses neither pays for neither.
 
     // Allocates cube-map arrays, so it needs the live context.
     m_probes.init(m_sceneCapture, m_cubeConvolver);
-
-    // Editor previews: same.
-    m_preview.init();
 
     const std::string version = m_context.versionString();
     m_info.api    = version.empty() ? "OpenGL" : "OpenGL " + version;
@@ -146,9 +144,10 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     PROFILE_SCOPE("GLBackend::render");
     PROFILE_GPU_SCOPE("GPU.Frame");
 
-    // Before anything reads a cache: if the scene was replaced, none of them
-    // can be trusted, and nothing downstream can tell on its own.
-    onAssetGraphSwapped(resources);
+    // Before anything reads a cache: if the world or the asset graph was
+    // replaced, what was built from it cannot be trusted, and nothing
+    // downstream can tell on its own.
+    onWorldReplaced(view, resources);
 
     {
         PROFILE_SCOPE("Render/SyncAssets");
@@ -355,18 +354,24 @@ void GLBackend::bakeProceduralSky(const Environment& env, const glm::vec3& sunDi
     m_bakedEnvPath.clear();  // force an HDR re-bake if the user switches back
 }
 
-void GLBackend::onAssetGraphSwapped(const ResourceManager& resources) {
-    const uint64_t epoch = resources.epoch();
-    if (epoch == m_assetEpoch) return;
-    m_assetEpoch = epoch;
+void GLBackend::onWorldReplaced(const RenderView& view, const ResourceManager& resources) {
+    const uint64_t assetEpoch = resources.epoch();
+    const uint64_t worldEpoch = view.worldEpoch;
+    if (assetEpoch == m_assetEpoch && worldEpoch == m_worldEpoch) return;
 
-    PROFILE_SCOPE("Render/GraphSwap");
+    PROFILE_SCOPE("Render/WorldReplaced");
 
-    m_view.invalidate();      // asset mirrors: handles and versions restart
-    m_probes.invalidate();    // cube captures: same probe pose, different scene
-    m_bakedIrradiance = {};   // SH volume: same box and grid, different scene
-
-    LOG_INFO("Asset graph swapped; scene-derived GPU caches dropped");
+    if (assetEpoch != m_assetEpoch) {
+        m_assetEpoch = assetEpoch;
+        m_view.invalidate();      // asset mirrors: handles and versions restart
+        LOG_INFO("Asset graph swapped; asset mirrors dropped");
+    }
+    if (worldEpoch != m_worldEpoch) {
+        m_worldEpoch = worldEpoch;
+        m_probes.invalidate();    // cube captures: same probe pose, different scene
+        m_bakedIrradiance = {};   // SH volume: same box and grid, different scene
+        LOG_INFO("Scene replaced; baked captures of it dropped");
+    }
 }
 
 void GLBackend::partitionDrawables(const RenderView& view) {
@@ -393,7 +398,7 @@ GpuTextureId GLBackend::renderPreview(const PreviewRequest& request,
                                   const ResourceManager& resources) {
     // Runs from the editor after the scene render; like the probe baker it
     // re-binds the camera / lights UBOs, which the next frame re-uploads.
-    return m_preview.render(m_context, m_view, m_ibl, request, resources);
+    return m_preview.render(m_context, m_view, m_ibl, m_shadowAtlas, request, resources);
 }
 
 GpuTextureId GLBackend::previewTexture(uint64_t key) const {
@@ -407,6 +412,12 @@ void GLBackend::releasePreview(uint64_t key) {
 GpuTextureId GLBackend::textureId(const TextureHandle& handle) const {
     const Vkm::GL::Texture2D* tex = m_view.getTexture(handle);
     return tex ? tex->getID() : 0;
+}
+
+GpuTextureId GLBackend::ensureTexture(const TextureHandle& handle,
+                                      const ResourceManager& resources) {
+    m_view.ensureTexture(handle, resources);
+    return textureId(handle);
 }
 
 uint32_t GLBackend::reloadChangedShaders() {

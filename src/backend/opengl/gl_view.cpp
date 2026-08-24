@@ -67,6 +67,12 @@ void GLView::setTextureFiltering(TextureFiltering mode, float maxAnisotropy) {
     }
 }
 
+void GLView::ensureTexture(const TextureHandle& handle, const ResourceManager& resources) {
+    if (!handle) return;
+    ensure(m_textures, handle, resources);
+    reportIfMissing(handle, resources);
+}
+
 void GLView::reportIfMissing(const TextureHandle& handle, const ResourceManager& resources) {
     const TextureAsset& asset = resources.get(handle);
     // Still in flight is not a failure - it resolves on a later frame, and the
@@ -94,12 +100,20 @@ void GLView::ensureMaterial(const MaterialHandle& handle, const ResourceManager&
 }
 
 void GLView::sync(const RenderView& view, const ResourceManager& resources) {
+    // Naming every RenderView member is what keeps the walk below complete:
+    // add one there and this stops compiling until someone has said whether it
+    // carries an asset handle. Nothing else catches that omission.
+    [[maybe_unused]] const auto& [viewportX, viewportY, viewportWidth, viewportHeight,
+        surfaceHeight, camera, drawables, shadowCasters, lights, probes, decals,
+        particlesAdditive, particlesAlpha, irradianceVolumes, skinMatrices, casterSkins,
+        settings, environment, ui, worldEpoch] = view;
+
     // Drawables arrive clustered by (material, mesh) - that is the draw sort -
     // so consecutive repeats dominate at scale and the previous handle is worth
     // remembering.
     MaterialHandle lastMaterial;
     MeshHandle     lastMesh;
-    for (const DrawableData& d : view.drawables) {
+    for (const DrawableData& d : drawables) {
         if (d.mesh != lastMesh) {
             lastMesh = d.mesh;
             ensure(m_meshes, d.mesh, resources);
@@ -116,7 +130,7 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
     // than sorted, so the repeat-skip is incidental here, but the list is
     // scene-sized and the compare is free.
     MeshHandle lastCasterMesh;
-    for (const ShadowCasterData& caster : view.shadowCasters) {
+    for (const ShadowCasterData& caster : shadowCasters) {
         if (caster.mesh == lastCasterMesh) continue;
         lastCasterMesh = caster.mesh;
         ensure(m_meshes, caster.mesh, resources);
@@ -125,13 +139,13 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
     // Decals are gathered scene-wide too, and a decal material is usually its
     // own (a scorch, a bullet hole) rather than one some visible drawable
     // happens to share - so without this walk the decal pass skips every one.
-    for (const DecalData& decal : view.decals) {
+    for (const DecalData& decal : decals) {
         ensureMaterial(decal.material, resources);
     }
 
     // Font atlases live inside FontAssets (not the texture slot), so ensure
     // them straight off the overlay's text commands.
-    for (const UIDrawCmd& cmd : view.ui.commands) {
+    for (const UIDrawCmd& cmd : ui.commands) {
         ensure(m_fontAtlases, cmd.font, resources);
     }
 }

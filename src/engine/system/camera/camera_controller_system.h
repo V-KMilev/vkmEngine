@@ -15,6 +15,10 @@ struct Transform;
 
 /**
  * @brief Camera controller used in the editor, supporting free-fly and look controls.
+ *
+ * Disabled until something enables it (see @ref setEnabled), because right-drag
+ * hides and grabs the pointer and only an authoring viewport has any business
+ * doing that.
  */
 class CameraControllerSystem : public System {
     public:
@@ -66,10 +70,15 @@ class CameraControllerSystem : public System {
         /**
          * @brief Enable or disable the fly controls entirely.
          *
-         * The controller is an authoring tool: the editor keeps it on, but a
-         * shipped game owns its camera and cursor (gameplay drives both), so
-         * the runtime turns it off at bootstrap. Disabled, update() is a no-op
-         * - no camera writes, no cursor-mode changes.
+         * The controller is an authoring tool, so it starts OFF and the editor
+         * is what turns it on - the safe way round, because a host that never
+         * asks gets a controller that does nothing rather than one that takes
+         * the cursor. A shipped game owns its camera and cursor (gameplay
+         * drives both), and it has no way to reach this switch: BehaviorContext
+         * carries no systems. Disabled, update() is a no-op - no camera writes,
+         * no cursor-mode changes.
+         *
+         * @param enabled Whether the fly controls run.
          */
         void setEnabled(bool enabled) { m_enabled = enabled; }
 
@@ -103,6 +112,27 @@ class CameraControllerSystem : public System {
          * navigation-gizmo view presets.
          */
         void viewFrom(Scene& scene, const glm::vec3& target, const glm::vec3& direction, float distance);
+
+        /**
+         * @brief Whether this controller has moved the camera since last asked,
+         * clearing the answer as it gives it.
+         *
+         * The camera it flies is the scene's own Camera entity - the editor has
+         * none of its own, which is what makes "you move what you see" true -
+         * and that entity's Transform is a value the scene file stores. So a
+         * look around is an edit to authored data, and a host that tracks
+         * unsaved work has to hear about it or the next save quietly writes
+         * wherever the viewport was parked over the framing somebody chose.
+         *
+         * Asked rather than announced, because this controller has no editor to
+         * tell: the runtime flies the same one and never asks. Covers every
+         * write it makes - a fly drag, a scroll dolly, Frame Selected, a
+         * view-cube snap - and reports nothing for a right-drag that moved the
+         * pointer nowhere.
+         *
+         * @return true if the camera's Transform changed under this controller.
+         */
+        bool takeCameraMoved();
 
     private:
         void updateFlyMode(WindowManager& window, const InputMap& input,
@@ -159,7 +189,19 @@ class CameraControllerSystem : public System {
 
         bool m_editorWantsMouse    = false;
         bool m_editorWantsKeyboard = false;
-        bool m_enabled             = true;
+        /**
+         * @brief Set whenever a write of this controller's changed the camera's
+         * pose; cleared by takeCameraMoved().
+         */
+        bool m_cameraMoved         = false;
+        /**
+         * @brief Whether the fly controls run; off until an editor asks.
+         *
+         * Right-button-down puts the window in CursorMode::Disabled - hidden,
+         * grabbed and re-centred every frame - which is what an authoring
+         * viewport wants and what a game that never asked for it must not get.
+         */
+        bool m_enabled             = false;
 };
 
 } // namespace Vkm::Engine

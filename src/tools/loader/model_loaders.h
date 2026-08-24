@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/mesh_asset.h"
@@ -132,16 +133,24 @@ SkeletonHandle loadModelSkeleton(const std::string& path, ResourceManager& resou
  * skeleton loadModelSkeleton builds; one naming a node the rig does not hold is
  * dropped and counted.
  *
+ * Markers are authored rather than imported - no interchange format carries
+ * one - so they arrive from the recipe beside the path and the index, and are
+ * written back into the clip's own source descriptor so the next cook re-emits
+ * the recipe with them still in it. One named nothing, or timed outside the
+ * clip, is dropped and counted: it could never fire at the instant it names.
+ *
  * Idempotent by name.
  *
  * @param path Path to the model file to parse with Assimp.
  * @param clipIndex Assimp global animation index to extract.
+ * @param markers Authored markers to carry on the clip; may be empty.
  * @param resources Resource manager the clip (and the rig it names) is added to.
  * @return Handle to the built or existing clip, or an empty handle on failure.
  */
 AnimationClipHandle loadModelAnimationClip(
     const std::string& path,
     int clipIndex,
+    std::vector<ClipMarker> markers,
     ResourceManager& resources
 );
 

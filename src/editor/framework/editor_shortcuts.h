@@ -8,14 +8,14 @@ class SceneIOController;
 /**
  * @brief Keyboard-shortcut dispatcher for the editor.
  *
- * Extracted from EditorSystem (god-file decomposition). Translates the
- * configured keybinds into editor commands: panel toggles, scene save/load
- * (via the controller), entity ops (delete/duplicate/focus/deselect) and
- * gizmo mode changes. Stateless; reads keybinds and mutates EditorState.
+ * Translates the configured keybinds into editor commands: panel toggles, scene
+ * save/load (via the controller), entity ops (delete/duplicate/focus/deselect)
+ * and gizmo mode changes. Stateless; reads keybinds and mutates EditorState.
  *
  * The F5 "show the hidden editor again" toggle is deliberately NOT here:
- * it uses raw GLFW (ImGui is not processing input while the editor is
- * hidden) and stays part of EditorSystem's visibility gate.
+ * process() runs past EditorSystem's visibility gate, so it never sees a frame
+ * while the editor is hidden. The toggle sits with the gate, on the same
+ * isPressed() keybind path as everything here.
  */
 class EditorShortcuts {
     public:

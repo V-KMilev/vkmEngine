@@ -14,8 +14,11 @@
 
 #include "core/math/axes.h"
 #include "core/math/easing.h"
+#include "core/math/random.h"
 #include "ecs/scene.h"
 #include "ecs/component/animation/animation.h"
+#include "ecs/component/animation/animator.h"
+#include "ecs/component/animation/bone_socket.h"
 #include "ecs/component/core/name.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/component/physics/collider.h"
@@ -31,8 +34,12 @@
 #include "platform/input/input_map.h"
 #include "platform/window/input_handle.h"
 #include "platform/window/glfw_include.h"
+#include "proc_audio.h"
 #include "proc_mesh.h"
 #include "resource/resource_manager.h"
+#include "runner_rig.h"
+#include "system/animation/animation_events.h"
+#include "system/audio/audio_events.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "system/physics/physics_events.h"
 #include "system/ui/ui_events.h"
@@ -76,11 +83,6 @@ constexpr float PLAYER_HALF_Y = 0.7f;
 // an overhead gantry whose underside sits just above it.
 constexpr float CROUCH_HALF_Y = 0.45f;
 
-// One full stride (both limbs swing out and back) at cadence 1. updatePlayer
-// scales each pivot's Animation::speed with the run speed, so the cycle
-// quickens as the track does.
-constexpr float RUN_PERIOD = 0.55f;
-
 // Train roof height: properly Subway-Surfers tall, ~1.8x the runner, so cars
 // read as vehicles rather than crates - and deliberately above the jump apex,
 // so from the ground you board via the nose ramps, never by jumping.
@@ -120,22 +122,22 @@ constexpr uint64_t RUN_SEED = 0x9E3779B9u;
 // its tail doubles as coyote time at ledges.
 constexpr float GROUNDED_GRACE = 0.12f;
 
-/**
- * @brief A looping limb swing for the AnimationSystem: rotate about X between
- *        -amplitude and +amplitude with a sine ease, starting @p phase seconds
- *        into the cycle (opposing limbs start half a period apart).
- */
-Animation makeSwing(float amplitude, float phase) {
-    Animation anim;
-    anim.rotationTrack.setEasing(Easing::byName("easeInOutSine"));
-    anim.rotationTrack.addKeyframe(0.0f,             glm::angleAxis(-amplitude, Math::WORLD_AXIS_X));
-    anim.rotationTrack.addKeyframe(RUN_PERIOD * 0.5f, glm::angleAxis( amplitude, Math::WORLD_AXIS_X));
-    anim.rotationTrack.addKeyframe(RUN_PERIOD,        glm::angleAxis(-amplitude, Math::WORLD_AXIS_X));
-    anim.time    = phase;
-    anim.playing = true;
-    anim.looping = true;
-    return anim;
-}
+// What the run sounds like. The distances are the chase camera's, not the
+// runner's: the ear rides the camera, which sits 8.5 m behind and a few above,
+// so full volume has to reach past that or the player would hear their own
+// footsteps attenuated.
+constexpr float FOOTSTEP_VOLUME = 0.55f;
+constexpr float COIN_VOLUME     = 0.42f;
+constexpr float HEARING_NEAR    = 12.0f;
+constexpr float HEARING_FAR     = 60.0f;
+
+// Per-playback spread. Two footfalls at identical gain and pitch read as one
+// sample looping rather than as a runner, and at this game's cadence they land
+// close enough together for that to be obvious. Narrow on purpose: wide enough
+// to break the repeat, not so wide that a step sounds like a different boot.
+constexpr float SPREAD_VOLUME_MIN = 0.86f;
+constexpr float SPREAD_PITCH_MIN  = 0.93f;
+constexpr float SPREAD_PITCH_MAX  = 1.08f;
 
 /**
  * @brief A coin's idle motion: a constant-rate full revolution about Y (four
@@ -222,6 +224,16 @@ void PotionRunner::onStart() {
             m_groundedTimer = GROUNDED_GRACE;
         }
     });
+    // The footstep comes from the animation, not from a timer beside it: the
+    // stride clip announces a marker at each instant a leg is vertical, and the
+    // sound is whatever gameplay decides that means. The clip says WHEN; this
+    // says whether - no sound in mid-air, and none for the ragdoll, which has
+    // stopped its own Animator anyway.
+    subscribe<AnimationEvent>([this](const AnimationEvent& e) {
+        if (e.entity != m_player || e.marker != RUNNER_MARKER_FOOTSTEP) return;
+        if (!m_alive || !m_grounded) return;
+        playAt(m_footstep, m_scene->get<Transform>(m_player).position, FOOTSTEP_VOLUME);
+    });
     // Coin pickup rides the physics trigger pipeline: the coin's trigger
     // volume overlaps the dynamic player and the narrowphase reports it.
     subscribe<TriggerEvent>([this](const TriggerEvent& e) {
@@ -232,6 +244,7 @@ void PotionRunner::onStart() {
             c.active = false;
             m_scene->get<Mesh>(c.entity).visible = false;
             ++m_coinCount;
+            playAt(m_coinChime, m_scene->get<Transform>(c.entity).position, COIN_VOLUME);
             // Roof coins pay double - the payoff the ROOF RIDE pill advertises.
             if (c.y > 1.5f) m_bonusScore += coinValue;
             if (m_coinCount % 10 == 0) LOG_INFO("Coins: %d", m_coinCount);
@@ -295,6 +308,20 @@ MaterialHandle PotionRunner::makeMaterial(
     // No texture handles are set: GLMaterial keys each map's "is bound" flag off
     // a valid handle, so the shader falls back to these scalars cleanly.
     return m_resources->add(std::move(material), name);
+}
+
+void PotionRunner::playAt(AudioClipHandle clip, const glm::vec3& position, float volume) {
+    VoiceParams params;
+    // The non-reproducible per-thread generator on purpose: m_rng is the run's
+    // deterministic stream and it deals the track, so drawing from it here
+    // would make the level layout depend on how often the runner's feet hit
+    // the ground. Nothing about a footstep needs to repeat across runs.
+    params.volume      = volume * Math::Random::range(SPREAD_VOLUME_MIN, 1.0f);
+    params.pitch       = Math::Random::range(SPREAD_PITCH_MIN, SPREAD_PITCH_MAX);
+    params.position    = position;
+    params.minDistance = HEARING_NEAR;
+    params.maxDistance = HEARING_FAR;
+    context().events->emit(PlaySoundEvent{clip, params});
 }
 
 EntityId PotionRunner::spawnBox(MeshHandle mesh, MaterialHandle material, const char* name) {
@@ -504,7 +531,6 @@ void PotionRunner::buildWorld() {
         m_scene->add(m_player, std::move(col));
     }
     m_playerParts.clear();
-    m_limbPivots.clear();
     auto addPart = [&](const char* name, MaterialHandle mat,
                        const glm::vec3& scale, const glm::vec3& offset, EntityId parent) {
         EntityId e = spawnBox(m_cubeMesh, mat, name);
@@ -518,25 +544,46 @@ void PotionRunner::buildWorld() {
     addPart("Head",    m_matPlayer,     {0.46f, 0.42f, 0.46f}, { 0.00f,  0.66f,  0.00f}, m_player);
     addPart("Visor",   m_matPlayerGlow, {0.50f, 0.12f, 0.50f}, { 0.00f,  0.74f,  0.00f}, m_player);
     addPart("Pack",    m_matPlayerGlow, {0.46f, 0.62f, 0.18f}, { 0.00f,  0.10f, -0.36f}, m_player);  // on the back, toward the camera
-    // Limbs hang from meshless pivot entities at the shoulder/hip joints, so
-    // the AnimationSystem's swing (see makeSwing) rotates them about the joint
-    // instead of paddling them about their own centres. Opposing limbs (and the
-    // opposite arm/leg of each side) start half a period out of phase, like a
-    // real stride. updatePlayer drives Animation::speed with the run cadence.
-    auto addLimb = [&](const char* name, const glm::vec3& scale, const glm::vec3& joint,
-                       float amplitude, float phase) {
-        EntityId pivot = m_scene->createEntity();
-        m_scene->add(pivot, makeName(name));
-        m_scene->add(pivot, Transform{joint, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), glm::vec3(1.0f)});
-        HierarchyOperations::setParent(*m_scene, pivot, m_player);
-        m_scene->add(pivot, makeSwing(amplitude, phase));
-        m_limbPivots.push_back(pivot);
-        addPart(name, m_matPlayer, scale, {0.0f, -scale.y * 0.5f + 0.04f, 0.0f}, pivot);
+    // The runner is a rig, and that is the whole reason its footsteps are real:
+    // a clip can carry markers and four keyframed pivots cannot. One Animator
+    // on the player plays one looping stride; updatePlayer scales its speed
+    // with the run, so the swing and the footsteps quicken together because
+    // they are the same clock.
+    {
+        Animator stride;
+        stride.skeleton = m_resources->add(makeRunnerSkeleton(), RUNNER_RIG_NAME);
+        stride.clip     = m_resources->add(makeRunnerStride(),   RUNNER_CLIP_NAME);
+        m_scene->add(m_player, std::move(stride));
+    }
+    // Each limb hangs off its bone through a BoneSocket, which places the socket
+    // entity at the joint with the bone's swing on it - so the limb box under it
+    // rotates about the shoulder or hip instead of paddling about its own
+    // centre. A socket is a direct child of the entity carrying the Animator,
+    // which is the only place BoneSocketSystem will place one.
+    auto addLimb = [&](const char* bone, const glm::vec3& scale) {
+        EntityId socket = m_scene->createEntity();
+        m_scene->add(socket, makeName(bone));
+        m_scene->add(socket, Transform{});
+        HierarchyOperations::setParent(*m_scene, socket, m_player);
+        BoneSocket attach;
+        attach.bone = bone;
+        m_scene->add(socket, std::move(attach));
+        addPart(bone, m_matPlayer, scale, {0.0f, -scale.y * 0.5f + 0.04f, 0.0f}, socket);
     };
-    addLimb("Arm L", {0.15f, 0.56f, 0.28f}, {-0.46f,  0.30f, 0.00f}, 0.9f, 0.0f);
-    addLimb("Arm R", {0.15f, 0.56f, 0.28f}, { 0.46f,  0.30f, 0.00f}, 0.9f, RUN_PERIOD * 0.5f);
-    addLimb("Leg L", {0.20f, 0.46f, 0.30f}, {-0.18f, -0.28f, 0.00f}, 1.1f, RUN_PERIOD * 0.5f);
-    addLimb("Leg R", {0.20f, 0.46f, 0.30f}, { 0.18f, -0.28f, 0.00f}, 1.1f, 0.0f);
+    addLimb(RUNNER_BONE_ARM_L, {0.15f, 0.56f, 0.28f});
+    addLimb(RUNNER_BONE_ARM_R, {0.15f, 0.56f, 0.28f});
+    addLimb(RUNNER_BONE_LEG_L, {0.20f, 0.46f, 0.30f});
+    addLimb(RUNNER_BONE_LEG_R, {0.20f, 0.46f, 0.30f});
+
+    // The two sounds this game makes. Registered here and played as requests
+    // rather than hung on an entity: the stride's footfalls arrive 138 ms apart
+    // at top cadence against a 130 ms clip, which leaves one speaker 8 ms to
+    // finish and retrigger in, and coins come in lanes of four 3.6 m apart, so
+    // at top speed their chimes start 83 ms apart against a 180 ms clip - and
+    // a collected coin is switched off the instant it pays, leaving nothing
+    // there to hang a source on.
+    m_footstep  = m_resources->add(makeFootstepSound(), "potion:footstep");
+    m_coinChime = m_resources->add(makeCoinChime(), "potion:coin");
 
     // Scrolling decoration pools (no gameplay, just a sense of speed). Pillars
     // stay shorter than the camera height so they never cross the view.
@@ -741,7 +788,7 @@ void PotionRunner::randomizeObstacle(Obstacle& o) {
     o.hasRamp    = false;       // only steady trains grow a boarding ramp below
     o.isTrain    = false;       // flips in the train branch; gates dressing + headlight
 
-    // ---- solvability guard 1 ------------------------------------------------
+    // Solvability guard 1.
     // Two recycles can share a z window: a faster train slowly closes on the
     // obstacle just ahead of it (the previous recycle). Side-by-side blockers
     // are survivable ONLY if the middle lane stays free - any lane can step to
@@ -800,9 +847,9 @@ void PotionRunner::randomizeObstacle(Obstacle& o) {
             m_convoyLeft = 2 + (frand() < 0.4f ? 1 : 0);
             m_convoyLane = o.lane;
         }
-        // ---- solvability guard 2: a fast train closes on the previous
-        // recycle; if that pairing would block two lanes without keeping the
-        // middle free, it runs steady instead and the gap never closes.
+        // Solvability guard 2: a fast train closes on the previous recycle; if
+        // that pairing would block two lanes without keeping the middle free,
+        // it runs steady instead and the gap never closes.
         if (o.relFactor > 0.0f && m_prevBlocking && !middleStaysFree(o.lane, m_prevLane)) {
             o.relFactor = 0.0f;
         }
@@ -958,6 +1005,11 @@ void PotionRunner::resetGame() {
         m_scene->get<Mesh>(part).material = mat;
         m_scene->get<Mesh>(part).visible  = true;
     }
+    // Back on its feet, and running again from the top of the cycle.
+    Animator& stride = m_scene->get<Animator>(m_player);
+    stride.playing = true;
+    stride.time    = 0.0f;
+
     Transform& pt = m_scene->get<Transform>(m_player);
     pt.position = {0.0f, PLAYER_HALF_Y, 0.0f};
     pt.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);   // undo the ragdoll tumble
@@ -1084,12 +1136,12 @@ void PotionRunner::updatePlayer(float dt) {
     box.halfExtents.y = halfY;
     box.center.y      = halfY - PLAYER_HALF_Y;   // keep the box bottom at the feet
 
-    // Stride cadence follows the run: the limb swings quicken as the track
-    // speeds up, and nearly freeze mid-pose while airborne.
+    // Stride cadence follows the run: the swing quickens as the track speeds up,
+    // and nearly freezes mid-pose while airborne. One field now, because one
+    // clip drives all four limbs - and the footstep markers ride the same
+    // timeline, so they follow without being told.
     const float cadence = m_grounded ? (0.85f + 1.15f * (m_speed / maxSpeed)) : 0.30f;
-    for (const EntityId& pivot : m_limbPivots) {
-        m_scene->get<Animation>(pivot).speed = cadence;
-    }
+    m_scene->get<Animator>(m_player).speed = cadence;
 
     // Bank into the lane change for a bit of life. Rotation is script-owned -
     // freezeRotation means the solver passes it through untouched.
@@ -1246,6 +1298,11 @@ void PotionRunner::die() {
     for (auto& [part, mat] : m_playerParts)                 // flash the whole runner red
         m_scene->get<Mesh>(part).material = m_matBarrier;
 
+    // Stop the stride: the crash is the solver's to pose from here, and an
+    // Animator still running would keep swinging the limbs on a tumbling body -
+    // and keep announcing footsteps for a runner who has stopped running.
+    m_scene->get<Animator>(m_player).playing = false;
+
     // The crash is the same dynamic body with the leash off: unfreeze rotation
     // so it tumbles, restore the full collider box (in case death came mid
     // slide), give it a bounce, and launch it up and back toward the camera.
@@ -1342,7 +1399,7 @@ void PotionRunner::buildUI() {
         return b;
     };
 
-    // ---- HUD: score / distance / coins, top-left, always visible ----
+    // HUD: score / distance / coins, top-left, always visible.
     EntityId hud = m_scene->createEntity();
     m_scene->add(hud, makeName("Potion HUD"));
     m_scene->add(hud, UICanvas{});
@@ -1379,7 +1436,7 @@ void PotionRunner::buildUI() {
                              TC, TC, {0.0f, 78.0f}, {420.0f, 56.0f}, hud);
     m_scene->get<UIElement>(m_uiMilestone).visible = false;
 
-    // ---- Start screen ----
+    // Start screen.
     EntityId start = m_scene->createEntity();
     m_scene->add(start, makeName("Potion Start"));
     UICanvas startCanvas;
@@ -1403,7 +1460,7 @@ void PotionRunner::buildUI() {
     makeText("Start Tip", "run up the white ramps to ride the trains  -  roof coins pay double", 15.0f,
              GOLD, UIText::Align::Center, TC, TC, {0.0f, 326.0f}, {660.0f, 22.0f}, startPanel);
 
-    // ---- Game over ----
+    // Game over screen.
     EntityId over = m_scene->createEntity();
     m_scene->add(over, makeName("Potion Game Over"));
     UICanvas overCanvas;

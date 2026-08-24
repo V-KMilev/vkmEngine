@@ -8,9 +8,15 @@
 // box, arrow). Those live here so each overlay routes through the same math
 // instead of re-deriving it. The math is intentionally minimal and identical
 // across callers - this is plain debug-overlay drawing, not a render path.
+//
+// The transform gizmo draws its own handles rather than these primitives, but
+// it projects into the same viewport, so it takes nearPlaneSide from here. The
+// near plane is one fact about the camera, and a second spelling of it is a
+// second answer to "is this behind the viewer" waiting to disagree.
 
 #include <cmath>
 
+#include "ui/editor_style.h"
 #include <imgui.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
@@ -18,10 +24,46 @@
 
 namespace Vkm::Engine {
 
+// Signed distance from a clip-space point to the near plane, positive in front
+// of it. GL clip space puts that plane at z = -w, so this one expression covers
+// both projections a camera can carry: a perspective w is the view depth, an
+// orthographic w is always 1 and the whole test falls to z. Testing w alone
+// does neither job - it passes a point nearer than the near plane, whose tiny
+// divisor throws the projection out to coordinates the viewport cannot hold,
+// and under an orthographic projection it passes everything, so gizmos behind
+// the camera are drawn over the view.
+inline float nearPlaneSide(const glm::vec4& clip) {
+    return clip.z + clip.w;
+}
+
+// Map a clip-space point that has passed the near-plane test into screen
+// coordinates inside the viewport child rect. The 3D pass renders at viewport
+// size and the viewport child sits at vpMin onscreen, so NDC maps to
+// (vpMin + (0..vpSize)) directly.
+inline ImVec2 clipToViewport(const glm::vec4& clip, ImVec2 vpMin, ImVec2 vpSize) {
+    const glm::vec3 ndc = glm::vec3(clip) / clip.w;
+    return ImVec2(vpMin.x + (ndc.x * 0.5f + 0.5f) * vpSize.x,
+                  vpMin.y + (1.0f - (ndc.y * 0.5f + 0.5f)) * vpSize.y);
+}
+
+// Pull whichever end of a clip-space segment lies behind the near plane onto
+// it, leaving the part that is actually in front. Returns false when both ends
+// are behind and there is nothing left to draw. Clipping rather than dropping
+// the offending vertex is what lets a wire that passes close to the camera run
+// off the edge of the viewport instead of stopping in mid-air.
+inline bool clipToNearPlane(glm::vec4& a, glm::vec4& b) {
+    const float da = nearPlaneSide(a);
+    const float db = nearPlaneSide(b);
+    if (da < 0.0f && db < 0.0f) return false;
+    if (da < 0.0f)      a = a + (b - a) * (da / (da - db));
+    else if (db < 0.0f) b = b + (a - b) * (db / (db - da));
+    return true;
+}
+
 // Project a world point through the viewport's view+projection into screen
 // coordinates inside the viewport child rect. Returns false when the point is
-// behind the camera. The 3D pass renders at viewport size and the viewport
-// child sits at vpMin onscreen, so NDC maps to (vpMin + (0..vpSize)) directly.
+// behind the near plane, which a single point can only be dropped for - a
+// billboard has no second end to clip against.
 inline bool projectToViewport(
     const glm::mat4& vp,
     const glm::vec3& p,
@@ -30,10 +72,8 @@ inline bool projectToViewport(
     ImVec2& out
 ) {
     const glm::vec4 clip = vp * glm::vec4(p, 1.0f);
-    if (clip.w <= 1e-5f) return false;
-    const glm::vec3 ndc = glm::vec3(clip) / clip.w;
-    out = ImVec2(vpMin.x + (ndc.x * 0.5f + 0.5f) * vpSize.x,
-                 vpMin.y + (1.0f - (ndc.y * 0.5f + 0.5f)) * vpSize.y);
+    if (nearPlaneSide(clip) <= 0.0f) return false;
+    out = clipToViewport(clip, vpMin, vpSize);
     return true;
 }
 
@@ -47,42 +87,44 @@ inline void orthoBasis(const glm::vec3& dir, glm::vec3& outT, glm::vec3& outB) {
     outB = glm::normalize(glm::cross(outT, dir));
 }
 
-// Draw a world-space segment as a viewport line, dropping it when either end
-// is behind the camera (same near-plane handling as the gizmo wireframes -
-// good enough for a debug overlay).
+// Draw a world-space segment as a viewport line, cut at the near plane when it
+// crosses one, and skipped when it lies entirely behind.
 inline void wireSegment(
     ImDrawList* dl, const glm::mat4& vp,
     const glm::vec3& a, const glm::vec3& b,
     ImVec2 vpMin, ImVec2 vpSize, ImU32 col, float thickness
 ) {
-    ImVec2 sa, sb;
-    if (projectToViewport(vp, a, vpMin, vpSize, sa)
-     && projectToViewport(vp, b, vpMin, vpSize, sb))
-        dl->AddLine(sa, sb, col, thickness);
+    glm::vec4 ca = vp * glm::vec4(a, 1.0f);
+    glm::vec4 cb = vp * glm::vec4(b, 1.0f);
+    if (!clipToNearPlane(ca, cb)) return;
+    dl->AddLine(clipToViewport(ca, vpMin, vpSize), clipToViewport(cb, vpMin, vpSize),
+                col, thickness);
 }
 
 // World-space arc center + radius * (cos t * axisA + sin t * axisB) over
-// [from, to] radians, drawn as connected segments that break where a point
-// falls behind the camera. Every ring, disc and cap gizmo routes through here.
+// [from, to] radians, drawn as connected segments each cut at the near plane.
+// Every ring, disc and cap gizmo routes through here, which is why a sphere
+// seen from inside its own radius reaches the viewport edge rather than
+// breaking up around the camera.
 inline void wireArc(
     ImDrawList* dl, const glm::mat4& vp,
     const glm::vec3& center, const glm::vec3& axisA, const glm::vec3& axisB,
     float radius, float from, float to, int segments,
     ImVec2 vpMin, ImVec2 vpSize, ImU32 col, float thickness
 ) {
-    ImVec2 prev{};
-    bool havePrev = false;
+    glm::vec4 prev{};
     for (int s = 0; s <= segments; ++s) {
         const float t = from + (to - from) * (static_cast<float>(s) / segments);
         const glm::vec3 p = center + (axisA * std::cos(t) + axisB * std::sin(t)) * radius;
-        ImVec2 sp;
-        if (projectToViewport(vp, p, vpMin, vpSize, sp)) {
-            if (havePrev) dl->AddLine(prev, sp, col, thickness);
-            prev = sp;
-            havePrev = true;
-        } else {
-            havePrev = false;
+        const glm::vec4 clip = vp * glm::vec4(p, 1.0f);
+        if (s > 0) {
+            glm::vec4 a = prev;
+            glm::vec4 b = clip;
+            if (clipToNearPlane(a, b))
+                dl->AddLine(clipToViewport(a, vpMin, vpSize), clipToViewport(b, vpMin, vpSize),
+                            col, thickness);
         }
+        prev = clip;
     }
 }
 
@@ -109,8 +151,9 @@ inline void wireSphere(
     wireCircle(dl, vp, center, Y, Z, radius, segments, vpMin, vpSize, col, thickness);
 }
 
-// World-space arrow: a line plus a filled triangular head at the tip.
-// Skipped entirely when either end is behind the camera.
+// World-space arrow: a line plus a filled triangular head at the tip. Skipped
+// entirely when either end is behind the near plane - unlike the wires, which
+// clip, because a head drawn at a clipped tip would point from nowhere.
 inline void arrowLine(
     ImDrawList* dl, const glm::mat4& vp,
     const glm::vec3& from, const glm::vec3& to,
@@ -143,7 +186,7 @@ inline void arrowLine(
 inline void wireBox(
     ImDrawList* dl, const glm::mat4& vp,
     const glm::vec3& pos, const glm::quat& rot, const glm::vec3& he,
-    ImVec2 vpMin, ImVec2 vpSize, ImU32 col, float thickness = 1.5f
+    ImVec2 vpMin, ImVec2 vpSize, ImU32 col, float thickness = EditorStyle::px(1.5f)
 ) {
     const glm::mat3 r = glm::mat3_cast(rot);
     glm::vec3 c[8];
@@ -171,7 +214,7 @@ inline void wireBox(
 inline void wireCapsule(
     ImDrawList* dl, const glm::mat4& vp,
     const glm::vec3& center, const glm::quat& rot, float radius, float halfHeight,
-    int segments, ImVec2 vpMin, ImVec2 vpSize, ImU32 col, float thickness = 1.5f
+    int segments, ImVec2 vpMin, ImVec2 vpSize, ImU32 col, float thickness = EditorStyle::px(1.5f)
 ) {
     const glm::mat3 r = glm::mat3_cast(rot);
     const glm::vec3 u = r[0];

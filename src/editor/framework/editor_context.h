@@ -7,6 +7,7 @@ namespace Vkm::Engine {
 struct FrameContext;
 struct EditorState;
 class EngineErrorLog;
+class AudioSystem;
 class CameraControllerSystem;
 class MaterialPreviewSession;
 class RenderSystem;
@@ -33,6 +34,12 @@ struct EditorContext {
     RenderSystem&           renderSystem;
     VisibilitySystem&       visibilitySystem;
     MaterialPreviewSession& materialPreviews;
+
+    // Here for auditioning: the Inspector's audio card and the Asset Browser's
+    // Sounds tab play a clip so it can be heard, which is the only way to
+    // preview one. They reach the device rather than the components, because
+    // an audition has no entity to reconcile.
+    AudioSystem&            audioSystem;
 
     // The editor-owned recoverable-error log (engine reports into it via the
     // reportError() sink). Read by the Bottom panel's Errors tab.

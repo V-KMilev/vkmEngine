@@ -10,6 +10,7 @@
 #include "logger.h"
 
 #include "core/clock.h"
+#include "core/event/event_bus.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/component/animation/animator.h"
@@ -20,6 +21,7 @@
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
 #include "resource/resource_manager.h"
+#include "system/animation/animation_events.h"
 #include "system/animation/pose_evaluator.h"
 #include "system/hierarchy/hierarchy_operations.h"
 
@@ -55,6 +57,7 @@ void SkeletalAnimationSystem::update(FrameContext& ctx) {
 
     FaultsSeen seen;
     poseRigs(ctx, seen);
+    publishMarkers(ctx);
 
     // Each latch holds only while its fault is still there, so fixing one is
     // reported again if it comes back - which is why poseRigs reports into seen
@@ -121,13 +124,13 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen) {
         // point - the same argument AnimationSystem's parallel pass makes.
         PROFILE_SCOPE("SkeletalAnimation/Evaluate");
         parallelFor(m_work.size(), grain, [&](size_t i) {
-            const RigWork& work = m_work[i];
-            Animator& animator  = animators->dataAt(work.animatorIndex);
+            RigWork& work      = m_work[i];
+            Animator& animator = animators->dataAt(work.animatorIndex);
 
-            advancePlayback(animator,
-                            work.clip     ? work.clip->duration     : 0.0f,
-                            work.fadeClip ? work.fadeClip->duration : 0.0f,
-                            simDelta);
+            work.step = advancePlayback(animator,
+                                        work.clip     ? work.clip->duration     : 0.0f,
+                                        work.fadeClip ? work.fadeClip->duration : 0.0f,
+                                        simDelta);
 
             PoseSample sample;
             sample.clip     = work.clip;
@@ -145,17 +148,29 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen) {
     }
 }
 
+void SkeletalAnimationSystem::publishMarkers(FrameContext& ctx) {
+    for (const RigWork& work : m_work) {
+        if (!work.clip || work.clip->markers.empty()) continue;
+
+        const EntityId rig = ctx.scene.entityAt(work.entityIndex);
+        for (const ClipMarker& marker : work.clip->markers) {
+            if (!crossesMarker(work.step, marker.time, work.clip->duration)) continue;
+            // Enqueued rather than emitted: the bus delivers at the top of the
+            // next Simulation stage, the one point where nothing is mid-walk over
+            // storage a listener may edit, and Transform still runs after it.
+            ctx.events.enqueue(AnimationEvent{rig, marker.name});
+        }
+    }
+}
+
 const AnimationClipAsset* SkeletalAnimationSystem::resolveClip(
     const ResourceManager& resources, const AnimationClipHandle& handle,
     const SkeletonAsset& skeleton, FaultsSeen& seen) {
     if (!handle || !resources.isAlive(handle)) return nullptr;
 
-    // A clip's per-bone table is bound to one rig's bone order at cook time, so
-    // it fits only a rig of that name and that length - a rig recooked longer
-    // while the clip stayed current fails the second half alone. Playing either
-    // one would pose the wrong joints from matching indices, so the bind pose
-    // stands and the mismatch is named, which is the failure that actually
-    // happens rather than a character that stands still for no stated reason.
+    // A clip's per-bone table is bound to one rig's order at cook time, so it
+    // fits only a rig of that name and that length. Posing the wrong joints out
+    // of matching indices is worse than holding the bind pose and saying so.
     const AnimationClipAsset& clip = resources.get(handle);
     if (clip.skeleton == skeleton.name && clip.bones.size() == skeleton.bones.size()) return &clip;
 
@@ -204,14 +219,8 @@ void SkeletalAnimationSystem::checkSkinnedMesh(const Scene& scene, const Resourc
         }
     }
 
-    // The palette already resolves a vertex into rig space, so the matrix that
-    // multiplies it has to be the rig's world matrix. Import parents skinned
-    // meshes to the rig at identity to make that true; hand-authoring can undo
-    // it, and the result is a character transformed twice.
-    //
-    // On the rig entity there is no second matrix: its transform IS the rig's
-    // world matrix, and it is what puts the character somewhere other than the
-    // origin. Testing it there would report every placed character.
+    // Import parents a skinned mesh to its rig at identity, which is what makes
+    // the palette's rig-space vertices land right; hand-authoring can undo it.
     if (!onRig && scene.has<Transform>(entity) && !isIdentity(scene.get<Transform>(entity))) {
         seen.meshOffset = true;
         if (!m_meshOffsetLogged) {

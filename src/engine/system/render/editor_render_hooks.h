@@ -86,12 +86,32 @@ class EditorRenderHooks {
         virtual void releaseAllPreviews() = 0;
 
         /**
-         * @brief GPU texture id for @p handle - editor thumbnails.
+         * @brief GPU texture id already mirrored for @p handle, or 0 if none is.
          *
-         * 0 while the texture has no GPU mirror yet (never drawn, or still
-         * decoding); the editor shows a placeholder and retries next frame.
+         * Reports; it never uploads. A texture is mirrored as a side effect of
+         * drawing the material that binds it, so 0 means "still decoding" or
+         * "nothing has drawn this yet", and the second never resolves alone.
+         *
+         * @param handle Texture to look up; an empty handle answers 0.
+         * @return The backend's id for the mirror, or 0.
          */
         virtual GpuTextureId textureId(const TextureHandle& handle) const = 0;
+
+        /**
+         * @brief Mirror @p handle onto the GPU if it is not already, and return it.
+         *
+         * What a library browser needs and textureId() cannot give it: the
+         * textures no material on screen binds never get a mirror otherwise.
+         * Idempotent and version-gated, but the first call per texture pays a
+         * full upload, so a caller showing many should spread them over frames.
+         *
+         * @param handle Texture to mirror; an empty handle answers 0.
+         * @param resources Resolves the handle to the pixels to upload.
+         * @return The backend's id for the mirror, or 0 when the asset has no
+         *         pixels yet (failed decode, or one still in flight).
+         */
+        virtual GpuTextureId ensureTexture(const TextureHandle& handle,
+                                           const ResourceManager& resources) = 0;
 };
 
 /**

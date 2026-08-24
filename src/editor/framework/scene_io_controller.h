@@ -24,6 +24,11 @@ class MaterialPreviewSession;
  * swaps it back. Both go through the same post-swap housekeeping as load(),
  * since a restore is just an in-memory reload - that shared path is why the
  * snapshot lives here rather than in the playbar.
+ *
+ * The snapshot is two documents, not one, because a session holds more than a
+ * scene file describes: the scene, and the list of every asset loaded at the
+ * time. Restoring only the first would put the world back and leave the Asset
+ * Browser emptied of whatever nothing in the world pointed at.
  */
 class SceneIOController {
     public:
@@ -42,6 +47,10 @@ class SceneIOController {
         /**
          * @brief Save to the current path, or pop the Save-As prompt if none yet.
          * Clears EditorState::sceneDirty on success.
+         *
+         * Refused while a play session is live, for the reason writeScene()
+         * gives - the scene in the world during a session is not the one the
+         * author wrote.
          */
         void save(FrameContext& ctx, EditorState& state);
 
@@ -86,18 +95,15 @@ class SceneIOController {
         /**
          * @brief Load a scene path directly (used by the recent-scenes menu). Goes
          * through the same housekeeping as a Load-modal pick.
+         *
+         * The current path moves only if the scene does: a read that fails
+         * leaves the outgoing scene live, and the name has to stay with it.
+         *
+         * @param ctx Frame context owning the scene being replaced.
+         * @param state Editor state whose scene-scoped parts are reset.
+         * @param path Absolute path of the scene file to open.
          */
         void loadPath(FrameContext& ctx, EditorState& state, const std::string& path);
-
-        /**
-         * @brief Open @p path through the unsaved-changes guard.
-         *
-         * Prompts (Save / Don't Save / Cancel) when the current scene is
-         * dirty, otherwise loads immediately. Every open flow - the picker
-         * and Open Recent - routes through this; loading a scene used to
-         * silently discard unsaved work.
-         */
-        void requestOpenPath(FrameContext& ctx, EditorState& state, const std::string& path);
 
         /**
          * @brief Render any pending Save-As / Load modals.
@@ -111,22 +117,105 @@ class SceneIOController {
         void drawDialogs(FrameContext& ctx, EditorState& state);
 
         /**
-         * @brief Serialize the live scene + assets to an in-memory snapshot for play
-         * mode. Call when entering play so Stop can restore the authored state.
+         * @brief Snapshot the live scene + assets in memory so Stop can restore
+         * the authored state. Call when entering play.
+         *
+         * Bakes every loaded asset into the cooked library first, for the reason
+         * writeScene() does: the snapshot is the scene file format, which names
+         * its assets and nothing more, and a name is only restorable when the
+         * library holds a record for it. An asset imported during this session
+         * and never baked would come back as an empty slot.
+         *
+         * The session's whole asset list is recorded beside the scene, because
+         * the scene names only what it uses: an import nobody has assigned yet
+         * is in the Asset Browser and in no component, and restoring the scene
+         * alone would drop it. The bake above is what makes that list
+         * restorable too.
+         *
+         * May block while an import that has not landed yet finishes, since the
+         * cook waits on outstanding async loads - pressing Play seconds after
+         * Import Model waits for that model. A half-loaded scene is not one worth
+         * playing, but the pause is visible and is worth expecting.
+         *
+         * @param ctx Frame context supplying the scene and resources to snapshot.
+         * @param state Editor state whose dirty flag and history revision are
+         *              remembered for Stop - the first to put back, the second
+         *              to tell a session that edited from one that only ran -
+         *              and which receives a toast if the cook or the
+         *              serialization failed.
          */
         void captureSnapshot(FrameContext& ctx, EditorState& state);
+
         /**
-         * @brief Swap the captured snapshot back in (same housekeeping as load()) and
-         * clear it. No-op if no snapshot was captured.
+         * @brief Swap the captured snapshot back in (same housekeeping as load())
+         * and clear it. No-op if no snapshot was captured.
+         *
+         * A failed restore keeps the snapshot rather than dropping it, so the
+         * played scene is left alone instead of being half-replaced.
+         *
+         * Every panel stays live during a session, so the world it throws away
+         * may hold entities and edits the author made inside one. Those are
+         * said out loud, because the editor called them authored work while
+         * they were being made: it pushed an undo step and raised the dirty
+         * flag for each, and withdrawing both without a word is what made the
+         * loss invisible.
+         *
+         * @param ctx Frame context supplying the scene and resources to restore into.
+         * @param state Editor state whose selection, dirty flag and toasts are
+         *              updated to match the restored scene.
          */
         void restoreSnapshot(FrameContext& ctx, EditorState& state);
+
         /**
-         * @brief Whether a play-mode snapshot is currently held.
+         * @brief End the play session: stop the clock and restore the authored
+         * scene. No-op outside a session.
          *
-         * @return true once captureSnapshot() has stored a snapshot (i.e. while
-         *         in play mode), false after restoreSnapshot() clears it.
+         * What Stop is, in one place. The transport's button is one caller and
+         * the unsaved-changes guard is the other - a save cannot run inside a
+         * session, so answering Save on quit has to end one first - and two
+         * spellings of Stop would drift the moment either grew a step.
+         *
+         * @param ctx Frame context owning the clock and the scene.
+         * @param state Editor state the restore updates.
          */
-        bool hasSnapshot() const { return !m_playSnapshot.empty(); }
+        void stopPlaySession(FrameContext& ctx, EditorState& state);
+
+        /**
+         * @brief Whether a play session is live.
+         *
+         * True from Play until Stop. Everything that must not run against the
+         * simulation's copy of the scene - a save, a scene swap, marking the
+         * authored scene dirty - asks this rather than the clock, which is
+         * paused in Edit mode as well.
+         *
+         * @return true while the authored scene is held aside and the world on
+         *         screen belongs to the simulation.
+         */
+        bool isPlaying() const { return !m_playSnapshot.empty(); }
+
+        /**
+         * @brief Take @p path as the file the scene already in the world came from.
+         *
+         * The one case a scene arrives without passing through this controller:
+         * both hosts open a project by asking bootProjectScene for its world,
+         * and the editor then has a scene on screen that it did not read. Left
+         * unadopted it is a scene with no file - Save asks for a name, the
+         * default one offered is not the name it has, and accepting it writes
+         * the session somewhere the project's entryScene never points, leaving
+         * the file the author was editing exactly as it was with nothing said.
+         * The title bar calling it untitled is the same gap, said out loud.
+         *
+         * Adopting is not loading: the world is already there and nothing is
+         * read, replaced or reselected here. An empty @p path is the honest
+         * answer for the two worlds with no file - a module-built one and the
+         * default scene standing in for a load that failed - and leaves the
+         * controller with no save path, which is what keeps a stand-in from
+         * overwriting the file it stood in for.
+         *
+         * @param state Editor state whose recent-scenes list gains @p path.
+         * @param path Absolute path of the scene file, or empty for none.
+         */
+        void adoptPath(EditorState& state, const std::string& path);
 
         bool hasPath() const { return !m_currentScenePath.empty(); }
         const std::string& path() const { return m_currentScenePath; }
@@ -134,9 +223,10 @@ class SceneIOController {
         /**
          * @brief True while a Save-As prompt is either queued for opening or currently visible.
          *
-         * Used by the save-on-quit flow to detect whether the user cancelled
-         * mid-Save (EditorState::afterSaveAction is cleared on cancel; left
-         * set on success).
+         * The unsaved-changes guard reads it to tell a save it is still waiting
+         * on from one the author backed out of: a scene still dirty with no
+         * prompt up means the Save-As was cancelled, and the action waiting on
+         * that save is dropped with it.
          */
         bool isSaveDialogActive() const;
 
@@ -155,6 +245,12 @@ class SceneIOController {
          * flow waits on it dropping, so a failed save must not look like a
          * successful one.
          *
+         * Refused outright while a play session is live: the scene in the world
+         * is then the simulation's, Stop is about to replace it with the
+         * snapshot, and writing it over the file would store a scene nobody
+         * authored - under a cleared dirty flag Stop then restores, so the
+         * editor would go on reporting the file as current.
+         *
          * @param ctx Frame context supplying the scene and resources to write.
          * @param state Editor state whose dirty flag, recents and toasts are updated.
          * @param path Absolute path of the scene file to write.
@@ -162,10 +258,45 @@ class SceneIOController {
          */
         bool writeScene(FrameContext& ctx, EditorState& state, const std::string& path);
         /**
+         * @brief Whether a live play session forbids the save being asked for,
+         * saying so through a toast when it does.
+         *
+         * @param state Editor state receiving the toast.
+         * @return true when a session is live and the caller must not write.
+         */
+        bool refusedDuringPlay(EditorState& state) const;
+        /**
          * @brief Load m_currentScenePath: stashes/restores selection, then runs
          * afterSceneReplace() housekeeping (camera rebind done inline).
+         *
+         * An open is the editor's clean break, and the session's imports break
+         * with it. The swap replaces the asset graph, so an asset nothing in
+         * the outgoing scene named - a sound imported and not yet assigned to a
+         * source - has no name in the new document to be recreated from and
+         * goes. That is the opposite of what Stop does, deliberately: Stop
+         * promises to put one session back, while this leaves a world for
+         * another one. What it does owe the author is the fact, so the ones
+         * that went are counted into a toast and named in the log.
+         *
+         * @param ctx Frame context owning the scene being replaced.
+         * @param state Editor state whose scene-scoped parts are reset.
+         * @return true when the scene on screen is the one @ref path names;
+         *         false when the read failed and the outgoing scene is still
+         *         live, which is the caller's cue to put the path back too.
          */
-        void load(FrameContext& ctx, EditorState& state);
+        bool load(FrameContext& ctx, EditorState& state);
+        /**
+         * @brief Drop the play snapshot and put the clock back in Edit mode.
+         *
+         * What every path that replaces the world has to do, in one place
+         * because getting it wrong is invisible: a snapshot outliving the scene
+         * it was taken from leaves the transport reading as playing, and Stop
+         * then restores that dead world over whatever replaced it - under the
+         * new scene's name, which is the file the next save writes.
+         *
+         * @param ctx Frame context supplying the clock the session ran on.
+         */
+        void endPlaySession(FrameContext& ctx);
         /**
          * @brief Name of the current selection (empty if none), captured BEFORE a
          * scene swap so afterSceneReplace can re-select it by name afterwards.
@@ -189,15 +320,33 @@ class SceneIOController {
         std::string m_currentScenePath;  ///< Empty until the user saves/loads once.
 
         /**
-         * @brief In-memory play-mode snapshot (serialized scene + assets). Non-empty
-         * only between captureSnapshot() (Play) and restoreSnapshot() (Stop).
+         * @brief In-memory play-mode snapshot of the scene. Non-empty only between
+         * captureSnapshot() (Play) and restoreSnapshot() (Stop).
          */
         std::string m_playSnapshot;
+
+        /**
+         * @brief The session's whole asset list at capture, as a serialized block.
+         *
+         * The scene above names only the assets the scene uses, which is what a
+         * scene file is; this is the rest. Held as text beside it so this header
+         * stays free of the JSON type, and because the two are one snapshot in
+         * two documents rather than a document and a cache.
+         */
+        std::string m_playAssets;
         /**
          * @brief EditorState::sceneDirty at capture time, restored on Stop so a play
          * session leaves the dirty flag exactly as the user left it.
          */
         bool        m_playSnapshotDirty = false;
+        /**
+         * @brief CommandStack::revision() at capture time.
+         *
+         * The same number on Stop means the session left the history exactly as
+         * Play found it, which is what lets the restore keep it: the scene it
+         * puts back is the one those steps were made against, at the same ids.
+         */
+        unsigned long long m_playSnapshotHistory = 0;
         bool        m_openSaveAsPopup = false;
         char        m_saveAsBuffer[256] = "scene.json";
 

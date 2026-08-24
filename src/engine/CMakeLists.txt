@@ -7,6 +7,7 @@ file(GLOB_RECURSE VKM_CORE_SOURCES CONFIGURE_DEPENDS
     io/*.cpp
     resource/*.cpp
     system/animation/*.cpp
+    system/audio/*.cpp
     system/particle/*.cpp
     system/async/*.cpp
     system/camera/*.cpp
@@ -75,6 +76,7 @@ target_link_libraries(vkm_core PRIVATE
     vkm_warnings
     vkm_build_info     # io/project_paths.h resolves paths against APP_ROOT_DIR
     stb                # platform/window/window_manager.cpp decodes the window icon
+    miniaudio          # system/audio owns the device; nothing else sees the header
 )
 
 # The headers those private dependencies own are still part of this library's

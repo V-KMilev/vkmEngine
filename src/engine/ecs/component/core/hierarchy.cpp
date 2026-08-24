@@ -7,10 +7,9 @@ namespace Vkm::Engine {
 void detachFromHierarchy(Scene& scene, EntityId entity) {
     if (!scene.has<Hierarchy>(entity)) return;
 
-    // Only the entity itself is guaranteed alive here. Scene::destroyEntity, the
-    // sole caller, unlinks one entity at a time, so a link left over from an
-    // earlier partial tear-down can still name a freed slot. Reading a neighbour
-    // is only safe when both isAlive and has<Hierarchy> hold.
+    // Only the entity itself is guaranteed alive: Scene::destroyEntity unlinks
+    // one at a time, so a link left over from an earlier tear-down can still
+    // name a freed slot. A neighbour needs isAlive and has<Hierarchy> both.
     auto safeHierarchy = [&](EntityId id) -> Hierarchy* {
         if (!id || !scene.isAlive(id) || !scene.has<Hierarchy>(id)) return nullptr;
         return &scene.get<Hierarchy>(id);

@@ -210,6 +210,46 @@ class ResourceManager {
         }
 
         /**
+         * @brief Exchange the contents of the asset at @p handle with @p value,
+         * leaving each holding the identity it arrived with, and commit.
+         *
+         * For rebuilding an asset without reissuing it: the handle still names
+         * the asset, findByName still finds it, and everything already holding
+         * either keeps meaning what it meant. The editor's Stop is the caller -
+         * it puts every asset back as Play found it while the undo history it
+         * keeps across the session still holds handles into this graph.
+         *
+         * Identity is the slot's, not the value's. A freshly built asset
+         * carries a name of its own (the one add() gave it), a uid, a hidden
+         * flag and a version that restarts at 1; letting those ride in would
+         * rename the asset to whatever it was built as, break the name index
+         * with it, and hand the backend's cache a version it has already seen.
+         * They are traded back, so @p value keeps its own and can be removed
+         * afterwards like any other asset.
+         *
+         * @tparam HandleType Handle type identifying the resource type.
+         * @param handle Handle naming the asset to rebuild; must still be live.
+         * @param value Asset holding the new contents; receives the old ones.
+         */
+        template<typename HandleType>
+        void swapValue(const HandleType& handle, typename HandleType::resource_t& value) {
+            using T = typename HandleType::resource_t;
+            static_assert(std::is_base_of_v<Resource, T>, "Resource type must inherit from Resource to use swapValue().");
+            auto& slot = getSlot<T>();
+            VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::swapValue invalid handle");
+            T& target = storageOf<T>(slot).get(handle.key.index);
+            if (&target == &value) return;
+
+            using std::swap;
+            swap(target, value);
+            swap(target.version, value.version);
+            swap(target.uid,     value.uid);
+            swap(target.hidden,  value.hidden);
+            swap(target.name,    value.name);
+            ++target.version;
+        }
+
+        /**
          * @brief Commit changes to a resource by bumping its per-asset version.
          *
          * The per-asset `version` is what the backend keys GPU re-uploads on:

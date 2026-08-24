@@ -170,6 +170,8 @@ namespace PrefabOverrides {
     template <> inline constexpr const char* COMPONENT_KEY<LOD>              = "LOD";
     template <> inline constexpr const char* COMPONENT_KEY<Decal>            = "Decal";
     template <> inline constexpr const char* COMPONENT_KEY<ParticleEmitter>  = "ParticleEmitter";
+    template <> inline constexpr const char* COMPONENT_KEY<AudioSource>      = "AudioSource";
+    template <> inline constexpr const char* COMPONENT_KEY<AudioListener>    = "AudioListener";
     template <> inline constexpr const char* COMPONENT_KEY<IrradianceVolume> = "IrradianceVolume";
     template <> inline constexpr const char* COMPONENT_KEY<ReflectionProbe>  = "ReflectionProbe";
     template <> inline constexpr const char* COMPONENT_KEY<Animation>        = "Animation";
@@ -185,8 +187,8 @@ namespace PrefabOverrides {
     /**
      * @brief Serialize a component the way the scene serializer would.
      *
-     * Mesh, LOD, Decal and Animator reference assets by handle and resolve a
-     * name through the manager; every other component writes itself.
+     * Mesh, LOD, Decal, Animator and AudioSource reference assets by handle and
+     * resolve a name through the manager; every other component writes itself.
      *
      * @tparam T Component type.
      * @param component Value to serialize.
@@ -196,7 +198,8 @@ namespace PrefabOverrides {
     template <typename T>
     nlohmann::json serialize(const T& component, const ResourceManager& resources) {
         if constexpr (std::is_same_v<T, Mesh> || std::is_same_v<T, LOD> ||
-                      std::is_same_v<T, Decal> || std::is_same_v<T, Animator>) {
+                      std::is_same_v<T, Decal> || std::is_same_v<T, Animator> ||
+                      std::is_same_v<T, AudioSource>) {
             return ComponentSerializer::save(component, resources);
         } else {
             return ComponentSerializer::save(component);

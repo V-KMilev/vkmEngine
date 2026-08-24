@@ -6,6 +6,8 @@
 #include <type_traits>
 
 #include "core/reflect.h"
+#include "resource/asset_ref.h"
+#include "resource/asset_type.h"
 #include "system/script/behavior.h"
 #include "system/script/behavior_field_visitor.h"
 
@@ -26,7 +28,8 @@ inline constexpr bool DEPENDENT_FALSE = false;
  * The single dispatch point behind ReflectedBehavior::visitFields, split out so
  * it can recurse into nested structs. The leaf check precedes the struct check,
  * so an explicit field() overload for a reflected type wins (edit it atomically
- * rather than descending into it).
+ * rather than descending into it); an AssetRef sits between the two because it
+ * is a string leaf that also carries the kind of asset it names.
  */
 template<typename V>
 void visitField(BehaviorFieldVisitor& visitor, const char* name, V& value) {
@@ -39,6 +42,12 @@ void visitField(BehaviorFieldVisitor& visitor, const char* name, V& value) {
         value = static_cast<V>(index);
     } else if constexpr (VISITOR_SUPPORTS_FIELD<V>) {
         visitor.field(name, value);
+    } else if constexpr (IS_ASSET_REF<V>) {
+        static_assert(ASSET_TYPE<typename V::asset_t> != AssetType::Count,
+            "ReflectedBehavior: AssetRef names an asset kind the library does not "
+            "hold. Only kinds with an ASSET_TYPE (resource/asset_type.h) can be "
+            "authored, because the assets block has no section for the others.");
+        visitor.assetField(name, value.name, ASSET_TYPE<typename V::asset_t>);
     } else if constexpr (Reflect::IS_REFLECTED<V>) {
         if (visitor.beginStruct(name)) {
             Reflect::forEachField(value, [&](std::string_view subName, auto& sub) {
@@ -49,9 +58,9 @@ void visitField(BehaviorFieldVisitor& visitor, const char* name, V& value) {
     } else {
         static_assert(DEPENDENT_FALSE<V>,
             "ReflectedBehavior: field type is not a supported leaf, a "
-            "VKM_ENUM_NAMES enum, or a VKM_REFLECT-ed struct. Add a field() "
-            "overload in behavior_field_visitor.h, register the type, or drop "
-            "the field from VKM_REFLECT.");
+            "VKM_ENUM_NAMES enum, an AssetRef<Asset>, or a VKM_REFLECT-ed "
+            "struct. Add a field() overload in behavior_field_visitor.h, "
+            "register the type, or drop the field from VKM_REFLECT.");
     }
 }
 

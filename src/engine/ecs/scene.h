@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <tuple>
 #include <utility>
@@ -277,6 +278,7 @@ class Scene {
             m_entityAllocator.clear();
             m_environment = Environment{};
             m_physics     = PhysicsSettings{};
+            ++m_epoch;
         }
 
         /**
@@ -308,7 +310,22 @@ class Scene {
             swap(m_components, other.m_components);
             swap(m_environment, other.m_environment);
             swap(m_physics, other.m_physics);
+            ++m_epoch;
+            ++other.m_epoch;
         }
+
+        /**
+         * @brief Identity of the world these entities belong to, bumped by
+         * every clear() and swap().
+         *
+         * A replacement world reuses the slot indices and generations of the one
+         * it replaced - the serializer rebuilds each entity at the index it was
+         * saved at - so a cache keyed on an entity, or on a pose, cannot tell
+         * the new world from the old one and keeps serving what it captured of
+         * a scene that is gone. Anything holding such a capture must drop it
+         * when this moves.
+         */
+        uint64_t epoch() const { return m_epoch; }
 
     public:
         /**
@@ -397,6 +414,11 @@ class Scene {
     private:
         Environment     m_environment;
         PhysicsSettings m_physics;
+
+        /**
+         * @brief Bumped by every clear() and swap(); see epoch().
+         */
+        uint64_t m_epoch = 0;
 
         SlotAllocator m_entityAllocator;
         std::vector<std::unique_ptr<ISparseSet>> m_components;

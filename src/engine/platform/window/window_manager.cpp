@@ -120,10 +120,9 @@ void WindowManager::createWindow(const std::string& title) {
 
     LOG_TRACE("Constructed Window '%s'", m_title.c_str());
 
-    // Every GLFW callback below reaches its target through this one pointer:
+    // Every GLFW callback below reaches its target through this one pointer -
     // the framebuffer-size one lands here, the input ones carry on to
-    // getInputHandle(). Registered before any of them, and well before the
-    // first glfwPollEvents() that could dispatch one.
+    // getInputHandle() - so it is set before any of them is registered.
     glfwSetWindowUserPointer(m_windowHandle, this);
 
     // Framebuffer, not window, size: this also catches the HiDPI / DPI changes a
@@ -176,9 +175,8 @@ void WindowManager::setTitle(const std::string& title) {
 
 void WindowManager::swapBuffers() {
     {
-        // The actual present. With vsync off and no FPS cap this returns fast,
-        // but when the CPU outruns the GPU the driver blocks here (or in the
-        // next frame's first GL call) until the queue drains - so a fat
+        // With vsync off and no FPS cap this returns fast, but when the CPU
+        // outruns the GPU the driver blocks here until the queue drains - a fat
         // SwapBuffers zone is the tell-tale of a GPU-bound frame.
         PROFILE_SCOPE("SwapBuffers");
         glfwSwapBuffers(m_windowHandle);

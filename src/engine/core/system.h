@@ -49,11 +49,20 @@ enum class SystemStage : uint8_t {
  * @brief Per-frame state bundle passed to every system.
  *
  * The field types encode two kinds of state. References are engine-owned
- * SERVICES, valid for the whole session: time through the Clock (getDeltaTime()
- * for real-time work, getSimDelta() in update(), getFixedStep() in
- * fixedUpdate()), `events` the gameplay bus flushed at the top of the Simulation
- * stage, `input` sampled once before any system runs so every reader agrees on
- * what is held and where the edges are.
+ * SERVICES, valid for the whole session: time through the Clock, `events` the
+ * gameplay bus flushed at the top of the Simulation stage, `input` sampled once
+ * before any system runs so every reader agrees on what is held and where the
+ * edges are.
+ *
+ * A system reads the timeline its responsibility lives on, not the timeline of
+ * the stage it happens to sit in. Simulation state - animation, particles,
+ * physics, gameplay's onUpdate - reads getSimDelta() in update() and
+ * getFixedStep() in fixedUpdate(), which is what makes pause, single-step and
+ * time-scale reach all of it without a case of their own. Presentation and
+ * services - input, camera, the editor, async loading, audio, gameplay's
+ * onRealtimeUpdate - run every frame regardless of the sim delta, on the real
+ * delta where they need one at all, because pausing a game must not cut its
+ * music or freeze the menu asking whether to quit.
  *
  * Pointers are per-frame PRODUCTS, null until their producer has run this frame:
  * `visibility` from VisibilitySystem, `poses` from SkeletalAnimationSystem, `ui`

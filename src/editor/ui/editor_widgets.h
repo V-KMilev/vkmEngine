@@ -2,10 +2,10 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <string>
 
 #include <imgui.h>
+#include <misc/cpp/imgui_stdlib.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -57,29 +57,41 @@ inline bool propRow(const char* label, const char* tooltip, Widget&& widget) {
     return changed;
 }
 
+/**
+ * @brief The bounds a prop row passes are a constraint, not a hint.
+ *
+ * A Drag/Slider clamps the mouse to its lo/hi, but Ctrl+click turns the widget
+ * into a text field that ImGui leaves unbounded by default - so every bound in
+ * the inspector was advisory on the one input path that can type an arbitrary
+ * number. ClampOnInput closes that, and is used rather than AlwaysClamp because
+ * AlwaysClamp also clamps a lo == hi == 0 range, which is how the rows with no
+ * meaningful limit spell "unbounded".
+ */
+inline constexpr ImGuiSliderFlags PROP_CLAMP = ImGuiSliderFlags_ClampOnInput;
+
 inline bool propSlider(const char* label, float* v, float lo, float hi,
                        const char* fmt = "%.3f", const char* tooltip = nullptr) {
-    return propRow(label, tooltip, [&] { return ImGui::SliderFloat("##v", v, lo, hi, fmt); });
+    return propRow(label, tooltip, [&] { return ImGui::SliderFloat("##v", v, lo, hi, fmt, PROP_CLAMP); });
 }
 
 inline bool propSliderInt(const char* label, int* v, int lo, int hi,
                           const char* tooltip = nullptr) {
-    return propRow(label, tooltip, [&] { return ImGui::SliderInt("##v", v, lo, hi); });
+    return propRow(label, tooltip, [&] { return ImGui::SliderInt("##v", v, lo, hi, "%d", PROP_CLAMP); });
 }
 
 inline bool propDrag(const char* label, float* v, float speed, float lo, float hi,
                      const char* fmt = "%.3f", const char* tooltip = nullptr) {
-    return propRow(label, tooltip, [&] { return ImGui::DragFloat("##v", v, speed, lo, hi, fmt); });
+    return propRow(label, tooltip, [&] { return ImGui::DragFloat("##v", v, speed, lo, hi, fmt, PROP_CLAMP); });
 }
 
 inline bool propDragInt(const char* label, int* v, float speed, int lo, int hi,
                         const char* tooltip = nullptr) {
-    return propRow(label, tooltip, [&] { return ImGui::DragInt("##v", v, speed, lo, hi); });
+    return propRow(label, tooltip, [&] { return ImGui::DragInt("##v", v, speed, lo, hi, "%d", PROP_CLAMP); });
 }
 
 inline bool propDrag3(const char* label, float* v, float speed, float lo, float hi,
                       const char* fmt = "%.3f", const char* tooltip = nullptr) {
-    return propRow(label, tooltip, [&] { return ImGui::DragFloat3("##v", v, speed, lo, hi, fmt); });
+    return propRow(label, tooltip, [&] { return ImGui::DragFloat3("##v", v, speed, lo, hi, fmt, PROP_CLAMP); });
 }
 
 inline bool propColor3(const char* label, float* v,
@@ -186,18 +198,10 @@ inline bool propAngleSlider(const char* label, float* radians,
 }
 
 /**
- * @brief Property row: a string edit staged through a fixed buffer.
- *
- * imgui_stdlib isn't compiled in, so the edit round-trips a 256-byte stack
- * buffer; longer strings are clamped on edit.
+ * @brief Property row: a string edit written straight into the string.
  */
 inline bool propString(const char* label, std::string& s, const char* tooltip = nullptr) {
-    char buf[256];
-    std::strncpy(buf, s.c_str(), sizeof(buf) - 1);
-    buf[sizeof(buf) - 1] = '\0';
-    const bool changed = propRow(label, tooltip, [&] { return ImGui::InputText("##v", buf, sizeof(buf)); });
-    if (changed) s = buf;
-    return changed;
+    return propRow(label, tooltip, [&] { return ImGui::InputText("##v", &s); });
 }
 
 /**
@@ -223,6 +227,23 @@ inline bool rebakeButton(uint32_t& bakeVersion) {
 inline void sectionLabel(const char* text) {
     ImGui::TextColored(EditorStyle::HEADER_TEXT, "%s", text);
 }
+
+/**
+ * @brief Draw one line of text clipped to a width, ellipsised in the middle.
+ *
+ * A wrapped line is what breaks a grid of tiles: a two-line name pushes the
+ * next row off the baseline, so every tile after a long name sits wrong. One
+ * line always, and the full text stays available on hover.
+ *
+ * The cut lands mid-line because these lines share their starts and differ at
+ * their ends - a clip named by its path, the sixtieth material out of one file
+ * - and a tail cut leaves a row of tiles all reading "assets/audio/to...".
+ *
+ * @param text Line to draw; empty draws the "(unnamed)" placeholder.
+ * @param maxWidth Width the line must fit inside, in pixels.
+ * @param dim Whether to draw in the disabled colour (a detail line does).
+ */
+void clippedLine(const char* text, float maxWidth, bool dim);
 
 /**
  * @brief Test whether a string contains a filter substring, case-insensitively.

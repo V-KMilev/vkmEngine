@@ -12,6 +12,7 @@
 
 #include "logger.h"
 
+#include "debug/engine_error_log.h"
 #include "ecs/component/render/camera.h"
 #include "ecs/environment.h"
 #include "ecs/component/core/transform.h"
@@ -200,16 +201,51 @@ void load(const nlohmann::json& j, Collider& c) {
 }
 
 namespace {
-// Resolve a saved asset name to a live handle, warning (and leaving the slot
-// empty) when it isn't in the asset graph - e.g. a dependency not loaded yet.
+
+// Names the loaders could not resolve since the scene loader last drained them.
+// A free list rather than a parameter because the loaders are one overload per
+// component, with nowhere to return a second value from.
+std::vector<UnresolvedRef> g_unresolved;
+
+// Resolve a saved asset name to a live handle. A name the asset graph cannot
+// answer leaves the component's slot empty: the file referenced something the
+// load did not bring in, and what the author sees is a field that used to hold
+// their work and now holds nothing. That goes through reportError rather than
+// the log, so the editor says it out loud (a toast, and the entry stays in
+// Bottom > Errors) instead of recording it where only a log reader would find
+// it. The runtime installs no sink and still gets the logged line.
+//
+// The name is also kept, under the field it was read from, so the caller can
+// hand it to the entity and a later save can write it back. Saying it once is
+// not enough on its own: the slot is empty either way, and a save that knew
+// only that would put an empty string where the author's reference was.
+//
+// A null field says the save has nowhere to put this one back - LOD's levels
+// are a ramp rather than a name, and that ramp's holes are its own decision -
+// so nothing is kept. Keeping it anyway would put the name in the document's
+// assets block and nowhere else, declaring an asset the scene has stopped
+// naming and asking every later load to go and find it.
 template<typename Asset>
-Handle<Asset> resolveAssetRef(const ResourceManager& r, const std::string& name, const char* what) {
+Handle<Asset> resolveAssetRef(const ResourceManager& r, const std::string& name,
+                              const char* what, const char* field) {
     if (name.empty()) return {};
     Handle<Asset> h = r.findByName<Asset>(name);
-    if (!h) LOG_WARNING("SceneLoad: %s asset '%s' not found - reference left unresolved", what, name.c_str());
+    if (!h) {
+        reportError("Scene", std::string(what) + " '" + name + "'",
+            "reference left unresolved - the asset is not loaded, so the slot is empty");
+        if (field) g_unresolved.push_back({field, name, ASSET_TYPE<Asset>});
+    }
     return h;
 }
 } // namespace
+
+std::vector<UnresolvedRef> takeUnresolvedRefs() {
+    std::vector<UnresolvedRef> taken;
+    taken.swap(g_unresolved);
+    return taken;
+}
+
+UnresolvedScope::~UnresolvedScope() { takeUnresolvedRefs(); }
 
 nlohmann::json save(const Mesh& m, const ResourceManager& resources) {
     return {
@@ -220,29 +256,39 @@ nlohmann::json save(const Mesh& m, const ResourceManager& resources) {
     };
 }
 void load(const nlohmann::json& j, Mesh& m, const ResourceManager& resources) {
-    m.mesh        = resolveAssetRef<MeshAsset>    (resources, j.value("mesh",     std::string{}), "mesh");
-    m.material    = resolveAssetRef<MaterialAsset>(resources, j.value("material", std::string{}), "material");
+    m.mesh        = resolveAssetRef<MeshAsset>    (resources, j.value("mesh",     std::string{}), "mesh", "mesh");
+    m.material    = resolveAssetRef<MaterialAsset>(resources, j.value("material", std::string{}), "material", "material");
     m.visible     = j.value("visible",     m.visible);
     m.castShadows = j.value("castShadows", m.castShadows);
+}
+void emitAssetRefs(const Mesh& m, AssetRefs& refs) {
+    if (m.mesh)     refs.meshes.push_back(m.mesh);
+    if (m.material) refs.materials.push_back(m.material);
 }
 
 nlohmann::json save(const Animator& a, const ResourceManager& resources) {
     return {
         {"skeleton", a.skeleton ? resources.get(a.skeleton).name : std::string{}},
         {"clip",     a.clip     ? resources.get(a.clip).name     : std::string{}},
-        {"time",     a.time},
-        {"speed",    a.speed},
-        {"playing",  a.playing},
-        {"looping",  a.looping},
+        {"time",        a.time},
+        {"speed",       a.speed},
+        {"playOnStart", a.playOnStart},
+        {"looping",     a.looping},
     };
 }
 void load(const nlohmann::json& j, Animator& a, const ResourceManager& resources) {
-    a.skeleton = resolveAssetRef<SkeletonAsset>     (resources, j.value("skeleton", std::string{}), "skeleton");
-    a.clip     = resolveAssetRef<AnimationClipAsset>(resources, j.value("clip",     std::string{}), "clip");
-    a.time     = j.value("time",    a.time);
-    a.speed    = j.value("speed",   a.speed);
-    a.playing  = j.value("playing", a.playing);
-    a.looping  = j.value("looping", a.looping);
+    a.skeleton = resolveAssetRef<SkeletonAsset>     (resources, j.value("skeleton", std::string{}), "skeleton", "skeleton");
+    a.clip     = resolveAssetRef<AnimationClipAsset>(resources, j.value("clip",     std::string{}), "clip", "clip");
+    a.time        = j.value("time",        a.time);
+    a.speed       = j.value("speed",       a.speed);
+    a.playOnStart = j.value("playOnStart", a.playOnStart);
+    a.looping     = j.value("looping",     a.looping);
+}
+void emitAssetRefs(const Animator& a, AssetRefs& refs) {
+    // fadeFrom is runtime state that no save writes, so it names nothing a
+    // file has to carry.
+    if (a.skeleton) refs.skeletons.push_back(a.skeleton);
+    if (a.clip)     refs.clips.push_back(a.clip);
 }
 
 nlohmann::json save(const BoneSocket& s)          { return saveReflected(s); }
@@ -264,9 +310,14 @@ void load(const nlohmann::json& j, LOD& l, const ResourceManager& resources) {
     if (!j.contains("levels")) return;
     for (const auto& entry : j["levels"]) {
         MeshHandle mesh = resolveAssetRef<MeshAsset>(
-            resources, entry.value("mesh", std::string{}), "LOD mesh");
+            resources, entry.value("mesh", std::string{}), "LOD mesh", nullptr);
         if (!mesh) continue;
         l.levels.push_back({mesh, entry.value("maxDistance", 0.0f)});
+    }
+}
+void emitAssetRefs(const LOD& l, AssetRefs& refs) {
+    for (const LODLevel& level : l.levels) {
+        if (level.mesh) refs.meshes.push_back(level.mesh);
     }
 }
 
@@ -278,9 +329,12 @@ nlohmann::json save(const Decal& d, const ResourceManager& resources) {
     };
 }
 void load(const nlohmann::json& j, Decal& d, const ResourceManager& resources) {
-    d.material  = resolveAssetRef<MaterialAsset>(resources, j.value("material", std::string{}), "material");
+    d.material  = resolveAssetRef<MaterialAsset>(resources, j.value("material", std::string{}), "material", "material");
     d.angleFade = j.value("angleFade", d.angleFade);
     d.opacity   = j.value("opacity",   d.opacity);
+}
+void emitAssetRefs(const Decal& d, AssetRefs& refs) {
+    if (d.material) refs.materials.push_back(d.material);
 }
 
 nlohmann::json save(const ParticleEmitter& e)          { return saveReflected(e); }
@@ -288,6 +342,35 @@ void load(const nlohmann::json& j, ParticleEmitter& e) { loadReflected(j, e); }
 
 nlohmann::json save(const ReflectionProbe& p)          { return saveReflected(p); }
 void load(const nlohmann::json& j, ReflectionProbe& p) { loadReflected(j, p); }
+
+nlohmann::json save(const AudioSource& s, const ResourceManager& resources) {
+    return {
+        {"clip",        s.clip ? resources.get(s.clip).name : std::string{}},
+        {"volume",      s.volume},
+        {"pitch",       s.pitch},
+        {"loop",        s.loop},
+        {"spatial",     s.spatial},
+        {"playOnStart", s.playOnStart},
+        {"minDistance", s.minDistance},
+        {"maxDistance", s.maxDistance},
+    };
+}
+void load(const nlohmann::json& j, AudioSource& s, const ResourceManager& resources) {
+    s.clip        = resolveAssetRef<AudioClipAsset>(resources, j.value("clip", std::string{}), "sound", "clip");
+    s.volume      = j.value("volume",      s.volume);
+    s.pitch       = j.value("pitch",       s.pitch);
+    s.loop        = j.value("loop",        s.loop);
+    s.spatial     = j.value("spatial",     s.spatial);
+    s.playOnStart = j.value("playOnStart", s.playOnStart);
+    s.minDistance = j.value("minDistance", s.minDistance);
+    s.maxDistance = j.value("maxDistance", s.maxDistance);
+}
+void emitAssetRefs(const AudioSource& s, AssetRefs& refs) {
+    if (s.clip) refs.sounds.push_back(s.clip);
+}
+
+nlohmann::json save(const AudioListener& l)          { return saveReflected(l); }
+void load(const nlohmann::json& j, AudioListener& l) { loadReflected(j, l); }
 
 nlohmann::json save(const IrradianceVolume& v)          { return saveReflected(v); }
 void load(const nlohmann::json& j, IrradianceVolume& v) { loadReflected(j, v); }
@@ -353,11 +436,11 @@ nlohmann::json save(const Animation& a) {
         {"position", saveTrack(a.positionTrack, [](const glm::vec3& v) { return vec3ToJson(v); })},
         {"rotation", saveTrack(a.rotationTrack, [](const glm::quat& q) { return quatToJson(q); })},
         {"scale",    saveTrack(a.scaleTrack,    [](const glm::vec3& v) { return vec3ToJson(v); })},
-        {"time",     a.time},
-        {"length",   a.length},
-        {"speed",    a.speed},
-        {"playing",  a.playing},
-        {"looping",  a.looping},
+        {"time",        a.time},
+        {"length",      a.length},
+        {"speed",       a.speed},
+        {"playOnStart", a.playOnStart},
+        {"looping",     a.looping},
     };
 }
 
@@ -365,11 +448,11 @@ void load(const nlohmann::json& j, Animation& a) {
     if (j.contains("position")) loadTrack(j["position"], a.positionTrack, [](const nlohmann::json& v) { return jsonToVec3(v); });
     if (j.contains("rotation")) loadTrack(j["rotation"], a.rotationTrack, [](const nlohmann::json& v) { return jsonToQuat(v); });
     if (j.contains("scale"))    loadTrack(j["scale"],    a.scaleTrack,    [](const nlohmann::json& v) { return jsonToVec3(v); });
-    a.time    = j.value("time",    a.time);
-    a.length  = j.value("length",  a.length);
-    a.speed   = j.value("speed",   a.speed);
-    a.playing = j.value("playing", a.playing);
-    a.looping = j.value("looping", a.looping);
+    a.time        = j.value("time",        a.time);
+    a.length      = j.value("length",      a.length);
+    a.speed       = j.value("speed",       a.speed);
+    a.playOnStart = j.value("playOnStart", a.playOnStart);
+    a.looping     = j.value("looping",     a.looping);
 }
 
 namespace {
@@ -389,11 +472,19 @@ class BehaviorJsonWriter : public BehaviorFieldVisitor {
         void field(const char* name, int& v)   override { cur()[name] = v; }
         void field(const char* name, bool& v)  override { cur()[name] = v; }
         void field(const char* name, glm::vec3& v) override { cur()[name] = vec3ToJson(v); }
+        void field(const char* name, std::string& v) override { cur()[name] = v; }
 
         void enumField(const char* name, int& index, const char* const* names, std::size_t count) override {
             // By name, not the raw index: reordering enum values without renaming
             // then leaves existing scenes valid (matches Reflect::enumName).
             if (index >= 0 && static_cast<std::size_t>(index) < count) cur()[name] = names[index];
+        }
+
+        // An asset reference is a name, and a name is a string. Which section of
+        // the assets block that name has to appear in is the asset serializer's
+        // job (it walks the same fields); the component only records it.
+        void assetField(const char* name, std::string& assetName, AssetType type) override {
+            field(name, assetName);
         }
 
         bool beginStruct(const char* name) override {
@@ -427,6 +518,17 @@ class BehaviorJsonReader : public BehaviorFieldVisitor {
         void field(const char* name, glm::vec3& v) override {
             // The current value goes in as the fallback: a malformed node keeps it.
             if (cur().contains(name)) v = jsonToVec3(cur()[name], v);
+        }
+        void field(const char* name, std::string& v) override {
+            // Type-checked, following enumField's keep-current rule rather than
+            // the numeric leaves' bare get<>(): free text is the field a
+            // hand-edited scene is likeliest to have got wrong, and a throw here
+            // costs the whole load rather than one value.
+            if (cur().contains(name) && cur()[name].is_string()) v = cur()[name].get<std::string>();
+        }
+
+        void assetField(const char* name, std::string& assetName, AssetType type) override {
+            field(name, assetName);
         }
 
         void enumField(const char* name, int& index, const char* const* names, std::size_t count) override {

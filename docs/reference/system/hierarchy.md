@@ -68,7 +68,10 @@ hazard, so do not bypass it.
 `HierarchySystem::update` does the following:
 
 1. Bucket every entity that has both `Hierarchy` and `Transform` by
-   hierarchy depth.
+   hierarchy depth. An entity whose own or whose ancestor's
+   `WorldTransform` is missing is dropped from the buckets instead:
+   pre-seeding makes that unreachable, and step 2 indexes both an
+   entity's slot and its parent's without a live check.
 2. For each depth bucket from 0 (roots) outward, `parallelFor` over
    the bucket: read the local `Transform` and the parent's
    `WorldTransform`, compose, write into `WorldTransform`.

@@ -12,6 +12,7 @@
 
 #include "logger.h"
 
+#include "debug/engine_error_log.h"
 #include "ecs/scene.h"
 #include "io/scene/component_serializer.h"
 #include "system/script/behavior_registry.h"
@@ -168,7 +169,14 @@ bool ScriptModule::reload(Scene& scene) {
     m_lib.unload();
 
     if (!loadCopyAndRegister()) {
-        LOG_ERROR("Script reload failed; behaviors were cleared (entities kept). Fix the build and reload again to retry, then reload the scene to restore behaviors.");
+        // Through reportError rather than the log alone: this is the reload's
+        // destructive outcome - the behaviors are gone and the entities that
+        // carried them are not - and the editor has no log view, so a toast
+        // that expires a few seconds later was the whole record of it. The
+        // scene-reference failure is reported this way for the same reason.
+        reportError("Script", m_modulePath,
+            "Reload failed; behaviors were cleared (entities kept). Fix the build and "
+            "reload again to retry, then reload the scene to restore behaviors.");
         return false;
     }
 

@@ -1,12 +1,17 @@
 #pragma once
 
+#include <memory>
+#include <filesystem>
 #include <string>
 #include <vector>
 
 #include "ecs/entity.h"
 #include "resource/asset/material_asset.h"
+#include "resource/resource_manager.h"
 
 #include "framework/asset_picker.h"
+#include "framework/editor_commands.h"
+#include "framework/editor_state.h"
 
 namespace Vkm::Engine {
 
@@ -47,6 +52,8 @@ enum class EntityKind {
     IrradianceVolume,
     Decal,
     ParticleEmitter,
+    AudioSource,
+    AudioListener,
     UICanvas,
     UIPanel,
     UIText,
@@ -224,9 +231,20 @@ void commitHierarchyMutation(EditorState& state);
  * by the old/new parent's world contribution. Decomposes the preserved world
  * matrix into the new parent's space (same math the transform gizmo uses).
  *
+ * An entity with no Transform is moved all the same, with the re-base skipped:
+ * a UI element is placed in screen space by its canvas and has no world pose to
+ * keep. The move is then reported when it leaves the element with no UICanvas
+ * ancestor, because that is what stops it being drawn.
+ *
  * A move that crosses into or out of a prefab instance is refused with a toast
  * instead: the instance's interior is the prefab's, and the scene stores none
  * of it, so either move would be lost on the next load without a word.
+ *
+ * @param scene     Scene holding both entities.
+ * @param state     Editor state receiving the history entry and any toast.
+ * @param child     Entity being moved.
+ * @param newParent New parent, or a null EntityId to unparent to the root.
+ * @param label     History entry text.
  */
 void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
                           EntityId newParent, const char* label);
@@ -265,6 +283,46 @@ MaterialHandle duplicateMaterial(
  * Does not assign it to any entity - the caller decides what to do with it.
  */
 MaterialHandle createNewMaterial(ResourceManager& resources, EditorState& state);
+
+/**
+ * @brief Rename an asset, report the name it actually got, and make it undoable.
+ *
+ * The one place an asset is renamed from editor UI. Every rename affordance -
+ * the Asset Browser's F2 modal, the Material Editor's own - calls this rather
+ * than open-coding it, because the sequence has two parts a caller would not
+ * guess and one of them was missed the first time it was copied.
+ *
+ * ResourceManager keeps names unique per type by suffixing a taken one, so the
+ * asset may not end up called what was typed. This reads the name back and
+ * toasts when it differs: an author who is not told goes looking for a name
+ * nothing holds. It then pushes the undo step with the name that was *assigned*
+ * rather than the one that was asked for, so redo repeats what happened.
+ *
+ * Applying before pushing is deliberate and matches the rest of the editor: the
+ * command carries the reverse of an edit that has already happened.
+ *
+ * @tparam Asset Asset type being renamed; @p handle is its Handle.
+ * @param resources Resource manager owning the asset and its name index.
+ * @param state Editor state whose command stack and toast list are appended to.
+ * @param handle Handle naming the asset to rename.
+ * @param from Name it had, kept for undo.
+ * @param to Name the author typed.
+ * @param label Undo-stack label, e.g. "Rename Material".
+ */
+template<typename Asset>
+void renameAsset(ResourceManager& resources, EditorState& state, Handle<Asset> handle,
+                 const std::string& from, const std::string& to, const char* label) {
+    resources.rename(handle, to);
+
+    const std::string assigned = resources.get(handle).name;
+    if (assigned != to) {
+        state.pushToast(EditorState::ToastKind::Info,
+                        "'" + to + "' was taken - renamed to '" + assigned + "'");
+    }
+
+    state.commands.push(std::make_unique<RenameAssetCommand<Handle<Asset>>>(
+        resources, handle, from, assigned, label));
+}
 
 /**
  * @brief Frame the entire visible scene: union the world-space AABBs of every
@@ -330,6 +388,67 @@ class PlacePrefabDialog {
 
     private:
         AssetPicker m_picker;
+};
+
+/**
+ * @brief Render the "Open Project" dialog: the recent projects, plus a path field.
+ *
+ * Drawn from the menu-bar scope for the same reason as ModelImportDialog. It
+ * chooses a project root and asks for it through
+ * EditorState::requestSceneAction - opening one throws the current scene away,
+ * so it goes through the same guard New Scene and Open Scene do, and nothing is
+ * opened from inside the dialog's own draw.
+ */
+class OpenProjectDialog {
+    public:
+        /**
+         * @brief Open the dialog when EditorState::requestOpenProject is set,
+         *        and request whichever project the user chooses.
+         *
+         * @param state Editor state supplying the recent-project list and
+         *        receiving the request.
+         */
+        void draw(EditorState& state);
+
+    private:
+        bool m_open = false;
+        char m_pathBuffer[512] = {};
+};
+
+/**
+ * @brief Render the "New Project" dialog: a name, a parent directory, and Create.
+ *
+ * Makes a project the way `vkm new` does - copies the SDK template, names it
+ * after the directory the author chose, and stamps the engine that answered -
+ * then asks for it through EditorState::requestSceneAction rather than opening
+ * it here, because creating one throws the current scene away and goes through
+ * the same guard Open Project does.
+ */
+class NewProjectDialog {
+    public:
+        /**
+         * @brief Open the dialog when EditorState::requestNewProject is set, and
+         *        request whichever project the author creates.
+         *
+         * @param state Editor state carrying the request and receiving the open.
+         */
+        void draw(EditorState& state);
+
+    private:
+        /**
+         * @brief Copy the template to @p dest and stamp it for this engine.
+         *
+         * @param dest Directory to create; must not already exist non-empty.
+         * @param error Filled with what went wrong when the result is false.
+         * @return true when the project is on disk and ready to open.
+         */
+        static bool create(const std::filesystem::path& dest, std::string& error);
+
+    private:
+        bool m_open = false;
+        char m_nameBuffer[128] = {};
+        char m_parentBuffer[512] = {};
+        std::string m_error;
 };
 
 } // namespace EditorActions

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 namespace Vkm::Engine {
 
 class Scene;
@@ -46,6 +48,29 @@ enum class SceneBoot {
 };
 
 /**
+ * @brief Which world bootProjectScene left standing, and the file it came from.
+ *
+ * The path is stated rather than left to be re-derived because only one of the
+ * three worlds has one, and the caller cannot tell which without repeating the
+ * rule this function exists to hold. An editor that guesses wrong either offers
+ * to overwrite a file it did not open, or calls a scene it read from disk
+ * untitled and saves the next Ctrl+S somewhere the project never looks.
+ */
+struct SceneBootResult {
+    SceneBoot   source = SceneBoot::Default;
+
+    /**
+     * @brief Absolute path the authored entry scene was read from.
+     *
+     * Empty for every other outcome, which is the whole point: a world a module
+     * generated and the default scene standing in for a failed load are both
+     * worlds with no file behind them, and a save must ask for a name rather
+     * than write over the one that failed.
+     */
+    std::string path;
+};
+
+/**
  * @brief Put the project's own world into @p scene.
  *
  * The rule a project opens by, in one place because all three hosts have to
@@ -63,9 +88,10 @@ enum class SceneBoot {
  * @param module The project's gameplay module, asked for a generated world.
  * @param scene Scene to fill; expected to be empty.
  * @param resources Resource manager the scene's assets are loaded into.
- * @return Which of the three worlds is now in @p scene.
+ * @return Which of the three worlds is now in @p scene, and the file it was
+ *         read from when it is the authored one.
  */
-SceneBoot bootProjectScene(
+SceneBootResult bootProjectScene(
     const Project& project,
     ScriptModule& module,
     Scene& scene,

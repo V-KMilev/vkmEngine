@@ -13,7 +13,10 @@
 #include "ecs/component/animation/animation.h"
 #include "ecs/component/animation/animator.h"
 #include "ecs/component/animation/bone_socket.h"
+#include "ecs/component/audio/audio_listener.h"
+#include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/hierarchy.h"
+#include "ecs/component/core/missing_assets.h"
 #include "ecs/component/core/name.h"
 #include "ecs/component/physics/character_controller.h"
 #include "ecs/component/physics/collider.h"
@@ -33,6 +36,7 @@
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
 #include "ecs/component/ui/ui_text.h"
+#include "resource/asset/material_asset.h"
 
 #include "framework/command.h"
 
@@ -62,6 +66,7 @@ class TransformChangeCommand : public Command {
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
         bool tryMerge(Command& incoming) override;
+        bool addresses(uint32_t slotIndex) const override { return m_entity.index == slotIndex; }
 
     private:
         EntityId    m_entity;
@@ -149,6 +154,12 @@ class CompositeCommand : public Command {
                 (*it)->undo(scene, state);
         }
         const char* label() const override { return m_label; }
+        bool addresses(uint32_t slotIndex) const override {
+            for (const auto& c : m_commands) {
+                if (c->addresses(slotIndex)) return true;
+            }
+            return false;
+        }
 
     private:
         std::vector<std::unique_ptr<Command>> m_commands;
@@ -170,6 +181,7 @@ class AddComponentCommand : public Command {
         void redo(Scene&, EditorState&) override;
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
+        bool addresses(uint32_t slotIndex) const override { return m_entity.index == slotIndex; }
 
     private:
         EntityId    m_entity;
@@ -192,6 +204,7 @@ class RemoveComponentCommand : public Command {
         void redo(Scene&, EditorState&) override;
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
+        bool addresses(uint32_t slotIndex) const override { return m_entity.index == slotIndex; }
 
     private:
         EntityId    m_entity;
@@ -219,11 +232,69 @@ class ComponentEditCommand : public Command {
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
         bool tryMerge(Command& incoming) override;
+        bool addresses(uint32_t slotIndex) const override { return m_entity.index == slotIndex; }
 
     private:
         EntityId    m_entity;
         T           m_before;
         T           m_after;
+        const char* m_label;
+};
+
+/**
+ * @brief Undoable edit of an entity's whole ScriptComponent, held as JSON.
+ *
+ * A behavior list is move-only, so a script edit has no pair of values for
+ * ComponentEditCommand<T> to copy. Its serialized form copies fine, and it is
+ * the same document EntitySnapshot::scriptJson already resurrects a deleted
+ * entity's scripts from - so the component appearing, a behavior being
+ * attached, a field being typed into, a row being removed and the card's x are
+ * one command over two strings, with "the entity has no ScriptComponent"
+ * spelled as an empty one.
+ *
+ * Coalesces with the next script edit on the same entity inside one gesture,
+ * for the reason ComponentEditCommand does: a drag on a behavior's float field
+ * pushes on every frame it changes.
+ */
+class ScriptEditCommand : public Command {
+    public:
+        ScriptEditCommand(EntityId e, std::string before, std::string after, const char* label)
+            : m_entity(e), m_before(std::move(before)), m_after(std::move(after)), m_label(label) {}
+
+        void redo(Scene& scene, EditorState& state) override;
+        void undo(Scene& scene, EditorState& state) override;
+        const char* label() const override { return m_label; }
+        bool tryMerge(Command& incoming) override;
+        bool addresses(uint32_t slotIndex) const override { return m_entity.index == slotIndex; }
+
+        /**
+         * @brief The entity's ScriptComponent as JSON, or empty when it has none.
+         *
+         * The "before" of any script edit, and the "after" once it has been
+         * applied. Exposed because the inspector applies script edits live -
+         * the field widgets write into the behavior itself - so the panel is
+         * what reads the two states around one.
+         *
+         * @param scene Scene holding the entity.
+         * @param id Entity to read.
+         * @return The serialized component, or an empty string when absent.
+         */
+        static std::string capture(const Scene& scene, EntityId id);
+
+    private:
+        /**
+         * @brief Put @p json back on @p id, removing the component when empty.
+         *
+         * @param scene Scene holding the entity.
+         * @param id Entity to write.
+         * @param json A ScriptComponent document, or empty for no component.
+         */
+        static void restore(Scene& scene, EntityId id, const std::string& json);
+
+    private:
+        EntityId    m_entity;
+        std::string m_before;
+        std::string m_after;
         const char* m_label;
 };
 
@@ -245,6 +316,7 @@ class ComponentEditCommand : public Command {
  */
 #define VKM_EDITOR_SNAPSHOT_COMPONENTS(X) \
     X(Transform,       transform)         \
+    X(MissingAssets,   missingAssets)     \
     X(Mesh,            mesh)              \
     X(LOD,             lod)               \
     X(Light,           light)            \
@@ -260,6 +332,8 @@ class ComponentEditCommand : public Command {
     X(IrradianceVolume, irradianceVolume) \
     X(Decal,            decal)            \
     X(ParticleEmitter,  particleEmitter)  \
+    X(AudioSource,      audioSource)      \
+    X(AudioListener,    audioListener)    \
     X(UICanvas,         uiCanvas)         \
     X(UIElement,        uiElement)        \
     X(UIImage,          uiImage)          \
@@ -294,6 +368,8 @@ class ComponentEditCommand : public Command {
     X(ReflectionProbe)                   \
     X(Decal)                             \
     X(ParticleEmitter)                   \
+    X(AudioSource)                       \
+    X(AudioListener)                     \
     X(IrradianceVolume)                  \
     X(LOD)                               \
     X(UICanvas)                          \
@@ -386,6 +462,7 @@ class CreateEntityCommand : public Command {
         void redo(Scene&, EditorState&) override;
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
+        bool addresses(uint32_t slotIndex) const override { return m_snap.slotIndex == slotIndex; }
 
     private:
         EntitySnapshot m_snap;
@@ -408,6 +485,7 @@ class DestroySubtreeCommand : public Command {
         void redo(Scene&, EditorState&) override;
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
+        bool addresses(uint32_t slotIndex) const override;
 
     private:
         SubtreeSnapshot m_snap;
@@ -449,6 +527,7 @@ class PlacePrefabCommand : public Command {
         void redo(Scene&, EditorState&) override;
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
+        bool addresses(uint32_t slotIndex) const override { return m_rootSlot == slotIndex; }
 
     private:
         ResourceManager* m_resources;
@@ -505,6 +584,7 @@ class PrefabOverrideCommand : public Command {
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
         bool tryMerge(Command& incoming) override;
+        bool addresses(uint32_t slotIndex) const override { return m_root.index == slotIndex; }
 
     private:
         /**
@@ -545,6 +625,14 @@ class ReparentCommand : public Command {
         void redo(Scene&, EditorState&) override;
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
+        // Either end counts: the step re-links the child under one of the two
+        // parents, so a step that could put an entity inside a subtree is as
+        // outlived as one that moves the subtree's own entity.
+        bool addresses(uint32_t slotIndex) const override {
+            return m_child.index == slotIndex
+                || m_oldParent.index == slotIndex
+                || m_newParent.index == slotIndex;
+        }
 
     private:
         EntityId    m_child;
@@ -573,11 +661,68 @@ class SetActiveCameraCommand : public Command {
         void redo(Scene&, EditorState&) override;
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
+        bool addresses(uint32_t slotIndex) const override;
 
     private:
         EntityId m_target;
         std::vector<std::pair<uint32_t, bool>> m_before;  ///< (slotIndex, wasActive) per camera
         const char* m_label;
+};
+
+/**
+ * @brief Undoable edit of a material's parameters (before -> after).
+ *
+ * Materials are scene assets: an edit here changes what every mesh using the
+ * handle looks like and marks the scene unsaved, so it is authored work and
+ * belongs in the history beside the component edits. Its own command rather
+ * than a case of ComponentEditCommand because a material is not on an entity -
+ * it lives in the ResourceManager, and putting the value back has to bump the
+ * asset's version so the renderer and the previews re-read it.
+ *
+ * The asset's identity - name, uid, source descriptor - is deliberately not
+ * part of what is restored. A material's name is renamed through its own
+ * command and indexed by the manager, so an undo that carried the name back
+ * would silently reverse a rename it was never asked about.
+ *
+ * Holds the ResourceManager by pointer for the same reason PlacePrefabCommand
+ * does, and no-ops on a handle whose asset has since been deleted.
+ */
+class MaterialEditCommand : public Command {
+    public:
+        /**
+         * @brief Record a material edit that has already been applied.
+         *
+         * @param resources Manager owning the asset.
+         * @param handle    The material that was edited.
+         * @param before    Its parameters before the edit.
+         * @param after     Its parameters now.
+         * @param label     History entry text.
+         */
+        MaterialEditCommand(ResourceManager& resources, MaterialHandle handle,
+                            MaterialAsset before, MaterialAsset after, const char* label)
+            : m_resources(&resources), m_handle(handle), m_before(std::move(before)),
+              m_after(std::move(after)), m_label(label) {}
+
+        void redo(Scene&, EditorState&) override;
+        void undo(Scene&, EditorState&) override;
+        const char* label() const override { return m_label; }
+        bool tryMerge(Command& incoming) override;
+
+    private:
+        /**
+         * @brief Put @p value's parameters back on the live asset and commit.
+         *
+         * @param state Editor state marked unsaved by the change.
+         * @param value The parameter set this direction installs.
+         */
+        void step(EditorState& state, const MaterialAsset& value);
+
+    private:
+        ResourceManager* m_resources;
+        MaterialHandle   m_handle;
+        MaterialAsset    m_before;
+        MaterialAsset    m_after;
+        const char*      m_label;
 };
 
 /**
@@ -625,8 +770,12 @@ VKM_EDITOR_COMMAND_COMPONENTS(VKM_EDITOR_EXTERN_COMMAND)
 extern template class AddComponentCommand<Name>;
 extern template class ComponentEditCommand<Name>;
 
-// Keyed by handle type rather than by component type, so not on the list.
+// Keyed by handle type rather than by component type, so not on the list. One
+// per asset kind the Asset Browser lets an author rename.
 extern template class RenameAssetCommand<MaterialHandle>;
 extern template class RenameAssetCommand<MeshHandle>;
+extern template class RenameAssetCommand<TextureHandle>;
+extern template class RenameAssetCommand<AnimationClipHandle>;
+extern template class RenameAssetCommand<AudioClipHandle>;
 
 } // namespace Vkm::Engine

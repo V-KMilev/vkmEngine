@@ -26,6 +26,43 @@ class ResourceManager;
 TextureFilterOverride textureFilterFromRecipe(const nlohmann::json& source);
 
 /**
+ * @brief Read the wrap mode a texture recipe's optional `wrap` key names.
+ *
+ * The key is written only by a texture that tiles - a model's maps, which
+ * reference UVs outside [0,1] - so an absent or unrecognised value reads as
+ * ClampToEdge, which is what a recipe without the key has always meant.
+ *
+ * @param source JSON source descriptor for a texture.
+ * @return The mode the key names, or TextureWrapMode::ClampToEdge.
+ */
+TextureWrapMode textureWrapFromRecipe(const nlohmann::json& source);
+
+/**
+ * @brief Build the `kind: file` recipe descriptor a texture is re-created from.
+ *
+ * `filter` and `wrap` are written only when the texture states something other
+ * than the default, so an ordinary texture's recipe says nothing about either -
+ * which is the truth about it, and one fewer spelling of the default to keep in
+ * step. This is the only writer of the descriptor: a producer that decodes its
+ * own pixels stamps what this returns rather than spelling the keys again, or
+ * one of them ends up written by one producer and not the other.
+ *
+ * @param ref Project-relative reference the texture is named and reloaded by.
+ * @param srgb Whether the pixels are sRGB-encoded.
+ * @param generateMipmaps Whether a mip chain is built for it.
+ * @param filterOverride The texture's own say over its sampling.
+ * @param wrap How sampling behaves outside [0,1], on both axes.
+ * @return The `kind: file` source descriptor.
+ */
+nlohmann::json fileTextureRecipe(
+    const std::string& ref,
+    bool srgb,
+    bool generateMipmaps,
+    TextureFilterOverride filterOverride,
+    TextureWrapMode wrap
+);
+
+/**
  * @brief Load a texture from a file.
  *
  * Decoded with stb_image: PNG, JPG, TGA, BMP and the rest of its formats.
@@ -36,6 +73,8 @@ TextureFilterOverride textureFilterFromRecipe(const nlohmann::json& source);
  * @param generateMipmaps Whether to generate mipmaps.
  * @param filterOverride The texture's own say over its sampling; None leaves it
  *        to the scene's filtering setting, which is what ordinary art wants.
+ * @param wrap How sampling behaves outside [0,1]; set on both axes, and carried
+ *        in the recipe so a texture rebuilt from it tiles the same way.
  * @return Handle to the loaded texture, or invalid handle on failure.
  */
 TextureHandle loadTexture(
@@ -43,7 +82,8 @@ TextureHandle loadTexture(
     ResourceManager& resourceManager,
     bool srgb = false,
     bool generateMipmaps = true,
-    TextureFilterOverride filterOverride = TextureFilterOverride::None
+    TextureFilterOverride filterOverride = TextureFilterOverride::None,
+    TextureWrapMode wrap = TextureWrapMode::ClampToEdge
 );
 
 /**
@@ -66,6 +106,8 @@ TextureHandle loadTexture(
  * @param generateMipmaps Whether to generate mipmaps once the pixels are decoded.
  * @param filterOverride The texture's own say over its sampling; None leaves it
  *        to the scene's filtering setting, which is what ordinary art wants.
+ * @param wrap How sampling behaves outside [0,1]; set on both axes, and carried
+ *        in the recipe so a texture rebuilt from it tiles the same way.
  * @return Handle to the loading texture; valid immediately, filled on a later frame.
  */
 TextureHandle requestTextureAsync(
@@ -73,7 +115,8 @@ TextureHandle requestTextureAsync(
     ResourceManager& resourceManager,
     bool srgb = false,
     bool generateMipmaps = true,
-    TextureFilterOverride filterOverride = TextureFilterOverride::None
+    TextureFilterOverride filterOverride = TextureFilterOverride::None,
+    TextureWrapMode wrap = TextureWrapMode::ClampToEdge
 );
 
 } // namespace Vkm::Engine

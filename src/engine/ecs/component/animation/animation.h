@@ -22,8 +22,36 @@ struct Animation {
     float length  = 0.0f;     ///< Explicit minimum length in seconds (0 = auto from last keyframe)
     float time    = 0.0f;     ///< Current animation time in seconds
     float speed   = 1.0f;     ///< Playback speed multiplier
-    bool  playing = false;
     bool  looping = true;
+
+    /**
+     * @brief Start playing on the first frame the simulation runs.
+     *
+     * The authored half, the way AudioSource splits the same pair. Gated on
+     * simulation time rather than on the component existing: in the editor an
+     * unplayed scene is a paused one, and an animation that ran merely because
+     * it was loaded would move the entity the author is placing.
+     */
+    bool playOnStart = true;
+
+    /**
+     * @brief Whether the animation should be advancing right now.
+     *
+     * Runtime state, not serialized, for the same reason AudioSource::playing
+     * is not: it describes a play session rather than the authored scene. The
+     * editor's transport writes it to preview, and a preview left running is
+     * not a decision about what a shipped scene does - `playOnStart` is.
+     */
+    bool playing = false;
+
+    /**
+     * @brief Whether playOnStart has already been honoured this session.
+     *
+     * Runtime state. Without it a non-looping clip with playOnStart would
+     * restart every frame after it ended, since `playing` falling back to false
+     * is exactly what "it finished" looks like.
+     */
+    bool started = false;
 
     /**
      * @brief The animation's effective length: the latest keyframe across all

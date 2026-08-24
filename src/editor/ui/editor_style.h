@@ -76,8 +76,10 @@ inline const ImVec4 TOAST_INFO_BG    = ImVec4(0.16f, 0.16f, 0.19f, 1.00f);
  *
  * The left accent strip / guide line is how the eye groups a card; panels used
  * to re-declare these locally, which let two pairs collide by accident (Light
- * vs Sheen, Anim vs Anisotropy - now intentionally distinct). Component cards
- * first, Material Editor groups second, Render Settings groups last.
+ * vs Sheen, Anim vs Anisotropy - now intentionally distinct). One hue per idea,
+ * not per place: MatTexture is what a texture wears wherever one is drawn, in
+ * the Asset Browser's rail and on the Material tab's map tiles alike. Component
+ * cards first, material hues second, Render Settings groups last.
  */
 namespace Accent {
     inline const ImVec4 Transform  = AXIS_Z;
@@ -93,15 +95,15 @@ namespace Accent {
     inline const ImVec4 Script     = ImVec4(0.85f, 0.45f, 0.58f, 1.0f);  // rose
     inline const ImVec4 UI         = ImVec4(0.95f, 0.62f, 0.30f, 1.0f);  // amber
     inline const ImVec4 Prefab     = ImVec4(0.52f, 0.45f, 0.95f, 1.0f);  // indigo
+    inline const ImVec4 Audio      = ImVec4(0.88f, 0.38f, 0.80f, 1.0f);  // magenta (not Script's rose)
 
     inline const ImVec4 MatBase    = ImVec4(0.90f, 0.55f, 0.25f, 1.0f);  // warm
-    inline const ImVec4 MatSurface = ImVec4(0.28f, 0.74f, 0.74f, 1.0f);  // teal
+    inline const ImVec4 MatTexture = ImVec4(0.28f, 0.74f, 0.74f, 1.0f);  // teal
+    inline const ImVec4 MatGlass   = ImVec4(0.55f, 0.85f, 0.65f, 1.0f);  // mint
     inline const ImVec4 MatCoat    = ImVec4(0.45f, 0.62f, 0.92f, 1.0f);  // light blue
     inline const ImVec4 MatAniso   = ImVec4(0.72f, 0.50f, 0.90f, 1.0f);  // lilac (not Anim's purple)
     inline const ImVec4 MatSSS     = ImVec4(0.88f, 0.45f, 0.55f, 1.0f);  // pink
     inline const ImVec4 MatSheen   = ImVec4(1.00f, 0.72f, 0.38f, 1.0f);  // brass (not Light's gold)
-    inline const ImVec4 MatVolume  = ImVec4(0.55f, 0.85f, 0.65f, 1.0f);  // mint
-    inline const ImVec4 MatTexture = AXIS_Y;
 
     inline const ImVec4 Quality    = ImVec4(0.55f, 0.62f, 0.75f, 1.0f);  // neutral-cool
     inline const ImVec4 Effect     = ImVec4(0.36f, 0.60f, 0.92f, 1.0f);  // effect blue

@@ -68,7 +68,7 @@ void BehaviorSystem::ensureStarted(Behavior& behavior, EntityId entity) {
 }
 
 void BehaviorSystem::tickBehaviors(FrameContext& ctx, float dt, const char* hookName,
-                                   void (Behavior::*hook)(float)) {
+                                   void (Behavior::*hook)(float), bool startIfNeeded) {
     Scene& scene = ctx.scene;
     auto* storage = scene.storage<ScriptComponent>();
     if (!storage) return;
@@ -95,8 +95,12 @@ void BehaviorSystem::tickBehaviors(FrameContext& ctx, float dt, const char* hook
 
             auto& behavior = sc.behaviors[i];
             if (!behavior || behavior->m_disabled) continue;
-            ensureStarted(*behavior, id);
-            if (behavior->m_disabled) continue;  // onStart threw
+            if (startIfNeeded) {
+                ensureStarted(*behavior, id);
+                if (behavior->m_disabled) continue;  // onStart threw
+            } else if (!behavior->m_started) {
+                continue;
+            }
             Behavior* b = behavior.get();
             guard(*b, hookName, [&] { (b->*hook)(dt); });
         }
@@ -136,9 +140,10 @@ void BehaviorSystem::drainPendingDestroy(Scene& scene) {
 void BehaviorSystem::drainPendingSceneLoad(FrameContext& ctx) {
     if (m_pendingSceneLoad.empty()) return;
 
-    // Take the request before loading: the load runs behaviors' onDestroy, and
-    // one of those asking for another scene must queue for the next pass rather
-    // than be swallowed by the clear below.
+    // Take the request before the endSession below, which clears the queue:
+    // this load is the one being served, and a further one asked for by an
+    // outgoing behavior's onDestroy belongs to the session that is ending
+    // rather than to the scene arriving.
     std::string path;
     path.swap(m_pendingSceneLoad);
 
@@ -151,6 +156,15 @@ void BehaviorSystem::drainPendingSceneLoad(FrameContext& ctx) {
     const std::filesystem::path scenePath = ProjectPaths::projectRoot() / path;
     if (SceneSerializer::load(ctx.scene, ctx.resources, scenePath.string())) {
         LOG_INFO("Loaded scene '%s' on request", path.c_str());
+        // The drain runs on a frozen frame, but nothing the load brought in
+        // will start on one - a behavior starts on a simulation tick. The
+        // behavior that asked has just gone with the old scene, so unless
+        // something outside gameplay resumes the clock the new world renders
+        // and never runs. Said here because there is no other symptom.
+        if (ctx.clock.isPaused() || ctx.clock.getTimeScale() <= 0.0f) {
+            LOG_WARNING("Scene '%s' was loaded while simulation time is frozen - nothing in it "
+                        "starts until the clock runs again", path.c_str());
+        }
     } else {
         // The load is transactional, so a failure leaves the current scene
         // standing rather than an empty world. Its behaviors have already had
@@ -171,6 +185,7 @@ void BehaviorSystem::init(FrameContext& ctx) {
     m_context.window    = &ctx.window;
     m_context.events    = &ctx.events;
     m_context.input     = &ctx.input;
+    m_context.clock     = &ctx.clock;
 
     // onDestroy for any entity-deletion path: register as a Scene observer, so
     // Scene fires onEntityDestroyed from destroyEntity (raw or via
@@ -190,30 +205,44 @@ void BehaviorSystem::onEntityDestroyed(EntityId entity) {
 void BehaviorSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("BehaviorSystem");
 
-    // No simulation time elapsed (paused / not stepping): scripts don't tick.
-    // Drop any queued physics events so they don't pile up across a pause.
-    if (ctx.clock.getSimDelta() <= 0.0f) {
-        m_collisions.clear();
-        m_triggers.clear();
-        return;
-    }
-
     Scene& scene = ctx.scene;
 
-    tickBehaviors(ctx, ctx.clock.getSimDelta(), "onUpdate", &Behavior::onUpdate);
+    if (ctx.clock.getSimDelta() > 0.0f) {
+        tickBehaviors(ctx, ctx.clock.getSimDelta(), "onUpdate", &Behavior::onUpdate,
+                      /*startIfNeeded*/ true);
 
-    // Dispatch collisions/triggers gathered since last frame. Swap to locals so
-    // a handler that emits a synchronous event can't mutate the list mid-walk.
-    std::vector<CollisionEvent> collisions;
-    collisions.swap(m_collisions);
-    for (const CollisionEvent& e : collisions) {
-        dispatchEntityHook(scene, e.a, e.b, "onCollision", &Behavior::onCollision);
-        dispatchEntityHook(scene, e.b, e.a, "onCollision", &Behavior::onCollision);
+        // Dispatch collisions/triggers gathered since last frame. Swap to locals so
+        // a handler that emits a synchronous event can't mutate the list mid-walk.
+        std::vector<CollisionEvent> collisions;
+        collisions.swap(m_collisions);
+        for (const CollisionEvent& e : collisions) {
+            dispatchEntityHook(scene, e.a, e.b, "onCollision", &Behavior::onCollision);
+            dispatchEntityHook(scene, e.b, e.a, "onCollision", &Behavior::onCollision);
+        }
+        std::vector<TriggerEvent> triggers;
+        triggers.swap(m_triggers);
+        for (const TriggerEvent& e : triggers) {
+            dispatchEntityHook(scene, e.trigger, e.other, "onTrigger", &Behavior::onTrigger);
+        }
+    } else {
+        // Physics did not run either, so anything still queued describes a world
+        // state older than the pause. Drop it rather than deliver it stale.
+        m_collisions.clear();
+        m_triggers.clear();
     }
-    std::vector<TriggerEvent> triggers;
-    triggers.swap(m_triggers);
-    for (const TriggerEvent& e : triggers) {
-        dispatchEntityHook(scene, e.trigger, e.other, "onTrigger", &Behavior::onTrigger);
+
+    // Real time, pause included, and after onUpdate so a realtime hook reading
+    // world state sees what the simulation produced this frame. Nothing starts
+    // here - a behavior belongs to a play session and only simulation time
+    // begins one, which is also what keeps the editor's Edit mode inert.
+    //
+    // The guard is what makes the promise in the hook's docs true rather than
+    // nearly true: gameplay is never handed a zero dt. Only the engine's very
+    // first frame measures one, having nothing to measure against yet.
+    const float realDelta = ctx.clock.getDeltaTime();
+    if (realDelta > 0.0f) {
+        tickBehaviors(ctx, realDelta, "onRealtimeUpdate", &Behavior::onRealtimeUpdate,
+                      /*startIfNeeded*/ false);
     }
 
     drainPendingDestroy(scene);
@@ -227,7 +256,8 @@ void BehaviorSystem::fixedUpdate(FrameContext& ctx) {
     // only runs while playing (or per queued step) - no explicit pause gate.
     // fixedUpdate runs before update each frame; onStart fires here if this is
     // the instance's first tick.
-    tickBehaviors(ctx, ctx.clock.getFixedStep(), "onFixedUpdate", &Behavior::onFixedUpdate);
+    tickBehaviors(ctx, ctx.clock.getFixedStep(), "onFixedUpdate", &Behavior::onFixedUpdate,
+                  /*startIfNeeded*/ true);
 
     drainPendingDestroy(ctx.scene);
 }
@@ -241,14 +271,32 @@ void BehaviorSystem::shutdown() {
 void BehaviorSystem::endSession(Scene& scene) {
     auto* storage = scene.storage<ScriptComponent>();
     if (!storage) return;
+
+    // The queues these behaviors defer into, taken off one of them: a bound
+    // context is how a behavior reaches them, and the editor's stop path calls
+    // this with no BehaviorSystem in hand. Null only when nothing ever started,
+    // which is also when nothing can have queued.
+    BehaviorContext* session = nullptr;
+
     storage->forEach([&](uint32_t, ScriptComponent& sc) {
         for (auto& behavior : sc.behaviors) {
             if (!behavior) continue;
+            if (behavior->m_ctx) session = behavior->m_ctx;
             fireDestroy(*behavior);
             behavior->m_started  = false;
             behavior->m_disabled = false;
         }
     });
+    if (!session) return;
+
+    // What an onDestroy just asked for named the world that is going away, and
+    // dies with it. Left queued it drains on the next frame - which since the
+    // realtime pass exists happens while paused, and in the editor paused is
+    // Edit mode: Stop would load a gameplay scene over the authored one, or
+    // destroy whichever entity inherited a slot the played scene had freed. An
+    // entity id does not go stale across the swap, it re-aims.
+    session->pendingDestroy->clear();
+    session->pendingSceneLoad->clear();
 }
 
 void BehaviorSystem::destroyEntityBehaviors(Scene& scene, EntityId entity) {

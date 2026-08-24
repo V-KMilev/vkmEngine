@@ -122,15 +122,26 @@ class SlotAllocator {
          *
          * Used by SceneSerializer so loaded entities keep the slot indices they
          * had at save time (eliminates id-remap on Hierarchy::parent etc.).
+         *
+         * Reaching a sparse index - entities saved at 1, 2, 6, ... - grows the
+         * table across the gap, and the dead placeholder slots that creates go
+         * onto the free list, so allocate() reuses the gap and size() counts
+         * only live slots. Left off it, every gap permanently leaks a slot and
+         * entityCount() over-reports for the life of the scene.
+         *
+         * The claimed slot may itself still be sitting in the free list. It is
+         * left there and skipped when it comes up rather than searched for and
+         * erased: erasing is a linear find plus a mid-vector shift per call,
+         * and a scene whose indices have gaps calls this once per entity with
+         * the gaps accumulating in the list - quadratic in entity count for any
+         * scene that has ever had something deleted.
+         *
+         * @param index Slot to claim; must be free and must not be slot 0.
+         * @return The handle for the newly live slot.
          */
         StorageIndex allocateAt(uint32_t index) {
             VKM_ASSERT(index > 0, "SlotAllocator::allocateAt: slot 0 is reserved");
 
-            // Growing to reach a sparse index (loading entities saved at, say,
-            // 1,2,6,...) creates dead placeholder slots in the gap. Free-list
-            // them so allocate() reuses the gap and size() counts only live
-            // slots - otherwise every gap permanently leaks a slot and
-            // entityCount() over-reports for the life of the scene.
             const uint32_t oldSize = static_cast<uint32_t>(m_generation.size());
             while (m_generation.size() <= index) m_generation.push_back({});
             for (uint32_t gap = oldSize; gap < index; ++gap) m_freeList.push_back(gap);
@@ -138,12 +149,6 @@ class SlotAllocator {
             VKM_ASSERT(!m_generation[index].alive(),
                 "SlotAllocator::allocateAt: slot %u already alive", index);
 
-            // The slot may still be sitting in the free list; it is left there
-            // and skipped when it comes up, rather than searched for and erased.
-            // Erasing meant a linear find plus a mid-vector shift per call, and
-            // loading a scene whose indices have gaps calls this once per entity
-            // with the gaps accumulating in the list - quadratic in entity count
-            // for a scene that had ever had something deleted.
             m_generation[index].setAlive(true);
             ++m_liveCount;
             return StorageIndex{index, m_generation[index].generation()};

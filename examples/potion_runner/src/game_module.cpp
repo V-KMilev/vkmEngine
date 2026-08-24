@@ -5,6 +5,7 @@
 
 #include "core/math/axes.h"
 #include "ecs/scene.h"
+#include "ecs/component/audio/audio_listener.h"
 #include "ecs/component/core/name.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/component/render/camera.h"
@@ -65,6 +66,11 @@ void vkmBuildScene(Vkm::Engine::Scene& scene) {
         glm::angleAxis(0.34f, Vkm::Engine::Math::WORLD_AXIS_X),
         glm::vec3(1.0f)
     });
+    // The ear rides the eye. Nothing in the engine assumes that - a listener is
+    // its own component precisely so a game can put it somewhere else - but a
+    // chase camera is where this game hears from, and the runner's footsteps
+    // are mixed against it.
+    scene.add(camera, Vkm::Engine::AudioListener{});
 
     // No sun: an underground night run, lit entirely by the game's own fixtures
     // (ceiling luminaires, neon trims, train headlights). With no directional

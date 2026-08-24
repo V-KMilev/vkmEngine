@@ -67,13 +67,24 @@ AnimationClipHandle createCookedAnimationClip(const nlohmann::json& source, Reso
     return {};
 }
 
+AudioClipHandle createCookedAudioClip(const nlohmann::json& source, ResourceManager& resources) {
+    const std::string kind = source.value("kind", std::string{});
+    if (kind == "cooked") {
+        return loadCookedAudioClip(source.value("name", std::string{}), resources);
+    }
+    LOG_ERROR("No cooked sound dispatch for kind '%s'", kind.c_str());
+    return {};
+}
+
 void registerCookedAssetFactories() {
-    LOG_INFO("Registering cooked asset factories (mesh/texture/skeleton/clip: cooked, material: inline)");
+    LOG_INFO("Registering cooked asset factories (mesh/texture/skeleton/clip/sound: cooked, "
+             "material: inline)");
     assetFactory().createMesh          = &createCookedMesh;
     assetFactory().createTexture       = &createCookedTexture;
     assetFactory().createMaterial      = &createCookedMaterial;
     assetFactory().createSkeleton      = &createCookedSkeleton;
     assetFactory().createAnimationClip = &createCookedAnimationClip;
+    assetFactory().createAudioClip     = &createCookedAudioClip;
 }
 
 } // namespace Vkm::Engine

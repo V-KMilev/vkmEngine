@@ -85,7 +85,7 @@ def sdk_version(root: Path) -> str | None:
     project made on 1.6.3.
     """
     for cfg in (root / "lib" / "cmake" / "vkmEngine" / "vkmEngineConfigVersion.cmake",
-                root / "build" / "vkmEngineConfigVersion.cmake"):
+                root / "build" / "lib" / "cmake" / "vkmEngine" / "vkmEngineConfigVersion.cmake"):
         if not cfg.is_file():
             continue
         m = re.search(r'set\(PACKAGE_VERSION\s+"(\d+\.\d+\.\d+)"', cfg.read_text())
@@ -222,10 +222,14 @@ def cmd_build(args) -> int:
 
     # Point find_package straight at this SDK's config directory. CMAKE_PREFIX_PATH
     # alone would work for an installed layout, but naming vkmEngine_DIR also works
-    # when the tool is run from the engine's build tree.
+    # when the tool is run from the engine's build tree, which exports a package of
+    # its own into the same relative directory (see cmake/install.cmake).
     config_dir = root / "lib" / "cmake" / "vkmEngine"
     if not config_dir.is_dir():
         config_dir = root / "build" / "lib" / "cmake" / "vkmEngine"
+    if not config_dir.is_dir():
+        die(f"no vkmEngine package under {root}. Build the engine (which writes one "
+            f"into its build tree), or install the SDK with `cmake --install`.")
 
     cfg = [cmake, "-S", d, "-B", build,
            f"-DvkmEngine_DIR={config_dir}",

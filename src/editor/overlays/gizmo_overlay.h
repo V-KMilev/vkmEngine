@@ -62,6 +62,19 @@ class GizmoOverlay {
         void drawEffectGizmos(EditorContext& ec);
 
         /**
+         * @brief Draw a billboard icon per audio source and listener, plus the
+         * selected source's two falloff spheres and the listener's facing.
+         *
+         * A sound is the one authored thing in the engine with nothing to look
+         * at, so without this an AudioSource is invisible in the viewport. The
+         * icon says where, and whether that where is heard at all - it keeps
+         * the speaker's radiating arcs only while the source is spatial. The
+         * spheres say how far, and are drawn for the selection only because a
+         * scene's worth of 60-unit wireframes buries everything else.
+         */
+        void drawAudioGizmos(EditorContext& ec);
+
+        /**
          * @brief Draw a wireframe of every entity's physics Collider (its set
          * of boxes) so the user sees what the solver collides against.
          *
@@ -97,9 +110,12 @@ class GizmoOverlay {
          * @brief Ray-cast pick on left-click in the viewport, updating the
          * editor selection.
          *
-         * Tests the culled visible set (meshes) and enabled lights; nearest hit
-         * wins, an empty-space click deselects. No-op while the gizmo is hovered
-         * or being dragged. Selection is UI state only - it never dirties the scene.
+         * Tests the culled visible set (meshes), the enabled lights' reach
+         * boxes, and the billboard marker of every entity that draws one -
+         * lights, cameras, audio sources and listeners. Nearest hit wins, an
+         * empty-space click deselects. No-op while the gizmo is hovered or
+         * being dragged. Selection is UI state only - it never dirties the
+         * scene.
          */
         void handleViewportPick(EditorContext& ec);
         bool isGizmoOver() const  { return m_gizmo.isOver(); }
@@ -125,9 +141,16 @@ class GizmoOverlay {
         EntityId  m_dragEntity{};
 
         /**
-         * @brief Drag-start transforms of EVERY selected entity (active
-         * included), so a gizmo drag moves the whole selection and drag-end
-         * can push one batch undo covering all of it.
+         * @brief Drag-start transforms of the selection's ROOTS, so a gizmo drag
+         * moves the whole selection and drag-end pushes one batch undo over it.
+         *
+         * Roots only: an entity whose ancestor is also selected already inherits
+         * that ancestor's motion through the hierarchy, so writing it again
+         * applies the delta twice. The active entity is therefore not always in
+         * here - it is absent exactly when an ancestor of it is selected, and
+         * m_dragActiveIsDescendant is how the drag knows that has happened.
+         * Nothing else may be read as "is this a multi-entity drag": a selection
+         * of two can have one root, and it is the root that has to move.
          */
         std::vector<std::pair<EntityId, Transform>> m_dragSelection;
 

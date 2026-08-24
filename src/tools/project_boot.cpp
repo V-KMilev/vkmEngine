@@ -91,7 +91,7 @@ bool bootHost(int argc, char** argv, const char* logFileName, const char* logger
     return true;
 }
 
-SceneBoot bootProjectScene(
+SceneBootResult bootProjectScene(
     const Project& project,
     ScriptModule& module,
     Scene& scene,
@@ -103,23 +103,27 @@ SceneBoot bootProjectScene(
 
         if (SceneSerializer::load(scene, resources, path.string())) {
             LOG_INFO("Opened scene '%s'", path.string().c_str());
-            return SceneBoot::Project;
+            // The one world with a file behind it, so the one that hands its
+            // path back. The two below do not: a module builds its world from
+            // code, and the default scene standing in for a load that failed
+            // must not be able to overwrite the file it stood in for.
+            return {SceneBoot::Project, path.string()};
         }
         reportError("Scene", path.string(),
                     "entry scene failed to load; the default scene stands in");
         buildDefaultScene(scene, resources);
-        return SceneBoot::Failed;
+        return {SceneBoot::Failed, {}};
     }
 
     if (module.buildScene(scene)) {
         LOG_INFO("Scene built by the project's module");
-        return SceneBoot::Project;
+        return {SceneBoot::Project, {}};
     }
 
     buildDefaultScene(scene, resources);
     LOG_INFO("Project '%s' supplies no scene of its own; opened the default scene",
              project.name.c_str());
-    return SceneBoot::Default;
+    return {SceneBoot::Default, {}};
 }
 
 } // namespace Vkm::Engine

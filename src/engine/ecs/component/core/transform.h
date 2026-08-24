@@ -65,22 +65,17 @@ struct Transform {
         out.scale    = {glm::length(basis[0]), glm::length(basis[1]), glm::length(basis[2])};
 
         // A mirrored basis has no rotation that reproduces it, so the flip is
-        // carried on one scale axis - which is where computeModelMatrix would
-        // have taken it from. Without this, quat_cast reads a reflection as a
-        // rotation and answers with a garbage quaternion.
+        // carried on one scale axis, where computeModelMatrix would have taken
+        // it from. Otherwise quat_cast reads a reflection as a rotation.
         if (glm::determinant(basis) < 0.0f) out.scale.x = -out.scale.x;
 
         for (int axis = 0; axis < 3; ++axis)
             basis[axis] = (out.scale[axis] != 0.0f) ? basis[axis] / out.scale[axis]
                                                     : glm::vec3(0.0f);
 
-        // An axis scaled to nothing keeps no direction to recover a rotation
-        // from, and dividing by that zero is a NaN quaternion that spreads into
-        // every matrix built from the result - a clip hiding a joint by keying
-        // its scale to zero is enough to reach it. The two axes that survived
-        // still carry the rotation, so the lost one is the axis they imply; with
-        // two of them gone there is none left to recover and the identity's
-        // column stands in.
+        // Dividing by a zero scale is a NaN quaternion that spreads into every
+        // matrix built from the result. The two axes that survived imply the
+        // lost one; with two of them gone the identity's column stands in.
         for (int axis = 0; axis < 3; ++axis) {
             if (glm::dot(basis[axis], basis[axis]) > 0.0f) continue;
 

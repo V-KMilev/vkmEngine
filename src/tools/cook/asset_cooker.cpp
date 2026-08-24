@@ -3,7 +3,6 @@
 #include "cook/asset_cooker.h"
 
 #include <filesystem>
-#include <fstream>
 #include <string>
 #include <system_error>
 
@@ -16,8 +15,10 @@
 #include "io/asset/asset_cook.h"
 #include "io/asset/asset_library.h"
 #include "io/asset/asset_serializer.h"
+#include "io/json_file.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/animation_clip_asset.h"
+#include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
@@ -102,21 +103,17 @@ bool isUpToDate(AssetType type, const std::string& name, uint64_t hash, CookedOu
     return AssetCook::isCookedCurrent(type, AssetLibrary::cookedPath(type, name), hash);
 }
 
+// The recipe is the half of the library a cook cannot regenerate, so it takes
+// the same temp-and-rename write every other document does. A recipe truncated
+// in place would be recorded under the current hash, skipped by every later
+// cook, and rejected by every later load.
 bool writeRecipeFile(const std::filesystem::path& path, const std::string& name,
                      const char* typeTag, const nlohmann::json& source) {
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-    std::ofstream out(path);
-    if (!out) {
-        LOG_ERROR("Cooker: cannot write recipe '%s'", path.string().c_str());
-        return false;
-    }
     nlohmann::json doc;
     doc["name"]   = name;
     doc["type"]   = typeTag;
     doc["source"] = source;
-    out << doc.dump(2);
-    return static_cast<bool>(out);
+    return detail::writeJsonFile(path, doc, "Cooker recipe");
 }
 
 // The cook* helpers return false only on a real cook failure (recipe / cooked
@@ -224,6 +221,31 @@ bool cookAnimationClip(const AnimationClipAsset& clip) {
     return true;
 }
 
+bool cookAudioClip(const AudioClipAsset& clip) {
+    if (clip.name.empty()) return true;
+
+    if (!clip.hasSource() || clip.sampleCount() == 0 || isCookedPlaceholder(clip.sourceJson())) {
+        warnUnlisted(AssetType::AudioClip, clip.name);
+        return true;
+    }
+
+    AssetLibrary& lib = AssetLibrary::get();
+    const nlohmann::json& recipe = clip.sourceJson();
+    const uint64_t hash = hashRecipe(recipe);
+
+    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::AudioClip, clip.name);
+    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::AudioClip, clip.name);
+    if (isUpToDate(AssetType::AudioClip, clip.name, hash, CookedOutput::Binary)) return true;
+
+    if (!writeRecipeFile(recipePath, clip.name, "audioClip", recipe)) return false;
+    if (!AssetCook::writeAudioClip(cookedPath, clip, hash)) return false;
+
+    lib.upsert({AssetType::AudioClip, clip.name, hash});
+    LOG_INFO("Cooked sound '%s' (%.2fs, %u channel(s), %u Hz)", clip.name.c_str(),
+             static_cast<double>(clip.duration()), clip.channels, clip.sampleRate);
+    return true;
+}
+
 bool cookMaterial(const MaterialAsset& mat, const ResourceManager& resources) {
     if (mat.name.empty()) return true;
 
@@ -272,6 +294,12 @@ bool cookAllAssets(ResourceManager& resources) {
     });
     resources.forEachOfType<MeshAsset>([&](MeshHandle, const MeshAsset& mesh) {
         if (!mesh.hidden && !cookMesh(mesh)) ++failed;
+    });
+    // Sounds reference nothing and nothing references them by anything but a
+    // name, so where they sit in this order is arbitrary; last keeps the chain
+    // above reading as the dependency order it is.
+    resources.forEachOfType<AudioClipAsset>([&](AudioClipHandle, const AudioClipAsset& clip) {
+        if (!clip.hidden && !cookAudioClip(clip)) ++failed;
     });
 
     // A failed cook leaves the manifest referencing a cooked file that was never

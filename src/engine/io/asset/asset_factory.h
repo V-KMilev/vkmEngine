@@ -3,6 +3,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include "resource/asset/animation_clip_asset.h"
+#include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
@@ -26,6 +27,7 @@ struct AssetFactory {
     MaterialHandle      (*createMaterial)     (const nlohmann::json&, ResourceManager&) = nullptr;
     SkeletonHandle      (*createSkeleton)     (const nlohmann::json&, ResourceManager&) = nullptr;
     AnimationClipHandle (*createAnimationClip)(const nlohmann::json&, ResourceManager&) = nullptr;
+    AudioClipHandle     (*createAudioClip)    (const nlohmann::json&, ResourceManager&) = nullptr;
 };
 
 AssetFactory& assetFactory();

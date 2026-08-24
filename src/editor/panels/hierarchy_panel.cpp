@@ -274,6 +274,8 @@ void HierarchyPanel::drawEntityNode(Scene& scene, ResourceManager& resources,
         if (scene.has<IrradianceVolume>(entity)) append("GI Volume");
         if (scene.has<Decal>(entity))            append("Decal");
         if (scene.has<ParticleEmitter>(entity))  append("Particles");
+        if (scene.has<AudioSource>(entity))      append("Sound");
+        if (scene.has<AudioListener>(entity))    append("Listener");
         if (scene.has<UICanvas>(entity))         append("Canvas");
         if (scene.has<UIElement>(entity))        append("UI Element");
         if (scene.has<UIImage>(entity))          append("Image");
@@ -379,9 +381,17 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, ResourceManager& resour
 
     if (scene.has<Camera>(entity)) {
         ImGui::Separator();
-        const auto& cam = scene.get<Camera>(entity);
-        const bool isActive = cam.active;
-        if (ImGui::MenuItem("Set as Main Camera", nullptr, false, !isActive)) {
+        // Active is not exclusive - the checkbox on the card sets it on as many
+        // cameras as you like - so greying this on cam.active alone said
+        // "already main" about a camera that may well not be the one rendered
+        // from. It is the fix for exactly that ambiguity, so it stays offered
+        // while any other camera also claims to be active.
+        bool otherActive = false;
+        scene.forEach<Camera>([&](EntityId other, const Camera& c) {
+            if (other != entity && c.active) otherActive = true;
+        });
+        const bool isOnlyActive = scene.get<Camera>(entity).active && !otherActive;
+        if (ImGui::MenuItem("Set as Main Camera", nullptr, false, !isOnlyActive)) {
             EditorActions::setActiveCamera(scene, state, entity);
         }
     }

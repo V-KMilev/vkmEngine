@@ -43,7 +43,64 @@ namespace AssetSerializer {
                                          const ResourceManager& resources);
 
     nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& resources);
-    bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources);
+
+    /**
+     * @brief The assets block for everything @p resources holds, referenced or not.
+     *
+     * The counterpart to saveAssetsForScene, and the difference is the whole
+     * point of it. A scene file lists what the scene names, because that is
+     * what a file is for: an asset nothing points at has no business being
+     * written into somebody's document. A session is not a file. An asset
+     * imported and not yet assigned to anything is in the Asset Browser and in
+     * every picker, and it is work somebody did - so the editor's play
+     * snapshot, which promises to put the session back exactly as it found it,
+     * needs the list a scene save deliberately leaves out.
+     *
+     * Hidden and unnamed assets are skipped by the same rule the scene save
+     * follows: a private preview asset is not the author's, and a name is what
+     * loadAssets has to find it by.
+     *
+     * @param resources The asset graph to enumerate.
+     * @return An object with the same section keys loadAssets reads.
+     */
+    nlohmann::json saveAllAssets(const ResourceManager& resources);
+
+    /**
+     * @brief What loadAssets does about a name @p resources already holds.
+     */
+    enum class LoadMode {
+        /**
+         * @brief Leave it alone.
+         *
+         * What a load wants: the graph either does not hold the name (and it is
+         * built) or holds an asset that already is what the document describes.
+         */
+        Create,
+        /**
+         * @brief Rebuild its contents in place, keeping its handle and name.
+         *
+         * What the editor's Stop wants. A session can edit an asset - the
+         * Material Editor stays live in play mode, and a behavior can write
+         * through the graph - and Stop puts the world back as Play found it,
+         * assets included. Rebuilding in place rather than as a replacement is
+         * what lets the undo history survive that: its steps hold the assets
+         * they are to put back, and a handle reissued out of a fresh graph
+         * names whatever landed in that slot instead.
+         */
+        Reload
+    };
+
+    /**
+     * @brief Recreate the assets a document names into @p resources.
+     *
+     * @param assetsJson An assets block, from any of the save functions above.
+     * @param resources The asset graph to build into.
+     * @param mode What to do about a name the graph already holds; see LoadMode.
+     * @return false if the block was not an object; true otherwise, with
+     *         per-asset failures logged and skipped.
+     */
+    bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources,
+                    LoadMode mode = LoadMode::Create);
 
     /**
      * @brief Apply an "inline" material descriptor (kind=="inline") to a freshly-

@@ -82,15 +82,23 @@ include("${CMAKE_CURRENT_LIST_DIR}/vkmEngineTargets.cmake")
 # ---------------------------------------------------------------------------
 # A host resolves shaders relative to the engine root at run time; these let a
 # project's build copy or reference them without hardcoding a layout.
-set_and_check(VKMENGINE_ROOT_DIR      "${PACKAGE_PREFIX_DIR}")
-set_and_check(VKMENGINE_BIN_DIR       "${PACKAGE_PREFIX_DIR}/bin")
-set_and_check(VKMENGINE_INCLUDE_DIR   "${PACKAGE_PREFIX_DIR}/include")
-set_and_check(VKMENGINE_SHADER_DIR    "${PACKAGE_PREFIX_DIR}/shaders")
-set_and_check(VKMENGINE_TEMPLATE_DIR  "${PACKAGE_PREFIX_DIR}/templates")
+#
+# Filled in at configure time rather than composed from PACKAGE_PREFIX_DIR here,
+# because this file is generated twice: once for the installed SDK, where every
+# path hangs off the prefix the package was unpacked into, and once for the
+# engine's own build tree, where the binaries are under build/ and the headers,
+# shaders and templates are still in the source tree. Composing them here would
+# describe only the first layout, which is what left the build-tree package
+# naming an include/ directory no build produces.
+set_and_check(VKMENGINE_ROOT_DIR      "@VKM_PKG_ROOT_DIR@")
+set_and_check(VKMENGINE_BIN_DIR       "@VKM_PKG_BIN_DIR@")
+set_and_check(VKMENGINE_INCLUDE_DIR   "@VKM_PKG_INCLUDE_DIR@")
+set_and_check(VKMENGINE_SHADER_DIR    "@VKM_PKG_SHADER_DIR@")
+set_and_check(VKMENGINE_TEMPLATE_DIR  "@VKM_PKG_TEMPLATE_DIR@")
 
-set(VKMENGINE_RUNTIME "${PACKAGE_PREFIX_DIR}/bin/vkm_runtime@CMAKE_EXECUTABLE_SUFFIX@")
-set(VKMENGINE_EDITOR  "${PACKAGE_PREFIX_DIR}/bin/vkm_editor@CMAKE_EXECUTABLE_SUFFIX@")
-set(VKMENGINE_COOKER  "${PACKAGE_PREFIX_DIR}/bin/vkm_cook@CMAKE_EXECUTABLE_SUFFIX@")
+set(VKMENGINE_RUNTIME "${VKMENGINE_BIN_DIR}/vkm_runtime@CMAKE_EXECUTABLE_SUFFIX@")
+set(VKMENGINE_EDITOR  "${VKMENGINE_BIN_DIR}/vkm_editor@CMAKE_EXECUTABLE_SUFFIX@")
+set(VKMENGINE_COOKER  "${VKMENGINE_BIN_DIR}/vkm_cook@CMAKE_EXECUTABLE_SUFFIX@")
 
 # ---------------------------------------------------------------------------
 # vkm_add_gameplay_module(<name>)

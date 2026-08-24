@@ -11,6 +11,38 @@
 
 namespace Vkm::Engine {
 
+void ViewportOverlay::drawNoCameraNotice(EditorContext& ec) {
+    const FrameContext& ctx = ec.frame;
+    if (ctx.visibility && ctx.visibility->hasCamera) return;
+
+    // Centred in the viewport, which is the empty thing being explained. Two
+    // lines in the shape the Inspector's empty state uses: what is wrong, then
+    // the routes back.
+    const char* headline = "No active camera - nothing to render from";
+    const char* detail   = "Entity > Create > Camera, or tick Active on a Camera card.";
+
+    const ImVec2 headSize = ImGui::CalcTextSize(headline);
+    const ImVec2 detailSize = ImGui::CalcTextSize(detail);
+    const float  lineGap  = ImGui::GetTextLineHeightWithSpacing() - ImGui::GetTextLineHeight();
+    const float  blockH   = headSize.y + lineGap + detailSize.y;
+    const ImVec2 center(ec.viewportPos.x + ec.viewportSize.x * 0.5f,
+                        ec.viewportPos.y + ec.viewportSize.y * 0.5f);
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImVec2 blockMin(center.x - std::max(headSize.x, detailSize.x) * 0.5f,
+                          center.y - blockH * 0.5f);
+    const float padX = EditorStyle::px(14.0f);
+    const float padY = EditorStyle::px(12.0f);
+    dl->AddRectFilled(ImVec2(blockMin.x - padX, blockMin.y - padY),
+                      ImVec2(blockMin.x + std::max(headSize.x, detailSize.x) + padX,
+                             blockMin.y + blockH + padY),
+                      ImGui::GetColorU32(EditorStyle::OVERLAY_BG), EditorStyle::px(6.0f));
+    dl->AddText(ImVec2(center.x - headSize.x * 0.5f, blockMin.y),
+                ImGui::GetColorU32(EditorStyle::WARNING), headline);
+    dl->AddText(ImVec2(center.x - detailSize.x * 0.5f, blockMin.y + headSize.y + lineGap),
+                ImGui::GetColorU32(ImGuiCol_TextDisabled), detail);
+}
+
 void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
     const FrameContext& ctx = ec.frame;
     m_hovered = false;
@@ -21,8 +53,8 @@ void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
 
     ImDrawList* drawList = ImGui::GetWindowDrawList();
 
-    constexpr float gizmoSize = 64.0f;
-    constexpr float edgeInset = gizmoSize * 0.8f + 12.0f;
+    const float gizmoSize = EditorStyle::px(64.0f);
+    const float edgeInset = gizmoSize * 0.8f + EditorStyle::px(12.0f);
     ImVec2 center(regionMax.x - edgeInset, regionMax.y - edgeInset);
 
     glm::mat3 viewRot = glm::mat3(ctx.visibility->view);
@@ -30,8 +62,8 @@ void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
     glm::vec3 axisY = viewRot * Math::WORLD_AXIS_Y;
     glm::vec3 axisZ = viewRot * Math::WORLD_AXIS_Z;
 
-    constexpr float axisLen = gizmoSize * 0.8f;
-    constexpr float labelDotRadius = 8.0f;
+    const float axisLen = gizmoSize * 0.8f;
+    const float labelDotRadius = EditorStyle::px(8.0f);
 
     // Six axis endpoints (+X, -X, +Y, -Y, +Z, -Z). Each is clickable for a
     // snap-to-view preset (DCC-standard navigation widget).
@@ -98,15 +130,16 @@ void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
         // Lines only for the positive (front-facing) axes so the gizmo
         // reads cleanly. Negative endpoints are dots only.
         if (isPositive) {
-            drawList->AddLine(center, endPts[i], e.col, 2.0f);
+            drawList->AddLine(center, endPts[i], e.col, EditorStyle::px(2.0f));
         }
 
         ImU32 dotCol = e.col;
         if (isHovered) dotCol = EditorStyle::HIGHLIGHT_U32;
+        const float dotR = EditorStyle::px(isHovered ? 7.0f : 6.0f);
         if (isPositive)
-            drawList->AddCircleFilled(endPts[i], isHovered ? 7.0f : 6.0f, dotCol, 12);
+            drawList->AddCircleFilled(endPts[i], dotR, dotCol, 12);
         else
-            drawList->AddCircle(endPts[i], isHovered ? 7.0f : 6.0f, dotCol, 12, 1.5f);
+            drawList->AddCircle(endPts[i], dotR, dotCol, 12, EditorStyle::px(1.5f));
 
         if (isPositive || isHovered) {
             const ImVec2 ts = ImGui::CalcTextSize(e.label);

@@ -19,6 +19,12 @@
 	path = modules/stb
 	url = https://github.com/nothings/stb.git
 
+# Audio. Public domain, one header plus the implementation unit beside it; the
+# engine owns the device behind it and nothing else includes it.
+[submodule "modules/miniaudio"]
+	path = modules/miniaudio
+	url = https://github.com/mackron/miniaudio.git
+
 # Editor and asset pipeline. Built only when the editor is.
 [submodule "modules/imgui"]
 	path = modules/imgui

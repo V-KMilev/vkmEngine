@@ -3,19 +3,26 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <string>
 #include <system_error>
+#include <vector>
 
 #include <imgui.h>
 #include <glm/glm.hpp>
 
+#include "io/json_file.h"
+#include "io/project_paths.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_state.h"
 #include "framework/prefab_overrides.h"
 #include "ecs/scene.h"
 #include "ecs/component/animation/animation.h"
+#include "ecs/component/audio/audio_listener.h"
+#include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/hierarchy.h"
 #include "ecs/component/core/name.h"
 #include "ecs/component/core/transform.h"
@@ -27,6 +34,8 @@
 #include "ecs/component/render/mesh.h"
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/component/render/reflection_probe.h"
+#include "ecs/component/ui/ui_canvas.h"
+#include "ecs/component/ui/ui_element.h"
 #include "io/scene/prefab.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "resource/resource_manager.h"
@@ -38,7 +47,10 @@
 #include "generator/mesh_generators.h"
 #include "generator/material_generators.h"
 #include "loader/model_loaders.h"
+#include "io/project.h"
 #include "io/project_paths.h"
+#include "ui/editor_dialogs.h"
+#include "ui/editor_style.h"
 #include "ui/editor_widgets.h"
 
 namespace Vkm::Engine {
@@ -67,7 +79,14 @@ void setTransformFromMatrix(Transform& t, const glm::mat4& m) {
 
 void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
                           EntityId newParent, const char* label) {
-    if (!scene.isAlive(child) || !scene.has<Transform>(child)) return;
+    if (!scene.isAlive(child)) return;
+
+    // A UI element carries no Transform - it is laid out in screen space by its
+    // canvas - and there is no world pose to preserve for one. That is a step
+    // to skip, not a move to refuse: the create path nests UI elements through
+    // setParent already, so an element made before its canvas existed had no
+    // way back under one, and the drag that asked said nothing.
+    const bool hasTransform = scene.has<Transform>(child);
 
     // An instance's interior belongs to its prefab: the scene stores the
     // instance as a reference and rebuilds the subtree from the file, so an
@@ -92,8 +111,10 @@ void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
     if (scene.has<Hierarchy>(child)) oldParent = scene.get<Hierarchy>(child).parent;
 
     // The world matrix is what stays fixed across the move; `before` is for undo.
-    const Transform before = scene.get<Transform>(child);
-    const glm::mat4 world   = HierarchyOperations::computeWorldMatrix(scene, child);
+    const Transform before = hasTransform ? scene.get<Transform>(child) : Transform{};
+    const glm::mat4 world  = hasTransform
+        ? HierarchyOperations::computeWorldMatrix(scene, child)
+        : glm::mat4(1.0f);
 
     const bool toParent = newParent && scene.isAlive(newParent);
     if (toParent) {
@@ -102,18 +123,33 @@ void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
         HierarchyOperations::removeFromParent(scene, child);
     }
 
-    // Re-express the preserved world matrix in the new parent's space so the
-    // entity stays put. Unparenting to root leaves local == world.
-    glm::mat4 local = world;
-    if (toParent && scene.has<Transform>(newParent)) {
-        local = glm::inverse(HierarchyOperations::computeWorldMatrix(scene, newParent)) * world;
+    Transform after = before;
+    if (hasTransform) {
+        // Re-express the preserved world matrix in the new parent's space so the
+        // entity stays put. Unparenting to root leaves local == world.
+        glm::mat4 local = world;
+        if (toParent && scene.has<Transform>(newParent)) {
+            local = glm::inverse(HierarchyOperations::computeWorldMatrix(scene, newParent)) * world;
+        }
+        Transform& t = scene.get<Transform>(child);
+        setTransformFromMatrix(t, local);
+        after = t;
     }
-    Transform& t = scene.get<Transform>(child);
-    setTransformFromMatrix(t, local);
 
     state.commands.push(std::make_unique<ReparentCommand>(
-        child, oldParent, toParent ? newParent : EntityId{}, before, t, label));
+        child, oldParent, toParent ? newParent : EntityId{}, before, after, label));
     commitHierarchyMutation(state);
+
+    // A UI element is laid out and drawn by the canvas above it, so one that
+    // lands outside every canvas stops drawing and nothing else says so. The
+    // move still happens - it is a legitimate step on the way to somewhere -
+    // but the author hears about it while the element is still where they put
+    // it.
+    if (scene.has<UIElement>(child) && !hasCanvasAncestor(scene, child)) {
+        state.pushToast(EditorState::ToastKind::Warning,
+                        "UI elements are drawn by the canvas above them - this one has no "
+                        "canvas ancestor now, so it will not appear");
+    }
 }
 
 void commitStructureChange(EditorState& state) {
@@ -157,12 +193,19 @@ MaterialHandle duplicateMaterial(
 }
 
 MaterialHandle createNewMaterial(ResourceManager& resources, EditorState& state) {
-    MaterialHandle h = generateDefaultMaterial(resources);
-    if (!h) return MaterialHandle{};
+    const MaterialHandle base = generateDefaultMaterial(resources);
+    if (!base) return MaterialHandle{};
 
-    // generateDefaultMaterial shares the "material:default" name; the unique
-    // rename is what distinguishes each new material on save/load.
-    resources.rename(h, uniqueMaterialName(resources, "Material"));
+    // A copy of the default, not the default renamed: that one asset is what
+    // every primitive and every cold-start load resolves "material:default" to,
+    // and renaming it would take it out from under all of them. The unique name
+    // is what distinguishes this one on save and load.
+    MaterialAsset copy = resources.get(base);
+    copy.version = 1;
+    copy.name    = uniqueMaterialName(resources, "Material");
+
+    MaterialHandle h = resources.add(std::move(copy));
+    if (!h) return MaterialHandle{};
 
     state.markSceneDirty();
     return h;
@@ -188,6 +231,8 @@ const char* defaultName(EntityKind k) {
         case EntityKind::IrradianceVolume: return "Irradiance Volume";
         case EntityKind::Decal:            return "Decal";
         case EntityKind::ParticleEmitter:  return "Particle Emitter";
+        case EntityKind::AudioSource:      return "Audio Source";
+        case EntityKind::AudioListener:    return "Audio Listener";
         case EntityKind::UICanvas:         return "UI Canvas";
         case EntityKind::UIPanel:          return "UI Panel";
         case EntityKind::UIText:           return "UI Text";
@@ -211,8 +256,11 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
 
     scene.add(entity, makeName(defaultName(kind)));
 
+    // Both halves reuse what the graph already holds under the name they would
+    // have taken. A primitive is a generator call and a default material, and
+    // neither is anything the author distinguished from the last one they made.
     auto addMesh = [&](MeshAsset mesh) {
-        auto meshHandle = resources.add(std::move(mesh));
+        auto meshHandle = addGeneratedMesh(resources, std::move(mesh));
         auto matHandle  = generateDefaultMaterial(resources);
         scene.add(entity, Mesh{meshHandle, matHandle});
     };
@@ -243,7 +291,11 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
         case EntityKind::Cone:     addMesh(generateCone());     break;
         case EntityKind::Camera: {
             Camera cam;
-            cam.active = false;
+            // Inactive so a new camera cannot hijack the view from the one the
+            // author is working through - except when there is no such camera,
+            // which is the one case where creating one is the recovery and an
+            // inactive result looks like the menu item did nothing.
+            cam.active = !findActiveCamera(scene);
             scene.add(entity, cam);
             break;
         }
@@ -258,6 +310,12 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
             break;
         case EntityKind::ParticleEmitter:
             scene.add(entity, ParticleEmitter{});
+            break;
+        case EntityKind::AudioSource:
+            scene.add(entity, AudioSource{});
+            break;
+        case EntityKind::AudioListener:
+            scene.add(entity, AudioListener{});
             break;
         case EntityKind::UICanvas:                          break;  // UICanvas added above
         case EntityKind::UIPanel:  scene.add(entity, UIImage{});  break;
@@ -515,10 +573,22 @@ bool saveAsPrefab(Scene& scene, const ResourceManager& resources, EditorState& s
         return false;
     }
 
-    // The subtree is stored as a reference now, and its entities are rebuilt
-    // from the file on the next load - so nothing already on the command stack
-    // still describes the scene, the same reason a scene load clears it.
-    state.commands.clear();
+    // The subtree is the prefab's now: the scene keeps a reference and the
+    // overrides against it, so a step that assigns a component in there would
+    // undo to a value the scene has stopped storing. Every step addressing an
+    // entity in the subtree is therefore dropped - and only those. The rest of
+    // the history was never about this subtree, its entities are not rebuilt
+    // from anything, and an author who moved the sun an hour ago can still take
+    // that back. (A scene load clears the whole stack for a reason that does
+    // not hold here: it replaces every entity, and this replaces none.)
+    std::vector<uint32_t> subtreeSlots{entity.index};
+    for (size_t i = 0; i < subtreeSlots.size(); ++i) {
+        HierarchyOperations::forEachChild(scene, scene.entityAt(subtreeSlots[i]),
+            [&](EntityId child) {
+                if (scene.isAlive(child)) subtreeSlots.push_back(child.index);
+            });
+    }
+    state.commands.forget(subtreeSlots);
     state.markSceneDirty();
     state.pushToast(EditorState::ToastKind::Info, "Saved prefab '" + shown + "'");
     return true;
@@ -677,6 +747,9 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
         item(EditorIcon::Decal,    "Decal",             EntityKind::Decal);
         item(EditorIcon::Particle, "Particle Emitter",  EntityKind::ParticleEmitter);
         ImGui::Separator();
+        item(EditorIcon::Audio,    "Audio Source",      EntityKind::AudioSource);
+        item(EditorIcon::Listener, "Audio Listener",    EntityKind::AudioListener);
+        ImGui::Separator();
         if (ImGui::BeginMenu("Light")) {
             item(EditorIcon::LightDir,   "Directional", EntityKind::DirectionalLight);
             item(EditorIcon::LightPoint, "Point",       EntityKind::PointLight);
@@ -779,6 +852,177 @@ void PlacePrefabDialog::draw(Scene& scene, ResourceManager& resources, EditorSta
 
     std::string picked;
     if (m_picker.draw(picked)) placePrefab(scene, resources, state, picked);
+}
+
+bool NewProjectDialog::create(const std::filesystem::path& dest, std::string& error) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    if (fs::exists(dest, ec) && !fs::is_empty(dest, ec)) {
+        error = "That directory already exists and is not empty";
+        return false;
+    }
+
+    const fs::path template_ = ProjectPaths::engineRoot() / "templates" / "default";
+    if (!fs::is_directory(template_, ec)) {
+        error = "No project template shipped with this engine";
+        return false;
+    }
+
+    fs::copy(template_, dest, fs::copy_options::recursive, ec);
+    if (ec) {
+        error = "Could not copy the template: " + ec.message();
+        return false;
+    }
+
+    // The template is generic and the project is not: name it after the
+    // directory rather than making the author's first act be editing JSON, and
+    // record the engine that answered, since the host compares that string
+    // against its own and a literal left here would warn on every open.
+    const fs::path projectFile = dest / "project.json";
+    nlohmann::json doc;
+    if (!detail::readJsonFile(projectFile, doc, "project")) {
+        error = "The template's project.json could not be read";
+        return false;
+    }
+    doc["name"]          = dest.filename().string();
+    doc["engineVersion"] = APP_VERSION;
+    if (!detail::writeJsonFile(projectFile, doc, "project")) {
+        error = "Could not write project.json";
+        return false;
+    }
+
+    // find_package asks by MAJOR.MINOR, so the patch digit is dropped here and
+    // kept above - the same split the vkm CLI makes for the same reason.
+    const fs::path cml = dest / "CMakeLists.txt";
+    std::ifstream in(cml);
+    if (!in) {
+        error = "The template's CMakeLists.txt could not be read";
+        return false;
+    }
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+
+    const std::string full = APP_VERSION;
+    const std::size_t secondDot = full.find('.', full.find('.') + 1);
+    const std::string majorMinor = secondDot == std::string::npos ? full : full.substr(0, secondDot);
+    const std::string token = "@VKM_ENGINE_VERSION@";
+    for (std::size_t at = text.find(token); at != std::string::npos;
+         at = text.find(token, at + majorMinor.size())) {
+        text.replace(at, token.size(), majorMinor);
+    }
+
+    std::ofstream out(cml, std::ios::trunc);
+    if (!out) {
+        error = "Could not write the project's CMakeLists.txt";
+        return false;
+    }
+    out << text;
+    return true;
+}
+
+void NewProjectDialog::draw(EditorState& state) {
+    if (state.requestNewProject) {
+        state.requestNewProject = false;
+        m_open  = true;
+        m_error.clear();
+        if (m_parentBuffer[0] == '\0') {
+            const std::string parent = ProjectPaths::projectRoot().parent_path().string();
+            std::snprintf(m_parentBuffer, sizeof(m_parentBuffer), "%s", parent.c_str());
+        }
+    }
+    if (!beginDialog("New Project", m_open)) return;
+
+    ImGui::TextDisabled("A project is a directory: its scenes, its assets, and the code that plays them.");
+    ImGui::Spacing();
+
+    ImGui::TextDisabled("Name");
+    ImGui::SetNextItemWidth(EditorStyle::px(360.0f));
+    const bool entered = ImGui::InputText("##NewProjectName", m_nameBuffer, sizeof(m_nameBuffer),
+                                          ImGuiInputTextFlags_EnterReturnsTrue);
+
+    ImGui::TextDisabled("In");
+    ImGui::SetNextItemWidth(EditorStyle::px(360.0f));
+    ImGui::InputText("##NewProjectParent", m_parentBuffer, sizeof(m_parentBuffer));
+
+    const std::string name   = m_nameBuffer;
+    const std::string parent = m_parentBuffer;
+    const bool named = !name.empty() && name.find_first_of("/\\") == std::string::npos;
+    const std::filesystem::path dest = named && !parent.empty()
+        ? std::filesystem::path(parent) / name : std::filesystem::path{};
+
+    if (!dest.empty()) ImGui::TextDisabled("%s", dest.string().c_str());
+    if (!m_error.empty()) ImGui::TextColored(EditorStyle::DANGER, "%s", m_error.c_str());
+
+    const DialogResult r = dialogButtons(m_open, "Create", named && !parent.empty(), entered);
+    if (r == DialogResult::Confirm) {
+        m_error.clear();
+        if (create(dest, m_error)) {
+            // Asked for rather than opened here: a new project replaces the
+            // scene in the world, which is the guard's business, not a dialog's.
+            state.requestSceneAction(EditorState::SceneAction::OpenProject, dest.string());
+            m_nameBuffer[0] = '\0';
+            m_open = false;
+            ImGui::CloseCurrentPopup();
+        }
+    }
+    endDialog();
+}
+
+void OpenProjectDialog::draw(EditorState& state) {
+    if (state.requestOpenProject) {
+        state.requestOpenProject = false;
+        m_open = true;
+    }
+    if (!beginDialog("Open Project", m_open)) return;
+
+    ImGui::TextDisabled("A project is a directory with a project.json in it.");
+    ImGui::Spacing();
+
+    // Recents first: switching between a few projects is the common case, and
+    // typing a path for it every time would be the wrong default.
+    std::string chosen;
+    if (!state.recentProjects.empty()) {
+        ImGui::TextDisabled("Recent");
+        for (const std::string& path : state.recentProjects) {
+            ImGui::PushID(path.c_str());
+            const std::string label = std::filesystem::path(path).filename().string();
+            if (ImGui::Selectable(label.empty() ? path.c_str() : label.c_str())) {
+                chosen = path;
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", path.c_str());
+            ImGui::PopID();
+        }
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+    }
+
+    ImGui::TextDisabled("Path");
+    ImGui::SetNextItemWidth(EditorStyle::px(360.0f));
+    const bool entered = ImGui::InputText("##ProjectPath", m_pathBuffer, sizeof(m_pathBuffer),
+                                          ImGuiInputTextFlags_EnterReturnsTrue);
+
+    const std::string typed = m_pathBuffer;
+    const bool typedIsProject = !typed.empty() && !findProjectRoot(typed).empty();
+    if (!typed.empty() && !typedIsProject) {
+        ImGui::TextColored(EditorStyle::WARNING, "No project.json here");
+    }
+
+    const DialogResult r = dialogButtons(m_open, "Open", typedIsProject, entered);
+    if (r == DialogResult::Confirm) chosen = typed;
+
+    if (!chosen.empty()) {
+        m_open = false;
+        ImGui::CloseCurrentPopup();
+    }
+
+    endDialog();
+
+    if (!chosen.empty()) {
+        state.requestSceneAction(EditorState::SceneAction::OpenProject, chosen);
+        m_pathBuffer[0] = '\0';
+    }
 }
 
 } // namespace EditorActions

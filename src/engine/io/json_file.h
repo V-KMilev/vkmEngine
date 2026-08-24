@@ -1,7 +1,9 @@
 #pragma once
 
+#include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <string>
 #include <system_error>
 
 #include <nlohmann/json.hpp>
@@ -29,6 +31,58 @@ inline bool readJsonFile(const std::filesystem::path& path, nlohmann::json& out,
         return false;
     }
     return true;
+}
+
+// Replace every non-finite number under @p node with 0, naming each one in the
+// log: @p what tags the document and @p path is the scratch buffer the field's
+// address is built in, grown and trimmed as the walk descends rather than
+// rebuilt per node.
+//
+// JSON cannot write an infinity or a NaN, so nlohmann::json dumps both as
+// `null` - and a null where a float was is a type error the component loaders
+// throw on, which aborts the whole load. One unrepresentable field would cost
+// every entity in the file, so the document is checked where it is built rather
+// than where it is read: the engine does not write a document it cannot read
+// back. Zero is what a field with no value gets; the field was already wrong -
+// an infinite volume is silent and an infinite position is nowhere - and the
+// log says which one, so the author can set it to what they meant.
+//
+// The read side is deliberately left strict. Teaching the loaders that `null`
+// means "keep the default" would make it a legal token in every scalar field of
+// the scene format, permanently, where this changes nothing about what a
+// well-formed file looks like - a finite number still writes exactly as it did.
+inline void writeNonFiniteAsZero(nlohmann::json& node, const char* what, std::string& path) {
+    if (node.is_object()) {
+        const std::size_t parent = path.size();
+        for (auto& field : node.items()) {
+            path += '/';
+            path += field.key();
+            writeNonFiniteAsZero(field.value(), what, path);
+            path.resize(parent);
+        }
+        return;
+    }
+    if (node.is_array()) {
+        const std::size_t parent = path.size();
+        for (std::size_t i = 0; i < node.size(); ++i) {
+            path += '/';
+            path += std::to_string(i);
+            writeNonFiniteAsZero(node[i], what, path);
+            path.resize(parent);
+        }
+        return;
+    }
+    // Integers cannot be non-finite, so only the float nodes are asked.
+    if (!node.is_number_float() || std::isfinite(node.get<double>())) return;
+
+    LOG_WARNING_C("IO", "%s: %s is not a finite number; written as 0", what, path.c_str());
+    node = 0.0;
+}
+
+// Hold @p doc to the rule above, from its root.
+inline void writeNonFiniteAsZero(nlohmann::json& doc, const char* what) {
+    std::string path;
+    writeNonFiniteAsZero(doc, what, path);
 }
 
 // Write @p doc to @p path, creating parent directories as needed. The dump goes

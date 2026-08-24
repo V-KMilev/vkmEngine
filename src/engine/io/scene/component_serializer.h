@@ -1,11 +1,17 @@
 #pragma once
 
+#include <string>
+#include <vector>
+
 #include <nlohmann/json.hpp>
 
 #include "ecs/environment.h"
+#include "resource/asset_type.h"
 #include "ecs/component/animation/animation.h"
 #include "ecs/component/animation/animator.h"
 #include "ecs/component/animation/bone_socket.h"
+#include "ecs/component/audio/audio_listener.h"
+#include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/hierarchy.h"
 #include "ecs/component/core/name.h"
 #include "ecs/component/core/transform.h"
@@ -32,14 +38,64 @@ namespace Vkm::Engine {
 class ResourceManager;
 
 /**
+ * @brief Every component the scene format round-trips, one row each.
+ *
+ * P is a component whose save and load take only the component; R is one that
+ * references assets by name, so both take the ResourceManager as well
+ * (resolution happens against the staging RM on load) and an emitAssetRefs
+ * overload sits beside them.
+ *
+ * The key is written out rather than derived from the type name, because it is
+ * the format: ScriptComponent is stored as "Script", and a stringified type
+ * name would change that silently.
+ *
+ * Saving, loading, the known-key set and the assets block that says what a
+ * scene file needs all expand from this one list, so none of the four can
+ * drift. A component saved but never loaded is silent round-trip data loss and
+ * the unknown-key warning cannot catch it, because the key is known; an R row
+ * whose assets nothing lists is the same loss one level down, because the
+ * component's own key was written correctly and only the reference dies.
+ *
+ * Hierarchy is not a row: SceneSerializer::saveComponents writes it explicitly
+ * and the caller's pass 2 reads it, because the parent it names may not exist
+ * yet when the entity is read.
+ */
+#define VKM_SCENE_COMPONENTS(P, R)              \
+    P(Name,             "Name")                 \
+    P(Transform,        "Transform")            \
+    P(Camera,           "Camera")               \
+    P(Light,            "Light")                \
+    P(Rigidbody,        "Rigidbody")            \
+    P(Collider,         "Collider")             \
+    P(CharacterController, "CharacterController") \
+    R(Mesh,             "Mesh")                 \
+    R(LOD,              "LOD")                  \
+    R(Decal,            "Decal")                \
+    P(ParticleEmitter,  "ParticleEmitter")      \
+    R(AudioSource,      "AudioSource")          \
+    P(AudioListener,    "AudioListener")        \
+    P(IrradianceVolume, "IrradianceVolume")     \
+    P(ReflectionProbe,  "ReflectionProbe")      \
+    P(Animation,        "Animation")            \
+    R(Animator,         "Animator")             \
+    P(BoneSocket,       "BoneSocket")           \
+    P(ScriptComponent,  "Script")               \
+    P(UICanvas,         "UICanvas")             \
+    P(UIElement,        "UIElement")            \
+    P(UIImage,          "UIImage")              \
+    P(UIText,           "UIText")               \
+    P(UIButton,         "UIButton")
+
+/**
  * @brief Per-component (de)serialization to JSON.
  *
- * Each component type has a `save` and `load` overload. Add a new component
- * by adding a pair here. Asset handles (Mesh, Decal) are resolved by
- * stable name through ResourceManager::findByName; entity references
- * (Hierarchy::parent) are stored as the saved scene-table index, which
- * resolves directly because SceneSerializer recreates each entity at its
- * saved slot.
+ * Each component type has a `save` and `load` overload, and one that references
+ * assets has an `emitAssetRefs` overload beside them. Add a new component by
+ * adding that set here and a row to VKM_SCENE_COMPONENTS above. Asset handles
+ * (Mesh, Decal) are resolved by stable name through
+ * ResourceManager::findByName; entity references (Hierarchy::parent) are stored
+ * as the saved scene-table index, which resolves directly because
+ * SceneSerializer recreates each entity at its saved slot.
  */
 namespace ComponentSerializer {
 
@@ -126,6 +182,20 @@ namespace ComponentSerializer {
     nlohmann::json save(const ParticleEmitter&);
     void load(const nlohmann::json&, ParticleEmitter&);
 
+    /**
+     * @brief AudioSource: the clip it names and how it should be heard.
+     *
+     * `playing` and `started` are deliberately absent. They describe a play
+     * session rather than the authored scene, and a scene row holding a half
+     * finished sound would resume a noise whose beginning nobody heard.
+     * `playOnStart` is the authored half of the same thing.
+     */
+    nlohmann::json save(const AudioSource&, const ResourceManager&);
+    void load(const nlohmann::json&, AudioSource&, const ResourceManager&);
+
+    nlohmann::json save(const AudioListener&);
+    void load(const nlohmann::json&, AudioListener&);
+
     nlohmann::json save(const IrradianceVolume&);
     void load(const nlohmann::json&, IrradianceVolume&);
 
@@ -180,6 +250,109 @@ namespace ComponentSerializer {
      */
     nlohmann::json save(const ScriptComponent&);
     void load(const nlohmann::json&, ScriptComponent&);
+
+    /**
+     * @brief Every asset a set of components references, one list per kind.
+     *
+     * What the scene's `assets` block is built from: the block has to name each
+     * of these for the next load to recreate them, and a reference it does not
+     * name resolves to nothing.
+     *
+     * One list per kind rather than one type-erased list, because the reader
+     * resolves each handle through the ResourceManager and that takes the
+     * asset's type back. Empty handles are never recorded - a slot the author
+     * left empty names nothing.
+     */
+    struct AssetRefs {
+        std::vector<MeshHandle>          meshes;
+        std::vector<MaterialHandle>      materials;
+        std::vector<SkeletonHandle>      skeletons;
+        std::vector<AnimationClipHandle> clips;
+        std::vector<AudioClipHandle>     sounds;
+    };
+
+    /**
+     * @brief Record every asset the component references into @p refs.
+     *
+     * One overload per component whose save writes a handle out as a name -
+     * exactly the R rows of VKM_SCENE_COMPONENTS, which is what expands the
+     * walk that calls these. That is why the set is nowhere written out by
+     * hand: a component missing from such a walk still saves its handle as a
+     * name, while the block listing what the scene needs never mentions it, so
+     * the next load resolves the reference to nothing and neither end warns -
+     * the component's own key was written correctly.
+     *
+     * A new R row with no overload here is a compile error at the expansion,
+     * naming the component that needs one.
+     */
+    void emitAssetRefs(const Mesh&,        AssetRefs&);
+    void emitAssetRefs(const LOD&,         AssetRefs&);
+    void emitAssetRefs(const Decal&,       AssetRefs&);
+    void emitAssetRefs(const AudioSource&, AssetRefs&);
+    void emitAssetRefs(const Animator&,    AssetRefs&);
+
+    /**
+     * @brief An asset name a load has just failed to resolve, and the field it
+     * was read from.
+     *
+     * The field is the scene format's key rather than the human word the error
+     * message uses, because the caller's job with one of these is to put the
+     * name back where it came from.
+     */
+    struct UnresolvedRef {
+        std::string field;
+        std::string name;
+        AssetType   type = AssetType::Count;  ///< Which kind the loader looked it up as.
+    };
+
+    /**
+     * @brief Take the references the loads since the last call could not resolve.
+     *
+     * A component's loader resolves names against the asset graph and leaves
+     * the slot empty when one does not answer; the name is then the only record
+     * of what belonged there, and a save that knows nothing about it writes an
+     * empty string over it. Collected here rather than returned, because the
+     * loaders are one overload per component with no room for a second output,
+     * and drained by the scene loader, which knows which entity and which
+     * component the names belong to.
+     *
+     * Call it inside an UnresolvedScope, which is what bounds the list to the
+     * component it was filled for.
+     *
+     * Holds only the ones a save can put back: a reference read out of an array
+     * rather than a named field has nowhere to return to, and is reported and
+     * forgotten rather than kept.
+     *
+     * @return The unresolved references, oldest first; empty when all resolved.
+     */
+    std::vector<UnresolvedRef> takeUnresolvedRefs();
+
+    /**
+     * @brief Bounds one component load's share of the unresolved list.
+     *
+     * The list is a free list rather than a member, because the loaders are one
+     * overload per component with nowhere to return a second value from - so it
+     * outlives the component, the entity and the file it was filled for. The
+     * destructor drops whatever the load did not take, and that is what makes a
+     * loader that throws part-way safe: names left standing are drained by the
+     * next component read instead, in the next scene opened, which records them
+     * as its own and hands them to the next save's assets block.
+     *
+     * Construct one for the span of a single component load, before the loader
+     * runs, and nothing else is needed - a load that finishes takes its own
+     * references and leaves an empty list behind.
+     */
+    class UnresolvedScope {
+        public:
+            UnresolvedScope() = default;
+            ~UnresolvedScope();
+
+            UnresolvedScope(const UnresolvedScope& other) = delete;
+            UnresolvedScope& operator=(const UnresolvedScope& other) = delete;
+
+            UnresolvedScope(UnresolvedScope && other) = delete;
+            UnresolvedScope& operator=(UnresolvedScope && other) = delete;
+    };
 
 } // namespace ComponentSerializer
 

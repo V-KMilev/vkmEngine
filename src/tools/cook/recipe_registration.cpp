@@ -2,6 +2,9 @@
 
 #include "asset_registration.h"
 
+#include <string>
+#include <vector>
+
 #include <nlohmann/json.hpp>
 
 #include "logger.h"
@@ -13,6 +16,7 @@
 #include "generator/material_generators.h"
 #include "generator/mesh_generators.h"
 #include "generator/texture_generators.h"
+#include "loader/audio_loaders.h"
 #include "loader/material_loaders.h"
 #include "loader/texture_loaders.h"
 #include "loader/model_loaders.h"
@@ -108,7 +112,8 @@ TextureHandle createRecipeTexture(const nlohmann::json& source, ResourceManager&
         // pixels off the main thread, AsyncLoaderSystem finalises the asset 1-3
         // frames later. Material binding shows a 1x1 gray fallback in the gap.
         return requestTextureAsync(path, resources, sRGB, genMipmaps,
-                                   textureFilterFromRecipe(source));
+                                   textureFilterFromRecipe(source),
+                                   textureWrapFromRecipe(source));
     }
 
     if (kind == "builtin") {
@@ -153,12 +158,37 @@ SkeletonHandle createRecipeSkeleton(const nlohmann::json& source, ResourceManage
     return createCookedSkeleton(source, resources);
 }
 
+// Authored clip markers, as the recipe carries them: an array of {name, time}.
+// Nothing in glTF or FBX names an animation event, so this is where one enters
+// the engine - alongside the import parameters it sits next to, and hashed into
+// the recipe like them, so adding a footstep re-cooks the clip that carries it.
+std::vector<ClipMarker> recipeMarkers(const nlohmann::json& source) {
+    std::vector<ClipMarker> markers;
+    const auto it = source.find("markers");
+    if (it == source.end() || !it->is_array()) return markers;
+
+    markers.reserve(it->size());
+    for (const nlohmann::json& entry : *it) {
+        if (!entry.is_object()) continue;
+        markers.push_back({entry.value("name", std::string{}), entry.value("time", 0.0f)});
+    }
+    return markers;
+}
+
 AnimationClipHandle createRecipeAnimationClip(const nlohmann::json& source, ResourceManager& resources) {
     if (source.value("kind", std::string{}) == "model") {
         return loadModelAnimationClip(source.value("path", std::string{}),
-                                      source.value("clip", -1), resources);
+                                      source.value("clip", -1),
+                                      recipeMarkers(source), resources);
     }
     return createCookedAnimationClip(source, resources);
+}
+
+AudioClipHandle createRecipeAudioClip(const nlohmann::json& source, ResourceManager& resources) {
+    if (source.value("kind", std::string{}) == "file") {
+        return loadAudioClip(source.value("path", std::string{}), resources);
+    }
+    return createCookedAudioClip(source, resources);
 }
 
 MaterialHandle createRecipeMaterial(const nlohmann::json& source, ResourceManager& resources) {
@@ -172,7 +202,11 @@ MaterialHandle createRecipeMaterial(const nlohmann::json& source, ResourceManage
     }
 
     if (kind == "default") {
-        return generateDefaultMaterial(resources);
+        // Built rather than looked up: loadAssetSection renames what a factory
+        // hands back to the name the document recorded, and handing back the
+        // graph's shared "material:default" would rename that out from under
+        // every component still resolving it.
+        return buildDefaultMaterial(resources);
     }
 
     if (kind == "model") {
@@ -188,13 +222,14 @@ MaterialHandle createRecipeMaterial(const nlohmann::json& source, ResourceManage
 void registerRecipeAssetFactories() {
     LOG_INFO("Registering recipe asset factories (meshes: generator/model/decimate, "
              "textures: file/builtin/solid/model-image, materials: folder/default/model, "
-             "skeletons + clips: model)");
+             "skeletons + clips: model, sounds: file)");
     assetFactory().createMesh     = &createRecipeMesh;
     assetFactory().createTexture  = &createRecipeTexture;
     assetFactory().createMaterial = &createRecipeMaterial;
 
     assetFactory().createSkeleton      = &createRecipeSkeleton;
     assetFactory().createAnimationClip = &createRecipeAnimationClip;
+    assetFactory().createAudioClip     = &createRecipeAudioClip;
 }
 
 } // namespace Vkm::Engine
