@@ -74,9 +74,17 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
 
     if (ImGui::BeginMenu("File")) {
         const bool haveCurrent = sceneIO.hasPath();
-        // A project is the bigger noun: it decides which scenes exist at all.
-        if (ImGui::MenuItem("Open Project...")) state.requestOpenProject = true;
-        if (ImGui::BeginMenu("Recent Projects", !state.recentProjects.empty())) {
+
+        // Two bodies, one shape each. The heading carries the noun, which is what
+        // lets every row drop it - and the rows that now read alike across the two
+        // carry a ## suffix, because ImGui hashes a widget's id from its label and
+        // two "Open..." in one menu would otherwise be one widget: "New" under SCENE needs no more saying than
+        // "New Scene" did, and the pair now reads as two lifecycles rather than
+        // as one list that changes naming convention halfway down.
+        ImGui::SeparatorText("Project");
+        if (ImGui::MenuItem("New...")) state.requestNewProject = true;
+        if (ImGui::MenuItem("Open...##project")) state.requestOpenProject = true;
+        if (ImGui::BeginMenu("Open Recent##project", !state.recentProjects.empty())) {
             for (const std::string& p : state.recentProjects) {
                 ImGui::PushID(p.c_str());
                 const std::string shortName = std::filesystem::path(p).filename().string();
@@ -88,18 +96,18 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
             }
             ImGui::EndMenu();
         }
-        ImGui::Separator();
-        if (ImGui::MenuItem("New Scene", keyLabel(state.keybinds.newScene))) {
+        ImGui::SeparatorText("Scene");
+        if (ImGui::MenuItem("New", keyLabel(state.keybinds.newScene))) {
             state.requestSceneAction(EditorState::SceneAction::New);
         }
-        if (ImGui::MenuItem("Open Scene...", keyLabel(state.keybinds.loadScene))) {
+        if (ImGui::MenuItem("Open...##scene", keyLabel(state.keybinds.loadScene))) {
             sceneIO.requestLoad();
         }
 
         // Recent scenes: MRU list maintained by SceneIOController on every
         // save/load. Click loads through the same housekeeping path.
         const bool haveRecents = !state.recentScenes.empty();
-        if (ImGui::BeginMenu("Open Recent", haveRecents)) {
+        if (ImGui::BeginMenu("Open Recent##scene", haveRecents)) {
             for (const auto& p : state.recentScenes) {
                 const std::string shortName = std::filesystem::path(p).filename().string();
                 ImGui::PushID(p.c_str());
@@ -113,17 +121,16 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
             if (ImGui::MenuItem("Clear List")) state.recentScenes.clear();
             ImGui::EndMenu();
         }
-        ImGui::Separator();
         // Greyed during a play session rather than left to refuse itself: the
         // scene in the world is the simulation's copy of one, and Stop is about
         // to throw it away. Writing it over the authored file is the one save
         // that cannot be taken back.
         const bool playing = sceneIO.isPlaying();
-        if (ImGui::MenuItem("Save Scene", keyLabel(state.keybinds.saveScene), false,
+        if (ImGui::MenuItem("Save", keyLabel(state.keybinds.saveScene), false,
                             haveCurrent && !playing)) {
             sceneIO.save(ctx, state);
         }
-        if (ImGui::MenuItem("Save Scene As...", keyLabel(state.keybinds.saveSceneAs), false,
+        if (ImGui::MenuItem("Save As...", keyLabel(state.keybinds.saveSceneAs), false,
                             !playing)) {
             sceneIO.requestSaveAs();
         }

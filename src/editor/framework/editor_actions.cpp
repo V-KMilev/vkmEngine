@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cctype>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <string>
@@ -12,6 +14,8 @@
 #include <imgui.h>
 #include <glm/glm.hpp>
 
+#include "io/json_file.h"
+#include "io/project_paths.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_state.h"
 #include "framework/prefab_overrides.h"
@@ -848,6 +852,121 @@ void PlacePrefabDialog::draw(Scene& scene, ResourceManager& resources, EditorSta
 
     std::string picked;
     if (m_picker.draw(picked)) placePrefab(scene, resources, state, picked);
+}
+
+bool NewProjectDialog::create(const std::filesystem::path& dest, std::string& error) {
+    namespace fs = std::filesystem;
+    std::error_code ec;
+
+    if (fs::exists(dest, ec) && !fs::is_empty(dest, ec)) {
+        error = "That directory already exists and is not empty";
+        return false;
+    }
+
+    const fs::path template_ = ProjectPaths::engineRoot() / "templates" / "default";
+    if (!fs::is_directory(template_, ec)) {
+        error = "No project template shipped with this engine";
+        return false;
+    }
+
+    fs::copy(template_, dest, fs::copy_options::recursive, ec);
+    if (ec) {
+        error = "Could not copy the template: " + ec.message();
+        return false;
+    }
+
+    // The template is generic and the project is not: name it after the
+    // directory rather than making the author's first act be editing JSON, and
+    // record the engine that answered, since the host compares that string
+    // against its own and a literal left here would warn on every open.
+    const fs::path projectFile = dest / "project.json";
+    nlohmann::json doc;
+    if (!detail::readJsonFile(projectFile, doc, "project")) {
+        error = "The template's project.json could not be read";
+        return false;
+    }
+    doc["name"]          = dest.filename().string();
+    doc["engineVersion"] = APP_VERSION;
+    if (!detail::writeJsonFile(projectFile, doc, "project")) {
+        error = "Could not write project.json";
+        return false;
+    }
+
+    // find_package asks by MAJOR.MINOR, so the patch digit is dropped here and
+    // kept above - the same split the vkm CLI makes for the same reason.
+    const fs::path cml = dest / "CMakeLists.txt";
+    std::ifstream in(cml);
+    if (!in) {
+        error = "The template's CMakeLists.txt could not be read";
+        return false;
+    }
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
+
+    const std::string full = APP_VERSION;
+    const std::size_t secondDot = full.find('.', full.find('.') + 1);
+    const std::string majorMinor = secondDot == std::string::npos ? full : full.substr(0, secondDot);
+    const std::string token = "@VKM_ENGINE_VERSION@";
+    for (std::size_t at = text.find(token); at != std::string::npos;
+         at = text.find(token, at + majorMinor.size())) {
+        text.replace(at, token.size(), majorMinor);
+    }
+
+    std::ofstream out(cml, std::ios::trunc);
+    if (!out) {
+        error = "Could not write the project's CMakeLists.txt";
+        return false;
+    }
+    out << text;
+    return true;
+}
+
+void NewProjectDialog::draw(EditorState& state) {
+    if (state.requestNewProject) {
+        state.requestNewProject = false;
+        m_open  = true;
+        m_error.clear();
+        if (m_parentBuffer[0] == '\0') {
+            const std::string parent = ProjectPaths::projectRoot().parent_path().string();
+            std::snprintf(m_parentBuffer, sizeof(m_parentBuffer), "%s", parent.c_str());
+        }
+    }
+    if (!beginDialog("New Project", m_open)) return;
+
+    ImGui::TextDisabled("A project is a directory: its scenes, its assets, and the code that plays them.");
+    ImGui::Spacing();
+
+    ImGui::TextDisabled("Name");
+    ImGui::SetNextItemWidth(EditorStyle::px(360.0f));
+    const bool entered = ImGui::InputText("##NewProjectName", m_nameBuffer, sizeof(m_nameBuffer),
+                                          ImGuiInputTextFlags_EnterReturnsTrue);
+
+    ImGui::TextDisabled("In");
+    ImGui::SetNextItemWidth(EditorStyle::px(360.0f));
+    ImGui::InputText("##NewProjectParent", m_parentBuffer, sizeof(m_parentBuffer));
+
+    const std::string name   = m_nameBuffer;
+    const std::string parent = m_parentBuffer;
+    const bool named = !name.empty() && name.find_first_of("/\\") == std::string::npos;
+    const std::filesystem::path dest = named && !parent.empty()
+        ? std::filesystem::path(parent) / name : std::filesystem::path{};
+
+    if (!dest.empty()) ImGui::TextDisabled("%s", dest.string().c_str());
+    if (!m_error.empty()) ImGui::TextColored(EditorStyle::DANGER, "%s", m_error.c_str());
+
+    const DialogResult r = dialogButtons(m_open, "Create", named && !parent.empty(), entered);
+    if (r == DialogResult::Confirm) {
+        m_error.clear();
+        if (create(dest, m_error)) {
+            // Asked for rather than opened here: a new project replaces the
+            // scene in the world, which is the guard's business, not a dialog's.
+            state.requestSceneAction(EditorState::SceneAction::OpenProject, dest.string());
+            m_nameBuffer[0] = '\0';
+            m_open = false;
+            ImGui::CloseCurrentPopup();
+        }
+    }
+    endDialog();
 }
 
 void OpenProjectDialog::draw(EditorState& state) {

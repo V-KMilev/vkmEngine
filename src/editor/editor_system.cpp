@@ -484,6 +484,7 @@ void EditorSystem::update(FrameContext& ctx) {
         // The three dialogs are owned here rather than by the menu bar, because
         // each serves more than one place that asks for it and a menu closes the
         // frame its item is clicked.
+        m_newProject.draw(m_state);
         m_openProject.draw(m_state);
         m_modelImport.draw(ctx.scene, ctx.resources, m_state);
         m_placePrefab.draw(ctx.scene, ctx.resources, m_state);

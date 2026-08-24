@@ -63,6 +63,7 @@ struct EditorState {
     bool requestModelImport = false;  ///< Set by the Import Model menu item, consumed by the menu-bar dialog
     bool requestPlacePrefab = false;  ///< Set by the Create > Prefab item, consumed by the menu-bar dialog
     bool requestScriptReload = false; ///< Set by the Reload Scripts menu item, consumed by EditorSystem (hot-reload)
+    bool requestNewProject   = false; ///< Set by the New Project menu item, consumed by the dialog that draws it
     bool requestOpenProject  = false; ///< Set by the Open Project menu item, consumed by the dialog that draws it
 
     bool sceneDirty = false;    ///< Unsaved edits since last save/load. Title shows '*'.

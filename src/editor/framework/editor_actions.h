@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -412,6 +413,42 @@ class OpenProjectDialog {
     private:
         bool m_open = false;
         char m_pathBuffer[512] = {};
+};
+
+/**
+ * @brief Render the "New Project" dialog: a name, a parent directory, and Create.
+ *
+ * Makes a project the way `vkm new` does - copies the SDK template, names it
+ * after the directory the author chose, and stamps the engine that answered -
+ * then asks for it through EditorState::requestSceneAction rather than opening
+ * it here, because creating one throws the current scene away and goes through
+ * the same guard Open Project does.
+ */
+class NewProjectDialog {
+    public:
+        /**
+         * @brief Open the dialog when EditorState::requestNewProject is set, and
+         *        request whichever project the author creates.
+         *
+         * @param state Editor state carrying the request and receiving the open.
+         */
+        void draw(EditorState& state);
+
+    private:
+        /**
+         * @brief Copy the template to @p dest and stamp it for this engine.
+         *
+         * @param dest Directory to create; must not already exist non-empty.
+         * @param error Filled with what went wrong when the result is false.
+         * @return true when the project is on disk and ready to open.
+         */
+        static bool create(const std::filesystem::path& dest, std::string& error);
+
+    private:
+        bool m_open = false;
+        char m_nameBuffer[128] = {};
+        char m_parentBuffer[512] = {};
+        std::string m_error;
 };
 
 } // namespace EditorActions
