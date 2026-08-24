@@ -24,7 +24,6 @@
 #include "panels/bottom_panel.h"
 #include "panels/preferences_panel.h"
 #include "panels/material_editor_panel.h"
-#include "panels/asset_browser_panel.h"
 #include "panels/render_settings_panel.h"
 
 struct GLFWwindow;
@@ -32,6 +31,7 @@ struct GLFWwindow;
 namespace Vkm::Engine {
 
 struct EditorContext;
+class AudioSystem;
 class CameraControllerSystem;
 class Scene;
 class UISystem;
@@ -57,8 +57,8 @@ class EditorSystem : public System {
             UISystem& uiSystem,
             VisibilitySystem& visibilitySystem,
             RenderSystem& renderSystem,
-            ScriptModule& scriptModule,
-            const std::string& projectName
+            AudioSystem& audioSystem,
+            ScriptModule& scriptModule
         );
         ~EditorSystem() override;
 
@@ -68,42 +68,82 @@ class EditorSystem : public System {
         EditorSystem(EditorSystem && other) = delete;
         EditorSystem& operator=(EditorSystem && other) = delete;
 
+        /**
+         * @brief Open the project the host was launched on, before the first frame.
+         *
+         * The editor has one project-open sequence and this is the other way
+         * into it: the host resolves the root and builds the window, and
+         * everything scoped to the project - its asset library, its editor
+         * settings, its gameplay module, its scene - is rooted here through the
+         * same ProjectController::open that File > Open Project runs. Written
+         * once, so a project-scoped thing added later cannot reach one way in
+         * and miss the other.
+         *
+         * @param ctx Frame context the project's world is built into.
+         */
+        void init(FrameContext& ctx) override;
+
         void update(FrameContext& ctx) override;
 
     private:
-        // Shader hot reload polls the shader directory on this interval rather
-        // than every frame; a save is a human action, so a second of latency is
-        // imperceptible and the scan stays off the frame budget.
-        static constexpr float SHADER_POLL_INTERVAL = 1.0f;
-        float m_shaderPollTimer = 0.0f;
+        static constexpr float SHADER_POLL_INTERVAL = 1.0f;  ///< Seconds between shader-source scans.
 
         /**
-         * @brief Open the project a menu or dialog chose, after the draw.
+         * @brief Bundle this frame with the editor's own collaborators.
          *
-         * Deferred because opening rebuilds the scene while the UI that asked is
-         * still being drawn, and guarded because it destroys the current scene:
-         * an unsaved one prompts first and this runs once that resolves.
-         *
-         * @param ec Editor context to re-root.
+         * @param ctx The frame the panels and the lifecycle act on.
+         * @return A context whose viewport rect drawWorkspace fills in later.
          */
-        void openPendingProject(EditorContext& ec);
+        EditorContext makeContext(FrameContext& ctx);
 
         /**
-         * @brief Execute a guarded destructive scene action once the
-         *        unsaved-changes flow resolves it.
+         * @brief Carry the pending scene action one stage on, and run it once
+         *        the unsaved-changes guard has cleared it.
          *
-         * @param ctx Frame context the action operates on.
-         * @param action Which action was confirmed.
+         * The one place a destructive action is answered and performed. Called
+         * before the ImGui frame opens, because all four rebuild the world and
+         * none of them may do that with a window still on the ImGui stack.
+         *
+         * @param ec Editor context the action operates on.
          */
-        void performSceneAction(FrameContext& ctx, EditorState::PendingSceneAction action);
+        void resolveSceneAction(EditorContext& ec);
+
+        /**
+         * @brief Do the thing the guard cleared.
+         *
+         * @param ec Editor context the action operates on.
+         * @param action Which action was approved.
+         * @param payload Its target: a scene file, a project root, or empty.
+         */
+        void performSceneAction(EditorContext& ec, EditorState::SceneAction action,
+                                const std::string& payload);
 
         void drawWorkspace(EditorContext& ec);
+
+        /**
+         * @brief Draw the right panel's tab bar and whichever tab is open.
+         *
+         * @param ec Per-frame editor context handed to the open tab's panel.
+         */
+        void drawRightTabs(EditorContext& ec);
+
+        /**
+         * @brief Draw the material editor as a window while it is detached.
+         *
+         * Closing the window re-docks it instead of hiding it: a panel that can
+         * be lost behind the viewport is what moved this one out of a window in
+         * the first place.
+         *
+         * @param ec Per-frame editor context.
+         */
+        void drawFloatingMaterial(EditorContext& ec);
 
     private:
         CameraControllerSystem& m_cameraController;
         UISystem&         m_uiSystem;
         RenderSystem&     m_renderSystem;
         VisibilitySystem& m_visibilitySystem;
+        AudioSystem&      m_audioSystem;
         ScriptModule&     m_scriptModule;
 
         MaterialPreviewSession m_materialPreviews;
@@ -118,15 +158,18 @@ class EditorSystem : public System {
          */
         unsigned long long m_lastErrorTotal = 0;
 
+        float             m_shaderPollTimer = 0.0f;
+
         SceneIOController m_sceneIO;
         ProjectController m_project;
-        bool              m_notedStartupProject = false;
         EditorMenuBar     m_menuBar;
         EditorStatusBar   m_statusBar;
         EditorShortcuts   m_shortcuts;
         EditorPanelResize m_panelResize;
         EditorActions::ModelImportDialog m_modelImport;
         EditorActions::PlacePrefabDialog m_placePrefab;
+        EditorActions::NewProjectDialog  m_newProject;
+        EditorActions::OpenProjectDialog m_openProject;
 
         EditorState      m_state;
         HierarchyPanel   m_hierarchy;
@@ -138,7 +181,6 @@ class EditorSystem : public System {
         PlaybackBar      m_playbar;
         PreferencesPanel m_preferences;
         MaterialEditorPanel m_materialEditor;
-        AssetBrowserPanel m_assetBrowser;
         RenderSettingsPanel m_renderSettings;
 };
 

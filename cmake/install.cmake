@@ -29,7 +29,7 @@ set(VKM_CMAKE_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/vkmEngine)
 # export set. What has to be here besides vkm_core is its own link interface:
 # CMake refuses to export a target whose dependencies are not exported with it,
 # and for a shared library that includes the private ones.
-set(VKM_EXPORTED_DEPS glm glm-header-only glfw vkm_log nlohmann_json glew stb vkm_build_info vkm_warnings)
+set(VKM_EXPORTED_DEPS glm glm-header-only glfw vkm_log nlohmann_json glew stb miniaudio vkm_build_info vkm_warnings)
 if(VKM_PROFILER)
     list(APPEND VKM_EXPORTED_DEPS TracyClient)
 endif()
@@ -156,23 +156,57 @@ install(EXPORT vkmEngineTargets
         DESTINATION ${VKM_CMAKE_INSTALL_DIR}
         COMPONENT   Development)
 
+# The build tree is a package too. `tools/vkm` says it finds the engine there so
+# the tool is usable before anything is installed, and that only works if a
+# complete package - config, version file and targets file - sits where
+# find_package looks. It lands under the same lib/cmake/vkmEngine the install
+# uses, so one path answers for both layouts.
+set(VKM_BUILD_TREE_PACKAGE_DIR ${CMAKE_BINARY_DIR}/${VKM_CMAKE_INSTALL_DIR})
+
+export(EXPORT vkmEngineTargets
+       FILE      ${VKM_BUILD_TREE_PACKAGE_DIR}/vkmEngineTargets.cmake
+       NAMESPACE vkmEngine::)
+
+# The two layouts the config file is generated for. Installed, every path hangs
+# off the prefix the SDK was unpacked into and has to stay relocatable, so the
+# strings below are escaped and resolved when the config is loaded. In the build
+# tree the binaries are under build/ while the headers, shaders and templates
+# never left the source tree, so those are absolute and settled here.
+set(VKM_PKG_ROOT_DIR     "\${PACKAGE_PREFIX_DIR}")
+set(VKM_PKG_BIN_DIR      "\${PACKAGE_PREFIX_DIR}/${CMAKE_INSTALL_BINDIR}")
+set(VKM_PKG_INCLUDE_DIR  "\${PACKAGE_PREFIX_DIR}/${CMAKE_INSTALL_INCLUDEDIR}")
+set(VKM_PKG_SHADER_DIR   "\${PACKAGE_PREFIX_DIR}/shaders")
+set(VKM_PKG_TEMPLATE_DIR "\${PACKAGE_PREFIX_DIR}/templates")
 configure_package_config_file(
     ${CMAKE_SOURCE_DIR}/cmake/vkmEngineConfig.cmake.in
-    ${CMAKE_BINARY_DIR}/vkmEngineConfig.cmake
+    ${CMAKE_BINARY_DIR}/install/vkmEngineConfig.cmake
+    INSTALL_DESTINATION ${VKM_CMAKE_INSTALL_DIR}
+)
+
+set(VKM_PKG_ROOT_DIR     "${CMAKE_SOURCE_DIR}")
+set(VKM_PKG_BIN_DIR      "${CMAKE_BINARY_DIR}/bin")
+set(VKM_PKG_INCLUDE_DIR  "${CMAKE_SOURCE_DIR}/src/engine")
+set(VKM_PKG_SHADER_DIR   "${CMAKE_SOURCE_DIR}/shaders")
+set(VKM_PKG_TEMPLATE_DIR "${CMAKE_SOURCE_DIR}/templates")
+configure_package_config_file(
+    ${CMAKE_SOURCE_DIR}/cmake/vkmEngineConfig.cmake.in
+    ${VKM_BUILD_TREE_PACKAGE_DIR}/vkmEngineConfig.cmake
     INSTALL_DESTINATION ${VKM_CMAKE_INSTALL_DIR}
 )
 
 # SameMinorVersion: the engine is not ABI-stable across minor releases, but a
 # project asking for 1.4 should accept 1.4.2. The toolchain pin in the config
-# file is what catches the case this cannot.
+# file is what catches the case this cannot. One file serves both layouts - it
+# names a version, not a path - so it is written into the build-tree package and
+# installed from there.
 write_basic_package_version_file(
-    ${CMAKE_BINARY_DIR}/vkmEngineConfigVersion.cmake
+    ${VKM_BUILD_TREE_PACKAGE_DIR}/vkmEngineConfigVersion.cmake
     VERSION       ${PROJECT_VERSION}
     COMPATIBILITY SameMinorVersion
 )
 
 install(FILES
-            ${CMAKE_BINARY_DIR}/vkmEngineConfig.cmake
-            ${CMAKE_BINARY_DIR}/vkmEngineConfigVersion.cmake
+            ${CMAKE_BINARY_DIR}/install/vkmEngineConfig.cmake
+            ${VKM_BUILD_TREE_PACKAGE_DIR}/vkmEngineConfigVersion.cmake
         DESTINATION ${VKM_CMAKE_INSTALL_DIR}
         COMPONENT   Development)

@@ -11,6 +11,7 @@
 #include "ecs/scene.h"
 #include "io/scene/component_serializer.h"
 #include "io/scene/prefab.h"
+#include "resource/asset/material_asset.h"
 #include "resource/resource_manager.h"
 #include "framework/editor_state.h"
 #include "framework/prefab_overrides.h"
@@ -182,6 +183,38 @@ VKM_EDITOR_COMMAND_COMPONENTS(VKM_EDITOR_INSTANTIATE_COMMAND)
 template class AddComponentCommand<Name>;
 template class ComponentEditCommand<Name>;
 
+// The parameters move; the identity does not. A material's name is the asset
+// graph's index key and has its own command, so it is taken from the live asset
+// rather than from the captured copy - along with the uid and source descriptor
+// that name it. commit() bumps the version, which is what the GL view, the
+// material previews and the viewport all watch to re-read the asset.
+void MaterialEditCommand::step(EditorState& state, const MaterialAsset& value) {
+    if (!m_resources->isAlive(m_handle)) return;
+    MaterialAsset& live = m_resources->edit(m_handle);
+    Resource identity   = live;
+    live                = value;
+    static_cast<Resource&>(live) = std::move(identity);
+    m_resources->commit(m_handle);
+    state.markSceneDirty();
+}
+
+void MaterialEditCommand::redo(Scene&, EditorState& state) {
+    step(state, m_after);
+}
+
+void MaterialEditCommand::undo(Scene&, EditorState& state) {
+    step(state, m_before);
+}
+
+bool MaterialEditCommand::tryMerge(Command& incoming) {
+    // Coalesce only with another edit of the same material - one drag over one
+    // slider. The chain start (m_before) stays; only m_after slides forward.
+    auto* p = dynamic_cast<MaterialEditCommand*>(&incoming);
+    if (!p || p->m_handle.id() != m_handle.id()) return false;
+    m_after = p->m_after;
+    return true;
+}
+
 template <typename HandleType>
 void RenameAssetCommand<HandleType>::redo(Scene&, EditorState& state) {
     if (!m_resources->isAlive(m_handle)) return;  // deleted since - no-op
@@ -198,6 +231,52 @@ void RenameAssetCommand<HandleType>::undo(Scene&, EditorState& state) {
 
 template class RenameAssetCommand<MaterialHandle>;
 template class RenameAssetCommand<MeshHandle>;
+template class RenameAssetCommand<TextureHandle>;
+template class RenameAssetCommand<AnimationClipHandle>;
+template class RenameAssetCommand<AudioClipHandle>;
+
+std::string ScriptEditCommand::capture(const Scene& scene, EntityId id) {
+    if (!scene.isAlive(id) || !scene.has<ScriptComponent>(id)) return {};
+    return ComponentSerializer::save(scene.get<ScriptComponent>(id)).dump();
+}
+
+void ScriptEditCommand::restore(Scene& scene, EntityId id, const std::string& json) {
+    // Removed first in both directions: SparseSet::add on a key it already
+    // holds appends a second dense entry rather than replacing the first, and
+    // a behavior list rebuilt from the document is the whole component anyway.
+    if (scene.has<ScriptComponent>(id)) scene.remove<ScriptComponent>(id);
+    if (json.empty()) return;
+
+    const nlohmann::json doc = nlohmann::json::parse(json, nullptr, /*allow_exceptions*/ false);
+    if (doc.is_discarded()) return;
+    ScriptComponent sc;
+    ComponentSerializer::load(doc, sc);
+    scene.add(id, std::move(sc));
+}
+
+void ScriptEditCommand::redo(Scene& scene, EditorState& state) {
+    const EntityId e = liveEntity(scene, m_entity);
+    if (!e) return;
+    restore(scene, e, m_after);
+    state.markSceneDirty();
+}
+
+void ScriptEditCommand::undo(Scene& scene, EditorState& state) {
+    const EntityId e = liveEntity(scene, m_entity);
+    if (!e) return;
+    restore(scene, e, m_before);
+    state.markSceneDirty();
+}
+
+bool ScriptEditCommand::tryMerge(Command& incoming) {
+    // Identity only, as Command::tryMerge asks: the chain start stays put and
+    // the end slides forward to whatever the gesture last landed on.
+    auto* p = dynamic_cast<ScriptEditCommand*>(&incoming);
+    if (!p || p->m_entity != m_entity) return false;
+    m_after = p->m_after;
+    m_label = p->m_label;
+    return true;
+}
 
 EntitySnapshot EntitySnapshot::capture(const Scene& scene, EntityId id) {
     EntitySnapshot s;
@@ -322,6 +401,13 @@ void DestroySubtreeCommand::redo(Scene& scene, EditorState& state) {
     if (state.selectedEntity.index == rootSlot) state.deselect();
 }
 
+bool DestroySubtreeCommand::addresses(uint32_t slotIndex) const {
+    for (const auto& node : m_snap.nodes) {
+        if (node.snap.slotIndex == slotIndex) return true;
+    }
+    return false;
+}
+
 void DestroySubtreeCommand::undo(Scene& scene, EditorState& state) {
     m_snap.apply(scene);
     state.hierarchyDirty = true;
@@ -444,6 +530,16 @@ void SetActiveCameraCommand::redo(Scene& scene, EditorState&) {
     // Compare by slot: m_before is keyed by slot for the same reason, and the
     // target may have been resurrected since with a newer generation.
     scene.forEach<Camera>([&](EntityId id, Camera& c) { c.active = (id.index == m_target.index); });
+}
+
+// Every camera in the scene, not just the target: the step flips the flag on
+// all of them, so any one of them going away outlives it.
+bool SetActiveCameraCommand::addresses(uint32_t slotIndex) const {
+    if (m_target.index == slotIndex) return true;
+    for (const auto& [slot, wasActive] : m_before) {
+        if (slot == slotIndex) return true;
+    }
+    return false;
 }
 
 void SetActiveCameraCommand::undo(Scene& scene, EditorState&) {

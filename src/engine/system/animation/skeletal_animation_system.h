@@ -7,6 +7,7 @@
 #include "ecs/component/animation/animator.h"
 #include "ecs/entity.h"
 #include "system/animation/pose_buffer.h"
+#include "system/animation/pose_evaluator.h"
 
 namespace Vkm::Engine {
 
@@ -26,10 +27,12 @@ struct SkeletonAsset;
  * AnimationSystem, PhysicsSystem or HierarchySystem - which is a direct
  * consequence of bones being indices rather than entities.
  *
- * Four phases. Allocation and mapping are serial and cheap (one pass over the
- * Animators, one walk of their subtrees); only the evaluation is parallel, and
- * it is safe for the same reason AnimationSystem's is - each rig writes its own
- * disjoint slice of the pose arrays and its own Animator.
+ * Allocation and mapping are serial and cheap (one pass over the Animators, one
+ * walk of their subtrees); only the evaluation is parallel, and it is safe for
+ * the same reason AnimationSystem's is - each rig writes its own disjoint slice
+ * of the pose arrays and its own Animator. Announcing the markers each rig
+ * crossed comes last and is serial again, because the EventBus is main-thread
+ * only and the evaluate pass has no business publishing anything.
  *
  * Time advances only when simulation time elapsed, but composition runs every
  * frame regardless, so scrubbing an Animator in the editor while paused shows
@@ -65,6 +68,17 @@ class SkeletalAnimationSystem : public System {
             const SkeletonAsset*      skeleton = nullptr;
             const AnimationClipAsset* clip     = nullptr;  ///< Null holds the bind pose.
             const AnimationClipAsset* fadeClip = nullptr;  ///< Clip being faded out of; null when nothing is.
+
+            /**
+             * @brief What the playing head did this frame, recorded by the
+             *        parallel pass so the serial one can announce markers.
+             *
+             * Three floats on a struct that is already per-rig and disjoint
+             * across threads, which is what makes deferring the announcement
+             * free - and it has to be deferred, because the EventBus is main
+             * thread only.
+             */
+            PlaybackStep step;
         };
 
         /**
@@ -121,6 +135,23 @@ class SkeletalAnimationSystem : public System {
          */
         void stampDescendants(Scene& scene, const ResourceManager& resources,
                               EntityId entity, const RigWork& work, FaultsSeen& seen);
+
+        /**
+         * @brief Enqueue an AnimationEvent for every marker a rig crossed this
+         *        frame.
+         *
+         * Serial, after the evaluate pass, because the EventBus is main-thread
+         * only - and cheap, because a scene holds few rigs and an unmarked clip
+         * costs one branch.
+         *
+         * Only the clip an Animator is *playing* announces anything. A
+         * crossfade advances two heads, and letting the outgoing one speak
+         * would fire a footstep from the run a character has already left at
+         * the same time as one from the walk it is entering.
+         *
+         * @param ctx Frame context supplying the scene and the event bus.
+         */
+        void publishMarkers(FrameContext& ctx);
 
         /**
          * @brief Name the two ways a skinned mesh can be wrong about its rig.

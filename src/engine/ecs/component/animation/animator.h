@@ -23,11 +23,13 @@ namespace Vkm::Engine {
  * EntityId in any serialized row, so it survives prefabs, undo and scene load
  * without a remap.
  *
- * The first six fields are persisted. Blend state deliberately is not, and will
- * not be: a crossfade is two clips and a countdown, and freezing that shape into
- * a scene row would outlive the blend system that wrote it, in a project with no
- * migration path. A saved scene reloads mid-blend as the clip it was blending
- * to, already there - which is where it was going, one fade early.
+ * The authored fields are persisted: the rig, the clip, where it starts, how
+ * fast, whether it loops and whether it plays on its own. Playback state is not,
+ * and neither is blend state - a crossfade is two clips and a countdown, and
+ * freezing that shape into a scene row would outlive the blend system that wrote
+ * it, in a project with no migration path. A saved scene reloads mid-blend as
+ * the clip it was blending to, already there - which is where it was going, one
+ * fade early.
  */
 struct Animator {
     SkeletonHandle      skeleton;  ///< The rig posed; nothing is posed without it.
@@ -35,11 +37,43 @@ struct Animator {
 
     float time    = 0.0f;   ///< Playback head, seconds into the clip.
     float speed   = 1.0f;   ///< Playback multiplier applied to the simulation delta.
-    bool  playing = true;
     bool  looping = true;
 
+    /**
+     * @brief Start playing on the first frame the simulation runs.
+     *
+     * The authored half, split from `playing` the way Animation and AudioSource
+     * split theirs. Gated on simulation time rather than on the component
+     * existing: in the editor an unplayed scene is a paused one, and a rig that
+     * ran merely because it was loaded would move the character being placed.
+     */
+    bool playOnStart = true;
+
     // Transient: runtime state, never serialized. A layer or blend-tree system
-    // replaces these four fields without touching the six above.
+    // replaces the blend fields without touching the authored ones above.
+
+    /**
+     * @brief Whether the clip should be advancing right now.
+     *
+     * Not serialized: it describes a play session rather than the authored
+     * scene. The editor's transport writes it to preview a clip, and a preview
+     * paused half an hour ago is not a decision about what a shipped scene does
+     * - `playOnStart` is. Serialized, it was: pressing Pause in the Animator
+     * card froze `playing: false` into the next save, with no dirty marker
+     * because previewing is correctly not an edit, and the character never
+     * animated again.
+     */
+    bool playing = false;
+
+    /**
+     * @brief Whether playOnStart has already been honoured this session.
+     *
+     * Runtime state. Without it a non-looping clip with playOnStart would
+     * restart every frame after it ended, since `playing` falling back to false
+     * is exactly what "it finished" looks like.
+     */
+    bool started = false;
+
     AnimationClipHandle fadeFrom;            ///< Clip being left; empty when nothing is fading.
     float               fadeTime      = 0.0f;   ///< Its own playback head - it keeps playing while it fades.
     float               fadeRemaining = 0.0f;   ///< Simulation seconds of blend still to run.

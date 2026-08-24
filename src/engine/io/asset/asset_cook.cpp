@@ -5,13 +5,15 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <memory>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "logger.h"
 
-#include "io/asset/asset_library.h"
 #include "resource/asset/animation_clip_asset.h"
+#include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
 #include "resource/asset/texture_asset.h"
@@ -26,6 +28,7 @@ constexpr uint16_t KIND_MESH       = 1;
 constexpr uint16_t KIND_TEXTURE    = 2;
 constexpr uint16_t KIND_SKELETON   = 3;
 constexpr uint16_t KIND_CLIP       = 4;
+constexpr uint16_t KIND_AUDIO      = 5;
 
 // The header is read/written field-by-field (never as a struct) so compiler
 // padding can't leak into the format: magic[4] + sentinel + kind + version +
@@ -43,10 +46,17 @@ constexpr uint64_t TEXTURE_FIXED_BYTES = sizeof(uint32_t) * 2 + 6 + 2 + sizeof(u
 constexpr uint64_t SKELETON_FIXED_BYTES    = sizeof(uint64_t);
 constexpr uint64_t SKELETON_PER_BONE_BYTES = sizeof(int32_t) + sizeof(uint32_t)
                                            + sizeof(glm::mat4) + sizeof(Transform);
-// Clip body: boneCount + duration + the six key-array counts + skeletonNameLen,
-// then the bulk ClipBone table, the six key arrays, and the skeleton name.
+// Clip body: boneCount + duration + the six key-array counts + skeletonNameLen +
+// markerCount + markerNameBytes, then the bulk ClipBone table, the six key
+// arrays, the skeleton name, a {time, nameLen} record per marker, and the
+// concatenated marker names.
 constexpr uint64_t CLIP_FIXED_BYTES = sizeof(uint64_t) + sizeof(float)
-                                    + sizeof(uint64_t) * 6 + sizeof(uint32_t);
+                                    + sizeof(uint64_t) * 6 + sizeof(uint32_t)
+                                    + sizeof(uint64_t) * 2;
+// Per marker: its time and the length of its name.
+constexpr uint64_t CLIP_PER_MARKER_BYTES = sizeof(float) + sizeof(uint32_t);
+// Audio body: sampleRate + channels + sampleCount, then the interleaved PCM.
+constexpr uint64_t AUDIO_FIXED_BYTES = sizeof(uint32_t) * 2 + sizeof(uint64_t);
 
 // Bytes one texel occupies in the source pixel data. An out-of-range enum (this
 // comes off disk) falls back to the same reading the backend gives it - RGBA /
@@ -164,6 +174,7 @@ bool cookedIdentity(AssetType type, uint16_t& outKind, uint16_t& outVersion) {
         case AssetType::Texture:       outKind = KIND_TEXTURE;  outVersion = TEXTURE_FORMAT_VERSION;        return true;
         case AssetType::Skeleton:      outKind = KIND_SKELETON; outVersion = SKELETON_FORMAT_VERSION;       return true;
         case AssetType::AnimationClip: outKind = KIND_CLIP;     outVersion = ANIMATION_CLIP_FORMAT_VERSION; return true;
+        case AssetType::AudioClip:     outKind = KIND_AUDIO;    outVersion = AUDIO_CLIP_FORMAT_VERSION;     return true;
         case AssetType::Material:
         case AssetType::Count:         return false;
     }
@@ -710,16 +721,31 @@ bool writeAnimationClip(const std::filesystem::path& path, const AnimationClipAs
             return false;
         }
     }
+    // A marker outside the timeline can never be reached at the instant it names:
+    // a looping head wraps it back to some other moment, and a clamped one never
+    // gets there at all. Refused here rather than silently moved, because where
+    // an event fires is the whole of what a marker says.
+    for (const ClipMarker& marker : clip.markers) {
+        if (std::isfinite(marker.time) && marker.time >= 0.0f && marker.time <= clip.duration) continue;
+        LOG_ERROR("Cooked clip '%s': marker '%s' at %f is outside the clip's %f seconds",
+                  path.string().c_str(), marker.name.c_str(),
+                  static_cast<double>(marker.time), static_cast<double>(clip.duration));
+        return false;
+    }
 
     std::ofstream os = openCookedWrite(path, "clip");
     if (!os) return false;
+
+    uint64_t markerNameBytes = 0;
+    for (const ClipMarker& marker : clip.markers) markerNameBytes += marker.name.size();
 
     const uint64_t payloadBytes = CLIP_FIXED_BYTES
         + boneCount * sizeof(ClipBone)
         + clip.positionTimes.size() * sizeof(float)     + clip.positions.size() * sizeof(glm::vec3)
         + clip.rotationTimes.size() * sizeof(float)     + clip.rotations.size() * sizeof(glm::quat)
         + clip.scaleTimes.size()    * sizeof(float)     + clip.scales.size()    * sizeof(glm::vec3)
-        + clip.skeleton.size();
+        + clip.skeleton.size()
+        + clip.markers.size() * CLIP_PER_MARKER_BYTES   + markerNameBytes;
 
     writeHeader(os, KIND_CLIP, ANIMATION_CLIP_FORMAT_VERSION, recipeHash, payloadBytes);
     writeRaw(os, boneCount);
@@ -731,6 +757,8 @@ bool writeAnimationClip(const std::filesystem::path& path, const AnimationClipAs
     writeRaw(os, static_cast<uint64_t>(clip.scaleTimes.size()));
     writeRaw(os, static_cast<uint64_t>(clip.scales.size()));
     writeRaw(os, static_cast<uint32_t>(clip.skeleton.size()));
+    writeRaw(os, static_cast<uint64_t>(clip.markers.size()));
+    writeRaw(os, markerNameBytes);
     writeBulk(os, clip.bones);
     writeBulk(os, clip.positionTimes);
     writeBulk(os, clip.positions);
@@ -739,6 +767,13 @@ bool writeAnimationClip(const std::filesystem::path& path, const AnimationClipAs
     writeBulk(os, clip.scaleTimes);
     writeBulk(os, clip.scales);
     os.write(clip.skeleton.data(), static_cast<std::streamsize>(clip.skeleton.size()));
+    for (const ClipMarker& marker : clip.markers) {
+        writeRaw(os, marker.time);
+        writeRaw(os, static_cast<uint32_t>(marker.name.size()));
+    }
+    for (const ClipMarker& marker : clip.markers) {
+        os.write(marker.name.data(), static_cast<std::streamsize>(marker.name.size()));
+    }
 
     if (!os) {
         LOG_ERROR("Cooked clip '%s': write failed", path.string().c_str());
@@ -761,11 +796,14 @@ bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& ou
     uint64_t rotationTimeCount = 0, rotationCount = 0;
     uint64_t scaleTimeCount    = 0, scaleCount    = 0;
     uint32_t skeletonNameLen   = 0;
+    uint64_t markerCount       = 0;
+    uint64_t markerNameBytes   = 0;
     if (!readRaw(is, boneCount) || !readRaw(is, duration) ||
         !readRaw(is, positionTimeCount) || !readRaw(is, positionCount) ||
         !readRaw(is, rotationTimeCount) || !readRaw(is, rotationCount) ||
         !readRaw(is, scaleTimeCount)    || !readRaw(is, scaleCount) ||
-        !readRaw(is, skeletonNameLen)) {
+        !readRaw(is, skeletonNameLen)   || !readRaw(is, markerCount) ||
+        !readRaw(is, markerNameBytes)) {
         LOG_ERROR("Cooked clip '%s': truncated body", p.c_str());
         return false;
     }
@@ -779,7 +817,9 @@ bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& ou
         !takeCount(rotationCount,     sizeof(glm::quat), remaining, p, "clip", "rotation")      ||
         !takeCount(scaleTimeCount,    sizeof(float),     remaining, p, "clip", "scale time")    ||
         !takeCount(scaleCount,        sizeof(glm::vec3), remaining, p, "clip", "scale")         ||
-        !takeCount(skeletonNameLen,   1,                 remaining, p, "clip", "rig name")) return false;
+        !takeCount(skeletonNameLen,   1,                 remaining, p, "clip", "rig name")   ||
+        !takeCount(markerCount, CLIP_PER_MARKER_BYTES,   remaining, p, "clip", "marker")     ||
+        !takeCount(markerNameBytes,   1,                 remaining, p, "clip", "marker name")) return false;
     if (remaining != 0) {
         LOG_ERROR("Cooked clip '%s': payload size inconsistent with counts", p.c_str());
         return false;
@@ -816,9 +856,54 @@ bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& ou
     readBulk(is, out.scales, scaleCount);
     out.skeleton.resize(skeletonNameLen);
     if (skeletonNameLen) is.read(out.skeleton.data(), skeletonNameLen);
+
+    // The marker records are fixed-size and already accounted for, so what is
+    // left of the payload is exactly the name blob - which is what each declared
+    // length is bounded against, one at a time, before any of it is read.
+    out.markers.assign(static_cast<size_t>(markerCount), ClipMarker{});
+    uint64_t nameBytes = 0;
+    for (uint64_t i = 0; i < markerCount; ++i) {
+        float    time    = 0.0f;
+        uint32_t nameLen = 0;
+        if (!readRaw(is, time) || !readRaw(is, nameLen)) {
+            LOG_ERROR("Cooked clip '%s': truncated marker table", p.c_str());
+            out.markers.clear();
+            return false;
+        }
+        // Where a marker fires is the whole of what it says, so a time the clip
+        // cannot reach is a corrupt file rather than one to quietly move.
+        if (!std::isfinite(time) || time < 0.0f || time > duration) {
+            LOG_ERROR("Cooked clip '%s': marker %llu at %f is outside the clip's %f seconds",
+                      p.c_str(), static_cast<unsigned long long>(i),
+                      static_cast<double>(time), static_cast<double>(duration));
+            out.markers.clear();
+            return false;
+        }
+        if (nameLen > markerNameBytes - nameBytes) {
+            LOG_ERROR("Cooked clip '%s': marker %llu declares a %u-byte name past the payload",
+                      p.c_str(), static_cast<unsigned long long>(i), nameLen);
+            out.markers.clear();
+            return false;
+        }
+        nameBytes += nameLen;
+        out.markers[static_cast<size_t>(i)].time = time;
+        out.markers[static_cast<size_t>(i)].name.resize(nameLen);
+    }
+    if (nameBytes != markerNameBytes) {
+        LOG_ERROR("Cooked clip '%s': payload size inconsistent with counts", p.c_str());
+        out.markers.clear();
+        return false;
+    }
+    for (ClipMarker& marker : out.markers) {
+        if (!marker.name.empty()) {
+            is.read(marker.name.data(), static_cast<std::streamsize>(marker.name.size()));
+        }
+    }
+
     if (!is) {
         LOG_ERROR("Cooked clip '%s': body read failed", p.c_str());
         out.bones.clear();
+        out.markers.clear();
         return false;
     }
 
@@ -839,6 +924,98 @@ bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& ou
     }
 
     out.duration = duration;
+    if (outHash) *outHash = recipeHash;
+    return true;
+}
+
+bool writeAudioClip(const std::filesystem::path& path, const AudioClipAsset& audio, uint64_t recipeHash) {
+    const std::string p = path.string();
+    if (audio.channels == 0 || audio.channels > MAX_AUDIO_CHANNELS) {
+        LOG_ERROR("Cooked sound '%s': %u channels is outside the 1..%u the format admits",
+                  p.c_str(), audio.channels, MAX_AUDIO_CHANNELS);
+        return false;
+    }
+    if (audio.sampleRate == 0 || audio.sampleRate > MAX_AUDIO_SAMPLE_RATE) {
+        LOG_ERROR("Cooked sound '%s': implausible sample rate %u", p.c_str(), audio.sampleRate);
+        return false;
+    }
+    // A partial frame is a clip whose last frame is missing a channel; the
+    // mixer reads whole frames and would run off the end of the buffer.
+    if (audio.sampleCount() % audio.channels != 0) {
+        LOG_ERROR("Cooked sound '%s': %zu samples do not divide into %u channels",
+                  p.c_str(), audio.sampleCount(), audio.channels);
+        return false;
+    }
+
+    std::ofstream os = openCookedWrite(path, "sound");
+    if (!os) return false;
+
+    const uint64_t payloadBytes = AUDIO_FIXED_BYTES + audio.sampleCount() * sizeof(int16_t);
+
+    writeHeader(os, KIND_AUDIO, AUDIO_CLIP_FORMAT_VERSION, recipeHash, payloadBytes);
+    writeRaw(os, audio.sampleRate);
+    writeRaw(os, audio.channels);
+    writeRaw(os, static_cast<uint64_t>(audio.sampleCount()));
+    if (audio.samples) writeBulk(os, *audio.samples);
+
+    if (!os) {
+        LOG_ERROR("Cooked sound '%s': write failed", p.c_str());
+        return false;
+    }
+    return true;
+}
+
+bool readAudioClip(const std::filesystem::path& path, AudioClipAsset& out, uint64_t* outHash) {
+    const std::string p = path.string();
+    std::ifstream is;
+    uint64_t recipeHash = 0;
+    uint64_t payloadBytes = 0;
+    if (!openCookedRead(is, path, KIND_AUDIO, AUDIO_CLIP_FORMAT_VERSION, AUDIO_FIXED_BYTES, "sound",
+                        recipeHash, payloadBytes)) return false;
+
+    uint32_t sampleRate  = 0;
+    uint32_t channels    = 0;
+    uint64_t sampleCount = 0;
+    if (!readRaw(is, sampleRate) || !readRaw(is, channels) || !readRaw(is, sampleCount)) {
+        LOG_ERROR("Cooked sound '%s': truncated body", p.c_str());
+        return false;
+    }
+
+    uint64_t remaining = payloadBytes - AUDIO_FIXED_BYTES;
+    if (!takeCount(sampleCount, sizeof(int16_t), remaining, p, "sound", "sample")) return false;
+    if (remaining != 0) {
+        LOG_ERROR("Cooked sound '%s': payload size inconsistent with counts", p.c_str());
+        return false;
+    }
+
+    if (channels == 0 || channels > MAX_AUDIO_CHANNELS) {
+        LOG_ERROR("Cooked sound '%s': %u channels is outside the 1..%u the format admits",
+                  p.c_str(), channels, MAX_AUDIO_CHANNELS);
+        return false;
+    }
+    if (sampleRate == 0 || sampleRate > MAX_AUDIO_SAMPLE_RATE) {
+        LOG_ERROR("Cooked sound '%s': implausible sample rate %u", p.c_str(), sampleRate);
+        return false;
+    }
+    // Checked as well as sized, for the same reason the clip's key ranges are:
+    // a file can carry the right number of bytes and still describe a frame
+    // layout that does not fit them, and the mixer reads whole frames.
+    if (sampleCount % channels != 0) {
+        LOG_ERROR("Cooked sound '%s': %llu samples do not divide into %u channels", p.c_str(),
+                  static_cast<unsigned long long>(sampleCount), channels);
+        return false;
+    }
+
+    std::vector<int16_t> samples;
+    readBulk(is, samples, sampleCount);
+    if (!is) {
+        LOG_ERROR("Cooked sound '%s': body read failed", p.c_str());
+        return false;
+    }
+
+    out.sampleRate = sampleRate;
+    out.channels   = channels;
+    out.samples    = std::make_shared<const std::vector<int16_t>>(std::move(samples));
     if (outHash) *outHash = recipeHash;
     return true;
 }

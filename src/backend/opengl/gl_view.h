@@ -78,7 +78,9 @@ class GLView {
          * The list matters because three of those four are gathered scene-wide
          * rather than from the visible set, so their assets need not appear
          * among the drawables at all - and every pass answers a missing GPU
-         * object by silently skipping the draw.
+         * object by silently skipping the draw. So the walk names every
+         * RenderView member rather than only the four it uses: a member added
+         * there fails to compile here until it has been classified.
          */
         void sync(const RenderView& view, const ResourceManager& resources);
 
@@ -119,6 +121,19 @@ class GLView {
          *                      driver reports.
          */
         void setTextureFiltering(TextureFiltering mode, float maxAnisotropy);
+
+        /**
+         * @brief Upload @p handle's texture outside of a sync(), for a caller
+         *        that wants to look at it rather than draw with it.
+         *
+         * sync() reaches a texture only through the material that binds it,
+         * which is right for a frame and wrong for a tool showing the whole
+         * library. Version-gated like every other upload here.
+         *
+         * @param handle Texture to upload; an empty handle does nothing.
+         * @param resources Resolves the handle to its pixels.
+         */
+        void ensureTexture(const TextureHandle& handle, const ResourceManager& resources);
 
         /**
          * @brief Resolve a handle to its synced GPU object; null if the handle is empty

@@ -17,6 +17,13 @@ class SceneIOController;
  *    one fixed tick while paused; Stop restores the snapshot and returns to
  *    Edit mode - undoing every transform/spawn the simulation made.
  *
+ * Pause, Resume and Step also hold and release the voices the mixer is playing,
+ * which the Clock cannot do for them: audio runs off the frame rather than off
+ * simulation time, so that a shipped game's pause menu keeps its music. Here
+ * the world was frozen to be looked at, so the bar reaches the device itself.
+ * A step is a pause with one tick in the middle, so it ends the way a pause
+ * does - what the tick set going is heard for that tick and then held.
+ *
  * The snapshot + restore live on SceneIOController (a restore is just an
  * in-memory reload), so the bar drives play mode through it.
  */
@@ -32,6 +39,16 @@ class PlaybackBar {
 
     private:
         bool m_hovered = false;
+
+        /**
+         * @brief Whether a stepped tick has been queued and not yet held.
+         *
+         * Set when Step queues the tick, read on the next draw - by which time
+         * the Clock has fed the step, the systems have run against it and any
+         * voice it started exists. There is no earlier moment: the bar draws in
+         * the UI stage, after the frame it is asking for has already happened.
+         */
+        bool m_stepPending = false;
 };
 
 } // namespace Vkm::Engine

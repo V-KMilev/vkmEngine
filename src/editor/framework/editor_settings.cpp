@@ -53,6 +53,7 @@ void visitScalarFields(State& state, Fn&& f) {
     f("showBottom",        state.showBottom);
     f("leftPanelWidth",    state.leftPanelWidth);
     f("rightPanelWidth",   state.rightPanelWidth);
+    f("materialFloating",  state.materialFloating);
     f("bottomPanelHeight", state.bottomPanelHeight);
     f("gizmoOperation",    state.gizmoOperation);
     f("gizmoMode",         state.gizmoMode);
@@ -208,11 +209,17 @@ bool load(EditorState& state, RenderSettings& render) {
         });
     }
 
-    // Recent scenes, which genuinely do belong to the open project.
+    // Recent scenes, which genuinely do belong to the open project. An entry
+    // whose file is gone is dropped on the way in, or Open Recent accumulates
+    // dead links across sessions.
     state.recentScenes.clear();
     if (j.contains("recentScenes") && j["recentScenes"].is_array()) {
         for (const auto& p : j["recentScenes"]) {
-            if (p.is_string()) state.recentScenes.push_back(p.get<std::string>());
+            if (!p.is_string()) continue;
+            std::string scenePath = p.get<std::string>();
+            std::error_code existsEc;
+            if (!std::filesystem::exists(scenePath, existsEc)) continue;
+            state.recentScenes.push_back(std::move(scenePath));
             if (state.recentScenes.size() >= EditorState::MAX_RECENT_ENTRIES) break;
         }
     }

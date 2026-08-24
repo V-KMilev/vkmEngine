@@ -10,7 +10,8 @@ the GPU-uploadable ones sync through a per-resource version counter.
 - `src/engine/resource/resource_manager.h` for the manager
 - `src/engine/resource/resource.h` for the `Resource` base (version, name, hidden flag, source JSON)
 - `src/engine/resource/resource_handle.h` for type-safe `Handle<T>`
-- `src/engine/resource/asset/mesh_asset.h`, `asset/texture_asset.h`, `asset/material_asset.h`, `asset/font_asset.h`, `asset/skeleton_asset.h`, `asset/animation_clip_asset.h` for the asset kinds
+- `src/engine/resource/asset_type.h` for `AssetType`, the kind tag every asset is filed and referenced under
+- `src/engine/resource/asset/mesh_asset.h`, `asset/texture_asset.h`, `asset/material_asset.h`, `asset/font_asset.h`, `asset/skeleton_asset.h`, `asset/animation_clip_asset.h`, `asset/audio_clip_asset.h` for the asset kinds
 - `src/engine/core/memory/sparse_set.h` for the `SparseSet<T>` that backs each asset table
 
 ## Handles
@@ -22,11 +23,19 @@ using MaterialHandle      = Handle<MaterialAsset>;
 using FontHandle          = Handle<FontAsset>;
 using SkeletonHandle      = Handle<SkeletonAsset>;
 using AnimationClipHandle = Handle<AnimationClipAsset>;
+using AudioClipHandle     = Handle<AudioClipAsset>;
 ```
 
 Each handle wraps a `StorageIndex` (index + generation), so stale handles
 are detected automatically; using a destroyed handle returns nothing
 without crashing.
+
+A handle is a *runtime* identity: it names a slot in one session's
+`ResourceManager`, which is why serialization stores names instead. The authored
+counterpart is `AssetRef<Asset>` (`resource/asset_ref.h`) - a name plus the
+asset kind it names - which is how a behavior field points at an asset and how
+that asset ends up in the scene's assets block. See
+[scripting.md](system/scripting.md#naming-an-asset).
 
 ## API
 
@@ -87,6 +96,15 @@ one, so save files contain only user-relevant content. Names are guaranteed uniq
 `rename()` (not `edit().name = ...`) so the name index stays consistent.
 
 ## Asset types
+
+Every kind the asset library holds is named by one enum, `AssetType`
+(`resource/asset_type.h`). Nothing on disk carries its numeric value: the
+manifest and the scene write the name, and a cooked file carries its own kind
+tag. It sits beside the assets rather than inside `AssetLibrary` because naming
+a kind is not the same job as owning the database, and code that needs only the
+tag should not have to include the manifest, its map and `<filesystem>` with it.
+`FontAsset` is the one kind with no value there - a font is baked at startup,
+not cooked into the library.
 
 ### MeshAsset
 
@@ -247,11 +265,13 @@ ranges into them.
 ```cpp
 struct ClipChannel { uint32_t first, count; };  // count 0 = channel absent
 struct ClipBone    { ClipChannel position, rotation, scale; };
+struct ClipMarker  { std::string name; float time; };  // an instant the clip announces
 
 struct AnimationClipAsset : Resource {
     std::string skeleton;          // rig whose bone order `bones` addresses
     float       duration = 0.0f;   // seconds, stored rather than derived
-    std::vector<ClipBone>  bones;  // parallel to that rig's bones
+    std::vector<ClipBone>   bones;    // parallel to that rig's bones
+    std::vector<ClipMarker> markers;  // in time order; empty for an unmarked clip
     std::vector<float> positionTimes;  std::vector<glm::vec3> positions;
     std::vector<float> rotationTimes;  std::vector<glm::quat> rotations;
     std::vector<float> scaleTimes;     std::vector<glm::vec3> scales;
@@ -269,6 +289,51 @@ keeps `AnimationTrack<T>` and is untouched (see
 
 A clip is bound to its rig **at cook time**: `bones` is parallel to the named
 skeleton's bone array, so nothing resolves a bone name at runtime.
+
+**Markers** are what the clip announces as it plays - a footstep, the frame a
+swing connects. They live on the clip and not on the `Animator` that plays it,
+because a footstep belongs to the walk: every character playing that walk gets
+the same footsteps without authoring them again, and retiming the walk moves
+them with it. Crossing one publishes an `AnimationEvent` on the `EventBus`; see
+[Animation](system/animation.md#animation-events).
+
+Nothing in glTF or FBX carries an animation event, so a marker is **authored in
+the clip's recipe** rather than imported, beside the path and the clip index:
+
+```json
+{ "kind": "model", "path": "assets/hero.glb", "clip": 2,
+  "markers": [ { "name": "footstep", "time": 0.12 },
+               { "name": "footstep", "time": 0.42 } ] }
+```
+
+The loader drops a marker with no name or a time outside the clip (it could
+never fire at the instant it names), sorts what is left by time, and writes it
+back into the clip's own `source` - which is what stops the next cook from
+regenerating the recipe without the markers it just read.
+
+### AudioClipAsset
+
+A sound, decoded in full at load: 16-bit interleaved PCM at the rate and
+channel layout the source file carried.
+
+```cpp
+struct AudioClipAsset : Resource {
+    uint32_t sampleRate = 0;   // as authored; the mixer resamples if it differs
+    uint32_t channels   = 0;   // only a mono clip can be meaningfully positioned
+    std::shared_ptr<const std::vector<int16_t>> samples;
+};
+```
+
+The one asset payload in the engine held through a `shared_ptr`, and the reason
+is the mixer: a playing voice reads those samples from the audio thread while a
+scene load frees the asset from the main thread without asking. Sharing
+ownership with the voice turns that from a use-after-free into a sound that
+keeps playing for the one frame it takes `AudioSystem` to notice.
+
+Decoding at load - rather than streaming - is a decision, not an omission: a
+streamed clip would be the only asset that keeps a file open past its load, and
+a `Resource` is a value a scene load builds in a staging manager and swaps in
+whole. See [Audio](system/audio.md) for the full argument and what it costs.
 
 ## Versioning
 
@@ -302,11 +367,12 @@ The tools split by dependency weight:
 
 - **`vkm_tools`** (runtime-safe): the GLM-only generators, the cooked-asset
   loaders, and `registerCookedAssetFactories` (`cooked` / `inline`).
-- **`vkm_cook`** (editor-only): the heavy importers (`loader/`, Assimp + stb)
-  and the asset cooker (`cook/`), plus `registerRecipeAssetFactories`.
+- **`vkm_cook`** (editor-only): the heavy importers (`loader/`, Assimp + stb +
+  the miniaudio decoder) and the asset cooker (`cook/`), plus
+  `registerRecipeAssetFactories`.
 
 The runtime registers only the cooked set, so it links neither Assimp nor the
-image decoders; the editor registers the recipe set instead, which falls through
+image and sound decoders; the editor registers the recipe set instead, which falls through
 to the cooked functions and (re)cooks recipes into the cache.
 
 ### Generators (`src/tools/generator/`)
@@ -369,6 +435,7 @@ one bad vertex.
 | `texture_loaders.cpp`   | Load via stb_image, auto-detect channels, sRGB flag handling   |
 | `material_loaders.cpp`  | Folder loader: scans a folder for `*Color*`, `*Normal*`, etc.  |
 | `model_loaders.cpp`      | Assimp-backed mesh, rig and clip import; per-load aiScene parse cache |
+| `audio_loaders.cpp`      | miniaudio-backed sound import: wav / mp3 / flac decoded to s16 |
 | `environment_loaders.cpp`| HDR equirectangular image loader (`loadHDRImage`) for IBL / skybox |
 
 ## Save/load round-trip
@@ -376,12 +443,16 @@ one bad vertex.
 See [IO and serialization](system/io.md) for the full flow.
 `AssetSerializer::saveAssetsForScene` emits only the assets actually
 referenced by the scene - `Mesh` (mesh + material), `LOD` (every level's
-mesh) and `Decal` (its material), plus the textures those materials
-reference. `emitDescriptor` is the single gate every one of those goes
-through, so a hidden or unnamed asset cannot be written as a reference by
-any emitter, present or future. A component that writes an
-asset name into the scene file has to be walked there, or the name has
-nothing to resolve against on load. On load,
+mesh), `Decal` (its material), `Animator` (its rig and clip),
+`AudioSource` (its sound) and every `AssetRef` field on a behavior, plus
+the textures those materials reference. `emitDescriptor` gates every
+reference a component holds as a handle, so a hidden or unnamed asset can
+never be written from one. A behavior's `AssetRef` fields are walked with
+them and go out through `emitNamedRef`: an authored name has no handle to
+inspect, so it is written exactly as authored, and a name the library does
+not hold is reported by `loadAssetSection` on load rather than dropped at
+save. A component that writes an asset name into the scene file has to be
+walked there, or the name has nothing to resolve against on load. On load,
 assets with the same `name` already in the manager are skipped (loads
 are idempotent), and new assets go through the `AssetFactory` dispatch
 by `kind`.

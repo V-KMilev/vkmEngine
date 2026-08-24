@@ -23,21 +23,27 @@ namespace Vkm::Engine {
 
 namespace {
 
-/**
- * @brief Build the recipe descriptor a file-loaded texture is re-created from.
- *
- * The `filter` key is omitted unless the texture states an override, so the
- * recipe of an ordinary texture says nothing about filtering - which is the
- * truth about it, and one fewer spelling of the default to keep in step.
- *
- * @param ref Project-relative reference the texture is named and reloaded by.
- * @param srgb Whether the pixels are sRGB-encoded.
- * @param generateMipmaps Whether a mip chain is built for it.
- * @param filterOverride The texture's own say over its sampling.
- * @return The `kind: file` source descriptor.
- */
-nlohmann::json fileTextureRecipe(const std::string& ref, bool srgb, bool generateMipmaps,
-                                 TextureFilterOverride filterOverride) {
+// The name each wrap mode is spelled by in a recipe. ClampToEdge is the default
+// and never written, so the reader answers with it for an unknown name too.
+const char* wrapName(TextureWrapMode wrap) {
+    switch (wrap) {
+        case TextureWrapMode::Repeat:         return "repeat";
+        case TextureWrapMode::MirroredRepeat: return "mirror";
+        case TextureWrapMode::ClampToEdge:    return "clamp";
+        case TextureWrapMode::ClampToBorder:  return "border";
+    }
+    return "clamp";
+}
+
+} // namespace
+
+nlohmann::json fileTextureRecipe(
+    const std::string& ref,
+    bool srgb,
+    bool generateMipmaps,
+    TextureFilterOverride filterOverride,
+    TextureWrapMode wrap
+) {
     nlohmann::json source = {
         {"kind",            "file"},
         {"path",            ref},
@@ -45,10 +51,9 @@ nlohmann::json fileTextureRecipe(const std::string& ref, bool srgb, bool generat
         {"generateMipmaps", generateMipmaps},
     };
     if (filterOverride == TextureFilterOverride::Nearest) source["filter"] = "nearest";
+    if (wrap != TextureWrapMode::ClampToEdge) source["wrap"] = wrapName(wrap);
     return source;
 }
-
-} // namespace
 
 TextureFilterOverride textureFilterFromRecipe(const nlohmann::json& source) {
     return source.value("filter", std::string{}) == "nearest"
@@ -56,12 +61,21 @@ TextureFilterOverride textureFilterFromRecipe(const nlohmann::json& source) {
         : TextureFilterOverride::None;
 }
 
+TextureWrapMode textureWrapFromRecipe(const nlohmann::json& source) {
+    const std::string wrap = source.value("wrap", std::string{});
+    if (wrap == "repeat") return TextureWrapMode::Repeat;
+    if (wrap == "mirror") return TextureWrapMode::MirroredRepeat;
+    if (wrap == "border") return TextureWrapMode::ClampToBorder;
+    return TextureWrapMode::ClampToEdge;
+}
+
 TextureHandle loadTexture(
     const std::string& filePath,
     ResourceManager& resourceManager,
     bool srgb,
     bool generateMipmaps,
-    TextureFilterOverride filterOverride
+    TextureFilterOverride filterOverride,
+    TextureWrapMode wrap
 ) {
     // The reference is what the asset is named and recorded by; the resolved
     // path is only what stb opens. An absolute name would bake the authoring
@@ -89,6 +103,8 @@ TextureHandle loadTexture(
     texture.params.type = TexturePixelType::UnsignedByte;
     texture.params.generateMipmaps = generateMipmaps;
     texture.params.filterOverride = filterOverride;
+    texture.params.wrapS = wrap;
+    texture.params.wrapT = wrap;
     texture.srgb = srgb;
     texture.filePath = ref;
 
@@ -104,7 +120,7 @@ TextureHandle loadTexture(
     // The reference is the texture's name: the stable identity scene + material
     // references resolve by, and the path used to reload it.
     texture.name         = ref;
-    texture.sourceJson() = fileTextureRecipe(ref, srgb, generateMipmaps, filterOverride);
+    texture.sourceJson() = fileTextureRecipe(ref, srgb, generateMipmaps, filterOverride, wrap);
     return resourceManager.add(std::move(texture));
 }
 
@@ -113,7 +129,8 @@ TextureHandle requestTextureAsync(
     ResourceManager& resourceManager,
     bool srgb,
     bool generateMipmaps,
-    TextureFilterOverride filterOverride
+    TextureFilterOverride filterOverride,
+    TextureWrapMode wrap
 ) {
     // The reference is the stable identity: a repeat request hands back the same
     // handle even while the first decode is in flight. The caller can bind it
@@ -123,18 +140,19 @@ TextureHandle requestTextureAsync(
     const std::string resolved = ProjectPaths::resolveProjectPath(ref).string();
     if (auto existing = resourceManager.findByName<TextureAsset>(ref)) return existing;
 
-    // Stub asset: dimensions filled in by the finaliser once decode is done.
-    // The mipmap + sRGB flags and the filter override do need to be set
-    // up-front - the finaliser only overwrites what the decode learned, and the
-    // asset serializer round-trips all three.
+    // Stub asset: the finaliser overwrites only what the decode learned, so what
+    // it cannot learn - mipmaps, sRGB, filter, wrap - is set here and survives
+    // onto the finished asset. Dimensions arrive with the pixels.
     TextureAsset stub;
     stub.params.generateMipmaps = generateMipmaps;
     stub.params.filterOverride  = filterOverride;
+    stub.params.wrapS           = wrap;
+    stub.params.wrapT           = wrap;
     stub.srgb                   = srgb;
     stub.loading                = true;
     stub.filePath               = ref;
     stub.name                   = ref;
-    stub.sourceJson() = fileTextureRecipe(ref, srgb, generateMipmaps, filterOverride);
+    stub.sourceJson() = fileTextureRecipe(ref, srgb, generateMipmaps, filterOverride, wrap);
     const TextureHandle handle = resourceManager.add(std::move(stub));
     const uint64_t      uid    = resourceManager.get(handle).uid;
 

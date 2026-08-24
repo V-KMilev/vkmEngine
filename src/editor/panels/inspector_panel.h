@@ -8,6 +8,7 @@
 #include "ecs/entity.h"
 
 #include "framework/asset_picker.h"
+#include "system/audio/audio_device.h"
 #include "ui/editor_widgets.h"
 
 namespace Vkm::Engine {
@@ -25,7 +26,7 @@ struct EditorContext;
  * with inline editing, plus an "Add Component" menu. When the World node is
  * selected instead of an entity, shows the scene-global Environment settings.
  * Edits route through the command stack so they are undoable. The compact Mesh
- * card links out to the standalone Material Editor for full PBR editing.
+ * card hands full PBR editing to the Material tab beside it.
  *
  * Entities belonging to a prefab instance are edited here like any other, and
  * an edit to one becomes a per-instance override (see PrefabOverrides): each
@@ -62,17 +63,28 @@ class InspectorPanel {
         void drawLightSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawRigidbodySection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawColliderSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawCameraSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        // The Camera card takes the whole context for the same reason the audio
+        // cards do: which camera is rendered from is the camera controller's
+        // answer, and it is not reachable from the scene alone.
+        void drawCameraSection(EditorContext& ec, EntityId id);
         void drawReflectionProbeSection(Scene& scene, ResourceManager& resources,
                                         EditorState& state, EntityId id);
         void drawDecalSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawParticleSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        // Particles and Animation take it for the clock: both cards report on a
+        // simulation that only advances while the world runs, and the clock is
+        // what separates "nothing to show" from "not running".
+        void drawParticleSection(EditorContext& ec, EntityId id);
+        // The audio cards take the whole context: the clip preview button plays
+        // through the editor's audio device, which is not reachable from the
+        // scene or the asset graph.
+        void drawAudioSourceSection(EditorContext& ec, EntityId id);
+        void drawAudioListenerSection(EditorContext& ec, EntityId id);
         void drawIrradianceVolumeSection(Scene& scene, ResourceManager& resources,
                                          EditorState& state, EntityId id);
         void drawWorldInspector(EditorContext& ec);
         void drawLODSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawAnimationSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawAnimatorSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        void drawAnimationSection(EditorContext& ec, EntityId id);
+        void drawAnimatorSection(EditorContext& ec, EntityId id);
         void drawBoneSocketSection(Scene& scene, ResourceManager& resources,
                                    EditorState& state, EntityId id);
         void drawCharacterControllerSection(Scene& scene, ResourceManager& resources,
@@ -98,6 +110,15 @@ class InspectorPanel {
         // World inspector's "Skybox HDR" browse. Cached file discovery rooted at
         // assets/envs; opened on demand instead of scanning every frame.
         AssetPicker m_envPicker;
+
+        // The clip currently being auditioned from a card, so a second press
+        // replaces it rather than layering a second copy over the first.
+        VoiceId m_previewVoice = 0;
+
+        // Which card started it. The audition is stopped when the selection
+        // leaves that entity, so the transport on the card always drives the
+        // voice the card is showing.
+        EntityId m_previewOwner;
 
         int m_colliderFitDetail = 4;  ///< Voxel resolution for the Collider "Fit to Mesh" button.
         int m_lodGenLevels      = 2;  ///< Levels the LOD card's Generate button builds below the source.

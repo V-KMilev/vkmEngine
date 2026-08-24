@@ -25,6 +25,7 @@ namespace Vkm::Engine {
 class GLView;
 class GLIBL;
 class GLMesh;
+class GLShadowAtlas;
 class ResourceManager;
 struct PreviewRequest;
 
@@ -39,7 +40,12 @@ struct PreviewRequest;
  * Follows GLProbeBaker's pattern: it re-binds the camera / lights UBOs with
  * its own per-request data, so it must run outside the main frame's passes
  * (the editor calls it after the scene render; the next frame re-uploads its
- * own UBOs). Shaders compile in init(), so call that from GLBackend::init.
+ * own UBOs).
+ *
+ * The rig - three programs and a 512x512 HDR scratch - is built on the first
+ * request, not at backend init. Both hosts construct a GLBackend, but only the
+ * editor ever asks for a preview, and a shipped game should pay nothing for
+ * authoring work it cannot reach.
  */
 class GLPreview {
     public:
@@ -54,17 +60,12 @@ class GLPreview {
 
     public:
         /**
-         * @brief Compile the bake programs + create the scratch target. Needs a
-         * live GL context (GLBackend::init).
-         */
-        void init();
-
-        /**
          * @brief Render @p req into its per-key target. Returns the LDR texture id,
-         * or 0 when the request can't be drawn (missing assets, no init).
+         * or 0 when the request can't be drawn (missing assets).
          */
         uint32_t render(Vkm::GL::Context& gl, GLView& glView, const GLIBL& ibl,
-                        const PreviewRequest& req, const ResourceManager& resources);
+                        const GLShadowAtlas& shadows, const PreviewRequest& req,
+                        const ResourceManager& resources);
 
         /**
          * @brief Last-rendered texture for @p key, or 0 when none exists.
@@ -94,6 +95,14 @@ class GLPreview {
         };
 
         Entry& ensureEntry(uint64_t key, uint32_t size);
+
+        /**
+         * @brief Compile the programs and create the scratch target.
+         *
+         * Called by the first render(), which is the only place a live GL
+         * context is guaranteed and the only proof the rig is wanted.
+         */
+        void init();
 
     private:
         std::unique_ptr<Vkm::GL::Shader>         m_pbr;       ///< forward PBR (scene draw)

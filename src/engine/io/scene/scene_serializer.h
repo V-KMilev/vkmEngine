@@ -83,6 +83,29 @@ namespace SceneSerializer {
     bool load(Scene& scene, ResourceManager& resources, const std::string& path);
 
     /**
+     * @brief Drop from @p id's unresolved-reference record every entry whose
+     *        field has since been filled, and the record itself once it is empty.
+     *
+     * The record is what the load could not resolve, kept so a save writes the
+     * names back rather than "" over them. A field the author has since filled
+     * is no longer one of those: the save already leaves such a slot alone, but
+     * the record went on saying the reference did not load, and the assets block
+     * went on declaring a name the scene has stopped using - so the Inspector
+     * told the author a mesh they had just chosen was still missing, and every
+     * later load went looking for one that is not there.
+     *
+     * Answered by writing the entity and reading the field back, which is the
+     * same question the save asks and therefore cannot drift from it. Idempotent
+     * and cheap to call on an entity that has no record, which is every healthy
+     * one.
+     *
+     * @param scene Scene holding the entity.
+     * @param resources Asset graph the entity's references resolve against.
+     * @param id Entity to prune; a dead one is ignored.
+     */
+    void pruneResolvedRefs(Scene& scene, const ResourceManager& resources, EntityId id);
+
+    /**
      * @brief Serialize @p scene + the assets it references to an in-memory JSON
      *        string (same content as save(), no file written).
      *
@@ -96,10 +119,22 @@ namespace SceneSerializer {
 
     /**
      * @brief Load a scene from an in-memory JSON string produced by
-     *        saveToString(), replacing @p scene + @p resources atomically.
+     *        saveToString(), replacing @p scene and merging into @p resources.
      *
-     * Same transactional swap as load(): on failure both are left untouched.
+     * The scene commits by the same transactional swap load() uses: on failure
+     * it is left untouched. The asset graph is *not* swapped, which is the one
+     * way this differs from load(). The document was written out of that graph
+     * moments earlier, so it asks for nothing the graph does not already hold
+     * and nothing is created - and every handle issued out of it before the
+     * call still means what it meant. The editor's undo history is why that
+     * matters: Stop keeps the steps taken before Play, each of which holds the
+     * asset it is to put back, and a swap would leave those addressing a
+     * manager that no longer exists.
      *
+     * @param text A document from saveToString().
+     * @param scene Scene to replace on success.
+     * @param resources Asset graph to resolve against, added to only where a
+     *        name is genuinely absent.
      * @return true on success; false (and a logged error) on failure.
      */
     bool loadFromString(const std::string& text, Scene& scene, ResourceManager& resources);

@@ -18,6 +18,20 @@ class ViewportOverlay {
         void drawNavigationGizmo(EditorContext& ec);
 
         /**
+         * @brief State the reason the viewport is showing nothing when the
+         *        scene has no camera to render from.
+         *
+         * The editor has no camera of its own: it flies whichever entity holds
+         * an active Camera, so deleting or unticking that one entity empties
+         * the viewport and freezes navigation. VisibilitySystem computes the
+         * fact and phrases it, but only into the log file, which the editor has
+         * no view of.
+         *
+         * @param ec The frame's editor context; the viewport rect is read off it.
+         */
+        void drawNoCameraNotice(EditorContext& ec);
+
+        /**
          * @brief True while the mouse is over one of the axis endpoints (so the
          * viewport does not also treat the click as a pick).
          *

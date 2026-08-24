@@ -1,5 +1,7 @@
 #pragma once
 
+#include <imgui.h>
+
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -40,9 +42,12 @@ struct EditorState {
     bool showInspector   = true;
     bool showBottom      = true;
     bool showPreferences = false;   ///< Preferences window (Ctrl+,)
-    bool showMaterialEditor = false;            ///< Material Editor window
-    MaterialHandle materialEditorTarget{};      ///< Which material it edits (else: selected entity's)
-    bool showAssetBrowser   = false;            ///< Asset Browser window (material/mesh thumbnail grid)
+    MaterialHandle materialEditorTarget{};      ///< What the Material tab edits (else: the selected entity's)
+    bool materialFloating  = false; ///< Material editor is a window rather than the right panel's second tab
+    ImVec2 materialDetachAt = {};   ///< Where the drag that detached it let go, so the window opens under the cursor
+    ImVec2 rightPanelMin    = {};   ///< Screen rect of the right panel, so a detached window knows when it is over it
+    ImVec2 rightPanelMax    = {};
+    bool revealMaterialTab = false;             ///< Pending request to open the right panel on Material
     bool showRenderSettings = false;            ///< Render Settings window (pass toggles + per-effect tuning)
     bool showColliders      = false;            ///< Draw physics collider wireframes in the viewport (View menu)
     bool showBounds         = false;            ///< Draw per-entity world AABBs in the viewport (View menu)
@@ -51,7 +56,12 @@ struct EditorState {
     // Layout dimensions (pixels)
     float leftPanelWidth    = 260.0f;
     float rightPanelWidth   = 340.0f;
-    float bottomPanelHeight = 200.0f;
+    // Tall enough for one whole row of default-size asset tiles - face, name
+    // and detail line - because the panel's first tab is a grid and a row cut
+    // across the middle reads as a broken tile rather than as a short panel.
+    // Persisted per project, so this is what a project with no saved layout
+    // opens at.
+    float bottomPanelHeight = 250.0f;
 
     bool viewportHovered = false;    ///< Whether mouse is over viewport
     bool hierarchyDirty  = true;     ///< Set by entity ops, consumed by HierarchyPanel
@@ -59,24 +69,32 @@ struct EditorState {
     bool requestModelImport = false;  ///< Set by the Import Model menu item, consumed by the menu-bar dialog
     bool requestPlacePrefab = false;  ///< Set by the Create > Prefab item, consumed by the menu-bar dialog
     bool requestScriptReload = false; ///< Set by the Reload Scripts menu item, consumed by EditorSystem (hot-reload)
+    bool requestNewProject   = false; ///< Set by the New Project menu item, consumed by the dialog that draws it
+    bool requestOpenProject  = false; ///< Set by the Open Project menu item, consumed by the dialog that draws it
 
     bool sceneDirty = false;    ///< Unsaved edits since last save/load. Title shows '*'.
 
     /**
-     * @brief The destructive scene actions that pass through the shared
-     * unsaved-changes guard. confirmAction is what the modal is currently
-     * confirming; afterSaveAction is deferred until the next clean save
-     * (the "Save" choice); pendingScenePath is the target of a guarded Open.
+     * @brief What action that throws the live scene away has been asked for,
+     *        and how far the unsaved-changes guard has got with answering it.
+     *
+     * One request at a time, in three stages. Ask is a request nobody has
+     * answered yet: EditorSystem prompts when the scene is dirty and goes
+     * straight to Run when it is not. Saving is the prompt's "Save" answer
+     * waiting for the write to land, and drops the request instead if the
+     * author backs out of the Save-As it opened. Run is approved, and
+     * EditorSystem performs it at one point in the frame with no ImGui window
+     * on the stack, because all four rebuild the world.
      */
-    enum class PendingSceneAction : uint8_t { None, Quit, New, Open, OpenProject };
-    PendingSceneAction confirmAction   = PendingSceneAction::None;
-    PendingSceneAction afterSaveAction = PendingSceneAction::None;
-    std::string        pendingScenePath;
+    enum class SceneAction : uint8_t { None, Quit, New, Open, OpenProject };
+    enum class ActionStage : uint8_t { Ask, Saving, Run };
+    SceneAction pendingAction = SceneAction::None;
+    ActionStage actionStage   = ActionStage::Ask;
+    std::string actionPayload;    ///< The target: a scene file, a project root, or nothing.
+
     std::vector<std::string> recentScenes;    ///< MRU list (absolute paths), most-recent first.
     std::vector<std::string> recentProjects;  ///< MRU project roots, most-recent first.
 
-    bool        showOpenProject = false;  ///< File > Open Project dialog is up.
-    std::string pendingProjectOpen;       ///< Project chosen from a menu; opened after the draw.
     std::string projectName;              ///< What the open project calls itself; titles the window.
     static constexpr size_t MAX_RECENT_ENTRIES = 8;
 
@@ -98,6 +116,55 @@ struct EditorState {
      * Cheap, idempotent.
      */
     void markSceneDirty() { sceneDirty = true; }
+
+    /**
+     * @brief Ask for the right panel's Material tab, showing @p material.
+     *
+     * A request rather than a tab switch because every caller is drawn before
+     * the tab bar that would answer it, and because the panel may be hidden
+     * when the ask is made.
+     *
+     * @param material The material to edit; the tab follows the selection again
+     *        once a different entity carrying one is picked.
+     */
+    void openMaterial(MaterialHandle material) {
+        materialEditorTarget = material;
+        showInspector        = true;
+        revealMaterialTab    = true;
+    }
+
+    /**
+     * @brief Ask for an action that throws the live scene away.
+     *
+     * The one way in for Quit, New Scene, Open Scene and Open Project. The
+     * request is parked rather than performed, so a caller says what it wants
+     * instead of remembering to ask about unsaved changes - which is what stops
+     * the next destructive action from being the one that forgets - and so the
+     * scene is never rebuilt inside the ImGui frame that asked for it.
+     * EditorSystem prompts, waits out a save, and performs.
+     *
+     * Ignored while an earlier request is still unresolved, so a held key or a
+     * second click cannot stack prompts.
+     *
+     * @param action What to do once the guard clears.
+     * @param payload The action's target - the scene file for Open, the project
+     *        root for OpenProject, empty for the two that need none.
+     */
+    void requestSceneAction(SceneAction action, std::string payload = {}) {
+        if (pendingAction != SceneAction::None) return;
+        pendingAction = action;
+        actionStage   = ActionStage::Ask;
+        actionPayload = std::move(payload);
+    }
+
+    /**
+     * @brief Drop the pending request, whatever stage it had reached.
+     */
+    void clearSceneAction() {
+        pendingAction = SceneAction::None;
+        actionStage   = ActionStage::Ask;
+        actionPayload.clear();
+    }
 
     /**
      * @brief Selection helpers - route ALL selection changes through these.

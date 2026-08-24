@@ -41,7 +41,12 @@ void applyEditorTheme() {
     style.SeparatorTextPadding    = ImVec2(16.0f, 4.0f);
     style.PopupBorderSize   = 1.0f;
     style.TabBarBorderSize  = 1.0f;
-    style.TabBarOverlineSize = 0.0f;  // drawn via TabSelectedOverline below
+    // The accent bar over the selected tab. Its colours were set below while
+    // this was 0, which drew none of them: a tab bar said which tab was open
+    // with a background shade alone, and that shade lost to the hover
+    // highlight next to it. Selection is the louder state, so it gets the one
+    // mark hover cannot imitate.
+    style.TabBarOverlineSize = 2.0f;
     style.WindowMinSize     = ImVec2(220.0f, 140.0f);
     style.DisabledAlpha     = 0.45f;
 
@@ -93,8 +98,14 @@ void applyEditorTheme() {
     c[ImGuiCol_Separator]             = ImVec4(0.26f, 0.29f, 0.36f, 0.55f);
     c[ImGuiCol_SeparatorHovered]      = aA(A, 0.70f);
     c[ImGuiCol_Tab]                   = ImVec4(0.135f, 0.145f, 0.170f, 1.00f);
-    c[ImGuiCol_TabHovered]            = aA(A, 0.70f);
-    c[ImGuiCol_TabSelected]           = ImVec4(0.230f, 0.275f, 0.360f, 1.00f);
+    // Hover is a neutral lift and selection is the accent, not the other way
+    // round. Painting a hovered tab in the accent at 0.70 made the tab under
+    // the pointer the brightest thing in the bar while the open one sat in a
+    // muted slate - so a bar answered "which tab am I on" with the pointer's
+    // position instead of its own state, and it read wrong in every panel
+    // that has tabs.
+    c[ImGuiCol_TabHovered]            = ImVec4(0.205f, 0.225f, 0.270f, 1.00f);
+    c[ImGuiCol_TabSelected]           = ImVec4(0.265f, 0.350f, 0.490f, 1.00f);
     c[ImGuiCol_PlotLines]             = AH;
     c[ImGuiCol_PlotHistogram]         = aA(AH, 0.85f);
     c[ImGuiCol_TableHeaderBg]         = ImVec4(0.150f, 0.160f, 0.190f, 1.00f);

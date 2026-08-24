@@ -74,7 +74,20 @@ void CameraControllerSystem::update(FrameContext& ctx) {
         m_lastDrivenId = target;
     }
 
+    // Compared rather than assumed: the fly path rewrites the rotation on every
+    // frame the right button is down, so "it ran" is not "it moved", and a host
+    // that marked the scene unsaved off the former would do it for a right-click
+    // that went nowhere.
+    const glm::vec3 position = transform.position;
+    const glm::quat rotation = transform.rotation;
     updateFlyMode(ctx.window, ctx.input, transform.position, transform.rotation, ctx.clock.getDeltaTime());
+    if (transform.position != position || transform.rotation != rotation) m_cameraMoved = true;
+}
+
+bool CameraControllerSystem::takeCameraMoved() {
+    const bool moved = m_cameraMoved;
+    m_cameraMoved = false;
+    return moved;
 }
 
 void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, const InputMap& input,
@@ -123,10 +136,17 @@ void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, const I
 
 void CameraControllerSystem::placeCamera(Transform& transform, const glm::vec3& target,
                                          const glm::vec3& dirToCamera, float distance) {
+    const glm::vec3 position = transform.position;
+    const glm::quat rotation = transform.rotation;
+
     transform.position = target + dirToCamera * distance;
     // dirToCamera points target -> camera, so the look direction is its negation.
     setAnglesFromDirection(-dirToCamera);
     updateRotationFromAngles(transform.rotation, m_yaw, m_pitch);
+
+    // Framing a selection moves the same serialized Transform a fly drag does,
+    // so it is the same edit and is reported the same way.
+    if (transform.position != position || transform.rotation != rotation) m_cameraMoved = true;
 }
 
 void CameraControllerSystem::focusOn(Scene& scene, const glm::vec3& target, float distance) {

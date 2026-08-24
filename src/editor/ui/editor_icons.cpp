@@ -12,6 +12,10 @@ namespace {
 
 ImFont* s_iconFont = nullptr;
 
+// The disc an entity marker sits on. Dark and translucent rather than opaque,
+// so it lifts the glyph off a bright sky without hiding the geometry under it.
+constexpr ImU32 MARKER_DISC_COL = IM_COL32(15, 15, 18, 180);
+
 // EditorIcon -> Lucide codepoint (lucide-static font/info.json). Every enum
 // value maps; the trailing 0 only catches an out-of-range cast.
 ImWchar iconCodepoint(EditorIcon icon) {
@@ -46,6 +50,9 @@ ImWchar iconCodepoint(EditorIcon icon) {
         case EditorIcon::Decal:      return 0xe302;  // sticker
         case EditorIcon::Particle:   return 0xe412;  // sparkles
         case EditorIcon::UIWidget:   return 0xe426;  // app-window
+        case EditorIcon::Audio:      return 0xe1ab;  // volume-2
+        case EditorIcon::Audio2D:    return 0xe1a9;  // volume
+        case EditorIcon::Listener:   return 0xe382;  // ear
         case EditorIcon::FrameAll:   return 0xe257;  // scan
         case EditorIcon::UICanvas:   return 0xe291;  // frame
         case EditorIcon::UIText:     return 0xe198;  // type
@@ -62,6 +69,9 @@ ImWchar iconCodepoint(EditorIcon icon) {
         case EditorIcon::Empty:      return 0xe4b0;  // circle-dashed
         case EditorIcon::Import:     return 0xe22f;  // import
         case EditorIcon::Colliders:  return 0xe1cb;  // box-select
+        case EditorIcon::Material:   return 0xe1dd;  // palette
+        case EditorIcon::Texture:    return 0xe0f6;  // image
+        case EditorIcon::Skeleton:   return 0xe358;  // bone
     }
     return 0;
 }
@@ -123,6 +133,11 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
     dl->AddRect(ImVec2(c.x - r * 0.7f, c.y - r * 0.7f),
                 ImVec2(c.x + r * 0.7f, c.y + r * 0.7f),
                 col, r * 0.25f, 0, th);
+}
+
+void drawEntityMarker(ImDrawList* dl, EditorIcon icon, ImVec2 center, ImU32 col) {
+    dl->AddCircleFilled(center, entityMarkerHitRadius(), MARKER_DISC_COL, 16);
+    drawEditorIcon(dl, icon, center, entityMarkerRadius() * 0.85f, col);
 }
 
 bool iconButton(

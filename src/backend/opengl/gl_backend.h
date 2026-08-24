@@ -80,30 +80,40 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         void releasePreview(uint64_t key) override;
         void releaseAllPreviews() override;
         GpuTextureId textureId(const TextureHandle& handle) const override;
+        GpuTextureId ensureTexture(const TextureHandle& handle,
+                                   const ResourceManager& resources) override;
         uint32_t reloadChangedShaders() override;
         uint32_t maxAnisotropy() const override;
 
     private:
         /**
-         * @brief Drop every GPU cache derived from the scene, after a graph swap.
+         * @brief Drop every GPU cache the world it was built from has outlived.
          *
          * Several caches avoid redundant GPU work by remembering what they last
          * built and comparing it against values the scene supplies: asset handle
          * and version for GLView, probe position and bakeVersion for the probe
          * array, box and grid for the irradiance volume. Every one of those
-         * repeats exactly when a scene is replaced - SceneSerializer commits by
-         * swapping a freshly built graph into place, and the editor's play-stop
-         * restore takes the same path - so each would skip work it must redo and
-         * go on showing the previous scene's contents.
+         * repeats exactly when what it is built from is replaced, so each would
+         * skip work it must redo and go on showing the previous scene.
          *
-         * Detecting the swap here, once, is deliberate. The alternative is every
+         * The two are replaced separately, and each drops what belongs to it.
+         * GLView mirrors assets, so it goes when the asset graph is swapped for
+         * another. The probe captures and the irradiance bake are pictures of a
+         * place in a world, so they go when the world is replaced - which a
+         * scene load does along with the graph, and the editor's play-stop
+         * restore does on its own, that one keeping the graph precisely so the
+         * handles the undo history holds still mean something.
+         *
+         * Detecting both here, once, is deliberate. The alternative is every
          * cache inventing its own staleness test, which is exactly how the probe
          * array and the irradiance volume came to be missed when GLView was
-         * fixed. A new scene-derived cache belongs in this function.
+         * fixed. A new cache belongs in this function, under whichever of the
+         * two it is a picture of.
          *
-         * @param resources The frame's resource manager, carrying the epoch.
+         * @param view The frame's view, carrying the world epoch.
+         * @param resources The frame's resource manager, carrying the asset epoch.
          */
-        void onAssetGraphSwapped(const ResourceManager& resources);
+        void onWorldReplaced(const RenderView& view, const ResourceManager& resources);
 
         /**
          * @brief Split the frame's drawables into the opaque + transparent buckets once
@@ -130,13 +140,41 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
          */
         bool skyNeedsRebake(const Environment& env, const glm::vec3& sunDir) const;
 
+        /**
+         * @brief Signature of the procedural sky currently baked into m_ibl, so a
+         * frame re-bakes only when the sun or a parameter actually changes.
+         */
+        struct BakedSky {
+            bool      active = false;
+            glm::vec3 sunDir{0.0f};
+            float     sunIntensity = 0.0f;
+            float     rayleigh     = 0.0f;
+            float     mie          = 0.0f;
+            float     mieG         = 0.0f;
+            glm::vec3 nightRadiance{0.0f};
+            glm::vec3 moonDir{0.0f};
+            float     moonIntensity = 0.0f;
+        };
+
+        /**
+         * @brief Signature of the irradiance volume currently baked, so a frame
+         * re-bakes only when the box, grid, or bake version actually changes.
+         */
+        struct BakedIrradiance {
+            bool      valid = false;
+            glm::vec3 center{0.0f};
+            glm::vec3 halfExtents{0.0f};
+            uint32_t  resolutionX = 0, resolutionY = 0, resolutionZ = 0;
+            uint32_t  bakeVersion = 0;
+        };
+
     private:
         Vkm::GL::Context m_context;
         GLView           m_view;
 
-        // Asset-graph identity the scene-derived GPU caches were built against.
-        // See onAssetGraphSwapped.
+        // Identities the caches above were built against. See onWorldReplaced.
         uint64_t      m_assetEpoch = 0;
+        uint64_t      m_worldEpoch = 0;
 
         // Batches the opaque bucket once per frame for both the depth prepass
         // and the forward pass (see GLFrameContext::opaqueBatch).
@@ -185,34 +223,7 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
 
         std::string m_bakedEnvPath;  ///< HDR path of the currently baked IBL; empty when none (or the sky is procedural).
 
-        /**
-         * @brief Signature of the procedural sky currently baked into m_ibl, so a
-         * frame re-bakes only when the sun or a parameter actually changes.
-         */
-        struct BakedSky {
-            bool      active = false;
-            glm::vec3 sunDir{0.0f};
-            float     sunIntensity = 0.0f;
-            float     rayleigh     = 0.0f;
-            float     mie          = 0.0f;
-            float     mieG         = 0.0f;
-            glm::vec3 nightRadiance{0.0f};
-            glm::vec3 moonDir{0.0f};
-            float     moonIntensity = 0.0f;
-        };
-        BakedSky m_bakedSky;
-
-        /**
-         * @brief Signature of the irradiance volume currently baked, so a frame
-         * re-bakes only when the box, grid, or bake version actually changes.
-         */
-        struct BakedIrradiance {
-            bool      valid = false;
-            glm::vec3 center{0.0f};
-            glm::vec3 halfExtents{0.0f};
-            uint32_t  resolutionX = 0, resolutionY = 0, resolutionZ = 0;
-            uint32_t  bakeVersion = 0;
-        };
+        BakedSky        m_bakedSky;
         BakedIrradiance m_bakedIrradiance;
 };
 

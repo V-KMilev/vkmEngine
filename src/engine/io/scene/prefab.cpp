@@ -261,6 +261,19 @@ json applyOverrides(const json& base, uint32_t uid,
             report("the root Transform is the instance's own pose");
             continue;
         }
+        // The other direction: a Script override would work, and must not. The
+        // component serializes as one field holding the whole behavior list, so
+        // the only address the format can spell replaces every behavior on the
+        // instance rather than editing one authored value - and the editor
+        // neither writes one (ScriptComponent has no COMPONENT_KEY) nor shows
+        // one, so an applied one would be invisible and unrevertable. Refused
+        // here, where a hand-edited file is reported as drift, rather than left
+        // as a back door that content could be authored against before the
+        // per-field address this needs has been designed.
+        if (o.component == "Script") {
+            report("behavior fields are the prefab's, not per-instance");
+            continue;
+        }
         if (!out.contains(o.component))            { report("no such component"); continue; }
         if (!out[o.component].contains(o.field))   { report("no such field");     continue; }
 
@@ -408,6 +421,7 @@ bool save(Scene& scene, EntityId root, const std::string& path,
     doc["nextUid"] = nextUid;
     doc["assets"]  = AssetSerializer::saveAssetsForEntities(scene, subtree, resources);
 
+    detail::writeNonFiniteAsZero(doc, "Prefab");
     if (!detail::writeJsonFile(resolvePath(path), doc, "Prefab")) return false;
 
     for (size_t i = 0; i < subtree.size(); ++i) {

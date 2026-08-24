@@ -85,8 +85,7 @@ LOD generateLOD(ResourceManager& resources, MeshHandle source, uint32_t extraLev
         // accumulate a new asset per press.
         MeshHandle handle = resources.findByName<MeshAsset>(name);
         if (handle) {
-            resources.edit(handle) = std::move(decimated);
-            resources.commit(handle);
+            resources.swapValue(handle, decimated);
         } else {
             handle = resources.add(std::move(decimated), name);
         }

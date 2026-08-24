@@ -98,11 +98,38 @@ rather than whether there is one:
 | `Default` | The project names no world of its own; the default scene stands in |
 | `Failed` | The project names an entry scene that did not load; the default scene stands in |
 
+`SceneBootResult` carries the path beside it, and only one of the three worlds
+has one: the authored entry scene. A module-built world and the default scene
+standing in for a load that failed are both worlds with no file behind them,
+which is what stops a stand-in being saved over the file it replaced.
+
+The editor adopts that path as the scene it is editing
+(`SceneIOController::adoptPath`, from both its startup and File > Open Project),
+because the world it opens on is the one scene it never read itself. Unadopted,
+a file the editor had just loaded was a scene with no file: Save asked for a
+name, offered `scene.json` rather than the name it has, and writing it left the
+project's `entryScene` untouched and the session saved where the project never
+looks - with the title bar calling it *untitled* the whole time. The path is
+stated by the function that opened the file rather than re-derived by each
+caller, since re-deriving it means restating the rule this one exists to hold.
+
 ### What each host does when a project will not open
 
 The exit code is the only answer a shell gets, so each host has to spend it on
 what is actually fatal *for that host*. The split is not arbitrary: the runtime
 plays a finished game, the editor is the tool you repair one with.
+
+`SceneSerializer::load` returns true after a load in which every reference went
+unresolved - each one is a component slot left empty, not a parse failure - so
+the last row is not something the loader can answer for. The cooker installs an
+`EngineErrorLog` sink around the load and counts what `reportError` puts in it,
+because a scene whose references resolved to nothing is exactly the state that
+gets packaged and ships a world with empty slots. That sink catches every
+failure the load reports, not only unresolved assets - a prefab file that will
+not open is in it too - so the message counts failures and names the two
+remedies apart rather than telling the author of a deleted file to save the
+project. `vkm package` needs no rule of its own: it already returns on a
+non-zero cook.
 
 | Condition | `vkm_runtime` | `vkm_editor` | `vkm_cook` |
 |-----------|---------------|--------------|------------|
@@ -114,6 +141,7 @@ plays a finished game, the editor is the tool you repair one with.
 | No entry scene and no `vkmBuildScene` (`SceneBoot::Default`) | exit 1 | opens on the default scene | exit 0 - nothing to cook |
 | No entry scene, module builds the world (`SceneBoot::Project`) | plays it | opens it | exit 0 - nothing to cook |
 | An asset fails to cook | n/a | reported, the session continues | exit 1 |
+| Entry scene loads, but something in it does not (unresolved reference, prefab file missing) | plays it with what loaded | reported, the session continues | exit 1 |
 
 The cooker reaches the last three rows by its own path rather than through
 `bootProjectScene` - it has no `Scene` to boot into and no module to ask, so it
@@ -133,7 +161,10 @@ Two judgments behind that table:
   a save cannot overwrite the file that failed to load; the reason is in the log
   and, because `bootProjectScene` reports it through `reportError` rather than
   logging it itself, in the Errors tab and a toast however the project was
-  opened.
+  opened. The same rule holds for an open made from inside a session:
+  `SceneIOController::loadPath` moves the current path only when the read
+  succeeded, so a failed `File > Open` leaves the title - and the file the next
+  Ctrl+S writes - on the scene still in the viewport.
 
 ## Components
 
@@ -158,19 +189,77 @@ clean write, so a full disk cannot leave a truncated file where a good one was.
 
 `SceneSerializer::save` emits a JSON object with four top-level blocks:
 
-- `assets`: name-only references to every asset a component names - `Mesh`,
-  `LOD` levels, `Decal`, and the rig plus clip an `Animator` names - plus the
-  textures those materials use. A
-  component reference the assets block never lists is one the loader never
-  recreates, so every component that names an asset has to be walked there. The
-  asset *data* lives in the cooked library (keyed by name), not in the scene
-  file, so the scene stays tiny and diff-friendly. Assets marked `hidden = true`
-  are skipped (editor previews, fallback textures, bundled primitives).
+- `assets`: name-only references to every asset the scene names - `Mesh`,
+  `LOD` levels, `Decal`, the rig plus clip an `Animator` names, the sound an
+  `AudioSource` names, and every `AssetRef` field on a behavior - plus the
+  textures those materials use. A reference the assets block never lists is one
+  the loader never recreates, so every component that names an asset has to be
+  walked there, and a behavior's authored fields are walked with them. The asset
+  *data* lives in the cooked library (keyed by name), not in the scene file, so
+  the scene stays tiny and diff-friendly. Assets marked `hidden = true` are
+  skipped (editor previews, fallback textures, bundled primitives). A behavior's
+  name is the one kind that can dangle - a component's comes from an asset that
+  exists - so it is emitted as authored and reported by the load if the library
+  has no such entry.
 - `entities`: one record per entity. Entities are stored at their slot
   index, and each component is keyed by its short name (see Component
   serializer below).
 - `environment` and `physics`: the scene-global `Environment` and
   `PhysicsSettings`, each a single reflected object rather than a component.
+
+Every number in the finished document is finite. JSON cannot spell an infinity
+or a NaN - nlohmann writes both as `null` - and a `null` where a float belongs is
+a type error the component loaders throw on, which fails the whole load: one bad
+field would cost every entity in the file. So the document is held to the rule
+where it is built (`detail::writeNonFiniteAsZero`, shared with `Prefab::save`):
+a non-finite value is written as `0` and named in the log by its path, e.g.
+`/entities/12/components/AudioSource/volume`. The play-mode snapshot goes through
+the same builder *and* the same cook, so a scene that could not be saved cannot
+fail to restore on Stop either - the second half is what makes that true, because
+the snapshot names its assets exactly as the file does and a name is restorable
+only once the library holds a record for it. Nothing about a well-formed file
+changes - a finite number writes exactly as it did - and the read side stays
+strict on purpose: teaching the loaders that `null` means "keep the default"
+would make it a permanent token in every scalar field of the format.
+
+Where the snapshot stops being the file is the list beside it. A scene document
+names the assets the scene uses and nothing else, which is right for something
+somebody saves and not enough for something that promises to put a session back:
+a sound imported and not yet assigned to a source is in the Asset Browser, in
+every picker, and in no component, so the scene never mentions it, and a session
+that edited it would leave that edit standing. So `captureSnapshot` records
+`AssetSerializer::saveAllAssets` - every live asset that has a name and is not
+hidden - alongside the document, and `restoreSnapshot` feeds that list back
+through `loadAssets` before it reads the scene. The extra list never reaches
+disk and the file format is untouched; it is the session's half of the snapshot,
+and the cook above is what makes it restorable.
+
+**Restoring keeps the graph and rebuilds its contents.** The two halves of the
+snapshot go back differently from the way a file load puts a scene in place, and
+the difference is the undo history the editor keeps across Stop. Its steps hold
+the assets they are to put back, as handles, and a handle is a slot index into
+one `ResourceManager` - so `loadFromString` reads the scene with
+`AssetPolicy::Merge`, resolving names against the graph the snapshot was
+captured from rather than swapping a rebuilt one in behind them, and the asset
+list goes back with `LoadMode::Reload`, which rebuilds each asset into the slot
+it already occupies (`ResourceManager::swapValue`: contents exchanged, identity
+and name left with the slot, version bumped so the backend re-uploads). Both
+halves are needed. Without the merge, a rebuilt graph restarts at the same
+indices and generations, so a surviving step resolves to whatever landed in its
+slot - measured, an undo of a mesh assignment silently restored a different
+mesh. Without the reload, a material edited during the session would keep that
+edit, because nothing would have put the old contents back.
+
+Nothing is *removed* by a restore: an asset a session created stays, the way an
+import made before Play does.
+
+**Opening a scene answers this the other way, on purpose.** Stop promises to put
+one session back; an open is leaving that world for another, and it drops the
+undo stack, the selection and the material previews on the way through. So the strays go with the session that imported them - carrying them
+would grow the graph by a scene's worth of assets per open and cook every one of
+them into the library at the next save - and the editor names them in the log
+and counts them into a toast rather than letting them vanish quietly. See
+[the editor](../editor.md#what-an-open-does-to-the-sessions-imports).
 
 `SceneSerializer::load` is **transactional for both entities and assets**:
 
@@ -184,12 +273,70 @@ clean write, so a full disk cannot leave a truncated file where a good one was.
    expand each prefab instance into it, wire the parent links, then read the
    `environment` and `physics` blocks. All of it sits inside one guard, so a
    drifted field anywhere - a string where a number belongs - fails the load
-   instead of unwinding out of it.
+   instead of unwinding out of it. **The abort names the record it was standing
+   on**: `loadInto` catches, prefixes the component key and rethrows, and the
+   entity loop keeps the id it is reading, so a single mistyped field reports
+   `Aborted while reading entity 17 of 'scene.json': component 'UIButton': type
+   must be string, but is number` rather than a file name and a JSON error. The
+   thrower knows neither half - nlohmann names the type mismatch and nothing
+   about where in the file it is - and without them a one-character drift costs
+   a bisection of the file. An asset *name* step 2 did not bring in is
+   not a drifted field and does not fail the load: the component's slot is
+   left empty and the miss goes through `reportError`, so the editor toasts it
+   and keeps it in Bottom > Errors rather than burying it in a log the editor
+   has no view of. By design there are no benign cases - the `assets` block is
+   built by walking exactly what the scene references. **A prefab that will not
+   open goes through the same seam**, and costs more: an unresolved name loses a
+   component's field, while a prefab whose file `Prefab::instantiateInto` cannot
+   read loses the whole authored subtree, leaving a childless entity in the
+   viewport. The instance is not dropped with it - the reference and its
+   overrides stay on the entity and survive the next save - so restoring the
+   file and loading again brings the subtree back, which is what the report
+   says and what the Inspector's Prefab card repeats on the empty instance.
 4. On full success, swap both staging containers in one step:
    `Scene::swap` for the scene, and `ResourceManager::swap` for the assets. The
    font slot swaps *back* (`swapSlot<FontAsset>`): fonts are baked at startup
    and never enter a scene file, so the staging RM has none, and without that
    step every `UIText` loses its font on load.
+
+### A reference that did not resolve is kept, not erased
+
+An asset name the load cannot answer leaves the component's slot empty, and an
+empty slot is indistinguishable from one nobody ever filled - so the save wrote
+`""` over the name and dropped the entry from the `assets` block, and reported
+it as an ordinary successful save. Opening a scene whose gitignored `library/`
+a teammate never committed and pressing Ctrl+S out of habit was enough to lose
+every reference in it, permanently.
+
+The name is the author's work, so the load keeps it: `resolveAssetRef` records
+what it could not resolve, `SceneSerializer` attaches it to the entity as a
+`MissingAssets` component (present only on the entities that have one, never
+written as a component of its own), and the save puts it back in two places -
+
+- the **field it came from**, but only when the save has just left that field
+  as an empty string, so a slot the author has since filled keeps what they
+  chose; and
+- the **assets block**, as the name-only entry a behavior's authored reference
+  already gets, because a field naming an asset the block does not declare stays
+  unresolved even once the library holding it is back.
+
+With both, restoring the library and reopening the scene brings the reference
+back to life. The editor also names them on the entity: the Inspector heads a
+selection that has any with the component, field and name it could not load,
+which is what separates "the mesh is gone" from "I never assigned one".
+
+**The record retires when the field is filled.** The other way an author can
+answer it is to pick something else, and nothing was retiring the record when
+they did: the field write already left the chosen mesh alone, but the banner went
+on saying the reference did not load and promising to put a name back that the
+save had stopped writing, and the assets block went on declaring it - so the
+saved scene named an asset that is not there and every later load reported it.
+`SceneSerializer::pruneResolvedRefs` drops the entries whose field is no longer
+empty, and the component with the last of them. It answers by writing the entity
+and reading the field back, which is the same question the save asks and so
+cannot drift from it, and the Inspector calls it where the banner is drawn -
+a field is filled from the picker, from the Asset Browser or by an undo, and
+none of those is a place the record could be retired from once and for all.
 
 `Scene::createEntityAt(slotIndex)` is what makes step 3 possible:
 entities recreate at their saved slot, so `Hierarchy::parent` indices
@@ -217,7 +364,8 @@ a hash of the recipe. Every asset is its own file:
 - `library/<type>/<uid>.json` - the recipe (and, for materials, the canonical
   `inline` form). The version-controlled source of truth.
 - `cooked/<type>/<uid>.vkmc` - the derived binary blob (mesh vertices/indices;
-  decoded texture pixels; a rig's bones and bind data; a clip's keys).
+  decoded texture pixels; a rig's bones and bind data; a clip's keys and
+  markers; a sound's PCM).
   Regenerable; git-ignored.
 - `library/_manifest.json` - maps each asset `name` to its type and recipe hash,
   under a `manifestVersion` the loader checks. `AssetLibrary`
@@ -239,8 +387,9 @@ nothing on disk answers to. A source outside the project keeps its absolute path
 or one file reached by two spellings becomes two assets.
 
 **Save** - `AssetSerializer::saveAssetsForScene` walks the components that name
-assets (`Mesh`, `LOD`, `Decal`) and emits **name-only** references to the
-meshes/materials/textures used. In the editor,
+assets (`Mesh`, `LOD`, `Decal`, `Animator`, `AudioSource`, plus the asset fields a
+behavior declares) and emits **name-only** references to the meshes / materials /
+textures / skeletons / animation clips / sounds used. In the editor,
 `SceneIOController` first calls `AssetCooker::cookAllAssets`, which bakes every
 non-hidden asset in the `ResourceManager` into the library + cooked cache and
 rewrites the manifest (skipping assets whose hash is unchanged and whose cooked
@@ -263,16 +412,16 @@ synthesized `{"kind":"cooked","name":...}` source, and when it answers no the
 asset gets the `source` object out of its library recipe instead - the same
 `model` / `generator` / `file` descriptor the import wrote. A material skips the
 probe: it has no cooked binary, so its recipe is always what loads. All of them
-go through the `AssetFactory` dispatch seam (`io/asset/asset_factory.h`) - five function pointers
-(mesh / texture / material / skeleton / animation clip) that each binary wires at
-startup, with plain switch dispatch on the `kind` field:
+go through the `AssetFactory` dispatch seam (`io/asset/asset_factory.h`) - six function pointers
+(mesh / texture / material / skeleton / animation clip / audio clip) that each
+binary wires at startup, with plain switch dispatch on the `kind` field:
 
 | `kind`                 | Handled by       | Resolves to                                         |
 |------------------------|------------------|-----------------------------------------------------|
 | `cooked`               | runtime + editor | A mesh/texture read from its cooked binary (async), or a skeleton/clip read from its own (synchronously) |
 | `inline`               | runtime + editor | A `MaterialAsset` from PBR scalars + texture refs   |
 | `generator` / `decimate` | editor only    | Procedural / LOD meshes (run by the cooker)         |
-| `file` / `model` / `model-image` | editor only | stb / Assimp texture, mesh, rig and clip import |
+| `file` / `model` / `model-image` | editor only | stb / Assimp texture, mesh, rig and clip import (a clip recipe also carries its authored `markers`) |
 | `folder` / `model` / `default` / `builtin` / `solid` | editor only | material + texture recipes |
 
 The runtime wires only the cooked dispatch (`registerCookedAssetFactories` sets
@@ -300,7 +449,8 @@ guarded by the `static_assert` in `asset_library.cpp`.
 | Mesh | Bounds, the four counts, the skin radius, then bulk vertices, indices and skin, then the rig name |
 | Texture | The `TextureParams` fields, then the decoded pixels |
 | Skeleton | Bone count, a `{parent, nameLen}` record per bone, bulk inverse-bind matrices, bulk bind-pose TRS, then the concatenated names |
-| Animation clip | Bone count, duration, the six key-array counts, the skeleton name length, then the bulk `ClipBone` table, the six key arrays and the name |
+| Animation clip | Bone count, duration, the six key-array counts, the skeleton name length, the marker count and marker-name length, then the bulk `ClipBone` table, the six key arrays, the rig name, a `{time, nameLen}` record per marker and the concatenated marker names |
+| Audio clip | Sample rate, channel count, sample count, then the interleaved 16-bit PCM |
 
 Fixed-size records come first and variable-length names last in both new
 bodies, so the size reconciliation works the same way `readMesh` does: bound
@@ -316,9 +466,17 @@ get wrong, because nothing downstream re-checks:
 - A clip's key times and values must pair up, its duration must be finite, and
   every channel range must land inside the array it addresses - the sampler
   indexes those arrays directly, once per bone per frame.
+- Every clip marker's time must be finite and inside `[0, duration]`. Where a
+  marker fires is the whole of what it says, and a time outside the timeline
+  never arrives at the instant it names - a looping head wraps it to some other
+  moment and a clamped one never reaches it at all.
 - A bone count past `MAX_SKELETON_BONES` is refused. It is a corruption
   threshold rather than a capability limit: raising it later accepts strictly
-  more files, so it starts tight.
+  more files, so it starts tight. `MAX_AUDIO_CHANNELS` and
+  `MAX_AUDIO_SAMPLE_RATE` are the same kind of threshold for a sound.
+- A sound's sample count must divide by its channel count. The mixer reads
+  whole frames, so a file that carries the right number of bytes and still
+  describes a half frame would run it off the end.
 - A mesh's skin stream must be parallel to its vertices or absent, and every
   bone index in it must be under `MAX_SKELETON_BONES`. That second check earns
   its keep for a sharper reason than the index check beside it: a bone index is
@@ -333,6 +491,13 @@ earns a completion type, an `AsyncLoadQueue` lane and a drain in
 assets block carries a `skeletons` and a `clips` section beside the other three;
 they load after materials and before meshes, because a clip names the rig its
 bone indices address.
+
+Sounds are synchronous too (`loadCookedAudioClip`), for a different reason: a
+cooked sound is bigger, but there is nothing to decode - the file already holds
+the PCM the mixer wants, so a worker hop would buy a copy's worth of latency at
+the price of a completion lane and a window in which a scene's sounds exist and
+are silent. Their `sounds` section loads last, because nothing depends on it and
+it depends on nothing.
 
 `MESH_FORMAT_VERSION` is **2**: the mesh body carries the skin stream, the skin
 radius and the rig name. Every mesh cooked before it is refused on read - a
@@ -401,6 +566,11 @@ Today's coverage, the flat list in `scene_serializer.cpp`:
 - `Mesh`, `LOD`, `Decal` - the ones that name assets, so their save/load also
   takes the `ResourceManager` that turns a handle into a name and back.
 - `ParticleEmitter`, `IrradianceVolume`, `ReflectionProbe`
+- `AudioSource` (asset-naming, so it takes the `ResourceManager` too) and
+  `AudioListener`. `AudioSource::playing` and `started` are runtime state and
+  are deliberately absent: they describe a play session, and a scene row holding
+  a half-finished sound would resume a noise whose beginning nobody heard (see
+  [Audio](audio.md))
 - `UICanvas`, `UIElement`, `UIImage`, `UIText`, `UIButton` (see [UI](ui.md))
 - `Rigidbody`, `Collider`, `CharacterController` (physics; runtime sleep state,
   the contact-normal outputs and derived mass properties are not persisted, and a
@@ -436,15 +606,24 @@ Two localised edits, no registry table, no virtual dispatch:
 
 1. A `save` / `load` overload pair in `component_serializer.h` (+ `.cpp`). If the
    component has nothing but plain reflected fields, both bodies are one call to
-   `saveReflected` / `loadReflected`.
-2. A row in `VKM_SCENE_COMPONENTS` in `scene_serializer.cpp` - `P(Type, "Key")`,
-   or `R(Type, "Key")` when the component references assets and its save/load
-   take the `ResourceManager`. Saving, loading and the known-key set behind the
-   "unknown component key" drift warning all expand from that one list.
+   `saveReflected` / `loadReflected`. A component that references assets by name
+   adds a third overload beside them, `emitAssetRefs(const T&, AssetRefs&)`,
+   which records the handles it holds without writing anything.
+2. A row in `VKM_SCENE_COMPONENTS`, at the top of `component_serializer.h` -
+   `P(Type, "Key")`, or `R(Type, "Key")` when the component references assets
+   and its save/load take the `ResourceManager`. Saving, loading, the known-key
+   set behind the "unknown component key" drift warning, and the `assets` block
+   `saveAssetsForEntities` builds all expand from that one list.
 
-Those were three hand-kept lists, and the failure was silent: a key that was
-saved and registered but never loaded round-tripped to nothing, while the drift
-warning that exists to catch it stayed quiet, because the key was still known.
+Those were four hand-kept lists, and the failure was silent in both directions:
+a key that was saved and registered but never loaded round-tripped to nothing,
+while the drift warning that exists to catch it stayed quiet because the key was
+still known; and a component whose assets the hand-written walk forgot saved its
+handle as a name that the `assets` block never listed, so the next load resolved
+it to nothing - which is how every decal material and every LOD level above the
+first were lost for a time. An `R` row with no `emitAssetRefs` overload now
+fails to compile at the walk, naming the component that needs one.
+
 The key is spelled out in the row rather than derived from the type name, since
 it is the format - `ScriptComponent` is stored as `"Script"`. `Hierarchy` is not
 a row: it is written explicitly and read by the loader's second pass.
@@ -467,7 +646,7 @@ per-entity component shape a scene uses, in its own file:
 {"version": 3, "nextUid": 3,
  "entities": [{"uid": 0, "components": {...}}, {"uid": 1, "parent": 0, "components": {...}}],
  "assets": {"textures": [...], "meshes": [...], "materials": [...],
-            "skeletons": [...], "clips": [...]}}
+            "skeletons": [...], "clips": [...], "sounds": [...]}}
 ```
 
 The `assets` block is the same one a scene carries, for the subtree this file
@@ -545,6 +724,14 @@ changes underneath an override (the uid, component, field or type is gone, or it
 addresses the root's `Transform`, which is the instance's own pose) the entry is
 kept, reported once, and not applied, so renaming a field and renaming it back
 does not lose the edit.
+
+`Script` is refused the same way, and for a reason that is about the address
+rather than about drift: the component serializes as one field holding the whole
+behavior list, so the only override this format can spell replaces every
+behavior on the instance. The editor neither writes one nor shows one, so an
+applied one would be invisible and unrevertable. A hand-edited file that names
+it is reported and left alone - see
+[scripting.md](scripting.md#authored-fields-inside-a-prefab-instance).
 
 The type check walks the prefab's value and the override's together rather than
 comparing their top-level kinds, because an array of the right kind holding the

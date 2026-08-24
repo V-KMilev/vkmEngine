@@ -30,6 +30,26 @@ struct PoseSample {
 };
 
 /**
+ * @brief The sweep a playback head made this frame: where it was, where it now
+ *        is, and how far it actually went between the two.
+ *
+ * `to` is the head the Animator now carries - already wrapped, already clamped -
+ * so a marker test built on it agrees exactly with the next frame's `from`,
+ * which is the same float. That is what makes one crossing one event: the
+ * arrival end of a sweep and the departure end of the next are the same value,
+ * so neither a rounding step nor a wrap can put a marker in both or in neither.
+ *
+ * `travel` is signed and may exceed the clip's length, because a hitch or a
+ * large time-scale can step a head over several whole loops. It is what
+ * distinguishes standing still from having gone all the way round.
+ */
+struct PlaybackStep {
+    float from   = 0.0f;  ///< Head before the advance.
+    float to     = 0.0f;  ///< Head after it, as the Animator now carries it.
+    float travel = 0.0f;  ///< Signed seconds covered; 0 when nothing moved.
+};
+
+/**
  * @brief Move @p animator's playback head(s) on by one frame, honouring loop and
  *        end of clip, and run down any fade in flight.
  *
@@ -51,12 +71,43 @@ struct PoseSample {
  * duration the caller can predict rather than one `speed` moves, and it reaches
  * its end whether or not the clip it is entering is still running.
  *
+ * `Animator::playOnStart` is honoured here, on the first frame with simulation
+ * time to spend, rather than at load: that is what makes a rig start on Play
+ * and hold its pose in a scene that is only open.
+ *
  * @param animator Animator to advance, in place.
  * @param duration Length of the clip playing on it, in seconds; 0 disables wrapping.
  * @param fromDuration Length of the clip being faded out of; 0 disables its wrapping.
  * @param simDelta Simulation seconds elapsed this frame.
+ * @return The sweep the *playing* head made. A stopped animator, a paused
+ *         frame and a zero speed all report no travel, which is what stops any
+ *         of them from announcing a marker.
  */
-void advancePlayback(Animator& animator, float duration, float fromDuration, float simDelta);
+PlaybackStep advancePlayback(Animator& animator, float duration, float fromDuration, float simDelta);
+
+/**
+ * @brief Whether @p step passed the instant @p marker names.
+ *
+ * The sweep is closed at the end it arrived at and open at the end it left, in
+ * both directions: a head that lands exactly on a marker announces it, and
+ * moving off again does not announce it a second time. Crossing it once more
+ * means leaving and coming back.
+ *
+ * A step long enough to cover a whole loop announces every marker exactly once
+ * rather than once per lap it skipped. The frame drew one pose, so it makes one
+ * sound; replaying four laps' worth of footsteps into a single frame is the
+ * burst a hitch would otherwise produce.
+ *
+ * Whether the clip loops is not asked, because @p step already says: a wrapped
+ * sweep is one whose `to` lies behind its `from` in the direction of travel, and
+ * a clamped one can never look like that.
+ *
+ * @param step The sweep this frame's advance made.
+ * @param marker Time the marker names, in seconds into the clip.
+ * @param duration Clip length in seconds; 0 makes every marker unreachable.
+ * @return True when the marker should be announced this frame.
+ */
+bool crossesMarker(const PlaybackStep& step, float marker, float duration);
 
 /**
  * @brief Sample @p sample's clips and compose the rig's pose, palette and

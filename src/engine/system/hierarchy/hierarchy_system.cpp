@@ -19,13 +19,12 @@ void HierarchySystem::update(FrameContext& ctx) {
 void HierarchySystem::resolve(Scene& scene) {
     PROFILE_SCOPE("Hierarchy/ResolveWorld");
     auto* hierarchyStorage = scene.storage<Hierarchy>();
-    if (!hierarchyStorage) return;
+    auto* worldStorage = scene.storage<WorldTransform>();
+    if (!hierarchyStorage || !worldStorage) return;
 
     // Within a single depth, entities are mutually independent (no parent-child
-    // links between siblings or cousins) so a parallelFor over the bucket is
-    // safe. Invariant relied on here: every entity with Hierarchy also has
-    // WorldTransform (pre-seeded by setParent) - no structural mutation happens
-    // inside the parallel section.
+    // links between siblings or cousins) and nothing below mutates the component
+    // graph, so a parallelFor over a bucket is safe.
     for (auto& b : m_buckets) b.clear();
 
     const uint32_t count = static_cast<uint32_t>(hierarchyStorage->size());
@@ -40,13 +39,24 @@ void HierarchySystem::resolve(Scene& scene) {
         VKM_ASSERT(scene.has<WorldTransform>(id),
             "HierarchySystem::resolve: Hierarchy without WorldTransform");
 
+        // Guarded along the whole chain, not just here: the depth loop below
+        // reads the parent's matrix as well as its own, and in a build where
+        // the assert is compiled out a missing slot is an out-of-range index.
+        bool resolvable = worldStorage->contains(entityIdx);
+
         uint32_t depth = 0;
         EntityId current = h.parent;
         while (current && depth < HierarchyOperations::MAX_DEPTH) {
+            if (!worldStorage->contains(current.index)) {
+                resolvable = false;
+                break;
+            }
             if (!hierarchyStorage->contains(current.index)) break;
             current = hierarchyStorage->get(current.index).parent;
             ++depth;
         }
+        if (!resolvable) continue;
+
         if (depth >= HierarchyOperations::MAX_DEPTH) {
             static bool warned = false;
             if (!warned) {
@@ -59,10 +69,8 @@ void HierarchySystem::resolve(Scene& scene) {
         m_buckets[depth].push_back(id);
     }
 
-    // Depths in order, so each child reads its parent's already-final
-    // WorldTransform instead of re-walking the ancestor chain: one matrix
-    // multiply per entity vs. depth-many in computeWorldMatrix - a real win on
-    // shallow-but-wide scenes.
+    // Depths in order: a child then reads a parent matrix that is already
+    // final, one multiply instead of re-walking the chain per entity.
     for (uint32_t d = 0; d < HierarchyOperations::MAX_DEPTH; ++d) {
         const auto& bucket = m_buckets[d];
         if (bucket.empty()) continue;
@@ -77,11 +85,9 @@ void HierarchySystem::resolve(Scene& scene) {
             parallelFor(bucket.size(), [&](size_t i) {
                 const EntityId id = bucket[i];
                 const Hierarchy& h = scene.get<Hierarchy>(id);
-                // h.parent is read by raw index without an isAlive guard here (unlike
-                // computeWorldMatrix) deliberately: the bucketing pass above already
-                // walked and validated this entity's full ancestor chain via
-                // contains(), this same frame, and setParent guarantees every parent
-                // has a WorldTransform.
+                // Read by raw index without an isAlive guard, unlike
+                // computeWorldMatrix: the bucketing pass validated this entity's
+                // whole ancestor chain this same frame.
                 const glm::mat4 parentWorld =
                     scene.get<WorldTransform>(h.parent).model;
                 const glm::mat4 local =

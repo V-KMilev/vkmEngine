@@ -8,6 +8,7 @@
 
 #include "core/math/random.h"
 #include "ecs/entity.h"
+#include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/material_asset.h"
 #include "system/script/reflected_behavior.h"
@@ -35,8 +36,22 @@ namespace Vkm::Engine {
  * stretch.
  *
  * Beyond behaviors + UI, the game leans on the rest of the engine:
- *  - AnimationSystem: looping eased tracks drive the runner's limb swing (whose
- *    cadence follows the run speed) and every coin's spin/pulse.
+ *  - SkeletalAnimationSystem: one Animator on the player plays a looping stride
+ *    clip (built in code, see runner_rig.h) whose cadence follows the run speed;
+ *    the four limbs hang off its bones through BoneSockets. The clip carries a
+ *    footstep marker at each footfall, so crossing one publishes an
+ *    AnimationEvent and the runner's footsteps come from the animation rather
+ *    than from a timer running beside it.
+ *  - AnimationSystem: looping eased tracks drive every coin's spin/pulse.
+ *  - AudioSystem: an AudioListener on the chase camera, and two synthesized
+ *    clips (proc_audio.h) played as PlaySoundEvent requests rather than
+ *    through an AudioSource. A footstep on each marker the stride announces -
+ *    but only while alive and grounded, because what a marker means is
+ *    gameplay's to decide - and a chime on each coin. Neither can be a source:
+ *    footfalls at top speed arrive closer together than one speaker can
+ *    retrigger, and so do the coins in a lane of four, so a shared source on
+ *    the player would swallow every ping after the first - while a collected
+ *    coin is switched off the instant it pays, leaving nothing to ride.
  *  - Lighting: point pools under the ceiling luminaires and spot headlights on
  *    trains (toggled per recycle via Light::enabled). Every light has a visible
  *    fixture emitting it. Sunless, the headlight spots take the 2D shadow
@@ -151,6 +166,25 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
         // Setup
         void buildWorld();
         void buildUI();
+        /**
+         * @brief Ask for one playback of @p clip at a world position.
+         *
+         * A PlaySoundEvent rather than an AudioSource, for both callers: a
+         * footfall must be able to overlap the one before it, and a coin's
+         * entity is recycled to the far end of the track the instant it is
+         * collected. Neither is a thing that can own a speaker.
+         *
+         * Volume and pitch are spread a little on every call, so a run does
+         * not sound like one sample on a loop. The spread lives here rather
+         * than on the clip or on a component field because it is the playback
+         * that varies, not the sound.
+         *
+         * @param clip Clip to play; a dead handle is silently ignored.
+         * @param position Where it is heard from, fixed at the moment of the call.
+         * @param volume Base gain, before the per-playback spread.
+         */
+        void playAt(AudioClipHandle clip, const glm::vec3& position, float volume);
+
         EntityId spawnBox(MeshHandle mesh, MaterialHandle material, const char* name);
         MaterialHandle makeMaterial(
             const glm::vec3& albedo, float metallic, float roughness,
@@ -198,32 +232,33 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
         WindowManager*   m_window    = nullptr;
 
         // Procedurally generated assets (created in buildWorld).
-        MeshHandle     m_cubeMesh;
-        MaterialHandle m_matPlayer;
-        MaterialHandle m_matPlayerGlow;   ///< Emissive accent on the runner (visor band, pack).
-        MaterialHandle m_matTrain;         ///< Hull livery A: navy metal.
-        MaterialHandle m_matTrainB;        ///< Hull livery B: teal metal.
-        MaterialHandle m_matTrainC;        ///< Hull livery C: graphite metal.
-        MaterialHandle m_matWindow;        ///< Train windscreen / window glow.
-        MaterialHandle m_matHeadlamp;      ///< Warm nose light bar - the visible source of the beam.
-        MaterialHandle m_matBarrier;       ///< The one hazard body material: matte barricade red.
-        MaterialHandle m_matStripe;        ///< White reflective band on every hazard.
-        MaterialHandle m_matSignalRed;     ///< Trackside signal lamp heads (left wall).
-        MaterialHandle m_matSignalGreen;   ///< Trackside signal lamp heads (right wall).
-        MaterialHandle m_matCoin;
-        MaterialHandle m_matGround;
-        MaterialHandle m_matBallast;       ///< Raised gravel bed under each lane's track.
-        MaterialHandle m_matRail;
-        MaterialHandle m_matTie;
-        MaterialHandle m_matWall;
-        MaterialHandle m_matTrim;
-        MaterialHandle m_matPillar;
-        MaterialHandle m_matArch;
+        MeshHandle      m_cubeMesh;
+        MaterialHandle  m_matPlayer;
+        MaterialHandle  m_matPlayerGlow;    ///< Emissive accent on the runner (visor band, pack).
+        MaterialHandle  m_matTrain;         ///< Hull livery A: navy metal.
+        MaterialHandle  m_matTrainB;        ///< Hull livery B: teal metal.
+        MaterialHandle  m_matTrainC;        ///< Hull livery C: graphite metal.
+        MaterialHandle  m_matWindow;        ///< Train windscreen / window glow.
+        MaterialHandle  m_matHeadlamp;      ///< Warm nose light bar - the visible source of the beam.
+        MaterialHandle  m_matBarrier;       ///< The one hazard body material: matte barricade red.
+        MaterialHandle  m_matStripe;        ///< White reflective band on every hazard.
+        MaterialHandle  m_matSignalRed;     ///< Trackside signal lamp heads (left wall).
+        MaterialHandle  m_matSignalGreen;   ///< Trackside signal lamp heads (right wall).
+        MaterialHandle  m_matCoin;
+        MaterialHandle  m_matGround;
+        MaterialHandle  m_matBallast;       ///< Raised gravel bed under each lane's track.
+        MaterialHandle  m_matRail;
+        MaterialHandle  m_matTie;
+        MaterialHandle  m_matWall;
+        MaterialHandle  m_matTrim;
+        MaterialHandle  m_matPillar;
+        MaterialHandle  m_matArch;
+        AudioClipHandle m_footstep;         ///< The synthesized footfall, played per stride marker.
+        AudioClipHandle m_coinChime;        ///< The synthesized pickup, played per coin.
 
         // World entities.
         EntityId              m_player{};  ///< Invisible rig root the gameplay drives; visible parts parent under it.
         std::vector<std::pair<EntityId, MaterialHandle>> m_playerParts;  ///< Part entity + its normal material (restored on reset).
-        std::vector<EntityId> m_limbPivots;  ///< Shoulder/hip joints whose Animation swings the limbs; speed follows cadence.
         EntityId              m_camera{};
         std::vector<Obstacle> m_obstacles;
         std::vector<Coin>     m_coins;

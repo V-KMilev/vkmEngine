@@ -1,10 +1,13 @@
 #pragma once
 
 #include <cstddef>
+#include <string>
 #include <type_traits>
 #include <utility>
 
 #include <glm/glm.hpp>
+
+#include "resource/asset_type.h"
 
 namespace Vkm::Engine {
 
@@ -17,7 +20,7 @@ namespace Vkm::Engine {
  * dispatches each to the method below that fits it. Implement one of these to
  * serialize, edit, or otherwise process every field uniformly.
  *
- * Three shapes of field reach a visitor, and together they keep the authorable
+ * Four shapes of field reach a visitor, and together they keep the authorable
  * type space effectively open without growing this interface per game type:
  *  - A leaf value goes to the matching `field()` overload. This is the only
  *    closed set; add an overload to support a new leaf type (a behavior that
@@ -25,6 +28,8 @@ namespace Vkm::Engine {
  *    nudge). Its widget/serialization is inherently engine/editor-owned.
  *  - Any VKM_ENUM_NAMES enum goes to `enumField()` - one method covers every
  *    enum, so game enums need no change here.
+ *  - Any AssetRef<Asset> goes to `assetField()` - one method covers every asset
+ *    kind, because the kind travels as an AssetType value rather than a type.
  *  - Any VKM_REFLECT-ed struct is descended into via beginStruct()/endStruct(),
  *    so composites built from the above need no change here either.
  */
@@ -32,10 +37,11 @@ class BehaviorFieldVisitor {
     public:
         virtual ~BehaviorFieldVisitor() = default;
 
-        virtual void field(const char* name, float& value)     = 0;
-        virtual void field(const char* name, int& value)       = 0;
-        virtual void field(const char* name, bool& value)      = 0;
-        virtual void field(const char* name, glm::vec3& value) = 0;
+        virtual void field(const char* name, float& value)       = 0;
+        virtual void field(const char* name, int& value)         = 0;
+        virtual void field(const char* name, bool& value)        = 0;
+        virtual void field(const char* name, glm::vec3& value)   = 0;
+        virtual void field(const char* name, std::string& value) = 0;
 
         /**
          * @brief Visit an enum field, type-erased to (name index, name table).
@@ -54,6 +60,28 @@ class BehaviorFieldVisitor {
          */
         virtual void enumField(const char* name, int& index,
                                const char* const* names, std::size_t count) = 0;
+
+        /**
+         * @brief Visit a field that names an asset, type-erased to (name, kind).
+         *
+         * ReflectedBehavior routes every AssetRef<Asset> here rather than adding
+         * a field() overload per asset struct, the same trade enumField makes:
+         * the kind arrives as a value, so one method covers every asset a field
+         * could name.
+         *
+         * What travels is the asset's *name*, the engine's serializable identity
+         * for one - not a handle, which names a slot in one session's
+         * ResourceManager. A serializing visitor writes it as it would any
+         * string; the assets-block walk additionally uses @p type to list the
+         * name in the section that recreates it on load, without which the
+         * reference resolves to nothing.
+         *
+         * @param name      Field name.
+         * @param assetName In: the current reference, empty for none. Out: the
+         *                  visitor's chosen one.
+         * @param type      Asset kind the field may reference.
+         */
+        virtual void assetField(const char* name, std::string& assetName, AssetType type) = 0;
 
         /**
          * @brief Enter a nested reflected-struct field; return true to descend.

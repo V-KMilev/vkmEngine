@@ -34,6 +34,14 @@ void AnimationSystem::update(FrameContext& ctx) {
     // slot and no component types are being added/removed during the loop.
     parallelFor(animCount, grain, [&](size_t i) {
         Animation& animation = animStorage->dataAt(static_cast<uint32_t>(i));
+
+        // The authored flag becomes the runtime one, once, and here rather than
+        // at load: that is what makes an animation start on Play and stay still
+        // in a scene that is only open.
+        if (animation.playOnStart && !animation.started) {
+            animation.started = true;
+            animation.playing = true;
+        }
         if (!animation.playing) return;
 
         animation.time += simDelta * animation.speed;

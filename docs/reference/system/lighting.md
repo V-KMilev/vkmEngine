@@ -175,9 +175,18 @@ enabled - when the sun angles or a sky parameter move. It produces:
 work whether or not a scene has a directional light, so it cannot read one; and
 a sky disagreeing with the light casting the shadows looks broken in a way that
 is hard to diagnose. `SkySystem` (Simulation stage) resolves that by pointing
-the first directional light from those same angles - so with the procedural sky
-on, a light's *rotation* is not yours to animate; write `sunElevation` and the
-light follows. Colour, intensity and shadow settings stay the light's.
+the scene's key light - `findKeyLight`, the first entity carrying a directional
+`Light`, which is the one definition of that rule - from those same angles.
+
+So with the procedural sky on, the key light's **rotation, colour and
+intensity** are the sky's: all three are written every frame, the rotation from
+`sunElevation` / `sunAzimuth` and the other two from `sky.lightColor` /
+`sky.lightIntensity` by day and the `night.moonlight*` pair after dark. Author
+those, not the `Light` - an edit typed into the light is gone before the next
+frame draws, and the value the scene saves is the sky's. Shadow settings, the
+type and the enabled flag stay the light's. The editor's Light card says this
+on the card itself and greys the two fields it does not own, because the same
+`findKeyLight` tells it which light the sky is driving.
 
 Below the horizon is night: the atmosphere is nearly black there, so a skyglow
 floor plus a moon lobe take over across a twilight band (`_common/sky.glsl`,
@@ -221,7 +230,7 @@ Do not re-define these values in a shader; include the generated file.
 
 ## Editor integration
 
-- The **light gizmo** (in `editor/overlays/gizmo_overlay.cpp`) draws
+- The **light gizmo** (in `editor/overlays/gizmo_overlay_draw.cpp`) draws
   a directional ray for directional lights, a cone for spotlights, a
   sphere for points, and the rect / disk outline for area lights.
 - The **inspector** exposes the relevant fields per light type. Area

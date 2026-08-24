@@ -75,7 +75,9 @@ class Clock {
          * @brief Set the slow-motion / fast-forward multiplier applied while running.
          *
          * Clamped to >= 0. Programmatic by design (no editor UI) - drive it from a
-         * script or console command.
+         * script or console command. Because no UI can undo it, the editor puts
+         * the scale back to 1 when a play session ends, so a scale a behavior
+         * set belongs to that session only.
          *
          * @param scale Time-scale multiplier; negative values are clamped to 0.
          */

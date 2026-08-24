@@ -78,9 +78,8 @@ inline bool rayIntersectsAABB(
     float tMax = glm::min(glm::min(tMaxV.x, tMaxV.y), tMaxV.z);
 
     // An origin inside the box puts tMin behind the ray, so the nearest hit in
-    // front is the exit at tMax. Reporting the negative tMin instead lets any
-    // box enclosing the camera - a room, a ground plane, a big trigger volume -
-    // undercut every genuine hit in a `t < nearest` ranking.
+    // front is the exit at tMax. A negative tMin would let any box enclosing
+    // the camera undercut every genuine hit in a `t < nearest` ranking.
     tHit = tMin > 0.0f ? tMin : tMax;
     return tMax >= tMin && tMax >= 0.0f;
 }

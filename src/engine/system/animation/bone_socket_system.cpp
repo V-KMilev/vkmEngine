@@ -93,11 +93,9 @@ void BoneSocketSystem::placeSockets(FrameContext& ctx, FaultsSeen& seen) {
             continue;
         }
 
-        // The parent is the rig, and has to be: what this writes is a local
-        // transform, and HierarchySystem's parentWorld * local only reaches the
-        // bone when the parent's world matrix is the frame the pose was composed
-        // in. A socket hung deeper would be placed somewhere plausible and
-        // wrong, which is the failure this whole subsystem is built to refuse.
+        // The parent has to be the rig: this writes a local transform, and
+        // HierarchySystem's parentWorld * local only reaches the bone when the
+        // parent's world matrix is the frame the pose was composed in.
         const EntityId rig = scene.has<Hierarchy>(entity)
             ? scene.get<Hierarchy>(entity).parent
             : EntityId{};

@@ -12,16 +12,22 @@
 #include "logger.h"
 
 #include "ecs/component/animation/animator.h"
+#include "ecs/component/audio/audio_source.h"
 #include "ecs/component/render/decal.h"
 #include "ecs/component/render/lod.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/scene.h"
+#include "ecs/component/core/missing_assets.h"
 #include "resource/resource_manager.h"
 #include "io/asset/asset_cook.h"
 #include "io/asset/asset_factory.h"
 #include "io/asset/asset_library.h"
 #include "io/json_file.h"
 #include "io/json_vec.h"
+#include "io/scene/component_serializer.h"
+#include "system/script/behavior.h"
+#include "system/script/behavior_field_visitor.h"
+#include "system/script/script_component.h"
 #include "core/reflect.h"
 
 namespace Vkm::Engine {
@@ -162,7 +168,59 @@ void emitDescriptor(nlohmann::json& target, const Resource& asset) {
     target.push_back({{"name", asset.name}});
 }
 
+/**
+ * @brief Emit a name-only reference that was authored as a name, not held as a handle.
+ *
+ * The emitters above dedup by handle id; a behavior's reference has no handle to
+ * dedup by, and the name may well be one a component already listed. So the
+ * section itself is what gets checked. It runs once per authored reference
+ * rather than once per entity, over lists a scene keeps short.
+ */
+void emitNamedRef(nlohmann::json& target, const std::string& name) {
+    for (const auto& entry : target) {
+        if (entry.value("name", std::string{}) == name) return;
+    }
+    target.push_back({{"name", name}});
+}
+
+/**
+ * @brief Collects (kind, name) for every asset a behavior's authored fields name.
+ *
+ * Every method but assetField is a no-op: a behavior's numbers, text and enums
+ * say nothing about which assets a scene needs. beginStruct still returns true,
+ * because an AssetRef nested inside a reflected struct is as much a reference as
+ * one at the top level.
+ */
+class BehaviorAssetRefs : public BehaviorFieldVisitor {
+    public:
+        void field(const char* name, float& value)       override {}
+        void field(const char* name, int& value)         override {}
+        void field(const char* name, bool& value)        override {}
+        void field(const char* name, glm::vec3& value)   override {}
+        void field(const char* name, std::string& value) override {}
+
+        void enumField(const char* name, int& index, const char* const* names, std::size_t count) override {}
+
+        void assetField(const char* name, std::string& assetName, AssetType type) override {
+            if (assetName.empty()) return;   // the field references nothing
+            m_refs.emplace_back(type, assetName);
+        }
+
+        bool beginStruct(const char* name) override { return true; }
+        void endStruct() override {}
+
+    public:
+        const std::vector<std::pair<AssetType, std::string>>& refs() const { return m_refs; }
+
+    private:
+        std::vector<std::pair<AssetType, std::string>> m_refs;
+};
+
 } // namespace
+
+#define VKM_SCENE_SKIP_P(Type, Key)
+#define VKM_SCENE_EMIT_R(Type, Key) \
+    if (scene.has<Type>(id)) ComponentSerializer::emitAssetRefs(scene.get<Type>(id), refs);
 
 nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<EntityId>& entities,
                                      const ResourceManager& resources) {
@@ -171,12 +229,14 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
     nlohmann::json materials = nlohmann::json::array();
     nlohmann::json skeletons = nlohmann::json::array();
     nlohmann::json clips     = nlohmann::json::array();
+    nlohmann::json sounds    = nlohmann::json::array();
 
     std::unordered_set<uint32_t> seenMeshes;
     std::unordered_set<uint32_t> seenMaterials;
     std::unordered_set<uint32_t> seenTextures;
     std::unordered_set<uint32_t> seenSkeletons;
     std::unordered_set<uint32_t> seenClips;
+    std::unordered_set<uint32_t> seenSounds;
 
     auto emitTexture = [&](const TextureHandle& h) {
         if (!h) return;
@@ -214,23 +274,80 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
         emitDescriptor(clips, resources.get(h));
     };
 
+    auto emitSound = [&](const AudioClipHandle& h) {
+        if (!h || !seenSounds.insert(h.id()).second) return;
+        emitDescriptor(sounds, resources.get(h));
+    };
+
+    BehaviorAssetRefs behaviorRefs;
+
+    // The references with a name and no handle behind them. A behavior's
+    // authored field is one; so is one the last load could not resolve, which
+    // the entity kept precisely so this document can still name it.
+    std::vector<std::pair<AssetType, std::string>> namedRefs;
+
     // Every component that writes an asset name into the document has to be
-    // walked here: a name the assets block never lists is a name loadAssets
-    // never recreates, and the component's reference resolves to nothing.
+    // walked, and which ones those are is the R rows of VKM_SCENE_COMPONENTS -
+    // the same list the save and the load expand from, so the three cannot
+    // disagree about the set. A row with no emitAssetRefs overload stops the
+    // build here rather than shipping a name this block never lists.
+    ComponentSerializer::AssetRefs refs;
     for (EntityId id : entities) {
-        if (scene.has<Mesh>(id)) {
-            const Mesh& m = scene.get<Mesh>(id);
-            emitMesh(m.mesh);
-            emitMaterial(m.material);
+        VKM_SCENE_COMPONENTS(VKM_SCENE_SKIP_P, VKM_SCENE_EMIT_R)
+
+        // What the load could not resolve has no handle to emit from, and the
+        // component's slot is empty - but the name is the author's, and the
+        // scene write puts it back into the field it came from. Listing it here
+        // is the other half of that: without an entry the next load never asks
+        // the library for it, so the reference stays broken even once the
+        // library holding it is restored.
+        if (scene.has<MissingAssets>(id)) {
+            for (const MissingAssetRef& ref : scene.get<MissingAssets>(id).refs) {
+                if (ref.type == AssetType::Count) continue;   // not a kind the library files
+                namedRefs.emplace_back(ref.type, ref.name);
+            }
         }
-        if (scene.has<LOD>(id)) {
-            for (const LODLevel& level : scene.get<LOD>(id).levels) emitMesh(level.mesh);
+        if (scene.has<ScriptComponent>(id)) {
+            // A behavior names its assets in authored fields rather than through
+            // handles, so the reference lives behind visitFields and this is the
+            // only walk that can see it.
+            for (const auto& behavior : scene.get<ScriptComponent>(id).behaviors) {
+                if (!behavior) continue;
+                // visitFields is non-const because the editor and the loader
+                // write through it; this visitor only reads. No cast is needed
+                // to get there: a unique_ptr hands out a mutable referent even
+                // when the pointer itself is const.
+                behavior->visitFields(behaviorRefs);
+            }
         }
-        if (scene.has<Decal>(id)) emitMaterial(scene.get<Decal>(id).material);
-        if (scene.has<Animator>(id)) {
-            const Animator& a = scene.get<Animator>(id);
-            emitSkeleton(a.skeleton);
-            emitClip(a.clip);
+    }
+
+    for (const MeshHandle& h : refs.meshes)             emitMesh(h);
+    for (const MaterialHandle& h : refs.materials)      emitMaterial(h);
+    for (const SkeletonHandle& h : refs.skeletons)      emitSkeleton(h);
+    for (const AnimationClipHandle& h : refs.clips)     emitClip(h);
+    for (const AudioClipHandle& h : refs.sounds)        emitSound(h);
+
+    // Emitted flat, by name: an authored reference has a name and no handle, so
+    // there is nothing to walk into beside it. A material named this way
+    // therefore arrives without the textures emitMaterial would have pulled in
+    // with it - no field names one today, and the material loader warns per
+    // unresolved map rather than failing quietly.
+    //
+    // A name absent from the library is emitted all the same and left to
+    // loadAssetSection to report: a component's name comes from an asset that
+    // exists, but a behavior's was typed against a library that may since have
+    // lost it, and dropping it here would turn a broken reference into silence.
+    namedRefs.insert(namedRefs.end(), behaviorRefs.refs().begin(), behaviorRefs.refs().end());
+    for (const auto& [type, name] : namedRefs) {
+        switch (type) {
+            case AssetType::Mesh:          emitNamedRef(meshes,    name); break;
+            case AssetType::Texture:       emitNamedRef(textures,  name); break;
+            case AssetType::Material:      emitNamedRef(materials, name); break;
+            case AssetType::Skeleton:      emitNamedRef(skeletons, name); break;
+            case AssetType::AnimationClip: emitNamedRef(clips,     name); break;
+            case AssetType::AudioClip:     emitNamedRef(sounds,    name); break;
+            case AssetType::Count:         break;
         }
     }
 
@@ -240,6 +357,43 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
     out["materials"] = std::move(materials);
     out["skeletons"] = std::move(skeletons);
     out["clips"]     = std::move(clips);
+    out["sounds"]    = std::move(sounds);
+    return out;
+}
+
+#undef VKM_SCENE_SKIP_P
+#undef VKM_SCENE_EMIT_R
+
+namespace {
+
+/**
+ * @brief Every live asset of one type, as the name-only descriptors a section holds.
+ *
+ * @tparam Asset Asset type to enumerate.
+ * @param resources The graph to walk.
+ * @return An array of descriptors, empty when the graph holds none.
+ */
+template<typename Asset>
+nlohmann::json everyAssetOfType(const ResourceManager& resources) {
+    nlohmann::json section = nlohmann::json::array();
+    resources.forEachOfType<Asset>([&section](Handle<Asset>, const Asset& asset) {
+        emitDescriptor(section, asset);
+    });
+    return section;
+}
+
+} // namespace
+
+nlohmann::json saveAllAssets(const ResourceManager& resources) {
+    nlohmann::json out;
+    // No dependency order to keep: these are names, and loadAssets reads the
+    // sections in the order it needs them whatever order they were written in.
+    out["textures"]  = everyAssetOfType<TextureAsset      >(resources);
+    out["materials"] = everyAssetOfType<MaterialAsset     >(resources);
+    out["skeletons"] = everyAssetOfType<SkeletonAsset     >(resources);
+    out["clips"]     = everyAssetOfType<AnimationClipAsset>(resources);
+    out["meshes"]    = everyAssetOfType<MeshAsset         >(resources);
+    out["sounds"]    = everyAssetOfType<AudioClipAsset    >(resources);
     return out;
 }
 
@@ -314,12 +468,18 @@ bool resolveCookedSource(AssetType type, const std::string& name, nlohmann::json
  * @brief Recreate one asset section (textures / materials / meshes) from its
  * JSON array, dispatching each name-only reference through @p factory and
  * renaming the result to the recorded name. Returns {created, already-present}.
+ *
+ * Under LoadMode::Reload a name the graph already holds is rebuilt into that
+ * same slot rather than left alone: the fresh asset is built, moved onto the
+ * live one, committed so the backend re-uploads it, and the shell it arrived in
+ * is dropped. Every handle out there keeps pointing at the asset it named,
+ * now holding what the document says it holds.
  */
 template<typename Asset>
 std::pair<size_t, size_t> loadAssetSection(
     const nlohmann::json& assetsJson, const char* sectionKey, AssetType type,
     Handle<Asset> (*factory)(const nlohmann::json&, ResourceManager&),
-    const char* what, ResourceManager& resources) {
+    const char* what, ResourceManager& resources, LoadMode mode) {
     size_t created = 0, skipped = 0;
     auto it = assetsJson.find(sectionKey);
     if (it == assetsJson.end() || !it->is_array() || it->empty()) return {created, skipped};
@@ -338,7 +498,8 @@ std::pair<size_t, size_t> loadAssetSection(
             LOG_WARNING("%s entry missing 'name' - skipping", what);
             continue;
         }
-        if (resources.findByName<Asset>(name)) { ++skipped; continue; }
+        const Handle<Asset> live = resources.findByName<Asset>(name);
+        if (live && mode == LoadMode::Create) { ++skipped; continue; }
 
         nlohmann::json source;
         if (!resolveCookedSource(type, name, source)) continue;
@@ -347,15 +508,29 @@ std::pair<size_t, size_t> loadAssetSection(
             LOG_WARNING("%s '%s' could not be recreated - skipping", what, name.c_str());
             continue;
         }
-        resources.rename(h, name);
-        ++created;
+        if (!live) {
+            resources.rename(h, name);
+            ++created;
+            continue;
+        }
+        // A factory that answered with the asset already there rebuilt nothing
+        // and there is nothing to move; removing it would delete the live one.
+        if (h == live) { ++skipped; continue; }
+
+        // The rebuilt contents go into the slot the live asset already sits in,
+        // so its handle keeps naming it - see ResourceManager::swapValue. The
+        // shell comes back holding the contents that were there and its own
+        // name, which is what lets it be removed like any other asset.
+        resources.swapValue(live, resources.edit(h));
+        resources.remove(h);
+        ++skipped;
     }
     return {created, skipped};
 }
 
 } // namespace
 
-bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
+bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources, LoadMode mode) {
     if (!assetsJson.is_object()) {
         LOG_WARNING("Assets block is not an object - skipping");
         return false;
@@ -364,20 +539,23 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
     // Order matters: textures -> materials (resolve their texture refs by name)
     // -> skeletons -> clips (each names the rig its bone indices address) ->
     // meshes. Each created asset is renamed to its recorded name so component
-    // references (which resolve by name) land on it.
-    const auto [texC, texS] = loadAssetSection<TextureAsset      >(assetsJson, "textures",  AssetType::Texture,       assetFactory().createTexture,       "Texture",  resources);
-    const auto [matC, matS] = loadAssetSection<MaterialAsset     >(assetsJson, "materials", AssetType::Material,      assetFactory().createMaterial,      "Material", resources);
-    const auto [sklC, sklS] = loadAssetSection<SkeletonAsset     >(assetsJson, "skeletons", AssetType::Skeleton,      assetFactory().createSkeleton,      "Skeleton", resources);
-    const auto [clpC, clpS] = loadAssetSection<AnimationClipAsset>(assetsJson, "clips",     AssetType::AnimationClip, assetFactory().createAnimationClip, "Clip",     resources);
-    const auto [mshC, mshS] = loadAssetSection<MeshAsset         >(assetsJson, "meshes",    AssetType::Mesh,          assetFactory().createMesh,          "Mesh",     resources);
+    // references (which resolve by name) land on it. Sounds depend on nothing
+    // and nothing depends on them, so they come last, where they cannot be
+    // mistaken for part of that chain.
+    const auto [texC, texS] = loadAssetSection<TextureAsset      >(assetsJson, "textures",  AssetType::Texture,       assetFactory().createTexture,       "Texture",  resources, mode);
+    const auto [matC, matS] = loadAssetSection<MaterialAsset     >(assetsJson, "materials", AssetType::Material,      assetFactory().createMaterial,      "Material", resources, mode);
+    const auto [sklC, sklS] = loadAssetSection<SkeletonAsset     >(assetsJson, "skeletons", AssetType::Skeleton,      assetFactory().createSkeleton,      "Skeleton", resources, mode);
+    const auto [clpC, clpS] = loadAssetSection<AnimationClipAsset>(assetsJson, "clips",     AssetType::AnimationClip, assetFactory().createAnimationClip, "Clip",     resources, mode);
+    const auto [mshC, mshS] = loadAssetSection<MeshAsset         >(assetsJson, "meshes",    AssetType::Mesh,          assetFactory().createMesh,          "Mesh",     resources, mode);
+    const auto [sndC, sndS] = loadAssetSection<AudioClipAsset    >(assetsJson, "sounds",    AssetType::AudioClip,     assetFactory().createAudioClip,     "Sound",    resources, mode);
 
     // Silent when the block asked for nothing new: a prefab carries its own
     // assets and is instantiated once per instance, per scene load, per
     // duplicate and per undo of one.
-    if (texC + matC + sklC + clpC + mshC > 0) {
-        LOG_INFO("%zu texture(s), %zu material(s), %zu rig(s), %zu clip(s), %zu mesh(es) created; "
-            "%zu+%zu+%zu+%zu+%zu skipped (already loaded)",
-            texC, matC, sklC, clpC, mshC, texS, matS, sklS, clpS, mshS);
+    if (texC + matC + sklC + clpC + mshC + sndC > 0) {
+        LOG_INFO("%zu texture(s), %zu material(s), %zu rig(s), %zu clip(s), %zu mesh(es), "
+            "%zu sound(s) created; %zu+%zu+%zu+%zu+%zu+%zu skipped (already loaded)",
+            texC, matC, sklC, clpC, mshC, sndC, texS, matS, sklS, clpS, mshS, sndS);
     }
     return true;
 }

@@ -170,4 +170,36 @@ inline DialogResult dialogButtons(bool& wantOpen, const char* confirmLabel,
  */
 inline void endDialog() { ImGui::EndPopup(); }
 
+/**
+ * @brief The editor's one rename dialog: a name field and the two buttons.
+ *
+ * A rename is typing, so the field takes the keyboard the frame the dialog
+ * appears with the old name selected, and Enter answers it - reaching back for
+ * the mouse is the whole gesture spent twice. Written once because it had been
+ * written twice: the Asset Browser's copy and the Material tab's drifted the
+ * moment one of them was fixed.
+ *
+ * The caller owns the buffer and does the renaming; this owns the look and the
+ * keyboard contract. @p open is cleared by any path that closes the dialog, so
+ * a caller with a target to forget can watch it.
+ *
+ * @param title Modal title, and its popup id: what is being renamed.
+ * @param open Dialog-visible intent, set by the caller to raise it.
+ * @param buf Edit buffer, seeded by the caller with the current name.
+ * @param bufSize Size of @p buf.
+ * @return true on the frame Rename is confirmed with a non-empty name.
+ */
+inline bool renameDialog(const char* title, bool& open, char* buf, size_t bufSize) {
+    if (!beginDialog(title, open)) return false;
+
+    if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
+    ImGui::SetNextItemWidth(EditorStyle::px(280.0f));
+    const bool committed = ImGui::InputText("##rnbuf", buf, bufSize,
+                                            ImGuiInputTextFlags_EnterReturnsTrue
+                                          | ImGuiInputTextFlags_AutoSelectAll);
+    const DialogResult result = dialogButtons(open, "Rename", buf[0] != '\0', committed);
+    endDialog();
+    return result == DialogResult::Confirm;
+}
+
 } // namespace Vkm::Engine

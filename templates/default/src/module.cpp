@@ -11,7 +11,6 @@
 #include "ecs/component/render/camera.h"
 #include "ecs/component/render/light.h"
 #include "system/script/script_component.h"
-#include "resource/resource_manager.h"
 
 #include "game.h"
 
@@ -37,9 +36,7 @@ extern "C"
 #if defined(_WIN32)
 __declspec(dllexport)
 #endif
-void vkmBuildScene(Vkm::Engine::Scene& scene, Vkm::Engine::ResourceManager& resources) {
-    (void)resources;
-
+void vkmBuildScene(Vkm::Engine::Scene& scene) {
     // Forward is +Z in this engine, so a camera at -Z looking along +Z faces the
     // origin. glm::quatLookAt aims the other way; do not reach for it here.
     const Vkm::Engine::EntityId camera = scene.createEntity();

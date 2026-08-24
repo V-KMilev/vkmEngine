@@ -158,4 +158,9 @@ AnimationClipHandle loadCookedAnimationClip(const std::string& name, ResourceMan
                                                      &AssetCook::readAnimationClip, resources);
 }
 
+AudioClipHandle loadCookedAudioClip(const std::string& name, ResourceManager& resources) {
+    return loadCookedSynchronous<AudioClipAsset>(name, AssetType::AudioClip, "sound",
+                                                 &AssetCook::readAudioClip, resources);
+}
+
 } // namespace Vkm::Engine
