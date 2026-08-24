@@ -572,6 +572,14 @@ addresses the root's `Transform`, which is the instance's own pose) the entry is
 kept, reported once, and not applied, so renaming a field and renaming it back
 does not lose the edit.
 
+`Script` is refused the same way, and for a reason that is about the address
+rather than about drift: the component serializes as one field holding the whole
+behavior list, so the only override this format can spell replaces every
+behavior on the instance. The editor neither writes one nor shows one, so an
+applied one would be invisible and unrevertable. A hand-edited file that names
+it is reported and left alone - see
+[scripting.md](scripting.md#authored-fields-inside-a-prefab-instance).
+
 The type check walks the prefab's value and the override's together rather than
 comparing their top-level kinds, because an array of the right kind holding the
 wrong elements throws inside the component loader - the failure the check exists

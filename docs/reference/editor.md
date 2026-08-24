@@ -177,18 +177,20 @@ asset graph.
 
 - **Audio Source** - the clip picker over `AudioClipAsset`, the clip's length,
   layout, rate and memory footprint, then gain / pitch / loop / play-on-start,
-  and the distance pair when the source is spatial. Two authoring mistakes are
+  and the distance pair when the source is spatial. Three authoring mistakes are
   named where they are made rather than left to the log: a max distance at or
-  under the min (nothing is attenuated) and a stereo clip on a spatial source
-  (its two channels already encode a position, so panning one is meaningless at
-  best). A Play button auditions the clip **through the device, not through
-  `AudioSource::playing`** - writing the component's flag would be a scene edit,
+  under the min (nothing is attenuated), a stereo clip on a spatial source (its
+  two channels already encode a position, so panning one is meaningless at
+  best), and a scene with no active `AudioListener` at all - the one the engine
+  cannot report at edit time, since its own warning waits for a positioned voice
+  to actually start. A Play button auditions the clip **through the device, not
+  through `AudioSource::playing`** - writing that flag would be a scene edit,
   undoable and dirtying and audible again on the next Play, when all that was
   asked for was to hear the file.
 - **Audio Listener** - active and master volume, plus the two things nothing
-  else on screen would show: a second active listener (only the first is heard
-  from, and which one that is comes down to storage order) and a listener
-  without a `Transform`, which has no position to hear from.
+  else on screen would show: a listener that is not the ear, which names the one
+  `findActiveListener` picked instead of merely counting the candidates, and a
+  listener without a `Transform`, which has no position to hear from.
 
 An entity carrying an `AudioSource` is named **Sound** in the hierarchy and one
 carrying an `AudioListener` is a **Listener**; the tooltip digest lists both.

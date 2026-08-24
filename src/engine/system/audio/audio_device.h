@@ -77,11 +77,11 @@ struct VoiceParams {
  * describes this file's discipline rather than something the build enforces.
  *
  * THE TWO KNOWN RACES ARE MINIAUDIO'S, and they are worth naming because a
- * vendored backend's bugs are ours to carry. ThreadSanitizer reports both
- * every run of scratchpad/adv_audio/race_check.cpp: ma_gainer::masterVolume
- * (a plain float, written here by ma_sound_set_volume from apply(), read by
- * the mixer in ma_gainer_process_pcm_frames_internal) and
- * ma_spatializer_listener::isEnabled (a plain ma_bool32, written by
+ * vendored backend's bugs are ours to carry. ThreadSanitizer reports both on
+ * every run that mixes while the main thread pushes voice parameters:
+ * ma_gainer::masterVolume (a plain float, written here by ma_sound_set_volume
+ * from apply(), read by the mixer in ma_gainer_process_pcm_frames_internal)
+ * and ma_spatializer_listener::isEnabled (a plain ma_bool32, written by
  * setListenerActive, read by the mixer). Both are single aligned scalars with
  * no invariant spanning them, and miniaudio uses ma_atomic_float for exactly
  * this kind of field elsewhere - ma_engine_node::volume and

@@ -1212,6 +1212,14 @@ void InspectorPanel::drawAudioSourceSection(EditorContext& ec, EntityId id) {
                 ImGui::TextColored(EditorStyle::WARNING,
                                    "A positioned sound needs a Transform to have a position.");
             }
+            // The one genuinely invisible failure on this card. AudioSystem's
+            // own warning is written once per session AND only when a spatial
+            // voice actually starts, so at edit time - which is where the
+            // mistake is made - nothing says it at all.
+            if (!findActiveListener(scene)) {
+                ImGui::TextColored(EditorStyle::WARNING,
+                                   "No active Audio Listener in the scene - this is silent.");
+            }
         }
 
         ImGui::Spacing();
@@ -1261,16 +1269,16 @@ void InspectorPanel::drawAudioListenerSection(EditorContext& ec, EntityId id) {
         changed |= propSlider("Volume", &listener.volume, 0.0f, 1.0f, "%.2f",
                               "Master gain for everything this listener hears");
 
-        // Which listener actually wins is storage order, which nothing on screen
-        // shows - so a second one is worth naming rather than leaving as a
-        // silence nobody can explain.
-        int active = 0;
-        scene.forEach<AudioListener, Transform>([&](EntityId, const AudioListener& l, const Transform&) {
-            if (l.active) ++active;
-        });
-        if (active > 1) {
+        // Which listener wins is storage order, which nothing else on screen
+        // shows. Naming the winner rather than counting the candidates is what
+        // turns "two listeners exist" into "this is not the one you hear".
+        const EntityId heard = findActiveListener(scene);
+        if (listener.active && heard && heard != id) {
+            char winner[64] = {};
+            getEntityDisplayName(scene, heard, winner, sizeof(winner));
             ImGui::TextColored(EditorStyle::WARNING,
-                               "%d active listeners; only the first is heard from.", active);
+                               "Not the ear: '%s' is heard from, being first in storage order.",
+                               winner);
         }
         if (listener.active && !scene.has<Transform>(id)) {
             ImGui::TextColored(EditorStyle::WARNING,
