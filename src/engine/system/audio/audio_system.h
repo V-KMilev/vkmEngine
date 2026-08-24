@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -75,12 +76,43 @@ class AudioSystem : public System {
          */
         AudioDevice& device() { return m_device; }
 
+        /**
+         * @brief The voice @p entity's AudioSource is being heard through.
+         *
+         * The other half of what an editor card needs and cannot work out for
+         * itself. AudioSource::playing says the source wants to be heard, which
+         * is scene state and answers nothing about the mixer: a voice the
+         * editor's transport is holding keeps that flag true while it makes no
+         * sound at all, so a card reading the flag alone tells the author a
+         * paused world is playing. The id handed back is what the device
+         * answers isVoicePaused() and voiceCursor() about, so the card can say
+         * held rather than playing and say how far in it stopped.
+         *
+         * Read-only on purpose: nothing outside this system may stop, start or
+         * re-point a source's voice, because this table is what reconciles them
+         * against their components every frame and a voice let go behind its
+         * back would be started again on the next one.
+         *
+         * @param entity Entity whose source to look up; the generation is
+         *        checked, so a recycled slot answers 0 rather than the previous
+         *        occupant's sound.
+         * @return The live voice, or 0 when the source is silent, has no voice
+         *         yet, or does not exist.
+         */
+        VoiceId voiceOf(EntityId entity) const;
+
     private:
         /**
          * @brief Point the ear at the scene's active listener, or turn it off.
          *
          * Which listener that is comes from findActiveListener, so the editor
          * and the mixer cannot disagree about which one is heard from.
+         *
+         * An earless scene also gets the master gain back at unity, because that
+         * gain came from the listener and goes away with it. Without that, a
+         * listener at low volume that is deleted or unticked leaves every 2D
+         * source quiet with nothing left on screen holding the slider, and not
+         * even a scene load puts it back.
          *
          * @param ctx Frame context supplying the scene to search.
          */
@@ -163,12 +195,17 @@ class AudioSystem : public System {
          * second unreported. Per world all the same, since stopEverything
          * empties the set with the voices.
          *
-         * @param clip Handle the warning is remembered against.
+         * Remembered against the clip's NAME rather than its handle, because a
+         * handle's id() is its slot index with the generation dropped: an asset
+         * removed and another added take the same slot, and the second would
+         * inherit the first's mark and never be reported. A name is the identity
+         * the scene format already uses, and the one this message prints.
+         *
          * @param asset The clip itself, read for its channel count and name.
          * @param spatial Whether the voice about to start is positioned; a flat
          *        voice is mixed without a spatializer, so stereo is correct there.
          */
-        void warnIfStereoSpatial(AudioClipHandle clip, const AudioClipAsset& asset, bool spatial);
+        void warnIfStereoSpatial(const AudioClipAsset& asset, bool spatial);
 
         /**
          * @brief Stop every voice and forget them.
@@ -244,8 +281,8 @@ class AudioSystem : public System {
         /// Whether the missing-listener warning has been written for this world.
         bool m_warnedNoListener = false;
 
-        /// Clips already reported as multi-channel on a positioned voice, by handle id.
-        std::unordered_set<uint32_t> m_warnedStereoClips;
+        /// Clips already reported as multi-channel on a positioned voice, by name.
+        std::unordered_set<std::string> m_warnedStereoClips;
 };
 
 } // namespace Vkm::Engine

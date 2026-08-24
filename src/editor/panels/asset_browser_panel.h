@@ -4,6 +4,7 @@
 
 #include "framework/asset_picker.h"
 #include "resource/resource_handle.h"
+#include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/material_asset.h"
 #include "system/audio/audio_device.h"
@@ -22,7 +23,7 @@ class ResourceManager;
  *
  * Sounds get a list rather than a grid, because a clip has no picture. What it
  * has is a length, a layout and a sound, so the row shows the first two and a
- * play button gives the third - hearing a clip IS previewing it, the way a
+ * transport gives the third - hearing a clip IS previewing it, the way a
  * thumbnail is for a material.
  *
  * Stateless w.r.t. assets - it reads ResourceManager every frame; only the
@@ -70,6 +71,7 @@ class AssetBrowserPanel {
         template<typename Asset>
         void openRename(Handle<Asset> h, const std::string& name);
 
+    private:
         float      m_cell = 104.0f;          ///< Thumbnail edge in px
         char       m_filter[64] = {};        ///< Grid search needle (every tab)
 
@@ -79,6 +81,15 @@ class AssetBrowserPanel {
         AssetPicker m_soundPicker;
         bool        m_requestSoundImport = false;
         VoiceId     m_previewVoice = 0;
+
+        // Which clip that voice came from, so the row playing it is the row
+        // that can hold it, cut it short and scrub it, while the rest offer
+        // only Play. The full handle rather than the id: a slot recycled by a
+        // remove and an add would otherwise hand a different clip a transport
+        // running against somebody else's sound. A graph swapped underneath it
+        // cannot: AudioSystem stops every voice when the asset epoch moves, so
+        // a handle from the manager that went away can never read as sounding.
+        AudioClipHandle m_previewClip;
 
         // Re-acquired every draw via ensureAssets - no ready flag so a
         // ResourceManager swap (scene load) doesn't leave stale handles.

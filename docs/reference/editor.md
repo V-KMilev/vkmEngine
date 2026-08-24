@@ -61,7 +61,7 @@ overlays drawn on top.
 | Gizmo Overlay       | `overlays/gizmo_overlay.cpp`          | The transform gizmo's drawing and drag, and the viewport's click-to-pick     |
 | Gizmo Drawing       | `overlays/gizmo_overlay_draw.cpp`     | Every `draw*Gizmos` body, plus the selection outline: lights, cameras, probes, volumes, decals, emitters, audio, colliders, skeletons, bounds |
 | Viewport Toolbar    | `overlays/viewport_toolbar.cpp`       | In-viewport icon tool box: tool/space/snap + selection actions              |
-| Playback Bar        | `overlays/playback_bar.cpp`           | Top-centre Play / Pause / Step / Stop transport for the simulation; Pause also holds the mixer's voices |
+| Playback Bar        | `overlays/playback_bar.cpp`           | Top-centre Play / Pause / Step / Stop transport for the simulation; Pause and Step also hold the mixer's voices |
 
 ### Where world settings live
 
@@ -193,7 +193,14 @@ asset graph.
   `AudioSource::playing`**: writing that flag would be a scene edit, undoable
   and dirtying and audible again on the next Play, when all that was asked for
   was to hear the file. Nothing on the row dirties the scene, which is the same
-  rule the animation cards follow for play, stop and scrub.
+  rule the animation cards follow for play, stop and scrub. It is drawn by
+  `auditionTransport`, shared with the Asset Browser's Sounds rows, because two
+  surfaces auditioning the same kind of thing with two vocabularies is how they
+  drift apart. On a host with no audio device the whole transport is disabled
+  and its tooltip says why, rather than answering a press with silence. A fifth
+  warning sits just above it, outside the spatial four: an `AudioListener` at
+  volume 0 silences the whole mix, this source and the audition with it, and
+  nothing else on the card would explain a cursor running with no sound.
 
   The slider reads `AudioDevice::voiceCursor` rather than a field on the
   component, because the mixer advances that cursor between frames and a
@@ -202,10 +209,16 @@ asset graph.
   nothing playing there is no cursor, so the slider is disabled rather than
   inventing a start offset. The audition belongs to the card that started it and
   stops when the selection moves, so the slider can never run against another
-  entity's clip. Stop and the scrubber are lit off the device, which is the one
-  thing on the row that speaks for the mixer: the Source: playing / idle label
-  beside them reports `AudioSource::playing`, the scene's state, and says
-  nothing about whether the file is being heard.
+  entity's clip. Stop and the scrubber are lit off the device, and so is the
+  label beside them. `AudioSource::playing` is the scene's word and not the
+  sound's - a voice the transport is holding keeps it true while nothing is
+  audible - so the label asks `AudioSystem::voiceOf` for the source's own voice
+  and reports what the mixer says about it: **Source: playing 12.40s**, or
+  **Source: held 12.40s** under a Pause or a Step. With no voice at all it falls
+  back to the flag, which is the only thing there is to say in the frame before
+  one exists. The position lives here rather than on the slider because that
+  slider belongs to the audition; the two are different sounds and the row keeps
+  them apart.
 - **Audio Listener** - active and master volume, plus the two things nothing
   else on screen would show: a listener that is not the ear, which names the one
   `findActiveListener` picked instead of merely counting the candidates, and a
@@ -291,7 +304,9 @@ restart. Order matters, because each step depends on the previous one:
 5. `AssetLibrary::get().load()` and the new project's own editor settings.
 6. Swap the gameplay module to the new project's `bin/`, or unload it when the
    project brings none.
-7. Boot its scene through `bootProjectScene`, the same rule both binaries use.
+7. Boot its scene through `bootProjectScene`, the same rule both binaries use,
+   and adopt the path it opened so that scene is the file this session edits -
+   without it, Save would ask for a name for a file the editor had just read.
    A project whose entry scene will not load still opens - the default scene
    stands in, carrying no save path - with an error toast, because the editor is
    where you fix that. The runtime refuses the same project instead; see
@@ -312,8 +327,36 @@ path is composed. See [system/io.md](system/io.md#projects-and-the-three-roots).
   [IO and serialization](system/io.md)).
 - After a successful load it clears the command stack and rebinds the
   camera if the loaded scene defined one.
+- Ends any play session the outgoing scene was in - the snapshot, its asset
+  list and the clock's pause/scale all go back to Edit mode. A snapshot that
+  outlived the scene it was taken from leaves the transport reading as playing,
+  and Stop then restores that dead world **over the scene just opened**, under
+  the opened file's name. New Scene and Open Project both clear it through the
+  same `endPlaySession`.
 - Maintains a recent-scenes list cached when the Open dialog is opened
   (so re-opening doesn't re-scan disk every frame).
+
+### What an open does to the session's imports
+
+An open is the editor's clean break: it already drops the undo stack, the
+selection, the material previews and the camera binding. The asset graph is
+replaced by the swap too, so an asset the *outgoing* scene never named - a
+sound imported and not yet assigned to a source - has no name in the new
+document to be recreated from, and goes with the session that imported it.
+
+That is deliberately the opposite of what **Stop** does. Stop promises to put
+one session back exactly as Play found it, so `captureSnapshot` records
+`saveAllAssets` beside the scene document and `restoreSnapshot` feeds it back
+(see [IO and serialization](system/io.md)). An open makes no such promise - it
+is leaving that world for another one - and carrying the strays forward would
+grow the graph by a scene's worth of assets per open and cook every one of them
+into the project library at the next save.
+
+What the open does owe the author is the fact. The ones that went are counted
+into a toast ("N unused import(s) stayed with the previous scene") and named
+one per line in the log, so re-importing them needs nothing but the message.
+Only assets the outgoing scene did not name are counted, and only those the new
+graph does not already hold - two scenes sharing a sound are not a loss.
 
 ## Material preview / Asset browser
 
@@ -329,25 +372,44 @@ frame.
 
 The Asset Browser's third tab is a **list**, not a grid, because a sound has no
 picture. What it has is a length, a layout and a sound, so the row shows the
-first two and a play button gives the third - hearing a clip is what previewing
-one means. One Pause and one Stop beside `Import Sound...` serve every row,
-because one audition voice is remembered for the whole tab: a second Play
-replaces the first rather than layering over it, and before them nothing here
-could hold or cut one short - which matters on a tab that imports mp3 and flac,
-where the moment worth hearing is a minute in. There is no position slider to
-go with the pause, unlike the Inspector's card: this tab remembers the voice and
-not which clip it came from, so a slider would have no length to measure
-against. They stop and hold an audition rather than owning its lifetime: leave
-the tab and a ninety-second ambience plays on, because this tab is the only
-thing holding its id. Both are lit only while the device says that voice is
-still there, here and on the Inspector's copy of it - an id outlives the voice
-it named, so a clip that ran to its end would otherwise leave a Stop offering to
-cut something that already stopped.
+first two and a transport gives the third - hearing a clip is what previewing
+one means. That transport is the Inspector card's, drawn by the same
+`auditionTransport`: Play on every row, and on the row that is sounding a Pause
+that holds it, a Stop that cuts it short and a position slider that moves it.
+The slider takes the Length column over while the row sounds, because a
+position measured against a length belongs in the column that states the
+length; every other row keeps its length as text.
+
+One voice serves the whole tab, so a Play replaces whatever was sounding rather
+than layering over it - and the tab now remembers **which clip** that voice came
+from, which is what lets one row own the transport instead of the tab owning a
+Pause and a Stop for all of them. That single remembered voice was the whole
+reason the controls sat beside `Import Sound...`, and a slider there had no
+length to measure against; both were an implementation showing through into the
+UI. The remembered clip is a full handle rather than an id, so a slot recycled
+by a remove and an add cannot hand a different clip a running transport; a graph
+swapped underneath it cannot either, since `AudioSystem` stops every voice when
+the asset epoch moves.
+
+An audition still does not follow the user out of the tab: leave it and a
+ninety-second ambience plays on, because this tab is the only thing holding the
+voice's id - come back and the row is still sounding, with its Stop lit. Pause,
+Stop and the slider are lit off the device rather than off a remembered id,
+here and on the Inspector's copy of them: an id outlives the voice it named, so
+a clip that ran to its end would otherwise leave a Stop offering to cut
+something that already stopped.
+The tab's own status line carries the two ways a clip goes unheard with nothing
+here wrong: a host with no audio device, and an `AudioListener` at volume 0,
+which silences the mix an audition plays through as surely as an absent device
+does.
 `Import Sound...` decodes a wav / mp3 / flac into the project, which is the
 only way a clip enters one; right-clicking a row assigns it to the selected
-entity's `AudioSource` as an undoable edit. On a host with no audio device the
-tab says so, since clips still import and cook there - they just cannot be
-heard.
+entity's `AudioSource` as an undoable edit. Picking a file the project already
+holds is answered with a toast saying so and nothing else: `loadAudioClip` keys
+on the project-relative name and hands back the clip it already has, so there
+is no new row to look for, and the scene is not dirtied for an import that did
+not happen. On a host with no audio device the tab says so, since clips still
+import and cook there - they just cannot be heard.
 
 ## CameraControllerSystem
 

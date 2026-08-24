@@ -435,6 +435,20 @@ class AudioDevice {
          */
         void setMasterVolume(float volume);
 
+        /**
+         * @brief The master gain the mix is running at.
+         *
+         * What setMasterVolume last took, after its own sanitising, so a caller
+         * reads the gain the mixer has rather than the number somebody asked
+         * for. Zero is the one value worth asking about: every voice is silent
+         * however loud it was asked to be, and an editor has to be able to say
+         * that out loud - a clip auditioned under a muted mix shows a running
+         * cursor and cannot be heard, which reads as a broken file.
+         *
+         * @return Linear master gain; 1 until something sets it otherwise.
+         */
+        float masterVolume() const noexcept { return m_masterVolume; }
+
     private:
         // Everything backend-shaped lives behind this: ma_engine, the voice
         // table and the ma_sound / ma_audio_buffer_ref pair each voice owns.
@@ -444,6 +458,7 @@ class AudioDevice {
     private:
         std::unique_ptr<Backend> m_backend;
         bool                     m_open = false;
+        float                    m_masterVolume = 1.0f;
 };
 
 } // namespace Vkm::Engine

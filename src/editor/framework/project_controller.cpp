@@ -84,7 +84,15 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
     //    will not load still opens - the default scene stands in with no save
     //    path behind it - and reports itself through the engine's error sink, so
     //    a project opened here fails the same way one opened at startup does.
-    bootProjectScene(project, scriptModule, ec.frame.scene, ec.frame.resources);
+    const SceneBootResult boot =
+        bootProjectScene(project, scriptModule, ec.frame.scene, ec.frame.resources);
+
+    // The scene came in without passing through the scene controller, so the
+    // path has to be handed over for it to be the file this project is editing
+    // - the same adoption the startup path makes, for the same reason. Empty
+    // for a module-built world and for the default scene standing in, which is
+    // what leaves those two asking for a name on the first save.
+    sceneIO.adoptPath(ec.state, boot.path);
 
     // The window title is composed once per frame from the editor state (see
     // EditorSystem); setting it here as well would be overwritten next frame.

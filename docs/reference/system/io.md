@@ -98,6 +98,21 @@ rather than whether there is one:
 | `Default` | The project names no world of its own; the default scene stands in |
 | `Failed` | The project names an entry scene that did not load; the default scene stands in |
 
+`SceneBootResult` carries the path beside it, and only one of the three worlds
+has one: the authored entry scene. A module-built world and the default scene
+standing in for a load that failed are both worlds with no file behind them,
+which is what stops a stand-in being saved over the file it replaced.
+
+The editor adopts that path as the scene it is editing
+(`SceneIOController::adoptPath`, from both its startup and File > Open Project),
+because the world it opens on is the one scene it never read itself. Unadopted,
+a file the editor had just loaded was a scene with no file: Save asked for a
+name, offered `scene.json` rather than the name it has, and writing it left the
+project's `entryScene` untouched and the session saved where the project never
+looks - with the title bar calling it *untitled* the whole time. The path is
+stated by the function that opened the file rather than re-derived by each
+caller, since re-deriving it means restating the rule this one exists to hold.
+
 ### What each host does when a project will not open
 
 The exit code is the only answer a shell gets, so each host has to spend it on
@@ -190,6 +205,29 @@ only once the library holds a record for it. Nothing about a well-formed file
 changes - a finite number writes exactly as it did - and the read side stays
 strict on purpose: teaching the loaders that `null` means "keep the default"
 would make it a permanent token in every scalar field of the format.
+
+Where the snapshot stops being the file is the list beside it. A scene document
+names the assets the scene uses and nothing else, which is right for something
+somebody saves and not enough for something that promises to put a session back:
+a sound imported and not yet assigned to a source is in the Asset Browser, in
+every picker, and in no component, so the scene never mentions it and the
+restoring swap drops it with the manager that held it - silently, since no
+reference was left unresolved for `reportError` to name. So `captureSnapshot`
+records `AssetSerializer::saveAllAssets` - every live asset that has a name and
+is not hidden - alongside the document, and `restoreSnapshot` feeds that list
+back through the same `loadAssets` the scene load uses, which skips every name
+already present and recreates only what the swap dropped. The extra list never
+reaches disk and the file format is untouched; it is the session's half of the
+snapshot, and the cook above is what makes it restorable.
+
+**Opening a scene answers this the other way, on purpose.** Stop promises to put
+one session back; an open is leaving that world for another, and it already
+drops the undo stack, the selection and the material previews on the way
+through. So the strays go with the session that imported them - carrying them
+would grow the graph by a scene's worth of assets per open and cook every one of
+them into the library at the next save - and the editor names them in the log
+and counts them into a toast rather than letting them vanish quietly. See
+[the editor](../editor.md#what-an-open-does-to-the-sessions-imports).
 
 `SceneSerializer::load` is **transactional for both entities and assets**:
 

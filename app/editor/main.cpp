@@ -76,9 +76,10 @@ int main(int argc, char** argv) {
             title.c_str(),
             true, false});
 
-        engine.addSystem<Vkm::Engine::EditorSystem>(Vkm::Engine::SystemStage::UI,
-            engine.getWindow().getWindowContext(),
-            sys.camera, sys.ui, sys.visibility, sys.render, sys.audio, scriptModule, project.name);
+        Vkm::Engine::EditorSystem& editor =
+            engine.addSystem<Vkm::Engine::EditorSystem>(Vkm::Engine::SystemStage::UI,
+                engine.getWindow().getWindowContext(),
+                sys.camera, sys.ui, sys.visibility, sys.render, sys.audio, scriptModule, project.name);
 
         // The editor opens on the same scene the runtime would boot, by the same
         // rule (see tools/project_boot.h). Which one it got is deliberately not
@@ -89,8 +90,14 @@ int main(int argc, char** argv) {
         // that failed, and the failure reports itself through the error sink
         // EditorSystem installed above - so it reaches Bottom > Errors and a
         // toast here exactly as it does through File > Open Project.
-        Vkm::Engine::bootProjectScene(project, scriptModule,
-                                 engine.getScene(), engine.getResources());
+        const Vkm::Engine::SceneBootResult boot = Vkm::Engine::bootProjectScene(
+            project, scriptModule, engine.getScene(), engine.getResources());
+
+        // And the path with it, which is what makes the entry scene the file
+        // this session is editing rather than a world that arrived from
+        // nowhere. Only the authored scene carries one, so the stand-in above
+        // still cannot be saved over the file it replaced.
+        editor.adoptScenePath(boot.path);
 
         engine.run();
 
