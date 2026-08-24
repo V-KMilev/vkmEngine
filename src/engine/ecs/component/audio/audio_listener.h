@@ -37,6 +37,10 @@ struct AudioListener {
      * half as loud. A player-facing slider is perceptual and owes the
      * conversion: drive this with position^2 or a decibel curve, or most of the
      * useful range hides in the slider's top quarter.
+     *
+     * A negative or non-finite value is heard as silence rather than as itself,
+     * because an infinite master gain would take the entire mix non-finite -
+     * every sound in the game, not just this one.
      */
     float volume = 1.0f;
 };

@@ -67,9 +67,10 @@ class GizmoOverlay {
          *
          * A sound is the one authored thing in the engine with nothing to look
          * at, so without this an AudioSource is invisible in the viewport. The
-         * icon says where; the spheres say how far, and are drawn for the
-         * selection only because a scene's worth of 60-unit wireframes buries
-         * everything else.
+         * icon says where, and whether that where is heard at all - it keeps
+         * the speaker's radiating arcs only while the source is spatial. The
+         * spheres say how far, and are drawn for the selection only because a
+         * scene's worth of 60-unit wireframes buries everything else.
          */
         void drawAudioGizmos(EditorContext& ec);
 
@@ -109,10 +110,12 @@ class GizmoOverlay {
          * @brief Ray-cast pick on left-click in the viewport, updating the
          * editor selection.
          *
-         * Tests the culled visible set (meshes), enabled lights and audio
-         * sources; nearest hit wins, an empty-space click deselects. No-op
-         * while the gizmo is hovered or being dragged. Selection is UI state
-         * only - it never dirties the scene.
+         * Tests the culled visible set (meshes), the enabled lights' reach
+         * boxes, and the billboard marker of every entity that draws one -
+         * lights, cameras, audio sources and listeners. Nearest hit wins, an
+         * empty-space click deselects. No-op while the gizmo is hovered or
+         * being dragged. Selection is UI state only - it never dirties the
+         * scene.
          */
         void handleViewportPick(EditorContext& ec);
         bool isGizmoOver() const  { return m_gizmo.isOver(); }

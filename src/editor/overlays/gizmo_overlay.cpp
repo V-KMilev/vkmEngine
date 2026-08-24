@@ -11,10 +11,12 @@
 #include "framework/editor_actions.h"
 #include "framework/editor_common.h"
 #include "framework/editor_commands.h"
+#include "overlays/wire_draw.h"
 #include "system/visibility/visibility.h"
 #include "core/math/bounds.h"
 #include "system/camera/camera_controller_system.h"
 #include "resource/resource_manager.h"
+#include "ecs/component/audio/audio_listener.h"
 #include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/world_transform.h"
 
@@ -305,6 +307,36 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
         }
     }
 
+    // Every entity the overlays mark with a billboard answers a click on that
+    // marker. None of these four has a mesh to be hit through, and the gizmo
+    // that moves one only appears once it is selected, so a marker that cannot
+    // be clicked is an entity that cannot be placed - and the click that missed
+    // it deselects, which is the worst answer available.
+    //
+    // Screen space rather than a world box, because a marker is a fixed number
+    // of pixels whatever it marks: a world size answering for it agrees at one
+    // distance and parts either side of it. Projected rather than derived from
+    // the fov, so an orthographic camera, where distance changes nothing, stays
+    // right. Depth is the distance to the marker's anchor, which is what lets a
+    // marker in front of a wall win the nearest-hit test against it.
+    const glm::mat4 viewProj = ctx.visibility->projection * ctx.visibility->view;
+    const EntityId  flownCam = ec.cameraController.getCameraEntity();
+
+    auto pickMarker = [&](EntityId id, const glm::vec3& pos) {
+        ImVec2 sp;
+        if (!projectToViewport(viewProj, pos, ImVec2(vpX, vpY), ImVec2(vpW, vpH), sp)) return;
+
+        const float dx = mp.x - sp.x;
+        const float dy = mp.y - sp.y;
+        if (dx * dx + dy * dy > ENTITY_MARKER_HIT_RADIUS * ENTITY_MARKER_HIT_RADIUS) return;
+
+        const float t = glm::distance(rayOrigin, pos);
+        if (t < nearestT) {
+            nearestT  = t;
+            hitEntity = id;
+        }
+    };
+
     // Also test light entities (no mesh, just position proximity). Lights
     // aren't in the visibility set, but HierarchySystem already cached each
     // hierarchical entity's WorldTransform so we just read it.
@@ -313,10 +345,13 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
         if (!light.enabled)          return; // unselectable when off, matches gizmo draw
 
         glm::vec3 pos = resolvedWorldPosition(ctx.scene, id, transform);
+        pickMarker(id, pos);
 
-        // Pick AABB scales with the light's reach: big area lights stay easy
-        // to hit, tiny point lights still need a near click. Directionals have
-        // no radius so fall back to a fixed value.
+        // Kept beside the marker rather than replaced by it: a light's gizmo IS
+        // a volume the user points at, so the box is a second target and not a
+        // stand-in for the first. It scales with the light's reach, so big area
+        // lights stay easy to hit and tiny point lights still need a near
+        // click. Directionals have no radius so fall back to a fixed value.
         const float radius = (light.type == LightType::Directional)
             ? 0.5f
             : std::clamp(light.radius * 0.2f, 0.3f, 3.0f);
@@ -330,25 +365,28 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
         }
     });
 
-    // Audio sources, on the same terms as lights and for the reason the owner
-    // of a scene asks for: the gizmo that moves a source only appears once the
-    // source is selected, so an icon you cannot click is an icon you cannot
-    // place. A fixed half-extent rather than one scaled by minDistance, because
-    // a sound has no visual extent - the icon IS the target, and a source with
-    // a 60-unit reach must not swallow every click in the level.
+    ctx.scene.forEach<Camera, Transform>([&](EntityId id, const Camera&, const Transform& transform) {
+        if (ctx.scene.has<Mesh>(id)) return; // already tested above
+        // The flown editor camera draws no marker - it is the viewer, and a
+        // marker there would sit inside the user's own eye.
+        if (id == flownCam)          return;
+        pickMarker(id, resolvedWorldPosition(ctx.scene, id, transform));
+    });
+
+    // A sound has no visual extent at all, so unlike a light there is no volume
+    // to fall back on: the marker is the whole target, which is also what keeps
+    // a source with a 60-unit reach from swallowing every click near it.
     ctx.scene.forEach<AudioSource, Transform>([&](EntityId id, const AudioSource&,
                                                   const Transform& transform) {
-        if (ctx.scene.has<Mesh>(id)) return;   // already tested above
+        if (ctx.scene.has<Mesh>(id)) return; // already tested above
+        pickMarker(id, resolvedWorldPosition(ctx.scene, id, transform));
+    });
 
-        const glm::vec3 pos = resolvedWorldPosition(ctx.scene, id, transform);
-        const glm::vec3 sourceMin = pos - glm::vec3(0.5f);
-        const glm::vec3 sourceMax = pos + glm::vec3(0.5f);
-
-        float t;
-        if (Math::rayIntersectsAABB(rayOrigin, invDir, sourceMin, sourceMax, t) && t < nearestT) {
-            nearestT = t;
-            hitEntity = id;
-        }
+    ctx.scene.forEach<AudioListener, Transform>([&](EntityId id, const AudioListener&,
+                                                    const Transform& transform) {
+        if (ctx.scene.has<Mesh>(id)) return; // already tested above
+        if (id == flownCam)          return; // the ear riding the viewer's camera
+        pickMarker(id, resolvedWorldPosition(ctx.scene, id, transform));
     });
 
     // Selection is editor UI state - it does not modify the scene. Setting

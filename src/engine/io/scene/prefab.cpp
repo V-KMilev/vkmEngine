@@ -421,6 +421,7 @@ bool save(Scene& scene, EntityId root, const std::string& path,
     doc["nextUid"] = nextUid;
     doc["assets"]  = AssetSerializer::saveAssetsForEntities(scene, subtree, resources);
 
+    detail::writeNonFiniteAsZero(doc, "Prefab");
     if (!detail::writeJsonFile(resolvePath(path), doc, "Prefab")) return false;
 
     for (size_t i = 0; i < subtree.size(); ++i) {

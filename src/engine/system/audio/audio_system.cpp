@@ -2,6 +2,8 @@
 
 #include "system/audio/audio_system.h"
 
+#include <vector>
+
 #include <glm/gtc/quaternion.hpp>
 
 #include "logger.h"
@@ -197,7 +199,16 @@ void AudioSystem::reconcileSource(FrameContext& ctx, EntityId entity, AudioSourc
 }
 
 void AudioSystem::startPendingRequests(FrameContext& ctx) {
-    for (const PlaySoundEvent& request : m_pending) {
+    // Swapped to a local before the walk, the way BehaviorSystem drains its
+    // collisions: starting a voice cannot emit anything today, but a walk over
+    // the member vector is one synchronous emit away from reallocating under
+    // itself, and the clear that used to follow would have swallowed whatever
+    // was appended during it. Emptied here, a request made mid-walk simply
+    // waits for the next frame.
+    std::vector<PlaySoundEvent> requests;
+    requests.swap(m_pending);
+
+    for (const PlaySoundEvent& request : requests) {
         // Asked for with nothing to play. Silent rather than refused: a
         // request has no id to report a failure through, and the alternative
         // is a log line once per coin.
@@ -208,7 +219,6 @@ void AudioSystem::startPendingRequests(FrameContext& ctx) {
         params.loop = false;
         m_device.play(ctx.resources.get(request.clip), params);
     }
-    m_pending.clear();
 }
 
 void AudioSystem::stopEverything() {

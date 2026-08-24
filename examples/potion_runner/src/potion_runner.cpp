@@ -578,8 +578,10 @@ void PotionRunner::buildWorld() {
     // The two sounds this game makes. Registered here and played as requests
     // rather than hung on an entity: the stride's footfalls arrive 138 ms apart
     // at top cadence against a 130 ms clip, which leaves one speaker 8 ms to
-    // finish and retrigger in, and a coin is pooled - its entity is 160 m up
-    // the track before its chime would have ended.
+    // finish and retrigger in, and coins come in lanes of four 3.6 m apart, so
+    // at top speed their chimes start 83 ms apart against a 180 ms clip - and
+    // a collected coin is switched off the instant it pays, leaving nothing
+    // there to hang a source on.
     m_footstep  = m_resources->add(makeFootstepSound(), "potion:footstep");
     m_coinChime = m_resources->add(makeCoinChime(), "potion:coin");
 

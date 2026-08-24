@@ -51,18 +51,13 @@ constexpr ImU32 DECAL_COL   = IM_COL32(200, 120, 220, 200);  // decal violet
 constexpr ImU32 EMITTER_COL = IM_COL32(240, 200, 90, 200);   // particle amber
 
 // Accent::Audio, the magenta the Inspector's two audio cards already wear, so
-// the same subject reads the same on the card and in the viewport - with the
-// green dropped a little from the card's 97 to hold it clear of DECAL_COL's
-// violet, which is its nearest neighbour in this file.
+// the same subject reads the same on the card and in the viewport - pushed a
+// little off the card's (224, 97, 204), most of it out of the green, to hold
+// it clear of DECAL_COL's violet, which is its nearest neighbour in this file.
 constexpr ImU32 AUDIO_COL = IM_COL32(232, 62, 208, 220);  // audio magenta
 // Same hue, faded: the outer falloff sphere, and anything present but not
 // contributing - a source with no clip, a listener that is not the ear.
 constexpr ImU32 AUDIO_COL_DIM = IM_COL32(232, 62, 208, 80);
-
-// Billboard radius for the source and listener glyphs - the same 8px the light
-// and camera markers use, because an entity marker is the same size whatever
-// it marks.
-constexpr float AUDIO_ICON_RADIUS = 8.0f;
 
 // A dense volume would bury the viewport under thousands of dots, so past this
 // the box alone has to speak for it.
@@ -122,20 +117,17 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
         const glm::quat rot = resolvedWorldRotation(ec.frame.scene, id, tf);
         const glm::vec3 dir = glm::normalize(Math::computeForward(rot));
 
-        // Billboard icon at the entity origin so a light is always findable
+        // Billboard marker at the entity origin so a light is always findable
         // even if the wireframe is tiny or pointed away. Drawn first so the
         // wireframe overlays it.
         {
             ImVec2 sp;
             if (projectToViewport(vp, pos, vpMin, vpSize, sp)) {
-                const float r = 8.0f;
-                // Dim disc behind the glyph so the icon reads on any background.
-                dl->AddCircleFilled(sp, r + 1.0f, IM_COL32(15, 15, 18, 180), 16);
                 const EditorIcon glyph =
                     light.type == LightType::Directional ? EditorIcon::LightDir :
                     light.type == LightType::Point       ? EditorIcon::LightPoint :
-                                                            EditorIcon::LightSpot;
-                drawEditorIcon(dl, glyph, sp, r * 0.85f, col);
+                                                           EditorIcon::LightSpot;
+                drawEntityMarker(dl, glyph, sp, col);
             }
         }
 
@@ -402,13 +394,19 @@ void GizmoOverlay::drawAudioGizmos(EditorContext& ec) {
 
         ImVec2 sp;
         if (projectToViewport(vp, pos, vpMin, vpSize, sp)) {
-            const float r = AUDIO_ICON_RADIUS;
-            // Dim disc behind the glyph so the icon reads on any background.
-            dl->AddCircleFilled(sp, r + 1.0f, IM_COL32(15, 15, 18, 180), 16);
-            drawEditorIcon(dl, EditorIcon::Audio, sp, r * 0.85f, col);
-            // The third state, and the only one that changes while nobody is
-            // editing: this source has a voice in the mixer right now.
-            if (source.playing) dl->AddCircle(sp, r + 3.0f, col, 0, 1.5f);
+            // A 2D source is drawn where its Transform is, but that pose is not
+            // heard - the mixer ignores it. The radiating arcs are exactly what
+            // the two kinds differ by, so the glyph that keeps them and the one
+            // that drops them are the pair, the way a light picks its glyph
+            // from its type.
+            drawEntityMarker(dl, source.spatial ? EditorIcon::Audio : EditorIcon::Audio2D,
+                             sp, col);
+            // The one thing here that changes while nobody is editing: this
+            // source has a voice in the mixer right now. A one-shot is over
+            // before a frame or two have passed, so what the ring reports on
+            // in practice is loops and beds.
+            if (source.playing)
+                dl->AddCircle(sp, ENTITY_MARKER_HIT_RADIUS + 2.0f, col, 0, 1.5f);
         }
 
         // The falloff pair is what an author tunes, and tuning is something
@@ -450,11 +448,8 @@ void GizmoOverlay::drawAudioGizmos(EditorContext& ec) {
         const glm::quat rot = resolvedWorldRotation(scene, id, tf);
 
         ImVec2 sp;
-        if (projectToViewport(vp, pos, vpMin, vpSize, sp)) {
-            const float r = AUDIO_ICON_RADIUS;
-            dl->AddCircleFilled(sp, r + 1.0f, IM_COL32(15, 15, 18, 180), 16);
-            drawEditorIcon(dl, EditorIcon::Listener, sp, r * 0.85f, col);
-        }
+        if (projectToViewport(vp, pos, vpMin, vpSize, sp))
+            drawEntityMarker(dl, EditorIcon::Listener, sp, col);
 
         // Which way the ear faces decides which speaker a source lands in, and
         // forward here is +Z. That is the engine's one convention whose wrong
@@ -583,11 +578,7 @@ void GizmoOverlay::drawCameraGizmos(EditorContext& ec) {
                 ImVec2(mid.x + 5.0f, mid.y), col);
         }
 
-        if (haveApex) {
-            const float r = 8.0f;
-            dl->AddCircleFilled(apexSp, r + 1.0f, IM_COL32(15, 15, 18, 180), 16);
-            drawEditorIcon(dl, EditorIcon::Camera, apexSp, r * 0.85f, col);
-        }
+        if (haveApex) drawEntityMarker(dl, EditorIcon::Camera, apexSp, col);
     });
 }
 

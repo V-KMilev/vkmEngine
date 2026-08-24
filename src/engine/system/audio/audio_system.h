@@ -107,8 +107,15 @@ class AudioSystem : public System {
          * stopping sounds that belong to a world that no longer exists rather
          * than about safety.
          *
-         * Requests waiting to start go too: they named a world that is being
-         * replaced, and a sound nobody can stop must not outlive it.
+         * Requests waiting to start go too, and bluntly: every one of them,
+         * including a request made against the graph that just arrived. The
+         * two cannot be told apart - both were emitted between the same pair
+         * of updates - and a handle from the old graph is not merely dead,
+         * since a swap hands the new graph its own generations and an old
+         * index can be alive there naming a different clip. Only a load that
+         * lands after this system in the frame can lose a good request, which
+         * is the editor's UI stage; at runtime the load is in Simulation and
+         * the flip is consumed on that same frame.
          */
         void stopEverything();
 
