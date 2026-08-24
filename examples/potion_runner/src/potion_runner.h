@@ -8,6 +8,7 @@
 
 #include "core/math/random.h"
 #include "ecs/entity.h"
+#include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/material_asset.h"
 #include "system/script/reflected_behavior.h"
@@ -42,10 +43,15 @@ namespace Vkm::Engine {
  *    AnimationEvent and the runner's footsteps come from the animation rather
  *    than from a timer running beside it.
  *  - AnimationSystem: looping eased tracks drive every coin's spin/pulse.
- *  - AudioSystem: an AudioListener on the chase camera and one spatial
- *    AudioSource on the runner, playing a synthesized footstep (proc_audio.h)
- *    on each marker the stride announces - but only while alive and grounded,
- *    because what a marker means is gameplay's to decide.
+ *  - AudioSystem: an AudioListener on the chase camera, and two synthesized
+ *    clips (proc_audio.h) played as PlaySoundEvent requests rather than
+ *    through an AudioSource. A footstep on each marker the stride announces -
+ *    but only while alive and grounded, because what a marker means is
+ *    gameplay's to decide - and a chime on each coin. Neither can be a source:
+ *    footfalls at top speed arrive closer together than one speaker can
+ *    retrigger, and a coin is pooled, so a source riding it would fly its own
+ *    chime up the track while a source on the player would swallow every ping
+ *    after the first.
  *  - Lighting: point pools under the ceiling luminaires and spot headlights on
  *    trains (toggled per recycle via Light::enabled). Every light has a visible
  *    fixture emitting it. Sunless, the headlight spots take the 2D shadow
@@ -160,6 +166,25 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
         // Setup
         void buildWorld();
         void buildUI();
+        /**
+         * @brief Ask for one playback of @p clip at a world position.
+         *
+         * A PlaySoundEvent rather than an AudioSource, for both callers: a
+         * footfall must be able to overlap the one before it, and a coin's
+         * entity is recycled to the far end of the track the instant it is
+         * collected. Neither is a thing that can own a speaker.
+         *
+         * Volume and pitch are spread a little on every call, so a run does
+         * not sound like one sample on a loop. The spread lives here rather
+         * than on the clip or on a component field because it is the playback
+         * that varies, not the sound.
+         *
+         * @param clip Clip to play; a dead handle is silently ignored.
+         * @param position Where it is heard from, fixed at the moment of the call.
+         * @param volume Base gain, before the per-playback spread.
+         */
+        void playAt(AudioClipHandle clip, const glm::vec3& position, float volume);
+
         EntityId spawnBox(MeshHandle mesh, MaterialHandle material, const char* name);
         MaterialHandle makeMaterial(
             const glm::vec3& albedo, float metallic, float roughness,
@@ -228,6 +253,8 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
         MaterialHandle m_matTrim;
         MaterialHandle m_matPillar;
         MaterialHandle m_matArch;
+        AudioClipHandle m_footstep;   ///< The synthesized footfall, played per stride marker.
+        AudioClipHandle m_coinChime;  ///< The synthesized pickup, played per coin.
 
         // World entities.
         EntityId              m_player{};  ///< Invisible rig root the gameplay drives; visible parts parent under it.

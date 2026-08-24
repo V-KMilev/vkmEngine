@@ -306,7 +306,11 @@ frame.
 The Asset Browser's third tab is a **list**, not a grid, because a sound has no
 picture. What it has is a length, a layout and a sound, so the row shows the
 first two and a play button gives the third - hearing a clip is what previewing
-one means. `Import Sound...` decodes a wav / mp3 / flac into the project, which
+one means. One Stop beside `Import Sound...` serves every row, because one
+audition voice is remembered for the whole tab: a second Play replaces the
+first rather than layering over it, and without a Stop a ninety-second
+ambience outlived the tab switch that started it. `Import Sound...` decodes a
+wav / mp3 / flac into the project, which
 is the only way a clip enters one; right-clicking a row assigns it to the
 selected entity's `AudioSource` as an undoable edit. On a host with no audio
 device the tab says so, since clips still import and cook there - they just
@@ -364,8 +368,14 @@ Default tool keybinds (active only when the camera is **not** in fly mode):
 `Q` Select, `W` Move, `E` Rotate, `R` Scale, `X` toggles Local / World.
 All are rebindable from the Preferences > Keybinds tab.
 
-Light and camera entities show their own gizmos in `gizmo_overlay.cpp`
-(directional rays, cone projections, frustum lines, area-light edges).
+Everything with no mesh of its own draws a gizmo in `gizmo_overlay.cpp`, so it
+can be found and placed at all: lights (directional rays, cone projections,
+area-light edges), cameras (frustum lines), reflection probes and irradiance
+volumes (influence boxes, and the selected volume's probe grid), decals
+(projection box) and particle emitters (marker plus velocity), and audio
+sources and listeners (a billboard icon each; the selected source's `Min` /
+`Max Distance` spheres, and the listener's facing arrow). These are authoring
+shapes rather than debug overlays, so none of them is behind a `View` toggle.
 
 The `View` menu adds three overlays that are off by default because they draw
 for every matching entity rather than the selection: **Show Colliders** (the
@@ -378,7 +388,10 @@ just its position).
 ## Entity selection and shortcuts
 
 - Click in the viewport to pick entities (ray-AABB against the visible
-  set's cached world AABBs).
+  set's cached world AABBs). Lights and audio sources have no mesh to hit, so
+  each gets a proximity box of its own: a light's scales with its reach, an
+  audio source's is fixed, because a sound has no visual extent and a 60-unit
+  `Max Distance` would otherwise swallow every click near it.
 - The hierarchy panel highlights the selection.
 - The inspector shows components of the selected entity. Entities inside a
   prefab instance are selected and edited like any other; an edit to one becomes

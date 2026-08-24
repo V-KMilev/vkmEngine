@@ -14,11 +14,11 @@
 
 #include "core/math/axes.h"
 #include "core/math/easing.h"
+#include "core/math/random.h"
 #include "ecs/scene.h"
 #include "ecs/component/animation/animation.h"
 #include "ecs/component/animation/animator.h"
 #include "ecs/component/animation/bone_socket.h"
-#include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/name.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/component/physics/collider.h"
@@ -39,6 +39,7 @@
 #include "resource/resource_manager.h"
 #include "runner_rig.h"
 #include "system/animation/animation_events.h"
+#include "system/audio/audio_events.h"
 #include "system/hierarchy/hierarchy_operations.h"
 #include "system/physics/physics_events.h"
 #include "system/ui/ui_events.h"
@@ -120,6 +121,23 @@ constexpr uint64_t RUN_SEED = 0x9E3779B9u;
 // once per fixed tick via the event flush, so this bridges that latency - and
 // its tail doubles as coyote time at ledges.
 constexpr float GROUNDED_GRACE = 0.12f;
+
+// What the run sounds like. The distances are the chase camera's, not the
+// runner's: the ear rides the camera, which sits 8.5 m behind and a few above,
+// so full volume has to reach past that or the player would hear their own
+// footsteps attenuated.
+constexpr float FOOTSTEP_VOLUME = 0.55f;
+constexpr float COIN_VOLUME     = 0.42f;
+constexpr float HEARING_NEAR    = 12.0f;
+constexpr float HEARING_FAR     = 60.0f;
+
+// Per-playback spread. Two footfalls at identical gain and pitch read as one
+// sample looping rather than as a runner, and at this game's cadence they land
+// close enough together for that to be obvious. Narrow on purpose: wide enough
+// to break the repeat, not so wide that a step sounds like a different boot.
+constexpr float SPREAD_VOLUME_MIN = 0.86f;
+constexpr float SPREAD_PITCH_MIN  = 0.93f;
+constexpr float SPREAD_PITCH_MAX  = 1.08f;
 
 /**
  * @brief A coin's idle motion: a constant-rate full revolution about Y (four
@@ -214,7 +232,7 @@ void PotionRunner::onStart() {
     subscribe<AnimationEvent>([this](const AnimationEvent& e) {
         if (e.entity != m_player || e.marker != RUNNER_MARKER_FOOTSTEP) return;
         if (!m_alive || !m_grounded) return;
-        m_scene->get<AudioSource>(m_player).playing = true;
+        playAt(m_footstep, m_scene->get<Transform>(m_player).position, FOOTSTEP_VOLUME);
     });
     // Coin pickup rides the physics trigger pipeline: the coin's trigger
     // volume overlaps the dynamic player and the narrowphase reports it.
@@ -226,6 +244,7 @@ void PotionRunner::onStart() {
             c.active = false;
             m_scene->get<Mesh>(c.entity).visible = false;
             ++m_coinCount;
+            playAt(m_coinChime, m_scene->get<Transform>(c.entity).position, COIN_VOLUME);
             // Roof coins pay double - the payoff the ROOF RIDE pill advertises.
             if (c.y > 1.5f) m_bonusScore += coinValue;
             if (m_coinCount % 10 == 0) LOG_INFO("Coins: %d", m_coinCount);
@@ -289,6 +308,20 @@ MaterialHandle PotionRunner::makeMaterial(
     // No texture handles are set: GLMaterial keys each map's "is bound" flag off
     // a valid handle, so the shader falls back to these scalars cleanly.
     return m_resources->add(std::move(material), name);
+}
+
+void PotionRunner::playAt(AudioClipHandle clip, const glm::vec3& position, float volume) {
+    VoiceParams params;
+    // The non-reproducible per-thread generator on purpose: m_rng is the run's
+    // deterministic stream and it deals the track, so drawing from it here
+    // would make the level layout depend on how often the runner's feet hit
+    // the ground. Nothing about a footstep needs to repeat across runs.
+    params.volume      = volume * Math::Random::range(SPREAD_VOLUME_MIN, 1.0f);
+    params.pitch       = Math::Random::range(SPREAD_PITCH_MIN, SPREAD_PITCH_MAX);
+    params.position    = position;
+    params.minDistance = HEARING_NEAR;
+    params.maxDistance = HEARING_FAR;
+    context().events->emit(PlaySoundEvent{clip, params});
 }
 
 EntityId PotionRunner::spawnBox(MeshHandle mesh, MaterialHandle material, const char* name) {
@@ -542,20 +575,13 @@ void PotionRunner::buildWorld() {
     addLimb(RUNNER_BONE_LEG_L, {0.20f, 0.46f, 0.30f});
     addLimb(RUNNER_BONE_LEG_R, {0.20f, 0.46f, 0.30f});
 
-    // The footstep the stride announces. One source, because a source is a
-    // speaker rather than a queue and the clip is shorter than the gap between
-    // two footfalls at any cadence the run reaches. Spatial, so it is heard from
-    // the camera's ear - minDistance covers the chase distance, so the runner is
-    // at full volume where the listener actually sits.
-    {
-        AudioSource footstep;
-        footstep.clip        = m_resources->add(makeFootstepSound(), "potion:footstep");
-        footstep.volume      = 0.55f;
-        footstep.playOnStart = false;
-        footstep.minDistance = 12.0f;
-        footstep.maxDistance = 60.0f;
-        m_scene->add(m_player, std::move(footstep));
-    }
+    // The two sounds this game makes. Registered here and played as requests
+    // rather than hung on an entity: the stride's footfalls arrive 138 ms apart
+    // at top cadence against a 130 ms clip, which leaves one speaker 8 ms to
+    // finish and retrigger in, and a coin is pooled - its entity is 160 m up
+    // the track before its chime would have ended.
+    m_footstep  = m_resources->add(makeFootstepSound(), "potion:footstep");
+    m_coinChime = m_resources->add(makeCoinChime(), "potion:coin");
 
     // Scrolling decoration pools (no gameplay, just a sense of speed). Pillars
     // stay shorter than the camera height so they never cross the view.

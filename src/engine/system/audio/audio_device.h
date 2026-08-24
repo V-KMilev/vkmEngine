@@ -184,7 +184,22 @@ class AudioDevice {
         bool isVoicePlaying(VoiceId voice) const;
 
         /**
-         * @brief Stop @p voice and release it. Unknown ids are ignored.
+         * @brief Ramp @p voice to silence and let it go. Unknown ids are ignored.
+         *
+         * The ramp is a few milliseconds and exists because releasing a sound
+         * outright cuts its waveform at whatever sample the cursor is on, which
+         * is a click at up to the signal's full amplitude - and three of the
+         * four things that stop a voice (a source's entity destroyed, its
+         * component removed, the editor's audition Stop) have no caller left to
+         * fade it themselves.
+         *
+         * Returns at once; the voice is silent within the ramp and released by
+         * the next reapFinishedVoices(). Until then the id answers exactly as
+         * it did when this released outright - unknown to updateVoice, finished
+         * to isVoicePlaying - so nothing above has a second state to know
+         * about. What it does mean is that a voice restarted on the following
+         * frame briefly overlaps the tail of the one it replaced, which is the
+         * crossfade it sounds like rather than a fault.
          */
         void stopVoice(VoiceId voice);
 
@@ -201,18 +216,39 @@ class AudioDevice {
          * Safe for the voices AudioSystem does track, because ids are never
          * reused and stopping one twice is a no-op - a source whose voice was
          * swept still reads as finished on the next reconcile.
+         *
+         * It is also what releases a voice stopVoice() ramped out, so a mixer
+         * nobody ever reaps holds those until it is closed. A device-backed one
+         * is reaped every frame by AudioSystem; an offline one is reaped by
+         * whoever pumps it.
+         *
+         * Finished is decided against the mixer's own clock, which advances a
+         * device period at a time, so a ramped voice is freed some way after
+         * it fell silent - 19 to 74 ms here, against PulseAudio. Inaudible for
+         * all of it, and bounded: a source toggled every frame at 60 Hz holds
+         * five voices rather than one.
          */
         void reapFinishedVoices();
 
         /**
-         * @brief Stop and release every voice, leaving the device open.
+         * @brief Cut and release every voice at once, leaving the device open.
          *
          * The answer to a scene load: the clips the voices are reading are
          * about to be freed, so nothing may still be pointing at them.
+         *
+         * Deliberately not ramped, unlike stopVoice(). This is the teardown
+         * path - close() uninitialises the mixer on the next line, so a ramp
+         * scheduled here would never be mixed at all, and the scene load that
+         * calls it has already replaced the world those sounds belonged to.
          */
         void stopAllVoices();
 
-        /// Number of voices the mixer currently holds.
+        /**
+         * @brief Number of voices the mixer currently holds.
+         *
+         * Which includes any still ramping out of a stopVoice(), because that
+         * is what the mixer is holding - they are inaudible but not yet freed.
+         */
         size_t voiceCount() const;
 
         /**

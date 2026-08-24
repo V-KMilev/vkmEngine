@@ -15,6 +15,7 @@
 #include "core/math/bounds.h"
 #include "system/camera/camera_controller_system.h"
 #include "resource/resource_manager.h"
+#include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/world_transform.h"
 
 namespace Vkm::Engine {
@@ -324,6 +325,27 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
 
         float t;
         if (Math::rayIntersectsAABB(rayOrigin, invDir, lightMin, lightMax, t) && t < nearestT) {
+            nearestT = t;
+            hitEntity = id;
+        }
+    });
+
+    // Audio sources, on the same terms as lights and for the reason the owner
+    // of a scene asks for: the gizmo that moves a source only appears once the
+    // source is selected, so an icon you cannot click is an icon you cannot
+    // place. A fixed half-extent rather than one scaled by minDistance, because
+    // a sound has no visual extent - the icon IS the target, and a source with
+    // a 60-unit reach must not swallow every click in the level.
+    ctx.scene.forEach<AudioSource, Transform>([&](EntityId id, const AudioSource&,
+                                                  const Transform& transform) {
+        if (ctx.scene.has<Mesh>(id)) return;   // already tested above
+
+        const glm::vec3 pos = resolvedWorldPosition(ctx.scene, id, transform);
+        const glm::vec3 sourceMin = pos - glm::vec3(0.5f);
+        const glm::vec3 sourceMax = pos + glm::vec3(0.5f);
+
+        float t;
+        if (Math::rayIntersectsAABB(rayOrigin, invDir, sourceMin, sourceMax, t) && t < nearestT) {
             nearestT = t;
             hitEntity = id;
         }

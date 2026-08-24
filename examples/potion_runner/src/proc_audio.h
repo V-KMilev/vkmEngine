@@ -30,4 +30,24 @@ namespace Vkm::Engine {
  */
 AudioClipAsset makeFootstepSound();
 
+/**
+ * @brief Synthesize a coin pickup: a short two-partial chime.
+ *
+ * A fifth above the fundamental, both decaying exponentially, which is the
+ * cheapest thing that reads as metal rather than as a beep - one partial alone
+ * is a test tone. Ramped at both ends for the same reason the footstep is.
+ * Longer than the footfall (0.18 s against 0.13) because a struck chime rings,
+ * but deliberately no louder: it peaks at 0.68 to the footstep's 0.68 and sits
+ * lower in rms, because a run collects coins while the feet keep landing and
+ * the chime has to cut through the stride without covering it.
+ *
+ * Deterministic: the small amount of noise in the strike comes from a seeded
+ * engine Rng, so the clip is identical on every launch. What varies between
+ * pickups is the playback (gain and pitch), not the sound.
+ *
+ * @return A ~0.18 second mono clip at 44100 Hz, unnamed - the caller names it
+ *         when it registers it, like every other asset this project builds.
+ */
+AudioClipAsset makeCoinChime();
+
 } // namespace Vkm::Engine
