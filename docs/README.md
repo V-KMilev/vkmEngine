@@ -38,7 +38,7 @@ is whichever subsystem you're about to change.
 5. **The subsystem you're touching** - the matching doc under
    [reference/](reference/) (architecture, ecs, resources, threading, editor, or
    `reference/system/` for rendering, lighting, visibility, hierarchy, animation,
-   events, io, scripting, physics, ui).
+   events, io, scripting, physics, ui, audio).
 
 If you only have time for one thing before a small change: skim the relevant
 reference doc and the development guide.
@@ -101,4 +101,5 @@ docs/
       scripting.md      Behavior lifecycle, ScriptComponent, DLL hot-reload
       physics.md        fixed-step rigid bodies, box + capsule colliders, solver, character controller
       ui.md             screen-space in-game UI (canvas/element/image/text/button)
+      audio.md          clips, sources, the listener, and the device seam
 ```

@@ -6,6 +6,8 @@
 #include "ecs/component/animation/animation.h"
 #include "ecs/component/animation/animator.h"
 #include "ecs/component/animation/bone_socket.h"
+#include "ecs/component/audio/audio_listener.h"
+#include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/hierarchy.h"
 #include "ecs/component/core/name.h"
 #include "ecs/component/core/transform.h"
@@ -125,6 +127,20 @@ namespace ComponentSerializer {
 
     nlohmann::json save(const ParticleEmitter&);
     void load(const nlohmann::json&, ParticleEmitter&);
+
+    /**
+     * @brief AudioSource: the clip it names and how it should be heard.
+     *
+     * `playing` and `started` are deliberately absent. They describe a play
+     * session rather than the authored scene, and a scene row holding a half
+     * finished sound would resume a noise whose beginning nobody heard.
+     * `playOnStart` is the authored half of the same thing.
+     */
+    nlohmann::json save(const AudioSource&, const ResourceManager&);
+    void load(const nlohmann::json&, AudioSource&, const ResourceManager&);
+
+    nlohmann::json save(const AudioListener&);
+    void load(const nlohmann::json&, AudioListener&);
 
     nlohmann::json save(const IrradianceVolume&);
     void load(const nlohmann::json&, IrradianceVolume&);

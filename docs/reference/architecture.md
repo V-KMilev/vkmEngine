@@ -37,7 +37,7 @@ Each system is registered at exactly one stage (`core/system.h`):
 ```cpp
 enum class SystemStage : uint8_t {
     Input        = 0,   // poll devices, capture input
-    Simulation   = 1,   // events, async loading, scripting, animation, physics
+    Simulation   = 1,   // events, async loading, scripting, animation, physics, audio
     Transform    = 2,   // local -> world transform resolution
     Visibility   = 3,   // culling
     Render        = 4,   // build RenderView, submit to the backend
@@ -55,7 +55,7 @@ does:
 |------------|---------------------------------------------------------------------------------|
 | Input      | `CameraControllerSystem`                                                              |
 | Simulation | (EventBus flush), `AsyncLoaderSystem`, `BehaviorSystem`, `AnimationSystem`, `SkeletalAnimationSystem`, `ParticleSystem`, `PhysicsSystem`, `CharacterControllerSystem`, `SkySystem` |
-| Transform  | `BoneSocketSystem`, `HierarchySystem`, `UISystem` (the game UI; runs in **both** binaries) |
+| Transform  | `BoneSocketSystem`, `HierarchySystem`, `UISystem` (the game UI; runs in **both** binaries), `AudioSystem` (after the world resolve it reads poses from) |
 | Visibility | `VisibilitySystem`                                                            |
 | Render     | `RenderSystem`                                                                |
 | UI         | `EditorSystem` (editor binary only)                                           |
@@ -104,7 +104,10 @@ elapsed seconds (input, camera, UI, file watching), `getSimDelta()` is that delt
 scaled by play state (0 while paused, exactly one step while single-stepping), and
 `getFixedStep()` is the constant 1/60 to use in `fixedUpdate()`. Simulation systems
 read the sim delta so pause, time-scale, and single-step apply uniformly; anything
-that must advance regardless of play state reads the real delta.
+that must advance regardless of play state reads the real delta. A system reads
+the timeline its responsibility lives on, so `AudioSystem` runs every frame
+whether or not the simulation advanced - pausing a game must not cut its music
+(see [Audio](system/audio.md#time-pause-and-the-editor)).
 
 The context is rebuilt from scratch each frame and the fixed-step loop runs before
 any producer stage, so `visibility`, `poses` and `ui` are always null inside
@@ -137,11 +140,13 @@ Engine code, single include root `src/engine/`:
 | `ecs/component/core/`      | `Transform`, `WorldTransform`, `Hierarchy`, `Name`                       |
 | `ecs/component/render/`    | `Mesh`, `Light`, `Camera`, `Decal`, `LOD`, `ParticleEmitter`, `ReflectionProbe`, `IrradianceVolume` |
 | `ecs/component/animation/` | `Animation`, `Animator`, `BoneSocket`                                    |
+| `ecs/component/audio/`     | `AudioSource`, `AudioListener`                                           |
 | `ecs/component/physics/`   | `Rigidbody`, `Collider`, `CharacterController`                           |
 | `ecs/component/ui/`        | `UICanvas`, `UIElement`, `UIImage`, `UIText`, `UIButton`                 |
 | `ecs/component/prefab/`    | `PrefabEntity`, `PrefabInstance`                                         |
 | `system/animation/`        | `AnimationSystem`, `AnimationTrack`, `SkeletalAnimationSystem`, `PoseBuffer`, `composePose`, `BoneSocketSystem` |
 | `system/async/`            | `AsyncLoaderSystem`                                                      |
+| `system/audio/`            | `AudioSystem`, `AudioDevice` (the only engine file that includes the audio backend) |
 | `system/camera/`           | `CameraControllerSystem`                                                       |
 | `core/event/`              | `EventBus` (typed pub/sub; engine-owned infrastructure)                  |
 | `system/hierarchy/`        | `HierarchySystem`, `HierarchyOperations` (free functions)               |
@@ -152,7 +157,7 @@ Engine code, single include root `src/engine/`:
 | `system/visibility/`       | `VisibilitySystem`, `Visibility`, `VisibilityContext`, `BoundsUtils`    |
 | `system/visibility/culling/` | `FrustumCuller`, `DistanceCulling`, `ScreenSizeCulling`                |
 | `resource/`                | `ResourceManager`, `Resource`, `Handle`, `texture_format`               |
-| `resource/asset/`          | `MeshAsset`, `MaterialAsset`, `TextureAsset`, `FontAsset`               |
+| `resource/asset/`          | `MeshAsset`, `MaterialAsset`, `TextureAsset`, `FontAsset`, `SkeletonAsset`, `AnimationClipAsset`, `AudioClipAsset` |
 | `io/`                      | `json_vec`, `project_paths` (shared I/O helpers)                          |
 | `io/asset/`                | `AssetLibrary`, `AssetFactory`, `AssetCooker`, `CookedLoader`, `AssetSerializer` |
 | `io/scene/`                | `SceneSerializer`, `ComponentSerializer`                                  |

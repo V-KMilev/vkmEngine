@@ -13,6 +13,7 @@
 #include "generator/material_generators.h"
 #include "generator/mesh_generators.h"
 #include "generator/texture_generators.h"
+#include "loader/audio_loaders.h"
 #include "loader/material_loaders.h"
 #include "loader/texture_loaders.h"
 #include "loader/model_loaders.h"
@@ -161,6 +162,13 @@ AnimationClipHandle createRecipeAnimationClip(const nlohmann::json& source, Reso
     return createCookedAnimationClip(source, resources);
 }
 
+AudioClipHandle createRecipeAudioClip(const nlohmann::json& source, ResourceManager& resources) {
+    if (source.value("kind", std::string{}) == "file") {
+        return loadAudioClip(source.value("path", std::string{}), resources);
+    }
+    return createCookedAudioClip(source, resources);
+}
+
 MaterialHandle createRecipeMaterial(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value("kind", std::string{});
 
@@ -188,13 +196,14 @@ MaterialHandle createRecipeMaterial(const nlohmann::json& source, ResourceManage
 void registerRecipeAssetFactories() {
     LOG_INFO("Registering recipe asset factories (meshes: generator/model/decimate, "
              "textures: file/builtin/solid/model-image, materials: folder/default/model, "
-             "skeletons + clips: model)");
+             "skeletons + clips: model, sounds: file)");
     assetFactory().createMesh     = &createRecipeMesh;
     assetFactory().createTexture  = &createRecipeTexture;
     assetFactory().createMaterial = &createRecipeMaterial;
 
     assetFactory().createSkeleton      = &createRecipeSkeleton;
     assetFactory().createAnimationClip = &createRecipeAnimationClip;
+    assetFactory().createAudioClip     = &createRecipeAudioClip;
 }
 
 } // namespace Vkm::Engine

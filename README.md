@@ -101,6 +101,7 @@ modules/
   vkmGL            Submodule: GL object wrappers + shader loading (vendors GLEW)
   vkmLog           Submodule: logging + VKM_ASSERT
   glm / glfw / stb Submodules: math, windowing, image + font decode
+  miniaudio        Submodule: audio device + wav/mp3/flac decode
   imgui            Submodule: Dear ImGui
   assimp / freetype / json / tracy
                    Submodules: model import, font rasterization, JSON, profiling

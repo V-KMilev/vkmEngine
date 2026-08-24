@@ -5,13 +5,16 @@
 #include <cmath>
 #include <cstring>
 #include <fstream>
+#include <memory>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include "logger.h"
 
 #include "io/asset/asset_library.h"
 #include "resource/asset/animation_clip_asset.h"
+#include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
 #include "resource/asset/texture_asset.h"
@@ -26,6 +29,7 @@ constexpr uint16_t KIND_MESH       = 1;
 constexpr uint16_t KIND_TEXTURE    = 2;
 constexpr uint16_t KIND_SKELETON   = 3;
 constexpr uint16_t KIND_CLIP       = 4;
+constexpr uint16_t KIND_AUDIO      = 5;
 
 // The header is read/written field-by-field (never as a struct) so compiler
 // padding can't leak into the format: magic[4] + sentinel + kind + version +
@@ -47,6 +51,8 @@ constexpr uint64_t SKELETON_PER_BONE_BYTES = sizeof(int32_t) + sizeof(uint32_t)
 // then the bulk ClipBone table, the six key arrays, and the skeleton name.
 constexpr uint64_t CLIP_FIXED_BYTES = sizeof(uint64_t) + sizeof(float)
                                     + sizeof(uint64_t) * 6 + sizeof(uint32_t);
+// Audio body: sampleRate + channels + sampleCount, then the interleaved PCM.
+constexpr uint64_t AUDIO_FIXED_BYTES = sizeof(uint32_t) * 2 + sizeof(uint64_t);
 
 // Bytes one texel occupies in the source pixel data. An out-of-range enum (this
 // comes off disk) falls back to the same reading the backend gives it - RGBA /
@@ -164,6 +170,7 @@ bool cookedIdentity(AssetType type, uint16_t& outKind, uint16_t& outVersion) {
         case AssetType::Texture:       outKind = KIND_TEXTURE;  outVersion = TEXTURE_FORMAT_VERSION;        return true;
         case AssetType::Skeleton:      outKind = KIND_SKELETON; outVersion = SKELETON_FORMAT_VERSION;       return true;
         case AssetType::AnimationClip: outKind = KIND_CLIP;     outVersion = ANIMATION_CLIP_FORMAT_VERSION; return true;
+        case AssetType::AudioClip:     outKind = KIND_AUDIO;    outVersion = AUDIO_CLIP_FORMAT_VERSION;     return true;
         case AssetType::Material:
         case AssetType::Count:         return false;
     }
@@ -839,6 +846,98 @@ bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& ou
     }
 
     out.duration = duration;
+    if (outHash) *outHash = recipeHash;
+    return true;
+}
+
+bool writeAudioClip(const std::filesystem::path& path, const AudioClipAsset& audio, uint64_t recipeHash) {
+    const std::string p = path.string();
+    if (audio.channels == 0 || audio.channels > MAX_AUDIO_CHANNELS) {
+        LOG_ERROR("Cooked sound '%s': %u channels is outside the 1..%u the format admits",
+                  p.c_str(), audio.channels, MAX_AUDIO_CHANNELS);
+        return false;
+    }
+    if (audio.sampleRate == 0 || audio.sampleRate > MAX_AUDIO_SAMPLE_RATE) {
+        LOG_ERROR("Cooked sound '%s': implausible sample rate %u", p.c_str(), audio.sampleRate);
+        return false;
+    }
+    // A partial frame is a clip whose last frame is missing a channel; the
+    // mixer reads whole frames and would run off the end of the buffer.
+    if (audio.sampleCount() % audio.channels != 0) {
+        LOG_ERROR("Cooked sound '%s': %zu samples do not divide into %u channels",
+                  p.c_str(), audio.sampleCount(), audio.channels);
+        return false;
+    }
+
+    std::ofstream os = openCookedWrite(path, "sound");
+    if (!os) return false;
+
+    const uint64_t payloadBytes = AUDIO_FIXED_BYTES + audio.sampleCount() * sizeof(int16_t);
+
+    writeHeader(os, KIND_AUDIO, AUDIO_CLIP_FORMAT_VERSION, recipeHash, payloadBytes);
+    writeRaw(os, audio.sampleRate);
+    writeRaw(os, audio.channels);
+    writeRaw(os, static_cast<uint64_t>(audio.sampleCount()));
+    if (audio.samples) writeBulk(os, *audio.samples);
+
+    if (!os) {
+        LOG_ERROR("Cooked sound '%s': write failed", p.c_str());
+        return false;
+    }
+    return true;
+}
+
+bool readAudioClip(const std::filesystem::path& path, AudioClipAsset& out, uint64_t* outHash) {
+    const std::string p = path.string();
+    std::ifstream is;
+    uint64_t recipeHash = 0;
+    uint64_t payloadBytes = 0;
+    if (!openCookedRead(is, path, KIND_AUDIO, AUDIO_CLIP_FORMAT_VERSION, AUDIO_FIXED_BYTES, "sound",
+                        recipeHash, payloadBytes)) return false;
+
+    uint32_t sampleRate  = 0;
+    uint32_t channels    = 0;
+    uint64_t sampleCount = 0;
+    if (!readRaw(is, sampleRate) || !readRaw(is, channels) || !readRaw(is, sampleCount)) {
+        LOG_ERROR("Cooked sound '%s': truncated body", p.c_str());
+        return false;
+    }
+
+    uint64_t remaining = payloadBytes - AUDIO_FIXED_BYTES;
+    if (!takeCount(sampleCount, sizeof(int16_t), remaining, p, "sound", "sample")) return false;
+    if (remaining != 0) {
+        LOG_ERROR("Cooked sound '%s': payload size inconsistent with counts", p.c_str());
+        return false;
+    }
+
+    if (channels == 0 || channels > MAX_AUDIO_CHANNELS) {
+        LOG_ERROR("Cooked sound '%s': %u channels is outside the 1..%u the format admits",
+                  p.c_str(), channels, MAX_AUDIO_CHANNELS);
+        return false;
+    }
+    if (sampleRate == 0 || sampleRate > MAX_AUDIO_SAMPLE_RATE) {
+        LOG_ERROR("Cooked sound '%s': implausible sample rate %u", p.c_str(), sampleRate);
+        return false;
+    }
+    // Checked as well as sized, for the same reason the clip's key ranges are:
+    // a file can carry the right number of bytes and still describe a frame
+    // layout that does not fit them, and the mixer reads whole frames.
+    if (sampleCount % channels != 0) {
+        LOG_ERROR("Cooked sound '%s': %llu samples do not divide into %u channels", p.c_str(),
+                  static_cast<unsigned long long>(sampleCount), channels);
+        return false;
+    }
+
+    std::vector<int16_t> samples;
+    readBulk(is, samples, sampleCount);
+    if (!is) {
+        LOG_ERROR("Cooked sound '%s': body read failed", p.c_str());
+        return false;
+    }
+
+    out.sampleRate = sampleRate;
+    out.channels   = channels;
+    out.samples    = std::make_shared<const std::vector<int16_t>>(std::move(samples));
     if (outHash) *outHash = recipeHash;
     return true;
 }

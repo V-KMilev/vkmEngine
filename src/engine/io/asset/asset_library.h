@@ -20,6 +20,7 @@ enum class AssetType : uint8_t {
     Material,
     Skeleton,
     AnimationClip,
+    AudioClip,
 
     Count
 };
@@ -133,4 +134,4 @@ class AssetLibrary {
 
 } // namespace Vkm::Engine
 
-VKM_ENUM_NAMES(::Vkm::Engine::AssetType, "mesh", "texture", "material", "skeleton", "animationClip")
+VKM_ENUM_NAMES(::Vkm::Engine::AssetType, "mesh", "texture", "material", "skeleton", "animationClip", "audioClip")

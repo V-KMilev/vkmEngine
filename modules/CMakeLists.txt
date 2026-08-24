@@ -62,6 +62,42 @@ if(NOT TARGET stb)
     )
 endif()
 
+# ============================================================================
+# miniaudio (audio device + wav/mp3/flac decoding). Public domain, one header,
+# and the one-line implementation translation unit it ships beside it - so the
+# implementation is compiled once here instead of being written out the way
+# stb's is above. The engine absorbs it privately: only src/engine/system/audio
+# and the audio importer include the header, and nothing that plays a sound
+# needs to know it exists.
+#
+# Three subsystems are compiled out rather than left unused. Encoding and
+# waveform/noise generation have no caller. The resource manager is the one
+# that matters: it is miniaudio's own file loader, and it would both spawn a
+# job thread the engine never asked for and give the audio engine a second way
+# to acquire a sound - one that bypasses ResourceManager, the asset library and
+# the cooked cache. Removing it makes that seam a link error rather than a rule.
+# ============================================================================
+if(NOT TARGET miniaudio)
+    add_library(miniaudio STATIC miniaudio/miniaudio.c)
+    # Split for export, like stb: miniaudio travels in the engine's link
+    # interface, so its include path has to resolve against an installed SDK too.
+    target_include_directories(miniaudio PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/miniaudio>
+        $<INSTALL_INTERFACE:include>
+    )
+    # PUBLIC because the header reads them as well: a consumer that compiled
+    # with a different set would see a different ma_engine_config layout.
+    target_compile_definitions(miniaudio PUBLIC
+        MA_NO_ENCODING
+        MA_NO_GENERATION
+        MA_NO_RESOURCE_MANAGER
+    )
+    # The Linux backends (ALSA / PulseAudio / JACK) are dlopen'ed at runtime, so
+    # miniaudio links none of them - it needs the loader and a thread library.
+    find_package(Threads REQUIRED)
+    target_link_libraries(miniaudio PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
+endif()
+
 # vkmGL: the OpenGL layer. Adds glew, and defers to the targets above.
 #
 # Its test suite defaults to "on only when vkm_gl is the top-level project",

@@ -53,7 +53,9 @@ complete worked examples. See [system/io.md](system/io.md#projects-and-the-three
   as references (scene, resources, clock, events, window, input), per-frame
   products as pointers (`visibility`, `ui`). Time comes off the clock:
   `getDeltaTime()` (real), `getSimDelta()` (clock-scaled, pause/step-aware),
-  `getFixedStep()` (1/60). Simulation systems read the sim delta.
+  `getFixedStep()` (1/60). Simulation systems read the sim delta; presentation
+  and services run every frame regardless of it - `AudioSystem` steps no time of
+  its own at all, which is why pausing a game does not cut its music.
 
 ## System execution order
 
@@ -67,7 +69,7 @@ is the scaling lever). The default wiring lives in `setupEngineApp`
 |-------|-----------------|
 | Input | CameraControllerSystem |
 | Simulation | (EventBus flush), AsyncLoaderSystem, BehaviorSystem, AnimationSystem, SkeletalAnimationSystem, ParticleSystem, PhysicsSystem, CharacterControllerSystem, SkySystem |
-| Transform | HierarchySystem (resolves `WorldTransform` from local `Transform` + hierarchy); UISystem (resolves UI layout + builds the screen-space overlay draw list) |
+| Transform | HierarchySystem (resolves `WorldTransform` from local `Transform` + hierarchy); UISystem (resolves UI layout + builds the screen-space overlay draw list); AudioSystem (pushes the resolved poses to the mixer) |
 | Visibility | VisibilitySystem (frustum / distance / screen-size culling -> `Visibility`) |
 | Render | RenderSystem (builds `RenderView`, hands it to the backend) |
 | UI | EditorSystem (editor binary only) |
@@ -96,7 +98,8 @@ and [ui.md](system/ui.md).
 ## Resources
 
 `ResourceManager` owns all assets (`MeshAsset`, `TextureAsset`, `MaterialAsset`,
-`ShaderAsset`) behind typed generational `Handle<T>`s. Assets are identified by a
+`FontAsset`, `SkeletonAsset`, `AnimationClipAsset`, `AudioClipAsset`) behind
+typed generational `Handle<T>`s. Assets are identified by a
 unique non-empty `name`; scene files reference them by name and resolve via
 `findByName`. `commit()` bumps a per-resource version so the backend skips
 unchanged uploads. See [resources.md](resources.md).
@@ -122,4 +125,4 @@ Full tree and design patterns: [architecture.md](architecture.md). House style:
 - **Subsystem detail:** [architecture.md](architecture.md), [ecs.md](ecs.md),
   [resources.md](resources.md), [threading.md](threading.md),
   [editor.md](editor.md), and `system/` (rendering, lighting, visibility,
-  hierarchy, animation, events, io, scripting, physics).
+  hierarchy, animation, events, io, scripting, physics, ui, audio).
