@@ -189,6 +189,22 @@ class AudioDevice {
         void stopVoice(VoiceId voice);
 
         /**
+         * @brief Release every voice that has played to its end.
+         *
+         * A one-shot leaves a finished sound sitting in the mixer until someone
+         * stops it, and not every caller has somewhere to keep the id: the
+         * editor's clip audition plays a file with no entity behind it and
+         * nothing to reconcile it against later. Sweeping here means play() is
+         * safe for a caller that never looks back, without a second lifetime
+         * rule for one kind of voice.
+         *
+         * Safe for the voices AudioSystem does track, because ids are never
+         * reused and stopping one twice is a no-op - a source whose voice was
+         * swept still reads as finished on the next reconcile.
+         */
+        void reapFinishedVoices();
+
+        /**
          * @brief Stop and release every voice, leaving the device open.
          *
          * The answer to a scene load: the clips the voices are reading are

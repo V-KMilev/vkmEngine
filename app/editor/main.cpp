@@ -78,7 +78,7 @@ int main(int argc, char** argv) {
 
         engine.addSystem<Vkm::Engine::EditorSystem>(Vkm::Engine::SystemStage::UI,
             engine.getWindow().getWindowContext(),
-            sys.camera, sys.ui, sys.visibility, sys.render, scriptModule, project.name);
+            sys.camera, sys.ui, sys.visibility, sys.render, sys.audio, scriptModule, project.name);
 
         // The editor opens on the same scene the runtime would boot, by the same
         // rule (see tools/project_boot.h). Which one it got is deliberately not

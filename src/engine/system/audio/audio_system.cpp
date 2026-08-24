@@ -49,6 +49,11 @@ void AudioSystem::update(FrameContext& ctx) {
         stopEverything();
     }
 
+    // Sounds that ran out, including any the editor started to audition a clip
+    // and has no id left for. A voice this drops that a source still tracks
+    // reads as finished on the pass below, which is what it is.
+    m_device.reapFinishedVoices();
+
     updateListener(ctx);
 
     ++m_frame;

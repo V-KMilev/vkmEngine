@@ -43,6 +43,7 @@ EditorSystem::EditorSystem(
     UISystem& uiSystem,
     VisibilitySystem& visibilitySystem,
     RenderSystem& renderSystem,
+    AudioSystem& audioSystem,
     ScriptModule& scriptModule,
     const std::string& projectName
 )
@@ -50,6 +51,7 @@ EditorSystem::EditorSystem(
     , m_uiSystem(uiSystem)
     , m_renderSystem(renderSystem)
     , m_visibilitySystem(visibilitySystem)
+    , m_audioSystem(audioSystem)
     , m_scriptModule(scriptModule)
     , m_materialPreviews(renderSystem)
     , m_sceneIO(cameraController, m_materialPreviews)
@@ -438,6 +440,7 @@ void EditorSystem::update(FrameContext& ctx) {
         m_renderSystem,
         m_visibilitySystem,
         m_materialPreviews,
+        m_audioSystem,
         m_errorLog,
         {},
         {}

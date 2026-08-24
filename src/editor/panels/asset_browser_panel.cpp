@@ -7,13 +7,17 @@
 #include <type_traits>
 #include <unordered_set>
 
+#include "ecs/component/audio/audio_source.h"
 #include "ecs/component/render/decal.h"
 #include "framework/editor_common.h"
 #include "framework/editor_actions.h"
 #include "framework/editor_commands.h"
 #include "framework/material_preview_session.h"
+#include "system/audio/audio_system.h"
 #include "system/render/render_system.h"
 #include "generator/mesh_generators.h"
+#include "loader/audio_loaders.h"
+#include "io/project_paths.h"
 #include "ui/editor_dialogs.h"
 
 namespace Vkm::Engine {
@@ -128,6 +132,12 @@ void AssetBrowserPanel::draw(EditorContext& ec) {
         if (ImGui::BeginTabItem("Meshes")) {
             ImGui::BeginChild("##meshgrid");
             drawMeshes(ec);
+            ImGui::EndChild();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Sounds")) {
+            ImGui::BeginChild("##soundlist");
+            drawSounds(ec);
             ImGui::EndChild();
             ImGui::EndTabItem();
         }
@@ -297,6 +307,122 @@ void AssetBrowserPanel::drawAssetGrid(EditorContext& ec) {
         if constexpr (isMaterial) ImGui::TextDisabled("No materials. Import a model or duplicate one.");
         else                      ImGui::TextDisabled("No meshes loaded. Use Import Model...");
     }
+}
+
+void AssetBrowserPanel::drawSounds(EditorContext& ec) {
+    EditorState&     state     = ec.state;
+    ResourceManager& resources = ec.frame.resources;
+    Scene&           scene     = ec.frame.scene;
+    AudioDevice&     device    = ec.audioSystem.device();
+
+    if (ImGui::Button("Import Sound...")) m_requestSoundImport = true;
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Decode a wav / mp3 / flac into the project's assets");
+    ImGui::SameLine();
+    if (!device.isOpen()) {
+        ImGui::TextColored(EditorStyle::WARNING, "No audio device - clips import but cannot be heard.");
+    } else {
+        ImGui::TextDisabled("Play a clip to hear it; auditioning changes nothing in the scene.");
+    }
+    ImGui::Separator();
+
+    if (m_requestSoundImport) {
+        m_soundPicker.options.popupId    = "Import Sound";
+        m_soundPicker.options.title      = "Import Sound";
+        m_soundPicker.options.root       = ProjectPaths::assets();
+        m_soundPicker.options.recursive  = true;
+        m_soundPicker.options.kind       = AssetPicker::Kind::Files;
+        m_soundPicker.options.extensions = {".wav", ".mp3", ".flac"};
+        m_soundPicker.options.maxResults = 2000;
+        m_soundPicker.options.relativeTo = ProjectPaths::projectRoot();
+        m_soundPicker.options.hint       = "WAV / MP3 / FLAC";
+        m_soundPicker.open();
+        m_requestSoundImport = false;
+    }
+    if (std::string picked; m_soundPicker.draw(picked)) {
+        if (loadAudioClip(picked, resources)) state.markSceneDirty();
+        else state.pushToast(EditorState::ToastKind::Error, "Could not decode " + picked);
+    }
+
+    // Assigning needs somewhere to assign to. A source with no clip is the
+    // usual state right after adding the component, so this is the path that
+    // fills it in without going back to the Inspector.
+    const EntityId sel = state.selectedEntity;
+    const bool canAssign = sel && scene.isAlive(sel) && scene.has<AudioSource>(sel);
+
+    constexpr ImGuiTableFlags TABLE_FLAGS =
+        ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_SizingStretchProp;
+    if (!ImGui::BeginTable("##sounds", 5, TABLE_FLAGS)) return;
+
+    ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight() * 2.4f);
+    ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+    ImGui::TableSetupColumn("Length", ImGuiTableColumnFlags_WidthFixed, EditorStyle::px(58.0f));
+    ImGui::TableSetupColumn("Format", ImGuiTableColumnFlags_WidthFixed, EditorStyle::px(96.0f));
+    ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, EditorStyle::px(64.0f));
+    ImGui::TableHeadersRow();
+
+    int shown = 0;
+    resources.forEachOfType<AudioClipAsset>([&](AudioClipHandle h, const AudioClipAsset& clip) {
+        if (clip.hidden || !matchesFilter(clip.name.c_str(), m_filter)) return;
+        ++shown;
+
+        ImGui::TableNextRow();
+        ImGui::PushID(static_cast<int>(h.id()));
+
+        ImGui::TableNextColumn();
+        const float ih = ImGui::GetFrameHeight();
+        ImGui::BeginDisabled(!device.isOpen());
+        if (iconButton("abSoundPlay", EditorIcon::Play, false, device.isOpen(), "Audition", ih)) {
+            device.stopVoice(m_previewVoice);
+            // Flat, not positioned. A default VoiceParams is spatial, and a
+            // spatial voice is measured against the scene's listener: in a
+            // project that has none yet - which is exactly the project someone
+            // is importing sounds into - it is silent, and in one that has an
+            // ear somewhere it plays at whatever the world origin sounds like
+            // from there. An audition is asking to hear the file.
+            VoiceParams audition;
+            audition.spatial = false;
+            m_previewVoice = device.play(clip, audition);
+        }
+        ImGui::EndDisabled();
+
+        ImGui::TableNextColumn();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(clip.name.empty() ? "(unnamed)" : clip.name.c_str());
+        if (ImGui::BeginPopupContextItem("##soundctx")) {
+            ImGui::BeginDisabled(!canAssign);
+            if (ImGui::MenuItem("Assign to selected Audio Source")) {
+                AudioSource& source = scene.get<AudioSource>(sel);
+                const AudioSource before = source;
+                source.clip = h;
+                state.commands.push(std::make_unique<ComponentEditCommand<AudioSource>>(
+                    sel, before, source, "Assign Sound"));
+                state.markSceneDirty();
+            }
+            ImGui::EndDisabled();
+            if (!canAssign) ImGui::TextDisabled("(select an entity with an Audio Source)");
+            ImGui::EndPopup();
+        }
+
+        ImGui::TableNextColumn();
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("%.2fs", static_cast<double>(clip.duration()));
+
+        ImGui::TableNextColumn();
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("%s %u Hz", clip.channels == 1 ? "mono" : "stereo", clip.sampleRate);
+
+        ImGui::TableNextColumn();
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("%.1f MB",
+                    static_cast<double>(clip.sampleCount() * sizeof(int16_t)) / (1024.0 * 1024.0));
+
+        ImGui::PopID();
+    });
+
+    ImGui::EndTable();
+
+    if (shown == 0) ImGui::TextDisabled("No sounds. Use Import Sound...");
 }
 
 void AssetBrowserPanel::drawMaterials(EditorContext& ec) { drawAssetGrid<MaterialAsset>(ec); }

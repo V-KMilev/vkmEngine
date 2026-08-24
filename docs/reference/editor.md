@@ -55,7 +55,7 @@ overlays drawn on top.
 | Bottom              | `panels/bottom_panel.cpp`             | Two tabs: Animation (keyframe editor) and Errors (recoverable engine failures) |
 | Render Settings     | `panels/render_settings_panel.cpp`    | Render quality tuning: `RenderSettings` (debug view / grid / MSAA, texture filtering, GTAO, bloom, shadows, probes) plus the `VisibilitySystem` culling thresholds; opened from Window > Render Settings |
 | Material Editor     | `panels/material_editor_panel.cpp`          | Per-material PBR inspector with live preview (renders the real pipeline)    |
-| Asset Browser       | `panels/asset_browser_panel.cpp`            | Thumbnail grid of materials / meshes / textures; pickable into the inspector|
+| Asset Browser       | `panels/asset_browser_panel.cpp`            | Thumbnail grid of materials / meshes / textures, plus a Sounds list with import and audition; pickable into the inspector|
 | Preferences         | `panels/preferences_panel.cpp`        | Floating editor/app settings window (Edit > Preferences, Ctrl+,)            |
 | Viewport Overlay    | `overlays/viewport_overlay.cpp`       | The axis navigation gizmo, top-right of the viewport (click an axis to snap the camera) |
 | Gizmo Overlay       | `overlays/gizmo_overlay.cpp`          | Transform gizmo drawing + light/camera gizmos                               |
@@ -162,6 +162,32 @@ The hierarchy names an entity carrying an `Animator` a **Rig**, ahead of Mesh -
 an entity with an `Animator` is the rig whatever else it carries, and its meshes
 are the entities under it. The hover tooltip's component digest lists `Animator`,
 `Socket` and `Character` beside the rest.
+
+### Audio cards (Inspector)
+
+Two cards, both ordinary `editComponentCard` sections, so they undo, record
+prefab overrides and appear in Add Component like everything else. They are the
+only cards that take the whole `EditorContext`, because auditioning a clip needs
+the editor's audio device and that is reachable from neither the scene nor the
+asset graph.
+
+- **Audio Source** - the clip picker over `AudioClipAsset`, the clip's length,
+  layout, rate and memory footprint, then gain / pitch / loop / play-on-start,
+  and the distance pair when the source is spatial. Two authoring mistakes are
+  named where they are made rather than left to the log: a max distance at or
+  under the min (nothing is attenuated) and a stereo clip on a spatial source
+  (its two channels already encode a position, so panning one is meaningless at
+  best). A Play button auditions the clip **through the device, not through
+  `AudioSource::playing`** - writing the component's flag would be a scene edit,
+  undoable and dirtying and audible again on the next Play, when all that was
+  asked for was to hear the file.
+- **Audio Listener** - active and master volume, plus the two things nothing
+  else on screen would show: a second active listener (only the first is heard
+  from, and which one that is comes down to storage order) and a listener
+  without a `Transform`, which has no position to hear from.
+
+An entity carrying an `AudioSource` is named **Sound** in the hierarchy and one
+carrying an `AudioListener` is a **Listener**; the tooltip digest lists both.
 
 ## Undo / redo
 
@@ -270,6 +296,15 @@ a preview mesh into a small offscreen target, kept separate from the main
 small per-frame bake budget, so the Asset Browser grid amortizes thumbnail
 generation across frames while the Material Editor's live view re-renders each
 frame.
+
+The Asset Browser's third tab is a **list**, not a grid, because a sound has no
+picture. What it has is a length, a layout and a sound, so the row shows the
+first two and a play button gives the third - hearing a clip is what previewing
+one means. `Import Sound...` decodes a wav / mp3 / flac into the project, which
+is the only way a clip enters one; right-clicking a row assigns it to the
+selected entity's `AudioSource` as an undoable edit. On a host with no audio
+device the tab says so, since clips still import and cook there - they just
+cannot be heard.
 
 ## CameraControllerSystem
 

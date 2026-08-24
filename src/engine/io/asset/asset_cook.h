@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 
-#include "io/asset/asset_library.h"
+#include "resource/asset_type.h"
 
 namespace Vkm::Engine {
 

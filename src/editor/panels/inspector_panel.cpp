@@ -15,6 +15,8 @@
 
 #include "ecs/component/animation/animation.h"
 #include "ecs/component/animation/bone_socket.h"
+#include "ecs/component/audio/audio_listener.h"
+#include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/component/physics/collider.h"
 #include "ecs/component/physics/rigidbody.h"
@@ -40,6 +42,7 @@
 #include "io/project_paths.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/skeleton_asset.h"
+#include "system/audio/audio_system.h"
 #include "system/physics/collider_fit.h"
 #include "system/script/behavior.h"
 #include "system/script/behavior_field_visitor.h"
@@ -335,6 +338,8 @@ void InspectorPanel::draw(EditorContext& ec) {
     if (scene.has<ReflectionProbe>(id)) drawReflectionProbeSection(scene, ctx.resources, state, id);
     if (scene.has<Decal>(id))          drawDecalSection(scene, ctx.resources, state, id);
     if (scene.has<ParticleEmitter>(id)) drawParticleSection(scene, ctx.resources, state, id);
+    if (scene.has<AudioSource>(id))     drawAudioSourceSection(ec, id);
+    if (scene.has<AudioListener>(id))   drawAudioListenerSection(ec, id);
     if (scene.has<IrradianceVolume>(id)) drawIrradianceVolumeSection(scene, ctx.resources, state, id);
     if (scene.has<LOD>(id))            drawLODSection(scene, ctx.resources, state, id);
     if (scene.has<Animation>(id))  drawAnimationSection(scene, ctx.resources, state, id);
@@ -607,6 +612,10 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         addItem("Animation", Animation{}, "Add Animation");
         addItem("Animator", Animator{}, "Add Animator");
         addItem("Bone Socket", BoneSocket{}, "Add Bone Socket");
+
+        section("Audio");
+        addItem("Audio Source", AudioSource{}, "Add Audio Source");
+        addItem("Audio Listener", AudioListener{}, "Add Audio Listener");
 
         section("Physics");
         addItem("Rigidbody", Rigidbody{}, "Add Rigidbody");
@@ -1093,6 +1102,133 @@ void InspectorPanel::drawParticleSection(Scene& scene, ResourceManager& resource
 
         ImGui::TextDisabled("Live: %d particle(s).",
                             static_cast<int>(e.particles.size()));
+
+        return changed;
+    });
+}
+
+void InspectorPanel::drawAudioSourceSection(EditorContext& ec, EntityId id) {
+    Scene&           scene     = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+
+    editComponentCard<AudioSource>(scene, resources, ec.state, id, "Audio Source",
+                                   EditorStyle::Accent::Audio,
+                                   "Edit Audio Source", "Remove Audio Source",
+                                   [&](AudioSource& source) {
+        bool changed = false;
+
+        changed |= pickAsset<AudioClipAsset>("##SoundPick", "Clip", resources, source.clip);
+
+        const AudioClipAsset* clip = (source.clip && resources.isAlive(source.clip))
+            ? &resources.get(source.clip) : nullptr;
+        if (clip) {
+            ImGui::TextDisabled("%.2fs, %u channel%s, %u Hz, %.1f MB",
+                                static_cast<double>(clip->duration()), clip->channels,
+                                clip->channels == 1 ? "" : "s", clip->sampleRate,
+                                static_cast<double>(clip->sampleCount() * sizeof(int16_t)) / (1024.0 * 1024.0));
+        }
+
+        ImGui::Spacing();
+        changed |= propSlider("Volume", &source.volume, 0.0f, 2.0f, "%.2f");
+        changed |= propDrag("Pitch", &source.pitch, 0.005f, 0.1f, 4.0f, "%.2fx",
+                            "Playback rate; also shifts the pitch");
+        changed |= propCheckbox("Loop", &source.loop);
+        changed |= propCheckbox("Play On Start", &source.playOnStart,
+                                "Starts by itself once the simulation runs. In the editor that "
+                                "means on Play, never while a scene is only open");
+
+        ImGui::Spacing();
+        changed |= propCheckbox("Spatial", &source.spatial,
+                                "Positioned in the world and attenuated by distance. Turn it off "
+                                "for music, narration and UI sound");
+        if (source.spatial) {
+            changed |= propDrag("Min Distance", &source.minDistance, 0.05f, 0.0f, 1000.0f, "%.2f",
+                                "Full volume inside this radius");
+            changed |= propDrag("Max Distance", &source.maxDistance, 0.25f, 0.0f, 5000.0f, "%.1f",
+                                "Silent at this radius; the falloff between the two is linear");
+            if (source.maxDistance <= source.minDistance) {
+                ImGui::TextColored(EditorStyle::WARNING,
+                                   "Max Distance is not past Min - nothing is attenuated.");
+            }
+            // Said here rather than logged at play time: a spatial stereo clip
+            // is an authoring mistake, and this is where it is being made. The
+            // two channels already encode a position, so panning one is at best
+            // meaningless and at worst a phasing mess.
+            if (clip && clip->channels > 1) {
+                ImGui::TextColored(EditorStyle::WARNING,
+                                   "This clip is stereo; positioning wants a mono one.");
+            }
+            // The same thing the listener card says, for the same reason: the
+            // sound is heard at the world origin rather than where the author
+            // meant, and nothing else on screen would explain why.
+            if (!scene.has<Transform>(id)) {
+                ImGui::TextColored(EditorStyle::WARNING,
+                                   "A positioned sound needs a Transform to have a position.");
+            }
+        }
+
+        ImGui::Spacing();
+        // Auditioning goes through the device rather than through `playing`,
+        // deliberately. Setting the component's flag would be an edit to the
+        // scene - undoable, dirtying, and audible again on the next Play - when
+        // all that was asked for was to hear the file.
+        const float ih = ImGui::GetFrameHeight();
+        ImGui::BeginDisabled(clip == nullptr);
+        if (iconButton("inspSoundPreview", EditorIcon::Play, false, clip != nullptr,
+                       "Audition the clip (does not change the scene)", ih) && clip) {
+            ec.audioSystem.device().stopVoice(m_previewVoice);
+            // Flat, for the reason the Asset Browser's audition states: a
+            // default VoiceParams is spatial, and a spatial audition is
+            // inaudible in a scene with no listener and arbitrary in one that
+            // has an ear standing somewhere else.
+            VoiceParams audition;
+            audition.spatial = false;
+            m_previewVoice = ec.audioSystem.device().play(*clip, audition);
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine(0, 8.0f);
+        if (iconButton("inspSoundPreviewStop", EditorIcon::Stop, false, true, "Stop the audition", ih)) {
+            ec.audioSystem.device().stopVoice(m_previewVoice);
+            m_previewVoice = 0;
+        }
+        ImGui::SameLine(0, 8.0f);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled(source.playing ? "Playing" : "Idle");
+
+        return changed;
+    });
+}
+
+void InspectorPanel::drawAudioListenerSection(EditorContext& ec, EntityId id) {
+    Scene&           scene     = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+
+    editComponentCard<AudioListener>(scene, resources, ec.state, id, "Audio Listener",
+                                     EditorStyle::Accent::Audio,
+                                     "Edit Audio Listener", "Remove Audio Listener",
+                                     [&](AudioListener& listener) {
+        bool changed = false;
+
+        changed |= propCheckbox("Active", &listener.active,
+                                "Exactly one listener is heard from; the first active one wins");
+        changed |= propSlider("Volume", &listener.volume, 0.0f, 1.0f, "%.2f",
+                              "Master gain for everything this listener hears");
+
+        // Which listener actually wins is storage order, which nothing on screen
+        // shows - so a second one is worth naming rather than leaving as a
+        // silence nobody can explain.
+        int active = 0;
+        scene.forEach<AudioListener, Transform>([&](EntityId, const AudioListener& l, const Transform&) {
+            if (l.active) ++active;
+        });
+        if (active > 1) {
+            ImGui::TextColored(EditorStyle::WARNING,
+                               "%d active listeners; only the first is heard from.", active);
+        }
+        if (listener.active && !scene.has<Transform>(id)) {
+            ImGui::TextColored(EditorStyle::WARNING,
+                               "A listener needs a Transform to have a position.");
+        }
 
         return changed;
     });

@@ -47,6 +47,8 @@ enum class EntityKind {
     IrradianceVolume,
     Decal,
     ParticleEmitter,
+    AudioSource,
+    AudioListener,
     UICanvas,
     UIPanel,
     UIText,

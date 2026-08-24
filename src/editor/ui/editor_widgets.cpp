@@ -11,6 +11,8 @@
 #include "ecs/scene.h"
 #include "ecs/component/animation/animation.h"
 #include "ecs/component/animation/animator.h"
+#include "ecs/component/audio/audio_listener.h"
+#include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/name.h"
 #include "ecs/component/render/camera.h"
 #include "ecs/component/render/decal.h"
@@ -274,6 +276,8 @@ EntityLabel entityLabelOf(const Scene& scene, EntityId id) {
     if (scene.has<IrradianceVolume>(id)) return {"GI Volume", EditorIcon::Volume};
     if (scene.has<Decal>(id))            return {"Decal",     EditorIcon::Decal};
     if (scene.has<ParticleEmitter>(id))  return {"Emitter",   EditorIcon::Particle};
+    if (scene.has<AudioSource>(id))      return {"Sound",     EditorIcon::Audio};
+    if (scene.has<AudioListener>(id))    return {"Listener",  EditorIcon::Listener};
     if (scene.has<UIButton>(id))         return {"Button",    EditorIcon::UIButton};
     if (scene.has<UIText>(id))           return {"Text",      EditorIcon::UIText};
     if (scene.has<UIImage>(id))          return {"Panel",     EditorIcon::UIImage};

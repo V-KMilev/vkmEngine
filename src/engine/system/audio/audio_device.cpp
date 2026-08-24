@@ -312,6 +312,19 @@ void AudioDevice::stopVoice(VoiceId voice) {
     m_backend->voices.erase(it);
 }
 
+void AudioDevice::reapFinishedVoices() {
+    if (!m_backend) return;
+
+    for (auto it = m_backend->voices.begin(); it != m_backend->voices.end(); ) {
+        if (ma_sound_at_end(&it->second->sound) == MA_FALSE) {
+            ++it;
+            continue;
+        }
+        m_backend->release(*it->second);
+        it = m_backend->voices.erase(it);
+    }
+}
+
 void AudioDevice::stopAllVoices() {
     if (!m_backend) return;
     for (auto& entry : m_backend->voices) m_backend->release(*entry.second);

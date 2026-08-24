@@ -16,6 +16,8 @@
 #include "framework/prefab_overrides.h"
 #include "ecs/scene.h"
 #include "ecs/component/animation/animation.h"
+#include "ecs/component/audio/audio_listener.h"
+#include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/hierarchy.h"
 #include "ecs/component/core/name.h"
 #include "ecs/component/core/transform.h"
@@ -188,6 +190,8 @@ const char* defaultName(EntityKind k) {
         case EntityKind::IrradianceVolume: return "Irradiance Volume";
         case EntityKind::Decal:            return "Decal";
         case EntityKind::ParticleEmitter:  return "Particle Emitter";
+        case EntityKind::AudioSource:      return "Audio Source";
+        case EntityKind::AudioListener:    return "Audio Listener";
         case EntityKind::UICanvas:         return "UI Canvas";
         case EntityKind::UIPanel:          return "UI Panel";
         case EntityKind::UIText:           return "UI Text";
@@ -258,6 +262,12 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
             break;
         case EntityKind::ParticleEmitter:
             scene.add(entity, ParticleEmitter{});
+            break;
+        case EntityKind::AudioSource:
+            scene.add(entity, AudioSource{});
+            break;
+        case EntityKind::AudioListener:
+            scene.add(entity, AudioListener{});
             break;
         case EntityKind::UICanvas:                          break;  // UICanvas added above
         case EntityKind::UIPanel:  scene.add(entity, UIImage{});  break;
@@ -676,6 +686,9 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
         item(EditorIcon::Volume,   "Irradiance Volume", EntityKind::IrradianceVolume);
         item(EditorIcon::Decal,    "Decal",             EntityKind::Decal);
         item(EditorIcon::Particle, "Particle Emitter",  EntityKind::ParticleEmitter);
+        ImGui::Separator();
+        item(EditorIcon::Audio,    "Audio Source",      EntityKind::AudioSource);
+        item(EditorIcon::Listener, "Audio Listener",    EntityKind::AudioListener);
         ImGui::Separator();
         if (ImGui::BeginMenu("Light")) {
             item(EditorIcon::LightDir,   "Directional", EntityKind::DirectionalLight);

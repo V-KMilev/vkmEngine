@@ -10,6 +10,7 @@ the GPU-uploadable ones sync through a per-resource version counter.
 - `src/engine/resource/resource_manager.h` for the manager
 - `src/engine/resource/resource.h` for the `Resource` base (version, name, hidden flag, source JSON)
 - `src/engine/resource/resource_handle.h` for type-safe `Handle<T>`
+- `src/engine/resource/asset_type.h` for `AssetType`, the kind tag every asset is filed and referenced under
 - `src/engine/resource/asset/mesh_asset.h`, `asset/texture_asset.h`, `asset/material_asset.h`, `asset/font_asset.h`, `asset/skeleton_asset.h`, `asset/animation_clip_asset.h`, `asset/audio_clip_asset.h` for the asset kinds
 - `src/engine/core/memory/sparse_set.h` for the `SparseSet<T>` that backs each asset table
 
@@ -88,6 +89,15 @@ one, so save files contain only user-relevant content. Names are guaranteed uniq
 `rename()` (not `edit().name = ...`) so the name index stays consistent.
 
 ## Asset types
+
+Every kind the asset library holds is named by one enum, `AssetType`
+(`resource/asset_type.h`). Nothing on disk carries its numeric value: the
+manifest and the scene write the name, and a cooked file carries its own kind
+tag. It sits beside the assets rather than inside `AssetLibrary` because naming
+a kind is not the same job as owning the database, and code that needs only the
+tag should not have to include the manifest, its map and `<filesystem>` with it.
+`FontAsset` is the one kind with no value there - a font is baked at startup,
+not cooked into the library.
 
 ### MeshAsset
 
