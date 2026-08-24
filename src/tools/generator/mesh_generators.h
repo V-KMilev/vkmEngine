@@ -1,8 +1,33 @@
 #pragma once
 
 #include "resource/asset/mesh_asset.h"
+#include "resource/resource_handle.h"
 
 namespace Vkm::Engine {
+
+class ResourceManager;
+
+/**
+ * @brief Put a generated mesh into @p resources, reusing the one already there
+ *        under its name.
+ *
+ * A generator stamps a deterministic name onto what it makes -
+ * "mesh:generator:cube", "mesh:generator:sphere:32:16" - precisely so that two
+ * identical generator calls are one asset rather than two copies a scene would
+ * save twice. Adding one unconditionally breaks that promise the moment the
+ * name is taken: ensureUniqueName suffixes it, and the name being the
+ * serializable identity, "mesh:generator:cube (3)" is what the scene file and
+ * the cooked library then call a mesh identical to two others beside it.
+ *
+ * Nothing edits a generated mesh, so sharing one is the whole of what the name
+ * promises. A caller wanting a variant asks the generator for different
+ * parameters, which is a different name.
+ *
+ * @param resources Asset graph to look the name up in and add to.
+ * @param mesh A freshly generated mesh, carrying its generator name.
+ * @return Handle to the mesh under that name, existing or newly added.
+ */
+MeshHandle addGeneratedMesh(ResourceManager& resources, MeshAsset mesh);
 
 /**
  * @brief Generate a triangle mesh.

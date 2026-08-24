@@ -159,8 +159,15 @@ void SceneIOController::save(FrameContext& ctx, EditorState& state) {
 }
 
 void SceneIOController::loadPath(FrameContext& ctx, EditorState& state, const std::string& path) {
+    // The name follows the scene, and only if the scene actually moves. load()
+    // reports a failed read as "editor state preserved" - and the file name is
+    // editor state. Left pointing at a scene that never opened, the title names
+    // it, the title says it has unsaved changes because the world still on
+    // screen does, and the next Ctrl+S writes that other world over the file.
+    // Which is the one file the author has just shown they wanted to keep.
+    std::string previous = m_currentScenePath;
     m_currentScenePath = path;
-    load(ctx, state);
+    if (!load(ctx, state)) m_currentScenePath = std::move(previous);
 }
 
 void SceneIOController::adoptPath(EditorState& state, const std::string& path) {
@@ -194,7 +201,7 @@ bool SceneIOController::isSaveDialogActive() const {
     return m_openSaveAsPopup || ImGui::IsPopupOpen("Save Scene As");
 }
 
-void SceneIOController::load(FrameContext& ctx, EditorState& state) {
+bool SceneIOController::load(FrameContext& ctx, EditorState& state) {
     if (m_currentScenePath.empty()) {
         m_currentScenePath = (ProjectPaths::scenes() / "scene.json").string();
     }
@@ -235,7 +242,7 @@ void SceneIOController::load(FrameContext& ctx, EditorState& state) {
             m_currentScenePath.c_str());
         state.pushToast(EditorState::ToastKind::Error,
             "Load failed: " + m_currentScenePath);
-        return;
+        return false;
     }
 
     reportDroppedImports(ctx, state, beforeAll, beforeNamed);
@@ -254,6 +261,7 @@ void SceneIOController::load(FrameContext& ctx, EditorState& state) {
 
     state.sceneDirty = false;
     pushRecentPath(state.recentScenes, m_currentScenePath);
+    return true;
 }
 
 void SceneIOController::endPlaySession(FrameContext& ctx) {
@@ -391,12 +399,11 @@ void SceneIOController::afterSceneReplace(
 
 void SceneIOController::captureSnapshot(FrameContext& ctx, EditorState& state) {
     // The snapshot is the scene file format, and that format promises that every
-    // asset name it writes is one the library can hand back. An asset imported
-    // this session and never baked has no manifest entry, so on Stop its name
-    // resolves to nothing while the ResourceManager still holding it is thrown
-    // away by the restoring swap - the import vanishes from the component and
-    // from the Asset Browser both. writeScene bakes before it writes for exactly
-    // this reason; the snapshot writes the same document and needs the same bake.
+    // asset name it writes is one the library can hand back. Stop rebuilds every
+    // asset out of the library, so an asset imported this session and never
+    // baked has no record to be rebuilt from and comes back empty. writeScene
+    // bakes before it writes for exactly this reason; the snapshot writes the
+    // same document and needs the same bake.
     const bool cooked = AssetCooker::cookAllAssets(ctx.resources);
 
     m_playSnapshot = SceneSerializer::saveToString(ctx.scene, ctx.resources);
@@ -410,9 +417,9 @@ void SceneIOController::captureSnapshot(FrameContext& ctx, EditorState& state) {
     // The scene document names the assets the scene uses and nothing else, which
     // is right for a file and not enough for a restore. A sound imported and not
     // yet assigned to a source is in the Asset Browser and in every picker, and
-    // no component points at it - so the scene never mentions it and the
-    // restoring swap throws it away with the manager that held it. Recording the
-    // session's whole list here is what makes Stop put back what Play found.
+    // no component points at it - so the scene never mentions it, and a session
+    // that edited it would leave that edit standing. Recording the session's
+    // whole list here is what makes Stop put back what Play found.
     m_playAssets = AssetSerializer::saveAllAssets(ctx.resources).dump();
     // A partial cook does not stop Play, by the same rule the save follows: the
     // session is still worth entering, and the toast names what Stop may lose.
@@ -449,21 +456,26 @@ void SceneIOController::restoreSnapshot(FrameContext& ctx, EditorState& state) {
     // their context is still valid, before the swap restores the snapshot.
     BehaviorSystem::endSession(ctx.scene);
 
+    // The assets first, and in place. A session can edit one - the Material
+    // Editor stays live in play mode, and a behavior writes through the graph -
+    // so putting the world back as Play found it means putting these back too,
+    // from the library entries the cook at capture guaranteed each of them.
+    // Rebuilt into the slots they already occupy rather than as a replacement
+    // graph, because the undo history the editor keeps across Stop holds the
+    // assets its steps are to put back: a handle reissued out of a fresh graph
+    // names whatever landed in that slot instead, and an undo of a mesh
+    // assignment silently restores a different mesh. Ahead of the scene load so
+    // that load resolves its names against the graph as Play found it.
+    if (nlohmann::json assets = nlohmann::json::parse(m_playAssets, nullptr, false);
+        !assets.is_discarded()) {
+        AssetSerializer::loadAssets(assets, ctx.resources, AssetSerializer::LoadMode::Reload);
+    }
+
     if (!SceneSerializer::loadFromString(m_playSnapshot, ctx.scene, ctx.resources)) {
         LOG_ERROR("SceneIOController::restoreSnapshot: failed to restore play snapshot");
         state.pushToast(EditorState::ToastKind::Error,
             "Stop: could not restore scene snapshot");
         return;  // Keep the snapshot so the live (played) scene is untouched.
-    }
-
-    // The load brought back the assets the scene names; this brings back the
-    // ones it does not. loadAssets skips every name already present, so it
-    // recreates exactly what the swap dropped, from the library entries the
-    // cook at capture guaranteed each of them. It runs before the housekeeping
-    // below so the panels' first draw after Stop sees the whole graph.
-    if (nlohmann::json assets = nlohmann::json::parse(m_playAssets, nullptr, false);
-        !assets.is_discarded()) {
-        AssetSerializer::loadAssets(assets, ctx.resources);
     }
 
     // The session is over, so it ends the one way every path ends one: the
@@ -473,13 +485,14 @@ void SceneIOController::restoreSnapshot(FrameContext& ctx, EditorState& state) {
     endPlaySession(ctx);
 
     // The history survives a Stop that the session never touched, and that is
-    // the whole difference between this swap and an open. A load fills the
-    // slots with another file's entities; this one writes back the document
-    // captured from these entities, at the ids they had - SceneSerializer keys
-    // every record on the slot index and rebuilds through createEntityAt - so
-    // every step still names what it named before Play. Edit, Play to check,
-    // Stop, undo the bad edit is the loop that was silently missing its last
-    // step.
+    // the whole difference between this restore and an open. A load fills the
+    // slots with another file's entities and swaps another file's asset graph
+    // in behind them; this one writes back the document captured from these
+    // entities, at the ids they had - SceneSerializer keys every record on the
+    // slot index and rebuilds through createEntityAt - into the graph it was
+    // captured from, rebuilt in place. So every step still names what it named
+    // before Play, entity and asset alike. Edit, Play to check, Stop, undo the
+    // bad edit is the loop that was silently missing its last step.
     //
     // A session that DID move the history is the case an open's reasoning
     // really covers: those steps address entities of the played world, which is

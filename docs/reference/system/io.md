@@ -124,8 +124,12 @@ unresolved - each one is a component slot left empty, not a parse failure - so
 the last row is not something the loader can answer for. The cooker installs an
 `EngineErrorLog` sink around the load and counts what `reportError` puts in it,
 because a scene whose references resolved to nothing is exactly the state that
-gets packaged and ships a world with empty slots. `vkm package` needs no rule of
-its own: it already returns on a non-zero cook.
+gets packaged and ships a world with empty slots. That sink catches every
+failure the load reports, not only unresolved assets - a prefab file that will
+not open is in it too - so the message counts failures and names the two
+remedies apart rather than telling the author of a deleted file to save the
+project. `vkm package` needs no rule of its own: it already returns on a
+non-zero cook.
 
 | Condition | `vkm_runtime` | `vkm_editor` | `vkm_cook` |
 |-----------|---------------|--------------|------------|
@@ -137,7 +141,7 @@ its own: it already returns on a non-zero cook.
 | No entry scene and no `vkmBuildScene` (`SceneBoot::Default`) | exit 1 | opens on the default scene | exit 0 - nothing to cook |
 | No entry scene, module builds the world (`SceneBoot::Project`) | plays it | opens it | exit 0 - nothing to cook |
 | An asset fails to cook | n/a | reported, the session continues | exit 1 |
-| Entry scene loads, but a reference in it goes unresolved | plays it with empty slots | reported, the session continues | exit 1 |
+| Entry scene loads, but something in it does not (unresolved reference, prefab file missing) | plays it with what loaded | reported, the session continues | exit 1 |
 
 The cooker reaches the last three rows by its own path rather than through
 `bootProjectScene` - it has no `Scene` to boot into and no module to ask, so it
@@ -157,7 +161,10 @@ Two judgments behind that table:
   a save cannot overwrite the file that failed to load; the reason is in the log
   and, because `bootProjectScene` reports it through `reportError` rather than
   logging it itself, in the Errors tab and a toast however the project was
-  opened.
+  opened. The same rule holds for an open made from inside a session:
+  `SceneIOController::loadPath` moves the current path only when the read
+  succeeded, so a failed `File > Open` leaves the title - and the file the next
+  Ctrl+S writes - on the scene still in the viewport.
 
 ## Components
 
@@ -219,15 +226,32 @@ Where the snapshot stops being the file is the list beside it. A scene document
 names the assets the scene uses and nothing else, which is right for something
 somebody saves and not enough for something that promises to put a session back:
 a sound imported and not yet assigned to a source is in the Asset Browser, in
-every picker, and in no component, so the scene never mentions it and the
-restoring swap drops it with the manager that held it - silently, since no
-reference was left unresolved for `reportError` to name. So `captureSnapshot`
-records `AssetSerializer::saveAllAssets` - every live asset that has a name and
-is not hidden - alongside the document, and `restoreSnapshot` feeds that list
-back through the same `loadAssets` the scene load uses, which skips every name
-already present and recreates only what the swap dropped. The extra list never
-reaches disk and the file format is untouched; it is the session's half of the
-snapshot, and the cook above is what makes it restorable.
+every picker, and in no component, so the scene never mentions it, and a session
+that edited it would leave that edit standing. So `captureSnapshot` records
+`AssetSerializer::saveAllAssets` - every live asset that has a name and is not
+hidden - alongside the document, and `restoreSnapshot` feeds that list back
+through `loadAssets` before it reads the scene. The extra list never reaches
+disk and the file format is untouched; it is the session's half of the snapshot,
+and the cook above is what makes it restorable.
+
+**Restoring keeps the graph and rebuilds its contents.** The two halves of the
+snapshot go back differently from the way a file load puts a scene in place, and
+the difference is the undo history the editor keeps across Stop. Its steps hold
+the assets they are to put back, as handles, and a handle is a slot index into
+one `ResourceManager` - so `loadFromString` reads the scene with
+`AssetPolicy::Merge`, resolving names against the graph the snapshot was
+captured from rather than swapping a rebuilt one in behind them, and the asset
+list goes back with `LoadMode::Reload`, which rebuilds each asset into the slot
+it already occupies (`ResourceManager::swapValue`: contents exchanged, identity
+and name left with the slot, version bumped so the backend re-uploads). Both
+halves are needed. Without the merge, a rebuilt graph restarts at the same
+indices and generations, so a surviving step resolves to whatever landed in its
+slot - measured, an undo of a mesh assignment silently restored a different
+mesh. Without the reload, a material edited during the session would keep that
+edit, because nothing would have put the old contents back.
+
+Nothing is *removed* by a restore: an asset a session created stays, the way an
+import made before Play does.
 
 **Opening a scene answers this the other way, on purpose.** Stop promises to put
 one session back; an open is leaving that world for another, and it drops the
@@ -300,6 +324,19 @@ With both, restoring the library and reopening the scene brings the reference
 back to life. The editor also names them on the entity: the Inspector heads a
 selection that has any with the component, field and name it could not load,
 which is what separates "the mesh is gone" from "I never assigned one".
+
+**The record retires when the field is filled.** The other way an author can
+answer it is to pick something else, and nothing was retiring the record when
+they did: the field write already left the chosen mesh alone, but the banner went
+on saying the reference did not load and promising to put a name back that the
+save had stopped writing, and the assets block went on declaring it - so the
+saved scene named an asset that is not there and every later load reported it.
+`SceneSerializer::pruneResolvedRefs` drops the entries whose field is no longer
+empty, and the component with the last of them. It answers by writing the entity
+and reading the field back, which is the same question the save asks and so
+cannot drift from it, and the Inspector calls it where the banner is drawn -
+a field is filled from the picker, from the Asset Browser or by an undo, and
+none of those is a place the record could be retired from once and for all.
 
 `Scene::createEntityAt(slotIndex)` is what makes step 3 possible:
 entities recreate at their saved slot, so `Hierarchy::parent` indices

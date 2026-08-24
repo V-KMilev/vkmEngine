@@ -2,6 +2,7 @@
 
 #include "io/scene/scene_serializer.h"
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <limits>
@@ -177,39 +178,68 @@ void loadInto(const json& src, const char* key, Scene& s, EntityId e, Args&&... 
 #define VKM_SCENE_SAVE(Type, Key)   if (s.has<Type>(id)) c[Key] = CS::save(s.get<Type>(id));
 #define VKM_SCENE_SAVE_R(Type, Key) if (s.has<Type>(id)) c[Key] = CS::save(s.get<Type>(id), r);
 
-void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager& r) {
+/**
+ * @brief Write every component @p id carries into @p c, and nothing else.
+ *
+ * The entity exactly as the scene holds it now, which is what makes this the
+ * one answer to "what is in that field". saveComponents puts the unresolved
+ * names back on top of it; pruneResolvedRefs asks whether they are still
+ * wanted.
+ *
+ * @param s Scene holding the entity.
+ * @param id Entity to write.
+ * @param c Object receiving one key per component.
+ * @param r Asset graph, for the components that name assets.
+ */
+void writeComponents(const Scene& s, EntityId id, json& c, const ResourceManager& r) {
     VKM_SCENE_COMPONENTS(VKM_SCENE_SAVE, VKM_SCENE_SAVE_R)
 
     // Written here, but read by the caller's second pass rather than by a
     // loader: the parent it names may not exist yet when this entity is read.
     if (s.has<Hierarchy>(id)) c["Hierarchy"] = CS::save(s.get<Hierarchy>(id));
+}
+
+#undef VKM_SCENE_SAVE
+#undef VKM_SCENE_SAVE_R
+
+/**
+ * @brief Whether @p ref's field came out of writeComponents as an empty string.
+ *
+ * Which is the one state a kept name can go back into: a slot the author has
+ * since filled keeps what they chose.
+ *
+ * @param c An entity's components, as writeComponents wrote them.
+ * @param ref A reference the load could not resolve.
+ * @return true if that field is present, a string, and empty.
+ */
+bool fieldLeftEmpty(const json& c, const MissingAssetRef& ref) {
+    const auto component = c.find(ref.component);
+    if (component == c.end()) return false;
+    const auto field = component->find(ref.field);
+    if (field == component->end()) return false;
+    return field->is_string() && field->get<std::string>().empty();
+}
+
+void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager& r) {
+    writeComponents(s, id, c, r);
 
     // What the last load could not resolve goes back exactly as it came. A
     // component holds a handle, and a handle for an asset the load never
-    // brought in is empty, so the block above has just written "" over the name
+    // brought in is empty, so the write above has just put "" over the name
     // the author wrote - which is the whole of what the file remembered about
     // that reference. Opening a scene whose cooked library a teammate did not
     // commit and pressing Ctrl+S out of habit is enough; nothing warns, because
     // by save time the empty slot is indistinguishable from one nobody ever
     // filled.
     //
-    // Only a field the save has just left as an empty string takes its name
-    // back: a slot the author has since filled keeps what they chose, and a
-    // field that is not a plain name - LOD's array of levels - is not something
-    // a name can be put back into, that ramp's holes being its own decision.
+    // A reference with nowhere to return to - LOD's levels are a ramp, not a
+    // name, and that ramp's holes are its own decision - is never recorded in
+    // the first place, so nothing here has to know about it.
     if (!s.has<MissingAssets>(id)) return;
     for (const MissingAssetRef& ref : s.get<MissingAssets>(id).refs) {
-        const auto component = c.find(ref.component);
-        if (component == c.end()) continue;
-        const auto field = component->find(ref.field);
-        if (field == component->end()) continue;
-        if (!field->is_string() || !field->get<std::string>().empty()) continue;
-        *field = ref.name;
+        if (fieldLeftEmpty(c, ref)) c[ref.component][ref.field] = ref.name;
     }
 }
-
-#undef VKM_SCENE_SAVE
-#undef VKM_SCENE_SAVE_R
 
 #define VKM_SCENE_LOAD(Type, Key)   loadInto<Type>(src, Key, s, e);
 #define VKM_SCENE_LOAD_R(Type, Key) loadInto<Type>(src, Key, s, e, r);
@@ -302,14 +332,47 @@ json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
 }
 
 /**
+ * @brief What a read does with the asset graph it is handed.
+ */
+enum class AssetPolicy {
+    /**
+     * @brief Build a replacement graph and swap it in.
+     *
+     * What a file the editor opens needs: the outgoing scene's assets go with
+     * it rather than accumulating a scene's worth per open. Every handle issued
+     * before the swap is stale afterwards.
+     */
+    Replace,
+    /**
+     * @brief Resolve against the live graph, adding only names it does not hold.
+     *
+     * What restoring the play snapshot needs. That document was serialized out
+     * of this very graph moments earlier, so it names nothing the graph is
+     * missing and nothing is created - and because no swap happens, every
+     * handle issued before it still means what it meant. The editor's undo
+     * history is the reason that matters: its steps hold the assets they are
+     * to put back, and a swap turns those into keys into a manager that no
+     * longer exists.
+     */
+    Merge
+};
+
+/**
  * @brief Validate + deserialize a scene document into @p scene + @p resources,
- *        committing atomically via swap. Shared by load() (from a file) and
- *        loadFromString() (from the play-mode snapshot); @p source labels the
- *        origin in log messages.
+ *        committing the scene atomically via swap. Shared by load() (from a
+ *        file) and loadFromString() (from the play-mode snapshot); @p source
+ *        labels the origin in log messages.
  *
+ * @param doc Scene document to read.
+ * @param scene Scene to replace on success.
+ * @param resources Asset graph to resolve against, and to replace under
+ *        AssetPolicy::Replace.
+ * @param source Origin, for log messages.
+ * @param policy What to do with the asset graph; see AssetPolicy.
  * @return true on success; false (and a logged error) leaves both untouched.
  */
-bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, const char* source) {
+bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, const char* source,
+                   AssetPolicy policy) {
     const int version = doc.value("version", 0);
     if (version <= 0) {
         LOG_ERROR("Missing/invalid 'version' field in '%s'", source);
@@ -328,15 +391,22 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
     // Transactional load: the asset factories write into the staging
     // ResourceManager and the entities into the staging Scene, so a failure
     // mid-load leaves the live scene and asset graph untouched.
+    //
+    // Under Merge there is no staging graph to fail into: the assets go
+    // straight into the live one. That costs nothing, because the document a
+    // Merge reads was written out of that same graph and so asks it for nothing
+    // it does not already hold - loadAssets skips every name it finds - and the
+    // scene half stays as transactional as it is here.
     Scene staging;
     ResourceManager stagingResources;
+    ResourceManager& assetGraph = (policy == AssetPolicy::Merge) ? resources : stagingResources;
 
     if (doc.contains("assets")) {
         // Inside a guard: a malformed assets block (bad JSON, missing library
         // entry) must log and leave the live scene + assets untouched, not throw
         // out of load().
         try {
-            AssetSerializer::loadAssets(doc["assets"], stagingResources);
+            AssetSerializer::loadAssets(doc["assets"], assetGraph);
         } catch (const std::exception& e) {
             LOG_ERROR("Asset load failed for '%s': %s - scene not loaded", source, e.what());
             return false;
@@ -387,9 +457,9 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             const json& components = (it != entry.end()) ? *it : noComponents;
 
             // Components that reference assets (Mesh) look them up in the
-            // staging RM, so resolution sees what loadAssets just built.
+            // graph loadAssets just wrote into, so resolution sees it.
             // Hierarchy is skipped: its parent index is captured below.
-            loadComponents(components, staging, entity, stagingResources);
+            loadComponents(components, staging, entity, assetGraph);
             if (components.contains("Hierarchy")) {
                 const uint32_t parentIdx = CS::loadParentIndex(components["Hierarchy"]);
                 if (parentIdx != std::numeric_limits<uint32_t>::max() && parentIdx != 0) {
@@ -462,7 +532,7 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             // adds a PrefabInstance: the prefab's own entities carry
             // PrefabEntity, and nesting is refused at save time.
             const PrefabInstance& instance = staging.get<PrefabInstance>(root);
-            if (!Prefab::instantiateInto(staging, stagingResources, instance.source, root,
+            if (!Prefab::instantiateInto(staging, assetGraph, instance.source, root,
                                          instance.overrides, &prefabDrift)) {
                 // The same seam an unresolved asset name goes through, for the
                 // same reason and then some: that one costs a component's field
@@ -536,9 +606,14 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
     // font (resolved by name each frame) on every load. Safe because
     // FontAsset is self-contained - no handles into the slots that were
     // just replaced.
+    //
+    // A Merge wrote into the live graph as it went, so there is no second half
+    // to commit and nothing above is stale: that is the whole point of it.
     scene.swap(staging);
-    resources.swap(stagingResources);
-    resources.swapSlot<FontAsset>(stagingResources);
+    if (policy == AssetPolicy::Replace) {
+        resources.swap(stagingResources);
+        resources.swapSlot<FontAsset>(stagingResources);
+    }
     scene.compact();
 
     LOG_INFO("Loaded scene from '%s' (%zu entities, %zu hierarchy links)",
@@ -568,7 +643,20 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
     json doc;
     if (!detail::readJsonFile(path, doc, "Scene")) return false;
 
-    return readSceneJson(doc, scene, resources, path.c_str());
+    return readSceneJson(doc, scene, resources, path.c_str(), AssetPolicy::Replace);
+}
+
+void pruneResolvedRefs(Scene& scene, const ResourceManager& resources, EntityId id) {
+    if (!scene.isAlive(id) || !scene.has<MissingAssets>(id)) return;
+
+    json components = json::object();
+    writeComponents(scene, id, components, resources);
+
+    std::vector<MissingAssetRef>& refs = scene.get<MissingAssets>(id).refs;
+    refs.erase(std::remove_if(refs.begin(), refs.end(),
+                   [&](const MissingAssetRef& ref) { return !fieldLeftEmpty(components, ref); }),
+               refs.end());
+    if (refs.empty()) scene.remove<MissingAssets>(id);
 }
 
 std::string saveToString(const Scene& scene, const ResourceManager& resources) {
@@ -586,7 +674,7 @@ bool loadFromString(const std::string& text, Scene& scene, ResourceManager& reso
         return false;
     }
 
-    return readSceneJson(doc, scene, resources, "<memory snapshot>");
+    return readSceneJson(doc, scene, resources, "<memory snapshot>", AssetPolicy::Merge);
 }
 
 } // namespace Vkm::Engine::SceneSerializer

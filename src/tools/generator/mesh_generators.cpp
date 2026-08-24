@@ -12,8 +12,14 @@
 
 #include <nlohmann/json.hpp>
 
+#include "resource/resource_manager.h"
 
 namespace Vkm::Engine {
+
+MeshHandle addGeneratedMesh(ResourceManager& resources, MeshAsset mesh) {
+    if (auto existing = resources.findByName<MeshAsset>(mesh.name)) return existing;
+    return resources.add(std::move(mesh));
+}
 
 namespace {
 /**

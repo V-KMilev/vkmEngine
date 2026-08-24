@@ -186,12 +186,19 @@ MaterialHandle duplicateMaterial(
 }
 
 MaterialHandle createNewMaterial(ResourceManager& resources, EditorState& state) {
-    MaterialHandle h = generateDefaultMaterial(resources);
-    if (!h) return MaterialHandle{};
+    const MaterialHandle base = generateDefaultMaterial(resources);
+    if (!base) return MaterialHandle{};
 
-    // generateDefaultMaterial shares the "material:default" name; the unique
-    // rename is what distinguishes each new material on save/load.
-    resources.rename(h, uniqueMaterialName(resources, "Material"));
+    // A copy of the default, not the default renamed: that one asset is what
+    // every primitive and every cold-start load resolves "material:default" to,
+    // and renaming it would take it out from under all of them. The unique name
+    // is what distinguishes this one on save and load.
+    MaterialAsset copy = resources.get(base);
+    copy.version = 1;
+    copy.name    = uniqueMaterialName(resources, "Material");
+
+    MaterialHandle h = resources.add(std::move(copy));
+    if (!h) return MaterialHandle{};
 
     state.markSceneDirty();
     return h;
@@ -242,8 +249,11 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
 
     scene.add(entity, makeName(defaultName(kind)));
 
+    // Both halves reuse what the graph already holds under the name they would
+    // have taken. A primitive is a generator call and a default material, and
+    // neither is anything the author distinguished from the last one they made.
     auto addMesh = [&](MeshAsset mesh) {
-        auto meshHandle = resources.add(std::move(mesh));
+        auto meshHandle = addGeneratedMesh(resources, std::move(mesh));
         auto matHandle  = generateDefaultMaterial(resources);
         scene.add(entity, Mesh{meshHandle, matHandle});
     };

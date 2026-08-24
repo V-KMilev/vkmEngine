@@ -201,7 +201,11 @@ MaterialHandle createRecipeMaterial(const nlohmann::json& source, ResourceManage
     }
 
     if (kind == "default") {
-        return generateDefaultMaterial(resources);
+        // Built rather than looked up: loadAssetSection renames what a factory
+        // hands back to the name the document recorded, and handing back the
+        // graph's shared "material:default" would rename that out from under
+        // every component still resolving it.
+        return buildDefaultMaterial(resources);
     }
 
     if (kind == "model") {

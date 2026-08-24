@@ -146,9 +146,10 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     PROFILE_SCOPE("GLBackend::render");
     PROFILE_GPU_SCOPE("GPU.Frame");
 
-    // Before anything reads a cache: if the scene was replaced, none of them
-    // can be trusted, and nothing downstream can tell on its own.
-    onAssetGraphSwapped(resources);
+    // Before anything reads a cache: if the world or the asset graph was
+    // replaced, what was built from it cannot be trusted, and nothing
+    // downstream can tell on its own.
+    onWorldReplaced(view, resources);
 
     {
         PROFILE_SCOPE("Render/SyncAssets");
@@ -355,18 +356,24 @@ void GLBackend::bakeProceduralSky(const Environment& env, const glm::vec3& sunDi
     m_bakedEnvPath.clear();  // force an HDR re-bake if the user switches back
 }
 
-void GLBackend::onAssetGraphSwapped(const ResourceManager& resources) {
-    const uint64_t epoch = resources.epoch();
-    if (epoch == m_assetEpoch) return;
-    m_assetEpoch = epoch;
+void GLBackend::onWorldReplaced(const RenderView& view, const ResourceManager& resources) {
+    const uint64_t assetEpoch = resources.epoch();
+    const uint64_t worldEpoch = view.worldEpoch;
+    if (assetEpoch == m_assetEpoch && worldEpoch == m_worldEpoch) return;
 
-    PROFILE_SCOPE("Render/GraphSwap");
+    PROFILE_SCOPE("Render/WorldReplaced");
 
-    m_view.invalidate();      // asset mirrors: handles and versions restart
-    m_probes.invalidate();    // cube captures: same probe pose, different scene
-    m_bakedIrradiance = {};   // SH volume: same box and grid, different scene
-
-    LOG_INFO("Asset graph swapped; scene-derived GPU caches dropped");
+    if (assetEpoch != m_assetEpoch) {
+        m_assetEpoch = assetEpoch;
+        m_view.invalidate();      // asset mirrors: handles and versions restart
+        LOG_INFO("Asset graph swapped; asset mirrors dropped");
+    }
+    if (worldEpoch != m_worldEpoch) {
+        m_worldEpoch = worldEpoch;
+        m_probes.invalidate();    // cube captures: same probe pose, different scene
+        m_bakedIrradiance = {};   // SH volume: same box and grid, different scene
+        LOG_INFO("Scene replaced; baked captures of it dropped");
+    }
 }
 
 void GLBackend::partitionDrawables(const RenderView& view) {

@@ -219,6 +219,12 @@ std::vector<UnresolvedRef> g_unresolved;
 // hand it to the entity and a later save can write it back. Saying it once is
 // not enough on its own: the slot is empty either way, and a save that knew
 // only that would put an empty string where the author's reference was.
+//
+// A null field says the save has nowhere to put this one back - LOD's levels
+// are a ramp rather than a name, and that ramp's holes are its own decision -
+// so nothing is kept. Keeping it anyway would put the name in the document's
+// assets block and nowhere else, declaring an asset the scene has stopped
+// naming and asking every later load to go and find it.
 template<typename Asset>
 Handle<Asset> resolveAssetRef(const ResourceManager& r, const std::string& name,
                               const char* what, const char* field) {
@@ -227,7 +233,7 @@ Handle<Asset> resolveAssetRef(const ResourceManager& r, const std::string& name,
     if (!h) {
         reportError("Scene", std::string(what) + " '" + name + "'",
             "reference left unresolved - the asset is not loaded, so the slot is empty");
-        g_unresolved.push_back({field, name, ASSET_TYPE<Asset>});
+        if (field) g_unresolved.push_back({field, name, ASSET_TYPE<Asset>});
     }
     return h;
 }
@@ -258,19 +264,19 @@ nlohmann::json save(const Animator& a, const ResourceManager& resources) {
     return {
         {"skeleton", a.skeleton ? resources.get(a.skeleton).name : std::string{}},
         {"clip",     a.clip     ? resources.get(a.clip).name     : std::string{}},
-        {"time",     a.time},
-        {"speed",    a.speed},
-        {"playing",  a.playing},
-        {"looping",  a.looping},
+        {"time",        a.time},
+        {"speed",       a.speed},
+        {"playOnStart", a.playOnStart},
+        {"looping",     a.looping},
     };
 }
 void load(const nlohmann::json& j, Animator& a, const ResourceManager& resources) {
     a.skeleton = resolveAssetRef<SkeletonAsset>     (resources, j.value("skeleton", std::string{}), "skeleton", "skeleton");
     a.clip     = resolveAssetRef<AnimationClipAsset>(resources, j.value("clip",     std::string{}), "clip", "clip");
-    a.time     = j.value("time",    a.time);
-    a.speed    = j.value("speed",   a.speed);
-    a.playing  = j.value("playing", a.playing);
-    a.looping  = j.value("looping", a.looping);
+    a.time        = j.value("time",        a.time);
+    a.speed       = j.value("speed",       a.speed);
+    a.playOnStart = j.value("playOnStart", a.playOnStart);
+    a.looping     = j.value("looping",     a.looping);
 }
 
 nlohmann::json save(const BoneSocket& s)          { return saveReflected(s); }
@@ -292,7 +298,7 @@ void load(const nlohmann::json& j, LOD& l, const ResourceManager& resources) {
     if (!j.contains("levels")) return;
     for (const auto& entry : j["levels"]) {
         MeshHandle mesh = resolveAssetRef<MeshAsset>(
-            resources, entry.value("mesh", std::string{}), "LOD mesh", "levels");
+            resources, entry.value("mesh", std::string{}), "LOD mesh", nullptr);
         if (!mesh) continue;
         l.levels.push_back({mesh, entry.value("maxDistance", 0.0f)});
     }

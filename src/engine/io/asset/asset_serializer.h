@@ -65,7 +65,42 @@ namespace AssetSerializer {
      */
     nlohmann::json saveAllAssets(const ResourceManager& resources);
 
-    bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources);
+    /**
+     * @brief What loadAssets does about a name @p resources already holds.
+     */
+    enum class LoadMode {
+        /**
+         * @brief Leave it alone.
+         *
+         * What a load wants: the graph either does not hold the name (and it is
+         * built) or holds an asset that already is what the document describes.
+         */
+        Create,
+        /**
+         * @brief Rebuild its contents in place, keeping its handle and name.
+         *
+         * What the editor's Stop wants. A session can edit an asset - the
+         * Material Editor stays live in play mode, and a behavior can write
+         * through the graph - and Stop puts the world back as Play found it,
+         * assets included. Rebuilding in place rather than as a replacement is
+         * what lets the undo history survive that: its steps hold the assets
+         * they are to put back, and a handle reissued out of a fresh graph
+         * names whatever landed in that slot instead.
+         */
+        Reload
+    };
+
+    /**
+     * @brief Recreate the assets a document names into @p resources.
+     *
+     * @param assetsJson An assets block, from any of the save functions above.
+     * @param resources The asset graph to build into.
+     * @param mode What to do about a name the graph already holds; see LoadMode.
+     * @return false if the block was not an object; true otherwise, with
+     *         per-asset failures logged and skipped.
+     */
+    bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources,
+                    LoadMode mode = LoadMode::Create);
 
     /**
      * @brief Apply an "inline" material descriptor (kind=="inline") to a freshly-

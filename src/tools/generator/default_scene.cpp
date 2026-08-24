@@ -42,7 +42,7 @@ EntityId buildDefaultScene(Scene& scene, ResourceManager& resources) {
     const EntityId cube = scene.createEntity();
     scene.add(cube, Transform{});
     scene.add(cube, makeName("Cube"));
-    scene.add(cube, Mesh{resources.add(generateCube()), generateDefaultMaterial(resources)});
+    scene.add(cube, Mesh{addGeneratedMesh(resources, generateCube()), generateDefaultMaterial(resources)});
 
     return camera;
 }

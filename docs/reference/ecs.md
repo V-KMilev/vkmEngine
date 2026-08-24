@@ -62,7 +62,7 @@ scene.remove<Mesh>(entity);
 | `Mesh`                | `component/render/mesh.h`                  | `MeshHandle mesh`, `MaterialHandle material`, `bool visible`, `bool castShadows`                      |
 | `Light`               | `component/render/light.h`                 | `LightType` (Directional, Point, Spot, Rect, Disk), color, intensity, attenuation, cone, area, shadow |
 | `Animation`           | `component/animation/animation.h`          | Three tracks (position vec3, rotation quat, scale vec3) plus playback state and explicit `length`     |
-| `Animator`            | `component/animation/animator.h`           | `SkeletonHandle skeleton`, `AnimationClipHandle clip`, `time`, `speed`, `playing`, `looping` - one per rigged character, not per mesh |
+| `Animator`            | `component/animation/animator.h`           | `SkeletonHandle skeleton`, `AnimationClipHandle clip`, `time`, `speed`, `looping`, `playOnStart`; `playing` + `started` are runtime only - one per rigged character, not per mesh |
 | `BoneSocket`          | `component/animation/bone_socket.h`        | `string bone` + `Transform offset` - what rides a joint of the rig it is parented to                  |
 | `Hierarchy`           | `component/core/hierarchy.h`               | `EntityId parent`, `firstChild`, `nextSibling`, `prevSibling`                                         |
 | `Name`                | `component/core/name.h`                    | `char value[64]` for editor display and asset look-up by name                                         |
