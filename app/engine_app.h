@@ -14,6 +14,7 @@
 #include "system/animation/animation_system.h"
 #include "system/animation/skeletal_animation_system.h"
 #include "system/animation/bone_socket_system.h"
+#include "system/audio/audio_system.h"
 #include "system/particle/particle_system.h"
 #include "system/physics/physics_system.h"
 #include "system/physics/character_controller_system.h"
@@ -53,6 +54,7 @@ struct AppConfig {
 struct AppSystems {
     Vkm::Engine::CameraControllerSystem& camera;
     Vkm::Engine::UISystem&               ui;
+    Vkm::Engine::AudioSystem&            audio;
     Vkm::Engine::VisibilitySystem&       visibility;
     Vkm::Engine::RenderSystem&           render;
 };
@@ -95,6 +97,11 @@ inline AppSystems setupEngineApp(Vkm::Engine::Engine& engine, const AppConfig& c
     engine.addSystem<Vkm::Engine::BoneSocketSystem>(Vkm::Engine::SystemStage::Transform);
     engine.addSystem<Vkm::Engine::HierarchySystem>(Vkm::Engine::SystemStage::Transform);
     auto& uiSystem = engine.addSystem<Vkm::Engine::UISystem>(Vkm::Engine::SystemStage::Transform);
+    // After the world resolve, like every other consumer of a resolved pose:
+    // audio presents the frame rather than simulating it, so a parented source
+    // or listener is heard where this frame put it. It still hears everything
+    // the frame decided, because Transform runs after Simulation.
+    auto& audioSystem = engine.addSystem<Vkm::Engine::AudioSystem>(Vkm::Engine::SystemStage::Transform);
     auto& visibilitySystem =
         engine.addSystem<Vkm::Engine::VisibilitySystem>(Vkm::Engine::SystemStage::Visibility);
     auto& renderSystem = engine.addSystem<Vkm::Engine::RenderSystem>(Vkm::Engine::SystemStage::Render);
@@ -112,5 +119,5 @@ inline AppSystems setupEngineApp(Vkm::Engine::Engine& engine, const AppConfig& c
     engine.getClock().setPaused(config.startPaused);
     engine.setFPSLog(config.logFps);
 
-    return AppSystems{cameraController, uiSystem, visibilitySystem, renderSystem};
+    return AppSystems{cameraController, uiSystem, audioSystem, visibilitySystem, renderSystem};
 }

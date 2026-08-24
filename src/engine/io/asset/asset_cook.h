@@ -8,6 +8,7 @@
 namespace Vkm::Engine {
 
 struct AnimationClipAsset;
+struct AudioClipAsset;
 struct MeshAsset;
 struct SkeletonAsset;
 struct TextureAsset;
@@ -40,6 +41,7 @@ constexpr uint16_t MESH_FORMAT_VERSION           = 2;
 constexpr uint16_t TEXTURE_FORMAT_VERSION        = 2;
 constexpr uint16_t SKELETON_FORMAT_VERSION       = 1;
 constexpr uint16_t ANIMATION_CLIP_FORMAT_VERSION = 1;
+constexpr uint16_t AUDIO_CLIP_FORMAT_VERSION     = 1;
 
 /**
  * @brief Bone count past which a rig is refused as corrupt rather than read.
@@ -52,12 +54,33 @@ constexpr uint16_t ANIMATION_CLIP_FORMAT_VERSION = 1;
  */
 constexpr uint32_t MAX_SKELETON_BONES = 1024;
 
+/**
+ * @brief Channel count past which a sound is refused as corrupt rather than read.
+ *
+ * Game audio is mono (so it can be positioned) or stereo (so it cannot); 7.1
+ * source material is the outer edge of what anyone authors. Like the bone
+ * ceiling this is a rejection threshold rather than a capability, and raising
+ * it later accepts strictly more files.
+ */
+constexpr uint32_t MAX_AUDIO_CHANNELS = 8;
+
+/**
+ * @brief Sample rate past which a clip is refused as corrupt rather than read.
+ *
+ * Twice the highest rate consumer hardware offers, so nothing real approaches
+ * it while a rate read out of a damaged file usually clears it. A clip's rate
+ * divides its frame count to give a duration, so a wild one is not merely odd -
+ * it makes the length wrong everywhere the length is read.
+ */
+constexpr uint32_t MAX_AUDIO_SAMPLE_RATE = 384000;
+
 // Writers (editor cooker). Create parent directories as needed. `recipeHash` is
 // stored in the header for staleness checks. Return false on any IO error.
 bool writeMesh         (const std::filesystem::path& path, const MeshAsset&          mesh,     uint64_t recipeHash);
 bool writeTexture      (const std::filesystem::path& path, const TextureAsset&       texture,  uint64_t recipeHash);
 bool writeSkeleton     (const std::filesystem::path& path, const SkeletonAsset&      skeleton, uint64_t recipeHash);
 bool writeAnimationClip(const std::filesystem::path& path, const AnimationClipAsset& clip,     uint64_t recipeHash);
+bool writeAudioClip    (const std::filesystem::path& path, const AudioClipAsset&     audio,    uint64_t recipeHash);
 
 /**
  * @brief Whether the cooked file at @p path can still serve @p type at @p recipeHash.
@@ -93,6 +116,7 @@ bool readMesh         (const std::filesystem::path& path, MeshAsset&          ou
 bool readTexture      (const std::filesystem::path& path, TextureAsset&       out, uint64_t* outHash = nullptr);
 bool readSkeleton     (const std::filesystem::path& path, SkeletonAsset&      out, uint64_t* outHash = nullptr);
 bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& out, uint64_t* outHash = nullptr);
+bool readAudioClip    (const std::filesystem::path& path, AudioClipAsset&     out, uint64_t* outHash = nullptr);
 
 } // namespace AssetCook
 

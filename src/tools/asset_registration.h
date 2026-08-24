@@ -3,6 +3,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include "resource/asset/animation_clip_asset.h"
+#include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
@@ -76,6 +77,18 @@ SkeletonHandle createCookedSkeleton(const nlohmann::json& source, ResourceManage
 AnimationClipHandle createCookedAnimationClip(const nlohmann::json& source, ResourceManager& resources);
 
 /**
+ * @brief Create a sound from its cooked source descriptor (runtime + editor).
+ *
+ * Takes the same synchronous cooked path as createCookedSkeleton; the recipe
+ * dispatch falls through to it for unhandled kinds.
+ *
+ * @param source JSON source descriptor carrying the asset `kind` and name.
+ * @param resources Resource manager the new clip is added to.
+ * @return Handle to the created clip, or an invalid handle on failure.
+ */
+AudioClipHandle createCookedAudioClip(const nlohmann::json& source, ResourceManager& resources);
+
+/**
  * @brief Wire the cooked dispatch into the AssetFactory seam (runtime only).
  *
  * Call once at startup before any scene I/O.
@@ -86,11 +99,11 @@ void registerCookedAssetFactories();
  * @brief Wire the heavy recipe asset factories into the AssetFactory seam (editor only).
  *
  * The recipe kinds (re)produce assets from their source: procedural mesh
- * generators, Assimp model import, and file/solid/folder textures and
- * materials. These are what the cooker runs to populate the cooked cache; a
- * runtime build does not link them. Falls through to the cooked dispatch, so a
- * host calls this instead of registerCookedAssetFactories(), once at startup
- * before any scene I/O.
+ * generators, Assimp model import, file/solid/folder textures and materials,
+ * and decoded sound files. These are what the cooker runs to populate the
+ * cooked cache; a runtime build does not link them. Falls through to the cooked
+ * dispatch, so a host calls this instead of registerCookedAssetFactories(),
+ * once at startup before any scene I/O.
  */
 void registerRecipeAssetFactories();
 

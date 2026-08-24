@@ -10,7 +10,7 @@ the GPU-uploadable ones sync through a per-resource version counter.
 - `src/engine/resource/resource_manager.h` for the manager
 - `src/engine/resource/resource.h` for the `Resource` base (version, name, hidden flag, source JSON)
 - `src/engine/resource/resource_handle.h` for type-safe `Handle<T>`
-- `src/engine/resource/asset/mesh_asset.h`, `asset/texture_asset.h`, `asset/material_asset.h`, `asset/font_asset.h`, `asset/skeleton_asset.h`, `asset/animation_clip_asset.h` for the asset kinds
+- `src/engine/resource/asset/mesh_asset.h`, `asset/texture_asset.h`, `asset/material_asset.h`, `asset/font_asset.h`, `asset/skeleton_asset.h`, `asset/animation_clip_asset.h`, `asset/audio_clip_asset.h` for the asset kinds
 - `src/engine/core/memory/sparse_set.h` for the `SparseSet<T>` that backs each asset table
 
 ## Handles
@@ -22,6 +22,7 @@ using MaterialHandle      = Handle<MaterialAsset>;
 using FontHandle          = Handle<FontAsset>;
 using SkeletonHandle      = Handle<SkeletonAsset>;
 using AnimationClipHandle = Handle<AnimationClipAsset>;
+using AudioClipHandle     = Handle<AudioClipAsset>;
 ```
 
 Each handle wraps a `StorageIndex` (index + generation), so stale handles
@@ -270,6 +271,30 @@ keeps `AnimationTrack<T>` and is untouched (see
 A clip is bound to its rig **at cook time**: `bones` is parallel to the named
 skeleton's bone array, so nothing resolves a bone name at runtime.
 
+### AudioClipAsset
+
+A sound, decoded in full at load: 16-bit interleaved PCM at the rate and
+channel layout the source file carried.
+
+```cpp
+struct AudioClipAsset : Resource {
+    uint32_t sampleRate = 0;   // as authored; the mixer resamples if it differs
+    uint32_t channels   = 0;   // only a mono clip can be meaningfully positioned
+    std::shared_ptr<const std::vector<int16_t>> samples;
+};
+```
+
+The one asset payload in the engine held through a `shared_ptr`, and the reason
+is the mixer: a playing voice reads those samples from the audio thread while a
+scene load frees the asset from the main thread without asking. Sharing
+ownership with the voice turns that from a use-after-free into a sound that
+keeps playing for the one frame it takes `AudioSystem` to notice.
+
+Decoding at load - rather than streaming - is a decision, not an omission: a
+streamed clip would be the only asset that keeps a file open past its load, and
+a `Resource` is a value a scene load builds in a staging manager and swaps in
+whole. See [Audio](system/audio.md) for the full argument and what it costs.
+
 ## Versioning
 
 `commit(handle)` bumps a single per-asset `version` counter. (There is no
@@ -302,11 +327,12 @@ The tools split by dependency weight:
 
 - **`vkm_tools`** (runtime-safe): the GLM-only generators, the cooked-asset
   loaders, and `registerCookedAssetFactories` (`cooked` / `inline`).
-- **`vkm_cook`** (editor-only): the heavy importers (`loader/`, Assimp + stb)
-  and the asset cooker (`cook/`), plus `registerRecipeAssetFactories`.
+- **`vkm_cook`** (editor-only): the heavy importers (`loader/`, Assimp + stb +
+  the miniaudio decoder) and the asset cooker (`cook/`), plus
+  `registerRecipeAssetFactories`.
 
 The runtime registers only the cooked set, so it links neither Assimp nor the
-image decoders; the editor registers the recipe set instead, which falls through
+image and sound decoders; the editor registers the recipe set instead, which falls through
 to the cooked functions and (re)cooks recipes into the cache.
 
 ### Generators (`src/tools/generator/`)
@@ -369,6 +395,7 @@ one bad vertex.
 | `texture_loaders.cpp`   | Load via stb_image, auto-detect channels, sRGB flag handling   |
 | `material_loaders.cpp`  | Folder loader: scans a folder for `*Color*`, `*Normal*`, etc.  |
 | `model_loaders.cpp`      | Assimp-backed mesh, rig and clip import; per-load aiScene parse cache |
+| `audio_loaders.cpp`      | miniaudio-backed sound import: wav / mp3 / flac decoded to s16 |
 | `environment_loaders.cpp`| HDR equirectangular image loader (`loadHDRImage`) for IBL / skybox |
 
 ## Save/load round-trip
@@ -376,7 +403,8 @@ one bad vertex.
 See [IO and serialization](system/io.md) for the full flow.
 `AssetSerializer::saveAssetsForScene` emits only the assets actually
 referenced by the scene - `Mesh` (mesh + material), `LOD` (every level's
-mesh) and `Decal` (its material), plus the textures those materials
+mesh), `Decal` (its material), `Animator` (its rig and clip) and
+`AudioSource` (its sound), plus the textures those materials
 reference. `emitDescriptor` is the single gate every one of those goes
 through, so a hidden or unnamed asset cannot be written as a reference by
 any emitter, present or future. A component that writes an

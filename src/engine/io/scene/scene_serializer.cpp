@@ -77,6 +77,8 @@ constexpr uint32_t MAX_ENTITY_SLOT = 1u << 22;
     R(LOD,              "LOD")                  \
     R(Decal,            "Decal")                \
     P(ParticleEmitter,  "ParticleEmitter")      \
+    R(AudioSource,      "AudioSource")          \
+    P(AudioListener,    "AudioListener")        \
     P(IrradianceVolume, "IrradianceVolume")     \
     P(ReflectionProbe,  "ReflectionProbe")      \
     P(Animation,        "Animation")            \

@@ -70,6 +70,8 @@ scene.remove<Mesh>(entity);
 | `CharacterController` | `component/physics/character_controller.h` | `moveInput` + `jumpRequested` in, tuning, `grounded` + `groundNormal` out                    |
 | `Rigidbody`           | `component/physics/rigidbody.h`            | Dynamic body: linear/angular velocity, mass, damping, restitution, friction, gravity scale, kinematic/static flags, plus the `supported` / `supportNormal` / `blockNormal` outputs |
 | `ReflectionProbe`     | `component/render/reflection_probe.h`      | Local IBL probe: `halfExtents` influence box, `falloff`, `intensity`, `resolution`                   |
+| `AudioSource`         | `component/audio/audio_source.h`           | `AudioClipHandle clip`, `volume`, `pitch`, `loop`, `spatial`, `playOnStart`, `min`/`maxDistance`; `playing` + `started` are runtime only |
+| `AudioListener`       | `component/audio/audio_listener.h`         | `active`, `volume` - the ear every spatial source is heard relative to                               |
 
 `Animation` and `Animator` are both covered in [Animation](system/animation.md):
 the first drives one entity's own `Transform`, the second poses a whole rig and
@@ -78,6 +80,11 @@ mesh component - a mesh is skinned when its asset carries skin weights, and the
 rig driving it is the nearest `Animator` above it in the hierarchy. `BoneSocket`
 is the third: it names a joint of the rig above it and reads that joint out of
 the published pose, which is how a weapon ends up in a hand.
+
+`AudioSource` and `AudioListener` are covered in [Audio](system/audio.md). There
+is no `play()` call: `AudioSource::playing` is the state the source wants to be
+in, gameplay writes it to start or stop a sound and reads it back to learn that
+a one-shot finished, and `AudioSystem` reconciles the two.
 
 Light gets a full breakdown in [Lighting](system/lighting.md), including
 the area-light fields (`areaWidth`, `areaHeight`, `areaRadius`, `twoSided`)

@@ -159,8 +159,8 @@ clean write, so a full disk cannot leave a truncated file where a good one was.
 `SceneSerializer::save` emits a JSON object with four top-level blocks:
 
 - `assets`: name-only references to every asset a component names - `Mesh`,
-  `LOD` levels, `Decal`, and the rig plus clip an `Animator` names - plus the
-  textures those materials use. A
+  `LOD` levels, `Decal`, the rig plus clip an `Animator` names, and the sound an
+  `AudioSource` names - plus the textures those materials use. A
   component reference the assets block never lists is one the loader never
   recreates, so every component that names an asset has to be walked there. The
   asset *data* lives in the cooked library (keyed by name), not in the scene
@@ -217,7 +217,8 @@ a hash of the recipe. Every asset is its own file:
 - `library/<type>/<uid>.json` - the recipe (and, for materials, the canonical
   `inline` form). The version-controlled source of truth.
 - `cooked/<type>/<uid>.vkmc` - the derived binary blob (mesh vertices/indices;
-  decoded texture pixels; a rig's bones and bind data; a clip's keys).
+  decoded texture pixels; a rig's bones and bind data; a clip's keys; a sound's
+  PCM).
   Regenerable; git-ignored.
 - `library/_manifest.json` - maps each asset `name` to its type and recipe hash,
   under a `manifestVersion` the loader checks. `AssetLibrary`
@@ -301,6 +302,7 @@ guarded by the `static_assert` in `asset_library.cpp`.
 | Texture | The `TextureParams` fields, then the decoded pixels |
 | Skeleton | Bone count, a `{parent, nameLen}` record per bone, bulk inverse-bind matrices, bulk bind-pose TRS, then the concatenated names |
 | Animation clip | Bone count, duration, the six key-array counts, the skeleton name length, then the bulk `ClipBone` table, the six key arrays and the name |
+| Audio clip | Sample rate, channel count, sample count, then the interleaved 16-bit PCM |
 
 Fixed-size records come first and variable-length names last in both new
 bodies, so the size reconciliation works the same way `readMesh` does: bound
@@ -318,7 +320,11 @@ get wrong, because nothing downstream re-checks:
   indexes those arrays directly, once per bone per frame.
 - A bone count past `MAX_SKELETON_BONES` is refused. It is a corruption
   threshold rather than a capability limit: raising it later accepts strictly
-  more files, so it starts tight.
+  more files, so it starts tight. `MAX_AUDIO_CHANNELS` and
+  `MAX_AUDIO_SAMPLE_RATE` are the same kind of threshold for a sound.
+- A sound's sample count must divide by its channel count. The mixer reads
+  whole frames, so a file that carries the right number of bytes and still
+  describes a half frame would run it off the end.
 - A mesh's skin stream must be parallel to its vertices or absent, and every
   bone index in it must be under `MAX_SKELETON_BONES`. That second check earns
   its keep for a sharper reason than the index check beside it: a bone index is
@@ -333,6 +339,13 @@ earns a completion type, an `AsyncLoadQueue` lane and a drain in
 assets block carries a `skeletons` and a `clips` section beside the other three;
 they load after materials and before meshes, because a clip names the rig its
 bone indices address.
+
+Sounds are synchronous too (`loadCookedAudioClip`), for a different reason: a
+cooked sound is bigger, but there is nothing to decode - the file already holds
+the PCM the mixer wants, so a worker hop would buy a copy's worth of latency at
+the price of a completion lane and a window in which a scene's sounds exist and
+are silent. Their `sounds` section loads last, because nothing depends on it and
+it depends on nothing.
 
 `MESH_FORMAT_VERSION` is **2**: the mesh body carries the skin stream, the skin
 radius and the rig name. Every mesh cooked before it is refused on read - a
@@ -401,6 +414,11 @@ Today's coverage, the flat list in `scene_serializer.cpp`:
 - `Mesh`, `LOD`, `Decal` - the ones that name assets, so their save/load also
   takes the `ResourceManager` that turns a handle into a name and back.
 - `ParticleEmitter`, `IrradianceVolume`, `ReflectionProbe`
+- `AudioSource` (asset-naming, so it takes the `ResourceManager` too) and
+  `AudioListener`. `AudioSource::playing` and `started` are runtime state and
+  are deliberately absent: they describe a play session, and a scene row holding
+  a half-finished sound would resume a noise whose beginning nobody heard (see
+  [Audio](audio.md))
 - `UICanvas`, `UIElement`, `UIImage`, `UIText`, `UIButton` (see [UI](ui.md))
 - `Rigidbody`, `Collider`, `CharacterController` (physics; runtime sleep state,
   the contact-normal outputs and derived mass properties are not persisted, and a
@@ -467,7 +485,7 @@ per-entity component shape a scene uses, in its own file:
 {"version": 3, "nextUid": 3,
  "entities": [{"uid": 0, "components": {...}}, {"uid": 1, "parent": 0, "components": {...}}],
  "assets": {"textures": [...], "meshes": [...], "materials": [...],
-            "skeletons": [...], "clips": [...]}}
+            "skeletons": [...], "clips": [...], "sounds": [...]}}
 ```
 
 The `assets` block is the same one a scene carries, for the subtree this file

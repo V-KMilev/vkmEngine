@@ -201,6 +201,7 @@ All external dependencies are git submodules under `modules/` (see `.gitmodules`
 | **glm** | `modules/glm` | Vector/matrix math, used engine-wide and by vkmGL |
 | **glfw** | `modules/glfw` | Window + input platform layer |
 | **stb** | `modules/stb` | `stb_image` (texture decode), `stb_truetype` (SDF font bake) |
+| **miniaudio** | `modules/miniaudio` | Playback device + wav/mp3/flac decode; absorbed privately by vkm_core, and only `system/audio` and the audio importer include it |
 | **imgui** | `modules/imgui` | Dear ImGui for editor UI |
 | **freetype** | `modules/freetype` | Font rasterizer, trimmed to the core; vendored so the build does not depend on a system libfreetype |
 | **json** | `modules/json` | nlohmann/json (`nlohmann_json`); serialization + asset `source` descriptors |

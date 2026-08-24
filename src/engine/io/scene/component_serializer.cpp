@@ -289,6 +289,32 @@ void load(const nlohmann::json& j, ParticleEmitter& e) { loadReflected(j, e); }
 nlohmann::json save(const ReflectionProbe& p)          { return saveReflected(p); }
 void load(const nlohmann::json& j, ReflectionProbe& p) { loadReflected(j, p); }
 
+nlohmann::json save(const AudioSource& s, const ResourceManager& resources) {
+    return {
+        {"clip",        s.clip ? resources.get(s.clip).name : std::string{}},
+        {"volume",      s.volume},
+        {"pitch",       s.pitch},
+        {"loop",        s.loop},
+        {"spatial",     s.spatial},
+        {"playOnStart", s.playOnStart},
+        {"minDistance", s.minDistance},
+        {"maxDistance", s.maxDistance},
+    };
+}
+void load(const nlohmann::json& j, AudioSource& s, const ResourceManager& resources) {
+    s.clip        = resolveAssetRef<AudioClipAsset>(resources, j.value("clip", std::string{}), "sound");
+    s.volume      = j.value("volume",      s.volume);
+    s.pitch       = j.value("pitch",       s.pitch);
+    s.loop        = j.value("loop",        s.loop);
+    s.spatial     = j.value("spatial",     s.spatial);
+    s.playOnStart = j.value("playOnStart", s.playOnStart);
+    s.minDistance = j.value("minDistance", s.minDistance);
+    s.maxDistance = j.value("maxDistance", s.maxDistance);
+}
+
+nlohmann::json save(const AudioListener& l)          { return saveReflected(l); }
+void load(const nlohmann::json& j, AudioListener& l) { loadReflected(j, l); }
+
 nlohmann::json save(const IrradianceVolume& v)          { return saveReflected(v); }
 void load(const nlohmann::json& j, IrradianceVolume& v) { loadReflected(j, v); }
 
