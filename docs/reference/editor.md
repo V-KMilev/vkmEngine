@@ -186,14 +186,22 @@ asset graph.
   to actually start. A Play button auditions the clip **through the device, not
   through `AudioSource::playing`** - writing that flag would be a scene edit,
   undoable and dirtying and audible again on the next Play, when all that was
-  asked for was to hear the file.
+  asked for was to hear the file. Its Stop is lit only while that audition is
+  sounding, which is the one thing on the row that speaks for the device: the
+  Playing / Idle label beside it reports `AudioSource::playing`, the scene's
+  state, and says nothing about whether the file is being heard.
 - **Audio Listener** - active and master volume, plus the two things nothing
   else on screen would show: a listener that is not the ear, which names the one
   `findActiveListener` picked instead of merely counting the candidates, and a
-  listener without a `Transform`, which has no position to hear from.
+  listener without a `Transform`, which has no position to hear from. Never
+  both: the rule joins on `Transform`, so a listener missing one is not
+  competing for the ear at all and would lose to a listener *later* in storage
+  order - it is told what is actually wrong instead.
 
-An entity carrying an `AudioSource` is named **Sound** in the hierarchy and one
-carrying an `AudioListener` is a **Listener**; the tooltip digest lists both.
+An entity carrying an `AudioSource` is named **Sound** in the hierarchy - **2D
+Sound** when it is not spatial, which is the same split by kind a `Light` makes
+between Dir / Point / Spot - and one carrying an `AudioListener` is a
+**Listener**; the tooltip digest lists both.
 
 ## Undo / redo
 
@@ -308,13 +316,19 @@ picture. What it has is a length, a layout and a sound, so the row shows the
 first two and a play button gives the third - hearing a clip is what previewing
 one means. One Stop beside `Import Sound...` serves every row, because one
 audition voice is remembered for the whole tab: a second Play replaces the
-first rather than layering over it, and without a Stop a ninety-second
-ambience outlived the tab switch that started it. `Import Sound...` decodes a
-wav / mp3 / flac into the project, which
-is the only way a clip enters one; right-clicking a row assigns it to the
-selected entity's `AudioSource` as an undoable edit. On a host with no audio
-device the tab says so, since clips still import and cook there - they just
-cannot be heard.
+first rather than layering over it, and before the Stop nothing here could cut
+one short - which matters on a tab that imports mp3 and flac. It stops an
+audition rather than owning its lifetime: leave the tab and a ninety-second
+ambience plays on, because this tab is the only thing holding its id. It is lit
+only while the device says that voice is still sounding, here and on the
+Inspector's copy of it - an id outlives the voice it named, so a clip that ran
+to its end would otherwise leave a Stop offering to cut something that already
+stopped.
+`Import Sound...` decodes a wav / mp3 / flac into the project, which is the
+only way a clip enters one; right-clicking a row assigns it to the selected
+entity's `AudioSource` as an undoable edit. On a host with no audio device the
+tab says so, since clips still import and cook there - they just cannot be
+heard.
 
 ## CameraControllerSystem
 
@@ -373,9 +387,17 @@ can be found and placed at all: lights (directional rays, cone projections,
 area-light edges), cameras (frustum lines), reflection probes and irradiance
 volumes (influence boxes, and the selected volume's probe grid), decals
 (projection box) and particle emitters (marker plus velocity), and audio
-sources and listeners (a billboard icon each; the selected source's `Min` /
-`Max Distance` spheres, and the listener's facing arrow). These are authoring
-shapes rather than debug overlays, so none of them is behind a `View` toggle.
+sources and listeners (a billboard icon each - the source's keeps the speaker's
+arcs only while it is spatial; plus the selected source's `Min` / `Max Distance`
+spheres, and the listener's facing arrow). These are authoring shapes rather
+than debug overlays, so none of them is behind a `View` toggle.
+
+Four of those - lights, cameras, audio sources and listeners - mark themselves
+with a glyph on a dim disc, all at one size, because a marker says *something
+is here* and the glyph inside it says what. One call draws it
+(`drawEntityMarker`, in `ui/editor_icons.h`) and the picker answers clicks
+within the radius that same header states, so a marker cannot be resized into
+a click target that no longer matches it.
 
 The `View` menu adds three overlays that are off by default because they draw
 for every matching entity rather than the selection: **Show Colliders** (the
@@ -388,10 +410,25 @@ just its position).
 ## Entity selection and shortcuts
 
 - Click in the viewport to pick entities (ray-AABB against the visible
-  set's cached world AABBs). Lights and audio sources have no mesh to hit, so
-  each gets a proximity box of its own: a light's scales with its reach, an
-  audio source's is fixed, because a sound has no visual extent and a 60-unit
-  `Max Distance` would otherwise swallow every click near it.
+  set's cached world AABBs). Everything else is picked by its **billboard
+  marker**: a light, a camera, an audio source and a listener have no mesh to
+  be hit through, and the gizmo that moves one only appears once it is
+  selected, so a marker that cannot be clicked is an entity that cannot be
+  placed - and the click that missed deselects, which is the worst answer
+  available. The rule is `drawEntityMarker` itself: what draws a marker is what
+  answers a click on one, tested in screen space against the same radius the
+  marker is drawn at, so it holds at any distance and under an orthographic
+  camera - where a world-sized proximity box, which agrees with a screen marker
+  at exactly one distance, would not. A light keeps such a box as well, scaled
+  by its reach, because a light's wireframe *is* a volume the user points at;
+  the marker covers the case where that wireframe has shrunk to nothing. A
+  sound has no volume to point at, which is also what keeps a 60-unit `Max
+  Distance` from swallowing every click near it. The flown editor camera is
+  excluded, the same way it draws no gizmo - it is the viewer.
+- Probes, irradiance volumes, decals and particle emitters draw wire volumes
+  rather than markers, and are still selected from the hierarchy only. Their
+  boxes run to tens of units, so answering a click anywhere inside one would
+  swallow everything standing in it.
 - The hierarchy panel highlights the selection.
 - The inspector shows components of the selected entity. Entities inside a
   prefab instance are selected and edited like any other; an edit to one becomes

@@ -223,6 +223,11 @@ json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
     // Fully reflected - the field list lives once, in environment.h.
     doc["environment"] = ComponentSerializer::save(scene.environment());
     doc["physics"]     = ComponentSerializer::save(scene.physics());
+
+    // Here rather than in save(), so the play-mode snapshot is held to the same
+    // rule as the file: a scene that cannot be written is one that cannot be
+    // restored when the user presses Stop.
+    detail::writeNonFiniteAsZero(doc, "Scene");
     return doc;
 }
 

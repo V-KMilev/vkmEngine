@@ -249,6 +249,8 @@ is no `Behavior` hook, because the event names the rig rather than the listener:
 subscribe<AnimationEvent>([this](const AnimationEvent& e) {
     if (e.entity != m_player || e.marker != "footstep") return;
     if (!m_grounded) return;                       // gameplay decides, not the clip
+    VoiceParams params;
+    params.position = m_scene->get<Transform>(m_player).position;
     context().events->emit(PlaySoundEvent{m_footstep, params});
 });
 ```
@@ -259,8 +261,8 @@ up, slows down, or is retimed by whoever authored the walk. The clip says
 *when*; gameplay says *whether* and *what it sounds like*. A request rather
 than an `AudioSource` because a fast stride asks for the next footfall before
 the last one has finished, and a source is a speaker rather than a queue - see
-[Starting a sound with no entity](audio.md#starting-a-sound-with-no-entity). Markers are authored
-in the clip's recipe - see
+[Starting a sound with no entity](audio.md#starting-a-sound-with-no-entity).
+Markers are authored in the clip's recipe - see
 [AnimationClipAsset](../resources.md#animationclipasset).
 
 ### Once per crossing, and only once

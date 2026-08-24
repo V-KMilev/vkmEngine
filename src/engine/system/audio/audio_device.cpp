@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <memory>
 #include <unordered_map>
@@ -124,9 +125,19 @@ struct AudioDevice::Backend {
     }
 
     static void apply(Voice& voice, const VoiceParams& params) {
-        ma_sound_set_volume(&voice.sound, std::max(0.0f, params.volume));
+        // A NaN gain is already answered with silence, because std::max keeps
+        // its first argument when the comparison against a NaN comes back
+        // false. An infinite one was not, and it is not one loud voice: every
+        // voice sums into the same master, so the whole mix reads non-finite
+        // for as long as it lives. Measured with two healthy voices beside it,
+        // all 4800 samples of the output went NaN, and came back only once the
+        // bad voice was reaped. Silence is the failure that stays local.
+        const float gain = std::isfinite(params.volume) ? std::max(0.0f, params.volume) : 0.0f;
+        ma_sound_set_volume(&voice.sound, gain);
         // Zero would hold one sample forever instead of advancing the cursor,
-        // and miniaudio requires the rate positive.
+        // and miniaudio requires the rate positive. A NaN rate lands on the
+        // same floor by the rule above, which is why this stays a max rather
+        // than becoming a clamp - std::clamp would hand the NaN straight on.
         ma_sound_set_pitch(&voice.sound, std::max(0.01f, params.pitch));
         ma_sound_set_looping(&voice.sound, params.loop ? MA_TRUE : MA_FALSE);
 
@@ -386,7 +397,11 @@ void AudioDevice::setListenerActive(bool active) {
 
 void AudioDevice::setMasterVolume(float volume) {
     if (!m_open) return;
-    ma_engine_set_volume(&m_backend->engine, std::max(0.0f, volume));
+    // The same guard the per-voice gain carries, for the same measured reason:
+    // an infinite master takes the entire mix non-finite, and this one is
+    // authored - AudioListener::volume is a serialized field a slider writes.
+    ma_engine_set_volume(&m_backend->engine,
+                         std::isfinite(volume) ? std::max(0.0f, volume) : 0.0f);
 }
 
 } // namespace Vkm::Engine

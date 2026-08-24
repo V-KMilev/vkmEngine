@@ -86,9 +86,11 @@ and neither can be expressed as a component:
   dropped at walking cadence, **19% at cadence 1.875 and 48% at 2.0**, which
   the runner reaches 33 seconds into a run. Through the request path: 0% at
   every cadence.
-- A **coin**, which is pooled: the entity is recycled 160 m up the track the
-  instant it is collected, so a source riding it would fly its own chime away,
-  and a source on the player would swallow every ping after the first.
+- A **coin**, which pays out in runs: coins are laid down in lanes of four
+  3.6 m apart, so at top speed one run's chimes start 83 ms apart against a
+  180 ms clip and a source on the player would swallow every ping after the
+  first. Riding the coin is no better - collecting it switches the coin off
+  where it stands, so there is no longer a thing there for the sound to be.
 
 What makes a request safe to forget is that it hands back nothing. There is no
 id, so nothing can stop it, move it or ask whether it finished - and therefore
@@ -98,6 +100,17 @@ its end and the next frame's `reapFinishedVoices()` releases it, which is the
 lifetime `AudioDevice::play` already documents for a caller that never looks
 back. `stopEverything` still reaches it, so a scene load silences requests
 along with everything else.
+
+That last sweep is deliberately blunt, and it is worth knowing how blunt. It
+drops **every** request waiting to start, including one made against the graph
+that just arrived, because nothing distinguishes the two: both were emitted
+between the same pair of `AudioSystem` updates, and a handle from the old graph
+is not merely dead - a swap hands the new graph its own generations, so an old
+index can be alive there and name a different clip. Dropping the request is the
+safe half of that trade. Only a load that lands *after* audio in the frame can
+lose a good one, which in practice means the editor's UI stage: at runtime the
+load happens in Simulation, the flip is consumed on that same frame, and the
+next frame's requests go through untouched. Measured both ways.
 
 `params.loop` is ignored, and that is the invariant that keeps the two paths
 from overlapping: a sound with no end needs an id to stop it, so it needs a
@@ -177,6 +190,17 @@ perceptual, so the settings menu owes the conversion (`position * position`, or
 a decibel curve) before it writes `AudioListener::volume`. Storing the slider's
 own position here instead would put a UI decision inside the mixer's contract
 and leave gameplay unable to reason about what multiplying two gains means.
+
+A gain that is negative or not finite is heard as **silence**, wherever it came
+from - a source's field, a request's, or the listener's master. That floor is
+not tidiness. Every voice sums into one master, so a single infinite gain takes
+every sample of the mix non-finite and silences the whole game until that voice
+is reaped: measured, two healthy voices beside one at `+inf` produced 4800 NaN
+samples out of 4800, and recovered only when the bad voice went. A
+`PlaySoundEvent` carries whatever arithmetic gameplay did, unchecked, so the
+floor lives at the device, where every path already passes through. NaN was
+always answered this way - `std::max` keeps its first argument when a comparison
+against a NaN comes back false - and infinity now is too.
 
 `spatial = false` bypasses all of it and mixes the clip flat - what music,
 narration and UI clicks want. Spatializing a stereo clip is close to
@@ -291,12 +315,14 @@ manage.
 That is a measurement now, not a deferral. Asked for 4096 voices at once the
 device starts 4096 - nothing refuses at any count - and each costs about
 3.2 kB. Mix cost is linear and small: on an AMD FX-8320, a 2012 eight-core
-part, 64 voices take 5% of one core, 128 take 10%, and 1024 take 80 to 95%
-across repeated runs, the spread being how much of it is spatialized and what
-else the machine is doing. The mixer's deadline is real time, so that last
-figure is where a device callback starts to miss on that machine: somewhere
-past a thousand voices, an order of magnitude beyond even the runaway below and
-further still past anything either example plays.
+part, 64 voices take 5 to 6% of one core, 128 take 10 to 13%, and 1024 take 83
+to 110% across six runs, the spread being how much of it is spatialized and
+what else the machine is doing. The mixer's deadline is real time, so that last
+figure is the deadline itself: a thousand voices is roughly where a device
+callback starts to miss on that machine rather than comfortably short of it -
+still an order of magnitude beyond the runaway below and further still past
+anything either example plays. Measure it on a quiet machine: one stray process
+holding five cores moved every figure here by half again.
 
 **What breaks first is the sum, not the mixer.** Four phase-locked copies of
 one clip at gain 0.5 already pass full scale. So the failure a cap could
@@ -316,8 +342,8 @@ arithmetic it needs is this.
 The fire-and-forget path is bounded by the clip rather than by a counter. Sixty
 requests a second of a two-second clip - a behavior emitting one every frame,
 which is the runaway a cap exists to catch - settle at exactly 120 voices, the
-clip's length times its rate, and drain to zero within two seconds of the
-requests stopping. There is nothing running away.
+clip's length times the rate they are asked for at, and drain to zero within
+two seconds of the requests stopping. There is nothing running away.
 
 ### Stopping a sound is ramped
 
@@ -389,7 +415,7 @@ the main thread pushes voice parameters, and both are inside the backend:
 
 | Field | Written from | Read from |
 |---|---|---|
-| `ma_gainer::masterVolume` (plain `float`) | `AudioDevice::Backend::apply` → `ma_sound_set_volume`, every frame per voice | `ma_gainer_process_pcm_frames_internal`, on the mixer thread |
+| `ma_gainer::masterVolume` (plain `float`) | `AudioDevice::Backend::apply` -> `ma_sound_set_volume`, every frame per voice | `ma_gainer_process_pcm_frames_internal`, on the mixer thread |
 | `ma_spatializer_listener::isEnabled` (plain `ma_bool32`) | `AudioDevice::setListenerActive`, every frame | `ma_spatializer_listener_is_enabled`, on the mixer thread |
 
 No engine-owned state races: the voice table, the clip's samples and every
@@ -475,7 +501,7 @@ The audio harness measures, off a real mix:
 - 33 simultaneous voices return 200 full buffers with no short read
 - the limit: 4096 voices start with nothing refused, mix cost stays linear in
   the count, and a request emitted every frame settles at the clip's length
-  times its rate rather than growing
+  times the rate it is asked for at rather than growing
 - what N copies of one clip actually sum to, phase-locked against staggered
   against scattered across a level
 - a one-shot clears its own `playing` flag and releases its voice
@@ -522,12 +548,18 @@ To hear a clip of your own, put a wav, mp3 or flac anywhere under a project's
 Both are drawn: selecting a spatial source puts a solid sphere at `Min
 Distance` and a faint one at `Max Distance` around it, which is the whole
 attenuation model, since the falloff between them is linear and nothing aims a
-sound. The source's own icon carries the other three things worth seeing
-without opening the Inspector - it is dimmed while the source names no clip
-(a broken source and a quiet one look identical otherwise) and ringed while
-`playing` is set. The listener icon is dimmed on every listener except the one
-`findActiveListener` picked, and carries a short arrow along its `+Z` facing,
-which is what decides the side a source is heard from.
+sound. The source's own icon carries the rest of what is worth seeing without
+opening the Inspector. It keeps the speaker's radiating arcs while `spatial` is
+set and drops them when it is not, because those arcs are the only thing the
+two kinds differ by: a 2D source is drawn at its `Transform` like any other,
+but that pose is not heard, so the marker would otherwise promise a placement
+the mixer ignores. It is dimmed while the source names no clip (a broken source
+and a quiet one look identical otherwise) and ringed while `playing` is set -
+which, for a one-shot shorter than a blink, is a ring you will not catch, so it
+is the loops and the beds it actually reports on. The listener icon is dimmed
+on every listener except the one `findActiveListener` picked, and carries a
+short arrow along its `+Z` facing, which is what decides the side a source is
+heard from.
 
 What to listen for, in the order it is likely to be wrong: a click where a loop
 wraps, panning that is on the wrong side, a fade that steps rather than glides,

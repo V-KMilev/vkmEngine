@@ -49,9 +49,9 @@ namespace Vkm::Engine {
  *    but only while alive and grounded, because what a marker means is
  *    gameplay's to decide - and a chime on each coin. Neither can be a source:
  *    footfalls at top speed arrive closer together than one speaker can
- *    retrigger, and a coin is pooled, so a source riding it would fly its own
- *    chime up the track while a source on the player would swallow every ping
- *    after the first.
+ *    retrigger, and so do the coins in a lane of four, so a shared source on
+ *    the player would swallow every ping after the first - while a collected
+ *    coin is switched off the instant it pays, leaving nothing to ride.
  *  - Lighting: point pools under the ceiling luminaires and spot headlights on
  *    trains (toggled per recycle via Light::enabled). Every light has a visible
  *    fixture emitting it. Sunless, the headlight spots take the 2D shadow
@@ -232,29 +232,29 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
         WindowManager*   m_window    = nullptr;
 
         // Procedurally generated assets (created in buildWorld).
-        MeshHandle     m_cubeMesh;
-        MaterialHandle m_matPlayer;
-        MaterialHandle m_matPlayerGlow;   ///< Emissive accent on the runner (visor band, pack).
-        MaterialHandle m_matTrain;         ///< Hull livery A: navy metal.
-        MaterialHandle m_matTrainB;        ///< Hull livery B: teal metal.
-        MaterialHandle m_matTrainC;        ///< Hull livery C: graphite metal.
-        MaterialHandle m_matWindow;        ///< Train windscreen / window glow.
-        MaterialHandle m_matHeadlamp;      ///< Warm nose light bar - the visible source of the beam.
-        MaterialHandle m_matBarrier;       ///< The one hazard body material: matte barricade red.
-        MaterialHandle m_matStripe;        ///< White reflective band on every hazard.
-        MaterialHandle m_matSignalRed;     ///< Trackside signal lamp heads (left wall).
-        MaterialHandle m_matSignalGreen;   ///< Trackside signal lamp heads (right wall).
-        MaterialHandle m_matCoin;
-        MaterialHandle m_matGround;
-        MaterialHandle m_matBallast;       ///< Raised gravel bed under each lane's track.
-        MaterialHandle m_matRail;
-        MaterialHandle m_matTie;
-        MaterialHandle m_matWall;
-        MaterialHandle m_matTrim;
-        MaterialHandle m_matPillar;
-        MaterialHandle m_matArch;
-        AudioClipHandle m_footstep;   ///< The synthesized footfall, played per stride marker.
-        AudioClipHandle m_coinChime;  ///< The synthesized pickup, played per coin.
+        MeshHandle      m_cubeMesh;
+        MaterialHandle  m_matPlayer;
+        MaterialHandle  m_matPlayerGlow;    ///< Emissive accent on the runner (visor band, pack).
+        MaterialHandle  m_matTrain;         ///< Hull livery A: navy metal.
+        MaterialHandle  m_matTrainB;        ///< Hull livery B: teal metal.
+        MaterialHandle  m_matTrainC;        ///< Hull livery C: graphite metal.
+        MaterialHandle  m_matWindow;        ///< Train windscreen / window glow.
+        MaterialHandle  m_matHeadlamp;      ///< Warm nose light bar - the visible source of the beam.
+        MaterialHandle  m_matBarrier;       ///< The one hazard body material: matte barricade red.
+        MaterialHandle  m_matStripe;        ///< White reflective band on every hazard.
+        MaterialHandle  m_matSignalRed;     ///< Trackside signal lamp heads (left wall).
+        MaterialHandle  m_matSignalGreen;   ///< Trackside signal lamp heads (right wall).
+        MaterialHandle  m_matCoin;
+        MaterialHandle  m_matGround;
+        MaterialHandle  m_matBallast;       ///< Raised gravel bed under each lane's track.
+        MaterialHandle  m_matRail;
+        MaterialHandle  m_matTie;
+        MaterialHandle  m_matWall;
+        MaterialHandle  m_matTrim;
+        MaterialHandle  m_matPillar;
+        MaterialHandle  m_matArch;
+        AudioClipHandle m_footstep;         ///< The synthesized footfall, played per stride marker.
+        AudioClipHandle m_coinChime;        ///< The synthesized pickup, played per coin.
 
         // World entities.
         EntityId              m_player{};  ///< Invisible rig root the gameplay drives; visible parts parent under it.

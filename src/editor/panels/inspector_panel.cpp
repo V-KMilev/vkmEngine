@@ -1242,7 +1242,13 @@ void InspectorPanel::drawAudioSourceSection(EditorContext& ec, EntityId id) {
         }
         ImGui::EndDisabled();
         ImGui::SameLine(0, 8.0f);
-        if (iconButton("inspSoundPreviewStop", EditorIcon::Stop, false, true, "Stop the audition", ih)) {
+        // Enabled only while the audition is actually running, which is the
+        // one thing on this row that speaks for the device: the label beside
+        // it reports `playing`, the scene's state, and says nothing about
+        // whether the file is being heard right now.
+        if (iconButton("inspSoundPreviewStop", EditorIcon::Stop, false,
+                       ec.audioSystem.device().isVoicePlaying(m_previewVoice),
+                       "Stop the audition", ih)) {
             ec.audioSystem.device().stopVoice(m_previewVoice);
             m_previewVoice = 0;
         }
@@ -1272,13 +1278,23 @@ void InspectorPanel::drawAudioListenerSection(EditorContext& ec, EntityId id) {
         // Which listener wins is storage order, which nothing else on screen
         // shows. Naming the winner rather than counting the candidates is what
         // turns "two listeners exist" into "this is not the one you hear".
+        //
+        // Gated on this listener having a pose, because findActiveListener
+        // joins on Transform: a listener without one loses to a LATER listener
+        // that has one, and blaming storage order there says the opposite of
+        // what happened. The warning under this one names the real reason.
         const EntityId heard = findActiveListener(scene);
-        if (listener.active && heard && heard != id) {
+        if (listener.active && heard && heard != id && scene.has<Transform>(id)) {
             char winner[64] = {};
             getEntityDisplayName(scene, heard, winner, sizeof(winner));
-            ImGui::TextColored(EditorStyle::WARNING,
-                               "Not the ear: '%s' is heard from, being first in storage order.",
+            // Wrapped where its neighbours are not, because this is the one
+            // warning on either audio card whose length is not fixed by the
+            // source: it carries an entity name a user typed, and unwrapped it
+            // pushes that name out of the panel at any default width.
+            ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::WARNING);
+            ImGui::TextWrapped("Not the ear: '%s' is heard from, being first in storage order.",
                                winner);
+            ImGui::PopStyleColor();
         }
         if (listener.active && !scene.has<Transform>(id)) {
             ImGui::TextColored(EditorStyle::WARNING,

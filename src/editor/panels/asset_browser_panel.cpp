@@ -319,12 +319,18 @@ void AssetBrowserPanel::drawSounds(EditorContext& ec) {
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("Decode a wav / mp3 / flac into the project's assets");
     ImGui::SameLine();
-    // The other half of the row's Play buttons, which until now had none:
-    // nothing stopped an audition on a tab switch, on closing the panel or at
-    // shutdown. This tab imports mp3 and flac, which is how a ninety-second
-    // ambience arrives, and the Inspector's audition already has both halves -
-    // two surfaces disagreeing about what auditioning means is the drift.
-    if (iconButton("abSoundStop", EditorIcon::Stop, false, m_previewVoice != 0,
+    // The other half of the row's Play buttons, which until now had none: an
+    // audition ran to its end and nothing here could cut it short, and this
+    // tab imports mp3 and flac, which is how a ninety-second ambience arrives.
+    // One button for the whole tab because one voice is remembered for the
+    // whole tab. It does not follow the user out - leaving the tab still
+    // leaves the clip playing, since this is the only place holding its id -
+    // so it is a way to stop an audition rather than a lifetime for one. The
+    // Inspector's audition has had both halves all along, and two surfaces
+    // disagreeing about what auditioning means is the drift. Enabled off the
+    // device rather than off a remembered id, because an id outlives the voice
+    // it named: a one-shot ends on its own and nothing here is told.
+    if (iconButton("abSoundStop", EditorIcon::Stop, false, device.isVoicePlaying(m_previewVoice),
                    "Stop the audition", ImGui::GetFrameHeight())) {
         device.stopVoice(m_previewVoice);
         m_previewVoice = 0;

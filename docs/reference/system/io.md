@@ -176,6 +176,19 @@ clean write, so a full disk cannot leave a truncated file where a good one was.
 - `environment` and `physics`: the scene-global `Environment` and
   `PhysicsSettings`, each a single reflected object rather than a component.
 
+Every number in the finished document is finite. JSON cannot spell an infinity
+or a NaN - nlohmann writes both as `null` - and a `null` where a float belongs is
+a type error the component loaders throw on, which fails the whole load: one bad
+field would cost every entity in the file. So the document is held to the rule
+where it is built (`detail::writeNonFiniteAsZero`, shared with `Prefab::save`):
+a non-finite value is written as `0` and named in the log by its path, e.g.
+`/entities/12/components/AudioSource/volume`. The play-mode snapshot goes through
+the same builder, so a scene that could not be saved cannot fail to restore on
+Stop either. Nothing about a well-formed file changes - a finite number writes
+exactly as it did - and the read side stays strict on purpose: teaching the
+loaders that `null` means "keep the default" would make it a permanent token in
+every scalar field of the format.
+
 `SceneSerializer::load` is **transactional for both entities and assets**:
 
 1. Read the file (early-out on parse failure; live scene untouched).

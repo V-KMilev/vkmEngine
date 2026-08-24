@@ -276,7 +276,11 @@ EntityLabel entityLabelOf(const Scene& scene, EntityId id) {
     if (scene.has<IrradianceVolume>(id)) return {"GI Volume", EditorIcon::Volume};
     if (scene.has<Decal>(id))            return {"Decal",     EditorIcon::Decal};
     if (scene.has<ParticleEmitter>(id))  return {"Emitter",   EditorIcon::Particle};
-    if (scene.has<AudioSource>(id))      return {"Sound",     EditorIcon::Audio};
+    if (scene.has<AudioSource>(id)) {
+        return scene.get<AudioSource>(id).spatial
+            ? EntityLabel{"Sound",    EditorIcon::Audio}
+            : EntityLabel{"2D Sound", EditorIcon::Audio2D};
+    }
     if (scene.has<AudioListener>(id))    return {"Listener",  EditorIcon::Listener};
     if (scene.has<UIButton>(id))         return {"Button",    EditorIcon::UIButton};
     if (scene.has<UIText>(id))           return {"Text",      EditorIcon::UIText};

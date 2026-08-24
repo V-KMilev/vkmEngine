@@ -23,6 +23,16 @@ using VoiceId = uint32_t;
  * seam hold in both directions.
  */
 struct VoiceParams {
+    /**
+     * @brief Linear gain for this voice, multiplied into the master.
+     *
+     * Negative and non-finite values are heard as silence. That is not
+     * tidiness: every voice sums into one master, so a single infinite gain
+     * takes the whole mix non-finite and silences every other sound until
+     * the voice is reaped. Gameplay fills this in arithmetic nobody checks -
+     * a PlaySoundEvent carries whatever the caller computed - so the floor
+     * lives here, where every path already passes through.
+     */
     float     volume      = 1.0f;
     float     pitch       = 1.0f;
     bool      loop        = false;
@@ -274,7 +284,14 @@ class AudioDevice {
         void setListenerActive(bool active);
 
         /**
-         * @brief Master gain applied to the whole mix. Negative values clamp to 0.
+         * @brief Master gain applied to the whole mix.
+         *
+         * A linear gain, passed through as written. Anything not finite, and
+         * anything below zero, is heard as silence rather than as itself: an
+         * infinite master takes every sample of the mix non-finite, which is
+         * every sound in the game gone rather than one gain being wrong.
+         *
+         * @param volume Linear master gain; 0 and below silence the mix.
          */
         void setMasterVolume(float volume);
 
