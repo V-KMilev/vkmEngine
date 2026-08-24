@@ -232,6 +232,10 @@ namespace ComponentSerializer {
      * undrained one attaches the previous component's misses to the next
      * entity, in the next file, in the next open.
      *
+     * Holds only the ones a save can put back: a reference read out of an array
+     * rather than a named field has nowhere to return to, and is reported and
+     * forgotten rather than kept.
+     *
      * @return The unresolved references, oldest first; empty when all resolved.
      */
     std::vector<UnresolvedRef> takeUnresolvedRefs();

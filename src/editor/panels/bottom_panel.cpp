@@ -18,7 +18,7 @@
 namespace Vkm::Engine {
 
 void BottomPanel::draw(EditorContext& ec) {
-    if (ImGui::BeginTabBar("##BottomTabs")) {
+    if (ImGui::BeginTabBar("##BottomTabs", ImGuiTabBarFlags_DrawSelectedOverline)) {
         if (ImGui::BeginTabItem("Animation")) {
             drawAnimationSection(ec);
             ImGui::EndTabItem();

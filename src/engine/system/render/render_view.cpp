@@ -72,6 +72,9 @@ void RenderView::build(
     PROFILE_SCOPE("RenderView::build");
 
     environment = scene.environment();
+    // Before the no-camera early-out: a world replaced while nothing was
+    // rendering it is still a world the caches downstream have to hear about.
+    worldEpoch  = scene.epoch();
 
     // The UI overlay is independent of the 3D camera, so snapshot it before the
     // no-camera early-out (a HUD/menu still draws when nothing 3D is in view).

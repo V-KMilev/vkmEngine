@@ -157,10 +157,12 @@ struct Animator {
 
     float time    = 0.0f;
     float speed   = 1.0f;
-    bool  playing = true;
     bool  looping = true;
+    bool  playOnStart = true;   // authored: start on the first simulated frame
 
     // Transient - runtime only, never serialized.
+    bool  playing = false;      // advancing right now
+    bool  started = false;      // playOnStart already honoured
     AnimationClipHandle fadeFrom;
     float               fadeTime      = 0.0f;
     float               fadeRemaining = 0.0f;
@@ -191,11 +193,21 @@ is the nearest `Animator` at or above it in the `Hierarchy`, which is the
 structure import produces anyway. That relationship needs no `EntityId` in any
 serialized row, so prefabs, undo and scene load never have to remap it.
 
-The first six fields are persisted, and the blend state deliberately is not. A
+The authored fields are persisted, and the blend state deliberately is not. A
 crossfade is a second clip and a countdown; freezing that shape into a scene row
 would outlive the blend system that wrote it, in a project with no migration
 path. A scene saved mid-blend reloads as the clip it was blending *to*, already
 there - which is where it was going, one fade early.
+
+**`playOnStart` is the authored flag and `playing` is the session's**, exactly
+as `Animation` and `AudioSource` split the same pair, and `advancePlayback`
+turns one into the other once on the first frame with simulation time to spend.
+`playing` used to be the persisted one, and the Animator card's transport writes
+it to preview a clip - correctly pushing no undo step and raising no dirty
+marker, because previewing is not an edit. Measured: press Pause in that card,
+press Ctrl+S for an unrelated reason, and the scene file holds `playing: false`
+for a character that is never going to animate again, with nothing having warned
+and nothing to undo.
 
 ## Crossfading
 

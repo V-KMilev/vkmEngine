@@ -45,6 +45,7 @@
 #include "generator/lod_generator.h"
 #include "io/asset/asset_library.h"
 #include "io/project_paths.h"
+#include "io/scene/scene_serializer.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/font_asset.h"
 #include "resource/asset/skeleton_asset.h"
@@ -420,15 +421,28 @@ void InspectorPanel::draw(EditorContext& ec) {
     // filled looks like too. The names are kept and written back by the save,
     // so this is a diagnosis and not a warning about losing them - what it
     // answers is "the mesh is gone and I cannot see why".
+    //
+    // Pruned before it is read, because the author answers it here: the moment
+    // they pick a mesh, the reference has loaded and the record is a leftover.
+    // Nothing else can retire it - a field is filled from the picker, from the
+    // Asset Browser, from an undo - so it is asked here, where it is about to
+    // be shown, rather than left to whichever of those wrote last.
+    SceneSerializer::pruneResolvedRefs(scene, ctx.resources, id);
     if (scene.has<MissingAssets>(id)) {
         const MissingAssets& missing = scene.get<MissingAssets>(id);
         ImGui::TextColored(EditorStyle::DANGER, "%zu asset reference(s) here did not load:",
                            missing.refs.size());
+        // Wrapped, because both halves are as long as their content: an asset
+        // name is a path as often as it is a word, and the sentence under them
+        // is a sentence. Unwrapped, the panel cut it at "rather than emp" -
+        // which is the line that says the names are not being lost.
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
         for (const MissingAssetRef& ref : missing.refs) {
-            ImGui::TextDisabled("  %s.%s  '%s'", ref.component.c_str(), ref.field.c_str(),
-                                ref.name.c_str());
+            ImGui::TextWrapped("  %s.%s  '%s'", ref.component.c_str(), ref.field.c_str(),
+                               ref.name.c_str());
         }
-        ImGui::TextDisabled("Kept as written: the save puts them back rather than emptying them.");
+        ImGui::TextWrapped("Kept as written: the save puts them back rather than emptying them.");
+        ImGui::PopStyleColor();
     }
 
     ImGui::Spacing();
@@ -453,7 +467,7 @@ void InspectorPanel::draw(EditorContext& ec) {
     if (scene.has<IrradianceVolume>(id)) drawIrradianceVolumeSection(scene, ctx.resources, state, id);
     if (scene.has<LOD>(id))            drawLODSection(scene, ctx.resources, state, id);
     if (scene.has<Animation>(id))  drawAnimationSection(ec, id);
-    if (scene.has<Animator>(id))   drawAnimatorSection(scene, ctx.resources, state, id);
+    if (scene.has<Animator>(id))   drawAnimatorSection(ec, id);
     if (scene.has<BoneSocket>(id)) drawBoneSocketSection(scene, ctx.resources, state, id);
     if (scene.has<ScriptComponent>(id)) drawScriptSection(scene, state, id);
     if (scene.has<UICanvas>(id))   drawUICanvasSection(scene, ctx.resources, state, id);
@@ -923,6 +937,14 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
                     ImGui::TextDisabled("Skinned: rig '%s' not loaded", asset.skeleton.c_str());
                 }
             }
+        } else {
+            // The material half of this card has always had its else, and it
+            // reports the milder failure of the two: a mesh with no material
+            // still draws with the shader's defaults, while a Mesh component
+            // with no mesh is skipped by the draw walk entirely. An empty slot
+            // here took the stats away and said nothing, so the card lost its
+            // whole reporting surface exactly when there was something to say.
+            ImGui::TextColored(EditorStyle::DANGER, "No mesh: this entity draws nothing");
         }
 
         ImGui::Spacing();
@@ -1812,9 +1834,11 @@ void InspectorPanel::drawAnimationSection(EditorContext& ec, EntityId id) {
     });
 }
 
-void InspectorPanel::drawAnimatorSection(Scene& scene, ResourceManager& resources,
-                                         EditorState& state, EntityId id) {
-    editComponentCard<Animator>(scene, resources, state, id, "Animator", EditorStyle::Accent::Anim,
+void InspectorPanel::drawAnimatorSection(EditorContext& ec, EntityId id) {
+    Scene&           scene     = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+
+    editComponentCard<Animator>(scene, resources, ec.state, id, "Animator", EditorStyle::Accent::Anim,
                                 "Edit Animator", "Remove Animator",
                                 [&](Animator& animator) {
         bool changed = false;
@@ -1838,11 +1862,12 @@ void InspectorPanel::drawAnimatorSection(Scene& scene, ResourceManager& resource
             ImGui::TextDisabled("The bind pose is held until they match.");
         }
 
-        // Transport, mirroring the Animation card: Loop and Speed round-trip
-        // with the scene so they push an edit, while play / stop / the scrubber
-        // do not - dirtying the scene every time someone previews a clip would
-        // make the unsaved-changes prompt meaningless. Scrubbing works while
-        // paused, because the pose system composes every frame.
+        // Transport, mirroring the Animation card: Loop, Speed and Play On Start
+        // round-trip with the scene so they push an edit, while play / stop /
+        // the scrubber do not - dirtying the scene every time someone previews a
+        // clip would make the unsaved-changes prompt meaningless, and `playing`
+        // is not something the scene stores. Scrubbing works while paused,
+        // because the pose system composes every frame.
         const float GAP = 8.0f;
         const float ih = ImGui::GetFrameHeight();
         if (iconButton("inspRigPlay", animator.playing ? EditorIcon::Pause : EditorIcon::Play,
@@ -1863,6 +1888,22 @@ void InspectorPanel::drawAnimatorSection(Scene& scene, ResourceManager& resource
         ImGui::SetNextItemWidth(-1);
         changed |= ImGui::DragFloat("##RigSpeed", &animator.speed, 0.005f, -10.0f, 10.0f,
                                     "Speed %.2fx", PROP_CLAMP);
+
+        // The authored half, worded as the Animation and Audio Source cards word
+        // their twin. The transport above previews; this is what a shipped scene
+        // does.
+        changed |= propCheckbox("Play On Start", &animator.playOnStart,
+                                "Starts by itself once the simulation runs. In the editor that "
+                                "means on Play, never while a scene is only open");
+
+        // The same thing the Animation card says, for the same reason: the play
+        // button sets a flag the pose evaluator acts on, and that evaluator
+        // returns on a zero sim delta, so in Edit mode the button reads Pause
+        // while the head stays where it was.
+        if (animator.playing && ec.frame.clock.getSimDelta() <= 0.0f) {
+            ImGui::TextDisabled("Held at %.2fs - it advances while the world runs.",
+                                static_cast<double>(animator.time));
+        }
 
         if (clip && clip->duration > 0.0f) {
             ImGui::SetNextItemWidth(-1);

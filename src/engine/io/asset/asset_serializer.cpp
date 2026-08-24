@@ -463,12 +463,18 @@ bool resolveCookedSource(AssetType type, const std::string& name, nlohmann::json
  * @brief Recreate one asset section (textures / materials / meshes) from its
  * JSON array, dispatching each name-only reference through @p factory and
  * renaming the result to the recorded name. Returns {created, already-present}.
+ *
+ * Under LoadMode::Reload a name the graph already holds is rebuilt into that
+ * same slot rather than left alone: the fresh asset is built, moved onto the
+ * live one, committed so the backend re-uploads it, and the shell it arrived in
+ * is dropped. Every handle out there keeps pointing at the asset it named,
+ * now holding what the document says it holds.
  */
 template<typename Asset>
 std::pair<size_t, size_t> loadAssetSection(
     const nlohmann::json& assetsJson, const char* sectionKey, AssetType type,
     Handle<Asset> (*factory)(const nlohmann::json&, ResourceManager&),
-    const char* what, ResourceManager& resources) {
+    const char* what, ResourceManager& resources, LoadMode mode) {
     size_t created = 0, skipped = 0;
     auto it = assetsJson.find(sectionKey);
     if (it == assetsJson.end() || !it->is_array() || it->empty()) return {created, skipped};
@@ -487,7 +493,8 @@ std::pair<size_t, size_t> loadAssetSection(
             LOG_WARNING("%s entry missing 'name' - skipping", what);
             continue;
         }
-        if (resources.findByName<Asset>(name)) { ++skipped; continue; }
+        const Handle<Asset> live = resources.findByName<Asset>(name);
+        if (live && mode == LoadMode::Create) { ++skipped; continue; }
 
         nlohmann::json source;
         if (!resolveCookedSource(type, name, source)) continue;
@@ -496,15 +503,29 @@ std::pair<size_t, size_t> loadAssetSection(
             LOG_WARNING("%s '%s' could not be recreated - skipping", what, name.c_str());
             continue;
         }
-        resources.rename(h, name);
-        ++created;
+        if (!live) {
+            resources.rename(h, name);
+            ++created;
+            continue;
+        }
+        // A factory that answered with the asset already there rebuilt nothing
+        // and there is nothing to move; removing it would delete the live one.
+        if (h == live) { ++skipped; continue; }
+
+        // The rebuilt contents go into the slot the live asset already sits in,
+        // so its handle keeps naming it - see ResourceManager::swapValue. The
+        // shell comes back holding the contents that were there and its own
+        // name, which is what lets it be removed like any other asset.
+        resources.swapValue(live, resources.edit(h));
+        resources.remove(h);
+        ++skipped;
     }
     return {created, skipped};
 }
 
 } // namespace
 
-bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
+bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources, LoadMode mode) {
     if (!assetsJson.is_object()) {
         LOG_WARNING("Assets block is not an object - skipping");
         return false;
@@ -516,12 +537,12 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources) {
     // references (which resolve by name) land on it. Sounds depend on nothing
     // and nothing depends on them, so they come last, where they cannot be
     // mistaken for part of that chain.
-    const auto [texC, texS] = loadAssetSection<TextureAsset      >(assetsJson, "textures",  AssetType::Texture,       assetFactory().createTexture,       "Texture",  resources);
-    const auto [matC, matS] = loadAssetSection<MaterialAsset     >(assetsJson, "materials", AssetType::Material,      assetFactory().createMaterial,      "Material", resources);
-    const auto [sklC, sklS] = loadAssetSection<SkeletonAsset     >(assetsJson, "skeletons", AssetType::Skeleton,      assetFactory().createSkeleton,      "Skeleton", resources);
-    const auto [clpC, clpS] = loadAssetSection<AnimationClipAsset>(assetsJson, "clips",     AssetType::AnimationClip, assetFactory().createAnimationClip, "Clip",     resources);
-    const auto [mshC, mshS] = loadAssetSection<MeshAsset         >(assetsJson, "meshes",    AssetType::Mesh,          assetFactory().createMesh,          "Mesh",     resources);
-    const auto [sndC, sndS] = loadAssetSection<AudioClipAsset    >(assetsJson, "sounds",    AssetType::AudioClip,     assetFactory().createAudioClip,     "Sound",    resources);
+    const auto [texC, texS] = loadAssetSection<TextureAsset      >(assetsJson, "textures",  AssetType::Texture,       assetFactory().createTexture,       "Texture",  resources, mode);
+    const auto [matC, matS] = loadAssetSection<MaterialAsset     >(assetsJson, "materials", AssetType::Material,      assetFactory().createMaterial,      "Material", resources, mode);
+    const auto [sklC, sklS] = loadAssetSection<SkeletonAsset     >(assetsJson, "skeletons", AssetType::Skeleton,      assetFactory().createSkeleton,      "Skeleton", resources, mode);
+    const auto [clpC, clpS] = loadAssetSection<AnimationClipAsset>(assetsJson, "clips",     AssetType::AnimationClip, assetFactory().createAnimationClip, "Clip",     resources, mode);
+    const auto [mshC, mshS] = loadAssetSection<MeshAsset         >(assetsJson, "meshes",    AssetType::Mesh,          assetFactory().createMesh,          "Mesh",     resources, mode);
+    const auto [sndC, sndS] = loadAssetSection<AudioClipAsset    >(assetsJson, "sounds",    AssetType::AudioClip,     assetFactory().createAudioClip,     "Sound",    resources, mode);
 
     // Silent when the block asked for nothing new: a prefab carries its own
     // assets and is instantiated once per instance, per scene load, per

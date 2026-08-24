@@ -27,7 +27,7 @@ void PreferencesPanel::draw(EditorContext& ec) {
 
     // Tab bar instead of master-detail: four sections aren't enough to
     // justify a sidebar.
-    if (ImGui::BeginTabBar("##PrefTabs", ImGuiTabBarFlags_None)) {
+    if (ImGui::BeginTabBar("##PrefTabs", ImGuiTabBarFlags_DrawSelectedOverline)) {
         if (ImGui::BeginTabItem("Camera")) {
             ImGui::Spacing();
             drawCameraSection(ec);

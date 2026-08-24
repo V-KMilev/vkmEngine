@@ -77,6 +77,16 @@ struct RenderView {
     Environment                   environment;     ///< Lighting environment (HDR/skybox), copied from the Scene each frame in build().
     UIDrawData                    ui;              ///< Screen-space UI overlay, copied from the UISystem's draw list each frame.
 
+    /**
+     * @brief Scene::epoch() at build time: which world these items came from.
+     *
+     * A replaced world reuses the entity slots and poses of the one before it,
+     * so a backend cache of what a place looked like - a baked probe, a baked
+     * irradiance volume - cannot tell that it is now a capture of a scene that
+     * is gone. Carried here because the backend is handed a view, not a scene.
+     */
+    uint64_t worldEpoch = 0;
+
     public:
         /**
          * @brief Refill the snapshot for the current frame.

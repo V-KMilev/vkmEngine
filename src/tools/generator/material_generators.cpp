@@ -11,7 +11,7 @@
 
 namespace Vkm::Engine {
 
-MaterialHandle generateDefaultMaterial(ResourceManager& resourceManager) {
+MaterialHandle buildDefaultMaterial(ResourceManager& resourceManager) {
     MaterialAsset material;
 
     material.albedo = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
@@ -35,6 +35,21 @@ MaterialHandle generateDefaultMaterial(ResourceManager& resourceManager) {
     LOG_TRACE("Generated default material (handle: %u)", handle.id());
 
     return handle;
+}
+
+MaterialHandle generateDefaultMaterial(ResourceManager& resourceManager) {
+    // One asset per name, the way the built-in textures this material binds are
+    // already shared. Without it every caller added another material called
+    // "material:default", ensureUniqueName suffixed it, and the suffix - names
+    // being the serializable identity - became the frozen identity of whatever
+    // it was attached to, in the scene file and in the cooked library. Six
+    // primitives created from the menu left six identical materials behind,
+    // numbered (2) through (7), and editing "the default material" reached
+    // exactly one of them.
+    if (auto existing = resourceManager.findByName<MaterialAsset>("material:default")) {
+        return existing;
+    }
+    return buildDefaultMaterial(resourceManager);
 }
 
 } // namespace Vkm::Engine

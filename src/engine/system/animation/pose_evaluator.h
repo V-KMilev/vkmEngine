@@ -71,6 +71,10 @@ struct PlaybackStep {
  * duration the caller can predict rather than one `speed` moves, and it reaches
  * its end whether or not the clip it is entering is still running.
  *
+ * `Animator::playOnStart` is honoured here, on the first frame with simulation
+ * time to spend, rather than at load: that is what makes a rig start on Play
+ * and hold its pose in a scene that is only open.
+ *
  * @param animator Animator to advance, in place.
  * @param duration Length of the clip playing on it, in seconds; 0 disables wrapping.
  * @param fromDuration Length of the clip being faded out of; 0 disables its wrapping.

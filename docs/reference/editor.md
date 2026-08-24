@@ -63,6 +63,19 @@ overlays drawn on top.
 | Viewport Toolbar    | `overlays/viewport_toolbar.cpp`       | In-viewport icon tool box: tool/space/snap + selection actions              |
 | Playback Bar        | `overlays/playback_bar.cpp`           | Top-centre Play / Pause / Step / Stop transport for the simulation; Pause and Step also hold the mixer's voices; frames and captions the viewport while a session runs |
 
+### A tab bar says which tab is open, not where the pointer is
+
+Selection is the louder state. A hovered tab gets a neutral lift; the open one
+gets the accent fill and the accent overline above it, which hover has no
+counterpart for. The theme used to have this the other way round - a hovered
+tab was painted `ACCENT` at 0.70 alpha while the open one sat in a muted slate
+- so resting the pointer on a neighbour made that neighbour the brightest thing
+in the bar, and the bar answered "which tab am I on" with the pointer's
+position. The overline is the mark that settles it: its colours
+(`TabSelectedOverline`, `TabDimmedSelectedOverline`) were already in the
+palette while `TabBarOverlineSize` was 0, so none of them were drawn. Tab bars
+opt in with `ImGuiTabBarFlags_DrawSelectedOverline`.
+
 ### Where world settings live
 
 Scene-global settings are cards in the **World inspector** (select
@@ -141,9 +154,12 @@ in Add Component like every other component.
 - **Animator** - rig and clip pickers over `SkeletonAsset` /
   `AnimationClipAsset`, the bone count of the rig actually resolved, and a
   transport (play / stop / loop / speed / time scrub) that mirrors the Animation
-  card: loop and speed round-trip with the scene so they push an edit, while
-  play, stop and the scrubber do not. Scrubbing works while paused because the
-  pose system composes every frame. A clip cooked against a different rig is
+  card: loop, speed and **Play On Start** round-trip with the scene so they push
+  an edit, while play, stop and the scrubber do not. Which is only safe because
+  `Animator::playing` is runtime state - it used to be serialized, so the
+  preview transport quietly wrote what a shipped scene does, and a Pause pressed
+  once froze a character that never animated again. Scrubbing works while paused
+  because the pose system composes every frame. A clip cooked against a different rig is
   called out in red on the card, where the pairing is being made, rather than
   only in the log. The clip's markers are listed read-only beneath the scrubber
   the way the Animation card lists its keyframe counts - a marker belongs to the
@@ -279,6 +295,13 @@ visible at all.
   kinematic body with no shape is inert rather than lost, and is not warned
   about. Both are the sentence the Character Controller card has always printed
   for the same two absences.
+- **Mesh** with no mesh - *"No mesh: this entity draws nothing."* The material
+  half of this card has always had its `else`; the mesh half did not, so an
+  empty mesh slot took the vert/tri/bounds readout away and put nothing in its
+  place - the card lost its reporting surface exactly when it had something to
+  report. It is the harsher of the card's two absences: `VisibilitySystem`
+  returns on an empty mesh handle, so the entity is in no draw list, has no
+  selection bounds and cannot be framed.
 - **Decal** with no material - *"No material: this projects nothing."* Harsher
   than the Mesh card's "No material assigned" because the consequence is: a mesh
   with no material still draws with the shader's defaults, while
@@ -530,10 +553,24 @@ before Play, and edit / Play to check / Stop / undo the bad edit is a loop that
 works. `captureSnapshot` records `CommandStack::revision()`; if the session
 moved the history - a panel is live in play mode, so an edit made during one
 addresses the world about to be discarded - that half of the open's reasoning
-does apply, and the stack is dropped with a toast saying so. `captureSnapshot`
-also records `saveAllAssets` beside the scene document and `restoreSnapshot`
-feeds it back
-(see [IO and serialization](system/io.md)). An open makes no such promise - it
+does apply, and the stack is dropped with a toast saying so.
+
+**The asset graph is kept, not rebuilt.** An undo step holds the asset it is to
+put back, as a handle, and a handle is a slot index into one `ResourceManager`.
+An open swaps in a graph built from the file it opened, which is why an open
+drops the stack; a Stop that did the same would leave the surviving steps
+addressing a manager that no longer exists, and since a rebuilt graph restarts
+at the same indices and generations those steps would resolve - to whatever
+landed in the slot instead. Measured: create a Sphere and a Cone, point the
+Sphere entity at the cone mesh, Play, Stop, Ctrl+Z, and the undo put
+`mesh:generator:cube` on it. So `restoreSnapshot` reads the snapshot into the
+graph it was captured from (`AssetPolicy::Merge`), and puts each asset's
+*contents* back in place first - `loadAssets` with `LoadMode::Reload`, over the
+`saveAllAssets` document `captureSnapshot` recorded beside the scene - so a
+material edited during the session reverts like everything else while its handle
+goes on naming it (see [IO and serialization](system/io.md)).
+
+An open makes no such promise - it
 is leaving that world for another one - and carrying the strays forward would
 grow the graph by a scene's worth of assets per open and cook every one of them
 into the project library at the next save.
@@ -604,6 +641,29 @@ on the project-relative name and hands back the clip it already has, so there
 is no new row to look for, and the scene is not dirtied for an import that did
 not happen. On a host with no audio device the tab says so, since clips still
 import and cook there - they just cannot be heard.
+
+### What Create > Primitive puts in the asset graph
+
+A generated mesh carries a deterministic name - `mesh:generator:cube`,
+`mesh:generator:sphere:32:16` - built from the same parameters as its source
+descriptor, and `stampGenerated` says why: *"identical generator calls land on
+one asset: the name is the serializable identity, and two meshes generated the
+same way are the same mesh rather than two copies a scene would save twice."*
+The menu broke that promise, because it added what the generator handed it
+without asking whether the graph already held that name. `ensureUniqueName`
+then did what it is for, and three cubes in one scene were
+`mesh:generator:cube`, `mesh:generator:cube (2)` and `mesh:generator:cube (3)` -
+three identical 24-vertex meshes, three recipes in `library/`, three
+indistinguishable rows in every mesh picker, and the suffix frozen into the
+scene file as the identity of two of them. The default material went the same
+way, so `Edit Material` on one cube reached a copy the others did not use.
+
+`addGeneratedMesh` and `generateDefaultMaterial` both reuse what the graph holds
+under the name they would have taken - the rule the built-in 1x1 textures beside
+them already followed. Nothing edits a generated mesh, and a material meant to
+be its own is made by **Duplicate** or **New Material**, which copies the
+default rather than renaming it: renaming it would take `material:default` out
+from under everything that resolves that name, including a cold-start load.
 
 ### When the scene has no camera
 

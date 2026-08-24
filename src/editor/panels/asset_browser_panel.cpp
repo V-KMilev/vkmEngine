@@ -124,7 +124,7 @@ void AssetBrowserPanel::draw(EditorContext& ec) {
                           "Right-click any tile for Assign / actions.");
     ImGui::Separator();
 
-    if (ImGui::BeginTabBar("##abtabs")) {
+    if (ImGui::BeginTabBar("##abtabs", ImGuiTabBarFlags_DrawSelectedOverline)) {
         if (ImGui::BeginTabItem("Materials")) {
             ImGui::BeginChild("##matgrid");
             drawMaterials(ec);

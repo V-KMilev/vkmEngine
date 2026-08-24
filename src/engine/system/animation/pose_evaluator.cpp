@@ -114,6 +114,15 @@ PlaybackStep advancePlayback(Animator& animator, float duration, float fromDurat
     PlaybackStep step{animator.time, animator.time, 0.0f};
     if (simDelta <= 0.0f) return step;
 
+    // The authored flag becomes the runtime one, once. Here rather than at load,
+    // so it fires when the simulation runs rather than when the scene arrives -
+    // which is what makes a rig start on Play and hold its pose in a scene that
+    // is only open. The same seam AnimationSystem gives the Animation component.
+    if (animator.playOnStart && !animator.started) {
+        animator.started = true;
+        animator.playing = true;
+    }
+
     const float delta = simDelta * animator.speed;
     if (animator.playing) {
         if (!advanceHead(animator.time, duration, delta, animator.looping)) animator.playing = false;

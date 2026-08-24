@@ -95,6 +95,13 @@ class SceneIOController {
         /**
          * @brief Load a scene path directly (used by the recent-scenes menu). Goes
          * through the same housekeeping as a Load-modal pick.
+         *
+         * The current path moves only if the scene does: a read that fails
+         * leaves the outgoing scene live, and the name has to stay with it.
+         *
+         * @param ctx Frame context owning the scene being replaced.
+         * @param state Editor state whose scene-scoped parts are reset.
+         * @param path Absolute path of the scene file to open.
          */
         void loadPath(FrameContext& ctx, EditorState& state, const std::string& path);
 
@@ -274,8 +281,14 @@ class SceneIOController {
          * promises to put one session back, while this leaves a world for
          * another one. What it does owe the author is the fact, so the ones
          * that went are counted into a toast and named in the log.
+         *
+         * @param ctx Frame context owning the scene being replaced.
+         * @param state Editor state whose scene-scoped parts are reset.
+         * @return true when the scene on screen is the one @ref path names;
+         *         false when the read failed and the outgoing scene is still
+         *         live, which is the caller's cue to put the path back too.
          */
-        void load(FrameContext& ctx, EditorState& state);
+        bool load(FrameContext& ctx, EditorState& state);
         /**
          * @brief Drop the play snapshot and put the clock back in Edit mode.
          *

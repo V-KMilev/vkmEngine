@@ -76,12 +76,19 @@ int main(int argc, char** argv) {
             LOG_ERROR("Failed to load '%s'", scenePath.string().c_str());
             return EXIT_FAILURE;
         }
-        if (const unsigned long long unresolved = loadErrors.totalPushed(); unresolved > 0) {
-            LOG_ERROR("'%s' loaded with %llu unresolved reference(s) - the assets it names "
-                      "are not in the library, so a cook of it would ship a world with "
-                      "empty slots. Open the project in the editor and save it, which bakes "
-                      "what the scene references into the library.",
-                      scenePath.string().c_str(), unresolved);
+        // What the sink holds is every failure the load reported, not only the
+        // unresolved assets it was installed for: a prefab file that will not
+        // open reaches it the same way. Calling all of them unresolved
+        // references answered a deleted file with "save the project", which
+        // bakes a library that file was never going to be in. Each one is
+        // already named above, so this counts them and names the remedies apart.
+        if (const unsigned long long failures = loadErrors.totalPushed(); failures > 0) {
+            LOG_ERROR("'%s' loaded with %llu failure(s), each reported above, so a cook of "
+                      "it would ship a world with the slots they left empty. An asset the "
+                      "library does not hold is baked in by opening the project in the "
+                      "editor and saving it; a file the scene names and the project does "
+                      "not have has to be put back.",
+                      scenePath.string().c_str(), failures);
             return EXIT_FAILURE;
         }
 

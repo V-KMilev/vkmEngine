@@ -84,7 +84,7 @@ class InspectorPanel {
         void drawWorldInspector(EditorContext& ec);
         void drawLODSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawAnimationSection(EditorContext& ec, EntityId id);
-        void drawAnimatorSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        void drawAnimatorSection(EditorContext& ec, EntityId id);
         void drawBoneSocketSection(Scene& scene, ResourceManager& resources,
                                    EditorState& state, EntityId id);
         void drawCharacterControllerSection(Scene& scene, ResourceManager& resources,
