@@ -770,8 +770,12 @@ VKM_EDITOR_COMMAND_COMPONENTS(VKM_EDITOR_EXTERN_COMMAND)
 extern template class AddComponentCommand<Name>;
 extern template class ComponentEditCommand<Name>;
 
-// Keyed by handle type rather than by component type, so not on the list.
+// Keyed by handle type rather than by component type, so not on the list. One
+// per asset kind the Asset Browser lets an author rename.
 extern template class RenameAssetCommand<MaterialHandle>;
 extern template class RenameAssetCommand<MeshHandle>;
+extern template class RenameAssetCommand<TextureHandle>;
+extern template class RenameAssetCommand<AnimationClipHandle>;
+extern template class RenameAssetCommand<AudioClipHandle>;
 
 } // namespace Vkm::Engine

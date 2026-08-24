@@ -67,6 +67,12 @@ void GLView::setTextureFiltering(TextureFiltering mode, float maxAnisotropy) {
     }
 }
 
+void GLView::ensureTexture(const TextureHandle& handle, const ResourceManager& resources) {
+    if (!handle) return;
+    ensure(m_textures, handle, resources);
+    reportIfMissing(handle, resources);
+}
+
 void GLView::reportIfMissing(const TextureHandle& handle, const ResourceManager& resources) {
     const TextureAsset& asset = resources.get(handle);
     // Still in flight is not a failure - it resolves on a later frame, and the

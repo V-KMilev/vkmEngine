@@ -581,7 +581,7 @@ what happens when the inputs are wrong.
 
 ### Auditioning a clip
 
-The Asset Browser's Sounds tab and the Inspector's Audio Source card both play
+The Asset Browser's Sounds rail row and the Inspector's Audio Source card both play
 a clip through the device directly, never through `AudioSource::playing` -
 setting that flag would be an edit to the scene when all that was asked for was
 to hear the file. Both pass a **flat, non-spatial** `VoiceParams`. A default
@@ -695,7 +695,7 @@ belongs when it is the playback that varies rather than the sound.
 To hear a clip of your own, put a wav, mp3 or flac anywhere under a project's
 `assets/`, then in the editor:
 
-1. Window > Asset Browser > Sounds > `Import Sound...`, pick it, press play.
+1. Bottom panel > Assets > Sounds > `Import Sound...`, pick it, press play.
    That is the decoder and the device, with no scene involved.
 2. Create > Audio Listener, then Create > Audio Source; assign the clip to the
    source, tick Loop, press Play on the transport.

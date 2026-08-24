@@ -199,7 +199,6 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         ImGui::Separator();
         ImGui::MenuItem("Render Settings", keyLabel(state.keybinds.toggleRenderSettings), &state.showRenderSettings);
         ImGui::MenuItem("Material Editor", keyLabel(state.keybinds.toggleMaterialEditor), &state.showMaterialEditor);
-        ImGui::MenuItem("Asset Browser",   keyLabel(state.keybinds.toggleAssetBrowser),   &state.showAssetBrowser);
         ImGui::EndMenu();
     }
 

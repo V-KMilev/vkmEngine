@@ -625,9 +625,14 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
     // id resolves cleanly. Same flow as the Asset Browser's: apply now, push
     // RenameAssetCommand so the rename is one Ctrl+Z away.
     if (beginDialog("Rename Material", m_renameOpen)) {
+        // Same keyboard contract the Asset Browser's rename holds: the field
+        // takes focus with its text selected, so the dialog can be answered
+        // without reaching back for the mouse.
+        if (ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere();
         ImGui::SetNextItemWidth(EditorStyle::px(280.0f));
         const bool commit = ImGui::InputText("##rnbuf", m_renameBuf, sizeof(m_renameBuf),
-                                             ImGuiInputTextFlags_EnterReturnsTrue);
+                                             ImGuiInputTextFlags_EnterReturnsTrue
+                                           | ImGuiInputTextFlags_AutoSelectAll);
         const DialogResult r = dialogButtons(m_renameOpen, "Rename",
                                              m_renameBuf[0] != '\0', commit);
         if (r == DialogResult::Confirm && resources.isAlive(target)) {

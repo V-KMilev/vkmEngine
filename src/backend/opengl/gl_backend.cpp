@@ -416,6 +416,12 @@ GpuTextureId GLBackend::textureId(const TextureHandle& handle) const {
     return tex ? tex->getID() : 0;
 }
 
+GpuTextureId GLBackend::ensureTexture(const TextureHandle& handle,
+                                      const ResourceManager& resources) {
+    m_view.ensureTexture(handle, resources);
+    return textureId(handle);
+}
+
 uint32_t GLBackend::reloadChangedShaders() {
     // Every Vkm::GL::Shader registers itself, so this reaches the passes, the
     // bakers and the editor previews without any of them opting in.

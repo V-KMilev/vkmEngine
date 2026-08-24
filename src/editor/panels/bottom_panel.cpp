@@ -9,6 +9,7 @@
 
 #include "core/clock.h"
 #include "debug/engine_error_log.h"
+#include "debug/profiler.h"
 #include "framework/component_edit.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
@@ -19,6 +20,13 @@ namespace Vkm::Engine {
 
 void BottomPanel::draw(EditorContext& ec) {
     if (ImGui::BeginTabBar("##BottomTabs", ImGuiTabBarFlags_DrawSelectedOverline)) {
+        if (ImGui::BeginTabItem("Assets")) {
+            // The one tab that spends GPU time - the thumbnail bakes - so it
+            // is worth telling apart from the panel around it.
+            PROFILE_SCOPE("Panel/AssetBrowser");
+            m_assets.draw(ec);
+            ImGui::EndTabItem();
+        }
         if (ImGui::BeginTabItem("Animation")) {
             drawAnimationSection(ec);
             ImGui::EndTabItem();

@@ -24,7 +24,6 @@
 #include "panels/bottom_panel.h"
 #include "panels/preferences_panel.h"
 #include "panels/material_editor_panel.h"
-#include "panels/asset_browser_panel.h"
 #include "panels/render_settings_panel.h"
 
 struct GLFWwindow;
@@ -156,7 +155,6 @@ class EditorSystem : public System {
         PlaybackBar      m_playbar;
         PreferencesPanel m_preferences;
         MaterialEditorPanel m_materialEditor;
-        AssetBrowserPanel m_assetBrowser;
         RenderSettingsPanel m_renderSettings;
 };
 

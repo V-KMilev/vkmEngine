@@ -69,6 +69,9 @@ ImWchar iconCodepoint(EditorIcon icon) {
         case EditorIcon::Empty:      return 0xe4b0;  // circle-dashed
         case EditorIcon::Import:     return 0xe22f;  // import
         case EditorIcon::Colliders:  return 0xe1cb;  // box-select
+        case EditorIcon::Material:   return 0xe1dd;  // palette
+        case EditorIcon::Texture:    return 0xe0f6;  // image
+        case EditorIcon::Skeleton:   return 0xe358;  // bone
     }
     return 0;
 }

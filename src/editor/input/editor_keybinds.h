@@ -48,7 +48,6 @@ struct EditorKeybinds {
     KeyBind toggleEditor     = { ImGuiKey_F5,     KeyMod_None };
     KeyBind toggleRenderSettings = { ImGuiKey_4,  KeyMod_Ctrl };
     KeyBind toggleMaterialEditor = { ImGuiKey_5,  KeyMod_Ctrl };
-    KeyBind toggleAssetBrowser   = { ImGuiKey_6,  KeyMod_Ctrl };
     KeyBind openPreferences  = { ImGuiKey_Comma,  KeyMod_Ctrl };
 
     KeyBind deleteEntity     = { ImGuiKey_Delete, KeyMod_None };
@@ -100,7 +99,6 @@ inline constexpr KeybindEntry KEYBINDS[] = {
     { "Windows & Panels", "Toggle Bottom",    "toggleBottom",         &EditorKeybinds::toggleBottom         },
     { "Windows & Panels", "Render Settings",  "toggleRenderSettings", &EditorKeybinds::toggleRenderSettings },
     { "Windows & Panels", "Material Editor",  "toggleMaterialEditor", &EditorKeybinds::toggleMaterialEditor },
-    { "Windows & Panels", "Asset Browser",    "toggleAssetBrowser",   &EditorKeybinds::toggleAssetBrowser   },
     { "Windows & Panels", "Toggle Editor",    "toggleEditor",         &EditorKeybinds::toggleEditor         },
     { "Windows & Panels", "Preferences",      "openPreferences",      &EditorKeybinds::openPreferences      },
 
