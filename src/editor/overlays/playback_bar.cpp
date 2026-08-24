@@ -45,7 +45,7 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     FrameContext& ctx   = ec.frame;
     Clock&        clock = ctx.clock;
 
-    const bool playing = sceneIO.hasSnapshot();  // a play session is active
+    const bool playing = sceneIO.isPlaying();
     const bool paused  = clock.isPaused();
 
     const float barH = BTN() + PAD() * 2.0f + 2.0f;

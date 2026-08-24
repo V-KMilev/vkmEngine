@@ -39,8 +39,8 @@ class GLHiZ {
         GLHiZ(const GLHiZ& other) = delete;
         GLHiZ& operator=(const GLHiZ& other) = delete;
 
-        GLHiZ(GLHiZ&& other) = delete;
-        GLHiZ& operator=(GLHiZ&& other) = delete;
+        GLHiZ(GLHiZ && other) = delete;
+        GLHiZ& operator=(GLHiZ && other) = delete;
 
     public:
         /**

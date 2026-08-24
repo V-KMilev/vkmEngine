@@ -30,8 +30,8 @@ class GLHiZPass : public GLPass {
         GLHiZPass(const GLHiZPass& other) = delete;
         GLHiZPass& operator=(const GLHiZPass& other) = delete;
 
-        GLHiZPass(GLHiZPass&& other) = delete;
-        GLHiZPass& operator=(GLHiZPass&& other) = delete;
+        GLHiZPass(GLHiZPass && other) = delete;
+        GLHiZPass& operator=(GLHiZPass && other) = delete;
 
     public:
         void execute(GLFrameContext& ctx) override;

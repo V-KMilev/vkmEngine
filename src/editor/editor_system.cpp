@@ -265,7 +265,7 @@ void EditorSystem::update(FrameContext& ctx) {
     // at the next Stop - inside one the world is the simulation's copy, and
     // Stop puts the camera back with the rest of it.
     const bool cameraMoved = m_cameraController.takeCameraMoved();
-    if (cameraMoved && !m_sceneIO.hasSnapshot()) m_state.markSceneDirty();
+    if (cameraMoved && !m_sceneIO.isPlaying()) m_state.markSceneDirty();
 
     syncWindowTitle(ctx.window, m_state.projectName, m_sceneIO.path(), m_state.sceneDirty);
 

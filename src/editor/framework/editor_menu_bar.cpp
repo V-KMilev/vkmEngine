@@ -117,7 +117,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         // scene in the world is the simulation's copy of one, and Stop is about
         // to throw it away. Writing it over the authored file is the one save
         // that cannot be taken back.
-        const bool playing = sceneIO.hasSnapshot();
+        const bool playing = sceneIO.isPlaying();
         if (ImGui::MenuItem("Save Scene", keyLabel(state.keybinds.saveScene), false,
                             haveCurrent && !playing)) {
             sceneIO.save(ctx, state);

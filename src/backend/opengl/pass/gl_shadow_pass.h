@@ -35,7 +35,7 @@ namespace Vkm::Engine {
  *
  * A frame that posed nothing never reaches any of that: with no palette the
  * skinned programs are not bound, not given a tile matrix, and not consulted
- * per run, so the pass is the one 1.5 had.
+ * per run, so the pass costs exactly what an unskinned one does.
  */
 class GLShadowPass : public GLPass {
     public:

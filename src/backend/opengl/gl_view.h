@@ -78,7 +78,9 @@ class GLView {
          * The list matters because three of those four are gathered scene-wide
          * rather than from the visible set, so their assets need not appear
          * among the drawables at all - and every pass answers a missing GPU
-         * object by silently skipping the draw.
+         * object by silently skipping the draw. So the walk names every
+         * RenderView member rather than only the four it uses: a member added
+         * there fails to compile here until it has been classified.
          */
         void sync(const RenderView& view, const ResourceManager& resources);
 

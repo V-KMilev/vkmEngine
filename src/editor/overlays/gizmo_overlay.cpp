@@ -41,9 +41,12 @@ void GizmoOverlay::finishDrag(EditorContext& ec) {
         return editStep<Transform>(ctx.scene, ctx.resources, id, bef, after, "Transform");
     };
 
-    if (m_dragSelection.size() > 1) {
-        // One history entry for the whole selection's motion.
-        auto batch = std::make_unique<CompositeCommand>("Transform Selection");
+    if (!m_dragSelection.empty()) {
+        // Every selection root, not just a multi-root drag: when the active
+        // entity is a descendant of the only root, the root is the one thing
+        // that moved and the else-branch below would find nothing to push.
+        auto batch = std::make_unique<CompositeCommand>(
+            m_dragSelection.size() > 1 ? "Transform Selection" : "Transform");
         for (const auto& [id, bef] : m_dragSelection) {
             const Transform* after = nullptr;
             if (changedOf(id, bef, after)) batch->add(stepFor(id, bef, *after));
@@ -141,7 +144,7 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
             m_dragSelection.emplace_back(id, ctx.scene.get<Transform>(id));
         }
         m_dragActiveIsDescendant =
-            m_dragSelection.size() > 1
+            !m_dragSelection.empty()
             && EditorActions::hasSelectedAncestor(ctx.scene, state.selection, state.selectedEntity);
     }
     if (m_gizmo.manipulate(drawList, ctx.visibility->view, subProj,
@@ -199,7 +202,7 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
         // does not accumulate). Translation is a world-space delta converted
         // into each entity's parent space; rotation applies in place (no
         // orbit around a shared pivot); scale is a component-wise ratio.
-        if (m_dragSelection.size() > 1) {
+        if (!m_dragSelection.empty()) {
             const glm::vec3 worldDelta =
                 glm::vec3(parentWorld * glm::vec4(transform.position, 1.0f))
               - glm::vec3(parentWorld * glm::vec4(m_dragStartTransform.position, 1.0f));

@@ -3,7 +3,6 @@
 #include "cook/asset_cooker.h"
 
 #include <filesystem>
-#include <fstream>
 #include <string>
 #include <system_error>
 
@@ -16,6 +15,7 @@
 #include "io/asset/asset_cook.h"
 #include "io/asset/asset_library.h"
 #include "io/asset/asset_serializer.h"
+#include "io/json_file.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/audio_clip_asset.h"
@@ -103,21 +103,17 @@ bool isUpToDate(AssetType type, const std::string& name, uint64_t hash, CookedOu
     return AssetCook::isCookedCurrent(type, AssetLibrary::cookedPath(type, name), hash);
 }
 
+// The recipe is the half of the library a cook cannot regenerate, so it takes
+// the same temp-and-rename write every other document does. A recipe truncated
+// in place would be recorded under the current hash, skipped by every later
+// cook, and rejected by every later load.
 bool writeRecipeFile(const std::filesystem::path& path, const std::string& name,
                      const char* typeTag, const nlohmann::json& source) {
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-    std::ofstream out(path);
-    if (!out) {
-        LOG_ERROR("Cooker: cannot write recipe '%s'", path.string().c_str());
-        return false;
-    }
     nlohmann::json doc;
     doc["name"]   = name;
     doc["type"]   = typeTag;
     doc["source"] = source;
-    out << doc.dump(2);
-    return static_cast<bool>(out);
+    return detail::writeJsonFile(path, doc, "Cooker recipe");
 }
 
 // The cook* helpers return false only on a real cook failure (recipe / cooked

@@ -25,6 +25,7 @@
 #include "platform/input/default_bindings.h"
 
 #include "gl_backend.h"
+#include "gl_debug.h"
 
 #include "resource/asset/font_asset.h"
 #include "font/font_baker.h"
@@ -70,6 +71,10 @@ inline AppSystems setupEngineApp(Vkm::Engine::Engine& engine, const AppConfig& c
     Vkm::Engine::installDefaultBindings(engine.getInput());
     auto& window = engine.getWindow();
     window.createWindow(config.windowTitle);
+    // Here and nowhere earlier: glDebugMessageCallback is a GLEW pointer, null
+    // until createWindow has run glewInit, and enabling on a null one no-ops in
+    // silence. Async - synchronous validates every GL call on the calling thread.
+    Vkm::GL::enableGLDebugLogging(false);
     window.setFramerate(0);
     // A game's own icon if it ships one, the engine's otherwise: a shipped game
     // should not wear the engine's logo, but one that authored no icon still

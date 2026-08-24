@@ -50,10 +50,9 @@ struct VoiceParams {
  * system's callers, not gameplay - has any way to reach the backend. Swapping
  * the backend is re-implementing this file.
  *
- * What lives on each side of that line is worth stating, because it is what the
- * design is. The backend owns the output device, the audio thread and its
- * callback, mixing, resampling, format conversion, the spatialization maths and
- * each voice's playback cursor. The engine owns everything with a name: which
+ * The backend owns the output device, the audio thread and its callback,
+ * mixing, resampling, format conversion, the spatialization maths and each
+ * voice's playback cursor. The engine owns everything with a name: which
  * clips exist (ResourceManager), which entities want to be heard (AudioSource),
  * where the ear is (AudioListener), and the lifetime of every voice - all of
  * which is driven from the main thread by AudioSystem, never from the mixer.
@@ -65,45 +64,45 @@ struct VoiceParams {
  * makes a sound outlive the graph it came from instead of reading freed memory
  * until AudioSystem next runs.
  *
- * NO DEVICE IS A NORMAL STATE. A headless cooker, a CI box, a machine whose
- * driver is broken: open() returns false, isOpen() stays false, and every other
- * call becomes a no-op that costs a branch. The engine runs silently rather
- * than refusing to run, and says so once instead of once a frame.
+ * No device is a normal state. On a headless cooker, a CI box, or a machine
+ * whose driver is broken, open() returns false, isOpen() stays false, and every
+ * other call becomes a no-op that costs a branch. The engine runs silently
+ * rather than refusing to run, and says so once instead of once a frame.
  *
- * WHICH THREAD MAY CALL THIS. All of it, render() included, is main-thread
- * only. Nothing here is guarded, and it does not need to be: every engine call
- * arrives from AudioSystem::update or from an editor panel, both on the main
- * thread, while the mixer thread is miniaudio's own and reaches back only
- * through the log bridge. A second thread calling render() while the main one
- * calls close() reads a graph being torn down, which is a segfault rather than
- * a wrong sample - so a harness that lends the offline mixer a thread must
- * join it before closing the device. A lock would put a mutex in the frame's
- * hot path to serve a caller the engine does not have.
+ * All of this, render() included, is main-thread only. Nothing here is guarded,
+ * and it does not need to be: every engine call arrives from
+ * AudioSystem::update or from an editor panel, both on the main thread, while
+ * the mixer thread is miniaudio's own and reaches back only through the log
+ * bridge. A second thread calling render() while the main one calls close()
+ * reads a graph being torn down, which is a segfault rather than a wrong sample
+ * - so a harness that lends the offline mixer a thread must join it before
+ * closing the device. A lock would put a mutex in the frame's hot path to serve
+ * a caller the engine does not have.
  *
- * WHAT THE SEAM IS, EXACTLY. Nothing outside vkm_core and vkm_cook can reach
- * miniaudio at all: it is linked privately, so its include path stops at those
- * two targets and the editor, the backend and gameplay cannot name the header
- * even if they tried. Inside them the path is target-wide, so "one file"
- * describes this file's discipline rather than something the build enforces.
+ * Nothing outside vkm_core and vkm_cook can reach miniaudio at all: it is
+ * linked privately, so its include path stops at those two targets and the
+ * editor, the backend and gameplay cannot name the header even if they tried.
+ * Inside them the path is target-wide, so "one file" describes this file's
+ * discipline rather than something the build enforces.
  *
- * THE KNOWN RACES ARE MINIAUDIO'S, and they are worth naming because a
- * vendored backend's bugs are ours to carry. ThreadSanitizer reports two of
- * them on every run that mixes while the main thread pushes voice parameters:
- * ma_gainer::masterVolume (a plain float, written here by ma_sound_set_volume
- * from apply(), read by the mixer in ma_gainer_process_pcm_frames_internal)
- * and ma_spatializer_listener::isEnabled (a plain ma_bool32, written by
- * setListenerActive, read by the mixer). A third joins them only while
- * something reads a playback cursor: ma_audio_buffer_ref::cursor is a plain
- * ma_uint64 the mixer advances and voiceCursor() reads, and its one caller is
- * the editor's audition card, where a value a frame stale is a slider a pixel
- * behind. Seeking is not part of that: miniaudio hands a seek to the mixer
- * through an atomic on purpose, which is why seekVoice() is safe to call from
- * here at all. All three are single aligned scalars with no invariant spanning
- * them, and miniaudio uses ma_atomic_float for exactly this kind of field
- * elsewhere - ma_engine_node::volume and ma_device::masterVolumeFactor are both
- * atomic - so they read as oversights upstream rather than a design. They are
- * left alone deliberately: patching them means carrying a fork of the backend,
- * and quieting some of them from this side would hide the rest.
+ * The known races are miniaudio's, and a vendored backend's bugs are ours to
+ * carry. ThreadSanitizer reports two of them on every run that mixes while the
+ * main thread pushes voice parameters: ma_gainer::masterVolume (a plain float,
+ * written here by ma_sound_set_volume from apply(), read by the mixer in
+ * ma_gainer_process_pcm_frames_internal) and ma_spatializer_listener::isEnabled
+ * (a plain ma_bool32, written by setListenerActive, read by the mixer). A third
+ * joins them only while something reads a playback cursor:
+ * ma_audio_buffer_ref::cursor is a plain ma_uint64 the mixer advances and
+ * voiceCursor() reads, and its one caller is the editor's audition card, where
+ * a value a frame stale is a slider a pixel behind. Seeking is not part of
+ * that: miniaudio hands a seek to the mixer through an atomic on purpose, which
+ * is why seekVoice() is safe to call from here at all. All three are single
+ * aligned scalars with no invariant spanning them, and miniaudio uses
+ * ma_atomic_float for exactly this kind of field elsewhere -
+ * ma_engine_node::volume and ma_device::masterVolumeFactor are both atomic - so
+ * they read as oversights upstream rather than a design. They are left alone
+ * deliberately: patching them means carrying a fork of the backend, and
+ * quieting some of them from this side would hide the rest.
  */
 class AudioDevice {
     public:
@@ -246,21 +245,21 @@ class AudioDevice {
         /**
          * @brief How far into its clip @p voice has played, in seconds.
          *
-         * THIS IS WHY AudioSource CARRIES NO PLAYBACK POSITION, and the
-         * difference from Animator::time is worth stating because the two
-         * inspector cards look alike. An animation's time is component state:
-         * nothing advances it but the system that reads it, both on this
-         * thread, so the component can BE the position and a scrubber writes
-         * it directly. A voice's cursor is advanced by the mixer thread
-         * between our frames, at the device's own rate, so a field mirroring
-         * it would be a copy of a number that changes without us. Whichever
-         * way that copy was pushed each frame, one side would lose: writing
-         * the component from the device throws a scrub away the moment it is
-         * made, and writing the device from the component re-seeks the mixer
-         * to a frame-old position sixty times a second, which is a stutter
-         * rather than a sound. Telling those two apart needs a dirty flag,
-         * and that is a synchronisation problem that would outlive whoever
-         * added it. Reading the device is a read of the only copy there is.
+         * This is why AudioSource carries no playback position, unlike
+         * Animator::time, whose inspector card looks much the same. An
+         * animation's time is component state: nothing advances it but the
+         * system that reads it, both on this thread, so the component can BE
+         * the position and a scrubber writes it directly. A voice's cursor is
+         * advanced by the mixer thread between our frames, at the device's own
+         * rate, so a field mirroring it would be a copy of a number that
+         * changes without us. Whichever way that copy was pushed each frame,
+         * one side would lose: writing the component from the device throws a
+         * scrub away the moment it is made, and writing the device from the
+         * component re-seeks the mixer to a frame-old position sixty times a
+         * second, which is a stutter rather than a sound. Telling those two
+         * apart needs a dirty flag, and that is a synchronisation problem that
+         * would outlive whoever added it. Reading the device is a read of the
+         * only copy there is.
          *
          * It also settles what a scrub means when nothing is playing: there
          * is no cursor, so the editor offers none. A mirrored field would

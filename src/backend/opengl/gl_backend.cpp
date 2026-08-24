@@ -125,14 +125,12 @@ bool GLBackend::init(WindowManager& window) {
     // Forward+ cluster light grid: allocate its SSBO now the context is live.
     m_clusterGrid.init();
 
-    // Froxel fog volumes allocate lazily - the fog pass inits them on the first
-    // fog-enabled frame, so scenes that never enable fog never pay the ~15 MB.
+    // Froxel fog volumes and the editor preview rig allocate lazily - the fog
+    // pass inits its volumes on the first fog-enabled frame, GLPreview on the
+    // first request - so a host that uses neither pays for neither.
 
     // Allocates cube-map arrays, so it needs the live context.
     m_probes.init(m_sceneCapture, m_cubeConvolver);
-
-    // Editor previews: same.
-    m_preview.init();
 
     const std::string version = m_context.versionString();
     m_info.api    = version.empty() ? "OpenGL" : "OpenGL " + version;

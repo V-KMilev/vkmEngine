@@ -91,12 +91,13 @@ class InstanceBuffer {
         uint32_t getCapacity()      const { return m_capacity; }
 
     private:
+        static constexpr float    GROWTH_FACTOR = 1.5f;
+        static constexpr uint32_t MIN_CAPACITY  = 64;
+
+    private:
         std::unique_ptr<Vkm::GL::VertexBuffer> m_buffer;
         uint32_t m_capacity      = 0;
         uint32_t m_instanceCount = 0;
-
-        static constexpr float    GROWTH_FACTOR = 1.5f;
-        static constexpr uint32_t MIN_CAPACITY  = 64;
 };
 
 } // namespace Vkm::GL

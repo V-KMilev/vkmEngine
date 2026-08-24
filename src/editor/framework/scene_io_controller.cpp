@@ -141,7 +141,7 @@ bool SceneIOController::writeScene(FrameContext& ctx, EditorState& state, const 
 }
 
 bool SceneIOController::refusedDuringPlay(EditorState& state) const {
-    if (!hasSnapshot()) return false;
+    if (!isPlaying()) return false;
     state.pushToast(EditorState::ToastKind::Warning,
         "Stop the play session before saving - the running scene is not the authored one");
     return true;

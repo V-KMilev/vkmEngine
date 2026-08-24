@@ -48,11 +48,9 @@ bool DynamicLibrary::load(const std::string& path) {
         return false;
     }
 #else
-    // RTLD_NOW: resolve now so a missing engine symbol fails loudly at load,
-    // not on first call. RTLD_LOCAL: keep the module's own symbols out of the
-    // global scope so reloads stay isolated - it needs nothing from there, since
-    // a gameplay module links libvkm_core and finds the engine through its own
-    // DT_NEEDED rather than through whichever host opened it.
+    // RTLD_NOW so a missing engine symbol fails at load rather than on first
+    // call, RTLD_LOCAL so reloads stay isolated: a gameplay module links
+    // libvkm_core and finds the engine through its own DT_NEEDED anyway.
     m_handle = ::dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (!m_handle) {
         const char* err = ::dlerror();

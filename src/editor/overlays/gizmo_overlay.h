@@ -141,9 +141,16 @@ class GizmoOverlay {
         EntityId  m_dragEntity{};
 
         /**
-         * @brief Drag-start transforms of EVERY selected entity (active
-         * included), so a gizmo drag moves the whole selection and drag-end
-         * can push one batch undo covering all of it.
+         * @brief Drag-start transforms of the selection's ROOTS, so a gizmo drag
+         * moves the whole selection and drag-end pushes one batch undo over it.
+         *
+         * Roots only: an entity whose ancestor is also selected already inherits
+         * that ancestor's motion through the hierarchy, so writing it again
+         * applies the delta twice. The active entity is therefore not always in
+         * here - it is absent exactly when an ancestor of it is selected, and
+         * m_dragActiveIsDescendant is how the drag knows that has happened.
+         * Nothing else may be read as "is this a multi-entity drag": a selection
+         * of two can have one root, and it is the root that has to move.
          */
         std::vector<std::pair<EntityId, Transform>> m_dragSelection;
 

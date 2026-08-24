@@ -140,6 +140,34 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
          */
         bool skyNeedsRebake(const Environment& env, const glm::vec3& sunDir) const;
 
+        /**
+         * @brief Signature of the procedural sky currently baked into m_ibl, so a
+         * frame re-bakes only when the sun or a parameter actually changes.
+         */
+        struct BakedSky {
+            bool      active = false;
+            glm::vec3 sunDir{0.0f};
+            float     sunIntensity = 0.0f;
+            float     rayleigh     = 0.0f;
+            float     mie          = 0.0f;
+            float     mieG         = 0.0f;
+            glm::vec3 nightRadiance{0.0f};
+            glm::vec3 moonDir{0.0f};
+            float     moonIntensity = 0.0f;
+        };
+
+        /**
+         * @brief Signature of the irradiance volume currently baked, so a frame
+         * re-bakes only when the box, grid, or bake version actually changes.
+         */
+        struct BakedIrradiance {
+            bool      valid = false;
+            glm::vec3 center{0.0f};
+            glm::vec3 halfExtents{0.0f};
+            uint32_t  resolutionX = 0, resolutionY = 0, resolutionZ = 0;
+            uint32_t  bakeVersion = 0;
+        };
+
     private:
         Vkm::GL::Context m_context;
         GLView           m_view;
@@ -195,34 +223,7 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
 
         std::string m_bakedEnvPath;  ///< HDR path of the currently baked IBL; empty when none (or the sky is procedural).
 
-        /**
-         * @brief Signature of the procedural sky currently baked into m_ibl, so a
-         * frame re-bakes only when the sun or a parameter actually changes.
-         */
-        struct BakedSky {
-            bool      active = false;
-            glm::vec3 sunDir{0.0f};
-            float     sunIntensity = 0.0f;
-            float     rayleigh     = 0.0f;
-            float     mie          = 0.0f;
-            float     mieG         = 0.0f;
-            glm::vec3 nightRadiance{0.0f};
-            glm::vec3 moonDir{0.0f};
-            float     moonIntensity = 0.0f;
-        };
-        BakedSky m_bakedSky;
-
-        /**
-         * @brief Signature of the irradiance volume currently baked, so a frame
-         * re-bakes only when the box, grid, or bake version actually changes.
-         */
-        struct BakedIrradiance {
-            bool      valid = false;
-            glm::vec3 center{0.0f};
-            glm::vec3 halfExtents{0.0f};
-            uint32_t  resolutionX = 0, resolutionY = 0, resolutionZ = 0;
-            uint32_t  bakeVersion = 0;
-        };
+        BakedSky        m_bakedSky;
         BakedIrradiance m_bakedIrradiance;
 };
 

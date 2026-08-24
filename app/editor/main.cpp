@@ -7,8 +7,6 @@
 
 #include "logger.h"
 
-#include "gl_debug.h"
-
 #include "core/engine.h"
 #include "asset_registration.h"
 #include "io/asset/asset_library.h"
@@ -25,12 +23,6 @@ int main(int argc, char** argv) {
         // Project root, working directory and log file, in the one order that
         // works (see tools/project_boot.h).
         if (!Vkm::Engine::bootHost(argc, argv, "log.log", "VKM-ENGINE")) return EXIT_FAILURE;
-
-        // Async GL debug logging: catches and logs GL errors without forcing
-        // GL_DEBUG_OUTPUT_SYNCHRONOUS, which validates every GL call on the
-        // calling thread (a real CPU cost across pass + ImGui submission).
-        // Pass true only to pin a GL error to its exact callsite.
-        Vkm::GL::enableGLDebugLogging(false);
 
         // The editor wires the recipe factories: they (re)cook assets from their
         // source and fall through to the cooked path for what is already baked.
@@ -67,7 +59,6 @@ int main(int argc, char** argv) {
         }
 
         Vkm::Engine::Engine engine;
-
 
         // Same convention EditorSystem's per-frame title uses; it takes over on
         // the first frame and adds the scene.

@@ -106,10 +106,9 @@ void Engine::run() {
     }
     LOG_TRACE("Main loop exited, running shutdown");
 
-    // Join the workers before anything else winds down. The pool is a
-    // function-local static, so left to itself it is destroyed after the
-    // singletons its in-flight decodes push into - a load still running at quit
-    // would hand its result to a queue that no longer exists.
+    // Join the workers first: the pool is a function-local static, destroyed
+    // after the singletons its in-flight decodes push into, so a load still
+    // running at quit would hand its result to a queue that no longer exists.
     ThreadPool::get().shutdown();
 
     shutdownSystems();
