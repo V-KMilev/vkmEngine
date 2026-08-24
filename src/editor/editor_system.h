@@ -32,6 +32,7 @@ struct GLFWwindow;
 namespace Vkm::Engine {
 
 struct EditorContext;
+class AudioSystem;
 class CameraControllerSystem;
 class Scene;
 class UISystem;
@@ -57,6 +58,7 @@ class EditorSystem : public System {
             UISystem& uiSystem,
             VisibilitySystem& visibilitySystem,
             RenderSystem& renderSystem,
+            AudioSystem& audioSystem,
             ScriptModule& scriptModule,
             const std::string& projectName
         );
@@ -104,6 +106,7 @@ class EditorSystem : public System {
         UISystem&         m_uiSystem;
         RenderSystem&     m_renderSystem;
         VisibilitySystem& m_visibilitySystem;
+        AudioSystem&      m_audioSystem;
         ScriptModule&     m_scriptModule;
 
         MaterialPreviewSession m_materialPreviews;

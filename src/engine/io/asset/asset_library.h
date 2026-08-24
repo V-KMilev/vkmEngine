@@ -6,24 +6,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "core/reflect.h"
+#include "resource/asset_type.h"
 
 namespace Vkm::Engine {
 
-/**
- * @brief The asset kinds that live in the library (shaders stay source-referenced and
- * are not part of the cooked database).
- */
-enum class AssetType : uint8_t {
-    Mesh,
-    Texture,
-    Material,
-    Skeleton,
-    AnimationClip,
-    AudioClip,
-
-    Count
-};
 struct AssetRecord {
     AssetType   type = AssetType::Mesh;
     std::string name;
@@ -133,5 +119,3 @@ class AssetLibrary {
 };
 
 } // namespace Vkm::Engine
-
-VKM_ENUM_NAMES(::Vkm::Engine::AssetType, "mesh", "texture", "material", "skeleton", "animationClip", "audioClip")

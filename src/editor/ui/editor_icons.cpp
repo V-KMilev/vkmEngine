@@ -46,6 +46,8 @@ ImWchar iconCodepoint(EditorIcon icon) {
         case EditorIcon::Decal:      return 0xe302;  // sticker
         case EditorIcon::Particle:   return 0xe412;  // sparkles
         case EditorIcon::UIWidget:   return 0xe426;  // app-window
+        case EditorIcon::Audio:      return 0xe1ab;  // volume-2
+        case EditorIcon::Listener:   return 0xe382;  // ear
         case EditorIcon::FrameAll:   return 0xe257;  // scan
         case EditorIcon::UICanvas:   return 0xe291;  // frame
         case EditorIcon::UIText:     return 0xe198;  // type

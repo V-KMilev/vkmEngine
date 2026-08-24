@@ -12,7 +12,6 @@
 
 #include "logger.h"
 
-#include "io/asset/asset_library.h"
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/mesh_asset.h"

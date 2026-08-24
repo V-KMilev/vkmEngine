@@ -2,9 +2,11 @@
 
 #include <string>
 
+#include "framework/asset_picker.h"
 #include "resource/resource_handle.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/material_asset.h"
+#include "system/audio/audio_device.h"
 
 namespace Vkm::Engine {
 
@@ -12,11 +14,16 @@ struct EditorContext;
 class ResourceManager;
 
 /**
- * @brief Floating Asset Browser: a live thumbnail grid of materials & meshes.
+ * @brief Floating Asset Browser: a live thumbnail grid of materials & meshes, plus a list of sounds.
  *
  * Opened from Window > Asset Browser. Each cell is a material/mesh preview via
  * MaterialPreviewSession, budgeted so a big grid spreads its bakes over several
  * frames.
+ *
+ * Sounds get a list rather than a grid, because a clip has no picture. What it
+ * has is a length, a layout and a sound, so the row shows the first two and a
+ * play button gives the third - hearing a clip IS previewing it, the way a
+ * thumbnail is for a material.
  *
  * Stateless w.r.t. assets - it reads ResourceManager every frame; only the
  * cell size and the two cached helper assets (a preview sphere for material
@@ -43,6 +50,7 @@ class AssetBrowserPanel {
         void ensureAssets(ResourceManager& resources);
         void drawMaterials(EditorContext& ec);
         void drawMeshes(EditorContext& ec);
+        void drawSounds(EditorContext& ec);
 
         // The single grid body shared by materials and meshes. Asset is the
         // asset type (MaterialAsset / MeshAsset); the matching handle is
@@ -63,7 +71,14 @@ class AssetBrowserPanel {
         void openRename(Handle<Asset> h, const std::string& name);
 
         float      m_cell = 104.0f;          ///< Thumbnail edge in px
-        char       m_filter[64] = {};        ///< Grid search needle (both tabs)
+        char       m_filter[64] = {};        ///< Grid search needle (every tab)
+
+        // Sound import + audition. The picker is panel-owned so its popup id is
+        // unique; the voice is remembered so a second play replaces the first
+        // rather than layering a copy over it.
+        AssetPicker m_soundPicker;
+        bool        m_requestSoundImport = false;
+        VoiceId     m_previewVoice = 0;
 
         // Re-acquired every draw via ensureAssets - no ready flag so a
         // ResourceManager swap (scene load) doesn't leave stale handles.

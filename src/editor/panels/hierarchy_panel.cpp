@@ -274,6 +274,8 @@ void HierarchyPanel::drawEntityNode(Scene& scene, ResourceManager& resources,
         if (scene.has<IrradianceVolume>(entity)) append("GI Volume");
         if (scene.has<Decal>(entity))            append("Decal");
         if (scene.has<ParticleEmitter>(entity))  append("Particles");
+        if (scene.has<AudioSource>(entity))      append("Sound");
+        if (scene.has<AudioListener>(entity))    append("Listener");
         if (scene.has<UICanvas>(entity))         append("Canvas");
         if (scene.has<UIElement>(entity))        append("UI Element");
         if (scene.has<UIImage>(entity))          append("Image");

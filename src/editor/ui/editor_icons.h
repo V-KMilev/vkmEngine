@@ -20,7 +20,7 @@ enum class EditorIcon {
     Play, Pause, Stop, Step, Loop, Key, Plus, Cross,
     // Entity-type glyphs (Hierarchy / Inspector identity).
     Entity, Mesh, Camera, LightDir, LightPoint, LightSpot, Anim,
-    Probe, Volume, Decal, Particle, UIWidget,
+    Probe, Volume, Decal, Particle, UIWidget, Audio, Listener,
     UICanvas, UIText, UIImage, UIButton,
     LightRect, LightDisk,
     Cube, Sphere, Plane, Pyramid, Cone, Triangle,

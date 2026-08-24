@@ -8,6 +8,7 @@
 #include "ecs/entity.h"
 
 #include "framework/asset_picker.h"
+#include "system/audio/audio_device.h"
 #include "ui/editor_widgets.h"
 
 namespace Vkm::Engine {
@@ -67,6 +68,11 @@ class InspectorPanel {
                                         EditorState& state, EntityId id);
         void drawDecalSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawParticleSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
+        // The audio cards take the whole context: the clip preview button plays
+        // through the editor's audio device, which is not reachable from the
+        // scene or the asset graph.
+        void drawAudioSourceSection(EditorContext& ec, EntityId id);
+        void drawAudioListenerSection(EditorContext& ec, EntityId id);
         void drawIrradianceVolumeSection(Scene& scene, ResourceManager& resources,
                                          EditorState& state, EntityId id);
         void drawWorldInspector(EditorContext& ec);
@@ -98,6 +104,10 @@ class InspectorPanel {
         // World inspector's "Skybox HDR" browse. Cached file discovery rooted at
         // assets/envs; opened on demand instead of scanning every frame.
         AssetPicker m_envPicker;
+
+        // The clip currently being auditioned from a card, so a second press
+        // replaces it rather than layering a second copy over the first.
+        VoiceId m_previewVoice = 0;
 
         int m_colliderFitDetail = 4;  ///< Voxel resolution for the Collider "Fit to Mesh" button.
         int m_lodGenLevels      = 2;  ///< Levels the LOD card's Generate button builds below the source.

@@ -13,6 +13,8 @@
 #include "ecs/component/animation/animation.h"
 #include "ecs/component/animation/animator.h"
 #include "ecs/component/animation/bone_socket.h"
+#include "ecs/component/audio/audio_listener.h"
+#include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/hierarchy.h"
 #include "ecs/component/core/name.h"
 #include "ecs/component/physics/character_controller.h"
@@ -260,6 +262,8 @@ class ComponentEditCommand : public Command {
     X(IrradianceVolume, irradianceVolume) \
     X(Decal,            decal)            \
     X(ParticleEmitter,  particleEmitter)  \
+    X(AudioSource,      audioSource)      \
+    X(AudioListener,    audioListener)    \
     X(UICanvas,         uiCanvas)         \
     X(UIElement,        uiElement)        \
     X(UIImage,          uiImage)          \
@@ -294,6 +298,8 @@ class ComponentEditCommand : public Command {
     X(ReflectionProbe)                   \
     X(Decal)                             \
     X(ParticleEmitter)                   \
+    X(AudioSource)                       \
+    X(AudioListener)                     \
     X(IrradianceVolume)                  \
     X(LOD)                               \
     X(UICanvas)                          \
