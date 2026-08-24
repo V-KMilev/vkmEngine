@@ -245,6 +245,8 @@ std::vector<UnresolvedRef> takeUnresolvedRefs() {
     return taken;
 }
 
+UnresolvedScope::~UnresolvedScope() { takeUnresolvedRefs(); }
+
 nlohmann::json save(const Mesh& m, const ResourceManager& resources) {
     return {
         {"mesh",        m.mesh     ? resources.get(m.mesh).name     : std::string{}},

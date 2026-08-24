@@ -520,15 +520,6 @@ void SceneIOController::stopPlaySession(FrameContext& ctx, EditorState& state) {
     restoreSnapshot(ctx, state);
 }
 
-void SceneIOController::requestOpenPath(FrameContext& ctx, EditorState& state, const std::string& path) {
-    if (state.sceneDirty) {
-        state.confirmAction    = EditorState::PendingSceneAction::Open;
-        state.pendingScenePath = path;
-        return;
-    }
-    loadPath(ctx, state, path);
-}
-
 void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
     if (beginDialog("Save Scene As", m_openSaveAsPopup)) {
         ImGui::TextDisabled("Saved into %s (.json appended automatically)",
@@ -580,11 +571,12 @@ void SceneIOController::drawDialogs(FrameContext& ctx, EditorState& state) {
         endDialog();
     }
 
-    // requestLoad() configured and opened the shared picker; a pick routes
-    // through the same loadPath() the recent-scenes menu uses.
+    // requestLoad() configured and opened the shared picker. A pick is asked for
+    // rather than loaded: opening throws the live scene away, so it goes through
+    // the same guard the recent-scenes menu uses.
     std::string picked;
     if (m_loadPicker.draw(picked)) {
-        requestOpenPath(ctx, state, picked);
+        state.requestSceneAction(EditorState::SceneAction::Open, picked);
     }
 }
 

@@ -316,11 +316,8 @@ namespace ComponentSerializer {
      * and drained by the scene loader, which knows which entity and which
      * component the names belong to.
      *
-     * Drain after every component load, whether or not that component
-     * references assets and whether or not it threw: the list outlives the
-     * scene it was filled for - it is a free list, not a member - so an
-     * undrained one attaches the previous component's misses to the next
-     * entity, in the next file, in the next open.
+     * Call it inside an UnresolvedScope, which is what bounds the list to the
+     * component it was filled for.
      *
      * Holds only the ones a save can put back: a reference read out of an array
      * rather than a named field has nowhere to return to, and is reported and
@@ -329,6 +326,33 @@ namespace ComponentSerializer {
      * @return The unresolved references, oldest first; empty when all resolved.
      */
     std::vector<UnresolvedRef> takeUnresolvedRefs();
+
+    /**
+     * @brief Bounds one component load's share of the unresolved list.
+     *
+     * The list is a free list rather than a member, because the loaders are one
+     * overload per component with nowhere to return a second value from - so it
+     * outlives the component, the entity and the file it was filled for. The
+     * destructor drops whatever the load did not take, and that is what makes a
+     * loader that throws part-way safe: names left standing are drained by the
+     * next component read instead, in the next scene opened, which records them
+     * as its own and hands them to the next save's assets block.
+     *
+     * Construct one for the span of a single component load, before the loader
+     * runs, and nothing else is needed - a load that finishes takes its own
+     * references and leaves an empty list behind.
+     */
+    class UnresolvedScope {
+        public:
+            UnresolvedScope() = default;
+            ~UnresolvedScope();
+
+            UnresolvedScope(const UnresolvedScope& other) = delete;
+            UnresolvedScope& operator=(const UnresolvedScope& other) = delete;
+
+            UnresolvedScope(UnresolvedScope && other) = delete;
+            UnresolvedScope& operator=(UnresolvedScope && other) = delete;
+    };
 
 } // namespace ComponentSerializer
 

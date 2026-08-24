@@ -43,7 +43,10 @@
 #include "generator/mesh_generators.h"
 #include "generator/material_generators.h"
 #include "loader/model_loaders.h"
+#include "io/project.h"
 #include "io/project_paths.h"
+#include "ui/editor_dialogs.h"
+#include "ui/editor_style.h"
 #include "ui/editor_widgets.h"
 
 namespace Vkm::Engine {
@@ -845,6 +848,62 @@ void PlacePrefabDialog::draw(Scene& scene, ResourceManager& resources, EditorSta
 
     std::string picked;
     if (m_picker.draw(picked)) placePrefab(scene, resources, state, picked);
+}
+
+void OpenProjectDialog::draw(EditorState& state) {
+    if (state.requestOpenProject) {
+        state.requestOpenProject = false;
+        m_open = true;
+    }
+    if (!beginDialog("Open Project", m_open)) return;
+
+    ImGui::TextDisabled("A project is a directory with a project.json in it.");
+    ImGui::Spacing();
+
+    // Recents first: switching between a few projects is the common case, and
+    // typing a path for it every time would be the wrong default.
+    std::string chosen;
+    if (!state.recentProjects.empty()) {
+        ImGui::TextDisabled("Recent");
+        for (const std::string& path : state.recentProjects) {
+            ImGui::PushID(path.c_str());
+            const std::string label = std::filesystem::path(path).filename().string();
+            if (ImGui::Selectable(label.empty() ? path.c_str() : label.c_str())) {
+                chosen = path;
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", path.c_str());
+            ImGui::PopID();
+        }
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+    }
+
+    ImGui::TextDisabled("Path");
+    ImGui::SetNextItemWidth(EditorStyle::px(360.0f));
+    const bool entered = ImGui::InputText("##ProjectPath", m_pathBuffer, sizeof(m_pathBuffer),
+                                          ImGuiInputTextFlags_EnterReturnsTrue);
+
+    const std::string typed = m_pathBuffer;
+    const bool typedIsProject = !typed.empty() && !findProjectRoot(typed).empty();
+    if (!typed.empty() && !typedIsProject) {
+        ImGui::TextColored(EditorStyle::WARNING, "No project.json here");
+    }
+
+    const DialogResult r = dialogButtons(m_open, "Open", typedIsProject, entered);
+    if (r == DialogResult::Confirm) chosen = typed;
+
+    if (!chosen.empty()) {
+        m_open = false;
+        ImGui::CloseCurrentPopup();
+    }
+
+    endDialog();
+
+    if (!chosen.empty()) {
+        state.requestSceneAction(EditorState::SceneAction::OpenProject, chosen);
+        m_pathBuffer[0] = '\0';
+    }
 }
 
 } // namespace EditorActions

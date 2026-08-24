@@ -448,9 +448,9 @@ it - see Save as Prefab below.
 ## Opening a project
 
 The editor edits *a project*, not the repo it was built in. `ProjectController`
-(`src/editor/framework/project_controller.h`) owns **File > Open Project...** and
-the **File > Recent Projects** list, and re-roots the whole editor in place - no
-restart. Order matters, because each step depends on the previous one:
+(`src/editor/framework/project_controller.h`) holds the one sequence that roots
+the editor in one, and re-roots it in place - no restart. Order matters, because
+each step composes paths or reads code the one before it put in place:
 
 1. Save the outgoing project's `editor_settings.json`, while its root is still
    current - otherwise its tuning would land in the project being opened.
@@ -458,25 +458,78 @@ restart. Order matters, because each step depends on the previous one:
    at the new project.
 3. Tear the scene down through `SceneIOController::beginSceneReplace`: behaviors
    get `onDestroy` while the old module still holds their code, and the undo
-   stack, material previews, play snapshot and saved-scene path all go with it.
-4. Drop the outgoing project's assets - a generated world never swaps the
-   `ResourceManager` the way a scene load does.
-5. `AssetLibrary::get().load()` and the new project's own editor settings.
-6. Swap the gameplay module to the new project's `bin/`, or unload it when the
+   stack, material previews, play snapshot, saved-scene path and the whole
+   `ResourceManager` go with it - a generated world never swaps the resources
+   the way a scene load does.
+4. `AssetLibrary::get().load()` and the new project's own editor settings.
+5. Swap the gameplay module to the new project's `bin/`, or unload it when the
    project brings none.
-7. Boot its scene through `bootProjectScene`, the same rule both binaries use,
+6. Boot its scene through `bootProjectScene`, the same rule both binaries use,
    and adopt the path it opened so that scene is the file this session edits -
    without it, Save would ask for a name for a file the editor had just read.
    A project whose entry scene will not load still opens - the default scene
    stands in, carrying no save path - with an error toast, because the editor is
    where you fix that. The runtime refuses the same project instead; see
    [system/io.md](system/io.md#what-each-host-does-when-a-project-will-not-open).
+7. Push the project onto the recent list, so the project you are in is in its
+   own Recent Projects menu.
 
 A path that names a file rather than a directory still works - `findProjectRoot`
 walks up to the owning `project.json`, so dropping in a scene opens its project.
 
-Command-line `vkm_editor <project>` does the same thing at startup, before any
-path is composed. See [system/io.md](system/io.md#projects-and-the-three-roots).
+**Command-line `vkm_editor <project>` runs the same sequence**, from
+`EditorSystem::init` - which the engine calls once, before the first frame.
+`ProjectController::OpenKind` is the only difference: `Startup` skips steps 1 and
+3, there being no outgoing project whose settings must be written and no scene to
+tear down, and writing a default layout over the settings file about to be read
+is exactly what a second copy of this sequence used to do. `app/editor/main.cpp`
+therefore boots the host, registers the recipe factories and runs - it opens
+nothing itself. See [system/io.md](system/io.md#projects-and-the-three-roots).
+
+**Choosing** a project is separate from opening one.
+`EditorActions::OpenProjectDialog` draws the recents list and the path field, and
+hands what it picks to `EditorState::requestSceneAction` - the same guard New
+Scene and Open Scene go through, because opening a project throws the current
+scene away too.
+
+## Actions that throw the live scene away
+
+Quit, New Scene, Open Scene and Open Project all replace or destroy the world, so
+all four go through one entry point:
+
+```cpp
+state.requestSceneAction(EditorState::SceneAction::Open, path);
+```
+
+A caller says what it wants and nothing else. It does not ask whether the scene
+is dirty, does not park the target in a field of its own, and does not perform
+the action - which is what stops the next destructive action added from being
+the one that forgets to ask, and what the six hand-written copies of that
+question used to cost.
+
+`EditorSystem` answers it, in `resolveSceneAction`, once per frame **before the
+ImGui frame opens**. The request carries a stage:
+
+- **Ask** - nobody has answered yet. A clean scene goes straight to Run; a dirty
+  one raises the *Unsaved Changes* prompt, which is drawn in both the visible and
+  hidden editor states.
+- **Saving** - the prompt's *Save* answer, waiting for the write. It ends any
+  play session first, because a save inside one is refused outright and the
+  scene the save is for is the authored one Stop puts back. The write landing
+  clears the dirty flag and advances to Run; backing out of the Save-As it opened
+  withdraws the request instead.
+- **Run** - approved. `performSceneAction` does it.
+
+Performing before the ImGui frame is the point: all four rebuild the scene, and
+doing that with a window still on the ImGui stack is what the deferral exists to
+avoid. Nothing in the editor opens a project or replaces a scene from inside its
+own draw.
+
+**File > Exit** goes through the same entry point rather than raising the
+window's close flag: the frame loop reads that flag before the next frame begins,
+so the editor would be gone before the close-intercept in the same stage could
+ask. The titlebar close is intercepted at the top of the UI stage, withdrawn, and
+re-raised by `performSceneAction` once the scene is safe.
 
 ## Scene I/O
 
@@ -522,12 +575,11 @@ the transport's button is not its only caller: answering **Save** to the
 unsaved-changes prompt ends the session first, the scene that save is for being
 the authored one Stop puts back.
 
-**File > Exit** asks the unsaved-changes question itself rather than raising the
-window's close flag for the frame's close-intercept to catch. That intercept is
-right where it runs - the top of the UI stage, after the window has reported a
-titlebar close - but a menu item raises the flag from inside that same stage,
-and the frame loop reads it before the next frame begins. So the X prompted and
-Exit, the same intent said another way, quit without asking.
+`SceneIOController::isPlaying()` is the state itself, and everything that must
+not run against the simulation's copy of the scene asks it by name - the menu bar
+greying the two saves, the camera-dirty rule, the transport, and the controller's
+own refusal to write. It is not asked of the clock, which is paused in Edit mode
+as well.
 
 ### What an open does to the session's imports
 

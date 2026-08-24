@@ -30,10 +30,7 @@ void EditorShortcuts::process(EditorContext& ec, SceneIOController& sceneIO) {
     if (isPressed(kb.saveSceneAs))     sceneIO.requestSaveAs();
     else if (isPressed(kb.saveScene))  sceneIO.save(ctx, state);
     if (isPressed(kb.loadScene))       sceneIO.requestLoad();
-    if (isPressed(kb.newScene)) {
-        if (state.sceneDirty) state.confirmAction = EditorState::PendingSceneAction::New;
-        else                  sceneIO.newScene(ctx, state);
-    }
+    if (isPressed(kb.newScene)) state.requestSceneAction(EditorState::SceneAction::New);
 
     if (isPressed(kb.toggleRenderSettings)) state.showRenderSettings = !state.showRenderSettings;
     if (isPressed(kb.toggleMaterialEditor)) state.showMaterialEditor = !state.showMaterialEditor;

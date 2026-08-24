@@ -40,6 +40,13 @@ constexpr float MOVE_EPS = 1e-4f;
  * when a body touched nothing, and it is walkable at every slope limit, so no
  * separate test for "is there a contact at all" is needed here.
  *
+ * Sliding along a wall is the controller's job rather than the solver's because
+ * steering straight into one makes a normal force, Coulomb friction scales with
+ * it, and whether the character glides or stops dead then depends on two
+ * material numbers - at 25 degrees off the wall normal with default friction it
+ * stops dead. A target that already runs along the wall never pushes into it,
+ * so there is no normal force for friction to bite on.
+ *
  * @param target Desired velocity, world space.
  * @param blockNormal Rigidbody::blockNormal - the most horizontal contact normal.
  * @param slopeLimit cos(maxSlopeAngle): at or above it the surface is walkable.
@@ -95,30 +102,20 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
             rb.sleepTimer = 0.0f;
         }
 
-        // Sliding along a wall is the controller's job, not the solver's.
-        // Steering straight into one makes a normal force, Coulomb friction
-        // scales with it, and whether the character glides or stops dead then
-        // depends on two material numbers - at 25 degrees off the wall normal
-        // with default friction it stops dead. A target that already runs along
-        // the wall never pushes into it, so there is no normal force for
-        // friction to bite on.
-        //
-        // Before the ground projection, not after: this only ever turns the
-        // horizontal, so the slope-following vertical below is then computed for
-        // the direction the character actually ends up going.
+        // Deflected before the ground projection, not after: this only ever
+        // turns the horizontal, so the slope-following vertical below is then
+        // computed for the direction the character actually ends up going.
         glm::vec3 velocity = rb.linearVelocity;
         glm::vec3 target = deflectAlongBlock(cc.moveInput, rb.blockNormal, slopeLimit);
 
         // Grounded, the target follows the ground plane, so walking up a ramp
         // neither launches off the top nor is dragged back by gravity fighting
-        // the contact. Airborne, only the horizontal is steered and the vertical
-        // is gravity's alone.
+        // the contact. Airborne, the vertical is gravity's alone.
         if (cc.grounded) {
             target -= cc.groundNormal * glm::dot(target, cc.groundNormal);
             // Already rising faster than the ground would carry it: it has just
-            // jumped, or been thrown, and that climb is not the controller's to
-            // undo. Grounding lags the contacts by a tick, so without this the
-            // first ticks of every jump are steered back into the floor.
+            // jumped or been thrown. Grounding lags the contacts by a tick, so
+            // without this the first ticks of a jump steer back into the floor.
             target.y = glm::max(target.y, velocity.y);
         } else {
             target.y = velocity.y;

@@ -165,12 +165,12 @@ system that finds itself wanting a reference to another system has a
 The rule above is one rule; the enforcement is four different mechanisms, and an
 agent bumping a constant needs to know which it is holding.
 
-| Format         | Constant                                   | What the reader refuses                       |
-|----------------|--------------------------------------------|-----------------------------------------------|
-| Cooked asset   | `io/asset/asset_cook.cpp:207`              | Anything but an exact match. A stale artifact is refused and re-cooked. |
-| Scene          | `io/scene/scene_serializer.cpp:42` (`= 2`) | Missing, zero, or *newer* than this build (`:376-385`). Nothing else. |
-| Prefab         | `io/scene/prefab.cpp:35` (`= 3`)           | The same shape (`:94-99`).                    |
-| `project.json` | `io/project.cpp:54-60` `engineVersion`     | Nothing. It warns, deliberately - "refusing to open would be worse". It is provenance, not a format version. |
+| Format         | Constant                                              | What the reader refuses                       |
+|----------------|-------------------------------------------------------|-----------------------------------------------|
+| Cooked asset   | `io/asset/asset_cook.h:40-44` - five, one per asset kind | Anything but an exact match. A stale artifact is refused and re-cooked. |
+| Scene          | `io/scene/scene_serializer.cpp:42` (`= 2`)            | Missing, zero, or *newer* than this build (`:327-335`). Nothing else. |
+| Prefab         | `io/scene/prefab.cpp:35` (`= 3`)                      | The same shape (`:94-99`).                    |
+| `project.json` | `io/project.cpp:54-60` `engineVersion`                | Nothing. It warns, deliberately - "refusing to open would be worse". It is provenance, not a format version. |
 
 The consequence for scene and prefab: **bumping the constant does not by itself
 stop an old file loading.** The gate refuses the future, not the past; an older

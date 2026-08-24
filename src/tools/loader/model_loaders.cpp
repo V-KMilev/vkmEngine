@@ -45,6 +45,7 @@
 #include "platform/threading/thread_pool.h"
 #include "io/asset/asset_cook.h"
 #include "io/project_paths.h"
+#include "loader/texture_loaders.h"
 #include "resource/resource_manager.h"
 #include "ecs/scene.h"
 #include "ecs/component/animation/animator.h"
@@ -551,6 +552,11 @@ MeshAsset buildMesh(const aiScene* scene, const std::string& path, int meshIdx) 
     return out;
 }
 
+// Models routinely tile and reference UVs outside [0,1] (and Assimp's glTF
+// importer can emit negative V); REPEAT resolves all of that in hardware.
+// Default ClampToEdge would smear/clamp instead.
+constexpr TextureWrapMode MODEL_TEXTURE_WRAP = TextureWrapMode::Repeat;
+
 // Decode raw RGBA8 bytes into a (cached, idempotent) TextureAsset. The source
 // is stamped onto the asset so cold-start load can recreate the same texture
 // via the recipe texture dispatch.
@@ -571,11 +577,8 @@ TextureHandle addTexture(
                                      : TextureInternalFormat::RGBA8;
     tex.params.format          = TexturePixelFormat::RGBA;
     tex.params.type            = TexturePixelType::UnsignedByte;
-    // Models routinely tile and reference UVs outside [0,1] (and Assimp's
-    // glTF importer can emit negative V); REPEAT resolves all of that in
-    // hardware. Default ClampToEdge would smear/clamp instead.
-    tex.params.wrapS           = TextureWrapMode::Repeat;
-    tex.params.wrapT           = TextureWrapMode::Repeat;
+    tex.params.wrapS           = MODEL_TEXTURE_WRAP;
+    tex.params.wrapT           = MODEL_TEXTURE_WRAP;
     tex.params.generateMipmaps = true;
     tex.srgb     = srgb;
     tex.name     = name;
@@ -673,10 +676,8 @@ TextureHandle textureFor(
         cache[key] = {};
         return {};
     }
-    nlohmann::json source = {
-        {"kind", "file"}, {"path", ProjectPaths::toProjectRelative(abs)}, {"sRGB", srgb},
-        {"generateMipmaps", true},
-    };
+    nlohmann::json source = fileTextureRecipe(ProjectPaths::toProjectRelative(abs), srgb,
+        /*generateMipmaps*/ true, TextureFilterOverride::None, MODEL_TEXTURE_WRAP);
     TextureHandle h = addTexture(res, stem + ":file:" + key, w, hh, px, srgb,
         std::move(source));
     stbi_image_free(px);

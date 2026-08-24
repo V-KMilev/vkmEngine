@@ -1,21 +1,14 @@
 #define VKM_LOG_CATEGORY "MAIN"
 
 #include <cstdlib>
-#include <filesystem>
-#include <string>
-#include <system_error>
 
 #include "logger.h"
 
 #include "core/engine.h"
 #include "asset_registration.h"
-#include "io/asset/asset_library.h"
-#include "io/project.h"
-#include "io/project_paths.h"
 #include "project_boot.h"
 #include "editor_system.h"
 #include "system/script/script_module.h"
-#include "platform/library/dynamic_library.h"
 #include "app/engine_app.h"
 
 int main(int argc, char** argv) {
@@ -29,67 +22,28 @@ int main(int argc, char** argv) {
         // Must precede scene I/O.
         Vkm::Engine::registerRecipeAssetFactories();
 
-        // Empty on a fresh project; the cooker rebuilds it on save.
-        Vkm::Engine::AssetLibrary::get().load();
-
-        // Titles the window, so two editors on two projects are tellable apart.
-        Vkm::Engine::Project project;
-        Vkm::Engine::loadProject(Vkm::Engine::ProjectPaths::projectRoot(), project);
-
-        // Load the hot-reloadable gameplay module: it registers behaviors into
-        // the engine's registry, so it must precede the scene boot. Declared
-        // before the Engine so it outlives it - behaviors are destroyed during
-        // Engine teardown and their code must still be loaded then.
+        // Declared before the Engine so it outlives it: behaviors are destroyed
+        // during Engine teardown and their code must still be loaded then. What
+        // goes into it is the project's, and the editor loads it when it opens
+        // one - here that would be the project-open sequence written twice.
         Vkm::Engine::ScriptModule scriptModule;
-        // The editor runs the edited project's code, from the one place a
-        // project builds it - the same lookup File > Open Project does.
-        const std::filesystem::path modulePath =
-            Vkm::Engine::ProjectPaths::projectBin() / Vkm::Engine::DynamicLibrary::platformName("game");
-
-        // Neither case stops the editor: a project with no code yet is how every
-        // project starts, and a module that will not load - built against another
-        // engine version, most often - is fixed by rebuilding it and reloading,
-        // which is a thing you need the editor open to do.
-        std::error_code moduleEc;
-        if (!std::filesystem::exists(modulePath, moduleEc)) {
-            LOG_INFO("Project has no gameplay module yet - scripts unavailable");
-        } else if (!scriptModule.load(modulePath.string())) {
-            LOG_WARNING("Gameplay module '%s' did not load - scripts unavailable until "
-                        "it builds and you reload it", modulePath.string().c_str());
-        }
 
         Vkm::Engine::Engine engine;
 
-        // Same convention EditorSystem's per-frame title uses; it takes over on
-        // the first frame and adds the scene.
-        const std::string title = project.name + " - vkmEngine";
-        auto sys = setupEngineApp(engine, AppConfig{
-            title.c_str(),
-            true, false});
+        // EditorSystem composes the real title - project, scene and modified
+        // marker - from its first frame onward.
+        auto sys = setupEngineApp(engine, AppConfig{"vkmEngine", true, false});
 
-        Vkm::Engine::EditorSystem& editor =
-            engine.addSystem<Vkm::Engine::EditorSystem>(Vkm::Engine::SystemStage::UI,
-                engine.getWindow().getWindowContext(),
-                sys.camera, sys.ui, sys.visibility, sys.render, sys.audio, scriptModule, project.name);
+        engine.addSystem<Vkm::Engine::EditorSystem>(Vkm::Engine::SystemStage::UI,
+            engine.getWindow().getWindowContext(),
+            sys.camera, sys.ui, sys.visibility, sys.render, sys.audio, scriptModule);
 
-        // The editor opens on the same scene the runtime would boot, by the same
-        // rule (see tools/project_boot.h). Which one it got is deliberately not
-        // an exit code here: a project naming no scene is a new project, and one
-        // whose entry scene will not load is the case the editor exists to fix -
-        // refusing to open would take away the only tool for it. The stand-in
-        // default scene carries no save path, so it cannot overwrite the file
-        // that failed, and the failure reports itself through the error sink
-        // EditorSystem installed above - so it reaches Bottom > Errors and a
-        // toast here exactly as it does through File > Open Project.
-        const Vkm::Engine::SceneBootResult boot = Vkm::Engine::bootProjectScene(
-            project, scriptModule, engine.getScene(), engine.getResources());
-
-        // And the path with it, which is what makes the entry scene the file
-        // this session is editing rather than a world that arrived from
-        // nowhere. Only the authored scene carries one, so the stand-in above
-        // still cannot be saved over the file it replaced.
-        editor.adoptScenePath(boot.path);
-
+        // The editor roots itself in the project this host was launched on from
+        // its init(), which runs before the first frame - the same sequence File
+        // > Open Project runs, so nothing project-scoped can reach one way in and
+        // miss the other. A project whose entry scene will not load still opens,
+        // deliberately: that is the case the editor exists to fix, and refusing
+        // would take away the only tool for it.
         engine.run();
 
     } catch (const std::exception& e) {

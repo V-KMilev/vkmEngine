@@ -52,7 +52,7 @@ new kind of problem - which is rare, and worth double-checking before assuming.
 
 If your system writes a pointer onto `FrameContext`, it owes that pointer on
 **every** return path, including the ones where it did nothing. Clear the buffer
-at the top of `update`, publish, then work - not the other way round.
+at the top of `update`, then work - not the other way round.
 `system/visibility/visibility_system.cpp:139-140` states the reason in place:
 
     // Cleared here, not at the serial gather, so the early-return paths below

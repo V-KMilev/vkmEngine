@@ -1,12 +1,16 @@
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "ecs/entity.h"
 #include "resource/asset/material_asset.h"
+#include "resource/resource_manager.h"
 
 #include "framework/asset_picker.h"
+#include "framework/editor_commands.h"
+#include "framework/editor_state.h"
 
 namespace Vkm::Engine {
 
@@ -280,6 +284,46 @@ MaterialHandle duplicateMaterial(
 MaterialHandle createNewMaterial(ResourceManager& resources, EditorState& state);
 
 /**
+ * @brief Rename an asset, report the name it actually got, and make it undoable.
+ *
+ * The one place an asset is renamed from editor UI. Every rename affordance -
+ * the Asset Browser's F2 modal, the Material Editor's own - calls this rather
+ * than open-coding it, because the sequence has two parts a caller would not
+ * guess and one of them was missed the first time it was copied.
+ *
+ * ResourceManager keeps names unique per type by suffixing a taken one, so the
+ * asset may not end up called what was typed. This reads the name back and
+ * toasts when it differs: an author who is not told goes looking for a name
+ * nothing holds. It then pushes the undo step with the name that was *assigned*
+ * rather than the one that was asked for, so redo repeats what happened.
+ *
+ * Applying before pushing is deliberate and matches the rest of the editor: the
+ * command carries the reverse of an edit that has already happened.
+ *
+ * @tparam Asset Asset type being renamed; @p handle is its Handle.
+ * @param resources Resource manager owning the asset and its name index.
+ * @param state Editor state whose command stack and toast list are appended to.
+ * @param handle Handle naming the asset to rename.
+ * @param from Name it had, kept for undo.
+ * @param to Name the author typed.
+ * @param label Undo-stack label, e.g. "Rename Material".
+ */
+template<typename Asset>
+void renameAsset(ResourceManager& resources, EditorState& state, Handle<Asset> handle,
+                 const std::string& from, const std::string& to, const char* label) {
+    resources.rename(handle, to);
+
+    const std::string assigned = resources.get(handle).name;
+    if (assigned != to) {
+        state.pushToast(EditorState::ToastKind::Info,
+                        "'" + to + "' was taken - renamed to '" + assigned + "'");
+    }
+
+    state.commands.push(std::make_unique<RenameAssetCommand<Handle<Asset>>>(
+        resources, handle, from, assigned, label));
+}
+
+/**
  * @brief Frame the entire visible scene: union the world-space AABBs of every
  * visible mesh entity, then focus the camera so the union fits in view.
  * No-op if there is nothing visible.
@@ -343,6 +387,31 @@ class PlacePrefabDialog {
 
     private:
         AssetPicker m_picker;
+};
+
+/**
+ * @brief Render the "Open Project" dialog: the recent projects, plus a path field.
+ *
+ * Drawn from the menu-bar scope for the same reason as ModelImportDialog. It
+ * chooses a project root and asks for it through
+ * EditorState::requestSceneAction - opening one throws the current scene away,
+ * so it goes through the same guard New Scene and Open Scene do, and nothing is
+ * opened from inside the dialog's own draw.
+ */
+class OpenProjectDialog {
+    public:
+        /**
+         * @brief Open the dialog when EditorState::requestOpenProject is set,
+         *        and request whichever project the user chooses.
+         *
+         * @param state Editor state supplying the recent-project list and
+         *        receiving the request.
+         */
+        void draw(EditorState& state);
+
+    private:
+        bool m_open = false;
+        char m_pathBuffer[512] = {};
 };
 
 } // namespace EditorActions

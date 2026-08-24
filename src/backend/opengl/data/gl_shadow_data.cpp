@@ -248,19 +248,9 @@ void GLShadowData::fitDirectional(const LightData& light, uint32_t lightIndex,
     // unshadowed.
     const float sunFar = std::max(cam.nearDepth + 1.0f, std::min(cam.farDepth, light.shadowDistance));
 
-    // Logarithmic split, anchored at CASCADE_NEAR and expressed as fractions of
-    // the full near->far edge so they index the frustum corners directly. The
-    // last split caps at sunFar.
-    //
-    // The practical scheme this replaced blended a uniform term over the same
-    // range, and that term is linear in sunFar: it put the first split at about
-    // 0.075 * sunFar, so every cascade boundary - the near one included - moved
-    // in step with shadowDistance and the foreground coarsened in proportion.
-    // Raising the blend weight does not fix it either, because the log term was
-    // anchored at the camera near plane and contributed almost nothing there.
-    // Anchored properly and used alone, the first split grows as the fourth root
-    // instead: over shadowDistance 40 -> 600 it moves 2.5 -> 4.9 world units
-    // rather than 3.6 -> 46.
+    // Logarithmic split anchored at CASCADE_NEAR, expressed as fractions of the
+    // near->far edge so they index the frustum corners directly; the last split
+    // caps at sunFar. Why that anchor: docs/reference/system/lighting.md.
     const float anchor = std::clamp(CASCADE_NEAR, cam.nearDepth, sunFar);
     float fr[5] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
     for (uint32_t c = 1; c < N; ++c) {

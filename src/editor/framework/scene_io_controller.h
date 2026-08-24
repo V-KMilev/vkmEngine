@@ -106,16 +106,6 @@ class SceneIOController {
         void loadPath(FrameContext& ctx, EditorState& state, const std::string& path);
 
         /**
-         * @brief Open @p path through the unsaved-changes guard.
-         *
-         * Prompts (Save / Don't Save / Cancel) when the current scene is
-         * dirty, otherwise loads immediately. Every open flow - the picker
-         * and Open Recent - routes through this; loading a scene used to
-         * silently discard unsaved work.
-         */
-        void requestOpenPath(FrameContext& ctx, EditorState& state, const std::string& path);
-
-        /**
          * @brief Render any pending Save-As / Load modals.
          *
          * Must be called once per frame from the menu-bar scope so the modals
@@ -233,9 +223,10 @@ class SceneIOController {
         /**
          * @brief True while a Save-As prompt is either queued for opening or currently visible.
          *
-         * Used by the save-on-quit flow to detect whether the user cancelled
-         * mid-Save (EditorState::afterSaveAction is cleared on cancel; left
-         * set on success).
+         * The unsaved-changes guard reads it to tell a save it is still waiting
+         * on from one the author backed out of: a scene still dirty with no
+         * prompt up means the Save-As was cancelled, and the action waiting on
+         * that save is dropped with it.
          */
         bool isSaveDialogActive() const;
 

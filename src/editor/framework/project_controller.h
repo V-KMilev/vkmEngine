@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace Vkm::Engine {
@@ -9,16 +10,17 @@ class ScriptModule;
 class SceneIOController;
 
 /**
- * @brief Opening a project from the editor, and remembering the ones opened.
+ * @brief Opening a project, which is the one ordered sequence for doing so.
  *
- * A project is the unit the editor edits, so switching one means re-rooting
- * everything scoped to it: the paths, the asset library, the gameplay module
- * and the scene. That ordering is the whole content of this class - each step
- * depends on the one before, and doing them out of order leaves the editor
- * showing one project's scene with another's assets.
+ * A project is the unit the editor edits, so opening one means rooting
+ * everything scoped to it: the paths, the asset library, the editor settings,
+ * the gameplay module and the scene. That ordering is the whole content of this
+ * class - each step depends on the one before, and doing them out of order
+ * leaves the editor showing one project's scene with another's assets.
  *
- * Draws its own dialog (recent projects plus a path field) and drives the
- * switch when one is chosen.
+ * It holds no state, deliberately: choosing which project to open belongs to
+ * EditorActions::OpenProjectDialog, and the request it makes is answered by the
+ * unsaved-changes guard before it ever reaches here.
  */
 class ProjectController {
     public:
@@ -33,43 +35,41 @@ class ProjectController {
 
     public:
         /**
-         * @brief Draw the Open Project dialog when the editor asked for it.
+         * @brief Which of the two ways into open() this is.
          *
-         * @param ec           Editor context; supplies the state flag and what the
-         *                     switch re-roots.
-         * @param scriptModule The module to swap for the new project's own.
-         * @param sceneIO      Owns the scene-replace teardown the switch runs.
+         * Startup is the project the host was launched on, opened before the
+         * first frame: there is no outgoing project whose settings must be
+         * written and no scene to tear down, and doing either would write a
+         * default editor layout over the settings file about to be read. Switch
+         * is File > Open Project, where both of those steps are what leaves the
+         * project being closed intact.
          */
-        void drawDialog(EditorContext& ec, ScriptModule& scriptModule, SceneIOController& sceneIO);
+        enum class OpenKind : uint8_t { Startup, Switch };
 
         /**
-         * @brief Switch the editor to the project rooted at @p projectRoot.
+         * @brief Root the editor in the project at @p projectRoot.
          *
-         * Re-roots the paths, reloads the asset library, swaps the gameplay
-         * module and boots the project's scene - in that order.
+         * The editor's only project-open sequence, for both ways in. Writes the
+         * outgoing project's settings, re-roots the paths, tears the old scene
+         * down, loads the project's asset library and editor settings, swaps the
+         * gameplay module and boots the project's scene - in that order, since
+         * each step composes paths or reads code the one before it put in place.
          *
-         * @param ec           Editor context to re-root.
-         * @param scriptModule Module to reload from the new project.
-         * @param sceneIO      Owns the scene-replace teardown the switch runs.
-         * @param projectRoot Directory holding the project's project.json.
-         * @return True when the directory was a project and the switch ran.
+         * Failure is reported and survivable: a directory with no project.json
+         * is refused before anything is torn down, and a project whose entry
+         * scene will not load still opens on the default scene, because the
+         * editor is where that gets fixed.
+         *
+         * @param ec           Editor context to root.
+         * @param scriptModule Module to load from the project's bin/.
+         * @param sceneIO      Owns the scene-replace teardown and adopts the
+         *                     path the project booted, so Save writes it back.
+         * @param projectRoot  The project directory, or any path inside it.
+         * @param kind         Which way in this is; see OpenKind.
+         * @return True when the directory was a project and the open ran.
          */
         bool open(EditorContext& ec, ScriptModule& scriptModule, SceneIOController& sceneIO,
-                  const std::string& projectRoot);
-
-        /**
-         * @brief Record the project the editor started in as most-recent.
-         *
-         * The project opened from the command line never went through open(),
-         * so without this the one you are actually in is the only one missing
-         * from its own recent list.
-         *
-         * @param ec Editor context holding the MRU.
-         */
-        void noteCurrentProject(EditorContext& ec);
-
-    private:
-        char m_pathBuffer[512] = {};
+                  const std::string& projectRoot, OpenKind kind);
 };
 
 } // namespace Vkm::Engine

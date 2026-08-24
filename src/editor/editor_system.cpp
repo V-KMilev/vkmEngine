@@ -44,8 +44,7 @@ EditorSystem::EditorSystem(
     VisibilitySystem& visibilitySystem,
     RenderSystem& renderSystem,
     AudioSystem& audioSystem,
-    ScriptModule& scriptModule,
-    const std::string& projectName
+    ScriptModule& scriptModule
 )
     : m_cameraController(cameraController)
     , m_uiSystem(uiSystem)
@@ -110,32 +109,10 @@ EditorSystem::EditorSystem(
     // scene, the resources and the window, never a system.
     m_cameraController.setEnabled(true);
 
-    // The grid defaults off engine-wide (it is an editor aid); the editor
-    // wants it on out of the box. Set before the load so a persisted value
-    // still wins. A missing/invalid settings file is non-fatal.
+    // The grid defaults off engine-wide (it is an editor aid); the editor wants
+    // it on out of the box. Set before init() reads the project's settings, so
+    // a persisted value still wins.
     m_renderSystem.getSettings().grid = true;
-    EditorSettings::load(m_state, m_renderSystem.getSettings());
-
-    // Handed in rather than re-read: loadProject deliberately reports the
-    // project once per open. Opening another one refreshes this
-    // (ProjectController::open).
-    m_state.projectName = projectName;
-
-    const size_t recentBefore = m_state.recentScenes.size();
-
-    // Drop recent-scene entries whose files no longer exist. Without this
-    // the Open Recent menu accumulates dead links across sessions.
-    m_state.recentScenes.erase(
-        std::remove_if(m_state.recentScenes.begin(), m_state.recentScenes.end(),
-            [](const std::string& p) {
-                std::error_code ec;
-                return !std::filesystem::exists(p, ec);
-            }),
-        m_state.recentScenes.end());
-    if (recentBefore != m_state.recentScenes.size()) {
-        LOG_INFO("Pruned %zu stale entries from Open Recent",
-            recentBefore - m_state.recentScenes.size());
-    }
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 430");
@@ -143,8 +120,7 @@ EditorSystem::EditorSystem(
     // Capture engine-reported recoverable errors into our log for the Errors tab.
     setErrorSink(&m_errorLog);
 
-    LOG_INFO("Initialized (%zu recent scene(s) restored)",
-        m_state.recentScenes.size());
+    LOG_INFO("Initialized");
 }
 
 EditorSystem::~EditorSystem() {
@@ -156,40 +132,70 @@ EditorSystem::~EditorSystem() {
     ImGui::DestroyContext();
 }
 
-void EditorSystem::openPendingProject(EditorContext& ec) {
-    if (ec.state.pendingProjectOpen.empty()) return;
-
-    // Opening a project throws the current scene away, so it asks first, the
-    // same way New Scene does. The chosen path stays parked until the prompt is
-    // answered; answering it clears the flag and this runs on the next frame.
-    if (ec.state.sceneDirty) {
-        ec.state.confirmAction = EditorState::PendingSceneAction::OpenProject;
-        return;
-    }
-
-    const std::string path = ec.state.pendingProjectOpen;
-    ec.state.pendingProjectOpen.clear();
-    m_project.open(ec, m_scriptModule, m_sceneIO, path);
+void EditorSystem::init(FrameContext& ctx) {
+    EditorContext ec = makeContext(ctx);
+    m_project.open(ec, m_scriptModule, m_sceneIO, ProjectPaths::projectRoot().string(),
+                   ProjectController::OpenKind::Startup);
 }
 
-void EditorSystem::performSceneAction(FrameContext& ctx, EditorState::PendingSceneAction action) {
+EditorContext EditorSystem::makeContext(FrameContext& ctx) {
+    return EditorContext{
+        ctx,
+        m_state,
+        m_cameraController,
+        m_renderSystem,
+        m_visibilitySystem,
+        m_materialPreviews,
+        m_audioSystem,
+        m_errorLog,
+        {},
+        {}
+    };
+}
+
+void EditorSystem::resolveSceneAction(EditorContext& ec) {
+    EditorState& state = ec.state;
+    if (state.pendingAction == EditorState::SceneAction::None) return;
+
+    switch (state.actionStage) {
+        case EditorState::ActionStage::Ask:
+            // Nothing to lose: a scene with no unsaved edits needs no prompt.
+            if (!state.sceneDirty) state.actionStage = EditorState::ActionStage::Run;
+            break;
+        case EditorState::ActionStage::Saving:
+            // The Save answer either lands, or the author backs out of the
+            // Save-As it opened - which withdraws the action along with it.
+            if (!state.sceneDirty) state.actionStage = EditorState::ActionStage::Run;
+            else if (!m_sceneIO.isSaveDialogActive()) state.clearSceneAction();
+            break;
+        case EditorState::ActionStage::Run:
+            break;
+    }
+    if (state.actionStage != EditorState::ActionStage::Run) return;
+
+    const EditorState::SceneAction action = state.pendingAction;
+    const std::string payload = state.actionPayload;
+    state.clearSceneAction();
+    performSceneAction(ec, action, payload);
+}
+
+void EditorSystem::performSceneAction(EditorContext& ec, EditorState::SceneAction action,
+                                      const std::string& payload) {
     switch (action) {
-        case EditorState::PendingSceneAction::Quit:
-            ctx.window.requestClose();
+        case EditorState::SceneAction::Quit:
+            ec.frame.window.requestClose();
             break;
-        case EditorState::PendingSceneAction::New:
-            m_sceneIO.newScene(ctx, m_state);
+        case EditorState::SceneAction::New:
+            m_sceneIO.newScene(ec.frame, ec.state);
             break;
-        case EditorState::PendingSceneAction::Open:
-            m_sceneIO.loadPath(ctx, m_state, m_state.pendingScenePath);
-            m_state.pendingScenePath.clear();
+        case EditorState::SceneAction::Open:
+            m_sceneIO.loadPath(ec.frame, ec.state, payload);
             break;
-        case EditorState::PendingSceneAction::OpenProject:
-            // The project is still parked in pendingProjectOpen; dropping the
-            // dirty flag lets the deferred open through on the next frame.
-            m_state.sceneDirty = false;
+        case EditorState::SceneAction::OpenProject:
+            m_project.open(ec, m_scriptModule, m_sceneIO, payload,
+                           ProjectController::OpenKind::Switch);
             break;
-        case EditorState::PendingSceneAction::None:
+        case EditorState::SceneAction::None:
             break;
     }
 }
@@ -252,6 +258,8 @@ void syncWindowTitle(WindowManager& window, const std::string& project,
 
 void EditorSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("EditorSystem");
+
+    EditorContext ec = makeContext(ctx);
 
     // Flying the viewport moves the scene's own Camera entity - the editor has
     // no camera of its own, which is what makes "you move what you see" true -
@@ -326,29 +334,14 @@ void EditorSystem::update(FrameContext& ctx) {
                                                            : m_state.selection.back();
     }
 
-    // Intercept window-close while the scene is dirty: clear shouldClose,
-    // open the save-on-quit modal next frame. A clean scene closes through
-    // normally. The modal lives in the ImGui frame below so it works in
-    // both visible and hidden editor states.
-    if (ctx.window.shouldClose() && m_state.sceneDirty
-            && m_state.confirmAction == EditorState::PendingSceneAction::None) {
+    // A titlebar close is a request like any other: withdraw it and put it
+    // through the guard, which raises it again once the scene is safe.
+    if (ctx.window.shouldClose()) {
         ctx.window.cancelClose();
-        m_state.confirmAction = EditorState::PendingSceneAction::Quit;
+        m_state.requestSceneAction(EditorState::SceneAction::Quit);
     }
 
-    // After a "Save" choice in the modal, three outcomes are possible:
-    //   (a) Save was synchronous (path set) -> sceneDirty drops to false -> close now.
-    //   (b) Save-As opened, user picks a name -> sceneDirty drops later -> close then.
-    //   (c) Save-As opened, user cancels -> no save dialog active, scene still
-    //       dirty -> user changed their mind, drop the intent.
-    if (m_state.afterSaveAction != EditorState::PendingSceneAction::None) {
-        if (!m_state.sceneDirty) {
-            performSceneAction(ctx, m_state.afterSaveAction);
-            m_state.afterSaveAction = EditorState::PendingSceneAction::None;
-        } else if (!m_sceneIO.isSaveDialogActive()) {
-            m_state.afterSaveAction = EditorState::PendingSceneAction::None;
-        }
-    }
+    resolveSceneAction(ec);
 
     // Begin the ImGui frame before *anything* else: the editor-toggle
     // keybind (default F5) is processed here so the rebind UI in
@@ -367,15 +360,14 @@ void EditorSystem::update(FrameContext& ctx) {
         // from continuing while the editor isn't drawing.
         if (!m_state.editorVisible) m_panelResize.resetDragState();
     }
-    // Save-guard modal: drawn before anything else so it's visible whether the
-    // editor is shown or hidden. Shared by the window close-intercept above and
-    // File > New Scene. The dialog scaffold owns the open handshake (fixing the
-    // old bug where OpenPopup re-fired every frame and Escape could never
-    // dismiss it) and the Enter/Escape contract.
+    // The unsaved-changes prompt, drawn before anything else so it is visible
+    // whether the editor is shown or hidden. It answers the pending request
+    // rather than acting on it; resolveSceneAction above performs what it
+    // approves, on the next frame and outside the ImGui frame.
     {
-        bool want = m_state.confirmAction != EditorState::PendingSceneAction::None;
+        bool want = m_state.pendingAction != EditorState::SceneAction::None
+                 && m_state.actionStage == EditorState::ActionStage::Ask;
         if (beginDialog("Unsaved Changes", want)) {
-            const EditorState::PendingSceneAction action = m_state.confirmAction;
             ImGui::TextUnformatted("This scene has unsaved changes.");
             ImGui::Spacing();
             ImGui::TextDisabled("%s", m_sceneIO.path().empty()
@@ -383,30 +375,29 @@ void EditorSystem::update(FrameContext& ctx) {
 
             switch (dialogButtons(want, "Save", "Don't Save")) {
                 case DialogResult::Confirm:
-                    // A play session owns the scene, and a save cannot run
-                    // inside one, so end it first: the scene this save is for
-                    // is the authored one Stop puts back, not the simulation's
-                    // copy. Without this the save would refuse and the action
-                    // waiting on the dirty flag would quietly be abandoned.
+                    // The scene this save is for is the authored one Stop puts
+                    // back, not the simulation's copy - and a save inside a
+                    // session is refused outright, so end the session first.
                     m_sceneIO.stopPlaySession(ctx, m_state);
-                    // save() opens Save-As if there's no current path; the
-                    // deferred action fires once sceneDirty drops to false.
                     m_sceneIO.save(ctx, m_state);
-                    m_state.afterSaveAction = action;
+                    m_state.actionStage = EditorState::ActionStage::Saving;
                     break;
                 case DialogResult::Alt:
-                    performSceneAction(ctx, action);
+                    m_state.actionStage = EditorState::ActionStage::Run;
                     break;
                 case DialogResult::Cancel:
-                    // Abandon the project that was waiting on this answer, or
-                    // the prompt reopens next frame and there is no way out.
-                    m_state.pendingProjectOpen.clear();
+                    m_state.clearSceneAction();
                     break;
                 default: break;
             }
             endDialog();
         }
-        if (!want) m_state.confirmAction = EditorState::PendingSceneAction::None;
+        // Dismissed without answering (Escape, or the window closing): the
+        // request goes with it, or the prompt reopens with no way out.
+        if (!want && m_state.pendingAction != EditorState::SceneAction::None
+                && m_state.actionStage == EditorState::ActionStage::Ask) {
+            m_state.clearSceneAction();
+        }
     }
 
     // Toast renders in both visible/hidden paths - failure feedback should
@@ -463,19 +454,6 @@ void EditorSystem::update(FrameContext& ctx) {
         m_uiSystem.setEditorPointerCapture(blockMouse);
     }
 
-    EditorContext ec{
-        ctx,
-        m_state,
-        m_cameraController,
-        m_renderSystem,
-        m_visibilitySystem,
-        m_materialPreviews,
-        m_audioSystem,
-        m_errorLog,
-        {},
-        {}
-    };
-
     m_shortcuts.process(ec, m_sceneIO);
 
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -503,22 +481,13 @@ void EditorSystem::update(FrameContext& ctx) {
 
         PROFILE_SCOPE("Editor/Panels");
         m_menuBar.draw(ec, m_sceneIO);
-        // Once, on the first UI frame: settings have been loaded by now, so the
-        // startup project takes its place at the front of the list.
-        if (!m_notedStartupProject) {
-            m_project.noteCurrentProject(ec);
-            m_notedStartupProject = true;
-        }
-        m_project.drawDialog(ec, m_scriptModule, m_sceneIO);
-        // ModelImportDialog is owned here (not in the menu bar) so it
-        // serves all three import-intent sources: the menu, the Inspector
-        // empty-state button, and the Hierarchy "+" menu.
+        // The three dialogs are owned here rather than by the menu bar, because
+        // each serves more than one place that asks for it and a menu closes the
+        // frame its item is clicked.
+        m_openProject.draw(m_state);
         m_modelImport.draw(ctx.scene, ctx.resources, m_state);
-        // Same reason for the prefab picker: the Create menu it hangs off is
-        // drawn from the menu bar, the Hierarchy and the Inspector alike.
         m_placePrefab.draw(ctx.scene, ctx.resources, m_state);
         drawWorkspace(ec);
-        openPendingProject(ec);
 
     } else {
         ImGui::PopStyleColor();

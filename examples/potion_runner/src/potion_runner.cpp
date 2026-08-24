@@ -788,7 +788,7 @@ void PotionRunner::randomizeObstacle(Obstacle& o) {
     o.hasRamp    = false;       // only steady trains grow a boarding ramp below
     o.isTrain    = false;       // flips in the train branch; gates dressing + headlight
 
-    // ---- solvability guard 1 ------------------------------------------------
+    // Solvability guard 1.
     // Two recycles can share a z window: a faster train slowly closes on the
     // obstacle just ahead of it (the previous recycle). Side-by-side blockers
     // are survivable ONLY if the middle lane stays free - any lane can step to
@@ -847,9 +847,9 @@ void PotionRunner::randomizeObstacle(Obstacle& o) {
             m_convoyLeft = 2 + (frand() < 0.4f ? 1 : 0);
             m_convoyLane = o.lane;
         }
-        // ---- solvability guard 2: a fast train closes on the previous
-        // recycle; if that pairing would block two lanes without keeping the
-        // middle free, it runs steady instead and the gap never closes.
+        // Solvability guard 2: a fast train closes on the previous recycle; if
+        // that pairing would block two lanes without keeping the middle free,
+        // it runs steady instead and the gap never closes.
         if (o.relFactor > 0.0f && m_prevBlocking && !middleStaysFree(o.lane, m_prevLane)) {
             o.relFactor = 0.0f;
         }
@@ -1399,7 +1399,7 @@ void PotionRunner::buildUI() {
         return b;
     };
 
-    // ---- HUD: score / distance / coins, top-left, always visible ----
+    // HUD: score / distance / coins, top-left, always visible.
     EntityId hud = m_scene->createEntity();
     m_scene->add(hud, makeName("Potion HUD"));
     m_scene->add(hud, UICanvas{});
@@ -1436,7 +1436,7 @@ void PotionRunner::buildUI() {
                              TC, TC, {0.0f, 78.0f}, {420.0f, 56.0f}, hud);
     m_scene->get<UIElement>(m_uiMilestone).visible = false;
 
-    // ---- Start screen ----
+    // Start screen.
     EntityId start = m_scene->createEntity();
     m_scene->add(start, makeName("Potion Start"));
     UICanvas startCanvas;
@@ -1460,7 +1460,7 @@ void PotionRunner::buildUI() {
     makeText("Start Tip", "run up the white ramps to ride the trains  -  roof coins pay double", 15.0f,
              GOLD, UIText::Align::Center, TC, TC, {0.0f, 326.0f}, {660.0f, 22.0f}, startPanel);
 
-    // ---- Game over ----
+    // Game over screen.
     EntityId over = m_scene->createEntity();
     m_scene->add(over, makeName("Potion Game Over"));
     UICanvas overCanvas;
