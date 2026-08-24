@@ -11,6 +11,36 @@
 
 namespace Vkm::Engine {
 
+void ViewportOverlay::drawNoCameraNotice(EditorContext& ec) {
+    const FrameContext& ctx = ec.frame;
+    if (ctx.visibility && ctx.visibility->hasCamera) return;
+
+    // Centred in the viewport, which is the empty thing being explained. Two
+    // lines in the shape the Inspector's empty state uses: what is wrong, then
+    // the routes back.
+    const char* headline = "No active camera - nothing to render from";
+    const char* detail   = "Entity > Create > Camera, or tick Active on a Camera card.";
+
+    const ImVec2 headSize = ImGui::CalcTextSize(headline);
+    const ImVec2 detailSize = ImGui::CalcTextSize(detail);
+    const float  lineGap  = ImGui::GetTextLineHeightWithSpacing() - ImGui::GetTextLineHeight();
+    const float  blockH   = headSize.y + lineGap + detailSize.y;
+    const ImVec2 center(ec.viewportPos.x + ec.viewportSize.x * 0.5f,
+                        ec.viewportPos.y + ec.viewportSize.y * 0.5f);
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImVec2 blockMin(center.x - std::max(headSize.x, detailSize.x) * 0.5f,
+                          center.y - blockH * 0.5f);
+    dl->AddRectFilled(ImVec2(blockMin.x - 14.0f, blockMin.y - 12.0f),
+                      ImVec2(blockMin.x + std::max(headSize.x, detailSize.x) + 14.0f,
+                             blockMin.y + blockH + 12.0f),
+                      ImGui::GetColorU32(EditorStyle::OVERLAY_BG), 6.0f);
+    dl->AddText(ImVec2(center.x - headSize.x * 0.5f, blockMin.y),
+                ImGui::GetColorU32(EditorStyle::WARNING), headline);
+    dl->AddText(ImVec2(center.x - detailSize.x * 0.5f, blockMin.y + headSize.y + lineGap),
+                ImGui::GetColorU32(ImGuiCol_TextDisabled), detail);
+}
+
 void ViewportOverlay::drawNavigationGizmo(EditorContext& ec) {
     const FrameContext& ctx = ec.frame;
     m_hovered = false;

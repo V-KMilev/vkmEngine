@@ -243,6 +243,21 @@ Sound** when it is not spatial, which is the same split by kind a `Light` makes
 between Dir / Point / Spot - and one carrying an `AudioListener` is a
 **Listener**; the tooltip digest lists both.
 
+### A card greys what the scene, not the author, is writing
+
+The Light card on the scene's key light is the case: with **World > Procedural
+Sky** on, `SkySystem` writes that light's rotation, colour and intensity from
+the Environment every frame, so a drag on Colour or Intensity there is undone
+before the next frame draws and the value the scene saves is the sky's. The
+card offered all three like any other light's, which made a working widget look
+broken and an authored colour vanish into the file.
+
+It now says so - one line naming the three fields and where they are authored -
+and disables the two it does not own, the same shape the Procedural Sky card
+already uses for the fields that depend on its own toggle. Which light the sky
+is driving comes from `findKeyLight`, the engine's own answer, so the card and
+the system cannot disagree.
+
 ### A card names what its component is waiting for
 
 A component that cannot work is the editor's worst failure to report, because
@@ -350,6 +365,13 @@ Available commands (in `framework/editor_commands.h`):
   `Name`, which has no Remove - an entity without a name falls back to its type
   label. Remove snapshots the prior value so undo restores it exactly, not a
   default-constructed copy.
+- `ScriptEditCommand`: the Script card's whole vocabulary - the component
+  added or removed, a behavior attached or removed, a field typed into - as one
+  step over the component's serialized form, with "no ScriptComponent" spelled
+  as an empty document. A behavior list is move-only, so there is no value for
+  `ComponentEditCommand<T>` to copy; the JSON `EntitySnapshot` already
+  resurrects a deleted entity's scripts from copies fine. Coalesces within a
+  gesture like the rest, so a drag on a behavior's float field is one step.
 - `CreateEntityCommand`: captures the post-create slot so redo
   recreates at the same slot.
 - `DestroySubtreeCommand`: captures the entire subtree (entity plus
@@ -534,6 +556,14 @@ small per-frame bake budget, so the Asset Browser grid amortizes thumbnail
 generation across frames while the Material Editor's live view re-renders each
 frame.
 
+Right-clicking any of the three tabs' entries assigns it to the selected
+entity, and that assignment is the same edit the Inspector's asset dropdown
+makes - so it takes the same road, `pushEdit`, which is what gives it an undo
+step and what turns it into a prefab override when the entity is an instance.
+Writing the component directly here instead left the instance's override list
+empty while the viewport showed the new asset, and the next save wrote the
+prefab's own back over it with nothing said.
+
 The Asset Browser's third tab is a **list**, not a grid, because a sound has no
 picture. What it has is a length, a layout and a sound, so the row shows the
 first two and a transport gives the third - hearing a clip is what previewing
@@ -596,6 +626,17 @@ like the menu item did nothing.
 FPS-style fly camera; a `System` on `SystemStage::Input`. Updates the
 active camera's transform from input each frame.
 
+**It starts disabled and the editor is what enables it.** The shared bootstrap
+registers the controller for both hosts, so the switch decides whether a
+shipped game gets fly controls, and right-button-down puts the window in
+`CursorMode::Disabled` - hidden, grabbed and re-centred every frame. Measured
+on `vkm_runtime` before this was settled: holding the right button warped the
+pointer to the centre of the window and snapped it back whenever it moved, and
+the game had no way to decline, because `BehaviorContext` carries the scene,
+the resources, the window and the events, and no systems. Off by default rather
+than turned off by the runtime, so a host that says nothing gets a controller
+that does nothing instead of one that takes the cursor.
+
 ### Controls
 
 | Input                          | Action                            |
@@ -626,6 +667,27 @@ class CameraControllerSystem : public System {
 
 Keybindings are configurable through the keybinds system; see the
 Preferences window's Keybinds tab.
+
+### Flying the camera is an edit
+
+There is no separate editor camera: the controller flies the scene's active
+`Camera` entity, which is what makes "you move what you see" true and what lets
+a viewport click pick through the same view the renderer draws. That entity's
+`Transform` is also a value the scene file stores - so a look around, a scroll
+dolly, Frame Selected and a view-cube snap all change authored data.
+
+They mark the scene unsaved, through `CameraControllerSystem::takeCameraMoved`:
+the controller reports that it moved the camera and `EditorSystem` marks the
+scene dirty, outside a play session (inside one the world is the simulation's
+copy and Stop puts the camera back with it). Before that, navigation left the
+title clean while the pose in the world and the pose on disk drifted apart, and
+the next save made for an unrelated reason wrote the parked viewport over the
+framing somebody had chosen, silently.
+
+Navigation deliberately pushes **no** undo step. A drag is not a discrete edit,
+and a bounded history filled with how you got to a viewpoint would push the
+edits worth undoing off the end of it. The dirty marker is the honest half: it
+says the file no longer matches the scene, which is the fact a save needs.
 
 ## Transform gizmo
 

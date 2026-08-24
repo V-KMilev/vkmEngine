@@ -201,6 +201,12 @@ void load(const nlohmann::json& j, Collider& c) {
 }
 
 namespace {
+
+// Names the loaders could not resolve since the scene loader last drained them.
+// A free list rather than a parameter because the loaders are one overload per
+// component, with nowhere to return a second value from.
+std::vector<UnresolvedRef> g_unresolved;
+
 // Resolve a saved asset name to a live handle. A name the asset graph cannot
 // answer leaves the component's slot empty: the file referenced something the
 // load did not bring in, and what the author sees is a field that used to hold
@@ -208,17 +214,30 @@ namespace {
 // the log, so the editor says it out loud (a toast, and the entry stays in
 // Bottom > Errors) instead of recording it where only a log reader would find
 // it. The runtime installs no sink and still gets the logged line.
+//
+// The name is also kept, under the field it was read from, so the caller can
+// hand it to the entity and a later save can write it back. Saying it once is
+// not enough on its own: the slot is empty either way, and a save that knew
+// only that would put an empty string where the author's reference was.
 template<typename Asset>
-Handle<Asset> resolveAssetRef(const ResourceManager& r, const std::string& name, const char* what) {
+Handle<Asset> resolveAssetRef(const ResourceManager& r, const std::string& name,
+                              const char* what, const char* field) {
     if (name.empty()) return {};
     Handle<Asset> h = r.findByName<Asset>(name);
     if (!h) {
         reportError("Scene", std::string(what) + " '" + name + "'",
             "reference left unresolved - the asset is not loaded, so the slot is empty");
+        g_unresolved.push_back({field, name, ASSET_TYPE<Asset>});
     }
     return h;
 }
 } // namespace
+
+std::vector<UnresolvedRef> takeUnresolvedRefs() {
+    std::vector<UnresolvedRef> taken;
+    taken.swap(g_unresolved);
+    return taken;
+}
 
 nlohmann::json save(const Mesh& m, const ResourceManager& resources) {
     return {
@@ -229,8 +248,8 @@ nlohmann::json save(const Mesh& m, const ResourceManager& resources) {
     };
 }
 void load(const nlohmann::json& j, Mesh& m, const ResourceManager& resources) {
-    m.mesh        = resolveAssetRef<MeshAsset>    (resources, j.value("mesh",     std::string{}), "mesh");
-    m.material    = resolveAssetRef<MaterialAsset>(resources, j.value("material", std::string{}), "material");
+    m.mesh        = resolveAssetRef<MeshAsset>    (resources, j.value("mesh",     std::string{}), "mesh", "mesh");
+    m.material    = resolveAssetRef<MaterialAsset>(resources, j.value("material", std::string{}), "material", "material");
     m.visible     = j.value("visible",     m.visible);
     m.castShadows = j.value("castShadows", m.castShadows);
 }
@@ -246,8 +265,8 @@ nlohmann::json save(const Animator& a, const ResourceManager& resources) {
     };
 }
 void load(const nlohmann::json& j, Animator& a, const ResourceManager& resources) {
-    a.skeleton = resolveAssetRef<SkeletonAsset>     (resources, j.value("skeleton", std::string{}), "skeleton");
-    a.clip     = resolveAssetRef<AnimationClipAsset>(resources, j.value("clip",     std::string{}), "clip");
+    a.skeleton = resolveAssetRef<SkeletonAsset>     (resources, j.value("skeleton", std::string{}), "skeleton", "skeleton");
+    a.clip     = resolveAssetRef<AnimationClipAsset>(resources, j.value("clip",     std::string{}), "clip", "clip");
     a.time     = j.value("time",    a.time);
     a.speed    = j.value("speed",   a.speed);
     a.playing  = j.value("playing", a.playing);
@@ -273,7 +292,7 @@ void load(const nlohmann::json& j, LOD& l, const ResourceManager& resources) {
     if (!j.contains("levels")) return;
     for (const auto& entry : j["levels"]) {
         MeshHandle mesh = resolveAssetRef<MeshAsset>(
-            resources, entry.value("mesh", std::string{}), "LOD mesh");
+            resources, entry.value("mesh", std::string{}), "LOD mesh", "levels");
         if (!mesh) continue;
         l.levels.push_back({mesh, entry.value("maxDistance", 0.0f)});
     }
@@ -287,7 +306,7 @@ nlohmann::json save(const Decal& d, const ResourceManager& resources) {
     };
 }
 void load(const nlohmann::json& j, Decal& d, const ResourceManager& resources) {
-    d.material  = resolveAssetRef<MaterialAsset>(resources, j.value("material", std::string{}), "material");
+    d.material  = resolveAssetRef<MaterialAsset>(resources, j.value("material", std::string{}), "material", "material");
     d.angleFade = j.value("angleFade", d.angleFade);
     d.opacity   = j.value("opacity",   d.opacity);
 }
@@ -311,7 +330,7 @@ nlohmann::json save(const AudioSource& s, const ResourceManager& resources) {
     };
 }
 void load(const nlohmann::json& j, AudioSource& s, const ResourceManager& resources) {
-    s.clip        = resolveAssetRef<AudioClipAsset>(resources, j.value("clip", std::string{}), "sound");
+    s.clip        = resolveAssetRef<AudioClipAsset>(resources, j.value("clip", std::string{}), "sound", "clip");
     s.volume      = j.value("volume",      s.volume);
     s.pitch       = j.value("pitch",       s.pitch);
     s.loop        = j.value("loop",        s.loop);
@@ -388,11 +407,11 @@ nlohmann::json save(const Animation& a) {
         {"position", saveTrack(a.positionTrack, [](const glm::vec3& v) { return vec3ToJson(v); })},
         {"rotation", saveTrack(a.rotationTrack, [](const glm::quat& q) { return quatToJson(q); })},
         {"scale",    saveTrack(a.scaleTrack,    [](const glm::vec3& v) { return vec3ToJson(v); })},
-        {"time",     a.time},
-        {"length",   a.length},
-        {"speed",    a.speed},
-        {"playing",  a.playing},
-        {"looping",  a.looping},
+        {"time",        a.time},
+        {"length",      a.length},
+        {"speed",       a.speed},
+        {"playOnStart", a.playOnStart},
+        {"looping",     a.looping},
     };
 }
 
@@ -400,11 +419,11 @@ void load(const nlohmann::json& j, Animation& a) {
     if (j.contains("position")) loadTrack(j["position"], a.positionTrack, [](const nlohmann::json& v) { return jsonToVec3(v); });
     if (j.contains("rotation")) loadTrack(j["rotation"], a.rotationTrack, [](const nlohmann::json& v) { return jsonToQuat(v); });
     if (j.contains("scale"))    loadTrack(j["scale"],    a.scaleTrack,    [](const nlohmann::json& v) { return jsonToVec3(v); });
-    a.time    = j.value("time",    a.time);
-    a.length  = j.value("length",  a.length);
-    a.speed   = j.value("speed",   a.speed);
-    a.playing = j.value("playing", a.playing);
-    a.looping = j.value("looping", a.looping);
+    a.time        = j.value("time",        a.time);
+    a.length      = j.value("length",      a.length);
+    a.speed       = j.value("speed",       a.speed);
+    a.playOnStart = j.value("playOnStart", a.playOnStart);
+    a.looping     = j.value("looping",     a.looping);
 }
 
 namespace {

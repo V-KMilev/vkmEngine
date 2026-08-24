@@ -39,6 +39,22 @@ ImGui** - ImGui stays the editor's own tooling, never the shipped game UI.
 `screenRect` (on `UIElement`, a `UIRect`) and `state` (on `UIButton`) are
 resolved every frame, so they are **not** reflected and do not serialize.
 
+Two structural requirements follow from the walk, and the editor names both on
+the card rather than leaving them to be discovered: an element with **no
+`UICanvas` ancestor** is never visited (the walk is only ever seeded from a
+canvas), and a `UIImage` / `UIText` / `UIButton` on an entity with **no
+`UIElement`** is never reached (`resolveElement` returns before it looks for
+any of the three). Both leave a card that renders in full and a viewport with
+nothing in it - see
+[the editor](../editor.md#a-card-names-what-its-component-is-waiting-for).
+
+The first requirement is **strictly** an ancestor: the seed is
+`forEachChild(canvas)`, so a `UIElement` put on the canvas entity itself is
+never resolved either. `hasCanvasAncestor` in `ecs/component/ui/ui_canvas.h` is
+the one definition of that rule, the way `findActiveCamera` and `findKeyLight`
+are of theirs, because the Inspector card and the interactive reparent both ask
+it and must not disagree over the same entity.
+
 ## Per-frame flow
 
 `UISystem` runs in the **Transform stage, right after `HierarchySystem`** - UI
@@ -112,7 +128,10 @@ startup only.
 
 `UIText` references its font by **asset name**, not a handle: names are the
 serializable asset identity, so the component stays plain data, and the
-per-frame `findByName` is O(1).
+per-frame `findByName` is O(1). A name nothing answers to draws nothing at all -
+`emitText` returns on the null handle - so the inspector's UI Text card reports
+an unresolved font in red, since that is where the name is typed and every other
+asset reference on the panel already reports one the project cannot answer.
 
 ## Interaction
 

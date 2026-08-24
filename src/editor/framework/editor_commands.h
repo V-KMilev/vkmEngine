@@ -16,6 +16,7 @@
 #include "ecs/component/audio/audio_listener.h"
 #include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/hierarchy.h"
+#include "ecs/component/core/missing_assets.h"
 #include "ecs/component/core/name.h"
 #include "ecs/component/physics/character_controller.h"
 #include "ecs/component/physics/collider.h"
@@ -241,6 +242,63 @@ class ComponentEditCommand : public Command {
 };
 
 /**
+ * @brief Undoable edit of an entity's whole ScriptComponent, held as JSON.
+ *
+ * A behavior list is move-only, so a script edit has no pair of values for
+ * ComponentEditCommand<T> to copy. Its serialized form copies fine, and it is
+ * the same document EntitySnapshot::scriptJson already resurrects a deleted
+ * entity's scripts from - so the component appearing, a behavior being
+ * attached, a field being typed into, a row being removed and the card's x are
+ * one command over two strings, with "the entity has no ScriptComponent"
+ * spelled as an empty one.
+ *
+ * Coalesces with the next script edit on the same entity inside one gesture,
+ * for the reason ComponentEditCommand does: a drag on a behavior's float field
+ * pushes on every frame it changes.
+ */
+class ScriptEditCommand : public Command {
+    public:
+        ScriptEditCommand(EntityId e, std::string before, std::string after, const char* label)
+            : m_entity(e), m_before(std::move(before)), m_after(std::move(after)), m_label(label) {}
+
+        void redo(Scene& scene, EditorState& state) override;
+        void undo(Scene& scene, EditorState& state) override;
+        const char* label() const override { return m_label; }
+        bool tryMerge(Command& incoming) override;
+        bool addresses(uint32_t slotIndex) const override { return m_entity.index == slotIndex; }
+
+        /**
+         * @brief The entity's ScriptComponent as JSON, or empty when it has none.
+         *
+         * The "before" of any script edit, and the "after" once it has been
+         * applied. Exposed because the inspector applies script edits live -
+         * the field widgets write into the behavior itself - so the panel is
+         * what reads the two states around one.
+         *
+         * @param scene Scene holding the entity.
+         * @param id Entity to read.
+         * @return The serialized component, or an empty string when absent.
+         */
+        static std::string capture(const Scene& scene, EntityId id);
+
+    private:
+        /**
+         * @brief Put @p json back on @p id, removing the component when empty.
+         *
+         * @param scene Scene holding the entity.
+         * @param id Entity to write.
+         * @param json A ScriptComponent document, or empty for no component.
+         */
+        static void restore(Scene& scene, EntityId id, const std::string& json);
+
+    private:
+        EntityId    m_entity;
+        std::string m_before;
+        std::string m_after;
+        const char* m_label;
+};
+
+/**
  * @brief The value-copyable components an EntitySnapshot round-trips, as
  * (Type, field-name) rows.
  *
@@ -258,6 +316,7 @@ class ComponentEditCommand : public Command {
  */
 #define VKM_EDITOR_SNAPSHOT_COMPONENTS(X) \
     X(Transform,       transform)         \
+    X(MissingAssets,   missingAssets)     \
     X(Mesh,            mesh)              \
     X(LOD,             lod)               \
     X(Light,           light)            \
@@ -403,6 +462,7 @@ class CreateEntityCommand : public Command {
         void redo(Scene&, EditorState&) override;
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
+        bool addresses(uint32_t slotIndex) const override { return m_snap.slotIndex == slotIndex; }
 
     private:
         EntitySnapshot m_snap;
@@ -467,7 +527,7 @@ class PlacePrefabCommand : public Command {
         void redo(Scene&, EditorState&) override;
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
-        bool addresses(uint32_t slotIndex) const override { return m_snap.slotIndex == slotIndex; }
+        bool addresses(uint32_t slotIndex) const override { return m_rootSlot == slotIndex; }
 
     private:
         ResourceManager* m_resources;
@@ -524,6 +584,7 @@ class PrefabOverrideCommand : public Command {
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
         bool tryMerge(Command& incoming) override;
+        bool addresses(uint32_t slotIndex) const override { return m_root.index == slotIndex; }
 
     private:
         /**
@@ -564,7 +625,14 @@ class ReparentCommand : public Command {
         void redo(Scene&, EditorState&) override;
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
-        bool addresses(uint32_t slotIndex) const override { return m_rootSlot == slotIndex; }
+        // Either end counts: the step re-links the child under one of the two
+        // parents, so a step that could put an entity inside a subtree is as
+        // outlived as one that moves the subtree's own entity.
+        bool addresses(uint32_t slotIndex) const override {
+            return m_child.index == slotIndex
+                || m_oldParent.index == slotIndex
+                || m_newParent.index == slotIndex;
+        }
 
     private:
         EntityId    m_child;
@@ -593,14 +661,7 @@ class SetActiveCameraCommand : public Command {
         void redo(Scene&, EditorState&) override;
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
-        // Either end counts: the step re-links the child under one of the two
-        // parents, so a step that could put an entity inside a subtree is as
-        // outlived as one that moves the subtree's own entity.
-        bool addresses(uint32_t slotIndex) const override {
-            return m_child.index == slotIndex
-                || m_oldParent.index == slotIndex
-                || m_newParent.index == slotIndex;
-        }
+        bool addresses(uint32_t slotIndex) const override;
 
     private:
         EntityId m_target;
@@ -646,7 +707,6 @@ class MaterialEditCommand : public Command {
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
         bool tryMerge(Command& incoming) override;
-        bool addresses(uint32_t slotIndex) const override { return m_root.index == slotIndex; }
 
     private:
         /**
@@ -686,7 +746,6 @@ class RenameAssetCommand : public Command {
         void redo(Scene&, EditorState&) override;
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
-        bool addresses(uint32_t slotIndex) const override;
 
     private:
         ResourceManager* m_resources;

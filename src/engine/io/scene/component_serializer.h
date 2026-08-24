@@ -1,8 +1,12 @@
 #pragma once
 
+#include <string>
+#include <vector>
+
 #include <nlohmann/json.hpp>
 
 #include "ecs/environment.h"
+#include "resource/asset_type.h"
 #include "ecs/component/animation/animation.h"
 #include "ecs/component/animation/animator.h"
 #include "ecs/component/animation/bone_socket.h"
@@ -196,6 +200,41 @@ namespace ComponentSerializer {
      */
     nlohmann::json save(const ScriptComponent&);
     void load(const nlohmann::json&, ScriptComponent&);
+
+    /**
+     * @brief An asset name a load has just failed to resolve, and the field it
+     * was read from.
+     *
+     * The field is the scene format's key rather than the human word the error
+     * message uses, because the caller's job with one of these is to put the
+     * name back where it came from.
+     */
+    struct UnresolvedRef {
+        std::string field;
+        std::string name;
+        AssetType   type = AssetType::Count;  ///< Which kind the loader looked it up as.
+    };
+
+    /**
+     * @brief Take the references the loads since the last call could not resolve.
+     *
+     * A component's loader resolves names against the asset graph and leaves
+     * the slot empty when one does not answer; the name is then the only record
+     * of what belonged there, and a save that knows nothing about it writes an
+     * empty string over it. Collected here rather than returned, because the
+     * loaders are one overload per component with no room for a second output,
+     * and drained by the scene loader, which knows which entity and which
+     * component the names belong to.
+     *
+     * Drain after every component load, whether or not that component
+     * references assets and whether or not it threw: the list outlives the
+     * scene it was filled for - it is a free list, not a member - so an
+     * undrained one attaches the previous component's misses to the next
+     * entity, in the next file, in the next open.
+     *
+     * @return The unresolved references, oldest first; empty when all resolved.
+     */
+    std::vector<UnresolvedRef> takeUnresolvedRefs();
 
 } // namespace ComponentSerializer
 

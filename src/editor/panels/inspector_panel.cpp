@@ -14,10 +14,12 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <misc/cpp/imgui_stdlib.h>
 
+#include "core/clock.h"
 #include "ecs/component/animation/animation.h"
 #include "ecs/component/animation/bone_socket.h"
 #include "ecs/component/audio/audio_listener.h"
 #include "ecs/component/audio/audio_source.h"
+#include "ecs/component/core/missing_assets.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/component/physics/collider.h"
 #include "ecs/component/physics/rigidbody.h"
@@ -25,6 +27,7 @@
 #include "ecs/component/prefab/prefab_instance.h"
 #include "ecs/component/render/decal.h"
 #include "ecs/component/render/irradiance_volume.h"
+#include "ecs/component/render/light.h"
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/component/render/reflection_probe.h"
 #include "ecs/component/ui/ui_button.h"
@@ -43,8 +46,10 @@
 #include "io/asset/asset_library.h"
 #include "io/project_paths.h"
 #include "resource/resource_manager.h"
+#include "resource/asset/font_asset.h"
 #include "resource/asset/skeleton_asset.h"
 #include "system/audio/audio_system.h"
+#include "system/camera/camera_controller_system.h"
 #include "system/physics/collider_fit.h"
 #include "system/script/behavior.h"
 #include "system/script/behavior_field_visitor.h"
@@ -56,6 +61,11 @@
 namespace Vkm::Engine {
 
 namespace {
+// How far the Camera card holds the two clip planes apart. They bound each
+// other, but merely touching is already degenerate: glm::perspective divides by
+// (zFar - zNear) and the cluster pass takes log(zFar / zNear).
+constexpr float CLIP_PLANE_SEPARATION = 0.001f;
+
 // Generic reflected-field -> ImGui inspector. The editor only sees a Behavior*,
 // so a behavior's authored fields are edited through this visitor (the same
 // bridge serialization uses).
@@ -171,6 +181,18 @@ bool pickAsset(const char* comboId, const char* label, ResourceManager& resource
     });
 
     bool picked = false;
+
+    // Clearing the slot is offered for the same reason pickBone offers it: an
+    // empty slot is a state the editor hands you (Create > Audio Source and
+    // Create > Decal both arrive with one), it is what the combo previews, and
+    // it round-trips through the scene file - so a combo that lists everything
+    // except the value it is showing can only be left by deleting the component
+    // and authoring it again.
+    if (ImGui::Selectable("(none)", !currentHandle)) {
+        currentHandle = Handle{};
+        picked = true;
+    }
+
     ImGuiListClipper clipper;
     clipper.Begin(static_cast<int>(rows.size()));
     while (clipper.Step()) {
@@ -332,6 +354,19 @@ void editComponentCard(Scene& scene, ResourceManager& resources, EditorState& st
     }
 }
 
+// The line every UI content card owes when its entity carries no UIElement.
+//
+// The rect a UIImage, UIText or UIButton draws into is the UIElement's, and
+// UISystem returns from resolveElement before it looks for any of the three
+// when there is none. All three cards otherwise render in full - four button
+// state colours, a text string, a colour swatch - for a component that is
+// never reached, so the sentence is one thing said in one place.
+void warnNoUIElement(const Scene& scene, EntityId id) {
+    if (scene.has<UIElement>(id)) return;
+    ImGui::TextColored(EditorStyle::DANGER, "No UI Element: nothing to give it a rect");
+    ImGui::TextDisabled("Nothing draws for it until one is added.");
+}
+
 // The radius of the capsule an entity stands on, or 0 when it has none. The
 // first capsule, because a character wears exactly one and a compound collider
 // is a mesh fit, which is all boxes.
@@ -379,6 +414,23 @@ void InspectorPanel::draw(EditorContext& ec) {
 
     drawIdentityHeader(scene, ctx.resources, state, id);
 
+    // Said once for the whole entity rather than per card, because the fields
+    // themselves cannot say it: an asset reference the load could not resolve
+    // leaves the slot empty, and an empty slot is what a field nobody ever
+    // filled looks like too. The names are kept and written back by the save,
+    // so this is a diagnosis and not a warning about losing them - what it
+    // answers is "the mesh is gone and I cannot see why".
+    if (scene.has<MissingAssets>(id)) {
+        const MissingAssets& missing = scene.get<MissingAssets>(id);
+        ImGui::TextColored(EditorStyle::DANGER, "%zu asset reference(s) here did not load:",
+                           missing.refs.size());
+        for (const MissingAssetRef& ref : missing.refs) {
+            ImGui::TextDisabled("  %s.%s  '%s'", ref.component.c_str(), ref.field.c_str(),
+                                ref.name.c_str());
+        }
+        ImGui::TextDisabled("Kept as written: the save puts them back rather than emptying them.");
+    }
+
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
@@ -392,15 +444,15 @@ void InspectorPanel::draw(EditorContext& ec) {
     if (scene.has<Collider>(id))   drawColliderSection(scene, ctx.resources, state, id);
     if (scene.has<CharacterController>(id))
         drawCharacterControllerSection(scene, ctx.resources, state, id);
-    if (scene.has<Camera>(id))     drawCameraSection(scene, ctx.resources, state, id);
+    if (scene.has<Camera>(id))     drawCameraSection(ec, id);
     if (scene.has<ReflectionProbe>(id)) drawReflectionProbeSection(scene, ctx.resources, state, id);
     if (scene.has<Decal>(id))          drawDecalSection(scene, ctx.resources, state, id);
-    if (scene.has<ParticleEmitter>(id)) drawParticleSection(scene, ctx.resources, state, id);
+    if (scene.has<ParticleEmitter>(id)) drawParticleSection(ec, id);
     if (scene.has<AudioSource>(id))     drawAudioSourceSection(ec, id);
     if (scene.has<AudioListener>(id))   drawAudioListenerSection(ec, id);
     if (scene.has<IrradianceVolume>(id)) drawIrradianceVolumeSection(scene, ctx.resources, state, id);
     if (scene.has<LOD>(id))            drawLODSection(scene, ctx.resources, state, id);
-    if (scene.has<Animation>(id))  drawAnimationSection(scene, ctx.resources, state, id);
+    if (scene.has<Animation>(id))  drawAnimationSection(ec, id);
     if (scene.has<Animator>(id))   drawAnimatorSection(scene, ctx.resources, state, id);
     if (scene.has<BoneSocket>(id)) drawBoneSocketSection(scene, ctx.resources, state, id);
     if (scene.has<ScriptComponent>(id)) drawScriptSection(scene, state, id);
@@ -528,14 +580,24 @@ void InspectorPanel::drawUIElementSection(Scene& scene, ResourceManager& resourc
         [&](UIElement& e) {
             bool changed = false;
             changed |= propRow("Anchor", "Parent anchor point, 0..1 (top-left to bottom-right).",
-                [&] { return ImGui::DragFloat2("##v", glm::value_ptr(e.anchor), 0.005f, 0.0f, 1.0f, "%.3f"); });
+                [&] { return ImGui::DragFloat2("##v", glm::value_ptr(e.anchor), 0.005f, 0.0f, 1.0f, "%.3f", PROP_CLAMP); });
             changed |= propRow("Pivot", "Element pivot, 0..1; the point placed at the anchor.",
-                [&] { return ImGui::DragFloat2("##v", glm::value_ptr(e.pivot), 0.005f, 0.0f, 1.0f, "%.3f"); });
+                [&] { return ImGui::DragFloat2("##v", glm::value_ptr(e.pivot), 0.005f, 0.0f, 1.0f, "%.3f", PROP_CLAMP); });
             changed |= propRow("Position", "Offset from the anchor, in reference pixels.",
                 [&] { return ImGui::DragFloat2("##v", glm::value_ptr(e.position), 0.5f, 0.0f, 0.0f, "%.1f"); });
             changed |= propRow("Size", "Element size, in reference pixels.",
-                [&] { return ImGui::DragFloat2("##v", glm::value_ptr(e.size), 0.5f, 0.0f, 8192.0f, "%.1f"); });
+                [&] { return ImGui::DragFloat2("##v", glm::value_ptr(e.size), 0.5f, 0.0f, 8192.0f, "%.1f", PROP_CLAMP); });
             changed |= propCheckbox("Visible", &e.visible, "Hides this element and its whole subtree.");
+
+            // The mistake that leaves a perfectly healthy-looking card in front
+            // of an empty viewport, and the one Create > UI hands an author who
+            // had nothing selected. Said in the same two-line shape the Bone
+            // Socket card uses for the structurally identical mistake: what is
+            // wrong, then the drag that fixes it.
+            if (!hasCanvasAncestor(scene, id)) {
+                ImGui::TextColored(EditorStyle::DANGER, "No UI Canvas above this: nothing draws");
+                ImGui::TextDisabled("Drag this entity onto a canvas in the Hierarchy.");
+            }
             return changed;
         });
 }
@@ -545,7 +607,9 @@ void InspectorPanel::drawUIImageSection(Scene& scene, ResourceManager& resources
     editComponentCard<UIImage>(scene, resources, state, id, "UI Image", EditorStyle::Accent::UI,
                                "Edit UI Image", "Remove UI Image",
         [&](UIImage& i) {
-            return propColor4("Color", glm::value_ptr(i.color));
+            const bool changed = propColor4("Color", glm::value_ptr(i.color));
+            warnNoUIElement(scene, id);
+            return changed;
         });
 }
 
@@ -561,6 +625,24 @@ void InspectorPanel::drawUITextSection(Scene& scene, ResourceManager& resources,
             changed |= propEnumCombo("Align", t.align);
             changed |= propEnumCombo("V Align", t.valign);
             changed |= propColor4("Color", glm::value_ptr(t.color));
+
+            warnNoUIElement(scene, id);
+
+            // The font is reached by name every frame and an unresolved one
+            // draws nothing at all, which is indistinguishable from an element
+            // that is off-screen or hidden. Every other asset reference on this
+            // panel reports a name the project cannot answer; this one is a
+            // plain text box, so the card has to.
+            if (!resources.findByName<FontAsset>(t.font)) {
+                // Wrapped, for the reason the listener card's warning is: the
+                // name in it is one the author typed, and unwrapped it leaves
+                // the panel at any default width.
+                ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::DANGER);
+                ImGui::TextWrapped("No font named '%s' is loaded",
+                                   t.font.empty() ? "" : t.font.c_str());
+                ImGui::PopStyleColor();
+                ImGui::TextDisabled("Nothing draws until the name matches one.");
+            }
             return changed;
         });
 }
@@ -577,6 +659,8 @@ void InspectorPanel::drawUIButtonSection(Scene& scene, ResourceManager& resource
             changed |= propColor4("Hover", glm::value_ptr(b.hoverColor));
             changed |= propColor4("Pressed", glm::value_ptr(b.pressedColor));
             changed |= propColor4("Disabled", glm::value_ptr(b.disabledColor));
+
+            warnNoUIElement(scene, id);
             return changed;
         });
 }
@@ -688,12 +772,16 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         addItem("UI Button", UIButton{}, "Add UI Button");
 
         // ScriptComponent is move-only, so it can't ride the (value-copying)
-        // AddComponentCommand - add it live, like the World/Physics edits.
+        // AddComponentCommand. It rides ScriptEditCommand instead, which holds
+        // the serialized component rather than a copy of it - the same step the
+        // Script card pushes for everything else it does.
         section("Script");
         if (!scene.has<ScriptComponent>(id) && matchesFilter("Script", s_componentFilter)) {
             drawPendingSection();
             if (ImGui::MenuItem("Script")) {
                 scene.add(id, ScriptComponent{});
+                state.commands.push(std::make_unique<ScriptEditCommand>(
+                    id, std::string{}, ScriptEditCommand::capture(scene, id), "Add Script"));
                 state.markSceneDirty();
                 warnPrefabOnly("Script");
             }
@@ -876,18 +964,42 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
 
 void InspectorPanel::drawLightSection(Scene& scene, ResourceManager& resources,
                                       EditorState& state, EntityId id) {
+    // While the procedural sky is on, the key light is the sky's: SkySystem
+    // writes this entity's rotation, colour and intensity from the Environment
+    // every frame, so an edit typed here is gone before the next frame draws
+    // and the value the scene saves is the sky's, not the author's. The card
+    // said none of that - it offered the fields like any other light's, and a
+    // drag that did nothing read as a broken widget. Asked through findKeyLight
+    // so the card and the system cannot disagree about which light it is.
+    const bool skyDriven = scene.environment().sky.procedural && findKeyLight(scene) == id;
+
     editComponentCard<Light>(scene, resources, state, id, "Light", EditorStyle::Accent::Light,
                              "Edit Light", "Remove Light",
                              [&](Light& light) {
         bool changed = false;
 
+        if (skyDriven) {
+            ImGui::TextWrapped("Procedural Sky drives this light: its rotation, colour and "
+                               "intensity are written from World > Procedural Sky every "
+                               "frame, and are what the scene saves.");
+            ImGui::Spacing();
+        }
+
         changed |= propEnumCombo("Type", light.type);
+
+        // Disabled rather than hidden: they are still what this light is, and
+        // still what the file records - they are just not the author's to set
+        // while the sky is writing them. Same shape the Procedural Sky card
+        // uses for the fields that depend on its own toggle.
+        ImGui::BeginDisabled(skyDriven);
         changed |= propColor3("Color", glm::value_ptr(light.color));
 
-        // Intensity is unbounded on the upper end (HDR scenes routinely need
-        // values in the hundreds for sun, thousands for studio lights). The
-        // drag range only clamps soft; users can type any value.
+        // The upper bound is generous rather than advisory: HDR scenes
+        // routinely need values in the hundreds for sun and thousands for
+        // studio lights, and since PROP_CLAMP the row's declared range is what
+        // a typed value gets clamped to, so it is set well above any of them.
         changed |= propDrag("Intensity", &light.intensity, 0.5f, 0.0f, 100000.0f, "%.2f");
+        ImGui::EndDisabled();
 
         if (light.type != LightType::Directional)
             changed |= propDrag("Radius", &light.radius, 0.5f, 0.1f, 1000.0f, "%.1f");
@@ -1137,13 +1249,23 @@ void InspectorPanel::drawDecalSection(Scene& scene, ResourceManager& resources,
                               "Fade where the surface turns away from the projector (projects along -Z; the Transform's scale is the box)");
         changed |= propSlider("Opacity", &decal.opacity, 0.0f, 1.0f, "%.2f");
 
+        // Harsher than the Mesh card's "No material assigned" because the
+        // consequence is: a mesh with no material still draws with the shader's
+        // defaults, while the decal pass skips a decal whose material is null
+        // outright. This is also the state Create > Decal hands you.
+        if (!decal.material) {
+            ImGui::TextColored(EditorStyle::DANGER, "No material: this projects nothing");
+        }
+
         return changed;
     });
 }
 
-void InspectorPanel::drawParticleSection(Scene& scene, ResourceManager& resources,
-                                         EditorState& state, EntityId id) {
-    editComponentCard<ParticleEmitter>(scene, resources, state, id, "Particle Emitter",
+void InspectorPanel::drawParticleSection(EditorContext& ec, EntityId id) {
+    Scene&           scene     = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+
+    editComponentCard<ParticleEmitter>(scene, resources, ec.state, id, "Particle Emitter",
                                        EditorStyle::Accent::Light,
                                        "Edit Particle Emitter", "Remove Particle Emitter",
                                        [&](ParticleEmitter& e) {
@@ -1172,6 +1294,14 @@ void InspectorPanel::drawParticleSection(Scene& scene, ResourceManager& resource
 
         ImGui::TextDisabled("Live: %d particle(s).",
                             static_cast<int>(e.particles.size()));
+        // Without this the count reads as a verdict on the emitter. Particles
+        // are simulated off the sim delta, so in Edit mode the number is
+        // structurally 0 however well the emitter is set up, and an author
+        // looking at "Emitting, Rate 20, Live: 0" is being told the opposite of
+        // what is true.
+        if (ec.frame.clock.getSimDelta() <= 0.0f) {
+            ImGui::TextDisabled("The world is not running - press Play to see them.");
+        }
 
         return changed;
     });
@@ -1409,6 +1539,15 @@ void InspectorPanel::drawRigidbodySection(Scene& scene, ResourceManager& resourc
         changed |= propCheckbox("Can Sleep", &rb.canSleep,
                                 "Uncheck for script-driven bodies that must stay responsive at rest");
 
+        // The pairing rule, said where the mistake is made - the sentence the
+        // Character Controller card already prints for the same absence.
+        // Scoped to a dynamic body because that is the one this ruins: it
+        // integrates gravity with nothing to land on and leaves the world,
+        // where a static or kinematic body with no shape is merely inert.
+        if (!rb.isStatic && !rb.isKinematic && !scene.has<Collider>(id)) {
+            ImGui::TextColored(EditorStyle::DANGER, "No Collider: it falls through everything.");
+        }
+
         if (changed) {
             // Wake the body so the edit (especially velocity) survives the next
             // tick - otherwise PhysicsSystem zeroes a sleeping body's velocity.
@@ -1474,12 +1613,23 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
 
         changed |= propCheckbox("Trigger", &col.isTrigger);
 
+        // The other half of the pairing rule. PhysicsSystem gathers bodies by
+        // walking the Rigidbody storage and reads a Collider only off entities
+        // it finds there, so a collider on its own is in no broadphase: it
+        // stops nothing and, Trigger ticked or not, fires nothing.
+        if (!scene.has<Rigidbody>(id)) {
+            ImGui::TextColored(EditorStyle::DANGER, "No Rigidbody: nothing collides with this.");
+        }
+
         return changed;
     });
 }
 
-void InspectorPanel::drawCameraSection(Scene& scene, ResourceManager& resources,
-                                       EditorState& state, EntityId id) {
+void InspectorPanel::drawCameraSection(EditorContext& ec, EntityId id) {
+    Scene&           scene     = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState&     state     = ec.state;
+
     editComponentCard<Camera>(scene, resources, state, id, "Camera", EditorStyle::Accent::Camera,
                               "Edit Camera", "Remove Camera",
                               [&](Camera& cam) {
@@ -1502,13 +1652,35 @@ void InspectorPanel::drawCameraSection(Scene& scene, ResourceManager& resources,
         if (!autoAspect)
             changed |= propDrag("Aspect", &cam.aspect, 0.01f, 0.1f, 10.0f, "%.3f");
 
-        changed |= propDrag("Near Clip", &cam.zNear, 0.01f, 0.001f, cam.zFar, "%.3f");
-        changed |= propDrag("Far Clip", &cam.zFar, 1.0f, cam.zNear, 100000.0f, "%.0f");
+        // Each bounded by the other, and kept apart rather than merely ordered:
+        // equal planes divide by zero in the projection, and the cluster pass
+        // takes log(zFar / zNear).
+        changed |= propDrag("Near Clip", &cam.zNear, 0.01f, 0.001f,
+                            cam.zFar - CLIP_PLANE_SEPARATION, "%.3f");
+        changed |= propDrag("Far Clip", &cam.zFar, 1.0f,
+                            cam.zNear + CLIP_PLANE_SEPARATION, 100000.0f, "%.0f");
 
         // Depth of field: amount 0 disables the blur pass entirely.
         changed |= propDrag("Focus Distance", &cam.focusDistance, 0.1f, 0.01f, 10000.0f, "%.2f");
         changed |= propSlider("DoF Amount", &cam.dofAmount, 0.0f, 1.0f, "%.2f");
         changed |= propCheckbox("Active", &cam.active);
+
+        // The eye's half of what the Audio Listener card already says for the
+        // ear. Named from the camera controller rather than from storage order:
+        // the controller and the visibility pass each keep the camera they
+        // resolved and hold it while it stays active, so "the first one wins"
+        // is a rule that is often not what happened, and printing it would hand
+        // the author a false reason.
+        const EntityId eye = ec.cameraController.getCameraEntity();
+        if (cam.active && eye && eye != id && scene.has<Camera>(eye)) {
+            char rendered[64] = {};
+            getEntityDisplayName(scene, eye, rendered, sizeof(rendered));
+            // Wrapped for the same reason the listener's is: it carries a name
+            // the author typed, and unwrapped that name leaves the panel.
+            ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::WARNING);
+            ImGui::TextWrapped("Not the eye: '%s' is rendered from.", rendered);
+            ImGui::PopStyleColor();
+        }
 
         if (ImGui::Button("Set as Main Camera", ImVec2(-1, 0))) {
             EditorActions::setActiveCamera(scene, state, id);
@@ -1558,16 +1730,18 @@ void InspectorPanel::drawLODSection(Scene& scene, ResourceManager& resources,
     });
 }
 
-void InspectorPanel::drawAnimationSection(Scene& scene, ResourceManager& resources,
-                                          EditorState& state, EntityId id) {
-    editComponentCard<Animation>(scene, resources, state, id, "Animation", EditorStyle::Accent::Anim,
+void InspectorPanel::drawAnimationSection(EditorContext& ec, EntityId id) {
+    Scene&           scene     = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+
+    editComponentCard<Animation>(scene, resources, ec.state, id, "Animation", EditorStyle::Accent::Anim,
                                  "Edit Animation", "Remove Animation",
                                  [&](Animation& anim) {
-        // Only authoring edits (length, keyframes) push a command; play/pause/
-        // stop/scrub never set `changed`, so they stay non-undoable. The card's
-        // snapshot does include time/playing, so undoing an authoring edit also
-        // restores the scrub position - acceptable since edits are normally made
-        // while paused.
+        // Only authoring edits (length, keyframes, Play On Start) push a command;
+        // play/pause/stop/scrub never set `changed`, so they stay non-undoable.
+        // The card's snapshot does include time/playing, so undoing an authoring
+        // edit also restores the scrub position - acceptable since edits are
+        // normally made while paused.
         const float GAP = 8.0f;
         float ih = ImGui::GetFrameHeight();
         if (iconButton("inspPlay", anim.playing ? EditorIcon::Pause : EditorIcon::Play,
@@ -1591,7 +1765,7 @@ void InspectorPanel::drawAnimationSection(Scene& scene, ResourceManager& resourc
         }
         ImGui::SameLine(0, GAP);
         ImGui::SetNextItemWidth(-1);
-        changed |= ImGui::DragFloat("##ASpeed", &anim.speed, 0.005f, 0.0f, 10.0f, "Speed %.2fx");
+        changed |= ImGui::DragFloat("##ASpeed", &anim.speed, 0.005f, 0.0f, 10.0f, "Speed %.2fx", PROP_CLAMP);
 
         // Explicit minimum length holds the clip open past the last keyframe
         // (0 = auto, derived from the keyframes).
@@ -1600,12 +1774,26 @@ void InspectorPanel::drawAnimationSection(Scene& scene, ResourceManager& resourc
             changed = true;
         }
 
+        // The authored half, worded as the Audio Source card words its twin.
+        // The transport above previews; this is what a shipped scene does.
+        changed |= propCheckbox("Play On Start", &anim.playOnStart,
+                                "Starts by itself once the simulation runs. In the editor that "
+                                "means on Play, never while a scene is only open");
+
+        // The same thing the Bottom panel's transport says, for the same
+        // reason: pressing Play here sets a flag AnimationSystem acts on, and
+        // that system returns on a zero sim delta, so in Edit mode the button
+        // reads Pause while the playhead stays where it was.
+        if (anim.playing && ec.frame.clock.getSimDelta() <= 0.0f) {
+            ImGui::TextDisabled("Held at %.2fs - it advances while the world runs.", anim.time);
+        }
+
         const float duration = Animation::computeDuration(anim);
         if (duration > 0.0f) {
             ImGui::SetNextItemWidth(-1);
             char timeFmt[32];
             snprintf(timeFmt, sizeof(timeFmt), "%%.2f / %.2f s", duration);
-            ImGui::SliderFloat("##ATime", &anim.time, 0.0f, duration, timeFmt);
+            ImGui::SliderFloat("##ATime", &anim.time, 0.0f, duration, timeFmt, PROP_CLAMP);
         }
 
         // Read-only digest. The editable keyframe editor lives in the Bottom
@@ -1674,13 +1862,13 @@ void InspectorPanel::drawAnimatorSection(Scene& scene, ResourceManager& resource
         ImGui::SameLine(0, GAP);
         ImGui::SetNextItemWidth(-1);
         changed |= ImGui::DragFloat("##RigSpeed", &animator.speed, 0.005f, -10.0f, 10.0f,
-                                    "Speed %.2fx");
+                                    "Speed %.2fx", PROP_CLAMP);
 
         if (clip && clip->duration > 0.0f) {
             ImGui::SetNextItemWidth(-1);
             char timeFmt[32];
             snprintf(timeFmt, sizeof(timeFmt), "%%.2f / %.2f s", clip->duration);
-            ImGui::SliderFloat("##RigTime", &animator.time, 0.0f, clip->duration, timeFmt);
+            ImGui::SliderFloat("##RigTime", &animator.time, 0.0f, clip->duration, timeFmt, PROP_CLAMP);
         } else if (animator.skeleton) {
             ImGui::TextDisabled("No clip: holding the bind pose.");
         }
@@ -1824,6 +2012,24 @@ void InspectorPanel::drawCharacterControllerSection(Scene& scene, ResourceManage
 }
 
 void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityId id) {
+    // Every mutation this card offers is applied live: the field widgets write
+    // into the behavior itself, and a behavior list is move-only, so there is
+    // no pair of values for the copying command path to hold. The serialized
+    // component is that pair - the same document a deleted entity's scripts
+    // already come back from - so it is read here, before anything below can
+    // touch it, and each mutation pushes the step it just made. The card's x
+    // is what most needed one: it takes the component, every behavior on it
+    // and every field the author typed, and Ctrl+Z used to answer by undoing
+    // some older edit instead.
+    const std::string scriptBefore = ScriptEditCommand::capture(scene, id);
+    const auto pushScriptEdit = [&](const char* label) {
+        std::string after = ScriptEditCommand::capture(scene, id);
+        if (after == scriptBefore) return;
+        state.commands.push(std::make_unique<ScriptEditCommand>(
+            id, scriptBefore, std::move(after), label));
+        state.markSceneDirty();
+    };
+
     bool remove = false;
     const bool open = beginComponentCard("Script", EditorStyle::Accent::Script, true, &remove);
     if (open) {
@@ -1839,8 +2045,6 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
                                "Prefab keeps what you change here; saving the scene does not.");
         }
 
-        // Script edits are applied live (no undo command): a behavior list is
-        // move-only, so it can't ride the value-copying command stack.
         int removeIndex = -1;
         for (size_t i = 0; i < sc.behaviors.size(); ++i) {
             Behavior* behavior = sc.behaviors[i].get();
@@ -1861,7 +2065,7 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
 
             BehaviorFieldInspector inspector;
             behavior->visitFields(inspector);
-            if (inspector.changed) state.markSceneDirty();
+            if (inspector.changed) pushScriptEdit("Edit Behavior");
 
             ImGui::PopID();
             if (i + 1 < sc.behaviors.size()) ImGui::Separator();
@@ -1896,7 +2100,7 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
                     if (ImGui::MenuItem(name.c_str())) {
                         if (auto behavior = BehaviorRegistry::get().create(name)) {
                             sc.behaviors.push_back(std::move(behavior));
-                            state.markSceneDirty();
+                            pushScriptEdit("Add Behavior");
                         }
                     }
                 }
@@ -1906,13 +2110,13 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
 
         if (removeIndex >= 0) {
             sc.behaviors.erase(sc.behaviors.begin() + removeIndex);
-            state.markSceneDirty();
+            pushScriptEdit("Remove Behavior");
         }
     }
     endComponentCard();
     if (remove) {
         scene.remove<ScriptComponent>(id);
-        state.markSceneDirty();
+        pushScriptEdit("Remove Script");
         PrefabOverrides::warnComponentIsPrefabs(scene, state, id, "Script",
                                                 "comes back from the prefab on the next load");
     }

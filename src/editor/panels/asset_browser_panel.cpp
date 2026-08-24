@@ -11,6 +11,7 @@
 #include "ecs/component/render/decal.h"
 #include "framework/editor_common.h"
 #include "framework/editor_actions.h"
+#include "framework/component_edit.h"
 #include "framework/editor_commands.h"
 #include "framework/material_preview_session.h"
 #include "system/audio/audio_system.h"
@@ -267,9 +268,18 @@ void AssetBrowserPanel::drawAssetGrid(EditorContext& ec) {
             }
             ImGui::BeginDisabled(!canAssign);
             if (ImGui::MenuItem("Assign to selected entity")) {
-                if constexpr (isMaterial) scene.get<Mesh>(sel).material = h;
-                else                      scene.get<Mesh>(sel).mesh     = h;
-                state.markSceneDirty();
+                // The same edit the Inspector's asset dropdown makes, so it
+                // takes the same road: pushEdit is what gives it an undo step
+                // and what turns it into a prefab override when the entity is
+                // an instance. Writing the component here instead left the
+                // instance's override list empty, and the next save wrote the
+                // prefab's mesh back over the one on screen.
+                Mesh& mesh = scene.get<Mesh>(sel);
+                const Mesh before = mesh;
+                if constexpr (isMaterial) mesh.material = h;
+                else                      mesh.mesh     = h;
+                pushEdit<Mesh>(scene, resources, state, sel, before, mesh,
+                               isMaterial ? "Assign Material" : "Assign Mesh");
             }
             ImGui::EndDisabled();
             if (!canAssign) ImGui::TextDisabled("(select a mesh entity to assign)");
@@ -421,9 +431,12 @@ void AssetBrowserPanel::drawSounds(EditorContext& ec) {
                 AudioSource& source = scene.get<AudioSource>(sel);
                 const AudioSource before = source;
                 source.clip = h;
-                state.commands.push(std::make_unique<ComponentEditCommand<AudioSource>>(
-                    sel, before, source, "Assign Sound"));
-                state.markSceneDirty();
+                // Through pushEdit rather than the plain edit command, for the
+                // reason the material assign above is: on a prefab instance
+                // this is an override, and one recorded nowhere is one the save
+                // does not write.
+                pushEdit<AudioSource>(scene, resources, state, sel,
+                                      before, source, "Assign Sound");
             }
             ImGui::EndDisabled();
             if (!canAssign) ImGui::TextDisabled("(select an entity with an Audio Source)");

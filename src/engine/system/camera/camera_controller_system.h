@@ -113,6 +113,27 @@ class CameraControllerSystem : public System {
          */
         void viewFrom(Scene& scene, const glm::vec3& target, const glm::vec3& direction, float distance);
 
+        /**
+         * @brief Whether this controller has moved the camera since last asked,
+         * clearing the answer as it gives it.
+         *
+         * The camera it flies is the scene's own Camera entity - the editor has
+         * none of its own, which is what makes "you move what you see" true -
+         * and that entity's Transform is a value the scene file stores. So a
+         * look around is an edit to authored data, and a host that tracks
+         * unsaved work has to hear about it or the next save quietly writes
+         * wherever the viewport was parked over the framing somebody chose.
+         *
+         * Asked rather than announced, because this controller has no editor to
+         * tell: the runtime flies the same one and never asks. Covers every
+         * write it makes - a fly drag, a scroll dolly, Frame Selected, a
+         * view-cube snap - and reports nothing for a right-drag that moved the
+         * pointer nowhere.
+         *
+         * @return true if the camera's Transform changed under this controller.
+         */
+        bool takeCameraMoved();
+
     private:
         void updateFlyMode(WindowManager& window, const InputMap& input,
                            glm::vec3& position, glm::quat& rotation, float deltaTime);
@@ -168,6 +189,11 @@ class CameraControllerSystem : public System {
 
         bool m_editorWantsMouse    = false;
         bool m_editorWantsKeyboard = false;
+        /**
+         * @brief Set whenever a write of this controller's changed the camera's
+         * pose; cleared by takeCameraMoved().
+         */
+        bool m_cameraMoved         = false;
         /**
          * @brief Whether the fly controls run; off until an editor asks.
          *

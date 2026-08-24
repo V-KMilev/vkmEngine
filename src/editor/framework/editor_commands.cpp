@@ -232,6 +232,49 @@ void RenameAssetCommand<HandleType>::undo(Scene&, EditorState& state) {
 template class RenameAssetCommand<MaterialHandle>;
 template class RenameAssetCommand<MeshHandle>;
 
+std::string ScriptEditCommand::capture(const Scene& scene, EntityId id) {
+    if (!scene.isAlive(id) || !scene.has<ScriptComponent>(id)) return {};
+    return ComponentSerializer::save(scene.get<ScriptComponent>(id)).dump();
+}
+
+void ScriptEditCommand::restore(Scene& scene, EntityId id, const std::string& json) {
+    // Removed first in both directions: SparseSet::add on a key it already
+    // holds appends a second dense entry rather than replacing the first, and
+    // a behavior list rebuilt from the document is the whole component anyway.
+    if (scene.has<ScriptComponent>(id)) scene.remove<ScriptComponent>(id);
+    if (json.empty()) return;
+
+    const nlohmann::json doc = nlohmann::json::parse(json, nullptr, /*allow_exceptions*/ false);
+    if (doc.is_discarded()) return;
+    ScriptComponent sc;
+    ComponentSerializer::load(doc, sc);
+    scene.add(id, std::move(sc));
+}
+
+void ScriptEditCommand::redo(Scene& scene, EditorState& state) {
+    const EntityId e = liveEntity(scene, m_entity);
+    if (!e) return;
+    restore(scene, e, m_after);
+    state.markSceneDirty();
+}
+
+void ScriptEditCommand::undo(Scene& scene, EditorState& state) {
+    const EntityId e = liveEntity(scene, m_entity);
+    if (!e) return;
+    restore(scene, e, m_before);
+    state.markSceneDirty();
+}
+
+bool ScriptEditCommand::tryMerge(Command& incoming) {
+    // Identity only, as Command::tryMerge asks: the chain start stays put and
+    // the end slides forward to whatever the gesture last landed on.
+    auto* p = dynamic_cast<ScriptEditCommand*>(&incoming);
+    if (!p || p->m_entity != m_entity) return false;
+    m_after = p->m_after;
+    m_label = p->m_label;
+    return true;
+}
+
 EntitySnapshot EntitySnapshot::capture(const Scene& scene, EntityId id) {
     EntitySnapshot s;
     s.slotIndex = id.index;

@@ -3,8 +3,11 @@
 #include <glm/glm.hpp>
 
 #include "core/reflect.h"
+#include "ecs/entity.h"
 
 namespace Vkm::Engine {
+
+class Scene;
 
 /**
  * @brief Enumeration of light types.
@@ -52,6 +55,24 @@ struct Light {
 
     bool enabled = true;
 };
+
+/**
+ * @brief The scene's key light: the first entity carrying a directional Light.
+ *
+ * The one definition of a rule two places have to agree on. SkySystem points
+ * this light at wherever the Environment says the sun is and writes its colour
+ * and intensity from the sky, and the editor greys those fields on the card
+ * that shows them - an inspector guessing at the rule separately is how a
+ * light ends up presented as editable while something else is writing it. A
+ * Transform is required as well as a Light, because a light with no pose has no
+ * direction to be given. Ties go to storage order; an empty result means the
+ * scene has no directional light, which is a scene the sky still renders over.
+ *
+ * @param scene The scene to search.
+ * @return The key light entity, or {} when there is none.
+ */
+EntityId findKeyLight(const Scene& scene);
+
 } // namespace Vkm::Engine
 
 VKM_ENUM_NAMES(::Vkm::Engine::LightType, "Directional", "Point", "Spot", "Rect", "Disk")

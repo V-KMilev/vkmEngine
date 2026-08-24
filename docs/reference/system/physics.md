@@ -95,6 +95,11 @@ PhysicsSystem::fixedUpdate(ctx)
   1. Read the physics settings off the scene's Environment.
   2. Gather: snapshot every live Rigidbody + Transform into PhysicsBody solver
      state; build a ColliderProxy (world AABB + parts span) per body with a Collider.
+     The walk starts from the Rigidbody storage, so the pairing is required in
+     both directions: a Collider without a Rigidbody is in no broadphase at all,
+     and a dynamic Rigidbody without a Collider integrates gravity with nothing
+     to land on. The inspector names each on its own card - see
+     [the editor](../editor.md#a-card-names-what-its-component-is-waiting-for).
      Re-derive the tick's inverse mass + local inverse inertia onto the BodyFrame.
      Sleeping / immovable bodies enter the solver with invMass 0.
   3. Integrate forces -> velocities: gravity * gravityScale, then damping
