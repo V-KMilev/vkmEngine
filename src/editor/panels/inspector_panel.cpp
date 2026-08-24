@@ -727,7 +727,19 @@ void InspectorPanel::drawPrefabSection(Scene& scene, EditorState& state, EntityI
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Select the instance root");
         }
 
-        if (!scene.has<PrefabEntity>(id)) {
+        if (id == root && !scene.has<PrefabEntity>(id)) {
+            // An expansion marks every entity it builds, the root included, so a
+            // root without the marker is a root nothing was built from: the file
+            // would not open. Answered before the branch below, whose sentence
+            // is about a scene-added child of a HEALTHY instance and is wrong
+            // twice over here - this entity came from the scene file, and it
+            // survives the next save carrying the reference and the overrides.
+            ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::WARNING);
+            ImGui::TextWrapped("The prefab file could not be opened, so this instance is "
+                               "empty. Restore it and load the scene again - the reference "
+                               "and any overrides are kept until then.");
+            ImGui::PopStyleColor();
+        } else if (!scene.has<PrefabEntity>(id)) {
             // Nothing here can be stored: the scene writes the instance as a
             // reference and skips its subtree, and the prefab has no entity to
             // rebuild this one from.

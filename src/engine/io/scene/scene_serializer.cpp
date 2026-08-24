@@ -15,6 +15,7 @@
 
 #include "logger.h"
 
+#include "debug/engine_error_log.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/entity.h"
@@ -386,8 +387,15 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             const PrefabInstance& instance = staging.get<PrefabInstance>(root);
             if (!Prefab::instantiateInto(staging, stagingResources, instance.source, root,
                                          instance.overrides, &prefabDrift)) {
-                LOG_WARNING("Prefab '%s' failed to expand in '%s'; instance left empty",
-                    instance.source.c_str(), source);
+                // The same seam an unresolved asset name goes through, for the
+                // same reason and then some: that one costs a component's field
+                // and this one costs the whole authored subtree, which vanishes
+                // from the viewport and leaves a childless entity behind. A log
+                // line is where only a log reader would find it.
+                reportError("Scene", "prefab '" + instance.source + "'",
+                    "could not be opened, so the instance is empty - the reference and "
+                    "its overrides are kept, so restoring the file and loading again "
+                    "brings the subtree back");
             }
         }
         for (const std::string& message : prefabDrift) {

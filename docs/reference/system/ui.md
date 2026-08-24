@@ -169,7 +169,13 @@ passthroughs in `ComponentSerializer` / `SceneSerializer`, registered in
 Because UI elements are entities, the editor support is mostly inherited:
 
 - **Hierarchy** lists entities by `Transform` **or** `UICanvas`/`UIElement`, so
-  UI entities (which carry no `Transform`) appear in the tree.
+  UI entities (which carry no `Transform`) appear in the tree, and dragging one
+  onto a canvas reparents it like anything else. The world-preserving re-base
+  the interactive reparent does is simply skipped for an entity with no
+  `Transform` - a UI element is placed in screen space by its canvas, so there
+  is no world pose to keep. A move that leaves an element with no `UICanvas`
+  ancestor still happens, and is reported with a toast, because that is what
+  stops it being drawn.
 - **Inspector** has a card per UI component (`drawUI*Section`), built from the
   shared `prop*` widgets; Add / Remove / field-edit all route through the
   command stack, so authoring is fully undoable.

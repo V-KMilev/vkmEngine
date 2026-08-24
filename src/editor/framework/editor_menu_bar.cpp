@@ -113,12 +113,20 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
             ImGui::EndMenu();
         }
         ImGui::Separator();
-        if (ImGui::MenuItem("Save Scene", keyLabel(state.keybinds.saveScene), false, haveCurrent)) {
+        // Greyed during a play session rather than left to refuse itself: the
+        // scene in the world is the simulation's copy of one, and Stop is about
+        // to throw it away. Writing it over the authored file is the one save
+        // that cannot be taken back.
+        const bool playing = sceneIO.hasSnapshot();
+        if (ImGui::MenuItem("Save Scene", keyLabel(state.keybinds.saveScene), false,
+                            haveCurrent && !playing)) {
             sceneIO.save(ctx, state);
         }
-        if (ImGui::MenuItem("Save Scene As...", keyLabel(state.keybinds.saveSceneAs))) {
+        if (ImGui::MenuItem("Save Scene As...", keyLabel(state.keybinds.saveSceneAs), false,
+                            !playing)) {
             sceneIO.requestSaveAs();
         }
+        if (playing) ImGui::TextDisabled("Stop the play session to save");
         ImGui::Separator();
         // Hot-reload the gameplay module: rebuild game.dll, then click this to
         // swap the new code in without restarting (consumed by EditorSystem).
@@ -133,10 +141,17 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
                 state.sceneDirty ? "  (modified)" : "");
         }
         ImGui::Separator();
-        // Exit routes through the window-close intercept, so the unsaved-
-        // changes guard applies exactly as it does for the titlebar X.
+        // Exit asks the unsaved-changes question itself rather than raising the
+        // close flag for the frame's own close-intercept to catch. The
+        // intercept is right where it runs - at the top of the UI stage, which
+        // is after the window has reported a titlebar close - but a menu item
+        // raises that flag from inside the same stage, and the frame loop reads
+        // it before the next one begins. So the editor was gone before it
+        // asked: the X prompted and Exit, the same intent said another way,
+        // threw the work away in silence.
         if (ImGui::MenuItem("Exit")) {
-            ctx.window.requestClose();
+            if (state.sceneDirty) state.confirmAction = EditorState::PendingSceneAction::Quit;
+            else                  ctx.window.requestClose();
         }
         ImGui::EndMenu();
     }

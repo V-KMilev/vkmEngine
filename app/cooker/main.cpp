@@ -10,6 +10,7 @@
 #include "resource/resource_manager.h"
 #include "asset_registration.h"
 #include "cook/asset_cooker.h"
+#include "debug/engine_error_log.h"
 #include "io/asset/asset_library.h"
 #include "io/project.h"
 #include "io/project_paths.h"
@@ -53,9 +54,34 @@ int main(int argc, char** argv) {
         Vkm::Engine::Scene scene;
         Vkm::Engine::ResourceManager resources;
 
+        // A load that resolved nothing still returns true - the scene is a
+        // document, and every unresolved reference is a component slot left
+        // empty rather than a parse failure. That is right for the editor,
+        // which is where they get fixed, and wrong here: with no reference
+        // resolved there is no loaded asset left for the cook below to fail on,
+        // so an empty world would sail past the exit code and be packaged. The
+        // loader already reports each one through the error seam; the cooker
+        // counts them by listening to it rather than by asking the loader to
+        // answer a different question for a different host.
+        Vkm::Engine::EngineErrorLog loadErrors;
+        Vkm::Engine::setErrorSink(&loadErrors);
+
         const std::filesystem::path scenePath = root / project.entryScene;
-        if (!Vkm::Engine::SceneSerializer::load(scene, resources, scenePath.string())) {
+        const bool loaded =
+            Vkm::Engine::SceneSerializer::load(scene, resources, scenePath.string());
+
+        Vkm::Engine::setErrorSink(nullptr);
+
+        if (!loaded) {
             LOG_ERROR("Failed to load '%s'", scenePath.string().c_str());
+            return EXIT_FAILURE;
+        }
+        if (const unsigned long long unresolved = loadErrors.totalPushed(); unresolved > 0) {
+            LOG_ERROR("'%s' loaded with %llu unresolved reference(s) - the assets it names "
+                      "are not in the library, so a cook of it would ship a world with "
+                      "empty slots. Open the project in the editor and save it, which bakes "
+                      "what the scene references into the library.",
+                      scenePath.string().c_str(), unresolved);
             return EXIT_FAILURE;
         }
 
