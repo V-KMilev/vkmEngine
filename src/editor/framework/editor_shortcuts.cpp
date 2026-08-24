@@ -33,7 +33,6 @@ void EditorShortcuts::process(EditorContext& ec, SceneIOController& sceneIO) {
     if (isPressed(kb.newScene)) state.requestSceneAction(EditorState::SceneAction::New);
 
     if (isPressed(kb.toggleRenderSettings)) state.showRenderSettings = !state.showRenderSettings;
-    if (isPressed(kb.toggleMaterialEditor)) state.showMaterialEditor = !state.showMaterialEditor;
 
     // Undo / redo - checked in this order so Ctrl+Shift+Z (redo) wins
     // when both bindings would match.

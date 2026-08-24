@@ -1,5 +1,7 @@
 #pragma once
 
+#include <imgui.h>
+
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -40,8 +42,12 @@ struct EditorState {
     bool showInspector   = true;
     bool showBottom      = true;
     bool showPreferences = false;   ///< Preferences window (Ctrl+,)
-    bool showMaterialEditor = false;            ///< Material Editor window
-    MaterialHandle materialEditorTarget{};      ///< Which material it edits (else: selected entity's)
+    MaterialHandle materialEditorTarget{};      ///< What the Material tab edits (else: the selected entity's)
+    bool materialFloating  = false; ///< Material editor is a window rather than the right panel's second tab
+    ImVec2 materialDetachAt = {};   ///< Where the drag that detached it let go, so the window opens under the cursor
+    ImVec2 rightPanelMin    = {};   ///< Screen rect of the right panel, so a detached window knows when it is over it
+    ImVec2 rightPanelMax    = {};
+    bool revealMaterialTab = false;             ///< Pending request to open the right panel on Material
     bool showRenderSettings = false;            ///< Render Settings window (pass toggles + per-effect tuning)
     bool showColliders      = false;            ///< Draw physics collider wireframes in the viewport (View menu)
     bool showBounds         = false;            ///< Draw per-entity world AABBs in the viewport (View menu)
@@ -110,6 +116,22 @@ struct EditorState {
      * Cheap, idempotent.
      */
     void markSceneDirty() { sceneDirty = true; }
+
+    /**
+     * @brief Ask for the right panel's Material tab, showing @p material.
+     *
+     * A request rather than a tab switch because every caller is drawn before
+     * the tab bar that would answer it, and because the panel may be hidden
+     * when the ask is made.
+     *
+     * @param material The material to edit; the tab follows the selection again
+     *        once a different entity carrying one is picked.
+     */
+    void openMaterial(MaterialHandle material) {
+        materialEditorTarget = material;
+        showInspector        = true;
+        revealMaterialTab    = true;
+    }
 
     /**
      * @brief Ask for an action that throws the live scene away.

@@ -229,6 +229,23 @@ inline void sectionLabel(const char* text) {
 }
 
 /**
+ * @brief Draw one line of text clipped to a width, ellipsised in the middle.
+ *
+ * A wrapped line is what breaks a grid of tiles: a two-line name pushes the
+ * next row off the baseline, so every tile after a long name sits wrong. One
+ * line always, and the full text stays available on hover.
+ *
+ * The cut lands mid-line because these lines share their starts and differ at
+ * their ends - a clip named by its path, the sixtieth material out of one file
+ * - and a tail cut leaves a row of tiles all reading "assets/audio/to...".
+ *
+ * @param text Line to draw; empty draws the "(unnamed)" placeholder.
+ * @param maxWidth Width the line must fit inside, in pixels.
+ * @param dim Whether to draw in the disabled colour (a detail line does).
+ */
+void clippedLine(const char* text, float maxWidth, bool dim);
+
+/**
  * @brief Test whether a string contains a filter substring, case-insensitively.
  *
  * @param text Candidate string being filtered.

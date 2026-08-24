@@ -20,6 +20,7 @@
 #include "data/gl_material.h"
 #include "data/gl_mesh.h"
 #include "data/gl_scene_capture.h"
+#include "data/gl_shadow_atlas.h"
 #include "convention/gl_bindings.h"
 #include "generator/mesh_generators.h"
 #include "resource/resource_manager.h"
@@ -105,7 +106,8 @@ GLPreview::Entry& GLPreview::ensureEntry(uint64_t key, uint32_t size) {
 }
 
 uint32_t GLPreview::render(Vkm::GL::Context& gl, GLView& glView, const GLIBL& ibl,
-                           const PreviewRequest& req, const ResourceManager& resources) {
+                           const GLShadowAtlas& shadows, const PreviewRequest& req,
+                           const ResourceManager& resources) {
     if (!req.mesh || !req.material || req.size == 0) return 0;
     if (!m_pbr) init();
 
@@ -167,7 +169,7 @@ uint32_t GLPreview::render(Vkm::GL::Context& gl, GLView& glView, const GLIBL& ib
     m_camera.update(cam);
 
     // m_noShadow is never built, so slotForLight() == -1 and the PBR shader
-    // skips shadow sampling entirely (same trick as the probe baker).
+    // reads no shadow value (same trick as the probe baker).
     m_lights.update(view.lights, m_noShadow);
 
     m_scratch.bind(gl);
@@ -217,6 +219,13 @@ uint32_t GLPreview::render(Vkm::GL::Context& gl, GLView& glView, const GLIBL& ib
         gl.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
 
+    // Not read - every preview light is shadowless - but this shader declares the
+    // slot as a sampler2DShadow, and the driver validates a declared sampler
+    // against the bound state at draw time whether or not the branch that reads
+    // it is taken. Whoever drew last left the atlas in the mode their own shader
+    // wanted, so each pass states the one it needs.
+    shadows.bind2D(GLBindings::ShadowTextureSlots::Atlas2D);
+
     m_drawables.clear();
     m_drawables.push_back(&view.drawables[0]);
     // No palette: the preview draws shaders/forward/pbr only, so a character
@@ -238,6 +247,9 @@ uint32_t GLPreview::render(Vkm::GL::Context& gl, GLView& glView, const GLIBL& ib
     gl.setDepthTest(false);
 
     m_composite->bind();
+    // The other half of the same agreement: this shader declares the atlas slot
+    // as a plain sampler2D, and the PBR draw above left it in comparison mode.
+    shadows.bind2DRaw(GLBindings::ShadowTextureSlots::Atlas2D);
     m_scratch.bindColor(0);
     m_composite->setUniform1f("u_bloomStrength", 0.0f);
     m_composite->setUniform1i("u_renderMode", 0);
