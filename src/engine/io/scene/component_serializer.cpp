@@ -12,6 +12,7 @@
 
 #include "logger.h"
 
+#include "debug/engine_error_log.h"
 #include "ecs/component/render/camera.h"
 #include "ecs/environment.h"
 #include "ecs/component/core/transform.h"
@@ -200,13 +201,21 @@ void load(const nlohmann::json& j, Collider& c) {
 }
 
 namespace {
-// Resolve a saved asset name to a live handle, warning (and leaving the slot
-// empty) when it isn't in the asset graph - e.g. a dependency not loaded yet.
+// Resolve a saved asset name to a live handle. A name the asset graph cannot
+// answer leaves the component's slot empty: the file referenced something the
+// load did not bring in, and what the author sees is a field that used to hold
+// their work and now holds nothing. That goes through reportError rather than
+// the log, so the editor says it out loud (a toast, and the entry stays in
+// Bottom > Errors) instead of recording it where only a log reader would find
+// it. The runtime installs no sink and still gets the logged line.
 template<typename Asset>
 Handle<Asset> resolveAssetRef(const ResourceManager& r, const std::string& name, const char* what) {
     if (name.empty()) return {};
     Handle<Asset> h = r.findByName<Asset>(name);
-    if (!h) LOG_WARNING("SceneLoad: %s asset '%s' not found - reference left unresolved", what, name.c_str());
+    if (!h) {
+        reportError("Scene", std::string(what) + " '" + name + "'",
+            "reference left unresolved - the asset is not loaded, so the slot is empty");
+    }
     return h;
 }
 } // namespace

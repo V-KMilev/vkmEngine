@@ -151,7 +151,7 @@ void AudioSystem::reconcileSource(FrameContext& ctx, EntityId entity, AudioSourc
 
     // A one-shot that reached its end. Writing `playing` back is how gameplay
     // asks whether a sound has finished without holding a handle to anything.
-    if (it != m_voices.end() && !m_device.isVoicePlaying(it->second.voice)) {
+    if (it != m_voices.end() && !m_device.isVoiceActive(it->second.voice)) {
         m_device.stopVoice(it->second.voice);
         m_voices.erase(it);
         source.playing = false;
@@ -181,16 +181,11 @@ void AudioSystem::reconcileSource(FrameContext& ctx, EntityId entity, AudioSourc
         return;
     }
 
-    // Said here rather than from the listener pass, because a project with no
-    // audio in it at all should not be told it is missing an ear. What makes
-    // the absence a problem is a sound that wanted to be positioned by one.
-    if (params.spatial && !m_hasListener && !m_warnedNoListener) {
-        m_warnedNoListener = true;
-        LOG_WARNING("A positioned sound started with no active AudioListener in the scene - it "
-                    "is silent until one exists (non-spatial sources are unaffected)");
-    }
+    const AudioClipAsset& clip = ctx.resources.get(source.clip);
+    warnIfNoListener(params.spatial);
+    warnIfStereoSpatial(source.clip, clip, params.spatial);
 
-    const VoiceId voice = m_device.play(ctx.resources.get(source.clip), params);
+    const VoiceId voice = m_device.play(clip, params);
     if (voice == 0) {
         source.playing = false;
         return;
@@ -217,8 +212,32 @@ void AudioSystem::startPendingRequests(FrameContext& ctx) {
         VoiceParams params = request.params;
         // A request cannot be stopped, so it must be able to end by itself.
         params.loop = false;
-        m_device.play(ctx.resources.get(request.clip), params);
+
+        const AudioClipAsset& clip = ctx.resources.get(request.clip);
+        warnIfNoListener(params.spatial);
+        warnIfStereoSpatial(request.clip, clip, params.spatial);
+        m_device.play(clip, params);
     }
+}
+
+void AudioSystem::warnIfNoListener(bool spatial) {
+    if (!spatial || m_hasListener || m_warnedNoListener) return;
+
+    m_warnedNoListener = true;
+    LOG_WARNING("A positioned sound started with no active AudioListener in the scene - it "
+                "is silent until one exists (non-spatial sources are unaffected)");
+}
+
+void AudioSystem::warnIfStereoSpatial(AudioClipHandle clip, const AudioClipAsset& asset,
+                                      bool spatial) {
+    if (!spatial || asset.channels <= 1) return;
+    if (!m_warnedStereoClips.insert(clip.id()).second) return;
+
+    LOG_WARNING("A positioned sound is playing the %u-channel clip '%s' - the mixer routes each "
+                "channel to the output channel it was authored for and attenuates it there, so "
+                "sound in one channel is never heard from the other side however the emitter "
+                "moves; positioning wants a mono clip",
+                asset.channels, asset.name.c_str());
 }
 
 void AudioSystem::stopEverything() {
@@ -227,6 +246,7 @@ void AudioSystem::stopEverything() {
     m_pending.clear();
     m_warnedNoListener = false;
     m_hasListener      = false;
+    m_warnedStereoClips.clear();
 }
 
 } // namespace Vkm::Engine

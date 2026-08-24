@@ -86,19 +86,24 @@ struct VoiceParams {
  * even if they tried. Inside them the path is target-wide, so "one file"
  * describes this file's discipline rather than something the build enforces.
  *
- * THE TWO KNOWN RACES ARE MINIAUDIO'S, and they are worth naming because a
- * vendored backend's bugs are ours to carry. ThreadSanitizer reports both on
- * every run that mixes while the main thread pushes voice parameters:
+ * THE KNOWN RACES ARE MINIAUDIO'S, and they are worth naming because a
+ * vendored backend's bugs are ours to carry. ThreadSanitizer reports two of
+ * them on every run that mixes while the main thread pushes voice parameters:
  * ma_gainer::masterVolume (a plain float, written here by ma_sound_set_volume
  * from apply(), read by the mixer in ma_gainer_process_pcm_frames_internal)
  * and ma_spatializer_listener::isEnabled (a plain ma_bool32, written by
- * setListenerActive, read by the mixer). Both are single aligned scalars with
- * no invariant spanning them, and miniaudio uses ma_atomic_float for exactly
- * this kind of field elsewhere - ma_engine_node::volume and
- * ma_device::masterVolumeFactor are both atomic - so these two read as
- * oversights upstream rather than a design. They are left alone deliberately:
- * patching them means carrying a fork of the backend, and quieting half of
- * them from this side would hide the other half.
+ * setListenerActive, read by the mixer). A third joins them only while
+ * something reads a playback cursor: ma_audio_buffer_ref::cursor is a plain
+ * ma_uint64 the mixer advances and voiceCursor() reads, and its one caller is
+ * the editor's audition card, where a value a frame stale is a slider a pixel
+ * behind. Seeking is not part of that: miniaudio hands a seek to the mixer
+ * through an atomic on purpose, which is why seekVoice() is safe to call from
+ * here at all. All three are single aligned scalars with no invariant spanning
+ * them, and miniaudio uses ma_atomic_float for exactly this kind of field
+ * elsewhere - ma_engine_node::volume and ma_device::masterVolumeFactor are both
+ * atomic - so they read as oversights upstream rather than a design. They are
+ * left alone deliberately: patching them means carrying a fork of the backend,
+ * and quieting some of them from this side would hide the rest.
  */
 class AudioDevice {
     public:
@@ -185,13 +190,110 @@ class AudioDevice {
         void updateVoice(VoiceId voice, const VoiceParams& params);
 
         /**
-         * @brief Whether @p voice still has audio left to play.
+         * @brief Whether @p voice is still there with audio left to play.
          *
          * False once a one-shot has reached its end, which is how AudioSystem
          * learns that a sound finished on its own. A looping voice never
          * reports false until it is stopped.
+         *
+         * A paused voice answers true. It is holding a place in a clip it has
+         * not finished, which is why this asks whether the voice is still
+         * there rather than whether sound is coming out of it - isVoicePaused
+         * answers the second half, and the two together are the only three
+         * states a caller can see: gone, sounding, held.
          */
-        bool isVoicePlaying(VoiceId voice) const;
+        bool isVoiceActive(VoiceId voice) const;
+
+        /**
+         * @brief Hold @p voice at its cursor, silently, without ending it.
+         *
+         * The mixer keeps the sound and only its clock stops, so resuming
+         * continues from the sample the pause landed on: a held voice is a
+         * place in a clip rather than a sound that has to be started again.
+         *
+         * Ramped over the same few milliseconds a stop is, for the same
+         * measured reason - a pause is a cut at whatever sample the cursor
+         * happens to be on. Swept across the phases of a 220 Hz tone at gain
+         * 0.8, cutting outright steps by 0.80, thirty-five times the
+         * waveform's own steepest sample-to-sample step, at the pause AND
+         * again at the resume; ramped, both stay inside that own step. What
+         * it costs is that the pause lands about ten milliseconds late, the
+         * sound playing through its own fade, so the cursor moves that far
+         * before it stops.
+         *
+         * A voice pauseAllVoices() is already holding changes hands rather
+         * than being ramped a second time, so the world resuming underneath it
+         * leaves it where this call put it. An unknown voice is ignored.
+         */
+        void pauseVoice(VoiceId voice);
+
+        /**
+         * @brief Let @p voice play on from where it was held.
+         *
+         * Ramped back in over the same few milliseconds, so the resume is no
+         * more of an edge than the pause was. Lets go of a voice the transport
+         * is holding as readily as one pauseVoice() held: this is the caller
+         * saying it wants that voice heard, whoever stopped it. A voice that is
+         * not held, and an unknown one, are ignored.
+         */
+        void resumeVoice(VoiceId voice);
+
+        /**
+         * @brief Whether @p voice is being held by a pause rather than playing.
+         */
+        bool isVoicePaused(VoiceId voice) const;
+
+        /**
+         * @brief How far into its clip @p voice has played, in seconds.
+         *
+         * THIS IS WHY AudioSource CARRIES NO PLAYBACK POSITION, and the
+         * difference from Animator::time is worth stating because the two
+         * inspector cards look alike. An animation's time is component state:
+         * nothing advances it but the system that reads it, both on this
+         * thread, so the component can BE the position and a scrubber writes
+         * it directly. A voice's cursor is advanced by the mixer thread
+         * between our frames, at the device's own rate, so a field mirroring
+         * it would be a copy of a number that changes without us. Whichever
+         * way that copy was pushed each frame, one side would lose: writing
+         * the component from the device throws a scrub away the moment it is
+         * made, and writing the device from the component re-seeks the mixer
+         * to a frame-old position sixty times a second, which is a stutter
+         * rather than a sound. Telling those two apart needs a dirty flag,
+         * and that is a synchronisation problem that would outlive whoever
+         * added it. Reading the device is a read of the only copy there is.
+         *
+         * It also settles what a scrub means when nothing is playing: there
+         * is no cursor, so the editor offers none. A mirrored field would
+         * have had to invent an answer and remember it somewhere.
+         *
+         * @param voice Voice to read; an unknown or finished one answers 0.
+         * @return Seconds from the clip's start, counting a seek that has been
+         *         asked for but not yet applied by the mixer.
+         */
+        float voiceCursor(VoiceId voice) const;
+
+        /**
+         * @brief Move @p voice's cursor to @p seconds into its clip.
+         *
+         * Safe while the voice plays and while it is paused: the seek is
+         * handed to the mixer as a target it applies before its next read, and
+         * voiceCursor() reports that target from the moment it is asked for,
+         * so a scrubber reads back what it just wrote rather than where the
+         * sound was a frame ago. A paused voice keeps the seek and starts from
+         * it when it resumes.
+         *
+         * Clamped to the clip here rather than passed through, because
+         * miniaudio refuses an out-of-range seek at the data source and still
+         * moves the sound's own clock to the position it refused - measured,
+         * a voice left playing from where it was with a time nine seconds in
+         * the future. Seeking to the very end is allowed and does what playing
+         * to the end does: the voice finishes, and the next reap releases it.
+         *
+         * @param voice Voice to move; unknown ids are ignored.
+         * @param seconds Position from the clip's start; negative and
+         *        non-finite values land at 0.
+         */
+        void seekVoice(VoiceId voice, float seconds);
 
         /**
          * @brief Ramp @p voice to silence and let it go. Unknown ids are ignored.
@@ -206,10 +308,14 @@ class AudioDevice {
          * Returns at once; the voice is silent within the ramp and released by
          * the next reapFinishedVoices(). Until then the id answers exactly as
          * it did when this released outright - unknown to updateVoice, finished
-         * to isVoicePlaying - so nothing above has a second state to know
+         * to isVoiceActive - so nothing above has a second state to know
          * about. What it does mean is that a voice restarted on the following
          * frame briefly overlaps the tail of the one it replaced, which is the
          * crossfade it sounds like rather than a fault.
+         *
+         * A held voice is stopped like any other, and stops being held: it is
+         * silent already, so it is let go on the next reap rather than ramped
+         * again, and the pause does not keep it out of that sweep.
          */
         void stopVoice(VoiceId voice);
 
@@ -254,10 +360,44 @@ class AudioDevice {
         void stopAllVoices();
 
         /**
+         * @brief Hold every voice that is sounding right now.
+         *
+         * The editor's transport, and nothing in the engine. Pausing a shipped
+         * game must not cut its music, silence a menu or swallow a UI click,
+         * and AudioSystem is written so that it does not - see its header. The
+         * editor's pause is a different pause wearing the same word: there the
+         * world was frozen deliberately to be looked at, and a level's ambience
+         * playing on underneath it is noise nobody asked for. So the editor
+         * holds the voices itself, through the same device handle it already
+         * auditions clips with, and no system in the engine learns that an
+         * editor exists.
+         *
+         * Exactly the voices live at the call, deliberately. One started
+         * afterwards plays: the only caller that starts a voice while the world
+         * is frozen is the editor auditioning a clip, and not being able to
+         * hear a file because the world is paused would be the same mistake
+         * pointing the other way.
+         */
+        void pauseAllVoices();
+
+        /**
+         * @brief Let every voice pauseAllVoices() is still holding play on.
+         *
+         * Only those. A voice held on its own - an audition stopped to look at
+         * one moment of a clip - stays where it was put, because that hold was
+         * about the clip rather than about the world, and so does one that was
+         * held here and then asked for by pauseVoice(). A voice stopped while
+         * it was held is not started again either: stopping hands the hold
+         * back, so what this resumes is only what is still waiting.
+         */
+        void resumeAllVoices();
+
+        /**
          * @brief Number of voices the mixer currently holds.
          *
-         * Which includes any still ramping out of a stopVoice(), because that
-         * is what the mixer is holding - they are inaudible but not yet freed.
+         * Which includes any still ramping out of a stopVoice(), and any being
+         * held by a pause, because that is what the mixer is holding - the
+         * first are inaudible but not yet freed, the second are waiting.
          */
         size_t voiceCount() const;
 

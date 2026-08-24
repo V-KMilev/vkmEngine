@@ -58,9 +58,10 @@ overlays drawn on top.
 | Asset Browser       | `panels/asset_browser_panel.cpp`            | Thumbnail grid of materials / meshes / textures, plus a Sounds list with import and audition; pickable into the inspector|
 | Preferences         | `panels/preferences_panel.cpp`        | Floating editor/app settings window (Edit > Preferences, Ctrl+,)            |
 | Viewport Overlay    | `overlays/viewport_overlay.cpp`       | The axis navigation gizmo, top-right of the viewport (click an axis to snap the camera) |
-| Gizmo Overlay       | `overlays/gizmo_overlay.cpp`          | Transform gizmo drawing + light/camera gizmos                               |
+| Gizmo Overlay       | `overlays/gizmo_overlay.cpp`          | The transform gizmo's drawing and drag, and the viewport's click-to-pick     |
+| Gizmo Drawing       | `overlays/gizmo_overlay_draw.cpp`     | Every `draw*Gizmos` body, plus the selection outline: lights, cameras, probes, volumes, decals, emitters, audio, colliders, skeletons, bounds |
 | Viewport Toolbar    | `overlays/viewport_toolbar.cpp`       | In-viewport icon tool box: tool/space/snap + selection actions              |
-| Playback Bar        | `overlays/playback_bar.cpp`           | Top-centre Play/Pause/Stop transport for all Animation components           |
+| Playback Bar        | `overlays/playback_bar.cpp`           | Top-centre Play / Pause / Step / Stop transport for the simulation; Pause also holds the mixer's voices |
 
 ### Where world settings live
 
@@ -80,8 +81,10 @@ preferences**:
 - **Bottom panel** is a tab bar over per-scene working surfaces:
   **Animation** (the keyframe editor below) and **Errors**. The Errors
   tab is where recoverable engine failures surface - a script hook that
-  throws does not kill the frame, it lands here - listing
-  `EngineErrorLog` entries newest first with a Clear button.
+  throws does not kill the frame, it lands here, and so does an asset
+  reference a scene load could not resolve, named by kind and by asset,
+  which is the one failure that costs the author a field they had filled
+  in - listing `EngineErrorLog` entries newest first with a Clear button.
 - **Preferences window** is a floating, closeable window opened from
   `Edit > Preferences` (Ctrl+,). Tabs: `Camera` (fly-cam), `Gizmo`
   (snap defaults), `Display`, `Keybinds`. These are user/app config, not
@@ -177,19 +180,32 @@ asset graph.
 
 - **Audio Source** - the clip picker over `AudioClipAsset`, the clip's length,
   layout, rate and memory footprint, then gain / pitch / loop / play-on-start,
-  and the distance pair when the source is spatial. Three authoring mistakes are
+  and the distance pair when the source is spatial. Four authoring mistakes are
   named where they are made rather than left to the log: a max distance at or
   under the min (nothing is attenuated), a stereo clip on a spatial source (its
   two channels already encode a position, so panning one is meaningless at
-  best), and a scene with no active `AudioListener` at all - the one the engine
-  cannot report at edit time, since its own warning waits for a positioned voice
-  to actually start. A Play button auditions the clip **through the device, not
-  through `AudioSource::playing`** - writing that flag would be a scene edit,
-  undoable and dirtying and audible again on the next Play, when all that was
-  asked for was to hear the file. Its Stop is lit only while that audition is
-  sounding, which is the one thing on the row that speaks for the device: the
-  Playing / Idle label beside it reports `AudioSource::playing`, the scene's
-  state, and says nothing about whether the file is being heard.
+  best), a spatial source with no `Transform` (heard at the world origin rather
+  than where it was placed), and a scene with no active `AudioListener` at all -
+  the one the engine cannot report at edit time, since its own warning waits for
+  a positioned voice to actually start. Beneath them is a transport that mirrors
+  the two animation cards' - play / pause / resume on one button, stop, and a
+  position slider - auditioning the clip **through the device, not through
+  `AudioSource::playing`**: writing that flag would be a scene edit, undoable
+  and dirtying and audible again on the next Play, when all that was asked for
+  was to hear the file. Nothing on the row dirties the scene, which is the same
+  rule the animation cards follow for play, stop and scrub.
+
+  The slider reads `AudioDevice::voiceCursor` rather than a field on the
+  component, because the mixer advances that cursor between frames and a
+  mirrored copy would be stale by construction - see [the audio
+  reference](system/audio.md#the-cursor-is-the-devices-not-the-components). With
+  nothing playing there is no cursor, so the slider is disabled rather than
+  inventing a start offset. The audition belongs to the card that started it and
+  stops when the selection moves, so the slider can never run against another
+  entity's clip. Stop and the scrubber are lit off the device, which is the one
+  thing on the row that speaks for the mixer: the Source: playing / idle label
+  beside them reports `AudioSource::playing`, the scene's state, and says
+  nothing about whether the file is being heard.
 - **Audio Listener** - active and master volume, plus the two things nothing
   else on screen would show: a listener that is not the ear, which names the one
   `findActiveListener` picked instead of merely counting the candidates, and a
@@ -314,16 +330,19 @@ frame.
 The Asset Browser's third tab is a **list**, not a grid, because a sound has no
 picture. What it has is a length, a layout and a sound, so the row shows the
 first two and a play button gives the third - hearing a clip is what previewing
-one means. One Stop beside `Import Sound...` serves every row, because one
-audition voice is remembered for the whole tab: a second Play replaces the
-first rather than layering over it, and before the Stop nothing here could cut
-one short - which matters on a tab that imports mp3 and flac. It stops an
-audition rather than owning its lifetime: leave the tab and a ninety-second
-ambience plays on, because this tab is the only thing holding its id. It is lit
-only while the device says that voice is still sounding, here and on the
-Inspector's copy of it - an id outlives the voice it named, so a clip that ran
-to its end would otherwise leave a Stop offering to cut something that already
-stopped.
+one means. One Pause and one Stop beside `Import Sound...` serve every row,
+because one audition voice is remembered for the whole tab: a second Play
+replaces the first rather than layering over it, and before them nothing here
+could hold or cut one short - which matters on a tab that imports mp3 and flac,
+where the moment worth hearing is a minute in. There is no position slider to
+go with the pause, unlike the Inspector's card: this tab remembers the voice and
+not which clip it came from, so a slider would have no length to measure
+against. They stop and hold an audition rather than owning its lifetime: leave
+the tab and a ninety-second ambience plays on, because this tab is the only
+thing holding its id. Both are lit only while the device says that voice is
+still there, here and on the Inspector's copy of it - an id outlives the voice
+it named, so a clip that ran to its end would otherwise leave a Stop offering to
+cut something that already stopped.
 `Import Sound...` decodes a wav / mp3 / flac into the project, which is the
 only way a clip enters one; right-clicking a row assigns it to the selected
 entity's `AudioSource` as an undoable edit. On a host with no audio device the
@@ -382,11 +401,11 @@ Default tool keybinds (active only when the camera is **not** in fly mode):
 `Q` Select, `W` Move, `E` Rotate, `R` Scale, `X` toggles Local / World.
 All are rebindable from the Preferences > Keybinds tab.
 
-Everything with no mesh of its own draws a gizmo in `gizmo_overlay.cpp`, so it
-can be found and placed at all: lights (directional rays, cone projections,
-area-light edges), cameras (frustum lines), reflection probes and irradiance
-volumes (influence boxes, and the selected volume's probe grid), decals
-(projection box) and particle emitters (marker plus velocity), and audio
+Everything with no mesh of its own draws a gizmo in `gizmo_overlay_draw.cpp`,
+so it can be found and placed at all: lights (directional rays, cone
+projections, area-light edges), cameras (frustum lines), reflection probes and
+irradiance volumes (influence boxes, and the selected volume's probe grid),
+decals (projection box) and particle emitters (marker plus velocity), and audio
 sources and listeners (a billboard icon each - the source's keeps the speaker's
 arcs only while it is spatial; plus the selected source's `Min` / `Max Distance`
 spheres, and the listener's facing arrow). These are authoring shapes rather
@@ -425,10 +444,12 @@ just its position).
   sound has no volume to point at, which is also what keeps a 60-unit `Max
   Distance` from swallowing every click near it. The flown editor camera is
   excluded, the same way it draws no gizmo - it is the viewer.
-- Probes, irradiance volumes, decals and particle emitters draw wire volumes
-  rather than markers, and are still selected from the hierarchy only. Their
-  boxes run to tens of units, so answering a click anywhere inside one would
-  swallow everything standing in it.
+- Probes, irradiance volumes and decals draw a wire box rather than a marker,
+  and are selected from the hierarchy only: those boxes run to tens of units,
+  so answering a click anywhere inside one would swallow everything standing in
+  it. A particle emitter has no box either way - a ring and a dot at its
+  origin, plus its velocity line - and is also selected from the hierarchy,
+  because it is the marker that carries the click and an emitter draws none.
 - The hierarchy panel highlights the selection.
 - The inspector shows components of the selected entity. Entities inside a
   prefab instance are selected and edited like any other; an edit to one becomes

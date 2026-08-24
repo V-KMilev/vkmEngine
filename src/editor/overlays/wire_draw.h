@@ -8,6 +8,11 @@
 // box, arrow). Those live here so each overlay routes through the same math
 // instead of re-deriving it. The math is intentionally minimal and identical
 // across callers - this is plain debug-overlay drawing, not a render path.
+//
+// The transform gizmo draws its own handles rather than these primitives, but
+// it projects into the same viewport, so it takes nearPlaneSide from here. The
+// near plane is one fact about the camera, and a second spelling of it is a
+// second answer to "is this behind the viewer" waiting to disagree.
 
 #include <cmath>
 

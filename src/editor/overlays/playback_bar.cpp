@@ -3,6 +3,7 @@
 #include "core/clock.h"
 #include "framework/editor_common.h"
 #include "framework/scene_io_controller.h"
+#include "system/audio/audio_system.h"
 
 namespace Vkm::Engine {
 
@@ -43,12 +44,27 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
             // New paused state: pause if it was running, otherwise run (start
             // from Edit mode, or resume a paused session).
             clock.setPaused(running);
+            // The clock does not reach the mixer, and deliberately so:
+            // AudioSystem runs off the frame rather than off simulation time,
+            // which is what keeps a shipped game's music, menu and UI clicks
+            // alive under its own pause menu. That rule is right there and
+            // wrong here - this pause froze the world to be looked at, and the
+            // level's ambience playing on underneath it is noise nobody asked
+            // for - so the transport holds the voices itself, through the same
+            // device it auditions clips with. A clip auditioned while the
+            // world is frozen is still heard: only what was already sounding
+            // is held, and only what this held is let go again.
+            AudioDevice& audio = ec.audioSystem.device();
+            if (running) audio.pauseAllVoices();
+            else         audio.resumeAllVoices();
         }
 
         ImGui::SameLine();
         // Step one fixed tick (physics + animation + scripts). Meaningful only
         // while paused; from Edit mode it begins a paused play session first so
-        // the step never mutates the authored scene irreversibly.
+        // the step never mutates the authored scene irreversibly. The held
+        // voices stay held through it: a tick is sixteen milliseconds of sound,
+        // and starting the mixer for it would be a click rather than a sound.
         if (iconButton("vpStep", EditorIcon::Step, false, paused,
                        "Step one fixed tick (while paused)", BTN())) {
             if (!playing) {

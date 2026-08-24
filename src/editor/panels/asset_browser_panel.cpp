@@ -330,7 +330,22 @@ void AssetBrowserPanel::drawSounds(EditorContext& ec) {
     // disagreeing about what auditioning means is the drift. Enabled off the
     // device rather than off a remembered id, because an id outlives the voice
     // it named: a one-shot ends on its own and nothing here is told.
-    if (iconButton("abSoundStop", EditorIcon::Stop, false, device.isVoicePlaying(m_previewVoice),
+    const bool livePreview = device.isVoiceActive(m_previewVoice);
+    const bool heldPreview = livePreview && device.isVoicePaused(m_previewVoice);
+    // Pause, because a ninety-second ambience is auditioned to hear one moment
+    // in it and holding it is how you stay on that moment. No scrubber beside
+    // it, unlike the Inspector's card: this tab remembers one voice for the
+    // whole tab and not which clip it came from, so a position slider would
+    // have no length to measure against.
+    if (iconButton("abSoundPause", heldPreview ? EditorIcon::Play : EditorIcon::Pause,
+                   livePreview && !heldPreview, livePreview,
+                   heldPreview ? "Resume the audition" : "Pause the audition",
+                   ImGui::GetFrameHeight())) {
+        if (heldPreview) device.resumeVoice(m_previewVoice);
+        else             device.pauseVoice(m_previewVoice);
+    }
+    ImGui::SameLine();
+    if (iconButton("abSoundStop", EditorIcon::Stop, false, livePreview,
                    "Stop the audition", ImGui::GetFrameHeight())) {
         device.stopVoice(m_previewVoice);
         m_previewVoice = 0;

@@ -183,11 +183,13 @@ field would cost every entity in the file. So the document is held to the rule
 where it is built (`detail::writeNonFiniteAsZero`, shared with `Prefab::save`):
 a non-finite value is written as `0` and named in the log by its path, e.g.
 `/entities/12/components/AudioSource/volume`. The play-mode snapshot goes through
-the same builder, so a scene that could not be saved cannot fail to restore on
-Stop either. Nothing about a well-formed file changes - a finite number writes
-exactly as it did - and the read side stays strict on purpose: teaching the
-loaders that `null` means "keep the default" would make it a permanent token in
-every scalar field of the format.
+the same builder *and* the same cook, so a scene that could not be saved cannot
+fail to restore on Stop either - the second half is what makes that true, because
+the snapshot names its assets exactly as the file does and a name is restorable
+only once the library holds a record for it. Nothing about a well-formed file
+changes - a finite number writes exactly as it did - and the read side stays
+strict on purpose: teaching the loaders that `null` means "keep the default"
+would make it a permanent token in every scalar field of the format.
 
 `SceneSerializer::load` is **transactional for both entities and assets**:
 
@@ -201,7 +203,12 @@ every scalar field of the format.
    expand each prefab instance into it, wire the parent links, then read the
    `environment` and `physics` blocks. All of it sits inside one guard, so a
    drifted field anywhere - a string where a number belongs - fails the load
-   instead of unwinding out of it.
+   instead of unwinding out of it. An asset *name* step 2 did not bring in is
+   not a drifted field and does not fail the load: the component's slot is
+   left empty and the miss goes through `reportError`, so the editor toasts it
+   and keeps it in Bottom > Errors rather than burying it in a log the editor
+   has no view of. By design there are no benign cases - the `assets` block is
+   built by walking exactly what the scene references.
 4. On full success, swap both staging containers in one step:
    `Scene::swap` for the scene, and `ResourceManager::swap` for the assets. The
    font slot swaps *back* (`swapSlot<FontAsset>`): fonts are baked at startup
@@ -257,8 +264,9 @@ nothing on disk answers to. A source outside the project keeps its absolute path
 or one file reached by two spellings becomes two assets.
 
 **Save** - `AssetSerializer::saveAssetsForScene` walks the components that name
-assets (`Mesh`, `LOD`, `Decal`) and emits **name-only** references to the
-meshes/materials/textures used. In the editor,
+assets (`Mesh`, `LOD`, `Decal`, `Animator`, `AudioSource`, plus the asset fields a
+behavior declares) and emits **name-only** references to the meshes / materials /
+textures / skeletons / animation clips / sounds used. In the editor,
 `SceneIOController` first calls `AssetCooker::cookAllAssets`, which bakes every
 non-hidden asset in the `ResourceManager` into the library + cooked cache and
 rewrites the manifest (skipping assets whose hash is unchanged and whose cooked
@@ -281,9 +289,9 @@ synthesized `{"kind":"cooked","name":...}` source, and when it answers no the
 asset gets the `source` object out of its library recipe instead - the same
 `model` / `generator` / `file` descriptor the import wrote. A material skips the
 probe: it has no cooked binary, so its recipe is always what loads. All of them
-go through the `AssetFactory` dispatch seam (`io/asset/asset_factory.h`) - five function pointers
-(mesh / texture / material / skeleton / animation clip) that each binary wires at
-startup, with plain switch dispatch on the `kind` field:
+go through the `AssetFactory` dispatch seam (`io/asset/asset_factory.h`) - six function pointers
+(mesh / texture / material / skeleton / animation clip / audio clip) that each
+binary wires at startup, with plain switch dispatch on the `kind` field:
 
 | `kind`                 | Handled by       | Resolves to                                         |
 |------------------------|------------------|-----------------------------------------------------|

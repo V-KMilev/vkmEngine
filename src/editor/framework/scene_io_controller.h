@@ -111,13 +111,37 @@ class SceneIOController {
         void drawDialogs(FrameContext& ctx, EditorState& state);
 
         /**
-         * @brief Serialize the live scene + assets to an in-memory snapshot for play
-         * mode. Call when entering play so Stop can restore the authored state.
+         * @brief Snapshot the live scene + assets in memory so Stop can restore
+         * the authored state. Call when entering play.
+         *
+         * Bakes every loaded asset into the cooked library first, for the reason
+         * writeScene() does: the snapshot is the scene file format, which names
+         * its assets and nothing more, and a name is only restorable when the
+         * library holds a record for it. An asset imported during this session
+         * and never baked would come back as an empty slot.
+         *
+         * May block while an import that has not landed yet finishes, since the
+         * cook waits on outstanding async loads - pressing Play seconds after
+         * Import Model waits for that model. A half-loaded scene is not one worth
+         * playing, but the pause is visible and is worth expecting.
+         *
+         * @param ctx Frame context supplying the scene and resources to snapshot.
+         * @param state Editor state whose dirty flag is remembered for Stop to put
+         *              back, and which receives a toast if the cook or the
+         *              serialization failed.
          */
         void captureSnapshot(FrameContext& ctx, EditorState& state);
+
         /**
-         * @brief Swap the captured snapshot back in (same housekeeping as load()) and
-         * clear it. No-op if no snapshot was captured.
+         * @brief Swap the captured snapshot back in (same housekeeping as load())
+         * and clear it. No-op if no snapshot was captured.
+         *
+         * A failed restore keeps the snapshot rather than dropping it, so the
+         * played scene is left alone instead of being half-replaced.
+         *
+         * @param ctx Frame context supplying the scene and resources to restore into.
+         * @param state Editor state whose selection, dirty flag and toasts are
+         *              updated to match the restored scene.
          */
         void restoreSnapshot(FrameContext& ctx, EditorState& state);
         /**

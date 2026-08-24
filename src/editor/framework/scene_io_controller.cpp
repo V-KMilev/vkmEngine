@@ -225,12 +225,27 @@ void SceneIOController::afterSceneReplace(
 }
 
 void SceneIOController::captureSnapshot(FrameContext& ctx, EditorState& state) {
+    // The snapshot is the scene file format, and that format promises that every
+    // asset name it writes is one the library can hand back. An asset imported
+    // this session and never baked has no manifest entry, so on Stop its name
+    // resolves to nothing while the ResourceManager still holding it is thrown
+    // away by the restoring swap - the import vanishes from the component and
+    // from the Asset Browser both. writeScene bakes before it writes for exactly
+    // this reason; the snapshot writes the same document and needs the same bake.
+    const bool cooked = AssetCooker::cookAllAssets(ctx.resources);
+
     m_playSnapshot = SceneSerializer::saveToString(ctx.scene, ctx.resources);
     if (m_playSnapshot.empty()) {
         LOG_ERROR("SceneIOController::captureSnapshot: failed to serialize scene");
         state.pushToast(EditorState::ToastKind::Error,
             "Play: could not snapshot scene (Stop will not restore)");
         return;
+    }
+    // A partial cook does not stop Play, by the same rule the save follows: the
+    // session is still worth entering, and the toast names what Stop may lose.
+    if (!cooked) {
+        state.pushToast(EditorState::ToastKind::Error,
+            "Some assets did not cook; Stop may not restore them");
     }
     // Remember the dirty flag so Stop leaves it exactly as the user left it -
     // simulation mutates the ECS directly (not via editor commands), so it
