@@ -150,6 +150,7 @@ class EditorSystem : public System {
         EditorPanelResize m_panelResize;
         EditorActions::ModelImportDialog m_modelImport;
         EditorActions::PlacePrefabDialog m_placePrefab;
+        EditorActions::NewProjectDialog  m_newProject;
         EditorActions::OpenProjectDialog m_openProject;
 
         EditorState      m_state;
