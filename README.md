@@ -84,7 +84,8 @@ Reference docs and contributor guides live under [docs/](docs/).
 ### Contributor guides
 
 - [Code style](docs/guides/code-style.md) - File layout, naming, formatting, comment styles, anti-patterns
-- [Development](docs/guides/development.md) - How to fit a change to the engine's structure and goals
+- [The Engine](docs/guides/engine.md) - What the engine is, what it values, and what has been decided
+- [Design](docs/guides/design.md) - Where a change belongs, what shape it takes, and what finished means
 - [Implementation](docs/guides/implementation.md) - What makes an implementation good: simple, clean, not speculative
 
 ## Source Layout

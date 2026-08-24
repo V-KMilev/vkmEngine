@@ -26,16 +26,23 @@ is whichever subsystem you're about to change.
 1. **Orient** - [reference/project-overview.md](reference/project-overview.md).
    One page: what the engine is, the core model, system order, the rendering and
    resource summary.
-2. **How to fit the change** - [guides/development.md](guides/development.md). The
-   engine has a grain; this is how to find it, where code belongs, and which
-   architectural seams you must not cross.
-3. **The quality bar** - [guides/implementation.md](guides/implementation.md).
+2. **What you are building** - [guides/engine.md](guides/engine.md). What the
+   engine is for, the order it trades in when two good things conflict, and the
+   questions already settled so nobody re-proposes them.
+3. **How to fit the change** - [guides/design.md](guides/design.md). The engine
+   has a grain; this is how to find it, where code belongs, which seams you must
+   not cross, and what "finished" means.
+4. **The quality bar** - [guides/implementation.md](guides/implementation.md).
    Simplest thing that solves today's problem; generic enough to not bite later
    but no more; clean and readable.
-4. **The mechanics** - [guides/code-style.md](guides/code-style.md). Naming,
+5. **The mechanics** - [guides/code-style.md](guides/code-style.md). Naming,
    layout, comments, formatting, class anatomy, includes - so your diff reads like
    it was always there.
-5. **The subsystem you're touching** - the matching doc under
+6. **Judging what is already there** - [guides/review.md](guides/review.md). The
+   other three assume you are adding something; this one asks whether the shape
+   the engine already has is the right one, and how to tell when fixes have
+   started standing in for a design.
+7. **The subsystem you're touching** - the matching doc under
    [reference/](reference/) (architecture, ecs, resources, threading, editor, or
    `reference/system/` for rendering, lighting, visibility, hierarchy, animation,
    events, io, scripting, physics, ui, audio).
@@ -57,11 +64,11 @@ For any non-trivial task:
    `System` looks like the other systems; a new component is a plain data struct.
 3. **Pick the smallest change that fits.** A method on an existing class beats a
    new file; an enum value beats a parallel type. Ask the three questions in the
-   [development guide](guides/development.md#3-three-questions-before-you-touch-a-file).
+   [design guide](guides/design.md#2-three-questions-before-you-touch-a-file).
 4. **Respect the seams.** Engine never reaches into the backend; systems talk
    through `FrameContext` and components, not to each other; assets are owned by
    `ResourceManager` and referenced by handle. See
-   [development.md](guides/development.md#4-the-seams-you-must-not-cross).
+   [engine.md](guides/engine.md#absolutes).
 5. **Write it to match its neighbors** ([code-style.md](guides/code-style.md)),
    then run the pre-commit checks in
    [implementation.md](guides/implementation.md#8-pre-commit-quality-pass).
@@ -79,9 +86,12 @@ alone, only from the feature they add.
 docs/
   README.md            <- you are here: the pre-flight order + working loop
   guides/
-    development.md      how to fit a problem to the engine (read 2nd)
+    engine.md           what the engine is, values, and has already decided (read 2nd)
+    design.md           where a change belongs, and what finished means (read 3rd)
     implementation.md   what makes an implementation good (read 3rd)
     code-style.md       naming / layout / comments / formatting (read 4th)
+    review.md           how to tell a drifting design from a working one
+    worked-example.md   one complete judgment, end to end
   reference/
     project-overview.md one-page orientation (read 1st)
     architecture.md     engine ownership, stages, FrameContext, directory tree, patterns

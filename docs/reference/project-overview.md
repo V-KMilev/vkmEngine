@@ -119,7 +119,7 @@ Full tree and design patterns: [architecture.md](architecture.md). House style:
 ## Where to go next
 
 - **Before writing code:** [../README.md](../README.md) (the pre-flight order) ->
-  [../guides/development.md](../guides/development.md) ->
+  [../guides/design.md](../guides/design.md) ->
   [../guides/implementation.md](../guides/implementation.md) ->
   [../guides/code-style.md](../guides/code-style.md).
 - **Subsystem detail:** [architecture.md](architecture.md), [ecs.md](ecs.md),
