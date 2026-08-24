@@ -63,24 +63,31 @@ struct EditorState {
     bool requestModelImport = false;  ///< Set by the Import Model menu item, consumed by the menu-bar dialog
     bool requestPlacePrefab = false;  ///< Set by the Create > Prefab item, consumed by the menu-bar dialog
     bool requestScriptReload = false; ///< Set by the Reload Scripts menu item, consumed by EditorSystem (hot-reload)
+    bool requestOpenProject  = false; ///< Set by the Open Project menu item, consumed by the dialog that draws it
 
     bool sceneDirty = false;    ///< Unsaved edits since last save/load. Title shows '*'.
 
     /**
-     * @brief The destructive scene actions that pass through the shared
-     * unsaved-changes guard. confirmAction is what the modal is currently
-     * confirming; afterSaveAction is deferred until the next clean save
-     * (the "Save" choice); pendingScenePath is the target of a guarded Open.
+     * @brief What action that throws the live scene away has been asked for,
+     *        and how far the unsaved-changes guard has got with answering it.
+     *
+     * One request at a time, in three stages. Ask is a request nobody has
+     * answered yet: EditorSystem prompts when the scene is dirty and goes
+     * straight to Run when it is not. Saving is the prompt's "Save" answer
+     * waiting for the write to land, and drops the request instead if the
+     * author backs out of the Save-As it opened. Run is approved, and
+     * EditorSystem performs it at one point in the frame with no ImGui window
+     * on the stack, because all four rebuild the world.
      */
-    enum class PendingSceneAction : uint8_t { None, Quit, New, Open, OpenProject };
-    PendingSceneAction confirmAction   = PendingSceneAction::None;
-    PendingSceneAction afterSaveAction = PendingSceneAction::None;
-    std::string        pendingScenePath;
+    enum class SceneAction : uint8_t { None, Quit, New, Open, OpenProject };
+    enum class ActionStage : uint8_t { Ask, Saving, Run };
+    SceneAction pendingAction = SceneAction::None;
+    ActionStage actionStage   = ActionStage::Ask;
+    std::string actionPayload;    ///< The target: a scene file, a project root, or nothing.
+
     std::vector<std::string> recentScenes;    ///< MRU list (absolute paths), most-recent first.
     std::vector<std::string> recentProjects;  ///< MRU project roots, most-recent first.
 
-    bool        showOpenProject = false;  ///< File > Open Project dialog is up.
-    std::string pendingProjectOpen;       ///< Project chosen from a menu; opened after the draw.
     std::string projectName;              ///< What the open project calls itself; titles the window.
     static constexpr size_t MAX_RECENT_ENTRIES = 8;
 
@@ -102,6 +109,39 @@ struct EditorState {
      * Cheap, idempotent.
      */
     void markSceneDirty() { sceneDirty = true; }
+
+    /**
+     * @brief Ask for an action that throws the live scene away.
+     *
+     * The one way in for Quit, New Scene, Open Scene and Open Project. The
+     * request is parked rather than performed, so a caller says what it wants
+     * instead of remembering to ask about unsaved changes - which is what stops
+     * the next destructive action from being the one that forgets - and so the
+     * scene is never rebuilt inside the ImGui frame that asked for it.
+     * EditorSystem prompts, waits out a save, and performs.
+     *
+     * Ignored while an earlier request is still unresolved, so a held key or a
+     * second click cannot stack prompts.
+     *
+     * @param action What to do once the guard clears.
+     * @param payload The action's target - the scene file for Open, the project
+     *        root for OpenProject, empty for the two that need none.
+     */
+    void requestSceneAction(SceneAction action, std::string payload = {}) {
+        if (pendingAction != SceneAction::None) return;
+        pendingAction = action;
+        actionStage   = ActionStage::Ask;
+        actionPayload = std::move(payload);
+    }
+
+    /**
+     * @brief Drop the pending request, whatever stage it had reached.
+     */
+    void clearSceneAction() {
+        pendingAction = SceneAction::None;
+        actionStage   = ActionStage::Ask;
+        actionPayload.clear();
+    }
 
     /**
      * @brief Selection helpers - route ALL selection changes through these.

@@ -62,8 +62,8 @@ constexpr std::array COMPONENT_KEYS = { VKM_SCENE_COMPONENTS(VKM_SCENE_KEY, VKM_
  *
  * The loader knows the name it failed on; only here is it known whose it was
  * and which component it was read from, which is the address a save needs to
- * put it back. Drained on every component, not only the ones that reference
- * assets, so nothing is left over to attach to the next entity.
+ * put it back. Called for every component, not only the ones that reference
+ * assets, so the list is empty by the time the next one is read.
  *
  * @param s Scene holding the entity.
  * @param e Entity the component was read into.
@@ -102,20 +102,15 @@ void loadInto(const json& src, const char* key, Scene& s, EntityId e, Args&&... 
     const auto it = src.find(key);
     if (it == src.end()) return;
 
+    // Bounds what this loader resolves to this component. A loader that throws
+    // part-way is abandoned and the component is not added, so its names must
+    // not be left for the next component read to record as its own.
+    CS::UnresolvedScope unresolved;
+
     T component;
     try {
         CS::load(*it, component, std::forward<Args>(args)...);
     } catch (const std::exception& error) {
-        // Whatever this loader resolved before it threw is dropped here, and
-        // dropping it is the point: the component is not being added, the load
-        // is about to be abandoned, and the collector is a free list shared by
-        // every load in the process. Left standing, the next scene opened
-        // drains it into its own first component and records names that scene
-        // never wrote - which the save then puts into that field and into its
-        // assets block, so one malformed file that failed to open makes the
-        // next healthy one reference assets nothing can answer for.
-        CS::takeUnresolvedRefs();
-
         // A loader throws from inside nlohmann, which names the type mismatch
         // and nothing about where in the file it happened. The key is in hand
         // right here and the entity id one level up, so both are attached on

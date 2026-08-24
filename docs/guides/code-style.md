@@ -408,9 +408,10 @@ log strings are output, not code structure, and are exempt - the build dump at
 `debug/build_info.h:20-27` is the whole population; see
 [13.4](#134-decorative-log-strings).)
 
-The one live violation is `editor/panels/asset_browser_panel.cpp`, which carries
-sixteen `// ---` banners. They are a defect that predates the rule, not a
-precedent - do not extend them, and do not copy the file's shape into a new panel.
+**Zero** tree-wide: `src/`, `app/`, `examples/` and `templates/` carry no banner
+of any width. There is nothing to copy from, so a banner arriving in a diff is
+new - and a long panel `.cpp`, where the sections feel like they want labels, is
+where it shows up.
 
 ---
 
@@ -723,14 +724,16 @@ instead of writing a move constructor. Lightweight value types (`StorageIndex`,
 
 ### 9.1 Where `VKM_ASSERT` actually lives
 
-All 30 uses are in `src/engine`, every one in a foundation type - `Scene`,
+All 30 uses are in `src/engine`, 29 of them in a foundation type - `Scene`,
 `SparseSet`, `SlotAllocator`, `ResourceManager`, `HierarchyOperations`, `Bus`,
-`Resource`. **Zero** in `src/backend`, `src/editor`, `src/tools` or `app/`, which
-guard and degrade instead. And a destructive operation asserts *and* guards on
-the same condition, so a release build refuses rather than corrupts:
-`scene.h:72-73`, `resource_manager.h:122-123`, `slot_allocator.h:64-65` each pair
-the assert with `if (!cond) return;`. The assert is for the programmer who broke
-it; the guard is for the user who ships it.
+`Resource`. The thirtieth is in a System: `hierarchy_system.cpp:39` asserts the
+`Hierarchy`-implies-`WorldTransform` pairing its own resolve reads through.
+**Zero** in `src/backend`, `src/editor`, `src/tools` or `app/`, which guard and
+degrade instead. And a destructive operation asserts *and* guards on the same
+condition, so a release build refuses rather than corrupts: `scene.h:72-73`,
+`resource_manager.h:122-123`, `slot_allocator.h:64-65` each pair the assert with
+`if (!cond) return;`. The assert is for the programmer who broke it; the guard is
+for the user who ships it.
 
 ### 9.2 Three channels, and which one an error takes
 

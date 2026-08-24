@@ -136,8 +136,8 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
 }
 
 void drawEntityMarker(ImDrawList* dl, EditorIcon icon, ImVec2 center, ImU32 col) {
-    dl->AddCircleFilled(center, ENTITY_MARKER_HIT_RADIUS, MARKER_DISC_COL, 16);
-    drawEditorIcon(dl, icon, center, ENTITY_MARKER_RADIUS * 0.85f, col);
+    dl->AddCircleFilled(center, entityMarkerHitRadius(), MARKER_DISC_COL, 16);
+    drawEditorIcon(dl, icon, center, entityMarkerRadius() * 0.85f, col);
 }
 
 bool iconButton(

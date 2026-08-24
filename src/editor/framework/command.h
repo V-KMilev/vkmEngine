@@ -44,7 +44,10 @@ class Command {
          *
          * Surfaced in the Edit menu's Undo/Redo entries.
          *
-         * @return Stable label string owned by the command.
+         * @return A string that outlives the command - every implementation
+         *         stores the pointer it was constructed with rather than a
+         *         copy, and CommandStack::undoLabel() hands it to the menu bar
+         *         frames later. A literal. Not a std::string's c_str().
          */
         virtual const char* label() const = 0;
 

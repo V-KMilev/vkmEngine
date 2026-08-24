@@ -9,6 +9,7 @@
 
 #include "framework/editor_common.h"
 #include "overlays/wire_draw.h"
+#include "ui/editor_style.h"
 #include "system/visibility/visibility.h"
 #include "system/animation/pose_buffer.h"
 #include "system/camera/camera_controller_system.h"
@@ -154,12 +155,14 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
 
                 // Disc outline (perpendicular to dir) so the user can see the
                 // light origin distinctly from the rays.
-                wireCircle(dl, vp, pos, right, udir, discR, 16, vpMin, vpSize, col, 1.5f);
+                wireCircle(dl, vp, pos, right, udir, discR, 16, vpMin, vpSize, col,
+                           EditorStyle::px(1.5f));
 
                 for (const glm::vec3& off : offsets) {
                     const glm::vec3 start = pos + off;
-                    arrowLine(dl, vp, start, start + dir * L, vpMin, vpSize,
-                              col, 2.0f, 12.0f, 6.0f);
+                    arrowLine(dl, vp, start, start + dir * L, vpMin, vpSize, col,
+                              EditorStyle::px(2.0f), EditorStyle::px(12.0f),
+                              EditorStyle::px(6.0f));
                 }
                 break;
             }
@@ -224,7 +227,7 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
                     }
                     for (int i = 0; i < 4; ++i) {
                         const int j = (i + 1) & 3;
-                        if (ok[i] && ok[j]) dl->AddLine(sp[i], sp[j], col, 1.5f);
+                        if (ok[i] && ok[j]) dl->AddLine(sp[i], sp[j], col, EditorStyle::px(1.5f));
                     }
                 } else {
                     // Disk: right/up already carry the radius, so unit radius here.
@@ -234,9 +237,11 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
                 // Emission arrow toward the lit hemisphere (+dir). Two-sided
                 // emitters get a second arrow on the back so the user can see
                 // the emission is bidirectional.
-                arrowLine(dl, vp, pos, pos + dir * 0.5f, vpMin, vpSize, col, 1.5f, 8.5f, 4.0f);
+                arrowLine(dl, vp, pos, pos + dir * 0.5f, vpMin, vpSize, col, EditorStyle::px(1.5f),
+                  EditorStyle::px(8.5f), EditorStyle::px(4.0f));
                 if (light.twoSided)
-                    arrowLine(dl, vp, pos, pos - dir * 0.5f, vpMin, vpSize, col, 1.5f, 8.5f, 4.0f);
+                    arrowLine(dl, vp, pos, pos - dir * 0.5f, vpMin, vpSize, col, EditorStyle::px(1.5f),
+                  EditorStyle::px(8.5f), EditorStyle::px(4.0f));
 
                 // Attenuation-cutoff sphere: the distance beyond which the
                 // light contributes nothing. Drawn dimmer / thinner than the
@@ -274,12 +279,13 @@ void GizmoOverlay::drawProbeGizmos(EditorContext& ec) {
 
         // The world-axis-aligned influence box (wireBox with no rotation).
         wireBox(dl, vp, pos, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), e,
-                ec.viewportPos, ec.viewportSize, col, selected ? 2.0f : 1.5f);
+                ec.viewportPos, ec.viewportSize, col,
+                EditorStyle::px(selected ? 2.0f : 1.5f));
 
         // Centre marker: the point the probe captures the scene from.
         ImVec2 sp;
         if (projectToViewport(vp, pos, ec.viewportPos, ec.viewportSize, sp))
-            dl->AddCircleFilled(sp, selected ? 4.0f : 3.0f, col);
+            dl->AddCircleFilled(sp, EditorStyle::px(selected ? 4.0f : 3.0f), col);
     });
 
     ec.frame.scene.forEach<IrradianceVolume, Transform>([&](EntityId id, const IrradianceVolume& volume,
@@ -290,7 +296,8 @@ void GizmoOverlay::drawProbeGizmos(EditorContext& ec) {
         const glm::vec3 pos = resolvedWorldPosition(ec.frame.scene, id, tf);
 
         wireBox(dl, vp, pos, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), volume.halfExtents,
-                ec.viewportPos, ec.viewportSize, col, selected ? 2.0f : 1.5f);
+                ec.viewportPos, ec.viewportSize, col,
+                EditorStyle::px(selected ? 2.0f : 1.5f));
 
         // The probe grid itself is only worth the clutter for the selected volume -
         // it is what tells you whether the resolution actually covers the geometry.
@@ -310,7 +317,7 @@ void GizmoOverlay::drawProbeGizmos(EditorContext& ec) {
                     const glm::vec3 t = (glm::vec3(x, y, z) + 0.5f) / resf;
                     ImVec2 pp;
                     if (projectToViewport(vp, boxMin + boxSize * t, ec.viewportPos, ec.viewportSize, pp))
-                        dl->AddCircleFilled(pp, 2.0f, col);
+                        dl->AddCircleFilled(pp, EditorStyle::px(2.0f), col);
                 }
             }
         }
@@ -332,14 +339,15 @@ void GizmoOverlay::drawEffectGizmos(EditorContext& ec) {
         // box gizmo is the decal's whole authoring model.
         const glm::vec3 pos = resolvedWorldPosition(ec.frame.scene, id, tf);
         wireBox(dl, vp, pos, tf.rotation, tf.scale * 0.5f,
-                ec.viewportPos, ec.viewportSize, col, selected ? 2.0f : 1.5f);
+                ec.viewportPos, ec.viewportSize, col,
+                EditorStyle::px(selected ? 2.0f : 1.5f));
 
         // Projection direction: decals project along the entity's forward.
         const glm::vec3 fwd = Math::computeForward(tf.rotation);
         ImVec2 a, b;
         if (projectToViewport(vp, pos, ec.viewportPos, ec.viewportSize, a) &&
             projectToViewport(vp, pos + fwd * (tf.scale.z * 0.75f), ec.viewportPos, ec.viewportSize, b))
-            dl->AddLine(a, b, col, selected ? 2.0f : 1.5f);
+            dl->AddLine(a, b, col, EditorStyle::px(selected ? 2.0f : 1.5f));
     });
 
     ec.frame.scene.forEach<ParticleEmitter, Transform>([&](EntityId id, const ParticleEmitter& e,
@@ -350,8 +358,9 @@ void GizmoOverlay::drawEffectGizmos(EditorContext& ec) {
         const glm::vec3 pos = resolvedWorldPosition(ec.frame.scene, id, tf);
         ImVec2 sp;
         if (!projectToViewport(vp, pos, ec.viewportPos, ec.viewportSize, sp)) return;
-        dl->AddCircle(sp, selected ? 6.0f : 5.0f, col, 0, selected ? 2.0f : 1.5f);
-        dl->AddCircleFilled(sp, 2.0f, col);
+        dl->AddCircle(sp, EditorStyle::px(selected ? 6.0f : 5.0f), col, 0,
+                      EditorStyle::px(selected ? 2.0f : 1.5f));
+        dl->AddCircleFilled(sp, EditorStyle::px(2.0f), col);
 
         // Initial-velocity direction, so the spray's aim reads at a glance.
         const float speed = glm::length(e.velocity);
@@ -359,7 +368,7 @@ void GizmoOverlay::drawEffectGizmos(EditorContext& ec) {
             ImVec2 tip;
             if (projectToViewport(vp, pos + (e.velocity / speed) * 0.75f,
                                   ec.viewportPos, ec.viewportSize, tip))
-                dl->AddLine(sp, tip, col, selected ? 2.0f : 1.5f);
+                dl->AddLine(sp, tip, col, EditorStyle::px(selected ? 2.0f : 1.5f));
         }
     });
 }
@@ -406,7 +415,8 @@ void GizmoOverlay::drawAudioGizmos(EditorContext& ec) {
             // before a frame or two have passed, so what the ring reports on
             // in practice is loops and beds.
             if (source.playing)
-                dl->AddCircle(sp, ENTITY_MARKER_HIT_RADIUS + 2.0f, col, 0, 1.5f);
+                dl->AddCircle(sp, entityMarkerHitRadius() + EditorStyle::px(2.0f), col, 0,
+                              EditorStyle::px(1.5f));
         }
 
         // The falloff pair is what an author tunes, and tuning is something
@@ -455,7 +465,8 @@ void GizmoOverlay::drawAudioGizmos(EditorContext& ec) {
         // forward here is +Z. That is the engine's one convention whose wrong
         // answer looks plausible instead of failing, so the arrow is the check.
         arrowLine(dl, vp, pos, pos + Math::computeForward(rot) * 0.8f,
-                  vpMin, vpSize, col, 1.5f, 8.5f, 4.0f);
+                  vpMin, vpSize, col, EditorStyle::px(1.5f),
+                  EditorStyle::px(8.5f), EditorStyle::px(4.0f));
     });
 }
 
@@ -572,7 +583,7 @@ void GizmoOverlay::drawCameraGizmos(EditorContext& ec) {
         if (haveFar[0] && haveFar[1]) {
             const ImVec2 mid((farSp[0].x + farSp[1].x) * 0.5f,
                              (farSp[0].y + farSp[1].y) * 0.5f);
-            const ImVec2 tab(mid.x, mid.y - 8.0f);
+            const ImVec2 tab(mid.x, mid.y - EditorStyle::px(8.0f));
             dl->AddTriangleFilled(tab,
                 ImVec2(mid.x - 5.0f, mid.y),
                 ImVec2(mid.x + 5.0f, mid.y), col);

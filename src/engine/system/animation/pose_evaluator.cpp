@@ -114,10 +114,9 @@ PlaybackStep advancePlayback(Animator& animator, float duration, float fromDurat
     PlaybackStep step{animator.time, animator.time, 0.0f};
     if (simDelta <= 0.0f) return step;
 
-    // The authored flag becomes the runtime one, once. Here rather than at load,
-    // so it fires when the simulation runs rather than when the scene arrives -
-    // which is what makes a rig start on Play and hold its pose in a scene that
-    // is only open. The same seam AnimationSystem gives the Animation component.
+    // The authored flag becomes the runtime one, once, and here rather than at
+    // load: that is what makes a rig start on Play and hold its pose in a scene
+    // that is only open. AnimationSystem gives Animation the same seam.
     if (animator.playOnStart && !animator.started) {
         animator.started = true;
         animator.playing = true;
@@ -133,17 +132,14 @@ PlaybackStep advancePlayback(Animator& animator, float duration, float fromDurat
         step.travel = animator.looping ? delta : animator.time - step.from;
     }
 
-    // Deliberately not gated on `playing`. A one-shot clip that runs out in the
-    // middle of a blend into it stops its own head, and a fade that stopped with
-    // it would hold the character at a weight no field names and nothing clears
-    // - visible as mostly the clip it already left. The blend is about reaching
-    // the clip, not about that clip advancing.
+    // Not gated on `playing`: a one-shot that runs out mid-blend stops its own
+    // head, and a fade stopping with it would strand the character at a weight
+    // no field names. The blend is about reaching the clip, not advancing it.
     if (animator.fadeRemaining <= 0.0f) return step;
 
     // The outgoing clip keeps playing while it fades, so the blend is between
-    // two moving poses. It never stops the animator: what is playing is the clip
-    // that was faded to, and an outgoing one that runs out holds its last frame
-    // for the rest of the blend.
+    // two moving poses; one that runs out holds its last frame for the rest of
+    // it. What `playing` names is the clip that was faded to.
     advanceHead(animator.fadeTime, fromDuration, delta, animator.looping);
 
     // Unscaled by speed: a blend length is a duration the caller asked for, not
@@ -228,10 +224,8 @@ void composePose(
         originMax = glm::max(originMax, origin);
 
         // Accumulated, not local: a bone under a scaled parent carries that
-        // scale too, and it is the total that stretches the skin. Floored at 1
-        // because this only ever inflates a bounding box, and the occlusion
-        // cull keeps conservatively - an under-sized box deletes geometry that
-        // was visible, an over-sized one costs a draw.
+        // scale too, and the total is what stretches the skin. Floored at 1
+        // because an under-sized bound deletes geometry that was visible.
         maxScale = std::max({maxScale,
             glm::length(glm::vec3(out.global[i][0])),
             glm::length(glm::vec3(out.global[i][1])),

@@ -622,8 +622,8 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
     ImGui::EndChild();
 
     // Rename modal at panel scope (not inside the params child) so the popup
-    // id resolves cleanly. Same flow as the Asset Browser's: apply now, push
-    // RenameAssetCommand so the rename is one Ctrl+Z away.
+    // id resolves cleanly. The rename itself is EditorActions', so this modal
+    // and the Asset Browser's cannot drift apart again.
     if (beginDialog("Rename Material", m_renameOpen)) {
         // Same keyboard contract the Asset Browser's rename holds: the field
         // takes focus with its text selected, so the dialog can be answered
@@ -636,9 +636,8 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         const DialogResult r = dialogButtons(m_renameOpen, "Rename",
                                              m_renameBuf[0] != '\0', commit);
         if (r == DialogResult::Confirm && resources.isAlive(target)) {
-            resources.rename(target, m_renameBuf);
-            state.commands.push(std::make_unique<RenameAssetCommand<MaterialHandle>>(
-                resources, target, m_renameOldName, m_renameBuf, "Rename Material"));
+            EditorActions::renameAsset(resources, state, target, m_renameOldName,
+                                       m_renameBuf, "Rename Material");
             state.markSceneDirty();
         }
         endDialog();

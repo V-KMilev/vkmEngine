@@ -16,6 +16,7 @@
 
 #include <cmath>
 
+#include "ui/editor_style.h"
 #include <imgui.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
@@ -185,7 +186,7 @@ inline void arrowLine(
 inline void wireBox(
     ImDrawList* dl, const glm::mat4& vp,
     const glm::vec3& pos, const glm::quat& rot, const glm::vec3& he,
-    ImVec2 vpMin, ImVec2 vpSize, ImU32 col, float thickness = 1.5f
+    ImVec2 vpMin, ImVec2 vpSize, ImU32 col, float thickness = EditorStyle::px(1.5f)
 ) {
     const glm::mat3 r = glm::mat3_cast(rot);
     glm::vec3 c[8];
@@ -213,7 +214,7 @@ inline void wireBox(
 inline void wireCapsule(
     ImDrawList* dl, const glm::mat4& vp,
     const glm::vec3& center, const glm::quat& rot, float radius, float halfHeight,
-    int segments, ImVec2 vpMin, ImVec2 vpSize, ImU32 col, float thickness = 1.5f
+    int segments, ImVec2 vpMin, ImVec2 vpSize, ImU32 col, float thickness = EditorStyle::px(1.5f)
 ) {
     const glm::mat3 r = glm::mat3_cast(rot);
     const glm::vec3 u = r[0];

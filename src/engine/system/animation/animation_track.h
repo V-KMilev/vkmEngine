@@ -86,10 +86,9 @@ class AnimationTrack {
                 return m_values[0];
             }
 
-            // At/before the first key: hold the first value. `time < 0.0f` is not
-            // enough: a track whose first key sits past 0 would then reach the
-            // interpolation below with upper_bound == begin(), underflowing
-            // prevIndex to SIZE_MAX.
+            // Hold the first value at or before the first key. `time < 0.0f` is
+            // not enough: a first key past 0 would reach the interpolation with
+            // upper_bound == begin(), underflowing prevIndex to SIZE_MAX.
             if (time <= m_times.front()) {
                 return m_values.front();
             }

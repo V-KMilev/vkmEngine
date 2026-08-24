@@ -112,7 +112,8 @@ TextureHandle createRecipeTexture(const nlohmann::json& source, ResourceManager&
         // pixels off the main thread, AsyncLoaderSystem finalises the asset 1-3
         // frames later. Material binding shows a 1x1 gray fallback in the gap.
         return requestTextureAsync(path, resources, sRGB, genMipmaps,
-                                   textureFilterFromRecipe(source));
+                                   textureFilterFromRecipe(source),
+                                   textureWrapFromRecipe(source));
     }
 
     if (kind == "builtin") {

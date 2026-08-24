@@ -49,11 +49,17 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
         // allocation happened to contain. Show the unoccluded value instead.
         if (ctx.aoReady) ctx.ao.bindColor(GLBindings::PostTextureSlots::SSAO);
         m_shader->setUniform1i("u_hasAO", ctx.aoReady ? 1 : 0);
-        ctx.shadowAtlas.bind2DRaw(GLBindings::ShadowTextureSlots::Atlas2D);
         if (ctx.fogReady)
             ctx.fog.bindIntegratedSlot(GLBindings::PostTextureSlots::FogVolume);
         m_shader->setUniformMatrix4fv("u_projection", view.camera.projection);
     }
+
+    // Unconditional: this shader declares the atlas slot as a plain sampler2D, and
+    // the forward pass leaves that texture bound with depth comparison enabled.
+    // The driver validates the declared sampler against the bound state at draw
+    // time whether or not the debug branch that reads it is taken, so binding it
+    // raw only in debug mode is undefined behaviour in every other frame.
+    ctx.shadowAtlas.bind2DRaw(GLBindings::ShadowTextureSlots::Atlas2D);
 
     ctx.screenTri.draw();
 }

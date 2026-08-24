@@ -9,11 +9,10 @@ struct EditorState;
 /**
  * @brief Border-drag resize for the docked panels.
  *
- * Extracted from EditorSystem (god-file decomposition). Owns the per-edge
- * drag state and turns mouse hover/drag on the Hierarchy / Inspector /
- * Bottom borders into edits of EditorState's panel sizes. Borderless: it
- * needs no extra layout space, it just probes the mouse against the known
- * panel-edge positions the workspace computed this frame.
+ * Owns the per-edge drag state and turns mouse hover/drag on the Hierarchy /
+ * Inspector / Bottom borders into edits of EditorState's panel sizes.
+ * Borderless: it needs no extra layout space, it just probes the mouse against
+ * the known panel-edge positions the workspace computed this frame.
  */
 class EditorPanelResize {
     public:

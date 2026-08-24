@@ -35,10 +35,9 @@ void AnimationSystem::update(FrameContext& ctx) {
     parallelFor(animCount, grain, [&](size_t i) {
         Animation& animation = animStorage->dataAt(static_cast<uint32_t>(i));
 
-        // The authored flag becomes the runtime one, once. Here rather than at
-        // load, so it fires when the simulation runs rather than when the scene
-        // arrives - which is what makes an animation start on Play and stay
-        // still in a scene that is only open.
+        // The authored flag becomes the runtime one, once, and here rather than
+        // at load: that is what makes an animation start on Play and stay still
+        // in a scene that is only open.
         if (animation.playOnStart && !animation.started) {
             animation.started = true;
             animation.playing = true;

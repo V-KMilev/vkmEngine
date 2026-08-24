@@ -75,13 +75,13 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     if (ImGui::BeginMenu("File")) {
         const bool haveCurrent = sceneIO.hasPath();
         // A project is the bigger noun: it decides which scenes exist at all.
-        if (ImGui::MenuItem("Open Project...")) state.showOpenProject = true;
+        if (ImGui::MenuItem("Open Project...")) state.requestOpenProject = true;
         if (ImGui::BeginMenu("Recent Projects", !state.recentProjects.empty())) {
             for (const std::string& p : state.recentProjects) {
                 ImGui::PushID(p.c_str());
                 const std::string shortName = std::filesystem::path(p).filename().string();
                 if (ImGui::MenuItem(shortName.empty() ? p.c_str() : shortName.c_str())) {
-                    state.pendingProjectOpen = p;
+                    state.requestSceneAction(EditorState::SceneAction::OpenProject, p);
                 }
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", p.c_str());
                 ImGui::PopID();
@@ -90,8 +90,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         }
         ImGui::Separator();
         if (ImGui::MenuItem("New Scene", keyLabel(state.keybinds.newScene))) {
-            if (state.sceneDirty) state.confirmAction = EditorState::PendingSceneAction::New;
-            else                  sceneIO.newScene(ctx, state);
+            state.requestSceneAction(EditorState::SceneAction::New);
         }
         if (ImGui::MenuItem("Open Scene...", keyLabel(state.keybinds.loadScene))) {
             sceneIO.requestLoad();
@@ -104,7 +103,9 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
             for (const auto& p : state.recentScenes) {
                 const std::string shortName = std::filesystem::path(p).filename().string();
                 ImGui::PushID(p.c_str());
-                if (ImGui::MenuItem(shortName.c_str())) sceneIO.requestOpenPath(ctx, state, p);
+                if (ImGui::MenuItem(shortName.c_str())) {
+                    state.requestSceneAction(EditorState::SceneAction::Open, p);
+                }
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", p.c_str());
                 ImGui::PopID();
             }
@@ -141,18 +142,10 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
                 state.sceneDirty ? "  (modified)" : "");
         }
         ImGui::Separator();
-        // Exit asks the unsaved-changes question itself rather than raising the
-        // close flag for the frame's own close-intercept to catch. The
-        // intercept is right where it runs - at the top of the UI stage, which
-        // is after the window has reported a titlebar close - but a menu item
-        // raises that flag from inside the same stage, and the frame loop reads
-        // it before the next one begins. So the editor was gone before it
-        // asked: the X prompted and Exit, the same intent said another way,
-        // threw the work away in silence.
-        if (ImGui::MenuItem("Exit")) {
-            if (state.sceneDirty) state.confirmAction = EditorState::PendingSceneAction::Quit;
-            else                  ctx.window.requestClose();
-        }
+        // Requested rather than raising the window's close flag: the frame loop
+        // reads that flag before the next frame begins, so the editor would be
+        // gone before the close-intercept in the same stage could ask.
+        if (ImGui::MenuItem("Exit")) state.requestSceneAction(EditorState::SceneAction::Quit);
         ImGui::EndMenu();
     }
 

@@ -331,7 +331,8 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
 
         const float dx = mp.x - sp.x;
         const float dy = mp.y - sp.y;
-        if (dx * dx + dy * dy > ENTITY_MARKER_HIT_RADIUS * ENTITY_MARKER_HIT_RADIUS) return;
+        const float hitR = entityMarkerHitRadius();
+        if (dx * dx + dy * dy > hitR * hitR) return;
 
         const float t = glm::distance(rayOrigin, pos);
         if (t < nearestT) {

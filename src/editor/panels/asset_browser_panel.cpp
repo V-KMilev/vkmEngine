@@ -30,9 +30,7 @@ namespace Vkm::Engine {
 
 namespace {
 
-// ---------------------------------------------------------------------------
 // The type-erased shape every kind is drawn through.
-// ---------------------------------------------------------------------------
 
 /**
  * @brief One asset as the grid sees it: no C++ type, only what a tile needs.
@@ -108,9 +106,7 @@ struct AssetKind {
     RemoveFn      remove;
 };
 
-// ---------------------------------------------------------------------------
 // Per-type operations. The only place an asset's C++ type is named.
-// ---------------------------------------------------------------------------
 
 template<typename Asset>
 struct KindOps {
@@ -123,25 +119,8 @@ struct KindOps {
 
     static void rename(EditorContext& ec, StorageIndex key,
                        const std::string& from, const char* to) {
-        const Handle<Asset> h{key};
-        ResourceManager& resources = ec.frame.resources;
-        resources.rename(h, to);
-
-        // ResourceManager keeps names unique per type by suffixing a taken one,
-        // so the asset may not be called what was typed. Said out loud, because
-        // an author who is not told goes looking for a name nothing holds.
-        const std::string assigned = resources.get(h).name;
-        if (assigned != to) {
-            ec.state.pushToast(EditorState::ToastKind::Info,
-                               "'" + std::string(to) + "' was taken - renamed to '"
-                                   + assigned + "'");
-        }
-
-        // Applied first, then the reverse pushed, so an accidental rename is
-        // one Ctrl+Z away. Its after is the name assigned rather than the one
-        // asked for, so redo repeats what happened.
-        ec.state.commands.push(std::make_unique<RenameAssetCommand<Handle<Asset>>>(
-            resources, h, from, assigned, "Rename Asset"));
+        EditorActions::renameAsset(ec.frame.resources, ec.state, Handle<Asset>{key},
+                                   from, to, "Rename Asset");
     }
 
     static void remove(ResourceManager& resources, StorageIndex key) {
@@ -155,7 +134,6 @@ uint64_t previewKey(AssetType type, uint32_t id) {
     return ((static_cast<uint64_t>(type) + 1ull) << 40) | id;
 }
 
-// ---------------------------------------------------------------------------
 // Detail lines. One string per kind, carrying the fact that kind actually has,
 // which is what buys back the columns a table would have spent on it.
 //
@@ -165,7 +143,6 @@ uint64_t previewKey(AssetType type, uint32_t id) {
 // one goes in the hover tooltip and is where the rest of what a table would
 // have columned goes, which is how the Sounds table's Format and Size survive
 // losing their columns rather than being dropped.
-// ---------------------------------------------------------------------------
 
 void materialDetail(const ResourceManager& resources, StorageIndex key,
                     bool verbose, char* out, size_t n) {
@@ -313,9 +290,7 @@ void clipDetail(const ResourceManager& resources, StorageIndex key,
     }
 }
 
-// ---------------------------------------------------------------------------
 // Thumbnails. Only the kinds that have a picture supply one.
-// ---------------------------------------------------------------------------
 
 GpuTextureId materialThumb(TileContext& tc, StorageIndex key, uint64_t version) {
     PreviewRequest req;
@@ -356,13 +331,11 @@ GpuTextureId textureThumb(TileContext& tc, StorageIndex key, uint64_t) {
     return backend->ensureTexture(handle, tc.ec.frame.resources);
 }
 
-// ---------------------------------------------------------------------------
 // Assignment. Each goes through pushEdit rather than writing the component,
 // which is what gives it an undo step and what turns it into a prefab override
 // when the entity is an instance. Writing the component here instead left the
 // instance's override list empty, and the next save wrote the prefab's own
 // asset back over the one on screen.
-// ---------------------------------------------------------------------------
 
 bool meshTarget(const Scene& scene, EntityId id) { return scene.has<Mesh>(id); }
 
@@ -416,12 +389,10 @@ void assignSound(EditorContext& ec, EntityId id, StorageIndex key) {
                           "Assign Sound");
 }
 
-// ---------------------------------------------------------------------------
 // Usage walks: does anything in the project hold a reference to this asset.
 // The scene is not the whole project - a texture is named by a material and
 // never by an entity - so they take the resources too, and each walks every
 // holder rather than the obvious one (see docs/reference/editor.md).
-// ---------------------------------------------------------------------------
 
 // The serializer, the GL material and the Material Editor each pair these
 // eleven members with something of their own; none of those pairings fits here.
@@ -509,12 +480,10 @@ void soundsInUse(const Scene& scene, const ResourceManager&,
     });
 }
 
-// ---------------------------------------------------------------------------
 // The table. Adding a kind is this entry plus its handful of small functions.
 // Rail order pairs the kinds that are about each other, and each wears a
 // registered hue no neighbour is close to; docs/reference/editor.md has the
 // reasoning for both, including why Accent::MatTexture cannot serve Textures.
-// ---------------------------------------------------------------------------
 
 const AssetKind KINDS[] = {
     {
@@ -601,10 +570,6 @@ const AssetKind& kindOf(AssetType type) {
     }
     return KINDS[0];
 }
-
-// ---------------------------------------------------------------------------
-// Tile text.
-// ---------------------------------------------------------------------------
 
 // Byte offsets of the next / previous character. Never land inside a UTF-8
 // sequence: a lone continuation byte renders as the font's replacement box.
