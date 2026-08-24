@@ -17,9 +17,10 @@ struct RenderSettings;
  * rebindings, recent scenes).
  *
  * The file lives in the open project's root (see path()); the recent-projects
- * list is the one exception, kept at the engine root so it survives switching
- * projects. Failures are non-fatal: load() returns false on missing/invalid
- * files and the editor starts with built-in defaults.
+ * list is the one exception, kept in ProjectPaths::userRoot() so it survives
+ * switching projects and an engine install nobody can write to. Failures are
+ * non-fatal: load() returns false on missing/invalid files and the editor starts
+ * with built-in defaults.
  */
 namespace EditorSettings {
 

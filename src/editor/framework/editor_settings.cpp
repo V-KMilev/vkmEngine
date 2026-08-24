@@ -94,19 +94,22 @@ void visitRenderFields(Settings& r, Fn&& f) {
 /**
  * @brief Where the recent-projects list lives.
  *
- * The engine root, not the open project. A list of projects you have opened is
- * how you get from one to the next, so keeping it inside a project means each
- * one remembers only the ones opened while it was open - and opening a second
- * project hides the list that would take you back to the first.
+ * The user's own settings directory, not the open project and not the engine.
+ * Not the project, because a list of projects you have opened is how you get
+ * from one to the next: kept inside a project, each one would remember only the
+ * ones opened while it was open, and opening a second would hide the list that
+ * takes you back to the first. Not the engine, because an SDK installed to
+ * /usr/local or Program Files is read-only, and the list would silently fail to
+ * save on every shutdown.
  *
  * @return Absolute path to the recents file.
  */
 std::string recentsPath() {
-    return (ProjectPaths::engineRoot() / "editor_recents.json").string();
+    return (ProjectPaths::userRoot() / "editor_recents.json").string();
 }
 
 /**
- * @brief Read the engine-wide recent-projects list into @p state.
+ * @brief Read the user-wide recent-projects list into @p state.
  *
  * @param state Editor state whose recentProjects list is replaced.
  */
@@ -131,7 +134,7 @@ void loadRecentProjects(EditorState& state) {
 }
 
 /**
- * @brief Write the engine-wide recent-projects list back out.
+ * @brief Write the user-wide recent-projects list back out.
  *
  * @param state Editor state supplying the list to persist.
  */

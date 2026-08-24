@@ -91,14 +91,17 @@ bool ScriptModule::loadCopyAndRegister() {
         fs::copy_file(src, copy, fs::copy_options::overwrite_existing, ec);
         copied = !ec;
     }
+    // Nothing could be written beside the module: an installed game's directory
+    // is read-only. The copy buys exactly one thing - a rebuild overwriting the
+    // original while it is loaded - and nothing rebuilds into a directory like
+    // this, so the original loads in place instead of the game refusing to start.
     if (!copied) {
-        LOG_ERROR("Failed to copy game module '%s': %s",
-            m_modulePath.c_str(), ec.message().c_str());
-        return false;
+        LOG_INFO("Cannot copy the game module aside (%s); loading '%s' in place",
+            ec.message().c_str(), m_modulePath.c_str());
     }
-    m_loadedCopyPath = copy.string();
+    m_loadedCopyPath = copied ? copy.string() : std::string{};
 
-    if (!m_lib.load(m_loadedCopyPath)) return false;
+    if (!m_lib.load(copied ? m_loadedCopyPath : m_modulePath)) return false;
 
     // The engine ships prebuilt libraries and is not ABI-stable between versions:
     // struct layouts, inline functions and templates are free to change, which is

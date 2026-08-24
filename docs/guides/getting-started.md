@@ -1,7 +1,7 @@
 # Getting started
 
 Making a game with vkmEngine, from an installed SDK. If you are working *on* the
-engine rather than *with* it, read [building.md](building.md) instead.
+engine rather than *with* it, read [building.md](../reference/building.md) instead.
 
 ## What you need
 
@@ -31,9 +31,16 @@ vkm build
 vkm run
 ```
 
-A spinning cube under a directional light. `vkm new` copied the SDK's template,
-`vkm build` compiled `src/` into `bin/game`, and `vkm run` handed the project to
-`vkm_runtime`, which loaded that module and ran it.
+A spinning cube under a directional light. `vkm new` copied the SDK's template
+and stamped your name and this SDK's version into it, `vkm build` compiled
+`src/` into `bin/game`, and `vkm run` handed the project to `vkm_runtime`, which
+loaded that module and ran it.
+
+That version is why the generated `CMakeLists.txt` asks `find_package` for the
+engine that made the project rather than for whatever is installed. Move to a
+later *minor* release and configure stops with a version mismatch instead of
+building your module against an engine it was not written for - edit the line
+when you mean to move.
 
 ## What a project is
 
@@ -68,15 +75,30 @@ seconds rather than recompiling an engine.
 vkm package
 ```
 
-That cooks the assets, then assembles everything a player needs:
+That cooks the assets, then assembles everything a player needs - and only that:
 
 ```
 dist/mygame/
     bin/            the game executable, the engine libraries, the gameplay module
     project.json    what the game is
-    assets/  scenes/  cooked/  library/     its content
+    scenes/  prefabs/  cooked/    the world, and the art in the form it plays
+    library/        the asset manifest and your materials
+    assets/         whatever the game still opens by name: environment maps, its icon
     shaders/        the engine's
 ```
+
+**What stays behind is the authoring half.** Your `.blend`, `.fbx`, `.gltf` and
+source textures do not ship: `cooked/` already holds them in the only form the
+runtime can open, and a shipped game links no importer that could read the
+originals anyway. Nor do the recipes recording how each was imported - they name
+paths on *your* machine, and a runtime cannot act on one. The two library parts
+that do ship are the ones a game reads: `_manifest.json`, which is how an asset
+name in a scene resolves to anything, and your materials, whose recipe *is* their
+runtime form.
+
+`vkm package` works this out from the recipes themselves rather than from a list
+of file extensions, so a file nothing imported - an `.hdr` your scene names, the
+`assets/logo/icon.png` your window wears - ships as a matter of course.
 
 The executable is a renamed copy of `vkm_runtime` - the engine is never
 rebuilt for a game, which is why this takes seconds. The player runs
@@ -144,6 +166,11 @@ A module exports what the host looks for:
 
 The template writes all three. If your project authors scenes in the editor, set
 `entryScene` in `project.json` and delete `vkmBuildScene`.
+
+`vkm run` needs the module. Without it every behavior in your scene is dropped on
+load and the game draws a world that does nothing, so `vkm_runtime` refuses and
+exits non-zero rather than playing that. `vkm_editor` opens the project anyway -
+build the module, then reload it from inside the editor.
 
 ## The toolchain pin
 

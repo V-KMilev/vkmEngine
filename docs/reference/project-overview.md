@@ -27,10 +27,12 @@ The engine holds no game of its own. A game is a **project**: a directory with a
 executable, unless an argument names a different one* - so a shipped game ships
 its exe next to its `project.json` and the player passes nothing.
 
-Two roots keep the halves apart: `engineRoot()` for what ships with the engine
-(shaders, default font, icons; read-only to a game) and `projectRoot()` for what
-the game owns. `examples/potion_runner` and `examples/stress_arena` are complete
-worked examples. See [system/io.md](system/io.md#projects-and-the-two-roots).
+Three roots keep the halves apart: `engineRoot()` for what ships with the engine
+(shaders, default font, icons; read-only to a game), `projectRoot()` for what the
+game owns, and `userRoot()` for how one person likes their tools - the editor's
+recent-projects list and window layout, which follow the user rather than either
+of the other two. `examples/potion_runner` and `examples/stress_arena` are
+complete worked examples. See [system/io.md](system/io.md#projects-and-the-three-roots).
 
 ## Core model
 
