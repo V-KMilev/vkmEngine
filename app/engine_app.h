@@ -17,7 +17,8 @@
 #include "system/audio/audio_system.h"
 #include "system/particle/particle_system.h"
 #include "system/physics/physics_system.h"
-#include "system/physics/character_controller_system.h"
+#include "system/physics/ragdoll_system.h"
+#include "system/physics/character/character_controller_system.h"
 #include "system/hierarchy/hierarchy_system.h"
 #include "system/ui/ui_system.h"
 #include "system/visibility/visibility_system.h"
@@ -92,6 +93,9 @@ inline AppSystems setupEngineApp(Vkm::Engine::Engine& engine, const AppConfig& c
     engine.addSystem<Vkm::Engine::BehaviorSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::AnimationSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::SkeletalAnimationSystem>(Vkm::Engine::SystemStage::Simulation);
+    // After the pose it reads and before the bodies it writes. It runs per
+    // frame, like the pose, rather than per fixed tick like the solve.
+    engine.addSystem<Vkm::Engine::RagdollSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::ParticleSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::PhysicsSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::CharacterControllerSystem>(Vkm::Engine::SystemStage::Simulation);
