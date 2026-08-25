@@ -49,9 +49,11 @@ class CameraControllerSystem : public System {
         void setCameraEntity(EntityId cameraEntity) { m_cameraEntity = cameraEntity; }
 
         /**
-         * @brief The entity the controller is currently flying (the active rendered
-         * camera). The editor uses this to suppress the transform gizmo on
-         * it - a gizmo there would fight the fly controls.
+         * @brief The entity the controller is currently flying.
+         *
+         * Always the active rendered camera. The editor uses it to suppress the
+         * transform gizmo on that entity, a gizmo there fighting the fly
+         * controls for the same drag.
          */
         EntityId getCameraEntity() const { return m_cameraEntity; }
 
@@ -107,9 +109,10 @@ class CameraControllerSystem : public System {
         void focusOn(Scene& scene, const glm::vec3& target, float distance);
 
         /**
-         * @brief Snap the camera to look at @p target from a specific world-space
-         * direction (e.g. (1,0,0) for "view from +X"). Used by the
-         * navigation-gizmo view presets.
+         * @brief Snap the camera to look at @p target from a world-space direction.
+         *
+         * Used by the navigation-gizmo view presets, which pass an axis:
+         * (1,0,0) is "view from +X".
          */
         void viewFrom(Scene& scene, const glm::vec3& target, const glm::vec3& direction, float distance);
 
@@ -150,9 +153,11 @@ class CameraControllerSystem : public System {
         void updateRotationFromAngles(glm::quat& rotation, float yaw, float pitch);
 
         /**
-         * @brief Resolve the camera the editor renders through: the entity whose
-         * Camera component is `active` (Transform required). Falls back to
-         * the current entity so the view never dies mid-edit.
+         * @brief Resolve the camera the editor renders through.
+         *
+         * The entity whose Camera component is `active`, and which carries a
+         * Transform. Falls back to the current entity, so the view never dies
+         * mid-edit.
          */
         EntityId resolveActiveCamera(Scene& scene);
 
@@ -170,9 +175,14 @@ class CameraControllerSystem : public System {
         void setAnglesFromDirection(const glm::vec3& dir);
 
         /**
-         * @brief Place the camera @p distance back from @p target along
-         * @p dirToCamera (unit, pointing from target toward the camera) and aim
-         * it at @p target. Shared core of focusOn() / viewFrom().
+         * @brief Place the camera back from @p target and aim it at @p target.
+         *
+         * The shared core of focusOn() and viewFrom().
+         *
+         * @param transform Camera transform to write.
+         * @param target Point to aim at.
+         * @param dirToCamera Unit direction pointing from target toward camera.
+         * @param distance How far back along @p dirToCamera to sit.
          */
         void placeCamera(Transform& transform, const glm::vec3& target,
                          const glm::vec3& dirToCamera, float distance);

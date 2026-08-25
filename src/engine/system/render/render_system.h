@@ -71,8 +71,10 @@ class RenderSystem : public System {
         RenderBackend* backend() const { return m_backend.get(); }
 
         /**
-         * @brief Editable render tuning (pass toggles + params). The editor's Render
-         * Settings panel mutates this; it is copied into the RenderView each frame.
+         * @brief Editable render tuning: pass toggles and their parameters.
+         *
+         * The editor's Render Settings panel mutates this, and it is copied
+         * into the RenderView each frame.
          */
         RenderSettings& getSettings() { return m_settings; }
         const RenderSettings& getSettings() const { return m_settings; }

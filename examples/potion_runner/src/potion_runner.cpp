@@ -183,15 +183,9 @@ void PotionRunner::onStart() {
         if (e.eventId == "potion:start") m_started = true;
         else if (e.eventId == "potion:restart" && !m_alive) resetGame();
     });
-    // The player is a dynamic body, so the solver reports every contact it
-    // makes. This one handler is the whole interaction ruleset:
-    //  - dead: each ragdoll slam kicks the camera;
-    //  - a mostly-up contact normal = standing on something (ground, roof,
-    //    ramp slope) -> arm the grounded grace timer;
-    //  - any other contact with an obstacle HULL (leading face, side, or a
-    //    gantry's underside) = the crash.
-    // `normal` points a -> b, so flip it when the player is `a` to get the
-    // surface normal as the player feels it.
+    // One handler is the whole interaction ruleset: a mostly-up contact normal
+    // means standing on something, and anything else against an obstacle hull is
+    // the crash. `normal` points a -> b, so flip it when the player is `a`.
     subscribe<CollisionEvent>([this](const CollisionEvent& e) {
         const EntityId player = m_player;
         const bool playerIsA = (e.a == player);
@@ -203,32 +197,23 @@ void PotionRunner::onStart() {
         const EntityId other = playerIsA ? e.b : e.a;
         for (const auto& o : m_obstacles) {
             if (other != o.entity) continue;
-            // A non-top contact is a crash - UNLESS the feet are already
-            // near the roof line. That grace covers the ramp-to-roof seam
-            // (the box grazes the hull face just under the roof on the way
-            // up; the next tick's contact pops it on top) and forgives hurdle
-            // hops and convoy roof-hops that land a hair short. Floating
-            // gantries are exempt: a rider's feet CAN sit near the bar's top
-            // while their head is inside it, so any contact with a bar you
-            // were meant to duck under stays lethal.
+            // A non-top contact is a crash unless the feet are near the roof line
+            // - that grace covers the ramp-to-roof seam and short hops. Gantries
+            // are exempt: feet near a bar's top can mean a head inside it.
             const bool grace = o.bottom <= 0.0f && m_height >= o.top - 0.6f;
             if (up < 0.7f && !grace) { die(); return; }
             break;
         }
-        // Arm grounded only when not ascending: the jump's launch tick still
-        // overlaps the floor, and letting that contact re-arm the grace timer
-        // made the runner count as "grounded" for the first airborne moments
-        // (flashing the ride pill mid-jump and opening a double-jump window).
+        // Not while ascending: the jump's launch tick still overlaps the floor,
+        // and re-arming there counts the runner as grounded through the first
+        // airborne moments - a ride pill mid-jump, and a double-jump window.
         if (up > 0.5f && m_scene->get<Rigidbody>(m_player).linearVelocity.y < 1.0f) {
             m_grounded      = true;
             m_groundedTimer = GROUNDED_GRACE;
         }
     });
-    // The footstep comes from the animation, not from a timer beside it: the
-    // stride clip announces a marker at each instant a leg is vertical, and the
-    // sound is whatever gameplay decides that means. The clip says WHEN; this
-    // says whether - no sound in mid-air, and none for the ragdoll, which has
-    // stopped its own Animator anyway.
+    // The clip says WHEN a leg is vertical; this says whether that means a
+    // sound. Not in mid-air, and not for the ragdoll.
     subscribe<AnimationEvent>([this](const AnimationEvent& e) {
         if (e.entity != m_player || e.marker != RUNNER_MARKER_FOOTSTEP) return;
         if (!m_alive || !m_grounded) return;
@@ -312,10 +297,9 @@ MaterialHandle PotionRunner::makeMaterial(
 
 void PotionRunner::playAt(AudioClipHandle clip, const glm::vec3& position, float volume) {
     VoiceParams params;
-    // The non-reproducible per-thread generator on purpose: m_rng is the run's
-    // deterministic stream and it deals the track, so drawing from it here
-    // would make the level layout depend on how often the runner's feet hit
-    // the ground. Nothing about a footstep needs to repeat across runs.
+    // The per-thread generator, not m_rng: m_rng is the run's deterministic
+    // stream and it deals the track, so drawing here would make the layout
+    // depend on how often the runner's feet hit the ground.
     params.volume      = volume * Math::Random::range(SPREAD_VOLUME_MIN, 1.0f);
     params.pitch       = Math::Random::range(SPREAD_PITCH_MIN, SPREAD_PITCH_MAX);
     params.position    = position;
@@ -335,17 +319,12 @@ EntityId PotionRunner::spawnBox(MeshHandle mesh, MaterialHandle material, const 
 }
 
 void PotionRunner::buildWorld() {
-    // Own the mood: this is a night run, and lights only read against dark.
-    // Near-zero image-based ambient (the skybox dims with it); the ceiling
-    // pools and train headlights below do the actual lighting.
-    // Matches what game_module.cpp's vkmBuildScene sets, but enforced here so
-    // the persisted scene and the game cannot drift apart.
+    // Set here as well as in game_module.cpp's vkmBuildScene, so the persisted
+    // scene and the game cannot drift apart.
     m_scene->environment().sky.intensity  = 0.08f;
     m_scene->environment().sky.showSkybox = false;   // underground: no sky, just the tunnel
-    // No sun underground - switch off any authored directional light (the saved
-    // editor scene still carries one). This frees the whole 2D shadow atlas for
-    // the train headlights: without a directional caster no CSM layers are
-    // reserved, so spots get all six slots.
+    // Switching the authored directional light off frees the whole 2D atlas for
+    // the headlights: with no CSM layers reserved, spots get all six slots.
     m_scene->forEach<Light>([](EntityId, Light& light) {
         if (light.type == LightType::Directional) light.enabled = false;
     });
@@ -355,16 +334,9 @@ void PotionRunner::buildWorld() {
 
     m_cubeMesh   = m_resources->add(makeCubeMesh(), "potion:cube");
 
-    // Materials. Emission is reserved for things that genuinely glow (fixtures,
-    // lamps, pickups); everything structural is lit by the real Lights below
-    // plus the faint image-based ambient.
-    //
-    // Trackbed & structure: matte, and NOT pitch black. Lighting here is
-    // physically attenuated (inverse-square), so a 2% albedo floor cannot show
-    // a light pool no matter how strong the lamp - surfaces need plausible
-    // night reflectance (5-12%) for the pools to register. Roughness sits near
-    // 1 so grazing-angle Fresnel doesn't sheen the long walls glossy; the only
-    // deliberately reflective surface is the polished steel rail.
+    // Trackbed and structure, at the night-plausible albedos this function's
+    // block explains. Roughness near 1 keeps grazing-angle Fresnel from
+    // sheening the long walls glossy; the polished rail is the one exception.
     m_matGround  = makeMaterial({0.030f, 0.032f, 0.037f}, 0.0f,  0.96f, {0,0,0}, 1.0f, false, "potion:ground");
     m_matBallast = makeMaterial({0.050f, 0.050f, 0.056f}, 0.0f,  0.96f, {0,0,0}, 1.0f, false, "potion:ballast"); // coarse gravel bed
     m_matRail    = makeMaterial({0.52f,  0.54f,  0.58f},  1.0f,  0.55f, {0,0,0}, 1.0f, false, "potion:rail");   // brushed steel
@@ -372,10 +344,8 @@ void PotionRunner::buildWorld() {
     m_matWall    = makeMaterial({0.055f, 0.058f, 0.070f}, 0.0f,  0.95f, {0,0,0}, 1.0f, false, "potion:wall");    // concrete
     m_matPillar  = makeMaterial({0.070f, 0.073f, 0.085f}, 0.0f,  0.93f, {0,0,0}, 1.0f, false, "potion:pillar");  // concrete column
 
-    // Emissives are accents, not light sources: strengths sit just over the
-    // bloom threshold so they halo softly, while the real Lights beside them do
-    // the illuminating. (Higher values flooded the frame and drowned the actual
-    // light pools - the old too-bright look.)
+    // Emissive strengths sit just over the bloom threshold so accents halo
+    // rather than flood - the real Lights beside them do the illuminating.
     m_matPlayer     = makeMaterial({0.05f,  0.45f,  0.62f},  0.5f,  0.42f, {0.00f, 0.18f, 0.28f}, 1.0f, false, "potion:player");
     m_matPlayerGlow = makeMaterial({0.40f,  0.95f,  1.00f},  0.0f,  0.40f, {0.20f, 0.85f, 1.00f}, 1.8f, true,  "potion:player_glow");
     m_matTrain      = makeMaterial({0.10f,  0.12f,  0.18f},  1.00f, 0.70f, {0.00f, 0.14f, 0.30f}, 0.5f, false, "potion:train");
@@ -386,10 +356,9 @@ void PotionRunner::buildWorld() {
     // the beam visibly comes FROM somewhere.
     m_matHeadlamp   = makeMaterial({1.00f,  0.95f,  0.80f},  0.0f,  0.40f, {1.00f, 0.92f, 0.72f}, 1.8f, true,  "potion:headlamp");
 
-    // One hazard family, one style: every obstacle body is the same matte
-    // painted red with white reflective bands - boards and barricades that are
-    // LIT BY their warning lamps, not glowing like lamps themselves (a trace of
-    // emission keeps them from dying to pure black at distance, nothing more).
+    // One hazard family, one style: matte painted red with white reflective
+    // bands, lit by their warning lamps rather than glowing like them. The
+    // trace of emission only keeps them off pure black at distance.
     m_matBarrier = makeMaterial({0.42f,  0.05f,  0.04f},  0.0f,  0.75f, {0.85f, 0.05f, 0.03f}, 0.25f, false, "potion:barrier");
     m_matStripe  = makeMaterial({0.82f,  0.84f,  0.87f},  0.0f,  0.60f, {0.60f, 0.63f, 0.70f}, 0.30f, false, "potion:stripe");
 
@@ -453,10 +422,9 @@ void PotionRunner::buildWorld() {
         }
     }
 
-    // A concrete ceiling sealing the tunnel: the arch ribs run up into it and
-    // the tube reads as underground instead of an open-topped trench. Like all
-    // static scenery it stays out of the shadow pass - only the moving pieces
-    // (player, obstacles) are worth a caster's cost.
+    // A concrete ceiling sealing the tunnel, so the tube reads as underground
+    // rather than an open-topped trench. Static scenery stays out of the shadow
+    // pass - only the moving pieces are worth a caster's cost.
     {
         EntityId ceiling = spawnBox(m_cubeMesh, m_matWall, "Ceiling");
         Transform& t = m_scene->get<Transform>(ceiling);
@@ -476,10 +444,9 @@ void PotionRunner::buildWorld() {
         m_scene->get<Mesh>(bed).castShadows = false;
     }
 
-    // Train rails: a polished-steel pair per lane, running the full length of the
-    // track. They are uniform along Z, so - unlike the sleepers below - they need
-    // no scrolling and are spawned once as static boxes. This pair-per-lane layout
-    // is what reads as "tracks for trains" rather than the old crosswalk stripes.
+    // A polished-steel pair per lane, the full length of the track. Uniform
+    // along Z, so unlike the sleepers below they need no scrolling and are
+    // spawned once as static boxes.
     constexpr float RAIL_GAUGE_HALF = 0.50f;   // half the spacing within a lane's rail pair
     constexpr float RAIL_W = 0.12f, RAIL_H = 0.14f;
     for (int lane = 0; lane < 3; ++lane) {
@@ -504,20 +471,15 @@ void PotionRunner::buildWorld() {
         m_scene->get<Mesh>(trim).castShadows = false;
     }
 
-    // Player: a little runner rig rather than a bare cube. The root is an
-    // invisible entity the gameplay drives (its scale stays 1, so the parented
-    // parts below keep their own, un-distorted scales). The root's origin sits at
-    // the body centre (updatePlayer places it at PLAYER_HALF_Y + height), so every
-    // part offset is relative to that centre. Parts cast shadows (the cube did),
-    // so the runner throws a proper shadow on the track.
+    // The root is an invisible entity the gameplay drives, its scale kept at 1
+    // so the parented parts keep their own. Its origin is the body centre -
+    // updatePlayer puts it at PLAYER_HALF_Y + height - so part offsets are from there.
     m_player = m_scene->createEntity();
     m_scene->add(m_player, makeName("Player"));
     m_scene->add(m_player, Transform{});
-    // The player is a DYNAMIC body for its whole life: the solver owns gravity,
-    // jumping, landing, roof support and ramp climbing (contacts vs the
-    // obstacle/ramp colliders below). freezeRotation keeps it upright - the
-    // behavior still owns rotation (bank) and lateral position, and death just
-    // unfreezes rotation to hand the same body over as the ragdoll.
+    // Dynamic for its whole life; freezeRotation keeps it upright while the
+    // behavior owns bank and lateral position, and death just unfreezes rotation
+    // to hand the same body over as the ragdoll.
     {
         Rigidbody rb;
         rb.mass           = 1.0f;
@@ -544,22 +506,18 @@ void PotionRunner::buildWorld() {
     addPart("Head",    m_matPlayer,     {0.46f, 0.42f, 0.46f}, { 0.00f,  0.66f,  0.00f}, m_player);
     addPart("Visor",   m_matPlayerGlow, {0.50f, 0.12f, 0.50f}, { 0.00f,  0.74f,  0.00f}, m_player);
     addPart("Pack",    m_matPlayerGlow, {0.46f, 0.62f, 0.18f}, { 0.00f,  0.10f, -0.36f}, m_player);  // on the back, toward the camera
-    // The runner is a rig, and that is the whole reason its footsteps are real:
-    // a clip can carry markers and four keyframed pivots cannot. One Animator
-    // on the player plays one looping stride; updatePlayer scales its speed
-    // with the run, so the swing and the footsteps quicken together because
-    // they are the same clock.
+    // A rig, because a clip can carry footstep markers and four keyframed pivots
+    // cannot. One Animator, one looping stride, its speed scaled with the run -
+    // so swing and footsteps quicken together off the same clock.
     {
         Animator stride;
         stride.skeleton = m_resources->add(makeRunnerSkeleton(), RUNNER_RIG_NAME);
         stride.clip     = m_resources->add(makeRunnerStride(),   RUNNER_CLIP_NAME);
         m_scene->add(m_player, std::move(stride));
     }
-    // Each limb hangs off its bone through a BoneSocket, which places the socket
-    // entity at the joint with the bone's swing on it - so the limb box under it
-    // rotates about the shoulder or hip instead of paddling about its own
-    // centre. A socket is a direct child of the entity carrying the Animator,
-    // which is the only place BoneSocketSystem will place one.
+    // A BoneSocket places its entity at the joint with the bone's swing on it,
+    // so the limb box under it turns about the shoulder or hip rather than its
+    // own centre. It must be a direct child of the Animator's entity.
     auto addLimb = [&](const char* bone, const glm::vec3& scale) {
         EntityId socket = m_scene->createEntity();
         m_scene->add(socket, makeName(bone));
@@ -575,13 +533,8 @@ void PotionRunner::buildWorld() {
     addLimb(RUNNER_BONE_LEG_L, {0.20f, 0.46f, 0.30f});
     addLimb(RUNNER_BONE_LEG_R, {0.20f, 0.46f, 0.30f});
 
-    // The two sounds this game makes. Registered here and played as requests
-    // rather than hung on an entity: the stride's footfalls arrive 138 ms apart
-    // at top cadence against a 130 ms clip, which leaves one speaker 8 ms to
-    // finish and retrigger in, and coins come in lanes of four 3.6 m apart, so
-    // at top speed their chimes start 83 ms apart against a 180 ms clip - and
-    // a collected coin is switched off the instant it pays, leaving nothing
-    // there to hang a source on.
+    // The two sounds this game makes, played as requests rather than hung on an
+    // entity - playAt's block says why neither can own a speaker.
     m_footstep  = m_resources->add(makeFootstepSound(), "potion:footstep");
     m_coinChime = m_resources->add(makeCoinChime(), "potion:coin");
 
@@ -596,15 +549,13 @@ void PotionRunner::buildWorld() {
             m_scene->get<Mesh>(s.entity).castShadows = false;
         }
     };
-    // Each station has a left pillar, a right pillar, and a ceiling rib capping
-    // them (shared z lattice) - a portal frame the player runs through. The pillars
-    // rise to ARCH_Y so they visibly hold the rib; the rib spans pillar-to-pillar
-    // (just past m_wallX on each side) instead of overhanging.
+    // Left pillar, right pillar and a ceiling rib capping them on a shared z
+    // lattice - a portal frame the player runs through. The pillars rise to
+    // ARCH_Y so they visibly hold the rib, which spans them rather than overhangs.
     const float archSpan = 2.0f * m_wallX + 0.4f;
-    // Sleepers: dark wooden cross-ties under each lane's rail pair. One short tie
-    // per lane (not one log across all three) so each lane reads as its own track.
-    // They scroll (recycled by scrollScenery) so the steel rails sitting on them
-    // read as rushing past - the sense of speed the old bright stripes carried.
+    // Dark wooden cross-ties, one short tie per lane rather than one log across
+    // all three, so each lane reads as its own track. They scroll, so the steel
+    // rails sitting on them read as rushing past.
     for (auto& lanePool : m_ties)
         makeScenery(lanePool, TIE_COUNT, m_matTie, {laneWidth * 0.62f, 0.10f, 0.30f}, "Tie");
     makeScenery(m_pillarsL, PILLAR_COUNT, m_matPillar, {0.40f, ARCH_Y, 0.40f},           "Pillar");
@@ -614,12 +565,9 @@ void PotionRunner::buildWorld() {
     // left wall, green down the right - the classic trackside blinkenlights.
     makeScenery(m_signalsL, PILLAR_COUNT, m_matSignalRed,   {0.12f, 0.26f, 0.12f}, "Signal");
     makeScenery(m_signalsR, PILLAR_COUNT, m_matSignalGreen, {0.12f, 0.26f, 0.12f}, "Signal");
-    // Station platforms: slabs along the walls with a painted safety line on
-    // top. Every scenery pool scrolls at the same speed and wraps by the same
-    // WRAP, so relative z offsets are constant forever - spacing 40 (a multiple
-    // of the 10-unit pillar lattice) with a half-bay phase parks each platform
-    // permanently BETWEEN pillars, never intersecting one. Sides are staggered
-    // so a platform slides past every ~20 units of track.
+    // Every scenery pool scrolls at one speed and wraps by one WRAP, so relative
+    // z offsets hold forever: spacing 40 - a multiple of the 10-unit pillar
+    // lattice - with a half-bay phase parks each platform between pillars.
     makeScenery(m_platformsL, 4, m_matPillar, {0.90f, 1.00f, 7.0f}, "Platform");
     makeScenery(m_platformsR, 4, m_matPillar, {0.90f, 1.00f, 7.0f}, "Platform");
     makeScenery(m_platEdgesL, 4, m_matStripe, {0.90f, 0.05f, 7.0f}, "Platform Edge");
@@ -628,12 +576,9 @@ void PotionRunner::buildWorld() {
     // recessed under it, so the ceiling reads as lit station girders instead of
     // flat neon slabs. The light shares the ribs' z lattice and scrolls with them.
     makeScenery(m_arches, PILLAR_COUNT, m_matPillar, {archSpan, 0.55f, 0.75f}, "Arch Beam");
-    // Each strip carries a POINT light, not a Rect: this renderer stacks
-    // inverse-square attenuation on top of the LTC form factor (which already
-    // falls off geometrically), so a Rect at the 5-unit ceiling-to-floor throw
-    // decays ~1/d^4 and never reaches the track. A point at ~150 delivers
-    // ~150/27 = a real pool below each fixture; the strip mesh still LOOKS
-    // like the tube doing the emitting.
+    // A POINT light, not a Rect: this renderer stacks inverse-square attenuation
+    // on the LTC form factor, so a Rect at the 5-unit ceiling throw decays ~1/d^4
+    // and never reaches the track. The strip mesh still looks like the emitter.
     makeScenery(m_archLights, PILLAR_COUNT, m_matArch, {archSpan * 0.88f, 0.16f, 0.45f}, "Arch Light");
     for (auto& strip : m_archLights) {
         Light wash;
@@ -644,18 +589,16 @@ void PotionRunner::buildWorld() {
         // UNDER the spacing or adjacent pools merge into one flat, even wash -
         // the valleys between pools are what keep the tunnel reading dark.
         wash.radius     = 8.0f;
-        // Off at spawn; the cube atlas has exactly two slots, so scrollWorld
-        // flips castShadows on for just the fixtures nearest the player - the
-        // runner and obstacles throw real moving shadows as they pass through
-        // each pool, and the caster count never exceeds the slots.
+        // Off at spawn: the cube atlas has two slots, and scrollWorld flips
+        // castShadows on for just the fixtures nearest the player, so the caster
+        // count never exceeds them.
         wash.castShadows = false;
         m_scene->add(strip.entity, std::move(wash));
     }
 
-    // Obstacle + coin pools. Per-recycle scale/material set in randomizeObstacle().
-    // Each obstacle also owns an "accent" box - a train windscreen or a hazard bar -
-    // placed alongside it each frame (like the train-roof coins). It is a sibling,
-    // not a child, so the obstacle box's per-recycle scale never distorts it.
+    // Per-recycle scale and material are set in randomizeObstacle. The accent
+    // box - a train windscreen or a hazard bar - is a sibling and not a child,
+    // so the obstacle's per-recycle scale never distorts it.
     m_obstacles.resize(OBSTACLE_COUNT);
     for (auto& o : m_obstacles) {
         o.entity = spawnBox(m_cubeMesh, m_matTrain,  "Obstacle");
@@ -663,12 +606,9 @@ void PotionRunner::buildWorld() {
         o.auxA   = spawnBox(m_cubeMesh, m_matPillar, "Obstacle Detail");   // gantry leg / barrier stripe
         o.auxB   = spawnBox(m_cubeMesh, m_matPillar, "Obstacle Detail");
         m_scene->get<Mesh>(o.accent).castShadows = false;
-        // The train headlight: a warm spot yawed 180 deg so it shines down -Z
-        // at the oncoming player. The only light an obstacle carries - it has a
-        // visible source (the cab) to be coming from. Enabled per recycle,
-        // trains only. Sunless, the 2D atlas has six spot slots and disabled
-        // lights never reach the renderer's list - the 3-4 headlights typically
-        // running all fit, so trains push real shadows ahead of themselves.
+        // The only light an obstacle carries: a warm spot yawed 180 deg so it
+        // shines down -Z at the oncoming player, out of the cab that visibly
+        // emits it. Enabled per recycle, trains only - six spot slots hold them all.
         Light beam;
         beam.type           = LightType::Spot;
         beam.color          = {1.00f, 0.92f, 0.72f};
@@ -685,10 +625,8 @@ void PotionRunner::buildWorld() {
         m_scene->add(o.lamp, Transform{{0.0f, 1.05f, SPAWN_Z},
                                        glm::angleAxis(glm::pi<float>(), Math::WORLD_AXIS_Y),
                                        glm::vec3(1.0f)});
-        // The hull is a kinematic collision body: the dynamic player lands on
-        // its roof (solver contact), and any non-top contact is the crash
-        // signal (see the CollisionEvent handler in onStart). Extents follow
-        // each recycle in randomizeObstacle.
+        // Kinematic: the dynamic player lands on its roof by solver contact, and
+        // any non-top contact is the crash signal. Extents follow each recycle.
         {
             Rigidbody rb;
             rb.isKinematic = true;
@@ -697,10 +635,9 @@ void PotionRunner::buildWorld() {
             col.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}}};
             m_scene->add(o.entity, std::move(col));
         }
-        // The boarding ramp, hidden until a recycle makes this a steady train.
-        // Pale like every "go here" cue - white invites, red kills. Its
-        // kinematic collider is what physically walks the player up the slope;
-        // thicker than the visual slab so a fast fall can't tunnel through it.
+        // Hidden until a recycle makes this a steady train, and pale like every
+        // "go here" cue - white invites, red kills. Its collider is thicker than
+        // the visual slab, so a fast fall cannot tunnel through it.
         o.ramp = spawnBox(m_cubeMesh, m_matStripe, "Boarding Ramp");
         m_scene->get<Mesh>(o.ramp).visible = false;
         {
@@ -771,11 +708,9 @@ void PotionRunner::buildWorld() {
 void PotionRunner::randomizeObstacle(Obstacle& o) {
     o.lane = randLane();
     float r = frand();
-    // Convoy stretches - the Subway-Surfers elevated run. Obstacles recycle in
-    // z order, so consecutive recycles are consecutive down the track: while a
-    // convoy is owed, force this one to be another train in the convoy lane.
-    // The gaps between cars (spacing 17.8 minus 12-15 of train) are one clean
-    // roof-to-roof jump, and roof coins pay double up there.
+    // Obstacles recycle in z order, so consecutive recycles are consecutive down
+    // the track: while a convoy is owed, force this one into the convoy lane. The
+    // car gaps are one clean roof-to-roof jump, and roof coins pay double.
     const bool convoyCar = m_convoyLeft > 0;
     if (convoyCar) {
         --m_convoyLeft;
@@ -788,14 +723,9 @@ void PotionRunner::randomizeObstacle(Obstacle& o) {
     o.hasRamp    = false;       // only steady trains grow a boarding ramp below
     o.isTrain    = false;       // flips in the train branch; gates dressing + headlight
 
-    // Solvability guard 1.
-    // Two recycles can share a z window: a faster train slowly closes on the
-    // obstacle just ahead of it (the previous recycle). Side-by-side blockers
-    // are survivable ONLY if the middle lane stays free - any lane can step to
-    // lane 1, but reaching a far lane THROUGH a blocked middle is the
-    // impossible path. A would-be barrier next to a closing train must keep
-    // that invariant or it demotes to a gantry, which is passable in-lane and
-    // therefore solvable no matter what overlaps it.
+    // Two recycles can share a z window: a faster train closes on the one ahead.
+    // Reaching a far lane through a blocked middle is the impossible path, so a
+    // barrier that would block the middle beside a train demotes to a gantry.
     const auto middleStaysFree = [](int a, int b) {
         return a == b || (a + b == 2 && a != 1);   // same lane, or the {0, 2} pair
     };
@@ -853,9 +783,8 @@ void PotionRunner::randomizeObstacle(Obstacle& o) {
         if (o.relFactor > 0.0f && m_prevBlocking && !middleStaysFree(o.lane, m_prevLane)) {
             o.relFactor = 0.0f;
         }
-        // Steady trains carry a boarding ramp at the nose - run into it and it
-        // walks you onto the roof, no jump. Convoy followers skip it (their
-        // ramp would poke into the car ahead; you board the leader instead),
+        // Run into a steady train's nose ramp and it walks you onto the roof, no
+        // jump. Convoy followers skip it - theirs would poke into the car ahead -
         // and the fast bearing-down trains stay ramp-less threats.
         o.hasRamp = (o.relFactor == 0.0f) && !convoyCar;
         if (o.hasRamp) {
@@ -881,10 +810,9 @@ void PotionRunner::randomizeObstacle(Obstacle& o) {
         accentMat      = m_matWindow;
         o.accentScale  = {halfX * 2.0f * 0.82f, 0.46f, 0.10f};
         o.accentOffset = {0.0f, o.top * 0.18f, -o.length * 0.5f - 0.06f};
-        // Dressing: a narrow roof walk line (the "run here" cue, not a deck),
-        // and one window band WIDER than the hull so it surfaces as a lit
-        // strip of passenger windows along BOTH flanks - one box, two sides,
-        // sitting upper-half like real car windows.
+        // A narrow roof walk line - the "run here" cue, not a deck - and one
+        // window band wider than the hull, so a single box surfaces as lit
+        // passenger windows along both flanks.
         o.auxVisible = true;
         auxAMat      = m_matStripe;
         auxAScale    = {halfX * 2.0f * 0.34f, 0.06f, o.length * 0.86f};
@@ -922,21 +850,18 @@ void PotionRunner::randomizeObstacle(Obstacle& o) {
     // entry, no contacts, and the collider overlay skips it too.
     m_scene->get<Collider>(o.ramp).enabled = o.hasRamp;
     if (o.hasRamp) {
-        // Extend the collider toe-ward past the visual slab and keep it thick:
-        // the tilted TOE end-face then sits below grade, so an approaching
-        // player's first contact is always the walkable top face - never the
-        // end face, whose down-forward normal would shove them into the
-        // ground instead of up the slope.
+        // Extended toe-ward past the visual slab and kept thick, so the tilted
+        // toe end-face sits below grade: the first contact is always the walkable
+        // top face, never the end face that would shove the player down.
         const float slopeLen = std::sqrt(o.top * o.top + RAMP_RUN * RAMP_RUN);
         ColliderPart& rampBox = m_scene->get<Collider>(o.ramp).parts[0];
         rampBox.halfExtents  = {halfX * 0.9f, 0.35f, slopeLen * 0.5f + 0.35f};
         rampBox.center       = {0.0f, -0.30f, -0.35f};
     }
 
-    // Only trains carry a light: the headlight has a visible source (the cab)
-    // to shine from. A light floating in front of a barricade with nothing
-    // emitting it reads wrong, so the other types run dark - their white bands
-    // and the ceiling pools they pass through do the telegraphing.
+    // Only trains carry a light: a headlight has a visible source to shine from,
+    // and one floating in front of a barricade does not. The other types
+    // telegraph with their white bands and the pools they pass through.
     m_scene->get<Light>(o.lamp).enabled = o.isTrain;
 
     m_scene->get<Transform>(o.accent).scale = o.accentScale;
@@ -1086,13 +1011,9 @@ void PotionRunner::updatePlayer(float dt) {
     m_groundedTimer = std::max(0.0f, m_groundedTimer - dt);
     m_grounded = m_groundedTimer > 0.0f;
 
-    // Ramp assist - the one interaction every character controller in the
-    // industry special-cases in code rather than leaving to the solver. Our
-    // kinematic ramps TELEPORT forward each frame and so advertise zero
-    // velocity to the contact solver; its position correction alone cannot
-    // out-climb a surface closing at track speed. While a ramp's span is under
-    // the runner, the feet track the slope surface directly; the solver still
-    // owns the handoff onto the roof (its contacts take over at the nose).
+    // Special-cased rather than left to the solver: a kinematic ramp teleports
+    // forward each frame and so advertises zero velocity, which position
+    // correction cannot out-climb. The solver still owns the handoff at the nose.
     for (const auto& o : m_obstacles) {
         if (!o.hasRamp) continue;
         if (std::fabs(laneX(o.lane) - m_playerX) > obstacleHalfX() + PLAYER_HALF_X) continue;
@@ -1117,9 +1038,8 @@ void PotionRunner::updatePlayer(float dt) {
     }
 
     // The behavior pins the lateral axes every frame: lane position is eased
-    // directly, and any x/z velocity the solver picked up from angled contacts
-    // (a ramp's surface normal pushes up AND back) is cancelled so the runner
-    // never drifts off z = 0 or out of its lane.
+    // directly, and any x/z velocity from an angled contact - a ramp normal
+    // pushes up AND back - is cancelled, so the runner holds z = 0 and its lane.
     const float k = 1.0f - std::exp(-dt * 14.0f);
     m_playerX += (laneX(m_lane) - m_playerX) * k;
     rb.linearVelocity.x = 0.0f;
@@ -1136,9 +1056,8 @@ void PotionRunner::updatePlayer(float dt) {
     box.halfExtents.y = halfY;
     box.center.y      = halfY - PLAYER_HALF_Y;   // keep the box bottom at the feet
 
-    // Stride cadence follows the run: the swing quickens as the track speeds up,
-    // and nearly freezes mid-pose while airborne. One field now, because one
-    // clip drives all four limbs - and the footstep markers ride the same
+    // Cadence follows the run and nearly freezes mid-air. One field, because one
+    // clip drives all four limbs - and the footstep markers ride that same
     // timeline, so they follow without being told.
     const float cadence = m_grounded ? (0.85f + 1.15f * (m_speed / maxSpeed)) : 0.30f;
     m_scene->get<Animator>(m_player).speed = cadence;
@@ -1185,10 +1104,9 @@ void PotionRunner::scrollWorld(float dt) {
         // so there is nothing to park anywhere.
         m_scene->get<Transform>(o.ramp).position =
             {x, o.top * 0.5f - 0.05f, o.z - o.length * 0.5f - RAMP_RUN * 0.5f};
-        // Train dressing rides with the hull: skirt under it, tail lights on
-        // the rear face, plow at the rails, and the lamp bar at the exact
-        // height the headlight spot emits from - the glow and the beam read
-        // as one fixture.
+        // Dressing rides with the hull: skirt under it, tail lights on the rear
+        // face, plow at the rails, and the lamp bar at the exact height the
+        // headlight emits from, so glow and beam read as one fixture.
         if (o.isTrain) {
             const float nose = o.z - o.length * 0.5f;
             m_scene->get<Transform>(o.skirt).position   = {x, 0.21f, o.z};
@@ -1244,15 +1162,14 @@ void PotionRunner::scrollWorld(float dt) {
     scrollScenery(m_platEdgesL, -(m_wallX - 0.48f), 1.03f, dt);  // painted safety line on top
     scrollScenery(m_platEdgesR,  (m_wallX - 0.48f), 1.03f, dt);
 
-    // Hand the two cube-shadow slots to the ceiling lights nearest the action:
-    // one just behind the player, one ahead. The atlas assigns slots first-come
-    // in light order, so keeping the caster count at ~2 here is what guarantees
-    // the shadows are these fixtures' and not two arbitrary ones down the track.
-    // And every fourth fixture is a tired one: its pool breathes with a slow
-    // two-sine flicker, which keeps a repeated corridor feeling alive.
+    // The two cube-shadow slots go to the fixtures nearest the action, one
+    // behind the player and one ahead: the atlas assigns first-come in light
+    // order, so holding the caster count at ~2 is what pins them here.
     for (size_t i = 0; i < m_archLights.size(); ++i) {
         Light& wash = m_scene->get<Light>(m_archLights[i].entity);
         wash.castShadows = (m_archLights[i].z > -6.0f && m_archLights[i].z < 14.0f);
+        // Every fourth fixture is a tired one, breathing on a two-sine flicker
+        // that keeps a repeated corridor feeling alive.
         if (i % 4 == 0) {
             wash.intensity = 45.0f * (0.78f + 0.22f * std::sin(m_camTime * 9.0f + m_archLights[i].z)
                                                     * std::sin(m_camTime * 23.0f));
@@ -1303,11 +1220,9 @@ void PotionRunner::die() {
     // and keep announcing footsteps for a runner who has stopped running.
     m_scene->get<Animator>(m_player).playing = false;
 
-    // The crash is the same dynamic body with the leash off: unfreeze rotation
-    // so it tumbles, restore the full collider box (in case death came mid
-    // slide), give it a bounce, and launch it up and back toward the camera.
-    // The behavior stops steering while dead (updatePlayer is skipped), so the
-    // solver owns the pose until resetGame() re-freezes it.
+    // The same dynamic body with the leash off: rotation unfrozen so it tumbles,
+    // the full collider box restored in case death came mid-slide, then a bounce
+    // and a launch. The behavior stops steering, so the solver owns the pose.
     Rigidbody& rb = m_scene->get<Rigidbody>(m_player);
     rb.freezeRotation = false;
     rb.restitution    = 0.45f;

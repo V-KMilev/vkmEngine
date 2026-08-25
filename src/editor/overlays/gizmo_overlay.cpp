@@ -72,10 +72,9 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
     float  vpWidth        = ec.viewportSize.x;
     float  vpHeight       = ec.viewportSize.y;
 
-    // The flown camera is excluded because it *is* the viewport eye: a transform
-    // gizmo on it would fight the fly controller (both write its Transform every
-    // frame). It can still be selected - Camera params stay editable in the
-    // Inspector.
+    // The flown camera is excluded because it is the viewport eye: a gizmo on it
+    // would fight the fly controller, both writing its Transform every frame. It
+    // is still selectable, and its Camera params still editable.
     const bool canManipulate =
            state.gizmoOperation != GizmoOperation::Select   // Select is pick-only, no handles
         && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)
@@ -83,18 +82,15 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
         && ctx.scene.has<Transform>(state.selectedEntity)
         && state.selectedEntity != ec.cameraController.getCameraEntity();
 
-    // Drag-end is decided before the draw guard, not after it: a shortcut can
-    // switch tool or selection mid-drag, and whether the drag is over is not
-    // the same question as whether the handles are drawn this frame. Only push
-    // if the transform actually changed (a no-op click on the gizmo does not
-    // deserve an undo entry).
+    // Before the draw guard, not after: a shortcut can switch tool or selection
+    // mid-drag, and whether the drag is over is a different question from
+    // whether the handles are drawn this frame.
     if (m_dragActive && (!canManipulate || !m_gizmo.isUsing())) finishDrag(ec);
     if (!canManipulate) return;
 
-    // The 3D pass now renders into viewport-sized FBOs and composite
-    // blits to the viewport sub-rect of the backbuffer (gl_composite_pass).
-    // So the visibility projection (built with the viewport's aspect)
-    // matches the rendered image 1:1 - no remap matrix needed.
+    // The visibility projection is built with the viewport's aspect and the 3D
+    // pass renders into viewport-sized FBOs, so it matches the rendered image
+    // 1:1 and needs no remap.
     const glm::mat4 subProj = ctx.visibility->projection;
 
     auto& transform = ctx.scene.get<Transform>(state.selectedEntity);
@@ -128,13 +124,9 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
         m_dragEntity         = state.selectedEntity;
         m_dragActive         = true;
 
-        // Snapshot every selected transform so the drag moves the whole set
-        // and drag-end can build one batch undo.
-        //
-        // Roots of the selection only. An entity whose ancestor is also selected
-        // already inherits that ancestor's motion through the hierarchy; moving
-        // it again on its own applied the delta twice, so dragging a parent and
-        // its child together sent the child twice as far.
+        // Every selected transform, so the drag moves the whole set and drag-end
+        // is one batch undo. Roots only: an entity whose ancestor is selected
+        // already inherits that motion, and moving it again doubles the delta.
         m_dragSelection.clear();
         const EntityId flown = ec.cameraController.getCameraEntity();
         for (EntityId id : state.selection) {
@@ -197,11 +189,9 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
             transform.scale    = scale;
         }
 
-        // Apply the active entity's delta to the rest of the selection, each
-        // from its own drag-start snapshot (never incrementally, so error
-        // does not accumulate). Translation is a world-space delta converted
-        // into each entity's parent space; rotation applies in place (no
-        // orbit around a shared pivot); scale is a component-wise ratio.
+        // Each from its own drag-start snapshot, never incrementally, so error
+        // does not accumulate. Translation is a world delta taken into each
+        // parent space; rotation applies in place; scale is a component ratio.
         if (!m_dragSelection.empty()) {
             const glm::vec3 worldDelta =
                 glm::vec3(parentWorld * glm::vec4(transform.position, 1.0f))
@@ -239,10 +229,9 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
                 }
             }
 
-            // The gizmo wrote the active entity directly, but an ancestor of it
-            // is moving too and that motion already reaches it through the
-            // hierarchy. Put it back where the drag started so it is carried
-            // rather than carried *and* pushed.
+            // The gizmo wrote this entity directly, but a moving ancestor already
+            // reaches it through the hierarchy. Put it back where the drag
+            // started, so it is carried rather than carried and pushed.
             if (m_dragActiveIsDescendant) transform = m_dragStartTransform;
         }
 
@@ -286,10 +275,9 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
     glm::vec3 rayOrigin = ctx.visibility->cameraPosition;
     glm::vec3 invDir(1.0f / worldDir.x, 1.0f / worldDir.y, 1.0f / worldDir.z);
 
-    // Test against the culled visible set instead of the whole scene: the
-    // visibility pass already filtered frustum/distance/size AND precomputed
-    // each entity's world matrix, so picking gets it for free. Off-screen /
-    // hidden meshes are not pickable - that matches what the user can see.
+    // Against the culled visible set, not the whole scene: the visibility pass
+    // already filtered and precomputed each world matrix, so picking gets both
+    // free - and what is off-screen is not pickable, which is what is meant.
     EntityId hitEntity{};
     float nearestT = std::numeric_limits<float>::max();
 
@@ -310,18 +298,9 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
         }
     }
 
-    // Every entity the overlays mark with a billboard answers a click on that
-    // marker. None of these four has a mesh to be hit through, and the gizmo
-    // that moves one only appears once it is selected, so a marker that cannot
-    // be clicked is an entity that cannot be placed - and the click that missed
-    // it deselects, which is the worst answer available.
-    //
-    // Screen space rather than a world box, because a marker is a fixed number
-    // of pixels whatever it marks: a world size answering for it agrees at one
-    // distance and parts either side of it. Projected rather than derived from
-    // the fov, so an orthographic camera, where distance changes nothing, stays
-    // right. Depth is the distance to the marker's anchor, which is what lets a
-    // marker in front of a wall win the nearest-hit test against it.
+    // A marker is a fixed pixel size whatever it marks, so the hit test is screen
+    // space - projected, not derived from the fov, which keeps an orthographic
+    // camera right. Anchor depth is what wins it against the wall behind it.
     const glm::mat4 viewProj = ctx.visibility->projection * ctx.visibility->view;
     const EntityId  flownCam = ec.cameraController.getCameraEntity();
 
@@ -351,11 +330,9 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
         glm::vec3 pos = resolvedWorldPosition(ctx.scene, id, transform);
         pickMarker(id, pos);
 
-        // Kept beside the marker rather than replaced by it: a light's gizmo IS
-        // a volume the user points at, so the box is a second target and not a
-        // stand-in for the first. It scales with the light's reach, so big area
-        // lights stay easy to hit and tiny point lights still need a near
-        // click. Directionals have no radius so fall back to a fixed value.
+        // Beside the marker, not instead of it: a light's gizmo is a volume the
+        // user points at, so this box is a second target. It scales with the
+        // light's reach; a directional has none, so it takes a fixed value.
         const float radius = (light.type == LightType::Directional)
             ? 0.5f
             : std::clamp(light.radius * 0.2f, 0.3f, 3.0f);

@@ -75,12 +75,9 @@ MeshHandle createRecipeMesh(const nlohmann::json& source, ResourceManager& resou
             LOG_ERROR("decimate: base mesh '%s' not loaded (LOD level dropped)", baseName.c_str());
             return {};
         }
-        // Resident is not the same as landed. A base that came from a model or
-        // from the cooked cache decodes on the ThreadPool, and this runs inside
-        // the scene load, before any frame that would finalise it - so the mesh
-        // under that handle is an empty stub, decimating it yields nothing, and
-        // the level disappears with only a "could not be recreated" to show for
-        // it. Wait for it here, where there is still something to do about it.
+        // Resident is not landed: a base out of a model or the cooked cache
+        // decodes on the ThreadPool, and this runs inside the scene load, before
+        // any frame would finalise it. Decimating a stub yields nothing.
         if (!awaitAsyncLoads(resources)) {
             LOG_ERROR("decimate: base mesh '%s' never finished loading (LOD level dropped)",
                 baseName.c_str());

@@ -270,11 +270,8 @@ bool cookMaterial(const MaterialAsset& mat, const ResourceManager& resources) {
 bool cookAllAssets(ResourceManager& resources) {
     LOG_INFO("Cooking assets into the library...");
 
-    // Land every asset still decoding, so the walks below see the contents they
-    // are meant to bake rather than empty stubs. A host with a frame loop does
-    // this through AsyncLoaderSystem and never has to think about it; the cooker
-    // has no frames, and without it every imported asset is skipped and the run
-    // reports a successful cook over a project it produced nothing for.
+    // Land every asset still decoding: a host with a frame loop does this
+    // through AsyncLoaderSystem, and the cooker has no frames.
     size_t failed = awaitAsyncLoads(resources) ? 0 : 1;
 
     // Textures first, then materials (which reference textures by name), then

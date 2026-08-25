@@ -48,10 +48,9 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
     Project project;
     loadProject(root, project);
 
-    // Empty the scene before the assets it references go away, through the same
-    // teardown a New Scene runs: behaviors get onDestroy while the old module
-    // still holds their code, and the undo stack, material previews and
-    // saved-scene path all belong to the project being left.
+    // Emptied before the assets it references go away, through the teardown a
+    // New Scene runs: behaviors get onDestroy while the old module still holds
+    // their code, and the scene-scoped editor state belongs to the project left.
     if (replacing) sceneIO.beginSceneReplace(ec.frame, ec.state);
 
     AssetLibrary::get().load();
@@ -72,17 +71,15 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
         LOG_WARNING("Project '%s' has no gameplay module", project.name.c_str());
     }
 
-    // Whatever the project says it starts as, by the rule and in the order both
-    // binaries boot with: an authored scene, else one its module generates, else
-    // the default scene. A project whose entry scene will not load still opens,
-    // and says so through the engine's error sink.
+    // Whatever the project says it starts as, by the rule both binaries boot
+    // with. One whose entry scene will not load still opens, and says so through
+    // the engine's error sink.
     const SceneBootResult boot =
         bootProjectScene(project, scriptModule, ec.frame.scene, ec.frame.resources);
 
-    // The scene came in without passing through the scene controller, so the
-    // path is handed over for it to be the file this project is editing. Empty
-    // for a module-built world and for the default scene standing in, which is
-    // what leaves those two asking for a name on the first save.
+    // The scene came in without passing through the scene controller, so the path
+    // is handed over to become the file this project edits. Empty for the two
+    // worlds with no file, which is what makes those ask for a name on save.
     sceneIO.adoptPath(ec.state, boot.path);
 
     // The window title is composed once per frame from the editor state (see

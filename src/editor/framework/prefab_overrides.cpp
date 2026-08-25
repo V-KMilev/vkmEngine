@@ -139,10 +139,8 @@ std::unique_ptr<Command> recordFields(Scene& scene, ResourceManager& resources, 
     const std::vector<PrefabOverride> restore = entriesFor(list, uid, component);
 
     // An override is a delta against the prefab's own value, so a component the
-    // prefab does not define cannot carry one: the entry would be reported as
-    // drift on the next load, and undoing it would restore nothing. Asked once,
-    // as the first entry for this pair is about to be made, so a drag pays the
-    // file read on its first frame rather than on every one.
+    // prefab does not define cannot carry one. Asked once, as the first entry for
+    // this pair is made, so a drag pays the file read on its first frame only.
     if (restore.empty() && !Prefab::definesComponent(instance.source, uid, component)) {
         return nullptr;
     }

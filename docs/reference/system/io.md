@@ -320,6 +320,10 @@ written as a component of its own), and the save puts it back in two places -
   already gets, because a field naming an asset the block does not declare stays
   unresolved even once the library holding it is back.
 
+A reference with nowhere to return to is never recorded in the first place, so
+neither half has to know about it: `LOD`'s levels are a ramp rather than a name,
+and the holes in that ramp are its own decision.
+
 With both, restoring the library and reopening the scene brings the reference
 back to life. The editor also names them on the entity: the Inspector heads a
 selection that has any with the component, field and name it could not load,
@@ -477,12 +481,21 @@ get wrong, because nothing downstream re-checks:
 - A sound's sample count must divide by its channel count. The mixer reads
   whole frames, so a file that carries the right number of bytes and still
   describes a half frame would run it off the end.
+- Every index in a mesh must name a vertex the file declares. A truncated write
+  resumed or a bad sector produces a correctly-sized file that does not, and
+  nothing downstream re-checks: decimation indexes a per-vertex array with them
+  and GL is handed the buffer as-is.
 - A mesh's skin stream must be parallel to its vertices or absent, and every
   bone index in it must be under `MAX_SKELETON_BONES`. That second check earns
   its keep for a sharper reason than the index check beside it: a bone index is
   never read by the CPU at all, it addresses the pose palette in the vertex
   stage, so a corrupt one is an out-of-range buffer read on every vertex of
   every frame and nothing else would notice.
+- A texture's declared width and height must describe exactly the pixel bytes
+  beside them. `TextureParams` reaches `glTexImage2D` verbatim, which then reads
+  `width * height` texels out of that buffer, so a size that merely *fits* is
+  not enough. The reconciliation divides rather than multiplies, so the math
+  cannot wrap.
 
 Skeletons and clips are read **synchronously** (`loadCookedSkeleton` /
 `loadCookedAnimationClip`). A rig is a few tens of kilobytes, well under what
@@ -520,9 +533,12 @@ isCookedCurrent(type, path, recipeHash)   // header only: 28 bytes, no body
 
 - **The loader** asks it before resolving a name (`resolveCookedSource`). A file
   that is absent, foreign, of another kind, of a format version this build does
-  not read, or baked from another recipe is not current, and the recipe loads
-  instead. That fallback is what makes `cooked/` genuinely regenerable rather
-  than regenerable on paper.
+  not read, baked from another recipe, or shorter or longer than the payload its
+  own header declares is not current, and the recipe loads instead. That last
+  case is what an interrupted write leaves behind, since the header goes to disk
+  before the body it describes: without it the reader would refuse a file the
+  cooker calls current and never rewrites. The fallback is what makes `cooked/`
+  genuinely regenerable rather than regenerable on paper.
 - **The cooker** asks it before skipping an asset (`isUpToDate`). Presence is not
   enough: a file this build cannot read is not an output that can be skipped.
 

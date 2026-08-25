@@ -418,10 +418,11 @@ Two importer hazards are handled explicitly:
   Without it a fifth influence would be dropped *after* the weights were
   normalised against it.
 - `aiProcess_JoinIdenticalVertices` merges vertices on a key that omits skin
-  weights and filters the merged-away ones out. Past that, Assimp only rewrites
-  a bone's weight list when the rewrite is non-empty - so a bone whose weights
-  **all** landed on joined vertices keeps its pre-join vertex ids against the
-  shrunken array. The importer bounds-checks every `mVertexId` and counts what
+  weights (Assimp's `Vertex.h:106-111`) and filters the merged-away ones out
+  (`JoinVerticesProcess.cpp:343`). Past that, `JoinVerticesProcess.cpp:354` only
+  rewrites a bone's weight list when the rewrite is non-empty - so a bone whose
+  weights **all** landed on joined vertices keeps its pre-join vertex ids against
+  the shrunken array. The importer bounds-checks every `mVertexId` and counts what
   it drops, because following one is an out-of-bounds read of Assimp's own
   data. The flag stays: dropping it needs a two-phase parse this codebase has
   never exercised, and `POST_PROCESS_FLAGS` is deliberately one shared constant

@@ -153,11 +153,9 @@ std::string path() {
 }
 
 bool load(EditorState& state, RenderSettings& render) {
-    // Separate file, separate lifetime: which projects you have opened is not
-    // one project's business, so reading it must not sit behind this project's
-    // settings file existing and parsing. Gated, the first open of a fresh
-    // project would start with an empty list and the shutdown save - which
-    // writes the recents unconditionally - would clobber the real history.
+    // Separate file, separate lifetime: which projects you have opened is not one
+    // project's business, so the read must not sit behind this project's settings
+    // parsing - the shutdown save writes recents unconditionally either way.
     loadRecentProjects(state);
 
     std::ifstream in(path());

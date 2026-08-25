@@ -328,6 +328,15 @@ in it should not be told it is missing an ear. The world that replaces this one
 earns the line again: the flag is cleared with the voices, by the same
 `stopEverything` a scene load and the editor's Stop go through.
 
+The master gain goes back to **unity** at the same moment, because the gain
+belonged to the ear rather than to the world - `AudioListener::volume` is what
+set it. Turning the listener off only silences the *spatial* voices; the master
+multiplies the 2D ones too, so a listener at half volume that is deleted, or
+merely unticked, would otherwise leave the music and the UI at half volume with
+nothing on screen still holding the slider that set it. A scene load does not
+undo it either - the epoch flip stops voices, not gains - so without this the
+quiet would outlive the world it was set in.
+
 ## The clip asset
 
 A clip is **fully decoded at load**, to 16-bit interleaved PCM at the rate and

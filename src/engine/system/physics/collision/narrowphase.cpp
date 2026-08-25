@@ -369,10 +369,9 @@ int capsuleFaceContact(const BoxShape& box, const glm::vec3& pa, const glm::vec3
 } // namespace
 
 int contactBoxes(const BoxShape& a, const BoxShape& b, Contact* out) {
-    // Separating-axis test (SAT): scan the 15 candidate axes (3 face normals per
-    // box + 9 edge-edge cross products); a negative overlap on any axis means no
-    // collision. The axis of minimum overlap classifies the contact as edge-edge
-    // or face, which is then dispatched to the matching builder.
+    // Separating-axis test over 15 axes: 3 face normals per box, 9 edge-edge
+    // cross products. The axis of least overlap classifies the contact, which
+    // is what picks the builder at the bottom.
     const glm::vec3 toCentre = b.center - a.center;
 
     float bestOverlap = std::numeric_limits<float>::max();
@@ -407,10 +406,9 @@ int contactBoxes(const BoxShape& a, const BoxShape& b, Contact* out) {
 }
 
 int contactCapsuleBox(const CapsuleShape& a, const BoxShape& b, Contact* out) {
-    // Everything here runs in the box's local frame, where the box is an
-    // axis-aligned box at the origin: "closest point on the box" becomes a
-    // clamp, and clipping the segment to a face becomes two interval
-    // intersections. The axes are orthonormal, so the inverse is the transpose.
+    // Worked in the box's local frame, where it is axis-aligned at the origin:
+    // the closest point becomes a clamp and clipping to a face becomes two
+    // interval intersections. Orthonormal axes, so the inverse is a transpose.
     const glm::mat3 rot(b.axes[0], b.axes[1], b.axes[2]);
     const glm::mat3 inv = glm::transpose(rot);
     const glm::vec3& h = b.halfExtents;

@@ -75,12 +75,9 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     if (ImGui::BeginMenu("File")) {
         const bool haveCurrent = sceneIO.hasPath();
 
-        // Two bodies, one shape each. The heading carries the noun, which is what
-        // lets every row drop it - and the rows that now read alike across the two
-        // carry a ## suffix, because ImGui hashes a widget's id from its label and
-        // two "Open..." in one menu would otherwise be one widget: "New" under SCENE needs no more saying than
-        // "New Scene" did, and the pair now reads as two lifecycles rather than
-        // as one list that changes naming convention halfway down.
+        // Two bodies, one shape each: the heading carries the noun, so every row
+        // drops it. Rows that then read alike across the two take a ## suffix -
+        // ImGui hashes an id from the label, so two "Open..." would collide.
         ImGui::SeparatorText("Project");
         if (ImGui::MenuItem("New...")) state.requestNewProject = true;
         if (ImGui::MenuItem("Open...##project")) state.requestOpenProject = true;
@@ -122,9 +119,8 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
             ImGui::EndMenu();
         }
         // Greyed during a play session rather than left to refuse itself: the
-        // scene in the world is the simulation's copy of one, and Stop is about
-        // to throw it away. Writing it over the authored file is the one save
-        // that cannot be taken back.
+        // scene in the world is the simulation's copy, and writing it over the
+        // authored file is the one save that cannot be taken back.
         const bool playing = sceneIO.isPlaying();
         if (ImGui::MenuItem("Save", keyLabel(state.keybinds.saveScene), false,
                             haveCurrent && !playing)) {
@@ -251,10 +247,9 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
 
         ImGui::Separator();
 
-        // Collapsed by default: the hashes answer "exactly which commit of each
-        // module is this?", which matters when reproducing a report and not
-        // otherwise. Each vkm module is its own repository, so one hash per
-        // module rather than one for the tree.
+        // Collapsed by default: the hashes answer which commit of each module
+        // this is, which matters when reproducing a report and not otherwise.
+        // Each vkm module is its own repository, so it gets its own hash.
         ImGui::Spacing();
         if (ImGui::TreeNode("Debug")) {
             row("vkmEngine:", "%s @ %.8s", APP_VERSION,     APP_COMMIT_HASH);

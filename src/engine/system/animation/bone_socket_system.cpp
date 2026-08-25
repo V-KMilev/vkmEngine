@@ -27,12 +27,15 @@ const char* nameOf(const Scene& scene, EntityId entity) {
     return scene.has<Name>(entity) ? scene.get<Name>(entity).value : "<unnamed>";
 }
 
-// The rig's linear name lookup, memoised on the socket. It re-runs when either
-// half of the pairing changes - a different rig, or a different bone name - so
-// SkeletonAsset::indexOf stays the once-per-pairing call it says it is instead
-// of a hundred string compares per socket per frame. Failure is memoised too: a
-// name the rig does not carry resolves to -1 once, rather than rescanning the
-// whole bone list every frame to fail again.
+/**
+ * @brief Resolve a socket's bone index, memoising it on the socket.
+ *
+ * Re-runs when either half of the pairing changes - a different rig, or a
+ * different bone name - so SkeletonAsset::indexOf stays the once-per-pairing
+ * call it says it is rather than a hundred string compares per socket per
+ * frame. Failure is memoised too: a name the rig does not carry resolves to -1
+ * once, instead of rescanning the whole bone list every frame to fail again.
+ */
 void resolveBone(BoneSocket& socket, SkeletonHandle rig, const SkeletonAsset& skeleton) {
     if (socket.resolvedRig == rig && socket.resolvedName == socket.bone) return;
 

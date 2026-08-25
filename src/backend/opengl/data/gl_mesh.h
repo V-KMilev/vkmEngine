@@ -26,6 +26,12 @@ struct MeshAsset;
  * rig binding. It is a separate buffer rather than four more fields on Vertex so
  * that a rock pays nothing for it - the shadow pass reads only aPos and replays
  * every caster per cascade tile and per cube face.
+ *
+ * That buffer sits at divisor 0, one entry per vertex, which is why 8/9 can be
+ * left enabled while a program that never declares them draws this VAO: every
+ * fetch is indexed by a vertex index the buffer has an entry for. The offline
+ * renderers rely on it - GLSceneCapture and GLPreview draw the static PBR
+ * program, so a character bakes and thumbnails in its bind pose.
  */
 class GLMesh {
     public:

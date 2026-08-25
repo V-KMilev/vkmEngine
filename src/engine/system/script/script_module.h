@@ -48,9 +48,13 @@ class ScriptModule {
         bool load(const std::string& modulePath);
 
         /**
-         * @brief Hot-reload from the same path: serialize -> swap module -> recreate.
-         * Returns true on success. On failure the module is left unloaded and a
-         * subsequent reload() retries the load (recovery after a fixed build).
+         * @brief Hot-reload from the same path: serialize, swap module, recreate.
+         *
+         * On failure the module is left unloaded and a subsequent reload()
+         * retries the load, which is the recovery path after a fixed build.
+         *
+         * @param scene Scene whose behaviors are saved across the swap.
+         * @return True if the module reloaded and its behaviors were restored.
          */
         bool reload(Scene& scene);
 
@@ -89,9 +93,12 @@ class ScriptModule {
 
     private:
         /**
-         * @brief Copy the built module to a fresh name, load it, and call its register
-         * entry. The copy keeps the build free to overwrite the original; when the
-         * directory refuses one, the original is loaded where it stands.
+         * @brief Copy the built module to a fresh name, load it, and call its
+         *        register entry.
+         *
+         * The copy keeps the build free to overwrite the original. When the
+         * directory refuses one - an installed game's is read-only - the
+         * original is loaded where it stands rather than the load failing.
          */
         bool loadCopyAndRegister();
 

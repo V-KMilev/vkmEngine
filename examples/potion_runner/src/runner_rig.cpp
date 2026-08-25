@@ -64,8 +64,7 @@ SkeletonAsset makeRunnerSkeleton() {
         rig.bindPose.push_back(bind);
         // Parented straight to the root, whose bind is identity, so a bone's
         // model-space bind matrix is its own. Nothing here is skinned, but the
-        // inverse bind is what the asset means and a placeholder would be a lie
-        // the first time something is.
+        // inverse bind is what the asset means and a placeholder would be a lie.
         rig.inverseBind.push_back(glm::inverse(Transform::computeModelMatrix(bind)));
     };
 

@@ -147,11 +147,9 @@ void GLTarget::bindGBuffer(uint32_t slot) const {
 }
 
 void GLTarget::blitColorFrom(const GLTarget& src) {
-    // setDrawBuffer binds this FBO and selects colour 0 (so we never blit into
-    // the G-buffer); then point the READ framebuffer at src (its read buffer
-    // defaults to colour 0) and blit. Order matters: setDrawBuffer binds
-    // GL_FRAMEBUFFER (read + draw), so the read bind must come after it. All via
-    // Vkm::GL::FrameBuffer wrappers - no raw GL.
+    // setDrawBuffer selects colour 0, so the blit never lands in the G-buffer. It binds
+    // GL_FRAMEBUFFER - read and draw both - so the read bind has to come after it,
+    // never before.
     m_fbo.setDrawBuffer(GL_COLOR_ATTACHMENT0);
     src.m_fbo.bind(GL_READ_FRAMEBUFFER);
     Vkm::GL::FrameBuffer::blit(

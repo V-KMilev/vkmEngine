@@ -166,11 +166,9 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // too). Once allocated it stays - toggles flip too often to thrash.
     if (view.settings.gtao || view.settings.renderMode != RenderMode::Default)
         m_ao.resize(view.viewportWidth, view.viewportHeight);
-    // MSAA: when enabled, the geometry passes render into the multisample target
-    // and GLResolvePass resolves it into m_sceneHDR; the whole post chain stays
-    // single-sample. When off, they render straight into m_sceneHDR (resolve
-    // passes no-op) and the MS storage is released - at 4x it is the largest
-    // allocation in the frame.
+    // The multisample twin is allocated only while MSAA is on; at 4x it is the frame's
+    // largest allocation. Which target the geometry passes then draw into, and what the
+    // resolve passes do with it: docs/reference/system/rendering.md.
     const uint32_t samples = view.settings.msaaSamples;
     if (samples > 1) {
         m_sceneMS.setSamples(samples, m_context);
@@ -380,11 +378,6 @@ void GLBackend::partitionDrawables(const RenderView& view) {
     m_transparent.clear();
     m_opaque.reserve(view.drawables.size());
 
-    // Opaque / Unlit prime depth in the prepass and draw first (early-Z).
-    // AlphaMask skips the prepass and draws in the forward pass with depth
-    // writes on + alpha-to-coverage, so its cutout edges anti-alias under MSAA.
-    // Transparent draws blended back-to-front last. An unresolved material reads
-    // as opaque, matching the forward pass fallback.
     for (const DrawableData& d : view.drawables) {
         const GLMaterial* material = m_view.getMaterial(d.material);
         const MaterialType type = material ? material->getType() : MaterialType::Opaque;

@@ -111,10 +111,9 @@ void RenderView::build(
     // load-bearing for no stated reason.
     skinMatrices.clear();
 
-    // Settled once for the whole frame. A frame that posed nothing has no
-    // palette for an item to index into, and every item's zero-bone default is
-    // already the right answer - so the gathers skip the lookup rather than
-    // repeat the same negative answer once per entity.
+    // Settled once for the frame: with no palette to index into, every item's
+    // zero-bone default is already right, so the gathers below skip the lookup
+    // rather than repeat one negative answer per entity.
     const PoseBuffer* posed = (poses && !poses->slices().empty()) ? poses : nullptr;
     buildDrawables(scene, visibility, posed);
     buildShadowCasters(scene, visibility, posed);

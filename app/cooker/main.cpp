@@ -54,15 +54,9 @@ int main(int argc, char** argv) {
         Vkm::Engine::Scene scene;
         Vkm::Engine::ResourceManager resources;
 
-        // A load that resolved nothing still returns true - the scene is a
-        // document, and every unresolved reference is a component slot left
-        // empty rather than a parse failure. That is right for the editor,
-        // which is where they get fixed, and wrong here: with no reference
-        // resolved there is no loaded asset left for the cook below to fail on,
-        // so an empty world would sail past the exit code and be packaged. The
-        // loader already reports each one through the error seam; the cooker
-        // counts them by listening to it rather than by asking the loader to
-        // answer a different question for a different host.
+        // A load that resolved nothing still returns true, so the cook counts
+        // failures off the error seam instead; see docs/reference/system/io.md,
+        // "What each host does when a project will not open".
         Vkm::Engine::EngineErrorLog loadErrors;
         Vkm::Engine::setErrorSink(&loadErrors);
 
@@ -76,12 +70,9 @@ int main(int argc, char** argv) {
             LOG_ERROR("Failed to load '%s'", scenePath.string().c_str());
             return EXIT_FAILURE;
         }
-        // What the sink holds is every failure the load reported, not only the
-        // unresolved assets it was installed for: a prefab file that will not
-        // open reaches it the same way. Calling all of them unresolved
-        // references answered a deleted file with "save the project", which
-        // bakes a library that file was never going to be in. Each one is
-        // already named above, so this counts them and names the remedies apart.
+        // The sink holds every failure the load reported, not only unresolved
+        // assets, and each is already named above - so this counts them and
+        // names the two remedies apart rather than picking one.
         if (const unsigned long long failures = loadErrors.totalPushed(); failures > 0) {
             LOG_ERROR("'%s' loaded with %llu failure(s), each reported above, so a cook of "
                       "it would ship a world with the slots they left empty. An asset the "

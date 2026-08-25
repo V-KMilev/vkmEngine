@@ -11,10 +11,8 @@ struct GLFWmonitor;
 
 namespace Vkm::Engine {
 
-// Window-creation defaults. Platform/window-layer constants (WindowManager owns
-// GL-context creation), kept here rather than in engine_config.h - that file
-// is reserved for cross-cutting ECS / engine-loop limits, not backend/window
-// knobs.
+// Window-creation defaults; the GL version is here because WindowManager is what
+// creates the context.
 inline constexpr int OPENGL_MAJOR_VERSION  = 4;     ///< Requested GL context major version.
 inline constexpr int OPENGL_MINOR_VERSION  = 3;     ///< Requested GL context minor version.
 inline constexpr int OPENGL_GLSL_VERSION   = OPENGL_MAJOR_VERSION * 100 + OPENGL_MINOR_VERSION * 10;  ///< GLSL "#version" the shader loader injects (derived: 4.3 -> 430).

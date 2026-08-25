@@ -57,16 +57,9 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PAD(), PAD()));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(GAP(), 0.0f));
 
-    // A stepped tick is one tick of world, so it is one tick of sound: the
-    // voices it started are held here, on the first draw after it ran. Held
-    // rather than never started, because what starts them is AudioSystem
-    // reconciling Play-On-Start sources against a simulation that did advance,
-    // and the whole seam is that no system in the engine learns an editor
-    // exists. So the transport does to a step what it already does to a pause -
-    // reaches the device itself - and the world sounds for exactly as long as
-    // it moved, instead of the source running on for as long as nobody presses
-    // Pause. Everything sounding is held, deliberately: a step is the Pause the
-    // author is already in, and Pause holds an audition it finds running too.
+    // A stepped tick is one tick of world, so it is one tick of sound: the voices
+    // it started are held here, on the first draw after it ran. See
+    // docs/reference/system/audio.md, "Two pauses wearing one word".
     AudioDevice& audio = ec.audioSystem.device();
     if (m_stepPending) {
         m_stepPending = false;
@@ -86,16 +79,9 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
             // New paused state: pause if it was running, otherwise run (start
             // from Edit mode, or resume a paused session).
             clock.setPaused(running);
-            // The clock does not reach the mixer, and deliberately so:
-            // AudioSystem runs off the frame rather than off simulation time,
-            // which is what keeps a shipped game's music, menu and UI clicks
-            // alive under its own pause menu. That rule is right there and
-            // wrong here - this pause froze the world to be looked at, and the
-            // level's ambience playing on underneath it is noise nobody asked
-            // for - so the transport holds the voices itself, through the same
-            // device it auditions clips with. A clip auditioned while the
-            // world is frozen is still heard: only what was already sounding
-            // is held, and only what this held is let go again.
+            // The clock does not reach the mixer, so the transport holds the
+            // voices itself through the device it auditions with; see
+            // docs/reference/system/audio.md, "Two pauses wearing one word".
             if (running) audio.pauseAllVoices();
             else         audio.resumeAllVoices();
         }

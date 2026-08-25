@@ -25,9 +25,7 @@ inline const glm::vec3 WORLD_AXIS_X = {1.0f, 0.0f, 0.0f};
 inline const glm::vec3 WORLD_AXIS_Y = {0.0f, 1.0f, 0.0f};
 inline const glm::vec3 WORLD_AXIS_Z = {0.0f, 0.0f, 1.0f};
 
-/// Up is +Y, and forward is +Z. Named aliases for the two that carry a meaning
-/// beyond "an axis", so call sites read as intent rather than as a coordinate.
-inline const glm::vec3 WORLD_UP      = WORLD_AXIS_Y;
-inline const glm::vec3 WORLD_FORWARD = WORLD_AXIS_Z;
+inline const glm::vec3 WORLD_UP      = WORLD_AXIS_Y;  ///< Up is +Y.
+inline const glm::vec3 WORLD_FORWARD = WORLD_AXIS_Z;  ///< Forward is +Z; see computeForward().
 
 } // namespace Vkm::Engine::Math

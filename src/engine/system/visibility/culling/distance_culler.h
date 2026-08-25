@@ -14,7 +14,11 @@ namespace Vkm::Engine {
 namespace DistanceCuller {
 
 /**
- * @brief True if the AABB center is within maxDistance of the camera (or maxDistance <= 0).
+ * @brief True if the AABB centre is within maxDistance of the camera.
+ *
+ * Always true when context.maxDistance is 0 or below, which is how distance
+ * culling is switched off.
+ *
  * @param boundsMin World-space AABB minimum.
  * @param boundsMax World-space AABB maximum.
  * @param context VisibilityContext with cameraPosition and maxDistance.

@@ -55,6 +55,12 @@ struct SolverParams {
  * restitution, then a separate split-impulse pass that fills pseudoLinear /
  * pseudoAngular to push the bodies apart. Mutates bodies in place by the indices
  * stored on each manifold; the caller integrates the resulting velocities.
+ *
+ * Each contact's restitution target is taken once, from the approach speed
+ * measured before the first pass. Recomputing it per iteration would read the
+ * post-impulse, already-separating velocity, so the bias would vanish after
+ * pass one and the remaining passes would drive the contact back to a resting
+ * vn == 0 - cancelling the bounce, and stopping a moving body dead at a wall.
  */
 void solveContacts(
     std::vector<PhysicsBody>& bodies,

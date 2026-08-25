@@ -84,6 +84,19 @@ class GLMaterial {
         void update(const MaterialAsset& material);
 
         void bind(uint32_t bindingPoint) const;
+
+        /**
+         * @brief Bind every map this material references to its texture slot.
+         *
+         * Every referenced map binds something: a map that has not resolved yet
+         * gets the placeholder rather than being skipped. Skipping would leave
+         * the previous draw's texture live in that slot, so a material still
+         * streaming - or one whose file failed to decode - would render with
+         * another object's maps, which reads as a shading bug with nothing
+         * pointing at the cause. The placeholder is unmistakable.
+         *
+         * @param view Resolves the bindings' handles, and owns the placeholder.
+         */
         void bindTextures(const GLView& view) const;
 
         MaterialType getType() const { return m_type; }
