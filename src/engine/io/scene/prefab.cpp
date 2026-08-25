@@ -589,6 +589,43 @@ bool instantiateInto(Scene& scene, ResourceManager& resources, const std::string
     return true;
 }
 
+
+// Turn the prefab-local indices a load leaves behind into the entities of the
+// instance this one belongs to. The index is a position in the file's entity
+// array, one-shifted; the uid at that position names the entity within the
+// instance, and the instance is whatever sits above this one carrying a
+// PrefabInstance.
+void resolvePhysicsRefs(Scene& scene, EntityId entity, const nlohmann::json& entities) {
+    const bool hasRefs = scene.has<Joint>(entity) || scene.has<Ragdoll>(entity);
+    if (!hasRefs) return;
+
+    const EntityId root =
+        HierarchyOperations::findInSelfOrAncestors<PrefabInstance>(scene, entity);
+    if (!root) return;
+
+    const std::vector<EntityId> subtree = collectSubtree(scene, root);
+    const auto byIndex = [&](EntityId stored) -> EntityId {
+        const uint32_t shifted = stored.index;
+        if (shifted == 0 || shifted > entities.size()) return {};
+        const uint32_t wanted = uidAt(entities, shifted - 1);
+        for (EntityId id : subtree) {
+            if (!scene.has<PrefabEntity>(id)) continue;
+            if (scene.get<PrefabEntity>(id).uid == wanted) return id;
+        }
+        return {};
+    };
+
+    if (scene.has<Joint>(entity)) {
+        Joint& joint = scene.get<Joint>(entity);
+        joint.connected = byIndex(joint.connected);
+    }
+    if (scene.has<Ragdoll>(entity)) {
+        Ragdoll& ragdoll = scene.get<Ragdoll>(entity);
+        ragdoll.root = byIndex(ragdoll.root);
+        for (RagdollBone& bone : ragdoll.bones) bone.body = byIndex(bone.body);
+    }
+}
+
 bool reloadComponent(Scene& scene, ResourceManager& resources, const std::string& path,
                      EntityId entity, uint32_t uid, const std::string& component,
                      const std::vector<PrefabOverride>& overrides) {
@@ -621,6 +658,14 @@ bool reloadComponent(Scene& scene, ResourceManager& resources, const std::string
                       path.c_str(), uid, component.c_str(), e.what());
             return false;
         }
+
+        // A file stores physics references as prefab-local indices, and the
+        // loader leaves them in the handle's slot field for instantiation to
+        // resolve. Re-reading one component takes the same path and reached
+        // nobody's resolve, so dropping an override on a Joint or a Ragdoll
+        // left an index sitting where an entity id belongs - pointing at
+        // whatever scene entity happens to own that slot.
+        resolvePhysicsRefs(scene, entity, entities);
         return true;
     }
     return false;

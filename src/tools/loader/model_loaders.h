@@ -162,6 +162,19 @@ AnimationClipHandle loadModelAnimationClip(
 );
 
 /**
+ * @brief What an import produced.
+ *
+ * A root of nothing is not a failure on its own: a file carrying clips and no
+ * mesh imports successfully and spawns no entities, which is what a downloaded
+ * animation is. `ok` is what separates the two.
+ */
+struct ModelImport {
+    EntityId root{};      ///< Root of the spawned subtree; empty when none was spawned.
+    uint32_t clips = 0;   ///< Animation clips imported from the file.
+    bool     ok = false;  ///< Whether the file opened and was understood.
+};
+
+/**
  * @brief Import a whole model file into @p scene.
  *
  * Adds every aiMesh's MeshAsset + MaterialAsset to @p resources (idempotent
@@ -175,12 +188,17 @@ AnimationClipHandle loadModelAnimationClip(
  * root when the rig is rooted at the scene node itself. That entity is the rig:
  * SkeletalAnimationSystem poses it and everything under it.
  *
+ * A file with clips and no mesh is a successful import that spawns nothing -
+ * a downloaded animation is exactly that - so the outcome is reported rather
+ * than encoded in the root: an empty root and `ok` both mean "no subtree", and
+ * only one of them is a failure.
+ *
  * @param path Path to the model file to import.
  * @param resources Resource manager the imported meshes/materials are added to.
  * @param scene Scene the entity hierarchy is spawned into.
- * @return The root EntityId, or an invalid id on failure.
+ * @return What the import produced.
  */
-EntityId importModelIntoScene(
+ModelImport importModelIntoScene(
     const std::string& path,
     ResourceManager& resources,
     Scene& scene
