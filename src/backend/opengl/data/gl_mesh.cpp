@@ -48,13 +48,6 @@ void GLMesh::update(const MeshAsset& mesh) {
     m_vao = std::make_unique<Vkm::GL::VertexArray>();
     m_vao->addBuffer(*m_vbo, layout);
 
-    // A mesh is skinned exactly when the asset carries a skin stream - no
-    // component says so. The stream is parallel to the vertices and sits at
-    // divisor 0, which is also why leaving 8/9 enabled costs nothing when the
-    // static program draws this VAO: every fetch is indexed by a vertex index
-    // this buffer has an entry for. GLSceneCapture and GLPreview rely on that -
-    // they draw shaders/forward/pbr, so a character bakes and thumbnails in bind
-    // pose, which is the right answer for both.
     if (mesh.skin.empty()) {
         m_skinVbo.reset();
         return;
@@ -88,10 +81,9 @@ void GLMesh::attachInstanceIndex(const Vkm::GL::VertexBuffer& buffer) const {
     m_vao->bind();
     buffer.bind();
 
-    // The mat4 path leaves 5..7 enabled on this shared VAO, and an enabled array
-    // the shader never declares is still an array GL may fetch - past the end of
-    // a buffer sized for a different pass. Turn them off rather than rely on the
-    // driver skipping them.
+    // The mat4 path leaves 5..7 enabled on this shared VAO, and an enabled array the
+    // shader never declares is still an array GL may fetch - past the end of a buffer
+    // sized for a different pass.
     for (uint32_t slot = INSTANCE_INDEX_ATTRIB + 1; slot <= INSTANCE_INDEX_ATTRIB + 3; ++slot)
         VKM_GL_CHECK(glDisableVertexAttribArray(slot));
     // An integer attribute, so glVertexAttribIPointer: the float entry point

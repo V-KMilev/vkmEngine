@@ -10,9 +10,10 @@ namespace Vkm::Engine {
 namespace {
 
 /**
- * @brief Combined material response for a contacting pair. Restitution takes the max
- * (a bouncy ball off a dead floor still bounces); friction is the geometric
- * mean, the usual Coulomb pairing.
+ * @brief Combined material response for a contacting pair.
+ *
+ * Restitution takes the max, so a bouncy ball off a dead floor still bounces.
+ * Friction is the geometric mean, the usual Coulomb pairing.
  */
 float combineRestitution(const PhysicsBody& a, const PhysicsBody& b) {
     return std::max(a.restitution, b.restitution);
@@ -23,9 +24,10 @@ float combineFriction(const PhysicsBody& a, const PhysicsBody& b) {
 }
 
 /**
- * @brief Effective mass along a unit direction at the two contact arms, i.e. the
- * denominator k = invMassA + invMassB + angular terms used to turn a desired
- * velocity change into an impulse magnitude.
+ * @brief Effective mass along a unit direction at the two contact arms.
+ *
+ * The denominator k = invMassA + invMassB + angular terms, which turns a
+ * desired velocity change into an impulse magnitude.
  */
 float effectiveMass(
     const PhysicsBody& a,
@@ -68,12 +70,8 @@ void solveContacts(
     std::vector<ContactManifold>& manifolds,
     const SolverParams& params
 ) {
-    // Restitution target per contact, computed ONCE from the pre-solve approach
-    // speed. A per-iteration recompute would read the post-impulse,
-    // already-separating velocity, so the bias would vanish after pass 1 and the
-    // rest of the passes would drive the contact back to a resting vn == 0,
-    // cancelling the bounce so a moving body stops dead at a wall. A constant
-    // target keeps every pass aiming at the same separation speed.
+    // Taken from the pre-solve approach speed, once, so that every pass aims at
+    // the same separation speed. Recomputing per iteration cancels the bounce.
     for (ContactManifold& manifold : manifolds) {
         PhysicsBody& a = bodies[manifold.bodyA];
         PhysicsBody& b = bodies[manifold.bodyB];

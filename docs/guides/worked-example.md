@@ -138,17 +138,20 @@ long and correct. An agent working to a line budget would instead have deleted
 the only written record of a threading contract and three upstream races, which
 is much the more expensive direction to be wrong in.
 
-### 5.2 `struct Resource` breaking the member rule
+### 5.2 Behavior fields breaking the member rule
 
-`src/engine/resource/resource.h` declares a `struct` with bare members and a full
-out-of-line Rule of 5, which violates
-[code-style.md](code-style.md#41-the-structclass-member-rule) head-on.
+A `Behavior` subclass declares its authored fields as bare public members on a
+class - `Spinner::degreesPerSecond`, and 22 more like it in
+`examples/stress_arena/src/stress_arena.h` - which violates
+[code-style.md](code-style.md#41-the-structclass-member-rule) head-on, and does
+it at a scale that makes it look like drift rather than a decision.
 
-**Leave it.** It is a documented exception with a stated reason: its `source`
-descriptor is a `unique_ptr` to a forward-declared type, so the special members
-must be defined where that type is visible. The rule has an exception list for
-exactly this, and "the guide says X" is not a finding when the guide also says
-why this is not X.
+**Leave it.** It is a documented exception with a stated reason: the field name
+*is* the serialized identity, appearing in the scene JSON and as the inspector's
+label, so an `m_` prefix would leak into both. Runtime-only state on the same
+classes does take `m_`, which is the tell that the shape is deliberate. The rule
+has an exception list for exactly this, and "the guide says X" is not a finding
+when the guide also says why this is not X.
 
 ---
 

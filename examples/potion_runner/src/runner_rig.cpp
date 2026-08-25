@@ -56,7 +56,6 @@ float swingAngle(float amplitude, float seconds) {
 
 SkeletonAsset makeRunnerSkeleton() {
     SkeletonAsset rig;
-    rig.name = RUNNER_RIG_NAME;
 
     const auto addBone = [&rig](const char* name, int32_t parent, const glm::vec3& position) {
         rig.bones.push_back({name, parent});
@@ -65,8 +64,7 @@ SkeletonAsset makeRunnerSkeleton() {
         rig.bindPose.push_back(bind);
         // Parented straight to the root, whose bind is identity, so a bone's
         // model-space bind matrix is its own. Nothing here is skinned, but the
-        // inverse bind is what the asset means and a placeholder would be a lie
-        // the first time something is.
+        // inverse bind is what the asset means and a placeholder would be a lie.
         rig.inverseBind.push_back(glm::inverse(Transform::computeModelMatrix(bind)));
     };
 
@@ -77,7 +75,6 @@ SkeletonAsset makeRunnerSkeleton() {
 
 AnimationClipAsset makeRunnerStride() {
     AnimationClipAsset clip;
-    clip.name     = RUNNER_CLIP_NAME;
     clip.skeleton = RUNNER_RIG_NAME;
     clip.duration = STRIDE_PERIOD;
     // Parallel to the rig: the root plus the four limbs, and the root carries

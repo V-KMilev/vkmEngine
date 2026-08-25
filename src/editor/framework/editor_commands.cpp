@@ -374,10 +374,9 @@ void SubtreeSnapshot::apply(Scene& scene) const {
         EntityId e = scene.createEntityAt(node.snap.slotIndex);
         node.snap.apply(scene, e);
     }
-    // Pass 2: link parents. setParent PREPENDS to the parent's child list,
-    // so to restore the original firstChild-first order we walk the nodes
-    // in reverse - the last-captured (rightmost) child links first, the
-    // first-captured (leftmost) child links last and ends up at firstChild.
+    // setParent prepends to the parent's child list, so the nodes are walked in
+    // reverse to restore the captured order: the rightmost child links first and
+    // the leftmost links last, ending up at firstChild.
     for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
         const auto& node = *it;
         EntityId child = scene.entityAt(node.snap.slotIndex);

@@ -235,12 +235,9 @@ void VisibilitySystem::update(FrameContext& ctx) {
             glm::vec3 worldMin, worldMax;
             Math::localToWorldAABB(modelMatrix, localMin, localMax, worldMin, worldMax);
 
-            // Filled for every valid mesh (not just camera-visible) so the caster
-            // gather below can reach off-screen occluders. castShadows flags it.
-            // The LOD level is resolved here because this is where the distance is
-            // known. Shadow casters get the same level as the camera view: a
-            // lower-detail silhouette is exactly as good for a depth map, and
-            // picking separately would mean a second selection with no visible benefit.
+            // Every valid mesh, not just the camera-visible ones, so the
+            // caster gather below reaches off-screen occluders. LOD resolves
+            // here because here is where the distance is known.
             m_scratch[i] = VisibleEntity{
                 ctx.scene.entityAt(entityIdx),
                 modelMatrix,

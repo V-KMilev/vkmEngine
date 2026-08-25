@@ -43,11 +43,9 @@ void removeStaleCopies(const std::filesystem::path& src) {
 } // namespace
 
 ScriptModule::~ScriptModule() {
-    // Drop the registry's factories before unloading: they close over this
-    // module's code, so the BehaviorRegistry singleton's own destruction at
-    // process exit would otherwise tear down std::functions whose code has
-    // already been dlclose'd here - a segfault in static teardown. Mirrors the
-    // clear-before-unload ordering in reload().
+    // Before unloading: the factories close over this module's code, so the
+    // registry singleton's own teardown at process exit would run them after
+    // the dlclose below - a segfault in static destruction.
     BehaviorRegistry::get().clear();
     // Unload before deleting so the copy file is no longer locked.
     m_lib.unload();
@@ -92,10 +90,9 @@ bool ScriptModule::loadCopyAndRegister() {
         fs::copy_file(src, copy, fs::copy_options::overwrite_existing, ec);
         copied = !ec;
     }
-    // Nothing could be written beside the module: an installed game's directory
-    // is read-only. The copy buys exactly one thing - a rebuild overwriting the
-    // original while it is loaded - and nothing rebuilds into a directory like
-    // this, so the original loads in place instead of the game refusing to start.
+    // A read-only directory is an installed game, which nothing rebuilds into -
+    // and guarding a rebuild is all the copy buys. Load in place rather than
+    // refuse to start.
     if (!copied) {
         LOG_INFO("Cannot copy the game module aside (%s); loading '%s' in place",
             ec.message().c_str(), m_modulePath.c_str());
@@ -104,13 +101,9 @@ bool ScriptModule::loadCopyAndRegister() {
 
     if (!m_lib.load(copied ? m_loadedCopyPath : m_modulePath)) return false;
 
-    // The engine ships prebuilt libraries and is not ABI-stable between versions:
-    // struct layouts, inline functions and templates are free to change, which is
-    // what lets them keep improving. A module built against a different version
-    // therefore disagrees with the host about memory it both reads and writes,
-    // and the symptom is a crash somewhere unrelated rather than a load failure.
-    // Refusing here turns that into a sentence. A module with no version at all
-    // predates the guard, so it is refused too rather than assumed compatible.
+    // A version mismatch is an ABI mismatch, whose symptom is a crash somewhere
+    // unrelated; refusing here turns that into a sentence. No version at all is
+    // refused too. See docs/reference/system/scripting.md.
     auto versionFn = reinterpret_cast<VersionFn>(m_lib.symbol("vkmModuleEngineVersion"));
     if (!versionFn) {
         LOG_ERROR("Game module '%s' declares no engine version. Rebuild it against "
@@ -140,10 +133,9 @@ bool ScriptModule::loadCopyAndRegister() {
 
 bool ScriptModule::reload(Scene& scene) {
     if (!m_lib.isLoaded()) {
-        // A previous reload may have failed and left the module unloaded. There
-        // are no live behaviors to preserve, so just retry the load - this is the
-        // recovery path after a fixed build (the old early-return made a failed
-        // reload permanent). Reload the scene afterwards to restore behaviors.
+        // A failed reload leaves the module unloaded and no behaviors to
+        // preserve, so this retries rather than refusing: it is the recovery
+        // path after a fixed build.
         if (m_modulePath.empty()) {
             LOG_WARNING("ScriptModule::reload called but no module was ever configured");
             return false;
@@ -152,10 +144,9 @@ bool ScriptModule::reload(Scene& scene) {
         return loadCopyAndRegister();
     }
 
-    // Serialize each entity's behaviors (type + reflected fields) while the
-    // current module is still loaded (visitFields/typeName are its code), and
-    // destroy the old behavior objects before unloading the module that owns
-    // their code and vtables.
+    // Saved while the current module is still loaded, because visitFields and
+    // typeName are its code, and the objects destroyed before the unload that
+    // takes their vtables with it.
     std::vector<std::pair<EntityId, nlohmann::json>> saved;
     if (auto* storage = scene.storage<ScriptComponent>()) {
         storage->forEach([&](uint32_t entityIdx, ScriptComponent& sc) {
@@ -169,11 +160,9 @@ bool ScriptModule::reload(Scene& scene) {
     m_lib.unload();
 
     if (!loadCopyAndRegister()) {
-        // Through reportError rather than the log alone: this is the reload's
-        // destructive outcome - the behaviors are gone and the entities that
-        // carried them are not - and the editor has no log view, so a toast
-        // that expires a few seconds later was the whole record of it. The
-        // scene-reference failure is reported this way for the same reason.
+        // reportError, not the log alone: this is the destructive outcome -
+        // behaviors gone, the entities that carried them kept - and the editor
+        // has no log view for a reader to find it in afterwards.
         reportError("Script", m_modulePath,
             "Reload failed; behaviors were cleared (entities kept). Fix the build and "
             "reload again to retry, then reload the scene to restore behaviors.");

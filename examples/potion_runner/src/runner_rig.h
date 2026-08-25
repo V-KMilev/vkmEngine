@@ -41,7 +41,8 @@ inline constexpr const char* RUNNER_MARKER_FOOTSTEP = "footstep";
  * it lands on the joint and the clip's rotation swings the limb about that
  * joint rather than paddling it about its own centre.
  *
- * @return The rig, named RUNNER_RIG_NAME so the clip below can bind to it.
+ * @return The rig; add it under RUNNER_RIG_NAME, which is what the clip below
+ *         binds to.
  */
 SkeletonAsset makeRunnerSkeleton();
 
@@ -54,7 +55,7 @@ SkeletonAsset makeRunnerSkeleton();
  * are vertical: the swinging foot is at the bottom of its arc, which is a
  * footfall.
  *
- * @return The clip, named RUNNER_CLIP_NAME and bound to RUNNER_RIG_NAME.
+ * @return The clip, bound to RUNNER_RIG_NAME; add it under RUNNER_CLIP_NAME.
  */
 AnimationClipAsset makeRunnerStride();
 

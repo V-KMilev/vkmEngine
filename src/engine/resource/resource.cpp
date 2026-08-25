@@ -19,23 +19,17 @@ std::unique_ptr<nlohmann::json> cloneSource(const std::unique_ptr<nlohmann::json
 Resource::Resource() = default;
 Resource::~Resource() = default;
 
-// A copy is a DUPLICATE: the caller must give it a distinct name before
-// re-adding (two live assets can't share a name), which is the duplicator's job.
-// The uid is deliberately not among the copied members - identity belongs to the
-// instance in the manager, and add() stamps a fresh one.
 Resource::Resource(const Resource& other)
-    : version(other.version)
-    , name(other.name)
-    , hidden(other.hidden)
-    , source(cloneSource(other.source))
+    : m_name(other.m_name)
+    , m_hidden(other.m_hidden)
+    , m_source(cloneSource(other.m_source))
 {}
 
 Resource& Resource::operator=(const Resource& other) {
     if (this == &other) return *this;
-    version = other.version;
-    name    = other.name;
-    hidden  = other.hidden;
-    source  = cloneSource(other.source);
+    m_name   = other.m_name;
+    m_hidden = other.m_hidden;
+    m_source = cloneSource(other.m_source);
     return *this;
 }
 
@@ -43,13 +37,13 @@ Resource::Resource(Resource && other) noexcept = default;
 Resource& Resource::operator=(Resource && other) noexcept = default;
 
 nlohmann::json& Resource::sourceJson() {
-    if (!source) source = std::make_unique<nlohmann::json>();
-    return *source;
+    if (!m_source) m_source = std::make_unique<nlohmann::json>();
+    return *m_source;
 }
 
 const nlohmann::json& Resource::sourceJson() const {
-    VKM_ASSERT(source != nullptr, "Resource::sourceJson() called on a resource with no source - guard with hasSource()");
-    return *source;
+    VKM_ASSERT(m_source != nullptr, "Resource::sourceJson() called on a resource with no source - guard with hasSource()");
+    return *m_source;
 }
 
 } // namespace Vkm::Engine

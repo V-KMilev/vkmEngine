@@ -31,6 +31,11 @@ struct EditorContext;
  * Entities belonging to a prefab instance are edited here like any other, and
  * an edit to one becomes a per-instance override (see PrefabOverrides): each
  * card marks the fields this instance owns and offers them back to the prefab.
+ *
+ * Many cards name an authoring mistake where it is made, rather than leaving it
+ * to the log. Which mistakes those are, what each one costs and why a given card
+ * says it in DANGER rather than WARNING is one page: docs/reference/editor.md,
+ * "A card names what its component is waiting for".
  */
 class InspectorPanel {
     public:

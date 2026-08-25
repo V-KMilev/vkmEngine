@@ -37,10 +37,9 @@ bool drawVec3Control(const char* label, float* values,
 
     float lineHeight = ImGui::GetFrameHeight();
     ImVec2 buttonSize(lineHeight + 2.0f, lineHeight);
-    // Floored, because the share left over goes to zero on a narrow panel and
-    // the three drags disappear entirely - a Transform card reduced to a row of
-    // axis buttons with no number to read or drag. Overflowing the column is the
-    // lesser failure, and the panel is resizable.
+    // Floored, because the share left over goes to zero on a narrow panel and the
+    // three drags disappear - a Transform card reduced to axis buttons with no
+    // number to drag. Overflowing is the lesser failure; the panel resizes.
     float inputWidth = std::max((ImGui::GetContentRegionAvail().x - EditorStyle::labelWidth()
                                  - buttonSize.x * 3 - ImGui::GetStyle().ItemSpacing.x * 5) / 3.0f,
                                 ImGui::GetFontSize() * 2.5f);
@@ -82,11 +81,9 @@ bool drawVec3Control(const char* label, float* values,
 void drawPropertyLabel(const char* label) {
     ImGui::AlignTextToFramePadding();
 
-    // The label lives in a fixed column measured from the ROW's start - i.e.
-    // including any card indent. (Measured from the window edge, a wide label
-    // inside an indented card slid underneath its widget: "Focus Distance"
-    // behind the slider.) A long label ellipsizes inside the column instead of
-    // pushing the widget.
+    // A fixed column measured from the row's start, card indent included -
+    // measured from the window edge, a wide label inside an indented card slides
+    // under its widget. A long label ellipsizes rather than pushing the widget.
     const float startX = ImGui::GetCursorPosX();
     const float colW   = EditorStyle::labelWidth();
     const float maxW   = colW - ImGui::GetStyle().ItemSpacing.x;

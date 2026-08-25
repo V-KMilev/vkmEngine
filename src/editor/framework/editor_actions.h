@@ -314,7 +314,7 @@ void renameAsset(ResourceManager& resources, EditorState& state, Handle<Asset> h
                  const std::string& from, const std::string& to, const char* label) {
     resources.rename(handle, to);
 
-    const std::string assigned = resources.get(handle).name;
+    const std::string assigned = resources.get(handle).name();
     if (assigned != to) {
         state.pushToast(EditorState::ToastKind::Info,
                         "'" + to + "' was taken - renamed to '" + assigned + "'");

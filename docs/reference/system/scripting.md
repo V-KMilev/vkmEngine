@@ -391,6 +391,15 @@ it. A module that declares an extra parameter compiles, links and loads, and
 reads whatever the calling convention left in that register. Copy the signature
 from this table exactly.
 
+**The version guard is an ABI guard.** The engine ships prebuilt libraries and is
+not ABI-stable between versions: struct layouts, inline functions and templates
+are all free to change, which is what lets them keep improving. A module built
+against a different version therefore disagrees with the host about memory that
+both of them read and write, and the symptom is a crash somewhere unrelated
+rather than a load failure - so `ScriptModule` refuses the load and says which
+version to rebuild against. A module reporting no version at all predates the
+guard and is refused on the same terms rather than assumed compatible.
+
 The module **links `vkm_core`** - `vkm_add_gameplay_module()` does it for every
 project - and that is not a second copy of the engine. `vkm_core` is a shared
 library, so the module and the host reach the same one, with its single typeId

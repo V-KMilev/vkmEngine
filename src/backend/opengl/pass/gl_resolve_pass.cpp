@@ -25,11 +25,9 @@ void GLResolvePass::execute(GLFrameContext& ctx) {
     } else {
         ctx.sceneRender.resolveColorTo(ctx.sceneHDR);
 
-        // Alpha-masked geometry skips the prepass and writes its depth in the
-        // forward pass - after the geometry resolve above. Re-resolve depth so
-        // the post passes (decals, fog, DoF) see cutouts exactly
-        // as they do with MSAA off, instead of fogging/blurring them as
-        // background. A pure-opaque frame skips it: depth is unchanged.
+        // Alpha-masked geometry writes its depth in the forward pass, after the geometry
+        // resolve above; without a second resolve the post passes (decals, fog, DoF)
+        // would treat its cutouts as background. A pure-opaque frame's depth is unchanged.
         if (!ctx.alphaMask.empty())
             ctx.sceneRender.resolveGeometryTo(ctx.sceneHDR, false);
     }

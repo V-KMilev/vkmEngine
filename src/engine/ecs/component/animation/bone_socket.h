@@ -45,8 +45,7 @@ struct BoneSocket {
 
     // Transient: what `bone` resolved to and what it resolved against, so the
     // rig's linear name lookup happens when the pairing changes rather than
-    // every frame. Never serialized - an index describes the rig currently
-    // loaded, not the socket that was authored.
+    // every frame.
     SkeletonHandle resolvedRig;     ///< Rig `boneIndex` was resolved against.
     std::string    resolvedName;    ///< Value of `bone` at that resolve.
     int32_t        boneIndex = -1;  ///< Bone `bone` names, or -1 when the rig has none.

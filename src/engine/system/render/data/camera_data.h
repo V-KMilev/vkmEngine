@@ -38,10 +38,9 @@ struct CameraData {
         invView        = glm::inverse(view);
         invViewProj    = glm::inverse(viewProjection);
 
-        // The plane identities differ by projection kind: perspective divides by
-        // w = -z and leaves projection[3][3] at 0, orthographic keeps w = 1. The
-        // perspective form applied to an ortho matrix yields a negative zFar, and
-        // the cluster/froxel shaders take log(zFar / zNear) on it.
+        // The plane identities differ by projection kind, and picking wrong is
+        // not benign: the perspective form on an ortho matrix yields a negative
+        // zFar, which the cluster and froxel shaders take a log of.
         if (projection[3][3] == 0.0f) {
             zNear = projection[3][2] / (projection[2][2] - 1.0f);
             zFar  = projection[3][2] / (projection[2][2] + 1.0f);

@@ -40,20 +40,11 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     ctx.gl.setBlending(false);
     ctx.gl.setFaceCulling(true);
     ctx.gl.setCullFace(GL_BACK);
-
-    // The prepass cleared the target and primed opaque depth (it is
-    // unconditional in the pass list), and the skybox filled the background
-    // before this pass. Match the primed depth with LEQUAL and leave writes off
-    // for early-Z. Do NOT clear here - that would wipe the skybox and leave
-    // transparents nothing to blend over.
     ctx.gl.setDepthFunc(GL_LEQUAL);
     ctx.gl.setDepthWrite(false);
 
-    // Everything below binds context state - texture units, UBOs, the storage
-    // buffers - which both programs then see. The per-program uniforms follow.
-    //
-    // The ShadowBlock UBO (binding 3) carries the matrices + slots; here we only
-    // bind the depth textures. The light loop samples per light type via each
+    // The ShadowBlock UBO (binding 3) carries the matrices and slots; only the depth
+    // textures are bound here. The light loop picks a slot per light type from that
     // light's shadowSlot (GpuLight.spot.w).
     ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::Atlas2D);
     for (uint32_t s = 0; s < Config::MAX_SHADOW_CASTERS_CUBE; ++s) {
@@ -93,12 +84,9 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     drawRuns(ctx, ctx.opaqueBatch);
 
     if (!ctx.alphaMask.empty()) {
-        // Alpha-masked geometry (foliage / fences / grates) is not in the
-        // prepass, so it primes its own depth here: writes on, LEQUAL over the
-        // opaque scene. Under MSAA, GL_SAMPLE_ALPHA_TO_COVERAGE turns the
-        // shader's sharpened cutout alpha into anti-aliased edges; at 1 sample
-        // it is a no-op (a hard cutout). Enabled raw - the Context deliberately
-        // does not model this one-off state, and the enable/disable is paired.
+        // GL_SAMPLE_ALPHA_TO_COVERAGE turns the shader's sharpened cutout alpha into
+        // anti-aliased edges under MSAA; at 1 sample it is a hard cutout. Enabled raw:
+        // the Context does not model this one-off state, and the pair is closed below.
         ctx.gl.setDepthWrite(true);
         ctx.gl.setDepthFunc(GL_LEQUAL);
         const bool a2c = ctx.view.settings.msaaSamples > 1;
@@ -130,10 +118,6 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         ctx.colorDst->blitColorFrom(ctx.sceneRender);
         ctx.sceneRender.bind(ctx.gl);
         ctx.colorDst->bindColor(GLBindings::PostTextureSlots::SceneColor);
-        // Every program that will draw samples the grab, and each is given the
-        // whole frame set again rather than the one uniform that changed:
-        // re-setting a dozen uniforms once a frame costs nothing, and it leaves
-        // exactly one place where a program learns what the frame looks like.
         bindFrameUniforms(*m_shader, ctx, true);
         if (posed) bindFrameUniforms(*m_skinnedShader, ctx, true);
 
@@ -150,10 +134,9 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         ctx.gl.setDepthWrite(true);
     }
 
-    // Leave the engine-default depth state so the next pass never inherits our
-    // early-Z setup. depthWrite especially: the early-Z path turns it off and the
-    // transparent block only restores it when transparents were actually drawn,
-    // so without this the exit state would depend on this frame's content.
+    // Leave the engine-default depth state: the early-Z path turns depthWrite off and
+    // the transparent block restores it only when transparents drew, so without this the
+    // state the next pass inherits would depend on this frame's content.
     ctx.gl.setFaceCulling(false);
     ctx.gl.setDepthFunc(GL_LEQUAL);
     ctx.gl.setDepthWrite(true);

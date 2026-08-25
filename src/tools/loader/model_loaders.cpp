@@ -193,7 +193,8 @@ Transform transformOf(const aiMatrix4x4& m) {
  * re-checks and every pose walk relies on.
  *
  * @param scene Parsed Assimp scene.
- * @param path Project-relative model reference, used for the name and recipe.
+ * @param path Project-relative model reference, recorded in the recipe. Add the
+ *        result under skeletonName(path) - that is what a clip binds to.
  * @return The rig, or an empty SkeletonAsset when the file has no bones or its
  *         rig cannot be resolved to one connected tree.
  */
@@ -289,7 +290,6 @@ SkeletonAsset buildSkeleton(const aiScene* scene, const std::string& path) {
         return {};
     }
 
-    out.name         = skeletonName(path);
     out.sourceJson() = { {"kind", "model"}, {"path", path} };
     return out;
 }
@@ -304,11 +304,19 @@ struct VertexInfluence {
  * @brief Transpose @p m's bone-to-vertices weights into @p out's per-vertex
  *        skin stream, addressed against @p skeleton's bone order.
  *
+ * @p rig is stamped onto the mesh because the indices this writes are only
+ * meaningful against a rig of that name and that length; the animation system
+ * refuses to pose a mesh whose stamp disagrees with the rig it sits under. The
+ * name is passed in rather than read off @p skeleton, which is built here and
+ * carries no name until a ResourceManager gives it one.
+ *
  * @param m Assimp mesh carrying the bones and their weights.
  * @param skeleton Rig the bone names resolve against.
+ * @param rig Name the rig is registered under - skeletonName(path).
  * @param out Mesh being built; its vertices must already be filled.
  */
-void appendSkin(const aiMesh* m, const SkeletonAsset& skeleton, MeshAsset& out) {
+void appendSkin(const aiMesh* m, const SkeletonAsset& skeleton, const std::string& rig,
+                MeshAsset& out) {
     std::vector<std::vector<VertexInfluence>> perVertex(m->mNumVertices);
     unsigned outOfRange = 0;
     unsigned offRig     = 0;
@@ -318,15 +326,9 @@ void appendSkin(const aiMesh* m, const SkeletonAsset& skeleton, MeshAsset& out) 
         if (index < 0) { ++offRig; continue; }
         for (unsigned wi = 0; wi < bone->mNumWeights; ++wi) {
             const aiVertexWeight& weight = bone->mWeights[wi];
-            // aiProcess_JoinIdenticalVertices merges on a key that omits skin
-            // weights (Assimp's Vertex.h:106-111) and filters the merged-away
-            // ones out (JoinVerticesProcess.cpp:343). Past that,
-            // JoinVerticesProcess.cpp:354 only rewrites a bone's weight list
-            // when the rewrite is non-empty - so a bone whose weights ALL
-            // landed on joined vertices keeps its pre-join vertex ids against
-            // the shrunken array. Following one is an out-of-bounds read of
-            // Assimp's own data, which is why this is a bounds check and not
-            // an assertion.
+            // A bone whose weights all landed on vertices
+            // aiProcess_JoinIdenticalVertices merged keeps its pre-join ids
+            // against the shrunken array; docs/reference/resources.md has why.
             if (weight.mVertexId >= m->mNumVertices) { ++outOfRange; continue; }
             if (weight.mWeight <= 0.0f) continue;
             perVertex[weight.mVertexId].push_back({static_cast<uint16_t>(index), weight.mWeight});
@@ -345,10 +347,8 @@ void appendSkin(const aiMesh* m, const SkeletonAsset& skeleton, MeshAsset& out) 
         float total = 0.0f;
         for (const VertexInfluence& influence : influences) total += influence.weight;
         if (total <= 0.0f) {
-            // Sum(w * M) with every w zero collapses the vertex onto the origin.
-            // Binding it rigidly to the rig root leaves it where the artist put
-            // it - wrong in a way that can be seen and fixed, rather than one
-            // that reads as a broken importer.
+            // sum(w * M) with every w zero collapses the vertex onto the
+            // origin; rigid to the rig root leaves it where the artist put it.
             skin.weights[0] = 255;
             ++unweighted;
         } else {
@@ -379,7 +379,7 @@ void appendSkin(const aiMesh* m, const SkeletonAsset& skeleton, MeshAsset& out) 
                     m->mName.C_Str(), unweighted);
     }
 
-    out.skeleton = skeleton.name;
+    out.skeleton = rig;
     out.computeAndSetSkinRadius(skeleton);
 }
 
@@ -409,8 +409,15 @@ std::vector<ClipMarker> usableMarkers(std::vector<ClipMarker> markers, float dur
 /**
  * @brief Build one of @p scene's animations as a clip bound to @p skeleton.
  *
+ * The binding is a name, stamped as skeletonName(@p path): a clip's per-bone
+ * table addresses one rig's order, and the animation system holds the bind pose
+ * rather than pose the wrong joints when the stamp does not match the rig the
+ * animator names. It comes from @p path because @p skeleton is built by the
+ * caller and carries no name until a ResourceManager gives it one.
+ *
  * @param scene Parsed Assimp scene.
- * @param path Project-relative model reference, used for the name and recipe.
+ * @param path Project-relative model reference, recorded in the recipe, and the
+ *        rig name the clip binds to. Add the result under clipName(path, clipIdx).
  * @param clipIdx Assimp global animation index.
  * @param skeleton Rig the channels are resolved against.
  * @param markers Authored markers to carry on the clip; may be empty.
@@ -430,7 +437,7 @@ AnimationClipAsset buildClip(const aiScene* scene, const std::string& path, int 
         return static_cast<float>(ticks / ticksPerSecond);
     };
 
-    out.skeleton = skeleton.name;
+    out.skeleton = skeletonName(path);
     out.duration = std::max(0.0f, seconds(anim->mDuration));
     out.bones.resize(skeleton.bones.size());
 
@@ -465,8 +472,7 @@ AnimationClipAsset buildClip(const aiScene* scene, const std::string& path, int 
                     clipName(path, clipIdx).c_str(), dropped);
     }
 
-    out.name    = clipName(path, clipIdx);
-    out.markers = usableMarkers(std::move(markers), out.duration, out.name);
+    out.markers = usableMarkers(std::move(markers), out.duration, clipName(path, clipIdx));
 
     // The recipe is regenerated from this on every cook, so a marker the author
     // wrote there and this load accepted has to go back into it - otherwise the
@@ -543,10 +549,9 @@ MeshAsset buildMesh(const aiScene* scene, const std::string& path, int meshIdx) 
     // walk of the node tree and it runs at import, not per frame.
     if (m->HasBones()) {
         const SkeletonAsset skeleton = buildSkeleton(scene, path);
-        if (!skeleton.bones.empty()) appendSkin(m, skeleton, out);
+        if (!skeleton.bones.empty()) appendSkin(m, skeleton, skeletonName(path), out);
     }
 
-    out.name           = meshName(path, meshIdx);
     out.sourceJson()   = { {"kind", "model"}, {"path", path}, {"mesh", meshIdx} };
     out.computeAndSetBounds();
     return out;
@@ -581,10 +586,9 @@ TextureHandle addTexture(
     tex.params.wrapT           = MODEL_TEXTURE_WRAP;
     tex.params.generateMipmaps = true;
     tex.srgb     = srgb;
-    tex.name     = name;
     tex.pixelData.assign(rgba, rgba + static_cast<size_t>(w) * h * 4);
     tex.sourceJson() = std::move(source);
-    return res.add(std::move(tex));
+    return res.add(std::move(tex), name);
 }
 
 // Decode one embedded aiTexture into RGBA8 bytes and register it under
@@ -695,7 +699,6 @@ MaterialHandle buildMaterial(
     if (MaterialHandle e = res.findByName<MaterialAsset>(nm)) return e;
 
     MaterialAsset out;
-    out.name           = nm;
     out.sourceJson()   = { {"kind", "model"}, {"path", path}, {"material", matIdx} };
 
     if (scene && matIdx >= 0 && matIdx < static_cast<int>(scene->mNumMaterials)) {
@@ -728,15 +731,9 @@ MaterialHandle buildMaterial(
         if (mt->Get(AI_MATKEY_TRANSMISSION_FACTOR, f) == AI_SUCCESS)
             out.transmission = f;
 
-        // Classify type. glTF carries an explicit alphaMode that beats
-        // the alpha-channel heuristics:
-        //   "MASK"  -> AlphaMask (alpha-tested foliage / leaves; depth-
-        //              writing in the opaque phase, no blending).
-        //   "BLEND" -> Transparent (or sorted via the heuristics below
-        //              when the asset is older / has no glTF metadata).
-        // KHR_materials_transmission glass keeps alpha = 1, so the
-        // heuristic also classifies on transmission > 0 so glass imports
-        // as Transparent and the scene-behind refraction path lights up.
+        // glTF's explicit alphaMode beats the alpha-channel heuristics below,
+        // which is all an older asset has. KHR_materials_transmission glass
+        // keeps alpha = 1, so transmission > 0 classifies as Transparent too.
         aiString alphaMode;
         const bool hasAlphaMode = (mt->Get(AI_MATKEY_GLTF_ALPHAMODE, alphaMode) == AI_SUCCESS);
         float cutoff = 0.5f;  // glTF default
@@ -799,11 +796,9 @@ MaterialHandle buildMaterial(
         out.emissionTexture = pick({aiTextureType_EMISSIVE,
                                     aiTextureType_EMISSION_COLOR}, true);
 
-        // glTF multiplies the emissive texture by emissiveFactor. Assimp's
-        // glTF importer frequently drops the factor; if a texture is bound
-        // but the factor came back ~black, fall back to white so the glow
-        // (DamagedHelmet vents/eyes, etc.) is not silently lost. Then
-        // apply KHR_materials_emissive_strength last.
+        // glTF multiplies the emissive texture by emissiveFactor, and Assimp's
+        // glTF importer frequently drops the factor - so a bound texture with a
+        // near-black factor falls back to white rather than losing the glow.
         if (out.emissionTexture &&
             out.emission.r < 1e-4f &&
             out.emission.g < 1e-4f &&
@@ -814,16 +809,16 @@ MaterialHandle buildMaterial(
         out.transmissionTexture = pick({aiTextureType_TRANSMISSION}, false);
         out.heightTexture       = pick({aiTextureType_DISPLACEMENT}, false);
     }
-    return res.add(std::move(out));
+    return res.add(std::move(out), nm);
 }
 
 /**
- * @brief Import @p absolute and build one of its meshes, named by @p ref.
+ * @brief Import @p absolute and build one of its meshes, recorded against @p ref.
  *
  * The two are separate arguments because they answer different questions: only
- * Assimp needs the path on this machine, while the name and the recipe record
- * the reference, which has to mean the same thing on another one. Callable from
- * a worker, unlike the resolution itself, which reads main-thread state.
+ * Assimp needs the path on this machine, while the recipe records the reference,
+ * which has to mean the same thing on another one. Callable from a worker,
+ * unlike the resolution itself, which reads main-thread state.
  */
 MeshAsset buildMeshFrom(const std::string& absolute, const std::string& ref, int meshIndex) {
     auto importer = importerCache().get(absolute);
@@ -859,11 +854,10 @@ MeshHandle requestModelMeshAsync(
     // Stub: bounds left zero so VisibilitySystem keeps it culled until
     // the worker fills in real vertex data.
     MeshAsset stub;
-    stub.name    = name;
     stub.loading = true;
     stub.sourceJson() = { {"kind", "model"}, {"path", ref}, {"mesh", meshIndex} };
-    const MeshHandle handle = resources.add(std::move(stub));
-    const uint64_t   uid    = resources.get(handle).uid;
+    const MeshHandle handle = resources.add(std::move(stub), name);
+    const uint64_t   uid    = resources.get(handle).uid();
 
     ThreadPool::get().addTask([handle, uid, absolute, ref, meshIndex]() {
         // ImporterCache is mutex-guarded, so concurrent callers from
@@ -898,7 +892,7 @@ SkeletonHandle loadModelSkeleton(const std::string& path, ResourceManager& resou
 
     SkeletonAsset skeleton = buildSkeleton(scene, ref);
     if (skeleton.bones.empty()) return {};
-    return resources.add(std::move(skeleton));
+    return resources.add(std::move(skeleton), skeletonName(ref));
 }
 
 AnimationClipHandle loadModelAnimationClip(
@@ -927,7 +921,7 @@ AnimationClipHandle loadModelAnimationClip(
 
     AnimationClipAsset clip = buildClip(scene, ref, clipIndex, skeleton, std::move(markers));
     if (clip.bones.empty()) return {};
-    return resources.add(std::move(clip));
+    return resources.add(std::move(clip), clipName(ref, clipIndex));
 }
 
 MaterialHandle loadModelMaterial(
@@ -992,7 +986,7 @@ EntityId importModelIntoScene(
         MeshHandle h = resources.findByName<MeshAsset>(nm);
         if (!h) {
             MeshAsset ma = buildMesh(aScene, ref, idx);
-            if (!ma.vertices.empty()) h = resources.add(std::move(ma));
+            if (!ma.vertices.empty()) h = resources.add(std::move(ma), nm);
         }
         meshes[idx] = h;
         return h;
@@ -1011,10 +1005,10 @@ EntityId importModelIntoScene(
     SkeletonHandle      rigHandle;
     AnimationClipHandle firstClip;
     if (!rig.bones.empty()) {
-        rigHandle = resources.findByName<SkeletonAsset>(rig.name);
+        rigHandle = resources.findByName<SkeletonAsset>(skeletonName(ref));
         if (!rigHandle) {
             SkeletonAsset copy = rig;
-            rigHandle = resources.add(std::move(copy));
+            rigHandle = resources.add(std::move(copy), skeletonName(ref));
         }
         for (unsigned i = 0; i < aScene->mNumAnimations; ++i) {
             const int clipIdx = static_cast<int>(i);
@@ -1024,7 +1018,7 @@ EntityId importModelIntoScene(
                 // them, so they are authored into the recipe afterwards and
                 // arrive on the next load through it.
                 AnimationClipAsset clip = buildClip(aScene, ref, clipIdx, rig, {});
-                if (!clip.bones.empty()) handle = resources.add(std::move(clip));
+                if (!clip.bones.empty()) handle = resources.add(std::move(clip), clipName(ref, clipIdx));
             }
             if (handle && !firstClip) firstClip = handle;
         }
@@ -1096,11 +1090,9 @@ EntityId importModelIntoScene(
     if (aScene->mRootNode)
         spawn(aScene->mRootNode, root);
 
-    // The rig's frame is the PARENT of its root bone, because buildSkeleton
-    // composes bone 0 from its own local transform down - so a bone's model
-    // matrix is expressed in the space its root sits in. Putting the Animator
-    // anywhere else would offset the whole pose by one node transform, which
-    // looks plausible until the character is compared with its own mesh.
+    // The rig's frame is the parent of its root bone: buildSkeleton composes
+    // bone 0 from its own local transform down, so a bone's model matrix is
+    // expressed in the space its root sits in. Anywhere else offsets the pose.
     if (rigHandle) {
         const aiNode* rootBone = aScene->mRootNode->FindNode(rig.bones[0].name.c_str());
         const aiNode* rigFrame = rootBone ? rootBone->mParent : nullptr;
@@ -1114,11 +1106,8 @@ EntityId importModelIntoScene(
         scene.add(rigEntity, animator);
 
         // Skinned vertices resolve into the rig's own space - the inverse-bind
-        // matrices already carry whatever placed the mesh there - so the matrix
-        // multiplying them must be the rig's world matrix and nothing else.
-        // Parenting each skinned mesh to the rig at identity makes that true by
-        // construction instead of by convention; a mesh left under its own node
-        // would be transformed twice, which looks plausible for exactly one pose.
+        // matrices carry whatever placed the mesh there - so parenting each one
+        // to the rig at identity is what stops it being transformed twice.
         for (EntityId skinned : skinnedMeshes) {
             HierarchyOperations::setParent(scene, skinned, rigEntity);
             scene.get<Transform>(skinned) = Transform{};

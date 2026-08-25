@@ -10,10 +10,12 @@
 namespace Vkm::Engine {
 
 /**
- * @brief Broadphase / narrowphase view of one collidable body, cached per tick.
- * `body` indexes the parallel solver-body array; `cullStatic` is true only for
- * permanently immovable bodies (static/kinematic) - a sleeping dynamic body is
- * NOT cullStatic, so it keeps generating contacts and stays supported.
+ * @brief Broadphase and narrowphase view of one collidable body, cached per tick.
+ *
+ * `body` indexes the parallel solver-body array. `cullStatic` is true only for
+ * permanently immovable bodies - static or kinematic - and a sleeping dynamic
+ * body is deliberately not one: it keeps generating contacts, which is what
+ * keeps whatever rests on it supported.
  */
 struct ColliderProxy {
     uint32_t body = 0;

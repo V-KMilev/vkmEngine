@@ -150,6 +150,13 @@ namespace Prefab {
      * is left alone - the instance's pose belongs to whoever placed it, not to
      * the prefab.
      *
+     * The caller marks @p root as a @ref PrefabInstance itself, unlike the
+     * @ref instantiate overloads which create the root and mark it. The scene
+     * loader has to: the overrides it read off the file belong on the component
+     * before the subtree is built from it. Without the marker the result is a
+     * loose copy - the next scene save writes the whole subtree inline and the
+     * link to the prefab is gone.
+     *
      * @param scene     Scene to build into.
      * @param resources Resolves asset names to handles.
      * @param path      Prefab file to read.

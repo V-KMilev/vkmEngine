@@ -102,10 +102,8 @@ inline AppSystems setupEngineApp(Vkm::Engine::Engine& engine, const AppConfig& c
     engine.addSystem<Vkm::Engine::BoneSocketSystem>(Vkm::Engine::SystemStage::Transform);
     engine.addSystem<Vkm::Engine::HierarchySystem>(Vkm::Engine::SystemStage::Transform);
     auto& uiSystem = engine.addSystem<Vkm::Engine::UISystem>(Vkm::Engine::SystemStage::Transform);
-    // After the world resolve, like every other consumer of a resolved pose:
-    // audio presents the frame rather than simulating it, so a parented source
-    // or listener is heard where this frame put it. It still hears everything
-    // the frame decided, because Transform runs after Simulation.
+    // After the world resolve it reads poses from; see
+    // docs/reference/system/audio.md, "Per-frame flow".
     auto& audioSystem = engine.addSystem<Vkm::Engine::AudioSystem>(Vkm::Engine::SystemStage::Transform);
     auto& visibilitySystem =
         engine.addSystem<Vkm::Engine::VisibilitySystem>(Vkm::Engine::SystemStage::Visibility);

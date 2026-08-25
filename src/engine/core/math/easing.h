@@ -21,12 +21,19 @@ using EasingFunction = float (*)(float);
  */
 namespace Easing {
 
-    // linear keeps a real named function because it is the canonical fallback /
-    // default elsewhere. The rest are thin lambdas over the glm::* easing
-    // templates (whose addresses can't be taken directly), decayed to a plain
-    // function pointer via the unary +; EASE() spells that wrapper.
+    /// A real named function, not an EASE() row: it is the default easing elsewhere.
     inline float linear(float t) { return glm::linearInterpolation(t); }
 
+    /**
+     * @brief Wrap a glm easing routine as a plain EasingFunction pointer.
+     *
+     * The glm easings are templates over `genType const&`, so no pointer to one
+     * carries EasingFunction's `float(float)` signature. Each is wrapped in a
+     * captureless lambda instead, and the leading unary + is what decays that
+     * lambda to a function pointer the table below can hold.
+     *
+     * @param glmFn Unqualified name of the glm routine, e.g. quadraticEaseIn.
+     */
     #define EASE(glmFn) +[](float t) { return glm::glmFn(t); }
 
     /**

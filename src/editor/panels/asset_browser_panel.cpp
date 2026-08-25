@@ -112,8 +112,8 @@ template<typename Asset>
 struct KindOps {
     static void rows(const ResourceManager& resources, const RowSink& sink) {
         resources.forEachOfType<Asset>([&](Handle<Asset> h, const Asset& a) {
-            if (a.hidden) return;  // editor helpers / preview primitives are not user-facing
-            sink(AssetRow{h.key, &a.name, a.version});
+            if (a.isHidden()) return;  // editor helpers / preview primitives are not user-facing
+            sink(AssetRow{h.key, &a.name(), a.version()});
         });
     }
 
@@ -158,11 +158,9 @@ void materialDetail(const ResourceManager& resources, StorageIndex key,
         snprintf(out, n, "%s . metal %.2f . rough %.2f", type,
                  static_cast<double>(m.metallic), static_cast<double>(m.roughness));
     } else if (m.type != MaterialType::Opaque) {
-        // The line says the one thing about a material its thumbnail cannot.
-        // A transparent or masked material looks like an opaque one on a
-        // preview sphere and behaves nothing like it, so when the render path
-        // is the unusual one that is the fact worth the line; when it is the
-        // ordinary one, roughness is what actually differs tile to tile.
+        // The one thing about a material its thumbnail cannot show: a
+        // transparent one looks opaque on a preview sphere. When the path is
+        // ordinary, roughness is what differs tile to tile instead.
         snprintf(out, n, "%s", type);
     } else {
         snprintf(out, n, "rough %.2f", static_cast<double>(m.roughness));
@@ -579,11 +577,9 @@ void AssetBrowserPanel::openRename(AssetType kind, StorageIndex key, const std::
 }
 
 void AssetBrowserPanel::ensureAssets(ResourceManager& resources) {
-    // Re-acquire every call rather than caching with a "ready" flag:
-    // SceneSerializer::load swaps the ResourceManager wholesale, so any
-    // cached handle survives the swap as a dangling (index, generation)
-    // pair into the now-discarded manager. findByName is O(1) (per-type
-    // name index in ResourceManager), so the cost is negligible.
+    // Re-acquired every call rather than cached behind a ready flag: a scene
+    // load swaps the ResourceManager wholesale, so a cached handle survives it
+    // as a dangling pair into the discarded one. findByName is O(1).
     m_sphere = resources.findByName<MeshAsset>("mesh:preview_sphere");
     if (!m_sphere) m_sphere = resources.addPrivate(generateSphere(), "mesh:preview_sphere");
 
@@ -638,9 +634,8 @@ void AssetBrowserPanel::drawRail(EditorContext& ec) {
         ImGui::PushID(static_cast<int>(kind.type));
 
         // The row wears its own kind's hue, not the editor's one accent: six
-        // rows highlighted in the same blue read as one list, and the strip
-        // beside them is three pixels wide and cannot carry the difference
-        // alone. Alpha, so the hue stays the kind's registered one.
+        // rows in the same blue read as one list, and the three-pixel strip
+        // beside them cannot carry the difference alone. Alpha keeps the hue.
         ImVec4 tint = *kind.accent;
         tint.w = 0.20f;
         ImGui::PushStyleColor(ImGuiCol_HeaderHovered, tint);
@@ -680,12 +675,8 @@ void AssetBrowserPanel::drawRail(EditorContext& ec) {
 void AssetBrowserPanel::drawToolbar(EditorContext& ec) {
     const AssetKind& kind = kindOf(m_kind);
 
-    // The verb slot: the first control is always the chosen kind's primary
-    // action, at the same place whatever kind that is. The label is the verb
-    // alone - the rail two inches to its left already says which kind is
-    // showing, so "Import Sound..." spent half a button saying it twice. What
-    // the noun did carry, the file formats behind an import, is a tooltip's
-    // job and now reads fuller than the noun ever did.
+    // The chosen kind's primary action, always first and always here; see
+    // docs/reference/editor.md, "One verb slot".
     if (ImGui::Button(kind.verb)) {
         switch (kind.verbAction) {
             case Verb::NewMaterial:
@@ -714,10 +705,9 @@ void AssetBrowserPanel::drawToolbar(EditorContext& ec) {
     ImGui::SliderFloat("##cell", &m_cell, 64.0f, 200.0f, "%.0f");
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Tile size");
 
-    // Both ways a clip can be inaudible with nothing on this kind wrong, said
-    // where the kind that can be heard is showing. A muted mix is the quieter
-    // of the two: a tile shows a Pause and a cursor running against the clip's
-    // length, so the audition looks exactly like one that is working.
+    // Both ways a clip can be inaudible with nothing about it wrong. A muted
+    // mix is the quieter: the tile shows a Pause and a running cursor, so the
+    // audition looks exactly like one that works.
     if (m_kind == AssetType::AudioClip) {
         AudioDevice& device = ec.audioSystem.device();
         if (!device.isOpen()) {
@@ -778,14 +768,8 @@ void AssetBrowserPanel::drawGrid(EditorContext& ec) {
         // the sound transport below - would be unreachable: the first item
         // submitted holds the mouse over an overlap unless it says otherwise.
         ImGui::SetNextItemAllowOverlap();
-        // No frame around the face. An ImageButton insets its picture by
-        // FramePadding and a sized Button does not, so on the theme's (8, 4)
-        // a thumbnail tile stood eight pixels shorter than a glyph tile and no
-        // two kinds' name lines could share a baseline - visible inside one
-        // kind too, the moment a thumbnail had not had its bake turn. It also
-        // started the picture eight pixels right of the name underneath it.
-        // Zeroed, both paths submit the same square, and that square's left
-        // edge is the one the name and the detail line start from.
+        // Zeroed so a thumbnail tile and a glyph tile submit the same square;
+        // see docs/reference/editor.md, "One tile, whatever the kind".
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, inert);
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, inert);
@@ -845,10 +829,9 @@ void AssetBrowserPanel::drawGrid(EditorContext& ec) {
         }
 
         if (!tex) {
-            // A kind with no thumbnail wears its glyph; a kind that has one but
-            // has not had its bake turn yet wears the same glyph faintly, so
-            // "there is no picture for this" and "the picture is coming" do not
-            // look alike.
+            // A kind with no thumbnail wears its glyph; one waiting on its bake
+            // wears the same glyph faintly, so "there is no picture for this"
+            // and "the picture is coming" do not look alike.
             ImVec4 glyph = *kind.accent;
             if (kind.thumb) glyph.w = 0.30f;
             drawEditorIcon(ImGui::GetWindowDrawList(), kind.icon,
@@ -878,10 +861,9 @@ void AssetBrowserPanel::drawGrid(EditorContext& ec) {
 
         clippedLine(row.name->c_str(), face, /*dim*/ false);
 
-        // The detail line, until this tile is the one being heard: then the
-        // same line says how far into that length the audition has got, and
-        // moves it. A position measured against a length belongs where the
-        // length was stated.
+        // The detail line, until this tile is the one being heard: then it says
+        // how far into that length the audition has got. A position measured
+        // against a length belongs where the length was stated.
         if (mine && device.isVoiceActive(m_previewVoice)) {
             auditionScrubber("abPos", device, m_previewVoice,
                              resources.get(AudioClipHandle{row.key}).duration(), face);
@@ -893,10 +875,9 @@ void AssetBrowserPanel::drawGrid(EditorContext& ec) {
 
         ImGui::EndGroup();
 
-        // Drawn after the group so it lies over the face's left edge, not
-        // under it. How solid it is answers the one thing a library is asked
-        // about its rows - is anything using this - which was otherwise legible
-        // only as a greyed-out Delete.
+        // After the group, so it lies over the face's left edge rather than
+        // under it. Its solidity answers the one thing a library is asked about
+        // a row - is anything using this.
         ImVec4 strip = *kind.accent;
         if (orphan) strip.w *= 0.35f;
         ImGui::GetWindowDrawList()->AddRectFilled(
@@ -970,12 +951,8 @@ void AssetBrowserPanel::serviceSoundImport(EditorContext& ec) {
     if (!m_soundPicker.draw(picked)) return;
 
     // Asked before the import, because loadAudioClip answers a name it already
-    // holds with the clip it already has and decodes nothing. The three
-    // outcomes then read apart: a file that would not decode, one that is
-    // already here, and a clip that is new. Picking a file and being told
-    // nothing at all is how the second one looked, and it was the one that
-    // also dirtied the scene - an unsaved-changes prompt for an import that
-    // did not happen is the prompt meaning less.
+    // holds with the clip it has and decodes nothing - so without this the three
+    // outcomes (undecodable, already here, new) cannot be told apart.
     ResourceManager& resources = ec.frame.resources;
     const std::string ref = ProjectPaths::toProjectRelative(picked);
     const bool alreadyHeld = static_cast<bool>(resources.findByName<AudioClipAsset>(ref));

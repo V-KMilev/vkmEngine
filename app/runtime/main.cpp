@@ -19,10 +19,9 @@
 
 int main(int argc, char** argv) {
     try {
-        // The project is the one beside this executable, unless an argument
-        // names a different one - which is for running several projects out of
-        // one build. Root, working directory and log file all get settled here,
-        // in the one order that works (see tools/project_boot.h).
+        // Project root, working directory and log file, in the one order that
+        // works (see tools/project_boot.h); argv[1] overrides the project beside
+        // this executable, which is how one build runs several.
         if (!Vkm::Engine::bootHost(argc, argv, "log.log", "VKM-ENGINE")) return EXIT_FAILURE;
 
         const std::filesystem::path root = Vkm::Engine::ProjectPaths::projectRoot();
@@ -35,23 +34,15 @@ int main(int argc, char** argv) {
         // Resolves scene asset references to their cooked files on load.
         Vkm::Engine::AssetLibrary::get().load();
 
-        // Load the gameplay module rather than linking it, so a game is data
-        // plus a module instead of a rebuilt engine. It registers behaviors into
-        // the registry, so it must precede the scene boot. Declared before the
-        // Engine so it outlives it - behaviors are destroyed during Engine
-        // teardown and their code must still be mapped then. It lives in the
-        // project's own bin/, the one place every project builds it.
-        //
-        // Fatal here, where the editor only warns: the behaviors in a scene are
-        // created through the registry this fills, so with no module every one of
-        // them is dropped on load - a [SCRIPT] [ERROR] line each - and the world
-        // draws and does nothing. Exit 0 would report that as a game that played,
-        // and the exit code is the only answer a shell gets. The editor is the
-        // tool you fix it in, so it opens anyway.
+        // Declared before the Engine so it outlives it: behaviors are destroyed
+        // during Engine teardown and their code must still be mapped then. It
+        // fills the behavior registry, so it also precedes the scene boot below.
         Vkm::Engine::ScriptModule scriptModule;
         const std::filesystem::path modulePath =
             Vkm::Engine::ProjectPaths::projectBin() / Vkm::Engine::DynamicLibrary::platformName("game");
 
+        // Fatal here where the editor only warns; see docs/reference/system/io.md,
+        // "What each host does when a project will not open".
         if (!std::filesystem::exists(modulePath, ec)) {
             LOG_ERROR("No gameplay module at '%s' - build the project before playing it",
                       modulePath.string().c_str());
@@ -77,12 +68,9 @@ int main(int argc, char** argv) {
             title.c_str(),
             false, true});
 
-        // A scene comes from the project that owns it, never from the command
-        // line - one function so all three hosts open a project the same way
-        // (see tools/project_boot.h). Anything but the project's own world is a
-        // failure to boot this game: either its entry scene did not load, or it
-        // names none and its module builds none, and both leave the runtime
-        // sitting on the engine's default scene under the game's own title.
+        // Anything but the project's own world leaves this game nothing to play:
+        // its entry scene did not load, or it names none and its module builds
+        // none, and both leave the runtime on the engine's default scene.
         if (Vkm::Engine::bootProjectScene(project, scriptModule,
                 engine.getScene(), engine.getResources()).source != Vkm::Engine::SceneBoot::Project) {
             LOG_ERROR("Project '%s' has no world of its own to play", project.name.c_str());

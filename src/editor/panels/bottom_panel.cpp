@@ -162,10 +162,8 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
         const float dur = Animation::computeDuration(anim);
 
         // The transport sets a flag AnimationSystem acts on, and that system
-        // returns on a zero sim delta - so in Edit mode the button flips to
-        // Pause and the playhead never moves. Say which of the two states this
-        // is, the way the Audio Source card reads its own transport off the
-        // mixer rather than off the scene's word for it.
+        // returns on a zero sim delta - so in Edit mode the button flips to Pause
+        // and the playhead never moves. Say which of the two states this is.
         if (anim.playing && ctx.clock.getSimDelta() <= 0.0f) {
             ImGui::TextDisabled("Held at %.2fs - it advances while the world runs.", anim.time);
         }

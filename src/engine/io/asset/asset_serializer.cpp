@@ -91,16 +91,16 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
         // to fire on every load: a hidden texture is not in the cooked
         // manifest, so shipping its name in a public material's recipe writes
         // a reference that can never resolve.
-        if (tex.hidden) {
+        if (tex.isHidden()) {
             LOG_WARNING("Material texture slot '%s' refers to hidden asset '%s' - dropping ref",
-                f.key, tex.name.c_str());
+                f.key, tex.name().c_str());
             continue;
         }
-        if (tex.name.empty()) {
+        if (tex.name().empty()) {
             LOG_WARNING("Material texture slot '%s' has no name - dropping ref", f.key);
             continue;
         }
-        textures[f.key] = tex.name;
+        textures[f.key] = tex.name();
     }
     if (!textures.empty()) src["textures"] = std::move(textures);
     return src;
@@ -133,11 +133,9 @@ void applyInline(const nlohmann::json& src, MaterialAsset& m, const ResourceMana
             if (texName.empty()) continue;
             const TextureHandle h = resources.findByName<TextureAsset>(texName);
             if (!h) {
-                // Keep whatever was already in the slot rather than zeroing
-                // it: the file referenced a name that didn't resolve in the
-                // current asset graph (typo, dependency not loaded yet, or a
-                // texture deleted under us). Silently dropping to null would
-                // give the material a transparent-black map at draw time.
+                // Keep whatever is in the slot rather than zeroing it. The
+                // name did not resolve in this graph - a typo, a dependency not
+                // loaded yet - and a null slot draws as transparent black.
                 LOG_WARNING("Material texture ref '%s' ('%s') unresolved; keeping previous slot value",
                     f.key, texName.c_str());
                 continue;
@@ -160,12 +158,12 @@ namespace {
  * manifest, so its name would name nothing on load.
  */
 void emitDescriptor(nlohmann::json& target, const Resource& asset) {
-    if (asset.hidden) return;
-    if (asset.name.empty()) {
+    if (asset.isHidden()) return;
+    if (asset.name().empty()) {
         LOG_WARNING("Asset has no name; skipping in save");
         return;
     }
-    target.push_back({{"name", asset.name}});
+    target.push_back({{"name", asset.name()}});
 }
 
 /**
@@ -255,7 +253,7 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
         // Checked here and not left to emitDescriptor because hidden gates the
         // texture walk below too: a thumbnail material must not drag its
         // textures into the user's scene.
-        if (asset.hidden) return;
+        if (asset.isHidden()) return;
         // Name-only reference; the cooker has already written the material's
         // canonical inline form to the library under this name.
         emitDescriptor(materials, asset);
@@ -286,21 +284,16 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
     // the entity kept precisely so this document can still name it.
     std::vector<std::pair<AssetType, std::string>> namedRefs;
 
-    // Every component that writes an asset name into the document has to be
-    // walked, and which ones those are is the R rows of VKM_SCENE_COMPONENTS -
-    // the same list the save and the load expand from, so the three cannot
-    // disagree about the set. A row with no emitAssetRefs overload stops the
-    // build here rather than shipping a name this block never lists.
+    // The components that name assets are the R rows of VKM_SCENE_COMPONENTS -
+    // the list the save and the load expand from too, so the three cannot
+    // disagree. A row with no emitAssetRefs overload stops the build here.
     ComponentSerializer::AssetRefs refs;
     for (EntityId id : entities) {
         VKM_SCENE_COMPONENTS(VKM_SCENE_SKIP_P, VKM_SCENE_EMIT_R)
 
-        // What the load could not resolve has no handle to emit from, and the
-        // component's slot is empty - but the name is the author's, and the
-        // scene write puts it back into the field it came from. Listing it here
-        // is the other half of that: without an entry the next load never asks
-        // the library for it, so the reference stays broken even once the
-        // library holding it is restored.
+        // The other half of keeping a name the load could not resolve: without
+        // an entry here the next load never asks the library for it, so the
+        // reference stays broken even once the library holding it is back.
         if (scene.has<MissingAssets>(id)) {
             for (const MissingAssetRef& ref : scene.get<MissingAssets>(id).refs) {
                 if (ref.type == AssetType::Count) continue;   // not a kind the library files
@@ -328,16 +321,9 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
     for (const AnimationClipHandle& h : refs.clips)     emitClip(h);
     for (const AudioClipHandle& h : refs.sounds)        emitSound(h);
 
-    // Emitted flat, by name: an authored reference has a name and no handle, so
-    // there is nothing to walk into beside it. A material named this way
-    // therefore arrives without the textures emitMaterial would have pulled in
-    // with it - no field names one today, and the material loader warns per
-    // unresolved map rather than failing quietly.
-    //
-    // A name absent from the library is emitted all the same and left to
-    // loadAssetSection to report: a component's name comes from an asset that
-    // exists, but a behavior's was typed against a library that may since have
-    // lost it, and dropping it here would turn a broken reference into silence.
+    // Flat, by name: an authored reference has no handle to walk into, so a
+    // material named this way arrives without the textures emitMaterial would
+    // have pulled in with it. No behavior field names one today.
     namedRefs.insert(namedRefs.end(), behaviorRefs.refs().begin(), behaviorRefs.refs().end());
     for (const auto& [type, name] : namedRefs) {
         switch (type) {
@@ -398,10 +384,6 @@ nlohmann::json saveAllAssets(const ResourceManager& resources) {
 }
 
 nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& resources) {
-    // Including the entities inside prefab instances, which the scene file does
-    // not describe and the prefab file now carries its own block for. They stay
-    // because an instance may override a Mesh or a Decal at an asset the prefab
-    // never names, and this walk is the only one that sees that.
     std::vector<EntityId> entities;
     entities.reserve(scene.entityCount());
     scene.forEachEntity([&](EntityId id) { entities.push_back(id); });
@@ -454,11 +436,9 @@ bool resolveCookedSource(AssetType type, const std::string& name, nlohmann::json
         outSource = nlohmann::json{{"kind", "cooked"}, {"name", name}};
         return true;
     }
-    // Not an error on its own: whether it can be recovered from is the factory's
-    // answer to give. An editor or a cook re-imports and re-bakes; the runtime,
-    // which links no importers, refuses the recipe kind on the next line and
-    // that pair of lines is the diagnosis - a shipped build cannot rebuild a
-    // stale cache, it needs one cooked for it.
+    // Not an error on its own: an editor or a cook re-imports and re-bakes,
+    // while the runtime refuses the recipe kind on the next line - and that pair
+    // of lines is the diagnosis.
     LOG_INFO("%s '%s': no cooked file this build can use; falling back to its recipe",
         Reflect::enumName(type), name.c_str());
     return loadLibrarySource(type, name, outSource);
@@ -536,12 +516,9 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources, Lo
         return false;
     }
 
-    // Order matters: textures -> materials (resolve their texture refs by name)
+    // Order matters: textures -> materials (which resolve texture refs by name)
     // -> skeletons -> clips (each names the rig its bone indices address) ->
-    // meshes. Each created asset is renamed to its recorded name so component
-    // references (which resolve by name) land on it. Sounds depend on nothing
-    // and nothing depends on them, so they come last, where they cannot be
-    // mistaken for part of that chain.
+    // meshes. Sounds depend on nothing and nothing on them, so they come last.
     const auto [texC, texS] = loadAssetSection<TextureAsset      >(assetsJson, "textures",  AssetType::Texture,       assetFactory().createTexture,       "Texture",  resources, mode);
     const auto [matC, matS] = loadAssetSection<MaterialAsset     >(assetsJson, "materials", AssetType::Material,      assetFactory().createMaterial,      "Material", resources, mode);
     const auto [sklC, sklS] = loadAssetSection<SkeletonAsset     >(assetsJson, "skeletons", AssetType::Skeleton,      assetFactory().createSkeleton,      "Skeleton", resources, mode);

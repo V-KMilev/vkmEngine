@@ -54,11 +54,9 @@ void GLFogPass::execute(GLFrameContext& ctx) {
     const uint32_t gx = (dims.x + 7u) / 8u;
     const uint32_t gy = (dims.y + 7u) / 8u;
 
-    // The light SSBO (binding 0) and cluster grid (binding 1) are already bound.
-    // The 2D shadow atlas is not - the forward pass usually binds it and it runs
-    // later - so bind it here for the sun's cascade lookup. The inject shader
-    // never samples the point-light cubes, so those stay unbound. (The
-    // ShadowBlock UBO is already bound by the backend.)
+    // The light SSBO, the cluster grid and the ShadowBlock UBO are bound already; the
+    // 2D atlas is not, because the forward pass binds it and runs later. The inject
+    // shader reads the sun's cascades from it and never samples the point-light cubes.
     ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::Atlas2D);
 
     ctx.fog.bindScatterImage(0, GL_WRITE_ONLY);

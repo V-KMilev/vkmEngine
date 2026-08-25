@@ -338,12 +338,6 @@ bool isCookedCurrent(AssetType type, const std::filesystem::path& path, uint64_t
     if (header.assetKind != expectKind || header.formatVersion != expectVersion
         || header.recipeHash != recipeHash) return false;
 
-    // The body is measured, not read. The header is written before the body, so
-    // an interrupted write or a partial copy leaves a file that identifies
-    // itself perfectly and is short - and identifying itself is all the rest of
-    // this function asks. Without this the reader refuses that file while the
-    // cooker calls it current and never rewrites it, which is precisely the
-    // project neither end repairs. One seek answers it; nothing is allocated.
     std::streamoff fileSize = 0;
     return payloadFillsFile(is, header.payloadBytes, fileSize);
 }
@@ -410,10 +404,8 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out, uint64_t* outHa
         return false;
     }
 
-    // Indices are bounds-checked as well as sized. A file can pass every size
-    // check above and still name vertices that do not exist - a truncated write
-    // resumed, a bad sector - and nothing downstream re-checks: decimation
-    // indexes a per-vertex array with them, and GL is handed the buffer as-is.
+    // An index past the vertex count is never re-checked downstream: decimation
+    // indexes a per-vertex array with it, and GL is handed the buffer as-is.
     const auto vertexTotal = static_cast<uint32_t>(out.vertices.size());
     for (const uint32_t index : out.indices) {
         if (index >= vertexTotal) {
@@ -426,10 +418,9 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out, uint64_t* outHa
         }
     }
 
-    // Bone indices get the same treatment, and for a sharper reason: they are
-    // not read by the CPU at all, they address the pose palette in the vertex
-    // stage. A corrupt one is an out-of-range buffer read on every vertex of
-    // every frame, and the palette is the only thing that would notice.
+    // A bone index is never read by the CPU at all - it addresses the pose
+    // palette in the vertex stage - so a corrupt one is an out-of-range read on
+    // every vertex of every frame, and nothing else would notice.
     for (const SkinVertex& skin : out.skin) {
         for (const uint16_t bone : skin.bones) {
             if (bone >= MAX_SKELETON_BONES) {
@@ -448,13 +439,9 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out, uint64_t* outHa
 }
 
 bool writeTexture(const std::filesystem::path& path, const TextureAsset& texture, uint64_t recipeHash) {
-    // Every TextureParams enum below is written as its raw value, so the file
-    // format IS the enumerator order. Reordering one is invisible to both the
-    // version check and the recipe hash - a cooked texture would simply decode
-    // as a different format, with no error. Every enumerator is spelled out
-    // rather than only the last, or a swap in the middle leaves the tail where
-    // it was and passes; appending stays legal. The message names the same
-    // remedy as the Vertex guard in writeMesh.
+    // These enums are written as raw values, so the file format IS the
+    // enumerator order, and a reorder is invisible to the version check and to
+    // the recipe hash. Every enumerator is named, or a swap in the middle passes.
     static_assert(static_cast<uint8_t>(TextureInternalFormat::R8)      == 0 &&
                   static_cast<uint8_t>(TextureInternalFormat::RG8)     == 1 &&
                   static_cast<uint8_t>(TextureInternalFormat::RGB8)    == 2 &&
@@ -536,11 +523,9 @@ bool readTexture(const std::filesystem::path& path, TextureAsset& out, uint64_t*
         return false;
     }
 
-    // Dimensions are checked as well as sized, for the same reason mesh indices
-    // are: a file can carry the right number of bytes and still declare a size
-    // that does not describe them, and nothing downstream re-checks - the params
-    // reach glTexImage2D verbatim, which then reads width * height texels out of
-    // this buffer. Division rather than multiplication so the math cannot wrap.
+    // The params reach glTexImage2D verbatim, which then reads width * height
+    // texels out of this buffer. Division rather than multiplication so the
+    // math cannot wrap.
     const uint64_t texelBytes = bytesPerTexel(tp.format, tp.type);
     const uint64_t texels     = static_cast<uint64_t>(tp.width) * tp.height;
     if (pixelBytes % texelBytes != 0 || pixelBytes / texelBytes != texels) {
@@ -648,10 +633,9 @@ bool readSkeleton(const std::filesystem::path& path, SkeletonAsset& out, uint64_
             out.bones.clear();
             return false;
         }
-        // The ordering invariant, re-checked rather than assumed. It is strictly
-        // stronger than a range check and it is what lets every consumer compose
-        // the pose in one forward loop: a bone that named a later parent - or
-        // itself - would leave the loop reading a transform it has not written.
+        // Stronger than a range check, and what lets every consumer compose the
+        // pose in one forward loop: a bone naming a later parent, or itself,
+        // would leave that loop reading a transform it has not written yet.
         if (parent < -1 || parent >= static_cast<int32_t>(i)) {
             LOG_ERROR("Cooked skeleton '%s': bone %llu names parent %d, which is not a bone before it",
                       p.c_str(), static_cast<unsigned long long>(i), parent);
@@ -721,10 +705,9 @@ bool writeAnimationClip(const std::filesystem::path& path, const AnimationClipAs
             return false;
         }
     }
-    // A marker outside the timeline can never be reached at the instant it names:
-    // a looping head wraps it back to some other moment, and a clamped one never
-    // gets there at all. Refused here rather than silently moved, because where
-    // an event fires is the whole of what a marker says.
+    // A marker outside the timeline never arrives at the instant it names: a
+    // looping head wraps it elsewhere, a clamped one never reaches it. Refused
+    // rather than moved, because where it fires is the whole of what it says.
     for (const ClipMarker& marker : clip.markers) {
         if (std::isfinite(marker.time) && marker.time >= 0.0f && marker.time <= clip.duration) continue;
         LOG_ERROR("Cooked clip '%s': marker '%s' at %f is outside the clip's %f seconds",
@@ -830,10 +813,8 @@ bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& ou
                   static_cast<unsigned long long>(boneCount), MAX_SKELETON_BONES);
         return false;
     }
-    // Times and values are read as one key each, and the sampler walks them in
-    // lockstep; a file where they disagree would sample a value that is not
-    // there. Checked separately from the size reconciliation, which two
-    // compensating corruptions could still satisfy.
+    // The sampler walks times and values in lockstep. Checked apart from the
+    // size reconciliation, which two compensating corruptions could satisfy.
     if (positionTimeCount != positionCount || rotationTimeCount != rotationCount ||
         scaleTimeCount != scaleCount) {
         LOG_ERROR("Cooked clip '%s': key times and values disagree in length", p.c_str());
@@ -907,10 +888,7 @@ bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& ou
         return false;
     }
 
-    // Ranges are bounds-checked as well as sized, for the same reason mesh
-    // indices are: a file can carry the right number of bytes and still name
-    // keys that are not in it, and nothing downstream re-checks - the sampler
-    // indexes these arrays directly, once per bone per frame.
+    // The sampler indexes these arrays directly, once per bone per frame.
     for (size_t i = 0; i < out.bones.size(); ++i) {
         const ClipBone& bone = out.bones[i];
         if (!channelInRange(bone.position, out.positions.size()) ||

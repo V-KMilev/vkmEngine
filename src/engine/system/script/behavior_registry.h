@@ -69,8 +69,10 @@ class BehaviorRegistry {
         std::vector<std::string> names() const;
 
         /**
-         * @brief Drop every registered factory. Used before unloading the game module
-         * on hot-reload, since the factories close over module code.
+         * @brief Drop every registered factory.
+         *
+         * Used before unloading the game module on hot-reload, since the
+         * factories close over module code.
          */
         void clear();
 

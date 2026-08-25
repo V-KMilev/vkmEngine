@@ -169,7 +169,7 @@ class BehaviorFieldInspector : public BehaviorFieldVisitor {
 template <typename Asset, typename Handle>
 bool pickAsset(const char* comboId, const char* label, ResourceManager& resources, Handle& currentHandle) {
     const std::string cur = (currentHandle && resources.isAlive(currentHandle))
-        ? resources.get(currentHandle).name : std::string("(none)");
+        ? resources.get(currentHandle).name() : std::string("(none)");
     drawPropertyLabel(label);
     ImGui::SetNextItemWidth(-1.0f);
     if (!ImGui::BeginCombo(comboId, cur.empty() ? "(unnamed)" : cur.c_str()))
@@ -177,18 +177,14 @@ bool pickAsset(const char* comboId, const char* label, ResourceManager& resource
 
     std::vector<std::pair<Handle, const Asset*>> rows;
     resources.forEachOfType<Asset>([&](Handle h, const Asset& a) {
-        if (a.hidden) return;
+        if (a.isHidden()) return;
         rows.emplace_back(h, &a);
     });
 
     bool picked = false;
 
-    // Clearing the slot is offered for the same reason pickBone offers it: an
-    // empty slot is a state the editor hands you (Create > Audio Source and
-    // Create > Decal both arrive with one), it is what the combo previews, and
-    // it round-trips through the scene file - so a combo that lists everything
-    // except the value it is showing can only be left by deleting the component
-    // and authoring it again.
+    // An empty slot is a state the editor hands you and one the scene file
+    // round-trips, so the combo has to be able to get back to it.
     if (ImGui::Selectable("(none)", !currentHandle)) {
         currentHandle = Handle{};
         picked = true;
@@ -201,7 +197,7 @@ bool pickAsset(const char* comboId, const char* label, ResourceManager& resource
             const auto& [h, a] = rows[i];
             ImGui::PushID(static_cast<int>(h.id()));
             const bool sel = currentHandle && currentHandle.id() == h.id();
-            if (ImGui::Selectable(a->name.empty() ? "(unnamed)" : a->name.c_str(), sel)) {
+            if (ImGui::Selectable(a->name().empty() ? "(unnamed)" : a->name().c_str(), sel)) {
                 currentHandle = h;
                 picked = true;
             }
@@ -225,12 +221,9 @@ bool pickBone(const char* comboId, const SkeletonAsset* skeleton, std::string& b
 
     bool picked = false;
     if (ImGui::BeginCombo(comboId, bone.empty() ? "(none)" : bone.c_str())) {
-        // BeginDisabled greys the widget and refuses a fresh click, but a
-        // popup opened on an earlier frame carries its own open state. The
-        // rig can go away underneath an open list - the socket reparented,
-        // the Animator's skeleton cleared, an undo of either - and every
-        // line below reads through the pointer. Close it: it has nothing
-        // left to list.
+        // BeginDisabled refuses a fresh click but not a popup opened on an
+        // earlier frame, and the rig can go away underneath an open list - the
+        // socket reparented, an undo - while every line below reads the pointer.
         if (!skeleton) {
             ImGui::CloseCurrentPopup();
         } else {
@@ -251,11 +244,9 @@ bool pickBone(const char* comboId, const SkeletonAsset* skeleton, std::string& b
                 picked = true;
             }
 
-            // Indented by depth, because a rig is a tree and finding a hand in a
-            // hundred flat names is not the same job as finding it under an arm.
-            // parent < index makes that one forward pass. A filtered list is a set
-            // of scattered matches instead, and indenting those would draw a tree
-            // that is not there.
+            // Indented by depth, because a rig is a tree; parent < index makes
+            // that one forward pass. A filtered list is scattered matches, and
+            // indenting those would draw a tree that is not there.
             const bool filtered = s_boneFilter[0] != '\0';
             std::vector<int> depth(skeleton->bones.size(), 0);
             std::vector<std::pair<const std::string*, int>> rows;
@@ -383,11 +374,8 @@ void InspectorPanel::draw(EditorContext& ec) {
     FrameContext& ctx   = ec.frame;
     EditorState&  state = ec.state;
 
-    // An audition is the sound of the clip in front of you, so it does not
-    // outlive the card that started it: selecting anything else stops it. That
-    // is also what keeps the transport below honest - one voice, one owner, so
-    // a card can never show a cursor running against another entity's clip, or
-    // pause a sound the panel is no longer showing.
+    // The audition belongs to the card that started it, so selecting anything
+    // else stops it - one voice, one owner, and the transport below stays honest.
     if (m_previewVoice != 0 && state.selectedEntity != m_previewOwner) {
         ec.audioSystem.device().stopVoice(m_previewVoice);
         m_previewVoice = 0;
@@ -415,27 +403,16 @@ void InspectorPanel::draw(EditorContext& ec) {
 
     drawIdentityHeader(scene, ctx.resources, state, id);
 
-    // Said once for the whole entity rather than per card, because the fields
-    // themselves cannot say it: an asset reference the load could not resolve
-    // leaves the slot empty, and an empty slot is what a field nobody ever
-    // filled looks like too. The names are kept and written back by the save,
-    // so this is a diagnosis and not a warning about losing them - what it
-    // answers is "the mesh is gone and I cannot see why".
-    //
-    // Pruned before it is read, because the author answers it here: the moment
-    // they pick a mesh, the reference has loaded and the record is a leftover.
-    // Nothing else can retire it - a field is filled from the picker, from the
-    // Asset Browser, from an undo - so it is asked here, where it is about to
-    // be shown, rather than left to whichever of those wrote last.
+    // Retired here, where the banner is drawn, because a field is filled from
+    // the picker, from the Asset Browser or by an undo; see
+    // docs/reference/system/io.md, "A reference that did not resolve is kept".
     SceneSerializer::pruneResolvedRefs(scene, ctx.resources, id);
     if (scene.has<MissingAssets>(id)) {
         const MissingAssets& missing = scene.get<MissingAssets>(id);
         ImGui::TextColored(EditorStyle::DANGER, "%zu asset reference(s) here did not load:",
                            missing.refs.size());
-        // Wrapped, because both halves are as long as their content: an asset
-        // name is a path as often as it is a word, and the sentence under them
-        // is a sentence. Unwrapped, the panel cut it at "rather than emp" -
-        // which is the line that says the names are not being lost.
+        // Wrapped: an asset name is as often a path as a word, and the sentence
+        // under them is a sentence.
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
         for (const MissingAssetRef& ref : missing.refs) {
             ImGui::TextWrapped("  %s.%s  '%s'", ref.component.c_str(), ref.field.c_str(),
@@ -547,10 +524,9 @@ void InspectorPanel::drawIdentityHeader(Scene& scene, ResourceManager& resources
         const Name before = name;
         ImGui::SetNextItemWidth(-1.0f);
         if (ImGui::InputText("##Name", name.value, sizeof(name.value))) {
-            // Route through the command stack like every other inspector edit:
-            // tryMerge coalesces the keystroke stream into one undo step, and
-            // markSceneDirty stops the rename from being silently lost on close
-            // (it used to do neither).
+            // Through the command stack like every other inspector edit:
+            // tryMerge coalesces the keystrokes into one undo step, and
+            // markSceneDirty keeps the rename from being lost on close.
             pushEdit<Name>(scene, resources, state, id, before, name, "Rename");
         }
         drawOverrideRows(scene, resources, state, id, PrefabOverrides::COMPONENT_KEY<Name>, "Name");
@@ -604,11 +580,8 @@ void InspectorPanel::drawUIElementSection(Scene& scene, ResourceManager& resourc
                 [&] { return ImGui::DragFloat2("##v", glm::value_ptr(e.size), 0.5f, 0.0f, 8192.0f, "%.1f", PROP_CLAMP); });
             changed |= propCheckbox("Visible", &e.visible, "Hides this element and its whole subtree.");
 
-            // The mistake that leaves a perfectly healthy-looking card in front
-            // of an empty viewport, and the one Create > UI hands an author who
-            // had nothing selected. Said in the same two-line shape the Bone
-            // Socket card uses for the structurally identical mistake: what is
-            // wrong, then the drag that fixes it.
+            // The default outcome of Create > UI with nothing selected; two
+            // lines, like the Bone Socket card: what is wrong, then the fix.
             if (!hasCanvasAncestor(scene, id)) {
                 ImGui::TextColored(EditorStyle::DANGER, "No UI Canvas above this: nothing draws");
                 ImGui::TextDisabled("Drag this entity onto a canvas in the Hierarchy.");
@@ -643,11 +616,9 @@ void InspectorPanel::drawUITextSection(Scene& scene, ResourceManager& resources,
 
             warnNoUIElement(scene, id);
 
-            // The font is reached by name every frame and an unresolved one
-            // draws nothing at all, which is indistinguishable from an element
-            // that is off-screen or hidden. Every other asset reference on this
-            // panel reports a name the project cannot answer; this one is a
-            // plain text box, so the card has to.
+            // An unresolved font draws nothing, which looks exactly like an
+            // element that is hidden. No asset field reports this one - it is a
+            // plain text box - so the card does.
             if (!resources.findByName<FontAsset>(t.font)) {
                 // Wrapped, for the reason the listener card's warning is: the
                 // name in it is one the author typed, and unwrapped it leaves
@@ -716,11 +687,9 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
                                                     "is not stored in the scene");
         };
 
-        // Headings rather than submenus, because the filter searches the whole
-        // list at once and a match buried in a collapsed submenu could not be
-        // reached. A heading is held back until an item under it actually
-        // draws, so a section the entity already carries in full - or one the
-        // filter emptied - never labels a gap.
+        // Headings rather than submenus: the filter searches the whole list, and
+        // a match buried in a collapsed submenu could not be reached. A heading
+        // is held back until an item under it draws, so it never labels a gap.
         const char* pendingSection = nullptr;
         bool        sectionDrawn   = false;
         const auto section = [&](const char* label) { pendingSection = label; };
@@ -750,9 +719,8 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         };
 
         // Sections, and the order within them, are the subject folders of
-        // ecs/component/ - the menu and the tree teach one structure. The core
-        // and prefab folders are absent on purpose: an entity is born with the
-        // first, and only the prefab path writes the second.
+        // ecs/component/ - the menu and the tree teach one structure. Core and
+        // prefab are absent: an entity is born with one, only prefabs write the other.
         section("Render");
         addItem("Mesh", Mesh{}, "Add Mesh");
         addItem("Light", generateLight(LightType::Point), "Add Light");
@@ -786,10 +754,9 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         addItem("UI Text", UIText{}, "Add UI Text");
         addItem("UI Button", UIButton{}, "Add UI Button");
 
-        // ScriptComponent is move-only, so it can't ride the (value-copying)
-        // AddComponentCommand. It rides ScriptEditCommand instead, which holds
-        // the serialized component rather than a copy of it - the same step the
-        // Script card pushes for everything else it does.
+        // ScriptComponent is move-only, so it cannot ride the value-copying
+        // AddComponentCommand. ScriptEditCommand holds the serialized component
+        // instead - the same step the Script card pushes for everything else.
         section("Script");
         if (!scene.has<ScriptComponent>(id) && matchesFilter("Script", s_componentFilter)) {
             drawPendingSection();
@@ -831,12 +798,9 @@ void InspectorPanel::drawPrefabSection(Scene& scene, EditorState& state, EntityI
         }
 
         if (id == root && !scene.has<PrefabEntity>(id)) {
-            // An expansion marks every entity it builds, the root included, so a
-            // root without the marker is a root nothing was built from: the file
-            // would not open. Answered before the branch below, whose sentence
-            // is about a scene-added child of a HEALTHY instance and is wrong
-            // twice over here - this entity came from the scene file, and it
-            // survives the next save carrying the reference and the overrides.
+            // An expansion marks every entity it builds, root included, so a
+            // root without the marker is one nothing was built from: the file
+            // would not open. Answered before the scene-added-child branch below.
             ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::WARNING);
             ImGui::TextWrapped("The prefab file could not be opened, so this instance is "
                                "empty. Restore it and load the scene again - the reference "
@@ -925,10 +889,8 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
                 glm::vec3 ext = asset.boundsMax - asset.boundsMin;
                 ImGui::TextDisabled("Bounds: %.1f x %.1f x %.1f", ext.x, ext.y, ext.z);
             }
-            // A skinned mesh names the rig it was bound to. Reporting the bone
-            // count of the rig actually resolved is what separates "the import
-            // produced a skeleton" from "the mesh remembers a name nothing
-            // answers to" - the two look identical without it.
+            // The rig actually resolved, not the name the mesh remembers: the
+            // two look identical until a bone count is shown against one.
             if (!asset.skin.empty()) {
                 const SkeletonHandle rig = resources.findByName<SkeletonAsset>(asset.skeleton);
                 if (rig) {
@@ -939,12 +901,8 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
                 }
             }
         } else {
-            // The material half of this card has always had its else, and it
-            // reports the milder failure of the two: a mesh with no material
-            // still draws with the shader's defaults, while a Mesh component
-            // with no mesh is skipped by the draw walk entirely. An empty slot
-            // here took the stats away and said nothing, so the card lost its
-            // whole reporting surface exactly when there was something to say.
+            // The harsher of the card's two absences: VisibilitySystem returns
+            // on an empty mesh handle, so the entity is in no draw list at all.
             ImGui::TextColored(EditorStyle::DANGER, "No mesh: this entity draws nothing");
         }
 
@@ -960,7 +918,7 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
         if (mesh.material) {
             const MaterialAsset& m = resources.get(mesh.material);
             ImGui::TextDisabled("Material: %s",
-                m.name.empty() ? "(unnamed)" : m.name.c_str());
+                m.name().empty() ? "(unnamed)" : m.name().c_str());
             const float bw = (ImGui::GetContentRegionAvail().x
                               - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
             if (ImGui::Button("Edit Material", ImVec2(bw, 0))) {
@@ -985,13 +943,9 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
 
 void InspectorPanel::drawLightSection(Scene& scene, ResourceManager& resources,
                                       EditorState& state, EntityId id) {
-    // While the procedural sky is on, the key light is the sky's: SkySystem
-    // writes this entity's rotation, colour and intensity from the Environment
-    // every frame, so an edit typed here is gone before the next frame draws
-    // and the value the scene saves is the sky's, not the author's. The card
-    // said none of that - it offered the fields like any other light's, and a
-    // drag that did nothing read as a broken widget. Asked through findKeyLight
-    // so the card and the system cannot disagree about which light it is.
+    // While the procedural sky is on, SkySystem writes this light's rotation,
+    // colour and intensity from the Environment every frame. Asked through
+    // findKeyLight so the card and the system cannot disagree which light it is.
     const bool skyDriven = scene.environment().sky.procedural && findKeyLight(scene) == id;
 
     editComponentCard<Light>(scene, resources, state, id, "Light", EditorStyle::Accent::Light,
@@ -1008,17 +962,14 @@ void InspectorPanel::drawLightSection(Scene& scene, ResourceManager& resources,
 
         changed |= propEnumCombo("Type", light.type);
 
-        // Disabled rather than hidden: they are still what this light is, and
-        // still what the file records - they are just not the author's to set
-        // while the sky is writing them. Same shape the Procedural Sky card
-        // uses for the fields that depend on its own toggle.
+        // Disabled rather than hidden: they are still what this light is and
+        // what the file records, just not the author's to set right now.
         ImGui::BeginDisabled(skyDriven);
         changed |= propColor3("Color", glm::value_ptr(light.color));
 
-        // The upper bound is generous rather than advisory: HDR scenes
-        // routinely need values in the hundreds for sun and thousands for
-        // studio lights, and since PROP_CLAMP the row's declared range is what
-        // a typed value gets clamped to, so it is set well above any of them.
+        // Generous rather than advisory: HDR scenes need hundreds for a sun and
+        // thousands for a studio light, and PROP_CLAMP makes a row's declared
+        // range the bound a typed value is held to.
         changed |= propDrag("Intensity", &light.intensity, 0.5f, 0.0f, 100000.0f, "%.2f");
         ImGui::EndDisabled();
 
@@ -1270,10 +1221,9 @@ void InspectorPanel::drawDecalSection(Scene& scene, ResourceManager& resources,
                               "Fade where the surface turns away from the projector (projects along -Z; the Transform's scale is the box)");
         changed |= propSlider("Opacity", &decal.opacity, 0.0f, 1.0f, "%.2f");
 
-        // Harsher than the Mesh card's "No material assigned" because the
-        // consequence is: a mesh with no material still draws with the shader's
-        // defaults, while the decal pass skips a decal whose material is null
-        // outright. This is also the state Create > Decal hands you.
+        // Harsher than the Mesh card's "No material assigned": a mesh with no
+        // material still draws with the shader's defaults, while the decal pass
+        // skips a null-material decal outright.
         if (!decal.material) {
             ImGui::TextColored(EditorStyle::DANGER, "No material: this projects nothing");
         }
@@ -1315,11 +1265,9 @@ void InspectorPanel::drawParticleSection(EditorContext& ec, EntityId id) {
 
         ImGui::TextDisabled("Live: %d particle(s).",
                             static_cast<int>(e.particles.size()));
-        // Without this the count reads as a verdict on the emitter. Particles
-        // are simulated off the sim delta, so in Edit mode the number is
-        // structurally 0 however well the emitter is set up, and an author
-        // looking at "Emitting, Rate 20, Live: 0" is being told the opposite of
-        // what is true.
+        // Particles run off the sim delta, so in Edit mode Live is structurally
+        // 0 however well the emitter is set up, and the count would otherwise
+        // read as a verdict on the emitter.
         if (ec.frame.clock.getSimDelta() <= 0.0f) {
             ImGui::TextDisabled("The world is not running - press Play to see them.");
         }
@@ -1371,26 +1319,9 @@ void InspectorPanel::drawAudioSourceSection(EditorContext& ec, EntityId id) {
                 ImGui::TextColored(EditorStyle::WARNING,
                                    "Max Distance is not past Min - nothing is attenuated.");
             }
-            // Said here because this is where the mistake is being made, and
-            // said again by AudioSystem once per clip because a project that
-            // plays through PlaySoundEvent has no card for it to be said on.
-            // Phrased around channels not crossing rather than around "it will
-            // not pan", because the second is measurably false for a stereo
-            // file whose two channels are identical - that one pans exactly as
-            // the mono equivalent does, which is what makes the mistake quiet.
-            // What is true of every multi-channel clip is that content in one
-            // channel never reaches the other side however the emitter moves,
-            // so a wide clip loses half its field. Names the consequence and
-            // lets the fix be implied, which is what its three neighbours do,
-            // and stays inside the width they set - unwrapped, per the rule
-            // the listener card's wrapped warning states.
-            //
-            // Counted rather than called stereo, because "stereo" is only true
-            // of one of the clips this fires on: a six-channel file was told it
-            // was stereo two rows under a summary reading "6 channels", which
-            // sends the author looking for a second channel that is not the
-            // thing hurting them. The count is what the Asset Browser's column
-            // and AudioSystem's log twin both say, so all three now agree.
+            // Counted rather than called stereo: this fires on any multi-channel
+            // clip, and a six-channel file told it was stereo sends the author
+            // looking for a second channel that is not the thing hurting them.
             if (clip && clip->channels > 1) {
                 ImGui::TextColored(EditorStyle::WARNING,
                                    "This clip has %u channels - each sticks to one ear.",
@@ -1403,30 +1334,26 @@ void InspectorPanel::drawAudioSourceSection(EditorContext& ec, EntityId id) {
                 ImGui::TextColored(EditorStyle::WARNING,
                                    "A positioned sound needs a Transform to have a position.");
             }
-            // The one genuinely invisible failure on this card. AudioSystem's
-            // own warning is written once per world AND only when a spatial
-            // voice actually starts, so at edit time - which is where the
-            // mistake is made - nothing says it at all.
+            // The one genuinely invisible failure here: AudioSystem's own
+            // warning waits for a spatial voice to start, so at edit time -
+            // where the mistake is made - nothing says it at all.
             if (!findActiveListener(scene)) {
                 ImGui::TextColored(EditorStyle::WARNING,
                                    "No active Audio Listener in the scene - this is silent.");
             }
         }
 
-        // Outside the spatial block above, because a muted mix is not a
-        // positioning mistake: it silences a 2D source, a positioned one and
-        // the audition below alike, and the transport would still show a
-        // cursor running against a clip nothing can hear.
+        // Outside the spatial block above: a muted mix is not a positioning
+        // mistake. It silences a 2D source, a positioned one and the audition
+        // alike, while the transport goes on showing a running cursor.
         if (ec.audioSystem.device().masterVolume() <= 0.0f) {
             ImGui::TextColored(EditorStyle::WARNING,
                                "Audio Listener volume is 0 - nothing is heard, audition included.");
         }
 
         ImGui::Spacing();
-        // The transport is the Asset Browser's, drawn from one place: the two
-        // surfaces are auditioning the same kind of thing, and what an audition
-        // plays, what it refuses to touch and why are stated on
-        // auditionTransport rather than argued twice.
+        // The Asset Browser's transport, drawn from one place: what an audition
+        // plays and what it refuses to touch is stated on auditionTransport.
         AudioDevice& device = ec.audioSystem.device();
         const float  ih     = ImGui::GetFrameHeight();
         if (auditionTransport("inspSound", device, m_previewVoice, m_previewOwner == id, clip, ih))
@@ -1434,18 +1361,9 @@ void InspectorPanel::drawAudioSourceSection(EditorContext& ec, EntityId id) {
 
         ImGui::SameLine(0, 8.0f);
         ImGui::AlignTextToFramePadding();
-        // Named, because the buttons beside it are a transport of their own:
-        // the audition and the source are two different things to be playing,
-        // and an unlabelled "Playing" would look like it belonged to them.
-        //
-        // Read off the mixer rather than off `playing` alone, which is the
-        // scene's word and not the sound's: a voice the transport is holding
-        // keeps that flag true while nothing is audible, so every card in a
-        // paused world used to claim its source was playing - the same
-        // disagreement the transport's own glyph had. What the device knows,
-        // this now says: held rather than playing, and how far into the clip
-        // the source has actually got, which is the thing the row beside it
-        // cannot show because that slider belongs to the audition.
+        // Named, because the buttons beside it are the audition's transport and
+        // an unlabelled "Playing" would look like it belonged to them. Read off
+        // the mixer, not off `playing`, which is the scene's word not the sound's.
         const VoiceId sourceVoice = ec.audioSystem.voiceOf(id);
         if (device.isVoiceActive(sourceVoice)) {
             ImGui::TextDisabled("Source: %s %.2fs",
@@ -1480,22 +1398,15 @@ void InspectorPanel::drawAudioListenerSection(EditorContext& ec, EntityId id) {
         changed |= propSlider("Volume", &listener.volume, 0.0f, 1.0f, "%.2f",
                               "Master gain for everything this listener hears");
 
-        // Which listener wins is storage order, which nothing else on screen
-        // shows. Naming the winner rather than counting the candidates is what
-        // turns "two listeners exist" into "this is not the one you hear".
-        //
-        // Gated on this listener having a pose, because findActiveListener
-        // joins on Transform: a listener without one loses to a LATER listener
-        // that has one, and blaming storage order there says the opposite of
-        // what happened. The warning under this one names the real reason.
+        // Naming the winner, not counting the candidates. Gated on this listener
+        // having a pose: findActiveListener joins on Transform, so one without it
+        // lost for the reason the warning below gives, not to storage order.
         const EntityId heard = findActiveListener(scene);
         if (listener.active && heard && heard != id && scene.has<Transform>(id)) {
             char winner[64] = {};
             getEntityDisplayName(scene, heard, winner, sizeof(winner));
-            // Wrapped where its neighbours are not, because this is the one
-            // warning on either audio card whose length is not fixed by the
-            // source: it carries an entity name a user typed, and unwrapped it
-            // pushes that name out of the panel at any default width.
+            // Wrapped where its neighbours are not: this is the one warning here
+            // carrying a name a user typed, and unwrapped it leaves the panel.
             ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::WARNING);
             ImGui::TextWrapped("Not the ear: '%s' is heard from, being first in storage order.",
                                winner);
@@ -1560,20 +1471,17 @@ void InspectorPanel::drawRigidbodySection(Scene& scene, ResourceManager& resourc
         changed |= propCheckbox("Can Sleep", &rb.canSleep,
                                 "Uncheck for script-driven bodies that must stay responsive at rest");
 
-        // The pairing rule, said where the mistake is made - the sentence the
-        // Character Controller card already prints for the same absence.
-        // Scoped to a dynamic body because that is the one this ruins: it
-        // integrates gravity with nothing to land on and leaves the world,
-        // where a static or kinematic body with no shape is merely inert.
+        // Scoped to a dynamic body, the one this ruins: it integrates gravity
+        // with nothing to land on and leaves the world, where a static or
+        // kinematic body with no shape is merely inert.
         if (!rb.isStatic && !rb.isKinematic && !scene.has<Collider>(id)) {
             ImGui::TextColored(EditorStyle::DANGER, "No Collider: it falls through everything.");
         }
 
         if (changed) {
-            // Wake the body so the edit (especially velocity) survives the next
-            // tick - otherwise PhysicsSystem zeroes a sleeping body's velocity.
-            // Applied to the live component before the card pushes the undo
-            // command, so the wake is captured in the command's "after" value.
+            // PhysicsSystem zeroes a sleeping body's velocity, so wake it - on
+            // the live component, before the card pushes the undo command, so
+            // the wake is in that command's "after" value.
             rb.sleeping = false;
             rb.sleepTimer = 0.0f;
         }
@@ -1613,10 +1521,9 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
             ImGui::TextDisabled("%zu parts (mesh-fitted)", col.parts.size());
         }
 
-        // Fit to Mesh: rebuild the collider from this entity's mesh. Detail 1 is
-        // a single box (the scaled bounds); higher detail voxelizes the mesh into
-        // a box compound that hugs its shape. The entity scale is baked in - the
-        // solver ignores Transform scale.
+        // Detail 1 is a single box (the scaled bounds); higher detail voxelizes
+        // the mesh into a box compound that hugs it. Entity scale is baked in,
+        // the solver ignoring Transform scale.
         if (scene.has<Mesh>(id) && scene.get<Mesh>(id).mesh) {
             const auto& asset = resources.get(scene.get<Mesh>(id).mesh);
             if (Math::hasValidBounds(asset.boundsMin, asset.boundsMax)) {
@@ -1634,9 +1541,8 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
 
         changed |= propCheckbox("Trigger", &col.isTrigger);
 
-        // The other half of the pairing rule. PhysicsSystem gathers bodies by
-        // walking the Rigidbody storage and reads a Collider only off entities
-        // it finds there, so a collider on its own is in no broadphase: it
+        // PhysicsSystem walks the Rigidbody storage and reads a Collider only
+        // off what it finds there, so a lone collider is in no broadphase: it
         // stops nothing and, Trigger ticked or not, fires nothing.
         if (!scene.has<Rigidbody>(id)) {
             ImGui::TextColored(EditorStyle::DANGER, "No Rigidbody: nothing collides with this.");
@@ -1686,12 +1592,9 @@ void InspectorPanel::drawCameraSection(EditorContext& ec, EntityId id) {
         changed |= propSlider("DoF Amount", &cam.dofAmount, 0.0f, 1.0f, "%.2f");
         changed |= propCheckbox("Active", &cam.active);
 
-        // The eye's half of what the Audio Listener card already says for the
-        // ear. Named from the camera controller rather than from storage order:
-        // the controller and the visibility pass each keep the camera they
-        // resolved and hold it while it stays active, so "the first one wins"
-        // is a rule that is often not what happened, and printing it would hand
-        // the author a false reason.
+        // From the camera controller, not from storage order: it and the
+        // visibility pass each hold the camera they resolved while it stays
+        // active, so "the first one wins" would hand the author a false reason.
         const EntityId eye = ec.cameraController.getCameraEntity();
         if (cam.active && eye && eye != id && scene.has<Camera>(eye)) {
             char rendered[64] = {};
@@ -1724,7 +1627,7 @@ void InspectorPanel::drawLODSection(Scene& scene, ResourceManager& resources,
         for (size_t i = 0; i < lod.levels.size(); ++i) {
             const LODLevel& level = lod.levels[i];
             const char* name = (level.mesh && resources.isAlive(level.mesh))
-                ? resources.get(level.mesh).name.c_str() : "<unresolved>";
+                ? resources.get(level.mesh).name().c_str() : "<unresolved>";
             const size_t tris = (level.mesh && resources.isAlive(level.mesh))
                 ? resources.get(level.mesh).indices.size() / 3 : 0;
             ImGui::TextDisabled("%zu: %s  (%zu tris, to %.0fm)", i, name, tris, level.maxDistance);
@@ -1758,11 +1661,9 @@ void InspectorPanel::drawAnimationSection(EditorContext& ec, EntityId id) {
     editComponentCard<Animation>(scene, resources, ec.state, id, "Animation", EditorStyle::Accent::Anim,
                                  "Edit Animation", "Remove Animation",
                                  [&](Animation& anim) {
-        // Only authoring edits (length, keyframes, Play On Start) push a command;
-        // play/pause/stop/scrub never set `changed`, so they stay non-undoable.
-        // The card's snapshot does include time/playing, so undoing an authoring
-        // edit also restores the scrub position - acceptable since edits are
-        // normally made while paused.
+        // Only authoring edits (length, keyframes, Play On Start) set `changed`,
+        // so play / pause / stop / scrub stay non-undoable. The snapshot does
+        // hold time and playing, so an undo also restores the scrub position.
         const float GAP = 8.0f;
         float ih = ImGui::GetFrameHeight();
         if (iconButton("inspPlay", anim.playing ? EditorIcon::Pause : EditorIcon::Play,
@@ -1801,10 +1702,9 @@ void InspectorPanel::drawAnimationSection(EditorContext& ec, EntityId id) {
                                 "Starts by itself once the simulation runs. In the editor that "
                                 "means on Play, never while a scene is only open");
 
-        // The same thing the Bottom panel's transport says, for the same
-        // reason: pressing Play here sets a flag AnimationSystem acts on, and
-        // that system returns on a zero sim delta, so in Edit mode the button
-        // reads Pause while the playhead stays where it was.
+        // Play sets a flag AnimationSystem acts on, and that system returns on
+        // a zero sim delta - so in Edit mode the button reads Pause while the
+        // playhead stays put. The Bottom panel's transport says it too.
         if (anim.playing && ec.frame.clock.getSimDelta() <= 0.0f) {
             ImGui::TextDisabled("Held at %.2fs - it advances while the world runs.", anim.time);
         }
@@ -1853,20 +1753,16 @@ void InspectorPanel::drawAnimatorSection(EditorContext& ec, EntityId id) {
         if (rig) ImGui::TextDisabled("%zu bones", rig->bones.size());
         // A clip is cooked against one rig's bone order, so one cooked against
         // another poses the wrong joints out of matching indices. The system
-        // refuses it and holds the bind pose; say so here, where the pairing is
-        // being made, rather than only in the log.
-        if (rig && clip && clip->skeleton != rig->name) {
+        // refuses it and holds the bind pose; said where the pairing is made.
+        if (rig && clip && clip->skeleton != rig->name()) {
             ImGui::TextColored(EditorStyle::DANGER, "Clip belongs to rig '%s'",
                                clip->skeleton.c_str());
             ImGui::TextDisabled("The bind pose is held until they match.");
         }
 
-        // Transport, mirroring the Animation card: Loop, Speed and Play On Start
-        // round-trip with the scene so they push an edit, while play / stop /
-        // the scrubber do not - dirtying the scene every time someone previews a
-        // clip would make the unsaved-changes prompt meaningless, and `playing`
-        // is not something the scene stores. Scrubbing works while paused,
-        // because the pose system composes every frame.
+        // Mirrors the Animation card: Loop, Speed and Play On Start round-trip
+        // with the scene so they push an edit, while play / stop / the scrubber
+        // do not. Scrubbing works paused - the pose system composes every frame.
         const float GAP = 8.0f;
         const float ih = ImGui::GetFrameHeight();
         if (iconButton("inspRigPlay", animator.playing ? EditorIcon::Pause : EditorIcon::Play,
@@ -1895,10 +1791,9 @@ void InspectorPanel::drawAnimatorSection(EditorContext& ec, EntityId id) {
                                 "Starts by itself once the simulation runs. In the editor that "
                                 "means on Play, never while a scene is only open");
 
-        // The same thing the Animation card says, for the same reason: the play
-        // button sets a flag the pose evaluator acts on, and that evaluator
-        // returns on a zero sim delta, so in Edit mode the button reads Pause
-        // while the head stays where it was.
+        // The same thing the Animation card says: play sets a flag the pose
+        // evaluator acts on, and that evaluator returns on a zero sim delta, so
+        // in Edit mode the head stays where it was.
         if (animator.playing && ec.frame.clock.getSimDelta() <= 0.0f) {
             ImGui::TextDisabled("Held at %.2fs - it advances while the world runs.",
                                 static_cast<double>(animator.time));
@@ -1914,9 +1809,8 @@ void InspectorPanel::drawAnimatorSection(EditorContext& ec, EntityId id) {
         }
 
         // Read-only, like the Animation card's keyframe digest: a marker belongs
-        // to the clip, not to this entity, and its authored home is the clip's
-        // recipe. What the card owes an author is the ability to see what the
-        // clip they just picked will announce, and at what time to expect it.
+        // to the clip and is authored in its recipe. What the card owes is a
+        // look at what the clip just picked will announce, and when.
         if (clip && !clip->markers.empty()) {
             ImGui::Spacing();
             ImGui::TextUnformatted("Markers");
@@ -1941,11 +1835,9 @@ void InspectorPanel::drawBoneSocketSection(Scene& scene, ResourceManager& resour
                                   [&](BoneSocket& socket) {
         bool changed = false;
 
-        // The rig is the parent and only the parent. BoneSocketSystem writes
-        // this entity's local Transform and lets the hierarchy resolve it
-        // against the parent's world matrix, so a socket hung any deeper lands
-        // somewhere plausible and wrong - which is why the system refuses it and
-        // why the card says so here, where the parenting is looked at.
+        // The rig is the parent and only the parent: BoneSocketSystem writes
+        // this entity's local Transform and lets the hierarchy resolve it against
+        // the parent's world matrix, so one hung deeper lands plausibly wrong.
         const EntityId rig = scene.has<Hierarchy>(id) ? scene.get<Hierarchy>(id).parent : EntityId{};
         const Animator* animator = (rig && scene.has<Animator>(rig))
             ? &scene.get<Animator>(rig) : nullptr;
@@ -1968,11 +1860,11 @@ void InspectorPanel::drawBoneSocketSection(Scene& scene, ResourceManager& resour
         // nothing at all: the socket simply stays where it was put.
         if (skeleton && !socket.bone.empty() && skeleton->indexOf(socket.bone) < 0) {
             ImGui::TextColored(EditorStyle::DANGER, "Rig '%s' has no bone '%s'",
-                               skeleton->name.c_str(), socket.bone.c_str());
+                               skeleton->name().c_str(), socket.bone.c_str());
             ImGui::TextDisabled("The socket stays where it is until they match.");
         } else if (skeleton) {
             ImGui::TextDisabled("%zu bones in rig '%s'",
-                                skeleton->bones.size(), skeleton->name.c_str());
+                                skeleton->bones.size(), skeleton->name().c_str());
         }
 
         // The offset is authored here rather than on the Transform card because
@@ -2014,9 +1906,8 @@ void InspectorPanel::drawCharacterControllerSection(Scene& scene, ResourceManage
                             "capsule rolls over.");
 
         // The step height that falls out of the capsule and the slope limit: an
-        // edge lower than this still produces a walkable contact normal, so the
-        // character climbs it. Spelled out because it is the number behind "why
-        // does it stop at that kerb", and both halves of it are set right here.
+        // edge lower than this still gives a walkable contact normal, so the
+        // character climbs it. It is the number behind "why that kerb".
         if (const float radius = capsuleRadiusOf(scene, id); radius > 0.0f) {
             const float limit = glm::radians(glm::clamp(cc.maxSlopeAngle, 0.0f, 90.0f));
             ImGui::Spacing();
@@ -2052,15 +1943,9 @@ void InspectorPanel::drawCharacterControllerSection(Scene& scene, ResourceManage
 }
 
 void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityId id) {
-    // Every mutation this card offers is applied live: the field widgets write
-    // into the behavior itself, and a behavior list is move-only, so there is
-    // no pair of values for the copying command path to hold. The serialized
-    // component is that pair - the same document a deleted entity's scripts
-    // already come back from - so it is read here, before anything below can
-    // touch it, and each mutation pushes the step it just made. The card's x
-    // is what most needed one: it takes the component, every behavior on it
-    // and every field the author typed, and Ctrl+Z used to answer by undoing
-    // some older edit instead.
+    // The field widgets write into the behavior itself, and a behavior list is
+    // move-only, so there is no pair of values for the copying command path to
+    // hold. The serialized component is that pair, read before anything moves it.
     const std::string scriptBefore = ScriptEditCommand::capture(scene, id);
     const auto pushScriptEdit = [&](const char* label) {
         std::string after = ScriptEditCommand::capture(scene, id);
@@ -2075,11 +1960,9 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
     if (open) {
         auto& sc = scene.get<ScriptComponent>(id);
 
-        // A behavior list is move-only, so ScriptComponent has no field-level
-        // override - it serializes as one value holding every behavior. Inside
-        // an instance that leaves nowhere for an edit here to be stored, and
-        // the field widgets below write straight into the live behavior, so say
-        // it once while the card is open rather than per keystroke.
+        // ScriptComponent serializes as one value holding every behavior, so an
+        // instance has nowhere to store a field-level override - and the widgets
+        // below write straight into the live behavior. Said once, not per key.
         if (PrefabOverrides::instanceRoot(scene, id)) {
             ImGui::TextWrapped("Script values on an instance belong to the prefab. Save as "
                                "Prefab keeps what you change here; saving the scene does not.");

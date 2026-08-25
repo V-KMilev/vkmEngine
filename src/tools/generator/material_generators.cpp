@@ -27,8 +27,7 @@ MaterialHandle buildDefaultMaterial(ResourceManager& resourceManager) {
     material.aoTexture = generateWhiteTexture(resourceManager);
     material.emissionTexture = generateBlackTexture(resourceManager);
 
-    material.name = "material:default";
-    auto handle = resourceManager.add(std::move(material));
+    auto handle = resourceManager.add(std::move(material), "material:default");
     // Stamp a source so SceneSerializer can recreate this on cold-start load.
     auto& asset = resourceManager.edit(handle);
     asset.sourceJson() = {{"kind", "default"}};
@@ -39,13 +38,8 @@ MaterialHandle buildDefaultMaterial(ResourceManager& resourceManager) {
 
 MaterialHandle generateDefaultMaterial(ResourceManager& resourceManager) {
     // One asset per name, the way the built-in textures this material binds are
-    // already shared. Without it every caller added another material called
-    // "material:default", ensureUniqueName suffixed it, and the suffix - names
-    // being the serializable identity - became the frozen identity of whatever
-    // it was attached to, in the scene file and in the cooked library. Six
-    // primitives created from the menu left six identical materials behind,
-    // numbered (2) through (7), and editing "the default material" reached
-    // exactly one of them.
+    // already shared: a second "material:default" gets a unique-name suffix, and
+    // that suffix - a name being the identity - freezes into every file naming it.
     if (auto existing = resourceManager.findByName<MaterialAsset>("material:default")) {
         return existing;
     }
