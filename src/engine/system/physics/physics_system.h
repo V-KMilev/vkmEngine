@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -11,7 +12,9 @@
 #include "system/physics/physics_internal.h"
 #include "system/physics/collision/contact.h"
 #include "system/physics/collision/narrowphase.h"
-#include "system/physics/collision/solver.h"
+#include "system/physics/collision/support.h"
+#include "system/physics/solver/joint_solver.h"
+#include "system/physics/solver/solver.h"
 
 namespace Vkm::Engine {
 
@@ -41,6 +44,27 @@ class Scene;
  * HierarchySystem rebuilds the whole subtree later in the same frame.
  */
 class PhysicsSystem : public System {
+    public:
+        /**
+         * @brief One proxy's parts, expanded into world space for a pair.
+         *
+         * One array per shape rather than one tagged list, so the pair loops
+         * stay branch-free. Bundled because the two are one idea - what this
+         * side of the pair looks like.
+         *
+         * A mesh part is absent on purpose: it is thousands of triangles and
+         * only the handful under the other shape matter, so it is walked per
+         * pair against that shape's bound rather than expanded here.
+         *
+         * Public because the expansion that fills one is file-local to the
+         * implementation, which makes this the shape of an argument rather than
+         * a detail of the state.
+         */
+        struct PairShapes {
+            std::vector<BoxShape>     boxes;
+            std::vector<CapsuleShape> capsules;
+        };
+
     public:
         PhysicsSystem() = default;
         ~PhysicsSystem() override = default;
@@ -109,6 +133,18 @@ class PhysicsSystem : public System {
         void wakeOnImpact(Scene& scene);
 
         /**
+         * @brief Resolve each Joint component to the two bodies it constrains.
+         *
+         * Anchors become world-space lever arms here, so the solver never looks
+         * at the scene. A joint naming a body that is not simulated this tick -
+         * destroyed, or without a Rigidbody - is dropped rather than held
+         * against a body index that means something else.
+         *
+         * @param scene Scene whose Joint components are gathered.
+         */
+        void gatherJoints(Scene& scene);
+
+        /**
          * @brief Resolve the contact manifolds with a sequential-impulse solver.
          *
          * @param physics Scene's physics settings (supplies the solver iteration count).
@@ -131,23 +167,33 @@ class PhysicsSystem : public System {
         std::vector<EntityId>        m_bodies;       ///< Live body entities this tick (indexes m_solverBodies)
         std::vector<PhysicsBody>     m_solverBodies; ///< Cached dynamic state, aligned with m_bodies
         std::vector<ContactManifold> m_manifolds;    ///< Reused across ticks; clear() keeps capacity
+        std::vector<JointConstraint> m_joints;       ///< This tick's joints, as body indices
+
+        /**
+         * @brief Body pairs a joint holds together, packed as (low << 32) | high.
+         *
+         * Jointed bodies overlap by construction - a thigh and a shin share the
+         * knee - so resolving both the contact and the joint means the solver
+         * pushing them apart while the joint pulls them together. The two pump
+         * energy in until the ragdoll leaves the level. Skipped here unless the
+         * joint says otherwise.
+         */
+        std::unordered_set<uint64_t> m_jointedPairs;
 
         // Per-tick scratch, reused across ticks (clear() keeps capacity). The
         // element types live in physics_internal.h so these can be members here
         // instead of file-local statics.
         std::vector<ColliderProxy> m_proxies;     ///< Broad/narrowphase view of each collidable body (built in gather)
-        std::vector<ColliderPart>  m_proxyParts;  ///< Every proxy's parts end to end; proxies index into it
+        std::vector<ColliderPart>  m_proxyParts;  ///< Every proxy's parts, end to end
         std::vector<BodyFrame>     m_bodyFrames;  ///< World<->local frame per body, parallel to m_bodies (for writeback)
 
         std::vector<uint32_t>                      m_sorted;  ///< X-sorted proxy order (broadphase)
         std::vector<std::pair<uint32_t, uint32_t>> m_pairs;   ///< Candidate proxy-index pairs (broadphase)
 
-        // One array per shape rather than one tagged list, so the quadratic pair
-        // loops stay branch-free.
-        std::vector<BoxShape>     m_boxA;      ///< A's boxes expanded to world space (narrowphase)
-        std::vector<BoxShape>     m_boxB;      ///< B's boxes expanded to world space (narrowphase)
-        std::vector<CapsuleShape> m_capsuleA;  ///< A's capsules expanded to world space (narrowphase)
-        std::vector<CapsuleShape> m_capsuleB;  ///< B's capsules expanded to world space (narrowphase)
+        PairShapes m_shapesA;   ///< A's parts, expanded for the current pair
+        PairShapes m_shapesB;   ///< B's parts, expanded for the current pair
+
+        std::vector<uint32_t> m_meshCandidates;  ///< Triangles a tree walk found
 };
 
 } // namespace Vkm::Engine

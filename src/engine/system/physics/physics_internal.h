@@ -31,12 +31,27 @@ struct ColliderProxy {
      */
     uint32_t partsFirst = 0;
     uint32_t partsCount = 0;
+
+    /**
+     * @brief The component this proxy was built from, for what did not copy.
+     *
+     * A mesh part's hierarchy lives on the Collider and is thousands of nodes;
+     * copying it per tick to reach it would cost more than the tree saves. Safe
+     * for the tick, on the same grounds the parts span is: nothing adds or
+     * removes a component between gather and the narrowphase.
+     */
+    const Collider* collider = nullptr;
     bool isTrigger = false;
     glm::vec3 position = {0.0f, 0.0f, 0.0f};
     glm::quat rotation = {1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 aabbMin = {0.0f, 0.0f, 0.0f};
     glm::vec3 aabbMax = {0.0f, 0.0f, 0.0f};
     bool cullStatic = false;
+
+    // Copied off the Rigidbody at gather, so the pair loop reads one struct
+    // rather than reaching back into the scene per candidate pair.
+    int layer = 1;
+    int collidesWith = ~0;
 };
 
 /**
