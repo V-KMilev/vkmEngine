@@ -18,7 +18,8 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
 
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(360, 480), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(EditorStyle::px(360.0f), EditorStyle::px(480.0f)),
+                             ImGuiCond_FirstUseEver);
 
     if (!ImGui::Begin("Render Settings", &state.showRenderSettings, ImGuiWindowFlags_NoCollapse)) {
         ImGui::End();

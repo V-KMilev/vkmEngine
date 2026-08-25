@@ -225,6 +225,10 @@ and none of them is enforced by the compiler. Read these before the first change
   (`ui/editor_style.h:118`) - design pixels at the 15px reference font, scaled to
   the loaded font size. 66 call sites across `src/editor`. A raw pixel literal
   looks right on your display and wrong on a scaled one, and nothing catches it.
+  The one exception is the ImGui style itself: `applyEditorTheme(scale)`
+  (`ui/editor_theme.h:16`) is handed the window's content scale and passes it to
+  `ScaleAllSizes`, because those metrics are set before there is a font to
+  measure.
 - **Dialogs use `beginDialog` / `dialogButtons` / `endDialog`**
   (`ui/editor_dialogs.h:11-28`). The scaffold owns the Escape-cancels /
   Enter-confirms contract, including the case where an active text field would

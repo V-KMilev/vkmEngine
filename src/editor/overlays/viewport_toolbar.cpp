@@ -17,6 +17,10 @@ float BTN() { return EditorStyle::px(26.0f); }
 float SEP() { return EditorStyle::px(10.0f); }
 /// Toolbar inner padding.
 float PAD() { return EditorStyle::px(5.0f); }
+/// Inset from the viewport edge the overlay floats at.
+float INSET() { return EditorStyle::px(8.0f); }
+/// Spacing between adjacent tool buttons.
+float TOOL_GAP() { return EditorStyle::px(4.0f); }
 
 void tipFor(char* buf, size_t n, const char* name, const KeyBind& bind) {
     char key[24];
@@ -28,7 +32,7 @@ void tipFor(char* buf, size_t n, const char* name, const KeyBind& bind) {
 void ViewportToolbar::drawViewMode(EditorContext& ec) {
     RenderSettings& settings = ec.renderSystem.getSettings();
 
-    ImGui::SetCursorPos(ImVec2(8.0f, 8.0f));
+    ImGui::SetCursorPos(ImVec2(INSET(), INSET()));
     ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::OVERLAY_BG);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PAD(), PAD()));
 
@@ -66,11 +70,11 @@ void ViewportToolbar::draw(EditorContext& ec) {
     const float toolbarH = BTN() + PAD() * 2.0f + 2.0f;
     ImVec2 ws = ImGui::GetWindowSize();
     float padY = ImGui::GetStyle().WindowPadding.y;
-    ImGui::SetCursorPos(ImVec2(8.0f, ws.y - padY - toolbarH - 8.0f));
+    ImGui::SetCursorPos(ImVec2(INSET(), ws.y - padY - toolbarH - INSET()));
 
     ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::OVERLAY_BG);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PAD(), PAD()));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(TOOL_GAP(), 0.0f));
 
     if (ImGui::BeginChild("##ViewportToolbar", ImVec2(0, toolbarH),
             ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_Borders)) {
