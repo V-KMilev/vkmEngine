@@ -23,7 +23,7 @@ set(VKM_CMAKE_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/vkmEngine)
 # Targets
 # ---------------------------------------------------------------------------
 # A project links exactly one engine target: vkm_core, through the
-# vkm_add_gameplay_module() helper the config file defines. Everything else the
+# vkm_add_gameplay_module() helper the config file includes. Everything else the
 # engine is made of - the render system, the GL backend, the cooker, the editor -
 # is reached by running a host, not by linking, so none of it belongs in the
 # export set. What has to be here besides vkm_core is its own link interface:
@@ -167,6 +167,13 @@ export(EXPORT vkmEngineTargets
        FILE      ${VKM_BUILD_TREE_PACKAGE_DIR}/vkmEngineTargets.cmake
        NAMESPACE vkmEngine::)
 
+# The gameplay module recipe, which the config file includes from beside itself.
+# Copied rather than generated: it holds no configure-time substitutions, and
+# copying it means the top-level CMakeLists and both package layouts read one
+# file. COPYONLY, so a `$`-bearing line is never mistaken for a substitution.
+configure_file(${CMAKE_SOURCE_DIR}/cmake/gameplay_module.cmake
+               ${VKM_BUILD_TREE_PACKAGE_DIR}/gameplay_module.cmake COPYONLY)
+
 # The two layouts the config file is generated for. Installed, every path hangs
 # off the prefix the SDK was unpacked into and has to stay relocatable, so the
 # strings below are escaped and resolved when the config is loaded. In the build
@@ -208,5 +215,6 @@ write_basic_package_version_file(
 install(FILES
             ${CMAKE_BINARY_DIR}/install/vkmEngineConfig.cmake
             ${VKM_BUILD_TREE_PACKAGE_DIR}/vkmEngineConfigVersion.cmake
+            ${CMAKE_SOURCE_DIR}/cmake/gameplay_module.cmake
         DESTINATION ${VKM_CMAKE_INSTALL_DIR}
         COMPONENT   Development)

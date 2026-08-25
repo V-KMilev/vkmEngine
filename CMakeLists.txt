@@ -28,15 +28,21 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
-# An installed SDK is relocatable: binaries find their libraries relative to
-# themselves rather than through an absolute path baked at build time. The build
-# tree keeps CMake's own generated rpath, which is why this is not applied there.
+# Binaries find their libraries relative to themselves rather than through an
+# absolute path baked at build time. Installed that is what makes an SDK
+# relocatable; in the build tree it is what makes `vkm package` honest, because
+# a package assembled from a build tree copies these binaries and would
+# otherwise ship a game that only starts on the machine that built it. CMake
+# still adds the link-path entries to the build rpath, so running out of
+# build/bin is unaffected.
 set(CMAKE_SKIP_BUILD_RPATH OFF)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH OFF)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
 if(APPLE)
+    set(CMAKE_BUILD_RPATH   "@loader_path")
     set(CMAKE_INSTALL_RPATH "@loader_path;@loader_path/../lib")
 else()
+    set(CMAKE_BUILD_RPATH   "$ORIGIN")
     set(CMAKE_INSTALL_RPATH "$ORIGIN;$ORIGIN/../lib")
 endif()
 
@@ -147,9 +153,18 @@ add_subdirectory(src/engine)
 add_subdirectory(src/tools)
 add_subdirectory(src/editor)
 add_subdirectory(src/backend/opengl)
+# The recipe every gameplay module is built by, and the names it uses. An
+# installed SDK hands both to a project through find_package; here they are
+# included and aliased directly, so the examples below are written the one way
+# rather than one way in this tree and another in a user's.
+include(cmake/gameplay_module.cmake)
+add_library(vkmEngine::vkm_core     ALIAS vkm_core)
+add_library(vkmEngine::vkm_warnings ALIAS vkm_warnings)
+
 # Example projects. Not part of the engine - each is a project in the shape a
-# real one takes, built from this tree because there is no installed SDK to
-# build them against yet.
+# real one takes. Added here so a build of the engine keeps them compiling
+# against it; `vkm build examples/<name>` configures the same file standalone,
+# which is the path a user's own project takes.
 add_subdirectory(examples/potion_runner)
 add_subdirectory(examples/stress_arena)
 
