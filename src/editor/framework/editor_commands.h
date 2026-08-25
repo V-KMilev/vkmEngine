@@ -20,6 +20,8 @@
 #include "ecs/component/core/name.h"
 #include "ecs/component/physics/character_controller.h"
 #include "ecs/component/physics/collider.h"
+#include "ecs/component/physics/joint.h"
+#include "ecs/component/physics/ragdoll.h"
 #include "ecs/component/physics/rigidbody.h"
 #include "ecs/component/prefab/prefab_entity.h"
 #include "ecs/component/prefab/prefab_instance.h"
@@ -328,6 +330,8 @@ class ScriptEditCommand : public Command {
     X(Rigidbody,        rigidbody)        \
     X(Collider,         collider)         \
     X(CharacterController, characterController) \
+    X(Joint,            joint)            \
+    X(Ragdoll,          ragdoll)          \
     X(ReflectionProbe,  reflectionProbe)  \
     X(IrradianceVolume, irradianceVolume) \
     X(Decal,            decal)            \
@@ -365,6 +369,8 @@ class ScriptEditCommand : public Command {
     X(Rigidbody)                         \
     X(Collider)                          \
     X(CharacterController)               \
+    X(Joint)                             \
+    X(Ragdoll)                           \
     X(ReflectionProbe)                   \
     X(Decal)                             \
     X(ParticleEmitter)                   \

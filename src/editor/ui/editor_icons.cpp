@@ -72,6 +72,11 @@ ImWchar iconCodepoint(EditorIcon icon) {
         case EditorIcon::Material:   return 0xe1dd;  // palette
         case EditorIcon::Texture:    return 0xe0f6;  // image
         case EditorIcon::Skeleton:   return 0xe358;  // bone
+        case EditorIcon::Character:  return 0xe21e;  // person-standing
+        case EditorIcon::Ragdoll:    return 0xe358;  // bone
+        case EditorIcon::Joint:      return 0xe103;  // link-2
+        case EditorIcon::Prefab:     return 0xe129;  // package
+        case EditorIcon::Socket:     return 0xe12d;  // paperclip
     }
     return 0;
 }

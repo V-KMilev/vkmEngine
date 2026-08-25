@@ -31,6 +31,9 @@
 #include "ecs/component/core/name.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/component/prefab/prefab_instance.h"
+#include "ecs/component/physics/character_controller.h"
+#include "ecs/component/physics/collider.h"
+#include "ecs/component/physics/rigidbody.h"
 #include "ecs/component/render/camera.h"
 #include "ecs/component/render/decal.h"
 #include "ecs/component/render/irradiance_volume.h"
@@ -228,6 +231,8 @@ const char* defaultName(EntityKind k) {
         case EntityKind::UIPanel:          return "UI Panel";
         case EntityKind::UIText:           return "UI Text";
         case EntityKind::UIButton:         return "UI Button";
+        case EntityKind::Character:        return "Character";
+        case EntityKind::StaticBody:       return "Static Body";
     }
     return "Entity";
 }
@@ -274,6 +279,38 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
         case EntityKind::DiskLight:
             scene.add(entity, generateLight(LightType::Disk));
             break;
+        case EntityKind::Character: {
+            // The pairing every DANGER line on the CharacterController card
+            // checks for: a capsule, a body that will not tip over or doze off,
+            // and the controller that drives them. Made together because made
+            // apart is three visits to the Add Component list and a card that
+            // spends them telling the author what is still missing.
+            ColliderPart part;
+            part.shape = ColliderShape::Capsule;
+            part.radius = 0.3f;
+            part.halfHeight = 0.6f;
+            part.center = {0.0f, part.halfHeight + part.radius, 0.0f};
+            Collider collider;
+            collider.parts = { part };
+            scene.add(entity, std::move(collider));
+
+            Rigidbody body;
+            body.mass = 70.0f;
+            body.freezeRotation = true;
+            body.canSleep = false;
+            scene.add(entity, std::move(body));
+
+            scene.add(entity, CharacterController{});
+            break;
+        }
+        case EntityKind::StaticBody: {
+            // A blocker: geometry the world collides with and nothing moves.
+            Rigidbody body;
+            body.isStatic = true;
+            scene.add(entity, std::move(body));
+            scene.add(entity, Collider{});
+            break;
+        }
         case EntityKind::Cube:     addMesh(generateCube());     break;
         case EntityKind::Sphere:   addMesh(generateSphere());   break;
         case EntityKind::Plane:    addMesh(generatePlane());    break;
@@ -740,6 +777,11 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
             item(EditorIcon::Triangle, "Triangle", EntityKind::Triangle);
             ImGui::EndMenu();
         }
+        if (ImGui::BeginMenu("Physics")) {
+            item(EditorIcon::Character, "Character",   EntityKind::Character);
+            item(EditorIcon::Colliders, "Static Body", EntityKind::StaticBody);
+            ImGui::EndMenu();
+        }
         if (ImGui::BeginMenu("UI")) {
             // A canvas is the screen-space root; panels/text/buttons created with
             // a canvas or element selected drop in as its children.
@@ -752,7 +794,7 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
         ImGui::Separator();
         // Neither modal can live here: the menu closes on click and this
         // function stops being called. Defer to the dialogs EditorSystem owns.
-        if (iconMenuItem(EditorIcon::Duplicate, "Prefab")) state.requestPlacePrefab = true;
+        if (iconMenuItem(EditorIcon::Prefab, "Prefab")) state.requestPlacePrefab = true;
         if (iconMenuItem(EditorIcon::Import, "Import Model")) state.requestModelImport = true;
         ImGui::EndMenu();
     }

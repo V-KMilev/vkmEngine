@@ -268,6 +268,8 @@ void HierarchyPanel::drawEntityNode(Scene& scene, ResourceManager& resources,
         if (scene.has<BoneSocket>(entity)) append("Socket");
         if (scene.has<Rigidbody>(entity))        append("Rigidbody");
         if (scene.has<Collider>(entity))         append("Collider");
+        if (scene.has<Joint>(entity))            append("Joint");
+        if (scene.has<Ragdoll>(entity))          append("Ragdoll");
         if (scene.has<CharacterController>(entity)) append("Character");
         if (scene.has<ScriptComponent>(entity))  append("Script");
         if (scene.has<ReflectionProbe>(entity))  append("Probe");
