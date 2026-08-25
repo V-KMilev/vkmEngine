@@ -31,6 +31,7 @@
 #include "ecs/component/core/name.h"
 #include "ecs/component/physics/ragdoll.h"
 #include "io/scene/component_serializer.h"
+#include "io/scene/scene_serializer.h"
 #include "io/scene/prefab.h"
 #include "system/animation/pose_buffer.h"
 #include "system/animation/ragdoll_pose.h"
@@ -374,6 +375,7 @@ void simulate(Scene& scene, int ticks) {
 // that the joint then holds the body to a fixed point in the world. Combined
 // with an unset distance - "whatever they were apart on the first tick" - that
 // path read a map iterator the branch above had already proved to be end().
+
 void testDistanceJointPinnedToWorld() {
     std::printf("A rope pinned to a world point:\n");
 
@@ -795,6 +797,53 @@ BoxShape boxAt(const glm::vec3& center, const glm::vec3& halfExtents) {
 // GJK has to agree with the routine the engine already trusts. Box against box
 // is the one pair both can answer, so it is the one that can be checked against
 // something other than my own arithmetic.
+// The segment-to-box closest point used to be found by projecting back and
+// forth between the segment and the box. Alternating projection between two
+// convex sets has fixed points that are not the nearest pair, so it settled on
+// them and reported real overlaps as no contact at all - a capsule passing
+// through geometry it was touching. These three are cases it missed, found by
+// checking it against a densely sampled exact distance; the overlaps are two
+// millimetres, four, and eleven.
+void testCapsuleBoxFindsSmallOverlaps() {
+    std::printf("Capsule against box, barely touching:\n");
+
+    struct Case { glm::vec3 half; glm::vec3 a; glm::vec3 b; float radius; };
+    const Case missedBefore[] = {
+        {{1.070485f, 1.059132f, 1.263437f},
+         {-1.577023f, -2.536281f, 2.629774f}, {-1.436692f, 0.909800f, -0.901492f}, 0.368448f},
+        {{1.454872f, 0.293407f, 1.480604f},
+         {-1.342335f, 2.620376f, 2.097023f}, {-1.542812f, -0.073972f, 0.878635f}, 0.064073f},
+        {{0.692265f, 1.117279f, 0.760827f},
+         {0.963844f, 0.254541f, -2.078951f}, {0.781100f, 1.121073f, 2.809511f}, 0.176733f},
+    };
+
+    int missed = 0;
+    for (const Case& c : missedBefore) {
+        BoxShape box;
+        box.center = {0.0f, 0.0f, 0.0f};
+        box.halfExtents = c.half;
+        CapsuleShape capsule;
+        capsule.a = c.a;
+        capsule.b = c.b;
+        capsule.radius = c.radius;
+        Contact out[MAX_CONTACTS_PER_MANIFOLD];
+        if (contactCapsuleBox(capsule, box, out) == 0) ++missed;
+    }
+    check("a capsule overlapping a box by millimetres is a contact", missed == 0);
+
+    // And it still says no when there is genuinely nothing there.
+    BoxShape unit;
+    unit.center = {0.0f, 0.0f, 0.0f};
+    unit.halfExtents = {0.5f, 0.5f, 0.5f};
+    CapsuleShape clear;
+    clear.a = {3.0f, 0.0f, 0.0f};
+    clear.b = {3.0f, 1.0f, 0.0f};
+    clear.radius = 0.2f;
+    Contact none[MAX_CONTACTS_PER_MANIFOLD];
+    check("  and one well clear of it is not",
+          contactCapsuleBox(clear, unit, none) == 0);
+}
+
 void testGjk() {
     std::printf("GJK / EPA:\n");
 
@@ -895,6 +944,97 @@ EntityId addFallingBody(Scene& scene, const glm::vec3& position, float half) {
     scene.add<Collider>(id, std::move(collider));
 
     return id;
+}
+
+// A jointed pair generates no manifold on purpose, and the only thing that woke
+// a sleeper walked manifolds - so a body asleep on the end of a joint was a
+// nail. The solver treats a sleeper as immovable, so pulling the other end did
+// nothing for as long as the pull lasted.
+// Stiffness used to scale each solver pass's impulse, so the error decayed by
+// (1 - stiffness) per pass and what was delivered was 1 - (1 - stiffness)^n.
+// At the default eight passes half stiffness was 99.6% of rigid, and the knob
+// silently changed meaning with a scene-wide solver setting.
+void testJointStiffnessIsIterationIndependent() {
+    std::printf("Joint stiffness against the pass count:\n");
+
+    auto driftAfter = [](float stiffness, int iterations) {
+        Scene scene;
+        scene.physics().gravity = glm::vec3(0.0f);   // the joint is the only force
+        scene.physics().solverIterations = iterations;
+
+        const EntityId anchor = scene.createEntity();
+        Transform at;
+        at.position = {0.0f, 0.0f, 0.0f};
+        scene.add<Transform>(anchor, std::move(at));
+
+        const EntityId body = scene.createEntity();
+        Transform bodyAt;
+        bodyAt.position = {2.0f, 0.0f, 0.0f};      // a metre past where it belongs
+        scene.add<Transform>(body, std::move(bodyAt));
+        Rigidbody rb;
+        rb.mass = 1.0f;
+        rb.canSleep = false;
+        scene.add<Rigidbody>(body, std::move(rb));
+
+        Joint joint;
+        joint.type = JointType::Distance;
+        joint.connected = anchor;
+        joint.distance = 1.0f;
+        joint.stiffness = stiffness;
+        scene.add<Joint>(body, std::move(joint));
+
+        // Few ticks on purpose: what differs is the rate the gap closes at,
+        // and after enough ticks every rate has closed it.
+        simulate(scene, 3);
+        return scene.get<Transform>(body).position.x - 1.0f;   // gap left
+    };
+
+    const float few  = driftAfter(0.25f, 2);
+    const float many = driftAfter(0.25f, 16);
+    check("half-closed at two passes and at sixteen agree",
+          std::fabs(few - many) < 0.05f);
+
+    // And it still means something: a stiffer joint closes more of the gap.
+    check("  and a stiffer joint closes more of the gap",
+          driftAfter(0.8f, 8) < driftAfter(0.2f, 8) - 0.05f);
+}
+
+void testJointWakesASleeper() {
+    std::printf("A sleeper on the end of a joint:\n");
+
+    Scene scene;
+    addBox(scene, {0.0f, -0.5f, 0.0f}, {8.0f, 0.5f, 8.0f});
+
+    // Resting on the floor and asleep, which is where a body ends up.
+    const EntityId anchorBody = addFallingBody(scene, {0.0f, 0.4f, 0.0f}, 0.4f);
+    const EntityId hauler = addFallingBody(scene, {2.0f, 0.4f, 0.0f}, 0.4f);
+
+    Joint rope;
+    rope.type = JointType::Distance;
+    rope.connected = anchorBody;
+    rope.distance = 2.0f;
+    scene.add<Joint>(hauler, std::move(rope));
+
+    simulate(scene, 240);
+
+    // Put it to sleep rather than wait for it: a jointed body is nudged by its
+    // own constraint every tick, so it settles slowly and what is under test is
+    // whether hauling the far end wakes it, not how long resting takes.
+    scene.get<Rigidbody>(anchorBody).sleeping = true;
+    scene.get<Rigidbody>(anchorBody).linearVelocity = glm::vec3(0.0f);
+    check("a body asleep on the end of a rope", scene.get<Rigidbody>(anchorBody).sleeping);
+
+    // Haul on the far end, hard and away.
+    scene.get<Rigidbody>(hauler).sleeping = false;
+    scene.get<Rigidbody>(hauler).sleepTimer = 0.0f;
+    scene.get<Rigidbody>(hauler).linearVelocity = {6.0f, 0.0f, 0.0f};
+
+    const float before = scene.get<Transform>(anchorBody).position.x;
+    simulate(scene, 60);
+    const float after = scene.get<Transform>(anchorBody).position.x;
+
+    check("  hauling one end wakes the other", !scene.get<Rigidbody>(anchorBody).sleeping);
+    check("  and drags it along", after > before + 0.1f);
 }
 
 // An anchor: a static body with no collider, which is a thing to hang from
@@ -1162,6 +1302,60 @@ EntityId addMeshBody(Scene& scene, const MeshAsset& mesh) {
     return id;
 }
 
+// A mesh part with a centre of its own. The tree is built over the raw points,
+// so the query bound and the triangle placement have to come back to that space
+// through the same two terms - the body's pose and the part's centre. Applying
+// one to the placement and not the other to the bound offsets them by exactly
+// the centre, and a slab test that misses returns no candidate, so the body
+// falls through a floor that is right there.
+// A triangle is a zero-thickness hull, so its Minkowski difference with a body
+// is symmetric about its plane: the shallowest way out flips the moment the
+// body's centre crosses it, and the position pass then drives the body down
+// through the floor rather than back up onto it. Started already sunk, which is
+// the state a fast body or a bad tick arrives in.
+void testMeshDoesNotEjectDownward() {
+    std::printf("A body sunk into a mesh floor:\n");
+
+    Scene scene;
+    addMeshBody(scene, makeGridMesh(8, 12.0f));
+
+    // Centre below the plane, which is where the normal used to flip.
+    const EntityId sunk = addFallingBody(scene, {0.5f, -0.12f, 0.5f}, 0.5f);
+    simulate(scene, 300);
+
+    const float y = scene.get<Transform>(sunk).position.y;
+    check("it is pushed back up, not through", y > 0.0f);
+    check("  and comes to rest on the surface", y > 0.25f && y < 1.0f);
+}
+
+void testOffsetMeshPartCollides() {
+    std::printf("A mesh part offset from its entity:\n");
+
+    Scene scene;
+    const MeshAsset grid = makeGridMesh(8, 12.0f);
+
+    const EntityId floorId = scene.createEntity();
+    scene.add<Transform>(floorId, Transform{});
+    Rigidbody floorBody;
+    floorBody.isStatic = true;
+    scene.add<Rigidbody>(floorId, std::move(floorBody));
+
+    Collider collider;
+    collider.parts.clear();
+    check("a mesh to stand on", addMeshCollider(collider, grid) > 0);
+    // Shifted two metres up: the triangles are at y = 0 in their own points,
+    // so the surface they describe now sits at y = 2.
+    collider.parts[0].center = {0.0f, 2.0f, 0.0f};
+    scene.add<Collider>(floorId, std::move(collider));
+
+    const EntityId faller = addFallingBody(scene, {0.5f, 6.0f, 0.5f}, 0.4f);
+    simulate(scene, 400);
+
+    const float y = scene.get<Transform>(faller).position.y;
+    check("  a body lands on it where the offset puts it", y > 2.0f && y < 3.0f);
+    check("  rather than falling through it", y > 0.0f);
+}
+
 void testMeshCollider() {
     std::printf("Mesh collider:\n");
 
@@ -1365,16 +1559,20 @@ void testComponentRoundTrip() {
     // description of a mesh: lose either and the shape is empty.
     Collider collider;
     collider.parts.clear();
-    collider.meshPoints = {{0,0,0}, {1,0,0}, {0,1,0}};
+    // Padded so the span starts somewhere other than zero: a round-trip that
+    // leaves meshFirst at its default cannot tell the field from its absence.
+    collider.meshPoints = {{9,9,9}, {9,9,9}, {9,9,9}, {0,0,0}, {1,0,0}, {0,1,0}};
     ColliderPart part;
     part.shape = ColliderShape::Mesh;
+    part.meshFirst = 3;
     part.meshCount = 3;
     collider.parts = { part };
 
     Collider back;
     ComponentSerializer::load(ComponentSerializer::save(collider), back);
-    check("a mesh collider keeps its points", back.meshPoints.size() == 3);
+    check("a mesh collider keeps its points", back.meshPoints.size() == 6);
     const bool span = back.parts.size() == 1
+                   && back.parts[0].meshFirst == 3
                    && back.parts[0].meshCount == 3
                    && back.parts[0].shape == ColliderShape::Mesh;
     check("  and the span that reads them", span);
@@ -1404,6 +1602,59 @@ void testQueryAgainstNewShapes() {
 
     check("a ray past the edge of the mesh finds nothing",
           !raycast(terrain, {20.0f, 4.0f, 0.0f}, {0,-1,0}, 100.0f, hit));
+}
+
+// Dying twice. A ragdoll that has come to rest is asleep where it landed, and
+// going inactive makes the bones kinematic - which skips the sleep test rather
+// than clearing it. Handing them back to the solver still asleep hands it
+// bodies isFrozen treats as immovable, so the second death never falls.
+void testRagdollFallsTwice() {
+    std::printf("A ragdoll that falls twice:\n");
+
+    Scene scene;
+    addBox(scene, {0.0f, -0.5f, 0.0f}, {8.0f, 0.5f, 8.0f});
+    const EntityId rig = scene.createEntity();
+    Transform at;
+    at.position = {0.0f, 3.0f, 0.0f};
+    scene.add<Transform>(rig, std::move(at));
+    check("a rig to knock down", buildRagdoll(scene, rig, makeTestRig()) == 4);
+
+    RagdollSystem ragdolls;
+    ResourceManager resources;
+    Clock clock;
+    EventBus events;
+    WindowManager window;
+    InputMap input;
+    FrameContext ctx{scene, resources, clock, events, window, input};
+    ragdolls.init(ctx);
+
+    const EntityId hips = scene.get<Ragdoll>(rig).bones[0].body;
+
+    // The state a rested ragdoll is in, set rather than waited for: what is
+    // under test is what activation does about it, not how long resting takes.
+    for (const RagdollBone& bone : scene.get<Ragdoll>(rig).bones) {
+        Rigidbody& body = scene.get<Rigidbody>(bone.body);
+        body.sleeping = true;
+        body.isKinematic = true;
+    }
+    scene.get<Ragdoll>(rig).active = true;
+    ragdolls.update(ctx);
+
+    check("activating a rested ragdoll wakes its bones",
+          !scene.get<Rigidbody>(hips).sleeping
+       && !scene.get<Rigidbody>(hips).isKinematic);
+
+    const float before =
+        HierarchyOperations::computeWorldMatrix(scene, hips)[3][1];
+    for (int i = 0; i < 200; ++i) {
+        ragdolls.update(ctx);
+        simulate(scene, 1);
+    }
+    const float after =
+        HierarchyOperations::computeWorldMatrix(scene, hips)[3][1];
+    check("  so it falls rather than hanging where it slept", after < before - 0.5f);
+
+    ragdolls.shutdown();
 }
 
 // The half of a ragdoll that is on screen. Every other ragdoll assertion checks
@@ -1466,6 +1717,14 @@ void testRagdollPose() {
     check("the pose is relative to the rig, not the world",
           near(global[slice + 0][3][0], 0.0f));
 
+    // The bound the visibility pass sizes a skinned mesh from. A composer that
+    // writes poses and no bound leaves whatever the last writer left, and a
+    // ragdoll culled by its own stale bound stops being drawn at exactly the
+    // moment it starts moving.
+    const PoseSlice& bound = poses.slices().front();
+    check("the pose publishes a bound the visibility pass can use",
+          bound.originMax.y > bound.originMin.y && bound.maxBoneScale >= 1.0f);
+
     // The palette is what the vertex shader reads, and a pose written without
     // one draws a character in its bind shape however the bones moved.
     const std::vector<glm::mat4>& palette = poses.palette();
@@ -1489,8 +1748,10 @@ void testRagdollPose() {
                        gatherRagdollBodies(broken, broken.get<Ragdoll>(partial)),
                        skeleton,
                        glm::mat4(1.0f), second.writeTo(slice2));
+    // Where the fallback puts it, not merely that it is a number: the buffer is
+    // zero-filled, so isfinite() held for a bone the composer never touched.
     check("a bone whose body is gone falls back to its parent",
-          std::isfinite(second.global()[slice2 + 1][3][1]));
+          near(second.global()[slice2 + 1][3][1], 1.3f));
 }
 
 // Two things can share a world without touching, which is what a layer says.
@@ -1570,11 +1831,108 @@ void testCollisionLayers() {
           (ownerMask & boneLayer) == 0);
     check("  leaving the owner colliding with everything else",
           (ownerMask & ~boneLayer) == ~boneLayer);
+
+    // And the bones do not hit each other. Each capsule spans its bone to that
+    // bone's child, so limbs are built overlapping; a rig that self-collides
+    // spends its first tick resolving interpenetration it was authored with and
+    // throws itself apart. A joint already spares adjacent bones - this is what
+    // spares one thigh from the other.
+    bool anyBoneSelfCollides = false;
+    for (const RagdollBone& bone : rigged.get<Ragdoll>(owner).bones) {
+        const Rigidbody& body = rigged.get<Rigidbody>(bone.body);
+        if ((body.layer & body.collidesWith) != 0) anyBoneSelfCollides = true;
+    }
+    check("  and the bones do not collide with each other", !anyBoneSelfCollides);
+
+    // And gives it back. collidesWith is authored, serialized and visible, so a
+    // character that once had a ragdoll must not quietly stop colliding with a
+    // layer it was never told about.
+    clearRagdoll(rigged, owner);
+    check("  and clearing the ragdoll returns the layer to the owner",
+          (rigged.get<Rigidbody>(owner).collidesWith & boneLayer) == boneLayer);
 }
 
 // A ragdoll doubles as a hit box rig: its bones are bodies with colliders, so a
 // query already picks one out. This is the whole path a game walks - shoot,
 // find the limb, find whose it is.
+// The branch made two components carry references to other entities, and taught
+// the loader to recover them from the slots a save writes. Nothing tested the
+// pair together: the component round-trips checked that a slot number survives,
+// which is not the same as the reference still naming the entity it named.
+void testSceneRoundTripKeepsReferences() {
+    std::printf("A whole scene, written down and read back:\n");
+
+    Scene scene;
+    ResourceManager resources;
+
+    // A jointed pair and a built ragdoll, which is every cross-entity reference
+    // the branch added.
+    const EntityId beam = scene.createEntity();
+    scene.add<Transform>(beam, Transform{});
+    scene.add(beam, makeName("Beam"));
+
+    const EntityId weight = scene.createEntity();
+    Transform at;
+    at.position = {0.0f, -2.0f, 0.0f};
+    scene.add<Transform>(weight, std::move(at));
+    scene.add(weight, makeName("Weight"));
+    Rigidbody body;
+    body.mass = 5.0f;
+    scene.add<Rigidbody>(weight, std::move(body));
+    Joint rope;
+    rope.type = JointType::Distance;
+    rope.connected = beam;
+    rope.distance = 2.0f;
+    scene.add<Joint>(weight, std::move(rope));
+
+    const EntityId rig = scene.createEntity();
+    scene.add<Transform>(rig, Transform{});
+    scene.add(rig, makeName("Rig"));
+    check("a scene with a joint and a ragdoll in it",
+          buildRagdoll(scene, rig, makeTestRig()) == 4);
+
+    const size_t boneCount = scene.get<Ragdoll>(rig).bones.size();
+    const std::string beamName = scene.get<Name>(beam).value;
+
+    const std::string document = SceneSerializer::saveToString(scene, resources);
+    check("  saves to a document", !document.empty());
+
+    Scene back;
+    ResourceManager backResources;
+    check("  and loads back",
+          SceneSerializer::loadFromString(document, back, backResources));
+
+    // Found by name, because the entity ids are the loader's to choose.
+    EntityId loadedWeight{};
+    EntityId loadedRig{};
+    back.forEachEntity([&](EntityId id) {
+        if (!back.has<Name>(id)) return;
+        const std::string name = back.get<Name>(id).value;
+        if (name == "Weight") loadedWeight = id;
+        if (name == "Rig")    loadedRig = id;
+    });
+    check("  the jointed body came back", loadedWeight && back.has<Joint>(loadedWeight));
+    check("  the rig came back", loadedRig && back.has<Ragdoll>(loadedRig));
+
+    // The part that a component round-trip cannot see: the reference has to name
+    // a live entity, and the right one.
+    const EntityId connected = back.get<Joint>(loadedWeight).connected;
+    check("  and the joint still names something that exists",
+          connected && back.isAlive(connected));
+    check("    which is the entity it named before",
+          back.has<Name>(connected) && beamName == back.get<Name>(connected).value);
+
+    const Ragdoll& loadedRagdoll = back.get<Ragdoll>(loadedRig);
+    check("  the ragdoll kept all of its bones", loadedRagdoll.bones.size() == boneCount);
+    bool everyBoneAlive = loadedRagdoll.root && back.isAlive(loadedRagdoll.root);
+    for (const RagdollBone& bone : loadedRagdoll.bones) {
+        if (!bone.body || !back.isAlive(bone.body) || !back.has<Rigidbody>(bone.body)) {
+            everyBoneAlive = false;
+        }
+    }
+    check("    and every one of them is a live body", everyBoneAlive);
+}
+
 void testRagdollAsHitboxes() {
     std::printf("A ragdoll as hit boxes:\n");
 
@@ -1624,11 +1982,19 @@ void testRagdollAsHitboxes() {
     check("something that is not a limb has no owner",
           !ragdollOwnerOf(scene, character, nullptr));
 
+    // The same ray with the bones masked out. Asserted as two facts rather than
+    // as "it missed, or what it found was not a bone": that disjunction was
+    // satisfied by the miss alone, and a mask that excluded nothing would have
+    // passed it just as well.
     QueryFilter withoutBones;
     withoutBones.layerMask = ~RagdollSettings{}.boneLayer;
-    check("  or for everything except them",
-          !raycast(scene, {5.0f, 1.3f, 0.0f}, {-1,0,0}, 20.0f, hit, withoutBones)
-       || ragdollOwnerOf(scene, hit.entity, nullptr) != character);
+    RayHit other;
+    const bool foundSomething =
+        raycast(scene, {5.0f, 1.3f, 0.0f}, {-1,0,0}, 20.0f, other, withoutBones);
+    check("  the same ray without them still finds the character", foundSomething);
+    check("    and what it finds is not one of its bones",
+          foundSomething && !ragdollOwnerOf(scene, other.entity, nullptr));
+    check("    which is a different entity from the limb", other.entity != hit.entity);
 }
 
 } // namespace
@@ -1643,6 +2009,7 @@ int main() {
                            Vkm::Log::LogLevel::ERROR);
 
     testMathConvention();
+    testCapsuleBoxFindsSmallOverlaps();
     testGjk();
     testRaycastShapes();
     testRaycastMisses();
@@ -1650,6 +2017,8 @@ int main() {
     testSpherecast();
     testCharacterStepUp();
     testCharacterStaircase();
+    testJointStiffnessIsIterationIndependent();
+    testJointWakesASleeper();
     testDistanceJointPinnedToWorld();
     testRebuildMeshBvhWithoutMesh();
     testRestOnNarrowSupport();
@@ -1658,11 +2027,15 @@ int main() {
     testJoints();
     testRagdoll();
     testMeshCollider();
+    testMeshDoesNotEjectDownward();
+    testOffsetMeshPartCollides();
     testImportedHierarchy();
     testComponentRoundTrip();
     testQueryAgainstNewShapes();
+    testRagdollFallsTwice();
     testRagdollPose();
     testCollisionLayers();
+    testSceneRoundTripKeepsReferences();
     testRagdollAsHitboxes();
 
     std::printf(g_failures ? "\n%d FAILURE(S)\n" : "\nALL OK\n", g_failures);
