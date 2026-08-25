@@ -1,0 +1,160 @@
+{
+  "assets": [
+    {
+      "hash": 153109286953994053,
+      "name": "bot:mat1",
+      "type": "material"
+    },
+    {
+      "hash": 10547141455248542538,
+      "name": "lab:bouncy",
+      "type": "material"
+    },
+    {
+      "hash": 16806898115199831655,
+      "name": "jump:clip0",
+      "type": "animationClip"
+    },
+    {
+      "hash": 1095019497374706601,
+      "name": "lab:route",
+      "type": "material"
+    },
+    {
+      "hash": 4098395521804732307,
+      "name": "lab:steep",
+      "type": "material"
+    },
+    {
+      "hash": 10625407273443074702,
+      "name": "walking:clip0",
+      "type": "animationClip"
+    },
+    {
+      "hash": 15071539093511423833,
+      "name": "builtin:white",
+      "type": "texture"
+    },
+    {
+      "hash": 17538684103242485125,
+      "name": "mesh:generator:cube",
+      "type": "mesh"
+    },
+    {
+      "hash": 18204703984904011686,
+      "name": "lab:ramp",
+      "type": "material"
+    },
+    {
+      "hash": 9087653979976512887,
+      "name": "builtin:black",
+      "type": "texture"
+    },
+    {
+      "hash": 14224190950802874093,
+      "name": "idle:clip0",
+      "type": "animationClip"
+    },
+    {
+      "hash": 285747578055307269,
+      "name": "builtin:gray",
+      "type": "texture"
+    },
+    {
+      "hash": 10561518889666308164,
+      "name": "lab:grip",
+      "type": "material"
+    },
+    {
+      "hash": 13940227885105085514,
+      "name": "lab:crate",
+      "type": "material"
+    },
+    {
+      "hash": 3269650682514770449,
+      "name": "lab:ground",
+      "type": "material"
+    },
+    {
+      "hash": 13467491131040516600,
+      "name": "bot:mat0",
+      "type": "material"
+    },
+    {
+      "hash": 2109284626269909332,
+      "name": "material:default",
+      "type": "material"
+    },
+    {
+      "hash": 281617528803336552,
+      "name": "lab:heavy",
+      "type": "material"
+    },
+    {
+      "hash": 1819552293140252688,
+      "name": "lab:tread",
+      "type": "material"
+    },
+    {
+      "hash": 3446670793558205377,
+      "name": "bot:mesh0",
+      "type": "mesh"
+    },
+    {
+      "hash": 1134031801248655488,
+      "name": "lab:ice",
+      "type": "material"
+    },
+    {
+      "hash": 12494483611236189369,
+      "name": "lab:rig",
+      "type": "material"
+    },
+    {
+      "hash": 1708079687597751976,
+      "name": "lab:mark",
+      "type": "material"
+    },
+    {
+      "hash": 2714793208014489352,
+      "name": "bot:mesh1",
+      "type": "mesh"
+    },
+    {
+      "hash": 1231474281375944905,
+      "name": "lab:hazard",
+      "type": "material"
+    },
+    {
+      "hash": 15049112235533972861,
+      "name": "builtin:normal",
+      "type": "texture"
+    },
+    {
+      "hash": 15557631190589178816,
+      "name": "bot:clip0",
+      "type": "animationClip"
+    },
+    {
+      "hash": 12675166301787250623,
+      "name": "lab:stone",
+      "type": "material"
+    },
+    {
+      "hash": 15265527261632478102,
+      "name": "running:clip0",
+      "type": "animationClip"
+    },
+    {
+      "hash": 3770743483038265489,
+      "name": "lab:wall",
+      "type": "material"
+    },
+    {
+      "hash": 2118454192204551764,
+      "name": "bot:skeleton",
+      "type": "skeleton"
+    }
+  ],
+  "manifestVersion": 1
+}

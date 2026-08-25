@@ -1,0 +1,9 @@
+{
+  "name": "bot:clip0",
+  "source": {
+    "clip": 0,
+    "kind": "model",
+    "path": "assets/bot.fbx"
+  },
+  "type": "animationClip"
+}

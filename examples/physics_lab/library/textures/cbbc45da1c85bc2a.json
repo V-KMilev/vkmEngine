@@ -1,0 +1,8 @@
+{
+  "name": "builtin:gray",
+  "source": {
+    "kind": "builtin",
+    "type": "gray"
+  },
+  "type": "texture"
+}
