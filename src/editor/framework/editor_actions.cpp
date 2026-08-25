@@ -431,6 +431,17 @@ Duplicate duplicateOne(Scene& scene, ResourceManager& resources, EditorState& st
     // its own, so keeping the number would point the original's overrides at it.
     snap.prefabEntity.reset();
 
+    // A ragdoll's bones are entities it owns, and a snapshot copies the ids
+    // verbatim. A copy that kept them would drive the original's skeleton from
+    // two places and destroy it when the copy was deleted - the observer
+    // destroys what the component names. The copy has no bones until someone
+    // builds them, and saying so is the only honest value here.
+    if (snap.ragdoll) {
+        snap.ragdoll->bones.clear();
+        snap.ragdoll->root = EntityId{};
+        snap.ragdoll->active = false;
+    }
+
     const EntityId newId = scene.createEntity();
     snap.apply(scene, newId);
     return {newId, std::make_unique<CreateEntityCommand>(
@@ -819,10 +830,21 @@ void ModelImportDialog::draw(Scene& scene, ResourceManager& resources, EditorSta
     }
     std::string picked;
     if (m_picker.draw(picked)) {
-        EntityId rootId = importModelIntoScene(picked, resources, scene);
-        if (rootId) {
-            state.selectEntity(rootId);
+        const ModelImport imported = importModelIntoScene(picked, resources, scene);
+        if (imported.root) {
+            state.selectEntity(imported.root);
             commitStructureChange(state);
+        } else if (imported.ok) {
+            // A file of clips and no mesh: the import worked and there is
+            // nothing to select, which looked exactly like failure before -
+            // the picker closed and the editor said nothing at all.
+            state.pushToast(EditorState::ToastKind::Info,
+                            "Imported " + std::to_string(imported.clips)
+                                + " clip(s). The file has no mesh, so nothing "
+                                  "was added to the scene.");
+        } else {
+            state.pushToast(EditorState::ToastKind::Error,
+                            "Could not import '" + picked + "'");
         }
     }
 }

@@ -335,6 +335,13 @@ void drawOverrideRows(Scene& scene, ResourceManager& resources, EditorState& sta
     if (!revert.empty()) PrefabOverrides::revert(scene, resources, state, id, component, revert);
 }
 
+// A component whose removal is not just the component's. Ragdoll owns a subtree
+// of bodies, and the card's own Clear is what takes them with it - offering the
+// header's remove beside it would strand every bone and leave undo holding a
+// component whose references all name something destroyed.
+template <typename T>
+constexpr bool CARD_OWNS_MORE_THAN_ITSELF = std::is_same_v<T, Ragdoll>;
+
 // Shared scaffold for a removable, value-edited component card: the remove
 // affordance, the begin/end card pair, the get<T> + `before` snapshot, and the
 // two undo pushes (ComponentEditCommand when a field changed, then
@@ -348,7 +355,8 @@ void editComponentCard(Scene& scene, ResourceManager& resources, EditorState& st
                        const char* editLabel, const char* removeLabel,
                        DrawFields drawFields) {
     bool remove = false;
-    const bool open = beginComponentCard(title, accent, true, &remove);
+    const bool open = beginComponentCard(title, accent, true,
+                                         CARD_OWNS_MORE_THAN_ITSELF<T> ? nullptr : &remove);
     if (open) {
         drawOverrideRows(scene, resources, state, id, PrefabOverrides::COMPONENT_KEY<T>);
 
@@ -1614,12 +1622,25 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
                 // replaces the parts, because a fitted box compound beside it
                 // would collide twice.
                 if (ImGui::Button("Make Mesh Collider", ImVec2(-1.0f, 0.0f))) {
+                    // Built beside the collider and swapped in only if it came
+                    // to something. Clearing first and hoping left an author
+                    // with no collider at all when the mesh had no whole
+                    // triangle in it - a button that removes what it cannot
+                    // replace.
                     const glm::vec3 scale = meshScaleRelativeTo(scene, id, meshNode);
-                    col.parts.clear();
-                    col.meshPoints.clear();
-                    col.meshNodes.clear();
-                    addMeshCollider(col, asset, scale);
-                    changed = true;
+                    Collider built;
+                    built.parts.clear();
+                    m_meshColliderEmpty = addMeshCollider(built, asset, scale) == 0;
+                    if (!m_meshColliderEmpty) {
+                        built.isTrigger = col.isTrigger;
+                        built.enabled   = col.enabled;
+                        col = std::move(built);
+                        changed = true;
+                    }
+                }
+                if (m_meshColliderEmpty) {
+                    ImGui::TextColored(EditorStyle::DANGER,
+                        "That mesh has no whole triangle; the collider is unchanged.");
                 }
             }
         }
@@ -1699,7 +1720,7 @@ void InspectorPanel::drawJointSection(Scene& scene, ResourceManager& resources,
         }
 
         changed |= propSlider("Stiffness", &joint.stiffness, 0.0f, 1.0f, "%.2f",
-                              "1 is rigid. Lower gives way under load.");
+                              "Fraction of the remaining gap closed per tick.\n1 pulls the anchors together at once; lower drifts back slowly.");
         changed |= propCheckbox("Collide Connected", &joint.collideConnected,
                                 "Off by default: jointed bodies usually overlap at\n"
                                 "the joint, and resolving both the contact and the\n"
@@ -1747,9 +1768,7 @@ void InspectorPanel::drawRagdollSection(Scene& scene, ResourceManager& resources
         // shaped them still loads has nothing to do with destroying them. Below
         // the rig check it was unreachable in the one case that most wants it -
         // a ragdoll whose skeleton went away.
-        if (!ragdoll.bones.empty() && ImGui::Button("Clear", ImVec2(-1.0f, 0.0f))) {
-            pending = Pending::Clear;
-        }
+        if (ImGui::Button("Clear", ImVec2(-1.0f, 0.0f))) pending = Pending::Clear;
 
         rigNode = HierarchyOperations::findInSelfOrDescendants<Animator>(scene, id);
         const bool hasRig = rigNode
@@ -1776,7 +1795,7 @@ void InspectorPanel::drawRagdollSection(Scene& scene, ResourceManager& resources
         // Removing the component leaves the bodies behind: the card's Remove is
         // the generic one and knows nothing about them. Said here because the
         // two buttons sit together and only one of them is complete.
-        ImGui::TextDisabled("Clear destroys the bones. Remove Ragdoll does not.");
+        ImGui::TextDisabled("Clear removes the ragdoll and its bones together.");
 
         return changed;
     });

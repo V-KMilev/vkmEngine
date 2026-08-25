@@ -151,6 +151,7 @@ class InspectorPanel {
         // The Connected combo's entries, rebuilt per frame because the list is
         // the scene. Members rather than locals so the per-frame churn reuses
         // one allocation instead of making two.
+        bool                     m_meshColliderEmpty = false;
         std::vector<EntityId>    m_jointCandidates;
         std::vector<std::string> m_jointCandidateLabels;
         std::vector<const char*> m_jointCandidateNames;
