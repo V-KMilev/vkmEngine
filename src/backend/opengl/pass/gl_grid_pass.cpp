@@ -19,11 +19,12 @@ namespace Vkm::Engine {
 
 namespace {
 
-// Quad half-size in world units. The vertex shader recentres the quad on the
-// camera and scales it by this, so it always covers the visible ground. The
-// fragment shader's distance fade (which keys off the same extent) hides the
-// quad rim, so the grid never shows a hard edge regardless of camera height.
-constexpr float GRID_EXTENT = 200.0f;
+// The grid's base reach in world units, before the shaders scale it by how far
+// the camera is from the plane. That curve lives in the two shader stages
+// instead of here: the vertex stage sizes the quad by it and the fragment stage
+// puts the fade inside that, so they have to agree - and a shader edit reloads
+// in a second where this needs a rebuild.
+constexpr float GRID_BASE_EXTENT = 100.0f;
 
 } // namespace
 
@@ -38,6 +39,9 @@ void GLGridPass::execute(GLFrameContext& ctx) {
 
     const RenderView& view = ctx.view;
     const glm::mat4& viewProj = view.camera.viewProjection;
+
+    const float height = glm::max(1.0f, glm::abs(view.camera.position.y));
+    const float extent = GRID_BASE_EXTENT * glm::max(1.0f, glm::log(height));
 
     // The chain scratches carry no depth attachment, so occlusion moves into the
     // shader: it samples the geometry target's depth and discards covered
@@ -54,7 +58,7 @@ void GLGridPass::execute(GLFrameContext& ctx) {
     ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SceneDepth);
     m_shader->setUniformMatrix4fv("u_viewProj", viewProj);
     m_shader->setUniform3fv("u_camPos", view.camera.position);
-    m_shader->setUniform1f("u_extent", GRID_EXTENT);
+    m_shader->setUniform1f("u_extent", extent);
 
     m_quad->draw();
 
