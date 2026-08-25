@@ -26,7 +26,6 @@ namespace {
 
 // Reused across parts so a query does not allocate per shape it looks at. A
 // query is one call on one thread, so these are its own rather than shared.
-thread_local std::vector<glm::vec3> t_scratchPoints;
 thread_local std::vector<uint32_t>  t_scratchTriangles;
 
 /**

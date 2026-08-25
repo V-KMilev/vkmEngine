@@ -1,11 +1,12 @@
 #include "system/physics/solver/solver.h"
-#include "system/physics/solver/solver_math.h"
-#include "system/physics/tolerance.h"
 
 #include <algorithm>
 #include <cmath>
 
 #include <glm/glm.hpp>
+
+#include "system/physics/solver/solver_math.h"
+#include "system/physics/tolerance.h"
 
 namespace Vkm::Engine {
 
