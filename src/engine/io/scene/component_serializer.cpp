@@ -2,8 +2,6 @@
 
 #include "io/scene/component_serializer.h"
 
-#include <glm/gtc/type_ptr.hpp>
-
 #include <cstddef>
 #include <cstring>
 #include <limits>
@@ -11,6 +9,8 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+
+#include <glm/gtc/type_ptr.hpp>
 
 #include "logger.h"
 
@@ -249,11 +249,11 @@ nlohmann::json save(const Collider& c) {
     j["parts"] = std::move(arr);
 
     if (!c.meshPoints.empty()) {
-        nlohmann::json hull = nlohmann::json::array();
+        nlohmann::json points = nlohmann::json::array();
         for (const glm::vec3& point : c.meshPoints) {
-            hull.push_back(vec3ToJson(point));
+            points.push_back(vec3ToJson(point));
         }
-        j["hull"] = std::move(hull);
+        j["mesh"] = std::move(points);
     }
     return j;
 }
@@ -286,10 +286,10 @@ void load(const nlohmann::json& j, Collider& c) {
     }
 
     c.meshPoints.clear();
-    auto hull = j.find("hull");
-    if (hull == j.end() || !hull->is_array()) return;
-    c.meshPoints.reserve(hull->size());
-    for (const auto& point : *hull) c.meshPoints.push_back(jsonToVec3(point));
+    auto points = j.find("mesh");
+    if (points == j.end() || !points->is_array()) return;
+    c.meshPoints.reserve(points->size());
+    for (const auto& point : *points) c.meshPoints.push_back(jsonToVec3(point));
 }
 
 namespace {

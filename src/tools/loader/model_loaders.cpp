@@ -1032,7 +1032,7 @@ TextureHandle loadModelEmbeddedTexture(
     return decodeEmbedded(emb, resources, name, modelRef, ref, srgb);
 }
 
-EntityId importModelIntoScene(
+ModelImport importModelIntoScene(
     const std::string& path,
     ResourceManager& resources,
     Scene& scene
@@ -1088,7 +1088,7 @@ EntityId importModelIntoScene(
         LOG_INFO("Imported %u clip(s) from '%s', bound to rig '%s'. Nothing was "
                  "added to the scene: the file has no mesh.",
                  imported, ref.c_str(), rigs.front().c_str());
-        return {};
+        return {EntityId{}, imported, true};
     }
 
     // Cache assets once (idempotent by name), keyed by Assimp global index.
@@ -1233,7 +1233,7 @@ EntityId importModelIntoScene(
     LOG_INFO("Imported model '%s' (%u meshes, %u materials, %zu bones, %u clips)",
         ref.c_str(), aScene->mNumMeshes, aScene->mNumMaterials,
         rig.bones.size(), rig.bones.empty() ? 0u : aScene->mNumAnimations);
-    return root;
+    return {root, rig.bones.empty() ? 0u : aScene->mNumAnimations, true};
 }
 
 } // namespace Vkm::Engine
