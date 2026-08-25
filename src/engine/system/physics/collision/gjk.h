@@ -42,22 +42,5 @@ bool gjkOverlap(const SupportShape& a, const SupportShape& b);
  */
 bool gjkContact(const SupportShape& a, const SupportShape& b, Contact& out);
 
-/**
- * @brief Distance between two convex shapes, and the direction that closes it.
- *
- * The closest-point form of the same search: the simplex walks toward the
- * origin of the Minkowski difference and settles on the feature nearest it,
- * whose length is the gap between the shapes. What a sweep needs and an
- * overlap test cannot give - a single support plane bounds the gap in one
- * direction only, and declaring a hit against it reports contact beside a
- * long shape metres from its surface.
- *
- * @param a First shape.
- * @param b Second shape.
- * @param[out] direction Unit direction from @p a toward @p b along the gap;
- *             untouched when the shapes overlap.
- * @return The separation distance, or zero when the shapes overlap or touch.
- */
-float gjkDistance(const SupportShape& a, const SupportShape& b, glm::vec3& direction);
 
 } // namespace Vkm::Engine
