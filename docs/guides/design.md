@@ -321,13 +321,12 @@ three hosts take a project directory:
 ./build/bin/vkm_cook    examples/potion_runner   # bake its assets, no window
 ```
 
-Walking the tool is not a supplementary check here. **It is the only verification
-this engine has.** `ctest --test-dir build` runs exactly one suite, `vkm_gl`, and
-that one belongs to the vkmGL submodule; the engine has no test target and
-deliberately does not get an empty one. `enable_testing()` sits in the top-level
-`CMakeLists.txt:148` precisely so that the first engine test can be an `add_test`
-beside whatever it tests rather than a decision somebody has to make first. Until
-that day, somebody using the thing is the test, and skipping it skips all of it.
+Walking the tool is still the half no suite covers. `ctest --test-dir build`
+runs two suites now: `vkm_gl` from the submodule, and `vkm_engine_tests` -
+headless assertions over the ECS, physics, queries, serialization and the
+character controller, in `tests/vkm_engine_tests.cpp`. What those cannot see is
+exactly what pressing Play sees: rendering, input, the editor, and every way the
+pieces meet. A change is verified when both halves pass, not either one.
 
 Where you cannot open a window, the exit codes are meant to be read:
 

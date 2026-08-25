@@ -14,15 +14,53 @@ and **before** `HierarchySystem`, so physics-updated transforms propagate into
 
 ## Key files
 
-- `src/engine/system/physics/physics_system.h/.cpp` - the system (gather, broadphase, narrowphase, solve, integrate)
-- `src/engine/system/physics/character_controller_system.h/.cpp` - `CharacterControllerSystem`
-- `src/engine/system/physics/collision/contact.h` - `Contact`, `ContactManifold`, `MAX_CONTACTS_PER_MANIFOLD`
-- `src/engine/system/physics/collision/narrowphase.h/.cpp` - `BoxShape`, `CapsuleShape`, and the three contact routines
-- `src/engine/system/physics/collision/solver.h/.cpp` - `PhysicsBody`, `SolverParams`, `solveContacts`
-- `src/engine/system/physics/inertia.h` - box / capsule inertia + world-space rotation helpers
-- `src/engine/system/physics/collider_fit.h/.cpp` - `fitBoxesToMesh` ("Fit to Mesh")
-- `src/engine/system/physics/physics_events.h` - `CollisionEvent`, `TriggerEvent`
-- `src/engine/ecs/component/physics/rigidbody.h`, `collider.h`, `character_controller.h` - the components
+Grouped by the question each folder answers, under `src/engine/system/physics/`.
+
+The system and the vocabulary it shares:
+
+- `physics_system.h/.cpp` - the system (gather, broadphase, narrowphase, solve, integrate)
+- `physics_events.h` - `CollisionEvent`, `TriggerEvent`
+- `physics_internal.h` - `ColliderProxy`, `BodyFrame`, `BodyContacts`: the tick's own view
+- `body_pose.h/.cpp` - `worldPoseOf`, the one conversion every entry point needs
+- `inertia.h` - box / capsule inertia + world-space rotation helpers
+- `tolerance.h` - the thresholds collision is decided by, with their units
+
+`collision/` - does it touch, and where:
+
+- `contact.h` - `Contact`, `ContactManifold`, `MAX_CONTACTS_PER_MANIFOLD`
+- `narrowphase.h/.cpp` - `BoxShape`, `CapsuleShape`, and the three primitive routines
+- `support.h/.cpp` - `SupportShape`: any convex shape, as the one thing GJK asks of it
+- `gjk.h/.cpp` - `gjkOverlap` / `gjkContact` / `gjkDistance`, for every pair with
+  no routine of its own
+- `mesh_bvh.h/.cpp` - build and query of the triangle-mesh hierarchy; the node
+  itself lives on the `Collider`
+
+`solver/` - make it stop touching:
+
+- `solver.h/.cpp` - `PhysicsBody`, `SolverParams`, `solveContacts`
+- `joint_solver.h/.cpp` - `JointConstraint`, `solveJoints`
+
+`query/` - ask the world a question:
+
+- `query.h/.cpp` - `raycast`, `spherecast`, `RayHit`, `QueryFilter`
+
+`character/` - what walks on it:
+
+- `character_controller_system.h/.cpp` - `CharacterControllerSystem`
+
+`authoring/` - editor-time, never per tick:
+
+- `collider_fit.h/.cpp` - `fitBoxesToMesh` ("Fit to Mesh")
+- `mesh_collider.h/.cpp` - `addMeshCollider`, one mesh part per collider, and the
+  tree rebuild that keeps its hierarchy honest
+- `ragdoll_build.h/.cpp` - `buildRagdoll` / `clearRagdoll`: capsule bodies per
+  bone, grouped under a node inside the character, on their own collision layer
+
+And beside the system: `ragdoll_system.h/.cpp` holds the bones kinematic while a
+clip drives the rig and destroys them with their owner.
+
+The components: `src/engine/ecs/component/physics/` - `rigidbody.h`, `collider.h`,
+`character_controller.h`, `joint.h`, `ragdoll.h`
 
 ## Components
 
@@ -153,7 +191,11 @@ at most `MAX_CONTACTS_PER_MANIFOLD` points** - so the solver, broadphase,
 `wakeOnImpact`, sleeping, events and writeback are shape-blind. `ContactManifold`
 addresses bodies by tick-snapshot index and knows nothing about shapes at all.
 
-- `contactBoxes` - SAT over 15 axes, then a face clip or an edge-edge point.
+- `contactBoxes` - SAT over 15 axes, then a face clip or an edge-edge point. An
+  edge axis must beat the best face by a real margin (`EDGE_PREFERENCE_REL/ABS`):
+  two horizontal edges of resting boxes cross to the face normal's own direction,
+  and taken by float noise that duplicate turned a four-point face manifold into
+  a single corner the position correction then rocked for ever.
 - `contactCapsuleBox` - runs in the box's local frame, where "closest point on
   the box" is a clamp. An alternating projection closes the segment onto the box;
   a positive gap gives the normal directly, and a segment that reaches inside
@@ -171,6 +213,11 @@ addresses bodies by tick-snapshot index and knows nothing about shapes at all.
 
 Capsule-vs-box is **not symmetric**: when the capsule is body B the routine runs
 capsule-first and the caller negates the normals back to A -> B.
+
+A triangle-mesh part joins through the same contract: its hierarchy is culled to
+the triangles near the other body, and each triangle is collided as a three-point
+`SupportShape` through `gjkContact` - one point per triangle, which is enough for
+a body resting on a floor of many.
 
 ## Inertia
 
@@ -273,8 +320,9 @@ h <= radius * (1 - cos(maxSlopeAngle))      // 0.107 m at radius 0.30, 50 degree
 ```
 
 Below that limit the edge is a walkable surface: the character grounds on it and
-climbs it like the ramp it geometrically is. Above it the edge is a wall, and the
-character is stopped - there is still **no step-up** (see below).
+climbs it like the ramp it geometrically is. Above it the edge is a wall - and if
+it is lower than `stepHeight`, the controller mounts it instead of stopping (see
+step-up below).
 
 What a step must never do is strand the character. Above the roll-over limit it
 used to: riding the edge lifted the capsule off the floor, `supportNormal` became
@@ -286,14 +334,18 @@ pushing into the edge, settles back onto the floor, and grounding now lapses for
 at most **2 ticks** (0.033 s) at both 0.15 m and 0.20 m. It is stopped by the
 step, which is honest, rather than hovering on it, which was not.
 
-A **System driving a component**, not a `Behavior`, because the thing that writes
+**A System driving a component**, not a `Behavior`, because the thing that writes
 `moveInput` changes and the thing that reads it should not: gameplay writes it
-today, a nav agent writes it in 1.8, and an engine system cannot address a
+today, a nav agent writes it tomorrow, and an engine system cannot address a
 hot-reloadable game behavior.
 
-**Deliberately partial:** velocity-driven, with no step-up (that needs a
-shapecast query the engine does not have), no crouch, no moving platforms and no
-runtime capsule resize. Wall projection was never on this list and should not be:
+**Deliberately partial:** velocity-driven, with no crouch, no moving platforms
+and no runtime capsule resize. Step-up is in: `findStep` probes with two
+spherecasts - clearance at step height, then straight down for a walkable
+landing - through the body's own collision mask, so a character's ragdoll bones
+never block their own stairs. A climb ends by arriving at the measured height,
+by the character no longer asking, or by its deadline; never because the step
+stopped blocking, since rising is exactly what un-blocks a riser. Wall projection was never on this list and should not be:
 a controller that cannot slide along a wall is one that is not doing its job.
 Step-up stays on it - a character stopped by a 0.15 m kerb is a limitation, and
 one that is honest about it now that grounding survives the contact. It is also
@@ -328,9 +380,11 @@ subscribing to the events directly or through the behavior `onCollision` /
 
 - The World inspector's **Physics** card edits the Environment's gravity and
   solver iterations (undoable like the other World cards).
-- The viewport's collider overlay draws each part as the shape it is: a wire box
-  or a wire capsule (`wireCapsule` in `src/editor/overlays/wire_draw.h`), placed
-  the way the solver places it - world position + rotation, no scale.
+- The viewport's collider overlay draws each part as the shape it is: a wire
+  box, a wire capsule, or a mesh's own triangles (decimated past a cap - a
+  wireframe says where a surface is, not every edge), placed the way the solver
+  places it - world position + rotation, no scale. Joints draw under the same
+  toggle: both anchors, the line between, and the link glyph at the midpoint.
 - The inspector's Collider section offers **Fit to Mesh**, which calls
   `fitBoxesToMesh` to approximate the entity's mesh with a grid of boxes
   (`detail` clamped to `[1, COLLIDER_FIT_MAX_DETAIL]`; `detail == 1` is the
@@ -338,8 +392,11 @@ subscribing to the events directly or through the behavior `onCollision` /
   mesh falls back to a single bounds-sized box. Every part it produces is a box:
   fitting capsules to a mesh is a medial-axis problem, not a scanline, and is not
   attempted.
-- `Rigidbody`, `Collider` and `CharacterController` round-trip with the scene as
-  components - their authored fields only, since every runtime output on them
-  (`sleeping`, the two contact normals, `grounded`) is rebuilt each tick. The
+- `Rigidbody`, `Collider`, `CharacterController`, `Joint` and `Ragdoll`
+  round-trip with the scene as components - authored fields only, since every
+  runtime output on them (`sleeping`, the two contact normals, `grounded`) is
+  rebuilt each tick. Entity references travel as slots and are recovered when
+  the scene is whole; a prefab rewrites them as local indices instead, so an
+  instance's joints tie to its own entities wherever it lands. The
   scene-global `PhysicsSettings` round-trips beside them as the file's own
   `physics` block rather than as a component on anything. See [io.md](io.md).
