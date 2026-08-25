@@ -2,6 +2,8 @@
 
 #include "io/scene/component_serializer.h"
 
+#include <glm/gtc/type_ptr.hpp>
+
 #include <cstddef>
 #include <cstring>
 #include <limits>
@@ -161,6 +163,72 @@ void load(const nlohmann::json& j, Rigidbody& rb) { loadReflected(j, rb); }
 nlohmann::json save(const CharacterController& cc)          { return saveReflected(cc); }
 void load(const nlohmann::json& j, CharacterController& cc) { loadReflected(j, cc); }
 
+nlohmann::json save(const Joint& joint) {
+    nlohmann::json out = saveReflected(joint);   // anchors, distance, stiffness
+    out["type"] = Reflect::enumName(joint.type);
+    // The connected entity is a reference, so it travels the way every other
+    // cross-entity reference does and is patched up once the scene is whole.
+    out["connected"] = joint.connected.index;
+    return out;
+}
+void load(const nlohmann::json& j, Joint& out) {
+    loadReflected(j, out);
+    if (j.contains("type")) {
+        out.type = Reflect::enumFromName<JointType>(j.at("type").get<std::string>());
+    }
+    if (j.contains("connected")) {
+        out.connected = EntityId{j.at("connected").get<uint32_t>(), 0};
+    }
+}
+
+nlohmann::json save(const Ragdoll& r) {
+    nlohmann::json out = saveReflected(r);   // active
+
+    // The bones travel with it. They are the mapping from a body back to the
+    // bone it poses, and the bodies are entities the scene saves anyway - so
+    // dropping the mapping does not save a ragdoll without its bodies, it saves
+    // a ragdoll that has forgotten them, beside a loose skeleton that falls.
+    nlohmann::json bones = nlohmann::json::array();
+    for (const RagdollBone& bone : r.bones) {
+        nlohmann::json entry;
+        entry["bone"] = bone.bone;
+        entry["body"] = bone.body.index;
+        nlohmann::json offset = nlohmann::json::array();
+        const float* m = glm::value_ptr(bone.boneFromBody);
+        for (int i = 0; i < 16; ++i) offset.push_back(m[i]);
+        entry["offset"] = std::move(offset);
+        bones.push_back(std::move(entry));
+    }
+    out["bones"] = std::move(bones);
+    out["root"] = r.root.index;
+    return out;
+}
+void load(const nlohmann::json& j, Ragdoll& r) {
+    loadReflected(j, r);
+
+    r.root = EntityId{j.value("root", 0u), 0};
+
+    r.bones.clear();
+    auto it = j.find("bones");
+    if (it == j.end() || !it->is_array()) return;
+
+    r.bones.reserve(it->size());
+    for (const auto& entry : *it) {
+        if (!entry.is_object()) continue;
+        RagdollBone bone;
+        bone.bone = entry.value("bone", -1);
+        // A slot, not a handle: the generation is recovered when the scene is
+        // whole, the same way a joint's connected entity is.
+        bone.body = EntityId{entry.value("body", 0u), 0};
+        const auto offset = entry.find("offset");
+        if (offset != entry.end() && offset->is_array() && offset->size() == 16) {
+            float* m = glm::value_ptr(bone.boneFromBody);
+            for (int i = 0; i < 16; ++i) m[i] = (*offset)[i].get<float>();
+        }
+        r.bones.push_back(bone);
+    }
+}
+
 nlohmann::json save(const Collider& c) {
     nlohmann::json j = saveReflected(c);   // isTrigger + enabled
     nlohmann::json arr = nlohmann::json::array();
@@ -174,18 +242,32 @@ nlohmann::json save(const Collider& c) {
             {"half",       vec3ToJson(p.halfExtents)},
             {"radius",     p.radius},
             {"halfHeight", p.halfHeight},
+            {"meshFirst",  p.meshFirst},
+            {"meshCount",  p.meshCount},
         });
     }
     j["parts"] = std::move(arr);
+
+    if (!c.meshPoints.empty()) {
+        nlohmann::json hull = nlohmann::json::array();
+        for (const glm::vec3& point : c.meshPoints) {
+            hull.push_back(vec3ToJson(point));
+        }
+        j["hull"] = std::move(hull);
+    }
     return j;
 }
 void load(const nlohmann::json& j, Collider& c) {
     loadReflected(j, c);   // isTrigger + enabled
 
+    // A missing key keeps the default unit box; a written-but-empty array is
+    // a collider someone emptied, and saying "unit box" to that is inventing
+    // geometry the scene does not have.
     auto it = j.find("parts");
-    if (it == j.end() || !it->is_array() || it->empty()) return;  // keep the default unit box
-
+    if (it == j.end() || !it->is_array()) return;
     c.parts.clear();
+    if (it->empty()) return;
+
     c.parts.reserve(it->size());
     for (const auto& e : *it) {
         // at() preserves the throw-on-missing-key behavior (caught by the scene
@@ -196,8 +278,18 @@ void load(const nlohmann::json& j, Collider& c) {
         p.halfExtents = jsonToVec3(e.at("half"));
         p.radius      = e.at("radius").get<float>();
         p.halfHeight  = e.at("halfHeight").get<float>();
+        // Absent on every collider written before convex parts existed, and on
+        // every one that has none. value() rather than at() for that reason.
+        p.meshFirst   = e.value("meshFirst", 0u);
+        p.meshCount   = e.value("meshCount", 0u);
         c.parts.push_back(p);
     }
+
+    c.meshPoints.clear();
+    auto hull = j.find("hull");
+    if (hull == j.end() || !hull->is_array()) return;
+    c.meshPoints.reserve(hull->size());
+    for (const auto& point : *hull) c.meshPoints.push_back(jsonToVec3(point));
 }
 
 namespace {

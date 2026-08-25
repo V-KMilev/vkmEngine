@@ -17,6 +17,8 @@
 #include "ecs/component/core/transform.h"
 #include "ecs/component/physics/character_controller.h"
 #include "ecs/component/physics/collider.h"
+#include "ecs/component/physics/joint.h"
+#include "ecs/component/physics/ragdoll.h"
 #include "ecs/component/physics/rigidbody.h"
 #include "ecs/component/render/camera.h"
 #include "ecs/component/render/decal.h"
@@ -68,6 +70,8 @@ class ResourceManager;
     P(Rigidbody,        "Rigidbody")            \
     P(Collider,         "Collider")             \
     P(CharacterController, "CharacterController") \
+    P(Joint,            "Joint")                \
+    P(Ragdoll,          "Ragdoll")              \
     R(Mesh,             "Mesh")                 \
     R(LOD,              "LOD")                  \
     R(Decal,            "Decal")                \
@@ -146,6 +150,28 @@ namespace ComponentSerializer {
      */
     nlohmann::json save(const CharacterController&);
     void load(const nlohmann::json&, CharacterController&);
+
+    /**
+     * @brief Joint: the type and the connected entity beside the reflected rest.
+     *
+     * `connected` is a cross-entity reference, so it is written as the slot the
+     * scene will rebuild rather than as a live handle, and is meaningless until
+     * the whole scene is read.
+     */
+    nlohmann::json save(const Joint&);
+    void load(const nlohmann::json&, Joint&);
+
+    /**
+     * @brief Ragdoll: the switch, the group node, and the bone mapping.
+     *
+     * The bones are entities the scene saves anyway; what travels here is the
+     * mapping back - which body poses which bone, and the offset between them.
+     * Dropping it would not save a ragdoll without its bodies, it would save
+     * one that has forgotten them, beside a loose skeleton that falls. Entity
+     * references go as slots and are recovered when the scene is whole.
+     */
+    nlohmann::json save(const Ragdoll&);
+    void load(const nlohmann::json&, Ragdoll&);
 
     nlohmann::json save(const Mesh&, const ResourceManager&);
     void load(const nlohmann::json&, Mesh&, const ResourceManager&);

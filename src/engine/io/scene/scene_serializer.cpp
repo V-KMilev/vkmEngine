@@ -24,6 +24,7 @@
 #include "ecs/component/core/missing_assets.h"
 #include "io/asset/asset_serializer.h"
 #include "io/scene/component_serializer.h"
+#include "system/physics/authoring/mesh_collider.h"
 #include "io/json_file.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/font_asset.h"
@@ -493,6 +494,62 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             const EntityId childId  = staging.entityAt(childIdx);
             const EntityId parentId = staging.entityAt(parentIdx);
             HierarchyOperations::setParent(staging, childId, parentId);
+        }
+
+        // A ragdoll's bones name the bodies that pose them, and those are
+        // saved as slots for the same reason a joint's connected entity is.
+        if (auto* ragdolls = staging.storage<Ragdoll>()) {
+            for (uint32_t i = 0; i < ragdolls->size(); ++i) {
+                Ragdoll& ragdoll = ragdolls->dataAt(i);
+                const uint32_t rootSlot = ragdoll.root.index;
+                ragdoll.root = rootSlot && staging.isAliveAtIndex(rootSlot)
+                    ? staging.entityAt(rootSlot)
+                    : EntityId{};
+
+                for (RagdollBone& bone : ragdoll.bones) {
+                    const uint32_t slot = bone.body.index;
+                    if (slot == 0) continue;
+                    if (!staging.isAliveAtIndex(slot)) {
+                        LOG_WARNING("Ragdoll names body slot %u, which '%s' does "
+                                    "not hold; that bone is left unsimulated",
+                                    slot, source);
+                        bone.body = EntityId{};
+                        continue;
+                    }
+                    bone.body = staging.entityAt(slot);
+                }
+            }
+        }
+
+        // A joint names another entity, and a saved reference is a slot rather
+        // than a handle: the generation it was written with belongs to the
+        // session that wrote it. Recovered here, where every slot is filled, so
+        // the joint holds a handle the scene will still recognise.
+        if (auto* joints = staging.storage<Joint>()) {
+            for (uint32_t i = 0; i < joints->size(); ++i) {
+                Joint& joint = joints->dataAt(i);
+                const uint32_t slot = joint.connected.index;
+                if (slot == 0) continue;
+                if (!staging.isAliveAtIndex(slot)) {
+                    LOG_WARNING("Joint names slot %u, which '%s' does not hold; "
+                                "the joint is left unconnected", slot, source);
+                    joint.connected = EntityId{};
+                    continue;
+                }
+                joint.connected = staging.entityAt(slot);
+            }
+        }
+
+        // The tree over a mesh collider's triangles is derived, so it is not
+        // written to disk where it could disagree with them. PhysicsSystem
+        // rebuilds one it finds missing, but only on a tick - and a query is
+        // not a tick, so a freshly loaded level answered nothing against its
+        // own terrain until something moved. In the editor, where the
+        // simulation is not running, that is never.
+        if (auto* colliders = staging.storage<Collider>()) {
+            for (uint32_t i = 0; i < colliders->size(); ++i) {
+                rebuildMeshBvh(colliders->dataAt(i));
+            }
         }
 
         // Missing scene-global fields keep the staging scene's defaults; a

@@ -16,6 +16,8 @@
 
 #include "ecs/scene.h"
 #include "ecs/component/core/hierarchy.h"
+#include "ecs/component/physics/joint.h"
+#include "ecs/component/physics/ragdoll.h"
 #include "ecs/component/prefab/prefab_entity.h"
 #include "ecs/component/prefab/prefab_instance.h"
 #include "io/asset/asset_serializer.h"
@@ -390,6 +392,31 @@ bool save(Scene& scene, EntityId root, const std::string& path,
         // saveComponents wrote in scene-entity terms.
         components.erase("Hierarchy");
 
+        // Joints and ragdolls name other entities, and a scene slot means
+        // nothing in whatever scene the prefab lands in. They travel as local
+        // indices the way the parent link does - shifted by one so zero stays
+        // "none" - and a reference pointing outside the subtree is dropped:
+        // it names something the prefab does not carry.
+        const auto localRef = [&](uint32_t slot) -> uint32_t {
+            const auto it = indexOf.find(slot);
+            return it != indexOf.end()
+                ? static_cast<uint32_t>(it->second) + 1
+                : 0;
+        };
+        if (components.contains("Joint")) {
+            json& joint = components["Joint"];
+            joint["connected"] = localRef(numberOr(joint, "connected", 0));
+        }
+        if (components.contains("Ragdoll")) {
+            json& ragdoll = components["Ragdoll"];
+            ragdoll["root"] = localRef(numberOr(ragdoll, "root", 0));
+            if (ragdoll.contains("bones") && ragdoll["bones"].is_array()) {
+                for (json& bone : ragdoll["bones"]) {
+                    bone["body"] = localRef(numberOr(bone, "body", 0));
+                }
+            }
+        }
+
         json entity;
         entity["uid"]        = uids[i];
         entity["components"] = std::move(components);
@@ -523,6 +550,29 @@ bool instantiateInto(Scene& scene, ResourceManager& resources, const std::string
             }
         }
         created.push_back(entity);
+    }
+
+    // The physics references come back from local indices now that every
+    // entity they can name exists. The loaders left the shifted index in the
+    // handle's slot field; out-of-range means the file was edited by hand,
+    // and the reference is cleared rather than pointed at a stranger.
+    const auto resolveRef = [&](EntityId stored) -> EntityId {
+        const uint32_t shifted = stored.index;
+        if (shifted == 0 || shifted > created.size()) return {};
+        return created[shifted - 1];
+    };
+    for (EntityId id : created) {
+        if (scene.has<Joint>(id)) {
+            Joint& joint = scene.get<Joint>(id);
+            joint.connected = resolveRef(joint.connected);
+        }
+        if (scene.has<Ragdoll>(id)) {
+            Ragdoll& ragdoll = scene.get<Ragdoll>(id);
+            ragdoll.root = resolveRef(ragdoll.root);
+            for (RagdollBone& bone : ragdoll.bones) {
+                bone.body = resolveRef(bone.body);
+            }
+        }
     }
 
     // The one drift case applyOverrides cannot see: it is only handed the
