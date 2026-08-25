@@ -38,9 +38,11 @@ Mechanics do not admit judgment. Every one of these is a rule, not a default.
   [section 4](#4-naming).
 - **No decorative separator comments** of any kind.
 - **No task, version or commit reference in a comment.** That is the commit's job.
-- **A comment states a constraint to a reader.** It never argues the decision to
-  a reviewer and never carries section headings, at any length. How long it may
-  be is a separate question - [6.1](#61-what-bounds-a-comment).
+- **A comment states a constraint to a reader**, in C++, CMake, GLSL and the
+  Python alike. It never argues the decision to a reviewer and never carries
+  section headings, at any length. How long it may be is a separate question -
+  [6.1](#61-what-bounds-a-comment); which files it binds,
+  [6.2](#62-the-bounds-are-about-the-comment-not-the-compiler).
 
 ---
 
@@ -81,7 +83,7 @@ Always include the **module path**, never the bare filename:
 only through the abstract interfaces in `system/render/` - `RenderBackend` and
 `EditorRenderHooks`, and no third (see [engine.md](engine.md#absolutes) for why
 this seam matters). `app/engine_app.h:27` includes `gl_backend.h` and constructs
-`GLBackend` at `:111`; that is not an exception to the rule but the point of it -
+`GLBackend` at `:114`; that is not an exception to the rule but the point of it -
 a host is the composition root, the one place allowed to pick which backend the
 engine gets.
 
@@ -144,7 +146,7 @@ namespace you put definitions in.
 
 `VKM_REFLECT_BEGIN` opens `namespace Vkm::Engine::Reflect` itself, so it goes at
 **global scope, after the `} // namespace` close** - never inside the namespace
-the type lives in. From `ecs/component/core/transform.h:109-113`:
+the type lives in. From `ecs/component/core/transform.h:102-108`:
 
 ```cpp
 } // namespace Vkm::Engine
@@ -361,21 +363,23 @@ group aligns across the gap.)
 
 ### 5.2 Where the rvalue spacing rule bends
 
-In `src/engine` headers `&&` is spaced at all 113 sites but one shape: a
-**callable parameter** is
-`Fn&& fn`, unspaced, 10 times out of 10 (`core/reflect.h:50`, `ecs/scene.h:186`,
-`core/memory/sparse_set.h:131`, `resource/resource_manager.h:301`, six more). The
-split is not rvalue-vs-forwarding - `Scene::add(EntityId, T && component)`
-(`ecs/scene.h:114`) is a forwarding reference and is spaced. `Fn&&` reads as one
-token: the thing you hand a lambda to.
+In `src/engine` headers `&&` is spaced at 100 of its 114 declarator sites. The
+14 that are not are all one idea - a **forwarded callable or pack**: `Fn&& fn`,
+10 times out of 10 (`core/reflect.h:50`, `ecs/scene.h:186`,
+`core/memory/sparse_set.h:131`, `resource/resource_manager.h:306`, six more),
+plus `Args&&... args` (`core/engine.h:92`) and `auto&&... f`
+(`core/reflect.h:53`). The split is not rvalue-vs-forwarding -
+`Scene::add(EntityId, T && component)` (`ecs/scene.h:114`) is a forwarding
+reference and is spaced. `Fn&&` reads as one token: the thing you hand a lambda
+to.
 
 ### 5.3 Multi-line parameter lists
 
 Break when the list does not fit, and keep one style within a single signature.
 Both forms are live and neither is the house style - full-breaks are outnumbered
 roughly four to one, and `render_view.h` uses each in the same class: `build` at
-`:105-110` full, `buildDrawables` at `:174-175` and `buildShadowCasters` at
-`:188-189` aligned to the open paren. Full-break when the parameters are long or
+`:105-110` full, `buildDrawables` at `:176-177` and `buildShadowCasters` at
+`:190-191` aligned to the open paren. Full-break when the parameters are long or
 each wants a `@param` beside it; align when the rest fit on the continuation.
 
 ```cpp
@@ -452,10 +456,12 @@ the work, so every line of it is a line of code the reader is not reading:
 Past three lines the comment is a diagnosis before it is a comment - one of three
 things has gone wrong and
 [implementation.md](implementation.md#6-comment-only-the-non-obvious-why) names
-them. A body comment that has grown ALL-CAPS headings has gone furthest:
-`editor/framework/scene_io_controller.cpp:219-234` is a sixteen-line run opening
-`// WHAT AN OPEN DOES TO THE SESSION'S IMPORTS, stated because the answer is`.
-That is a design brief filed inside a function body.
+them. The longest run left in a function body is eleven lines
+(`backend/opengl/gl_backend.cpp:90-100`), and it shows the failure whole: a
+per-pass ordering brief, indented into a table, filed inside `GLBackend::init`.
+The same ordering is already a document, at
+[../reference/system/rendering.md](../reference/system/rendering.md#the-passes-fixed-order),
+which is where a body comment that has grown a table belongs.
 
 **On a declaration, a comment is bounded by relevance to a caller.** A
 declaration block is not in the reader's way. It is what a caller reads *instead*
@@ -476,17 +482,19 @@ What a declaration block may **not** do, at any length:
 
 - **Argue the decision to an imagined reviewer.** A commit body defends a choice
   against an objection; a comment states the constraint the choice protects. Cut
-  the arguing sentence, keep the constraint. In
-  `system/audio/audio_device.h:53-54`, *"What lives on each side of that line is
-  worth stating, because it is what the design is"* is the sentence to cut - and
-  the paragraph it introduces is not, because which side of the seam owns a
-  voice's lifetime is exactly what a caller cannot infer.
+  the arguing clause, keep the constraint. In
+  `editor/framework/editor_actions.h:301-302`, *"Applying before pushing is
+  deliberate and matches the rest of the editor"* is the half to cut; *"the
+  command carries the reverse of an edit that has already happened"* is the half
+  a caller needs, because it says what state the command is built against.
 - **Carry section headings.** ALL-CAPS headers, banner separators, numbered
   parts, a second topic after a blank ` *` line. The same block says the same
   thing in paragraphs. If a part of it genuinely needs headings, that part has
   become a document: move it to `docs/reference/` and leave a one-line pointer.
 - **Narrate history.** What it used to be, what was tried, which release changed
   it. The log keeps that, accurately and forever.
+  `editor/framework/asset_picker.h:15-16` says a filesystem walk *"used to lag
+  with big asset trees"*; the present tense says the same thing and stays true.
 - **Restate what the signature already says.** `@param scene The scene` is
   nothing. `@param scene Scene whose Light components are gathered`
   (`render_view.h:129`) is the half a caller could not have guessed.
@@ -538,6 +546,28 @@ struct Transform {
     static glm::mat4 computeModelMatrix(const Transform& transform);
 };
 ```
+
+### 6.2 The bounds are about the comment, not the compiler
+
+The styles and the Doxygen rules above are C++ syntax.
+[6.1](#61-what-bounds-a-comment) is not. It turns on what a comment *does* -
+restate the code, argue a decision, hold a constraint the reader could not
+infer - and that question reads the same in a `CMakeLists.txt`, in a shader
+under `shaders/`, and in the Python under `tools/`. A `#` run inside a
+`foreach()` or an `if()` is a comment inside a body and holds to 1-3 lines; a
+block at the top of a file, or above a target, a function or a uniform, is a
+declaration block, bounded by what a reader of that target cannot work out. The
+four things forbidden at any length are forbidden there too.
+
+Build files earn more explanation per line than C++ does. An `install()`
+destination, a generator expression, `PUBLIC` against `PRIVATE`, why a target is
+`INTERFACE` - none of that is inferable from the line it sits on, so a correct
+pass over CMake leaves far more standing than the same pass over `src/`.
+`CMakeLists.txt:20-22` spends three lines on why every target is
+position-independent, and nothing else in the tree records it. What is about the
+build as a whole rather than about the line under it belongs in
+[../reference/building.md](../reference/building.md), with a one-line pointer
+left where it was.
 
 ---
 
@@ -646,7 +676,7 @@ instead of writing a move constructor. Lightweight value types (`StorageIndex`,
     - **A private member template** whose only callers are in that same file -
       `BehaviorSystem::guard` (declared `system/script/behavior_system.h:172-173`,
       defined `behavior_system.cpp:54`) and `GLView::ensure`
-      (`backend/opengl/gl_view.h:168`, defined `gl_view.cpp:22`).
+      (`backend/opengl/gl_view.h:175`, defined `gl_view.cpp:22`).
     - **Explicitly instantiated,** where the header ends in `extern template`
       declarations and the `.cpp` holds the bodies plus one `template class` line
       per instantiation. `editor/framework/editor_commands.h:759-765` and
@@ -723,14 +753,15 @@ instead of writing a move constructor. Lightweight value types (`StorageIndex`,
 
 ### 9.1 Where `VKM_ASSERT` actually lives
 
-All 30 uses are in `src/engine`, 29 of them in a foundation type - `Scene`,
+30 of the 31 uses are in `src/engine`, 29 of them in a foundation type - `Scene`,
 `SparseSet`, `SlotAllocator`, `ResourceManager`, `HierarchyOperations`, `Bus`,
 `Resource`. The thirtieth is in a System: `hierarchy_system.cpp:39` asserts the
-`Hierarchy`-implies-`WorldTransform` pairing its own resolve reads through.
-**Zero** in `src/backend`, `src/editor`, `src/tools` or `app/`, which guard and
-degrade instead. And a destructive operation asserts *and* guards on the same
-condition, so a release build refuses rather than corrupts: `scene.h:72-73`,
-`resource_manager.h:122-123`, `slot_allocator.h:64-65` each pair the assert with
+`Hierarchy`-implies-`WorldTransform` pairing its own resolve reads through, and
+the thirty-first is `tools/generator/mesh_generators.cpp:81`. **Zero** in
+`src/backend`, `src/editor` or `app/`, which guard and degrade instead. And a
+destructive operation asserts *and* guards on the same condition, so a release
+build refuses rather than corrupts: `scene.h:72-73`,
+`resource_manager.h:133-134`, `slot_allocator.h:64-65` each pair the assert with
 `if (!cond) return;`. The assert is for the programmer who broke it; the guard is
 for the user who ships it.
 
@@ -745,23 +776,23 @@ An error reaches a human three ways, and they are not interchangeable. Pick by
   reaches the editor's Errors tab and the cooker's load summary. For a
   recoverable failure the **project author** caused: a throwing script hook, a
   scene asset that will not resolve, a gameplay module that will not load.
-- **`state.pushToast(ToastKind::...)`** (`editor/framework/editor_state.h:151`)
+- **`state.pushToast(ToastKind::...)`** (`editor/framework/editor_state.h:214`)
   reaches the author now, beside the gesture. For an **editor action** that
-  succeeded or failed. Editor-only - all 37 sites are in `src/editor`.
+  succeeded or failed. Editor-only - all 39 sites are in `src/editor`.
 
 `reportError` logs *and* appends, so it never wants a `LOG_ERROR` beside it. Only
-the editor and the cooker install a sink (`editor/editor_system.cpp:144`,
-`app/cooker/main.cpp:67`); the runtime installs none, so a shipped game keeps the
+the editor and the cooker install a sink (`editor/editor_system.cpp:118`,
+`app/cooker/main.cpp:61`); the runtime installs none, so a shipped game keeps the
 log line and nothing else.
 
 **An editor operation that fails takes the first channel and the third,** not
 `reportError` - the author caused nothing and there is nothing to file. The log
 line carries the path and the reason for whoever reads a console; the toast
 carries the filename for the author who just pressed the button.
-`framework/scene_io_controller.cpp:127-129`, `:241-244` and
-`framework/project_controller.cpp:38-39` are the shape.
+`framework/scene_io_controller.cpp:115-118`, `:210-213` and
+`framework/project_controller.cpp:34-35` are the shape.
 
-The two are not always adjacent, and that is the part to get right: of the 16
+The two are not always adjacent, and that is the part to get right: of the 18
 error toasts in `src/editor`, 5 have a `LOG_ERROR` beside them and the rest sit
 above a call that already logged where it failed. So write the toast at the
 gesture and make sure something logged - not a second log line restating a
@@ -788,7 +819,7 @@ output across two filters for no gain.
 - Iterate `SparseSet` densely instead of random access by id.
 - Use generational handles; check generation rather than storing raw pointers.
 - Early-continue / early-return over deep nesting. From
-  `system/visibility/visibility_system.cpp:265-272`:
+  `system/visibility/visibility_system.cpp:262-269`:
 
   ```cpp
   for (uint32_t i = 0; i < meshCount; ++i) {
@@ -819,14 +850,15 @@ There are **two** families, and a render pass needs the second:
 and its header block states the context/collect lifecycle. Two placement
 conventions the macros cannot tell you:
 
-- **A `System::update` opens with `PROFILE_SCOPE("<ClassName>")` as its first
-  statement.** 13 of 14 do; `system/sky/sky_system.cpp` is the gap, not the
-  licence.
-- **A backend pass opens no zone of its own.** `gl_backend.cpp:279-282` already
+- **A `System`'s frame entry point opens with `PROFILE_SCOPE("<ClassName>")` as
+  its first statement.** 14 of the 15 systems do, counting `fixedUpdate` for the
+  two whose `update` is empty (`PhysicsSystem`, `CharacterControllerSystem`);
+  `system/sky/sky_system.cpp` is the gap, not the licence.
+- **A backend pass opens no zone of its own.** `gl_backend.cpp:276-278` already
   wraps every `execute()` in a `PROFILE_SCOPE_NAMED` *and* a
   `PROFILE_GPU_SCOPE_NAMED` keyed on the pass's registered name. Adding one
   inside `execute()` duplicates it. Sub-zones for phases within a pass are
-  welcome - `gl_shadow_pass.cpp:134,140,144` splits gather / upload / draw.
+  welcome - `gl_shadow_pass.cpp:133,139,143` splits gather / upload / draw.
 
 ---
 
@@ -961,6 +993,6 @@ Authored fields on `Behavior` subclasses are bare public members on a class,
 violating 4.1 deliberately: the field name is the serialized identity (scene JSON
 + inspector label), and an `m_` prefix would leak into both. Runtime-only state on
 behaviors still uses `m_`. The shipped model is `Spinner::degreesPerSecond`
-(`templates/default/src/game.h:21`); the two example projects use the same shape
+(`templates/default/src/game.h:22`); the two example projects use the same shape
 at larger scale (`examples/potion_runner/src/potion_runner.h`, 7 fields;
 `examples/stress_arena/src/stress_arena.h`, 22).

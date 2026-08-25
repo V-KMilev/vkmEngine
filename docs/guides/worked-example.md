@@ -13,14 +13,14 @@ answer.
 
 ## The subject
 
-`src/editor/framework/scene_io_controller.h` and its `.cpp` - 956 lines
+`src/editor/framework/scene_io_controller.h` and its `.cpp` - 871 lines
 together - which own saving, loading, opening a project's scene, and the play
 session that Play captures and Stop restores.
 
 ## 1. The evidence, measured before judged
 
-    16        public methods, past the ctor and the deleted Rule of 5
-    13        fixes in six months, the fourth-highest in the engine
+    15        public methods, past the ctor and the deleted Rule of 5
+    9         fixes in six months, the fourth-highest in the engine
     m_currentScenePath        which file is open
     m_saveAsBuffer[256]       what a dialog widget is showing
     m_openSaveAsPopup         whether that dialog is up
@@ -44,10 +44,10 @@ survive Stop will be a fifth field.
 
 **[review.md](review.md#13-a-guard-instead-of-a-state) - a guard instead of a
 state.** `refusedDuringPlay()` is a state machine nobody wrote down, and the
-state it guards has no name - `hasSnapshot()` is asked at four call sites in four
-files, and one of them needs a comment to say that a play session is what the
-call means. Every new operation must remember to ask, and the one that forgets is
-a bug an author finds, not a compiler.
+state it guards is not modelled - `isPlaying()` is `!m_playSnapshot.empty()`, so
+four call sites in four files each re-derive "a session is live" from a buffer
+holding text. Every new operation must remember to ask, and the one that forgets
+is a bug an author finds, not a compiler.
 
 **[review.md](review.md#15-a-class-holding-unrelated-state) - unrelated state.**
 Read the members as a list. Which file is open, what a widget is showing, and
@@ -60,7 +60,7 @@ file dialogs; anything new touching play mode either grows this class or works
 around it. It suffocates rather than smooths.
 
 **[engine.md](engine.md#2-what-it-optimises-for) - the value order.** Correctness
-that survives load is first. Thirteen fixes say it is not surviving.
+that survives load is first. Nine fixes say it is not surviving.
 
 **[implementation.md](implementation.md#61-tests-you-can-actually-run) - the
 derived-state test.** `m_playSnapshotDirty` and `m_playSnapshotHistory` exist to
@@ -101,11 +101,12 @@ owner.
 Calibration cuts both ways. A guide that only ever finds fault trains you to find
 fault.
 
-### 5.1 The 63-line comment on `AudioDevice`
+### 5.1 The 62-line comment on `AudioDevice`
 
-`src/engine/system/audio/audio_device.h:45-107` carries a Doxygen block many
-times longer than anything else in the file, with four ALL-CAPS headings inside
-it. The instinct is to cut it to a brief and a paragraph.
+`src/engine/system/audio/audio_device.h:45-106` carries a Doxygen block many
+times longer than anything else in the file. When this judgment was made it also
+carried four ALL-CAPS headings and one arguing clause. The instinct is to cut it
+to a brief and a paragraph.
 
 **Mostly wrong - and the part that is right has nothing to do with the length.**
 Run the bound in [code-style.md](code-style.md#61-what-bounds-a-comment) over it
@@ -124,19 +125,20 @@ in the tree records it, and moving it to `docs/reference/system/audio.md` files
 it where the person about to call `render()` from a worker thread is not looking.
 The length was never the defect. This is what a seam's block is *for*.
 
-**Goes.** The four ALL-CAPS headings - `NO DEVICE IS A NORMAL STATE`, `WHICH
+**Went.** The four ALL-CAPS headings - `NO DEVICE IS A NORMAL STATE`, `WHICH
 THREAD MAY CALL THIS`, `WHAT THE SEAM IS, EXACTLY`, `THE KNOWN RACES ARE
 MINIAUDIO'S`. The paragraphs under them say the same things without them, and
 headings are the structure of a document: a block that genuinely needs them is
 telling you one of its topics belongs in `docs/reference/`. And the arguing
-clause at `:53-54` - *"worth stating, because it is what the design is"* - which
-defends the next paragraph to a reviewer rather than telling a caller anything.
-Cut the clause, keep the paragraph.
+clause that opened the ownership paragraph - *"worth stating, because it is what
+the design is"* - which defended the paragraph to a reviewer rather than telling
+a caller anything. The clause went, the paragraph stayed.
 
-That is an edit of about six lines, after which the block is still sixty lines
-long and correct. An agent working to a line budget would instead have deleted
-the only written record of a threading contract and three upstream races, which
-is much the more expensive direction to be wrong in.
+That was an edit of six lines, and what it left is the block the file carries
+now: sixty-two lines, still long and still correct. An agent working to a line
+budget would instead have deleted the only written record of a threading
+contract and three upstream races, which is much the more expensive direction to
+be wrong in.
 
 ### 5.2 Behavior fields breaking the member rule
 
