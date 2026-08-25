@@ -79,6 +79,10 @@ Behavior:
   serially on the caller - and with nothing submitted the wait returns without even
   taking the lock. At or above it, grain is `count / (threadCount + 1)` (the `+1` is
   the participating main thread).
+- **The wait is a scope guard, not a trailing statement.** Every queued chunk
+  holds pointers into `parallelFor`'s own frame - the batch counter and the
+  callback adapter - so the wait has to run on the unwinding path too, and the
+  chunk the caller runs inline is ordinary user code that can throw.
 - **Re-entrancy is serial.** Calling `parallelFor` from inside a worker (i.e.
   `isWorkerThread()` is true) falls back to a serial sweep: with every worker blocked
   on chunks queued behind the workers themselves, nothing would be left to run them.

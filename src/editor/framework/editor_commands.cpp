@@ -184,17 +184,20 @@ template class AddComponentCommand<Name>;
 template class ComponentEditCommand<Name>;
 
 // The parameters move; the identity does not. A material's name is the asset
-// graph's index key and has its own command, so it is taken from the live asset
-// rather than from the captured copy - along with the uid and source descriptor
-// that name it. commit() bumps the version, which is what the GL view, the
-// material previews and the viewport all watch to re-read the asset.
+// graph's index key and has its own command, so it stays with the live asset
+// along with the uid that names it. swapValue is the manager's own door for
+// exactly this - replace the contents, keep the identity, bump the version -
+// and the version is what the GL view, the material previews and the viewport
+// watch to re-read the asset. Doing it by hand here restored a copy whose uid
+// and version the copy constructor deliberately does not carry, which pinned
+// the version and left undo changing the asset but not the picture.
+//
+// The source descriptor is not swapped, which is correct here: both snapshots
+// are copies of the same live asset and carry the same descriptor.
 void MaterialEditCommand::step(EditorState& state, const MaterialAsset& value) {
     if (!m_resources->isAlive(m_handle)) return;
-    MaterialAsset& live = m_resources->edit(m_handle);
-    Resource identity   = live;
-    live                = value;
-    static_cast<Resource&>(live) = std::move(identity);
-    m_resources->commit(m_handle);
+    MaterialAsset next = value;
+    m_resources->swapValue(m_handle, next);
     state.markSceneDirty();
 }
 
@@ -211,7 +214,12 @@ bool MaterialEditCommand::tryMerge(Command& incoming) {
     // slider. The chain start (m_before) stays; only m_after slides forward.
     auto* p = dynamic_cast<MaterialEditCommand*>(&incoming);
     if (!p || p->m_handle.id() != m_handle.id()) return false;
-    m_after = p->m_after;
+
+    // Copy-construct then move: a snapshot is a value, and copy-assigning one
+    // asset over another is deleted precisely so it cannot be done to a live
+    // one by accident. The identity these carry is nobody's - they were never
+    // in the manager - so the constructor leaving it at its defaults is right.
+    m_after = MaterialAsset(p->m_after);
     return true;
 }
 

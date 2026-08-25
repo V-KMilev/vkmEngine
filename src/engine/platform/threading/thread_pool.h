@@ -172,6 +172,16 @@ void parallelFor(size_t count, size_t grain, Function && function) {
     // unrelated texture read.
     std::atomic<size_t> pending{0};
 
+    // Every queued task holds pointers into this frame, so the wait has to run
+    // on the unwinding path too - the caller's own chunk below can throw. Armed
+    // before addTasks, which raises the count before it queues anything.
+    struct BatchWait {
+        ~BatchWait() { pool.waitForBatch(pending); }
+
+        ThreadPool&          pool;
+        std::atomic<size_t>& pending;
+    } batchWait{pool, pending};
+
     if (grain < count) {
         std::vector<std::function<void()>> tasks;
         for (size_t i = grain; i < count; i += grain) {
@@ -194,8 +204,6 @@ void parallelFor(size_t count, size_t grain, Function && function) {
     for (size_t i = 0; i < grain; ++i) {
         invokeAt(i);
     }
-
-    pool.waitForBatch(pending);
 }
 
 /**
