@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "EDITOR"
+
 #include "framework/editor_actions.h"
 
 #include <algorithm>
@@ -10,6 +12,8 @@
 #include <string>
 #include <system_error>
 #include <vector>
+
+#include "logger.h"
 
 #include <imgui.h>
 #include <glm/glm.hpp>
@@ -227,7 +231,7 @@ const char* defaultName(EntityKind k) {
     }
     return "Entity";
 }
-}
+} // namespace
 
 EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& state, EntityKind kind) {
     const EntityId entity = scene.createEntity();
@@ -920,7 +924,6 @@ void NewProjectDialog::draw(EditorState& state) {
         ? std::filesystem::path(parent) / name : std::filesystem::path{};
 
     if (!dest.empty()) ImGui::TextDisabled("%s", dest.string().c_str());
-    if (!m_error.empty()) ImGui::TextColored(EditorStyle::DANGER, "%s", m_error.c_str());
 
     const DialogResult r = dialogButtons(m_open, "Create", named && !parent.empty(), entered);
     if (r == DialogResult::Confirm) {
@@ -932,6 +935,13 @@ void NewProjectDialog::draw(EditorState& state) {
             m_nameBuffer[0] = '\0';
             m_open = false;
             ImGui::CloseCurrentPopup();
+        } else {
+            // Said out here, because dialogButtons has already closed the popup
+            // by the time this runs - a message written inside it would be drawn
+            // to a dialog that is gone, which is how the likeliest failure of
+            // all, a name already taken, reported itself as success.
+            state.pushToast(EditorState::ToastKind::Error, m_error);
+            LOG_ERROR("New Project: %s", m_error.c_str());
         }
     }
     endDialog();

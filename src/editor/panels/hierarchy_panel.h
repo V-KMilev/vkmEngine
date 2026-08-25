@@ -39,6 +39,7 @@ class HierarchyPanel {
         void drawEntityContextMenu(Scene& scene, ResourceManager& resources,
                                    EditorState& state, EntityId entity);
 
+    private:
         char m_filter[64] = {};
         char m_lastFilter[64] = {};
         std::vector<EntityId> m_cachedRoots;

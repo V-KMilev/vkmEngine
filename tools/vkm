@@ -33,10 +33,6 @@ import sys
 from pathlib import Path
 
 
-# --------------------------------------------------------------------------
-# Locating the SDK
-# --------------------------------------------------------------------------
-
 def sdk_root() -> Path:
     """The engine root this script belongs to.
 
@@ -55,6 +51,29 @@ def sdk_root() -> Path:
     die("cannot locate the engine. Set VKM_ENGINE_ROOT to the SDK directory.")
 
 
+def package_dir(root: Path) -> Path | None:
+    """This SDK's CMake package directory, whichever layout it is in.
+
+    Installed that is <prefix>/lib/cmake/vkmEngine. The engine's own build
+    writes a complete package into the same relative place under build/, which
+    is what lets this tool work before anything has been installed.
+    """
+    for d in (root / "lib" / "cmake" / "vkmEngine",
+              root / "build" / "lib" / "cmake" / "vkmEngine"):
+        if d.is_dir():
+            return d
+    return None
+
+
+def package_setting(root: Path, filename: str, pattern: str) -> str | None:
+    """The first capture of `pattern` in a file of this SDK's package."""
+    pkg = package_dir(root)
+    if not pkg or not (pkg / filename).is_file():
+        return None
+    m = re.search(pattern, (pkg / filename).read_text())
+    return m.group(1) if m else None
+
+
 def sdk_compiler(root: Path) -> str | None:
     """The C++ compiler the engine was built with, as its config records it.
 
@@ -64,14 +83,19 @@ def sdk_compiler(root: Path) -> str | None:
     a machine with both GCC and Clang installed it is a coin flip. Reading it out
     here and passing it back makes the right choice the default.
     """
-    for cfg in (root / "lib" / "cmake" / "vkmEngine" / "vkmEngineConfig.cmake",
-                root / "build" / "lib" / "cmake" / "vkmEngine" / "vkmEngineConfig.cmake"):
-        if not cfg.is_file():
-            continue
-        m = re.search(r'set\(VKMENGINE_BUILD_CXX_COMPILER\s+"([^"]+)"\)', cfg.read_text())
-        if m:
-            return m.group(1)
-    return None
+    return package_setting(root, "vkmEngineConfig.cmake",
+                           r'set\(VKMENGINE_BUILD_CXX_COMPILER\s+"([^"]+)"\)')
+
+
+def sdk_build_type(root: Path) -> str | None:
+    """The configuration the engine was built as, as its config records it.
+
+    Empty for a multi-config generator, which names its configuration at build
+    time instead - so a caller has to treat "no answer" as "do not ask CMake for
+    one" rather than as a default to invent.
+    """
+    return package_setting(root, "vkmEngineConfig.cmake",
+                           r'set\(VKMENGINE_BUILD_TYPE\s+"([^"]+)"\)')
 
 
 def sdk_version(root: Path) -> str | None:
@@ -84,14 +108,8 @@ def sdk_version(root: Path) -> str | None:
     -compatible, so pinning the patch digit there would reject 1.6.0 for a
     project made on 1.6.3.
     """
-    for cfg in (root / "lib" / "cmake" / "vkmEngine" / "vkmEngineConfigVersion.cmake",
-                root / "build" / "lib" / "cmake" / "vkmEngine" / "vkmEngineConfigVersion.cmake"):
-        if not cfg.is_file():
-            continue
-        m = re.search(r'set\(PACKAGE_VERSION\s+"(\d+\.\d+\.\d+)"', cfg.read_text())
-        if m:
-            return m.group(1)
-    return None
+    return package_setting(root, "vkmEngineConfigVersion.cmake",
+                           r'set\(PACKAGE_VERSION\s+"(\d+\.\d+\.\d+)"')
 
 
 def host(root: Path, name: str) -> Path:
@@ -102,10 +120,6 @@ def host(root: Path, name: str) -> Path:
             return candidate
     die(f"{name} not found under {root}. Build the engine first, or check the SDK.")
 
-
-# --------------------------------------------------------------------------
-# Small helpers
-# --------------------------------------------------------------------------
 
 def die(msg: str):
     print(f"vkm: {msg}", file=sys.stderr)
@@ -165,10 +179,6 @@ def read_project(d: Path) -> dict:
         die(f"{d / 'project.json'} is not valid JSON: {e}")
 
 
-# --------------------------------------------------------------------------
-# Commands
-# --------------------------------------------------------------------------
-
 def cmd_new(args) -> int:
     root = sdk_root()
     template = root / "templates" / "default"
@@ -179,21 +189,16 @@ def cmd_new(args) -> int:
     if dest.exists() and any(dest.iterdir()):
         die(f"'{dest}' already exists and is not empty")
 
-    # Read before a single file is copied. The template writes
-    # "@VKM_ENGINE_VERSION@" wherever a version belongs and only this side knows
-    # which engine is answering, so an SDK that cannot say leaves a project whose
-    # very next command fails - better to refuse than to hand one over.
+    # Read before a single file is copied: an SDK that cannot name its own
+    # version would otherwise leave a project whose very next command fails.
     version = sdk_version(root)
     if not version:
         die(f"cannot read the engine version from {root}; the SDK looks incomplete")
 
     shutil.copytree(template, dest, dirs_exist_ok=True)
 
-    # The template is generic; the project is not. Name it after the directory
-    # the user chose rather than making them edit JSON as a first act, and record
-    # the engine it was made with - the host compares that string against its own
-    # version, so a literal left in the template would greet every new project
-    # with a warning about an engine it was never authored against.
+    # The host compares engineVersion string for string, so the template's
+    # "@VKM_ENGINE_VERSION@" left in place would warn on every launch.
     pj = dest / "project.json"
     data = json.loads(pj.read_text())
     data["name"] = dest.name
@@ -224,10 +229,8 @@ def cmd_build(args) -> int:
     # alone would work for an installed layout, but naming vkmEngine_DIR also works
     # when the tool is run from the engine's build tree, which exports a package of
     # its own into the same relative directory (see cmake/install.cmake).
-    config_dir = root / "lib" / "cmake" / "vkmEngine"
-    if not config_dir.is_dir():
-        config_dir = root / "build" / "lib" / "cmake" / "vkmEngine"
-    if not config_dir.is_dir():
+    config_dir = package_dir(root)
+    if not config_dir:
         die(f"no vkmEngine package under {root}. Build the engine (which writes one "
             f"into its build tree), or install the SDK with `cmake --install`.")
 
@@ -250,6 +253,13 @@ def cmd_build(args) -> int:
                 f"--compiler, or rebuild the engine here.")
         warn_if_offpath(Path(compiler))
         cfg.append(f"-DCMAKE_CXX_COMPILER={compiler}")
+
+    # The SDK's own configuration, unless the caller named one: a single-config
+    # generator left without a build type compiles the module with neither
+    # optimisation nor NDEBUG, against an engine that has both.
+    build_type = sdk_build_type(root)
+    if build_type and not any(a.startswith("-DCMAKE_BUILD_TYPE") for a in args.cmake_args):
+        cfg.append(f"-DCMAKE_BUILD_TYPE={build_type}")
 
     if args.generator:
         cfg += ["-G", args.generator]
@@ -356,11 +366,9 @@ def cmd_package(args) -> int:
     name = args.name or meta.get("name") or d.name
     out = Path(args.out or (d / "dist" / name)).resolve()
 
-    # vkm_runtime refuses to start a project whose bin/ holds no gameplay module,
-    # so packaging one produces a tree that only fails on the player's machine -
-    # after the last line here has printed the command to run it with. Refused
-    # before the cook rather than after the copy loop: cooking is minutes of work,
-    # and the rmtree below would take a good dist/ down with it on the way.
+    # vkm_runtime refuses to start a project with no gameplay module under bin/,
+    # so packaging one yields a tree that fails only on the player's machine.
+    # Checked ahead of the cook and the rmtree below, both costlier to undo.
     module = "game.dll" if os.name == "nt" else "libgame.so"
     if not (d / "bin" / module).is_file():
         die(f"{d} has no gameplay module at bin/{module} - run 'vkm build' first; "
@@ -375,13 +383,25 @@ def cmd_package(args) -> int:
     (out / "bin").mkdir(parents=True)
 
     exe_suffix = ".exe" if os.name == "nt" else ""
-    shutil.copy2(host(root, "vkm_runtime"), out / "bin" / (name + exe_suffix))
+    runtime = host(root, "vkm_runtime")
+    shutil.copy2(runtime, out / "bin" / (name + exe_suffix))
 
-    # Everything the executable loads, beside it. The binaries carry an $ORIGIN
-    # rpath, so the package runs wherever it is unzipped.
+    # Everything the executable loads, beside it, out of the directory the host
+    # itself was found in - <prefix>/bin installed, build/bin in the engine's own
+    # tree. Both carry an $ORIGIN rpath, so the package runs where it is unzipped.
+    copied = 0
     for pattern in ("*.so*", "*.dll"):
-        for lib in (root / "bin").glob(pattern):
+        for lib in runtime.parent.glob(pattern):
             shutil.copy2(lib, out / "bin" / lib.name)
+            copied += 1
+
+    # A glob that matches nothing raises nothing, so without this the one failure
+    # that matters is silent: a package with no engine beside the executable
+    # starts on the machine that built it, borrowing the libraries it was linked
+    # against, and nowhere else.
+    if not copied:
+        die(f"no engine libraries beside {runtime}; a package without them would "
+            f"run only on this machine")
 
     # The gameplay module joins them: the host looks for it under the project's
     # bin/, and in a package the project root and the package root are the same
@@ -420,8 +440,6 @@ def cmd_package(args) -> int:
     print(f"  run it with: {out / 'bin' / (name + exe_suffix)}")
     return 0
 
-
-# --------------------------------------------------------------------------
 
 def main() -> int:
     ap = argparse.ArgumentParser(prog="vkm", description="vkmEngine project tool")

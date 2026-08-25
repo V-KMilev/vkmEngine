@@ -1,8 +1,6 @@
 # Build metadata embedded in the binary: branch, short commit, and a configure
-# timestamp. Recomputed on every configure so it tracks the current checkout -
-# re-run cmake to refresh after committing or switching branches. (For
-# per-build accuracy you'd generate a header in a build-time custom command;
-# configure-time is enough for this project.)
+# timestamp. Recomputed per configure, not per build, so a commit or a branch
+# switch is only in the binary after cmake runs again.
 
 string(TIMESTAMP PROJECT_BUILD_DATE "%Y-%m-%d %H:%M:%S" UTC)
 

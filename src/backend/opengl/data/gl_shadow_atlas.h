@@ -69,38 +69,16 @@ class GLShadowAtlas {
         void beginCubeFace(const Vkm::GL::Context& gl, uint32_t slot, uint32_t face) const;
 
         /**
-         * @brief Bind the 2D atlas depth texture to a sampler unit for
-         *        depth-compare sampling.
-         *
-         * Leaves the texture in comparison mode, which is what a shader
-         * declaring it as sampler2DShadow requires. Every bind sets the mode
-         * explicitly, so neither entry point depends on which ran last.
-         *
-         * @param unit Texture unit index.
-         */
-        /**
          * @brief Bind the 2D atlas for a shader that samples it with sampler2DShadow.
          *
          * The comparison lives on a sampler object bound to @p unit, not on the
          * texture, because more than one pass reads this atlas per frame and they
-         * do not agree on how. Toggling the texture's own compare mode made the
-         * result depend on the order the passes happen to run in, which nothing
-         * enforced and which two drivers disagreed about.
+         * do not agree on how.
          *
          * @param unit Texture unit to bind the atlas and its comparison sampler to.
          */
         void bind2D(uint32_t unit) const;
 
-        /**
-         * @brief Bind the 2D atlas depth texture to a sampler unit for raw
-         *        depth reads.
-         *
-         * Clears the comparison mode, for the debug view that displays stored
-         * depth through a plain sampler2D - sampling a texture in comparison
-         * mode with a non-shadow sampler is undefined.
-         *
-         * @param unit Texture unit index.
-         */
         /**
          * @brief Bind the 2D atlas for a shader that samples it with a plain sampler2D.
          *

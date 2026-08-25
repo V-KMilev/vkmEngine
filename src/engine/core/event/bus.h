@@ -63,18 +63,23 @@ class Bus : public IBus {
         /**
          * @brief Erase the listener with @p id.
          *
-         * Not callable from inside a listener during emit/flush, and asserts on
-         * it: making mid-flush removal legal means dispatching from a snapshot
-         * copy of the listener list, which every frame on a hot bus would pay
-         * for a case nothing has needed. A listener that must unsubscribe
-         * itself enqueues an event and removes on the next flush.
+         * Not callable from inside a listener during emit/flush: making
+         * mid-flush removal legal means dispatching from a snapshot copy of the
+         * listener list, which every frame on a hot bus would pay for a case
+         * nothing has needed. A call from there asserts, and is refused rather
+         * than acted on - emit/flush walk by index against a size read before
+         * the walk, so an erase under them runs off the end. A listener that
+         * must unsubscribe itself enqueues an event and removes on the next
+         * flush.
          *
-         * @return true if it was found.
+         * @return true if it was found and erased.
          */
         bool remove(ListenerId id) {
             VKM_ASSERT(m_flushDepth == 0,
                 "EventBus: unsubscribe is not allowed from inside a "
                 "listener callback during emit/flush");
+            if (m_flushDepth != 0) return false;
+
             for (auto it = m_listeners.begin(); it != m_listeners.end(); ++it) {
                 if (it->id == id) {
                     m_listeners.erase(it);

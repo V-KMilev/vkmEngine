@@ -104,20 +104,34 @@ class TransformGizmo {
         glm::quat getDragRotation() const { return m_dragRotation; }
 
     private:
-        ImVec2 worldToScreen(const glm::vec3& worldPos) const;
+        /**
+         * @brief Project a world point into viewport screen coordinates.
+         *
+         * False means the point is behind the near plane, where it has no
+         * screen position at all: @p out is left untouched, and every handle
+         * derived from the point has to be dropped rather than drawn or hit
+         * tested at a stand-in coordinate.
+         *
+         * @param worldPos Point in world space.
+         * @param out      Screen position inside the viewport rect, written
+         *                 only on success.
+         * @return True when the point is in front of the near plane.
+         */
+        bool project(const glm::vec3& worldPos, ImVec2& out) const;
+
         glm::vec3 screenToRay(ImVec2 screenPos) const;
         float computeScreenFactor(const glm::vec3& gizmoOrigin) const;
         static float intersectRayPlane(const glm::vec3& rayOrigin, const glm::vec3& rayDir,
                                        const glm::vec3& planePoint, const glm::vec3& planeNormal);
         static float distPointToSegment2D(ImVec2 p, ImVec2 a, ImVec2 b);
 
-        GizmoElement hitTestTranslation(const glm::vec3 axes[3], const ImVec2 screenAxes[3]) const;
+        GizmoElement hitTestTranslation(const ImVec2 screenAxes[3], const bool axisOk[3]) const;
         GizmoElement hitTestRotation(const glm::vec3 axes[3]) const;
-        GizmoElement hitTestScale(const ImVec2 screenAxes[3]) const;
+        GizmoElement hitTestScale(const ImVec2 screenAxes[3], const bool axisOk[3]) const;
 
-        void drawTranslationGizmo(ImDrawList* dl, const ImVec2 screenAxes[3]);
+        void drawTranslationGizmo(ImDrawList* dl, const ImVec2 screenAxes[3], const bool axisOk[3]);
         void drawRotationGizmo(ImDrawList* dl, const glm::vec3 axes[3]);
-        void drawScaleGizmo(ImDrawList* dl, const ImVec2 screenAxes[3]);
+        void drawScaleGizmo(ImDrawList* dl, const ImVec2 screenAxes[3], const bool axisOk[3]);
 
         // Return true if model was modified.
         bool handleTranslationDrag(glm::mat4& model, const glm::vec3 axes[3]);
@@ -133,10 +147,37 @@ class TransformGizmo {
          *
          * The quad spans the two axes other than i: @p qA / @p qB sit on
          * those axes at PLANE_QUAD_FRAC, @p qC is the far corner. One source
-         * of truth for the hit test and the draw.
+         * of truth for the hit test and the draw, including whether there is
+         * a quad at all - there is none when a spanning axis is behind the
+         * near plane and has no screen position to span to.
+         *
+         * @param i          Index of the axis the quad faces along.
+         * @param screenAxes Projected axis tips, indexed as GIZMO_AXES.
+         * @param axisOk     Which of those tips projected.
+         * @param qA         Corner on axis (i + 1) % 3.
+         * @param qB         Corner on axis (i + 2) % 3.
+         * @param qC         Far corner, offset by both.
+         * @return True when both spanning axes projected and the corners hold.
          */
-        void planeQuadCorners(int i, const ImVec2 screenAxes[3],
+        bool planeQuadCorners(int i, const ImVec2 screenAxes[3], const bool axisOk[3],
                               ImVec2& qA, ImVec2& qB, ImVec2& qC) const;
+
+        static constexpr float GIZMO_SIZE_PIXELS  = 110.0f;
+        static constexpr float AXIS_HIT_RADIUS    = 10.0f;
+        static constexpr float PLANE_QUAD_FRAC    = 0.28f;
+        static constexpr float ARROW_HEAD_PIXELS  = 6.0f;
+        static constexpr float SCALE_BOX_HALF     = 4.0f;
+        static constexpr int   CIRCLE_SEGMENTS    = 64;
+        static constexpr float LINE_THICKNESS      = 2.5f;
+        static constexpr float HIGHLIGHT_THICKNESS = 3.5f;
+
+        static constexpr ImU32 COLOR_X         = EditorStyle::AXIS_X_U32;
+        static constexpr ImU32 COLOR_Y         = EditorStyle::AXIS_Y_U32;
+        static constexpr ImU32 COLOR_Z         = EditorStyle::AXIS_Z_U32;
+        static constexpr ImU32 COLOR_HIGHLIGHT = EditorStyle::HIGHLIGHT_U32;
+        static constexpr ImU32 COLOR_PLANE_X   = EditorStyle::AXIS_X_FILL_U32;
+        static constexpr ImU32 COLOR_PLANE_Y   = EditorStyle::AXIS_Y_FILL_U32;
+        static constexpr ImU32 COLOR_PLANE_Z   = EditorStyle::AXIS_Z_FILL_U32;
 
     private:
         // Per-frame cached state
@@ -180,23 +221,6 @@ class TransformGizmo {
 
         // Delta rotation from current drag (set by handleRotationDrag)
         glm::quat m_dragRotation{1.0f, 0.0f, 0.0f, 0.0f};
-
-        static constexpr float GIZMO_SIZE_PIXELS  = 110.0f;
-        static constexpr float AXIS_HIT_RADIUS    = 10.0f;
-        static constexpr float PLANE_QUAD_FRAC    = 0.28f;
-        static constexpr float ARROW_HEAD_PIXELS  = 6.0f;
-        static constexpr float SCALE_BOX_HALF     = 4.0f;
-        static constexpr int   CIRCLE_SEGMENTS    = 64;
-        static constexpr float LINE_THICKNESS      = 2.5f;
-        static constexpr float HIGHLIGHT_THICKNESS = 3.5f;
-
-        static constexpr ImU32 COLOR_X         = EditorStyle::AXIS_X_U32;
-        static constexpr ImU32 COLOR_Y         = EditorStyle::AXIS_Y_U32;
-        static constexpr ImU32 COLOR_Z         = EditorStyle::AXIS_Z_U32;
-        static constexpr ImU32 COLOR_HIGHLIGHT = EditorStyle::HIGHLIGHT_U32;
-        static constexpr ImU32 COLOR_PLANE_X   = EditorStyle::AXIS_X_FILL_U32;
-        static constexpr ImU32 COLOR_PLANE_Y   = EditorStyle::AXIS_Y_FILL_U32;
-        static constexpr ImU32 COLOR_PLANE_Z   = EditorStyle::AXIS_Z_FILL_U32;
 };
 
 } // namespace Vkm::Engine

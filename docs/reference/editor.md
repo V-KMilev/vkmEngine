@@ -1230,6 +1230,11 @@ visuals, the ray casts and pick tests, and the drag state machine. A drag emits
 a single `TransformChangeCommand`, so undo steps back over the whole gesture
 rather than each frame of it.
 
+Handles project through the same near-plane test the viewport wires use
+(`overlays/wire_draw.h`). A point behind that plane has no screen position at
+all, so the handle it belongs to is dropped from the draw and from the hit test
+rather than standing in at a fixed coordinate a click could still land on.
+
 Default tool keybinds (active only when the camera is **not** in fly mode):
 `Q` Select, `W` Move, `E` Rotate, `R` Scale, `X` toggles Local / World.
 All are rebindable from the Preferences > Keybinds tab.

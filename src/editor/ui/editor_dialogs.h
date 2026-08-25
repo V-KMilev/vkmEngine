@@ -8,25 +8,6 @@
 
 namespace Vkm::Engine {
 
-/**
- * @brief Shared modal-dialog scaffold: one look and one keyboard contract for
- * every editor dialog.
- *
- * Escape cancels and Enter confirms. ImGui holds WantTextInput while a field
- * is active, which would otherwise swallow Enter in exactly the dialogs that
- * most need it, so a field wanting Enter to confirm passes its
- * ImGuiInputTextFlags_EnterReturnsTrue result as dialogButtons' fieldCommitted
- * argument - the caller decides whether a commit means confirm, the scaffold
- * still owns closing the popup.
- *
- * Usage:
- *   if (beginDialog("Rename Asset", m_renameOpen)) {
- *       // ...content...
- *       switch (dialogButtons(m_renameOpen, "Rename", nameValid)) { ... }
- *       endDialog();
- *   }
- */
-
 enum class DialogResult {
     None,     ///< Nothing chosen this frame; the dialog stays open.
     Confirm,  ///< The confirm (rightmost, accent) button or Enter.
@@ -35,7 +16,17 @@ enum class DialogResult {
 };
 
 /**
- * @brief Open (when @p wantOpen) and begin the centered modal.
+ * @brief Open (when @p wantOpen) and begin the centered modal - the first of the
+ * three calls that make up the shared dialog scaffold.
+ *
+ * beginDialog / dialogButtons / endDialog give every editor dialog one look and
+ * one keyboard contract, Escape cancelling and Enter confirming:
+ *
+ *   if (beginDialog("Rename Asset", m_renameOpen)) {
+ *       // ...content...
+ *       switch (dialogButtons(m_renameOpen, "Rename", nameValid)) { ... }
+ *       endDialog();
+ *   }
  *
  * @param title    The modal's ImGui title (also its popup id).
  * @param wantOpen Dialog-visible intent; cleared here when the popup was
@@ -58,7 +49,12 @@ inline bool beginDialog(const char* title, bool& wantOpen) {
  *
  * Closes the popup and clears @p wantOpen when any result fires. Escape always
  * cancels; Enter confirms while @p confirmEnabled and either no text field has
- * the keyboard or @p fieldCommitted says one just committed.
+ * the keyboard or @p fieldCommitted says one just committed. ImGui holds
+ * WantTextInput while a field is active, which would otherwise swallow Enter in
+ * exactly the dialogs that most need it, so a field wanting Enter to confirm
+ * passes its ImGuiInputTextFlags_EnterReturnsTrue result as @p fieldCommitted -
+ * the caller decides whether a commit means confirm, this still owns closing
+ * the popup.
  *
  * The alt label has no default and stands ahead of both flags, so nothing but a
  * label can land in its slot and it cannot be reached past one; the old order,

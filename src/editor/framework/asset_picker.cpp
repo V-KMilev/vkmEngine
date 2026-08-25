@@ -43,7 +43,7 @@ std::string displayName(
     }
     return recursive ? p.string() : p.filename().string();
 }
-}
+} // namespace
 
 void AssetPicker::open() {
     m_openRequested = true;
@@ -189,9 +189,15 @@ bool AssetPicker::draw(std::string& outPath) {
         }
         ImGui::EndChild();
 
+        // The selection survives a filter change, so it can be off screen by the
+        // time either confirm path runs. Both read this, so neither opens a row
+        // the list is no longer showing.
+        const bool selectionVisible =
+            m_selected >= 0 && matchesFilter(m_entries[m_selected].c_str(), m_filter);
+
         // Enter from the search field: the selection, or the single match.
         if (!picked && searchCommit) {
-            if (m_selected >= 0 && matchesFilter(m_entries[m_selected].c_str(), m_filter)) {
+            if (selectionVisible) {
                 confirm(m_selected);
             } else if (view.size() == 1) {
                 confirm(view[0]);
@@ -200,7 +206,7 @@ bool AssetPicker::draw(std::string& outPath) {
 
         if (!picked) {
             bool want = true;  // lifetime is popup-managed; the flag is discarded
-            const DialogResult r = dialogButtons(want, "Open", m_selected >= 0);
+            const DialogResult r = dialogButtons(want, "Open", selectionVisible);
             if (r == DialogResult::Confirm) confirm(m_selected);
         }
         ImGui::EndPopup();

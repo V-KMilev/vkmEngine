@@ -2,8 +2,6 @@
 
 #include <imgui.h>
 
-namespace Vkm::Engine::EditorStyle {
-
 /**
  * @brief Shared editor visual constants.
  *
@@ -11,6 +9,7 @@ namespace Vkm::Engine::EditorStyle {
  * and the gizmo. Drawlist code uses the `*_U32` packed colors; ImGui
  * widget styling uses the ImVec4 variants.
  */
+namespace Vkm::Engine::EditorStyle {
 
 // Axis colors - ImDrawList packed form.
 inline constexpr ImU32 AXIS_X_U32      = IM_COL32(220,  60,  60, 255);
@@ -122,8 +121,7 @@ inline float px(float units) {
     return static_cast<float>(static_cast<int>(ImGui::GetFontSize() * (units / 15.0f) + 0.5f));
 }
 
-// Width reserved for aligned property labels. Font-relative so the column
-// scales with the loaded font size / DPI (~100 px at the default 15 px font).
-inline float labelWidth() { return static_cast<float>(static_cast<int>(ImGui::GetFontSize() * 6.7f + 0.5f)); }
+/// Width reserved for aligned property labels.
+inline float labelWidth() { return px(100.0f); }
 
 } // namespace Vkm::Engine::EditorStyle

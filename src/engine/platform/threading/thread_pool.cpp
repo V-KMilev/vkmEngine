@@ -12,7 +12,7 @@ namespace {
 // Set inside process() so parallelFor can detect re-entry from a worker
 // and fall back to a serial sweep instead of deadlocking on its own slot.
 thread_local bool t_isWorker = false;
-}
+} // namespace
 
 bool ThreadPool::isWorkerThread() {
     return t_isWorker;

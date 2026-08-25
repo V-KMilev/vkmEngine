@@ -59,7 +59,7 @@ at the top of `update`, then work - not the other way round.
     // still publish an empty result instead of last frame's stale entries.
 
 and `ctx.visibility = &m_result;` follows at all three exits (`:158`, `:191`,
-`:274`). `ui_system.cpp:26-28` and `skeletal_animation_system.cpp:54-56` open the
+`:271`). `ui_system.cpp:26-28` and `skeletal_animation_system.cpp:54-56` open the
 same way.
 
 A consumer must tell "ran, found nothing" from "never ran", and a null can only
@@ -107,9 +107,9 @@ The directory tree encodes responsibility. Let it place your code:
 Two of those are easy to miss because they are not under `src/engine/`. A new
 asset kind splits: the type is a `Resource` subclass in `resource/asset/`, while
 the code that *reads a file into it* is a loader in `src/tools/`. And a system is
-declared in `system/<name>/` but comes alive at one line in
-`setupEngineApp` (`app/engine_app.h:67`), where every `addSystem<T>(stage)` call
-lives and where the stage placement is argued in a comment beside it.
+declared in `system/<name>/` but comes alive at one line in `setupEngineApp`,
+where every `addSystem<T>(stage)` call lives (`app/engine_app.h:89-110`) and
+where the stage placement is argued in a comment beside it.
 
 If it fits nowhere obvious, the tree is telling you the design is off. Stop and
 reconsider rather than forcing it in.
@@ -223,10 +223,15 @@ and none of them is enforced by the compiler. Read these before the first change
   loses the bound.
 - **Fixed metrics go through `EditorStyle::px(units)`**
   (`ui/editor_style.h:118`) - design pixels at the 15px reference font, scaled to
-  the loaded font size. 66 call sites across `src/editor`. A raw pixel literal
-  looks right on your display and wrong on a scaled one, and nothing catches it.
+  the loaded font size. Over 140 call sites across `src/editor`. A raw pixel
+  literal looks right on your display and wrong on a scaled one, and nothing
+  catches it.
+  The one exception is the ImGui style itself: `applyEditorTheme(scale)`
+  (`ui/editor_theme.h:16`) is handed the window's content scale and passes it to
+  `ScaleAllSizes`, because those metrics are set before there is a font to
+  measure.
 - **Dialogs use `beginDialog` / `dialogButtons` / `endDialog`**
-  (`ui/editor_dialogs.h:11-28`). The scaffold owns the Escape-cancels /
+  (`ui/editor_dialogs.h:18-35`). The scaffold owns the Escape-cancels /
   Enter-confirms contract, including the case where an active text field would
   otherwise swallow Enter in exactly the dialogs that need it.
 
@@ -242,7 +247,7 @@ procedure is inside `src/backend/opengl/pass/`:
 2. **Gate yourself in the first lines of `execute()`.** 14 of the 18 passes do -
    `gl_bloom_pass.cpp:26` is `if (!ctx.view.settings.bloom) return;`,
    `gl_decal_pass.cpp:44` is `if (view.decals.empty()) return;`. The backend runs
-   every pass unconditionally (`gl_backend.cpp:279-282`) and skips nothing,
+   every pass unconditionally (`gl_backend.cpp:276-278`) and skips nothing,
    deliberately: only the pass knows what would make it a no-op, and the
    condition belongs with the knowledge.
 3. **Register it in the ordered list** at `gl_backend.cpp:101-119`, with a name.
@@ -320,7 +325,7 @@ Walking the tool is not a supplementary check here. **It is the only verificatio
 this engine has.** `ctest --test-dir build` runs exactly one suite, `vkm_gl`, and
 that one belongs to the vkmGL submodule; the engine has no test target and
 deliberately does not get an empty one. `enable_testing()` sits in the top-level
-`CMakeLists.txt:142` precisely so that the first engine test can be an `add_test`
+`CMakeLists.txt:148` precisely so that the first engine test can be an `add_test`
 beside whatever it tests rather than a decision somebody has to make first. Until
 that day, somebody using the thing is the test, and skipping it skips all of it.
 

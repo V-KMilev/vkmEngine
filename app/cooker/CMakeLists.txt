@@ -1,7 +1,6 @@
 # vkm_cook - bakes a project's assets with no window and no GL context, so a
-# release build needs no GUI step and no GPU. Links the tools (Assimp, image
-# decode) the runtime deliberately excludes. The target carries an _app suffix
-# its OUTPUT_NAME drops, the cooker library having claimed vkm_cook already.
+# release build needs neither a GUI step nor a GPU. Links the importers the
+# runtime deliberately excludes.
 add_executable(vkm_cook_app main.cpp)
 
 set_target_properties(vkm_cook_app PROPERTIES OUTPUT_NAME vkm_cook)

@@ -1,11 +1,8 @@
-# vkm_runtime - bare engine executable, no editor. Foundation for a future
-# game binary. The target carries an _app suffix its OUTPUT_NAME drops, so the
-# three hosts read alike in the build files and ship under the plain names.
+# vkm_runtime - the engine with no editor, which is what a shipped game runs.
 add_executable(vkm_runtime_app main.cpp)
 
 set_target_properties(vkm_runtime_app PROPERTIES OUTPUT_NAME vkm_runtime)
 
-# The app drives the engine directly, so it links the engine libs itself.
 target_link_libraries(vkm_runtime_app PRIVATE
     vkm_core
     vkm_render

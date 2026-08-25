@@ -8,32 +8,23 @@
 
 include(CMakeFindDependencyMacro)
 
-# ---------------------------------------------------------------------------
-# Dependencies the exported targets name
-# ---------------------------------------------------------------------------
 # The engine's vendored libraries ship inside this package, but a few imported
 # targets come from CMake's own find modules and exist only once someone has
 # asked for them. Without these the targets file fails to load with "target not
 # found", which reads like a broken SDK rather than a missing find_package.
 find_dependency(Threads)
 
-# ---------------------------------------------------------------------------
-# Toolchain pin
-# ---------------------------------------------------------------------------
 # The engine ships prebuilt libraries and C++ headers, and a project's gameplay
-# module is compiled against them. That is Unreal's model, and it is a deliberate
-# trade: struct layouts, inline functions and templates may change between engine
-# versions, which buys the freedom to keep improving them. The price is that a
-# module must be built with the same toolchain as the engine it links.
+# module is compiled against them, so a module has to be built with the
+# toolchain that built the engine it links. A mismatch is a hard error rather
+# than a warning because it does not fail at link time: it fails at run time, as
+# a corrupt object or a crash inside a function that looks innocent, with the
+# cause invisible by then.
 #
-# So this is a hard error, not a warning. A mismatch does not fail at link time -
-# it fails at run time, as a corrupt object or a crash inside a function that
-# looks innocent, and the cause is invisible by then.
-# The compiler itself, not just its name: `vkm build` passes this back to CMake
-# so a project is configured with the toolchain that built the engine instead of
-# whichever one CMake happens to find first. On a machine with both GCC and Clang
-# installed - every MSYS2 install - that is otherwise a coin flip the check below
-# has to catch.
+# The full compiler path is kept, not just the name: `vkm build` passes it back
+# to CMake so a project is configured with the toolchain that built the engine
+# rather than whichever one CMake finds first - on a machine carrying both GCC
+# and Clang, which is every MSYS2 install, that is otherwise a coin flip.
 set(VKMENGINE_BUILD_CXX_COMPILER         "@CMAKE_CXX_COMPILER@")
 set(VKMENGINE_BUILD_CXX_COMPILER_ID      "@CMAKE_CXX_COMPILER_ID@")
 set(VKMENGINE_BUILD_CXX_COMPILER_VERSION "@CMAKE_CXX_COMPILER_VERSION@")
@@ -72,14 +63,8 @@ if(NOT VKMENGINE_SKIP_TOOLCHAIN_CHECK)
     unset(_vkm_have_major)
 endif()
 
-# ---------------------------------------------------------------------------
-# Imported targets
-# ---------------------------------------------------------------------------
 include("${CMAKE_CURRENT_LIST_DIR}/vkmEngineTargets.cmake")
 
-# ---------------------------------------------------------------------------
-# Where the SDK's data lives
-# ---------------------------------------------------------------------------
 # A host resolves shaders relative to the engine root at run time; these let a
 # project's build copy or reference them without hardcoding a layout.
 #
@@ -87,9 +72,9 @@ include("${CMAKE_CURRENT_LIST_DIR}/vkmEngineTargets.cmake")
 # because this file is generated twice: once for the installed SDK, where every
 # path hangs off the prefix the package was unpacked into, and once for the
 # engine's own build tree, where the binaries are under build/ and the headers,
-# shaders and templates are still in the source tree. Composing them here would
-# describe only the first layout, which is what left the build-tree package
-# naming an include/ directory no build produces.
+# shaders and templates never left the source tree. Composed here it would
+# describe the first layout only, and the build-tree package would name an
+# include/ directory no build produces.
 set_and_check(VKMENGINE_ROOT_DIR      "@VKM_PKG_ROOT_DIR@")
 set_and_check(VKMENGINE_BIN_DIR       "@VKM_PKG_BIN_DIR@")
 set_and_check(VKMENGINE_INCLUDE_DIR   "@VKM_PKG_INCLUDE_DIR@")
@@ -100,45 +85,9 @@ set(VKMENGINE_RUNTIME "${VKMENGINE_BIN_DIR}/vkm_runtime@CMAKE_EXECUTABLE_SUFFIX@
 set(VKMENGINE_EDITOR  "${VKMENGINE_BIN_DIR}/vkm_editor@CMAKE_EXECUTABLE_SUFFIX@")
 set(VKMENGINE_COOKER  "${VKMENGINE_BIN_DIR}/vkm_cook@CMAKE_EXECUTABLE_SUFFIX@")
 
-# ---------------------------------------------------------------------------
-# vkm_add_gameplay_module(<name>)
-# ---------------------------------------------------------------------------
-# Every project's module is built the same way, so the SDK provides the recipe
-# rather than asking each project to restate it. The name is what the module is
-# called on disk; the engine looks for "game" in the project's bin/.
-function(vkm_add_gameplay_module TARGET)
-    cmake_parse_arguments(VKM "" "OUTPUT_NAME;PROJECT_DIR" "SOURCES" ${ARGN})
-
-    if(NOT VKM_SOURCES)
-        message(FATAL_ERROR "vkm_add_gameplay_module(${TARGET}): SOURCES is required")
-    endif()
-    if(NOT VKM_OUTPUT_NAME)
-        set(VKM_OUTPUT_NAME game)
-    endif()
-    if(NOT VKM_PROJECT_DIR)
-        set(VKM_PROJECT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-    endif()
-
-    add_library(${TARGET} SHARED ${VKM_SOURCES})
-
-    # Links the engine, never a host executable: the editor and the runtime load
-    # the same file.
-    target_link_libraries(${TARGET} PRIVATE vkmEngine::vkm_core)
-
-    # Into the project's own bin/, which is the one place a host looks.
-    # All three destinations, because Windows splits a shared library into
-    # game.dll and the import library libgame.dll.a. Leaving the archive to a
-    # global default puts every project's import library in one directory under
-    # the same name, and two projects configured in one tree collide there.
-    set_target_properties(${TARGET} PROPERTIES
-        OUTPUT_NAME              ${VKM_OUTPUT_NAME}
-        RUNTIME_OUTPUT_DIRECTORY ${VKM_PROJECT_DIR}/bin
-        LIBRARY_OUTPUT_DIRECTORY ${VKM_PROJECT_DIR}/bin
-        ARCHIVE_OUTPUT_DIRECTORY ${VKM_PROJECT_DIR}/bin
-    )
-    if(WIN32)
-        set_target_properties(${TARGET} PROPERTIES PREFIX "")
-    endif()
-endfunction()
+# Beside this file rather than inside it, because the engine's own examples are
+# built by the same function from the same file - so `vkm build` on an example
+# and `vkm build` on a project a user made run one recipe, not two that drifted.
+include("${CMAKE_CURRENT_LIST_DIR}/gameplay_module.cmake")
 
 check_required_components(vkmEngine)

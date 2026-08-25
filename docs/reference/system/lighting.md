@@ -132,12 +132,14 @@ Shadow rendering goes through `GLShadowPass`, which:
   (`u_shadowCube[SHADOW_MAX_CUBE]`), one per point-light slot, each read
   with a single unfiltered tap.
 
-  The atlas texture carries `GL_TEXTURE_COMPARE_FUNC = GL_LEQUAL` and
-  linear filtering; `GLShadowAtlas::bind2D` turns the comparison mode on
-  and `bind2DRaw` turns it off for the `ShadowAtlas` debug view, which
-  reads stored depth through a plain `sampler2D`. Sampling a texture in
-  comparison mode with a non-shadow sampler is undefined, so the two
-  entry points each set the mode rather than assuming a prior state.
+  The atlas is read both ways within a frame, so the comparison lives on
+  a sampler object bound to a texture unit rather than on the texture.
+  `GLShadowAtlas::bind2D` binds a comparing sampler on
+  `ShadowTextureSlots::Atlas2D`; `bind2DRaw` binds a non-comparing one on
+  `Atlas2DRaw`, for the `ShadowAtlas` debug view that reads stored depth
+  through a plain `sampler2D`. Two units, because a sampler replaces
+  every sampling parameter for the unit it is bound to - which is also
+  why both samplers carry the atlas's own linear filtering and clamp.
 
 `shadowDistance` controls how far the directional cascades cover in world
 units. It is ignored for spot, point, and area lights, which use `radius`
