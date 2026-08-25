@@ -142,6 +142,10 @@ add_subdirectory(src/engine)
 add_subdirectory(src/tools)
 add_subdirectory(src/editor)
 add_subdirectory(src/backend/opengl)
+
+# Engine tests. After the libraries they link, before the executables, which
+# they are not part of.
+add_subdirectory(tests)
 # The recipe every gameplay module is built by, and the names it uses. An
 # installed SDK hands both to a project through find_package; here they are
 # included and aliased directly, so the examples below are written the one way
@@ -155,6 +159,7 @@ add_library(vkmEngine::vkm_warnings ALIAS vkm_warnings)
 # which is the path a user's own project takes.
 add_subdirectory(examples/potion_runner)
 add_subdirectory(examples/stress_arena)
+add_subdirectory(examples/physics_lab)
 
 # Three thin executables, each linking the engine libs itself and putting the
 # repo root on its include path so the "app/" prefix resolves. What each host is
