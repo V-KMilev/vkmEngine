@@ -17,6 +17,7 @@
 
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
+#include <assimp/config.h>
 #include <assimp/postprocess.h>
 #include <assimp/material.h>
 #include <assimp/GltfMaterial.h>
@@ -78,6 +79,27 @@ constexpr unsigned POST_PROCESS_FLAGS =
     aiProcess_PopulateArmatureData;
 
 /**
+ * @brief Apply the reader settings every import in the engine shares.
+ *
+ * FBX stores a joint's transform as a stack of pivots, and Assimp preserves
+ * them by splitting the joint into `$AssimpFbx$_Rotation`, `_PreRotation` and
+ * `_Translation` helper nodes. Which helpers an export produces depends on what
+ * that export contains, so two files of one rig decompose differently and the
+ * bones no longer share names - which breaks the only thing binding a clip to a
+ * rig. What survived binding was animated and what did not held its bind pose,
+ * so a clip played correct but offset by the rest pose it was standing in.
+ *
+ * Baking them costs nothing and answers all of it: names become the joints'
+ * own, identical across exports, and a 65-joint rig stops arriving as 207
+ * bones. The property is FBX's alone; every other format is untouched.
+ *
+ * @param importer Importer to configure, before it reads anything.
+ */
+void configureImporter(Assimp::Importer& importer) {
+    importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_PRESERVE_PIVOTS, false);
+}
+
+/**
  * @brief LRU cache of parsed Assimp scenes keyed by canonical path.
  *
  * The recipe factories re-import one aiMesh or one aiMaterial per
@@ -109,6 +131,7 @@ class ImporterCache {
             }
 
             auto importer = std::make_shared<Assimp::Importer>();
+            configureImporter(*importer);
             if (!importer->ReadFile(path, POST_PROCESS_FLAGS)) {
                 // Log here while we still have the Importer that holds
                 // the real error string. Callers would otherwise see a
@@ -206,27 +229,14 @@ SkeletonAsset buildSkeleton(const aiScene* scene, const std::string& path) {
     // space at bind). A bone shared by two meshes carries the same offset in
     // both, so the first one seen stands.
     std::unordered_map<std::string, glm::mat4> offsets;
-    const aiNode* armature = nullptr;
-    bool disjoint = false;
     for (unsigned mi = 0; mi < scene->mNumMeshes; ++mi) {
         const aiMesh* m = scene->mMeshes[mi];
         for (unsigned bi = 0; bi < m->mNumBones; ++bi) {
             const aiBone* bone = m->mBones[bi];
             offsets.emplace(bone->mName.C_Str(), toMat4(bone->mOffsetMatrix));
-            if (!bone->mArmature) continue;
-            if (!armature) armature = bone->mArmature;
-            else if (armature != bone->mArmature) disjoint = true;
         }
     }
     if (offsets.empty()) return out;
-    // aiProcess_PopulateArmatureData is what makes this answerable. Merging two
-    // rigs would give them an invented shared root and one bone numbering, and
-    // every clip in the file would then be bound to a rig neither of them is.
-    if (disjoint) {
-        LOG_ERROR("Model '%s': its bones belong to more than one armature; "
-                  "a file has to hold one rig", path.c_str());
-        return {};
-    }
 
     // The chain from the scene root down to each bone. A bone Assimp named but
     // left out of the node tree has no local transform and cannot be posed, so
@@ -260,6 +270,30 @@ SkeletonAsset buildSkeleton(const aiScene* scene, const std::string& path) {
     std::unordered_set<const aiNode*> needed;
     for (const std::vector<const aiNode*>& chain : chains) {
         for (size_t i = common - 1; i < chain.size(); ++i) needed.insert(chain[i]);
+    }
+
+    // Two rigs in one file meet only at an ancestor belonging to neither, and
+    // merging them would invent a shared root and one bone numbering that
+    // neither rig has - so every clip in the file would bind to a rig that is
+    // not in it. The tell is that ancestor having bones down more than one of
+    // its branches while being no bone itself; a single rig either roots at a
+    // bone, or at the one container node above it.
+    //
+    // Read from the tree rather than from aiBone::mArmature. Assimp's FBX
+    // reader decomposes a node into $AssimpFbx$ helpers and points mArmature at
+    // the bone's own helper parent, so an ordinary rig reports as many
+    // armatures as it has joints - which refused every skinned FBX ever opened.
+    if (offsets.find(rigRoot->mName.C_Str()) == offsets.end()) {
+        size_t branches = 0;
+        for (unsigned c = 0; c < rigRoot->mNumChildren; ++c) {
+            if (needed.count(rigRoot->mChildren[c])) ++branches;
+        }
+        if (branches > 1) {
+            LOG_ERROR("Model '%s': its bones form %zu separate rigs under '%s'; "
+                      "a file has to hold one rig", path.c_str(), branches,
+                      rigRoot->mName.C_Str());
+            return {};
+        }
     }
 
     // Depth-first from the rig root, skipping what no bone needs. The set is
@@ -424,7 +458,8 @@ std::vector<ClipMarker> usableMarkers(std::vector<ClipMarker> markers, float dur
  * @return The clip, or an empty AnimationClipAsset when the index names nothing.
  */
 AnimationClipAsset buildClip(const aiScene* scene, const std::string& path, int clipIdx,
-                             const SkeletonAsset& skeleton, std::vector<ClipMarker> markers) {
+                             const SkeletonAsset& skeleton, const std::string& rigName,
+                             std::vector<ClipMarker> markers) {
     AnimationClipAsset out;
     if (!scene || clipIdx < 0 || clipIdx >= static_cast<int>(scene->mNumAnimations)) return out;
     const aiAnimation* anim = scene->mAnimations[clipIdx];
@@ -437,7 +472,11 @@ AnimationClipAsset buildClip(const aiScene* scene, const std::string& path, int 
         return static_cast<float>(ticks / ticksPerSecond);
     };
 
-    out.skeleton = skeletonName(path);
+    // The rig it was bound against, which is not always the one in this file:
+    // an animation exported without skin has no rig of its own and binds to a
+    // named one instead. Passed rather than read off the asset, because a rig
+    // built here and not yet handed to the manager has no name yet.
+    out.skeleton = rigName;
     out.duration = std::max(0.0f, seconds(anim->mDuration));
     out.bones.resize(skeleton.bones.size());
 
@@ -467,6 +506,17 @@ AnimationClipAsset buildClip(const aiScene* scene, const std::string& path, int 
             out.scales.push_back(toVec3(channel->mScalingKeys[k].mValue));
         }
     }
+    // Not one channel found a bone. The clip animates some other rig, which for
+    // a named binding means the wrong name was given - and an empty clip plays
+    // as a rig standing still, which reads as a broken animation rather than as
+    // a mistake anyone can see.
+    if (out.positions.empty() && out.rotations.empty() && out.scales.empty()) {
+        LOG_ERROR("Clip '%s': none of its %u channels name a bone of rig '%s'; "
+                  "it animates a different rig", clipName(path, clipIdx).c_str(),
+                  anim->mNumChannels, rigName.c_str());
+        return {};
+    }
+
     if (dropped) {
         LOG_WARNING("Clip '%s': dropped %u channel(s) naming nodes outside the rig",
                     clipName(path, clipIdx).c_str(), dropped);
@@ -478,6 +528,9 @@ AnimationClipAsset buildClip(const aiScene* scene, const std::string& path, int 
     // wrote there and this load accepted has to go back into it - otherwise the
     // first save after an import quietly deletes the authoring it just read.
     out.sourceJson() = { {"kind", "model"}, {"path", path}, {"clip", clipIdx} };
+    // Only when it is not this file's own rig. Absent means "the file's", which
+    // is what every clip imported before this existed already means.
+    if (rigName != skeletonName(path)) out.sourceJson()["rig"] = rigName;
     if (!out.markers.empty()) {
         nlohmann::json markerJson = nlohmann::json::array();
         for (const ClipMarker& marker : out.markers) {
@@ -899,7 +952,8 @@ AnimationClipHandle loadModelAnimationClip(
     const std::string& path,
     int clipIndex,
     std::vector<ClipMarker> markers,
-    ResourceManager& resources
+    ResourceManager& resources,
+    const std::string& rig
 ) {
     const std::string ref = ProjectPaths::toProjectRelative(path);
     if (auto existing = resources.findByName<AnimationClipAsset>(clipName(ref, clipIndex))) return existing;
@@ -909,17 +963,36 @@ AnimationClipHandle loadModelAnimationClip(
     const aiScene* scene = importer->GetScene();
     if (!scene) return {};
 
-    // The clip's bone indices are only meaningful against the rig they were
-    // resolved with, so it is built here rather than looked up: a rig the
-    // manager happens to hold under the same name could have come from
-    // anywhere.
+    // Named a rig: bind to that one. The clip's bone indices are only meaningful
+    // against the rig they were resolved with, so the manager's copy is used
+    // directly rather than a rebuild of it - a rig that merely shares the name
+    // could have come from anywhere, but one the caller named is the one meant.
+    // This is what lets an animation exported without skin be used at all: it
+    // carries channels and no bind pose, so it has no rig of its own to bind to.
+    if (!rig.empty()) {
+        const SkeletonHandle handle = resources.findByName<SkeletonAsset>(rig);
+        if (!handle) {
+            LOG_ERROR("Clip '%s': names rig '%s', which is not loaded",
+                      clipName(ref, clipIndex).c_str(), rig.c_str());
+            return {};
+        }
+        const SkeletonAsset& target = resources.get(handle);
+        AnimationClipAsset bound =
+            buildClip(scene, ref, clipIndex, target, rig, std::move(markers));
+        if (bound.bones.empty()) return {};
+        return resources.add(std::move(bound), clipName(ref, clipIndex));
+    }
+
     const SkeletonAsset skeleton = buildSkeleton(scene, ref);
     if (skeleton.bones.empty()) {
-        LOG_ERROR("Clip '%s': the file has no rig to bind it to", clipName(ref, clipIndex).c_str());
+        LOG_ERROR("Clip '%s': the file has no rig of its own, and none was "
+                  "named. An animation exported without skin has to say which "
+                  "rig it animates.", clipName(ref, clipIndex).c_str());
         return {};
     }
 
-    AnimationClipAsset clip = buildClip(scene, ref, clipIndex, skeleton, std::move(markers));
+    AnimationClipAsset clip =
+        buildClip(scene, ref, clipIndex, skeleton, skeletonName(ref), std::move(markers));
     if (clip.bones.empty()) return {};
     return resources.add(std::move(clip), clipName(ref, clipIndex));
 }
@@ -968,11 +1041,53 @@ EntityId importModelIntoScene(
     const std::string ref = ProjectPaths::toProjectRelative(path);
 
     Assimp::Importer importer;
+    configureImporter(importer);
     const aiScene* aScene = importer.ReadFile(
         ProjectPaths::resolveProjectPath(ref).string(), POST_PROCESS_FLAGS);
-    if (!aScene || aScene->mNumMeshes == 0) {
+    if (!aScene) {
+        const char* why = importer.GetErrorString();
         LOG_ERROR("Model import failed '%s': %s", ref.c_str(),
-            importer.GetErrorString());
+                  why && *why ? why : "the importer gave no reason");
+        return {};
+    }
+
+    // No mesh but animations: an animation exported without skin, which is one
+    // motion of a library meant for a rig sent separately. There is nothing to
+    // spawn - a clip is not a thing in the world - so the import is of the clips
+    // themselves, bound to a rig already loaded. One rig is unambiguous and is
+    // taken; more than one has to be said, and the clip-by-clip entry point is
+    // where it is said.
+    if (aScene->mNumMeshes == 0) {
+        if (aScene->mNumAnimations == 0) {
+            LOG_ERROR("Model import failed '%s': it holds no mesh and no "
+                      "animation", ref.c_str());
+            return {};
+        }
+
+        std::vector<std::string> rigs;
+        resources.forEachOfType<SkeletonAsset>(
+            [&](SkeletonHandle, const SkeletonAsset& asset) {
+                rigs.push_back(asset.name());
+            });
+
+        if (rigs.size() != 1) {
+            LOG_ERROR("'%s' holds %u animation(s) and no rig of its own. The "
+                      "project has %zu rig(s) loaded, so which one they animate "
+                      "cannot be guessed - import the character first, or name "
+                      "the rig on the clip.",
+                      ref.c_str(), aScene->mNumAnimations, rigs.size());
+            return {};
+        }
+
+        unsigned imported = 0;
+        for (unsigned i = 0; i < aScene->mNumAnimations; ++i) {
+            const int idx = static_cast<int>(i);
+            const std::string& rig = rigs.front();
+            if (loadModelAnimationClip(ref, idx, {}, resources, rig)) ++imported;
+        }
+        LOG_INFO("Imported %u clip(s) from '%s', bound to rig '%s'. Nothing was "
+                 "added to the scene: the file has no mesh.",
+                 imported, ref.c_str(), rigs.front().c_str());
         return {};
     }
 
@@ -1017,7 +1132,8 @@ EntityId importModelIntoScene(
                 // A fresh import carries no markers: no interchange format has
                 // them, so they are authored into the recipe afterwards and
                 // arrive on the next load through it.
-                AnimationClipAsset clip = buildClip(aScene, ref, clipIdx, rig, {});
+                AnimationClipAsset clip =
+                    buildClip(aScene, ref, clipIdx, rig, skeletonName(ref), {});
                 if (!clip.bones.empty()) handle = resources.add(std::move(clip), clipName(ref, clipIdx));
             }
             if (handle && !firstClip) firstClip = handle;
