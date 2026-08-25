@@ -180,11 +180,8 @@ MaterialHandle duplicateMaterial(
     const MaterialAsset& src = resources.get(source);
 
     MaterialAsset copy = src;  // value copy of params + texture refs
-    copy.version = 1;
-    copy.name = uniqueMaterialName(resources,
-        (src.name.empty() ? std::string("material") : src.name) + " copy");
-
-    MaterialHandle nh = resources.add(std::move(copy));
+    MaterialHandle nh = resources.add(std::move(copy),
+        uniqueMaterialName(resources, src.name() + " copy"));
     if (!nh) return MaterialHandle{};
 
     if (assignTo) assignTo->material = nh;
@@ -201,10 +198,7 @@ MaterialHandle createNewMaterial(ResourceManager& resources, EditorState& state)
     // and renaming it would take it out from under all of them. The unique name
     // is what distinguishes this one on save and load.
     MaterialAsset copy = resources.get(base);
-    copy.version = 1;
-    copy.name    = uniqueMaterialName(resources, "Material");
-
-    MaterialHandle h = resources.add(std::move(copy));
+    MaterialHandle h = resources.add(std::move(copy), uniqueMaterialName(resources, "Material"));
     if (!h) return MaterialHandle{};
 
     state.markSceneDirty();

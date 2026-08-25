@@ -45,13 +45,12 @@ CookedRequest<Asset> beginCookedRequest(const std::string& name, AssetType type,
     }
 
     Asset stub;
-    stub.name    = name;
     stub.loading = true;
     stub.sourceJson() = {{"kind", "cooked"}, {"name", name}};
 
     CookedRequest<Asset> req;
-    req.handle     = resources.add(std::move(stub));
-    req.uid        = resources.get(req.handle).uid;
+    req.handle     = resources.add(std::move(stub), name);
+    req.uid        = resources.get(req.handle).uid();
     req.dispatch   = true;
     req.path       = AssetLibrary::cookedPath(type, name);
     req.expectHash = record->recipeHash;
@@ -81,9 +80,8 @@ Handle<Asset> loadCookedSynchronous(const std::string& name, AssetType type, con
         return {};
     }
 
-    decoded.name = name;
     decoded.sourceJson() = {{"kind", "cooked"}, {"name", name}};
-    return resources.add(std::move(decoded));
+    return resources.add(std::move(decoded), name);
 }
 
 } // namespace

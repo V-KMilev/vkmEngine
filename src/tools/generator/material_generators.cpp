@@ -27,8 +27,7 @@ MaterialHandle buildDefaultMaterial(ResourceManager& resourceManager) {
     material.aoTexture = generateWhiteTexture(resourceManager);
     material.emissionTexture = generateBlackTexture(resourceManager);
 
-    material.name = "material:default";
-    auto handle = resourceManager.add(std::move(material));
+    auto handle = resourceManager.add(std::move(material), "material:default");
     // Stamp a source so SceneSerializer can recreate this on cold-start load.
     auto& asset = resourceManager.edit(handle);
     asset.sourceJson() = {{"kind", "default"}};

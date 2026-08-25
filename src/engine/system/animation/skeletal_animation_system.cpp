@@ -172,14 +172,14 @@ const AnimationClipAsset* SkeletalAnimationSystem::resolveClip(
     // fits only a rig of that name and that length. Posing the wrong joints out
     // of matching indices is worse than holding the bind pose and saying so.
     const AnimationClipAsset& clip = resources.get(handle);
-    if (clip.skeleton == skeleton.name && clip.bones.size() == skeleton.bones.size()) return &clip;
+    if (clip.skeleton == skeleton.name() && clip.bones.size() == skeleton.bones.size()) return &clip;
 
     seen.clipMismatch = true;
     if (!m_clipMismatchLogged) {
         LOG_WARNING("Clip '%s' (rig '%s', %zu bones) does not fit rig '%s' (%zu bones) - "
                     "holding the bind pose",
-                    clip.name.c_str(), clip.skeleton.c_str(), clip.bones.size(),
-                    skeleton.name.c_str(), skeleton.bones.size());
+                    clip.name().c_str(), clip.skeleton.c_str(), clip.bones.size(),
+                    skeleton.name().c_str(), skeleton.bones.size());
         m_clipMismatchLogged = true;
     }
     return nullptr;
@@ -209,12 +209,12 @@ void SkeletalAnimationSystem::checkSkinnedMesh(const Scene& scene, const Resourc
     const MeshAsset& asset = resources.get(mesh.mesh);
     if (asset.skin.empty()) return;
 
-    if (asset.skeleton != skeleton.name) {
+    if (asset.skeleton != skeleton.name()) {
         seen.rigMismatch = true;
         if (!m_rigMismatchLogged) {
             LOG_WARNING("Mesh '%s' is skinned to rig '%s' but sits under '%s' - "
                         "its bone indices address the wrong joints",
-                        asset.name.c_str(), asset.skeleton.c_str(), skeleton.name.c_str());
+                        asset.name().c_str(), asset.skeleton.c_str(), skeleton.name().c_str());
             m_rigMismatchLogged = true;
         }
     }
@@ -226,7 +226,7 @@ void SkeletalAnimationSystem::checkSkinnedMesh(const Scene& scene, const Resourc
         if (!m_meshOffsetLogged) {
             LOG_WARNING("Skinned mesh '%s' does not sit at its rig's origin - "
                         "skinned vertices are already in rig space, so its own "
-                        "transform is applied twice", asset.name.c_str());
+                        "transform is applied twice", asset.name().c_str());
             m_meshOffsetLogged = true;
         }
     }

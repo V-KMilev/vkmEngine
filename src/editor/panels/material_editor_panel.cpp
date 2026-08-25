@@ -333,7 +333,7 @@ void MaterialEditorPanel::drawChooser(EditorContext& ec, MaterialHandle target, 
 
     const char* preview = "(choose a material)";
     if (target) {
-        const std::string& name = resources.get(target).name;
+        const std::string& name = resources.get(target).name();
         preview = name.empty() ? "(unnamed)" : name.c_str();
     }
 
@@ -354,8 +354,8 @@ void MaterialEditorPanel::drawChooser(EditorContext& ec, MaterialHandle target, 
     // Snapshotted once so ImGuiListClipper can window the visible rows.
     std::vector<std::pair<MaterialHandle, const MaterialAsset*>> rows;
     resources.forEachOfType<MaterialAsset>([&](MaterialHandle h, const MaterialAsset& a) {
-        if (a.hidden) return;  // editor helpers (thumbnail neutral, and such) are not user-facing
-        if (!matchesFilter(a.name.c_str(), m_chooserFilter)) return;
+        if (a.isHidden()) return;  // editor helpers (thumbnail neutral, and such) are not user-facing
+        if (!matchesFilter(a.name().c_str(), m_chooserFilter)) return;
         rows.emplace_back(h, &a);
     });
 
@@ -370,7 +370,7 @@ void MaterialEditorPanel::drawChooser(EditorContext& ec, MaterialHandle target, 
             const auto& [handle, asset] = rows[i];
             ImGui::PushID(static_cast<int>(handle.id()));
             const bool current = target && handle.id() == target.id();
-            if (ImGui::Selectable(asset->name.empty() ? "(unnamed)" : asset->name.c_str(), current)) {
+            if (ImGui::Selectable(asset->name().empty() ? "(unnamed)" : asset->name().c_str(), current)) {
                 ec.state.openMaterial(handle);
             }
             ImGui::PopID();
@@ -435,7 +435,7 @@ void MaterialEditorPanel::drawIdentityRow(EditorContext& ec, MaterialHandle targ
     if (!ImGui::BeginPopup("##matActions")) return;
 
     const MaterialAsset& current = resources.get(target);
-    sectionLabel(current.name.empty() ? "(unnamed)" : current.name.c_str());
+    sectionLabel(current.name().empty() ? "(unnamed)" : current.name().c_str());
     ImGui::Separator();
 
     if (ImGui::MenuItem("Duplicate")) {
@@ -447,8 +447,8 @@ void MaterialEditorPanel::drawIdentityRow(EditorContext& ec, MaterialHandle targ
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Fork it, so edits stop reaching the others");
 
     if (ImGui::MenuItem("Rename...")) {
-        std::snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", current.name.c_str());
-        m_renameOldName = current.name;
+        std::snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", current.name().c_str());
+        m_renameOldName = current.name();
         m_renameOpen    = true;
     }
 
@@ -513,7 +513,7 @@ void MaterialEditorPanel::drawPreview(EditorContext& ec, MaterialHandle target,
         req.distance    = m_distance;
         req.background  = static_cast<PreviewBackground>(m_background);
         req.lightYawDeg = m_lightYaw;
-        const uint64_t version = previewVersion(resources.get(target).version, shape.id(),
+        const uint64_t version = previewVersion(resources.get(target).version(), shape.id(),
                                                 m_shape, m_yaw, m_pitch, m_distance,
                                                 m_background, m_lightYaw);
         tex = ec.materialPreviews.texture(resources, req, version, /*live*/ true);

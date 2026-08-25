@@ -138,7 +138,7 @@ void BoneSocketSystem::placeSockets(FrameContext& ctx, FaultsSeen& seen) {
                 } else {
                     LOG_WARNING("Bone socket '%s' names bone '%s', which rig '%s' does not "
                                 "have - it stays where it is", nameOf(scene, entity),
-                                socket.bone.c_str(), skeleton.name.c_str());
+                                socket.bone.c_str(), skeleton.name().c_str());
                 }
                 m_noBoneLogged = true;
             }

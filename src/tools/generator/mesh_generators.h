@@ -11,7 +11,7 @@ class ResourceManager;
  * @brief Put a generated mesh into @p resources, reusing the one already there
  *        under its name.
  *
- * A generator stamps a deterministic name onto what it makes -
+ * The name is read out of the generator descriptor the generator stamped -
  * "mesh:generator:cube", "mesh:generator:sphere:32:16" - precisely so that two
  * identical generator calls are one asset rather than two copies a scene would
  * save twice. Adding one unconditionally breaks that promise the moment the
@@ -24,7 +24,7 @@ class ResourceManager;
  * parameters, which is a different name.
  *
  * @param resources Asset graph to look the name up in and add to.
- * @param mesh A freshly generated mesh, carrying its generator name.
+ * @param mesh A mesh straight from one of the generators below, descriptor and all.
  * @return Handle to the mesh under that name, existing or newly added.
  */
 MeshHandle addGeneratedMesh(ResourceManager& resources, MeshAsset mesh);

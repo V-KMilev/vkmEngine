@@ -169,7 +169,7 @@ class BehaviorFieldInspector : public BehaviorFieldVisitor {
 template <typename Asset, typename Handle>
 bool pickAsset(const char* comboId, const char* label, ResourceManager& resources, Handle& currentHandle) {
     const std::string cur = (currentHandle && resources.isAlive(currentHandle))
-        ? resources.get(currentHandle).name : std::string("(none)");
+        ? resources.get(currentHandle).name() : std::string("(none)");
     drawPropertyLabel(label);
     ImGui::SetNextItemWidth(-1.0f);
     if (!ImGui::BeginCombo(comboId, cur.empty() ? "(unnamed)" : cur.c_str()))
@@ -177,7 +177,7 @@ bool pickAsset(const char* comboId, const char* label, ResourceManager& resource
 
     std::vector<std::pair<Handle, const Asset*>> rows;
     resources.forEachOfType<Asset>([&](Handle h, const Asset& a) {
-        if (a.hidden) return;
+        if (a.isHidden()) return;
         rows.emplace_back(h, &a);
     });
 
@@ -201,7 +201,7 @@ bool pickAsset(const char* comboId, const char* label, ResourceManager& resource
             const auto& [h, a] = rows[i];
             ImGui::PushID(static_cast<int>(h.id()));
             const bool sel = currentHandle && currentHandle.id() == h.id();
-            if (ImGui::Selectable(a->name.empty() ? "(unnamed)" : a->name.c_str(), sel)) {
+            if (ImGui::Selectable(a->name().empty() ? "(unnamed)" : a->name().c_str(), sel)) {
                 currentHandle = h;
                 picked = true;
             }
@@ -960,7 +960,7 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
         if (mesh.material) {
             const MaterialAsset& m = resources.get(mesh.material);
             ImGui::TextDisabled("Material: %s",
-                m.name.empty() ? "(unnamed)" : m.name.c_str());
+                m.name().empty() ? "(unnamed)" : m.name().c_str());
             const float bw = (ImGui::GetContentRegionAvail().x
                               - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
             if (ImGui::Button("Edit Material", ImVec2(bw, 0))) {
@@ -1724,7 +1724,7 @@ void InspectorPanel::drawLODSection(Scene& scene, ResourceManager& resources,
         for (size_t i = 0; i < lod.levels.size(); ++i) {
             const LODLevel& level = lod.levels[i];
             const char* name = (level.mesh && resources.isAlive(level.mesh))
-                ? resources.get(level.mesh).name.c_str() : "<unresolved>";
+                ? resources.get(level.mesh).name().c_str() : "<unresolved>";
             const size_t tris = (level.mesh && resources.isAlive(level.mesh))
                 ? resources.get(level.mesh).indices.size() / 3 : 0;
             ImGui::TextDisabled("%zu: %s  (%zu tris, to %.0fm)", i, name, tris, level.maxDistance);
@@ -1855,7 +1855,7 @@ void InspectorPanel::drawAnimatorSection(EditorContext& ec, EntityId id) {
         // another poses the wrong joints out of matching indices. The system
         // refuses it and holds the bind pose; say so here, where the pairing is
         // being made, rather than only in the log.
-        if (rig && clip && clip->skeleton != rig->name) {
+        if (rig && clip && clip->skeleton != rig->name()) {
             ImGui::TextColored(EditorStyle::DANGER, "Clip belongs to rig '%s'",
                                clip->skeleton.c_str());
             ImGui::TextDisabled("The bind pose is held until they match.");
@@ -1968,11 +1968,11 @@ void InspectorPanel::drawBoneSocketSection(Scene& scene, ResourceManager& resour
         // nothing at all: the socket simply stays where it was put.
         if (skeleton && !socket.bone.empty() && skeleton->indexOf(socket.bone) < 0) {
             ImGui::TextColored(EditorStyle::DANGER, "Rig '%s' has no bone '%s'",
-                               skeleton->name.c_str(), socket.bone.c_str());
+                               skeleton->name().c_str(), socket.bone.c_str());
             ImGui::TextDisabled("The socket stays where it is until they match.");
         } else if (skeleton) {
             ImGui::TextDisabled("%zu bones in rig '%s'",
-                                skeleton->bones.size(), skeleton->name.c_str());
+                                skeleton->bones.size(), skeleton->name().c_str());
         }
 
         // The offset is authored here rather than on the Transform card because

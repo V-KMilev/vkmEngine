@@ -8,7 +8,7 @@ the GPU-uploadable ones sync through a per-resource version counter.
 ## Key files
 
 - `src/engine/resource/resource_manager.h` for the manager
-- `src/engine/resource/resource.h` for the `Resource` base (version, name, hidden flag, source JSON)
+- `src/engine/resource/resource.h` for the `Resource` base (name, version, uid, hidden flag, source JSON)
 - `src/engine/resource/resource_handle.h` for type-safe `Handle<T>`
 - `src/engine/resource/asset_type.h` for `AssetType`, the kind tag every asset is filed and referenced under
 - `src/engine/resource/asset/mesh_asset.h`, `asset/texture_asset.h`, `asset/material_asset.h`, `asset/font_asset.h`, `asset/skeleton_asset.h`, `asset/animation_clip_asset.h`, `asset/audio_clip_asset.h` for the asset kinds
@@ -72,28 +72,32 @@ auto handle = rm.findByName<MeshAsset>("wall_512");
 
 ## Resource base
 
-Every asset inherits `Resource`:
+Every asset inherits `Resource`. Its four identity fields are private, read
+through const accessors, and written only by `ResourceManager` - the one friend
+the class has. The manager keeps a per-type name index and guarantees names are
+unique and non-empty, so a name written behind its back would have left
+`findByName` looking for a string the asset no longer carries. There is now no
+way to write one behind its back.
 
-| Field          | Type                                  | Notes                                                                                       |
-|----------------|---------------------------------------|---------------------------------------------------------------------------------------------|
-| `name`         | `std::string`                         | Stable identity for serialization and look-up                                               |
-| `version`      | `uint64_t`                            | Bumped on `commit()`; backends compare to skip re-upload                                    |
-| `uid`          | `uint64_t`                            | Process-unique instance id stamped by `add()`. A handle names a slot; this names the asset in it, which is how an async completion knows the graph did not change under it |
-| `hidden`       | `bool`                                | When true, filtered from pickers / Asset Browser / scene save (previews, fallbacks). Set via `addPrivate()` |
-| `source`       | `std::unique_ptr<nlohmann::json>`     | The asset's recipe (loader/generator descriptor). The editor cooker bakes it into the library + cooked cache; scenes reference the asset by `name`, not by this descriptor |
+| Accessor      | Type                                  | Notes                                                                                       |
+|---------------|---------------------------------------|---------------------------------------------------------------------------------------------|
+| `name()`      | `const std::string&`                  | Stable identity for serialization and look-up. Assigned by `add(asset, name)`, changed by `rename()` |
+| `version()`   | `uint64_t`                            | Restarted at 1 by `add()` and bumped by `commit()`; backends compare to skip re-upload       |
+| `uid()`       | `uint64_t`                            | Process-unique instance id stamped by `add()`. A handle names a slot; this names the asset in it, which is how an async completion knows the graph did not change under it |
+| `isHidden()`  | `bool`                                | When true, filtered from pickers / Asset Browser / scene save (previews, fallbacks). Set via `addPrivate()` |
+| `sourceJson()`| `nlohmann::json&`                     | The asset's recipe (loader/generator descriptor). The editor cooker bakes it into the library + cooked cache; scenes reference the asset by name, not by this descriptor |
 
-`source` is held by `unique_ptr` against a forward-declared `nlohmann::json`
-so headers don't drag the JSON header in (see
-[../guides/code-style.md](../guides/code-style.md) for why this exception is
-deliberate).
+The source descriptor is held by `unique_ptr` against a forward-declared
+`nlohmann::json` so headers don't drag the JSON header in; that is why
+`Resource`'s Rule of 5 is defined out of line in `resource.cpp`, where the full
+type is visible. `hasSource()` tests the slot, and the const `sourceJson()`
+asserts rather than allocating.
 
-`hidden = true` is set (via `ResourceManager::addPrivate`) on the editor's own
-preview and thumbnail assets - the Asset Browser's preview sphere and neutral
-thumbnail material, the Material Editor's preview primitives. The cooker leaves
-them out of the manifest and `AssetSerializer` refuses to write a reference to
-one, so save files contain only user-relevant content. Names are guaranteed unique and non-empty per type:
-`add()` runs them through `ensureUniqueName`, and a name must be changed via
-`rename()` (not `edit().name = ...`) so the name index stays consistent.
+`addPrivate()` is what marks an asset hidden, and the editor is its only caller:
+the Asset Browser's preview sphere and neutral thumbnail material, the Material
+Editor's preview primitives. The cooker leaves them out of the manifest and
+`AssetSerializer` refuses to write a reference to one, so save files contain
+only user-relevant content.
 
 ## Asset types
 
@@ -337,12 +341,12 @@ whole. See [Audio](system/audio.md) for the full argument and what it costs.
 
 ## Versioning
 
-`commit(handle)` bumps a single per-asset `version` counter. (There is no
+`commit(handle)` bumps a single per-asset version counter. (There is no
 global or per-type version counter - those mechanisms were removed.) `GLView`
 keys on this per-asset version: it keeps a per-asset cached version and rebuilds
-GPU state only when the cached value diverges from the asset's `version`.
+GPU state only when the cached value diverges from the asset's `version()`.
 
-`version` only tracks edits *within* one asset graph. A wholesale replacement
+A version only tracks edits *within* one asset graph. A wholesale replacement
 (scene load, editor play-stop restore) is what `epoch()` is for: the incoming
 graph restarts at the same indices, generations and versions, so the backend
 compares the epoch and drops every mirror when it moves. `swap()`, `swapSlot()`

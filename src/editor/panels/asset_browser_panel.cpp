@@ -112,8 +112,8 @@ template<typename Asset>
 struct KindOps {
     static void rows(const ResourceManager& resources, const RowSink& sink) {
         resources.forEachOfType<Asset>([&](Handle<Asset> h, const Asset& a) {
-            if (a.hidden) return;  // editor helpers / preview primitives are not user-facing
-            sink(AssetRow{h.key, &a.name, a.version});
+            if (a.isHidden()) return;  // editor helpers / preview primitives are not user-facing
+            sink(AssetRow{h.key, &a.name(), a.version()});
         });
     }
 
