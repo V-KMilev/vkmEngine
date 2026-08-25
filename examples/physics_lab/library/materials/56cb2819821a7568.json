@@ -1,0 +1,55 @@
+{
+  "name": "lab:mark",
+  "source": {
+    "albedo": [
+      0.5799999833106995,
+      0.949999988079071,
+      0.25999999046325684,
+      1.0
+    ],
+    "alphaCutoff": 0.5,
+    "anisotropy": 0.0,
+    "anisotropyDirection": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "ao": 1.0,
+    "attenuationColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "attenuationDistance": 1.0,
+    "clearcoat": 0.0,
+    "clearcoatRoughness": 0.0,
+    "emission": [
+      0.18000000715255737,
+      0.3400000035762787,
+      0.05000000074505806
+    ],
+    "emissiveStrength": 1.0,
+    "heightScale": 0.0,
+    "ior": 1.5,
+    "kind": "inline",
+    "metallic": 0.0,
+    "normalScale": 1.0,
+    "roughness": 0.4000000059604645,
+    "sheenColor": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "sheenRoughness": 0.30000001192092896,
+    "subsurface": 0.0,
+    "subsurfaceColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "thicknessFactor": 0.0,
+    "transmission": 0.0,
+    "type": "Opaque"
+  },
+  "type": "material"
+}
