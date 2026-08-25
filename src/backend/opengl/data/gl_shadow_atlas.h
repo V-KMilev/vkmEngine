@@ -78,6 +78,17 @@ class GLShadowAtlas {
          *
          * @param unit Texture unit index.
          */
+        /**
+         * @brief Bind the 2D atlas for a shader that samples it with sampler2DShadow.
+         *
+         * The comparison lives on a sampler object bound to @p unit, not on the
+         * texture, because more than one pass reads this atlas per frame and they
+         * do not agree on how. Toggling the texture's own compare mode made the
+         * result depend on the order the passes happen to run in, which nothing
+         * enforced and which two drivers disagreed about.
+         *
+         * @param unit Texture unit to bind the atlas and its comparison sampler to.
+         */
         void bind2D(uint32_t unit) const;
 
         /**
@@ -89,6 +100,11 @@ class GLShadowAtlas {
          * mode with a non-shadow sampler is undefined.
          *
          * @param unit Texture unit index.
+         */
+        /**
+         * @brief Bind the 2D atlas for a shader that samples it with a plain sampler2D.
+         *
+         * @param unit Texture unit to bind the atlas and its non-comparing sampler to.
          */
         void bind2DRaw(uint32_t unit) const;
 
@@ -111,6 +127,14 @@ class GLShadowAtlas {
 
         std::unique_ptr<Vkm::GL::Texture2D>                m_atlas2D;
         std::vector<std::unique_ptr<Vkm::GL::TextureCube>> m_cubes;
+
+        // Two sampler objects rather than one texture whose compare mode gets
+        // toggled. A sampler overrides the unit's sampling state, so the atlas
+        // can be read as a shadow map by one pass and as a depth image by
+        // another in the same frame without either changing state the other
+        // depends on. See bind2D.
+        uint32_t m_cmpSampler = 0;
+        uint32_t m_rawSampler = 0;
 };
 
 } // namespace Vkm::Engine

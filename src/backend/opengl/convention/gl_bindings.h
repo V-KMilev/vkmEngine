@@ -56,6 +56,11 @@ namespace GLBindings {
     // The cube samplers occupy CubeBase .. CubeBase+MAX_CUBE-1.
     namespace ShadowTextureSlots {
         constexpr uint32_t Atlas2D  = 11;  ///< Tiled 2D depth atlas (sampler2DShadow).
+        // The same atlas read as a depth image rather than as a shadow map, on a
+        // unit of its own. A comparison lives on the sampler bound to a unit, so
+        // one unit cannot serve both readings without whichever pass ran last
+        // deciding for the other - which is what it used to do.
+        constexpr uint32_t Atlas2DRaw = 25; ///< Tiled 2D depth atlas, no comparison (sampler2D).
         constexpr uint32_t CubeBase = 12;  ///< First point-light depth cube (samplerCube[]).
     } // namespace ShadowTextureSlots
 

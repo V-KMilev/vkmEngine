@@ -56,7 +56,9 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
 
     // Unconditional: this shader declares the slot as a plain sampler2D, and the driver
     // validates that against the bound state whether or not the debug branch reads it.
-    ctx.shadowAtlas.bind2DRaw(GLBindings::ShadowTextureSlots::Atlas2D);
+    // Its own unit, so the shadow readers' unit is never disturbed and neither
+    // reading depends on which pass ran last.
+    ctx.shadowAtlas.bind2DRaw(GLBindings::ShadowTextureSlots::Atlas2DRaw);
 
     ctx.screenTri.draw();
 }
