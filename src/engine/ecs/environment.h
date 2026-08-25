@@ -152,7 +152,8 @@ struct Environment {
      *
      * The one place elevation/azimuth become a vector, so the sky bake, the
      * skybox and the light that follows them cannot each roll their own and
-     * drift. Matches the engine's forward convention (+Z at azimuth 0).
+     * drift. Azimuth 0 is +Z by definition of the angles, which is not the
+     * engine's forward and does not have to be.
      *
      * @return Unit direction pointing at the sun.
      */
