@@ -10,7 +10,7 @@ namespace Vkm::Engine {
 // child < popup, frames recessed), and a single accent (EditorStyle::ACCENT)
 // drives every interactive/selected surface, so the editor reads as one
 // designed system.
-void applyEditorTheme() {
+void applyEditorTheme(float scale) {
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
 
@@ -47,6 +47,11 @@ void applyEditorTheme() {
     style.TabBarOverlineSize = 2.0f;
     style.WindowMinSize     = ImVec2(220.0f, 140.0f);
     style.DisabledAlpha     = 0.45f;
+
+    // Every metric above is a reference-font design pixel, so the chrome follows
+    // the font's content scale - 2x glyphs sit in 1x padding otherwise. Border
+    // sizes are deliberately left out of it: a hairline is one pixel at any scale.
+    style.ScaleAllSizes(scale);
 
     const ImVec4 A   = EditorStyle::ACCENT;
     const ImVec4 AH  = EditorStyle::ACCENT_HOV;

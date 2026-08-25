@@ -146,8 +146,6 @@ bool hasTex(int flag) {
     return (u_material.textureFlags & flag) != 0;
 }
 
-// Parallax-occlusion mapping
-
 // Ray-march the height field along the tangent-space view direction, then
 // interpolate the crossing for a smooth silhouette. More layers at grazing
 // angles.
@@ -291,8 +289,6 @@ float specularAA(vec3 N, float roughness) {
     float a2       = clamp(alpha2 + kernel, 0.0, 1.0);
     return sqrt(sqrt(a2));   // back to perceptual roughness
 }
-
-// BRDF lobes
 
 #include "../../_common/brdf.glsl"  // distributionGGX (takes the GGX alpha)
 #include "../../_common/sh_l1.glsl"  // SH_Y*/SH_A*: the irradiance-volume projection <-> evaluation contract
@@ -489,11 +485,9 @@ vec3 evaluateLight(vec3 N, vec3 V, vec3 L, vec3 T, vec3 B, Surface s, vec3 f0, v
     // Base specular: anisotropic when configured, isotropic otherwise.
     float D, Vis;
     if (u_material.anisotropy > 0.001) {
-        // Project the authored direction into the shading plane and fall back
-        // to the geometric tangent when it is degenerate. The direction is a
-        // free vector in the material, so it can arrive zeroed or parallel to
-        // N - normalize() of either is NaN, and a NaN here poisons D, Vis and
-        // the whole fragment.
+        // Project the authored direction into the shading plane, or take the
+        // geometric tangent: it is a free vector in the material, so a zeroed
+        // or N-parallel one normalizes to NaN and poisons the whole fragment.
         vec3 aT = T * u_material.anisotropyDirection.x +
                   B * u_material.anisotropyDirection.y +
                   N * u_material.anisotropyDirection.z;
@@ -640,12 +634,9 @@ void main() {
         uv = parallax(uv, viewTS);
     }
 
-    // Alpha test for foliage / leaves (glTF alphaMode = MASK). Done before any
-    // lighting work so masked-out pixels skip the whole PBR cost. The cutout is
-    // sharpened to a ~1px edge and written as coverage (outAlpha below): under
-    // MSAA the forward pass enables alpha-to-coverage so this anti-aliases; with
-    // A2C off, blending is off too, so any coverage > 0 renders solid - a hard
-    // cutout, matching the old behaviour.
+    // Alpha test for foliage (glTF alphaMode = MASK), run before lighting so
+    // masked pixels skip the PBR cost. outAlpha carries the ~1px cutout as
+    // coverage: alpha-to-coverage resolves it under MSAA, a hard cut without.
     float maskCoverage = 1.0;
     if (u_material.type == MAT_ALPHA_MASK) {
         float aTex = hasTex(TEX_ALBEDO) ? texture(u_albedoTexture, uv).a : 1.0;
@@ -706,19 +697,9 @@ void main() {
 
             vec3 Lc = toCenter / max(dist, 1e-4);
 
-            // Build the tangent frame (N = +Z in local space) and transform
-            // the polygon's vertices.
-            //
-            // Vertex order matters: the Lambert edge formula gives positive
-            // irradiance when the polygon is CCW-wound viewed from local +Z
-            // (the shading normal). With axisU / axisV oriented so
-            // cross(axisU, axisV) points along the EMITTER face, surfaces
-            // lit by the emitter front have their normal pointing back at
-            // the polygon - which means the polygon appears CW in local
-            // space. We pre-reverse the world-space winding (emit corners
-            // as bl -> tl -> tr -> br instead of bl -> br -> tr -> tl) so
-            // the local frame sees them as CCW and the integral is
-            // positive on the lit side.
+            // Tangent frame with N at local +Z, where the edge formula is
+            // positive only for CCW. A lit surface faces the emitter, so the
+            // corners below arrive pre-reversed (bl -> tl -> tr -> br).
             mat3 toLocal = ltcTangentFrame(N, V);
             vec3 U  = light.axisU.xyz;
             vec3 Vv = light.axisV.xyz;
@@ -737,7 +718,6 @@ void main() {
                 // that the silhouette reads as circular.
                 const int N_DISK = 12;
                 vec3 verts[12];
-                // Named apart from the light loop's k, though the scopes are distinct.
                 for (int dv = 0; dv < N_DISK; ++dv) {
                     float t = -float(dv) / float(N_DISK) * 6.2831853;  // CW order
                     vec3 worldP = lightPos + cos(t) * U + sin(t) * Vv;
@@ -850,13 +830,9 @@ void main() {
         Lo += evaluateLight(N, V, L, T, B, s, f0, radiance);
     }
 
-    // Indirect light. Split-sum IBL when a baked environment is present:
-    // diffuse from the irradiance cube, specular from the roughness-prefiltered
-    // cube weighted by the BRDF/DFG LUT. Falls back to flat ambient otherwise.
-    // The AO map modulates the indirect term either way.
-    // Screen-space AO (GTAO) carries the occlusion factor plus a bent normal -
-    // the average unoccluded direction. Sampling irradiance along the bent normal
-    // (instead of the geometric normal) keeps creases from over-collecting light.
+    // GTAO carries the occlusion factor plus a bent normal - the average
+    // unoccluded direction. Gathering irradiance along it rather than along the
+    // geometric normal keeps creases from over-collecting light.
     float ssao  = 1.0;
     vec3  bentN = N;
     if (u_hasSSAO == 1) {
@@ -943,11 +919,9 @@ void main() {
         return;
     }
 
-    // Screen-space transmission refraction: sample the copied scene behind the
-    // surface, offset along the refracted view ray (IOR bend), tinted by the
-    // glass colour + Beer-Lambert volume absorption. Makes transmissive glass
-    // show and bend the background instead of rendering opaque. (Specular in
-    // `color` is attenuated by the blend - a simplification until a Fresnel split.)
+    // Screen-space transmission refraction: the copied scene behind the
+    // surface, offset along the refracted view ray and tinted by the glass
+    // colour. With no Fresnel split, the specular in `color` is attenuated too.
     if (u_hasSceneColor == 1 && u_material.transmission > 0.0) {
         vec3 rdir = refract(-V, N, 1.0 / max(u_material.ior, 1.0));
         if (dot(rdir, rdir) > 0.0) {

@@ -1,29 +1,17 @@
 # The SDK install - every install rule the engine has, in one file.
 #
-# `cmake --install` produces an SDK, not a game. That distinction is the whole
-# point of the project split: the engine is a thing you build games with, and a
-# game is a project directory plus a renamed copy of vkm_runtime. Packaging a
-# game is a separate operation (see tools/vkm), not a mode of this one.
-#
-# The layout a project sees:
-#
-#   <prefix>/bin/      the three hosts and the shared libraries they need
-#   <prefix>/include/  the engine's public headers, module-qualified, plus the
-#                      third-party headers its public headers reach into
-#   <prefix>/lib/cmake/vkmEngine/   find_package() lands here
-#   <prefix>/shaders/  engine shaders, loaded at run time relative to the root
-#   <prefix>/templates/ what `vkm new` copies
+# `cmake --install` produces an SDK, not a game: the engine is a thing you build
+# games with, and a game is a project directory plus a renamed copy of
+# vkm_runtime. Packaging a game is a separate operation (tools/vkm), not a mode
+# of this one. The layout these rules produce is in docs/reference/building.md.
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
 set(VKM_CMAKE_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/vkmEngine)
 
-# ---------------------------------------------------------------------------
-# Targets
-# ---------------------------------------------------------------------------
 # A project links exactly one engine target: vkm_core, through the
-# vkm_add_gameplay_module() helper the config file defines. Everything else the
+# vkm_add_gameplay_module() helper the config file includes. Everything else the
 # engine is made of - the render system, the GL backend, the cooker, the editor -
 # is reached by running a host, not by linking, so none of it belongs in the
 # export set. What has to be here besides vkm_core is its own link interface:
@@ -48,14 +36,10 @@ install(TARGETS vkm_render vkm_gl
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime)
 
 # The hosts. A packaged game is a renamed copy of vkm_runtime, so the binary
-# ships in the SDK rather than being rebuilt per game - that is the point of the
-# project split.
+# ships in the SDK rather than being rebuilt per game.
 install(TARGETS vkm_runtime_app vkm_editor_app vkm_cook_app
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime)
 
-# ---------------------------------------------------------------------------
-# Headers
-# ---------------------------------------------------------------------------
 # src/engine ships and nothing else does: a project writes behaviors and builds
 # scenes, and reaches neither the GL backend nor the editor. The directory
 # structure is the include path, so it is preserved exactly - "ecs/scene.h"
@@ -72,9 +56,8 @@ install(DIRECTORY ${CMAKE_SOURCE_DIR}/src/engine/
         PATTERN "build_info.h" EXCLUDE
 )
 
-# Third-party headers the engine's own public headers include. An audit of all
-# 121 public headers found these and nothing else, so this list is the complete
-# set a project needs - not a guess.
+# The third-party headers the engine's own public headers include - the complete
+# set, so a project compiles against the SDK without vendoring anything itself.
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/modules/glm/glm
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT Development
         FILES_MATCHING PATTERN "*.hpp" PATTERN "*.h" PATTERN "*.inl")
@@ -108,9 +91,6 @@ if(VKM_PROFILER)
             FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
 endif()
 
-# ---------------------------------------------------------------------------
-# Engine data
-# ---------------------------------------------------------------------------
 # Shaders are engine chrome: they ship with the engine and a project never edits
 # them. Everything a project owns - its scenes, its assets, its cooked library -
 # belongs to the project and is not the SDK's to install.
@@ -147,9 +127,6 @@ endif()
 install(PROGRAMS ${CMAKE_SOURCE_DIR}/tools/vkm
         DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime)
 
-# ---------------------------------------------------------------------------
-# The package
-# ---------------------------------------------------------------------------
 install(EXPORT vkmEngineTargets
         FILE        vkmEngineTargets.cmake
         NAMESPACE   vkmEngine::
@@ -166,6 +143,13 @@ set(VKM_BUILD_TREE_PACKAGE_DIR ${CMAKE_BINARY_DIR}/${VKM_CMAKE_INSTALL_DIR})
 export(EXPORT vkmEngineTargets
        FILE      ${VKM_BUILD_TREE_PACKAGE_DIR}/vkmEngineTargets.cmake
        NAMESPACE vkmEngine::)
+
+# The gameplay module recipe, which the config file includes from beside itself.
+# Copied rather than generated: it holds no configure-time substitutions, and
+# copying it means the top-level CMakeLists and both package layouts read one
+# file. COPYONLY, so a `$`-bearing line is never mistaken for a substitution.
+configure_file(${CMAKE_SOURCE_DIR}/cmake/gameplay_module.cmake
+               ${VKM_BUILD_TREE_PACKAGE_DIR}/gameplay_module.cmake COPYONLY)
 
 # The two layouts the config file is generated for. Installed, every path hangs
 # off the prefix the SDK was unpacked into and has to stay relocatable, so the
@@ -208,5 +192,6 @@ write_basic_package_version_file(
 install(FILES
             ${CMAKE_BINARY_DIR}/install/vkmEngineConfig.cmake
             ${VKM_BUILD_TREE_PACKAGE_DIR}/vkmEngineConfigVersion.cmake
+            ${CMAKE_SOURCE_DIR}/cmake/gameplay_module.cmake
         DESTINATION ${VKM_CMAKE_INSTALL_DIR}
         COMPONENT   Development)

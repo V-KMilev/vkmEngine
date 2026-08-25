@@ -121,6 +121,13 @@ class CommandStack {
         unsigned long long revision() const { return m_revision; }
 
     private:
+        /**
+         * @brief Cap on the undo history to bound editor memory. Oldest entries
+         * are dropped when the cap is exceeded.
+         */
+        static constexpr size_t HISTORY_LIMIT = 200;
+
+    private:
         std::vector<std::unique_ptr<Command>> m_undo;
         std::vector<std::unique_ptr<Command>> m_redo;
 
@@ -136,12 +143,6 @@ class CommandStack {
          * @brief Bumped by every operation that changes the history.
          */
         unsigned long long m_revision = 0;
-
-        /**
-         * @brief Cap on the undo history to bound editor memory. Oldest entries
-         * are dropped when the cap is exceeded.
-         */
-        static constexpr size_t HISTORY_LIMIT = 200;
 };
 
 } // namespace Vkm::Engine

@@ -74,10 +74,14 @@ EditorSystem::EditorSystem(
     // A real TTF instead of ImGui's 13 px bitmap default; Roboto Medium already
     // ships with the engine, so the editor reuses it. Sized against the window's
     // content scale so text stays crisp on HiDPI displays.
+    float scaleX = 1.0f, scaleY = 1.0f;
+    glfwGetWindowContentScale(window, &scaleX, &scaleY);
+    // Clamped at 1 because a scale below it would shrink the font rather than
+    // leave it alone. The theme reads the same number, so chrome and text are
+    // never scaled by two different ones.
+    const float uiScale = std::max(scaleX, 1.0f);
     {
-        float scaleX = 1.0f, scaleY = 1.0f;
-        glfwGetWindowContentScale(window, &scaleX, &scaleY);
-        const float fontSize = std::floor(15.0f * std::max(scaleX, 1.0f));
+        const float fontSize = std::floor(15.0f * uiScale);
         static std::string s_fontPath =
             (ProjectPaths::engineFonts() / "Roboto-Medium.ttf").string();
         if (!io.Fonts->AddFontFromFileTTF(s_fontPath.c_str(), fontSize)) {
@@ -95,7 +99,7 @@ EditorSystem::EditorSystem(
         }
     }
 
-    applyEditorTheme();
+    applyEditorTheme(uiScale);
 
     // The fly controls are an authoring tool, so the editor is what asks for
     // them. Off by default rather than switched off by the runtime: right-drag
@@ -247,7 +251,7 @@ void syncWindowTitle(WindowManager& window, const std::string& project,
         s_last = std::move(title);
     }
 }
-}
+} // namespace
 
 void EditorSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("EditorSystem");
@@ -589,12 +593,13 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
             drawRightTabs(ec);
             ImGui::PopStyleVar();
         }
-        // Recorded where it is drawn rather than recomputed: a detached window
-        // asks whether it was released over this panel, and the answer has to be
-        // the rectangle the panel actually occupied, not one derived twice.
+        ImGui::EndChild();
+
+        // Read after EndChild, which is where ImGui makes the child itself the
+        // last item. Before it, these are whatever widget the Inspector drew
+        // last - which is a rectangle inside the panel rather than the panel.
         m_state.rightPanelMin = ImGui::GetItemRectMin();
         m_state.rightPanelMax = ImGui::GetItemRectMax();
-        ImGui::EndChild();
         ImGui::PopStyleVar();
     }
 
@@ -710,7 +715,11 @@ void EditorSystem::drawFloatingMaterial(EditorContext& ec) {
                     ImGui::GetColorU32(EditorStyle::Accent::MatBase),
                     EditorStyle::px(4.0f), 0, EditorStyle::px(2.0f));
     }
-    if (overPanel && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) m_state.materialFloating = false;
+    // Gated on the drag: a release over the panel that did not follow one is an
+    // ordinary click in the Inspector, and it used to close the window.
+    if (dragging && overPanel && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        m_state.materialFloating = false;
+    }
     if (!open) m_state.materialFloating = false;
 }
 

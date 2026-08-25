@@ -1,6 +1,4 @@
 # vkm_core - ECS, resources, IO, platform, and the non-render systems.
-# CONFIGURE_DEPENDS re-globs on demand, so adding/removing a source file does
-# not need a manual reconfigure.
 file(GLOB_RECURSE VKM_CORE_SOURCES CONFIGURE_DEPENDS
     core/*.cpp
     ecs/*.cpp
@@ -26,20 +24,14 @@ file(GLOB_RECURSE VKM_CORE_SOURCES CONFIGURE_DEPENDS
     debug/*.cpp
 )
 
-# Shared, not static, and that is the SDK's central decision. A gameplay module
-# has to reach engine symbols without carrying a second copy of them: two copies
-# mean two typeId registries and two sets of singletons, so a component type
-# registered against one is invisible to the other. A static engine can only
-# satisfy that by having the module resolve symbols from the host executable,
-# which works on Linux but binds a module to one specific exe on Windows - so a
-# module built for the editor cannot be loaded by the runtime. One shared library
-# both link against removes the choice of host from the question.
+# Shared, not static: a gameplay module has to reach engine symbols without
+# carrying a second copy of them, and one shared library both it and the host
+# link against is the only arrangement that does not bind a module to one exe.
+# docs/reference/building.md carries the rest of the reasoning.
 add_library(vkm_core SHARED ${VKM_CORE_SOURCES})
 
-# The public surface is not yet annotated, so on Windows let CMake generate the
-# export table from the object files. Narrowing this to an explicit VKM_API is a
-# later step of the same version; it changes what is exported, not whether the
-# shared build works.
+# The public surface is not annotated, so on Windows CMake generates the export
+# table from the object files instead.
 set_target_properties(vkm_core PROPERTIES
     WINDOWS_EXPORT_ALL_SYMBOLS ON
 )
@@ -90,18 +82,13 @@ target_compile_definitions(vkm_core PUBLIC
     GLM_ENABLE_EXPERIMENTAL
     GLM_FORCE_INTRINSICS
 
-    # The engine version, visible to anything that links vkm_core - including a
-    # gameplay module built against an installed SDK, which does not link
-    # vkm_build_info. A module reports this back through vkmModuleEngineVersion() and
-    # the host compares it with its own, so a module built against a different
-    # engine is refused at load with a sentence instead of crashing later.
+    # Here rather than in vkm_build_info, which a gameplay module built against
+    # an installed SDK does not link: the module reports this back through
+    # vkmModuleEngineVersion(), and a host that reads a different number refuses
+    # the module at load instead of crashing later.
     VKM_ENGINE_VERSION="${PROJECT_VERSION}"
 )
 
-# Tracy plumbing. The facade (debug/profiler.h) gates every macro on
-# VKM_PROFILER, so consumers never include Tracy headers themselves. TracyClient
-# stays a PUBLIC link so backend/editor TUs that pull profile macros via the
-# facade get the symbols at link time.
 # Tracy is linked privately for the same reason as glfw: its objects live inside
 # libvkm_core, and a consumer expanding a PROFILE_ macro resolves the symbols
 # from there. Its include path still propagates, because the facade's macros
@@ -114,13 +101,11 @@ if(VKM_PROFILER)
     )
 endif()
 
-# vkm_headers - an include-only (INTERFACE) view of vkm_core's public API.
-# Kept for consumers that genuinely need headers without a link, but a gameplay
-# module is no longer one of them: it links vkm_core directly now that
-# vkm_core is shared, which gives it the one typeId registry and the one set of
-# singletons rather than resolving them from whichever exe loaded it.
-# The GLM_* defs are mandatory either way: glm types cross the module boundary
-# (e.g. CollisionEvent), so both sides must agree on glm's layout.
+# vkm_headers - an include-only (INTERFACE) view of vkm_core's public API, for a
+# consumer that needs the headers without the link. A gameplay module is not one
+# of them; it links vkm_core. The GLM_* definitions are not optional here: glm
+# types cross the module boundary (CollisionEvent, for one), so both sides have
+# to agree on glm's layout.
 add_library(vkm_headers INTERFACE)
 target_include_directories(vkm_headers INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>

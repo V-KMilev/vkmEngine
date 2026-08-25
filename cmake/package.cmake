@@ -2,9 +2,9 @@
 #
 #     cmake --build build --target package
 #
-# Two components, and the split is the useful part: Runtime is what a player
-# needs to run a game, Development is what a developer needs to build one.
-# A packaged game ships Runtime only, which is why the split exists at all.
+# Two components: Runtime is what a player needs to run a game, Development what
+# a developer needs to build one. A packaged game ships Runtime alone, which is
+# what the split is for.
 
 set(CPACK_PACKAGE_NAME              "vkmEngine")
 set(CPACK_PACKAGE_VENDOR            "vkm")
@@ -26,9 +26,8 @@ else()
 endif()
 
 # The engine is not ABI-stable across compilers, so the archive name says which
-# one built it. Without this, two builds of the same version are indistinguishable
-# and the toolchain pin's error message is the first anyone learns of the
-# difference - after downloading the wrong one.
+# one built it - otherwise the toolchain pin's error is the first anyone hears
+# of the difference, after downloading the wrong archive.
 set(CPACK_PACKAGE_FILE_NAME
     "${CPACK_PACKAGE_FILE_NAME}-${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSION}")
 

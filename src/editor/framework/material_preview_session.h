@@ -80,6 +80,7 @@ class MaterialPreviewSession {
         static constexpr uint32_t LIVE_SIZE  = 512;  ///< Material Editor pane
         static constexpr uint32_t THUMB_SIZE = 256;  ///< Asset Browser tiles
 
+    private:
         RenderSystem& m_renderSystem;
 
         /**

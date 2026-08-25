@@ -42,24 +42,19 @@ layout(binding = 12) uniform samplerCube u_shadowCube[SHADOW_MAX_CUBE];
 // 3x3 PCF sample of one 2D atlas tile. Returns 1 (lit) .. 0 (shadowed); off-map
 // or beyond-far reads as lit so geometry outside the map is never darkened.
 //
-// The taps go through a sampler2DShadow, so the texture unit does the depth
-// compare against a 2x2 neighbourhood and returns the bilinear-weighted
-// fraction that passed. That matters wherever a shadow texel is wider than a
-// screen pixel - which is most of the near field at a large shadowDistance -
-// because a nearest fetch compared in the shader can only return 0 or 1, and
-// nine of them can only return ten distinct values. The edge then lands on
-// texel boundaries and reads as a staircase of blocks however dense the map
-// is. The same nine taps interpolated give a continuous ratio instead.
+// The taps go through a sampler2DShadow, so each is a hardware depth compare
+// over a 2x2 neighbourhood returning the bilinear fraction that passed. Nine of
+// those give a continuous ratio; nine nearest fetches compared in the shader
+// give ten values, and a staircased edge wherever a texel outgrows a pixel.
 //
 // Pass N = vec3(0) to skip the normal-offset bias - correct for a volumetric
 // sample, which has no surface to self-shadow.
 float sample2DSlot(int slot, vec3 worldPos, vec3 N, float ndotl) {
     Shadow2D sm = u_shadow.s2d[slot];
 
-    // Normal-offset bias: shift the sample point along the surface normal by a
-    // few shadow texels (more at grazing angles). params.y is the cascade's
-    // world texel size, so this scales per cascade and kills self-shadow acne
-    // without the peter-panning a large depth bias would cause.
+    // Normal-offset bias: shift along the normal by a few shadow texels, more
+    // at grazing angles. params.y is the cascade's world texel size, so this
+    // kills acne per cascade without a big depth bias's peter-panning.
     float offsetTexels = 1.5 + 3.0 * (1.0 - clamp(ndotl, 0.0, 1.0));
     vec3  samplePos    = worldPos + N * (sm.params.y * offsetTexels);
 
@@ -73,14 +68,8 @@ float sample2DSlot(int slot, vec3 worldPos, vec3 N, float ndotl) {
     }
 
     // Slope-scaled depth bias on top (params.x = the light's shadowBias knob).
-    // One shadow texel spans a depth range proportional to tan(theta) between
-    // the surface and the light, so a constant bias only covers surfaces facing
-    // the light. It is the ground under a low sun that breaks: the normal-offset
-    // above shifts along the surface normal, which at grazing incidence is
-    // perpendicular to the light's view direction and so barely moves the sample
-    // in depth - the acne it is meant to kill reappears as stripes. Clamped, or
-    // a light parallel to the surface would drive the bias to infinity and
-    // detach the shadow from whatever casts it.
+    // Under a low sun the normal offset barely moves the sample in depth, so
+    // its acne returns as stripes; the clamp keeps a grazing light finite.
     float nl      = clamp(ndotl, 0.0, 1.0);
     float slope   = min(sqrt(1.0 - nl * nl) / max(nl, 0.1), 4.0);
     float bias    = sm.params.x * (1.0 + slope);

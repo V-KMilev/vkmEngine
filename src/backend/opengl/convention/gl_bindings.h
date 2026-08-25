@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "core/engine_config.h"
+
 namespace Vkm::Engine {
 
 /**
@@ -62,6 +64,12 @@ namespace GLBindings {
         // deciding for the other - which is what it used to do.
         constexpr uint32_t Atlas2DRaw = 25; ///< Tiled 2D depth atlas, no comparison (sampler2D).
         constexpr uint32_t CubeBase = 12;  ///< First point-light depth cube (samplerCube[]).
+
+        // The cubes run CubeBase .. CubeBase+MAX-1 and the IBL set starts at 14,
+        // so raising MAX_SHADOW_CASTERS_CUBE past two silently overwrites the
+        // irradiance cube rather than failing. Say so at build time instead.
+        static_assert(CubeBase + Config::MAX_SHADOW_CASTERS_CUBE <= 14,
+                      "Point-light shadow cubes would overlap the IBL texture slots");
     } // namespace ShadowTextureSlots
 
     // Image-based lighting textures, above the shadow slots (11-13). Bound by
