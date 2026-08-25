@@ -83,6 +83,17 @@ class GizmoOverlay {
         void drawColliderGizmos(EditorContext& ec);
 
         /**
+         * @brief Draw every joint as its two anchors and the line between them.
+         *
+         * A joint has no mesh and no collider, so without this it is authored
+         * blind: the only way to see a wrong anchor was to run the scene and
+         * watch the body snap. Point joints mark the shared anchor; distance
+         * joints draw the rope. Toggled with EditorState::showColliders - one
+         * switch for everything physics authors against.
+         */
+        void drawJointGizmos(EditorContext& ec);
+
+        /**
          * @brief Draw every posed rig as bone segments from parent to child,
          * with an axis triad per bone on the selected one.
          *

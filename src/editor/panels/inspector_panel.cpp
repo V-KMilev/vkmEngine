@@ -1,6 +1,7 @@
 #include "panels/inspector_panel.h"
 
 #include <algorithm>
+#include <climits>
 #include <cstring>
 #include <filesystem>
 #include <memory>
@@ -51,7 +52,12 @@
 #include "resource/asset/skeleton_asset.h"
 #include "system/audio/audio_system.h"
 #include "system/camera/camera_controller_system.h"
-#include "system/physics/collider_fit.h"
+#include "system/physics/authoring/collider_fit.h"
+#include "system/hierarchy/hierarchy_operations.h"
+#include "system/physics/authoring/mesh_collider.h"
+#include "system/physics/authoring/ragdoll_build.h"
+#include "ecs/component/physics/ragdoll.h"
+#include "ecs/component/physics/joint.h"
 #include "system/script/behavior.h"
 #include "system/script/behavior_field_visitor.h"
 #include "system/script/behavior_registry.h"
@@ -62,6 +68,25 @@
 namespace Vkm::Engine {
 
 namespace {
+
+// The scale between the entity a collider is authored on and the node the art
+// actually hangs from. An import puts the mesh on a child with a unit fix-up of
+// its own - the lab's character is 1 and its model node 0.01 - and a shape
+// fitted with the parent's scale comes out wrong by exactly that factor. Walked
+// as local scales rather than decomposed from the relative matrix, so a
+// mirrored node keeps its sign; a rotation between the two would make any
+// single scale vector an approximation, and there is none in an import chain.
+glm::vec3 meshScaleRelativeTo(const Scene& scene, EntityId collider, EntityId meshNode) {
+    glm::vec3 scale(1.0f);
+    EntityId at = meshNode;
+    for (uint32_t step = 0; at && step < HierarchyOperations::MAX_DEPTH; ++step) {
+        if (scene.has<Transform>(at)) scale *= scene.get<Transform>(at).scale;
+        if (at == collider) break;
+        at = scene.has<Hierarchy>(at) ? scene.get<Hierarchy>(at).parent : EntityId{};
+    }
+    return scale;
+}
+
 // How far the Camera card holds the two clip planes apart. They bound each
 // other, but merely touching is already degenerate: glm::perspective divides by
 // (zFar - zNear) and the cluster pass takes log(zFar / zNear).
@@ -435,6 +460,8 @@ void InspectorPanel::draw(EditorContext& ec) {
     if (scene.has<Collider>(id))   drawColliderSection(scene, ctx.resources, state, id);
     if (scene.has<CharacterController>(id))
         drawCharacterControllerSection(scene, ctx.resources, state, id);
+    if (scene.has<Joint>(id))      drawJointSection(scene, ctx.resources, state, id);
+    if (scene.has<Ragdoll>(id))    drawRagdollSection(scene, ctx.resources, state, id);
     if (scene.has<Camera>(id))     drawCameraSection(ec, id);
     if (scene.has<ReflectionProbe>(id)) drawReflectionProbeSection(scene, ctx.resources, state, id);
     if (scene.has<Decal>(id))          drawDecalSection(scene, ctx.resources, state, id);
@@ -746,6 +773,8 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         addItem("Rigidbody", Rigidbody{}, "Add Rigidbody");
         addItem("Collider", Collider{}, "Add Collider");
         addItem("Character Controller", CharacterController{}, "Add Character Controller");
+        addItem("Joint", Joint{}, "Add Joint");
+        addItem("Ragdoll", Ragdoll{}, "Add Ragdoll");
 
         section("UI");
         addItem("UI Canvas", UICanvas{}, "Add UI Canvas");
@@ -1471,6 +1500,14 @@ void InspectorPanel::drawRigidbodySection(Scene& scene, ResourceManager& resourc
         changed |= propCheckbox("Can Sleep", &rb.canSleep,
                                 "Uncheck for script-driven bodies that must stay responsive at rest");
 
+        // The layer fields the simulation already filters by. Serialized and
+        // load-bearing - a ragdoll build writes them - but they were only
+        // reachable through a text editor until they had rows here.
+        changed |= propDragInt("Layer", &rb.layer, 0.1f, 0, 1 << 30,
+                               "Bit mask of the layers this body is on; a ragdoll puts its bones on 2");
+        changed |= propDragInt("Collides With", &rb.collidesWith, 0.1f, INT_MIN, INT_MAX,
+                               "Bit mask of layers this body collides with; -1 is everything");
+
         // Scoped to a dynamic body, the one this ruins: it integrates gravity
         // with nothing to land on and leaves the world, where a static or
         // kinematic body with no shape is merely inert.
@@ -1504,18 +1541,42 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
             ColliderPart& part = col.parts[0];
             changed |= propEnumCombo("Shape", part.shape);
             changed |= drawVec3Control("Center", glm::value_ptr(part.center), 0.0f, 0.05f);
-            if (part.shape == ColliderShape::Capsule) {
-                // The segment runs along the entity's local +Y, so the capsule
-                // stands 2*(halfHeight + radius) tall; the total is spelled out
-                // because that is the number an author is matching to a model.
-                changed |= propDrag("Radius", &part.radius, 0.01f, 0.001f, 1000.0f, "%.3f");
-                changed |= propDrag("Half Height", &part.halfHeight, 0.01f, 0.0f, 1000.0f, "%.3f",
-                                    "Half the segment, caps excluded. 0 is a sphere.");
-                ImGui::TextDisabled("Height %.3f along local +Y",
-                                    (part.halfHeight + part.radius) * 2.0f);
-            } else {
-                changed |= drawVec3Control("Half Extents",
-                    glm::value_ptr(part.halfExtents), 0.5f, 0.05f);
+            switch (part.shape) {
+                case ColliderShape::Capsule:
+                    // The segment runs along the entity's local +Y, so the
+                    // capsule stands 2*(halfHeight + radius) tall; the total is
+                    // spelled out because that is the number an author is
+                    // matching to a model.
+                    changed |= propDrag("Radius", &part.radius, 0.01f, 0.001f,
+                                        1000.0f, "%.3f");
+                    changed |= propDrag("Half Height", &part.halfHeight, 0.01f,
+                                        0.0f, 1000.0f, "%.3f",
+                                        "Half the segment, caps excluded. 0 is a sphere.");
+                    ImGui::TextDisabled("Height %.3f along local +Y",
+                                        (part.halfHeight + part.radius) * 2.0f);
+                    break;
+
+                case ColliderShape::Mesh:
+                    ImGui::TextDisabled("%u triangle(s), %zu tree node(s)",
+                                        part.meshCount / 3, col.meshNodes.size());
+                    // The one shape that cannot move, and the failure is
+                    // silent: a triangle soup has no inside to be pushed out of.
+                    if (scene.has<Rigidbody>(id)) {
+                        const Rigidbody& rb = scene.get<Rigidbody>(id);
+                        if (!rb.isStatic && !rb.isKinematic) {
+                            ImGui::TextColored(EditorStyle::DANGER,
+                                "A mesh encloses no volume: this body falls through the world.");
+                        }
+                    }
+                    break;
+
+                case ColliderShape::Box:
+                    changed |= drawVec3Control("Half Extents",
+                        glm::value_ptr(part.halfExtents), 0.5f, 0.05f);
+                    break;
+
+                case ColliderShape::Count:
+                    break;
             }
         } else {
             ImGui::TextDisabled("%zu parts (mesh-fitted)", col.parts.size());
@@ -1524,16 +1585,40 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
         // Detail 1 is a single box (the scaled bounds); higher detail voxelizes
         // the mesh into a box compound that hugs it. Entity scale is baked in,
         // the solver ignoring Transform scale.
-        if (scene.has<Mesh>(id) && scene.get<Mesh>(id).mesh) {
-            const auto& asset = resources.get(scene.get<Mesh>(id).mesh);
+        // Same problem the other way up: an import leaves the geometry on the
+        // nodes that draw, and the physics goes on the root where the Rigidbody
+        // is. Without looking down, every one of these buttons is missing on
+        // the only entity it makes sense to press them from.
+        const EntityId meshNode =
+            HierarchyOperations::findInSelfOrDescendants<Mesh>(scene, id);
+        if (meshNode && scene.get<Mesh>(meshNode).mesh) {
+            const auto& asset = resources.get(scene.get<Mesh>(meshNode).mesh);
+            if (meshNode != id && scene.has<Name>(meshNode)) {
+                ImGui::Spacing();
+                ImGui::TextDisabled("Shape from '%s'", scene.get<Name>(meshNode).value);
+            }
             if (Math::hasValidBounds(asset.boundsMin, asset.boundsMax)) {
                 ImGui::Spacing();
                 propSliderInt("Detail", &m_colliderFitDetail, 1, COLLIDER_FIT_MAX_DETAIL,
                     "1 = one box; higher = a tighter box compound (more boxes = heavier)");
                 if (ImGui::Button("Fit to Mesh", ImVec2(-1.0f, 0.0f))) {
-                    const glm::vec3 scale = scene.has<Transform>(id)
-                        ? scene.get<Transform>(id).scale : glm::vec3(1.0f);
+                    const glm::vec3 scale = meshScaleRelativeTo(scene, id, meshNode);
                     col.parts = fitBoxesToMesh(asset, m_colliderFitDetail, scale);
+                    col.meshPoints.clear();
+                    col.meshNodes.clear();
+                    changed = true;
+                }
+
+                // The other way to take a shape from the same mesh: the
+                // geometry itself, for something that does not move. It
+                // replaces the parts, because a fitted box compound beside it
+                // would collide twice.
+                if (ImGui::Button("Make Mesh Collider", ImVec2(-1.0f, 0.0f))) {
+                    const glm::vec3 scale = meshScaleRelativeTo(scene, id, meshNode);
+                    col.parts.clear();
+                    col.meshPoints.clear();
+                    col.meshNodes.clear();
+                    addMeshCollider(col, asset, scale);
                     changed = true;
                 }
             }
@@ -1550,6 +1635,160 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
 
         return changed;
     });
+}
+
+void InspectorPanel::drawJointSection(Scene& scene, ResourceManager& resources,
+                                      EditorState& state, EntityId id) {
+    editComponentCard<Joint>(scene, resources, state, id, "Joint",
+                             EditorStyle::Accent::Physics,
+                             "Edit Joint", "Remove Joint", [&](Joint& joint) {
+        bool changed = false;
+
+        changed |= propEnumCombo("Type", joint.type);
+
+        // Picked from the scene rather than typed: a joint naming a slot that
+        // does not exist holds nothing and says nothing about it. Built each
+        // frame because the list is the scene, and the scene changes.
+        // Every entity, not only the named ones: a joint tied to something
+        // unnamed used to show "None", which is what an unset joint shows, and
+        // picking anything from the list then overwrote a connection the author
+        // could not see they had.
+        m_jointCandidates.clear();
+        m_jointCandidateLabels.clear();
+        m_jointCandidateNames.clear();
+        m_jointCandidates.push_back(EntityId{});
+        m_jointCandidateLabels.emplace_back("None");
+        scene.forEachEntity([&](EntityId other) {
+            if (other == id) return;
+            char label[96];
+            getEntityDisplayName(scene, other, label, sizeof(label));
+            m_jointCandidates.push_back(other);
+            m_jointCandidateLabels.emplace_back(label);
+        });
+        // Pointers taken only once the labels have stopped moving.
+        m_jointCandidateNames.reserve(m_jointCandidateLabels.size());
+        for (const std::string& label : m_jointCandidateLabels) {
+            m_jointCandidateNames.push_back(label.c_str());
+        }
+
+        int selected = 0;
+        for (size_t i = 0; i < m_jointCandidates.size(); ++i) {
+            if (m_jointCandidates[i] == joint.connected) {
+                selected = static_cast<int>(i);
+                break;
+            }
+        }
+        if (propIndexCombo("Connected", m_jointCandidateNames.data(),
+                           static_cast<int>(m_jointCandidateNames.size()),
+                           &selected)) {
+            joint.connected = m_jointCandidates[static_cast<size_t>(selected)];
+            changed = true;
+        }
+
+        changed |= drawVec3Control("Anchor", glm::value_ptr(joint.anchor),
+                                   0.0f, 0.05f);
+        changed |= drawVec3Control("Connected Anchor",
+                                   glm::value_ptr(joint.connectedAnchor), 0.0f, 0.05f);
+
+        if (joint.type == JointType::Distance) {
+            changed |= propDrag("Distance", &joint.distance, 0.01f, -1.0f, 1000.0f,
+                                "%.3f m",
+                                "Negative takes whatever the two were apart on the\n"
+                                "first tick, so a rope built at play time needs no\n"
+                                "one to measure it.");
+        }
+
+        changed |= propSlider("Stiffness", &joint.stiffness, 0.0f, 1.0f, "%.2f",
+                              "1 is rigid. Lower gives way under load.");
+        changed |= propCheckbox("Collide Connected", &joint.collideConnected,
+                                "Off by default: jointed bodies usually overlap at\n"
+                                "the joint, and resolving both the contact and the\n"
+                                "joint makes the pair fight and gain energy.");
+
+        // The two ways a joint silently does nothing.
+        if (!joint.connected) {
+            ImGui::TextColored(EditorStyle::DANGER, "No connected body: this holds nothing.");
+        }
+        if (!scene.has<Rigidbody>(id)) {
+            ImGui::TextColored(EditorStyle::DANGER, "No Rigidbody: this entity is not simulated.");
+        }
+
+        return changed;
+    });
+}
+
+void InspectorPanel::drawRagdollSection(Scene& scene, ResourceManager& resources,
+                                        EditorState& state, EntityId id) {
+    // What the buttons asked for, run after the card rather than inside it.
+    // Building removes and re-adds the component, and clearing removes it - and
+    // the card holds a reference to it across the whole draw, which those would
+    // leave dangling for the edit it pushes afterwards.
+    enum class Pending { None, Build, Clear };
+    Pending pending = Pending::None;
+    EntityId rigNode{};
+
+    editComponentCard<Ragdoll>(scene, resources, state, id, "Ragdoll",
+                               EditorStyle::Accent::Physics,
+                               "Edit Ragdoll", "Remove Ragdoll", [&](Ragdoll& ragdoll) {
+        bool changed = false;
+
+        changed |= propCheckbox("Active", &ragdoll.active,
+                                "On, physics poses the rig and the clip is ignored.\n"
+                                "Off, the bodies follow the animation and do not fall.");
+
+        ImGui::TextDisabled("%zu simulated bone(s)", ragdoll.bones.size());
+
+        // A model import puts the Animator on a node below the entity the
+        // physics is authored on, so the rig is looked for downward rather than
+        // demanded here - otherwise the button is dead on the entity every
+        // author would select.
+        // Offered before the rig is looked for, because clearing does not need
+        // one: the bones are ordinary entities, and whether the skeleton that
+        // shaped them still loads has nothing to do with destroying them. Below
+        // the rig check it was unreachable in the one case that most wants it -
+        // a ragdoll whose skeleton went away.
+        if (!ragdoll.bones.empty() && ImGui::Button("Clear", ImVec2(-1.0f, 0.0f))) {
+            pending = Pending::Clear;
+        }
+
+        rigNode = HierarchyOperations::findInSelfOrDescendants<Animator>(scene, id);
+        const bool hasRig = rigNode
+                         && scene.get<Animator>(rigNode).skeleton
+                         && resources.isAlive(scene.get<Animator>(rigNode).skeleton);
+        if (!hasRig) {
+            ImGui::TextColored(EditorStyle::DANGER,
+                "No Animator with a skeleton here or below: nothing to build from.");
+            return changed;
+        }
+        if (rigNode != id && scene.has<Name>(rigNode)) {
+            ImGui::TextDisabled("Rig from '%s'", scene.get<Name>(rigNode).value);
+        }
+
+        ImGui::Spacing();
+        propDrag("Thickness", &m_ragdollSettings.thickness, 0.01f, 0.02f, 1.0f, "%.2f",
+                 "Limb radius as a fraction of its length. A rig says nothing\n"
+                 "about how solid it is, and length is what scales.");
+        propDrag("Mass", &m_ragdollSettings.mass, 1.0f, 0.1f, 1000.0f, "%.0f kg",
+                 "Shared out by limb volume, so a forearm does not weigh a torso.");
+
+        if (ImGui::Button("Build", ImVec2(-1.0f, 0.0f))) pending = Pending::Build;
+
+        // Removing the component leaves the bodies behind: the card's Remove is
+        // the generic one and knows nothing about them. Said here because the
+        // two buttons sit together and only one of them is complete.
+        ImGui::TextDisabled("Clear destroys the bones. Remove Ragdoll does not.");
+
+        return changed;
+    });
+
+    if (pending == Pending::Build && rigNode) {
+        const SkeletonAsset& rig = resources.get(scene.get<Animator>(rigNode).skeleton);
+        buildRagdoll(scene, id, rig, m_ragdollSettings);
+        state.markSceneDirty();
+    } else if (pending == Pending::Clear) {
+        clearRagdoll(scene, id);
+        state.markSceneDirty();
+    }
 }
 
 void InspectorPanel::drawCameraSection(EditorContext& ec, EntityId id) {
@@ -1905,13 +2144,21 @@ void InspectorPanel::drawCharacterControllerSection(Scene& scene, ResourceManage
                             "along rather than walk into, and how tall a step the\n"
                             "capsule rolls over.");
 
-        // The step height that falls out of the capsule and the slope limit: an
-        // edge lower than this still gives a walkable contact normal, so the
-        // character climbs it. It is the number behind "why that kerb".
+        changed |= propDrag("Step Height", &cc.stepHeight, 0.01f, 0.0f, 10.0f, "%.2f m",
+                            "Tallest thing the character mounts instead of stopping at.\n"
+                            "Checked against real geometry before anything moves: there\n"
+                            "has to be clear space above it and walkable ground beyond,\n"
+                            "so raising this makes the character climb more, never\n"
+                            "climb through. Zero switches it off and a kerb is a wall.");
+
+        // What the capsule rolls over on its own, which is not the same number
+        // and is why a character was climbing kerbs before step-up existed: an
+        // edge lower than this gives a walkable contact normal by itself.
         if (const float radius = capsuleRadiusOf(scene, id); radius > 0.0f) {
             const float limit = glm::radians(glm::clamp(cc.maxSlopeAngle, 0.0f, 90.0f));
             ImGui::Spacing();
-            ImGui::TextDisabled("Rolls over steps up to %.2f m", radius * (1.0f - std::cos(limit)));
+            ImGui::TextDisabled("Rolls over steps up to %.2f m unaided",
+                                radius * (1.0f - std::cos(limit)));
         }
 
         // Live state, not authoring: moveInput is written by gameplay and the
