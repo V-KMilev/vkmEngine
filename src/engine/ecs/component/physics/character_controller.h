@@ -22,8 +22,7 @@ namespace Vkm::Engine {
  * character, physically speaking, but not one anybody wants - and canSleep
  * false, so standing still does not park the body the input then has to wake.
  *
- * Deliberately partial for 1.6: velocity-driven, with no step-up (that needs a
- * shapecast query the engine does not have) and no crouch or platform riding.
+ * Deliberately partial: velocity-driven, with no crouch and no platform riding.
  */
 struct CharacterController {
     glm::vec3 moveInput = {0.0f, 0.0f, 0.0f};   ///< Desired horizontal velocity, world space, m/s.
@@ -34,7 +33,28 @@ struct CharacterController {
     float airControl    = 0.25f;   ///< Fraction of acceleration available while airborne.
     float maxSlopeAngle = 50.0f;   ///< Degrees; a steeper surface holds nothing up.
 
+    /**
+     * @brief Tallest obstacle the character mounts instead of stopping at, in
+     *        metres. Zero disables it.
+     *
+     * A kerb, a stair tread, the lip of a doorway. Below this the character
+     * rises over what blocks it; above it, the obstacle is a wall and the
+     * character slides along it as before. It is checked against real geometry
+     * before anything moves - there has to be clear space at the top and
+     * walkable ground beyond - so setting it tall makes the character climb
+     * more, never climb through.
+     */
+    float stepHeight = 0.4f;
+
     bool grounded = false;                       ///< Read-only: on a surface within maxSlopeAngle.
+
+    // A climb, once started, outlives the condition that started it: leaving
+    // the ground is the first thing it does, so a step re-decided each tick
+    // from `grounded` aborts itself and the character bounces at the kerb
+    // instead of mounting it. These carry it to the height that was measured.
+    bool  stepping    = false;   ///< Read-only: mounting something this tick.
+    float stepTargetY = 0.0f;    ///< Read-only: world Y the feet are climbing to.
+    float stepTime    = 0.0f;    ///< Read-only: seconds the current climb has run.
     glm::vec3 groundNormal = {0.0f, 1.0f, 0.0f}; ///< Read-only: its normal; world up when airborne.
 };
 
@@ -46,5 +66,6 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::CharacterController)
     VKM_F(jumpSpeed),
     VKM_F(acceleration),
     VKM_F(airControl),
-    VKM_F(maxSlopeAngle)
+    VKM_F(maxSlopeAngle),
+    VKM_F(stepHeight)
 VKM_REFLECT_END()
