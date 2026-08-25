@@ -48,8 +48,9 @@ events.unsubscribe<DamageEvent>(id);
 
 Returns `true` if the listener existed and was removed. **Cannot be
 called from inside a listener callback during emit/flush** - the system
-asserts. Listeners that need self-unsubscribe should `enqueue` a removal
-event for the next frame.
+asserts, and a release build refuses the call and returns `false` rather
+than erasing under a walk that is already bounded. Listeners that need
+self-unsubscribe should `enqueue` a removal event for the next frame.
 
 ## Publishing
 
@@ -85,7 +86,7 @@ to push events, add a mutex to `Bus<EventT>` at that point.
 
 - Don't subscribe or unsubscribe from inside a listener callback during
   `emit`/`flush`. Subscribing is *technically* safe (new listeners join
-  the next frame's flush) but unsubscribing trips an assert.
+  the next frame's flush) but unsubscribing trips an assert and is refused.
 - A listener that enqueues an event whose bus has already been flushed
   this frame will see that event fire on the *next* frame's flush.
 - Listeners are iterated by index against a frozen bound at flush
@@ -99,7 +100,7 @@ in `m_buses` keyed by `typeId<EventT>()`). The bus holds:
 
 - a `std::vector<{ListenerId, std::function}>` of subscribers,
 - a `std::vector<EventT>` queue for deferred events,
-- a `flushDepth` counter that gates the unsubscribe assert.
+- a `flushDepth` counter that gates unsubscribe.
 
 `emit` and `flush` walk the listener vector by index, holding the size
 constant so subscribes during dispatch don't grow the iteration. The

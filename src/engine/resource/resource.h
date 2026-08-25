@@ -62,7 +62,12 @@ class Resource {
          * by passing one.
          */
         Resource(const Resource& other);
-        Resource& operator=(const Resource& other);
+        // Deleted rather than defined. Assigning one asset's base over another
+        // silently drops the uid and version the copy constructor deliberately
+        // omits, so a caller replacing an asset's contents gets an identity the
+        // manager never issued. ResourceManager::swapValue is the door for that,
+        // and it is the only one - this deletion is what keeps it so.
+        Resource& operator=(const Resource& other) = delete;
 
         Resource(Resource && other) noexcept;
         Resource& operator=(Resource && other) noexcept;

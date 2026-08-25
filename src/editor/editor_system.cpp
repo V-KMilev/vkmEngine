@@ -589,12 +589,13 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
             drawRightTabs(ec);
             ImGui::PopStyleVar();
         }
-        // Recorded where it is drawn rather than recomputed: a detached window
-        // asks whether it was released over this panel, and the answer has to be
-        // the rectangle the panel actually occupied, not one derived twice.
+        ImGui::EndChild();
+
+        // Read after EndChild, which is where ImGui makes the child itself the
+        // last item. Before it, these are whatever widget the Inspector drew
+        // last - which is a rectangle inside the panel rather than the panel.
         m_state.rightPanelMin = ImGui::GetItemRectMin();
         m_state.rightPanelMax = ImGui::GetItemRectMax();
-        ImGui::EndChild();
         ImGui::PopStyleVar();
     }
 
@@ -710,7 +711,11 @@ void EditorSystem::drawFloatingMaterial(EditorContext& ec) {
                     ImGui::GetColorU32(EditorStyle::Accent::MatBase),
                     EditorStyle::px(4.0f), 0, EditorStyle::px(2.0f));
     }
-    if (overPanel && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) m_state.materialFloating = false;
+    // Gated on the drag: a release over the panel that did not follow one is an
+    // ordinary click in the Inspector, and it used to close the window.
+    if (dragging && overPanel && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        m_state.materialFloating = false;
+    }
     if (!open) m_state.materialFloating = false;
 }
 

@@ -25,13 +25,6 @@ Resource::Resource(const Resource& other)
     , m_source(cloneSource(other.m_source))
 {}
 
-Resource& Resource::operator=(const Resource& other) {
-    if (this == &other) return *this;
-    m_name   = other.m_name;
-    m_hidden = other.m_hidden;
-    m_source = cloneSource(other.m_source);
-    return *this;
-}
 
 Resource::Resource(Resource && other) noexcept = default;
 Resource& Resource::operator=(Resource && other) noexcept = default;
