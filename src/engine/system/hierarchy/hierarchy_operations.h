@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include <glm/glm.hpp>
 
 #include "ecs/scene.h"
@@ -54,6 +56,17 @@ glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity);
 constexpr uint32_t MAX_DEPTH = 32;
 
 /**
+ * @brief Entities a downward search will visit before giving up.
+ *
+ * A runaway guard rather than a limit anyone should meet: a cycle makes a
+ * breadth-first walk enqueue for as long as memory lasts, and a malformed
+ * import is exactly when someone reaches for a search. Set far above any real
+ * subtree - a rig is tens of bones, a level prop a handful - so a search that
+ * hits it has found a loop rather than a large model.
+ */
+constexpr size_t MAX_SEARCH_NODES = 4096;
+
+/**
  * @brief Iterate over all direct children of an entity.
  *
  * @param scene The scene containing the entity.
@@ -75,6 +88,68 @@ void forEachChild(const Scene& scene, EntityId parent, Fn&& fn) {
         fn(child);
         child = next;
     }
+}
+
+/**
+ * @brief The nearest entity at or below @p root carrying a T.
+ *
+ * A model import puts what a component needs on a different entity than the one
+ * an author selects: the rig is on the node the bones are composed in, the
+ * geometry on the nodes that draw, and the physics on the root because that is
+ * where the Rigidbody has to be. Rather than making the author find the right
+ * node, the code looks in the direction the answer is.
+ *
+ * Breadth first, so the nearest wins: a rig nested two deep is still the rig,
+ * and a deeper one under a prop attached to a hand is not.
+ *
+ * @tparam T Component to look for.
+ * @param scene Scene to walk.
+ * @param root Entity to start from, inclusive.
+ * @return The entity carrying it, or an invalid id.
+ */
+template<typename T>
+EntityId findInSelfOrDescendants(const Scene& scene, EntityId root) {
+    if (!root) return {};
+    if (scene.has<T>(root)) return root;
+
+    // Bounded like findInSelfOrAncestors below it. A cycle in the hierarchy
+    // makes this queue grow for as long as memory lasts, and a malformed
+    // import is exactly when someone reaches for a search.
+    std::vector<EntityId> pending = { root };
+    for (size_t i = 0; i < pending.size() && pending.size() < MAX_SEARCH_NODES; ++i) {
+        EntityId found{};
+        forEachChild(scene, pending[i], [&](EntityId child) {
+            if (!found && scene.has<T>(child)) found = child;
+            pending.push_back(child);
+        });
+        if (found) return found;
+    }
+    return {};
+}
+
+/**
+ * @brief The nearest entity at or above @p leaf carrying a T.
+ *
+ * The other direction, for the same reason: a ragdoll is authored on the root
+ * beside the Rigidbody, and the animation system reaches it from the rig node
+ * underneath. Neither end has to know how deep the other is.
+ *
+ * @tparam T Component to look for.
+ * @param scene Scene to walk.
+ * @param leaf Entity to start from, inclusive.
+ * @return The entity carrying it, or an invalid id.
+ */
+template<typename T>
+EntityId findInSelfOrAncestors(const Scene& scene, EntityId leaf) {
+    EntityId at = leaf;
+    // Bounded by the same depth limit the resolve pass follows, so a hierarchy
+    // that somehow formed a cycle stops rather than hanging the frame.
+    for (uint32_t step = 0; at && step < MAX_DEPTH; ++step) {
+        if (scene.has<T>(at)) return at;
+        if (!scene.has<Hierarchy>(at)) return {};
+        at = scene.get<Hierarchy>(at).parent;
+    }
+    return {};
 }
 
 /**
