@@ -126,12 +126,16 @@ TextureHandle loadModelEmbeddedTexture(
 SkeletonHandle loadModelSkeleton(const std::string& path, ResourceManager& resources);
 
 /**
- * @brief Build and register one of a model file's animations, bound to its rig.
+ * @brief Build and register one of a model file's animations, bound to a rig.
  *
  * Named "<stem>:clip<index>" by Assimp's global animation index, so a re-import
- * relinks. Channels are resolved to bone indices here, against the same
- * skeleton loadModelSkeleton builds; one naming a node the rig does not hold is
- * dropped and counted.
+ * relinks. Channels are resolved to bone indices here; one naming a node the rig
+ * does not hold is dropped and counted.
+ *
+ * The rig is the one in the same file unless @p rig names another. It has to be
+ * nameable, because a rig is built from skin weights and an animation exported
+ * without a mesh therefore has none of its own - which is how animation
+ * libraries are distributed, one file per motion against a rig sent once.
  *
  * Markers are authored rather than imported - no interchange format carries
  * one - so they arrive from the recipe beside the path and the index, and are
@@ -145,13 +149,16 @@ SkeletonHandle loadModelSkeleton(const std::string& path, ResourceManager& resou
  * @param clipIndex Assimp global animation index to extract.
  * @param markers Authored markers to carry on the clip; may be empty.
  * @param resources Resource manager the clip (and the rig it names) is added to.
+ * @param rig Name of an already-loaded skeleton to bind against. Empty binds to
+ *        the rig in @p path's own file, which is what a skinned export carries.
  * @return Handle to the built or existing clip, or an empty handle on failure.
  */
 AnimationClipHandle loadModelAnimationClip(
     const std::string& path,
     int clipIndex,
     std::vector<ClipMarker> markers,
-    ResourceManager& resources
+    ResourceManager& resources,
+    const std::string& rig = {}
 );
 
 /**
