@@ -115,6 +115,7 @@ outcome and the reason.
 | Shader permutations      | Built, measured, reverted. No win on a GPU-bound frame. |
 | Draw-sort hoisting       | Built, measured, reverted. Same reason.               |
 | Buffer-stall fixes       | Built, measured, reverted. Same reason.               |
+| GJK replacing the narrowphase | Rejected as a replacement, adopted as an addition. The hand-written pair routines return up to 4 contact points; GJK+EPA returns one, and resting stability needs the manifold. Mesh triangles route through one GJK path instead of growing the pair matrix: a triangle is a convex point cloud, so the support machinery serves it without a routine of its own. |
 
 The pattern in the last three is the lesson: **the frame is GPU-bound**, so a
 CPU-side optimisation needs a profile before it needs a patch. Assume any obvious
@@ -179,10 +180,10 @@ default. So say in the commit what you expect an old file to do. If the answer
 needs to be "refuse it", that is a change to what the gate does and belongs with
 the owner, not inside the task.
 
-And when you change one, there is nothing in-tree to round-trip against: **the
-repo ships no scene and no prefab.** Both `examples/*/scenes/` are empty and both
-examples build their worlds in code, so testing a format change means authoring a
-scene by hand in the editor first, then saving and reloading it.
+And when you change one, round-trip against what ships:
+`examples/physics_lab/scenes/obstacle_course.json` is a saved scene of record -
+the other examples still build their worlds in code. A format change that scene
+cannot survive is a format change that did not happen.
 
 ---
 
@@ -191,7 +192,10 @@ scene by hand in the editor first, then saving and reloading it.
 Not rules. Things that are true, are not obvious, and have each produced a wrong
 result somebody had to chase down.
 
-- **Forward is +Z.** GLM's `quatLookAt` aims 180 degrees off it. A sun overhead
-  needs a *positive* pitch. Silently wrong-looking output, never an error.
 - **The frame is GPU-bound.** See section 4.
-- **Screen-right is -X** in the engine's right-handed basis.
+- **Forward is -Z and screen-right is +X**, right-handed with +Y up - glm's
+  own convention. It was +Z forward once, which put right at -X and left
+  `glm::quatLookAt` aiming 180 degrees off. Screen-right is `cross(forward,
+  up)` under either convention; `cross(up, forward)` is the mirrored one and
+  always was. The convention lives in `Math::computeForward` and friends;
+  every place that broke during the flip was a place that had hand-rolled it.

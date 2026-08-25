@@ -284,6 +284,22 @@ GL object and the other because glm has no business in a GL wrapper's API. That
 is the whole exception. A backend *type the engine renders through* is
 `Vkm::Engine`.
 
+### 4.0 Do not redefine what glm or the standard library already names
+
+Before declaring a constant, check whether glm or `<limits>` already carries it.
+`glm::epsilon<float>()`, `glm::pi<float>()`, `glm::half_pi<float>()` and the rest
+of `glm/gtc/constants.hpp` are the engine's vocabulary; a local `PI` or a local
+`EPSILON` is a second name for a value that already had one, and the two drift.
+
+This holds for tolerances too, which is the case most likely to tempt you.
+Guarding a division, testing a vector for degeneracy, asking whether a length can
+be normalized - those are questions about what floats can represent, and
+`glm::epsilon<float>()` is the answer to all of them.
+
+Declare a constant of your own when the value is genuinely the engine's: a slope
+limit, a sleep threshold, a cascade count. If you cannot say what the number
+means in the engine's own terms, it is probably an epsilon in disguise.
+
 ### 4.1 The struct/class member rule
 
 This is the single most common slip. The rule:

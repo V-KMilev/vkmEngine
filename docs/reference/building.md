@@ -103,10 +103,16 @@ injection), so it passes on a build machine with no GPU. It builds by default:
 option otherwise defaults to "only when vkm_gl is the top-level project" - which
 as a submodule means never.
 
-The engine itself has no test target, and does not get an empty one. Testing is
-enabled at the root, so the first engine test is an `add_test` beside whatever
-it tests rather than a decision to make first. Tests ride along with the work
-that needs them.
+The engine has a suite of its own beside it, `vkm_engine`, built from
+`tests/vkm_engine_tests.cpp` and registered the same way. It covers engine logic
+that is pure computation over a `Scene` - collision, the solver, queries,
+ragdoll authoring, serialization round-trips - so it too runs on a machine with
+no GPU and no display. `ctest --test-dir build` runs both.
+
+What it deliberately does not cover is anything needing a device or a window,
+which is most of the renderer and all of the editor. Walking the tool is still
+the verification for those. New engine tests join the existing suite rather than
+starting another one.
 
 What the hosts do offer a script is the boot check above: their exit codes
 separate "opened the project" from "opened something else instead", which is the
