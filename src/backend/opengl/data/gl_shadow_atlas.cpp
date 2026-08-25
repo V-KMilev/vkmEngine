@@ -56,15 +56,9 @@ void GLShadowAtlas::init(uint32_t tileRes) {
     params.generateMipmaps = false;
     m_atlas2D = std::make_unique<Vkm::GL::Texture2D>("shadow_atlas_2d", params);
 
-    // LEQUAL matches the shader's own test, which counted a sample lit when the
-    // biased receiver depth was no greater than the stored caster depth.
-    m_atlas2D->bind();
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
-
     // A bound sampler replaces every sampling parameter for that unit, not only
     // the comparison, so both carry the atlas's own filtering and clamp. They
-    // outlive a resize because they describe how the atlas is read rather than
-    // what it holds.
+    // outlive a resize: they describe how the atlas is read, not what it holds.
     if (!m_cmpSampler) {
         glGenSamplers(1, &m_cmpSampler);
         glSamplerParameteri(m_cmpSampler, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -82,7 +76,6 @@ void GLShadowAtlas::init(uint32_t tileRes) {
         glSamplerParameteri(m_rawSampler, GL_TEXTURE_WRAP_T,     GL_CLAMP_TO_EDGE);
         glSamplerParameteri(m_rawSampler, GL_TEXTURE_COMPARE_MODE, GL_NONE);
     }
-    m_atlas2D->unbind();
 
     m_fbo2D.bind();
     m_fbo2D.attachTexture2D(GL_DEPTH_ATTACHMENT, m_atlas2D->getID());
