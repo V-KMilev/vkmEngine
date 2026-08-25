@@ -141,11 +141,11 @@ absolutes at the top state the rules; this is which pieces they protect:
   (`system/render/editor_render_hooks.h:69`) is offscreen rendering for authoring
   tools - asset thumbnails, material previews - which a shipped game never asks
   for. `GLBackend` inherits both (`backend/opengl/gl_backend.h:61`) and the
-  editor asks for it by `dynamic_cast` through `editorRenderHooks()` (`:125`),
-  showing placeholders when the answer is null. It lives under `system/render`
-  rather than in the editor because the backend has to implement it and cannot
-  see editor code. Two seams, both named here; an authoring-side GPU need extends
-  this one rather than inventing a third.
+  editor asks for it by `dynamic_cast` through `editorRenderHooks()`
+  (`editor_render_hooks.h:125`), showing placeholders when the answer is null.
+  It lives under `system/render` rather than in the editor because the backend
+  has to implement it and cannot see editor code. Two seams, both named here; an
+  authoring-side GPU need extends this one rather than inventing a third.
 - **Stage order** - Input, Simulation, Transform, Visibility, Render, UI. A
   system is placed by responsibility and relies on ordering, never on manual
   sequencing.
@@ -154,7 +154,7 @@ absolutes at the top state the rules; this is which pieces they protect:
 the `AppSystems` bundle (camera, UI, visibility, render, audio) plus the
 `ScriptModule` that owns the gameplay library, taken by constructor
 (`editor/editor_system.h:54-63`) and wired at
-`app/editor/main.cpp:79-82`. That is allowed because it is not participating in
+`app/editor/main.cpp:36-38`. That is allowed because it is not participating in
 the frame's data flow: it is the authoring tool *driving* the engine, at the UI
 stage, after every producer has already run. Nothing else gets to do this. A
 system that finds itself wanting a reference to another system has a
@@ -168,7 +168,7 @@ agent bumping a constant needs to know which it is holding.
 | Format         | Constant                                              | What the reader refuses                       |
 |----------------|-------------------------------------------------------|-----------------------------------------------|
 | Cooked asset   | `io/asset/asset_cook.h:40-44` - five, one per asset kind | Anything but an exact match. A stale artifact is refused and re-cooked. |
-| Scene          | `io/scene/scene_serializer.cpp:42` (`= 2`)            | Missing, zero, or *newer* than this build (`:327-335`). Nothing else. |
+| Scene          | `io/scene/scene_serializer.cpp:42` (`= 2`)            | Missing, zero, or *newer* than this build (`:314-323`). Nothing else. |
 | Prefab         | `io/scene/prefab.cpp:35` (`= 3`)                      | The same shape (`:94-99`).                    |
 | `project.json` | `io/project.cpp:54-60` `engineVersion`                | Nothing. It warns, deliberately - "refusing to open would be worse". It is provenance, not a format version. |
 
