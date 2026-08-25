@@ -461,7 +461,6 @@ void StressArena::onStart() {
 
 MaterialHandle StressArena::makeMaterial(const MaterialAsset& source, const char* name) {
     MaterialAsset material = source;
-    material.name = name;
     return m_resources->add(std::move(material), name);
 }
 

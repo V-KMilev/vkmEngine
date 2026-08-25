@@ -39,7 +39,19 @@ class ResourceManager {
 
     public:
         /**
-         * @brief Add a new resource to the manager.
+         * @brief Add a new resource to the manager, stamping its identity.
+         *
+         * The name the asset arrives with is made non-empty and unique within
+         * its type - "asset" when it had none, a " (N)" suffix when it was
+         * taken - because findByName resolves a name back to a handle, and two
+         * assets sharing a name would share a serialized identity. The overload
+         * below is how a caller supplies one; Resource keeps the field private,
+         * so these two are the only door to it.
+         *
+         * The stored asset also gets a fresh process-unique uid and its version
+         * restarted at 1. Both say "a new asset sits here" - the uid to an async
+         * completion that may have been minted against the previous occupant of
+         * this slot, the version to a backend cache holding GPU state for it.
          *
          * @param resource The resource instance to add (will be moved).
          * @return The handle for the newly added resource.
@@ -50,16 +62,15 @@ class ResourceManager {
             static_assert(std::is_base_of_v<Resource, T>, "ResourceManager stores only types deriving from Resource.");
             auto& slot = getSlot<T>();
 
-            // The name is the asset's serializable identity, so it has to be
-            // non-empty and unique within its type for findByName to be an
-            // unambiguous key.
-            ensureUniqueName(slot, resource.name);
+            ensureUniqueName(slot, resource.m_name);
 
             StorageIndex key = slot.allocator.allocate();
-            std::string indexName = resource.name;  // unique + non-empty now
-            // Stamped on the stored asset rather than the argument: insertion may
-            // copy, and a copy is a duplicate that carries no identity of its own.
-            storageOf<T>(slot).add(key.index, std::forward<ResourceType>(resource)).uid = ++s_nextUid;
+            std::string indexName = resource.m_name;  // unique + non-empty now
+            // Stamped on the stored asset, not the argument: insertion may copy,
+            // and a copy is a duplicate that carries no identity of its own.
+            Resource& stored = storageOf<T>(slot).add(key.index, std::forward<ResourceType>(resource));
+            stored.m_uid     = ++s_nextUid;
+            stored.m_version = 1;
             slot.nameIndex.emplace(std::move(indexName), key.index);
 
             return Handle<T>{key};
@@ -74,7 +85,7 @@ class ResourceManager {
          */
         template<typename ResourceType>
         auto add(ResourceType && resource, std::string name) {
-            resource.name = std::move(name);
+            resource.m_name = std::move(name);
             return add(std::forward<ResourceType>(resource));
         }
 
@@ -82,7 +93,7 @@ class ResourceManager {
          * @brief Insert a private asset hidden from user-facing surfaces.
          *
          * Pickers, the Asset Browser and the scene saver filter on
-         * Resource::hidden so these never surface to the user or get
+         * Resource::isHidden so these never surface to the user or get
          * serialized into a scene save. Today's only caller is the editor
          * (preview primitives, neutral thumbnail materials); the flag is
          * named for the visibility intent, not the consumer.
@@ -93,8 +104,8 @@ class ResourceManager {
          */
         template<typename ResourceType>
         auto addPrivate(ResourceType && resource, std::string name) {
-            resource.hidden = true;
-            resource.name = std::move(name);
+            resource.m_hidden = true;
+            resource.m_name   = std::move(name);
             return add(std::forward<ResourceType>(resource));
         }
 
@@ -123,7 +134,7 @@ class ResourceManager {
             if (!slot.allocator.has(handle.key)) return;
 
             const T& res = storageOfConst<T>(slot).get(handle.key.index);
-            dropNameIndex(slot, res.name, handle.key.index);
+            dropNameIndex(slot, res.m_name, handle.key.index);
             storageOf<T>(slot).remove(handle.key.index);
             slot.allocator.free(handle.key);
         }
@@ -165,10 +176,10 @@ class ResourceManager {
         /**
          * @brief Get mutable access to a resource for editing by handle.
          *
-         * IMPORTANT: do NOT mutate the `name` field through this reference -
-         * the per-type findByName index will go stale and findByName(newName)
-         * keeps returning nothing. Use rename(handle, newName) instead. Every
-         * other field is safe to edit in place; only the name is indexed.
+         * Reaches the asset's own fields only: the identity the manager indexes
+         * by is private to Resource, so nothing here can put the name index out
+         * of step. rename(handle, newName) is how a name changes; commit(handle)
+         * is how the backend is told the contents did.
          */
         template<typename HandleType>
         auto& edit(const HandleType& handle) {
@@ -181,9 +192,8 @@ class ResourceManager {
         /**
          * @brief Rename a resource and keep findByName consistent.
          *
-         * Direct `edit(h).name = ...` only mutates the asset; the per-type
-         * name index won't see the change and findByName(newName) keeps
-         * returning nothing. Use this whenever a name is assigned after add().
+         * The only way to change a name after add(): Resource keeps its name
+         * private so the asset and the per-type index cannot drift apart.
          *
          * Holds the same non-empty + unique-per-type guarantee add() gives, so
          * @p newName may come straight from a text field: an empty string falls
@@ -203,10 +213,10 @@ class ResourceManager {
             // Drop the old mapping before the uniqueness check, so renaming an
             // asset to the name it already holds is a no-op rather than a
             // collision with itself.
-            dropNameIndex(slot, res.name, handle.key.index);
+            dropNameIndex(slot, res.m_name, handle.key.index);
             ensureUniqueName(slot, newName);
-            res.name = std::move(newName);
-            slot.nameIndex[res.name] = handle.key.index;
+            res.m_name = std::move(newName);
+            slot.nameIndex[res.m_name] = handle.key.index;
         }
 
         /**
@@ -242,11 +252,11 @@ class ResourceManager {
 
             using std::swap;
             swap(target, value);
-            swap(target.version, value.version);
-            swap(target.uid,     value.uid);
-            swap(target.hidden,  value.hidden);
-            swap(target.name,    value.name);
-            ++target.version;
+            swap(target.m_version, value.m_version);
+            swap(target.m_uid,     value.m_uid);
+            swap(target.m_hidden,  value.m_hidden);
+            swap(target.m_name,    value.m_name);
+            ++target.m_version;
         }
 
         /**
@@ -263,18 +273,18 @@ class ResourceManager {
             static_assert(std::is_base_of_v<Resource, T>, "Resource type must inherit from Resource to use commit().");
             auto& slot = getSlot<T>();
             VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::commit invalid handle");
-            ++storageOf<T>(slot).get(handle.key.index).version;
+            ++storageOf<T>(slot).get(handle.key.index).m_version;
         }
 
         /**
-         * @brief Find a resource by its `name` field.
+         * @brief Find a resource by the name it was added or renamed under.
          *
          * Returns a default (invalid) handle if the type is unregistered or no
          * asset matches.
          *
          * O(1) lookup via a per-type name->index map maintained on
-         * add/remove/rename. A `name` mutated directly through edit() is not
-         * reflected there; rename(handle, newName) keeps the index consistent.
+         * add/remove/rename - the only three ways a name comes or goes, since
+         * Resource keeps its own private.
          */
         template<typename T>
         Handle<T> findByName(const std::string& name) const {
@@ -283,12 +293,7 @@ class ResourceManager {
 
             auto it = slot->nameIndex.find(name);
             if (it == slot->nameIndex.end()) return {};
-            const uint32_t index = it->second;
-            // Defensive: if the entry was removed (shouldn't happen because
-            // remove() erases the mapping, but guards against rename-after-
-            // add drift), fall back to invalid.
-            if (!storageOfConst<T>(*slot).contains(index)) return {};
-            return Handle<T>{slot->allocator.handleAt(index)};
+            return Handle<T>{slot->allocator.handleAt(it->second)};
         }
 
         /**
@@ -440,7 +445,6 @@ class ResourceManager {
          * place.
          */
         static void dropNameIndex(TypedSlot& slot, const std::string& name, uint32_t index) {
-            if (name.empty()) return;
             auto it = slot.nameIndex.find(name);
             if (it != slot.nameIndex.end() && it->second == index) {
                 slot.nameIndex.erase(it);

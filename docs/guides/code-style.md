@@ -289,11 +289,10 @@ This is the single most common slip. The rule:
 | Kind                | Members      | Rule of 5 | Examples                          |
 |---------------------|--------------|-----------|-----------------------------------|
 | Data-only struct    | bare `name`  | none      | `Transform`, `DrawableData`, `FrameContext` |
-| Class with behavior | `m_name`     | explicit  | `Engine`, `RenderSystem`, `SparseSet<T>` |
+| Class with behavior | `m_name`     | explicit  | `Engine`, `RenderSystem`, `SparseSet<T>`, `Resource` |
 
 If you want to put `m_` on a struct member, the struct is probably a class. If
-you're skipping the Rule of 5 on a `class`, it's probably a struct. (For the one
-deliberate hybrid, `Resource`, see [13.1](#131-resource-hybrid-struct).)
+you're skipping the Rule of 5 on a `class`, it's probably a struct.
 
 ### 4.2 Method names
 
@@ -406,7 +405,7 @@ Do not divide code with banner comments:
 Organize with `public:` / `private:`, blank lines, and `@brief` docs. (Runtime
 log strings are output, not code structure, and are exempt - the build dump at
 `debug/build_info.h:20-27` is the whole population; see
-[13.4](#134-decorative-log-strings).)
+[13.3](#133-decorative-log-strings).)
 
 **Zero** tree-wide: `src/`, `app/`, `examples/` and `templates/` carry no banner
 of any width. There is nothing to copy from, so a banner arriving in a diff is
@@ -886,18 +885,7 @@ refactors) live in [implementation.md](implementation.md).
 
 Intentional deviations. Do not introduce new ones without team agreement.
 
-### 13.1 `Resource` hybrid struct
-
-`resource/resource.h` declares `struct Resource` with **bare member names**
-(data-struct convention) but a full **out-of-line Rule of 5**. The reason: its
-`source` descriptor is a `std::unique_ptr<nlohmann::json>` held against a
-forward declaration, so the special members must be defined in `resource.cpp`
-where the full json type is visible. It is semantically a data struct
-(subclasses are loaded/saved generically by `name`) that happens to own a
-non-trivial pointer. Do not copy this pattern - if your type needs the Rule of
-5, it is almost always a class.
-
-### 13.2 `ScriptComponent` move-only component
+### 13.1 `ScriptComponent` move-only component
 
 `system/script/script_component.h` holds
 `std::vector<std::unique_ptr<Behavior>>`, making it **move-only** - the one ECS
@@ -906,7 +894,7 @@ component that is not a trivially-copyable aggregate. It works because
 Deep copy goes through `Behavior::clone()`. Do not generalize from this: a
 component should be a plain data struct unless it must own polymorphic instances.
 
-### 13.3 Backend flat includes
+### 13.2 Backend flat includes
 
 Files under `src/backend/opengl/` use flat `gl_`-prefixed includes
 (`#include "gl_backend.h"`) rather than module-qualified paths. The backend is a
@@ -919,25 +907,26 @@ too: `gl_texture.h` exists as both `src/backend/opengl/data/gl_texture.h` and
 the including file first, so which one you get depends on where you are writing
 from. When you add a backend header, check the name is not already vkmGL's.
 
-### 13.4 Decorative log strings
+### 13.3 Decorative log strings
 
 Decorative separators are forbidden in source comments but allowed inside
 runtime log strings (boot banner, build dump). They are visible output, not code
 structure.
 
-### 13.5 `VKM_LOG_CATEGORY` precedes the own-header
+### 13.4 `VKM_LOG_CATEGORY` precedes the own-header
 
 As covered in [section 3](#3-implementation-file-structure-cpp), the
 `#define VKM_LOG_CATEGORY "..."` is the one `#define` allowed before the own
 header include. Every other configuration macro stays in its natural position.
 
-### 13.6 Terse value accessors
+### 13.5 Terse value accessors
 
 An accessor drops the `getX` prefix when its **name already reads as the thing
 it returns**: `Handle::id()`, `Scene::environment()` / `entityCount()` /
 `epoch()` / `physics()`, `GenerationIndex::alive()` / `generation()`,
 `SparseSet::size()`, `ThreadPool::threadCount()`, `WindowManager::mode()` /
-`vsync()`, `RenderSystem::backendInfo()` / `maxAnisotropy()` / `backend()`.
+`vsync()`, `RenderSystem::backendInfo()` / `maxAnisotropy()` / `backend()`,
+`Resource::name()` / `uid()` / `version()`.
 
 The test is the **name**, not the class's kind. `RenderSystem` is this guide's
 archetypal class-with-behavior ([7.2.1](#721-data-members-get-their-own-trailing-section))
@@ -951,7 +940,7 @@ Which means one class carries both, and that is correct rather than sloppy:
 beside `getStorage()` (which *creates* the storage if it is missing),
 `WindowManager::mode()` beside `getWidth()`. Ask it per name, not per class.
 
-### 13.7 A `System` subclass spells out the Rule of 5 it inherits
+### 13.6 A `System` subclass spells out the Rule of 5 it inherits
 
 `core/system.h:98-102` already deletes all four copy/move members, so
 [7.3](#73-non-copyable-non-movable-for-resource-owners) would let a stateless
@@ -966,7 +955,7 @@ A system's class `@brief` also carries what no signature can - **which
 it writes is in place before HierarchySystem resolves world transforms in the
 Transform stage."
 
-### 13.8 Reflected behavior fields are bare publics
+### 13.7 Reflected behavior fields are bare publics
 
 Authored fields on `Behavior` subclasses are bare public members on a class,
 violating 4.1 deliberately: the field name is the serialized identity (scene JSON

@@ -247,13 +247,13 @@ void AudioSystem::warnIfNoListener(bool spatial) {
 
 void AudioSystem::warnIfStereoSpatial(const AudioClipAsset& asset, bool spatial) {
     if (!spatial || asset.channels <= 1) return;
-    if (!m_warnedStereoClips.insert(asset.name).second) return;
+    if (!m_warnedStereoClips.insert(asset.name()).second) return;
 
     LOG_WARNING("A positioned sound is playing the %u-channel clip '%s' - the mixer routes each "
                 "channel to the output channel it was authored for and attenuates it there, so "
                 "sound in one channel is never heard from the other side however the emitter "
                 "moves; positioning wants a mono clip",
-                asset.channels, asset.name.c_str());
+                asset.channels, asset.name().c_str());
 }
 
 void AudioSystem::stopEverything() {

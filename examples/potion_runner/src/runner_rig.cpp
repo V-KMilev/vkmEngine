@@ -56,7 +56,6 @@ float swingAngle(float amplitude, float seconds) {
 
 SkeletonAsset makeRunnerSkeleton() {
     SkeletonAsset rig;
-    rig.name = RUNNER_RIG_NAME;
 
     const auto addBone = [&rig](const char* name, int32_t parent, const glm::vec3& position) {
         rig.bones.push_back({name, parent});
@@ -77,7 +76,6 @@ SkeletonAsset makeRunnerSkeleton() {
 
 AnimationClipAsset makeRunnerStride() {
     AnimationClipAsset clip;
-    clip.name     = RUNNER_CLIP_NAME;
     clip.skeleton = RUNNER_RIG_NAME;
     clip.duration = STRIDE_PERIOD;
     // Parallel to the rig: the root plus the four limbs, and the root carries

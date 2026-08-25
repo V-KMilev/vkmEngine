@@ -33,7 +33,7 @@ void GLTexture::update(const TextureAsset& texture) {
 
     if (!m_texture) {
         const std::string name = texture.filePath.empty()
-            ? ("texture_" + std::to_string(texture.version))
+            ? ("texture_" + std::to_string(texture.version()))
             : texture.filePath;
         m_texture = std::make_unique<Vkm::GL::Texture2D>(name, params);
     } else if (data) {
@@ -56,7 +56,7 @@ void GLTexture::update(const FontAsset& font) {
     params.data            = font.atlasPixels.empty() ? nullptr : font.atlasPixels.data();
 
     if (!m_texture) {
-        m_texture = std::make_unique<Vkm::GL::Texture2D>(font.name + ":atlas", params);
+        m_texture = std::make_unique<Vkm::GL::Texture2D>(font.name() + ":atlas", params);
     } else if (params.data) {
         m_texture->setData(params.data, params.width, params.height, GL_RED, GL_UNSIGNED_BYTE);
     }

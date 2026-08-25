@@ -62,9 +62,9 @@ void finalize(ResourceManager& rm, std::vector<Completion> completions, Apply ap
         }
 
         auto& asset = rm.edit(c.handle);
-        if (asset.uid != c.assetUid) {
+        if (asset.uid() != c.assetUid) {
             LOG_VERBOSE("Async completion for a replaced asset (slot %u, now '%s') - dropping",
-                c.handle.id(), asset.name.c_str());
+                c.handle.id(), asset.name().c_str());
             continue;
         }
 
@@ -106,7 +106,7 @@ void finalizeAsyncLoads(ResourceManager& rm) {
     finalize(rm, queue.drainMeshes(), [](MeshAsset& asset, MeshLoadCompletion& c) {
         if (!c.success || c.vertices.empty()) {
             LOG_WARNING("Async mesh decode failed for '%s' - leaving asset empty",
-                asset.name.c_str());
+                asset.name().c_str());
             return false;
         }
 

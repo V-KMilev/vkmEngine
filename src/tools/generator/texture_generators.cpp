@@ -28,9 +28,8 @@ TextureHandle getOrCreateNamed(ResourceManager& rm, const char* name,
                                TextureAsset texture)
 {
     if (auto existing = rm.findByName<TextureAsset>(name)) return existing;
-    texture.name         = name;
     texture.sourceJson() = source;
-    return rm.add(std::move(texture));
+    return rm.add(std::move(texture), name);
 }
 
 /**
@@ -121,13 +120,12 @@ TextureHandle createSolidColorTexture(glm::vec4 color, ResourceManager& rm, bool
     if (auto existing = rm.findByName<TextureAsset>(key)) return existing;
 
     TextureAsset tex = makeSolidColorAsset(color, srgb);
-    tex.name         = key;
     nlohmann::json src;
     src["kind"]  = "solid";
     src["color"] = {color.r, color.g, color.b, color.a};
     src["srgb"]  = srgb;
     tex.sourceJson() = std::move(src);
-    return rm.add(std::move(tex));
+    return rm.add(std::move(tex), key);
 }
 
 } // namespace Vkm::Engine

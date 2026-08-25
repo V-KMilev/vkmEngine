@@ -39,11 +39,11 @@ void GLView::ensure(GLResourceTable<GLT>& table, const Handle<AssetT>& handle, c
     auto& slot = table.slots[id];
     if (!slot.gl || slot.generation != generation) {
         slot.gl         = std::make_unique<GLT>(asset);
-        slot.version    = asset.version;
+        slot.version    = asset.version();
         slot.generation = generation;
-    } else if (slot.version != asset.version) {
+    } else if (slot.version != asset.version()) {
         slot.gl->update(asset);
-        slot.version = asset.version;
+        slot.version = asset.version();
     }
 }
 
@@ -85,7 +85,7 @@ void GLView::reportIfMissing(const TextureHandle& handle, const ResourceManager&
     if (!m_reportedMissing.insert(handle.id()).second) return;
 
     LOG_WARNING("Texture '%s' has no pixels (path '%s') - drawing the missing-texture placeholder",
-        asset.name.c_str(), asset.filePath.c_str());
+        asset.name().c_str(), asset.filePath.c_str());
 }
 
 void GLView::ensureMaterial(const MaterialHandle& handle, const ResourceManager& resources) {

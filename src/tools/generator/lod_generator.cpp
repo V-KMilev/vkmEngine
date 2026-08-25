@@ -40,13 +40,11 @@ LOD generateLOD(ResourceManager& resources, MeshHandle source, uint32_t extraLev
 
     const MeshAsset& sourceMesh = resources.get(source);
     if (sourceMesh.indices.size() < 3) {
-        LOG_WARNING("generateLOD: source '%s' has no triangles", sourceMesh.name.c_str());
+        LOG_WARNING("generateLOD: source '%s' has no triangles", sourceMesh.name().c_str());
         return lod;
     }
 
-    const std::string baseName = sourceMesh.name.empty()
-        ? ("mesh:" + std::to_string(source.id()))
-        : sourceMesh.name;
+    const std::string baseName = sourceMesh.name();
 
     float    distance = FIRST_DISTANCE;
     float    grid     = static_cast<float>(FIRST_GRID);
@@ -71,7 +69,6 @@ LOD generateLOD(ResourceManager& resources, MeshHandle source, uint32_t extraLev
         }
 
         const std::string name = baseName + ":lod" + std::to_string(level);
-        decimated.name = name;
         // A sourceless asset is one the cooker skips, and an asset that never
         // reaches the library is a mesh the scene file cannot resolve on load -
         // which would drop every level but the base on the next round trip.
