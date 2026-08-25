@@ -1,22 +1,14 @@
-# ============================================================================
-# External Dependencies
-# ============================================================================
 # Shared dependencies the ENGINE owns, added before vkmGL so its own
-# `if (TARGET ...)` guards defer to these.
+# `if (TARGET ...)` guards defer to these. glm is in fifteen behaviour-facing
+# engine headers and the image decoder is engine-wide, so neither can sit behind
+# a backend: a second one would either vendor its own glm and risk a version
+# skew across the module boundary, or reach through the GL backend for it. vkmGL
+# keeps glew, the only genuinely OpenGL-specific one, and expects the rest as
+# targets a parent provides - it hard-errors when they are absent.
 #
-# They used to be vkmGL's, and the engine reached through the GL backend to get
-# them - glm is in fifteen behaviour-facing engine headers, and the image
-# decoder was included from vkmGL/modules/stb. That works with one backend and
-# breaks with two: a second backend would either vendor its own glm and risk a
-# version skew across the module boundary, or depend on the GL backend to get
-# one. They belong beside the engine that needs them.
-#
-# vkmGL keeps glew, which is the only genuinely OpenGL-specific one. It expects
-# the rest as targets a parent provides, and hard-errors when they are absent.
 # Vendored dependencies install themselves by default, which would scatter their
 # headers, archives and pkgconfig files through the SDK prefix. The engine picks
-# what ships (cmake/install.cmake); each of these is switched off at its own
-# option so nothing lands that we did not choose.
+# what ships (cmake/install.cmake), so each is switched off at its own option.
 set(GLM_BUILD_INSTALL OFF CACHE BOOL "" FORCE)
 if(NOT TARGET glm)
     add_subdirectory(glm)
@@ -43,13 +35,10 @@ if(NOT TARGET vkm_log)
     add_subdirectory(vkmLog)
 endif()
 
-# ============================================================================
-# stb (image decoding). Header-only upstream; we compile the implementation
-# once into a tiny static lib so any engine target (not just the GL backend)
-# can decode images - the window icon is the first user. The headers are the
-# engine's own stb submodule now; vkmGL compiles a file-local copy
-# (STB_IMAGE_STATIC), so there is no duplicate-symbol clash.
-# ============================================================================
+# stb is header-only upstream. The implementation is compiled once into a tiny
+# static lib so any engine target, not just the GL backend, can decode an image.
+# vkmGL compiles a file-local copy (STB_IMAGE_STATIC) of its own, so the two do
+# not clash.
 if(NOT TARGET stb)
     set(_stb_impl ${CMAKE_CURRENT_BINARY_DIR}/stb_image_impl.c)
     file(WRITE ${_stb_impl} "#define STB_IMAGE_IMPLEMENTATION\n#include \"stb_image.h\"\n")
@@ -62,21 +51,16 @@ if(NOT TARGET stb)
     )
 endif()
 
-# ============================================================================
-# miniaudio (audio device + wav/mp3/flac decoding). Public domain, one header,
-# and the one-line implementation translation unit it ships beside it - so the
-# implementation is compiled once here instead of being written out the way
-# stb's is above. The engine absorbs it privately: only src/engine/system/audio
-# and the audio importer include the header, and nothing that plays a sound
-# needs to know it exists.
+# miniaudio (audio device + wav/mp3/flac decoding) ships an implementation
+# translation unit of its own, so unlike stb above nothing has to be written out
+# here.
 #
 # Three subsystems are compiled out rather than left unused. Encoding and
-# waveform/noise generation have no caller. The resource manager is the one
-# that matters: it is miniaudio's own file loader, and it would both spawn a
-# job thread the engine never asked for and give the audio engine a second way
-# to acquire a sound - one that bypasses ResourceManager, the asset library and
-# the cooked cache. Removing it makes that seam a link error rather than a rule.
-# ============================================================================
+# waveform/noise generation have no caller. The resource manager is the one that
+# matters: it is miniaudio's own file loader, and it would both spawn a job
+# thread the engine never asked for and give the audio engine a second way to
+# acquire a sound - one that bypasses ResourceManager, the asset library and the
+# cooked cache. Removing it makes that seam a link error rather than a rule.
 if(NOT TARGET miniaudio)
     add_library(miniaudio STATIC miniaudio/miniaudio.c)
     # Split for export, like stb: miniaudio travels in the engine's link
@@ -98,21 +82,18 @@ if(NOT TARGET miniaudio)
     target_link_libraries(miniaudio PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
 endif()
 
-# vkmGL: the OpenGL layer. Adds glew, and defers to the targets above.
-#
-# Its test suite defaults to "on only when vkm_gl is the top-level project",
-# which as a submodule here means never - so the one suite in the tree had never
-# been compiled. Asked for explicitly instead: it covers what runs without a GL
-# context (vertex layout arithmetic, the shader preprocessor), so it costs one
-# small translation unit and passes on a machine with no GPU.
+# vkmGL: the OpenGL layer. Adds glew, and defers to the targets above. Its test
+# suite defaults to "on only when vkm_gl is the top-level project", which as a
+# submodule here means never, so it is asked for explicitly - the suite needs no
+# GL context and costs one small translation unit.
 set(VKM_GL_BUILD_TESTS ON CACHE BOOL "" FORCE)
 if(NOT TARGET vkm_gl)
     add_subdirectory(vkmGL)
 endif()
 
-# nlohmann/json (single-header, INTERFACE target `nlohmann_json`).
-# Suppress its own install rules and tests — the parent project installs
-# whatever subset of targets it wants via its own EXPORT set.
+# nlohmann/json (single-header, INTERFACE target `nlohmann_json`). Its own
+# install rules are off because the engine installs the subset it wants through
+# its own EXPORT set.
 set(JSON_Install   OFF CACHE BOOL "" FORCE)
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
 if(NOT TARGET nlohmann_json)
@@ -120,11 +101,9 @@ if(NOT TARGET nlohmann_json)
 endif()
 
 
-# ============================================================================
-# Assimp (model import: glTF / OBJ / FBX / DAE / STL / PLY / 3DS).
-# Trimmed hard: no tools/tests/samples/exporters, only the importers we use,
-# and the bundled zlib so the build stays self-contained on MSYS2/clang.
-# ============================================================================
+# Assimp, trimmed hard: no tools/tests/samples/exporters, only the importers the
+# engine uses, and the bundled zlib so the build stays self-contained on
+# MSYS2/clang.
 set(ASSIMP_BUILD_TESTS                    OFF CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_ASSIMP_TOOLS             OFF CACHE BOOL "" FORCE)
 set(ASSIMP_BUILD_SAMPLES                  OFF CACHE BOOL "" FORCE)
@@ -148,12 +127,9 @@ if(NOT TARGET assimp)
     add_subdirectory(assimp)
 endif()
 
-# ============================================================================
-# FreeType (font rasterizer for ImGui). Vendored so the build doesn't depend
-# on a system libfreetype being installed. Trimmed to the core rasterizer:
-# no zlib/bzip2/png/harfbuzz/brotli - none of which UI text needs - keeping
-# the build self-contained like assimp above.
-# ============================================================================
+# FreeType (font rasterizer for ImGui), vendored so the build does not depend on
+# a system libfreetype. Trimmed to the core rasterizer - UI text needs neither
+# the compression codecs nor complex script shaping.
 set(FT_DISABLE_ZLIB     ON CACHE BOOL "" FORCE)
 set(FT_DISABLE_BZIP2    ON CACHE BOOL "" FORCE)
 set(FT_DISABLE_PNG      ON CACHE BOOL "" FORCE)
@@ -164,9 +140,6 @@ if(NOT TARGET freetype)
     add_subdirectory(freetype)
 endif()
 
-# ============================================================================
-# ImGui Library
-# ============================================================================
 add_library(imgui STATIC
     imgui/imgui.cpp
     imgui/imgui_draw.cpp
@@ -192,14 +165,9 @@ target_link_libraries(imgui PUBLIC
     freetype
 )
 
-# imgui uses its own built-in GL loader (imgui_impl_opengl3_loader.h)
-# -- no GLEW dependency, no loader defines needed
-
-# ============================================================================
-# Tracy (CPU + GPU profiler). Gated by VKM_PROFILER so release builds compile
-# Tracy with TRACY_ENABLE=OFF, making every client macro a zero-cost no-op.
-# Engine code talks to Tracy only through debug/profiler.h.
-# ============================================================================
+# Tracy (CPU + GPU profiler). Built with TRACY_ENABLE off rather than left out,
+# so the client's macros compile to nothing and engine code keeps talking to the
+# one facade in debug/profiler.h either way.
 if(VKM_PROFILER)
     set(TRACY_ENABLE         ON  CACHE BOOL "" FORCE)
     set(TRACY_ON_DEMAND      ON  CACHE BOOL "" FORCE)

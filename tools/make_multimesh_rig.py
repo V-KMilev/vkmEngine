@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Emit assets/models/multimesh_rig.gltf - three skinned meshes, one skin.
 
-Every rigged model the engine has is one mesh, so nothing exercised the case
-1.6's design turns on: importModelIntoScene spawns a sub-entity per aiMesh, so
-a real character arrives as body + clothes + hair sharing ONE rig. This writes
-the smallest file that is that case.
+Every rigged model the engine has is one mesh, so nothing exercises the case the
+importer turns on: importModelIntoScene spawns a sub-entity per aiMesh, so a
+real character arrives as body + clothes + hair sharing ONE rig. This writes the
+smallest file that is that case.
 
   Character                     (the rig frame: parent of the root joint)
     Root -- Spine -+- Head      four joints, one branch at Spine

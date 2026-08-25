@@ -1,14 +1,9 @@
 # Stress Arena - the profiling load, as a project.
 #
-# Everything here is what a game made with vkmEngine looks like: a project.json
-# saying what the game is, gameplay sources compiled into one module the engine
-# loads, and the project's own scenes and assets beside them. The engine knows
-# none of it by name.
-#
-# One file, two ways in. `vkm build examples/stress_arena` configures it as a
-# project of its own and finds the engine exactly as a game made with `vkm new`
-# does; the engine's build adds it as a subdirectory, where those targets are
-# already defined and find_package would be asking for what is in the room.
+# One file, two ways in: `vkm build examples/stress_arena` configures it
+# standalone and finds the engine the way a project from `vkm new` does, and the
+# engine's own build adds it as a subdirectory, where those targets already
+# exist. Both paths in docs/reference/building.md.
 cmake_minimum_required(VERSION 3.25)
 
 if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
@@ -21,9 +16,8 @@ endif()
 
 file(GLOB_RECURSE STRESS_ARENA_SOURCES CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp)
 
-# The SDK's own recipe: one shared library named `game` in this project's bin/,
-# linked against the engine rather than against a host, so the editor and the
-# runtime load the same file.
+# Compiles src/ into the one module a host loads, into this project's bin/ as
+# `game` - the only place a host looks.
 vkm_add_gameplay_module(stress_arena_module SOURCES ${STRESS_ARENA_SOURCES})
 
 target_include_directories(stress_arena_module PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
