@@ -15,7 +15,7 @@ layout(binding = 21) uniform sampler2D u_ao;             // GTAO factor
 // binds the atlas through GLShadowAtlas::bind2DRaw, which clears the texture's
 // comparison mode - sampling it with a non-shadow sampler while that mode is
 // set is undefined.
-layout(binding = 11) uniform sampler2D u_shadowAtlas;    // tiled 2D shadow depth
+layout(binding = 25) uniform sampler2D u_shadowAtlas;    // tiled 2D shadow depth
 layout(binding = 24) uniform sampler3D u_fog;            // integrated froxel fog
 uniform int  u_hasAO;        // 0 when GTAO is off and nothing wrote the AO target
 uniform int  u_renderMode;   // 0 = final image, else a debug buffer (see MODE_* below)

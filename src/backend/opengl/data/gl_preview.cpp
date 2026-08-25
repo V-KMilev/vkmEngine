@@ -246,7 +246,7 @@ uint32_t GLPreview::render(Vkm::GL::Context& gl, GLView& glView, const GLIBL& ib
     m_composite->bind();
     // The other half of the same agreement: this shader declares the atlas slot
     // as a plain sampler2D, and the PBR draw above left it in comparison mode.
-    shadows.bind2DRaw(GLBindings::ShadowTextureSlots::Atlas2D);
+    shadows.bind2DRaw(GLBindings::ShadowTextureSlots::Atlas2DRaw);
     m_scratch.bindColor(0);
     m_composite->setUniform1f("u_bloomStrength", 0.0f);
     m_composite->setUniform1i("u_renderMode", 0);
