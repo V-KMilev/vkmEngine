@@ -191,10 +191,9 @@ void GLShadowData::cullCasters(const RenderView& view) {
     m_keyCount = count ? maxKey + 1 : 0;
     }
 
-    // Point lights first, and serially over lights: each one narrows the scene to
-    // what its sphere reaches, which is what makes the six face culls cheap. With
-    // only a couple of cube lights in flight there is nothing to gain from
-    // parallelising this outer loop, and the faces below parallelise anyway.
+    // A sphere pass first, serially over lights: each one narrows the scene to what its
+    // sphere reaches, which is what makes the six face culls below cheap - and those
+    // parallelise, so there are only ever a couple of iterations here to overlap.
     {
     PROFILE_SCOPE("Shadow/Cull/Sphere");
     m_cubeCandidates.resize(m_jobsCube.size());

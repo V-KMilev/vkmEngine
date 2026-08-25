@@ -120,63 +120,63 @@ bool writeRecipeFile(const std::filesystem::path& path, const std::string& name,
 // write); a skip - unnamed, nothing to bake, or already up to date - returns
 // true, so cookAllAssets can distinguish failures from no-ops.
 bool cookMesh(const MeshAsset& mesh) {
-    if (mesh.name.empty()) return true;
+    if (mesh.name().empty()) return true;
 
     // Nothing to bake: never had a recipe, or it was read back from the cooked
     // cache and the library already holds the recipe it was baked from.
     if (!mesh.hasSource() || isCookedPlaceholder(mesh.sourceJson())) {
-        warnUnlisted(AssetType::Mesh, mesh.name);
+        warnUnlisted(AssetType::Mesh, mesh.name());
         return true;
     }
-    if (mesh.loading || mesh.vertices.empty()) return reportUnbaked(AssetType::Mesh, mesh.name);
+    if (mesh.loading || mesh.vertices.empty()) return reportUnbaked(AssetType::Mesh, mesh.name());
 
     AssetLibrary& lib = AssetLibrary::get();
     const nlohmann::json& recipe = mesh.sourceJson();
     const uint64_t hash = hashRecipe(recipe);
 
-    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Mesh, mesh.name);
-    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::Mesh, mesh.name);
-    if (isUpToDate(AssetType::Mesh, mesh.name, hash, CookedOutput::Binary)) return true;
+    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Mesh, mesh.name());
+    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::Mesh, mesh.name());
+    if (isUpToDate(AssetType::Mesh, mesh.name(), hash, CookedOutput::Binary)) return true;
 
-    if (!writeRecipeFile(recipePath, mesh.name, "mesh", recipe)) return false;
+    if (!writeRecipeFile(recipePath, mesh.name(), "mesh", recipe)) return false;
     if (!AssetCook::writeMesh(cookedPath, mesh, hash)) return false;
 
-    lib.upsert({AssetType::Mesh, mesh.name, hash});
+    lib.upsert({AssetType::Mesh, mesh.name(), hash});
     LOG_INFO("Cooked mesh '%s' (%zu verts, %zu indices)",
-             mesh.name.c_str(), mesh.vertices.size(), mesh.indices.size());
+             mesh.name().c_str(), mesh.vertices.size(), mesh.indices.size());
     return true;
 }
 
 bool cookTexture(const TextureAsset& tex) {
-    if (tex.name.empty()) return true;
+    if (tex.name().empty()) return true;
 
     if (!tex.hasSource() || isCookedPlaceholder(tex.sourceJson())) {
-        warnUnlisted(AssetType::Texture, tex.name);
+        warnUnlisted(AssetType::Texture, tex.name());
         return true;
     }
-    if (tex.loading || tex.pixelData.empty()) return reportUnbaked(AssetType::Texture, tex.name);
+    if (tex.loading || tex.pixelData.empty()) return reportUnbaked(AssetType::Texture, tex.name());
 
     AssetLibrary& lib = AssetLibrary::get();
     const nlohmann::json& recipe = tex.sourceJson();
     const uint64_t hash = hashRecipe(recipe);
 
-    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Texture, tex.name);
-    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::Texture, tex.name);
-    if (isUpToDate(AssetType::Texture, tex.name, hash, CookedOutput::Binary)) return true;
+    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Texture, tex.name());
+    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::Texture, tex.name());
+    if (isUpToDate(AssetType::Texture, tex.name(), hash, CookedOutput::Binary)) return true;
 
-    if (!writeRecipeFile(recipePath, tex.name, "texture", recipe)) return false;
+    if (!writeRecipeFile(recipePath, tex.name(), "texture", recipe)) return false;
     if (!AssetCook::writeTexture(cookedPath, tex, hash)) return false;
 
-    lib.upsert({AssetType::Texture, tex.name, hash});
-    LOG_INFO("Cooked texture '%s' (%ux%u)", tex.name.c_str(), tex.params.width, tex.params.height);
+    lib.upsert({AssetType::Texture, tex.name(), hash});
+    LOG_INFO("Cooked texture '%s' (%ux%u)", tex.name().c_str(), tex.params.width, tex.params.height);
     return true;
 }
 
 bool cookSkeleton(const SkeletonAsset& skeleton) {
-    if (skeleton.name.empty()) return true;
+    if (skeleton.name().empty()) return true;
 
     if (!skeleton.hasSource() || skeleton.bones.empty() || isCookedPlaceholder(skeleton.sourceJson())) {
-        warnUnlisted(AssetType::Skeleton, skeleton.name);
+        warnUnlisted(AssetType::Skeleton, skeleton.name());
         return true;
     }
 
@@ -184,23 +184,23 @@ bool cookSkeleton(const SkeletonAsset& skeleton) {
     const nlohmann::json& recipe = skeleton.sourceJson();
     const uint64_t hash = hashRecipe(recipe);
 
-    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Skeleton, skeleton.name);
-    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::Skeleton, skeleton.name);
-    if (isUpToDate(AssetType::Skeleton, skeleton.name, hash, CookedOutput::Binary)) return true;
+    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Skeleton, skeleton.name());
+    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::Skeleton, skeleton.name());
+    if (isUpToDate(AssetType::Skeleton, skeleton.name(), hash, CookedOutput::Binary)) return true;
 
-    if (!writeRecipeFile(recipePath, skeleton.name, "skeleton", recipe)) return false;
+    if (!writeRecipeFile(recipePath, skeleton.name(), "skeleton", recipe)) return false;
     if (!AssetCook::writeSkeleton(cookedPath, skeleton, hash)) return false;
 
-    lib.upsert({AssetType::Skeleton, skeleton.name, hash});
-    LOG_INFO("Cooked skeleton '%s' (%zu bones)", skeleton.name.c_str(), skeleton.bones.size());
+    lib.upsert({AssetType::Skeleton, skeleton.name(), hash});
+    LOG_INFO("Cooked skeleton '%s' (%zu bones)", skeleton.name().c_str(), skeleton.bones.size());
     return true;
 }
 
 bool cookAnimationClip(const AnimationClipAsset& clip) {
-    if (clip.name.empty()) return true;
+    if (clip.name().empty()) return true;
 
     if (!clip.hasSource() || clip.bones.empty() || isCookedPlaceholder(clip.sourceJson())) {
-        warnUnlisted(AssetType::AnimationClip, clip.name);
+        warnUnlisted(AssetType::AnimationClip, clip.name());
         return true;
     }
 
@@ -208,24 +208,24 @@ bool cookAnimationClip(const AnimationClipAsset& clip) {
     const nlohmann::json& recipe = clip.sourceJson();
     const uint64_t hash = hashRecipe(recipe);
 
-    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::AnimationClip, clip.name);
-    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::AnimationClip, clip.name);
-    if (isUpToDate(AssetType::AnimationClip, clip.name, hash, CookedOutput::Binary)) return true;
+    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::AnimationClip, clip.name());
+    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::AnimationClip, clip.name());
+    if (isUpToDate(AssetType::AnimationClip, clip.name(), hash, CookedOutput::Binary)) return true;
 
-    if (!writeRecipeFile(recipePath, clip.name, "animationClip", recipe)) return false;
+    if (!writeRecipeFile(recipePath, clip.name(), "animationClip", recipe)) return false;
     if (!AssetCook::writeAnimationClip(cookedPath, clip, hash)) return false;
 
-    lib.upsert({AssetType::AnimationClip, clip.name, hash});
-    LOG_INFO("Cooked clip '%s' (%.2fs, %zu bones)", clip.name.c_str(),
+    lib.upsert({AssetType::AnimationClip, clip.name(), hash});
+    LOG_INFO("Cooked clip '%s' (%.2fs, %zu bones)", clip.name().c_str(),
              static_cast<double>(clip.duration), clip.bones.size());
     return true;
 }
 
 bool cookAudioClip(const AudioClipAsset& clip) {
-    if (clip.name.empty()) return true;
+    if (clip.name().empty()) return true;
 
     if (!clip.hasSource() || clip.sampleCount() == 0 || isCookedPlaceholder(clip.sourceJson())) {
-        warnUnlisted(AssetType::AudioClip, clip.name);
+        warnUnlisted(AssetType::AudioClip, clip.name());
         return true;
     }
 
@@ -233,21 +233,21 @@ bool cookAudioClip(const AudioClipAsset& clip) {
     const nlohmann::json& recipe = clip.sourceJson();
     const uint64_t hash = hashRecipe(recipe);
 
-    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::AudioClip, clip.name);
-    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::AudioClip, clip.name);
-    if (isUpToDate(AssetType::AudioClip, clip.name, hash, CookedOutput::Binary)) return true;
+    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::AudioClip, clip.name());
+    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::AudioClip, clip.name());
+    if (isUpToDate(AssetType::AudioClip, clip.name(), hash, CookedOutput::Binary)) return true;
 
-    if (!writeRecipeFile(recipePath, clip.name, "audioClip", recipe)) return false;
+    if (!writeRecipeFile(recipePath, clip.name(), "audioClip", recipe)) return false;
     if (!AssetCook::writeAudioClip(cookedPath, clip, hash)) return false;
 
-    lib.upsert({AssetType::AudioClip, clip.name, hash});
-    LOG_INFO("Cooked sound '%s' (%.2fs, %u channel(s), %u Hz)", clip.name.c_str(),
+    lib.upsert({AssetType::AudioClip, clip.name(), hash});
+    LOG_INFO("Cooked sound '%s' (%.2fs, %u channel(s), %u Hz)", clip.name().c_str(),
              static_cast<double>(clip.duration()), clip.channels, clip.sampleRate);
     return true;
 }
 
 bool cookMaterial(const MaterialAsset& mat, const ResourceManager& resources) {
-    if (mat.name.empty()) return true;
+    if (mat.name().empty()) return true;
 
     AssetLibrary& lib = AssetLibrary::get();
     // A material's canonical inline form is both its editable source of truth and
@@ -255,13 +255,13 @@ bool cookMaterial(const MaterialAsset& mat, const ResourceManager& resources) {
     const nlohmann::json inlineSource = AssetSerializer::materialToInline(mat, resources);
     const uint64_t hash = hashRecipe(inlineSource);
 
-    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Material, mat.name);
-    if (isUpToDate(AssetType::Material, mat.name, hash, CookedOutput::None)) return true;
+    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Material, mat.name());
+    if (isUpToDate(AssetType::Material, mat.name(), hash, CookedOutput::None)) return true;
 
-    if (!writeRecipeFile(recipePath, mat.name, "material", inlineSource)) return false;
+    if (!writeRecipeFile(recipePath, mat.name(), "material", inlineSource)) return false;
 
-    lib.upsert({AssetType::Material, mat.name, hash});
-    LOG_INFO("Cooked material '%s'", mat.name.c_str());
+    lib.upsert({AssetType::Material, mat.name(), hash});
+    LOG_INFO("Cooked material '%s'", mat.name().c_str());
     return true;
 }
 
@@ -270,36 +270,33 @@ bool cookMaterial(const MaterialAsset& mat, const ResourceManager& resources) {
 bool cookAllAssets(ResourceManager& resources) {
     LOG_INFO("Cooking assets into the library...");
 
-    // Land every asset still decoding, so the walks below see the contents they
-    // are meant to bake rather than empty stubs. A host with a frame loop does
-    // this through AsyncLoaderSystem and never has to think about it; the cooker
-    // has no frames, and without it every imported asset is skipped and the run
-    // reports a successful cook over a project it produced nothing for.
+    // Land every asset still decoding: a host with a frame loop does this
+    // through AsyncLoaderSystem, and the cooker has no frames.
     size_t failed = awaitAsyncLoads(resources) ? 0 : 1;
 
     // Textures first, then materials (which reference textures by name), then
     // skeletons, then the clips and meshes that name one - matching the load
     // order so a downstream consumer is consistent.
     resources.forEachOfType<TextureAsset>([&](TextureHandle, const TextureAsset& tex) {
-        if (!tex.hidden && !cookTexture(tex)) ++failed;
+        if (!tex.isHidden() && !cookTexture(tex)) ++failed;
     });
     resources.forEachOfType<MaterialAsset>([&](MaterialHandle, const MaterialAsset& mat) {
-        if (!mat.hidden && !cookMaterial(mat, resources)) ++failed;
+        if (!mat.isHidden() && !cookMaterial(mat, resources)) ++failed;
     });
     resources.forEachOfType<SkeletonAsset>([&](SkeletonHandle, const SkeletonAsset& skeleton) {
-        if (!skeleton.hidden && !cookSkeleton(skeleton)) ++failed;
+        if (!skeleton.isHidden() && !cookSkeleton(skeleton)) ++failed;
     });
     resources.forEachOfType<AnimationClipAsset>([&](AnimationClipHandle, const AnimationClipAsset& clip) {
-        if (!clip.hidden && !cookAnimationClip(clip)) ++failed;
+        if (!clip.isHidden() && !cookAnimationClip(clip)) ++failed;
     });
     resources.forEachOfType<MeshAsset>([&](MeshHandle, const MeshAsset& mesh) {
-        if (!mesh.hidden && !cookMesh(mesh)) ++failed;
+        if (!mesh.isHidden() && !cookMesh(mesh)) ++failed;
     });
     // Sounds reference nothing and nothing references them by anything but a
     // name, so where they sit in this order is arbitrary; last keeps the chain
     // above reading as the dependency order it is.
     resources.forEachOfType<AudioClipAsset>([&](AudioClipHandle, const AudioClipAsset& clip) {
-        if (!clip.hidden && !cookAudioClip(clip)) ++failed;
+        if (!clip.isHidden() && !cookAudioClip(clip)) ++failed;
     });
 
     // A failed cook leaves the manifest referencing a cooked file that was never

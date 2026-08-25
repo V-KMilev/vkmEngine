@@ -57,10 +57,9 @@ void CameraControllerSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("CameraControllerSystem");
     if (!m_enabled) return;
 
-    // Always drive the active rendered camera, so the fly controls keep working
-    // after "Set as Main Camera" / a scene load. resolveActiveCamera only ever
-    // returns {} or a live entity that has a Transform, so a non-empty result
-    // needs no further validation here.
+    // The active rendered camera, so the fly controls survive a scene load or a
+    // "Set as Main Camera". A non-empty result is always a live entity with a
+    // Transform, so nothing below re-checks it.
     EntityId target = resolveActiveCamera(ctx.scene);
     if (!target) return;
 
@@ -75,9 +74,8 @@ void CameraControllerSystem::update(FrameContext& ctx) {
     }
 
     // Compared rather than assumed: the fly path rewrites the rotation on every
-    // frame the right button is down, so "it ran" is not "it moved", and a host
-    // that marked the scene unsaved off the former would do it for a right-click
-    // that went nowhere.
+    // frame the button is down, so a host marking the scene unsaved off "it
+    // ran" would do it for a right-click that went nowhere.
     const glm::vec3 position = transform.position;
     const glm::quat rotation = transform.rotation;
     updateFlyMode(ctx.window, ctx.input, transform.position, transform.rotation, ctx.clock.getDeltaTime());

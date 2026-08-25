@@ -14,8 +14,10 @@ namespace Vkm::Engine {
 namespace {
 
 /**
- * @brief Moller-Trumbore ray-triangle test. Returns true (and a positive @p t) when
- * the ray origin+dir crosses the triangle in front of the origin.
+ * @brief Moller-Trumbore ray-triangle test.
+ *
+ * True, with a positive @p t, when the ray crosses the triangle in front of
+ * its origin; a crossing behind the origin does not count as a hit.
  */
 bool rayHitsTriangle(
     const glm::vec3& o, const glm::vec3& d,

@@ -38,10 +38,8 @@ std::filesystem::path executableDir() {
 }
 
 std::filesystem::path resolveRoot() {
-    // A packaged layout is detected by a shaders/ folder (always shipped) beside
-    // the executable or one level up, and rooted there so the game is
-    // relocatable. A dev run from build/bin has no such folder nearby and falls
-    // back to the build-time repo root.
+    // The marker for a packaged layout is the shaders/ folder, which always
+    // ships; rooting there is what makes the game relocatable.
     const std::filesystem::path exeDir = executableDir();
     if (!exeDir.empty()) {
         std::error_code ec;
@@ -129,10 +127,7 @@ std::filesystem::path userRoot() {
     // at shutdown where nobody is looking.
     static const std::filesystem::path resolved = [] {
         const std::filesystem::path base = userConfigBase();
-        // No home directory to speak of - a service account, a stripped
-        // container. The engine root is where these files used to live, so
-        // falling back there is no worse than before, and in a dev checkout it
-        // is writable.
+        // No home directory at all - a service account, a stripped container.
         if (base.empty()) return engineRoot();
 
         const std::filesystem::path dir = base / USER_DIR_NAME;
@@ -164,10 +159,8 @@ std::string toProjectRelative(const std::string& path) {
 
     const std::filesystem::path relative = given.lexically_relative(projectRoot());
     // Empty means the two share no root at all (different Windows drives); a
-    // leading ".." component means the file sits outside the project. Neither has
-    // a project-relative form, so the absolute path stays the identity. The match
-    // is on whole components - a directory named "..cache" is inside the project -
-    // and generic_string() has already folded any Windows separator to '/'.
+    // leading ".." component means the file sits outside the project. The match
+    // is on whole components, so a directory named "..cache" is still inside.
     const std::string generic = relative.generic_string();
     if (generic.empty() || generic == ".." || generic.rfind("../", 0) == 0) {
         return given.generic_string();

@@ -22,6 +22,9 @@ shaders/_generated/
 /scenes/
 /cooked/
 /library/
+# A project's derived caches, written by the cooker on save and on cook.
+examples/*/cooked/
+examples/*/library/
 # A project's built gameplay module, and the copies ScriptModule loads from.
 examples/*/bin/
 # Where vkm package assembles a standalone game, by default.

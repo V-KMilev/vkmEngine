@@ -126,10 +126,9 @@ void GLShadowPass::renderCasters(GLFrameContext& ctx, const ShadowCasterBatch& b
     const std::vector<ShadowCasterSkin>& skins   = ctx.view.casterSkins;
     const std::vector<uint32_t>&         order   = batch.order;
 
-    // Culling and mesh-sorting already happened on the thread pool (see
-    // GLShadowData::cullCasters), so this is submission only: one upload, then
-    // one draw per mesh run from its slice via baseInstance. Depth-only, so the
-    // instance data is just the model matrix - no normal matrix.
+    // Culling and mesh-sorting already ran on the thread pool (see
+    // GLShadowData::cullCasters), so this is submission only - and depth-only, so the
+    // instance data is the model matrix and nothing else.
     {
     PROFILE_SCOPE("ShadowCasters/Gather");
     m_models.clear();
@@ -153,20 +152,16 @@ void GLShadowPass::renderCasters(GLFrameContext& ctx, const ShadowCasterBatch& b
 
         mesh->attachInstances(m_instances, 4);
 
-        // The common case: one instanced draw for the whole run. A frame that
-        // posed nothing takes it for every mesh, skin stream or not - none of
-        // them has a palette to read, so all of them draw the vertices they
-        // stored, which is their bind pose.
+        // The common case: one instanced draw for the whole run. A frame that posed
+        // nothing takes it for every mesh, skin stream or not.
         if (!skinned || !mesh->isSkinned()) {
             bindProgram(program);
             mesh->drawInstanced(static_cast<uint32_t>(i - first), static_cast<uint32_t>(first));
             continue;
         }
 
-        // A skinned run is drawn caster by caster, because the palette base is a
-        // uniform here and a uniform describes one draw. A caster the frame did
-        // not pose falls back to the static program, which renders the vertices
-        // it stored - its bind pose, the same answer the camera path gives it.
+        // Caster by caster: the palette base is a uniform here, and a uniform describes
+        // one draw. An unposed caster falls back to the static program's bind pose.
         for (size_t k = first; k < i; ++k) {
             const ShadowCasterSkin& skin = skins[order[k]];
             Vkm::GL::Shader& chosen = (skin.count > 0) ? *skinned : program;

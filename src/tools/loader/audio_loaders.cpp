@@ -109,9 +109,9 @@ AudioClipHandle loadAudioClip(const std::string& filePath, ResourceManager& reso
     LOG_VERBOSE("Loaded sound '%s' (%.2fs, %u channel(s), %u Hz)", ref.c_str(),
                 static_cast<double>(clip.duration()), clip.channels, clip.sampleRate);
 
-    clip.name         = ref;
     clip.sourceJson() = {{"kind", "file"}, {"path", ref}};
-    return resources.add(std::move(clip));
+    // The reference is the clip's name: the identity a scene resolves it by.
+    return resources.add(std::move(clip), ref);
 }
 
 } // namespace Vkm::Engine

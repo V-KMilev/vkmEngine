@@ -12,14 +12,11 @@
 
 #include <nlohmann/json.hpp>
 
+#include "l_assert.h"
+
 #include "resource/resource_manager.h"
 
 namespace Vkm::Engine {
-
-MeshHandle addGeneratedMesh(ResourceManager& resources, MeshAsset mesh) {
-    if (auto existing = resources.findByName<MeshAsset>(mesh.name)) return existing;
-    return resources.add(std::move(mesh));
-}
 
 namespace {
 /**
@@ -40,30 +37,52 @@ nlohmann::json meshGeneratorSource(const char* type, nlohmann::json params = nlo
 }
 
 /**
- * @brief Stamp source + name on a freshly-generated mesh in one call.
+ * @brief Spell a generator descriptor as the name the mesh is registered under.
  *
- * The name is "mesh:generator:<type>:<param>:<param>..." derived from the same
- * params as the source, so identical generator calls land on one asset: the name
- * is the serializable identity, and two meshes generated the same way are the
- * same mesh rather than two copies a scene would save twice.
+ * "mesh:generator:<type>:<param>:<param>..." - the parameters in the
+ * descriptor's own key order, which nlohmann keeps sorted, so the spelling is a
+ * function of the recipe alone. Two identical generator calls therefore ask for
+ * one name and share one asset: the name is the serializable identity, and two
+ * meshes generated the same way are the same mesh rather than two copies a
+ * scene would save twice.
  *
- * @param mesh Freshly generated mesh to stamp (source + name set in place).
- * @param type Generator type tag (e.g. "cube", "sphere").
- * @param params Generator parameters folded into the deterministic name.
+ * Read back out of the descriptor rather than built beside it, so a mesh's
+ * recipe and its name cannot come to disagree.
+ *
+ * @param source A "generator" descriptor as meshGeneratorSource builds it.
+ * @return The name the mesh belongs under.
  */
-void stampGenerated(MeshAsset& mesh, const char* type, const nlohmann::json& params = {}) {
-    mesh.sourceJson() = meshGeneratorSource(type, params);
-    std::string key = std::string("mesh:generator:") + type;
-    if (params.is_object()) {
-        for (auto it = params.begin(); it != params.end(); ++it) {
+std::string generatorName(const nlohmann::json& source) {
+    std::string key = "mesh:generator:" + source.value("type", std::string{});
+    const auto params = source.find("params");
+    if (params != source.end() && params->is_object()) {
+        for (auto it = params->begin(); it != params->end(); ++it) {
             key += ':';
             key += it.value().dump();
         }
     }
-    mesh.name = key;
+    return key;
+}
+
+/**
+ * @brief Stamp the generator descriptor on a freshly-generated mesh.
+ *
+ * @param mesh Freshly generated mesh to stamp (source set in place).
+ * @param type Generator type tag (e.g. "cube", "sphere").
+ * @param params Generator parameters folded into the descriptor.
+ */
+void stampGenerated(MeshAsset& mesh, const char* type, const nlohmann::json& params = {}) {
+    mesh.sourceJson() = meshGeneratorSource(type, params);
 }
 
 } // namespace
+
+MeshHandle addGeneratedMesh(ResourceManager& resources, MeshAsset mesh) {
+    VKM_ASSERT(mesh.hasSource(), "addGeneratedMesh: the mesh carries no generator descriptor");
+    const std::string name = generatorName(mesh.sourceJson());
+    if (auto existing = resources.findByName<MeshAsset>(name)) return existing;
+    return resources.add(std::move(mesh), name);
+}
 
 MeshAsset generateTriangle(float size) {
     MeshAsset mesh;
@@ -207,9 +226,8 @@ MeshAsset generateSphere(uint32_t xSegments, uint32_t ySegments) {
     const float radius = 0.5f;
 
     // Cube-sphere (quad-sphere): six subdivided cube faces pushed onto the
-    // sphere. Unlike a lat-long sphere it has NO poles, so there is no vertex
-    // collapse, no degenerate (zero) tangent -> NaN, and no texture pinching at
-    // the top/bottom (the old "bald spot"). Each face maps its own [0,1] UVs.
+    // sphere. It has no poles, so no vertex collapse, no degenerate tangent ->
+    // NaN, no pinching. Each face maps its own [0,1] UVs.
     const uint32_t res = std::max(2u, std::max(xSegments, ySegments) / 2u);  // per-face grid
 
     // Emit one triangle oriented outward: flip it if its geometric normal

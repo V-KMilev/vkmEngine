@@ -31,10 +31,7 @@ void GLSkyboxPass::execute(GLFrameContext& ctx) {
     const RenderView& view = ctx.view;
     if (!view.environment.sky.showSkybox) return;
 
-    // Draw into the same HDR target as the forward pass (no clear). The vertex
-    // shader forces z = w so the cube sits at the far plane; depth func LEQUAL
-    // with depth writes off fills only the background pixels (depth == far from
-    // the prepass) and leaves lit geometry untouched.
+    // The vertex shader forces z = w, which is what puts the cube at the far plane.
     ctx.sceneRender.bind(ctx.gl);
     ctx.gl.setDepthTest(true);
     ctx.gl.setDepthWrite(false);
@@ -47,10 +44,9 @@ void GLSkyboxPass::execute(GLFrameContext& ctx) {
     m_shader->setUniformMatrix4fv("u_projection", view.camera.projection);
     m_shader->setUniform1f("u_iblIntensity", view.environment.sky.intensity);
 
-    // Analytic discs and stars: only for the procedural sky (an HDR skybox
-    // already has its own sky in it). Each disc fades over its outer 20% for a
-    // soft limb. The shader decides how much of night to apply from the sun's
-    // elevation, so nothing here needs to know which half of the day it is.
+    // Analytic sun/moon discs and stars, for the procedural sky only - an HDR skybox
+    // already has its own. Each disc fades over its outer 20% for a soft limb, and the
+    // shader reads the sun's elevation to decide how much of night to apply.
     const Environment& env = view.environment;
     m_shader->setUniform1i("u_hasSun", env.sky.procedural ? 1 : 0);
     if (env.sky.procedural) {

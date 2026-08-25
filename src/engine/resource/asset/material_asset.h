@@ -68,11 +68,9 @@ struct MaterialAsset : public Resource {
 
     // Transmission + volume - light through the surface
     float transmission = 0.0f;                   ///< Fraction of light refracted instead of diffused (0: opaque, 1: glass)
-    // KHR_materials_volume - Beer-Lambert absorption inside a transmissive
-    // medium. thicknessFactor == 0 means "thin-walled" and absorption is
-    // disabled (matches the glTF spec default). attenuationColor is the
-    // color that white light turns into after travelling attenuationDistance
-    // through the volume; transmittance per channel = pow(c, t / d).
+    // KHR_materials_volume - Beer-Lambert absorption inside a transmissive medium.
+    // Transmittance per channel is pow(attenuationColor, path / attenuationDistance),
+    // the path taken from thicknessFactor; thin-walled is the glTF spec default.
     float     thicknessFactor     = 0.0f;        ///< Volume thickness in metres (0: thin-walled, no absorption)
     float     attenuationDistance = 1.0f;        ///< Path length at which radiance reaches attenuationColor (m)
     glm::vec3 attenuationColor    = {1,1,1};     ///< Transmittance after one attenuationDistance (white = no tint)

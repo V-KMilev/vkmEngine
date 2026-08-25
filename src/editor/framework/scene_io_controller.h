@@ -303,9 +303,25 @@ class SceneIOController {
          */
         static std::string cacheSelectionName(FrameContext& ctx, EditorState& state);
         /**
-         * @brief Editor housekeeping shared by load() and restoreSnapshot() after the
-         * scene + resources have been swapped: clear undo, drop stale GPU
-         * previews, re-select @p priorSelectionName, and rebind the active camera.
+         * @brief Editor housekeeping every scene swap shares, once the scene and
+         * resources have been replaced.
+         *
+         * Marks the Hierarchy's cached roots stale, drops the GPU previews and
+         * the pinned material keyed by the outgoing graph, re-selects
+         * @p priorSelectionName, and rebinds the camera controller to the new
+         * scene's active Camera.
+         *
+         * The undo history is deliberately not touched here. Two of the three
+         * swaps that come through replace every entity and have to drop it; the
+         * third puts back the very scene it snapshotted, at the same ids, and
+         * keeping the history is the point of that one. Each caller clears it
+         * where that reason is true rather than here, where it is not.
+         *
+         * @param ctx Frame context owning the swapped scene and resources.
+         * @param state Editor state whose selection and cached panel state is reset.
+         * @param priorSelectionName Name captured before the swap; re-selected when
+         *                           the new scene has an entity by it, empty for none.
+         * @param eventPath Scene path named in the several-active-cameras warning.
          */
         void afterSceneReplace(
             FrameContext& ctx,

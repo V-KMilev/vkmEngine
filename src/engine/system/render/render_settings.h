@@ -80,17 +80,21 @@ struct RenderSettings {
     // Anti-aliasing
     uint32_t msaaSamples = 4;  ///< Scene-pass MSAA samples (1 = off, 2/4/8); post runs on the resolved buffer.
 
-    // Texture filtering. Not MaterialAsset::anisotropy, which is the brushed-
-    // metal BRDF lobe - the same word for an unrelated thing.
-    //
-    // Two fields rather than one ladder because they are orthogonal: the base
-    // filter decides how a texel is sampled, the degree decides how many samples
-    // a stretched footprint gets. Anisotropy only means anything on top of
-    // mipmapped sampling, so it is ignored unless the mode is Trilinear. The
-    // editor presents them as one list; the model keeps them apart.
-    //
-    // Both are the frame's default rather than its decree - a texture carrying
-    // TextureParams::filterOverride keeps its own.
+    /**
+     * @brief How a texel is sampled, and with it textureAnisotropy below.
+     *
+     * Not MaterialAsset::anisotropy, which is the brushed-metal BRDF lobe - the
+     * same word for an unrelated thing.
+     *
+     * Two fields rather than one ladder because they are orthogonal: the filter
+     * decides how a texel is sampled, the degree decides how many samples a
+     * stretched footprint gets. Anisotropy means nothing without mipmapped
+     * sampling, so it is ignored unless the mode is Trilinear. The editor
+     * presents them as one list; the model keeps them apart.
+     *
+     * Both are the frame's default rather than its decree - a texture carrying
+     * TextureParams::filterOverride keeps its own.
+     */
     TextureFiltering textureFiltering = TextureFiltering::Trilinear;
     uint32_t textureAnisotropy = 16;  ///< Degree when the mode is Trilinear (1 = off); clamped to the driver's ceiling.
 

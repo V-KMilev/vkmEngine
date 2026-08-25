@@ -54,12 +54,11 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
         m_shader->setUniformMatrix4fv("u_projection", view.camera.projection);
     }
 
-    // Unconditional: this shader declares the atlas slot as a plain sampler2D, and
-    // the forward pass leaves that texture bound with depth comparison enabled.
-    // The driver validates the declared sampler against the bound state at draw
-    // time whether or not the debug branch that reads it is taken, so binding it
-    // raw only in debug mode is undefined behaviour in every other frame.
-    ctx.shadowAtlas.bind2DRaw(GLBindings::ShadowTextureSlots::Atlas2D);
+    // Unconditional: this shader declares the slot as a plain sampler2D, and the driver
+    // validates that against the bound state whether or not the debug branch reads it.
+    // Its own unit, so the shadow readers' unit is never disturbed and neither
+    // reading depends on which pass ran last.
+    ctx.shadowAtlas.bind2DRaw(GLBindings::ShadowTextureSlots::Atlas2DRaw);
 
     ctx.screenTri.draw();
 }

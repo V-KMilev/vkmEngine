@@ -381,11 +381,9 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, ResourceManager& resour
 
     if (scene.has<Camera>(entity)) {
         ImGui::Separator();
-        // Active is not exclusive - the checkbox on the card sets it on as many
-        // cameras as you like - so greying this on cam.active alone said
-        // "already main" about a camera that may well not be the one rendered
-        // from. It is the fix for exactly that ambiguity, so it stays offered
-        // while any other camera also claims to be active.
+        // Active is not exclusive, so greying this on cam.active alone would say
+        // "already main" about a camera that may not be the one rendered from.
+        // It stays offered while any other camera also claims to be active.
         bool otherActive = false;
         scene.forEach<Camera>([&](EntityId other, const Camera& c) {
             if (other != entity && c.active) otherActive = true;

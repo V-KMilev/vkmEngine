@@ -59,16 +59,6 @@ const std::vector<InstanceRun>& GLInstanceBatcher::buildGrouped(
 
     if (m_skinning) resolveSkinned(list, view);
 
-    // Sort indices by (skinned, material id, mesh id) so identical draws sit
-    // contiguously and merge into one instanced call each. Skinnedness leads the
-    // key because it selects the program, and a batch should switch program once
-    // rather than per run. Sorting indices keeps the input list untouched.
-    //
-    // With no palette there is no second program to switch to, so the key is
-    // the narrow one and the comparator never loads m_skinned - two sorts
-    // rather than a flag tested inside one, because the flag would be re-read
-    // on every one of the N log N comparisons to answer a question settled
-    // before the sort began.
     m_order.resize(list.size());
     for (uint32_t i = 0; i < list.size(); ++i) m_order[i] = i;
     if (m_skinning) {
@@ -149,10 +139,8 @@ void GLInstanceBatcher::upload() {
     m_modelBuffer.update(m_models.data(),  count);
     m_normalBuffer.update(m_normals.data(), count);
 
-    // Identity to start with: an un-culled batch draws every instance in batch
-    // order, and a cull - when one runs - overwrites this with the survivors.
-    // Filling it here means the draw path has exactly one shape whether or not
-    // anything culled.
+    // Identity, so an un-culled batch draws every instance in batch order and the draw
+    // path has one shape; a cull, when one runs, overwrites this with the survivors.
     m_visible.resize(count);
     for (uint32_t i = 0; i < count; ++i) m_visible[i] = i;
     growAndUpload(m_visibleBuffer, m_visibleCapacity, m_visible.data(),

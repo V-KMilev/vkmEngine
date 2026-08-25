@@ -38,7 +38,7 @@ reader who can work quickly and be right.
   `update` opens with `PROFILE_SCOPE("<ClassName>")`, the deleted Rule of 5 is
   written out even with no state, and the class `@brief` says which stage it runs
   at and why that one
-  ([code-style.md](code-style.md#137-a-system-subclass-spells-out-the-rule-of-5-it-inherits)).
+  ([code-style.md](code-style.md#136-a-system-subclass-spells-out-the-rule-of-5-it-inherits)).
 - A **component** is data. `Transform` is the model: plain members plus *static*
   helpers, no instance methods that mutate.
 - A **render pass** looks like the other passes and lives in the backend.

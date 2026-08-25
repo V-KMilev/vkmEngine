@@ -82,10 +82,9 @@ void EditorPanelResize::process(
         }
     };
 
-    // The horizontal max must leave room for both the other side panel
-    // (if shown) AND a minimum viewport in the middle - clamping each
-    // panel against its own static max only would let the viewport
-    // collapse to nothing.
+    // The horizontal max leaves room for the other side panel and a minimum
+    // viewport between them; clamping each panel against its own static max
+    // alone would let the viewport collapse to nothing.
     const float MIN_CENTER  = EditorStyle::px(200.0f);
     const float LEFT_MIN    = EditorStyle::px(180.0f);
     const float LEFT_MAX    = EditorStyle::px(500.0f);

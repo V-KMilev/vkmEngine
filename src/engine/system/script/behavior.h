@@ -198,10 +198,12 @@ class Behavior {
         EntityId spawn() { return m_ctx->scene->createEntity(); }
 
         /**
-         * @brief Destroy @p entity (and its subtree) - deferred until after the current
-         * hook pass, so destroying your own entity is safe. Fires onDestroy on
-         * the affected behaviors. Routed through HierarchyOperations. Drained
-         * on a paused frame too, so onRealtimeUpdate may use it.
+         * @brief Destroy @p entity and its subtree.
+         *
+         * Deferred until after the current hook pass, so destroying your own
+         * entity is safe, and drained on a paused frame too, so
+         * onRealtimeUpdate may use it. Routed through HierarchyOperations, and
+         * fires onDestroy on the affected behaviors.
          */
         void destroy(EntityId entity) { m_ctx->pendingDestroy->push_back(entity); }
 
@@ -223,9 +225,11 @@ class Behavior {
         void loadScene(const std::string& scenePath) { *m_ctx->pendingSceneLoad = scenePath; }
 
         /**
-         * @brief Subscribe to events of type EventT for this behavior's lifetime. The
-         * subscription is dropped automatically when the behavior is destroyed
-         * (or the play session ends), so there is nothing to clean up by hand.
+         * @brief Subscribe to events of type EventT for this behavior's lifetime.
+         *
+         * The subscription is dropped automatically when the behavior is
+         * destroyed, or when the play session ends, so there is nothing to
+         * clean up by hand.
          */
         template<typename EventT>
         void subscribe(std::function<void(const EventT&)> callback) {
@@ -254,9 +258,11 @@ class Behavior {
         }
 
         /**
-         * @brief Drop all subscribe<E>() listeners. Run from the destructor and, while
-         * the EventBus is guaranteed alive, by BehaviorSystem::endSession at
-         * play stop / shutdown (so it never unsubscribes from a dead bus).
+         * @brief Drop all subscribe<E>() listeners.
+         *
+         * Run from the destructor and, while the EventBus is guaranteed alive,
+         * by BehaviorSystem::endSession at play stop and shutdown, so it never
+         * unsubscribes from a dead bus.
          */
         void clearSubscriptions() {
             for (auto& unsubscribe : m_subscriptions) unsubscribe();

@@ -74,10 +74,9 @@ class BoneSocketSystem : public System {
         void placeSockets(FrameContext& ctx, FaultsSeen& seen);
 
     private:
-        // Edge latches, so each fault is named once per gap rather than once a
-        // frame. All three are silent on screen otherwise: a socket that is not
-        // placed simply stays wherever it last was, which for a fresh one is the
-        // world origin and for a moved one is a plausible-looking lie.
+        // Edge latches, so each fault is named once per gap and not once a
+        // frame. All three are silent on screen: an unplaced socket stays where
+        // it last was, which for a moved one is a plausible-looking lie.
         bool m_noPoseLogged   = false;  ///< Nothing posed the rig this socket hangs off.
         bool m_unrootedLogged = false;  ///< Not a direct child of an entity carrying an Animator.
         bool m_noBoneLogged   = false;  ///< The rig has no bone of that name.

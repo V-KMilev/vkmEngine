@@ -24,11 +24,9 @@ GLOcclusionCullPass::GLOcclusionCullPass()
 GLOcclusionCullPass::~GLOcclusionCullPass() = default;
 
 void GLOcclusionCullPass::execute(GLFrameContext& ctx) {
-    // Not running leaves the batch un-culled, and an un-culled batch draws
-    // straight from the CPU counts - so switching this off costs nothing rather
-    // than compacting instances no one asked to cull. Same on the first frame
-    // after a resize, when the pyramid describes a viewport that no longer
-    // exists.
+    // Skipping is safe: an un-culled batch draws from the CPU counts instead of the
+    // compacted ones. isBuilt() is false on the first frame after a resize, when the
+    // pyramid still describes a viewport that no longer exists.
     const GLHiZ& hiz = ctx.hiz;
     if (!ctx.view.settings.occlusionCulling || !hiz.isBuilt()) return;
 

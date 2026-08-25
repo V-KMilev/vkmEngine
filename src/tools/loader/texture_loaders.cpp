@@ -117,11 +117,10 @@ TextureHandle loadTexture(
     LOG_VERBOSE("Loaded texture '%s' (%dx%d, %d channels, sRGB: %s)",
         ref.c_str(), width, height, channels, srgb ? "yes" : "no");
 
+    texture.sourceJson() = fileTextureRecipe(ref, srgb, generateMipmaps, filterOverride, wrap);
     // The reference is the texture's name: the stable identity scene + material
     // references resolve by, and the path used to reload it.
-    texture.name         = ref;
-    texture.sourceJson() = fileTextureRecipe(ref, srgb, generateMipmaps, filterOverride, wrap);
-    return resourceManager.add(std::move(texture));
+    return resourceManager.add(std::move(texture), ref);
 }
 
 TextureHandle requestTextureAsync(
@@ -132,10 +131,8 @@ TextureHandle requestTextureAsync(
     TextureFilterOverride filterOverride,
     TextureWrapMode wrap
 ) {
-    // The reference is the stable identity: a repeat request hands back the same
-    // handle even while the first decode is in flight. The caller can bind it
-    // right away; the asset just won't have pixels yet. Relativised before the
-    // lookup, or one file requested under two spellings becomes two assets.
+    // Relativised before the lookup, or one file requested under two spellings
+    // becomes two assets.
     const std::string ref      = ProjectPaths::toProjectRelative(filePath);
     const std::string resolved = ProjectPaths::resolveProjectPath(ref).string();
     if (auto existing = resourceManager.findByName<TextureAsset>(ref)) return existing;
@@ -151,17 +148,13 @@ TextureHandle requestTextureAsync(
     stub.srgb                   = srgb;
     stub.loading                = true;
     stub.filePath               = ref;
-    stub.name                   = ref;
     stub.sourceJson() = fileTextureRecipe(ref, srgb, generateMipmaps, filterOverride, wrap);
-    const TextureHandle handle = resourceManager.add(std::move(stub));
-    const uint64_t      uid    = resourceManager.get(handle).uid;
+    const TextureHandle handle = resourceManager.add(std::move(stub), ref);
+    const uint64_t      uid    = resourceManager.get(handle).uid();
 
-    // stb's orientation flag is a process-wide global, so it is set here on the
-    // main thread rather than inside the task. Two decodes racing on it would
-    // silently hand one of them the wrong orientation - harmless only for as
-    // long as every caller wants the same value, which is not a property worth
-    // depending on. Setting it before the task is queued orders it against the
-    // worker that will read it.
+    // stb's orientation flag is a process-wide global, so it is set on the main
+    // thread and before the task is queued - which orders it against the worker
+    // that reads it, where two racing decodes would not be ordered at all.
     stbi_set_flip_vertically_on_load(true);
 
     // The task captures only the resolved path + the asset's identity:

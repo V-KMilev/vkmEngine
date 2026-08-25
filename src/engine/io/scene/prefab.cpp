@@ -263,13 +263,7 @@ json applyOverrides(const json& base, uint32_t uid,
         }
         // The other direction: a Script override would work, and must not. The
         // component serializes as one field holding the whole behavior list, so
-        // the only address the format can spell replaces every behavior on the
-        // instance rather than editing one authored value - and the editor
-        // neither writes one (ScriptComponent has no COMPONENT_KEY) nor shows
-        // one, so an applied one would be invisible and unrevertable. Refused
-        // here, where a hand-edited file is reported as drift, rather than left
-        // as a back door that content could be authored against before the
-        // per-field address this needs has been designed.
+        // the only address the format can spell replaces every behavior on it.
         if (o.component == "Script") {
             report("behavior fields are the prefab's, not per-instance");
             continue;
@@ -306,9 +300,7 @@ bool isInsideInstance(const Scene& scene, EntityId id) {
 
     // Bounded by the live entity count rather than by a depth: a chain longer
     // than that has already revisited an entity, so a hand-edited file that made
-    // a cycle still terminates, and no real subtree is cut short. A walk that
-    // stopped early would answer "not inside an instance" for an entity that is,
-    // and the scene serializer writes what this says.
+    // a cycle still terminates and no real subtree is cut short.
     EntityId cursor = scene.get<Hierarchy>(id).parent;
     for (size_t step = 0; step <= scene.entityCount() && scene.isAlive(cursor); ++step) {
         if (scene.has<PrefabInstance>(cursor)) return true;
@@ -357,13 +349,9 @@ bool save(Scene& scene, EntityId root, const std::string& path,
     doc["version"]  = PREFAB_FORMAT_VERSION;
     doc["entities"] = json::array();
 
-    // Uids are handed out in walk order on the first save and kept on every
-    // later one, so an override written against this prefab still resolves after
-    // it is re-saved with entities added, removed or reordered. nextUid is the
-    // high-water mark: never reused, so a deleted entity's number cannot come
-    // back attached to something else. It has to be seeded from the file being
-    // overwritten - the entity that held the highest number may be the one that
-    // was just deleted, and the live subtree no longer remembers it.
+    // The high-water mark is seeded from the file being overwritten as well as
+    // from the live subtree: the entity that held the highest number may be the
+    // one that was just deleted, and only the file still remembers it.
     uint32_t nextUid = 0;
     {
         json existing;
@@ -382,10 +370,7 @@ bool save(Scene& scene, EntityId root, const std::string& path,
 
     // Decided here and stamped onto the scene only once the file is on disk, so
     // a save that could not be written leaves the subtree as it found it: a
-    // subtree carrying numbers no file answers to would hand one out twice the
-    // next time a prefab was written over it. A number is kept only if it is
-    // this entity's alone - two entities on one uid, or a child on the root's,
-    // would write a file this build's own reader refuses.
+    // subtree numbered against no file would hand one number out twice.
     nextUid = std::max(nextUid, uint32_t{1});
     std::set<uint32_t> taken{PrefabEntity::ROOT};
     std::vector<uint32_t> uids(subtree.size(), PrefabEntity::ROOT);
@@ -430,10 +415,6 @@ bool save(Scene& scene, EntityId root, const std::string& path,
     }
 
     // The subtree that was just written becomes an instance of what it wrote.
-    // Without this the master copy is a loose subtree: a scene save would store
-    // its entities inline, a scene load would rebuild them with no uids, and the
-    // next save of this prefab would renumber the file and detach every override
-    // in one go.
     if (!scene.has<PrefabInstance>(root)) scene.add(root, PrefabInstance{});
     PrefabInstance& instance = scene.get<PrefabInstance>(root);
     instance.source = path;
@@ -467,11 +448,6 @@ EntityId instantiate(Scene& scene, ResourceManager& resources, const std::string
         return {};
     }
 
-    // What makes the result an instance rather than a loose copy of the prefab's
-    // entities: without it a scene save writes the whole subtree inline and the
-    // link to the file is gone. A caller that brings its own root marks it
-    // itself - the scene loader has to, because the overrides it read belong on
-    // the component before the subtree is built from it.
     scene.add(root, PrefabInstance{});
     scene.get<PrefabInstance>(root).source = path;
     return root;
@@ -491,10 +467,8 @@ bool instantiateInto(Scene& scene, ResourceManager& resources, const std::string
     std::set<uint32_t> built;
 
     // A failure leaves nothing of this call behind. The entity being built is
-    // not parented yet, so destroying the root's subtree - which is all a caller
-    // that owns the root can do - cannot reach it; it would stay loose in the
-    // scene, outside every instance, and the next save would write it out as an
-    // entity of its own. The root itself belongs to the caller.
+    // not parented yet, so destroying the root's subtree cannot reach it - it
+    // would stay loose in the scene and be saved as an entity of its own.
     const auto abandon = [&](EntityId building) {
         if (building && building != root) scene.destroyEntity(building);
         for (size_t i = created.size(); i-- > 1;) scene.destroyEntity(created[i]);

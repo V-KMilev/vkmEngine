@@ -249,8 +249,8 @@ UnresolvedScope::~UnresolvedScope() { takeUnresolvedRefs(); }
 
 nlohmann::json save(const Mesh& m, const ResourceManager& resources) {
     return {
-        {"mesh",        m.mesh     ? resources.get(m.mesh).name     : std::string{}},
-        {"material",    m.material ? resources.get(m.material).name : std::string{}},
+        {"mesh",        m.mesh     ? resources.get(m.mesh).name()     : std::string{}},
+        {"material",    m.material ? resources.get(m.material).name() : std::string{}},
         {"visible",     m.visible},
         {"castShadows", m.castShadows},
     };
@@ -268,8 +268,8 @@ void emitAssetRefs(const Mesh& m, AssetRefs& refs) {
 
 nlohmann::json save(const Animator& a, const ResourceManager& resources) {
     return {
-        {"skeleton", a.skeleton ? resources.get(a.skeleton).name : std::string{}},
-        {"clip",     a.clip     ? resources.get(a.clip).name     : std::string{}},
+        {"skeleton", a.skeleton ? resources.get(a.skeleton).name() : std::string{}},
+        {"clip",     a.clip     ? resources.get(a.clip).name()     : std::string{}},
         {"time",        a.time},
         {"speed",       a.speed},
         {"playOnStart", a.playOnStart},
@@ -299,7 +299,7 @@ nlohmann::json save(const LOD& l, const ResourceManager& resources) {
     for (const LODLevel& level : l.levels) {
         if (!level.mesh) continue;   // an unresolved level would load as a hole in the ramp
         levels.push_back({
-            {"mesh",        resources.get(level.mesh).name},
+            {"mesh",        resources.get(level.mesh).name()},
             {"maxDistance", level.maxDistance},
         });
     }
@@ -323,7 +323,7 @@ void emitAssetRefs(const LOD& l, AssetRefs& refs) {
 
 nlohmann::json save(const Decal& d, const ResourceManager& resources) {
     return {
-        {"material",  d.material ? resources.get(d.material).name : std::string{}},
+        {"material",  d.material ? resources.get(d.material).name() : std::string{}},
         {"angleFade", d.angleFade},
         {"opacity",   d.opacity},
     };
@@ -345,7 +345,7 @@ void load(const nlohmann::json& j, ReflectionProbe& p) { loadReflected(j, p); }
 
 nlohmann::json save(const AudioSource& s, const ResourceManager& resources) {
     return {
-        {"clip",        s.clip ? resources.get(s.clip).name : std::string{}},
+        {"clip",        s.clip ? resources.get(s.clip).name() : std::string{}},
         {"volume",      s.volume},
         {"pitch",       s.pitch},
         {"loop",        s.loop},

@@ -65,20 +65,15 @@ EditorSystem::EditorSystem(
     // drag that means something to the content stays with the content.
     io.ConfigWindowsMoveFromTitleBarOnly = true;
 
-    // ImGui ini lives with the user's own settings: window positions and table
-    // column widths are how *this user* likes the editor laid out, not something
-    // a project owns - and the path is captured once for ImGui's lifetime, so a
-    // project-rooted one would go stale the moment another project is opened.
-    // Not the engine root either: an installed SDK is read-only, and ImGui
-    // writes this at shutdown, where a failure has nobody to report it to.
-    // Static so the c_str pointer stays valid for ImGui's lifetime.
+    // Under the user root (see docs/reference/system/io.md, "Which root owns a
+    // path"), and static because ImGui holds the c_str for its whole lifetime -
+    // a project-rooted path would go stale on the next Open Project anyway.
     static std::string s_iniPath = (ProjectPaths::userRoot() / "imgui.ini").string();
     io.IniFilename = s_iniPath.c_str();
 
-    // A real TTF instead of ImGui's 13 px bitmap default. Roboto Medium already
-    // ships with the engine (the in-game UI bakes its SDF font from it), so the
-    // editor reuses it. Sized against the window's content scale so text stays
-    // crisp on HiDPI displays.
+    // A real TTF instead of ImGui's 13 px bitmap default; Roboto Medium already
+    // ships with the engine, so the editor reuses it. Sized against the window's
+    // content scale so text stays crisp on HiDPI displays.
     {
         float scaleX = 1.0f, scaleY = 1.0f;
         glfwGetWindowContentScale(window, &scaleX, &scaleY);
@@ -102,11 +97,9 @@ EditorSystem::EditorSystem(
 
     applyEditorTheme();
 
-    // The fly controls are an authoring tool and start off, so the editor is
-    // what asks for them. Off by default rather than turned off by the runtime:
-    // right-drag hides, grabs and re-centres the pointer, and a shipped game
-    // that never asked for that cannot switch it back - a behavior reaches the
-    // scene, the resources and the window, never a system.
+    // The fly controls are an authoring tool, so the editor is what asks for
+    // them. Off by default rather than switched off by the runtime: right-drag
+    // grabs the pointer, and a behavior reaches no system to give it back.
     m_cameraController.setEnabled(true);
 
     // The grid defaults off engine-wide (it is an editor aid); the editor wants
@@ -261,17 +254,9 @@ void EditorSystem::update(FrameContext& ctx) {
 
     EditorContext ec = makeContext(ctx);
 
-    // Flying the viewport moves the scene's own Camera entity - the editor has
-    // no camera of its own, which is what makes "you move what you see" true -
-    // and that entity's Transform is a value the scene file stores. So looking
-    // around is an edit to authored data, and saying nothing about it left the
-    // title clean and the unsaved-changes guard quiet while the pose in the
-    // world and the pose on disk drifted apart: a save made minutes later for
-    // an unrelated reason wrote wherever the viewport happened to be parked
-    // over the framing somebody had chosen. Asked every frame either way, so a
-    // session's own flying does not sit in the flag and get reported as an edit
-    // at the next Stop - inside one the world is the simulation's copy, and
-    // Stop puts the camera back with the rest of it.
+    // Taken every frame either way, so a session's own flying does not sit in
+    // the flag until the next Stop; see docs/reference/editor.md, "Flying the
+    // camera is an edit".
     const bool cameraMoved = m_cameraController.takeCameraMoved();
     if (cameraMoved && !m_sceneIO.isPlaying()) m_state.markSceneDirty();
 
@@ -293,10 +278,9 @@ void EditorSystem::update(FrameContext& ctx) {
         }
     }
 
-    // Shader hot reload. Polled rather than watched: a filesystem watcher is a
-    // per-platform dependency for something a once-a-second directory scan of a
-    // few dozen files already answers. Editor-only - a shipped runtime has no
-    // shader sources to watch and should not be touching the disk each frame.
+    // Polled rather than watched: a filesystem watcher is a per-platform
+    // dependency for what a once-a-second scan of a few dozen files answers.
+    // Editor-only - a shipped runtime has no shader sources to watch.
     m_shaderPollTimer += ctx.clock.getDeltaTime();
     if (m_shaderPollTimer >= SHADER_POLL_INTERVAL) {
         m_shaderPollTimer = 0.0f;
@@ -343,10 +327,9 @@ void EditorSystem::update(FrameContext& ctx) {
 
     resolveSceneAction(ec);
 
-    // Begin the ImGui frame before *anything* else: the editor-toggle
-    // keybind (default F5) is processed here so the rebind UI in
-    // Preferences actually drives it. We do the same toggle in both the
-    // hidden and visible branches because the ImGui frame exists in both.
+    // Before anything else: the editor-toggle keybind is processed here so the
+    // rebind UI in Preferences drives it, and the toggle sits in both the hidden
+    // and visible branches because the ImGui frame exists in both.
     {
         PROFILE_SCOPE("Editor/ImGuiNewFrame");
         ImGui_ImplOpenGL3_NewFrame();
@@ -360,10 +343,9 @@ void EditorSystem::update(FrameContext& ctx) {
         // from continuing while the editor isn't drawing.
         if (!m_state.editorVisible) m_panelResize.resetDragState();
     }
-    // The unsaved-changes prompt, drawn before anything else so it is visible
-    // whether the editor is shown or hidden. It answers the pending request
-    // rather than acting on it; resolveSceneAction above performs what it
-    // approves, on the next frame and outside the ImGui frame.
+    // Drawn before anything else, so it is visible whether the editor is shown
+    // or hidden. It answers the pending request rather than acting on it -
+    // resolveSceneAction performs what it approves, outside the ImGui frame.
     {
         bool want = m_state.pendingAction != EditorState::SceneAction::None
                  && m_state.actionStage == EditorState::ActionStage::Ask;
@@ -506,13 +488,9 @@ void EditorSystem::update(FrameContext& ctx) {
         m_renderSettings.draw(ec);
     }
 
-    // The gesture boundary, after every panel has had its chance to push: a
-    // press, a motion and a release is one undo step, and only the editor can
-    // see where one ends. Both halves are needed - a gizmo drag holds the mouse
-    // without an ImGui item being active, while a slider tweaked with the
-    // keyboard keeps its item active with the mouse up. Asked at the end of the
-    // frame rather than the start so the push a drag makes on its release frame
-    // still lands inside the gesture it belongs to.
+    // The gesture boundary, after every panel has had its chance to push. Both
+    // halves are needed: a gizmo drag holds the mouse with no ImGui item active,
+    // while a keyboard-tweaked slider keeps its item active with the mouse up.
     if (!ImGui::IsAnyMouseDown() && !ImGui::IsAnyItemActive()) {
         m_state.commands.endGesture();
     }
@@ -531,10 +509,8 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
 
     // Zero spacing tiles the panel children edge-to-edge; each panel restores
-    // the theme spacing INSIDE its child, so panel content - and every popup
-    // opened from it, which snapshots the style at Begin - keeps the theme's
-    // rhythm instead of inheriting the tiling hack (menus opened from panels
-    // used to render squashed while the same menu from the menu bar did not).
+    // the theme spacing inside its child, so its content - and every popup
+    // opened from it, which snapshots the style at Begin - keeps that rhythm.
     const ImVec2 themeSpacing = ImGui::GetStyle().ItemSpacing;
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
 
@@ -570,10 +546,9 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
         if (ImGui::BeginChild("##Viewport", ImVec2(centerW, mainH), ImGuiChildFlags_None)) {
             ec.viewportPos  = vpMin;
             ec.viewportSize = ImVec2(centerW, mainH);
-            // Tell the engine the viewport rect so next frame's render
-            // pipeline sizes its FBOs and projection to this rect instead
-            // of the full GLFW window. The rect is ImGui's, in window screen
-            // coords; the engine wants framebuffer pixels.
+            // The engine sizes next frame's FBOs and projection to this rect
+            // rather than to the full GLFW window. The rect is ImGui's, in
+            // window screen coords; the engine wants framebuffer pixels.
             const float vpScale = ec.frame.window.framebufferScale();
             ec.frame.window.setSceneViewport(
                 static_cast<uint32_t>(std::max(0.0f, vpMin.x * vpScale)),

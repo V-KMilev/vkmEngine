@@ -33,17 +33,22 @@ class AnimationTrack {
         AnimationTrack& operator=(AnimationTrack && other) noexcept = default;
 
         /**
-         * @brief Construct a track that interpolates with @p easing. The default
-         *        constructor uses linear (see m_easing's initializer).
+         * @brief Construct a track that interpolates with @p easing.
+         *
+         * The default constructor uses linear, per m_easing's initializer.
          */
         explicit AnimationTrack(EasingFunction easing) : m_easing(easing) {}
 
     public:
         /**
-         * @brief Adds a keyframe with a specified time and value.
-         *        Keeps keyframes sorted by time ascending.
-         * @param time The time (in seconds or arbitrary units).
-         * @param value The value for the keyframe.
+         * @brief Add a keyframe at @p time.
+         *
+         * Keeps the keyframes sorted by ascending time. A second keyframe at a
+         * time already held is added beside the first rather than replacing it;
+         * setKeyframe() is the call that re-keys.
+         *
+         * @param time Time in seconds, or in whatever unit the track is read at.
+         * @param value Value the track takes at that time.
          */
         void addKeyframe(float time, const T& value) {
             auto it = std::upper_bound(m_times.begin(), m_times.end(), time);
@@ -53,10 +58,14 @@ class AnimationTrack {
         }
 
         /**
-         * @brief Sets a keyframe at @p time: replaces the value if a keyframe
-         *        already exists at (approximately) that time, otherwise adds a
-         *        new one. Prevents degenerate zero-length segments from
-         *        re-keying at the same instant.
+         * @brief Set the value at @p time, replacing any keyframe already there.
+         *
+         * Matches an existing keyframe approximately rather than exactly, which
+         * is what keeps re-keying at the same instant from leaving a
+         * zero-length segment behind.
+         *
+         * @param time Time to key at.
+         * @param value Value the track takes at that time.
          */
         void setKeyframe(float time, const T& value) {
             for (size_t i = 0; i < m_times.size(); ++i) {
@@ -149,7 +158,9 @@ class AnimationTrack {
         }
 
         /**
-         * @brief Removes the keyframe at @p index. No-op if out of range.
+         * @brief Remove the keyframe at @p index.
+         *
+         * A no-op if @p index is out of range.
          */
         void removeKeyframe(size_t index) {
             if (index >= m_times.size()) return;
@@ -158,7 +169,9 @@ class AnimationTrack {
         }
 
         /**
-         * @brief Replaces the value of the keyframe at @p index. No-op if out of range.
+         * @brief Replace the value of the keyframe at @p index.
+         *
+         * A no-op if @p index is out of range.
          */
         void setKeyframeValue(size_t index, const T& value) {
             if (index >= m_values.size()) return;
@@ -166,9 +179,11 @@ class AnimationTrack {
         }
 
         /**
-         * @brief Moves the keyframe at @p index to a new time, keeping the
-         *        track sorted (the keyframe may change index as a result).
-         *        No-op if out of range.
+         * @brief Move the keyframe at @p index to @p time.
+         *
+         * The track stays sorted, so the keyframe may come to sit at a
+         * different index than the one named here. A no-op if @p index is out
+         * of range.
          */
         void setKeyframeTime(size_t index, float time) {
             if (index >= m_times.size()) return;
@@ -186,9 +201,11 @@ class AnimationTrack {
 
     private:
         /**
-         * @brief Interpolates between two values using the appropriate method.
-         * Uses spherical linear interpolation (slerp) for quaternions,
-         * and linear interpolation (mix) for all other types.
+         * @brief Interpolate between two values by the method the type wants.
+         *
+         * Spherical linear interpolation for quaternions, so a rotation takes
+         * the short arc at constant speed; plain linear interpolation for
+         * every other type.
          */
         template<typename U = T>
         static U interpolate(const U& a, const U& b, float t) {

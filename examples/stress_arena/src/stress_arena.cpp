@@ -377,26 +377,17 @@ void StressArena::onStart() {
     installStressBindings(*context().input);
     m_churnRng.seed(ARENA_SEED, CHURN_STREAM);
 
-    // Procedural sky rather than an HDR file, for the same reason nothing else
-    // here is loaded: the atmosphere is baked from parameters, so the lighting
-    // environment is identical on every machine and no capture depends on which
-    // .hdr happens to be present. The bake follows the primary directional light
-    // (the sun built in buildLights) and re-runs only when it or a sky parameter
-    // moves - so it costs one bake at startup, not one per frame.
+    // Procedural rather than an HDR file, for the same reason nothing here is
+    // loaded: baked from parameters, the lighting is identical on every machine.
+    // It follows the sun and re-bakes only when that or a parameter moves.
     Environment& environment = m_scene->environment();
     environment.sky.showSkybox    = true;
     environment.sky.procedural = true;
     environment.sky.intensity     = 1.0f;
 
-    // Daylight: a mid-morning sun high enough to light the block from above, so
-    // the towers read as solid volumes with their own cast shadows rather than
-    // as flat silhouettes against a bright horizon. Rayleigh carries the blue,
-    // Mie is kept modest - a large Mie term at this elevation washes the whole
-    // sky toward white and buries the geometry it is supposed to light.
-    // Mid-morning. High enough that the towers cast shadows down onto the block
-    // instead of across the whole arena, and off-axis so those shadows fall
-    // diagonally and the cascades cover a varied depth range rather than one
-    // flat slab. The key light follows these, so this is the only place it is set.
+    // Mid-morning and off-axis, so the towers cast shadows down onto the block
+    // rather than across the arena and the cascades cover a varied depth range.
+    // Mie stays modest - a large term at this elevation washes the sky white.
     environment.sky.lightColor          = {1.0f, 0.96f, 0.90f};
     environment.sky.lightIntensity      = 3.2f;
     environment.sky.sunElevation        = 70.0f;
@@ -407,11 +398,9 @@ void StressArena::onStart() {
     environment.sky.mieG             = 0.76f;
     environment.sky.sunDiscIntensity = 15.0f;
 
-    // Volumetric fog on by default: one of the heaviest passes in the pipeline
-    // and the one most often left out of a benchmark, which is exactly why it
-    // belongs in the default load. Thin enough for a clear day - it reads as
-    // aerial haze over distance rather than as a ground fog bank, and still
-    // costs the same froxel grid either way. Key 8 takes it out.
+    // On by default: one of the heaviest passes and the one most often left out
+    // of a benchmark. Thin enough to read as aerial haze rather than a fog bank,
+    // and the froxel grid costs the same either way. Key 8 takes it out.
     environment.fog.enabled    = true;
     environment.fog.density    = 0.006f;
     environment.fog.height     = 18.0f;
@@ -426,12 +415,9 @@ void StressArena::onStart() {
             camera.zFar  = 600.0f;   // the far towers must stay in frustum
             camera.zNear = 0.2f;
 
-            // Depth of field is off unless a camera asks for it - the pass
-            // early-outs at amount 0, so the default camera never runs it and
-            // it would be missing from a capture entirely. Kept modest: enough
-            // to put a real circle-of-confusion on the far skyline (which is
-            // what the pass costs) without blurring the scene into mush.
-            // focusDistance tracks the look target in updateCamera.
+            // The pass early-outs at amount 0, so without this a capture would
+            // be missing it entirely. Modest: enough for a real circle of
+            // confusion on the far skyline, which is what the pass costs.
             camera.dofAmount     = 0.35f;
             camera.focusDistance = CAM_RADIUS;
         }
@@ -461,7 +447,6 @@ void StressArena::onStart() {
 
 MaterialHandle StressArena::makeMaterial(const MaterialAsset& source, const char* name) {
     MaterialAsset material = source;
-    material.name = name;
     return m_resources->add(std::move(material), name);
 }
 
@@ -505,10 +490,9 @@ void StressArena::buildMaterials() {
     base.roughness = 0.7f;
     m_matTower = makeMaterial(base, "stress:tower");
 
-    // The prop palette. Each entry varies the parameters the PBR shader
-    // branches on, so the forward pass is not measured on one uniform BRDF:
-    // a share of the palette carries clearcoat, anisotropy or sheen, each of
-    // which lights a different lobe in the shader.
+    // Each entry varies the parameters the PBR shader branches on, so the
+    // forward pass is not measured on one uniform BRDF: a share of the palette
+    // carries clearcoat, anisotropy or sheen, each lighting a different lobe.
     m_propMaterials.reserve(static_cast<size_t>(uniqueMaterials));
     for (int i = 0; i < uniqueMaterials; ++i) {
         MaterialAsset m;
@@ -715,10 +699,9 @@ void StressArena::buildProps() {
             m_scene->add(prop, std::move(lod));
         }
 
-        // The first animatedCount props get a track. Spread across all four clip
-        // shapes so the evaluator is measured on its real mix rather than on one
-        // branch: rotation-only, position-only, scale-only (which also keeps the
-        // culling bounds moving) and one clip driving all three at once.
+        // Spread across all four clip shapes, so the evaluator is measured on its
+        // real mix rather than one branch: rotation, position, scale - which also
+        // keeps the culling bounds moving - and one clip driving all three.
         if (static_cast<int>(m_spinners.size()) < animatedCount) {
             switch (i % 4) {
                 case 0:
@@ -744,11 +727,9 @@ void StressArena::buildLights() {
     m_lights.reserve(static_cast<size_t>(lightCount));
 
     for (int i = 0; i < lightCount; ++i) {
-        // Two thirds light the prop field the camera looks at; the rest sit out
-        // in the tower ring so the skyline is lit rather than a black cutout.
-        // Spread evenly for the same reason the props are: clustered lights
-        // leave dark gaps and pile several into one cluster cell, which is not
-        // the binning behaviour worth measuring.
+        // Two thirds light the prop field, the rest the tower ring so the skyline
+        // is not a black cutout. Spread evenly for the same reason the props are:
+        // clustered lights pile into one cell, which is not the binning to measure.
         const bool  inField = (i % 3) != 0;
         const glm::vec3 spot = inField
             ? scatterOnGround(i, lightCount, PIT_HALF, PROP_ZONE_OUTER, m_rng, 0.5f)
@@ -804,10 +785,9 @@ void StressArena::buildLights() {
         }
     }
 
-    // One directional key light. It drives the CSM cascades and the contact
-    // shadow pass, neither of which any point or spot light reaches - and the
-    // procedural sky bakes its atmosphere around this direction, so the sky and
-    // the key light stay consistent.
+    // One directional key light: it drives the CSM cascades, which no point or
+    // spot light reaches, and the procedural sky bakes its atmosphere around this
+    // direction, so the two stay consistent.
     EntityId sun = m_scene->createEntity();
     m_scene->add(sun, makeName("Sun"));
 
@@ -901,10 +881,9 @@ void StressArena::buildDecals() {
 }
 
 void StressArena::buildProbes() {
-    // Reflection probes: each bakes six faces of the scene on first sight
-    // (throttled to one per frame by the probe manager), so they show up as a
-    // burst of long frames at startup and then settle. That startup burst is
-    // itself worth capturing - it is what a player sees on level load.
+    // Each bakes six faces on first sight, throttled to one probe per frame, so
+    // they show up as a burst of long frames at startup and then settle. That
+    // burst is worth capturing: it is what a player sees on level load.
     for (int i = 0; i < reflectionProbes; ++i) {
         const float angle  = glm::two_pi<float>() * static_cast<float>(i) / static_cast<float>(std::max(1, reflectionProbes));
         const float radius = ARENA_HALF * 0.45f;
@@ -1064,12 +1043,9 @@ void StressArena::updateModelScales() {
     // drops out of the frame entirely rather than rescanning the list forever.
     if (m_unfittedKinds == 0) return;
 
-    // A cooked mesh is handed back as an empty stub and filled in off-thread, so
-    // its bounds are only known some frames after the build. Until then an
-    // instance cannot be scaled sensibly - Sponza's meshes are authored at wildly
-    // different extents, and a fixed scale would leave some invisible and others
-    // swallowing the arena. So each kind is fitted once, the frame its vertices
-    // land, and then left alone.
+    // A cooked mesh comes back as an empty stub filled in off-thread, so bounds
+    // land some frames later - and the source meshes are authored at wildly
+    // different extents, so each kind is fitted the frame its vertices arrive.
     for (ModelKind& kind : m_models) {
         if (kind.fitted) continue;
 
@@ -1106,10 +1082,9 @@ void StressArena::buildDrones() {
         EntityId body = spawnMesh(m_cube, m_matChrome, "Drone",
                                   {radius, height, 0.0f}, {1.6f, 0.5f, 2.4f});
 
-        // Arm, then rotor: the chain exists so the rig is three deep. The
-        // scattered props are all hierarchy roots, so without something like
-        // this the depth-bucketed resolve in HierarchySystem never runs on
-        // anything but depth 0 and its cost stays invisible.
+        // Arm, then rotor: the chain exists so the rig is three deep. Every
+        // scattered prop is a root, so without it the depth-bucketed resolve in
+        // HierarchySystem never runs past depth 0 and its cost stays invisible.
         EntityId arm = spawnMesh(m_cube, m_matTower, "Drone Arm",
                                  {0.0f, 0.0f, 0.0f}, {0.25f, 0.9f, 0.25f});
         m_scene->get<Transform>(arm).position = {0.0f, 0.6f, 0.0f};
@@ -1233,10 +1208,9 @@ void StressArena::updateDebris(float dt) {
 
     m_debrisAccum += debrisRate * dt;
     while (m_debrisAccum >= 1.0f) {
-        // Keep only the fraction while capped, matching ParticleSystem: banking
-        // whole spawns at the cap discharges them the moment pieces start
-        // expiring. The shipped rate stays under one per frame so it never
-        // reaches that, but debrisRate is a dial.
+        // Only the fraction is kept while capped, matching ParticleSystem:
+        // banking whole spawns discharges them the moment pieces start expiring.
+        // The shipped rate never reaches the cap, but debrisRate is a dial.
         if (m_debris.size() >= MAX_LIVE) {
             m_debrisAccum -= std::floor(m_debrisAccum);
             break;
@@ -1458,11 +1432,9 @@ void StressArena::updateCamera(float dt) {
 
     m_camTime += dt;
 
-    // A cut jumps most of the way round the loop at once: nothing visible before
-    // is visible after, so the culling sets, the batch membership and every
-    // newly-referenced mesh and material all turn over in a single frame. That
-    // is the worst case for frame-to-frame coherence and shows up as a
-    // deliberate spike, which is why it is off unless asked for.
+    // A cut jumps most of the way round the loop at once, so culling sets, batch
+    // membership and every newly-referenced asset turn over in one frame. The
+    // worst case for frame coherence, and a deliberate spike - hence opt-in.
     if (cameraCutInterval > 0.0f) {
         m_cutTimer -= dt;
         if (m_cutTimer <= 0.0f) {
@@ -1494,10 +1466,9 @@ void StressArena::updateCamera(float dt) {
 
     Transform& transform = m_scene->get<Transform>(m_camera);
     transform.position = position;
-    // Negated on purpose. glm::quatLookAt builds a rotation for GLM's -Z
-    // forward, but this engine's forward is +Z (Math::computeForward), so the
-    // unnegated result aims the camera directly away from the target - here,
-    // out at the tower ring a few units behind it instead of across the block.
+    // Negated on purpose: glm::quatLookAt builds a rotation for GLM's -Z
+    // forward, while this engine's forward is +Z, so the unnegated result aims
+    // the camera directly away from the target.
     transform.rotation = glm::quatLookAt(-forward, Math::WORLD_AXIS_Y);
 }
 

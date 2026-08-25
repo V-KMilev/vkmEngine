@@ -145,9 +145,11 @@ struct RenderView {
         void buildDecals(const Scene& scene);
 
         /**
-         * @brief Flatten every emitter's live particles into billboard instances,
-         * evaluating size + colour from each particle's age. Alpha particles are
-         * sorted back-to-front against the camera; additive ones need no order.
+         * @brief Flatten every emitter's live particles into billboard instances.
+         *
+         * Size and colour are evaluated from each particle's age. Alpha
+         * particles are sorted back-to-front against the camera; additive ones
+         * need no order, their blend being commutative.
          *
          * @param scene Scene whose ParticleEmitter components are gathered.
          */
