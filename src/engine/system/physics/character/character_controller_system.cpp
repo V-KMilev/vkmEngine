@@ -18,6 +18,7 @@
 #include "ecs/component/core/transform.h"
 #include "core/math/axes.h"
 #include "ecs/scene.h"
+#include "system/physics/body_pose.h"
 #include "system/physics/query/query.h"
 #include "system/physics/tolerance.h"
 
@@ -25,10 +26,6 @@ namespace Vkm::Engine {
 
 namespace {
 
-// The engine's world up, and the axis a capsule collider stands along.
-// Below this a requested velocity is nothing rather than a very slow walk.
-// Squared, because it is only ever compared against another of its own kind: at
-// 1e-4 that is a centimetre a second, which no player asked for.
 constexpr float MOVE_SPEED_SQ = 1e-4f;
 
 /**
@@ -219,10 +216,15 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
                             && capsuleOf(*collider, radius, halfHeight, offset)
                             && radius > 0.0f;
 
+        // Resolved the way PhysicsSystem and the queries resolve it, because
+        // stepTargetY is a world height and the probes are cast in world space.
+        // A character parented to anything - a lift, a vehicle, a prefab root -
+        // has a Transform in that parent's frame, and reading it raw put the
+        // feet wherever the parent happened to be.
         glm::vec3 feet(0.0f);
         if (climbable) {
-            const Transform& transform = scene.get<Transform>(id);
-            feet = transform.position + transform.rotation * offset
+            const BodyPose pose = worldPoseOf(scene, id, scene.get<Transform>(id));
+            feet = pose.position + pose.rotation * offset
                  - Math::WORLD_UP * (halfHeight + radius);
         }
 
