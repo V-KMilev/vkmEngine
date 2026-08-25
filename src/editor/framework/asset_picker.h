@@ -72,6 +72,7 @@ class AssetPicker {
             std::string hint;
         };
 
+    public:
         Options options;
 
     private:

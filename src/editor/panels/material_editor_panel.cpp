@@ -835,8 +835,6 @@ bool MaterialEditorPanel::drawParameters(ResourceManager& resources, EditorRende
         }
     }
     endComponentCard();
-    ImGui::Spacing();
-
 
     for (const Feature& feature : FEATURES) {
         if (!feature.active(mat)) continue;
@@ -845,7 +843,6 @@ bool MaterialEditorPanel::drawParameters(ResourceManager& resources, EditorRende
             changed |= feature.body(mat);
         }
         endComponentCard();
-        ImGui::Spacing();
         if (remove) {
             feature.disable(mat);
             changed = true;
@@ -897,7 +894,6 @@ bool MaterialEditorPanel::drawParameters(ResourceManager& resources, EditorRende
         }
     }
     endComponentCard();
-    ImGui::Spacing();
 
     return changed;
 }

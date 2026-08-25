@@ -36,7 +36,7 @@ bool drawVec3Control(const char* label, float* values,
     ImGui::PushID(label);
 
     float lineHeight = ImGui::GetFrameHeight();
-    ImVec2 buttonSize(lineHeight + 2.0f, lineHeight);
+    ImVec2 buttonSize(lineHeight + EditorStyle::px(2.0f), lineHeight);
     // Floored, because the share left over goes to zero on a narrow panel and the
     // three drags disappear - a Transform card reduced to axis buttons with no
     // number to drag. Overflowing is the lesser failure; the panel resizes.
@@ -68,10 +68,10 @@ bool drawVec3Control(const char* label, float* values,
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, axes[i].hover);
         if (ImGui::Button(axes[i].button, buttonSize)) { values[i] = resetValue; changed = true; }
         ImGui::PopStyleColor(3);
-        ImGui::SameLine(0, 2);
+        ImGui::SameLine(0, EditorStyle::px(2.0f));
         ImGui::SetNextItemWidth(inputWidth);
         changed |= ImGui::DragFloat(axes[i].drag, &values[i], speed, 0.0f, 0.0f, "%.2f");
-        if (i < 2) ImGui::SameLine(0, 6);
+        if (i < 2) ImGui::SameLine(0, EditorStyle::px(6.0f));
     }
 
     ImGui::PopID();
@@ -114,16 +114,19 @@ struct CardState {
     ImVec4 accent;
     float  startY = 0.0f;   // body top, screen-space y
     float  lineX  = 0.0f;   // left accent-line x, screen-space
+    int    frame  = 0;      // the ImGui frame that pushed it
     bool   open   = false;
 };
-// Accessor instead of a bare global: the stack enforces balanced begin/end
-// pairs while keeping the lifetime explicit. thread_local because the only
-// context where it is valid is the ImGui-owning thread.
+// Accessor instead of a bare global, so the lifetime stays explicit.
+// thread_local because the only context where it is valid is the ImGui-owning
+// thread.
 std::vector<CardState>& cardStack() {
     thread_local std::vector<CardState> s;
     return s;
 }
-constexpr float CARD_INDENT = 14.0f;
+// A function, not a constant: px() reads the live font and there is no ImGui
+// context yet when a file-scope initializer runs.
+float cardIndent() { return EditorStyle::px(14.0f); }
 
 // Tinted, accent-stripped CollapsingHeader (no body/end pairing). File-local -
 // only beginComponentCard below uses it.
@@ -137,8 +140,9 @@ bool styledCollapsingHeader(const char* title, const ImVec4& accent,
     ImGui::PushStyleColor(ImGuiCol_Header,        EditorStyle::CARD_HEADER);
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered, EditorStyle::CARD_HEADER_HOV);
     ImGui::PushStyleColor(ImGuiCol_HeaderActive,  EditorStyle::CARD_HEADER_ACT);
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 7));
-    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
+                        ImVec2(EditorStyle::px(8.0f), EditorStyle::px(7.0f)));
+    ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, EditorStyle::px(4.0f));
 
     const bool open = ImGui::CollapsingHeader(title, flags);
     const ImVec2 rMin = ImGui::GetItemRectMin();
@@ -149,7 +153,7 @@ bool styledCollapsingHeader(const char* title, const ImVec4& accent,
 
     // Accent strip welded to the header's left edge.
     ImGui::GetWindowDrawList()->AddRectFilled(
-        ImVec2(rMin.x, rMin.y), ImVec2(rMin.x + 3.0f, rMax.y),
+        ImVec2(rMin.x, rMin.y), ImVec2(rMin.x + EditorStyle::px(3.0f), rMax.y),
         ImGui::GetColorU32(accent));
     return open;
 }
@@ -157,6 +161,12 @@ bool styledCollapsingHeader(const char* title, const ImVec4& accent,
 
 bool beginComponentCard(const char* title, const ImVec4& accent,
                         bool defaultOpen, bool* removeClicked) {
+    // A card whose end was skipped would otherwise sit on this stack for the
+    // rest of the session, shifting every later card's guide line. ImGui resets
+    // its own id and indent stacks per frame; this one follows.
+    std::vector<CardState>& stack = cardStack();
+    if (!stack.empty() && stack.back().frame != ImGui::GetFrameCount()) stack.clear();
+
     ImGui::PushID(title);
     ImGui::Spacing();
 
@@ -165,7 +175,7 @@ bool beginComponentCard(const char* title, const ImVec4& accent,
 
     if (removeClicked) {
         ImGui::SameLine(ImGui::GetContentRegionAvail().x
-                        + ImGui::GetCursorPosX() - 20);
+                        + ImGui::GetCursorPosX() - EditorStyle::px(20.0f));
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
         ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::DANGER);
         if (ImGui::SmallButton("x")) *removeClicked = true;
@@ -176,28 +186,34 @@ bool beginComponentCard(const char* title, const ImVec4& accent,
     CardState st;
     st.accent = accent;
     st.open   = open;
-    st.lineX  = rMin.x + CARD_INDENT * 0.5f;
+    st.frame  = ImGui::GetFrameCount();
+    st.lineX  = rMin.x + cardIndent() * 0.5f;
     if (open) {
-        ImGui::Indent(CARD_INDENT);
+        ImGui::Indent(cardIndent());
         ImGui::Spacing();
         st.startY = ImGui::GetCursorScreenPos().y;
     }
-    cardStack().push_back(st);
+    stack.push_back(st);
     return open;
 }
 
 void endComponentCard() {
-    CardState st = cardStack().back();
-    cardStack().pop_back();
+    std::vector<CardState>& stack = cardStack();
+    // No matching begin, so there is no PushID of ours to pop either.
+    if (stack.empty()) return;
+
+    const CardState st = stack.back();
+    stack.pop_back();
 
     if (st.open) {
         ImGui::Spacing();
         const float endY = ImGui::GetCursorScreenPos().y;
-        ImGui::Unindent(CARD_INDENT);
+        ImGui::Unindent(cardIndent());
         const ImU32 c = ImGui::GetColorU32(ImVec4(
             st.accent.x, st.accent.y, st.accent.z, 0.30f));
         ImGui::GetWindowDrawList()->AddLine(
-            ImVec2(st.lineX, st.startY), ImVec2(st.lineX, endY), c, 2.0f);
+            ImVec2(st.lineX, st.startY), ImVec2(st.lineX, endY), c,
+            EditorStyle::px(2.0f));
     }
     ImGui::PopID();
     ImGui::Spacing();
@@ -361,7 +377,7 @@ void iconPaddedLabel(char* out, size_t n, const char* name,
                      const char* idStr) {
     const float sw = ImGui::CalcTextSize(" ").x;
     int pad = (sw > 0.0f)
-        ? static_cast<int>((rowIconRadius() * 2.0f + 6.0f) / sw) + 1 : 4;
+        ? static_cast<int>((rowIconRadius() * 2.0f + EditorStyle::px(6.0f)) / sw) + 1 : 4;
     if (pad < 2)  pad = 2;
     if (pad > 18) pad = 18;
     char sp[20];
@@ -376,7 +392,7 @@ void drawRowGlyph(EditorIcon ic, float startX, ImVec2 rmin, float rh) {
         ImVec2(startX + iconR, rmin.y + rh * 0.5f), iconR,
         ImGui::GetColorU32(ImGuiCol_Text));
 }
-}
+} // namespace
 
 EditorIcon entityIconKind(const Scene& scene, EntityId id) {
     return entityLabelOf(scene, id).icon;
@@ -405,7 +421,7 @@ bool iconMenuItem(EditorIcon icon, const char* label, const char* shortcut, bool
     iconPaddedLabel(padded, sizeof(padded), label, nullptr);
     const ImVec2 p = ImGui::GetCursorScreenPos();
     const bool pressed = ImGui::MenuItem(padded, shortcut, false, enabled);
-    drawRowGlyph(icon, p.x + 4.0f, p, ImGui::GetItemRectSize().y);
+    drawRowGlyph(icon, p.x + EditorStyle::px(4.0f), p, ImGui::GetItemRectSize().y);
     return pressed;
 }
 
@@ -415,7 +431,7 @@ bool entitySelectable(const char* idStr, bool selected,
     iconPaddedLabel(label, sizeof(label), name, idStr);
     const ImVec2 p = ImGui::GetCursorScreenPos();
     const bool clicked = ImGui::Selectable(label, selected);
-    drawRowGlyph(icon, p.x + 4.0f, p, ImGui::GetItemRectSize().y);
+    drawRowGlyph(icon, p.x + EditorStyle::px(4.0f), p, ImGui::GetItemRectSize().y);
     return clicked;
 }
 

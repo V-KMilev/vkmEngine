@@ -330,6 +330,7 @@ class SceneIOController {
             const std::string& eventPath
         );
 
+    private:
         CameraControllerSystem& m_cameraController;
         MaterialPreviewSession& m_materialPreviews;
 

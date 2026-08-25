@@ -230,7 +230,7 @@ and none of them is enforced by the compiler. Read these before the first change
   `ScaleAllSizes`, because those metrics are set before there is a font to
   measure.
 - **Dialogs use `beginDialog` / `dialogButtons` / `endDialog`**
-  (`ui/editor_dialogs.h:11-28`). The scaffold owns the Escape-cancels /
+  (`ui/editor_dialogs.h:18-35`). The scaffold owns the Escape-cancels /
   Enter-confirms contract, including the case where an active text field would
   otherwise swallow Enter in exactly the dialogs that need it.
 

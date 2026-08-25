@@ -251,7 +251,7 @@ void syncWindowTitle(WindowManager& window, const std::string& project,
         s_last = std::move(title);
     }
 }
-}
+} // namespace
 
 void EditorSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("EditorSystem");

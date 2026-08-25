@@ -231,7 +231,7 @@ const char* defaultName(EntityKind k) {
     }
     return "Entity";
 }
-}
+} // namespace
 
 EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& state, EntityKind kind) {
     const EntityId entity = scene.createEntity();

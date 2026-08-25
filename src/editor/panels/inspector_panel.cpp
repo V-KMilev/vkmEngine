@@ -368,7 +368,7 @@ float capsuleRadiusOf(const Scene& scene, EntityId id) {
         if (part.shape == ColliderShape::Capsule) return part.radius;
     return 0.0f;
 }
-}
+} // namespace
 
 void InspectorPanel::draw(EditorContext& ec) {
     FrameContext& ctx   = ec.frame;

@@ -162,6 +162,23 @@ class TransformGizmo {
         bool planeQuadCorners(int i, const ImVec2 screenAxes[3], const bool axisOk[3],
                               ImVec2& qA, ImVec2& qB, ImVec2& qC) const;
 
+        static constexpr float GIZMO_SIZE_PIXELS  = 110.0f;
+        static constexpr float AXIS_HIT_RADIUS    = 10.0f;
+        static constexpr float PLANE_QUAD_FRAC    = 0.28f;
+        static constexpr float ARROW_HEAD_PIXELS  = 6.0f;
+        static constexpr float SCALE_BOX_HALF     = 4.0f;
+        static constexpr int   CIRCLE_SEGMENTS    = 64;
+        static constexpr float LINE_THICKNESS      = 2.5f;
+        static constexpr float HIGHLIGHT_THICKNESS = 3.5f;
+
+        static constexpr ImU32 COLOR_X         = EditorStyle::AXIS_X_U32;
+        static constexpr ImU32 COLOR_Y         = EditorStyle::AXIS_Y_U32;
+        static constexpr ImU32 COLOR_Z         = EditorStyle::AXIS_Z_U32;
+        static constexpr ImU32 COLOR_HIGHLIGHT = EditorStyle::HIGHLIGHT_U32;
+        static constexpr ImU32 COLOR_PLANE_X   = EditorStyle::AXIS_X_FILL_U32;
+        static constexpr ImU32 COLOR_PLANE_Y   = EditorStyle::AXIS_Y_FILL_U32;
+        static constexpr ImU32 COLOR_PLANE_Z   = EditorStyle::AXIS_Z_FILL_U32;
+
     private:
         // Per-frame cached state
         glm::mat4 m_viewProj{1.0f};
@@ -204,23 +221,6 @@ class TransformGizmo {
 
         // Delta rotation from current drag (set by handleRotationDrag)
         glm::quat m_dragRotation{1.0f, 0.0f, 0.0f, 0.0f};
-
-        static constexpr float GIZMO_SIZE_PIXELS  = 110.0f;
-        static constexpr float AXIS_HIT_RADIUS    = 10.0f;
-        static constexpr float PLANE_QUAD_FRAC    = 0.28f;
-        static constexpr float ARROW_HEAD_PIXELS  = 6.0f;
-        static constexpr float SCALE_BOX_HALF     = 4.0f;
-        static constexpr int   CIRCLE_SEGMENTS    = 64;
-        static constexpr float LINE_THICKNESS      = 2.5f;
-        static constexpr float HIGHLIGHT_THICKNESS = 3.5f;
-
-        static constexpr ImU32 COLOR_X         = EditorStyle::AXIS_X_U32;
-        static constexpr ImU32 COLOR_Y         = EditorStyle::AXIS_Y_U32;
-        static constexpr ImU32 COLOR_Z         = EditorStyle::AXIS_Z_U32;
-        static constexpr ImU32 COLOR_HIGHLIGHT = EditorStyle::HIGHLIGHT_U32;
-        static constexpr ImU32 COLOR_PLANE_X   = EditorStyle::AXIS_X_FILL_U32;
-        static constexpr ImU32 COLOR_PLANE_Y   = EditorStyle::AXIS_Y_FILL_U32;
-        static constexpr ImU32 COLOR_PLANE_Z   = EditorStyle::AXIS_Z_FILL_U32;
 };
 
 } // namespace Vkm::Engine
