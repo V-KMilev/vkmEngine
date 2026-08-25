@@ -219,11 +219,8 @@ uint32_t GLPreview::render(Vkm::GL::Context& gl, GLView& glView, const GLIBL& ib
         gl.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
 
-    // Not read - every preview light is shadowless - but this shader declares the
-    // slot as a sampler2DShadow, and the driver validates a declared sampler
-    // against the bound state at draw time whether or not the branch that reads
-    // it is taken. Whoever drew last left the atlas in the mode their own shader
-    // wanted, so each pass states the one it needs.
+    // Never read - every preview light is shadowless - but the shader declares the slot
+    // as sampler2DShadow, and the driver validates a declared sampler at draw time.
     shadows.bind2D(GLBindings::ShadowTextureSlots::Atlas2D);
 
     m_drawables.clear();

@@ -119,6 +119,10 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
          * @brief Split the frame's drawables into the opaque + transparent buckets once
          * (one material resolve each) so the depth prepass and forward pass share
          * the result instead of re-partitioning the list a pass apiece.
+         *
+         * A material that has not resolved yet counts as opaque here and in the
+         * forward pass's own fallback, so the two never disagree about where a
+         * drawable still streaming its material draws.
          */
         void partitionDrawables(const RenderView& view);
 

@@ -326,15 +326,9 @@ void appendSkin(const aiMesh* m, const SkeletonAsset& skeleton, const std::strin
         if (index < 0) { ++offRig; continue; }
         for (unsigned wi = 0; wi < bone->mNumWeights; ++wi) {
             const aiVertexWeight& weight = bone->mWeights[wi];
-            // aiProcess_JoinIdenticalVertices merges on a key that omits skin
-            // weights (Assimp's Vertex.h:106-111) and filters the merged-away
-            // ones out (JoinVerticesProcess.cpp:343). Past that,
-            // JoinVerticesProcess.cpp:354 only rewrites a bone's weight list
-            // when the rewrite is non-empty - so a bone whose weights ALL
-            // landed on joined vertices keeps its pre-join vertex ids against
-            // the shrunken array. Following one is an out-of-bounds read of
-            // Assimp's own data, which is why this is a bounds check and not
-            // an assertion.
+            // A bone whose weights all landed on vertices
+            // aiProcess_JoinIdenticalVertices merged keeps its pre-join ids
+            // against the shrunken array; docs/reference/resources.md has why.
             if (weight.mVertexId >= m->mNumVertices) { ++outOfRange; continue; }
             if (weight.mWeight <= 0.0f) continue;
             perVertex[weight.mVertexId].push_back({static_cast<uint16_t>(index), weight.mWeight});
@@ -353,10 +347,8 @@ void appendSkin(const aiMesh* m, const SkeletonAsset& skeleton, const std::strin
         float total = 0.0f;
         for (const VertexInfluence& influence : influences) total += influence.weight;
         if (total <= 0.0f) {
-            // Sum(w * M) with every w zero collapses the vertex onto the origin.
-            // Binding it rigidly to the rig root leaves it where the artist put
-            // it - wrong in a way that can be seen and fixed, rather than one
-            // that reads as a broken importer.
+            // sum(w * M) with every w zero collapses the vertex onto the
+            // origin; rigid to the rig root leaves it where the artist put it.
             skin.weights[0] = 255;
             ++unweighted;
         } else {
@@ -739,15 +731,9 @@ MaterialHandle buildMaterial(
         if (mt->Get(AI_MATKEY_TRANSMISSION_FACTOR, f) == AI_SUCCESS)
             out.transmission = f;
 
-        // Classify type. glTF carries an explicit alphaMode that beats
-        // the alpha-channel heuristics:
-        //   "MASK"  -> AlphaMask (alpha-tested foliage / leaves; depth-
-        //              writing in the opaque phase, no blending).
-        //   "BLEND" -> Transparent (or sorted via the heuristics below
-        //              when the asset is older / has no glTF metadata).
-        // KHR_materials_transmission glass keeps alpha = 1, so the
-        // heuristic also classifies on transmission > 0 so glass imports
-        // as Transparent and the scene-behind refraction path lights up.
+        // glTF's explicit alphaMode beats the alpha-channel heuristics below,
+        // which is all an older asset has. KHR_materials_transmission glass
+        // keeps alpha = 1, so transmission > 0 classifies as Transparent too.
         aiString alphaMode;
         const bool hasAlphaMode = (mt->Get(AI_MATKEY_GLTF_ALPHAMODE, alphaMode) == AI_SUCCESS);
         float cutoff = 0.5f;  // glTF default
@@ -810,11 +796,9 @@ MaterialHandle buildMaterial(
         out.emissionTexture = pick({aiTextureType_EMISSIVE,
                                     aiTextureType_EMISSION_COLOR}, true);
 
-        // glTF multiplies the emissive texture by emissiveFactor. Assimp's
-        // glTF importer frequently drops the factor; if a texture is bound
-        // but the factor came back ~black, fall back to white so the glow
-        // (DamagedHelmet vents/eyes, etc.) is not silently lost. Then
-        // apply KHR_materials_emissive_strength last.
+        // glTF multiplies the emissive texture by emissiveFactor, and Assimp's
+        // glTF importer frequently drops the factor - so a bound texture with a
+        // near-black factor falls back to white rather than losing the glow.
         if (out.emissionTexture &&
             out.emission.r < 1e-4f &&
             out.emission.g < 1e-4f &&
@@ -1106,11 +1090,9 @@ EntityId importModelIntoScene(
     if (aScene->mRootNode)
         spawn(aScene->mRootNode, root);
 
-    // The rig's frame is the PARENT of its root bone, because buildSkeleton
-    // composes bone 0 from its own local transform down - so a bone's model
-    // matrix is expressed in the space its root sits in. Putting the Animator
-    // anywhere else would offset the whole pose by one node transform, which
-    // looks plausible until the character is compared with its own mesh.
+    // The rig's frame is the parent of its root bone: buildSkeleton composes
+    // bone 0 from its own local transform down, so a bone's model matrix is
+    // expressed in the space its root sits in. Anywhere else offsets the pose.
     if (rigHandle) {
         const aiNode* rootBone = aScene->mRootNode->FindNode(rig.bones[0].name.c_str());
         const aiNode* rigFrame = rootBone ? rootBone->mParent : nullptr;
@@ -1124,11 +1106,8 @@ EntityId importModelIntoScene(
         scene.add(rigEntity, animator);
 
         // Skinned vertices resolve into the rig's own space - the inverse-bind
-        // matrices already carry whatever placed the mesh there - so the matrix
-        // multiplying them must be the rig's world matrix and nothing else.
-        // Parenting each skinned mesh to the rig at identity makes that true by
-        // construction instead of by convention; a mesh left under its own node
-        // would be transformed twice, which looks plausible for exactly one pose.
+        // matrices carry whatever placed the mesh there - so parenting each one
+        // to the rig at identity is what stops it being transformed twice.
         for (EntityId skinned : skinnedMeshes) {
             HierarchyOperations::setParent(scene, skinned, rigEntity);
             scene.get<Transform>(skinned) = Transform{};

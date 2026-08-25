@@ -42,6 +42,18 @@ namespace AssetSerializer {
     nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<EntityId>& entities,
                                          const ResourceManager& resources);
 
+    /**
+     * @brief The assets block for every entity in @p scene.
+     *
+     * Including the entities inside prefab instances, which the scene file does
+     * not describe and the prefab file carries its own block for. They are
+     * walked anyway because an instance may override a Mesh or a Decal at an
+     * asset the prefab never names, and this is the only walk that sees it.
+     *
+     * @param scene Scene to walk.
+     * @param resources Resolves each handle to the asset it names.
+     * @return An object with the same section keys loadAssets reads.
+     */
     nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& resources);
 
     /**

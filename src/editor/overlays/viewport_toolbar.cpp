@@ -11,9 +11,12 @@ namespace Vkm::Engine {
 
 namespace {
 // Sizes in design px - font/DPI-relative via EditorStyle::px.
-float BTN() { return EditorStyle::px(26.0f); }  ///< Icon button side length
-float SEP() { return EditorStyle::px(10.0f); }  ///< Spacing between groups
-float PAD() { return EditorStyle::px(5.0f);  }  ///< Toolbar inner padding
+/// Icon button side length.
+float BTN() { return EditorStyle::px(26.0f); }
+/// Spacing between groups.
+float SEP() { return EditorStyle::px(10.0f); }
+/// Toolbar inner padding.
+float PAD() { return EditorStyle::px(5.0f); }
 
 void tipFor(char* buf, size_t n, const char* name, const KeyBind& bind) {
     char key[24];

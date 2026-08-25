@@ -124,9 +124,8 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
     }
 
     // No icon font: one neutral primitive for every icon, so a button stays
-    // visibly clickable and its tooltip still names the action. Deliberately not
-    // per-icon art - the font ships with the engine, so this path only runs when
-    // the installed file was removed by hand.
+    // visibly clickable and its tooltip still names the action. Not per-icon art
+    // - the font ships with the engine, so this runs only if it was removed.
     r = std::max(3.0f, std::round(r));
     c = ImVec2(std::floor(c.x) + 0.5f, std::floor(c.y) + 0.5f);
     const float th = std::max(1.0f, std::round(r * 0.20f));

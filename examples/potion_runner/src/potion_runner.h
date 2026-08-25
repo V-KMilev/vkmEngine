@@ -164,6 +164,25 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
         };
 
         // Setup
+        /**
+         * @brief Build the whole world procedurally, once, on the first play tick.
+         *
+         * The look is one decision applied everywhere, so it is stated here
+         * rather than at each material below. This is a night run underground and
+         * lights only read against dark: image-based ambient is near zero, the
+         * authored directional light is switched off, and the ceiling pools and
+         * train headlights do all the lighting.
+         *
+         * Albedo is night-plausible rather than black. Lighting is physically
+         * attenuated, so a surface at one or two percent cannot show a light pool
+         * however strong the lamp - trackbed and structure sit at three to nine,
+         * at roughness near 1 so the long walls do not sheen glossy at grazing
+         * angles, and the polished steel rail is the one exception to both.
+         *
+         * Emission is reserved for what genuinely glows - fixtures, lamps,
+         * pickups - and sits just over the bloom threshold, so an accent haloes
+         * instead of flooding the frame and drowning the pools it sits in.
+         */
         void buildWorld();
         void buildUI();
         /**
@@ -222,11 +241,9 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
          */
         int   randLane() { return m_rng.nextInt(0, 2); }
 
-        // Cached engine handles pulled from the BehaviorContext once in onStart.
-        // The Behavior base no longer exposes the scene / resources / window
-        // directly - context() is the single access path - so the game caches the
-        // three it touches every frame rather than repeating context().* at every
-        // call site. The context is session-stable, so these stay valid for life.
+        // Pulled from the BehaviorContext once in onStart. context() is the single
+        // access path and the context is session-stable, so the three handles this
+        // game touches every frame are held rather than re-asked at each call.
         Scene*           m_scene     = nullptr;
         ResourceManager* m_resources = nullptr;
         WindowManager*   m_window    = nullptr;

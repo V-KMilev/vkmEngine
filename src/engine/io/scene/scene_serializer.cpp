@@ -111,11 +111,9 @@ void loadInto(const json& src, const char* key, Scene& s, EntityId e, Args&&... 
     try {
         CS::load(*it, component, std::forward<Args>(args)...);
     } catch (const std::exception& error) {
-        // A loader throws from inside nlohmann, which names the type mismatch
-        // and nothing about where in the file it happened. The key is in hand
-        // right here and the entity id one level up, so both are attached on
-        // the way out - otherwise one mistyped field reports a file name and a
-        // JSON error, and finding it is a bisection of the file.
+        // nlohmann names the type mismatch and nothing about where in the file
+        // it happened. The key is in hand here and the entity id one level up,
+        // so both are attached on the way out.
         throw std::runtime_error(std::string("component '") + key + "': " + error.what());
     }
     if (s.has<T>(e)) s.get<T>(e) = std::move(component);
@@ -174,18 +172,9 @@ bool fieldLeftEmpty(const json& c, const MissingAssetRef& ref) {
 void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager& r) {
     writeComponents(s, id, c, r);
 
-    // What the last load could not resolve goes back exactly as it came. A
-    // component holds a handle, and a handle for an asset the load never
-    // brought in is empty, so the write above has just put "" over the name
-    // the author wrote - which is the whole of what the file remembered about
-    // that reference. Opening a scene whose cooked library a teammate did not
-    // commit and pressing Ctrl+S out of habit is enough; nothing warns, because
-    // by save time the empty slot is indistinguishable from one nobody ever
-    // filled.
-    //
-    // A reference with nowhere to return to - LOD's levels are a ramp, not a
-    // name, and that ramp's holes are its own decision - is never recorded in
-    // the first place, so nothing here has to know about it.
+    // What the last load could not resolve goes back exactly as it came: the
+    // write above put "" over the name, and an empty slot cannot be told from
+    // one nobody ever filled (docs/reference/system/io.md).
     if (!s.has<MissingAssets>(id)) return;
     for (const MissingAssetRef& ref : s.get<MissingAssets>(id).refs) {
         if (fieldLeftEmpty(c, ref)) c[ref.component][ref.field] = ref.name;
@@ -249,8 +238,6 @@ json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
 
             // uid -> component -> field. The nesting is the address, and object
             // keys make a duplicate (uid, component, field) unrepresentable.
-            // Omitted when empty, so an instance with no edits reads exactly as
-            // it did before overrides existed.
             if (!instance.overrides.empty()) {
                 json overrides = json::object();
                 for (const PrefabOverride& o : instance.overrides) {
@@ -339,15 +326,9 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
         return false;
     }
 
-    // Transactional load: the asset factories write into the staging
-    // ResourceManager and the entities into the staging Scene, so a failure
-    // mid-load leaves the live scene and asset graph untouched.
-    //
-    // Under Merge there is no staging graph to fail into: the assets go
-    // straight into the live one. That costs nothing, because the document a
-    // Merge reads was written out of that same graph and so asks it for nothing
-    // it does not already hold - loadAssets skips every name it finds - and the
-    // scene half stays as transactional as it is here.
+    // Transactional: the factories write into the staging ResourceManager and
+    // the entities into the staging Scene, so a failure mid-load leaves the live
+    // pair untouched. Merge has no staging graph to fail into - see AssetPolicy.
     Scene staging;
     ResourceManager stagingResources;
     ResourceManager& assetGraph = (policy == AssetPolicy::Merge) ? resources : stagingResources;
@@ -485,11 +466,9 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             const PrefabInstance& instance = staging.get<PrefabInstance>(root);
             if (!Prefab::instantiateInto(staging, assetGraph, instance.source, root,
                                          instance.overrides, &prefabDrift)) {
-                // The same seam an unresolved asset name goes through, for the
-                // same reason and then some: that one costs a component's field
-                // and this one costs the whole authored subtree, which vanishes
-                // from the viewport and leaves a childless entity behind. A log
-                // line is where only a log reader would find it.
+                // The same seam an unresolved asset name goes through, and it
+                // costs more: the whole authored subtree vanishes from the
+                // viewport, leaving a childless entity behind.
                 reportError("Scene", "prefab '" + instance.source + "'",
                     "could not be opened, so the instance is empty - the reference and "
                     "its overrides are kept, so restoring the file and loading again "
@@ -544,25 +523,13 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
     }
 
     // Both stagings swap in one step; compact() reclaims the sparse capacity the
-    // staging build grew.
-    //
-    // Outstanding handles into `resources` from before this call are
-    // stale - editor panels that cached handles to hidden previews
-    // (MaterialEditor preview meshes, AssetBrowser neutral material)
-    // re-acquire on next use via findByName-or-addPrivate (O(1) now).
-    //
-    // Fonts are engine-owned (baked at startup) and never enter the scene
-    // file, so the staging RM has no font slot. Swap it back from the
-    // just-displaced live RM - without it every UIText silently loses its
-    // font (resolved by name each frame) on every load. Safe because
-    // FontAsset is self-contained - no handles into the slots that were
-    // just replaced.
-    //
-    // A Merge wrote into the live graph as it went, so there is no second half
-    // to commit and nothing above is stale: that is the whole point of it.
+    // staging build grew. A Merge wrote into the live graph as it went, so it
+    // has no second half to commit and nothing above it is stale.
     scene.swap(staging);
     if (policy == AssetPolicy::Replace) {
         resources.swap(stagingResources);
+        // Fonts are baked at startup and never enter a scene file, so the
+        // staging graph has no font slot to put in place of the live one.
         resources.swapSlot<FontAsset>(stagingResources);
     }
     scene.compact();

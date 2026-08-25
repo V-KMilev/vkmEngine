@@ -141,6 +141,14 @@ backend-agnostic.
   first use, so the runtime host never compiles its programs or allocates its
   scratch target
 
+**MSAA.** When `msaaSamples > 1` the geometry passes render into `m_sceneMS` and
+`GLResolvePass` resolves it into `m_sceneHDR`; the whole post chain stays
+single-sample, so no post pass ever has to know how many samples the frame drew
+with. When it is off, the geometry passes render straight into `m_sceneHDR`, the
+two resolve passes no-op, and the multisample storage is released rather than
+kept against the setting coming back - at 4x it is the largest allocation in the
+frame.
+
 Post passes do not blit results back into `m_sceneHDR`: the frame context
 carries a colour chain (`colorSrc`/`colorDst` + `flipColor()`). A pass samples
 `colorSrc`, writes `colorDst`, and flips; after the first flip the chain

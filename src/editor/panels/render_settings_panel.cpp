@@ -58,19 +58,16 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
         constexpr int FILTER_COUNT = 7;
         constexpr int FIRST_ANISO  = 3;
 
-        // Offer only what the driver reports. The backend clamps anyway, so a
-        // level beyond the ceiling would still render correctly - it would just
-        // render at a degree the menu was not showing, which is the one outcome
-        // a settings menu must not produce.
+        // Only what the driver reports. The backend clamps anyway, so a level
+        // past the ceiling still renders - at a degree the menu is not showing,
+        // which is the one outcome a settings menu must not produce.
         const uint32_t ceiling = ec.renderSystem.maxAnisotropy();
         int count = FIRST_ANISO;
         while (count < FILTER_COUNT && FILTERS[count].degree <= ceiling) ++count;
 
-        // Preview the highest offered degree the stored one reaches rather than
-        // an exact match, because the two part company: a settings file written
-        // where 16x exists still asks for 16x here, and is meant to keep asking.
-        // Taking the last row that fits names the degree the driver is giving
-        // it, without writing the file down to this machine.
+        // The highest offered degree the stored one reaches, not an exact match:
+        // a settings file written where 16x exists keeps asking for it here, and
+        // the last row that fits names what the driver actually gives.
         int current = FIRST_ANISO - 1;
         for (int i = 0; i < count; ++i) {
             if (FILTERS[i].mode != s.textureFiltering) continue;

@@ -42,14 +42,9 @@ void AudioSystem::init(FrameContext& ctx) {
 void AudioSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("AudioSystem::update");
 
-    // A closed device is not a reason to skip this. Every call below is a
-    // no-op without one, and running anyway is what makes a silent host behave
-    // like a host where every sound is zero-length rather than one where no
-    // sound ever ends: play() answers 0, reconcileSource clears `playing`, and
-    // gameplay that waits for a one-shot to finish gets its answer. Skipping
-    // left that flag stuck true forever, which is the one thing a component
-    // whose whole contract is "read it back to learn the sound finished" must
-    // not do on a state the engine calls normal.
+    // Runs whole on a device that never opened, so a silent host behaves like
+    // one where every sound is zero-length and `playing` still clears itself.
+    // See docs/reference/system/audio.md.
 
     // The asset graph was replaced under us - a scene load, or the editor's
     // Stop restoring its snapshot. Every voice is playing a clip that belonged
@@ -69,11 +64,9 @@ void AudioSystem::update(FrameContext& ctx) {
     ++m_frame;
     const bool simRunning = ctx.clock.getSimDelta() > 0.0f;
 
-    // Every source, not the posed ones only. A 2D source reads no position at
-    // all, and the entities most likely to carry one - a UI button, anything a
-    // behavior spawned - have no Transform, so joining on one would leave them
-    // silent forever with `playing` stuck true. An entity with no pose is heard
-    // where a default Transform would put it.
+    // Every source, not the posed ones only: a 2D source reads no position at
+    // all, and joining on Transform would leave a UI button silent forever with
+    // `playing` stuck true. An entity with no pose is heard at the origin.
     Scene& scene = ctx.scene;
     scene.forEach<AudioSource>([&](EntityId id, AudioSource& source) {
         const glm::vec3 world = scene.has<Transform>(id)
@@ -120,14 +113,8 @@ void AudioSystem::updateListener(FrameContext& ctx) {
     m_hasListener = static_cast<bool>(entity);
     m_device.setListenerActive(m_hasListener);
     if (!m_hasListener) {
-        // Unity, because the gain belonged to the ear rather than to the world -
-        // AudioListener::volume says so. Turning the listener off only silences
-        // the spatial voices; the master multiplies the 2D ones too, so a
-        // listener at half volume that is deleted, or merely unticked, would
-        // otherwise leave the music and the UI at half volume with nothing on
-        // screen still holding the slider that set it. A scene load does not
-        // undo it either - the epoch flip stops voices, not gains - so the
-        // quiet outlives the world it was set in.
+        // The gain belonged to the ear, so it leaves with it: the master
+        // multiplies the 2D voices too, which nothing else would restore.
         m_device.setMasterVolume(1.0f);
         return;
     }
@@ -211,12 +198,9 @@ void AudioSystem::reconcileSource(FrameContext& ctx, EntityId entity, AudioSourc
 }
 
 void AudioSystem::startPendingRequests(FrameContext& ctx) {
-    // Swapped to a local before the walk, the way BehaviorSystem drains its
-    // collisions: starting a voice cannot emit anything today, but a walk over
-    // the member vector is one synchronous emit away from reallocating under
-    // itself, and the clear that used to follow would have swallowed whatever
-    // was appended during it. Emptied here, a request made mid-walk simply
-    // waits for the next frame.
+    // Drained into a local, the way BehaviorSystem drains its collisions: a
+    // walk over the member vector is one synchronous emit away from
+    // reallocating under itself, and a request made mid-walk waits a frame.
     std::vector<PlaySoundEvent> requests;
     requests.swap(m_pending);
 

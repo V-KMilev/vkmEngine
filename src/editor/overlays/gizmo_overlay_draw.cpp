@@ -134,10 +134,9 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
 
         switch (light.type) {
             case LightType::Directional: {
-                // Sun gizmo: a small disc at the light origin plus three
-                // parallel rays in the forward direction. The triangular
-                // offset reads as "parallel rays" instead of a single arrow
-                // (which always looked more like a spotlight).
+                // A small disc at the light origin plus three parallel rays
+                // forward; the triangular offset reads as parallel rays rather
+                // than as the single arrow a spotlight wears.
                 const float L      = 1.5f;          // ray length (world units)
                 const float spread = 0.18f;         // lateral offset of side rays
                 const float discR  = 0.10f;         // sun disc radius
@@ -203,10 +202,9 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
             }
             case LightType::Rect:
             case LightType::Disk: {
-                // Wireframe emitter outline. axisU = local +X * width/2 (Rect)
-                // or +X * radius (Disk); axisV = local +Y similarly. Matches
-                // render_view.cpp's GPU packing so the gizmo agrees with the
-                // shaded result.
+                // axisU is local +X * width/2 for a Rect or * radius for a Disk,
+                // axisV the same on +Y - matching render_view's GPU packing, so
+                // the gizmo agrees with the shaded result.
                 const bool isRect = (light.type == LightType::Rect);
                 const float ux = isRect ? light.areaWidth  * 0.5f : light.areaRadius;
                 const float uy = isRect ? light.areaHeight * 0.5f : light.areaRadius;
@@ -243,12 +241,9 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
                     arrowLine(dl, vp, pos, pos - dir * 0.5f, vpMin, vpSize, col, EditorStyle::px(1.5f),
                   EditorStyle::px(8.5f), EditorStyle::px(4.0f));
 
-                // Attenuation-cutoff sphere: the distance beyond which the
-                // light contributes nothing. Drawn dimmer / thinner than the
-                // emitter outline so the silhouette reads as the actual
-                // emitter shape and the sphere reads as a falloff hint
-                // (matches how Point's 3 great-circle gizmo communicates the
-                // same data).
+                // The distance beyond which the light contributes nothing, drawn
+                // dimmer and thinner than the emitter outline so the silhouette
+                // reads as the shape and the sphere as a falloff hint.
                 const float rr = std::max(0.05f, light.radius);
                 const ImU32 fade = selected
                     ? IM_COL32(255, 200, 80, 90)
@@ -385,10 +380,9 @@ void GizmoOverlay::drawAudioGizmos(EditorContext& ec) {
     Scene&                 scene     = ec.frame.scene;
     const ResourceManager& resources = ec.frame.resources;
 
-    // Joined on Transform, unlike the reconcile in AudioSystem: a source with
-    // no pose is heard at the world origin, and drawing it there would put a
-    // marker on a place the author never picked. The Inspector names that case
-    // where it can be fixed.
+    // Joined on Transform, unlike AudioSystem's reconcile: a source with no pose
+    // is heard at the world origin, and a marker there would sit on a place the
+    // author never picked. The Inspector names that case where it is fixed.
     scene.forEach<AudioSource, Transform>([&](EntityId id, const AudioSource& source,
                                               const Transform& tf) {
         const bool selected = ec.state.isSelected(id);
@@ -403,34 +397,27 @@ void GizmoOverlay::drawAudioGizmos(EditorContext& ec) {
 
         ImVec2 sp;
         if (projectToViewport(vp, pos, vpMin, vpSize, sp)) {
-            // A 2D source is drawn where its Transform is, but that pose is not
-            // heard - the mixer ignores it. The radiating arcs are exactly what
-            // the two kinds differ by, so the glyph that keeps them and the one
-            // that drops them are the pair, the way a light picks its glyph
-            // from its type.
+            // A 2D source is drawn where its Transform is, but the mixer ignores
+            // that pose - and the radiating arcs are exactly what the two kinds
+            // differ by, so keeping or dropping them is the pair.
             drawEntityMarker(dl, source.spatial ? EditorIcon::Audio : EditorIcon::Audio2D,
                              sp, col);
-            // The one thing here that changes while nobody is editing: this
-            // source has a voice in the mixer right now. A one-shot is over
-            // before a frame or two have passed, so what the ring reports on
-            // in practice is loops and beds.
+            // The one thing here that changes while nobody is editing. A one-shot
+            // is over within a frame or two, so what the ring reports on in
+            // practice is loops and beds.
             if (source.playing)
                 dl->AddCircle(sp, entityMarkerHitRadius() + EditorStyle::px(2.0f), col, 0,
                               EditorStyle::px(1.5f));
         }
 
-        // The falloff pair is what an author tunes, and tuning is something
-        // done to the selected entity. minDistance defaults to 1 but
-        // maxDistance defaults to 50, so drawing every source's would bury the
-        // viewport under 100-unit wireframes - the same reason drawProbeGizmos
-        // keeps an IrradianceVolume's probe grid to the selection.
+        // Tuning is done to the selected entity, and maxDistance defaults to 50,
+        // so drawing every source's would bury the viewport under 100-unit
+        // wireframes - the same reason a probe grid stays on the selection.
         if (!selected || !source.spatial) return;
 
-        // Deliberately not clamped against each other. A maxDistance at or
-        // under minDistance disables attenuation entirely, and an outer sphere
-        // drawn INSIDE the inner one is the picture behind the Inspector's
-        // warning for exactly that: a degenerate setup has to draw
-        // degenerately or the gizmo is lying about what the mixer will do.
+        // Deliberately not clamped against each other: a maxDistance at or under
+        // minDistance disables attenuation, and the outer sphere drawn inside the
+        // inner one is that fact. Clamping would lie about what the mixer does.
         wireSphere(dl, vp, pos, std::max(0.05f, source.minDistance), 24,
                    vpMin, vpSize, AUDIO_COL, 1.0f);
         wireSphere(dl, vp, pos, std::max(0.05f, source.maxDistance), 24,
@@ -496,11 +483,9 @@ void GizmoOverlay::drawCameraGizmos(EditorContext& ec) {
         glm::vec3 right, up;
         orthoBasis(fwd, right, up);
 
-        // Use the camera's actual near and far so the gizmo reflects what
-        // the camera really clips. Clamp the minimums so degenerate values
-        // don't produce zero-extent rectangles. The drawn lines extend off
-        // viewport for cameras with large zFar - that's correct; the
-        // projection clipping in projectToViewport handles it.
+        // The camera's actual near and far, so the gizmo shows what it really
+        // clips; the minimums are clamped only to keep a degenerate value from
+        // producing a zero-extent rectangle. A large zFar draws off viewport.
         const float zNear = std::max(0.001f, cam.zNear);
         const float zFar  = std::max(zNear + 0.001f, cam.zFar);
 
@@ -602,10 +587,9 @@ void GizmoOverlay::drawColliderGizmos(EditorContext& ec) {
     const ImVec2    vpSize = scope.vpSize;
     ImDrawList*     dl     = scope.dl;
 
-    // Physics evaluates a collider in the entity's WORLD frame - position +
-    // rotation, no scale (see PhysicsSystem, which reads the WorldTransform for
-    // a parented body). Draw it the same way so the wireframe is exactly what
-    // the solver collides against.
+    // Physics evaluates a collider in the entity's world frame - position and
+    // rotation, no scale - so the wireframe is drawn the same way and is exactly
+    // what the solver collides against.
     ec.frame.scene.forEach<Collider, Transform>([&](EntityId id, const Collider& col, const Transform& tf) {
         if (!col.enabled) return;   // inert colliders don't collide, so don't draw them
         const bool   selected = (ec.state.isSelected(id));
@@ -683,10 +667,9 @@ void GizmoOverlay::drawSkeletonGizmos(EditorContext& ec) {
             dl->AddCircleFilled(screen[b], 2.5f, col, 6);
         }
 
-        // Segments show where the joints are; only axes show which way they
-        // face, which is what a composition or bind-inverse mistake actually
-        // corrupts. Drawn on the selected rig alone - a hundred triads per
-        // character would bury the viewport.
+        // Segments show where the joints are; only axes show which way they face,
+        // which is what a composition or bind-inverse mistake corrupts. On the
+        // selected rig alone - a hundred triads would bury the viewport.
         if (!selected) return;
         const glm::vec3 extent = boneMax - boneMin;
         const float axisLength = std::max(0.05f * std::max({extent.x, extent.y, extent.z}), 1e-3f);

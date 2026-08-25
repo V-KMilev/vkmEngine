@@ -477,10 +477,9 @@ class ResourceManager {
         // its first pass without a special case.
         uint64_t m_epoch = 1;
 
-        // Process-wide on purpose: the staging manager a scene load fills is a
-        // second ResourceManager, and its assets have to be distinguishable from
-        // the live ones they are about to replace. A per-manager counter would
-        // hand both graphs the same ids.
+        // Process-wide on purpose: a scene load fills a second ResourceManager,
+        // whose assets must stay distinguishable from the live ones they are
+        // about to replace.
         inline static std::atomic<uint64_t> s_nextUid{0};
 };
 

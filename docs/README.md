@@ -71,7 +71,7 @@ For any non-trivial task:
    [engine.md](guides/engine.md#absolutes).
 5. **Write it to match its neighbors** ([code-style.md](guides/code-style.md)),
    then run the pre-commit checks in
-   [implementation.md](guides/implementation.md#8-pre-commit-quality-pass).
+   [implementation.md](guides/implementation.md#8-before-you-commit).
 6. **Found a code inconsistency or a stale doc along the way?** Note it and
    surface it - don't silently route around it.
 
@@ -102,7 +102,7 @@ docs/
     editor.md           panels, gizmos, undo/redo, material preview
     system/
       rendering.md      the fixed 19-pass forward pipeline + RenderView contract
-      lighting.md       five light types, LTC area lights, shadows, IBL
+      lighting.md       five light types, LTC area lights, shadows, IBL, Forward+
       visibility.md     frustum / distance / screen-size culling
       hierarchy.md      world-transform resolve, HierarchyOperations
       animation.md      keyframe tracks, skeletal rigs, poses, GPU skinning

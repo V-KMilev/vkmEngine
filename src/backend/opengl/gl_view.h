@@ -165,6 +165,11 @@ class GLView {
     private:
         /**
          * @brief Upload or refresh a single asset into its table, version-gated.
+         *
+         * The version alone cannot decide it. A freed slot can be recycled by a
+         * different asset that also starts at version 1, so an in-place update()
+         * is valid only when the handle's generation still matches the one the
+         * slot was built from; anything else is rebuilt from scratch.
          */
         template <typename GLT, typename AssetT>
         void ensure(GLResourceTable<GLT>& table, const Handle<AssetT>& handle, const ResourceManager& resources);

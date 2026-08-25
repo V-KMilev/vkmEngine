@@ -25,12 +25,9 @@ void SkySystem::update(FrameContext& ctx) {
     const Environment& env = ctx.scene.environment();
     if (!env.sky.procedural) return;
 
-    // Whichever body is up owns the light. They sit opposite each other, so this
-    // is a swap and not a blend: interpolating between two near-opposite
-    // directions would sweep the light through directions neither body occupies.
-    // Both fades are measured off the sun's elevation, the same quantity ownership
-    // flips on, so moonlight starts from nothing exactly where it takes over. The
-    // moon's own elevation would not do: moonTilt already has it well up by then.
+    // A swap, not a blend: the two sit opposite, so interpolating would sweep
+    // the light through directions neither occupies. Both fades read the sun's
+    // elevation - moonTilt already has the moon well up before it takes over.
     const float sunUp    = std::clamp(env.sky.sunElevation / SUN_FADE_DEGREES, 0.0f, 1.0f);
     const float moonUp   = std::clamp(-env.sky.sunElevation / SUN_FADE_DEGREES, 0.0f, 1.0f);
     const bool  moonOwns = sunUp <= 0.0f;
@@ -39,11 +36,9 @@ void SkySystem::update(FrameContext& ctx) {
     // the disc the skybox draws for the same body cannot disagree.
     const SkyAngles angles = moonOwns ? env.moonAngles() : env.sunAngles();
 
-    // Built from the angles rather than from the direction vector: a look-at
-    // would have to be corrected for this engine's +Z forward, and the euler
-    // form is exact. Elevation maps straight onto pitch; the azimuth turns by a
-    // half so the light faces AWAY from the body - the direction TO it is where
-    // the light comes from, not where it points.
+    // From the angles, not a direction vector: a look-at would need correcting
+    // for this engine's +Z forward, and the euler form is exact. The azimuth
+    // turns by a half so the light faces away from the body it comes from.
     const glm::quat rotation = glm::quat(glm::vec3(
         glm::radians(angles.elevation), glm::radians(angles.azimuth + 180.0f), 0.0f));
 

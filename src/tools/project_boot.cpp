@@ -42,11 +42,8 @@ bool bootHost(int argc, char** argv, const char* logFileName, const char* logger
     std::error_code ec;
 
     // Resolved first, and against the launch directory: current_path() below
-    // moves the CWD, and absolute(argv[1]) would then answer differently. The
-    // root is also set before anything composes a project path, because a
-    // composed path is a plain string by then and will not follow a later
-    // override. Nothing is logged yet - the log file lives under the root being
-    // decided.
+    // moves the CWD, and absolute(argv[1]) would then answer differently.
+    // Nothing is logged yet - the log file lives under the root being decided.
     bool argNotAProject = false;
     if (argc > 1) {
         const std::filesystem::path found = findProjectRoot(std::filesystem::absolute(argv[1], ec));
@@ -54,20 +51,15 @@ bool bootHost(int argc, char** argv, const char* logFileName, const char* logger
         else               ProjectPaths::setProjectRoot(found);
     }
 
-    // Pin the working directory to the ENGINE root, not the project's: shaders
-    // load CWD-relative ("shaders/forward/pbr") and ship with the engine, while
-    // every project-owned path is absolute. Without this a host only starts when
-    // launched from the engine root.
+    // Pinned to the ENGINE root, because shaders load CWD-relative. Without it
+    // a host only starts when it was launched from there.
     std::filesystem::current_path(ProjectPaths::engineRoot(), ec);
 
-    // Beside the project when the project can hold it: that is where a developer
-    // looks, and a shipped game simply has no logs/ yet. An installed game's
-    // directory is read-only, though, so the log falls back to the user's own
-    // state directory rather than being lost - named after the project, because
-    // one directory serves every game this engine ships.
     const std::filesystem::path root = ProjectPaths::projectRoot();
     std::filesystem::path logPath = root / "logs" / logFileName;
     if (!logFileWritable(logPath)) {
+        // Named after the project: one state directory serves every game this
+        // engine ships.
         logPath = ProjectPaths::userLogs() / root.filename() / logFileName;
         // Neither place will take it. Nothing can be logged, so stderr is the
         // only channel left to say why the host is not starting.
@@ -103,10 +95,6 @@ SceneBootResult bootProjectScene(
 
         if (SceneSerializer::load(scene, resources, path.string())) {
             LOG_INFO("Opened scene '%s'", path.string().c_str());
-            // The one world with a file behind it, so the one that hands its
-            // path back. The two below do not: a module builds its world from
-            // code, and the default scene standing in for a load that failed
-            // must not be able to overwrite the file it stood in for.
             return {SceneBoot::Project, path.string()};
         }
         reportError("Scene", path.string(),

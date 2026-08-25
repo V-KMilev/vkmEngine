@@ -148,7 +148,9 @@ class AudioDevice {
         bool openOffline(uint32_t sampleRate, uint32_t channels);
 
         /**
-         * @brief Stop every voice and shut the mixer down. Idempotent.
+         * @brief Stop every voice and shut the mixer down.
+         *
+         * Idempotent: a device that is already closed absorbs the call.
          */
         void close();
 
@@ -295,7 +297,7 @@ class AudioDevice {
         void seekVoice(VoiceId voice, float seconds);
 
         /**
-         * @brief Ramp @p voice to silence and let it go. Unknown ids are ignored.
+         * @brief Ramp @p voice to silence and let it go.
          *
          * The ramp is a few milliseconds and exists because releasing a sound
          * outright cuts its waveform at whatever sample the cursor is on, which
@@ -315,6 +317,8 @@ class AudioDevice {
          * A held voice is stopped like any other, and stops being held: it is
          * silent already, so it is let go on the next reap rather than ramped
          * again, and the pause does not keep it out of that sweep.
+         *
+         * @param voice Voice to stop; unknown ids are ignored.
          */
         void stopVoice(VoiceId voice);
 

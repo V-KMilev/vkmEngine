@@ -78,10 +78,8 @@ glm::mat3 localInverseInertia(const Rigidbody& rb, const Collider* collider) {
     glm::vec3 center(0.0f);
     glm::mat3 inertia(0.0f);
     if (collider->parts.size() == 1 && collider->parts[0].shape == ColliderShape::Capsule) {
-        // A lone capsule gets its own tensor. It is the one shape the box
-        // approximation below is badly wrong about: an upright capsule spins
-        // about its axis several times more freely than the box around it, and
-        // that difference is exactly what a graze against a character tests.
+        // The one shape the box approximation below is badly wrong about.
+        // See docs/reference/system/physics.md.
         const ColliderPart& part = collider->parts[0];
         center  = part.center;
         inertia = capsuleInertiaLocal(rb.mass, part.radius, part.halfHeight);
@@ -323,10 +321,9 @@ void PhysicsSystem::narrowphase(std::vector<BodyContacts>& contacts, EventBus& e
     m_manifolds.clear();
     Contact scratch[MAX_CONTACTS_PER_MANIFOLD];
 
-    // Colliders expand into their world-space parts here, so a single body pair
-    // can yield several manifolds (one per part-pair that touches). The solver
-    // already handles many manifolds per body pair, so this just works - each
-    // manifold carries the same bodyA/bodyB indices.
+    // Parts expand into world space here, so one body pair can yield several
+    // manifolds. They all carry the same bodyA/bodyB, which is what lets the
+    // solver take them as they come.
 
     for (const auto& pair : m_pairs) {
         const ColliderProxy& A = m_proxies[pair.first];
@@ -358,10 +355,9 @@ void PhysicsSystem::narrowphase(std::vector<BodyContacts>& contacts, EventBus& e
             for (int c = 0; c < manifold.count; ++c) manifold.contacts[c] = scratch[c];
             m_manifolds.push_back(manifold);
 
-            // The most upward normal each body is held by, and the most
-            // horizontal one it is pressed against. A's surface normal is
-            // -normal and B's is +normal, because the normal runs A -> B and a
-            // surface pushes back along its own outward direction.
+            // The most upward normal each body is held by. A's surface normal
+            // is -normal and B's is +normal, the normal running A -> B and a
+            // surface pushing back along its own outward direction.
             for (int c = 0; c < manifold.count; ++c) {
                 const glm::vec3& normal = manifold.contacts[c].normal;
                 if (-normal.y > contacts[A.body].support.y) contacts[A.body].support = -normal;
@@ -407,10 +403,9 @@ void PhysicsSystem::narrowphase(std::vector<BodyContacts>& contacts, EventBus& e
                 if (A.isTrigger) events.enqueue(TriggerEvent{entityA, entityB});
                 if (B.isTrigger) events.enqueue(TriggerEvent{entityB, entityA});
             } else {
-                // Only a resolved contact counts as support for the sleep test.
-                // A trigger holds nothing up, and a body that dozed off inside
-                // one would be stuck: wakeOnImpact walks the manifolds, which
-                // never carry trigger pairs.
+                // Only a resolved contact supports the sleep test: a trigger
+                // holds nothing up, and a body asleep inside one would never
+                // be woken - wakeOnImpact walks manifolds, which skip them.
                 contacts[A.body].touched = true;
                 contacts[B.body].touched = true;
                 events.enqueue(CollisionEvent{entityA, entityB, contactPoint, contactNormal});

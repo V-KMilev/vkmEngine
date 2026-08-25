@@ -290,9 +290,8 @@ std::string slotDetail(const ResourceManager& resources, const TextureHandle& sl
     if (!slot) return "(none)";
     const auto& texture = resources.get(slot);
     // The generators mark their output with a "procedural:" pseudo-path rather
-    // than a file (texture_generators.cpp). Ellipsised into a tile it reads as
-    // noise, and the question it would be answering - which file is in this
-    // slot - is not one a generated texture has an answer to.
+    // than a file, and "which file is in this slot" is not a question a
+    // generated texture has an answer to.
     if (texture.filePath.empty() || texture.filePath.rfind("procedural:", 0) == 0) {
         return "(generated)";
     }
@@ -314,11 +313,9 @@ MaterialHandle MaterialEditorPanel::resolveTarget(EditorContext& ec) {
         state.materialEditorTarget = {};
     }
 
-    // This side of the editor follows the selection, and so does this tab. A
-    // material chosen by hand outranks it, but only until another entity that
-    // carries one is picked - otherwise opening a material from the Asset
-    // Browser would be undone by the next click in the viewport, and following
-    // the selection would lose a material nothing uses yet.
+    // A material chosen by hand outranks the selection, but only until another
+    // entity carrying one is picked; see docs/reference/editor.md, "Which
+    // material the tab edits".
     if (state.selectedEntity != m_lastSelection) {
         m_lastSelection = state.selectedEntity;
         if (selMesh && selMesh->material) state.materialEditorTarget = {};
@@ -469,10 +466,9 @@ MeshHandle MaterialEditorPanel::previewMesh(ResourceManager& resources,
                                             const MeshHandle& entityMesh) {
     if (m_shape == SHAPE_ENTITY && entityMesh) return entityMesh;
 
-    // Look up each preview every call (findByName is O(1)). Caching the
-    // handles in a flag-gated block would leave them stale across a scene
-    // load - SceneSerializer swaps the whole ResourceManager, dropping every
-    // hidden asset along with it. Lazy lookup re-registers automatically.
+    // Looked up every call (findByName is O(1)). Cached handles would go stale
+    // across a scene load, which swaps the whole ResourceManager and drops every
+    // hidden asset with it; a lazy lookup re-registers them.
     auto getOrAdd = [&](const char* name, auto&& make) {
         MeshHandle h = resources.findByName<MeshAsset>(name);
         if (!h) h = resources.addPrivate(make(), name);
@@ -533,9 +529,8 @@ void MaterialEditorPanel::drawPreview(EditorContext& ec, MaterialHandle target,
                 ImGui::GetColorU32(ImGuiCol_Border), EditorStyle::px(3.0f));
 
     // A transparent hit-target over the picture, so the orbit drag owns the
-    // active id and never moves the window (see ConfigWindowsMoveFromTitleBar).
-    // It covers the whole face, so it has to let the controls drawn on top of
-    // it answer the pointer first.
+    // active id and never moves the window. It covers the whole face, so the
+    // controls drawn on top of it have to answer the pointer first.
     ImGui::SetCursorScreenPos(origin);
     ImGui::SetNextItemAllowOverlap();
     ImGui::InvisibleButton("##orbit", ImVec2(face, face));
@@ -608,18 +603,16 @@ bool MaterialEditorPanel::mapTile(ResourceManager& resources, EditorRenderHooks*
     ImGui::PushID(label);
     ImGui::BeginGroup();
 
-    // The GPU mirror the renderer actually samples. 0 = not resident yet (or an
-    // empty slot); the live preview syncs the material's textures, so a bound
-    // slot resolves within a frame. Loaded textures are flipped at decode
-    // (stb flip-on-load), so the UVs unflip.
+    // The GPU mirror the renderer samples; 0 is not-resident-yet or an empty
+    // slot, and the live preview syncs textures so a bound slot resolves within
+    // a frame. Loaded textures are flipped at decode, so the UVs unflip.
     const GpuTextureId texId = (slot && backend) ? backend->textureId(slot) : 0;
     const ImVec2       faceMin = ImGui::GetCursorScreenPos();
     ImDrawList*        dl      = ImGui::GetWindowDrawList();
 
     // No frame around the face: an ImageButton insets its picture by
-    // FramePadding and a sized Button does not, so a bound tile and an empty
-    // one would stand at different heights and their name lines would not
-    // share a baseline.
+    // FramePadding and a sized Button does not, so a bound tile and an empty one
+    // would stand at different heights and lose their shared baseline.
     const ImVec4 inert = ImGui::GetStyleColorVec4(ImGuiCol_Button);
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, inert);
@@ -883,11 +876,9 @@ bool MaterialEditorPanel::drawParameters(ResourceManager& resources, EditorRende
         ImGui::EndPopup();
     }
 
-    // Maps last, and deliberately. Base and the lobes above it answer one
-    // question - what is this surface - so a lobe added by the button belongs
-    // directly under the rows it extends rather than below eleven tiles. The
-    // maps answer a different question, what drives it, and being a grid rather
-    // than a form they read better with nothing after them.
+    // Maps last: base and the lobes above answer what this surface is, so a lobe
+    // the button adds belongs under the rows it extends rather than below eleven
+    // tiles. The maps answer what drives it, and a grid reads better last.
     ImGui::Spacing();
     if (beginComponentCard("Maps", EditorStyle::Accent::MatTexture, true)) {
         changed |= drawMaps(resources, backend, target, mat);
@@ -939,10 +930,8 @@ void MaterialEditorPanel::serviceTexturePicker(EditorContext& ec) {
     ResourceManager& resources = ec.frame.resources;
     if (resources.isAlive(m_pendingMaterial)) {
         // Asked before the load, because loadTexture decodes and adds without
-        // looking: the same file in two slots is one asset, not two. Unless the
-        // two slots want it in different colour spaces, which is two textures
-        // on the GPU and has to stay that way - a roughness map read as sRGB is
-        // the wrong numbers, not a duplicate.
+        // looking: the same file in two slots is one asset - unless they want
+        // different colour spaces, which is two textures and must stay two.
         const std::string ref = ProjectPaths::toProjectRelative(picked);
         TextureHandle existing = resources.findByName<TextureAsset>(ref);
         if (existing && resources.get(existing).srgb != m_pendingTextureSrgb) existing = {};
@@ -1056,20 +1045,15 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         ImGui::Separator();
         ImGui::Spacing();
 
-        // The parameters scroll and the preview does not: the whole point of
-        // the pane is watching the material while a slider that may be far down
-        // the column is dragged.
-        // Looser than the editor's default row spacing. This column is read
-        // rather than filled in - an author drags one slider and looks up at
-        // the sphere - so the rows want separating more than a form's do.
+        // The parameters scroll and the preview does not, the point being to
+        // watch the material while a slider far down the column is dragged. The
+        // rows sit looser than a form's: this column is read, not filled in.
         const ImVec2 rowGap(ImGui::GetStyle().ItemSpacing.x, EditorStyle::px(6.0f));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, rowGap);
         if (ImGui::BeginChild("##meParams", ImVec2(0, 0))) {
-            // Live edit; the commit bumps the version, which refreshes the
-            // preview and the viewport next frame. Materials are scene assets,
-            // so an edit is unsaved work and takes an undo step like every
-            // other authored edit. The pre-edit copy is taken every frame
-            // because a widget only reports a change after it has made it.
+            // Live edit; the commit bumps the version, refreshing the preview
+            // and the viewport next frame. The pre-edit copy is taken every
+            // frame because a widget only reports a change after making it.
             MaterialAsset&      mat    = resources.edit(target);
             const MaterialAsset before = mat;
             if (drawParameters(resources, editorRenderHooks(ec.renderSystem.backend()),
@@ -1084,11 +1068,9 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
         ImGui::PopStyleVar();
     }
 
-    // Both pickers and the modal are raised at panel scope rather than inside
-    // the parameter child: OpenPopup hashes its id against the window it is
-    // called from, and one begun out here would never match. They are also
-    // raised whether or not there is a material, because the one that went away
-    // while a picker was open is exactly the case that would strand it.
+    // At panel scope, not inside the parameter child: OpenPopup hashes its id
+    // against the calling window. Raised whether or not there is a material -
+    // one that went away while a picker was open is what would strand it.
     serviceTexturePicker(ec);
     servicePbrFolder(ec);
 

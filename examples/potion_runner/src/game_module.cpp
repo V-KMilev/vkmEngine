@@ -49,10 +49,9 @@ void vkmBuildScene(Vkm::Engine::Scene& scene) {
 
         auto& registry = Vkm::Engine::BehaviorRegistry::get();
 
-    // A real night: the ambient is almost gone so the game's arch washes, trim
-    // rims, headlights and glows carve visible pools out of the dark instead of
-    // fighting a daylit scene. PotionRunner::buildWorld enforces the same mood at
-    // play time, so the two never drift.
+    // A real night, so the game's own fixtures carve visible pools out of the
+    // dark. PotionRunner::buildWorld sets the same values at play time, so the
+    // authored scene and the built world cannot drift.
     scene.environment().sky.intensity  = 0.08f;
     scene.environment().sky.showSkybox = false;   // underground: tunnel dark, no sky
 
@@ -67,16 +66,13 @@ void vkmBuildScene(Vkm::Engine::Scene& scene) {
         glm::vec3(1.0f)
     });
     // The ear rides the eye. Nothing in the engine assumes that - a listener is
-    // its own component precisely so a game can put it somewhere else - but a
-    // chase camera is where this game hears from, and the runner's footsteps
-    // are mixed against it.
+    // its own component so a game can put it elsewhere - but a chase camera is
+    // where this game hears from.
     scene.add(camera, Vkm::Engine::AudioListener{});
 
-    // No sun: an underground night run, lit entirely by the game's own fixtures
-    // (ceiling luminaires, neon trims, train headlights). With no directional
-    // caster the 2D shadow atlas reserves no CSM layers, so the headlight spots
-    // get all six slots; the two cube slots go to the ceiling lights nearest
-    // the player (see PotionRunner::scrollWorld).
+    // No sun: an underground run lit entirely by the game's own fixtures. With no
+    // directional caster the 2D atlas reserves no CSM layers, so the headlight
+    // spots take all six slots and scrollWorld hands out the two cube ones.
 
     // The whole game: one entity, one behavior, which builds the rest on Play.
     auto game = scene.createEntity();

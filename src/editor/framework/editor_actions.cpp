@@ -81,18 +81,14 @@ void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
                           EntityId newParent, const char* label) {
     if (!scene.isAlive(child)) return;
 
-    // A UI element carries no Transform - it is laid out in screen space by its
-    // canvas - and there is no world pose to preserve for one. That is a step
-    // to skip, not a move to refuse: the create path nests UI elements through
-    // setParent already, so an element made before its canvas existed had no
-    // way back under one, and the drag that asked said nothing.
+    // A UI element carries no Transform - its canvas lays it out in screen
+    // space - so there is no world pose to preserve. A step to skip, not a move
+    // to refuse: an element made before its canvas needs a way back under one.
     const bool hasTransform = scene.has<Transform>(child);
 
-    // An instance's interior belongs to its prefab: the scene stores the
-    // instance as a reference and rebuilds the subtree from the file, so an
-    // entity dropped inside one is never written, and one dragged out of one is
-    // put back where the prefab has it. Both moves look like they worked and
-    // are gone by the next load, so say no while there is still someone to tell.
+    // An instance's interior belongs to its prefab, so neither move survives a
+    // load and both look like they worked; see docs/reference/editor.md, "What
+    // an instance will not let you do".
     if (PrefabOverrides::instanceRoot(scene, newParent)) {
         state.pushToast(EditorState::ToastKind::Warning,
                         "A prefab instance is built from its prefab - an entity moved "
@@ -140,11 +136,9 @@ void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
         child, oldParent, toParent ? newParent : EntityId{}, before, after, label));
     commitHierarchyMutation(state);
 
-    // A UI element is laid out and drawn by the canvas above it, so one that
-    // lands outside every canvas stops drawing and nothing else says so. The
-    // move still happens - it is a legitimate step on the way to somewhere -
-    // but the author hears about it while the element is still where they put
-    // it.
+    // An element outside every canvas stops drawing, and nothing else says so.
+    // The move still happens - it is a legitimate step on the way somewhere -
+    // but the author hears about it while the element is still where they put it.
     if (scene.has<UIElement>(child) && !hasCanvasAncestor(scene, child)) {
         state.pushToast(EditorState::ToastKind::Warning,
                         "UI elements are drawn by the canvas above them - this one has no "
@@ -195,8 +189,7 @@ MaterialHandle createNewMaterial(ResourceManager& resources, EditorState& state)
 
     // A copy of the default, not the default renamed: that one asset is what
     // every primitive and every cold-start load resolves "material:default" to,
-    // and renaming it would take it out from under all of them. The unique name
-    // is what distinguishes this one on save and load.
+    // so renaming it would take it out from under all of them.
     MaterialAsset copy = resources.get(base);
     MaterialHandle h = resources.add(std::move(copy), uniqueMaterialName(resources, "Material"));
     if (!h) return MaterialHandle{};
@@ -285,10 +278,9 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
         case EntityKind::Cone:     addMesh(generateCone());     break;
         case EntityKind::Camera: {
             Camera cam;
-            // Inactive so a new camera cannot hijack the view from the one the
-            // author is working through - except when there is no such camera,
-            // which is the one case where creating one is the recovery and an
-            // inactive result looks like the menu item did nothing.
+            // Inactive, so a new camera cannot hijack the view from the one the
+            // author works through - unless there is none, the one case where
+            // creating one is the recovery and inactive looks like a no-op.
             cam.active = !findActiveCamera(scene);
             scene.add(entity, cam);
             break;
@@ -323,11 +315,9 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
     uint32_t parentSlot = 0;
     if (isUIElement && state.selectedEntity && scene.isAlive(state.selectedEntity)
         && (scene.has<UICanvas>(state.selectedEntity) || scene.has<UIElement>(state.selectedEntity))) {
-        // Unless that canvas belongs to a prefab instance. The scene stores an
-        // instance as a reference and rebuilds its subtree from the file, so an
-        // element parented in there is never written: it would draw until the
-        // next load and then be gone. Leave it outside and say why - the same
-        // answer reparentKeepingWorld gives a drag that aims there.
+        // Unless that canvas belongs to a prefab instance, whose interior is
+        // never written: the element would draw until the next load and then be
+        // gone. Left outside, with the answer a drag aiming there also gets.
         if (PrefabOverrides::instanceRoot(scene, state.selectedEntity)) {
             state.pushToast(EditorState::ToastKind::Warning,
                             "A prefab instance is built from its prefab - the new element is "
@@ -338,10 +328,9 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
         }
     }
 
-    // Snapshot the just-created entity so undo can resurrect it intact
-    // (CreateEntityCommand::undo destroys; redo re-creates at the same slot).
-    // The parent slot rides along: EntitySnapshot is leaf-only, so without it a
-    // redone UI element comes back as a root and stops being drawn.
+    // Snapshot the new entity so undo can resurrect it intact. The parent slot
+    // rides along because EntitySnapshot is leaf-only: without it a redone UI
+    // element comes back as a root and stops being drawn.
     state.commands.push(std::make_unique<CreateEntityCommand>(
         EntitySnapshot::capture(scene, entity), "Create Entity", parentSlot));
     commitStructureChange(state);
@@ -480,10 +469,8 @@ void deleteSelection(Scene& scene, EditorState& state) {
     }
 
     // Roots only: an entity whose ancestor is also selected dies with that
-    // ancestor's subtree - deleting it separately would double-destroy.
-    // Test against the captured copy, not state.selection: the deselect below
-    // has to happen before the destroys, so by the time the loop runs the live
-    // selection is empty.
+    // subtree, and deleting it separately would double-destroy. Tested against
+    // this copy - the deselect below empties the live selection first.
     const std::vector<EntityId> sel = state.selection;
 
     const EntityId priorSel = state.selectedEntity;
@@ -534,9 +521,7 @@ bool saveAsPrefab(Scene& scene, const ResourceManager& resources, EditorState& s
 
     // A subtree inside somebody else's instance is not a file's to define, and
     // Prefab::save refuses it. Answered here, where the instance root is still
-    // in reach to be named: everything the editor says about a component added
-    // inside an instance sends the user to Save as Prefab, and on an entity in
-    // there this is the one that writes it.
+    // in reach to be named in the refusal.
     const EntityId owner = PrefabOverrides::instanceRoot(scene, entity);
     if (owner && owner != entity) {
         char rootName[64];
@@ -547,12 +532,9 @@ bool saveAsPrefab(Scene& scene, const ResourceManager& resources, EditorState& s
         return false;
     }
 
-    // An instance saves back over the prefab it came from - that is how a prefab
-    // is edited. Anything else becomes a new file, because overwriting a
-    // stranger's prefab would silently re-point every instance of it at this
-    // subtree. Project-relative, because the instance stores this path and a
-    // scene carrying it has to name the same file on another machine; the write
-    // resolves it and makes the directory.
+    // An instance saves back over its own source, anything else takes a free name
+    // (docs/reference/editor.md, "Save as Prefab"). Project-relative, because the
+    // instance stores this path and a scene has to carry it across machines.
     const bool editsItsOwn = scene.has<PrefabInstance>(entity)
                           && !scene.get<PrefabInstance>(entity).source.empty();
     const std::string path = editsItsOwn
@@ -567,14 +549,8 @@ bool saveAsPrefab(Scene& scene, const ResourceManager& resources, EditorState& s
         return false;
     }
 
-    // The subtree is the prefab's now: the scene keeps a reference and the
-    // overrides against it, so a step that assigns a component in there would
-    // undo to a value the scene has stopped storing. Every step addressing an
-    // entity in the subtree is therefore dropped - and only those. The rest of
-    // the history was never about this subtree, its entities are not rebuilt
-    // from anything, and an author who moved the sun an hour ago can still take
-    // that back. (A scene load clears the whole stack for a reason that does
-    // not hold here: it replaces every entity, and this replaces none.)
+    // Every step addressing an entity in the subtree is dropped, and only those;
+    // see docs/reference/editor.md, "Save as Prefab".
     std::vector<uint32_t> subtreeSlots{entity.index};
     for (size_t i = 0; i < subtreeSlots.size(); ++i) {
         HierarchyOperations::forEachChild(scene, scene.entityAt(subtreeSlots[i]),
@@ -720,10 +696,9 @@ void frameAll(FrameContext& ctx, CameraControllerSystem& camera) {
     const glm::vec3 center = (mn + mx) * 0.5f;
     const glm::vec3 extent = mx - mn;
     const float diag = glm::length(extent);
-    // Fit a sphere of radius diag/2 in the perspective frustum. A 1.1x pad on
-    // the diagonal gives breathing room, with a 2.0 floor so tiny scenes don't
-    // pull the camera inside the geometry. The camera controller normalises the
-    // look direction.
+    // Fit a sphere of radius diag/2 in the perspective frustum: a 1.1x pad for
+    // breathing room, with a 2.0 floor so a tiny scene does not pull the camera
+    // inside its own geometry.
     const float distance = std::max(2.0f, diag * 1.1f);
     camera.focusOn(ctx.scene, center, distance);
 }
@@ -869,10 +844,9 @@ bool NewProjectDialog::create(const std::filesystem::path& dest, std::string& er
         return false;
     }
 
-    // The template is generic and the project is not: name it after the
-    // directory rather than making the author's first act be editing JSON, and
-    // record the engine that answered, since the host compares that string
-    // against its own and a literal left here would warn on every open.
+    // Named after the directory, so the author's first act is not editing JSON,
+    // and stamped with the engine that answered - the host compares that string
+    // against its own, and a literal left here would warn on every open.
     const fs::path projectFile = dest / "project.json";
     nlohmann::json doc;
     if (!detail::readJsonFile(projectFile, doc, "project")) {

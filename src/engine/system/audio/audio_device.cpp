@@ -22,33 +22,30 @@ namespace Vkm::Engine {
 namespace {
 
 // Every backend miniaudio knows except the null one, in its own priority order.
-// Passed explicitly because ma_engine builds its context from the full default
-// list, which ends in the null backend: on a machine with no audio hardware that
-// would succeed, spend a thread mixing into nowhere, and hide the one state the
-// engine most needs to be able to report.
+// ma_engine's own default list ends in the null backend, which would succeed on
+// a machine with no audio hardware and mix into nowhere.
 constexpr std::array<ma_backend, 12> PLAYBACK_BACKENDS = {
     ma_backend_wasapi, ma_backend_dsound, ma_backend_winmm,  ma_backend_coreaudio,
     ma_backend_sndio,  ma_backend_audio4, ma_backend_oss,    ma_backend_pulseaudio,
     ma_backend_alsa,   ma_backend_jack,   ma_backend_aaudio, ma_backend_opensl,
 };
 
-// How long a stopped voice takes to reach silence. Releasing a sound outright
-// cuts its waveform at whatever sample the cursor happens to be on, and a
-// vertical edge is a click: measured against a 220 Hz tone at gain 0.8, the
-// worst cut across one cycle is a step of 0.63 - the signal's full amplitude -
-// where its own steepest sample-to-sample step is 0.018, thirty-five times
-// smaller. Five milliseconds spreads that over 240 frames at 48 kHz, which
-// puts every step of the ramp an order of magnitude below the waveform's own
-// slope, and is short enough that a source restarted on the next frame does
-// not audibly overlap the tail of the one it replaced.
+// How long a stopped voice takes to reach silence. The measurement behind the
+// number is in docs/reference/system/audio.md.
 constexpr uint32_t STOP_FADE_MS = 5;
 
-// Carries what miniaudio cannot say for itself: why a device declined, or that
-// one has just disconnected. It speaks from its own thread as well as ours - a
-// disconnect is reported from the mixer - so this trims into a stack buffer
-// rather than a string: there is no reason to reach the allocator from that
-// thread on the way to a log line. vkmLog serialises the rest, the way it
-// already does for the lines the asset loaders write from ThreadPool workers.
+/**
+ * @brief Forward a miniaudio log line into vkmLog.
+ *
+ * Carries what miniaudio cannot say for itself: why a device declined, or that
+ * one has just disconnected.
+ *
+ * Called from the mixer thread as well as ours - a disconnect is reported from
+ * the mixer - so it trims into a stack buffer rather than a string, there being
+ * no reason to reach the allocator from that thread on the way to a log line.
+ * vkmLog serialises the rest, as it already does for the lines the asset loaders
+ * write from ThreadPool workers.
+ */
 void forwardBackendLog(void* userData, ma_uint32 level, const char* message) {
     // Warnings and errors only: below that miniaudio dumps ninety lines of device
     // capabilities on every launch, and the one line worth having - backend, rate
@@ -85,12 +82,15 @@ void forwardBackendLog(void* userData, ma_uint32 level, const char* message) {
  */
 struct AudioDevice::Backend {
     struct Voice {
-        // Who is holding a voice at its cursor, if anyone. One field and not a
-        // held flag beside an owner flag, because a pair can disagree and the
-        // disagreement is expensive: a voice no longer held but still
-        // remembered as the bulk pause's comes back on the next
-        // resumeAllVoices, and find() hides it, so nothing above is left able
-        // to stop it again.
+        /**
+         * @brief Who is holding a voice at its cursor, if anyone.
+         *
+         * One field rather than a held flag beside an owner flag, because a
+         * pair can disagree and the disagreement is expensive: a voice no
+         * longer held but still remembered as the bulk pause's comes back on
+         * the next resumeAllVoices, and find() hides it, so nothing above is
+         * left able to stop it again.
+         */
         enum class Hold {
             None,
             Own,   ///< Asked for by pauseVoice; only resumeVoice lets it go.
@@ -140,19 +140,14 @@ struct AudioDevice::Backend {
     }
 
     static void apply(Voice& voice, const VoiceParams& params) {
-        // A NaN gain is already answered with silence, because std::max keeps
-        // its first argument when the comparison against a NaN comes back
-        // false. An infinite one was not, and it is not one loud voice: every
-        // voice sums into the same master, so the whole mix reads non-finite
-        // for as long as it lives. Measured with two healthy voices beside it,
-        // all 4800 samples of the output went NaN, and came back only once the
-        // bad voice was reaped. Silence is the failure that stays local.
+        // NaN needs no branch of its own: std::max keeps its first argument
+        // when a comparison against a NaN comes back false, so it lands on the
+        // same floor the infinity check puts +inf on.
         const float gain = std::isfinite(params.volume) ? std::max(0.0f, params.volume) : 0.0f;
         ma_sound_set_volume(&voice.sound, gain);
-        // Zero would hold one sample forever instead of advancing the cursor,
-        // and miniaudio requires the rate positive. A NaN rate lands on the
-        // same floor by the rule above, which is why this stays a max rather
-        // than becoming a clamp - std::clamp would hand the NaN straight on.
+        // Zero would hold one sample forever instead of advancing the cursor.
+        // A max rather than a clamp, because std::clamp would hand a NaN
+        // straight on where this floors it.
         ma_sound_set_pitch(&voice.sound, std::max(0.01f, params.pitch));
         ma_sound_set_looping(&voice.sound, params.loop ? MA_TRUE : MA_FALSE);
 
@@ -321,10 +316,6 @@ VoiceId AudioDevice::play(const AudioClipAsset& clip, const VoiceParams& params)
     if (!m_open || clip.sampleCount() == 0 || clip.channels == 0) return 0;
 
     auto voice = std::make_unique<Backend::Voice>();
-    // The voice shares the clip's samples rather than pointing at them: the
-    // mixer reads from the audio thread and a scene load frees assets from the
-    // main one, so the buffer has to outlive the asset by however long it takes
-    // AudioSystem to notice.
     voice->samples = clip.samples;
     if (ma_audio_buffer_ref_init(ma_format_s16, clip.channels, voice->samples->data(),
                                  clip.frameCount(), &voice->buffer) != MA_SUCCESS) {
@@ -341,12 +332,9 @@ VoiceId AudioDevice::play(const AudioClipAsset& clip, const VoiceParams& params)
         return 0;
     }
 
-    // Linear attenuation, always. It is the only model under which the two
-    // authored distances mean what they say: full volume inside the first,
-    // silent at the second. miniaudio's default inverse model never reaches
-    // zero, which leaves maxDistance meaning nothing but a clamp and every
-    // sound in a level faintly audible from everywhere in it. Doppler is off
-    // because nothing here tracks velocity.
+    // Linear attenuation, always: the only model under which minDistance and
+    // maxDistance mean what they say. Doppler is off because nothing here
+    // tracks velocity.
     ma_sound_set_attenuation_model(&voice->sound, ma_attenuation_model_linear);
     ma_sound_set_rolloff(&voice->sound, 1.0f);
     ma_sound_set_doppler_factor(&voice->sound, 0.0f);
@@ -381,10 +369,9 @@ void AudioDevice::pauseVoice(VoiceId voice) {
     Backend::Voice* v = m_backend->find(voice);
     if (v == nullptr) return;
 
-    // Whoever asks for the hold owns it, and asking is the claim - a voice the
-    // transport is already holding becomes this caller's, so the world resuming
-    // underneath it leaves it where it was put. What must not be repeated is
-    // the ramp, which would restart a fade already halfway down.
+    // Whoever asks for the hold owns it, so a voice the transport holds becomes
+    // this caller's. What must not be repeated is the ramp, which would restart
+    // a fade already halfway down.
     const bool alreadyHeld = v->hold != Backend::Voice::Hold::None;
     v->hold = Backend::Voice::Hold::Own;
     if (!alreadyHeld) Backend::pauseSound(*v, Backend::Voice::Hold::Own);
@@ -420,10 +407,8 @@ void AudioDevice::seekVoice(VoiceId voice, float seconds) {
 
     const double at = std::isfinite(seconds) ? std::max(0.0, static_cast<double>(seconds)) : 0.0;
     const ma_uint64 frame = static_cast<ma_uint64>(at * static_cast<double>(v->buffer.sampleRate));
-    // Clamped rather than passed through: miniaudio refuses a seek past the
-    // end at the data source and moves the sound's own clock to the position
-    // it refused anyway, leaving the voice playing from where it was with a
-    // clock nine seconds ahead of it. The clip's length is right here.
+    // Clamped here because miniaudio refuses an out-of-range seek at the data
+    // source and still moves the sound's own clock to the position it refused.
     ma_sound_seek_to_pcm_frame(&v->sound, std::min(frame, v->buffer.sizeInFrames));
 }
 
@@ -438,17 +423,12 @@ void AudioDevice::stopVoice(VoiceId voice) {
     // wherever it had got to, restarting a fade that is halfway done.
     if (stopping.retiring) return;
 
-    // A stopped voice is held by nobody. It is already silent if it was held,
-    // so it needs no ramp of its own; leaving it marked held would keep it out
-    // of every future reap, since the hold is exactly why it reads as not
-    // playing, and would leave resumeAllVoices a stopped voice to start again.
+    // A stopped voice is held by nobody: the hold is exactly why a voice reads
+    // as not playing, so leaving it set would keep this one out of every reap.
     stopping.hold = Backend::Voice::Hold::None;
 
-    // Ramped rather than cut, and therefore not released here: the mixer needs
-    // the sound for as long as the ramp lasts. reapFinishedVoices takes it
-    // once the scheduled stop has passed, and until then find() hides it, so
-    // the id behaves exactly as it did when this released outright - unknown
-    // to updateVoice, finished to isVoiceActive.
+    // Not released here: the mixer needs the sound for as long as the ramp
+    // lasts, and reapFinishedVoices takes it once the stop has passed.
     stopping.retiring = true;
     ma_sound_stop_with_fade_in_milliseconds(&stopping.sound, STOP_FADE_MS);
 }
@@ -458,13 +438,8 @@ void AudioDevice::reapFinishedVoices() {
 
     for (auto it = m_backend->voices.begin(); it != m_backend->voices.end(); ) {
         // Two ways to be finished: the clip ran out, or a ramped stop reached
-        // the end of its fade. A looping voice satisfies neither until someone
-        // stops it, which is what keeps an ambience alive here.
-        //
-        // A held voice looks like the second one and is not it: holding one
-        // stops the node, so the only thing separating a sound that is waiting
-        // from one that is over is who has it. stopVoice hands it back, so a
-        // voice stopped while held is still swept.
+        // the end of its fade. A held voice looks like the second and is not
+        // it - holding stops the node too, so who holds it is the difference.
         const Backend::Voice& voice = *it->second;
         const ma_sound& sound = voice.sound;
         const bool finished = ma_sound_at_end(&sound) == MA_TRUE
@@ -481,12 +456,8 @@ void AudioDevice::reapFinishedVoices() {
 
 void AudioDevice::stopAllVoices() {
     if (!m_backend) return;
-    // Cut, not ramped, unlike stopVoice. This is the teardown path: close()
-    // uninitialises the mixer on the next line, so a ramp scheduled here would
-    // never be mixed, and the scene load that calls it has already replaced
-    // the world the sounds belonged to. Waiting for a fade would mean holding
-    // the frame open for it or inventing somewhere for the voices to live in
-    // the meantime, to smooth an edge under a load that is not quiet anyway.
+    // Cut, not ramped, unlike stopVoice: close() uninitialises the mixer on the
+    // next line, so a ramp scheduled here would never be mixed at all.
     for (auto& entry : m_backend->voices) m_backend->release(*entry.second);
     m_backend->voices.clear();
 }
@@ -528,9 +499,6 @@ void AudioDevice::setListenerActive(bool active) {
 }
 
 void AudioDevice::setMasterVolume(float volume) {
-    // The same guard the per-voice gain carries, for the same measured reason:
-    // an infinite master takes the entire mix non-finite, and this one is
-    // authored - AudioListener::volume is a serialized field a slider writes.
     // Kept rather than only pushed, so masterVolume() answers what the mixer
     // was given instead of making every caller sanitise the number again.
     m_masterVolume = std::isfinite(volume) ? std::max(0.0f, volume) : 0.0f;

@@ -35,10 +35,9 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
         return false;
     }
 
-    // The field reads are inside the try as well as the parse: value<std::string>
-    // throws on a key that holds a number or an array, which is exactly what a
-    // hand-edited project.json produces. A bad file leaves the defaults standing
-    // rather than taking the process down.
+    // The field reads sit inside the try with the parse: value<std::string>
+    // throws on a key holding a number or an array, which is exactly what a
+    // hand-edited project.json produces.
     nlohmann::json doc;
     try {
         in >> doc;
@@ -68,13 +67,12 @@ fs::path findProjectRoot(const fs::path& start) {
     // Accept a file as well as a directory, so passing a scene finds its project.
     fs::path dir = fs::is_directory(start, ec) ? start : start.parent_path();
 
-    // Normalised before the walk, because the answer gets composed on: it names
-    // the log directory and is the string the editor's recent list dedupes by.
     // A path typed "proj/" - what shell completion produces - ends in an empty
-    // element, "proj/." in a dot, and both compose away, so "logs/<project>/"
-    // silently loses its <project>. Only the path handed in can carry one; the
-    // loop below reaches every other directory through parent_path().
+    // element and "proj/." in a dot, both of which compose away, so a
+    // "logs/<project>/" built on one would silently lose its <project>.
     dir = fs::absolute(dir, ec).lexically_normal();
+    // Only the path handed in can end that way; the loop reaches every other
+    // directory through parent_path().
     if (!dir.has_filename()) dir = dir.parent_path();
 
     while (!dir.empty()) {

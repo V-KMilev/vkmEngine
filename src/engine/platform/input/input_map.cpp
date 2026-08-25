@@ -15,9 +15,8 @@ namespace {
 const std::vector<InputBinding> NO_BINDINGS;
 
 // Active enough to count as "down" for held/pressed/released. Digital sources
-// give exactly 0 or 1; the threshold is here so an analogue source (a trigger,
-// a stick past centre) resolves to a button the same way without every caller
-// picking its own cut-off.
+// give exactly 0 or 1; the threshold is what lets an analogue source - a trigger,
+// a stick past centre - resolve to a button the same way.
 constexpr float ACTIVE_THRESHOLD = 0.5f;
 
 } // namespace

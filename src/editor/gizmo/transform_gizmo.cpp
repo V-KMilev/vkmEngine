@@ -12,10 +12,9 @@ namespace Vkm::Engine {
 
 ImVec2 TransformGizmo::worldToScreen(const glm::vec3& worldPos) const {
     glm::vec4 clip = m_viewProj * glm::vec4(worldPos, 1.0f);
-    // The near plane, not a positive w. A perspective w is the view depth, so
-    // testing it alone still passes a point nearer than the plane and divides
-    // by a sliver; an orthographic w is 1 for every point in the world, so it
-    // passes everything, the half of the world behind the camera included.
+    // The near plane, not a positive w: a perspective w is the view depth, so it
+    // passes a point nearer than the plane and divides by a sliver, and an
+    // orthographic w is 1 everywhere, so it passes the world behind the camera.
     if (nearPlaneSide(clip) <= 0.0f) return ImVec2(-10000, -10000);
 
     glm::vec3 ndc = glm::vec3(clip) / clip.w;
@@ -246,10 +245,9 @@ bool TransformGizmo::manipulate(
             m_dragPlaneNormal = getDragPlaneNormal(m_active, axes);
             m_dragPlanePoint = m_gizmoOrigin;
 
-            // Decompose once at drag-start. Skew/perspective are discarded
-            // (the gizmo only ever drives translation/rotation/scale), and
-            // re-decomposing each frame would just throw the same result
-            // away while costing CPU.
+            // Once at drag-start. Skew and perspective are discarded, the gizmo
+            // driving only translation, rotation and scale, and re-decomposing
+            // each frame would throw the same result away.
             {
                 glm::vec3 skew;
                 glm::vec4 persp;

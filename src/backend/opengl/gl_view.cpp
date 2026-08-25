@@ -31,11 +31,6 @@ void GLView::ensure(GLResourceTable<GLT>& table, const Handle<AssetT>& handle, c
         table.slots.resize(id + 1);
     }
 
-    // A freed slot can be recycled by a different asset that also starts at
-    // version 1, so the version gate alone can't distinguish them. Rebuild from
-    // scratch when the slot is empty or its generation moved on (recycled); an
-    // in-place update() is only valid when it is the same asset (same generation)
-    // with a newer version.
     auto& slot = table.slots[id];
     if (!slot.gl || slot.generation != generation) {
         slot.gl         = std::make_unique<GLT>(asset);
@@ -48,11 +43,8 @@ void GLView::ensure(GLResourceTable<GLT>& table, const Handle<AssetT>& handle, c
 }
 
 void GLView::invalidate() {
-    // The incoming graph reuses the same handle indices and generations at
-    // version 1, so ensure() cannot tell its assets apart from the outgoing
-    // ones. Nothing here is salvageable: drop it all and let the next sync
-    // repopulate. m_reportedMissing goes too - a name that failed to load in the
-    // old graph deserves a fresh warning if it fails again in the new one.
+    // m_reportedMissing is dropped along with the tables: a name that failed to load in
+    // the old graph deserves a fresh warning if it fails again in the new one.
     m_meshes.slots.clear();
     m_materials.slots.clear();
     m_textures.slots.clear();
@@ -123,12 +115,8 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
         ensureMaterial(d.material, resources);
     }
 
-    // Casters are gathered scene-wide, not from the visible set, so an
-    // off-screen occluder's mesh - or the far-LOD variant visibility picked for
-    // it - may appear in no drawable at all, and the shadow pass answers a mesh
-    // it cannot resolve by drawing nothing. They arrive in storage order rather
-    // than sorted, so the repeat-skip is incidental here, but the list is
-    // scene-sized and the compare is free.
+    // Casters arrive in storage order rather than sorted, so the repeat-skip is
+    // incidental here - but the list is scene-sized and the compare is free.
     MeshHandle lastCasterMesh;
     for (const ShadowCasterData& caster : shadowCasters) {
         if (caster.mesh == lastCasterMesh) continue;

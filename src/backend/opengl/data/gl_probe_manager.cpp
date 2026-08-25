@@ -27,10 +27,9 @@ void GLProbeManager::init(GLSceneCapture& capture, GLCubeConvolver& convolver) {
 int GLProbeManager::bind(const RenderView& view) {
     if (!m_array) return 0;
 
-    // Collect the baked probes, in scene order. A probe's layer in the cube
-    // arrays is its scene index, and the arrays hold MAX_PROBES layers - the
-    // same bound as the shader's per-fragment blend loop - so anything past the
-    // capacity has nowhere to have been baked and nothing to be bound into.
+    // Baked probes in scene order: a probe's layer in the cube arrays is its scene
+    // index, and the arrays hold MAX_PROBES layers - the same bound as the shader's
+    // per-fragment blend loop.
     m_active.clear();
     const int capacity = m_array->capacity();
     for (size_t i = 0; i < view.probes.size() && static_cast<int>(i) < capacity; ++i) {
@@ -63,10 +62,8 @@ void GLProbeManager::update(Vkm::GL::Context& gl, const RenderView& view, const 
     const int n = std::min(static_cast<int>(view.probes.size()), capacity);
     if (static_cast<int>(m_state.size()) < n) m_state.resize(n);
 
-    // Size the shared cube arrays to the highest resolution any active probe
-    // requests - array textures force one face size across every layer, so a
-    // per-probe request drives the shared build via its maximum. On a change,
-    // rebuild the arrays and force every probe to re-bake into the new size.
+    // Array textures force one face size across every layer, so the shared arrays take
+    // the highest resolution any active probe asks for; changing it drops every bake.
     if (n > 0) {
         int desired = GLProbeArray::MIN_RESOLUTION;
         for (int i = 0; i < n; ++i)

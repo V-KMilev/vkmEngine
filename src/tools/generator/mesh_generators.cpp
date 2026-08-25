@@ -226,9 +226,8 @@ MeshAsset generateSphere(uint32_t xSegments, uint32_t ySegments) {
     const float radius = 0.5f;
 
     // Cube-sphere (quad-sphere): six subdivided cube faces pushed onto the
-    // sphere. Unlike a lat-long sphere it has NO poles, so there is no vertex
-    // collapse, no degenerate (zero) tangent -> NaN, and no texture pinching at
-    // the top/bottom (the old "bald spot"). Each face maps its own [0,1] UVs.
+    // sphere. It has no poles, so no vertex collapse, no degenerate tangent ->
+    // NaN, no pinching. Each face maps its own [0,1] UVs.
     const uint32_t res = std::max(2u, std::max(xSegments, ySegments) / 2u);  // per-face grid
 
     // Emit one triangle oriented outward: flip it if its geometric normal

@@ -19,10 +19,6 @@ std::unique_ptr<nlohmann::json> cloneSource(const std::unique_ptr<nlohmann::json
 Resource::Resource() = default;
 Resource::~Resource() = default;
 
-// A copy is a DUPLICATE: it carries the contents and the name, but neither the
-// uid nor the version, because those belong to the instance the manager holds
-// and add() stamps both afresh. The name still has to become distinct, which
-// add() does by suffixing - or the caller does by passing one.
 Resource::Resource(const Resource& other)
     : m_name(other.m_name)
     , m_hidden(other.m_hidden)

@@ -27,13 +27,9 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
     const RenderView& view   = ctx.view;
     const GLView&     glView = ctx.resources;
 
-    // First pass to touch the HDR target, so it clears all of the attachments
-    // (colour, G-buffer, depth) for the frame. The skybox + forward run after
-    // and never clear colour, so a transparent surface is never wiped by a later
-    // background fill.
-    // Re-assert the scene clear colour: offscreen renderers (material previews,
-    // probe bakes) set their own backdrop between frames, and the stored colour
-    // is applied at clear.
+    // Re-assert the scene clear colour: offscreen renderers (material previews, probe
+    // bakes) set their own backdrop between frames, and the stored colour is applied
+    // at clear.
     ctx.gl.setClearColor(glm::vec4(0.0f));
     ctx.sceneRender.clearForFrame(ctx.gl);
     ctx.gl.setDepthTest(true);
@@ -44,10 +40,8 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
     ctx.gl.setCullFace(GL_BACK);
     ctx.sceneRender.bindGBufferPass(ctx.gl);
 
-    // Uniform state is per program in GL, so the view matrix has to be set on
-    // each of them, not once on whichever happens to be bound. With no palette
-    // no run is skinned, the skinned program is never bound, and so it is never
-    // given anything either.
+    // Uniform state is per program in GL, so the view matrix has to be set on each of
+    // them, not once on whichever happens to be bound.
     m_shader->bind();
     m_shader->setUniformMatrix4fv("u_view", view.camera.view);
 
@@ -57,10 +51,8 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
         ctx.skinPalette.bind();
     }
 
-    // No albedo texture is sampled - the prepass writes normal/roughness/
-    // metalness from the UBO - so binding the material UBO is enough. The
-    // material bindings are context state, not program state, so the cache
-    // below survives a program switch.
+    // The material bindings are context state, not program state, so the cache below
+    // survives a program switch.
     const GLMaterial* boundMaterial = nullptr;
     const Vkm::GL::Shader* boundProgram = nullptr;
     ctx.opaqueBatch.bindInstanceData();

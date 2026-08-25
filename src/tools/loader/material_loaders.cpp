@@ -166,13 +166,9 @@ MaterialHandle buildFolderMaterial(const std::string& folderRef, ResourceManager
         "height", "displacement", "disp", "parallax"
     }).value_or("");
 
-    // Every scalar keeps MaterialAsset's own default except these two. The shader
-    // multiplies each factor by its map, and a folder material always binds
-    // something in both slots - the discovered map, or a constant fallback that
-    // carries the default (white = fully rough, black = dielectric). So both
-    // factors have to be 1: anything lower scales the authored map down as well
-    // as the fallback, and metallic's old 0.0 erased a metallic or packed map
-    // outright, rendering every such folder material as a dielectric.
+    // The shader multiplies each factor by its map, and a folder material always
+    // binds one - the discovered map, or a fallback carrying the default (white
+    // = fully rough, black = dielectric) - so anything under 1 scales it down.
     MaterialAsset material;
     material.metallic  = 1.0f;
     material.roughness = 1.0f;
@@ -269,10 +265,8 @@ MaterialHandle loadMaterialFromFolder(
     const std::string& folderPath,
     ResourceManager& resourceManager
 ) {
-    // Idempotent by name like every other loader, and the folder reference is
-    // this material's name: a second load of the same folder is that same
-    // material, not a second copy of it living under a suffixed name. Relativised
-    // before the lookup, or one folder named two ways becomes two materials.
+    // Relativised before the lookup, or one folder named two ways becomes two
+    // materials.
     const std::string ref = ProjectPaths::toProjectRelative(folderPath);
     if (MaterialHandle loaded = resourceManager.findByName<MaterialAsset>(ref)) return loaded;
 
@@ -285,11 +279,9 @@ MaterialHandle loadMaterialFromFolder(
 
     MaterialHandle handle = buildFolderMaterial(ref, resourceManager);
     if (handle) {
-        // Record how this material was created so SceneSerializer can recreate
-        // it on a cold-start load (texture discovery happens again at reload).
-        // The folder reference is the material's stable identity - it is also the
-        // name scene refs resolve by, so rename to it (keeps the name index in
-        // sync; edit().name would not).
+        // The folder reference is this material's stable identity and the name
+        // scene refs resolve by; the source is what a cold-start load rebuilds
+        // it from, rediscovering the folder's textures as it goes.
         resourceManager.rename(handle, ref);
         resourceManager.edit(handle).sourceJson() = {
             {"kind", "folder"},

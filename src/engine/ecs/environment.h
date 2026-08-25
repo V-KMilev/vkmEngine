@@ -30,18 +30,14 @@ struct SkySettings {
     float sunAngularRadius = 0.02f;
     float sunDiscIntensity = 15.0f;  ///< Analytic sun-disc radiance (added over the atmospheric glow).
 
-    // Where the sun is, and therefore what time of day it is - the sky's one
-    // real control; everything else here is appearance. Kept here rather than
-    // read off a directional light because the sky is scene-global and must work
-    // whether or not the scene has one. SkySystem points a light FROM these, so
-    // the key light and the sky cannot disagree. Below the horizon is night.
+    // SkySystem aims the key light FROM these, so the sun the skybox draws and
+    // the light that casts its shadows cannot disagree.
     float sunElevation = 50.0f;  ///< Degrees above the horizon. Negative is night.
     float sunAzimuth   = 30.0f;  ///< Degrees around the horizon, from +Z toward +X.
 
-    // The key light's daylight settings. Here rather than on the Light because
-    // the sky drives that light: it has to know what full daylight looks like to
-    // hand over to moonlight and back. Its own colour/intensity are unused while
-    // the procedural sky is on.
+    // The key light's daylight end. SkySystem hands that light between these and
+    // the moonlight below, so the Light's own colour and intensity are unused
+    // while the procedural sky is on.
     glm::vec3 lightColor     = {1.0f, 0.96f, 0.90f};  ///< Key light colour at midday.
     float     lightIntensity = 3.0f;                  ///< Key light intensity at midday.
 };
@@ -61,8 +57,7 @@ struct NightSkySettings {
     float     moonTilt          = 15.0f;
     float     moonAngularRadius = 0.03f;            ///< Moon disc radius in the skybox (radians).
     float     moonIntensity     = 1.2f;             ///< Moon disc radiance; its halo follows.
-    /// Star brightness; 0 disables the field. Tuned so the brightest cores clear
-    /// the bloom threshold while the faint ones stay faint.
+    /// Star brightness; 0 disables the field. The default clears the bloom threshold.
     float     starIntensity     = 3.0f;
     float     starDensity       = 140.0f;           ///< Grid density; higher packs more, smaller stars.
 

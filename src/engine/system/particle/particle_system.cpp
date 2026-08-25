@@ -42,11 +42,9 @@ void ParticleSystem::update(FrameContext& ctx) {
             // still emits evenly.
             emitter.spawnAccumulator += emitter.rate * dt;
             while (emitter.spawnAccumulator >= 1.0f) {
-                // At capacity the accumulator keeps only its fraction. Banking
-                // whole spawns while full meant a long-saturated emitter built
-                // up arbitrarily many credits and then discharged them the
-                // instant particles started dying - a visible burst out of
-                // nowhere, worse the longer it had been full.
+                // Only the fraction survives at capacity: banking whole spawns
+                // lets a long-saturated emitter discharge every credit at once
+                // the instant particles start dying.
                 if (emitter.particles.size() >= emitter.maxParticles) {
                     emitter.spawnAccumulator -= std::floor(emitter.spawnAccumulator);
                     break;

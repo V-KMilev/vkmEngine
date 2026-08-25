@@ -207,13 +207,32 @@ in [Rendering](rendering.md)). The baker is skipped when nothing changed
 (same env-map path; procedural sun/params unmoved): a comparison and an
 early-out.
 
+## Forward+ clustering
+
+The view frustum is diced into `CLUSTER_X` x `CLUSTER_Y` screen tiles by
+`CLUSTER_Z` exponential depth slices. A compute pass (`ClusterCull`, pass 8)
+culls the scene's lights into each cluster's list, capped at
+`MAX_LIGHTS_PER_CLUSTER`; the forward pass then shades a pixel against its own
+cluster's handful rather than the whole `MAX_LIGHTS` upload. That is why the
+light cap can be generous.
+
+**The 32 x 18 split is measured.** It puts a tile at roughly 60px on a
+1080p-class viewport. Coarser tiles make each pixel iterate lights that only
+clip a far corner of its tile: at 16 x 9 (120px tiles) that cost 0.35 ms of
+extra forward shading in a 220-light scene. Finer stops paying - 48 x 27
+measured identical to 32 x 18 while costing 2.3x the grid memory - because the
+cull is already tight enough that the lights left in a cluster genuinely
+overlap it. The cull pass itself is insensitive to the split (0.10 -> 0.11 ms).
+
 ## Limits and the generated-constants contract
 
 Cross-cutting limits live in `engine_config.h`. At configure time
 `cmake/generate_shader_config.cmake` mirrors them (under the same names) into
 `shaders/_generated/engine_config.glsl`, which the shaders `#include` through
-the engine's shader preprocessor - C++ and GLSL share one source of truth.
-Do not re-define these values in a shader; include the generated file.
+the engine's shader preprocessor (`preprocessShaderSource` in
+`modules/vkmGL/src/shader/gl_shader.cpp`, reached via `GraphicsShaderSource`) -
+C++ and GLSL share one source of truth. Do not re-define these values in a
+shader; include the generated file.
 (`_common/shadows.glsl` keeps its short local names as aliases:
 `SHADOW_MAX_2D` = `MAX_SHADOW_CASTERS_2D`, `SHADOW_MAX_CUBE` =
 `MAX_SHADOW_CASTERS_CUBE`.)
@@ -222,11 +241,11 @@ Do not re-define these values in a shader; include the generated file.
 |----------------------------------|-------|-------------|
 | `Config::MAX_LIGHTS`             | 256   | light upload cap; `forward/pbr`, `clustering`, `fog/inject` |
 | `Config::MAX_LIGHTS_PER_CLUSTER` | 64    | Forward+ per-cluster light list cap |
-| `Config::CLUSTER_X/Y/Z`          | 16 x 9 x 24 | Forward+ cluster grid dimensions |
+| `Config::CLUSTER_X/Y/Z`          | 32 x 18 x 24 | Forward+ cluster grid dimensions (see above) |
 | `Config::MAX_SHADOW_CASTERS_2D`  | 6     | 2D shadow atlas tiles (`SHADOW_MAX_2D`) |
 | `Config::MAX_SHADOW_CASTERS_CUBE`| 2     | point-light cube maps (`SHADOW_MAX_CUBE`) |
 | `Config::NUM_CASCADES`           | 4     | not mirrored to GLSL; the CSM count reaches the shader via the shadow UBO (`csmCount` / `cascadeSplits`) |
-| `Config::SHADOW_CUBE_NEAR`       | 0.1   | shadow pass only (CPU-side cube projection), not mirrored to GLSL |
+| `Config::SHADOW_CUBE_NEAR`       | 0.1   | shadow pass only (`gl_shadow_data.cpp` builds the cube projection), not mirrored to GLSL |
 
 ## Editor integration
 

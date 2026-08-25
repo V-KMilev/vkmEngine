@@ -23,9 +23,8 @@ int main(int argc, char** argv) {
         Vkm::Engine::registerRecipeAssetFactories();
 
         // Declared before the Engine so it outlives it: behaviors are destroyed
-        // during Engine teardown and their code must still be loaded then. What
-        // goes into it is the project's, and the editor loads it when it opens
-        // one - here that would be the project-open sequence written twice.
+        // during Engine teardown and their code must still be loaded then. It is
+        // filled when the editor opens a project, not here - one open sequence.
         Vkm::Engine::ScriptModule scriptModule;
 
         Vkm::Engine::Engine engine;
@@ -38,12 +37,8 @@ int main(int argc, char** argv) {
             engine.getWindow().getWindowContext(),
             sys.camera, sys.ui, sys.visibility, sys.render, sys.audio, scriptModule);
 
-        // The editor roots itself in the project this host was launched on from
-        // its init(), which runs before the first frame - the same sequence File
-        // > Open Project runs, so nothing project-scoped can reach one way in and
-        // miss the other. A project whose entry scene will not load still opens,
-        // deliberately: that is the case the editor exists to fix, and refusing
-        // would take away the only tool for it.
+        // The project opens from EditorSystem::init, on the same sequence File >
+        // Open Project runs; see docs/reference/editor.md, "Opening a project".
         engine.run();
 
     } catch (const std::exception& e) {

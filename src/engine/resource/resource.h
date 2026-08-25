@@ -51,6 +51,16 @@ class Resource {
         Resource();
         ~Resource();
 
+        /**
+         * @brief Duplicate @p other's contents and name, but not its identity.
+         *
+         * A copy is a DUPLICATE, not the same asset twice: it carries the
+         * contents, the name and the source descriptor, and neither the uid nor
+         * the version, because those belong to the instance the manager holds
+         * and `add()` stamps both afresh. The name still has to become distinct
+         * within its type, which `add()` does by suffixing - or the caller does
+         * by passing one.
+         */
         Resource(const Resource& other);
         Resource& operator=(const Resource& other);
 
