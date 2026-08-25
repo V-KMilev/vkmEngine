@@ -43,10 +43,7 @@ EntityId CameraControllerSystem::resolveActiveCamera(Scene& scene) {
 }
 
 void CameraControllerSystem::setAnglesFromDirection(const glm::vec3& dir) {
-    // Inverse of updateRotationFromAngles():
-    //   forward = (cos(pitch)*sin(yaw), sin(pitch), cos(pitch)*cos(yaw))
-    m_pitch = std::asin(std::clamp(dir.y, -1.0f, 1.0f));
-    m_yaw   = std::atan2(dir.x, dir.z);
+    Math::toYawPitch(dir, m_yaw, m_pitch);
 }
 
 void CameraControllerSystem::reseedAnglesFromRotation(const glm::quat& rotation) {
@@ -180,11 +177,10 @@ void CameraControllerSystem::viewFrom(Scene& scene, const glm::vec3& target, con
 }
 
 void CameraControllerSystem::updateRotationFromAngles(glm::quat& rotation, float yaw, float pitch) {
-    glm::quat yawQuat = glm::angleAxis(yaw, Math::WORLD_AXIS_Y);
-    // Negative right axis because mouse Y is inverted.
-    glm::quat pitchQuat = glm::angleAxis(pitch, -Math::WORLD_AXIS_X);
-    // Yaw first, then pitch - swapping causes roll drift.
-    rotation = yawQuat * pitchQuat;
+    // Both halves come from Math now. They were a mapping here and a reversal
+    // of it forty lines up, which is two places to keep in step and was one
+    // place too many the moment forward moved.
+    rotation = Math::fromYawPitch(yaw, pitch);
 }
 
 } // namespace Vkm::Engine

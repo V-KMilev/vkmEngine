@@ -62,7 +62,10 @@ void vkmBuildScene(Vkm::Engine::Scene& scene) {
     scene.add(camera, Vkm::Engine::Camera{Vkm::Engine::ProjectionType::Perspective});
     scene.add(camera, Vkm::Engine::Transform{
         glm::vec3(0.0f, 4.6f, -8.5f),
-        glm::angleAxis(0.34f, Vkm::Engine::Math::WORLD_AXIS_X),
+        // Looking down the track, which runs along +Z. The half turn is
+        // forward being -Z; the track did not move.
+        glm::angleAxis(0.34f, Vkm::Engine::Math::WORLD_AXIS_X)
+            * glm::angleAxis(glm::pi<float>(), Vkm::Engine::Math::WORLD_AXIS_Y),
         glm::vec3(1.0f)
     });
     // The ear rides the eye. Nothing in the engine assumes that - a listener is

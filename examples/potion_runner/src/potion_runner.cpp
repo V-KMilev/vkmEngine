@@ -622,8 +622,11 @@ void PotionRunner::buildWorld() {
         o.lamp = m_scene->createEntity();
         m_scene->add(o.lamp, makeName("Train Headlight"));
         m_scene->add(o.lamp, std::move(beam));
+        // Shining down the track, which the train runs along. That is what
+        // forward now means, where it used to be the half turn this
+        // line carried - the beam did not move, the axis under it did.
         m_scene->add(o.lamp, Transform{{0.0f, 1.05f, SPAWN_Z},
-                                       glm::angleAxis(glm::pi<float>(), Math::WORLD_AXIS_Y),
+                                       glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
                                        glm::vec3(1.0f)});
         // Kinematic: the dynamic player lands on its roof by solver contact, and
         // any non-top contact is the crash signal. Extents follow each recycle.
@@ -1205,7 +1208,10 @@ void PotionRunner::updateCamera(float dt) {
 
     Transform& t = m_scene->get<Transform>(m_camera);
     t.position = {m_camX, m_camY, -8.5f};
-    t.rotation = glm::angleAxis(0.34f, Math::WORLD_AXIS_X);  // look down the +Z track
+    // Looking down the +Z track. The half turn is forward moving to -Z in
+    // the convention; the track still runs the way it always did.
+    t.rotation = glm::angleAxis(0.34f, Math::WORLD_AXIS_X)
+               * glm::angleAxis(glm::pi<float>(), Math::WORLD_AXIS_Y);
 }
 
 void PotionRunner::die() {
