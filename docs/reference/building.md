@@ -64,6 +64,27 @@ The executables land in `build/bin/` - one directory so an exe finds its DLLs
 project's gameplay module builds into that project's own `bin/` instead, because
 it belongs to the project rather than to this build tree.
 
+## The examples build the way a game does
+
+`examples/potion_runner` and `examples/stress_arena` are projects, and one
+`CMakeLists.txt` each serves both ways of building them. Configured on its own -
+
+```bash
+./tools/vkm build examples/potion_runner
+```
+
+- it is the top-level project, calls `find_package(vkmEngine)` against the
+package the engine's build tree exports (or against an installed SDK), and links
+`vkmEngine::vkm_core`: the same path a project made by `vkm new` takes. Added by
+the engine's own `CMakeLists.txt` it skips `project()` and `find_package`,
+because those targets are already defined in that tree.
+
+The recipe both paths call is `vkm_add_gameplay_module()`, in
+`cmake/gameplay_module.cmake`. It ships beside `vkmEngineConfig.cmake` and is
+included from there, so the examples are built by the code an SDK hands a user
+rather than by a second copy of it that can drift. `vkm build` is what a user
+runs; keeping the examples on it is what keeps it working.
+
 ## Tests
 
 ```bash
@@ -104,7 +125,7 @@ half a smoke test turns on.
 | `vkm_headers` | Interface lib | Include-only view of vkm_core's public API, for a consumer that wants the headers without the link. A gameplay module is not one of them: it links vkm_core |
 | `vkm_build_info` | Interface lib | Compile-time build metadata (version, branch, commit hash) |
 | `vkm_warnings` | Interface lib | Shared GCC/Clang warning flags; first-party targets opt in, submodules don't |
-| `<project>_module` | Shared lib | One per project (`potion_runner_module`, `stress_arena_module`): that project's gameplay sources built as `game.dll`/`libgame.so` into the project's own `bin/`. The engine ships no gameplay of its own |
+| `<project>_module` | Shared lib | One per project (`potion_runner_module`, `stress_arena_module`): that project's gameplay sources built by `vkm_add_gameplay_module()` as `game.dll`/`libgame.so` into the project's own `bin/`. The engine ships no gameplay of its own |
 | `vkm_runtime_app` | Executable | Bare engine, no editor. Includes `app/engine_app.h` for the shared bootstrap; links no Assimp and no ImGui. Runs as `vkm_runtime` |
 | `vkm_editor_app` | Executable | Engine libs + `vkm_editor` + `vkm_cook`; loads the open project's module for hot-reload. Runs as `vkm_editor` |
 | `vkm_cook_app` | Executable | Headless asset cook: `vkm_cook` with no window, no GL context and no `Engine`, so it runs over SSH and on CI. Runs as `vkm_cook` |
@@ -138,7 +159,8 @@ cmake --install build --prefix /path/to/sdk
 <prefix>/bin/       the three hosts, the shared engine, and the vkm command
 <prefix>/include/   the engine's public headers plus the third-party headers
                     they reach into
-<prefix>/lib/cmake/vkmEngine/   what find_package(vkmEngine) loads
+<prefix>/lib/cmake/vkmEngine/   what find_package(vkmEngine) loads, plus the
+                    gameplay-module recipe it includes
 <prefix>/shaders/   engine shaders
 <prefix>/assets/    the editor's font and logo - engine chrome, not anyone's art
 <prefix>/templates/ what `vkm new` copies
