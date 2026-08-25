@@ -46,7 +46,11 @@ struct RagdollSettings {
      * spent on nothing.
      *
      * Everything else still hits them, so they serve as hit boxes while the
-     * ragdoll is inactive and as a body when it is not.
+     * ragdoll is inactive and as a body when it is not - and the bones take
+     * this bit out of their own mask too, so they do not hit each other. Limbs
+     * are built overlapping, since each capsule spans its bone to that bone's
+     * child, and a rig that self-collides spends its first tick resolving
+     * interpenetration it was authored with.
      */
     int boneLayer = 1 << 1;
 };

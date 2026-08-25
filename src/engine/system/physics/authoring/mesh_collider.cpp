@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "PHYSICS"
+
 #include "system/physics/authoring/mesh_collider.h"
 
 #include "logger.h"

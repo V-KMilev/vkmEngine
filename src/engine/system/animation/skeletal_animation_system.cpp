@@ -120,11 +120,13 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen) {
                 work.ragdollBodies = gatherRagdollBodies(scene, ragdoll);
             }
         }
-        if (scene.has<WorldTransform>(rigEntity)) {
-            work.rigWorld = scene.get<WorldTransform>(rigEntity).model;
-        } else if (scene.has<Transform>(rigEntity)) {
-            work.rigWorld =
-                Transform::computeModelMatrix(scene.get<Transform>(rigEntity));
+        // Walked, not read off WorldTransform, and only where it is used: the
+        // bodies this is divided out of are walked the same way a few lines
+        // above, and WorldTransform is written by the Transform stage - a frame
+        // behind. Mixing the two put a moving character's ragdoll a frame of
+        // its own motion away from where the bodies actually were.
+        if (work.ragdoll) {
+            work.rigWorld = HierarchyOperations::computeWorldMatrix(scene, rigEntity);
         }
 
         totalBones += skeleton.bones.size();
@@ -158,10 +160,19 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen) {
             RigWork& work      = m_work[i];
             Animator& animator = animators->dataAt(work.animatorIndex);
 
-            work.step = advancePlayback(animator,
-                                        work.clip     ? work.clip->duration     : 0.0f,
-                                        work.fadeClip ? work.fadeClip->duration : 0.0f,
-                                        simDelta);
+            // A ragdoll takes the rig over entirely, and that includes the
+            // clock: a body driven by the solver is not playing an animation,
+            // so its head does not move and its markers do not fire. Advancing
+            // anyway left a corpse taking footsteps - the markers are enqueued
+            // from work.step, which stays a zero-travel step here - and put the
+            // playback head somewhere nobody had watched it reach by the time
+            // the character got up.
+            if (!work.ragdoll) {
+                work.step = advancePlayback(animator,
+                                            work.clip     ? work.clip->duration     : 0.0f,
+                                            work.fadeClip ? work.fadeClip->duration : 0.0f,
+                                            simDelta);
+            }
 
             PoseSample sample;
             sample.clip     = work.clip;
@@ -174,9 +185,9 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen) {
                 ? 1.0f - animator.fadeRemaining / animator.fadeDuration
                 : 1.0f;
 
-            // A ragdoll takes the rig over entirely: the bodies are already
-            // where the limbs are, and blending them with a clip would drag
-            // every limb toward the midpoint of two unrelated poses.
+            // The bodies are already where the limbs are, and blending them
+            // with a clip would drag every limb toward the midpoint of two
+            // unrelated poses.
             if (work.ragdoll) {
                 composeRagdollPose(*work.ragdoll, work.ragdollBodies,
                                    *work.skeleton, work.rigWorld,
