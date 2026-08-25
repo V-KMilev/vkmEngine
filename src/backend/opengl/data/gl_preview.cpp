@@ -244,8 +244,9 @@ uint32_t GLPreview::render(Vkm::GL::Context& gl, GLView& glView, const GLIBL& ib
     gl.setDepthTest(false);
 
     m_composite->bind();
-    // The other half of the same agreement: this shader declares the atlas slot
-    // as a plain sampler2D, and the PBR draw above left it in comparison mode.
+    // Never read - the preview composites in default mode - but this shader
+    // declares the atlas slot as a plain sampler2D, and the driver validates a
+    // declared sampler at draw time.
     shadows.bind2DRaw(GLBindings::ShadowTextureSlots::Atlas2DRaw);
     m_scratch.bindColor(0);
     m_composite->setUniform1f("u_bloomStrength", 0.0f);
