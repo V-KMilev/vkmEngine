@@ -37,10 +37,15 @@ struct JointConstraint {
 /**
  * @brief Remove the relative motion the joints forbid.
  *
- * Run in the same passes as the contacts, and after them: a joint that resolved
- * separately would pull a body into a surface the contact pass had just pushed
- * it out of, and the two would trade the body back and forth for as long as
- * both were unhappy.
+ * Run after the contact solve, as its own set of passes over the same bodies.
+ * Not interleaved with it: the contacts converge first, so a joint corrects
+ * against velocities a surface has already had its say about, rather than
+ * pulling a body into one the contact pass then pushes it out of.
+ *
+ * The cost of that order is that the last word belongs to the joints, so a
+ * body pinned into a wall stays slightly inside it. The alternative trades the
+ * body back and forth for as long as both constraints are unhappy, which is
+ * visible where this is not.
  *
  * @param bodies Solver bodies, mutated in place.
  * @param joints Constraints to satisfy.

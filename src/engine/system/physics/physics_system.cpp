@@ -27,6 +27,7 @@
 #include "system/physics/inertia.h"
 #include "system/physics/physics_events.h"
 #include "system/physics/collision/gjk.h"
+#include "system/physics/tolerance.h"
 #include "system/physics/collision/mesh_bvh.h"
 #include "system/physics/collision/narrowphase.h"
 #include "core/math/bounds.h"
@@ -42,8 +43,6 @@ constexpr float SLEEP_ANGULAR_SQ = 0.04f;   // (0.2 rad/s)^2
 constexpr float SLEEP_DELAY      = 0.5f;    // seconds of rest before sleeping
 constexpr float WAKE_SPEED_SQ    = 0.25f;   // partner speed^2 that wakes a sleeper
 
-// The engine's world up: the axis support is measured against, and the answer
-// both published normals fall back to when nothing was touched.
 
 // How much of a normal points sideways. Squared, because it is only ever
 // compared against another of its own kind.
@@ -274,7 +273,7 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
     std::vector<BodyContacts> contacts(m_bodies.size());
     narrowphase(contacts, ctx.events);
 
-    wakeOnImpact(scene);
+    wakeConnected(scene);
 
     solve(physics, dt);
 
@@ -510,8 +509,15 @@ void PhysicsSystem::narrowphase(std::vector<BodyContacts>& contacts, EventBus& e
             // every triangle coming out of it.
             const glm::mat3 rotation = glm::mat3_cast(meshProxy.rotation);
             const glm::mat3 toLocal = glm::transpose(rotation);
-            const glm::vec3 corners[2] = {min - meshProxy.position,
-                                          max - meshProxy.position};
+            // Where the triangles actually are: the body's pose and the part's
+            // own centre. The tree is built over the raw points, so the query
+            // bound has to come back to that space through both - the same two
+            // terms the placement below applies in the other direction. Take
+            // only one of them and the bound is offset from the nodes by the
+            // other, and a slab test that misses returns no candidate at all.
+            const glm::vec3 origin =
+                meshProxy.position + rotation * meshPart.center;
+            const glm::vec3 corners[2] = {min - origin, max - origin};
             glm::vec3 localMin(std::numeric_limits<float>::max());
             glm::vec3 localMax(std::numeric_limits<float>::lowest());
             for (int i = 0; i < 8; ++i) {
@@ -533,13 +539,44 @@ void PhysicsSystem::narrowphase(std::vector<BodyContacts>& contacts, EventBus& e
 
                 glm::vec3 world[3];
                 for (int c = 0; c < 3; ++c) {
-                    world[c] = meshProxy.position
-                             + rotation * meshCollider.meshPoints[base + c];
+                    world[c] = origin + rotation * meshCollider.meshPoints[base + c];
                 }
                 const SupportShape face = supportOfPoints(world, 3);
                 const SupportShape& first  = meshIsA ? face  : other;
                 const SupportShape& second = meshIsA ? other : face;
-                record(gjkContact(first, second, scratch[0]) ? 1 : 0);
+                if (!gjkContact(first, second, scratch[0])) continue;
+
+                // The triangle decides the direction, not EPA. A triangle is a
+                // zero-thickness hull, so its Minkowski difference with a body
+                // is symmetric about its plane and the shallowest way out flips
+                // the moment the body's centre crosses it - at which point the
+                // position pass drives the body down through the floor instead
+                // of back up onto it. The winding says which side is outside,
+                // and it has been sitting in the buffer unread.
+                const glm::vec3 edge = glm::cross(world[1] - world[0],
+                                                  world[2] - world[0]);
+                const float edgeLenSq = glm::dot(edge, edge);
+                if (edgeLenSq > Physics::DEGENERATE_SQ) {
+                    const glm::vec3 faceNormal = edge / std::sqrt(edgeLenSq);
+
+                    // How far the body reaches past the face, measured along
+                    // the face - never along EPA's answer. The two agree while
+                    // the body is on the outside, and it is exactly when they
+                    // stop agreeing that this matters.
+                    const glm::vec3 deepest = support(other, -faceNormal);
+                    const float depth = glm::dot(world[0] - deepest, faceNormal);
+                    if (depth <= 0.0f) continue;
+
+                    // The contact normal runs A -> B, so it is the face's own
+                    // direction when the mesh is A and the reverse when it is B.
+                    scratch[0].normal = faceNormal * (meshIsA ? 1.0f : -1.0f);
+                    scratch[0].penetration = depth;
+                    // The point moves with them. A normal from the face and a
+                    // point from EPA describe different contacts, and the lever
+                    // arm between the two is a torque nothing asked for.
+                    scratch[0].point = deepest + faceNormal * (depth * 0.5f);
+                }
+                record(1);
             }
         };
 
@@ -572,7 +609,7 @@ void PhysicsSystem::narrowphase(std::vector<BodyContacts>& contacts, EventBus& e
             } else {
                 // Only a resolved contact supports the sleep test: a trigger
                 // holds nothing up, and a body asleep inside one would never
-                // be woken - wakeOnImpact walks manifolds, which skip them.
+                // be woken - wakeConnected walks manifolds, which skip them.
                 contacts[A.body].touched = true;
                 contacts[B.body].touched = true;
                 events.enqueue(CollisionEvent{entityA, entityB, contactPoint, contactNormal});
@@ -581,28 +618,47 @@ void PhysicsSystem::narrowphase(std::vector<BodyContacts>& contacts, EventBus& e
     }
 }
 
-void PhysicsSystem::wakeOnImpact(Scene& scene) {
+void PhysicsSystem::wakeConnected(Scene& scene) {
     PROFILE_SCOPE("Physics/Wake");
 
-    for (const ContactManifold& manifold : m_manifolds) {
-        const uint32_t a = manifold.bodyA;
-        const uint32_t b = manifold.bodyB;
+    auto wake = [&](uint32_t idx, Rigidbody& rb) {
+        rb.sleeping = false;
+        rb.sleepTimer = 0.0f;
+        m_solverBodies[idx].invMass = m_bodyFrames[idx].invMass;
+        // The gathered world rotation, not the local Transform's: for a
+        // parented body those differ, and the solver is running in world.
+        m_solverBodies[idx].invInertiaWorld =
+            inverseInertiaWorld(m_bodyFrames[idx].invInertiaLocal, m_bodyFrames[idx].worldRot);
+    };
+
+    // One rule for both ways two bodies are connected: if one end is moving and
+    // the other is asleep, the sleeper is about to be disturbed and has to be
+    // awake to notice.
+    auto rouse = [&](uint32_t a, uint32_t b) {
+        // A world pin is a synthetic body appended past the gathered ones: it
+        // has an index in the solver and no entity behind it, so there is
+        // nothing to wake and nothing to read.
+        if (a >= m_bodies.size() || b >= m_bodies.size()) return;
         Rigidbody& rbA = scene.get<Rigidbody>(m_bodies[a]);
         Rigidbody& rbB = scene.get<Rigidbody>(m_bodies[b]);
-        const float speedA = glm::dot(m_solverBodies[a].linearVelocity, m_solverBodies[a].linearVelocity);
-        const float speedB = glm::dot(m_solverBodies[b].linearVelocity, m_solverBodies[b].linearVelocity);
-
-        auto wake = [&](uint32_t idx, Rigidbody& rb) {
-            rb.sleeping = false;
-            rb.sleepTimer = 0.0f;
-            m_solverBodies[idx].invMass = m_bodyFrames[idx].invMass;
-            // The gathered world rotation, not the local Transform's: for a
-            // parented body those differ, and the solver is running in world.
-            m_solverBodies[idx].invInertiaWorld =
-                inverseInertiaWorld(m_bodyFrames[idx].invInertiaLocal, m_bodyFrames[idx].worldRot);
-        };
+        const float speedA = glm::dot(m_solverBodies[a].linearVelocity,
+                                      m_solverBodies[a].linearVelocity);
+        const float speedB = glm::dot(m_solverBodies[b].linearVelocity,
+                                      m_solverBodies[b].linearVelocity);
         if (rbA.sleeping && !rbB.sleeping && speedB > WAKE_SPEED_SQ) wake(a, rbA);
         if (rbB.sleeping && !rbA.sleeping && speedA > WAKE_SPEED_SQ) wake(b, rbB);
+    };
+
+    for (const ContactManifold& manifold : m_manifolds) {
+        rouse(manifold.bodyA, manifold.bodyB);
+    }
+
+    // Joints too, and they are the case that needed saying: a jointed pair
+    // generates no manifold on purpose, so a body asleep on the end of one was
+    // a nail. Pulling the other end did nothing, for as long as the pull
+    // lasted, because the solver treats a sleeper as immovable.
+    for (const JointConstraint& joint : m_joints) {
+        rouse(joint.bodyA, joint.bodyB);
     }
 }
 

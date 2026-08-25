@@ -130,7 +130,7 @@ class PhysicsSystem : public System {
          *
          * @param scene Scene whose sleeping bodies may be woken.
          */
-        void wakeOnImpact(Scene& scene);
+        void wakeConnected(Scene& scene);
 
         /**
          * @brief Resolve each Joint component to the two bodies it constrains.

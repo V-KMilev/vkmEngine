@@ -92,13 +92,16 @@ void solveJoints(
                 // a joint that holds a body exactly where it found it: the
                 // correction and the velocity it induces cancel each other, and
                 // the error never closes.
-                // Stiffness scales the impulse once. Folding it into the bias
-                // as well made the position correction go as its square, so a
-                // joint at half stiffness closed error at a quarter rate while
-                // claiming half.
-                const glm::vec3 bias = separation * rate;
-                const glm::vec3 impulse =
-                    glm::inverse(k) * (-(relative + bias)) * joint.stiffness;
+                // Stiffness scales the target the passes converge on, not
+                // each pass's impulse. Scaling the impulse compounds: the error
+                // decays by a factor of (1 - stiffness) per pass, so what is
+                // actually delivered is 1 - (1 - stiffness)^iterations. At the
+                // default eight passes that made half stiffness 99.6% of rigid
+                // and tied the knob to a scene-wide solver setting nobody
+                // relates it to. On the bias it is what it says: the rate the
+                // drift closes at, once, whatever the pass count.
+                const glm::vec3 bias = separation * (rate * joint.stiffness);
+                const glm::vec3 impulse = glm::inverse(k) * (-(relative + bias));
 
                 applyImpulse(a, impulse, joint.anchorA, -1.0f);
                 applyImpulse(b, impulse, joint.anchorB, +1.0f);
@@ -116,9 +119,9 @@ void solveJoints(
             if (mass <= 0.0f) continue;
 
             const float error = length - joint.distance;
-            const float bias = error * rate;
+            const float bias = error * (rate * joint.stiffness);
             const float along = glm::dot(relative, axis);
-            const float magnitude = -(along + bias) * mass * joint.stiffness;
+            const float magnitude = -(along + bias) * mass;
 
             const glm::vec3 impulse = axis * magnitude;
             applyImpulse(a, impulse, joint.anchorA, -1.0f);
