@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "PHYSICS"
+
 #include "system/physics/authoring/ragdoll_build.h"
 
 #include <cmath>
@@ -8,6 +10,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtx/quaternion.hpp>
+
+#include "logger.h"
 
 #include "core/math/rotation.h"
 #include "ecs/scene.h"
@@ -73,6 +77,14 @@ void clearRagdoll(Scene& scene, EntityId rigEntity) {
     }
     if (ragdoll.root && scene.isAlive(ragdoll.root)) {
         HierarchyOperations::destroyHierarchy(scene, ragdoll.root);
+    }
+
+    // The bit the build took out of the owner's mask goes back. It is an
+    // authored, serialized field that nobody edited, and leaving it cleared
+    // means a character that once had a ragdoll quietly stops colliding with
+    // a whole layer.
+    if (scene.has<Rigidbody>(rigEntity)) {
+        scene.get<Rigidbody>(rigEntity).collidesWith |= ragdoll.boneLayer;
     }
     scene.remove<Ragdoll>(rigEntity);
 }
@@ -169,7 +181,15 @@ uint32_t buildRagdoll(Scene& scene, EntityId rigEntity, const SkeletonAsset& rig
         ragdoll.bones.push_back(entry);
     }
 
-    if (ragdoll.bones.empty()) return 0;
+    if (ragdoll.bones.empty()) {
+        // Said rather than returned quietly: the old ragdoll is already gone by
+        // here, so a silent zero is an author watching their skeleton vanish
+        // with nothing to explain it.
+        LOG_WARNING("buildRagdoll: no bone of '%s' is longer than %.3f m, so "
+                    "there is nothing to build; the previous ragdoll is cleared",
+                    rig.name().c_str(), static_cast<double>(settings.minBoneLength));
+        return 0;
+    }
 
     for (const RagdollBone& entry : ragdoll.bones) {
         Rigidbody body;
@@ -178,6 +198,13 @@ uint32_t buildRagdoll(Scene& scene, EntityId rigEntity, const SkeletonAsset& rig
             : settings.mass / static_cast<float>(ragdoll.bones.size());
         body.canSleep = true;
         body.layer = settings.boneLayer;
+        // And not with each other. Limbs are built overlapping - a shoulder's
+        // capsule reaches into the arm's, because both span a bone to its
+        // child - so a ragdoll that self-collides starts every activation by
+        // resolving interpenetration it was authored with, and throws itself
+        // apart. Adjacent bones are already spared by their joint; this is
+        // what spares a thigh from the other thigh.
+        body.collidesWith &= ~settings.boneLayer;
         scene.add(entry.body, std::move(body));
 
         // Joined to the nearest ancestor that got a body: a bone skipped for
@@ -227,6 +254,7 @@ uint32_t buildRagdoll(Scene& scene, EntityId rigEntity, const SkeletonAsset& rig
     scene.add(root, Transform{});
     HierarchyOperations::setParent(scene, root, rigEntity);
     ragdoll.root = root;
+    ragdoll.boneLayer = settings.boneLayer;
 
     const glm::mat4 toParent =
         glm::inverse(HierarchyOperations::computeWorldMatrix(scene, root));

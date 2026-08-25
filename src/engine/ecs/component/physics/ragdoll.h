@@ -51,6 +51,17 @@ struct RagdollBone {
 struct Ragdoll {
     bool active = false;                ///< Physics drives the rig when true
     EntityId root{};                    ///< Node the bones are grouped under
+
+    /**
+     * @brief The layer bit the bones were built on.
+     *
+     * Recorded because the build takes it out of the owner's collidesWith, and
+     * something has to put it back when the ragdoll goes. Without it a
+     * character that was once given a ragdoll and then cleared is a character
+     * that silently stopped colliding with a layer, in a field the author can
+     * see and did not change.
+     */
+    int boneLayer = 1 << 1;
     std::vector<RagdollBone> bones;     ///< One per simulated bone
 };
 

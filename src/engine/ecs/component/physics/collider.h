@@ -80,7 +80,8 @@ struct MeshNode {
  * The shape is a set of oriented primitives: one part for a simple collider,
  * many for a mesh-fitted one ("Fit to Mesh"). The narrowphase runs once per
  * pair of parts, dispatching on the two shape tags. Pose comes from the entity's
- * Transform (root-space == world for physics bodies).
+ * world transform, which for a parented body is walked at gather rather than
+ * read off its own Transform.
  */
 struct Collider {
     std::vector<ColliderPart> parts = { ColliderPart{} }; ///< The collision volume: one or more parts. Default to a single unit box.

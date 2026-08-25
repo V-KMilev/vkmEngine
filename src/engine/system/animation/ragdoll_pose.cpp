@@ -1,5 +1,6 @@
 #include "system/animation/ragdoll_pose.h"
 
+#include <limits>
 #include <vector>
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -48,6 +49,10 @@ void composeRagdollPose(
         }
     }
 
+    glm::vec3 originMin(std::numeric_limits<float>::max());
+    glm::vec3 originMax(std::numeric_limits<float>::lowest());
+    float maxScale = 1.0f;
+
     const glm::mat4 toRig = glm::inverse(rigWorld);
 
     for (size_t i = 0; i < count; ++i) {
@@ -71,6 +76,26 @@ void composeRagdollPose(
         out.palette[i] = i < skeleton.inverseBind.size()
             ? out.global[i] * skeleton.inverseBind[i]
             : out.global[i];
+
+        // The same bound composePose publishes, for the same reason: the
+        // visibility pass sizes a skinned mesh from the pose it is drawn in,
+        // and a slice that never says where its bones went keeps whatever the
+        // last writer left. A ragdoll that falls out of its own stale bound
+        // stops being drawn - at exactly the moment it starts moving.
+        const glm::vec3 origin(out.global[i][3]);
+        originMin = glm::min(originMin, origin);
+        originMax = glm::max(originMax, origin);
+        maxScale = glm::max(maxScale, glm::max(
+            glm::length(glm::vec3(out.global[i][0])),
+            glm::max(glm::length(glm::vec3(out.global[i][1])),
+                     glm::length(glm::vec3(out.global[i][2])))));
+    }
+
+    if (count == 0) originMin = originMax = glm::vec3(0.0f);
+    if (out.slice) {
+        out.slice->originMin    = originMin;
+        out.slice->originMax    = originMax;
+        out.slice->maxBoneScale = maxScale;
     }
 }
 

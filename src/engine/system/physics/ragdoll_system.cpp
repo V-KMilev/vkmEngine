@@ -83,7 +83,16 @@ void RagdollSystem::update(FrameContext& ctx) {
             for (const RagdollBone& bone : ragdoll.bones) {
                 if (!bone.body || !scene.isAlive(bone.body)
                     || !scene.has<Rigidbody>(bone.body)) continue;
-                scene.get<Rigidbody>(bone.body).isKinematic = false;
+                Rigidbody& body = scene.get<Rigidbody>(bone.body);
+                body.isKinematic = false;
+                // Woken as well as unfrozen. A ragdoll that has come to rest is
+                // asleep where it landed, and while it is inactive the bones
+                // are kinematic - which skips the sleep test rather than
+                // clearing it. Handed back to the solver still asleep, they are
+                // bodies it treats as immovable: the character dies, gets up,
+                // and the second death never falls.
+                body.sleeping = false;
+                body.sleepTimer = 0.0f;
             }
             continue;
         }

@@ -54,11 +54,16 @@ struct Joint {
     float distance = -1.0f;
 
     /**
-     * @brief How hard the joint pulls the anchors together, 0 to 1.
+     * @brief How fast the joint closes the gap between its anchors, 0 to 1.
      *
-     * A fraction of the correction applied per tick rather than a spring
+     * A fraction of the remaining error removed per tick rather than a spring
      * constant: it cannot be tuned into instability, and 1 is a rigid joint
      * rather than an explosive one.
+     *
+     * It scales the target the solver converges on, not each pass's impulse,
+     * so what it means does not change with the scene's solver iteration
+     * count. At 0 the anchors are still held rigidly against relative motion -
+     * that is what makes it a joint - but drift already there is left alone.
      */
     float stiffness = 1.0f;
 
