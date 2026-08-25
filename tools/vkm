@@ -33,10 +33,6 @@ import sys
 from pathlib import Path
 
 
-# --------------------------------------------------------------------------
-# Locating the SDK
-# --------------------------------------------------------------------------
-
 def sdk_root() -> Path:
     """The engine root this script belongs to.
 
@@ -125,10 +121,6 @@ def host(root: Path, name: str) -> Path:
     die(f"{name} not found under {root}. Build the engine first, or check the SDK.")
 
 
-# --------------------------------------------------------------------------
-# Small helpers
-# --------------------------------------------------------------------------
-
 def die(msg: str):
     print(f"vkm: {msg}", file=sys.stderr)
     sys.exit(1)
@@ -187,10 +179,6 @@ def read_project(d: Path) -> dict:
         die(f"{d / 'project.json'} is not valid JSON: {e}")
 
 
-# --------------------------------------------------------------------------
-# Commands
-# --------------------------------------------------------------------------
-
 def cmd_new(args) -> int:
     root = sdk_root()
     template = root / "templates" / "default"
@@ -201,21 +189,16 @@ def cmd_new(args) -> int:
     if dest.exists() and any(dest.iterdir()):
         die(f"'{dest}' already exists and is not empty")
 
-    # Read before a single file is copied. The template writes
-    # "@VKM_ENGINE_VERSION@" wherever a version belongs and only this side knows
-    # which engine is answering, so an SDK that cannot say leaves a project whose
-    # very next command fails - better to refuse than to hand one over.
+    # Read before a single file is copied: an SDK that cannot name its own
+    # version would otherwise leave a project whose very next command fails.
     version = sdk_version(root)
     if not version:
         die(f"cannot read the engine version from {root}; the SDK looks incomplete")
 
     shutil.copytree(template, dest, dirs_exist_ok=True)
 
-    # The template is generic; the project is not. Name it after the directory
-    # the user chose rather than making them edit JSON as a first act, and record
-    # the engine it was made with - the host compares that string against its own
-    # version, so a literal left in the template would greet every new project
-    # with a warning about an engine it was never authored against.
+    # The host compares engineVersion string for string, so the template's
+    # "@VKM_ENGINE_VERSION@" left in place would warn on every launch.
     pj = dest / "project.json"
     data = json.loads(pj.read_text())
     data["name"] = dest.name
@@ -383,11 +366,9 @@ def cmd_package(args) -> int:
     name = args.name or meta.get("name") or d.name
     out = Path(args.out or (d / "dist" / name)).resolve()
 
-    # vkm_runtime refuses to start a project whose bin/ holds no gameplay module,
-    # so packaging one produces a tree that only fails on the player's machine -
-    # after the last line here has printed the command to run it with. Refused
-    # before the cook rather than after the copy loop: cooking is minutes of work,
-    # and the rmtree below would take a good dist/ down with it on the way.
+    # vkm_runtime refuses to start a project with no gameplay module under bin/,
+    # so packaging one yields a tree that fails only on the player's machine.
+    # Checked ahead of the cook and the rmtree below, both costlier to undo.
     module = "game.dll" if os.name == "nt" else "libgame.so"
     if not (d / "bin" / module).is_file():
         die(f"{d} has no gameplay module at bin/{module} - run 'vkm build' first; "
@@ -459,8 +440,6 @@ def cmd_package(args) -> int:
     print(f"  run it with: {out / 'bin' / (name + exe_suffix)}")
     return 0
 
-
-# --------------------------------------------------------------------------
 
 def main() -> int:
     ap = argparse.ArgumentParser(prog="vkm", description="vkmEngine project tool")

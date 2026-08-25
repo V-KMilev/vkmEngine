@@ -3,8 +3,8 @@
  *
  * Contract: distributionGGX takes the GGX ALPHA (= perceptual roughness
  * squared), Filament-style. Callers holding perceptual roughness square it
- * first - the same name previously existed with both signatures in different
- * files, which silently mis-squared when a call was moved between them.
+ * first; passing the perceptual value straight in is a silent mis-square, not
+ * an error anywhere.
  */
 
 // GGX / Trowbridge-Reitz normal distribution (Karis stable form).

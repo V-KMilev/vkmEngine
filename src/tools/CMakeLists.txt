@@ -1,7 +1,6 @@
 # vkm_tools - runtime-safe asset tools: procedural generators, shader +
-# environment loaders, and the cooked-asset factory registration. Links stb
-# (HDR float decode for environments) but NOT Assimp - the heavy importers live
-# in vkm_cook, so a runtime build never pulls Assimp.
+# environment loaders, and the cooked-asset factory registration. The heavy
+# importers live in vkm_cook, so a runtime build pulls no Assimp.
 file(GLOB_RECURSE VKM_TOOLS_SOURCES CONFIGURE_DEPENDS *.cpp)
 
 # The heavy importers (Assimp / stb LDR decode / miniaudio decode) and the asset
@@ -38,9 +37,8 @@ target_link_libraries(vkm_tools PRIVATE
 
 # vkm_cook - the heavy importers (Assimp, stb LDR decode, miniaudio audio
 # decode) and the asset cooker that bakes recipes into the cooked cache. Linked
-# by the editor and by vkm_cook_app; never by the runtime, which is what keeps a
-# shipped game free of an importer it cannot use - the link list guarantees
-# that, not a build flag.
+# by the editor and by vkm_cook_app and never by the runtime, so a shipped game
+# carries no importer it cannot use.
 add_library(vkm_cook STATIC ${VKM_COOK_SOURCES})
 
 # stb_image for the LDR decode, miniaudio for the audio decode. Both

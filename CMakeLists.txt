@@ -11,8 +11,8 @@ project(
   LANGUAGES C CXX
 )
 
-# First-party targets build as strict C++17 (no GNU extensions). Submodules set
-# their own standard per-target, so this default only governs our code.
+# Submodules set their own standard per target, so this default governs
+# first-party code only.
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -22,19 +22,18 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # outright on a thread-local relocation (stb was the one that found this).
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-# One place for executables, one for libraries. Keeping the shared engine beside
-# the exes means the build tree needs no rpath tricks to run in place.
+# The shared engine sits beside the exes, so the build tree needs no rpath
+# tricks to run in place.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
-# Binaries find their libraries relative to themselves rather than through an
-# absolute path baked at build time. Installed that is what makes an SDK
-# relocatable; in the build tree it is what makes `vkm package` honest, because
-# a package assembled from a build tree copies these binaries and would
-# otherwise ship a game that only starts on the machine that built it. CMake
-# still adds the link-path entries to the build rpath, so running out of
-# build/bin is unaffected.
+# Binaries find their libraries relative to themselves rather than through a
+# path baked at build time: that is what makes an installed SDK relocatable, and
+# what lets `vkm package` copy binaries out of a build tree without shipping a
+# game that only starts on the machine that built it. CMake still adds the
+# link-path entries to the build rpath, so running out of build/bin is
+# unaffected.
 set(CMAKE_SKIP_BUILD_RPATH OFF)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH OFF)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
@@ -46,12 +45,10 @@ else()
     set(CMAKE_INSTALL_RPATH "$ORIGIN;$ORIGIN/../lib")
 endif()
 
-# Written to the build dir for clangd, IDEs, and any tool that wants to know how
-# a translation unit is actually compiled.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # An in-source build scatters generated files through the tree and makes a clean
-# checkout impossible to tell from a dirty one. Refuse rather than warn.
+# checkout impossible to tell from a dirty one.
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_BINARY_DIR)
     message(FATAL_ERROR
         "In-source builds are not supported. Configure into a subdirectory:\n"
@@ -68,9 +65,8 @@ if(NOT _vkm_multi_config AND NOT CMAKE_BUILD_TYPE)
     message(STATUS "No build type specified - defaulting to RelWithDebInfo")
 endif()
 
-# Profiler (Tracy) toggle. Defaults ON except for explicit Release builds, where
-# debug/profiler.h expands every macro to a zero-cost no-op and Tracy compiles
-# to nothing.
+# Tracy is off in an explicit Release build: debug/profiler.h expands every
+# macro to a zero-cost no-op there, so the client compiles to nothing anyway.
 if(NOT DEFINED VKM_PROFILER)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         set(VKM_PROFILER OFF CACHE BOOL "Enable Tracy CPU + GPU profiling")
@@ -79,12 +75,10 @@ if(NOT DEFINED VKM_PROFILER)
     endif()
 endif()
 
-# The compiler's runtime DLLs, beside the binaries in the BUILD tree. Not just at
-# install time: the engine's shared libraries link libstdc++ dynamically, so
-# running straight out of build/bin needs them there too, and their absence shows
-# up as a system dialog with no log line to explain it. Only targets that link
-# assimp inherit its -static-libstdc++, which is why the executables used to work
-# while the libraries did not.
+# The compiler's runtime DLLs, in the BUILD tree and not only at install time:
+# the engine's shared libraries link libstdc++ dynamically - only targets that
+# link assimp inherit its -static-libstdc++ - so running straight out of
+# build/bin without these fails with a system dialog and no log line.
 if(MINGW)
     get_filename_component(_vkm_mingw_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
     foreach(_dll libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll)
@@ -98,15 +92,12 @@ endif()
 # Branch / commit / build-date -> PROJECT_* variables, recomputed each configure.
 include(cmake/git_metadata.cmake)
 
-# Derive shaders/_generated/engine_config.glsl from src/engine/core/engine_config.h
-# so cross-language constants (MAX_LIGHTS, NUM_CASCADES, ...) have one C++ source
-# of truth instead of comment-driven mirroring in each shader.
+# Derives shaders/_generated/ from the C++ headers, so a cross-language constant
+# has one source of truth instead of a hand-kept copy in each shader.
 include(cmake/generate_shader_config.cmake)
 
 # Warning flags shared by every first-party target. GCC/Clang dialect only -
-# MSVC uses a different flag spelling, so the genexpr leaves it untouched.
-# Targets opt in by linking vkm_warnings; submodules don't, so third-party code
-# keeps its own warning level.
+# MSVC spells these differently, so the generator expression leaves it alone.
 set(_vkm_gcc_warnings
     -Wall
     -Wextra
@@ -140,11 +131,9 @@ target_compile_definitions(vkm_build_info INTERFACE
     VKM_LOG_COMMIT_HASH="${VKM_LOG_COMMIT_HASH}"
 )
 
-# ctest, for the whole tree. Testing has to be enabled in the *top-level*
-# directory or CMake writes no test file beside it, and `ctest` in build/ reports
-# zero tests however many `add_test` calls the subdirectories make. That is how
-# vkmGL's suite stayed invisible across nine tags. Enabling it here also means
-# the engine's first test is an `add_test` line rather than a decision.
+# Testing has to be enabled in the *top-level* directory or CMake writes no test
+# file beside it, and `ctest` in build/ reports zero tests however many
+# `add_test` calls the subdirectories make.
 enable_testing()
 
 add_subdirectory(modules)
@@ -161,19 +150,15 @@ include(cmake/gameplay_module.cmake)
 add_library(vkmEngine::vkm_core     ALIAS vkm_core)
 add_library(vkmEngine::vkm_warnings ALIAS vkm_warnings)
 
-# Example projects. Not part of the engine - each is a project in the shape a
-# real one takes. Added here so a build of the engine keeps them compiling
-# against it; `vkm build examples/<name>` configures the same file standalone,
+# Example projects, added here so a build of the engine keeps them compiling
+# against it. `vkm build examples/<name>` configures the same file standalone,
 # which is the path a user's own project takes.
 add_subdirectory(examples/potion_runner)
 add_subdirectory(examples/stress_arena)
 
-# Three thin executables under app/. vkm_runtime plays a project, vkm_editor
-# adds the in-process editor to edit one, and vkm_cook bakes a project's assets
-# with no window at all. The first two link the engine libs directly and share the
-# header-only bootstrap in app/engine_app.h (setupEngineApp) - the editor's only
-# addition is its EditorSystem; the cooker builds no Engine. Each puts the repo
-# root on its include path so that "app/" prefix resolves.
+# Three thin executables, each linking the engine libs itself and putting the
+# repo root on its include path so the "app/" prefix resolves. What each host is
+# and what it links: docs/reference/building.md.
 #
 # None of them export symbols. A gameplay module links the shared engine itself,
 # so it resolves against that rather than against whichever host opened it - which
