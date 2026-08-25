@@ -7,6 +7,7 @@
 #include <utility>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
 
 #include "system/physics/tolerance.h"
 
@@ -235,31 +236,7 @@ int faceContact(const BoxShape& a, const BoxShape& b, int caseIndex, const glm::
     return count;
 }
 
-/**
- * @brief Closest point on segment [a, b] to @p p.
- *
- * Collapses to @p a for a degenerate segment, which is what makes a
- * zero-length capsule (a sphere) need no special case anywhere above.
- *
- * @param a Segment start.
- * @param b Segment end.
- * @param p Point to close on.
- * @return The closest point, on the segment.
- */
-glm::vec3 closestPointOnSegment(const glm::vec3& a, const glm::vec3& b, const glm::vec3& p) {
-    const glm::vec3 d = b - a;
-    const float len2 = glm::dot(d, d);
-    if (len2 <= Physics::DEGENERATE_SQ) return a;
-    return a + d * glm::clamp(glm::dot(p - a, d) / len2, 0.0f, 1.0f);
-}
 
-// Runaway guard on the capsule-box alternating projection, not its convergence
-// policy - the step test inside the loop is what normally ends it, after about
-// seven passes. A segment running nearly tangent to a face converges slowly and
-// wants hundreds, so this is set well above the average rather than near it: a
-// run that stops early answers a distance LARGER than the real one, and the
-// radius test reads that as no contact for an overlap that is really there.
-constexpr int MAX_PROJECTION_PASSES = 64;
 
 /**
  * @brief Closest point on segment [pa, pb] to an axis-aligned box of half-extents
@@ -275,14 +252,71 @@ constexpr int MAX_PROJECTION_PASSES = 64;
  * @return The closest point, on the segment, in the same local frame.
  */
 glm::vec3 closestOnSegmentToBox(const glm::vec3& pa, const glm::vec3& pb, const glm::vec3& h) {
-    glm::vec3 p = closestPointOnSegment(pa, pb, glm::vec3(0.0f));
-    for (int i = 0; i < MAX_PROJECTION_PASSES; ++i) {
-        const glm::vec3 next = closestPointOnSegment(pa, pb, glm::clamp(p, -h, h));
-        const glm::vec3 step = next - p;
-        p = next;
-        if (glm::dot(step, step) <= Physics::DEGENERATE_SQ) break;
+    const glm::vec3 dir = pb - pa;
+
+    // Solved rather than iterated. The squared distance from the segment to the
+    // box is a piecewise quadratic in t: on any stretch where the same set of
+    // axes is outside the slab, the nearest point on the box moves affinely
+    // with t, so the distance is a parabola with one minimum. The breakpoints
+    // are where the segment crosses a slab plane - at most six - so evaluating
+    // each stretch exactly costs less than the alternating projection it
+    // replaces, and answers where that could not: projecting between two
+    // convex sets has fixed points that are not the nearest pair, and it
+    // settled on them often enough to report real millimetre overlaps as no
+    // contact at all.
+    float cuts[8] = {0.0f, 1.0f};
+    int cutCount = 2;
+    for (int i = 0; i < 3; ++i) {
+        if (std::fabs(dir[i]) <= glm::epsilon<float>()) continue;
+        for (const float bound : {-h[i], h[i]}) {
+            const float t = (bound - pa[i]) / dir[i];
+            if (t > 0.0f && t < 1.0f && cutCount < 8) cuts[cutCount++] = t;
+        }
     }
-    return p;
+    // Sorted in place rather than through std::sort: at most eight values, and
+    // the library's insertion path is what the optimiser cannot prove a bound
+    // for here.
+    for (int i = 1; i < cutCount; ++i) {
+        const float key = cuts[i];
+        int j = i - 1;
+        while (j >= 0 && cuts[j] > key) { cuts[j + 1] = cuts[j]; --j; }
+        cuts[j + 1] = key;
+    }
+
+    float bestT = 0.0f;
+    float bestDist2 = std::numeric_limits<float>::max();
+    for (int c = 0; c + 1 < cutCount; ++c) {
+        const float t0 = cuts[c];
+        const float t1 = cuts[c + 1];
+        if (t1 - t0 <= glm::epsilon<float>()) continue;
+
+        // Which axes are outside their slab is fixed across the stretch, so it
+        // is read once, in the middle, where no boundary sits.
+        const glm::vec3 middle = pa + dir * ((t0 + t1) * 0.5f);
+        float a = 0.0f;
+        float b = 0.0f;
+        float cc = 0.0f;
+        for (int i = 0; i < 3; ++i) {
+            float offset = 0.0f;
+            if (middle[i] >  h[i]) offset =  h[i];
+            else if (middle[i] < -h[i]) offset = -h[i];
+            else continue;                       // inside the slab: contributes nothing
+            const float k = pa[i] - offset;
+            a  += dir[i] * dir[i];
+            b  += 2.0f * dir[i] * k;
+            cc += k * k;
+        }
+
+        // The parabola's vertex, held inside the stretch it was derived for.
+        float t = t0;
+        if (a > glm::epsilon<float>()) t = glm::clamp(-b / (2.0f * a), t0, t1);
+        const float dist2 = a * t * t + b * t + cc;
+        if (dist2 < bestDist2) {
+            bestDist2 = dist2;
+            bestT = t;
+        }
+    }
+    return pa + dir * bestT;
 }
 
 /**
@@ -340,7 +374,7 @@ int capsuleFaceContact(const BoxShape& box, const glm::vec3& pa, const glm::vec3
     bool inside = true;
     for (int k = 1; k <= 2 && inside; ++k) {
         const int u = (face + k) % 3;
-        if (std::fabs(dir[u]) <= Physics::DEGENERATE_SQ) {
+        if (std::fabs(dir[u]) <= glm::epsilon<float>()) {
             inside = std::fabs(pa[u]) <= h[u];
             continue;
         }

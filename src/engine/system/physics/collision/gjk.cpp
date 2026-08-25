@@ -307,124 +307,11 @@ Face makeFace(const std::vector<Vertex>& hull, int i, int j, int k) {
 }
 
 
-// The closest point to the origin on the simplex's current feature, with the
-// simplex reduced to the vertices of that feature - a point, an edge, or a
-// face. Reduction is what keeps the walk finite: a vertex that stopped
-// supporting the closest feature never returns.
-glm::vec3 closestOnSimplex(Simplex& simplex) {
-    if (simplex.count == 1) return simplex.points[0].point;
 
-    if (simplex.count == 2) {
-        const glm::vec3 a = simplex.points[0].point;
-        const glm::vec3 b = simplex.points[1].point;
-        const glm::vec3 ab = b - a;
-        const float len2 = glm::dot(ab, ab);
-        const float t = len2 > glm::epsilon<float>()
-            ? glm::clamp(glm::dot(-a, ab) / len2, 0.0f, 1.0f)
-            : 0.0f;
-        if (t <= 0.0f) { simplex.count = 1; return a; }
-        if (t >= 1.0f) { simplex.points[0] = simplex.points[1]; simplex.count = 1; return b; }
-        return a + ab * t;
-    }
 
-    // Triangle: Ericson's region walk. Each early-out names the feature the
-    // origin projects onto and reduces the simplex to it.
-    const Vertex va = simplex.points[0];
-    const Vertex vb = simplex.points[1];
-    const Vertex vc = simplex.points[2];
-    const glm::vec3 a = va.point;
-    const glm::vec3 b = vb.point;
-    const glm::vec3 c = vc.point;
-
-    const glm::vec3 ab = b - a;
-    const glm::vec3 ac = c - a;
-    const glm::vec3 ao = -a;
-
-    const float d1 = glm::dot(ab, ao);
-    const float d2 = glm::dot(ac, ao);
-    if (d1 <= 0.0f && d2 <= 0.0f) { simplex.count = 1; return a; }
-
-    const glm::vec3 bo = -b;
-    const float d3 = glm::dot(ab, bo);
-    const float d4 = glm::dot(ac, bo);
-    if (d3 >= 0.0f && d4 <= d3) {
-        simplex.points[0] = vb; simplex.count = 1; return b;
-    }
-
-    const float vcArea = d1 * d4 - d3 * d2;
-    if (vcArea <= 0.0f && d1 >= 0.0f && d3 <= 0.0f) {
-        const float t = d1 / (d1 - d3);
-        simplex.points[0] = va; simplex.points[1] = vb; simplex.count = 2;
-        return a + ab * t;
-    }
-
-    const glm::vec3 co = -c;
-    const float d5 = glm::dot(ab, co);
-    const float d6 = glm::dot(ac, co);
-    if (d6 >= 0.0f && d5 <= d6) {
-        simplex.points[0] = vc; simplex.count = 1; return c;
-    }
-
-    const float vbArea = d5 * d2 - d1 * d6;
-    if (vbArea <= 0.0f && d2 >= 0.0f && d6 <= 0.0f) {
-        const float t = d2 / (d2 - d6);
-        simplex.points[0] = va; simplex.points[1] = vc; simplex.count = 2;
-        return a + ac * t;
-    }
-
-    const float vaArea = d3 * d6 - d5 * d4;
-    if (vaArea <= 0.0f && (d4 - d3) >= 0.0f && (d5 - d6) >= 0.0f) {
-        const float t = (d4 - d3) / ((d4 - d3) + (d5 - d6));
-        simplex.points[0] = vb; simplex.points[1] = vc; simplex.count = 2;
-        return b + (c - b) * t;
-    }
-
-    // Inside the face.
-    const float denom = 1.0f / (vaArea + vbArea + vcArea);
-    return a + ab * (vbArea * denom) + ac * (vcArea * denom);
-}
 
 } // namespace
 
-float gjkDistance(const SupportShape& a, const SupportShape& b, glm::vec3& direction) {
-    Simplex simplex;
-    simplex.push(minkowski(a, b, glm::vec3(1.0f, 0.0f, 0.0f)));
-
-    glm::vec3 closest = simplex.points[0].point;
-    float best2 = glm::dot(closest, closest);
-
-    for (int i = 0; i < MAX_GJK_ITERATIONS; ++i) {
-        if (best2 <= glm::epsilon<float>()) return 0.0f;
-
-        const glm::vec3 dir = -closest;
-        const Vertex next = minkowski(a, b, dir);
-
-        // The support point got no nearer to the origin than the feature the
-        // simplex already holds: the walk has met the surface of the
-        // difference, and the gap is the distance left.
-        const float progress = best2 - glm::dot(closest, next.point);
-        if (progress <= Physics::CONTACT_TOLERANCE * best2) break;
-
-        simplex.push(next);
-        closest = closestOnSimplex(simplex);
-        const float d2 = glm::dot(closest, closest);
-        // A step that stopped shrinking is a step the arithmetic has run out
-        // of; the current answer is as good as float gets.
-        if (d2 >= best2) break;
-        best2 = d2;
-        if (simplex.count == 4) {
-            // Four points that did not enclose the origin reduce through the
-            // closest face; the walk continues from there.
-            simplex.count = 3;
-            closest = closestOnSimplex(simplex);
-            best2 = glm::dot(closest, closest);
-        }
-    }
-
-    const float dist = std::sqrt(best2);
-    if (dist > 0.0f) direction = -closest / dist;
-    return dist;
-}
 
 bool gjkOverlap(const SupportShape& a, const SupportShape& b) {
     Simplex simplex;
@@ -439,17 +326,17 @@ bool gjkContact(const SupportShape& a, const SupportShape& b, Contact& out) {
     // Scratch reused across calls: EPA runs once per overlapping pair per
     // tick, and four fresh vectors each time was allocator traffic for
     // buffers whose sizes are bounded by the iteration cap anyway.
-    thread_local std::vector<Vertex> hull;
-    thread_local std::vector<Face> faces;
-    thread_local std::vector<std::pair<int, int>> horizon;
-    thread_local std::vector<Face> kept;
+    thread_local std::vector<Vertex> t_hull;
+    thread_local std::vector<Face> t_faces;
+    thread_local std::vector<std::pair<int, int>> t_horizon;
+    thread_local std::vector<Face> t_kept;
 
-    hull.assign(simplex.points.begin(), simplex.points.end());
-    faces.assign({
-        makeFace(hull, 0, 1, 2),
-        makeFace(hull, 0, 2, 3),
-        makeFace(hull, 0, 3, 1),
-        makeFace(hull, 1, 3, 2)
+    t_hull.assign(simplex.points.begin(), simplex.points.end());
+    t_faces.assign({
+        makeFace(t_hull, 0, 1, 2),
+        makeFace(t_hull, 0, 2, 3),
+        makeFace(t_hull, 0, 3, 1),
+        makeFace(t_hull, 1, 3, 2)
     });
 
     // GJK has already proved the overlap, so from here every exit answers
@@ -464,12 +351,12 @@ bool gjkContact(const SupportShape& a, const SupportShape& b, Contact& out) {
         // applied there spins the body instead of stopping it.
         const glm::vec3 onFace = face.normal * face.distance;
         const glm::vec3 weights = barycentric(onFace,
-                                              hull[face.a].point,
-                                              hull[face.b].point,
-                                              hull[face.c].point);
-        const glm::vec3 onA = hull[face.a].onA * weights.x
-                            + hull[face.b].onA * weights.y
-                            + hull[face.c].onA * weights.z;
+                                              t_hull[face.a].point,
+                                              t_hull[face.b].point,
+                                              t_hull[face.c].point);
+        const glm::vec3 onA = t_hull[face.a].onA * weights.x
+                            + t_hull[face.b].onA * weights.y
+                            + t_hull[face.c].onA * weights.z;
 
         out.normal = face.normal;
         out.penetration = face.distance;
@@ -482,10 +369,10 @@ bool gjkContact(const SupportShape& a, const SupportShape& b, Contact& out) {
         // The face nearest the origin is the shallowest way out, which is the
         // one a solver should push along.
         size_t nearest = 0;
-        for (size_t i = 1; i < faces.size(); ++i) {
-            if (faces[i].distance < faces[nearest].distance) nearest = i;
+        for (size_t i = 1; i < t_faces.size(); ++i) {
+            if (t_faces[i].distance < t_faces[nearest].distance) nearest = i;
         }
-        const Face face = faces[nearest];
+        const Face face = t_faces[nearest];
         if (glm::dot(face.normal, face.normal) <= glm::epsilon<float>()) break;
 
         const Vertex next = minkowski(a, b, face.normal);
@@ -499,15 +386,15 @@ bool gjkContact(const SupportShape& a, const SupportShape& b, Contact& out) {
         }
 
         // Every face the new point can see is no longer on the surface. Their
-        // shared edges are the horizon the new point cones back to; an edge
-        // seen twice is interior to that horizon and cancels.
-        const int added = static_cast<int>(hull.size());
-        hull.push_back(next);
+        // shared edges are the t_horizon the new point cones back to; an edge
+        // seen twice is interior to that t_horizon and cancels.
+        const int added = static_cast<int>(t_hull.size());
+        t_hull.push_back(next);
 
-        horizon.clear();
-        kept.clear();
-        kept.reserve(faces.size());
-        for (const Face& f : faces) {
+        t_horizon.clear();
+        t_kept.clear();
+        t_kept.reserve(t_faces.size());
+        for (const Face& f : t_faces) {
             if (glm::dot(f.normal, next.point) - f.distance > 0.0f) {
                 const std::pair<int, int> edges[3] = {
                     {f.a, f.b}, {f.b, f.c}, {f.c, f.a}
@@ -515,32 +402,32 @@ bool gjkContact(const SupportShape& a, const SupportShape& b, Contact& out) {
                 for (const auto& edge : edges) {
                     const auto twin = std::make_pair(edge.second, edge.first);
                     const auto it =
-                        std::find(horizon.begin(), horizon.end(), twin);
-                    if (it != horizon.end()) horizon.erase(it);
-                    else horizon.push_back(edge);
+                        std::find(t_horizon.begin(), t_horizon.end(), twin);
+                    if (it != t_horizon.end()) t_horizon.erase(it);
+                    else t_horizon.push_back(edge);
                 }
             } else {
-                kept.push_back(f);
+                t_kept.push_back(f);
             }
         }
 
-        if (horizon.empty()) break;
-        for (const auto& edge : horizon) {
-            kept.push_back(makeFace(hull, edge.first, edge.second, added));
+        if (t_horizon.empty()) break;
+        for (const auto& edge : t_horizon) {
+            t_kept.push_back(makeFace(t_hull, edge.first, edge.second, added));
         }
-        faces.swap(kept);
+        t_faces.swap(t_kept);
     }
 
     size_t nearest = 0;
-    for (size_t i = 1; i < faces.size(); ++i) {
-        if (faces[i].distance < faces[nearest].distance) nearest = i;
+    for (size_t i = 1; i < t_faces.size(); ++i) {
+        if (t_faces[i].distance < t_faces[nearest].distance) nearest = i;
     }
-    if (faces.empty()
-        || glm::dot(faces[nearest].normal, faces[nearest].normal)
+    if (t_faces.empty()
+        || glm::dot(t_faces[nearest].normal, t_faces[nearest].normal)
                <= glm::epsilon<float>()) {
         return false;
     }
-    contactFromFace(faces[nearest]);
+    contactFromFace(t_faces[nearest]);
     return true;
 }
 
