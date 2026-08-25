@@ -19,6 +19,7 @@ namespace Vkm::Engine {
 enum class ColliderShape : uint8_t {
     Box     = 0,   ///< Oriented box; reads center + halfExtents.
     Capsule = 1,   ///< Swept segment along local +Y; reads center + radius + halfHeight.
+    Mesh    = 2,   ///< Triangle soup; reads center + meshFirst + meshCount.
     Count          ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
 };
 
@@ -40,6 +41,37 @@ struct ColliderPart {
     glm::vec3     halfExtents = {0.5f, 0.5f, 0.5f};   ///< Box: half-sizes
     float         radius      = 0.5f;                 ///< Capsule: sweep radius
     float         halfHeight  = 0.5f;                 ///< Capsule: half the segment, caps excluded
+
+    /**
+     * @brief Mesh: the part's triangle corners, as a span into the Collider's
+     *        buffer.
+     *
+     * A span rather than a vector per part, for the reason the proxy list uses
+     * one: a part stays a plain value that copies without allocating. The
+     * indices are the Collider's own, so a part is only meaningful beside it.
+     */
+    uint32_t      meshFirst   = 0;
+    uint32_t      meshCount   = 0;
+};
+
+/**
+ * @brief One node of a triangle mesh's bounding hierarchy.
+ *
+ * A leaf names a run of triangles; an interior node names its right child and
+ * has its left implicitly next, which is what a depth-first build gives for
+ * free and saves a second index per node.
+ *
+ * Component data rather than a system type: the nodes live on the Collider
+ * beside the triangles they index, and the build and query that use them stay
+ * with the physics system.
+ */
+struct MeshNode {
+    glm::vec3 min = {0.0f, 0.0f, 0.0f};
+    glm::vec3 max = {0.0f, 0.0f, 0.0f};
+
+    uint32_t firstTriangle = 0;  ///< Leaf: first triangle; interior: unused
+    uint32_t triangleCount = 0;  ///< 0 marks an interior node
+    uint32_t rightChild    = 0;  ///< Interior: the far child; left is this + 1
 };
 
 /**
@@ -52,12 +84,32 @@ struct ColliderPart {
  */
 struct Collider {
     std::vector<ColliderPart> parts = { ColliderPart{} }; ///< The collision volume: one or more parts. Default to a single unit box.
+
+    /**
+     * @brief Every mesh part's triangle corners, in the entity's frame.
+     *
+     * Read three points at a time, one triangle each. Corners rather than an
+     * index buffer: it costs the duplicated corners of a shared edge and saves
+     * the whole apparatus of keeping two arrays in step, and the narrowphase
+     * only ever asks a triangle for its extreme point in a direction.
+     */
+    std::vector<glm::vec3> meshPoints;
+
+    /**
+     * @brief Bounding hierarchy over the mesh parts' triangles.
+     *
+     * Derived, not authored: rebuilt whenever it is empty and a Mesh part
+     * exists, so it survives a scene load without being written to disk. A
+     * level's collision mesh is tens of thousands of triangles and every pair
+     * against it would otherwise test every one, every tick.
+     */
+    std::vector<MeshNode> meshNodes;
     bool isTrigger = false;                               ///< Generates contacts for queries but no impulse response.
     bool enabled   = true;                                ///< When false the collider is inert: no broadphase entry, no contacts, no debug draw.
 };
 } // namespace Vkm::Engine
 
-VKM_ENUM_NAMES(::Vkm::Engine::ColliderShape, "Box", "Capsule")
+VKM_ENUM_NAMES(::Vkm::Engine::ColliderShape, "Box", "Capsule", "Mesh")
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::Collider)
     VKM_F(isTrigger),
