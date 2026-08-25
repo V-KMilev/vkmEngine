@@ -43,7 +43,7 @@ std::string displayName(
     }
     return recursive ? p.string() : p.filename().string();
 }
-}
+} // namespace
 
 void AssetPicker::open() {
     m_openRequested = true;

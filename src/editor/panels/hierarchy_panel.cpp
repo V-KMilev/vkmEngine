@@ -45,7 +45,7 @@ bool isSelfOrAncestor(const Scene& scene, EntityId node, EntityId maybeAncestor)
 bool isHierarchyNode(const Scene& scene, EntityId id) {
     return scene.has<Transform>(id) || scene.has<UICanvas>(id) || scene.has<UIElement>(id);
 }
-}
+} // namespace
 
 void HierarchyPanel::draw(EditorContext& ec) {
     FrameContext& ctx   = ec.frame;

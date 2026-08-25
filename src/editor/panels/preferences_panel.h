@@ -37,6 +37,7 @@ class PreferencesPanel {
         void drawDisplaySection(FrameContext& ctx);
         void drawKeybindsSection(EditorState& state);
 
+    private:
         // Display section: FPS cap value the InputInt edits before "Apply".
         int m_fpsLimitEdit = 0;
 
