@@ -87,19 +87,9 @@ void solveJoints(
                     continue;
                 }
 
-                // The impulse has to cancel the relative motion AND close the
-                // gap, so the two terms add. Subtracting the bias instead makes
-                // a joint that holds a body exactly where it found it: the
-                // correction and the velocity it induces cancel each other, and
-                // the error never closes.
-                // Stiffness scales the target the passes converge on, not
-                // each pass's impulse. Scaling the impulse compounds: the error
-                // decays by a factor of (1 - stiffness) per pass, so what is
-                // actually delivered is 1 - (1 - stiffness)^iterations. At the
-                // default eight passes that made half stiffness 99.6% of rigid
-                // and tied the knob to a scene-wide solver setting nobody
-                // relates it to. On the bias it is what it says: the rate the
-                // drift closes at, once, whatever the pass count.
+                // The two terms add: the impulse has to cancel the relative
+                // motion and close the gap. Stiffness scales the bias, not each
+                // pass's impulse, which would compound over the iterations.
                 const glm::vec3 bias = separation * (rate * joint.stiffness);
                 const glm::vec3 impulse = glm::inverse(k) * (-(relative + bias));
 

@@ -268,16 +268,13 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
 
     broadphase();
 
-    // Spans narrowphase -> writeback (the sleep test and the support outputs are
-    // read after the solve), so it is owned here and threaded through.
-    std::vector<BodyContacts> contacts(m_bodies.size());
-    narrowphase(contacts, ctx.events);
+    narrowphase(ctx.events);
 
     wakeConnected(scene);
 
     solve(physics, dt);
 
-    writeback(scene, dt, contacts);
+    writeback(scene, dt);
 }
 
 bool PhysicsSystem::gatherBodies(Scene& scene) {
@@ -361,6 +358,9 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
         }
     }
 
+    // Seeded fresh each tick; assign() keeps the capacity.
+    m_contacts.assign(m_bodies.size(), BodyContacts{});
+
     return !m_bodies.empty();
 }
 
@@ -386,8 +386,14 @@ void PhysicsSystem::broadphase() {
 
     for (uint32_t p = 0; p < m_proxies.size(); ++p) m_sorted.push_back(p);
 
+    // Ties break on the entity slot, so the sweep order is a function of the
+    // world rather than of the Rigidbody set's add-and-remove order: a row of
+    // identical crates settles the same after an unrelated body is destroyed.
     std::sort(m_sorted.begin(), m_sorted.end(), [&](uint32_t a, uint32_t b) {
-        return m_proxies[a].aabbMin.x < m_proxies[b].aabbMin.x;
+        const ColliderProxy& pa = m_proxies[a];
+        const ColliderProxy& pb = m_proxies[b];
+        if (pa.aabbMin.x != pb.aabbMin.x) return pa.aabbMin.x < pb.aabbMin.x;
+        return m_bodies[pa.body].slot() < m_bodies[pb.body].slot();
     });
 
     for (size_t a = 0; a < m_sorted.size(); ++a) {
@@ -406,7 +412,7 @@ void PhysicsSystem::broadphase() {
     }
 }
 
-void PhysicsSystem::narrowphase(std::vector<BodyContacts>& contacts, EventBus& events) {
+void PhysicsSystem::narrowphase(EventBus& events) {
     PROFILE_SCOPE("Physics/Narrowphase");
 
     m_manifolds.clear();
@@ -458,16 +464,16 @@ void PhysicsSystem::narrowphase(std::vector<BodyContacts>& contacts, EventBus& e
             // surface pushing back along its own outward direction.
             for (int c = 0; c < manifold.count; ++c) {
                 const glm::vec3& normal = manifold.contacts[c].normal;
-                if (-normal.y > contacts[A.body].support.y) contacts[A.body].support = -normal;
-                if ( normal.y > contacts[B.body].support.y) contacts[B.body].support =  normal;
+                if (-normal.y > m_contacts[A.body].support.y) m_contacts[A.body].support = -normal;
+                if ( normal.y > m_contacts[B.body].support.y) m_contacts[B.body].support =  normal;
 
                 // Both bodies see the same horizontal magnitude - the two
                 // normals differ only in sign - so one measure serves both.
                 const float horizontal = horizontalLengthSq(normal);
-                if (horizontal > horizontalLengthSq(contacts[A.body].block))
-                    contacts[A.body].block = -normal;
-                if (horizontal > horizontalLengthSq(contacts[B.body].block))
-                    contacts[B.body].block =  normal;
+                if (horizontal > horizontalLengthSq(m_contacts[A.body].block))
+                    m_contacts[A.body].block = -normal;
+                if (horizontal > horizontalLengthSq(m_contacts[B.body].block))
+                    m_contacts[B.body].block =  normal;
             }
         };
 
@@ -610,8 +616,8 @@ void PhysicsSystem::narrowphase(std::vector<BodyContacts>& contacts, EventBus& e
                 // Only a resolved contact supports the sleep test: a trigger
                 // holds nothing up, and a body asleep inside one would never
                 // be woken - wakeConnected walks manifolds, which skip them.
-                contacts[A.body].touched = true;
-                contacts[B.body].touched = true;
+                m_contacts[A.body].touched = true;
+                m_contacts[B.body].touched = true;
                 events.enqueue(CollisionEvent{entityA, entityB, contactPoint, contactNormal});
             }
         }
@@ -675,7 +681,7 @@ void PhysicsSystem::gatherJoints(Scene& scene) {
     // so a joint to something not simulated resolves to nothing and is dropped.
     std::unordered_map<uint32_t, uint32_t> indexOf;
     indexOf.reserve(m_bodies.size());
-    for (uint32_t i = 0; i < m_bodies.size(); ++i) indexOf[m_bodies[i].index] = i;
+    for (uint32_t i = 0; i < m_bodies.size(); ++i) indexOf[m_bodies[i].slot()] = i;
 
     const uint32_t count = static_cast<uint32_t>(storage->size());
     for (uint32_t i = 0; i < count; ++i) {
@@ -686,10 +692,10 @@ void PhysicsSystem::gatherJoints(Scene& scene) {
         // moved in.
         if (!joint.connected || !scene.isAlive(joint.connected)) continue;
 
-        const auto a = indexOf.find(self.index);
+        const auto a = indexOf.find(self.slot());
         if (a == indexOf.end()) continue;
 
-        const auto b = indexOf.find(joint.connected.index);
+        const auto b = indexOf.find(joint.connected.slot());
         uint32_t bodyB = 0;
         glm::mat3 rotB(1.0f);
         if (b != indexOf.end()) {
@@ -725,14 +731,16 @@ void PhysicsSystem::gatherJoints(Scene& scene) {
             // authored rope has a length someone chose; one built at play time
             // has the length it was built with, and asking the author to
             // compute it is asking them to do the solver's arithmetic.
-            if (joint.distance < 0.0f) {
+            if (joint.distance >= 0.0f) {
+                joint.resolvedDistance = joint.distance;
+            } else if (joint.resolvedDistance < 0.0f) {
                 const glm::vec3 worldA =
                     m_solverBodies[a->second].position + constraint.anchorA;
                 const glm::vec3 worldB =
                     m_solverBodies[bodyB].position + constraint.anchorB;
-                joint.distance = glm::length(worldB - worldA);
+                joint.resolvedDistance = glm::length(worldB - worldA);
             }
-            constraint.distance = joint.distance;
+            constraint.distance = joint.resolvedDistance;
         }
 
         if (!joint.collideConnected) {
@@ -743,6 +751,22 @@ void PhysicsSystem::gatherJoints(Scene& scene) {
 
         m_joints.push_back(constraint);
     }
+
+    // Gauss-Seidel, so the solve order is part of the answer: sorting on the
+    // pair of slots ties it to the scene rather than to the Joint set's
+    // insertion order. A world-anchored joint's synthetic body has no slot.
+    const auto slotOf = [&](uint32_t body) {
+        return body < m_bodies.size()
+            ? m_bodies[body].slot()
+            : std::numeric_limits<uint32_t>::max();
+    };
+    std::sort(m_joints.begin(), m_joints.end(),
+              [&](const JointConstraint& a, const JointConstraint& b) {
+        const uint32_t slotA = slotOf(a.bodyA);
+        const uint32_t slotB = slotOf(b.bodyA);
+        if (slotA != slotB) return slotA < slotB;
+        return slotOf(a.bodyB) < slotOf(b.bodyB);
+    });
 }
 
 void PhysicsSystem::solve(const PhysicsSettings& physics, float dt) {
@@ -759,7 +783,7 @@ void PhysicsSystem::solve(const PhysicsSettings& physics, float dt) {
     solveJoints(m_solverBodies, m_joints, params);
 }
 
-void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<BodyContacts>& contacts) {
+void PhysicsSystem::writeback(Scene& scene, float dt) {
     PROFILE_SCOPE("Physics/Writeback");
 
     for (size_t k = 0; k < m_bodies.size(); ++k) {
@@ -769,9 +793,9 @@ void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<BodyCont
 
         // Published before the early-outs below: a sleeping body resting on the
         // floor is supported, and that is exactly when a controller asks.
-        rb.supported = contacts[k].touched;
-        rb.supportNormal = rb.supported ? contacts[k].support : Math::WORLD_UP;
-        rb.blockNormal   = rb.supported ? contacts[k].block   : Math::WORLD_UP;
+        rb.supported = m_contacts[k].touched;
+        rb.supportNormal = rb.supported ? m_contacts[k].support : Math::WORLD_UP;
+        rb.blockNormal   = rb.supported ? m_contacts[k].block   : Math::WORLD_UP;
 
         if (rb.isStatic) continue;
         if (rb.sleeping) {
@@ -810,7 +834,7 @@ void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<BodyCont
         if (!rb.isKinematic && rb.canSleep) {
             const float linSq = glm::dot(rb.linearVelocity, rb.linearVelocity);
             const float angSq = glm::dot(rb.angularVelocity, rb.angularVelocity);
-            const bool resting = contacts[k].touched && linSq < SLEEP_LINEAR_SQ
+            const bool resting = m_contacts[k].touched && linSq < SLEEP_LINEAR_SQ
                                  && angSq < SLEEP_ANGULAR_SQ;
             if (resting) {
                 rb.sleepTimer += dt;
