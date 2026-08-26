@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/math/random.h"
 #include "core/system.h"
 
 namespace Vkm::Engine {
@@ -24,6 +25,17 @@ class ParticleSystem : public System {
 
     public:
         void update(FrameContext& ctx) override;
+
+    private:
+        /**
+         * @brief The spread generator, seeded once and owned by the system.
+         *
+         * Math::Random::rng() is per-thread and clock-seeded, so a spawn drawn
+         * from it depends on when the process started and which worker ran the
+         * emitter. Owning one makes the same scene played twice produce the
+         * same effect.
+         */
+        Math::Rng m_rng{0x9E3779B97F4A7C15ULL};
 };
 
 } // namespace Vkm::Engine

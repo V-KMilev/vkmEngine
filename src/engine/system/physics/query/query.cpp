@@ -499,7 +499,6 @@ bool castPart(const Collider& collider, const ColliderPart& part,
 // counts as static: it is what the solver treats as immovable, and a caller
 // asking for "the level" means the things that do not fall.
 bool passesMobility(const Rigidbody& rb, const QueryFilter& filter) {
-    if ((rb.layer & filter.layerMask) == 0) return false;
     const bool immovable = rb.isStatic || rb.isKinematic || rb.mass <= 0.0f;
     return immovable ? filter.hitStatic : filter.hitDynamic;
 }
@@ -530,7 +529,9 @@ bool sweepBodies(
         const Collider& collider = scene.get<Collider>(id);
         if (!collider.enabled) continue;
         if (collider.isTrigger && !filter.hitTriggers) continue;
-        if (!passesMobility(rbStorage->dataAt(i), filter)) continue;
+        const Rigidbody& rb = rbStorage->dataAt(i);
+        if ((rb.layer & filter.layerMask) == 0) continue;
+        if (!passesMobility(rb, filter)) continue;
 
         const BodyPose pose = worldPoseOf(scene, id, scene.get<Transform>(id));
         const glm::mat3 basis = glm::mat3_cast(pose.rotation);

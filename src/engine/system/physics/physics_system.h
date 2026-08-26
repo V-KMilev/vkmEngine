@@ -76,7 +76,6 @@ class PhysicsSystem : public System {
         PhysicsSystem& operator=(PhysicsSystem && other) = delete;
 
     public:
-        void update(FrameContext& ctx) override {}
         void fixedUpdate(FrameContext& ctx) override;
 
         bool hasFixedUpdate() const override { return true; }
@@ -117,13 +116,13 @@ class PhysicsSystem : public System {
          *
          * Produces the contact manifolds for the solver and fires collision events.
          *
-         * @param contacts Per-body summary, one entry per gathered body, filled
-         *                 in as contacts are found. A body that gains none is
-         *                 left holding the seeded sentinels rather than
-         *                 directions; writeback is what turns them into one.
-         * @param events   Bus the collision / trigger events are enqueued on.
+         * Fills m_contacts as it goes: a body that gains none is left holding
+         * the seeded sentinels rather than directions, and writeback is what
+         * turns them into one.
+         *
+         * @param events Bus the collision / trigger events are enqueued on.
          */
-        void narrowphase(std::vector<BodyContacts>& contacts, EventBus& events);
+        void narrowphase(EventBus& events);
 
         /**
          * @brief Wake any sleeping bodies struck this step, before the solve.
@@ -155,13 +154,13 @@ class PhysicsSystem : public System {
         /**
          * @brief Integrate solved velocities into poses and update sleep state.
          *
-         * @param scene    Scene whose Transforms are written back.
-         * @param dt       Fixed timestep, in seconds.
-         * @param contacts Per-body summary from narrowphase: the touched flag
-         *                 decides sleeping, and both normals are published onto
-         *                 the Rigidbody for whatever reads them.
+         * Reads m_contacts: the touched flag decides sleeping, and both normals
+         * are published onto the Rigidbody for whatever reads them.
+         *
+         * @param scene Scene whose Transforms are written back.
+         * @param dt    Fixed timestep, in seconds.
          */
-        void writeback(Scene& scene, float dt, const std::vector<BodyContacts>& contacts);
+        void writeback(Scene& scene, float dt);
 
     private:
         std::vector<EntityId>        m_bodies;       ///< Live body entities this tick (indexes m_solverBodies)
@@ -186,6 +185,7 @@ class PhysicsSystem : public System {
         std::vector<ColliderProxy> m_proxies;     ///< Broad/narrowphase view of each collidable body (built in gather)
         std::vector<ColliderPart>  m_proxyParts;  ///< Every proxy's parts, end to end
         std::vector<BodyFrame>     m_bodyFrames;  ///< World<->local frame per body, parallel to m_bodies (for writeback)
+        std::vector<BodyContacts>  m_contacts;    ///< Per-body contact summary, spanning narrowphase -> writeback
 
         std::vector<uint32_t>                      m_sorted;  ///< X-sorted proxy order (broadphase)
         std::vector<std::pair<uint32_t, uint32_t>> m_pairs;   ///< Candidate proxy-index pairs (broadphase)
