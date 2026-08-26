@@ -157,14 +157,15 @@ Three parts:
    reflected component the first two are one line each into the reflection
    driver.
 3. **Add its row to `VKM_SCENE_COMPONENTS`**
-   (`io/scene/component_serializer.h:63`). Saving, loading, the known-key set
-   and the scene's `assets` block all expand from that one list, which is why it
-   is a list: a component saved but never loaded is silent round-trip loss that
-   the unknown-key warning cannot catch, because the key is known.
+   (`io/scene/component_serializer.h:75`), as a `P`, `R` or `E` row - the letter
+   says what the component refers to, and decides what its save and load are
+   handed (`:49-58`). Saving, loading, the known-key set and the scene's
+   `assets` block all expand from that one list, which is why it is a list: a
+   component saved but never loaded is silent round-trip loss that the
+   unknown-key warning cannot catch, because the key is known.
 
-Step 1 is the one with a boundary. 17 of the 24 components in the scene format
-are reflected; the other seven are hand-written on purpose, and the reasons are
-in source at `component_serializer.cpp:125-133`:
+Step 1 is the one with a boundary. 19 of the 26 components in the scene format
+are reflected; the other seven are hand-written on purpose, for four reasons:
 
 - **It references an asset by name.** `Mesh`, `LOD`, `Decal`, `AudioSource`,
   `Animator` - these are the `R` rows, whose save and load take the
@@ -179,6 +180,16 @@ in source at `component_serializer.cpp:125-133`:
 - **It needs a second pass.** `Hierarchy` stores its parent as a scene-table
   index and is not a row at all - `saveComponents` writes it and the caller's
   pass 2 reads it, after the entity table exists.
+
+Reflection and a hand-written `save` / `load` are not the same boundary, and
+three rows sit on both sides of it. `Joint` and `Ragdoll` are the `E` rows:
+reflected, and hand-written anyway, because an entity reference cannot survive a
+file as the `EntityId` it is in memory - their save takes an `EntityNamer` and
+their load an `EntityResolver`, and the reflected half still goes through the
+driver in the first line of each (`component_serializer.cpp:165`, `:179`).
+`Collider` is the third: it reflects `isTrigger` and `enabled` and writes its
+parts array and mesh point cloud by hand (`:225`), which is field iteration's
+reach again.
 
 Getting *that* one wrong is loud, not silent: `Reflect::Traits<T>` is left
 unspecialised deliberately, so calling the generic driver on an unreflected type
@@ -213,7 +224,7 @@ and none of them is enforced by the compiler. Read these before the first change
   undo. On an entity inside a prefab instance it is a *different* command,
   `PrefabOverrideCommand`, because the value there is the prefab's patched by the
   instance's overrides.
-- **Property rows go through the `prop*` wrappers, never raw ImGui.** 190 `prop*`
+- **Property rows go through the `prop*` wrappers, never raw ImGui.** 197 `prop*`
   calls in `src/editor` against 26 raw slider / drag / input / checkbox / colour
   calls, and those 26 are either not property rows or sit inside a `propRow`
   lambda - which is the wrapper, and is the escape hatch when no `prop*` fits the
@@ -244,16 +255,18 @@ procedure is inside `src/backend/opengl/pass/`:
 1. **Subclass `GLPass`** (`gl_pass.h`) and override `execute(GLFrameContext&)`.
    The base carries the shared fullscreen preamble / epilogue and the
    colour-chain promotion; use them rather than open-coding GL state.
-2. **Gate yourself in the first lines of `execute()`.** 14 of the 18 passes do -
+2. **Gate yourself in the first lines of `execute()`.** 15 of the 19 passes do -
    `gl_bloom_pass.cpp:26` is `if (!ctx.view.settings.bloom) return;`,
    `gl_decal_pass.cpp:44` is `if (view.decals.empty()) return;`. The backend runs
-   every pass unconditionally (`gl_backend.cpp:276-278`) and skips nothing,
+   every pass unconditionally (`gl_backend.cpp:269-272`) and skips nothing,
    deliberately: only the pass knows what would make it a no-op, and the
    condition belongs with the knowledge.
-3. **Register it in the ordered list** at `gl_backend.cpp:101-119`, with a name.
-   The list is the schedule - there is no graph, no dependency declaration, and
-   the comment block above it argues the order. Put yours where its inputs are
-   already written and say why in that comment.
+3. **Register it in the ordered list** at `gl_backend.cpp:94-113`, with a name.
+   The list is the schedule - there is no graph and no dependency declaration,
+   and the comment above it says only that the order is load-bearing, pointing at
+   [../reference/system/rendering.md](../reference/system/rendering.md#the-passes-fixed-order)
+   for what each pass owes the next. Put yours where its inputs are already
+   written, and say why there rather than in the list.
 4. **Anything you produce for a later pass goes on `GLFrameContext`,** the
    backend's own per-frame product carrier. It is not `FrameContext`; the engine
    never sees it.
