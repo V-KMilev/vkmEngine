@@ -47,22 +47,22 @@ void HierarchySystem::resolve(Scene& scene) {
         uint32_t depth = 0;
         EntityId current = h.parent;
         while (current && depth < HierarchyOperations::MAX_DEPTH) {
-            if (!worldStorage->contains(current.index)) {
+            if (!worldStorage->contains(current.slot())) {
                 resolvable = false;
                 break;
             }
-            if (!hierarchyStorage->contains(current.index)) break;
-            current = hierarchyStorage->get(current.index).parent;
+            if (!hierarchyStorage->contains(current.slot())) break;
+            current = hierarchyStorage->get(current.slot()).parent;
             ++depth;
         }
         if (!resolvable) continue;
 
         if (depth >= HierarchyOperations::MAX_DEPTH) {
-            static bool warned = false;
-            if (!warned) {
+            static bool s_warned = false;
+            if (!s_warned) {
                 LOG_WARNING("HierarchySystem::resolve: hierarchy depth exceeds %u; entity %u skipped (and any descendants)",
-                    HierarchyOperations::MAX_DEPTH, id.index);
-                warned = true;
+                    HierarchyOperations::MAX_DEPTH, id.slot());
+                s_warned = true;
             }
             continue;
         }

@@ -110,6 +110,16 @@ void configureImporter(Assimp::Importer& importer) {
  */
 class ImporterCache {
     public:
+        ImporterCache() = default;
+        ~ImporterCache() = default;
+
+        ImporterCache(const ImporterCache& other) = delete;
+        ImporterCache& operator=(const ImporterCache& other) = delete;
+
+        ImporterCache(ImporterCache && other) = delete;
+        ImporterCache& operator=(ImporterCache && other) = delete;
+
+    public:
         std::shared_ptr<Assimp::Importer> get(const std::string& path) {
             std::error_code ec;
             std::string canonical;
@@ -151,12 +161,15 @@ class ImporterCache {
             std::string path;
             std::shared_ptr<Assimp::Importer> importer;
         };
+
         // LRU cap. Sized for a typical asset-import batch: a file is
         // re-imported once per (mesh, material) an asset entry names,
         // and a single model can split across several sub-models. 8
         // entries comfortably covers the common case while keeping
         // retained aiScene memory bounded - each entry is a few MB.
         static constexpr size_t MAX_CACHED = 8;
+
+    private:
         std::vector<Entry> m_entries;
         std::mutex m_mutex;
 };

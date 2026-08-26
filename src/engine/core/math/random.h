@@ -100,6 +100,7 @@ class Rng {
     private:
         static constexpr uint64_t DEFAULT_STREAM = 0xda3e39cb94b95bdbULL;  ///< Canonical PCG stream, used as the default selector.
 
+    private:
         uint64_t m_state = 0x853c49e6748fea9bULL;  ///< LCG state; advanced on every draw.
         uint64_t m_inc   = DEFAULT_STREAM;          ///< Stream increment (kept odd); fixes which sequence this draws.
 };
@@ -123,14 +124,14 @@ namespace Random {
  * design; construct your own Rng(seed) when you need determinism.
  */
 inline Rng& rng() {
-    thread_local Rng generator = [] {
-        static std::atomic<uint64_t> counter{0};
-        const uint64_t n = counter.fetch_add(1, std::memory_order_relaxed);
+    thread_local Rng t_generator = [] {
+        static std::atomic<uint64_t> s_counter{0};
+        const uint64_t n = s_counter.fetch_add(1, std::memory_order_relaxed);
         const uint64_t t = static_cast<uint64_t>(
             std::chrono::high_resolution_clock::now().time_since_epoch().count());
         return Rng(t ^ (n * 0x9E3779B97F4A7C15ULL), n + 1u);
     }();
-    return generator;
+    return t_generator;
 }
 
 /**

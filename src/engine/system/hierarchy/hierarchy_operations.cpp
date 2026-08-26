@@ -83,13 +83,13 @@ void removeFromParent(Scene& scene, EntityId entity) {
             scene.get<Hierarchy>(prevSibling).nextSibling = nextSibling;
         } else {
             LOG_WARNING("RemoveFromParent: prevSibling %u of entity %u has no Hierarchy (link corruption)",
-                prevSibling.index, entity.index);
+                prevSibling.slot(), entity.slot());
         }
     } else if (scene.isAlive(parent) && scene.has<Hierarchy>(parent)) {
         scene.get<Hierarchy>(parent).firstChild = nextSibling;
     } else {
         LOG_WARNING("RemoveFromParent: parent %u of entity %u has no Hierarchy (link corruption)",
-            parent.index, entity.index);
+            parent.slot(), entity.slot());
     }
 
     if (nextSibling) {
@@ -97,7 +97,7 @@ void removeFromParent(Scene& scene, EntityId entity) {
             scene.get<Hierarchy>(nextSibling).prevSibling = prevSibling;
         } else {
             LOG_WARNING("RemoveFromParent: nextSibling %u of entity %u has no Hierarchy (link corruption)",
-                nextSibling.index, entity.index);
+                nextSibling.slot(), entity.slot());
         }
     }
 
@@ -135,11 +135,11 @@ glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity) {
     if (current && depth >= MAX_DEPTH) {
         // A deeper-than-supported chain would silently snap to identity from
         // a partial root; surface it once so misimports are loud.
-        static bool warned = false;
-        if (!warned) {
+        static bool s_warned = false;
+        if (!s_warned) {
             LOG_WARNING("ComputeWorldMatrix: hierarchy depth exceeds %u; deeper ancestors ignored",
                 MAX_DEPTH);
-            warned = true;
+            s_warned = true;
         }
     }
 
