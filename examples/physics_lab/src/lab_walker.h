@@ -32,6 +32,7 @@ class LabWalker : public ReflectedBehavior<LabWalker> {
 
         void onStart() override;
         void onUpdate(float dt) override;
+        void onFixedUpdate(float dt) override;
 
     public:
         /**
@@ -79,18 +80,6 @@ class LabWalker : public ReflectedBehavior<LabWalker> {
         AssetRef<AnimationClipAsset> jumpClip;  ///< Played while airborne
 
     private:
-        /**
-         * @brief The descendant carrying the Animator, or an invalid id.
-         *
-         * A model import puts the Animator on the entity whose frame the rig's
-         * bones are composed in, which is a child of the entity the character's
-         * physics lives on - so the two are never the same entity, and the
-         * behavior has to go and find it.
-         *
-         * @param root Entity to search from, inclusive.
-         * @return The entity holding the Animator, or an invalid id.
-         */
-
         /**
          * @brief Crossfade to @p clip unless it is already the one playing.
          *
