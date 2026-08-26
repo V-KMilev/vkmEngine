@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 
 #include "ecs/entity.h"
+#include "system/physics/authoring/ragdoll_build.h"
 
 #include "framework/asset_picker.h"
 #include "system/audio/audio_device.h"
@@ -94,6 +95,26 @@ class InspectorPanel {
                                    EditorState& state, EntityId id);
         void drawCharacterControllerSection(Scene& scene, ResourceManager& resources,
                                             EditorState& state, EntityId id);
+
+        /**
+         * @brief Joint: what it holds, to what, and where on each body.
+         *
+         * The connected entity is picked from the scene rather than typed,
+         * because a joint to a slot that does not exist is a joint that does
+         * nothing and says nothing.
+         */
+        void drawJointSection(Scene& scene, ResourceManager& resources,
+                              EditorState& state, EntityId id);
+
+        /**
+         * @brief Ragdoll: the switch, and the buttons that build and clear it.
+         *
+         * Building needs the rig, which comes from the entity's Animator - so
+         * the card says so when there is none, rather than offering a button
+         * that cannot work.
+         */
+        void drawRagdollSection(Scene& scene, ResourceManager& resources,
+                                EditorState& state, EntityId id);
         void drawScriptSection(Scene& scene, EditorState& state, EntityId id);
         void drawHierarchySection(Scene& scene, EditorState& state, EntityId id);
         void drawUICanvasSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
@@ -125,6 +146,15 @@ class InspectorPanel {
         // voice the card is showing.
         EntityId m_previewOwner;
 
+        RagdollSettings m_ragdollSettings{};  ///< Proportions the Build button uses
+
+        // The Connected combo's entries, rebuilt per frame because the list is
+        // the scene. Members rather than locals so the per-frame churn reuses
+        // one allocation instead of making two.
+        bool                     m_meshColliderEmpty = false;
+        std::vector<EntityId>    m_jointCandidates;
+        std::vector<std::string> m_jointCandidateLabels;
+        std::vector<const char*> m_jointCandidateNames;
         int m_colliderFitDetail = 4;  ///< Voxel resolution for the Collider "Fit to Mesh" button.
         int m_lodGenLevels      = 2;  ///< Levels the LOD card's Generate button builds below the source.
 };

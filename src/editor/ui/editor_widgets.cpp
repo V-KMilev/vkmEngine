@@ -12,13 +12,21 @@
 #include "ecs/scene.h"
 #include "ecs/component/animation/animation.h"
 #include "ecs/component/animation/animator.h"
+#include "ecs/component/animation/bone_socket.h"
 #include "ecs/component/audio/audio_listener.h"
 #include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/name.h"
+#include "ecs/component/physics/character_controller.h"
+#include "ecs/component/physics/collider.h"
+#include "ecs/component/physics/joint.h"
+#include "ecs/component/physics/ragdoll.h"
+#include "ecs/component/physics/rigidbody.h"
 #include "ecs/component/render/camera.h"
 #include "ecs/component/render/decal.h"
 #include "ecs/component/render/irradiance_volume.h"
+#include "ecs/component/prefab/prefab_instance.h"
 #include "ecs/component/render/light.h"
+#include "ecs/component/render/lod.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/component/render/reflection_probe.h"
@@ -314,6 +322,12 @@ struct EntityLabel {
 };
 
 EntityLabel entityLabelOf(const Scene& scene, EntityId id) {
+    // Above everything: an instance is a prefab whatever else it carries, and
+    // that is the fact which constrains how it may be edited. Only the root
+    // holds one - PrefabEntity is stamped on every entity in the subtree, so a
+    // row for it would say "prefab" about an entire hierarchy and identify
+    // nothing.
+    if (scene.has<PrefabInstance>(id)) return {"Prefab", EditorIcon::Prefab};
     if (scene.has<Camera>(id)) return {"Camera", EditorIcon::Camera};
     if (scene.has<Light>(id)) {
         switch (scene.get<Light>(id).type) {
@@ -327,10 +341,15 @@ EntityLabel entityLabelOf(const Scene& scene, EntityId id) {
         return {"Light", EditorIcon::LightPoint};
     }
     // Before Mesh: an entity carrying an Animator is the rig whatever else it
-    // carries, and its meshes are the entities under it.
+    // carries, and its meshes are the entities under it. A socket reads the
+    // same way - a sword riding a hand is a socket first and geometry second,
+    // because where it is attached is what someone is looking for.
     if (scene.has<Animator>(id)) return {"Rig", EditorIcon::Anim};
+    if (scene.has<BoneSocket>(id)) return {"Socket", EditorIcon::Socket};
     if (scene.has<Mesh>(id)) {
-        return {scene.has<Animation>(id) ? "Animated Mesh" : "Mesh", EditorIcon::Mesh};
+        if (scene.has<Animation>(id)) return {"Animated Mesh", EditorIcon::Mesh};
+        if (scene.has<LOD>(id))       return {"LOD Mesh",      EditorIcon::Mesh};
+        return {"Mesh", EditorIcon::Mesh};
     }
     if (scene.has<Animation>(id))        return {"Animation", EditorIcon::Anim};
     if (scene.has<ReflectionProbe>(id))  return {"Probe",     EditorIcon::Probe};
@@ -348,6 +367,14 @@ EntityLabel entityLabelOf(const Scene& scene, EntityId id) {
     if (scene.has<UIImage>(id))          return {"Panel",     EditorIcon::UIImage};
     if (scene.has<UICanvas>(id))         return {"Canvas",    EditorIcon::UICanvas};
     if (scene.has<UIElement>(id))        return {"Widget",    EditorIcon::UIWidget};
+    // Physics rows sit below the visual ones on purpose: a crate keeps its mesh
+    // glyph however it collides, and these catch what has no other face - a
+    // character capsule, a ragdoll's bones, an invisible blocker.
+    if (scene.has<CharacterController>(id)) return {"Character", EditorIcon::Character};
+    if (scene.has<Ragdoll>(id))          return {"Ragdoll",   EditorIcon::Ragdoll};
+    if (scene.has<Joint>(id))            return {"Jointed Body", EditorIcon::Joint};
+    if (scene.has<Collider>(id))         return {"Collider",  EditorIcon::Colliders};
+    if (scene.has<Rigidbody>(id))        return {"Body",      EditorIcon::Colliders};
     return {"Entity", EditorIcon::Entity};
 }
 

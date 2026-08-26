@@ -20,8 +20,9 @@ namespace Vkm::Engine {
  * "apply" step.
  *
  * A hierarchy root's local Transform is already its world pose, so the solver reads
- * it directly. A parented body takes its world pose from WorldTransform instead, and
- * writeback converts the solved pose back into the parent's frame.
+ * it directly. A parented body's is resolved by walking its chain of Transforms -
+ * a ragdoll's bones are children of their character - and writeback converts the
+ * solved pose back into the parent's frame.
  */
 struct Rigidbody {
     glm::vec3 linearVelocity  = {0.0f, 0.0f, 0.0f};  ///< World-space velocity (m/s)
@@ -36,6 +37,32 @@ struct Rigidbody {
     float friction    = 0.5f;                        ///< Coulomb coefficient [0,1+]
 
     float gravityScale = 1.0f;                        ///< Multiplier on world gravity (0 = floats)
+
+    /**
+     * @brief Which group this body belongs to, as a single bit.
+     *
+     * Paired with `collidesWith` below, and the two together are the only way
+     * to say that two things share a world without touching - a bullet that
+     * passes through its shooter, two characters that walk through each other,
+     * a trigger volume only the player trips.
+     *
+     * A bit rather than a number, so a mask can name several groups at once.
+     * Anything at 0 collides with nothing, which is a way to switch a body's
+     * collision off without disabling the collider that draws it.
+     */
+    int layer = 1;
+
+    /**
+     * @brief Which layers this body collides with, as a mask of their bits.
+     *
+     * Read both ways round: a pair collides only if each body's layer is in the
+     * other's mask. One-sided masks would make "does A hit B" depend on which
+     * was asked, which is not a question collision can answer differently.
+     *
+     * Defaults to everything, so a body nobody has thought about behaves the
+     * way it always did.
+     */
+    int collidesWith = ~0;
 
     bool isKinematic = false;                         ///< Script-driven: ignores forces, immune to impulses, still moves
     bool isStatic    = false;                         ///< Never moves; infinite mass
@@ -100,6 +127,8 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::Rigidbody)
     VKM_F(restitution),
     VKM_F(friction),
     VKM_F(gravityScale),
+    VKM_F(layer),
+    VKM_F(collidesWith),
     VKM_F(isKinematic),
     VKM_F(isStatic),
     VKM_F(freezeRotation),

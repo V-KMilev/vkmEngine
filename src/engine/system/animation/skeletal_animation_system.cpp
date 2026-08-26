@@ -23,6 +23,9 @@
 #include "resource/resource_manager.h"
 #include "system/animation/animation_events.h"
 #include "system/animation/pose_evaluator.h"
+#include "ecs/component/core/world_transform.h"
+#include "ecs/component/physics/ragdoll.h"
+#include "system/animation/ragdoll_pose.h"
 #include "system/hierarchy/hierarchy_operations.h"
 
 namespace Vkm::Engine {
@@ -96,6 +99,36 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen) {
         work.fadeClip = resolveClip(resources, animator.fadeFrom, skeleton, seen);
         work.slice    = m_poses.addSlice(static_cast<uint32_t>(skeleton.bones.size()));
 
+        // An active ragdoll takes the rig over, and everything it needs is
+        // read here with everything else: the parallel pass never touches the
+        // scene, and the bone bodies' poses travel to the worker as values.
+        // The pointer is safe for the same reason the clip pointers are - no
+        // component is added or removed between this loop and that one.
+        const EntityId rigEntity = scene.entityAt(work.entityIndex);
+
+        // Looked for above as well as here. An import puts the Animator on a
+        // node under the entity the physics is authored on, so a ragdoll added
+        // where everything else was added is a parent or two away - and asking
+        // the author to find the rig node instead is asking them to know how
+        // the importer builds a hierarchy.
+        const EntityId ragdollEntity =
+            HierarchyOperations::findInSelfOrAncestors<Ragdoll>(scene, rigEntity);
+        if (ragdollEntity) {
+            const Ragdoll& ragdoll = scene.get<Ragdoll>(ragdollEntity);
+            if (ragdoll.active && !ragdoll.bones.empty()) {
+                work.ragdoll = &ragdoll;
+                work.ragdollBodies = gatherRagdollBodies(scene, ragdoll);
+            }
+        }
+        // Walked, not read off WorldTransform, and only where it is used: the
+        // bodies this is divided out of are walked the same way a few lines
+        // above, and WorldTransform is written by the Transform stage - a frame
+        // behind. Mixing the two put a moving character's ragdoll a frame of
+        // its own motion away from where the bodies actually were.
+        if (work.ragdoll) {
+            work.rigWorld = HierarchyOperations::computeWorldMatrix(scene, rigEntity);
+        }
+
         totalBones += skeleton.bones.size();
         m_work.push_back(work);
     }
@@ -127,10 +160,19 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen) {
             RigWork& work      = m_work[i];
             Animator& animator = animators->dataAt(work.animatorIndex);
 
-            work.step = advancePlayback(animator,
-                                        work.clip     ? work.clip->duration     : 0.0f,
-                                        work.fadeClip ? work.fadeClip->duration : 0.0f,
-                                        simDelta);
+            // A ragdoll takes the rig over entirely, and that includes the
+            // clock: a body driven by the solver is not playing an animation,
+            // so its head does not move and its markers do not fire. Advancing
+            // anyway left a corpse taking footsteps - the markers are enqueued
+            // from work.step, which stays a zero-travel step here - and put the
+            // playback head somewhere nobody had watched it reach by the time
+            // the character got up.
+            if (!work.ragdoll) {
+                work.step = advancePlayback(animator,
+                                            work.clip     ? work.clip->duration     : 0.0f,
+                                            work.fadeClip ? work.fadeClip->duration : 0.0f,
+                                            simDelta);
+            }
 
             PoseSample sample;
             sample.clip     = work.clip;
@@ -143,7 +185,16 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen) {
                 ? 1.0f - animator.fadeRemaining / animator.fadeDuration
                 : 1.0f;
 
-            composePose(*work.skeleton, sample, m_poses.writeTo(work.slice));
+            // The bodies are already where the limbs are, and blending them
+            // with a clip would drag every limb toward the midpoint of two
+            // unrelated poses.
+            if (work.ragdoll) {
+                composeRagdollPose(*work.ragdoll, work.ragdollBodies,
+                                   *work.skeleton, work.rigWorld,
+                                   m_poses.writeTo(work.slice));
+            } else {
+                composePose(*work.skeleton, sample, m_poses.writeTo(work.slice));
+            }
         });
     }
 }

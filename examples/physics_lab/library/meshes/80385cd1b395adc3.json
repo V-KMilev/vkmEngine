@@ -1,0 +1,8 @@
+{
+  "name": "mesh:generator:cube",
+  "source": {
+    "kind": "generator",
+    "type": "cube"
+  },
+  "type": "mesh"
+}

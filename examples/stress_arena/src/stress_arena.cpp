@@ -14,6 +14,7 @@
 
 #include "core/math/axes.h"
 #include "core/math/easing.h"
+#include "core/math/rotation.h"
 #include "ecs/scene.h"
 #include "io/asset/asset_library.h"
 #include "io/asset/cooked_loader.h"
@@ -743,7 +744,9 @@ void StressArena::buildLights() {
         Transform transform;
         transform.position = position;
         // Spots point down and outward; the rotation is only read for spots.
-        transform.rotation = glm::angleAxis(frand(0.6f, 1.4f), Math::WORLD_AXIS_X);
+        // Negative because forward is -Z, so a positive turn about X
+        // tilts a spot up rather than down.
+        transform.rotation = glm::angleAxis(-frand(0.6f, 1.4f), Math::WORLD_AXIS_X);
         m_scene->add(entity, std::move(transform));
 
         Light light;
@@ -1111,9 +1114,11 @@ void StressArena::buildDrones() {
 
             Transform lampTransform;
             lampTransform.position = {0.0f, -0.4f, 0.0f};
-            // Point straight down: +Z is forward, so a +90 degree X rotation
+            // Point straight down. Forward is -Z, so the quarter turn goes
+            // the other way than it did when forward was +Z
             // tips it from horizontal to floorward.
-            lampTransform.rotation = glm::angleAxis(glm::half_pi<float>(), Math::WORLD_AXIS_X);
+            lampTransform.rotation =
+                glm::angleAxis(-glm::half_pi<float>(), Math::WORLD_AXIS_X);
             m_scene->add(lamp, std::move(lampTransform));
 
             Light spot;
@@ -1173,11 +1178,13 @@ void StressArena::updateDrones() {
             GROUND_Y + drone.height + std::sin(angle * 1.9f) * 2.5f,
             std::sin(angle) * drone.radius
         };
-        // Bank into the turn and face along the tangent. +Z forward again, so
-        // the yaw is measured from +Z rather than the -Z most code assumes.
+        // Bank into the turn and face along the tangent. The half turn is
+        // forward moving from +Z to -Z: the yaw was measured from +Z
+        // and the circle it is flown around did not change.
         transform.rotation =
             glm::angleAxis(-angle, Math::WORLD_AXIS_Y) *
-            glm::angleAxis(std::sin(angle * 1.9f) * 0.25f, Math::WORLD_AXIS_Z);
+            glm::angleAxis(std::sin(angle * 1.9f) * 0.25f, Math::WORLD_AXIS_Z) *
+            glm::angleAxis(glm::pi<float>(), Math::WORLD_AXIS_Y);
     }
 }
 
@@ -1466,10 +1473,7 @@ void StressArena::updateCamera(float dt) {
 
     Transform& transform = m_scene->get<Transform>(m_camera);
     transform.position = position;
-    // Negated on purpose: glm::quatLookAt builds a rotation for GLM's -Z
-    // forward, while this engine's forward is +Z, so the unnegated result aims
-    // the camera directly away from the target.
-    transform.rotation = glm::quatLookAt(-forward, Math::WORLD_AXIS_Y);
+    transform.rotation = Math::lookRotation(forward);
 }
 
 void StressArena::updatePhysics() {

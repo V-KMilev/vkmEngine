@@ -382,6 +382,40 @@ void SubtreeSnapshot::apply(Scene& scene) const {
         EntityId e = scene.createEntityAt(node.snap.slotIndex);
         node.snap.apply(scene, e);
     }
+
+    // Pass 1b: re-stamp the references the components carry. A snapshot holds
+    // whole EntityIds, and every entity above came back with a bumped
+    // generation - so a Joint restored verbatim names a handle that no longer
+    // compares equal to anything, and the solver drops it. Silently: a
+    // resurrected ragdoll simply never moves again.
+    //
+    // A reference already alive is left alone; it points outside the subtree
+    // and was never invalidated. One whose slot came back here is re-read from
+    // the scene. Anything else named something that is genuinely gone.
+    auto restamp = [&](EntityId stored) {
+        if (!stored) return EntityId{};
+        if (scene.isAlive(stored)) return stored;
+        for (const auto& node : nodes) {
+            if (node.snap.slotIndex != stored.index) continue;
+            const EntityId live = scene.entityAt(stored.index);
+            return scene.isAlive(live) ? live : EntityId{};
+        }
+        return EntityId{};
+    };
+
+    for (const auto& node : nodes) {
+        const EntityId e = scene.entityAt(node.snap.slotIndex);
+        if (!scene.isAlive(e)) continue;
+
+        if (scene.has<Joint>(e)) {
+            scene.get<Joint>(e).connected = restamp(scene.get<Joint>(e).connected);
+        }
+        if (scene.has<Ragdoll>(e)) {
+            Ragdoll& ragdoll = scene.get<Ragdoll>(e);
+            ragdoll.root = restamp(ragdoll.root);
+            for (RagdollBone& bone : ragdoll.bones) bone.body = restamp(bone.body);
+        }
+    }
     // setParent prepends to the parent's child list, so the nodes are walked in
     // reverse to restore the captured order: the rightmost child links first and
     // the leftmost links last, ending up at firstChild.

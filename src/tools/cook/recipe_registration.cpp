@@ -176,7 +176,8 @@ AnimationClipHandle createRecipeAnimationClip(const nlohmann::json& source, Reso
     if (source.value("kind", std::string{}) == "model") {
         return loadModelAnimationClip(source.value("path", std::string{}),
                                       source.value("clip", -1),
-                                      recipeMarkers(source), resources);
+                                      recipeMarkers(source), resources,
+                                      source.value("rig", std::string{}));
     }
     return createCookedAnimationClip(source, resources);
 }

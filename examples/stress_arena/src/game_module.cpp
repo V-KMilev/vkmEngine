@@ -56,11 +56,13 @@ void vkmBuildScene(Vkm::Engine::Scene& scene) {
     cameraComponent.zFar = 600.0f;
     scene.add(camera, std::move(cameraComponent));
 
-    // Parked outside the tower ring looking in. Positive pitch tilts the view
-    // down: the engine's forward is +Z (Math::computeForward), not GLM's -Z.
+    // Parked outside the tower ring looking in, pitched down toward it.
     scene.add(camera, Vkm::Engine::Transform{
         glm::vec3(0.0f, 26.0f, -95.0f),
-        glm::quat(glm::vec3(glm::radians(9.0f), 0.0f, 0.0f)),
+        // The half turn is forward being -Z where this art faces +Z; the pitch
+        // is unchanged and still means the same thing.
+        glm::quat(glm::vec3(glm::radians(9.0f), 0.0f, 0.0f))
+            * glm::angleAxis(glm::pi<float>(), Vkm::Engine::Math::WORLD_AXIS_Y),
         glm::vec3(1.0f)
     });
 

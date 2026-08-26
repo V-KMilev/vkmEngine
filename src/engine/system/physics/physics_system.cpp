@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <limits>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -10,18 +11,24 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include "core/clock.h"
-#include "core/math/rotation.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/environment.h"
-#include "ecs/component/core/hierarchy.h"
 #include "ecs/component/core/transform.h"
-#include "ecs/component/core/world_transform.h"
 #include "ecs/component/physics/collider.h"
+#include "ecs/component/physics/joint.h"
 #include "ecs/component/physics/rigidbody.h"
 #include "core/event/event_bus.h"
+#include "system/physics/authoring/mesh_collider.h"
+#include "core/math/axes.h"
+#include "core/math/rotation.h"
+#include "system/hierarchy/hierarchy_operations.h"
+#include "system/physics/body_pose.h"
 #include "system/physics/inertia.h"
 #include "system/physics/physics_events.h"
+#include "system/physics/collision/gjk.h"
+#include "system/physics/tolerance.h"
+#include "system/physics/collision/mesh_bvh.h"
 #include "system/physics/collision/narrowphase.h"
 #include "core/math/bounds.h"
 
@@ -36,9 +43,6 @@ constexpr float SLEEP_ANGULAR_SQ = 0.04f;   // (0.2 rad/s)^2
 constexpr float SLEEP_DELAY      = 0.5f;    // seconds of rest before sleeping
 constexpr float WAKE_SPEED_SQ    = 0.25f;   // partner speed^2 that wakes a sleeper
 
-// The engine's world up: the axis support is measured against, and the answer
-// both published normals fall back to when nothing was touched.
-const glm::vec3 UP = {0.0f, 1.0f, 0.0f};
 
 // How much of a normal points sideways. Squared, because it is only ever
 // compared against another of its own kind.
@@ -59,12 +63,66 @@ bool isFrozen(const Rigidbody& rb, float invMass) {
     return rb.sleeping || invMass == 0.0f;
 }
 
+// Every mesh part of one proxy. A collider may hold several parts and only
+// some are meshes, and the caller wants the component beside each because that
+// is where the triangles and the tree live.
+template <typename Fn>
+void forEachMeshPart(const ColliderProxy& proxy,
+                     const std::vector<ColliderPart>& parts, Fn&& fn) {
+    if (!proxy.collider) return;
+    for (uint32_t i = 0; i < proxy.partsCount; ++i) {
+        const ColliderPart& part = parts[proxy.partsFirst + i];
+        if (part.shape == ColliderShape::Mesh) fn(*proxy.collider, part);
+    }
+}
+
+// World-space bound of one shape, for asking a mesh which triangles are near it.
+void shapeBounds(const SupportShape& shape, glm::vec3& min, glm::vec3& max) {
+    const glm::vec3 axes[3] = {
+        {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}
+    };
+    for (int i = 0; i < 3; ++i) {
+        min[i] = support(shape, -axes[i])[i];
+        max[i] = support(shape,  axes[i])[i];
+    }
+}
+
 // Half-extent of one part's own local-space AABB. A capsule's is its radius on
-// the two axes across the segment and radius + halfHeight along it.
-glm::vec3 partLocalExtent(const ColliderPart& part) {
-    return part.shape == ColliderShape::Capsule
-        ? glm::vec3(part.radius, part.halfHeight + part.radius, part.radius)
-        : part.halfExtents;
+// the two axes across the segment and radius + halfHeight along it; a hull's or
+// a mesh's is whatever its points reach, halfExtents saying nothing about
+// either. Both read the same buffer, so both take the same branch - a mesh
+// falling through to halfExtents gave a sixteen-metre floor a half-metre bound,
+// and bodies landed on it only where they happened to be near its origin.
+glm::vec3 partLocalExtent(const Collider& collider, const ColliderPart& part) {
+    switch (part.shape) {
+        case ColliderShape::Box:
+            return part.halfExtents;
+
+        case ColliderShape::Capsule:
+            return glm::vec3(part.radius, part.halfHeight + part.radius,
+                             part.radius);
+
+        case ColliderShape::Mesh: {
+            glm::vec3 extent(0.0f);
+            for (uint32_t i = 0; i < part.meshCount; ++i) {
+                const uint32_t index = part.meshFirst + i;
+                if (index >= collider.meshPoints.size()) break;
+                extent = glm::max(extent, glm::abs(collider.meshPoints[index]));
+            }
+            return extent;
+        }
+
+        case ColliderShape::Count:
+            break;
+    }
+    return part.halfExtents;
+}
+
+bool hasMeshPart(const Collider& collider) {
+    for (const ColliderPart& part : collider.parts) {
+        if (part.shape == ColliderShape::Mesh) return true;
+    }
+    return false;
 }
 
 glm::mat3 localInverseInertia(const Rigidbody& rb, const Collider* collider) {
@@ -89,7 +147,7 @@ glm::mat3 localInverseInertia(const Rigidbody& rb, const Collider* collider) {
         glm::vec3 mn(std::numeric_limits<float>::max());
         glm::vec3 mx(std::numeric_limits<float>::lowest());
         for (const ColliderPart& part : collider->parts) {
-            const glm::vec3 extent = partLocalExtent(part);
+            const glm::vec3 extent = partLocalExtent(*collider, part);
             mn = glm::min(mn, part.center - extent);
             mx = glm::max(mx, part.center + extent);
         }
@@ -129,8 +187,11 @@ void computeAABB(
             mn = glm::min(center - axis, center + axis) - glm::vec3(part.radius);
             mx = glm::max(center - axis, center + axis) + glm::vec3(part.radius);
         } else {
+            // A hull's bound is its points'; a box's is its half-extents. Both
+            // are then the same problem: an oriented box put into world space.
+            const glm::vec3 extent = partLocalExtent(collider, part);
             model[3] = glm::vec4(center, 1.0f);
-            Math::localToWorldAABB(model, -part.halfExtents, part.halfExtents, mn, mx);
+            Math::localToWorldAABB(model, -extent, extent, mn, mx);
         }
         outMin = glm::min(outMin, mn);
         outMax = glm::max(outMax, mx);
@@ -147,21 +208,42 @@ bool aabbOverlap(const ColliderProxy& a, const ColliderProxy& b) {
 // monomorphic arrays rather than one tagged list: the pair loops below are
 // quadratic, so the shape test belongs here, once per part, not inside them.
 void expandSubShapes(const ColliderProxy& p, const std::vector<ColliderPart>& parts,
-                     std::vector<BoxShape>& boxes, std::vector<CapsuleShape>& capsules) {
+                     PhysicsSystem::PairShapes& out) {
+    std::vector<BoxShape>& boxes = out.boxes;
+    std::vector<CapsuleShape>& capsules = out.capsules;
+
     boxes.clear();
     capsules.clear();
+
     const glm::mat3 r = glm::mat3_cast(p.rotation);
+
     for (uint32_t i = 0; i < p.partsCount; ++i) {
         const ColliderPart& part = parts[p.partsFirst + i];
         const glm::vec3 center = p.position + r * part.center;
-        if (part.shape == ColliderShape::Capsule) {
-            // The capsule's segment runs along the body's local +Y.
-            const glm::vec3 axis = r[1] * part.halfHeight;
-            capsules.push_back({center - axis, center + axis, part.radius});
-        } else {
-            boxes.push_back({center, {r[0], r[1], r[2]}, part.halfExtents});
+
+        switch (part.shape) {
+            case ColliderShape::Capsule: {
+                // The capsule's segment runs along the body's local +Y.
+                const glm::vec3 axis = r[1] * part.halfHeight;
+                capsules.push_back({center - axis, center + axis, part.radius});
+                break;
+            }
+            case ColliderShape::Mesh: {
+                // Not expanded here. A mesh is thousands of triangles and only
+                // the handful under the other shape matter, so it is walked per
+                // pair against that shape's bound instead - which is the whole
+                // reason it carries a tree.
+                break;
+            }
+            case ColliderShape::Box:
+                boxes.push_back({center, {r[0], r[1], r[2]}, part.halfExtents});
+                break;
+
+            case ColliderShape::Count:
+                break;
         }
     }
+
 }
 
 } // namespace
@@ -179,6 +261,11 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
 
     integrateForces(scene, physics, dt);
 
+    // Before the pairing rather than before the solve: what a joint holds
+    // together must not also be pushed apart, and the narrowphase is where
+    // that is decided.
+    gatherJoints(scene);
+
     broadphase();
 
     // Spans narrowphase -> writeback (the sleep test and the support outputs are
@@ -186,7 +273,7 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
     std::vector<BodyContacts> contacts(m_bodies.size());
     narrowphase(contacts, ctx.events);
 
-    wakeOnImpact(scene);
+    wakeConnected(scene);
 
     solve(physics, dt);
 
@@ -221,25 +308,13 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
         frame.invMass = dynamicInverseMass(rb);
         frame.invInertiaLocal = localInverseInertia(rb, collider);
 
-        // A hierarchy root's local Transform is already its world pose; a parented
-        // body reads its WorldTransform and records the parent frame so writeback
-        // can convert the solved world pose back to local.
-        glm::vec3 worldPos = t.position;
-        glm::quat worldRot = t.rotation;
-        if (scene.has<Hierarchy>(id)) {
-            const Hierarchy& h = scene.get<Hierarchy>(id);
-            if (h.parent && scene.has<WorldTransform>(id) && scene.has<WorldTransform>(h.parent)) {
-                const glm::mat4& selfWorld   = scene.get<WorldTransform>(id).model;
-                const glm::mat4& parentWorld = scene.get<WorldTransform>(h.parent).model;
-                worldPos              = glm::vec3(selfWorld[3]);
-                worldRot              = Math::worldRotationOf(selfWorld);
-                frame.parented        = true;
-                frame.parentWorldInv  = glm::inverse(parentWorld);
-                frame.parentRot       = Math::worldRotationOf(parentWorld);
-            }
-        }
-
-        frame.worldRot = worldRot;
+        const BodyPose pose = worldPoseOf(scene, id, t);
+        const glm::vec3 worldPos = pose.position;
+        const glm::quat worldRot = pose.rotation;
+        frame.parented       = pose.parented;
+        frame.parentWorldInv = pose.parentWorldInv;
+        frame.parentRot      = pose.parentRot;
+        frame.worldRot       = worldRot;
 
         const uint32_t bodyIndex = static_cast<uint32_t>(m_bodies.size());
         m_bodies.push_back(id);
@@ -261,15 +336,26 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
         m_solverBodies.push_back(pb);
 
         if (collider && collider->enabled) {
+            // A scene load reads the triangles back and not the tree, which is
+            // derived: rebuilt here, once, rather than written to disk where it
+            // could disagree with the triangles it describes.
+            const bool needsTree = collider->meshNodes.empty()
+                && hasMeshPart(*collider);
+            if (needsTree) rebuildMeshBvh(scene.get<Collider>(id));
+
             ColliderProxy proxy;
             proxy.body = bodyIndex;
+            proxy.collider = collider;
             proxy.partsFirst = static_cast<uint32_t>(m_proxyParts.size());
             proxy.partsCount = static_cast<uint32_t>(collider->parts.size());
             proxy.isTrigger  = collider->isTrigger;
-            m_proxyParts.insert(m_proxyParts.end(), collider->parts.begin(), collider->parts.end());
+            m_proxyParts.insert(m_proxyParts.end(),
+                                collider->parts.begin(), collider->parts.end());
             proxy.position = worldPos;
             proxy.rotation = worldRot;
             proxy.cullStatic = rb.isStatic || rb.isKinematic;
+            proxy.layer = rb.layer;
+            proxy.collidesWith = rb.collidesWith;
             computeAABB(*collider, worldPos, worldRot, proxy.aabbMin, proxy.aabbMax);
             m_proxies.push_back(proxy);
         }
@@ -310,6 +396,11 @@ void PhysicsSystem::broadphase() {
             const ColliderProxy& pb = m_proxies[m_sorted[b]];
             if (pb.aabbMin.x > pa.aabbMax.x) break;  // sorted on X: no further overlap
             if (pa.cullStatic && pb.cullStatic) continue;
+
+            // Both ways round, so "does A hit B" cannot depend on which was
+            // asked. A pair that fails this is not a pair.
+            if ((pa.layer & pb.collidesWith) == 0) continue;
+            if ((pb.layer & pa.collidesWith) == 0) continue;
             if (aabbOverlap(pa, pb)) m_pairs.emplace_back(m_sorted[a], m_sorted[b]);
         }
     }
@@ -328,10 +419,17 @@ void PhysicsSystem::narrowphase(std::vector<BodyContacts>& contacts, EventBus& e
     for (const auto& pair : m_pairs) {
         const ColliderProxy& A = m_proxies[pair.first];
         const ColliderProxy& B = m_proxies[pair.second];
+
+        if (!m_jointedPairs.empty()) {
+            const uint64_t low  = glm::min(A.body, B.body);
+            const uint64_t high = glm::max(A.body, B.body);
+            if (m_jointedPairs.count((low << 32) | high)) continue;
+        }
+
         const bool trigger = A.isTrigger || B.isTrigger;
 
-        expandSubShapes(A, m_proxyParts, m_boxA, m_capsuleA);
-        expandSubShapes(B, m_proxyParts, m_boxB, m_capsuleB);
+        expandSubShapes(A, m_proxyParts, m_shapesA);
+        expandSubShapes(B, m_proxyParts, m_shapesB);
 
         bool anyContact = false;
         glm::vec3 contactPoint(0.0f);
@@ -373,27 +471,133 @@ void PhysicsSystem::narrowphase(std::vector<BodyContacts>& contacts, EventBus& e
             }
         };
 
-        for (const BoxShape& sa : m_boxA)
-            for (const BoxShape& sb : m_boxB)
+        for (const BoxShape& sa : m_shapesA.boxes)
+            for (const BoxShape& sb : m_shapesB.boxes)
                 record(contactBoxes(sa, sb, scratch));
 
-        for (const CapsuleShape& ca : m_capsuleA)
-            for (const BoxShape& sb : m_boxB)
+        for (const CapsuleShape& ca : m_shapesA.capsules)
+            for (const BoxShape& sb : m_shapesB.boxes)
                 record(contactCapsuleBox(ca, sb, scratch));
 
         // B's capsules against A's boxes. Capsule-vs-box is not symmetric, so it
         // runs capsule-first and the normals are flipped back to A -> B here.
-        for (const CapsuleShape& cb : m_capsuleB) {
-            for (const BoxShape& sa : m_boxA) {
+        for (const CapsuleShape& cb : m_shapesB.capsules) {
+            for (const BoxShape& sa : m_shapesA.boxes) {
                 const int n = contactCapsuleBox(cb, sa, scratch);
                 for (int c = 0; c < n; ++c) scratch[c].normal = -scratch[c].normal;
                 record(n);
             }
         }
 
-        for (const CapsuleShape& ca : m_capsuleA)
-            for (const CapsuleShape& cb : m_capsuleB)
+        for (const CapsuleShape& ca : m_shapesA.capsules)
+            for (const CapsuleShape& cb : m_shapesB.capsules)
                 record(contactCapsuleCapsule(ca, cb, scratch));
+
+        // Anything against a mesh. Only the triangles under the other shape
+        // are fetched, and a triangle is convex, so one support-driven routine
+        // covers every shape it can meet rather than one routine per pair.
+        const auto meshAgainst = [&](const ColliderProxy& meshProxy,
+                                     const Collider& meshCollider,
+                                     const ColliderPart& meshPart,
+                                     const SupportShape& other, bool meshIsA) {
+            glm::vec3 min(0.0f);
+            glm::vec3 max(0.0f);
+            shapeBounds(other, min, max);
+
+            // The tree is in the mesh body's frame and the other shape is in
+            // the world, so the query goes into the mesh's frame rather than
+            // every triangle coming out of it.
+            const glm::mat3 rotation = glm::mat3_cast(meshProxy.rotation);
+            const glm::mat3 toLocal = glm::transpose(rotation);
+            // Where the triangles actually are: the body's pose and the part's
+            // own centre. The tree is built over the raw points, so the query
+            // bound has to come back to that space through both - the same two
+            // terms the placement below applies in the other direction. Take
+            // only one of them and the bound is offset from the nodes by the
+            // other, and a slab test that misses returns no candidate at all.
+            const glm::vec3 origin =
+                meshProxy.position + rotation * meshPart.center;
+            const glm::vec3 corners[2] = {min - origin, max - origin};
+            glm::vec3 localMin(std::numeric_limits<float>::max());
+            glm::vec3 localMax(std::numeric_limits<float>::lowest());
+            for (int i = 0; i < 8; ++i) {
+                const glm::vec3 corner = {corners[(i >> 0) & 1].x,
+                                          corners[(i >> 1) & 1].y,
+                                          corners[(i >> 2) & 1].z};
+                const glm::vec3 local = toLocal * corner;
+                localMin = glm::min(localMin, local);
+                localMax = glm::max(localMax, local);
+            }
+
+            m_meshCandidates.clear();
+            queryMeshBvh(meshCollider.meshNodes, localMin, localMax,
+                         m_meshCandidates);
+
+            for (uint32_t triangle : m_meshCandidates) {
+                const uint32_t base = meshPart.meshFirst + triangle * 3;
+                if (base + 2 >= meshCollider.meshPoints.size()) continue;
+
+                glm::vec3 world[3];
+                for (int c = 0; c < 3; ++c) {
+                    world[c] = origin + rotation * meshCollider.meshPoints[base + c];
+                }
+                const SupportShape face = supportOfPoints(world, 3);
+                const SupportShape& first  = meshIsA ? face  : other;
+                const SupportShape& second = meshIsA ? other : face;
+                if (!gjkContact(first, second, scratch[0])) continue;
+
+                // The triangle decides the direction, not EPA. A triangle is a
+                // zero-thickness hull, so its Minkowski difference with a body
+                // is symmetric about its plane and the shallowest way out flips
+                // the moment the body's centre crosses it - at which point the
+                // position pass drives the body down through the floor instead
+                // of back up onto it. The winding says which side is outside,
+                // and it has been sitting in the buffer unread.
+                const glm::vec3 edge = glm::cross(world[1] - world[0],
+                                                  world[2] - world[0]);
+                const float edgeLenSq = glm::dot(edge, edge);
+                if (edgeLenSq > Physics::DEGENERATE_SQ) {
+                    const glm::vec3 faceNormal = edge / std::sqrt(edgeLenSq);
+
+                    // How far the body reaches past the face, measured along
+                    // the face - never along EPA's answer. The two agree while
+                    // the body is on the outside, and it is exactly when they
+                    // stop agreeing that this matters.
+                    const glm::vec3 deepest = support(other, -faceNormal);
+                    const float depth = glm::dot(world[0] - deepest, faceNormal);
+                    if (depth <= 0.0f) continue;
+
+                    // The contact normal runs A -> B, so it is the face's own
+                    // direction when the mesh is A and the reverse when it is B.
+                    scratch[0].normal = faceNormal * (meshIsA ? 1.0f : -1.0f);
+                    scratch[0].penetration = depth;
+                    // The point moves with them. A normal from the face and a
+                    // point from EPA describe different contacts, and the lever
+                    // arm between the two is a torque nothing asked for.
+                    scratch[0].point = deepest + faceNormal * (depth * 0.5f);
+                }
+                record(1);
+            }
+        };
+
+        forEachMeshPart(A, m_proxyParts, [&](const Collider& c,
+                                            const ColliderPart& p) {
+            for (const BoxShape& sb : m_shapesB.boxes) {
+                meshAgainst(A, c, p, supportOf(sb), true);
+            }
+            for (const CapsuleShape& cb : m_shapesB.capsules) {
+                meshAgainst(A, c, p, supportOf(cb), true);
+            }
+        });
+        forEachMeshPart(B, m_proxyParts, [&](const Collider& c,
+                                            const ColliderPart& p) {
+            for (const BoxShape& sa : m_shapesA.boxes) {
+                meshAgainst(B, c, p, supportOf(sa), false);
+            }
+            for (const CapsuleShape& ca : m_shapesA.capsules) {
+                meshAgainst(B, c, p, supportOf(ca), false);
+            }
+        });
         if (anyContact) {
             // Enqueued, not emitted: listeners fire on the next EventBus flush,
             // never mid-solve.
@@ -405,7 +609,7 @@ void PhysicsSystem::narrowphase(std::vector<BodyContacts>& contacts, EventBus& e
             } else {
                 // Only a resolved contact supports the sleep test: a trigger
                 // holds nothing up, and a body asleep inside one would never
-                // be woken - wakeOnImpact walks manifolds, which skip them.
+                // be woken - wakeConnected walks manifolds, which skip them.
                 contacts[A.body].touched = true;
                 contacts[B.body].touched = true;
                 events.enqueue(CollisionEvent{entityA, entityB, contactPoint, contactNormal});
@@ -414,28 +618,130 @@ void PhysicsSystem::narrowphase(std::vector<BodyContacts>& contacts, EventBus& e
     }
 }
 
-void PhysicsSystem::wakeOnImpact(Scene& scene) {
+void PhysicsSystem::wakeConnected(Scene& scene) {
     PROFILE_SCOPE("Physics/Wake");
 
-    for (const ContactManifold& manifold : m_manifolds) {
-        const uint32_t a = manifold.bodyA;
-        const uint32_t b = manifold.bodyB;
+    auto wake = [&](uint32_t idx, Rigidbody& rb) {
+        rb.sleeping = false;
+        rb.sleepTimer = 0.0f;
+        m_solverBodies[idx].invMass = m_bodyFrames[idx].invMass;
+        // The gathered world rotation, not the local Transform's: for a
+        // parented body those differ, and the solver is running in world.
+        m_solverBodies[idx].invInertiaWorld =
+            inverseInertiaWorld(m_bodyFrames[idx].invInertiaLocal, m_bodyFrames[idx].worldRot);
+    };
+
+    // One rule for both ways two bodies are connected: if one end is moving and
+    // the other is asleep, the sleeper is about to be disturbed and has to be
+    // awake to notice.
+    auto rouse = [&](uint32_t a, uint32_t b) {
+        // A world pin is a synthetic body appended past the gathered ones: it
+        // has an index in the solver and no entity behind it, so there is
+        // nothing to wake and nothing to read.
+        if (a >= m_bodies.size() || b >= m_bodies.size()) return;
         Rigidbody& rbA = scene.get<Rigidbody>(m_bodies[a]);
         Rigidbody& rbB = scene.get<Rigidbody>(m_bodies[b]);
-        const float speedA = glm::dot(m_solverBodies[a].linearVelocity, m_solverBodies[a].linearVelocity);
-        const float speedB = glm::dot(m_solverBodies[b].linearVelocity, m_solverBodies[b].linearVelocity);
-
-        auto wake = [&](uint32_t idx, Rigidbody& rb) {
-            rb.sleeping = false;
-            rb.sleepTimer = 0.0f;
-            m_solverBodies[idx].invMass = m_bodyFrames[idx].invMass;
-            // The gathered world rotation, not the local Transform's: for a
-            // parented body those differ, and the solver is running in world.
-            m_solverBodies[idx].invInertiaWorld =
-                inverseInertiaWorld(m_bodyFrames[idx].invInertiaLocal, m_bodyFrames[idx].worldRot);
-        };
+        const float speedA = glm::dot(m_solverBodies[a].linearVelocity,
+                                      m_solverBodies[a].linearVelocity);
+        const float speedB = glm::dot(m_solverBodies[b].linearVelocity,
+                                      m_solverBodies[b].linearVelocity);
         if (rbA.sleeping && !rbB.sleeping && speedB > WAKE_SPEED_SQ) wake(a, rbA);
         if (rbB.sleeping && !rbA.sleeping && speedA > WAKE_SPEED_SQ) wake(b, rbB);
+    };
+
+    for (const ContactManifold& manifold : m_manifolds) {
+        rouse(manifold.bodyA, manifold.bodyB);
+    }
+
+    // Joints too, and they are the case that needed saying: a jointed pair
+    // generates no manifold on purpose, so a body asleep on the end of one was
+    // a nail. Pulling the other end did nothing, for as long as the pull
+    // lasted, because the solver treats a sleeper as immovable.
+    for (const JointConstraint& joint : m_joints) {
+        rouse(joint.bodyA, joint.bodyB);
+    }
+}
+
+void PhysicsSystem::gatherJoints(Scene& scene) {
+    PROFILE_SCOPE("Physics/GatherJoints");
+
+    m_joints.clear();
+    m_jointedPairs.clear();
+
+    auto* storage = scene.storage<Joint>();
+    if (!storage) return;
+
+    // Entity -> this tick's body index. Built from the bodies actually gathered,
+    // so a joint to something not simulated resolves to nothing and is dropped.
+    std::unordered_map<uint32_t, uint32_t> indexOf;
+    indexOf.reserve(m_bodies.size());
+    for (uint32_t i = 0; i < m_bodies.size(); ++i) indexOf[m_bodies[i].index] = i;
+
+    const uint32_t count = static_cast<uint32_t>(storage->size());
+    for (uint32_t i = 0; i < count; ++i) {
+        const EntityId self = scene.entityAt(storage->keyAt(i));
+        Joint& joint = storage->dataAt(i);
+        // Checked as a handle, not a slot: a dead entity's slot is reused, and
+        // a joint matched by index alone would quietly tie itself to whatever
+        // moved in.
+        if (!joint.connected || !scene.isAlive(joint.connected)) continue;
+
+        const auto a = indexOf.find(self.index);
+        if (a == indexOf.end()) continue;
+
+        const auto b = indexOf.find(joint.connected.index);
+        uint32_t bodyB = 0;
+        glm::mat3 rotB(1.0f);
+        if (b != indexOf.end()) {
+            bodyB = b->second;
+            rotB = glm::mat3_cast(m_bodyFrames[bodyB].worldRot);
+        } else if (scene.has<Transform>(joint.connected)) {
+            // The documented world pin: connected has a pose but no body, so
+            // the joint holds to that point in the world. A synthetic static
+            // body carries it through the solver - appended after the real
+            // ones, so nothing writes it back.
+            const glm::mat4 world =
+                HierarchyOperations::computeWorldMatrix(scene, joint.connected);
+            PhysicsBody anchor;
+            anchor.position = glm::vec3(world[3]);
+            bodyB = static_cast<uint32_t>(m_solverBodies.size());
+            m_solverBodies.push_back(anchor);
+            rotB = glm::mat3_cast(Math::worldRotationOf(world));
+        } else {
+            continue;
+        }
+
+        const glm::mat3 rotA = glm::mat3_cast(m_bodyFrames[a->second].worldRot);
+
+        JointConstraint constraint;
+        constraint.bodyA = a->second;
+        constraint.bodyB = bodyB;
+        constraint.anchorA = rotA * joint.anchor;
+        constraint.anchorB = rotB * joint.connectedAnchor;
+        constraint.stiffness = glm::clamp(joint.stiffness, 0.0f, 1.0f);
+
+        if (joint.type == JointType::Distance) {
+            // Unset: whatever the two were apart when the joint first ran. An
+            // authored rope has a length someone chose; one built at play time
+            // has the length it was built with, and asking the author to
+            // compute it is asking them to do the solver's arithmetic.
+            if (joint.distance < 0.0f) {
+                const glm::vec3 worldA =
+                    m_solverBodies[a->second].position + constraint.anchorA;
+                const glm::vec3 worldB =
+                    m_solverBodies[bodyB].position + constraint.anchorB;
+                joint.distance = glm::length(worldB - worldA);
+            }
+            constraint.distance = joint.distance;
+        }
+
+        if (!joint.collideConnected) {
+            const uint64_t low  = glm::min(constraint.bodyA, constraint.bodyB);
+            const uint64_t high = glm::max(constraint.bodyA, constraint.bodyB);
+            m_jointedPairs.insert((low << 32) | high);
+        }
+
+        m_joints.push_back(constraint);
     }
 }
 
@@ -446,6 +752,11 @@ void PhysicsSystem::solve(const PhysicsSettings& physics, float dt) {
     params.iterations = physics.solverIterations;
     params.dt = dt;
     solveContacts(m_solverBodies, m_manifolds, params);
+
+    // After the contacts, not beside them. A joint resolved first would pull a
+    // body into a surface the contact pass then pushes it out of, and the two
+    // would trade the body back and forth for as long as both were unhappy.
+    solveJoints(m_solverBodies, m_joints, params);
 }
 
 void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<BodyContacts>& contacts) {
@@ -459,8 +770,8 @@ void PhysicsSystem::writeback(Scene& scene, float dt, const std::vector<BodyCont
         // Published before the early-outs below: a sleeping body resting on the
         // floor is supported, and that is exactly when a controller asks.
         rb.supported = contacts[k].touched;
-        rb.supportNormal = rb.supported ? contacts[k].support : UP;
-        rb.blockNormal   = rb.supported ? contacts[k].block   : UP;
+        rb.supportNormal = rb.supported ? contacts[k].support : Math::WORLD_UP;
+        rb.blockNormal   = rb.supported ? contacts[k].block   : Math::WORLD_UP;
 
         if (rb.isStatic) continue;
         if (rb.sleeping) {

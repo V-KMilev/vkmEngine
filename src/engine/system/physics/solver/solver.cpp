@@ -1,9 +1,12 @@
-#include "system/physics/collision/solver.h"
+#include "system/physics/solver/solver.h"
 
 #include <algorithm>
 #include <cmath>
 
 #include <glm/glm.hpp>
+
+#include "system/physics/solver/solver_math.h"
+#include "system/physics/tolerance.h"
 
 namespace Vkm::Engine {
 
@@ -23,39 +26,15 @@ float combineFriction(const PhysicsBody& a, const PhysicsBody& b) {
     return std::sqrt(std::max(0.0f, a.friction * b.friction));
 }
 
-/**
- * @brief Effective mass along a unit direction at the two contact arms.
- *
- * The denominator k = invMassA + invMassB + angular terms, which turns a
- * desired velocity change into an impulse magnitude.
- */
-float effectiveMass(
-    const PhysicsBody& a,
-    const PhysicsBody& b,
-    const glm::vec3& rA,
-    const glm::vec3& rB,
-    const glm::vec3& dir
-) {
-    const glm::vec3 rnA = glm::cross(rA, dir);
-    const glm::vec3 rnB = glm::cross(rB, dir);
-    const float angular =
-        glm::dot(dir, glm::cross(a.invInertiaWorld * rnA, rA)) +
-        glm::dot(dir, glm::cross(b.invInertiaWorld * rnB, rB));
-    const float k = a.invMass + b.invMass + angular;
-    return k > 0.0f ? 1.0f / k : 0.0f;
-}
-
-glm::vec3 velocityAt(const PhysicsBody& body, const glm::vec3& r) {
-    return body.linearVelocity + glm::cross(body.angularVelocity, r);
-}
+// The contact and joint solvers share their velocity/impulse arithmetic
+// through SolverMath; the pseudo pair stays here because split-impulse
+// position correction is this solver's own device.
+using SolverMath::applyImpulse;
+using SolverMath::effectiveMass;
+using SolverMath::velocityAt;
 
 glm::vec3 pseudoVelocityAt(const PhysicsBody& body, const glm::vec3& r) {
     return body.pseudoLinear + glm::cross(body.pseudoAngular, r);
-}
-
-void applyImpulse(PhysicsBody& body, const glm::vec3& impulse, const glm::vec3& r, float sign) {
-    body.linearVelocity  += sign * body.invMass * impulse;
-    body.angularVelocity += sign * body.invInertiaWorld * glm::cross(r, impulse);
 }
 
 void applyPseudoImpulse(PhysicsBody& body, const glm::vec3& impulse, const glm::vec3& r, float sign) {
@@ -121,7 +100,7 @@ void solveContacts(
                 const glm::vec3 relVelT = velocityAt(b, rB) - velocityAt(a, rA);
                 glm::vec3 tangent = relVelT - glm::dot(relVelT, contact.normal) * contact.normal;
                 const float tLen = glm::length(tangent);
-                if (tLen < 1e-6f) continue;
+                if (tLen < Physics::FRICTION_DEADZONE) continue;
                 tangent /= tLen;
 
                 const float kt = effectiveMass(a, b, rA, rB, tangent);

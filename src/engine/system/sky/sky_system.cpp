@@ -36,11 +36,20 @@ void SkySystem::update(FrameContext& ctx) {
     // the disc the skybox draws for the same body cannot disagree.
     const SkyAngles angles = moonOwns ? env.moonAngles() : env.sunAngles();
 
-    // From the angles, not a direction vector: a look-at would need correcting
-    // for this engine's +Z forward, and the euler form is exact. The azimuth
-    // turns by a half so the light faces away from the body it comes from.
+    // A light travels away from the body it comes from, so what is wanted here
+    // is the opposite of Environment::directionFromAngles - which is the
+    // direction toward it, and is what the skybox draws its disc along. The two
+    // have to stay exactly opposed or the sun lights the scene from one place
+    // and is drawn in another.
+    //
+    // With forward at -Z, euler(-elevation, azimuth) is that opposite: negating
+    // the elevation turns the light down from a body that is up, and the
+    // azimuth needs nothing. The half turn a +Z forward needs here does both
+    // jobs at once, so removing it alone fixes the azimuth and leaves the
+    // elevation inverted - lighting the scene from below a sun that is
+    // overhead.
     const glm::quat rotation = glm::quat(glm::vec3(
-        glm::radians(angles.elevation), glm::radians(angles.azimuth + 180.0f), 0.0f));
+        glm::radians(-angles.elevation), glm::radians(angles.azimuth), 0.0f));
 
     const glm::vec3 color     = moonOwns ? env.night.moonlightColor : env.sky.lightColor;
     const float     intensity = moonOwns ? env.night.moonlightIntensity * moonUp
