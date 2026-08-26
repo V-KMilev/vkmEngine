@@ -54,6 +54,29 @@ bool isIdentity(const Transform& transform) {
 void SkeletalAnimationSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("SkeletalAnimationSystem");
 
+    // Published every frame, filled on the tick: a frame that ran none draws
+    // the last pose rather than a null the render path reads as "no rig here".
+    ctx.poses = &m_poses;
+
+    // Advancing a clip is the tick's; composing the pose it names is
+    // presentation, and no tick runs while paused. The step is already zero
+    // here, so this rebuilds the pose without advancing or crossing a marker.
+    if (!ctx.clock.isPaused()) return;
+
+    m_poses.clear();
+    m_work.clear();
+
+    FaultsSeen seen;
+    poseRigs(ctx, seen);
+
+    m_clipMismatchLogged = seen.clipMismatch;
+    m_rigMismatchLogged  = seen.rigMismatch;
+    m_meshOffsetLogged   = seen.meshOffset;
+}
+
+void SkeletalAnimationSystem::fixedUpdate(FrameContext& ctx) {
+    PROFILE_SCOPE("SkeletalAnimationSystem::fixed");
+
     m_poses.clear();
     m_work.clear();
     ctx.poses = &m_poses;
@@ -146,7 +169,10 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen) {
         stampDescendants(scene, resources, rig, work, seen);
     }
 
-    const float simDelta = ctx.clock.getSimDelta();
+    // No pause test: reaching a fixedUpdate means a step was consumed, and one
+    // is only consumed when simulation time elapsed - the editor's single step
+    // is paused and stepping at once.
+    const float simDelta = ctx.clock.getFixedStep();
     const size_t grain = (totalBones < MIN_PARALLEL_BONES)
         ? m_work.size()
         : std::max<size_t>(1, m_work.size() / (ThreadPool::get().threadCount() + 1));
@@ -243,7 +269,7 @@ void SkeletalAnimationSystem::stampDescendants(Scene& scene, const ResourceManag
         // A nested rig owns its own subtree: it allocated a slice of its own,
         // and stamping through it would hand its meshes the wrong pose.
         if (scene.has<Animator>(child)) return;
-        m_poses.mapEntity(child.index, work.slice);
+        m_poses.mapEntity(child.slot(), work.slice);
         checkSkinnedMesh(scene, resources, child, *work.skeleton, false, seen);
         stampDescendants(scene, resources, child, work, seen);
     });
