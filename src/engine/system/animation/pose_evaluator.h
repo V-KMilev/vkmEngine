@@ -15,9 +15,9 @@ struct SkeletonAsset;
  * alongside the one being entered, at its own playback head, because a blend
  * between two moving poses is what keeps a run-to-walk from freezing a foot.
  *
- * Two is the whole of 1.6's blending. What grows later - a list of layers, a
- * blend tree - replaces this struct, which is per-frame, rather than the
- * persisted Animator; that is why the fade fields on it are transient.
+ * This struct is per-frame and the Animator is persisted, which is why the
+ * fade fields on the component are transient: what is in flight this frame is
+ * described here, not saved there.
  */
 struct PoseSample {
     const AnimationClipAsset* clip = nullptr;  ///< Clip playing; null holds the bind pose.

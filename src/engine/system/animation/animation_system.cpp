@@ -12,16 +12,14 @@
 
 namespace Vkm::Engine {
 
-void AnimationSystem::update(FrameContext& ctx) {
+void AnimationSystem::fixedUpdate(FrameContext& ctx) {
     PROFILE_SCOPE("AnimationSystem");
 
     auto& scene = ctx.scene;
-    const float simDelta = ctx.clock.getSimDelta();
-
-    // No simulation time elapsed (paused, or not stepping this frame): advance
-    // nothing and, crucially, apply nothing - so authoring a Transform while
-    // paused is not overwritten by re-sampling the track at the same time.
-    if (simDelta <= 0.0f) return;
+    // No pause test: reaching a fixedUpdate means a step was consumed, and one
+    // is only consumed when simulation time elapsed - the editor's single step
+    // is paused and stepping at once.
+    const float simDelta = ctx.clock.getFixedStep();
 
     auto* animStorage = scene.storage<Animation>();
     if (!animStorage) return;
