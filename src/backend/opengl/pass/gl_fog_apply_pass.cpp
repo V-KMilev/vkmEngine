@@ -32,9 +32,9 @@ void GLFogApplyPass::execute(GLFrameContext& ctx) {
     beginFullscreen(ctx.gl);
 
     m_shader->bind();
-    ctx.colorSrc->bindColor(GLBindings::PostTextureSlots::SceneColor);
-    ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SceneDepth);
-    ctx.fog.bindIntegratedSlot(GLBindings::PostTextureSlots::FogVolume);
+    ctx.colorSrc->bindColor(GLBindings::PostTextureSlots::SCENE_COLOR);
+    ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SCENE_DEPTH);
+    ctx.fog.bindIntegratedSlot(GLBindings::PostTextureSlots::FOG_VOLUME);
 
     m_shader->setUniformMatrix4fv("u_projection", view.camera.projection);
     m_shader->setUniform1f("u_zNear", view.camera.zNear);

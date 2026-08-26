@@ -65,7 +65,7 @@ void GLSkyboxPass::execute(GLFrameContext& ctx) {
         m_shader->setUniform1f("u_starDensity", env.night.starDensity);
     }
 
-    ctx.ibl.bindEnvCube(GLBindings::IBLTextureSlots::EnvCube);
+    ctx.ibl.bindEnvCube(GLBindings::IBLTextureSlots::ENV_CUBE);
     m_cube->draw();
 
     // Restore the engine-default depth state so nothing downstream inherits this

@@ -48,10 +48,10 @@ int GLProbeManager::bind(const RenderView& view) {
         block.probes[p].params  = glm::vec4(pd.falloff, pd.intensity, static_cast<float>(m_active[p]), 0.0f);
     }
     Vkm::GL::uploadIfChanged(m_ubo, m_lastBlock, block);
-    if (m_ubo) m_ubo->bindBase(GLBindings::UBOBindingPoints::Probes);
+    if (m_ubo) m_ubo->bindBase(GLBindings::UBOBindingPoints::PROBES);
 
-    m_array->bindIrradiance(GLBindings::ProbeTextureSlots::Irradiance);
-    m_array->bindPrefilter(GLBindings::ProbeTextureSlots::Prefilter);
+    m_array->bindIrradiance(GLBindings::ProbeTextureSlots::IRRADIANCE);
+    m_array->bindPrefilter(GLBindings::ProbeTextureSlots::PREFILTER);
     return static_cast<int>(m_active.size());
 }
 

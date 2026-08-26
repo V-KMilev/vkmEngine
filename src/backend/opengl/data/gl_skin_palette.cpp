@@ -19,7 +19,7 @@ void GLSkinPalette::update(const std::vector<glm::mat4>& matrices) {
 
 void GLSkinPalette::bind() const {
     if (!m_buffer) return;
-    m_buffer->bindBase(GLBindings::SSBOBindingPoints::SkinPalette);
+    m_buffer->bindBase(GLBindings::SSBOBindingPoints::SKIN_PALETTE);
 }
 
 } // namespace Vkm::Engine
