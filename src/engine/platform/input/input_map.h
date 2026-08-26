@@ -5,6 +5,10 @@
 #include <unordered_map>
 #include <vector>
 
+#include <glm/gtc/quaternion.hpp>
+
+#include "platform/input/input_command.h"
+
 namespace Vkm::Engine {
 
 class InputHandle;
@@ -51,6 +55,12 @@ struct InputBinding {
  *
  * Sampled by the engine at the top of the frame, before any system runs, so
  * every reader in the frame sees the same input state.
+ *
+ * That frame sampling serves frame-rate work - the camera, the editor, UI.
+ * Simulation runs on a different clock, so a fixed update reads a per-tick
+ * InputCommand instead, built by beginTick() from the edges latched across
+ * however many frames fell between two ticks. The frame queries below must not
+ * be read from a fixed update.
  */
 class InputMap {
     public:
@@ -105,9 +115,58 @@ class InputMap {
         /**
          * @brief Sample every action from @p input, rolling the previous values.
          *
-         * Called once per frame by the engine before the systems run.
+         * Called once per frame by the engine before the systems run. Also
+         * latches this frame's edges for the next command, so a press that
+         * begins and ends between two ticks still reaches one.
          */
         void update(const InputHandle& input);
+
+        /**
+         * @brief Build the command for @p tick from everything since the last one.
+         *
+         * Called once per fixed step by the engine, before the systems run.
+         * Takes the axes as they stand and the edges latched since the previous
+         * command, then clears the latch - which is what stops one keypress
+         * reading as pressed on every tick of a slow frame.
+         *
+         * @param tick Simulation tick the command drives.
+         */
+        void beginTick(uint32_t tick);
+
+        /**
+         * @brief Say where the player is looking, for the commands that follow.
+         *
+         * Set from the frame clock, where a view actually turns, and read back
+         * off InputCommand::view inside a fixed update. A game that steers
+         * relative to its camera calls this once per frame after moving it; one
+         * that steers in world space never calls it at all.
+         *
+         * @param view Orientation the input from now on is aimed with.
+         */
+        void setView(const glm::quat& view) { m_view = view; }
+
+        /**
+         * @brief The command the current fixed step is running under.
+         *
+         * What a fixed update reads instead of the frame queries. Before the
+         * first beginTick() this is a zeroed command, which reads as "nothing
+         * held", so a system that runs early sees no input rather than stale
+         * input.
+         */
+        const InputCommand& command() const { return m_command; }
+
+        /**
+         * @brief The command's slot for @p action, or -1 when it has none.
+         *
+         * Assigned in definition order and stable for the session, which is
+         * what lets a command be a fixed array rather than a map. An action
+         * defined past MAX_INPUT_ACTIONS has no slot; its axis is absent from
+         * every command and the frame queries still answer for it.
+         *
+         * @param action Action name.
+         * @return Index into InputCommand::axis, or -1.
+         */
+        int indexOf(const std::string& action) const;
 
         /**
          * @brief Is the action active this frame? (any binding held)
@@ -137,6 +196,7 @@ class InputMap {
             std::vector<InputBinding> bindings;
             float value     = 0.0f;  ///< This frame's axis value.
             float lastValue = 0.0f;  ///< Previous frame's, for the edges.
+            int   slot      = -1;    ///< Index in an InputCommand, or -1 past the cap.
         };
 
         /**
@@ -148,8 +208,23 @@ class InputMap {
          */
         const Action* find(const std::string& action) const;
 
+        /**
+         * @brief Give @p entry a command slot if it has none and one is left.
+         *
+         * @param entry Action being defined or extended.
+         * @param action Its name, for the warning when the cap is reached.
+         */
+        void assignSlot(Action& entry, const std::string& action);
+
     private:
         std::unordered_map<std::string, Action> m_actions;
+
+        InputCommand m_command;              ///< The current tick's, from beginTick.
+        glm::quat    m_view{1.0f, 0.0f, 0.0f, 0.0f};  ///< Latched into every command beginTick builds.
+        uint32_t     m_pendingPressed  = 0;  ///< Edges latched since the last command.
+        uint32_t     m_pendingReleased = 0;
+        uint32_t     m_nextSequence    = 1;  ///< 0 is the zeroed pre-first-tick command.
+        uint32_t     m_nextSlot        = 0;
 };
 
 } // namespace Vkm::Engine
