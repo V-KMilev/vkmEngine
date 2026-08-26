@@ -52,8 +52,8 @@ std::filesystem::path resolveRoot() {
 
 // Set by setProjectRoot(); empty until then.
 std::filesystem::path& projectOverride() {
-    static std::filesystem::path path;
-    return path;
+    static std::filesystem::path s_path;
+    return s_path;
 }
 
 // Folder the engine keeps its per-user files under, inside whichever directory
@@ -104,8 +104,8 @@ std::filesystem::path userStateBase() {
 
 std::filesystem::path engineRoot() {
     // Resolved once: the on-disk layout can't change under a running process.
-    static const std::filesystem::path resolved = resolveRoot();
-    return resolved;
+    static const std::filesystem::path s_resolved = resolveRoot();
+    return s_resolved;
 }
 
 void setProjectRoot(const std::filesystem::path& path) {
@@ -125,7 +125,7 @@ std::filesystem::path userRoot() {
     // Resolved once, and created with it: the caller that asks for this root is
     // about to write in it, and a root that does not exist is a save that fails
     // at shutdown where nobody is looking.
-    static const std::filesystem::path resolved = [] {
+    static const std::filesystem::path s_resolved = [] {
         const std::filesystem::path base = userConfigBase();
         // No home directory at all - a service account, a stripped container.
         if (base.empty()) return engineRoot();
@@ -135,16 +135,16 @@ std::filesystem::path userRoot() {
         std::filesystem::create_directories(dir, ec);
         return ec ? engineRoot() : dir;
     }();
-    return resolved;
+    return s_resolved;
 }
 
 std::filesystem::path userLogs() {
-    static const std::filesystem::path resolved = [] {
+    static const std::filesystem::path s_resolved = [] {
         const std::filesystem::path base = userStateBase();
         if (base.empty()) return engineRoot() / "logs";
         return base / USER_DIR_NAME / "logs";
     }();
-    return resolved;
+    return s_resolved;
 }
 
 std::filesystem::path resolveProjectPath(const std::string& path) {

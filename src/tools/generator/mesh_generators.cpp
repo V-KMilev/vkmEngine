@@ -441,7 +441,7 @@ MeshAsset decimateMesh(const MeshAsset& src, uint32_t gridResolution) {
         lo = glm::min(lo, v.position);
         hi = glm::max(hi, v.position);
     }
-    const glm::vec3 extent = glm::max(hi - lo, glm::vec3(1e-6f));
+    const glm::vec3 extent = glm::max(hi - lo, glm::vec3(glm::epsilon<float>()));
     const float res = static_cast<float>(gridResolution);
 
     auto cellOf = [&](const glm::vec3& p) -> uint64_t {
@@ -485,10 +485,12 @@ MeshAsset decimateMesh(const MeshAsset& src, uint32_t gridResolution) {
         const float inv = 1.0f / static_cast<float>(cell.count);
         Vertex v;
         v.position = cell.position * inv;
-        v.normal   = glm::length(cell.normal) > 1e-6f ? glm::normalize(cell.normal) : glm::vec3(0.0f, 1.0f, 0.0f);
+        v.normal   = glm::length(cell.normal) > glm::epsilon<float>()
+                   ? glm::normalize(cell.normal) : glm::vec3(0.0f, 1.0f, 0.0f);
         v.uv       = cell.uv * inv;
         const glm::vec3 t3 = glm::vec3(cell.tangent);
-        v.tangent  = glm::vec4(glm::length(t3) > 1e-6f ? glm::normalize(t3) : glm::vec3(1.0f, 0.0f, 0.0f),
+        v.tangent  = glm::vec4(glm::length(t3) > glm::epsilon<float>()
+                                   ? glm::normalize(t3) : glm::vec3(1.0f, 0.0f, 0.0f),
                                cell.tangent.w >= 0.0f ? 1.0f : -1.0f);
         out.vertices.push_back(v);
     }

@@ -148,6 +148,9 @@ class SlotAllocator {
 
             VKM_ASSERT(!m_generation[index].alive(),
                 "SlotAllocator::allocateAt: slot %u already alive", index);
+            // Guarded as well as asserted: a release build refuses rather than
+            // handing out a slot two owners would then share.
+            if (m_generation[index].alive()) return {};
 
             m_generation[index].setAlive(true);
             ++m_liveCount;

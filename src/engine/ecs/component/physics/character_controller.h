@@ -60,8 +60,9 @@ struct CharacterController {
 
 } // namespace Vkm::Engine
 
-// moveInput / jumpRequested / grounded / groundNormal are per-tick traffic, not
-// authored state, and are intentionally absent: only the tuning is serialized.
+// moveInput, jumpRequested, grounded, groundNormal, stepping, stepTargetY and
+// stepTime are per-tick traffic, not authored state, and are intentionally
+// absent: only the tuning is serialized.
 VKM_REFLECT_BEGIN(::Vkm::Engine::CharacterController)
     VKM_F(jumpSpeed),
     VKM_F(acceleration),

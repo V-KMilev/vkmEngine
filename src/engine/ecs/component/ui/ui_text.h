@@ -13,9 +13,9 @@ namespace Vkm::Engine {
  * @brief A line of text drawn within its element's rect.
  *
  * Renders `text` at `pixelSize` reference pixels, tinted by `color`, in the SDF
- * font named `font` (so it stays crisp at any size). The font is referenced by
- * asset name - not a handle - so it survives scene load (which swaps the asset
- * graph) and serializes as plain data; the UISystem resolves it through
+ * font named `font` (so it stays crisp at any size). The font is named rather
+ * than handled because a scene load swaps the whole asset graph, which a name
+ * survives and a handle does not; the UISystem resolves it through
  * ResourceManager::findByName each frame. The string is laid out as a single
  * line, aligned within the element rect on both axes; it is neither wrapped nor
  * broken across lines, so a caller wanting several lines uses several UIText

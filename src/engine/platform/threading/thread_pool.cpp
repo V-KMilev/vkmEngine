@@ -32,8 +32,8 @@ ThreadPool::~ThreadPool() {
 ThreadPool& ThreadPool::get() {
     // hardware_concurrency() is allowed to answer 0 when it cannot tell. One
     // worker still drains the queue; zero would strand every task in it.
-    static ThreadPool instance(std::max<size_t>(1, std::thread::hardware_concurrency()));
-    return instance;
+    static ThreadPool s_instance(std::max<size_t>(1, std::thread::hardware_concurrency()));
+    return s_instance;
 }
 
 void ThreadPool::addTask(std::function<void()> && task) {

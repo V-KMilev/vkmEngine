@@ -96,8 +96,8 @@ template<typename T>
 TypeId typeId() {
     // Cached per (module, T); the value comes from the shared registry, so all
     // modules agree even though each caches its own local.
-    static const TypeId id = detail::typeIdFromInfo(typeid(T));
-    return id;
+    static const TypeId s_id = detail::typeIdFromInfo(typeid(T));
+    return s_id;
 }
 
 } // namespace Vkm::Engine

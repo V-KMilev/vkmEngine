@@ -40,7 +40,7 @@ void AudioSystem::init(FrameContext& ctx) {
 }
 
 void AudioSystem::update(FrameContext& ctx) {
-    PROFILE_SCOPE("AudioSystem::update");
+    PROFILE_SCOPE("AudioSystem");
 
     // Runs whole on a device that never opened, so a silent host behaves like
     // one where every sound is zero-length and `playing` still clears itself.
@@ -100,7 +100,7 @@ void AudioSystem::shutdown() {
 }
 
 VoiceId AudioSystem::voiceOf(EntityId entity) const {
-    const auto it = m_voices.find(entity.index);
+    const auto it = m_voices.find(entity.slot());
     if (it == m_voices.end() || it->second.entity != entity) return 0;
     return it->second.voice;
 }
@@ -136,7 +136,7 @@ void AudioSystem::reconcileSource(FrameContext& ctx, EntityId entity, AudioSourc
         source.playing = true;
     }
 
-    auto it = m_voices.find(entity.index);
+    auto it = m_voices.find(entity.slot());
     // A slot recycled by an unrelated entity: the source that owned this voice
     // is gone, and the entity now wearing its number must not inherit it.
     if (it != m_voices.end() && it->second.entity != entity) {
@@ -194,7 +194,7 @@ void AudioSystem::reconcileSource(FrameContext& ctx, EntityId entity, AudioSourc
         source.playing = false;
         return;
     }
-    m_voices.emplace(entity.index, ActiveVoice{entity, voice, m_frame});
+    m_voices.emplace(entity.slot(), ActiveVoice{entity, voice, m_frame});
 }
 
 void AudioSystem::startPendingRequests(FrameContext& ctx) {

@@ -6,6 +6,7 @@
 
 #include <glm/gtc/quaternion.hpp>
 
+#include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/component/render/light.h"
@@ -22,6 +23,8 @@ constexpr float SUN_FADE_DEGREES = 8.0f;
 } // namespace
 
 void SkySystem::update(FrameContext& ctx) {
+    PROFILE_SCOPE("SkySystem");
+
     const Environment& env = ctx.scene.environment();
     if (!env.sky.procedural) return;
 
@@ -36,18 +39,9 @@ void SkySystem::update(FrameContext& ctx) {
     // the disc the skybox draws for the same body cannot disagree.
     const SkyAngles angles = moonOwns ? env.moonAngles() : env.sunAngles();
 
-    // A light travels away from the body it comes from, so what is wanted here
-    // is the opposite of Environment::directionFromAngles - which is the
-    // direction toward it, and is what the skybox draws its disc along. The two
-    // have to stay exactly opposed or the sun lights the scene from one place
-    // and is drawn in another.
-    //
-    // With forward at -Z, euler(-elevation, azimuth) is that opposite: negating
-    // the elevation turns the light down from a body that is up, and the
-    // azimuth needs nothing. The half turn a +Z forward needs here does both
-    // jobs at once, so removing it alone fixes the azimuth and leaves the
-    // elevation inverted - lighting the scene from below a sun that is
-    // overhead.
+    // Exactly opposed to Environment::directionFromAngles, which points toward
+    // the body and is what the skybox draws its disc along: a light travels away
+    // from its source. With forward at -Z that is euler(-elevation, azimuth).
     const glm::quat rotation = glm::quat(glm::vec3(
         glm::radians(-angles.elevation), glm::radians(angles.azimuth), 0.0f));
 
