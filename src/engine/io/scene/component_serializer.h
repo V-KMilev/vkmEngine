@@ -5,6 +5,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "ecs/entity_ref.h"
 #include "ecs/environment.h"
 #include "resource/asset_type.h"
 #include "ecs/component/animation/animation.h"
@@ -37,15 +38,23 @@
 
 namespace Vkm::Engine {
 
+class Scene;
+
 class ResourceManager;
 
 /**
  * @brief Every component the scene format round-trips, one row each.
  *
- * P is a component whose save and load take only the component; R is one that
- * references assets by name, so both take the ResourceManager as well
- * (resolution happens against the staging RM on load) and an emitAssetRefs
- * overload sits beside them.
+ * The letter says what a component refers to outside itself:
+ *
+ * P - refers to nothing outside itself; save and load take only the component.
+ * R - refers to assets by name, so both take the ResourceManager as well
+ *     (resolution happens against the staging RM on load) and an emitAssetRefs
+ *     overload sits beside them.
+ * E - refers to other entities, so save takes an EntityNamer and load an
+ *     EntityResolver - the carrier that knows what it calls an entity. Joint
+ *     names the body at the far end of it; Ragdoll names its group node and
+ *     the body posing each bone.
  *
  * The key is written out rather than derived from the type name, because it is
  * the format: ScriptComponent is stored as "Script", and a stringified type
@@ -62,7 +71,7 @@ class ResourceManager;
  * and the caller's pass 2 reads it, because the parent it names may not exist
  * yet when the entity is read.
  */
-#define VKM_SCENE_COMPONENTS(P, R)              \
+#define VKM_SCENE_COMPONENTS(P, R, E)           \
     P(Name,             "Name")                 \
     P(Transform,        "Transform")            \
     P(Camera,           "Camera")               \
@@ -70,8 +79,8 @@ class ResourceManager;
     P(Rigidbody,        "Rigidbody")            \
     P(Collider,         "Collider")             \
     P(CharacterController, "CharacterController") \
-    P(Joint,            "Joint")                \
-    P(Ragdoll,          "Ragdoll")              \
+    E(Joint,            "Joint")                \
+    E(Ragdoll,          "Ragdoll")              \
     R(Mesh,             "Mesh")                 \
     R(LOD,              "LOD")                  \
     R(Decal,            "Decal")                \
@@ -154,12 +163,11 @@ namespace ComponentSerializer {
     /**
      * @brief Joint: the type and the connected entity beside the reflected rest.
      *
-     * `connected` is a cross-entity reference, so it is written as the slot the
-     * scene will rebuild rather than as a live handle, and is meaningless until
-     * the whole scene is read.
+     * `connected` is a cross-entity reference, so it travels as the carrier's
+     * name for that entity and comes back through that carrier's resolver.
      */
-    nlohmann::json save(const Joint&);
-    void load(const nlohmann::json&, Joint&);
+    nlohmann::json save(const Joint&, const EntityNamer&);
+    void load(const nlohmann::json&, Joint&, const EntityResolver&);
 
     /**
      * @brief Ragdoll: the switch, the group node, and the bone mapping.
@@ -167,11 +175,11 @@ namespace ComponentSerializer {
      * The bones are entities the scene saves anyway; what travels here is the
      * mapping back - which body poses which bone, and the offset between them.
      * Dropping it would not save a ragdoll without its bodies, it would save
-     * one that has forgotten them, beside a loose skeleton that falls. Entity
-     * references go as slots and are recovered when the scene is whole.
+     * one that has forgotten them, beside a loose skeleton that falls. The
+     * entity references travel as the carrier's names for them.
      */
-    nlohmann::json save(const Ragdoll&);
-    void load(const nlohmann::json&, Ragdoll&);
+    nlohmann::json save(const Ragdoll&, const EntityNamer&);
+    void load(const nlohmann::json&, Ragdoll&, const EntityResolver&);
 
     nlohmann::json save(const Mesh&, const ResourceManager&);
     void load(const nlohmann::json&, Mesh&, const ResourceManager&);

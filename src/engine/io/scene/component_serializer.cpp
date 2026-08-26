@@ -15,6 +15,7 @@
 #include "logger.h"
 
 #include "debug/engine_error_log.h"
+#include "ecs/scene.h"
 #include "ecs/component/render/camera.h"
 #include "ecs/environment.h"
 #include "ecs/component/core/transform.h"
@@ -124,15 +125,12 @@ void loadReflected(const nlohmann::json& j, T& obj) {
 
 } // namespace
 
-// Component save / load. Reflectable components are one-line passthroughs
-// into the reflection driver. The exceptions are intentional:
-//   - Mesh:      ResourceManager handle lookup (cross-asset reference).
-//   - Animator:  the same, plus a persisted surface narrower than the struct -
-//                blend state is transient by design.
-//   - Hierarchy: parent stored as raw scene-table index, resolved by
-//                SceneSerializer after the entity table is loaded.
-//   - Animation: AnimationTrack<T> keeps its keyframes private and must go
-//                through explicit accessors - no clean fit for field iteration.
+// Component save / load. Reflectable components are one-line passthroughs into
+// the reflection driver. Hand-written where reflection cannot carry it: every R
+// and E row, because it names an asset or an entity; and Collider, Animation
+// and ScriptComponent, whose data is not a flat field list - parts, tracks
+// behind private accessors, polymorphic behaviors. Animator is an R row that
+// also persists less than it holds: blend state is transient by design.
 
 nlohmann::json save(const Environment& env) {
     return saveReflected(env);
@@ -163,25 +161,21 @@ void load(const nlohmann::json& j, Rigidbody& rb) { loadReflected(j, rb); }
 nlohmann::json save(const CharacterController& cc)          { return saveReflected(cc); }
 void load(const nlohmann::json& j, CharacterController& cc) { loadReflected(j, cc); }
 
-nlohmann::json save(const Joint& joint) {
+nlohmann::json save(const Joint& joint, const EntityNamer& name) {
     nlohmann::json out = saveReflected(joint);   // anchors, distance, stiffness
     out["type"] = Reflect::enumName(joint.type);
-    // The connected entity is a reference, so it travels the way every other
-    // cross-entity reference does and is patched up once the scene is whole.
-    out["connected"] = joint.connected.index;
+    out["connected"] = name(joint.connected);
     return out;
 }
-void load(const nlohmann::json& j, Joint& out) {
+void load(const nlohmann::json& j, Joint& out, const EntityResolver& resolve) {
     loadReflected(j, out);
     if (j.contains("type")) {
         out.type = Reflect::enumFromName<JointType>(j.at("type").get<std::string>());
     }
-    if (j.contains("connected")) {
-        out.connected = EntityId{j.at("connected").get<uint32_t>(), 0};
-    }
+    out.connected = resolve(j.value("connected", 0u));
 }
 
-nlohmann::json save(const Ragdoll& r) {
+nlohmann::json save(const Ragdoll& r, const EntityNamer& name) {
     nlohmann::json out = saveReflected(r);   // active
 
     // The bones travel with it. They are the mapping from a body back to the
@@ -192,7 +186,7 @@ nlohmann::json save(const Ragdoll& r) {
     for (const RagdollBone& bone : r.bones) {
         nlohmann::json entry;
         entry["bone"] = bone.bone;
-        entry["body"] = bone.body.index;
+        entry["body"] = name(bone.body);
         nlohmann::json offset = nlohmann::json::array();
         const float* m = glm::value_ptr(bone.boneFromBody);
         for (int i = 0; i < 16; ++i) offset.push_back(m[i]);
@@ -200,13 +194,13 @@ nlohmann::json save(const Ragdoll& r) {
         bones.push_back(std::move(entry));
     }
     out["bones"] = std::move(bones);
-    out["root"] = r.root.index;
+    out["root"] = name(r.root);
     return out;
 }
-void load(const nlohmann::json& j, Ragdoll& r) {
+void load(const nlohmann::json& j, Ragdoll& r, const EntityResolver& resolve) {
     loadReflected(j, r);
 
-    r.root = EntityId{j.value("root", 0u), 0};
+    r.root = resolve(j.value("root", 0u));
 
     r.bones.clear();
     auto it = j.find("bones");
@@ -217,9 +211,7 @@ void load(const nlohmann::json& j, Ragdoll& r) {
         if (!entry.is_object()) continue;
         RagdollBone bone;
         bone.bone = entry.value("bone", -1);
-        // A slot, not a handle: the generation is recovered when the scene is
-        // whole, the same way a joint's connected entity is.
-        bone.body = EntityId{entry.value("body", 0u), 0};
+        bone.body = resolve(entry.value("body", 0u));
         const auto offset = entry.find("offset");
         if (offset != entry.end() && offset->is_array() && offset->size() == 16) {
             float* m = glm::value_ptr(bone.boneFromBody);
@@ -483,7 +475,7 @@ nlohmann::json save(const UIButton& b)          { return saveReflected(b); }
 void load(const nlohmann::json& j, UIButton& b) { loadReflected(j, b); }
 
 nlohmann::json save(const Hierarchy& h) {
-    return nlohmann::json{{"parent", h.parent.index}};
+    return nlohmann::json{{"parent", h.parent.slot()}};
 }
 uint32_t loadParentIndex(const nlohmann::json& j) {
     return j.value("parent", std::numeric_limits<uint32_t>::max());
@@ -648,8 +640,25 @@ class BehaviorJsonReader : public BehaviorFieldVisitor {
 
 nlohmann::json save(const ScriptComponent& sc) {
     nlohmann::json behaviors = nlohmann::json::array();
+
+    // A held one goes back at the position it was read from, not on the end.
+    // This list's order is the order the behaviors run in, so appending would
+    // rewrite it on the first save of a scene opened while its module was
+    // missing. Written back exactly as read, because the code that knows what
+    // these properties mean is in that module; parsed rather than emitted as a
+    // string so the file stays one document.
+    const auto emitHeldAt = [&](size_t position) {
+        for (const UnknownBehavior& kept : sc.unknown) {
+            if (kept.index != position) continue;
+            nlohmann::json props = nlohmann::json::parse(kept.properties, nullptr, false);
+            if (props.is_discarded()) props = nlohmann::json::object();
+            behaviors.push_back({{"type", kept.type}, {"properties", std::move(props)}});
+        }
+    };
+
     for (const auto& behavior : sc.behaviors) {
         if (!behavior) continue;
+        emitHeldAt(behaviors.size());
         nlohmann::json props = nlohmann::json::object();
         BehaviorJsonWriter writer(props);
         // visitFields is non-const (shared with the editor/loader, which mutate);
@@ -657,19 +666,40 @@ nlohmann::json save(const ScriptComponent& sc) {
         const_cast<Behavior&>(*behavior).visitFields(writer);
         behaviors.push_back({{"type", behavior->typeName()}, {"properties", std::move(props)}});
     }
+
+    // Whatever sat past the last constructed one, in the order recorded.
+    const size_t total = sc.behaviors.size() + sc.unknown.size();
+    while (behaviors.size() < total) {
+        const size_t before = behaviors.size();
+        emitHeldAt(before);
+        if (behaviors.size() == before) break;
+    }
     return {{"behaviors", std::move(behaviors)}};
 }
 
 void load(const nlohmann::json& j, ScriptComponent& sc) {
     sc.behaviors.clear();
+    sc.unknown.clear();
     if (!j.contains("behaviors") || !j["behaviors"].is_array()) return;
     for (const auto& entry : j["behaviors"]) {
         const std::string type = entry.value("type", std::string{});
         if (type.empty()) continue;
+
+        const nlohmann::json* props =
+            entry.contains("properties") && entry["properties"].is_object()
+                ? &entry["properties"] : nullptr;
+
         auto behavior = BehaviorRegistry::get().create(type);
-        if (!behavior) continue;
-        if (entry.contains("properties") && entry["properties"].is_object()) {
-            BehaviorJsonReader reader(entry["properties"]);
+        if (!behavior) {
+            // Kept, not dropped: no type of this name is registered, which
+            // says the module is absent, not that the scene stopped wanting
+            // the behavior. See UnknownBehavior.
+            sc.unknown.push_back({type, props ? props->dump() : std::string{"{}"},
+                                  sc.behaviors.size() + sc.unknown.size()});
+            continue;
+        }
+        if (props) {
+            BehaviorJsonReader reader(*props);
             behavior->visitFields(reader);
         }
         sc.behaviors.push_back(std::move(behavior));
