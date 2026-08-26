@@ -13,7 +13,8 @@ namespace Vkm::Engine {
     class PoseBuffer;
     struct Visibility;
     struct UIDrawData;
-} // namespace Vkm::Engine
+    struct SplashFrame;
+}
 
 namespace Vkm::Engine {
 
@@ -79,9 +80,10 @@ struct FrameContext {
     WindowManager&   window;
     InputMap&        input;
 
-    const Visibility* visibility = nullptr;
-    const PoseBuffer* poses      = nullptr;
-    const UIDrawData* ui         = nullptr;
+    const Visibility*  visibility = nullptr;
+    const PoseBuffer*  poses      = nullptr;
+    const UIDrawData*  ui         = nullptr;
+    const SplashFrame* splash     = nullptr;
 };
 
 /**
@@ -124,8 +126,12 @@ class System {
 
         /**
          * @brief Execute this system for the current frame.
+         *
+         * Empty by default, like fixedUpdate: a system runs on the frame clock,
+         * the tick, or both, and one that runs only on the tick has nothing to
+         * say here.
          */
-        virtual void update(FrameContext& ctx) = 0;
+        virtual void update(FrameContext& ctx) {}
 
         /**
          * @brief Execute this system at the fixed simulation rate.
@@ -134,9 +140,12 @@ class System {
          * loop. Use ctx.clock.getFixedStep() for the step length. Intended for deterministic
          * simulation (physics, networking tick). Empty default; opt in by override.
          *
-         * Note: the frame context is rebuilt each frame and the fixed-step loop
-         * runs before any producer stage, so ctx.visibility, ctx.poses and ctx.ui
-         * are always null here. Read per-frame products from update() only.
+         * The frame context is rebuilt each frame and the fixed-step loop runs
+         * before any producer stage, so ctx.visibility and ctx.ui are null here
+         * - read those from update() only. ctx.poses is the exception, and it is
+         * one because a pose is simulation: SkeletalAnimationSystem fills it in
+         * its own fixedUpdate, so a system registered after it in the Simulation
+         * stage reads this tick's pose rather than last frame's.
          */
         virtual void fixedUpdate(FrameContext& ctx) {}
 
