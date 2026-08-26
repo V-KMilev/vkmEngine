@@ -20,6 +20,7 @@
 #include "system/physics/ragdoll_system.h"
 #include "system/physics/character/character_controller_system.h"
 #include "system/hierarchy/hierarchy_system.h"
+#include "system/splash/splash_system.h"
 #include "system/ui/ui_system.h"
 #include "system/visibility/visibility_system.h"
 #include "system/render/render_system.h"
@@ -41,6 +42,12 @@ inline void ensureDefaultUIFont(Vkm::Engine::ResourceManager& resources) {
         (Vkm::Engine::ProjectPaths::engineFonts() / "Roboto-Medium.ttf").string(),
         "ui:roboto");
 }
+
+// The fade applies at each end of every entry in the sequence. The frames it
+// runs over are the process's slowest, so a short fade arrives as a flash. A
+// project's own logos carry their hold in its project.json.
+constexpr float VENDOR_SPLASH_SECONDS = 0.5f;
+constexpr float SPLASH_FADE_SECONDS   = 1.25f;
 
 // Per-binary policy for the shared bootstrap: everything that genuinely differs
 // between vkm_editor and vkm_runtime, and nothing more - so the system
@@ -89,12 +96,25 @@ inline AppSystems setupEngineApp(Vkm::Engine::Engine& engine, const AppConfig& c
 
     auto& cameraController =
         engine.addSystem<Vkm::Engine::CameraControllerSystem>(Vkm::Engine::SystemStage::Input);
+    // First in the stage, so the frame it publishes is the one that frame's
+    // render reads. It runs on the frame clock, not the simulation one: it fades
+    // on while the rest is still loading, and while the editor's clock is paused.
+    auto& splashSystem = engine.addSystem<Vkm::Engine::SplashSystem>(Vkm::Engine::SystemStage::Simulation);
+    splashSystem.setFade(SPLASH_FADE_SECONDS);
+    // The mono mark: the splash ground is black, and the light-background logo
+    // is near-black ink on it. From the engine root, so a project with no assets
+    // directory of its own still shows it.
+    splashSystem.add(
+        (Vkm::Engine::ProjectPaths::engineAssets() / "logo" / "vkm_engine_logo_mono.png").string(),
+        VENDOR_SPLASH_SECONDS);
     engine.addSystem<Vkm::Engine::AsyncLoaderSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::BehaviorSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::AnimationSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::SkeletalAnimationSystem>(Vkm::Engine::SystemStage::Simulation);
-    // After the pose it reads and before the bodies it writes. It runs per
-    // frame, like the pose, rather than per fixed tick like the solve.
+    // After the pose it reads and before the bodies it writes, on the tick with
+    // the solve rather than per frame with the pose: the bone transforms it
+    // writes are what the solver reads next, so a per-frame write would vary a
+    // tick's starting shape with the last frame's length.
     engine.addSystem<Vkm::Engine::RagdollSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::ParticleSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::PhysicsSystem>(Vkm::Engine::SystemStage::Simulation);

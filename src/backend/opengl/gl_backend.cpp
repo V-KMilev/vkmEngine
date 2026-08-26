@@ -33,6 +33,7 @@
 #include "pass/gl_bloom_pass.h"
 #include "pass/gl_grid_pass.h"
 #include "pass/gl_composite_pass.h"
+#include "pass/gl_splash_pass.h"
 #include "pass/gl_ui_pass.h"
 #include "data/gl_ibl_baker.h"
 #include "data/gl_material.h"
@@ -87,17 +88,9 @@ bool GLBackend::init(WindowManager& window) {
     // Covers compute stages too - they share the same loader.
     Vkm::GL::setShaderVersion(OPENGL_GLSL_VERSION);
 
-    // Build the pass list. Passes compile their shaders, so this must run after
-    // the context exists. Where the order is load-bearing:
-    //   DepthPrepass  - clears the scene target; primes opaque depth + G-buffer.
-    //   ResolveDepth  - MSAA only: resolves depth (+ G-buffer when read) for the
-    //                   screen-space passes.
-    //   OcclusionCull - rejects opaque instances hidden behind the HiZ pyramid
-    //                   and writes each run's indirect draw command.
-    //   Skybox        - fills the background BEFORE geometry, so sorted
-    //                   transparents blend over it instead of being overwritten.
-    //   ResolveColor  - MSAA only: resolves colour (+ depth if alpha-mask drew).
-    //   Composite     - tonemap + debug views, to the backbuffer viewport.
+    // Passes compile their shaders, so this must run after the context exists.
+    // The order is load-bearing; what each pass owes the next is documented at
+    // docs/reference/system/rendering.md, "The passes (fixed order)".
     m_passes.push_back({"Shadow",         std::make_unique<GLShadowPass>()});
     m_passes.push_back({"DepthPrepass",   std::make_unique<GLDepthPrepass>()});
     m_passes.push_back({"ResolveDepth",   std::make_unique<GLResolvePass>(GLResolvePass::Scope::Geometry)});
@@ -117,6 +110,7 @@ bool GLBackend::init(WindowManager& window) {
     m_passes.push_back({"Grid",           std::make_unique<GLGridPass>()});
     m_passes.push_back({"Composite",      std::make_unique<GLCompositePass>()});
     m_passes.push_back({"UI",             std::make_unique<GLUIPass>()});
+    m_passes.push_back({"Splash",         std::make_unique<GLSplashPass>()});
 
     // The GTAO pass is a fullscreen draw that samples the scene depth, so its
     // own target carries the factor + packed bent normal and no depth buffer.
