@@ -51,7 +51,7 @@ void appendPose(const PoseBuffer& poses, EntityId id, std::vector<glm::mat4>& ou
     first = 0;
     count = 0;
 
-    const PoseSlice* slice = poses.sliceOf(id.index);
+    const PoseSlice* slice = poses.sliceOf(id.slot());
     if (!slice || slice->count == 0) return;
 
     const std::vector<glm::mat4>& palette = poses.palette();
@@ -67,6 +67,7 @@ void RenderView::build(
     const Scene& scene,
     const Visibility& visibility,
     const UIDrawData* uiData,
+    const SplashFrame* splashFrame,
     const PoseBuffer* poses
 ) {
     PROFILE_SCOPE("RenderView::build");
@@ -83,6 +84,10 @@ void RenderView::build(
         ui.vertices = uiData->vertices;
         ui.commands = uiData->commands;
     }
+
+    // Same reason: the frames a splash covers are the ones before the project's
+    // world has arrived, so there is nothing for a camera to be pointed at.
+    splash = splashFrame ? *splashFrame : SplashFrame{};
 
     if (!visibility.hasCamera) {
         // No camera this frame: emit an empty snapshot, not a stale one.
