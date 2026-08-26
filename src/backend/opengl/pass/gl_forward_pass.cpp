@@ -46,15 +46,15 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     // The ShadowBlock UBO (binding 3) carries the matrices and slots; only the depth
     // textures are bound here. The light loop picks a slot per light type from that
     // light's shadowSlot (GpuLight.spot.w).
-    ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::Atlas2D);
+    ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::ATLAS_2D);
     for (uint32_t s = 0; s < Config::MAX_SHADOW_CASTERS_CUBE; ++s) {
-        ctx.shadowAtlas.bindCube(s, GLBindings::ShadowTextureSlots::CubeBase + s);
+        ctx.shadowAtlas.bindCube(s, GLBindings::ShadowTextureSlots::CUBE_BASE + s);
     }
 
     if (ctx.ibl.isReady()) {
-        ctx.ibl.bindIrradiance(GLBindings::IBLTextureSlots::Irradiance);
-        ctx.ibl.bindPrefilter(GLBindings::IBLTextureSlots::Prefilter);
-        ctx.ibl.bindBrdf(GLBindings::IBLTextureSlots::BrdfLUT);
+        ctx.ibl.bindIrradiance(GLBindings::IBLTextureSlots::IRRADIANCE);
+        ctx.ibl.bindPrefilter(GLBindings::IBLTextureSlots::PREFILTER);
+        ctx.ibl.bindBrdf(GLBindings::IBLTextureSlots::BRDF_LUT);
     }
 
     // The shader multiplies the GTAO factor into the indirect term (ambient/IBL);
@@ -117,7 +117,7 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         // single-sample scratch.
         ctx.colorDst->blitColorFrom(ctx.sceneRender);
         ctx.sceneRender.bind(ctx.gl);
-        ctx.colorDst->bindColor(GLBindings::PostTextureSlots::SceneColor);
+        ctx.colorDst->bindColor(GLBindings::PostTextureSlots::SCENE_COLOR);
         bindFrameUniforms(*m_shader, ctx, true);
         if (posed) bindFrameUniforms(*m_skinnedShader, ctx, true);
 
@@ -165,7 +165,7 @@ void GLForwardPass::drawRuns(GLFrameContext& ctx, const GLInstanceBatchView& bat
 
         const GLMaterial* material = glView.getMaterial(run.material);
         if (material && material != boundMaterial) {
-            material->bind(GLBindings::UBOBindingPoints::Material);
+            material->bind(GLBindings::UBOBindingPoints::MATERIAL);
             material->bindTextures(glView);
             boundMaterial = material;
         }

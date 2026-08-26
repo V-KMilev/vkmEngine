@@ -21,17 +21,17 @@ struct MapBinding {
     int                            flag;
 };
 constexpr MapBinding MATERIAL_MAPS[] = {
-    {&MaterialAsset::albedoTexture,              GLBindings::TextureSlots::Albedo,              GLBindings::MaterialTextureFlags::Albedo},
-    {&MaterialAsset::normalTexture,              GLBindings::TextureSlots::Normal,              GLBindings::MaterialTextureFlags::Normal},
-    {&MaterialAsset::metallicRoughnessTexture,   GLBindings::TextureSlots::MetallicRoughness,   GLBindings::MaterialTextureFlags::MetallicRoughness},
-    {&MaterialAsset::aoTexture,                  GLBindings::TextureSlots::AO,                  GLBindings::MaterialTextureFlags::AO},
-    {&MaterialAsset::emissionTexture,            GLBindings::TextureSlots::Emission,            GLBindings::MaterialTextureFlags::Emission},
-    {&MaterialAsset::heightTexture,              GLBindings::TextureSlots::Height,              GLBindings::MaterialTextureFlags::Height},
-    {&MaterialAsset::clearcoatTexture,           GLBindings::TextureSlots::Clearcoat,           GLBindings::MaterialTextureFlags::Clearcoat},
-    {&MaterialAsset::transmissionTexture,        GLBindings::TextureSlots::Transmission,        GLBindings::MaterialTextureFlags::Transmission},
-    {&MaterialAsset::metallicTexture,            GLBindings::TextureSlots::Metallic,            GLBindings::MaterialTextureFlags::Metallic},
-    {&MaterialAsset::roughnessTexture,           GLBindings::TextureSlots::Roughness,           GLBindings::MaterialTextureFlags::Roughness},
-    {&MaterialAsset::aoMetallicRoughnessTexture, GLBindings::TextureSlots::AOMetallicRoughness, GLBindings::MaterialTextureFlags::AOMetallicRoughness},
+    {&MaterialAsset::albedoTexture,              GLBindings::TextureSlots::ALBEDO,                GLBindings::MaterialTextureFlags::ALBEDO},
+    {&MaterialAsset::normalTexture,              GLBindings::TextureSlots::NORMAL,                GLBindings::MaterialTextureFlags::NORMAL},
+    {&MaterialAsset::metallicRoughnessTexture,   GLBindings::TextureSlots::METALLIC_ROUGHNESS,    GLBindings::MaterialTextureFlags::METALLIC_ROUGHNESS},
+    {&MaterialAsset::aoTexture,                  GLBindings::TextureSlots::AO,                    GLBindings::MaterialTextureFlags::AO},
+    {&MaterialAsset::emissionTexture,            GLBindings::TextureSlots::EMISSION,              GLBindings::MaterialTextureFlags::EMISSION},
+    {&MaterialAsset::heightTexture,              GLBindings::TextureSlots::HEIGHT,                GLBindings::MaterialTextureFlags::HEIGHT},
+    {&MaterialAsset::clearcoatTexture,           GLBindings::TextureSlots::CLEARCOAT,             GLBindings::MaterialTextureFlags::CLEARCOAT},
+    {&MaterialAsset::transmissionTexture,        GLBindings::TextureSlots::TRANSMISSION,          GLBindings::MaterialTextureFlags::TRANSMISSION},
+    {&MaterialAsset::metallicTexture,            GLBindings::TextureSlots::METALLIC,              GLBindings::MaterialTextureFlags::METALLIC},
+    {&MaterialAsset::roughnessTexture,           GLBindings::TextureSlots::ROUGHNESS,             GLBindings::MaterialTextureFlags::ROUGHNESS},
+    {&MaterialAsset::aoMetallicRoughnessTexture, GLBindings::TextureSlots::AO_METALLIC_ROUGHNESS, GLBindings::MaterialTextureFlags::AO_METALLIC_ROUGHNESS},
 };
 
 } // namespace

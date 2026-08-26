@@ -69,7 +69,7 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
 
         const GLMaterial* material = glView.getMaterial(run.material);
         if (material && material != boundMaterial) {
-            material->bind(GLBindings::UBOBindingPoints::Material);
+            material->bind(GLBindings::UBOBindingPoints::MATERIAL);
             boundMaterial = material;
         }
         ctx.opaqueBatch.draw(run, i);

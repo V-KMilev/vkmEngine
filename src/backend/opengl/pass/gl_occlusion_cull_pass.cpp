@@ -34,12 +34,12 @@ void GLOcclusionCullPass::execute(GLFrameContext& ctx) {
     if (instances == 0) return;
     if (!ctx.opaqueBatch.bindCullBuffers()) return;
 
-    hiz.bind(GLBindings::PostTextureSlots::HiZ);
+    hiz.bind(GLBindings::PostTextureSlots::HI_Z);
 
     m_compute->bind();
     m_compute->setUniformMatrix4fv("u_viewProjection", ctx.view.camera.viewProjection);
     m_compute->setUniform1ui("u_instanceCount", instances);
-    m_compute->setUniform1i("u_hiz", static_cast<int>(GLBindings::PostTextureSlots::HiZ));
+    m_compute->setUniform1i("u_hiz", static_cast<int>(GLBindings::PostTextureSlots::HI_Z));
     m_compute->setUniform2f("u_hizSize", static_cast<float>(hiz.width(0)),
                                          static_cast<float>(hiz.height(0)));
     m_compute->setUniform1f("u_hizMaxLod", static_cast<float>(hiz.mipCount() - 1));

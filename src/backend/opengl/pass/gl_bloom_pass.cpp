@@ -42,13 +42,13 @@ void GLBloomPass::execute(GLFrameContext& ctx) {
     m_down->bind();
     for (int mip = 0; mip < mips; ++mip) {
         if (mip == 0) {
-            ctx.colorSrc->bindColor(GLBindings::BloomTextureSlots::Source);
+            ctx.colorSrc->bindColor(GLBindings::BloomTextureSlots::SOURCE);
             m_down->setUniform1f("u_srcLod", 0.0f);
             m_down->setUniform1i("u_karis", 1);
             m_down->setUniform1f("u_threshold", settings.bloomThreshold);
             m_down->setUniform1f("u_knee",      settings.bloomKnee);
         } else {
-            bloom.bind(GLBindings::BloomTextureSlots::Source);
+            bloom.bind(GLBindings::BloomTextureSlots::SOURCE);
             m_down->setUniform1f("u_srcLod", static_cast<float>(mip - 1));
             m_down->setUniform1i("u_karis", 0);
         }
@@ -58,7 +58,7 @@ void GLBloomPass::execute(GLFrameContext& ctx) {
 
     m_up->bind();
     m_up->setUniform1f("u_filterRadius", settings.bloomRadius);
-    bloom.bind(GLBindings::BloomTextureSlots::Source);
+    bloom.bind(GLBindings::BloomTextureSlots::SOURCE);
     ctx.gl.setBlending(true);
     ctx.gl.setBlendFunc(GL_ONE, GL_ONE);
     for (int mip = mips - 1; mip > 0; --mip) {

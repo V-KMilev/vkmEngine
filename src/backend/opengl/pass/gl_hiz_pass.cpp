@@ -40,8 +40,8 @@ void GLHiZPass::execute(GLFrameContext& ctx) {
             // Level 0 reduces the scene depth itself. It is a different texture
             // but the same sampler2D and the same .r, so the loop does not
             // special-case anything past which texture is bound.
-            ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SceneDepth);
-            m_reduce->setUniform1i("u_src", static_cast<int>(GLBindings::PostTextureSlots::SceneDepth));
+            ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SCENE_DEPTH);
+            m_reduce->setUniform1i("u_src", static_cast<int>(GLBindings::PostTextureSlots::SCENE_DEPTH));
             m_reduce->setUniform1f("u_srcLod", 0.0f);
             m_reduce->setUniform2i("u_srcSize", static_cast<int>(ctx.view.viewportWidth),
                                                 static_cast<int>(ctx.view.viewportHeight));
@@ -49,8 +49,8 @@ void GLHiZPass::execute(GLFrameContext& ctx) {
             // Reading level mip-1 while writing level mip is only defined while
             // the sampled range stops below the attachment.
             hiz.restrictSampling(mip - 1);
-            hiz.bind(GLBindings::PostTextureSlots::HiZ);
-            m_reduce->setUniform1i("u_src", static_cast<int>(GLBindings::PostTextureSlots::HiZ));
+            hiz.bind(GLBindings::PostTextureSlots::HI_Z);
+            m_reduce->setUniform1i("u_src", static_cast<int>(GLBindings::PostTextureSlots::HI_Z));
             m_reduce->setUniform1f("u_srcLod", static_cast<float>(mip - 1));
             m_reduce->setUniform2i("u_srcSize", hiz.width(mip - 1), hiz.height(mip - 1));
         }
