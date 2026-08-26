@@ -6,9 +6,13 @@ fire synchronously or `enqueue()` to defer until the next `flush()`.
 
 The bus is **engine infrastructure, not a System**: the Engine owns one by
 value (like the Clock and WindowManager), every `FrameContext` carries it as
-`ctx.events`, and the frame loop calls `flush()` at the top of the Simulation
-stage - the fixed, visible point where queued events deliver. Nothing is wired
-to it in `setupEngineApp`; systems just read it off the context.
+`ctx.events`, and `flush()` is called at the top of the Simulation stage - the
+fixed, visible point where queued events deliver. That point is reached **once
+per tick**, inside the fixed loop, and once more per frame for whatever was
+queued outside a tick or by the last tick of the frame; `flush` drains, so the
+second never repeats the first. Delivering on the frame instead would put a
+reaction however many ticks later the frame rate decided. Nothing is wired to it
+in `setupEngineApp`; systems just read it off the context.
 
 ## Key Files
 
@@ -86,7 +90,7 @@ to push events, add a mutex to `Bus<EventT>` at that point.
 
 - Don't subscribe or unsubscribe from inside a listener callback during
   `emit`/`flush`. Subscribing is *technically* safe (new listeners join
-  the next frame's flush) but unsubscribing trips an assert and is refused.
+  the next flush) but unsubscribing trips an assert and is refused.
 - A listener that enqueues an event whose bus has already been flushed
   this frame will see that event fire on the *next* frame's flush.
 - Listeners are iterated by index against a frozen bound at flush

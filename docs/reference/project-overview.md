@@ -38,8 +38,11 @@ complete worked examples. See [system/io.md](system/io.md#projects-and-the-three
 
 - **`Scene`** - an open, type-erased ECS registry. Any plain struct is a component
   with no registration; each type is stored in its own `SparseSet<T>`, created on
-  first use. Entities are generational handles (`EntityId` = `StorageIndex`) from a
-  `SlotAllocator`, so stale handles are detected, not crashed.
+  first use. Entities are generational handles - `EntityId`, a type of its own
+  wrapping a `StorageIndex` from a `SlotAllocator`, so a stale handle is detected
+  rather than crashed and an asset slot cannot be passed where an entity is
+  wanted. A reference that leaves the Scene travels as whatever the carrier
+  calls the entity; see [ecs.md](ecs.md).
 - **`System`** - per-frame unit with `init` / `update` / `fixedUpdate` / `shutdown`.
   Each registers at exactly one `SystemStage`.
 - **`Engine`** - stack-constructible owner of the `Scene`, `ResourceManager`,
@@ -53,9 +56,10 @@ complete worked examples. See [system/io.md](system/io.md#projects-and-the-three
   as references (scene, resources, clock, events, window, input), per-frame
   products as pointers (`visibility`, `ui`). Time comes off the clock:
   `getDeltaTime()` (real), `getSimDelta()` (clock-scaled, pause/step-aware),
-  `getFixedStep()` (1/60). Simulation systems read the sim delta; presentation
-  and services run every frame regardless of it - `AudioSystem` steps no time of
-  its own at all, which is why pausing a game does not cut its music.
+  `getFixedStep()` (the project's tick length, 1/64 by default). Simulation
+  systems read the sim delta; presentation and services run every frame
+  regardless of it - `AudioSystem` steps no time of its own at all, which is why
+  pausing a game does not cut its music.
 
 ## System execution order
 
@@ -73,9 +77,6 @@ is the scaling lever). The default wiring lives in `setupEngineApp`
 | Visibility | VisibilitySystem (frustum / distance / screen-size culling -> `Visibility`) |
 | Render | RenderSystem (builds `RenderView`, hands it to the backend) |
 | UI | EditorSystem (editor binary only) |
-
-(`FileWatcherSystem` is an Input-stage `System` the engine provides but the default app
-does not register; see [io.md](system/io.md).)
 
 ## Rendering at a glance
 

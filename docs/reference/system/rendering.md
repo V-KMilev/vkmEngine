@@ -181,6 +181,16 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 | 17 | Grid | World-space ground grid overlay into the chain (LEQUAL test done in its shader) |
 | 18 | Composite | Tonemap to the backbuffer viewport (or a debug buffer per `renderMode`) |
 | 19 | UI | Screen-space in-game UI overlay drawn flat on top (no-op when empty). See [ui.md](ui.md) |
+| 20 | Splash | The startup logo over black, covering the whole surface. A no-op once the sequence is over |
+
+The Splash pass is last because a splash is not drawn on top of the frame -
+it is what is on screen instead of one. It covers the whole surface rather
+than the viewport rect, so in the editor it hides the panels as well, and
+`EditorSystem` stands aside while it is up rather than painting chrome over
+it. What it draws arrives on `RenderView::splash` as a path and an opacity,
+not as pixels: the engine core cannot decode a file, so `SplashSystem`
+decides which logo is up and how faded, and the pass - which links the
+loaders - reads it, uploading once per logo rather than once per frame.
 
 IBL is **not** a pass: the persistent `GLIBLBaker` re-bakes inside `render()`
 when `environment.hdrPath` changes or, for the procedural sky, when the sun

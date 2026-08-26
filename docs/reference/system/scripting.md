@@ -230,7 +230,14 @@ whole contract, and a behavior never has to read `BehaviorSystem` to learn what
    this hook before 1.7 changed meaning.
 2. **`onFixedUpdate` is simulation time too**, and needs no gate of its own - the
    accumulator behind it is filled from the sim delta, so pause and time-scale
-   already reach it.
+   already reach it. It is also on a *different clock from input*: actions are
+   sampled once per render frame, and a fixed step runs zero or many times per
+   frame. So a fixed update reads `context().input->command()` - the per-tick
+   `InputCommand`, built from the axes as they stand plus the edges latched
+   since the previous tick - and never `held()` / `pressed()` / `axis()`, which
+   answer for the frame. Asking the frame queries from a fixed update drops a
+   tap taken between two ticks and repeats a press across every tick of a slow
+   frame.
 3. **`onRealtimeUpdate` is real time.** It runs every frame, paused or not, and
    `setTimeScale()` does not reach it either. Menu animation, unscaled timers,
    ducking the music, holding a key to quit - all of it lives here.
@@ -441,13 +448,13 @@ behaviors from the saved type + fields. Entities and all other components are
 untouched - only the behavior C++ objects are rebuilt, and they start fresh
 (`onStart` runs again).
 
-**A reload that fails goes through `reportError`, not `LOG_ERROR`.** By then the
-old behaviors are already destroyed and the new module would not load, so the
-scene keeps its entities and loses their code - the most destructive outcome the
-reload has, and the only record of it used to be a toast that expired in a few
-seconds pointing at a log the editor has no view of. It now leaves a named entry
-in **Bottom > Errors**, the way an unresolved asset reference does, and the
-toast points there instead.
+**A reload that fails goes through `reportError`, not `LOG_ERROR`.** The saved
+documents are put back either way, so a failed reload leaves every behavior held
+as text rather than gone: nothing is lost, including on save, and a later reload
+that works turns them back into behaviors. What is lost until then is that they
+run. That is worth a named entry in **Bottom > Errors**, the way an unresolved
+asset reference is, rather than a toast that expires in a few seconds pointing
+at a log the editor has no view of.
 
 ## Serialization
 
@@ -456,6 +463,8 @@ is stored as its registered type name plus a `properties` object holding every
 reflected field, walked through `visitFields` - the same visitor the inspector
 and the hot-reload path use, so the three cannot drift. On load
 `BehaviorRegistry` recreates the instance by name and the reader fills the
-fields back in, dropping any behavior whose type is not registered and keeping a
-field's constructed default wherever the file has no value for it. See
+fields back in, keeping a field's constructed default wherever the file has no
+value for it. A type the registry does not know is not dropped: it is kept as an
+`UnknownBehavior` and written back unread, so a scene saved with the module
+missing still holds it. See
 [io.md](io.md).

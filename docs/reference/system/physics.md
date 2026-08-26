@@ -30,8 +30,8 @@ The system and the vocabulary it shares:
 - `contact.h` - `Contact`, `ContactManifold`, `MAX_CONTACTS_PER_MANIFOLD`
 - `narrowphase.h/.cpp` - `BoxShape`, `CapsuleShape`, and the three primitive routines
 - `support.h/.cpp` - `SupportShape`: any convex shape, as the one thing GJK asks of it
-- `gjk.h/.cpp` - `gjkOverlap` / `gjkContact` / `gjkDistance`, for every pair with
-  no routine of its own
+- `gjk.h/.cpp` - `gjkOverlap` / `gjkContact`, for every pair with no routine of
+  its own
 - `mesh_bvh.h/.cpp` - build and query of the triangle-mesh hierarchy; the node
   itself lives on the `Collider`
 
