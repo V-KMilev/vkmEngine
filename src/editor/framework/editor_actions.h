@@ -58,6 +58,8 @@ enum class EntityKind {
     UIPanel,
     UIText,
     UIButton,
+    Character,
+    StaticBody,
 };
 
 /**

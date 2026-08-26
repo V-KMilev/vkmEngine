@@ -20,12 +20,12 @@ EntityId buildDefaultScene(Scene& scene, ResourceManager& resources) {
     const EntityId camera = scene.createEntity();
     Transform cameraTransform;
 
-    // Negative Z, because a camera looks along its forward and this engine's
-    // forward is +Z: parked at +6 it would face away from the cube it is here
-    // to show. The positive pitch tilts that forward down onto the origin from
-    // eye height.
-    cameraTransform.position = {0.0f, 2.0f, -6.0f};
-    cameraTransform.rotation = glm::quat(glm::vec3(glm::radians(18.0f), 0.0f, 0.0f));
+    // Back along +Z, which forward being -Z makes the natural place to watch
+    // the origin from. Asked of lookRotation so the scene the engine generates
+    // for itself derives its one camera the way any other caller would, instead
+    // of naming angles that only hold for one convention.
+    cameraTransform.position = {0.0f, 2.0f, 6.0f};
+    cameraTransform.rotation = Math::lookRotation(-cameraTransform.position);
 
     scene.add(camera, cameraTransform);
     scene.add(camera, Camera{});

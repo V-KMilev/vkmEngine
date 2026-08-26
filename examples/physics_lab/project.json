@@ -1,0 +1,5 @@
+{
+    "name": "Physics Lab",
+    "engineVersion": "0.7.2",
+    "entryScene": "scenes/obstacle_course.json"
+}

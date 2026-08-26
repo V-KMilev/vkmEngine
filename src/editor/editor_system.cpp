@@ -567,7 +567,10 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
             m_gizmoOverlay.drawProbeGizmos(ec);
             m_gizmoOverlay.drawEffectGizmos(ec);
             m_gizmoOverlay.drawAudioGizmos(ec);
-            if (m_state.showColliders) m_gizmoOverlay.drawColliderGizmos(ec);
+            if (m_state.showColliders) {
+                m_gizmoOverlay.drawColliderGizmos(ec);
+                m_gizmoOverlay.drawJointGizmos(ec);
+            }
             if (m_state.showBounds)    m_gizmoOverlay.drawBoundsGizmos(ec);
             if (m_state.showSkeletons) m_gizmoOverlay.drawSkeletonGizmos(ec);
             m_gizmoOverlay.drawSelectionOutline(ec);

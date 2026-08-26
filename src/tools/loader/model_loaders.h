@@ -126,12 +126,16 @@ TextureHandle loadModelEmbeddedTexture(
 SkeletonHandle loadModelSkeleton(const std::string& path, ResourceManager& resources);
 
 /**
- * @brief Build and register one of a model file's animations, bound to its rig.
+ * @brief Build and register one of a model file's animations, bound to a rig.
  *
  * Named "<stem>:clip<index>" by Assimp's global animation index, so a re-import
- * relinks. Channels are resolved to bone indices here, against the same
- * skeleton loadModelSkeleton builds; one naming a node the rig does not hold is
- * dropped and counted.
+ * relinks. Channels are resolved to bone indices here; one naming a node the rig
+ * does not hold is dropped and counted.
+ *
+ * The rig is the one in the same file unless @p rig names another. It has to be
+ * nameable, because a rig is built from skin weights and an animation exported
+ * without a mesh therefore has none of its own - which is how animation
+ * libraries are distributed, one file per motion against a rig sent once.
  *
  * Markers are authored rather than imported - no interchange format carries
  * one - so they arrive from the recipe beside the path and the index, and are
@@ -145,14 +149,30 @@ SkeletonHandle loadModelSkeleton(const std::string& path, ResourceManager& resou
  * @param clipIndex Assimp global animation index to extract.
  * @param markers Authored markers to carry on the clip; may be empty.
  * @param resources Resource manager the clip (and the rig it names) is added to.
+ * @param rig Name of an already-loaded skeleton to bind against. Empty binds to
+ *        the rig in @p path's own file, which is what a skinned export carries.
  * @return Handle to the built or existing clip, or an empty handle on failure.
  */
 AnimationClipHandle loadModelAnimationClip(
     const std::string& path,
     int clipIndex,
     std::vector<ClipMarker> markers,
-    ResourceManager& resources
+    ResourceManager& resources,
+    const std::string& rig = {}
 );
+
+/**
+ * @brief What an import produced.
+ *
+ * A root of nothing is not a failure on its own: a file carrying clips and no
+ * mesh imports successfully and spawns no entities, which is what a downloaded
+ * animation is. `ok` is what separates the two.
+ */
+struct ModelImport {
+    EntityId root{};      ///< Root of the spawned subtree; empty when none was spawned.
+    uint32_t clips = 0;   ///< Animation clips imported from the file.
+    bool     ok = false;  ///< Whether the file opened and was understood.
+};
 
 /**
  * @brief Import a whole model file into @p scene.
@@ -168,12 +188,17 @@ AnimationClipHandle loadModelAnimationClip(
  * root when the rig is rooted at the scene node itself. That entity is the rig:
  * SkeletalAnimationSystem poses it and everything under it.
  *
+ * A file with clips and no mesh is a successful import that spawns nothing -
+ * a downloaded animation is exactly that - so the outcome is reported rather
+ * than encoded in the root: an empty root and `ok` both mean "no subtree", and
+ * only one of them is a failure.
+ *
  * @param path Path to the model file to import.
  * @param resources Resource manager the imported meshes/materials are added to.
  * @param scene Scene the entity hierarchy is spawned into.
- * @return The root EntityId, or an invalid id on failure.
+ * @return What the import produced.
  */
-EntityId importModelIntoScene(
+ModelImport importModelIntoScene(
     const std::string& path,
     ResourceManager& resources,
     Scene& scene

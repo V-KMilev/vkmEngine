@@ -7,12 +7,13 @@
 #include <utility>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
+
+#include "system/physics/tolerance.h"
 
 namespace Vkm::Engine {
 
 namespace {
-
-constexpr float EPS = 1e-6f;
 
 float projectRadius(const BoxShape& box, const glm::vec3& axis) {
     return box.halfExtents.x * std::fabs(glm::dot(box.axes[0], axis))
@@ -120,19 +121,25 @@ void closestSegmentSegment(
 
     float s = 0.0f;
     float t = 0.0f;
-    if (a <= EPS && e <= EPS) {
+    if (a <= Physics::DEGENERATE_SQ && e <= Physics::DEGENERATE_SQ) {
         c1 = p1; c2 = p2; return;
     }
-    if (a <= EPS) {
+    if (a <= Physics::DEGENERATE_SQ) {
         t = glm::clamp(f / e, 0.0f, 1.0f);
     } else {
         const float c = glm::dot(d1, r);
-        if (e <= EPS) {
+        if (e <= Physics::DEGENERATE_SQ) {
             s = glm::clamp(-c / a, 0.0f, 1.0f);
         } else {
             const float b = glm::dot(d1, d2);
+            // denom is a*e*sin^2 of the angle between the segments; measured
+            // against a*e it is the angle alone. Against the raw tolerance it
+            // was metres to the fourth against metres squared, and limb-length
+            // segments read as parallel a degree and a half apart.
             const float denom = a * e - b * b;
-            if (denom > EPS) s = glm::clamp((b * f - c * e) / denom, 0.0f, 1.0f);
+            if (denom > Physics::DEGENERATE_SQ * a * e) {
+                s = glm::clamp((b * f - c * e) / denom, 0.0f, 1.0f);
+            }
             t = (b * s + f) / e;
             if (t < 0.0f)      { t = 0.0f; s = glm::clamp(-c / a, 0.0f, 1.0f); }
             else if (t > 1.0f) { t = 1.0f; s = glm::clamp((b - c) / a, 0.0f, 1.0f); }
@@ -229,31 +236,7 @@ int faceContact(const BoxShape& a, const BoxShape& b, int caseIndex, const glm::
     return count;
 }
 
-/**
- * @brief Closest point on segment [a, b] to @p p.
- *
- * Collapses to @p a for a degenerate segment, which is what makes a
- * zero-length capsule (a sphere) need no special case anywhere above.
- *
- * @param a Segment start.
- * @param b Segment end.
- * @param p Point to close on.
- * @return The closest point, on the segment.
- */
-glm::vec3 closestPointOnSegment(const glm::vec3& a, const glm::vec3& b, const glm::vec3& p) {
-    const glm::vec3 d = b - a;
-    const float len2 = glm::dot(d, d);
-    if (len2 <= EPS) return a;
-    return a + d * glm::clamp(glm::dot(p - a, d) / len2, 0.0f, 1.0f);
-}
 
-// Runaway guard on the capsule-box alternating projection, not its convergence
-// policy - the step test inside the loop is what normally ends it, after about
-// seven passes. A segment running nearly tangent to a face converges slowly and
-// wants hundreds, so this is set well above the average rather than near it: a
-// run that stops early answers a distance LARGER than the real one, and the
-// radius test reads that as no contact for an overlap that is really there.
-constexpr int MAX_PROJECTION_PASSES = 64;
 
 /**
  * @brief Closest point on segment [pa, pb] to an axis-aligned box of half-extents
@@ -269,14 +252,71 @@ constexpr int MAX_PROJECTION_PASSES = 64;
  * @return The closest point, on the segment, in the same local frame.
  */
 glm::vec3 closestOnSegmentToBox(const glm::vec3& pa, const glm::vec3& pb, const glm::vec3& h) {
-    glm::vec3 p = closestPointOnSegment(pa, pb, glm::vec3(0.0f));
-    for (int i = 0; i < MAX_PROJECTION_PASSES; ++i) {
-        const glm::vec3 next = closestPointOnSegment(pa, pb, glm::clamp(p, -h, h));
-        const glm::vec3 step = next - p;
-        p = next;
-        if (glm::dot(step, step) <= EPS) break;
+    const glm::vec3 dir = pb - pa;
+
+    // Solved rather than iterated. The squared distance from the segment to the
+    // box is a piecewise quadratic in t: on any stretch where the same set of
+    // axes is outside the slab, the nearest point on the box moves affinely
+    // with t, so the distance is a parabola with one minimum. The breakpoints
+    // are where the segment crosses a slab plane - at most six - so evaluating
+    // each stretch exactly costs less than the alternating projection it
+    // replaces, and answers where that could not: projecting between two
+    // convex sets has fixed points that are not the nearest pair, and it
+    // settled on them often enough to report real millimetre overlaps as no
+    // contact at all.
+    float cuts[8] = {0.0f, 1.0f};
+    int cutCount = 2;
+    for (int i = 0; i < 3; ++i) {
+        if (std::fabs(dir[i]) <= glm::epsilon<float>()) continue;
+        for (const float bound : {-h[i], h[i]}) {
+            const float t = (bound - pa[i]) / dir[i];
+            if (t > 0.0f && t < 1.0f && cutCount < 8) cuts[cutCount++] = t;
+        }
     }
-    return p;
+    // Sorted in place rather than through std::sort: at most eight values, and
+    // the library's insertion path is what the optimiser cannot prove a bound
+    // for here.
+    for (int i = 1; i < cutCount; ++i) {
+        const float key = cuts[i];
+        int j = i - 1;
+        while (j >= 0 && cuts[j] > key) { cuts[j + 1] = cuts[j]; --j; }
+        cuts[j + 1] = key;
+    }
+
+    float bestT = 0.0f;
+    float bestDist2 = std::numeric_limits<float>::max();
+    for (int c = 0; c + 1 < cutCount; ++c) {
+        const float t0 = cuts[c];
+        const float t1 = cuts[c + 1];
+        if (t1 - t0 <= glm::epsilon<float>()) continue;
+
+        // Which axes are outside their slab is fixed across the stretch, so it
+        // is read once, in the middle, where no boundary sits.
+        const glm::vec3 middle = pa + dir * ((t0 + t1) * 0.5f);
+        float a = 0.0f;
+        float b = 0.0f;
+        float cc = 0.0f;
+        for (int i = 0; i < 3; ++i) {
+            float offset = 0.0f;
+            if (middle[i] >  h[i]) offset =  h[i];
+            else if (middle[i] < -h[i]) offset = -h[i];
+            else continue;                       // inside the slab: contributes nothing
+            const float k = pa[i] - offset;
+            a  += dir[i] * dir[i];
+            b  += 2.0f * dir[i] * k;
+            cc += k * k;
+        }
+
+        // The parabola's vertex, held inside the stretch it was derived for.
+        float t = t0;
+        if (a > glm::epsilon<float>()) t = glm::clamp(-b / (2.0f * a), t0, t1);
+        const float dist2 = a * t * t + b * t + cc;
+        if (dist2 < bestDist2) {
+            bestDist2 = dist2;
+            bestT = t;
+        }
+    }
+    return pa + dir * bestT;
 }
 
 /**
@@ -318,11 +358,13 @@ constexpr float CAPSULE_FLAT_DOT = 0.05f;
 int capsuleFaceContact(const BoxShape& box, const glm::vec3& pa, const glm::vec3& dir,
                        const glm::vec3& normal, float radius, Contact* out) {
     int face = -1;
-    for (int i = 0; i < 3; ++i)
-        if (std::fabs(std::fabs(normal[i]) - 1.0f) < 1e-4f) face = i;
+    for (int i = 0; i < 3; ++i) {
+        const float offAxis = std::fabs(std::fabs(normal[i]) - 1.0f);
+        if (offAxis < Physics::AXIS_TOLERANCE) face = i;
+    }
 
     const float dirLen2 = glm::dot(dir, dir);
-    if (face < 0 || dirLen2 <= EPS) return 0;
+    if (face < 0 || dirLen2 <= Physics::DEGENERATE_SQ) return 0;
     if (std::fabs(glm::dot(dir / std::sqrt(dirLen2), normal)) >= CAPSULE_FLAT_DOT) return 0;
 
     // Clip the segment to the face: two interval intersections, one per in-face axis.
@@ -332,7 +374,7 @@ int capsuleFaceContact(const BoxShape& box, const glm::vec3& pa, const glm::vec3
     bool inside = true;
     for (int k = 1; k <= 2 && inside; ++k) {
         const int u = (face + k) % 3;
-        if (std::fabs(dir[u]) <= EPS) {
+        if (std::fabs(dir[u]) <= glm::epsilon<float>()) {
             inside = std::fabs(pa[u]) <= h[u];
             continue;
         }
@@ -343,7 +385,7 @@ int capsuleFaceContact(const BoxShape& box, const glm::vec3& pa, const glm::vec3
         t1 = std::min(t1, hi);
         inside = t0 <= t1;
     }
-    if (!inside || t1 - t0 <= 1e-4f) return 0;
+    if (!inside || t1 - t0 <= Physics::CONTACT_TOLERANCE) return 0;
 
     // The face plane, and how far each clipped end sits above it.
     const glm::mat3 rot(box.axes[0], box.axes[1], box.axes[2]);
@@ -366,6 +408,14 @@ int capsuleFaceContact(const BoxShape& box, const glm::vec3& pa, const glm::vec3
     return count;
 }
 
+// How decisively an edge-edge axis must beat the best face axis before it is
+// believed (relative factor on the overlap, and an absolute floor in metres).
+// The values are Box2D's: loose enough that a real edge crossing - which wins
+// by whole millimetres - always passes, tight enough that a degenerate cross
+// product shadowing a face normal never does.
+constexpr float EDGE_PREFERENCE_REL = 0.98f;
+constexpr float EDGE_PREFERENCE_ABS = 0.001f;
+
 } // namespace
 
 int contactBoxes(const BoxShape& a, const BoxShape& b, Contact* out) {
@@ -380,7 +430,8 @@ int contactBoxes(const BoxShape& a, const BoxShape& b, Contact* out) {
 
     auto tryAxis = [&](glm::vec3 axis, int caseIndex) {
         const float len2 = glm::dot(axis, axis);
-        if (len2 < EPS) return true;   // degenerate (parallel edges); skip
+        // Degenerate: parallel edges, so there is no axis to separate along.
+        if (len2 < Physics::DEGENERATE_SQ) return true;
         axis /= std::sqrt(len2);
         const float overlap = overlapOnAxis(a, b, axis, toCentre);
         if (overlap < 0.0f) return false;  // separating axis found
@@ -394,9 +445,28 @@ int contactBoxes(const BoxShape& a, const BoxShape& b, Contact* out) {
 
     for (int i = 0; i < 3; ++i) if (!tryAxis(a.axes[i], i)) return 0;
     for (int i = 0; i < 3; ++i) if (!tryAxis(b.axes[i], 3 + i)) return 0;
+    const float faceOverlap = bestOverlap;
+    const int   faceCase    = bestCase;
+    const glm::vec3 faceAxis = bestAxis;
     for (int i = 0; i < 3; ++i)
         for (int j = 0; j < 3; ++j)
             if (!tryAxis(glm::cross(a.axes[i], b.axes[j]), 6 + i * 3 + j)) return 0;
+
+    // An edge axis only wins over a face by a clear margin, never by float
+    // noise. Two horizontal edges of a box resting on another cross to a
+    // near-vertical axis - the face normal's own direction - and under a
+    // whisker of tilt that duplicate measures epsilon less overlap than the
+    // face it copies. Taken literally it turns a four-point face manifold into
+    // one corner contact, and a body held at one corner is a body the position
+    // correction rocks: it tips, the opposite corner becomes the contact, and
+    // it tips back, for ever. A genuine edge-edge crossing beats the face by
+    // far more than these margins.
+    if (bestCase >= 6 && faceCase >= 0
+        && bestOverlap >= faceOverlap * EDGE_PREFERENCE_REL - EDGE_PREFERENCE_ABS) {
+        bestCase    = faceCase;
+        bestAxis    = faceAxis;
+        bestOverlap = faceOverlap;
+    }
 
     if (bestCase < 0) return 0;
 
@@ -423,7 +493,7 @@ int contactCapsuleBox(const CapsuleShape& a, const BoxShape& b, Contact* out) {
     glm::vec3 normal(0.0f);   // capsule -> box
     glm::vec3 point(0.0f);
     float penetration = 0.0f;
-    if (dist2 > EPS) {
+    if (dist2 > Physics::DEGENERATE_SQ) {
         const float dist = std::sqrt(dist2);
         if (dist > a.radius) return 0;
         normal = -delta / dist;
@@ -469,7 +539,7 @@ int contactCapsuleCapsule(const CapsuleShape& a, const CapsuleShape& b, Contact*
 
     glm::vec3 normal;
     float dist = 0.0f;
-    if (dist2 > EPS) {
+    if (dist2 > Physics::DEGENERATE_SQ) {
         dist = std::sqrt(dist2);
         normal = delta / dist;
     } else {
@@ -477,7 +547,9 @@ int contactCapsuleCapsule(const CapsuleShape& a, const CapsuleShape& b, Contact*
         // separates them; along it would shove one capsule through the other
         // lengthwise instead.
         const glm::vec3 axis = a.b - a.a;
-        normal = glm::dot(axis, axis) > EPS ? perpendicularTo(axis) : glm::vec3(0.0f, 1.0f, 0.0f);
+        normal = glm::dot(axis, axis) > Physics::DEGENERATE_SQ
+               ? perpendicularTo(axis)
+               : glm::vec3(0.0f, 1.0f, 0.0f);
     }
 
     // Midway between the two surface points, so neither radius biases where the

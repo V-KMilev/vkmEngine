@@ -1,0 +1,55 @@
+{
+  "name": "lab:ground",
+  "source": {
+    "albedo": [
+      0.28999999165534973,
+      0.30000001192092896,
+      0.3199999928474426,
+      1.0
+    ],
+    "alphaCutoff": 0.5,
+    "anisotropy": 0.0,
+    "anisotropyDirection": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "ao": 1.0,
+    "attenuationColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "attenuationDistance": 1.0,
+    "clearcoat": 0.0,
+    "clearcoatRoughness": 0.0,
+    "emission": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "emissiveStrength": 1.0,
+    "heightScale": 0.0,
+    "ior": 1.5,
+    "kind": "inline",
+    "metallic": 0.0,
+    "normalScale": 1.0,
+    "roughness": 0.8999999761581421,
+    "sheenColor": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "sheenRoughness": 0.30000001192092896,
+    "subsurface": 0.0,
+    "subsurfaceColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "thicknessFactor": 0.0,
+    "transmission": 0.0,
+    "type": "Opaque"
+  },
+  "type": "material"
+}

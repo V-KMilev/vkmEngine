@@ -7,9 +7,12 @@
 #include "ecs/component/animation/animator.h"
 #include "ecs/entity.h"
 #include "system/animation/pose_buffer.h"
+#include "system/animation/ragdoll_pose.h"
 #include "system/animation/pose_evaluator.h"
 
 namespace Vkm::Engine {
+
+struct Ragdoll;
 
 class ResourceManager;
 class Scene;
@@ -66,6 +69,17 @@ class SkeletalAnimationSystem : public System {
             uint32_t slice         = 0;  ///< Slice addSlice() handed out for it.
 
             const SkeletonAsset*      skeleton = nullptr;
+
+            /**
+             * @brief The ragdoll driving this rig, or null when a clip is.
+             *
+             * Resolved in the serial pass with everything else the parallel one
+             * reads, so the evaluation never touches the scene.
+             */
+            const Ragdoll* ragdoll = nullptr;
+            std::vector<RagdollBodyPose> ragdollBodies;  ///< Its bodies' poses, as values
+            glm::mat4 rigWorld = glm::mat4(1.0f);  ///< The rig entity's world matrix
+
             const AnimationClipAsset* clip     = nullptr;  ///< Null holds the bind pose.
             const AnimationClipAsset* fadeClip = nullptr;  ///< Clip being faded out of; null when nothing is.
 

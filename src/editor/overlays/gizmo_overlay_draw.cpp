@@ -18,6 +18,7 @@
 #include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/world_transform.h"
 #include "ecs/component/physics/collider.h"
+#include "ecs/component/physics/joint.h"
 #include "ecs/component/render/decal.h"
 #include "ecs/component/render/irradiance_volume.h"
 #include "ecs/component/render/particle_emitter.h"
@@ -39,6 +40,7 @@ constexpr ImU32 BOUNDS_COL   = IM_COL32(230, 200, 60, 160);  // mesh-bounds ambe
 constexpr ImU32 IRRADIANCE_VOLUME_COL = IM_COL32(235, 150, 77, 200);  // GI orange, against the probe's blue
 
 constexpr ImU32 SKELETON_COL = IM_COL32(120, 190, 255, 230);  // rig blue
+constexpr ImU32 JOINT_COL    = IM_COL32(255, 170, 60, 220);   // joint amber, against physics green
 
 // A bone's own X / Y / Z, in the editor's axis colours - so a bone triad reads
 // against the navigation gizmo and the transform handles without a legend.
@@ -94,6 +96,42 @@ struct ViewportOverlayScope {
     ImDrawList* dl = nullptr;
 };
 
+
+// A mesh collider drawn as its own triangles. Exact rather than approximate,
+// because the whole reason to reach for this shape is that no box describes the
+// geometry - a bounding wireframe would show the thing it is not.
+void drawMeshColliderWires(ImDrawList* dl, const glm::mat4& vp,
+                           const Collider& col, const ColliderPart& part,
+                           const glm::vec3& center, const glm::mat3& r,
+                           ImVec2 vpMin, ImVec2 vpSize, ImU32 color) {
+    const uint32_t last = part.meshFirst + part.meshCount;
+    if (last > col.meshPoints.size()) return;
+
+    // A level's collision mesh is tens of thousands of triangles and drawing
+    // every edge of it costs more than the frame it is meant to explain. Past
+    // this it is stepped through, which keeps the shape legible and the cost
+    // flat - the alternative is a viewport that stalls on the thing an author
+    // turned the overlay on to look at.
+    //
+    // Low, because each triangle is three lines and each line is four vertices
+    // in the draw list: at 2000 that was 24,000 vertices a frame, per mesh
+    // collider, streamed through a buffer that exists to carry a few hundred.
+    // A wireframe is there to say where the surface is, and a quarter of one
+    // says that as well as all of it.
+    constexpr uint32_t MAX_DRAWN = 400;
+    const uint32_t triangles = part.meshCount / 3;
+    const uint32_t step = triangles > MAX_DRAWN ? triangles / MAX_DRAWN : 1;
+
+    for (uint32_t t = 0; t < triangles; t += step) {
+        const uint32_t base = part.meshFirst + t * 3;
+        const glm::vec3 a = center + r * col.meshPoints[base + 0];
+        const glm::vec3 b = center + r * col.meshPoints[base + 1];
+        const glm::vec3 c = center + r * col.meshPoints[base + 2];
+        wireSegment(dl, vp, a, b, vpMin, vpSize, color, 1.0f);
+        wireSegment(dl, vp, b, c, vpMin, vpSize, color, 1.0f);
+        wireSegment(dl, vp, c, a, vpMin, vpSize, color, 1.0f);
+    }
+}
 } // namespace
 
 void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
@@ -599,11 +637,80 @@ void GizmoOverlay::drawColliderGizmos(EditorContext& ec) {
         const glm::mat3 r   = glm::mat3_cast(rot);
         for (const ColliderPart& part : col.parts) {
             const glm::vec3 center = pos + r * part.center;
-            if (part.shape == ColliderShape::Capsule)
-                wireCapsule(dl, vp, center, rot, part.radius, part.halfHeight,
-                            COLLIDER_CAPSULE_SEGMENTS, vpMin, vpSize, color);
-            else
-                wireBox(dl, vp, center, rot, part.halfExtents, vpMin, vpSize, color);
+            switch (part.shape) {
+                case ColliderShape::Capsule:
+                    wireCapsule(dl, vp, center, rot, part.radius, part.halfHeight,
+                                COLLIDER_CAPSULE_SEGMENTS, vpMin, vpSize, color);
+                    break;
+
+                case ColliderShape::Mesh:
+                    drawMeshColliderWires(dl, vp, col, part, center, r,
+                                          vpMin, vpSize, color);
+                    break;
+
+                case ColliderShape::Box:
+                    wireBox(dl, vp, center, rot, part.halfExtents,
+                            vpMin, vpSize, color);
+                    break;
+
+                case ColliderShape::Count:
+                    break;
+            }
+        }
+    });
+}
+
+void GizmoOverlay::drawJointGizmos(EditorContext& ec) {
+    ViewportOverlayScope scope(ec);
+    if (!scope.valid()) return;
+
+    const glm::mat4 vp     = scope.vp;
+    const ImVec2    vpMin  = scope.vpMin;
+    const ImVec2    vpSize = scope.vpSize;
+    ImDrawList*     dl     = scope.dl;
+
+    Scene& scene = ec.frame.scene;
+    scene.forEach<Joint, Transform>([&](EntityId id, const Joint& joint, const Transform& tf) {
+        const bool selected = ec.state.isSelected(id)
+                           || (joint.connected && ec.state.isSelected(joint.connected));
+        const ImU32 color = selected ? EditorStyle::HIGHLIGHT_U32 : JOINT_COL;
+
+        // The anchors as the solver reads them: each in its own body's frame,
+        // position and rotation only.
+        const glm::vec3 anchorA = resolvedWorldPosition(scene, id, tf)
+            + resolvedWorldRotation(scene, id, tf) * joint.anchor;
+
+        ImVec2 spA;
+        const bool onA = projectToViewport(vp, anchorA, vpMin, vpSize, spA);
+
+        // A joint whose connected entity is gone or empty holds to a world
+        // point; there is nothing to draw a rope to, so the anchor stands alone.
+        const bool tethered = joint.connected
+                           && scene.isAlive(joint.connected)
+                           && scene.has<Transform>(joint.connected);
+        if (!tethered) {
+            if (onA) drawEntityMarker(dl, EditorIcon::Joint, spA, color);
+            return;
+        }
+
+        const Transform& ct = scene.get<Transform>(joint.connected);
+        const glm::vec3 anchorB =
+            resolvedWorldPosition(scene, joint.connected, ct)
+            + resolvedWorldRotation(scene, joint.connected, ct) * joint.connectedAnchor;
+
+        ImVec2 spB;
+        const bool onB = projectToViewport(vp, anchorB, vpMin, vpSize, spB);
+        if (onA && onB) {
+            dl->AddLine(spA, spB, color, EditorStyle::px(1.5f));
+            dl->AddCircleFilled(spA, EditorStyle::px(3.0f), color);
+            dl->AddCircleFilled(spB, EditorStyle::px(3.0f), color);
+        }
+
+        // The glyph sits at the midpoint, where it reads as the relationship
+        // rather than as either body.
+        ImVec2 mid;
+        if (projectToViewport(vp, (anchorA + anchorB) * 0.5f, vpMin, vpSize, mid)) {
+            drawEntityMarker(dl, EditorIcon::Joint, mid, color);
         }
     });
 }

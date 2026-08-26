@@ -16,6 +16,8 @@
 
 #include "ecs/scene.h"
 #include "ecs/component/core/hierarchy.h"
+#include "ecs/component/physics/joint.h"
+#include "ecs/component/physics/ragdoll.h"
 #include "ecs/component/prefab/prefab_entity.h"
 #include "ecs/component/prefab/prefab_instance.h"
 #include "io/asset/asset_serializer.h"
@@ -390,6 +392,31 @@ bool save(Scene& scene, EntityId root, const std::string& path,
         // saveComponents wrote in scene-entity terms.
         components.erase("Hierarchy");
 
+        // Joints and ragdolls name other entities, and a scene slot means
+        // nothing in whatever scene the prefab lands in. They travel as local
+        // indices the way the parent link does - shifted by one so zero stays
+        // "none" - and a reference pointing outside the subtree is dropped:
+        // it names something the prefab does not carry.
+        const auto localRef = [&](uint32_t slot) -> uint32_t {
+            const auto it = indexOf.find(slot);
+            return it != indexOf.end()
+                ? static_cast<uint32_t>(it->second) + 1
+                : 0;
+        };
+        if (components.contains("Joint")) {
+            json& joint = components["Joint"];
+            joint["connected"] = localRef(numberOr(joint, "connected", 0));
+        }
+        if (components.contains("Ragdoll")) {
+            json& ragdoll = components["Ragdoll"];
+            ragdoll["root"] = localRef(numberOr(ragdoll, "root", 0));
+            if (ragdoll.contains("bones") && ragdoll["bones"].is_array()) {
+                for (json& bone : ragdoll["bones"]) {
+                    bone["body"] = localRef(numberOr(bone, "body", 0));
+                }
+            }
+        }
+
         json entity;
         entity["uid"]        = uids[i];
         entity["components"] = std::move(components);
@@ -525,6 +552,29 @@ bool instantiateInto(Scene& scene, ResourceManager& resources, const std::string
         created.push_back(entity);
     }
 
+    // The physics references come back from local indices now that every
+    // entity they can name exists. The loaders left the shifted index in the
+    // handle's slot field; out-of-range means the file was edited by hand,
+    // and the reference is cleared rather than pointed at a stranger.
+    const auto resolveRef = [&](EntityId stored) -> EntityId {
+        const uint32_t shifted = stored.index;
+        if (shifted == 0 || shifted > created.size()) return {};
+        return created[shifted - 1];
+    };
+    for (EntityId id : created) {
+        if (scene.has<Joint>(id)) {
+            Joint& joint = scene.get<Joint>(id);
+            joint.connected = resolveRef(joint.connected);
+        }
+        if (scene.has<Ragdoll>(id)) {
+            Ragdoll& ragdoll = scene.get<Ragdoll>(id);
+            ragdoll.root = resolveRef(ragdoll.root);
+            for (RagdollBone& bone : ragdoll.bones) {
+                bone.body = resolveRef(bone.body);
+            }
+        }
+    }
+
     // The one drift case applyOverrides cannot see: it is only handed the
     // entities the file has, so an override naming one it does not would pass
     // through every entity unmentioned.
@@ -537,6 +587,43 @@ bool instantiateInto(Scene& scene, ResourceManager& resources, const std::string
     }
 
     return true;
+}
+
+
+// Turn the prefab-local indices a load leaves behind into the entities of the
+// instance this one belongs to. The index is a position in the file's entity
+// array, one-shifted; the uid at that position names the entity within the
+// instance, and the instance is whatever sits above this one carrying a
+// PrefabInstance.
+void resolvePhysicsRefs(Scene& scene, EntityId entity, const nlohmann::json& entities) {
+    const bool hasRefs = scene.has<Joint>(entity) || scene.has<Ragdoll>(entity);
+    if (!hasRefs) return;
+
+    const EntityId root =
+        HierarchyOperations::findInSelfOrAncestors<PrefabInstance>(scene, entity);
+    if (!root) return;
+
+    const std::vector<EntityId> subtree = collectSubtree(scene, root);
+    const auto byIndex = [&](EntityId stored) -> EntityId {
+        const uint32_t shifted = stored.index;
+        if (shifted == 0 || shifted > entities.size()) return {};
+        const uint32_t wanted = uidAt(entities, shifted - 1);
+        for (EntityId id : subtree) {
+            if (!scene.has<PrefabEntity>(id)) continue;
+            if (scene.get<PrefabEntity>(id).uid == wanted) return id;
+        }
+        return {};
+    };
+
+    if (scene.has<Joint>(entity)) {
+        Joint& joint = scene.get<Joint>(entity);
+        joint.connected = byIndex(joint.connected);
+    }
+    if (scene.has<Ragdoll>(entity)) {
+        Ragdoll& ragdoll = scene.get<Ragdoll>(entity);
+        ragdoll.root = byIndex(ragdoll.root);
+        for (RagdollBone& bone : ragdoll.bones) bone.body = byIndex(bone.body);
+    }
 }
 
 bool reloadComponent(Scene& scene, ResourceManager& resources, const std::string& path,
@@ -571,6 +658,14 @@ bool reloadComponent(Scene& scene, ResourceManager& resources, const std::string
                       path.c_str(), uid, component.c_str(), e.what());
             return false;
         }
+
+        // A file stores physics references as prefab-local indices, and the
+        // loader leaves them in the handle's slot field for instantiation to
+        // resolve. Re-reading one component takes the same path and reached
+        // nobody's resolve, so dropping an override on a Joint or a Ragdoll
+        // left an index sitting where an entity id belongs - pointing at
+        // whatever scene entity happens to own that slot.
+        resolvePhysicsRefs(scene, entity, entities);
         return true;
     }
     return false;

@@ -1,4 +1,4 @@
-#include "system/physics/collider_fit.h"
+#include "system/physics/authoring/collider_fit.h"
 
 #include <algorithm>
 #include <cmath>
@@ -6,8 +6,10 @@
 #include <cstdint>
 
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
 
 #include "resource/asset/mesh_asset.h"
+#include "system/physics/tolerance.h"
 
 namespace Vkm::Engine {
 
@@ -28,7 +30,9 @@ bool rayHitsTriangle(
     const glm::vec3 e2 = v2 - v0;
     const glm::vec3 p  = glm::cross(d, e2);
     const float det = glm::dot(e1, p);
-    if (std::fabs(det) < 1e-8f) return false;       // ray parallel to triangle
+    // Parallel to the triangle: the reciprocal below would be meaningless, and
+    // this is a question about the division rather than about the geometry.
+    if (std::fabs(det) < glm::epsilon<float>()) return false;
 
     const float inv = 1.0f / det;
     const glm::vec3 tv = o - v0;
@@ -39,15 +43,29 @@ bool rayHitsTriangle(
     const float v = glm::dot(d, q) * inv;
     if (v < 0.0f || u + v > 1.0f) return false;
 
+    // Ahead of the origin rather than at it. The casts below start on a cell
+    // boundary, and a crossing reported at zero is the surface they started
+    // from being counted again.
+    constexpr float MIN_ADVANCE = 1e-6f;
     t = glm::dot(e2, q) * inv;
-    return t > 1e-6f;
+    return t > MIN_ADVANCE;
 }
 
-// absScale must be component-wise non-negative (all callers pass glm::abs(scale)).
-ColliderPart boundsBox(const glm::vec3& bmin, const glm::vec3& bmax, const glm::vec3& absScale) {
+// Two crossings closer together than this fraction of a cell are the same
+// surface hit twice, not a span with a thickness. A fraction rather than a
+// length: the mesh may be authored at any size, and what makes two crossings
+// the same is that the column found nothing between them.
+constexpr float CROSSING_MERGE_FRACTION = 1e-3f;
+
+// A centre scales by the signed scale - a mirrored mesh's box sits on the
+// mirrored side - while a half-extent has no side and takes the magnitude.
+// The floor is applied after the scale, so the millimetre it promises is a
+// millimetre in the world rather than in whatever units the mesh was drawn in.
+ColliderPart boundsBox(const glm::vec3& bmin, const glm::vec3& bmax, const glm::vec3& scale) {
     ColliderPart box;
-    box.center      = (bmin + bmax) * 0.5f * absScale;
-    box.halfExtents = glm::max((bmax - bmin) * 0.5f, glm::vec3(1e-3f)) * absScale;
+    box.center      = (bmin + bmax) * 0.5f * scale;
+    const glm::vec3 half = (bmax - bmin) * 0.5f * glm::abs(scale);
+    box.halfExtents = glm::max(half, glm::vec3(Physics::MIN_HALF_EXTENT));
     return box;
 }
 
@@ -64,7 +82,7 @@ std::vector<ColliderPart> fitBoxesToMesh(const MeshAsset& mesh, int detail, cons
     // detail 1 (or no usable geometry) -> a single box enclosing the bounds.
     if (detail <= 1 || mesh.indices.size() < 3
         || ext.x <= 0.0f || ext.y <= 0.0f || ext.z <= 0.0f) {
-        return { boundsBox(bmin, bmax, absScale) };
+        return { boundsBox(bmin, bmax, scale) };
     }
 
     // The raycast path below indexes vertices by index-buffer values. Validate
@@ -72,14 +90,15 @@ std::vector<ColliderPart> fitBoxesToMesh(const MeshAsset& mesh, int detail, cons
     // back to the bounds box instead of reading out of bounds in the hot loop.
     const uint32_t vertexCount = static_cast<uint32_t>(mesh.vertices.size());
     for (uint32_t idx : mesh.indices) {
-        if (idx >= vertexCount) return { boundsBox(bmin, bmax, absScale) };
+        if (idx >= vertexCount) return { boundsBox(bmin, bmax, scale) };
     }
 
     const int       R    = detail;
     const glm::vec3  cell = ext / static_cast<float>(R);
     const glm::vec3  dir(1.0f, 0.0f, 0.0f);     // scan along +X
     const float      xStart   = bmin.x - cell.x;   // ray origin: outside on -X
-    const float      mergeEps = cell.x * 1e-3f;    // collapse coincident crossings
+    // Collapses crossings that landed on the same point.
+    const float      mergeEps = cell.x * CROSSING_MERGE_FRACTION;
 
     std::vector<ColliderPart> boxes;
     std::vector<float>        xs;   // surface crossing x-coords, reused per column
@@ -120,8 +139,9 @@ std::vector<ColliderPart> fitBoxesToMesh(const MeshAsset& mesh, int detail, cons
                 const glm::vec3 hi(x1, bmin.y + static_cast<float>(iy + 1) * cell.y,
                                        bmin.z + static_cast<float>(iz + 1) * cell.z);
                 ColliderPart box;
-                box.center      = (lo + hi) * 0.5f * absScale;
-                box.halfExtents = (hi - lo) * 0.5f * absScale;
+                box.center      = (lo + hi) * 0.5f * scale;
+                box.halfExtents = glm::max((hi - lo) * 0.5f * absScale,
+                                           glm::vec3(Physics::MIN_HALF_EXTENT));
                 boxes.push_back(box);
             }
         }
@@ -130,7 +150,7 @@ std::vector<ColliderPart> fitBoxesToMesh(const MeshAsset& mesh, int detail, cons
     // A non-watertight or paper-thin mesh can resolve to nothing; fall back to
     // the bounds box so the entity is never left without a collider.
     if (boxes.empty()) {
-        return { boundsBox(bmin, bmax, absScale) };
+        return { boundsBox(bmin, bmax, scale) };
     }
     return boxes;
 }
