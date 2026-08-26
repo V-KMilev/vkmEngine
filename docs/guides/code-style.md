@@ -26,8 +26,10 @@ Mechanics do not admit judgment. Every one of these is a rule, not a default.
 - **No `static` free functions in a `.cpp`.** Use an anonymous namespace.
 - **Every virtual override carries `override`**, destructors included.
 - **Struct members are bare; class members take `m_`.**
-- **Data members come last, in a `private:` section of their own** - never mixed
-  with nested types, methods or constants.
+- **A class's data members come last, in a `private:` section of their own** -
+  never mixed with nested types, methods or constants. A data-only struct is the
+  other shape and holds to it instead: bare members first, static helpers after
+  ([4.1](#41-the-structclass-member-rule)).
 - **A template another file could instantiate lives entirely in a header.** No
   `.tpp`. File-local helper templates - [section 8](#8-templates).
 - **A namespace you put definitions in closes with `} // namespace Name`.** A
@@ -62,7 +64,7 @@ The editor has a root of its own (`src/editor/CMakeLists.txt:6`) *and* the
 engine's, so an editor `.cpp` includes `panels/`, `framework/` and `ui/` from the
 first and `core/`, `ecs/`, `system/` from the second - see
 `panels/inspector_panel.cpp:1-24`. The three hosts add the repo root instead
-(`app/editor/CMakeLists.txt:21` and its siblings), which is why `app/` is spelled
+(`app/editor/CMakeLists.txt:18` and its siblings), which is why `app/` is spelled
 into the path.
 
 Always include the **module path**, never the bare filename:
@@ -212,8 +214,8 @@ namespace Vkm::Engine {
 
 ### 3.1 File-local helpers go in an anonymous namespace
 
-Never use `static` free functions in a `.cpp`. Use an anonymous namespace,
-placed between `namespace Vkm::Engine {` and the first externally visible
+Never use `static` free functions in a `.cpp`. Use an anonymous namespace. The
+first one goes between `namespace Vkm::Engine {` and the first externally visible
 definition:
 
 ```cpp
@@ -232,6 +234,13 @@ void Engine::run() { /* ... */ }
 } // namespace Vkm::Engine
 ```
 
+A file may open more than one, each sitting directly above the definitions that
+use it: 8 of the 85 `.cpp` files with an anonymous namespace do,
+`editor/framework/editor_actions.cpp` with seven. That is the shape
+[anti-pattern 8](#12-anti-patterns-reviewers-flag) asks for in place of a banner
+comment introducing a section - the namespace both scopes the helpers and marks
+where the section starts, and it cannot go stale the way a label can.
+
 Helpers inside an anonymous namespace get no extra prefix (`detail_`,
 `_internal`) - the namespace already restricts their scope.
 
@@ -248,7 +257,7 @@ Helpers inside an anonymous namespace get no extra prefix (`detail_`,
 | Local variable   | camelCase                    | `deltaTime`, `worldMin`              |
 | File-scope state | `g_` + camelCase             | `g_interrupted`, `g_sink`            |
 | `thread_local`   | `t_` + camelCase             | `t_isWorker`                         |
-| `static` local   | `s_` + camelCase             | `s_iniPath`, `s_iconFont`            |
+| `static` local   | `s_` + camelCase             | `s_iniPath`, `s_fontPath`            |
 | Constant         | UPPER_SNAKE_CASE             | `ALIVE_BIT`, `DEFAULT_THREAD_COUNT`  |
 | Enum class value | PascalCase                   | `SystemStage::Render`                |
 | Type alias       | PascalCase                   | `EntityId`, `MeshHandle`             |
@@ -472,12 +481,15 @@ the work, so every line of it is a line of code the reader is not reading:
 Past three lines the comment is a diagnosis before it is a comment - one of three
 things has gone wrong and
 [implementation.md](implementation.md#6-comment-only-the-non-obvious-why) names
-them. The longest run left in a function body is eleven lines
-(`backend/opengl/gl_backend.cpp:90-100`), and it shows the failure whole: a
-per-pass ordering brief, indented into a table, filed inside `GLBackend::init`.
-The same ordering is already a document, at
-[../reference/system/rendering.md](../reference/system/rendering.md#the-passes-fixed-order),
-which is where a body comment that has grown a table belongs.
+them. The longest runs left in a function body are eleven lines, and both have
+the same tell - a second paragraph, with a bare `//` dividing it from the first.
+`editor/overlays/gizmo_overlay_draw.cpp:111-121` spends them above one
+`constexpr`; `tools/loader/model_loaders.cpp:278-288` above one `if`. A body
+comment that has grown a second paragraph has become a document, and a document
+goes under `docs/reference/` with a pointer left where it was.
+`backend/opengl/gl_backend.cpp:91-93` is what that looks like: three lines saying
+the pass order is load-bearing, and the order itself at
+[../reference/system/rendering.md](../reference/system/rendering.md#the-passes-fixed-order).
 
 **On a declaration, a comment is bounded by relevance to a caller.** A
 declaration block is not in the reader's way. It is what a caller reads *instead*
@@ -498,22 +510,26 @@ What a declaration block may **not** do, at any length:
 
 - **Argue the decision to an imagined reviewer.** A commit body defends a choice
   against an objection; a comment states the constraint the choice protects. Cut
-  the arguing clause, keep the constraint. In
-  `editor/framework/editor_actions.h:301-302`, *"Applying before pushing is
-  deliberate and matches the rest of the editor"* is the half to cut; *"the
-  command carries the reverse of an edit that has already happened"* is the half
-  a caller needs, because it says what state the command is built against.
+  the arguing clause, keep the constraint. *"Applying before pushing is
+  deliberate and matches the rest of the editor"* is all clause and no
+  constraint; `editor/framework/editor_actions.h:303-304` is what is left when it
+  goes - *"The rename is applied before the command is pushed: the command
+  carries the reverse of an edit that has already happened"* - which says what
+  state the command is built against and nothing about the choice being sound.
 - **Carry section headings.** ALL-CAPS headers, banner separators, numbered
   parts, a second topic after a blank ` *` line. The same block says the same
   thing in paragraphs. If a part of it genuinely needs headings, that part has
   become a document: move it to `docs/reference/` and leave a one-line pointer.
 - **Narrate history.** What it used to be, what was tried, which release changed
-  it. The log keeps that, accurately and forever.
-  `editor/framework/asset_picker.h:15-16` says a filesystem walk *"used to lag
-  with big asset trees"*; the present tense says the same thing and stays true.
+  it. The log keeps that, accurately and forever. A block saying a filesystem
+  walk *"used to lag with big asset trees"* dates itself against a reader who
+  cannot see what changed; `editor/framework/asset_picker.h:15-17` is the present
+  tense of the same constraint - a walk every frame the modal is open *"lags with
+  big asset trees, so this one scans once when the popup opens"* - and it stays
+  true.
 - **Restate what the signature already says.** `@param scene The scene` is
   nothing. `@param scene Scene whose Light components are gathered`
-  (`render_view.h:129`) is the half a caller could not have guessed.
+  (`render_view.h:136`) is the half a caller could not have guessed.
 
 Those four are the failure, not the length. A block that avoids all four is the
 right length whatever it measures.
@@ -627,9 +643,9 @@ Then `private:` holds the `m_`-prefixed members.
 
 ### 7.2.1 Data members get their own trailing section
 
-Data members are **always last**, in a `private:` section of their own. Never mix
-them with nested types, methods, or constants - even when that means two
-`private:` blocks:
+In a class, data members are **always last**, in a `private:` section of their
+own. Never mix them with nested types, methods, or constants - even when that
+means two `private:` blocks:
 
 ```cpp
 class RenderSystem : public System {
@@ -654,6 +670,12 @@ class RenderSystem : public System {
 The second `private:` is not redundant. The state of an object is the thing a
 reader most often wants to find, and it should be in one place at the bottom of
 every class in the engine, not somewhere in the middle of a particular one.
+
+A data-only struct is not this shape and is not meant to be. It has no `private:`
+section to put anything last in: its members are bare and come first, with any
+static helper after them (`ecs/component/core/transform.h:17-28`).
+[4.1](#41-the-structclass-member-rule) is the rule that decides which of the two
+you are writing; this one applies once you have answered it.
 
 ### 7.3 Non-copyable, non-movable for resource owners
 
@@ -867,10 +889,16 @@ and its header block states the context/collect lifecycle. Two placement
 conventions the macros cannot tell you:
 
 - **A `System`'s frame entry point opens with `PROFILE_SCOPE("<ClassName>")` as
-  its first statement.** 14 of the 15 systems do, counting `fixedUpdate` for the
-  two whose `update` is empty (`PhysicsSystem`, `CharacterControllerSystem`);
-  `system/sky/sky_system.cpp` is the gap, not the licence.
-- **A backend pass opens no zone of its own.** `gl_backend.cpp:276-278` already
+  its first statement.** All 18 do, without exception - reading `fixedUpdate` as
+  the entry point for the four that have no `update` of their own
+  (`PhysicsSystem`, `CharacterControllerSystem`, `RagdollSystem`,
+  `AnimationSystem`), which inherit the base's empty one. The label is the bare
+  class name; the two systems with both entry points live suffix the second so
+  the two do not merge under it - `BehaviorSystem::fixedUpdate` and
+  `SkeletalAnimationSystem::fixedUpdate` open `PROFILE_SCOPE("...::fixed")`
+  (`system/script/behavior_system.cpp:240`,
+  `system/animation/skeletal_animation_system.cpp:82`).
+- **A backend pass opens no zone of its own.** `gl_backend.cpp:269-272` already
   wraps every `execute()` in a `PROFILE_SCOPE_NAMED` *and* a
   `PROFILE_GPU_SCOPE_NAMED` keyed on the pass's registered name. Adding one
   inside `execute()` duplicates it. Sub-zones for phases within a pass are
@@ -888,7 +916,7 @@ conventions the macros cannot tell you:
       callable parameter is `Fn&& fn`, unspaced.
 - [ ] Every virtual override has `override`.
 - [ ] Struct members are bare; class members have `m_`.
-- [ ] Data members are last, in a `private:` section of their own.
+- [ ] A class's data members are last, in a `private:` section of their own.
 - [ ] No multi-paragraph `///` blocks; `@brief` is one sentence.
 - [ ] No what-comments (`// Increment the counter`); no task/commit references.
 - [ ] No `//` run past three lines in a function body; `///` on a member is one
@@ -990,12 +1018,12 @@ beside `getStorage()` (which *creates* the storage if it is missing),
 
 ### 13.6 A `System` subclass spells out the Rule of 5 it inherits
 
-`core/system.h:98-102` already deletes all four copy/move members, so
+`core/system.h:100-104` already deletes all four copy/move members, so
 [7.3](#73-non-copyable-non-movable-for-resource-owners) would let a stateless
-subclass omit them. All 16 write them out anyway, `sky_system.h`,
-`particle_system.h`, `animation_system.h` and `async_loader_system.h` included,
-and those four hold no data members at all. Match them: the block is how a reader
-recognises a `System` at a glance.
+subclass omit them. All 18 write them out anyway, `sky_system.h`,
+`animation_system.h` and `async_loader_system.h` included, and those three hold
+no data members at all. Match them: the block is how a reader recognises a
+`System` at a glance.
 
 A system's class `@brief` also carries what no signature can - **which
 `SystemStage` it runs at and why that one**, argued against a named sibling.
@@ -1012,3 +1040,36 @@ behaviors still uses `m_`. The shipped model is `Spinner::degreesPerSecond`
 (`templates/default/src/game.h:22`); the two example projects use the same shape
 at larger scale (`examples/potion_runner/src/potion_runner.h`, 7 fields;
 `examples/stress_arena/src/stress_arena.h`, 22).
+
+### 13.8 A DPI-scaled dimension is a function, not a constant
+
+`EditorStyle::px()` scales a design-time pixel by the loaded font size, and so
+by the display's content/DPI scale - neither is known at compile time and either
+can change while the editor runs. A layout number that needs it therefore cannot
+be a `constexpr`, and the shape it takes instead is a file-local nullary function
+in the anonymous namespace, ALL_CAPS like the constant it stands in for
+(`editor/overlays/viewport_toolbar.cpp:13-21`):
+
+```cpp
+// Sizes in design px - font/DPI-relative via EditorStyle::px.
+/// Icon button side length.
+float BTN() { return EditorStyle::px(26.0f); }
+/// Spacing between groups.
+float SEP() { return EditorStyle::px(10.0f); }
+/// Toolbar inner padding.
+float PAD() { return EditorStyle::px(5.0f); }
+/// Inset from the viewport edge the overlay floats at.
+float INSET() { return EditorStyle::px(8.0f); }
+```
+
+The name earns its place by being used more than once - `viewport_toolbar.cpp`
+has eight `BTN()` and four `PAD()`, `playback_bar.cpp` five and three. A single
+call site does not: `EditorStyle::px(8.0f)` at the one place it applies says the
+same thing with one fewer name to look up, and the sentence the declaration
+carried moves to the line above it. That is the whole rule - the indirection is
+for the numbers that must agree with each other, not for every number.
+
+`EditorStyle::px()` reaching the call site directly is also the norm inside a
+panel, where the number is local to one card or row: `const float GAP =
+EditorStyle::px(8.0f);` at the top of a lambda, or the literal expression in the
+one row that uses it.
