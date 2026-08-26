@@ -1,7 +1,12 @@
 # Animation
 
-Two systems, both in the Simulation stage, both reading `simDelta` so pause /
-time-scale / single-step apply uniformly. They do not overlap:
+Two systems, both in the Simulation stage, and both on the **tick** rather than
+the frame: a pose is simulation - physics and the hitboxes read the Transforms
+it writes - so advancing one per frame would make the same tick answer
+differently depending on how long the last frame took. Pause, time-scale and
+single-step still reach them, through the accumulator that decides whether a
+tick happens at all rather than through a delta they scale themselves. They do
+not overlap:
 
 - **`AnimationSystem`** plays authored keyframe tracks onto an entity's own
   `Transform`. One entity, one animated object.
