@@ -68,6 +68,8 @@ int main(int argc, char** argv) {
             title.c_str(),
             false, true});
 
+        engine.getClock().setTickRate(project.tickRate);
+
         // Anything but the project's own world leaves this game nothing to play:
         // its entry scene did not load, or it names none and its module builds
         // none, and both leave the runtime on the engine's default scene.
