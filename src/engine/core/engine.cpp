@@ -56,9 +56,8 @@ void Engine::run() {
 
         m_window.updateInput();
 
-        // Resolve actions once, before any system runs, so every reader in the
-        // frame - and both the fixed and variable updates - sees the same input
-        // state and the same edges.
+        // Resolve actions once, so every frame-rate reader sees the same state.
+        // This also latches the edges the next tick's command is built from.
         m_input.update(m_window.getInputHandle());
 
         if (!m_initialized) {
@@ -67,8 +66,16 @@ void Engine::run() {
 
         while (m_clock.consumeFixedStep()) {
             PROFILE_SCOPE("FixedUpdate");
+            // The command this tick runs under, built before any system reads it.
+            m_input.beginTick(m_tick++);
             for (size_t s = 0; s < m_systemsByStage.size(); ++s) {
                 PROFILE_SCOPE_NAMED(STAGE_NAMES[s]);
+
+                // Delivered at the top of Simulation on the next tick: waiting
+                // for the end of the frame would put a reaction however many
+                // ticks later the frame rate decides.
+                if (s == static_cast<size_t>(SystemStage::Simulation)) m_events.flush();
+
                 for (auto& sys : m_systemsByStage[s]) {
                     if (sys->hasFixedUpdate()) sys->fixedUpdate(ctx);
                 }
@@ -78,9 +85,9 @@ void Engine::run() {
         for (size_t s = 0; s < m_systemsByStage.size(); ++s) {
             PROFILE_SCOPE_NAMED(STAGE_NAMES[s]);
 
-            // Queued events deliver at the top of Simulation - after input,
-            // before any gameplay system ticks. The bus is infrastructure, so
-            // the loop owns this step rather than a stand-in system.
+            // Whatever was queued outside a tick, or by the last tick of this
+            // frame. flush drains, so this never repeats what the loop above
+            // already delivered.
             if (s == static_cast<size_t>(SystemStage::Simulation)) m_events.flush();
 
             for (auto& sys : m_systemsByStage[s]) {

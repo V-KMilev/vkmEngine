@@ -16,7 +16,9 @@ namespace Vkm::Engine {
  * Engine infrastructure, not a System: the Engine owns one by value (like the
  * Clock and WindowManager), carries it on every FrameContext, and calls
  * flush() at the top of the Simulation stage - the fixed, visible point where
- * queued events deliver.
+ * queued events deliver. That point is reached once per fixed tick, and once
+ * more per frame for whatever was queued outside a tick; flush drains, so the
+ * second never repeats the first.
  *
  * Per-type listener and queue storage is created lazily on first use.
  *
@@ -28,8 +30,9 @@ namespace Vkm::Engine {
  *  - Don't subscribe or unsubscribe from inside a listener callback during
  *    emit/flush - it iterates the listener vector and a concurrent mutation
  *    would invalidate it (unsubscribe is asserted against; see Bus::remove).
- *  - A listener that enqueues an event whose bus has already been flushed this
- *    frame will see that event fire on the next frame's flush.
+ *  - A listener that enqueues an event whose bus has already been flushed will
+ *    see that event fire on the next flush - the next tick's, or the frame's
+ *    own if no tick follows in this frame.
  *
  * Usage:
  *   struct DamageEvent { EntityId target; int amount; };
@@ -88,8 +91,11 @@ class EventBus {
         /**
          * @brief Drain every per-type queue to its listeners.
          *
-         * Called once per frame by Engine::run at the top of the Simulation
-         * stage, before any gameplay system ticks.
+         * Called by Engine::run at the top of the Simulation stage, before any
+         * gameplay system ticks: once per fixed tick, and once more per frame
+         * for what was queued outside a tick or by the frame's last one.
+         * Delivering on the frame alone would put a reaction however many ticks
+         * later the frame rate decided.
          */
         void flush();
 

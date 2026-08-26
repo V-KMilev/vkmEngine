@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -105,6 +106,7 @@ class Engine {
         ResourceManager m_resources;
 
         Clock         m_clock;
+        uint32_t      m_tick = 0;   ///< Fixed steps run this session; stamped on each command.
         EventBus      m_events;
         InputMap      m_input;
         WindowManager m_window;
