@@ -19,8 +19,6 @@ float SEP() { return EditorStyle::px(10.0f); }
 float PAD() { return EditorStyle::px(5.0f); }
 /// Inset from the viewport edge the overlay floats at.
 float INSET() { return EditorStyle::px(8.0f); }
-/// Spacing between adjacent tool buttons.
-float TOOL_GAP() { return EditorStyle::px(4.0f); }
 
 void tipFor(char* buf, size_t n, const char* name, const KeyBind& bind) {
     char key[24];
@@ -74,7 +72,7 @@ void ViewportToolbar::draw(EditorContext& ec) {
 
     ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::OVERLAY_BG);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PAD(), PAD()));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(TOOL_GAP(), 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(EditorStyle::px(4.0f), 0.0f));
 
     if (ImGui::BeginChild("##ViewportToolbar", ImVec2(0, toolbarH),
             ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_Borders)) {

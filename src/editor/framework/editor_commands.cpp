@@ -32,8 +32,8 @@ namespace {
 // LIFO: an older command can only run once everything pushed after it has
 // been undone, and by then its slot holds the entity it was made against.
 EntityId liveEntity(const Scene& scene, EntityId captured) {
-    if (!captured || !scene.isAliveAtIndex(captured.index)) return {};
-    return scene.entityAt(captured.index);
+    if (!captured || !scene.isAliveAtIndex(captured.slot())) return {};
+    return scene.entityAt(captured.slot());
 }
 
 } // namespace
@@ -288,7 +288,7 @@ bool ScriptEditCommand::tryMerge(Command& incoming) {
 
 EntitySnapshot EntitySnapshot::capture(const Scene& scene, EntityId id) {
     EntitySnapshot s;
-    s.slotIndex = id.index;
+    s.slotIndex = id.slot();
 #define VKM_SNAPSHOT_CAPTURE(Type, field) \
     if (scene.has<Type>(id)) s.field = scene.get<Type>(id);
     VKM_EDITOR_SNAPSHOT_COMPONENTS(VKM_SNAPSHOT_CAPTURE)
@@ -337,7 +337,7 @@ SubtreeSnapshot SubtreeSnapshot::capture(const Scene& scene, EntityId root) {
     SubtreeSnapshot s;
     if (!scene.isAlive(root)) return s;
     if (scene.has<Hierarchy>(root)) {
-        s.rootParentSlot = scene.get<Hierarchy>(root).parent.index;
+        s.rootParentSlot = scene.get<Hierarchy>(root).parent.slot();
     }
     // DFS pre-order. Stack pushes children in reverse so the original
     // firstChild->nextSibling order pops out left-to-right; the nodes
@@ -368,7 +368,7 @@ SubtreeSnapshot SubtreeSnapshot::capture(const Scene& scene, EntityId root) {
             c = scene.get<Hierarchy>(c).nextSibling;
         }
         for (auto it = children.rbegin(); it != children.rend(); ++it) {
-            stack.push_back({*it, f.id.index});
+            stack.push_back({*it, f.id.slot()});
         }
     }
     return s;
@@ -396,8 +396,8 @@ void SubtreeSnapshot::apply(Scene& scene) const {
         if (!stored) return EntityId{};
         if (scene.isAlive(stored)) return stored;
         for (const auto& node : nodes) {
-            if (node.snap.slotIndex != stored.index) continue;
-            const EntityId live = scene.entityAt(stored.index);
+            if (node.snap.slotIndex != stored.slot()) continue;
+            const EntityId live = scene.entityAt(stored.slot());
             return scene.isAlive(live) ? live : EntityId{};
         }
         return EntityId{};
@@ -439,7 +439,7 @@ void DestroySubtreeCommand::redo(Scene& scene, EditorState& state) {
     if (!scene.isAlive(root)) return;
     HierarchyOperations::destroyHierarchy(scene, root);
     state.hierarchyDirty = true;
-    if (state.selectedEntity.index == rootSlot) state.deselect();
+    if (state.selectedEntity.slot() == rootSlot) state.deselect();
 }
 
 bool DestroySubtreeCommand::addresses(uint32_t slotIndex) const {
@@ -452,11 +452,11 @@ bool DestroySubtreeCommand::addresses(uint32_t slotIndex) const {
 void DestroySubtreeCommand::undo(Scene& scene, EditorState& state) {
     m_snap.apply(scene);
     state.hierarchyDirty = true;
-    if (m_priorSelection.index != 0) {
+    if (m_priorSelection.slot() != 0) {
         // Restore selection if the prior pick was anywhere inside the
         // resurrected subtree (the common case is the root itself).
         for (const auto& node : m_snap.nodes) {
-            if (node.snap.slotIndex == m_priorSelection.index) {
+            if (node.snap.slotIndex == m_priorSelection.slot()) {
                 state.selectEntity(scene.entityAt(node.snap.slotIndex));
                 break;
             }
@@ -498,7 +498,7 @@ void PlacePrefabCommand::undo(Scene& scene, EditorState& state) {
     if (!scene.isAlive(root)) return;
     HierarchyOperations::destroyHierarchy(scene, root);
     state.hierarchyDirty = true;
-    if (state.selectedEntity.index == m_rootSlot) state.deselect();
+    if (state.selectedEntity.slot() == m_rootSlot) state.deselect();
 }
 
 // The entry list is what the scene stores, so it moves either way; the value
@@ -570,13 +570,13 @@ void ReparentCommand::undo(Scene& scene, EditorState& state) {
 void SetActiveCameraCommand::redo(Scene& scene, EditorState&) {
     // Compare by slot: m_before is keyed by slot for the same reason, and the
     // target may have been resurrected since with a newer generation.
-    scene.forEach<Camera>([&](EntityId id, Camera& c) { c.active = (id.index == m_target.index); });
+    scene.forEach<Camera>([&](EntityId id, Camera& c) { c.active = (id.slot() == m_target.slot()); });
 }
 
 // Every camera in the scene, not just the target: the step flips the flag on
 // all of them, so any one of them going away outlives it.
 bool SetActiveCameraCommand::addresses(uint32_t slotIndex) const {
-    if (m_target.index == slotIndex) return true;
+    if (m_target.slot() == slotIndex) return true;
     for (const auto& [slot, wasActive] : m_before) {
         if (slot == slotIndex) return true;
     }

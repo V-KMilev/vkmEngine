@@ -54,6 +54,6 @@ bool save(const EditorState& state, const RenderSettings& render);
  */
 std::string path();
 
-}  // namespace EditorSettings
+} // namespace EditorSettings
 
-}  // namespace Vkm::Engine
+} // namespace Vkm::Engine

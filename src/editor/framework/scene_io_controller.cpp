@@ -168,14 +168,14 @@ void SceneIOController::requestSaveAs() {
 }
 
 void SceneIOController::requestLoad() {
-    m_loadPicker.options.popupId    = "Load Scene";
-    m_loadPicker.options.title      = "Load Scene";
-    m_loadPicker.options.root       = ProjectPaths::scenes();
-    m_loadPicker.options.recursive  = false;
-    m_loadPicker.options.kind       = AssetPicker::Kind::Files;
-    m_loadPicker.options.extensions = {".json"};
-    m_loadPicker.options.relativeTo.clear();  // loadPath() wants an absolute path
-    m_loadPicker.options.hint.clear();
+    m_loadPicker.options().popupId    = "Load Scene";
+    m_loadPicker.options().title      = "Load Scene";
+    m_loadPicker.options().root       = ProjectPaths::scenes();
+    m_loadPicker.options().recursive  = false;
+    m_loadPicker.options().kind       = AssetPicker::Kind::Files;
+    m_loadPicker.options().extensions = {".json"};
+    m_loadPicker.options().relativeTo.clear();  // loadPath() wants an absolute path
+    m_loadPicker.options().hint.clear();
     m_loadPicker.open();
 }
 

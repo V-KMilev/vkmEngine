@@ -1,10 +1,10 @@
 #pragma once
 
-#include <imgui.h>
-
 #include <algorithm>
 #include <string>
 #include <vector>
+
+#include <imgui.h>
 
 #include "ecs/entity.h"
 #include "framework/command_stack.h"

@@ -121,6 +121,22 @@ bool apply(Scene& scene, ResourceManager& resources, EntityId root, uint32_t uid
     return reread;
 }
 
+// Whether a field holds a reference to an entity rather than a value.
+//
+// Such a field cannot be an override. An override is a patch against the
+// prefab's document and is read back in the prefab's namespace, while an editor
+// edit names the entity in the scene's - so the number would mean one thing
+// where it was written and another where it is applied. The design answer is
+// the same either way: a reference whose target is inside the prefab is the
+// prefab's to define, and one whose target is outside cannot survive the
+// document at all. So the field keeps the prefab's value and the edit is not
+// recorded.
+bool namesAnEntity(const char* component, const std::string& field) {
+    if (std::strcmp(component, "Joint") == 0)   return field == "connected";
+    if (std::strcmp(component, "Ragdoll") == 0) return field == "bones" || field == "root";
+    return false;
+}
+
 std::unique_ptr<Command> recordFields(Scene& scene, ResourceManager& resources, EntityId id,
                                       const char* component, const json& before, const json& after,
                                       const char* label) {
@@ -150,6 +166,7 @@ std::unique_ptr<Command> recordFields(Scene& scene, ResourceManager& resources, 
     for (auto field = after.begin(); field != after.end(); ++field) {
         const auto was = before.find(field.key());
         if (was != before.end() && *was == field.value()) continue;
+        if (namesAnEntity(component, field.key())) continue;
         setEntry(entries, uid, component, field.key(), field.value().dump());
         changed = true;
     }

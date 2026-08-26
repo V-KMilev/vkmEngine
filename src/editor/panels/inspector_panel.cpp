@@ -97,37 +97,35 @@ constexpr float CLIP_PLANE_SEPARATION = 0.001f;
 // bridge serialization uses).
 class BehaviorFieldInspector : public BehaviorFieldVisitor {
     public:
-        bool changed = false;
-
         void field(const char* name, float& v) override {
             drawPropertyLabel(name);
             ImGui::SetNextItemWidth(-1.0f);
-            if (ImGui::DragFloat(widgetId(name), &v, 0.1f)) changed = true;
+            if (ImGui::DragFloat(widgetId(name).text, &v, 0.1f)) m_changed = true;
         }
         void field(const char* name, int& v) override {
             drawPropertyLabel(name);
             ImGui::SetNextItemWidth(-1.0f);
-            if (ImGui::DragInt(widgetId(name), &v)) changed = true;
+            if (ImGui::DragInt(widgetId(name).text, &v)) m_changed = true;
         }
         void field(const char* name, bool& v) override {
             drawPropertyLabel(name);
-            if (ImGui::Checkbox(widgetId(name), &v)) changed = true;
+            if (ImGui::Checkbox(widgetId(name).text, &v)) m_changed = true;
         }
         void field(const char* name, glm::vec3& v) override {
             drawPropertyLabel(name);
             ImGui::SetNextItemWidth(-1.0f);
-            if (ImGui::DragFloat3(widgetId(name), glm::value_ptr(v), 0.1f)) changed = true;
+            if (ImGui::DragFloat3(widgetId(name).text, glm::value_ptr(v), 0.1f)) m_changed = true;
         }
         void field(const char* name, std::string& v) override {
             drawPropertyLabel(name);
             ImGui::SetNextItemWidth(-1.0f);
-            if (ImGui::InputText(widgetId(name), &v)) changed = true;
+            if (ImGui::InputText(widgetId(name).text, &v)) m_changed = true;
         }
 
         void enumField(const char* name, int& index, const char* const* names, std::size_t count) override {
             drawPropertyLabel(name);
             ImGui::SetNextItemWidth(-1.0f);
-            if (ImGui::Combo(widgetId(name), &index, names, static_cast<int>(count))) changed = true;
+            if (ImGui::Combo(widgetId(name).text, &index, names, static_cast<int>(count))) m_changed = true;
         }
 
         // Asset reference: a combo over what the project's library holds of that
@@ -137,7 +135,7 @@ class BehaviorFieldInspector : public BehaviorFieldVisitor {
         void assetField(const char* name, std::string& assetName, AssetType type) override {
             drawPropertyLabel(name);
             ImGui::SetNextItemWidth(-1.0f);
-            if (ImGui::BeginCombo(widgetId(name), assetName.empty() ? "(none)" : assetName.c_str())) {
+            if (ImGui::BeginCombo(widgetId(name).text, assetName.empty() ? "(none)" : assetName.c_str())) {
                 // Built inside the combo, like pickAsset's: closed, it costs
                 // nothing; open, it is the library as it stands this frame.
                 static char s_assetFilter[48] = {};
@@ -151,13 +149,13 @@ class BehaviorFieldInspector : public BehaviorFieldVisitor {
 
                 if (ImGui::Selectable("(none)", assetName.empty())) {
                     assetName.clear();
-                    changed = true;
+                    m_changed = true;
                 }
                 for (const std::string& candidate : AssetLibrary::get().namesOf(type)) {
                     if (!matchesFilter(candidate.c_str(), s_assetFilter)) continue;
                     if (ImGui::Selectable(candidate.c_str(), candidate == assetName)) {
                         assetName = candidate;
-                        changed   = true;
+                        m_changed = true;
                     }
                 }
                 ImGui::EndCombo();
@@ -178,14 +176,42 @@ class BehaviorFieldInspector : public BehaviorFieldVisitor {
         }
         void endStruct() override { ImGui::TreePop(); }
 
+        bool changed() const { return m_changed; }
+
     private:
-        // Hidden-label id for the widget; uniqueness across behaviors comes from
-        // the per-behavior PushID in drawScriptSection.
-        const char* widgetId(const char* name) {
-            snprintf(m_id, sizeof(m_id), "##%s", name);
-            return m_id;
+        /**
+         * @brief One field's hidden ImGui label, owned by the expression using it.
+         *
+         * ImGui takes the label as the widget's identity, so it has to outlive
+         * the call. Returned by value rather than written into a member: a
+         * shared buffer would alias the moment two labels were built in one
+         * expression, and nothing about the signature would say so.
+         *
+         * The buffer is sized for a behavior field name, which is a C++
+         * identifier, plus the "##" that hides it.
+         */
+        struct WidgetId {
+            char text[80] = {};
+        };
+
+        /**
+         * @brief Build the hidden label for field @p name.
+         *
+         * Uniqueness across behaviors comes from the per-behavior PushID in
+         * drawScriptSection, so this only has to separate one behavior's fields
+         * from each other.
+         *
+         * @param name Reflected field name.
+         * @return The label, valid for as long as the returned value lives.
+         */
+        static WidgetId widgetId(const char* name) {
+            WidgetId id;
+            snprintf(id.text, sizeof(id.text), "##%s", name);
+            return id;
         }
-        char m_id[80] = {};
+
+    private:
+        bool m_changed = false;
 };
 
 // Asset-reference combo: pick which loaded asset of type Asset a handle points
@@ -551,7 +577,7 @@ void InspectorPanel::drawIdentityHeader(Scene& scene, ResourceManager& resources
     inlineIcon(entityIconKind(scene, id), ih, ImGui::GetColorU32(EditorStyle::ACCENT));
     ImGui::SameLine();
     ImGui::AlignTextToFramePadding();
-    ImGui::TextDisabled("#%u", id.index);
+    ImGui::TextDisabled("#%u", id.slot());
     ImGui::SameLine();
 
     if (scene.has<Name>(id)) {
@@ -1070,14 +1096,14 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
         ImGui::SameLine();
         if (ImGui::SmallButton("Browse...")) {
             const std::filesystem::path appRoot = ProjectPaths::projectRoot();
-            m_envPicker.options.popupId    = "PickEnvHdr";
-            m_envPicker.options.title      = "Pick Environment HDR";
-            m_envPicker.options.root       = ProjectPaths::envs();
-            m_envPicker.options.recursive  = false;
-            m_envPicker.options.kind       = AssetPicker::Kind::Files;
-            m_envPicker.options.extensions = {".hdr"};
-            m_envPicker.options.relativeTo = appRoot;
-            m_envPicker.options.hint.clear();
+            m_envPicker.options().popupId    = "PickEnvHdr";
+            m_envPicker.options().title      = "Pick Environment HDR";
+            m_envPicker.options().root       = ProjectPaths::envs();
+            m_envPicker.options().recursive  = false;
+            m_envPicker.options().kind       = AssetPicker::Kind::Files;
+            m_envPicker.options().extensions = {".hdr"};
+            m_envPicker.options().relativeTo = appRoot;
+            m_envPicker.options().hint.clear();
             m_envPicker.open();
         }
         std::string pickedHdr;
@@ -1717,6 +1743,11 @@ void InspectorPanel::drawJointSection(Scene& scene, ResourceManager& resources,
                                 "Negative takes whatever the two were apart on the\n"
                                 "first tick, so a rope built at play time needs no\n"
                                 "one to measure it.");
+            // The solver owns the measurement, so it is shown and not edited.
+            if (joint.distance < 0.0f && joint.resolvedDistance >= 0.0f) {
+                ImGui::TextDisabled("Holding %.3f m, measured on the first tick.",
+                                    joint.resolvedDistance);
+            }
         }
 
         changed |= propSlider("Stiffness", &joint.stiffness, 0.0f, 1.0f, "%.2f",
@@ -1792,9 +1823,6 @@ void InspectorPanel::drawRagdollSection(Scene& scene, ResourceManager& resources
 
         if (ImGui::Button("Build", ImVec2(-1.0f, 0.0f))) pending = Pending::Build;
 
-        // Removing the component leaves the bodies behind: the card's Remove is
-        // the generic one and knows nothing about them. Said here because the
-        // two buttons sit together and only one of them is complete.
         ImGui::TextDisabled("Clear removes the ragdoll and its bones together.");
 
         return changed;
@@ -1922,7 +1950,7 @@ void InspectorPanel::drawAnimationSection(EditorContext& ec, EntityId id) {
         // Only authoring edits (length, keyframes, Play On Start) set `changed`,
         // so play / pause / stop / scrub stay non-undoable. The snapshot does
         // hold time and playing, so an undo also restores the scrub position.
-        const float GAP = 8.0f;
+        const float GAP = EditorStyle::px(8.0f);
         float ih = ImGui::GetFrameHeight();
         if (iconButton("inspPlay", anim.playing ? EditorIcon::Pause : EditorIcon::Play,
                        anim.playing, true, anim.playing ? "Pause" : "Play", ih))
@@ -2021,7 +2049,7 @@ void InspectorPanel::drawAnimatorSection(EditorContext& ec, EntityId id) {
         // Mirrors the Animation card: Loop, Speed and Play On Start round-trip
         // with the scene so they push an edit, while play / stop / the scrubber
         // do not. Scrubbing works paused - the pose system composes every frame.
-        const float GAP = 8.0f;
+        const float GAP = EditorStyle::px(8.0f);
         const float ih = ImGui::GetFrameHeight();
         if (iconButton("inspRigPlay", animator.playing ? EditorIcon::Pause : EditorIcon::Play,
                        animator.playing, true, animator.playing ? "Pause" : "Play", ih))
@@ -2254,13 +2282,44 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
 
             BehaviorFieldInspector inspector;
             behavior->visitFields(inspector);
-            if (inspector.changed) pushScriptEdit("Edit Behavior");
+            if (inspector.changed()) pushScriptEdit("Edit Behavior");
 
             ImGui::PopID();
             if (i + 1 < sc.behaviors.size()) ImGui::Separator();
         }
 
-        if (sc.behaviors.empty()) ImGui::TextDisabled("No behaviors attached.");
+        if (sc.behaviors.empty() && sc.unknown.empty())
+            ImGui::TextDisabled("No behaviors attached.");
+
+        int removeUnknown = -1;
+        // A scope of its own rather than an offset into the one above: the
+        // constructed rows push ids from 0 and so would these, and a number
+        // picked to sit clear of them is only clear until one list grows.
+        ImGui::PushID("held");
+        for (size_t i = 0; i < sc.unknown.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            if (!sc.behaviors.empty() || i > 0) ImGui::Separator();
+
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextColored(EditorStyle::WARNING, "%s", sc.unknown[i].type.c_str());
+            ImGui::SameLine(ImGui::GetContentRegionAvail().x - EditorStyle::px(14.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::DANGER);
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            const bool dropThis = ImGui::SmallButton("x##rmunknown");
+            ImGui::PopStyleColor(2);
+            if (dropThis) removeUnknown = static_cast<int>(i);
+            if (ImGui::IsItemHovered())
+                ImGui::SetTooltip("Discard this behavior and its values");
+
+            ImGui::TextDisabled("No such behavior type is registered. Its values are "
+                                "kept and saved; it does not run.");
+            ImGui::PopID();
+        }
+        ImGui::PopID();
+        if (removeUnknown >= 0) {
+            sc.unknown.erase(sc.unknown.begin() + removeUnknown);
+            pushScriptEdit("Discard Missing Behavior");
+        }
 
         if (PrefabOverrides::instanceRoot(scene, id)) {
             ImGui::TextWrapped("Behavior fields are not per-instance overrides: "
@@ -2342,7 +2401,7 @@ void InspectorPanel::drawHierarchySection(Scene& scene, EditorState& state, Enti
                     char name[64];
                     getEntityDisplayName(scene, child, name, sizeof(name));
                     char cid[16];
-                    snprintf(cid, sizeof(cid), "%u", child.index);
+                    snprintf(cid, sizeof(cid), "%u", child.slot());
                     if (entitySelectable(cid, state.selectedEntity == child,
                                          entityIconKind(scene, child), name)) {
                         state.selectEntity(child);
