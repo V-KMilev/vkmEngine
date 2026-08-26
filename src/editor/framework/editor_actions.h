@@ -292,7 +292,7 @@ MaterialHandle createNewMaterial(ResourceManager& resources, EditorState& state)
  * The one place an asset is renamed from editor UI. Every rename affordance -
  * the Asset Browser's F2 modal, the Material Editor's own - calls this rather
  * than open-coding it, because the sequence has two parts a caller would not
- * guess and one of them was missed the first time it was copied.
+ * guess.
  *
  * ResourceManager keeps names unique per type by suffixing a taken one, so the
  * asset may not end up called what was typed. This reads the name back and
@@ -300,8 +300,8 @@ MaterialHandle createNewMaterial(ResourceManager& resources, EditorState& state)
  * nothing holds. It then pushes the undo step with the name that was *assigned*
  * rather than the one that was asked for, so redo repeats what happened.
  *
- * Applying before pushing is deliberate and matches the rest of the editor: the
- * command carries the reverse of an edit that has already happened.
+ * The rename is applied before the command is pushed: the command carries the
+ * reverse of an edit that has already happened.
  *
  * @tparam Asset Asset type being renamed; @p handle is its Handle.
  * @param resources Resource manager owning the asset and its name index.

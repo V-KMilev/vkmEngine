@@ -285,5 +285,5 @@ bool save(const EditorState& state, const RenderSettings& render) {
     return true;
 }
 
-}  // namespace EditorSettings
-}  // namespace Vkm::Engine
+} // namespace EditorSettings
+} // namespace Vkm::Engine

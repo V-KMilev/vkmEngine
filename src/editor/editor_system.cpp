@@ -27,6 +27,7 @@
 #include "ui/editor_icons.h"
 #include "platform/window/window_manager.h"
 #include "system/camera/camera_controller_system.h"
+#include "system/splash/splash_frame.h"
 #include "system/ui/ui_system.h"
 #include "system/render/render_system.h"
 #include "system/render/editor_render_hooks.h"
@@ -341,6 +342,15 @@ void EditorSystem::update(FrameContext& ctx) {
         ImGui::NewFrame();
     }
 
+    // A splash covers the whole surface and the Render stage drew it before this
+    // one, so panels submitted now land on top of it. The frame is still closed:
+    // NewFrame and Render are a pair, and skipping Render leaks a half-open one.
+    if (ctx.splash && ctx.splash->isShowing()) {
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        return;
+    }
+
     if (isPressed(m_state.keybinds.toggleEditor)) {
         m_state.editorVisible = !m_state.editorVisible;
         // Releasing input capture immediately on hide stops a held drag
@@ -534,7 +544,7 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6, 6));
         if (ImGui::BeginChild("##Hierarchy", ImVec2(leftW, mainH), ImGuiChildFlags_Borders)) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, themeSpacing);
-            m_hierarchy.draw(ec);
+            m_hierarchy.draw(ec, m_sceneIO);
             ImGui::PopStyleVar();
         }
         ImGui::EndChild();
@@ -611,7 +621,7 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
         if (ImGui::BeginChild("##Bottom", ImVec2(0, bottomH), ImGuiChildFlags_Borders)) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, themeSpacing);
-            m_bottom.draw(ec);
+            m_bottom.draw(ec, m_sceneIO);
             ImGui::PopStyleVar();
         }
         ImGui::EndChild();

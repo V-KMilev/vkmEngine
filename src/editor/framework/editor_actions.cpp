@@ -13,10 +13,10 @@
 #include <system_error>
 #include <vector>
 
-#include "logger.h"
-
 #include <imgui.h>
 #include <glm/glm.hpp>
+
+#include "logger.h"
 
 #include "io/json_file.h"
 #include "io/project_paths.h"
@@ -365,7 +365,7 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
                             "left outside it, and needs a canvas the scene owns");
         } else {
             HierarchyOperations::setParent(scene, entity, state.selectedEntity);
-            parentSlot = state.selectedEntity.index;
+            parentSlot = state.selectedEntity.slot();
         }
     }
 
@@ -603,11 +603,11 @@ bool saveAsPrefab(Scene& scene, const ResourceManager& resources, EditorState& s
 
     // Every step addressing an entity in the subtree is dropped, and only those;
     // see docs/reference/editor.md, "Save as Prefab".
-    std::vector<uint32_t> subtreeSlots{entity.index};
+    std::vector<uint32_t> subtreeSlots{entity.slot()};
     for (size_t i = 0; i < subtreeSlots.size(); ++i) {
         HierarchyOperations::forEachChild(scene, scene.entityAt(subtreeSlots[i]),
             [&](EntityId child) {
-                if (scene.isAlive(child)) subtreeSlots.push_back(child.index);
+                if (scene.isAlive(child)) subtreeSlots.push_back(child.slot());
             });
     }
     state.commands.forget(subtreeSlots);
@@ -671,7 +671,7 @@ void redo(Scene& scene, EditorState& state) {
 void setActiveCamera(Scene& scene, EditorState& state, EntityId target) {
     std::vector<std::pair<uint32_t, bool>> beforeActive;
     scene.forEach<Camera>([&](EntityId other, Camera& c) {
-        beforeActive.emplace_back(other.index, c.active);
+        beforeActive.emplace_back(other.slot(), c.active);
         c.active = (other == target);
     });
     state.commands.push(std::make_unique<SetActiveCameraCommand>(
@@ -814,17 +814,17 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
 void ModelImportDialog::draw(Scene& scene, ResourceManager& resources, EditorState& state) {
     if (state.requestModelImport) {
         const std::filesystem::path appRoot = ProjectPaths::projectRoot();
-        m_picker.options.popupId    = "Import Model";
-        m_picker.options.title      = "Import Model";
-        m_picker.options.root       = ProjectPaths::assets();
-        m_picker.options.recursive  = true;
-        m_picker.options.kind       = AssetPicker::Kind::Files;
-        m_picker.options.extensions = {
+        m_picker.options().popupId    = "Import Model";
+        m_picker.options().title      = "Import Model";
+        m_picker.options().root       = ProjectPaths::assets();
+        m_picker.options().recursive  = true;
+        m_picker.options().kind       = AssetPicker::Kind::Files;
+        m_picker.options().extensions = {
             ".gltf", ".glb", ".obj", ".fbx", ".dae", ".stl", ".ply", ".3ds"
         };
-        m_picker.options.maxResults = 2000;
-        m_picker.options.relativeTo = appRoot;
-        m_picker.options.hint       = "glTF / GLB / OBJ / FBX / DAE / STL / PLY / 3DS";
+        m_picker.options().maxResults = 2000;
+        m_picker.options().relativeTo = appRoot;
+        m_picker.options().hint       = "glTF / GLB / OBJ / FBX / DAE / STL / PLY / 3DS";
         m_picker.open();
         state.requestModelImport = false;
     }
@@ -871,15 +871,15 @@ void PlacePrefabDialog::draw(Scene& scene, ResourceManager& resources, EditorSta
     if (state.requestPlacePrefab) {
         state.requestPlacePrefab = false;
         if (hasAnyPrefab()) {
-            m_picker.options.popupId    = "Place Prefab";
-            m_picker.options.title      = "Place Prefab";
-            m_picker.options.root       = ProjectPaths::prefabs();
-            m_picker.options.recursive  = true;
-            m_picker.options.kind       = AssetPicker::Kind::Files;
-            m_picker.options.extensions = {".json"};
+            m_picker.options().popupId    = "Place Prefab";
+            m_picker.options().title      = "Place Prefab";
+            m_picker.options().root       = ProjectPaths::prefabs();
+            m_picker.options().recursive  = true;
+            m_picker.options().kind       = AssetPicker::Kind::Files;
+            m_picker.options().extensions = {".json"};
             // Project-relative, because that is what the instance stores and
             // what a scene carrying it has to resolve on another machine.
-            m_picker.options.relativeTo = ProjectPaths::projectRoot();
+            m_picker.options().relativeTo = ProjectPaths::projectRoot();
             m_picker.open();
         } else {
             state.pushToast(EditorState::ToastKind::Info,

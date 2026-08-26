@@ -61,27 +61,27 @@ void AssetPicker::refreshIfNeeded() {
 
     std::error_code ec;
     auto consider = [&](const std::filesystem::directory_entry& e) -> bool {
-        if (static_cast<int>(m_paths.size()) >= options.maxResults) {
+        if (static_cast<int>(m_paths.size()) >= m_options.maxResults) {
             m_truncated = true;
             return false;
         }
         const bool isFile = e.is_regular_file();
         const bool isDir  = e.is_directory();
-        if (options.kind == Kind::Files && !isFile) return true;
-        if (options.kind == Kind::Directories && !isDir) return true;
-        if (options.kind == Kind::Files && !extMatches(options.extensions, e.path())) return true;
+        if (m_options.kind == Kind::Files && !isFile) return true;
+        if (m_options.kind == Kind::Directories && !isDir) return true;
+        if (m_options.kind == Kind::Files && !extMatches(m_options.extensions, e.path())) return true;
         m_paths.push_back(e.path());
-        m_entries.push_back(displayName(e.path(), options.relativeTo, options.recursive));
+        m_entries.push_back(displayName(e.path(), m_options.relativeTo, m_options.recursive));
         return true;
     };
 
-    if (options.recursive) {
+    if (m_options.recursive) {
         for (const auto& e :
-                std::filesystem::recursive_directory_iterator(options.root, ec)) {
+                std::filesystem::recursive_directory_iterator(m_options.root, ec)) {
             if (!consider(e)) break;
         }
     } else {
-        for (const auto& e : std::filesystem::directory_iterator(options.root, ec)) {
+        for (const auto& e : std::filesystem::directory_iterator(m_options.root, ec)) {
             if (!consider(e)) break;
         }
     }
@@ -91,7 +91,7 @@ void AssetPicker::refreshIfNeeded() {
     // empty directory.
     if (ec) {
         LOG_WARNING("AssetPicker: cannot iterate %s - %s",
-            options.root.string().c_str(), ec.message().c_str());
+            m_options.root.string().c_str(), ec.message().c_str());
     }
 
     // Sort by display name for a stable, predictable browse experience.
@@ -109,7 +109,7 @@ void AssetPicker::refreshIfNeeded() {
     m_paths   = std::move(p2);
 
     char titleId[160];
-    snprintf(titleId, sizeof(titleId), "%s###%s", options.title, options.popupId);
+    snprintf(titleId, sizeof(titleId), "%s###%s", m_options.title, m_options.popupId);
     ImGui::OpenPopup(titleId);
 }
 
@@ -119,7 +119,7 @@ bool AssetPicker::draw(std::string& outPath) {
     // Real title in the bar, stable id after ### (the raw popupId used to BE
     // the visible title, so dialogs were named "PickEnvHdr").
     char titleId[160];
-    snprintf(titleId, sizeof(titleId), "%s###%s", options.title, options.popupId);
+    snprintf(titleId, sizeof(titleId), "%s###%s", m_options.title, m_options.popupId);
 
     bool picked = false;
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
@@ -130,18 +130,18 @@ bool AssetPicker::draw(std::string& outPath) {
         ImVec2(EditorStyle::px(380.0f), EditorStyle::px(260.0f)),
         ImVec2(FLT_MAX, FLT_MAX));
     if (ImGui::BeginPopupModal(titleId, nullptr, ImGuiWindowFlags_NoSavedSettings)) {
-        ImGui::TextDisabled("%s", options.root.string().c_str());
+        ImGui::TextDisabled("%s", m_options.root.string().c_str());
         // Say so when the listing was cut short. A partial list that looks
         // complete is the same failure as an empty one with no warning: the
         // user concludes the file is not there.
         if (m_truncated) {
             ImGui::SameLine(0, EditorStyle::px(12.0f));
             ImGui::TextColored(EditorStyle::WARNING,
-                               "first %d only - narrow the search", options.maxResults);
+                               "first %d only - narrow the search", m_options.maxResults);
         }
-        if (!options.hint.empty()) {
+        if (!m_options.hint.empty()) {
             ImGui::SameLine(0, EditorStyle::px(12.0f));
-            ImGui::TextDisabled("%s", options.hint.c_str());
+            ImGui::TextDisabled("%s", m_options.hint.c_str());
         }
 
         // Live filter. Focused on open so type-to-narrow needs no click;
@@ -159,7 +159,7 @@ bool AssetPicker::draw(std::string& outPath) {
         }
 
         auto confirm = [&](int idx) {
-            outPath = options.relativeTo.empty() ? m_paths[idx].string() : m_entries[idx];
+            outPath = m_options.relativeTo.empty() ? m_paths[idx].string() : m_entries[idx];
             picked  = true;
             ImGui::CloseCurrentPopup();
         };

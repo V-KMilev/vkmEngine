@@ -569,7 +569,7 @@ const AssetKind& kindOf(AssetType type) {
     return KINDS[0];
 }
 
-}  // namespace
+} // namespace
 
 void AssetBrowserPanel::openRename(AssetType kind, StorageIndex key, const std::string& name) {
     snprintf(m_renameBuf, sizeof(m_renameBuf), "%s", name.c_str());
@@ -896,15 +896,15 @@ void AssetBrowserPanel::drawGrid(EditorContext& ec) {
 
 void AssetBrowserPanel::serviceTextureImport(EditorContext& ec) {
     if (m_requestTextureImport) {
-        m_texturePicker.options.popupId    = "Import Texture";
-        m_texturePicker.options.title      = "Import Texture";
-        m_texturePicker.options.root       = ProjectPaths::assets();
-        m_texturePicker.options.recursive  = true;
-        m_texturePicker.options.kind       = AssetPicker::Kind::Files;
-        m_texturePicker.options.extensions = {".png", ".jpg", ".jpeg", ".tga", ".bmp"};
-        m_texturePicker.options.maxResults = 4000;
-        m_texturePicker.options.relativeTo = ProjectPaths::projectRoot();
-        m_texturePicker.options.hint       = "PNG / JPG / TGA / BMP, read as colour (sRGB)";
+        m_texturePicker.options().popupId    = "Import Texture";
+        m_texturePicker.options().title      = "Import Texture";
+        m_texturePicker.options().root       = ProjectPaths::assets();
+        m_texturePicker.options().recursive  = true;
+        m_texturePicker.options().kind       = AssetPicker::Kind::Files;
+        m_texturePicker.options().extensions = {".png", ".jpg", ".jpeg", ".tga", ".bmp"};
+        m_texturePicker.options().maxResults = 4000;
+        m_texturePicker.options().relativeTo = ProjectPaths::projectRoot();
+        m_texturePicker.options().hint       = "PNG / JPG / TGA / BMP, read as colour (sRGB)";
         m_texturePicker.open();
         m_requestTextureImport = false;
     }
@@ -934,15 +934,15 @@ void AssetBrowserPanel::serviceTextureImport(EditorContext& ec) {
 
 void AssetBrowserPanel::serviceSoundImport(EditorContext& ec) {
     if (m_requestSoundImport) {
-        m_soundPicker.options.popupId    = "Import Sound";
-        m_soundPicker.options.title      = "Import Sound";
-        m_soundPicker.options.root       = ProjectPaths::assets();
-        m_soundPicker.options.recursive  = true;
-        m_soundPicker.options.kind       = AssetPicker::Kind::Files;
-        m_soundPicker.options.extensions = {".wav", ".mp3", ".flac"};
-        m_soundPicker.options.maxResults = 2000;
-        m_soundPicker.options.relativeTo = ProjectPaths::projectRoot();
-        m_soundPicker.options.hint       = "WAV / MP3 / FLAC";
+        m_soundPicker.options().popupId    = "Import Sound";
+        m_soundPicker.options().title      = "Import Sound";
+        m_soundPicker.options().root       = ProjectPaths::assets();
+        m_soundPicker.options().recursive  = true;
+        m_soundPicker.options().kind       = AssetPicker::Kind::Files;
+        m_soundPicker.options().extensions = {".wav", ".mp3", ".flac"};
+        m_soundPicker.options().maxResults = 2000;
+        m_soundPicker.options().relativeTo = ProjectPaths::projectRoot();
+        m_soundPicker.options().hint       = "WAV / MP3 / FLAC";
         m_soundPicker.open();
         m_requestSoundImport = false;
     }
@@ -990,6 +990,16 @@ void AssetBrowserPanel::drawDeleteModal(EditorContext& ec) {
     // where everything that named it would find it.
     ImGui::TextDisabled("Undo cannot bring it back.");
 
+    // Delete is offered on orphans only, but the step that cleared the last
+    // reference still holds the component, handle and all, and a handle is read
+    // with a check for null and not for life. So the history goes with the asset.
+    const size_t depth = ec.state.commands.undoDepth() + ec.state.commands.redoDepth();
+    if (depth > 0) {
+        ImGui::TextDisabled("%zu undo step%s will be discarded: a step from before "
+                            "the asset was orphaned still names it.",
+                            depth, depth == 1 ? "" : "s");
+    }
+
     const DialogResult r = dialogButtons(m_delete.open, "Delete");
     if (r == DialogResult::Confirm && m_delete.key) {
         // The audition outlives its tile - AudioSystem's voice holds the samples
@@ -1003,6 +1013,7 @@ void AssetBrowserPanel::drawDeleteModal(EditorContext& ec) {
         }
         ec.materialPreviews.evict(previewKey(m_delete.kind, m_delete.key.index));
         kindOf(m_delete.kind).remove(ec.frame.resources, m_delete.key);
+        ec.state.commands.clear();
         ec.state.markSceneDirty();
     }
     if (r != DialogResult::None) m_delete.key = {};

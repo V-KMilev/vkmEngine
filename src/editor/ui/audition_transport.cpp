@@ -6,14 +6,10 @@
 
 #include "resource/asset/audio_clip_asset.h"
 #include "ui/editor_icons.h"
+#include "ui/editor_style.h"
 #include "ui/editor_widgets.h"
 
 namespace Vkm::Engine {
-
-namespace {
-// Gap between the two buttons, matching the Inspector card's other rows.
-constexpr float BUTTON_GAP = 8.0f;
-}  // namespace
 
 bool auditionTransport(const char* idStr, AudioDevice& device, VoiceId& voice,
                        bool mine, const AudioClipAsset* clip, float size) {
@@ -45,7 +41,8 @@ bool auditionTransport(const char* idStr, AudioDevice& device, VoiceId& voice,
         }
     }
 
-    ImGui::SameLine(0, BUTTON_GAP);
+    // Matches the Inspector card's other rows.
+    ImGui::SameLine(0, EditorStyle::px(8.0f));
     snprintf(id, sizeof(id), "%sStop", idStr);
     // A held voice stops here like any other: it is a place in a clip, not a
     // sound that has already finished.

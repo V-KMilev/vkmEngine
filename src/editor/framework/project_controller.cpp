@@ -7,6 +7,7 @@
 
 #include "logger.h"
 
+#include "core/clock.h"
 #include "ecs/scene.h"
 #include "framework/editor_context.h"
 #include "framework/editor_settings.h"
@@ -48,6 +49,10 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
     Project project;
     loadProject(root, project);
 
+    // Set on every open, before anything in the project ticks: the rate belongs
+    // to the project, and one editor session can open a second one.
+    ec.frame.clock.setTickRate(project.tickRate);
+
     // Emptied before the assets it references go away, through the teardown a
     // New Scene runs: behaviors get onDestroy while the old module still holds
     // their code, and the scene-scoped editor state belongs to the project left.
@@ -61,8 +66,11 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
     const fs::path modulePath =
         ProjectPaths::projectBin() / DynamicLibrary::platformName("game");
     std::error_code moduleEc;
+    bool moduleFailed = false;
     if (fs::exists(modulePath, moduleEc)) {
-        scriptModule.load(modulePath.string());
+        // A failed load is otherwise silent: the project opens looking fine
+        // and every behavior in the scene loads as text that never runs.
+        moduleFailed = !scriptModule.load(modulePath.string());
     } else {
         // Unload rather than leave the last project's module in place: it would
         // still answer buildScene below and generate the previous project's
@@ -88,7 +96,17 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
     ec.state.sceneDirty  = false;
 
     pushRecentPath(ec.state.recentProjects, root.string());
-    ec.state.pushToast(EditorState::ToastKind::Info, "Opened " + project.name);
+    // One slot, so the last push is the only one anyone sees. A project that
+    // opened without its gameplay is the thing the author has to act on, and
+    // "Opened X" over the top of it says the opposite.
+    if (moduleFailed) {
+        ec.state.pushToast(EditorState::ToastKind::Error,
+            "Opened " + project.name + " without its gameplay module - see Bottom > "
+            "Errors. Behaviors are kept but do not run; fix the build and use "
+            "Edit > Reload Scripts.");
+    } else {
+        ec.state.pushToast(EditorState::ToastKind::Info, "Opened " + project.name);
+    }
     LOG_INFO("Opened project '%s' at '%s'", project.name.c_str(), root.string().c_str());
     return true;
 }

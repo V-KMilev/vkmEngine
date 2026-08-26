@@ -16,11 +16,12 @@
 
 #include <cmath>
 
-#include "ui/editor_style.h"
 #include <imgui.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
+
+#include "ui/editor_style.h"
 
 namespace Vkm::Engine {
 

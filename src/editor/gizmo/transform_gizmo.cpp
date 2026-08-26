@@ -3,12 +3,20 @@
 #include <algorithm>
 #include <cmath>
 
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/matrix_decompose.hpp>
 
 #include "overlays/wire_draw.h"
 
 namespace Vkm::Engine {
+
+namespace {
+// A drag plane needs an axis the camera is not looking along. Below this the
+// cross product of the two is noise, and the plane it defines flips from one
+// side of the axis to the other under the mouse.
+constexpr float MIN_DRAG_PLANE_CROSS = 1e-5f;
+} // namespace
 
 bool TransformGizmo::project(const glm::vec3& worldPos, ImVec2& out) const {
     return projectToViewport(m_viewProj, worldPos, m_vpMin,
@@ -43,7 +51,7 @@ float TransformGizmo::computeScreenFactor(const glm::vec3& gizmoOrigin) const {
     glm::vec2 ndcOrigin = glm::vec2(clipOrigin) / clipOrigin.w;
     glm::vec2 ndcRight  = glm::vec2(clipRight) / clipRight.w;
     float ndcLength = glm::length(ndcRight - ndcOrigin);
-    if (ndcLength < 1e-7f) return 1.0f;
+    if (ndcLength < glm::epsilon<float>()) return 1.0f;
 
     // Desired size in NDC, scaled with UI/DPI so the gizmo isn't a tiny
     // overlay on a 4K display.
@@ -54,7 +62,7 @@ float TransformGizmo::computeScreenFactor(const glm::vec3& gizmoOrigin) const {
 float TransformGizmo::intersectRayPlane(const glm::vec3& rayOrigin, const glm::vec3& rayDir,
                                          const glm::vec3& planePoint, const glm::vec3& planeNormal) {
     float denom = glm::dot(planeNormal, rayDir);
-    if (std::abs(denom) < 1e-7f) return -1.0f;
+    if (std::abs(denom) < glm::epsilon<float>()) return -1.0f;
     return glm::dot(planePoint - rayOrigin, planeNormal) / denom;
 }
 
@@ -62,7 +70,7 @@ float TransformGizmo::distPointToSegment2D(ImVec2 p, ImVec2 a, ImVec2 b) {
     ImVec2 ab(b.x - a.x, b.y - a.y);
     ImVec2 ap(p.x - a.x, p.y - a.y);
     float abLen2 = ab.x * ab.x + ab.y * ab.y;
-    if (abLen2 < 1e-7f) return std::sqrt(ap.x * ap.x + ap.y * ap.y);
+    if (abLen2 < glm::epsilon<float>()) return std::sqrt(ap.x * ap.x + ap.y * ap.y);
 
     float t = std::clamp((ap.x * ab.x + ap.y * ab.y) / abLen2, 0.0f, 1.0f);
     float dx = p.x - (a.x + t * ab.x);
@@ -83,17 +91,17 @@ glm::vec3 TransformGizmo::getDragPlaneNormal(GizmoElement elem, const glm::vec3 
     switch (elem) {
         case GizmoElement::AxisX: {
             glm::vec3 cross = glm::cross(m_cameraDir, axes[0]);
-            if (glm::length(cross) < 1e-5f) return axes[1];
+            if (glm::length(cross) < MIN_DRAG_PLANE_CROSS) return axes[1];
             return glm::normalize(glm::cross(axes[0], cross));
         }
         case GizmoElement::AxisY: {
             glm::vec3 cross = glm::cross(m_cameraDir, axes[1]);
-            if (glm::length(cross) < 1e-5f) return axes[0];
+            if (glm::length(cross) < MIN_DRAG_PLANE_CROSS) return axes[0];
             return glm::normalize(glm::cross(axes[1], cross));
         }
         case GizmoElement::AxisZ: {
             glm::vec3 cross = glm::cross(m_cameraDir, axes[2]);
-            if (glm::length(cross) < 1e-5f) return axes[0];
+            if (glm::length(cross) < MIN_DRAG_PLANE_CROSS) return axes[0];
             return glm::normalize(glm::cross(axes[2], cross));
         }
         case GizmoElement::PlaneYZ: return axes[0];
@@ -279,7 +287,7 @@ bool TransformGizmo::manipulate(
             if (operation == GizmoOperation::Scale) {
                 glm::vec3 axis = getAxisDirection(m_active, axes);
                 m_scaleStartDist = glm::dot(m_dragStartWorldHit - m_gizmoOrigin, axis);
-                if (std::abs(m_scaleStartDist) < 1e-6f) m_scaleStartDist = 1.0f;
+                if (std::abs(m_scaleStartDist) < glm::epsilon<float>()) m_scaleStartDist = 1.0f;
             }
         }
     }
@@ -436,7 +444,7 @@ bool TransformGizmo::handleRotationDrag(glm::mat4& model, const glm::vec3 axes[3
     glm::vec3 currentHit = m_cameraPos + rayDir * t;
     glm::vec3 currentDir = currentHit - m_gizmoOrigin;
     float currentLen = glm::length(currentDir);
-    if (currentLen < 1e-6f) return false;
+    if (currentLen < glm::epsilon<float>()) return false;
     currentDir /= currentLen;
 
     float dotVal = std::clamp(glm::dot(m_rotationStartDir, currentDir), -1.0f, 1.0f);
@@ -468,7 +476,7 @@ bool TransformGizmo::handleScaleDrag(glm::mat4& model, const glm::vec3 axes[3]) 
     glm::vec3 axis = getAxisDirection(m_active, axes);
     float currentDist = glm::dot(currentHit - m_gizmoOrigin, axis);
 
-    if (std::abs(m_scaleStartDist) < 1e-6f) return false;
+    if (std::abs(m_scaleStartDist) < glm::epsilon<float>()) return false;
     float scaleFactor = currentDist / m_scaleStartDist;
     scaleFactor = std::clamp(scaleFactor, 0.01f, 100.0f);
 

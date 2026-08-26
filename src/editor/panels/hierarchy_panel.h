@@ -11,6 +11,7 @@ class Scene;
 class ResourceManager;
 struct EditorState;
 struct EditorContext;
+class SceneIOController;
 
 /**
  * @brief Editor panel displaying the entity hierarchy tree.
@@ -31,13 +32,15 @@ class HierarchyPanel {
         HierarchyPanel& operator=(HierarchyPanel && other) = delete;
 
     public:
-        void draw(EditorContext& ec);
+        void draw(EditorContext& ec, SceneIOController& sceneIO);
 
     private:
         void drawEntityNode(Scene& scene, ResourceManager& resources,
-                            EditorState& state, EntityId entity);
+                            EditorState& state, SceneIOController& sceneIO,
+                            EntityId entity);
         void drawEntityContextMenu(Scene& scene, ResourceManager& resources,
-                                   EditorState& state, EntityId entity);
+                                   EditorState& state, SceneIOController& sceneIO,
+                                   EntityId entity);
 
     private:
         char m_filter[64] = {};
