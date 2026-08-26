@@ -36,6 +36,10 @@ namespace Vkm::Engine::SceneSerializer {
 
 namespace {
 
+// A scene names an entity by its slot: load recreates each entity at the slot
+// it was saved at.
+uint32_t sceneSlotName(EntityId e) { return e.slot(); }
+
 using nlohmann::json;
 namespace CS = ComponentSerializer;
 
@@ -55,7 +59,9 @@ constexpr uint32_t MAX_ENTITY_SLOT = 1u << 22;
 // Every JSON key written by saveComponents, for unknown-key detection on load.
 // Order is incidental here (membership test only).
 #define VKM_SCENE_KEY(Type, Key) Key,
-constexpr std::array COMPONENT_KEYS = { VKM_SCENE_COMPONENTS(VKM_SCENE_KEY, VKM_SCENE_KEY) "Hierarchy" };
+constexpr std::array COMPONENT_KEYS = {
+    VKM_SCENE_COMPONENTS(VKM_SCENE_KEY, VKM_SCENE_KEY, VKM_SCENE_KEY) "Hierarchy"
+};
 #undef VKM_SCENE_KEY
 
 /**
@@ -127,6 +133,7 @@ void loadInto(const json& src, const char* key, Scene& s, EntityId e, Args&&... 
 
 #define VKM_SCENE_SAVE(Type, Key)   if (s.has<Type>(id)) c[Key] = CS::save(s.get<Type>(id));
 #define VKM_SCENE_SAVE_R(Type, Key) if (s.has<Type>(id)) c[Key] = CS::save(s.get<Type>(id), r);
+#define VKM_SCENE_SAVE_E(Type, Key) if (s.has<Type>(id)) c[Key] = CS::save(s.get<Type>(id), name);
 
 /**
  * @brief Write every component @p id carries into @p c, and nothing else.
@@ -140,9 +147,11 @@ void loadInto(const json& src, const char* key, Scene& s, EntityId e, Args&&... 
  * @param id Entity to write.
  * @param c Object receiving one key per component.
  * @param r Asset graph, for the components that name assets.
+ * @param name Names the entities the components refer to.
  */
-void writeComponents(const Scene& s, EntityId id, json& c, const ResourceManager& r) {
-    VKM_SCENE_COMPONENTS(VKM_SCENE_SAVE, VKM_SCENE_SAVE_R)
+void writeComponents(const Scene& s, EntityId id, json& c, const ResourceManager& r,
+                     const EntityNamer& name) {
+    VKM_SCENE_COMPONENTS(VKM_SCENE_SAVE, VKM_SCENE_SAVE_R, VKM_SCENE_SAVE_E)
 
     // Written here, but read by the caller's second pass rather than by a
     // loader: the parent it names may not exist yet when this entity is read.
@@ -151,6 +160,7 @@ void writeComponents(const Scene& s, EntityId id, json& c, const ResourceManager
 
 #undef VKM_SCENE_SAVE
 #undef VKM_SCENE_SAVE_R
+#undef VKM_SCENE_SAVE_E
 
 /**
  * @brief Whether @p ref's field came out of writeComponents as an empty string.
@@ -170,8 +180,10 @@ bool fieldLeftEmpty(const json& c, const MissingAssetRef& ref) {
     return field->is_string() && field->get<std::string>().empty();
 }
 
-void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager& r) {
-    writeComponents(s, id, c, r);
+
+void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager& r,
+                    const EntityNamer& name) {
+    writeComponents(s, id, c, r, name);
 
     // What the last load could not resolve goes back exactly as it came: the
     // write above put "" over the name, and an empty slot cannot be told from
@@ -182,15 +194,25 @@ void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager&
     }
 }
 
+void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager& r) {
+    auto bySlot = sceneSlotName;
+    const EntityNamer name(bySlot);
+    saveComponents(s, id, c, r, name);
+}
+
 #define VKM_SCENE_LOAD(Type, Key)   loadInto<Type>(src, Key, s, e);
 #define VKM_SCENE_LOAD_R(Type, Key) loadInto<Type>(src, Key, s, e, r);
+#define VKM_SCENE_LOAD_E(Type, Key) loadInto<Type>(src, Key, s, e, resolve);
 
-void loadComponents(const json& src, Scene& s, EntityId e, const ResourceManager& r) {
-    VKM_SCENE_COMPONENTS(VKM_SCENE_LOAD, VKM_SCENE_LOAD_R)
+void loadComponents(const json& src, Scene& s, EntityId e, const ResourceManager& r,
+                    const EntityResolver& resolve) {
+    VKM_SCENE_COMPONENTS(VKM_SCENE_LOAD, VKM_SCENE_LOAD_R, VKM_SCENE_LOAD_E)
 }
+
 
 #undef VKM_SCENE_LOAD
 #undef VKM_SCENE_LOAD_R
+#undef VKM_SCENE_LOAD_E
 
 namespace {
 
@@ -218,7 +240,7 @@ json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
         if (Prefab::isInsideInstance(scene, id)) return;
 
         json entity;
-        entity["id"] = id.index;
+        entity["id"] = id.slot();
         json components = json::object();
 
         // WorldTransform is derived from Transform + Hierarchy each frame -
@@ -312,7 +334,12 @@ enum class AssetPolicy {
  */
 bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, const char* source,
                    AssetPolicy policy) {
-    const int version = doc.value("version", 0);
+    // value() throws when the key holds a string or an array, which is what a
+    // hand-edited file does. Reading the malformed case as the missing one
+    // refuses it with a message instead of unwinding out of the load.
+    const int version = doc.contains("version") && doc["version"].is_number_integer()
+        ? doc["version"].get<int>()
+        : 0;
     if (version <= 0) {
         LOG_ERROR("Missing/invalid 'version' field in '%s'", source);
         return false;
@@ -365,23 +392,49 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
     const char* blockBeingRead  = "entities";
 
     try {
+        // Every entity is created before any component is read, so a
+        // reference resolves where it is read. The id checks belong to this
+        // pass: afterwards every id is alive, and a second aliveness test
+        // would call each entity a duplicate of itself.
+        std::vector<EntityId> byEntry;
+        byEntry.reserve(doc["entities"].size());
         for (const auto& entry : doc["entities"]) {
             const uint32_t id = entry.value("id", 0u);
-            entityBeingRead = id;
             if (id == 0 || id > MAX_ENTITY_SLOT) {
                 ++unusableIds;
+                byEntry.emplace_back();
                 continue;
             }
             // A repeated id would allocate an already-live slot and add every
             // component to it twice: SparseSet appends a second dense entry
-            // rather than overwriting, so the entity yields each component twice
-            // and a later remove swap-and-pops against a stale index.
+            // rather than overwriting, so the entity yields each component
+            // twice and a later remove swap-and-pops against a stale index.
             if (staging.isAliveAtIndex(id)) {
                 ++duplicateIds;
+                byEntry.emplace_back();
                 continue;
             }
-            const EntityId entity = staging.createEntityAt(id);
+            byEntry.push_back(staging.createEntityAt(id));
             ++entityCount;
+        }
+
+        // A saved reference is a slot, and every slot that will exist now does.
+        auto bySavedSlot = [&](uint32_t slot) -> EntityId {
+            if (!staging.isAliveAtIndex(slot)) {
+                LOG_WARNING("'%s' names entity slot %u, which it does not hold; "
+                            "that reference is left empty", source, slot);
+                return {};
+            }
+            return staging.entityAt(slot);
+        };
+        const EntityResolver resolve(bySavedSlot);
+
+        for (size_t e = 0; e < doc["entities"].size(); ++e) {
+            const json& entry = doc["entities"][e];
+            const EntityId entity = byEntry[e];
+            if (!entity) continue;
+            const uint32_t id = entity.slot();
+            entityBeingRead = id;
 
             // Referenced, not value()'d: nlohmann returns by value, so asking
             // that way deep-copied every entity's whole component block on the
@@ -392,7 +445,7 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             // Components that reference assets (Mesh) look them up in the
             // graph loadAssets just wrote into, so resolution sees it.
             // Hierarchy is skipped: its parent index is captured below.
-            loadComponents(components, staging, entity, assetGraph);
+            loadComponents(components, staging, entity, assetGraph, resolve);
             if (components.contains("Hierarchy")) {
                 const uint32_t parentIdx = CS::loadParentIndex(components["Hierarchy"]);
                 if (parentIdx != std::numeric_limits<uint32_t>::max() && parentIdx != 0) {
@@ -496,50 +549,6 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             HierarchyOperations::setParent(staging, childId, parentId);
         }
 
-        // A ragdoll's bones name the bodies that pose them, and those are
-        // saved as slots for the same reason a joint's connected entity is.
-        if (auto* ragdolls = staging.storage<Ragdoll>()) {
-            for (uint32_t i = 0; i < ragdolls->size(); ++i) {
-                Ragdoll& ragdoll = ragdolls->dataAt(i);
-                const uint32_t rootSlot = ragdoll.root.index;
-                ragdoll.root = rootSlot && staging.isAliveAtIndex(rootSlot)
-                    ? staging.entityAt(rootSlot)
-                    : EntityId{};
-
-                for (RagdollBone& bone : ragdoll.bones) {
-                    const uint32_t slot = bone.body.index;
-                    if (slot == 0) continue;
-                    if (!staging.isAliveAtIndex(slot)) {
-                        LOG_WARNING("Ragdoll names body slot %u, which '%s' does "
-                                    "not hold; that bone is left unsimulated",
-                                    slot, source);
-                        bone.body = EntityId{};
-                        continue;
-                    }
-                    bone.body = staging.entityAt(slot);
-                }
-            }
-        }
-
-        // A joint names another entity, and a saved reference is a slot rather
-        // than a handle: the generation it was written with belongs to the
-        // session that wrote it. Recovered here, where every slot is filled, so
-        // the joint holds a handle the scene will still recognise.
-        if (auto* joints = staging.storage<Joint>()) {
-            for (uint32_t i = 0; i < joints->size(); ++i) {
-                Joint& joint = joints->dataAt(i);
-                const uint32_t slot = joint.connected.index;
-                if (slot == 0) continue;
-                if (!staging.isAliveAtIndex(slot)) {
-                    LOG_WARNING("Joint names slot %u, which '%s' does not hold; "
-                                "the joint is left unconnected", slot, source);
-                    joint.connected = EntityId{};
-                    continue;
-                }
-                joint.connected = staging.entityAt(slot);
-            }
-        }
-
         // The tree over a mesh collider's triangles is derived, so it is not
         // written to disk where it could disagree with them. PhysicsSystem
         // rebuilds one it finds missing, but only on a tick - and a query is
@@ -624,8 +633,12 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
 void pruneResolvedRefs(Scene& scene, const ResourceManager& resources, EntityId id) {
     if (!scene.isAlive(id) || !scene.has<MissingAssets>(id)) return;
 
+    // Only asset names are read back out of this, so how entities are named
+    // does not matter here.
+    auto bySlot = sceneSlotName;
+    const EntityNamer name(bySlot);
     json components = json::object();
-    writeComponents(scene, id, components, resources);
+    writeComponents(scene, id, components, resources, name);
 
     std::vector<MissingAssetRef>& refs = scene.get<MissingAssets>(id).refs;
     refs.erase(std::remove_if(refs.begin(), refs.end(),

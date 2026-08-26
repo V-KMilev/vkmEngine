@@ -68,5 +68,6 @@ struct Ragdoll {
 } // namespace Vkm::Engine
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::Ragdoll)
-    VKM_F(active)
+    VKM_F(active),
+    VKM_F(boneLayer)
 VKM_REFLECT_END()
