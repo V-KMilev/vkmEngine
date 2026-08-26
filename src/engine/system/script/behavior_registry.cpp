@@ -9,8 +9,8 @@
 namespace Vkm::Engine {
 
 BehaviorRegistry& BehaviorRegistry::get() {
-    static BehaviorRegistry instance;
-    return instance;
+    static BehaviorRegistry s_instance;
+    return s_instance;
 }
 
 void BehaviorRegistry::registerBehavior(std::string name, Factory factory) {
