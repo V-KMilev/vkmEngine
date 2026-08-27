@@ -306,12 +306,7 @@ Face makeFace(const std::vector<Vertex>& hull, int i, int j, int k) {
     return face;
 }
 
-
-
-
-
 } // namespace
-
 
 bool gjkOverlap(const SupportShape& a, const SupportShape& b) {
     Simplex simplex;

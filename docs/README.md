@@ -48,7 +48,7 @@ is whichever subsystem you're about to change.
    events, io, scripting, physics, ui, audio).
 
 If you only have time for one thing before a small change: skim the relevant
-reference doc and the development guide.
+reference doc and [guides/design.md](guides/design.md).
 
 ---
 

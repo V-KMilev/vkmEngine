@@ -50,13 +50,29 @@ namespace Config {
     // distances without clipping fragments inside a very small light.
     constexpr float SHADOW_CUBE_NEAR = 0.1f;
 
-    // Fixed simulation step (60 Hz). The cadence at which fixedUpdate runs.
-    constexpr float FIXED_TIME_STEP = 1.0f / 60.0f;
+    // Simulation ticks per second when a project does not name its own. The
+    // cadence fixedUpdate runs at, and for a networked game the rate the wire
+    // is clocked by.
+    constexpr uint32_t DEFAULT_TICK_RATE = 64;
+
+    // Bounds on that, so a hand-edited project.json cannot ask for a step of
+    // zero (an infinite tick loop) or one so slow the simulation is unusable.
+    // Four, not one: the accumulator is capped at MAX_FRAME_ACCUMULATOR below,
+    // and a step longer than that cap can never be consumed - so a rate of 1, 2
+    // or 3 is a simulation whose fixedUpdate silently never runs. The
+    // static_assert after the cap keeps the two from drifting apart.
+    constexpr uint32_t MIN_TICK_RATE = 4;
+    constexpr uint32_t MAX_TICK_RATE = 480;
 
     // Cap on the simulation-time accumulator. Prevents a frame hitch from
     // queuing enough fixedUpdate ticks to outpace the next frame ("spiral
-    // of death"). 0.25s ~= 15 ticks max per render frame at FIXED_TIME_STEP.
+    // of death"). A quarter second is 16 ticks at the default rate; a project
+    // that raises its rate gets more ticks per hitch, not a longer stall.
     constexpr float MAX_FRAME_ACCUMULATOR = 0.25f;
+
+    static_assert(1.0f / static_cast<float>(MIN_TICK_RATE) <= MAX_FRAME_ACCUMULATOR,
+                  "A step longer than the accumulator cap can never be consumed, "
+                  "so the slowest allowed tick rate would never tick at all");
 
 } // namespace Config
 

@@ -10,6 +10,7 @@
 #include "core/clock.h"
 #include "debug/engine_error_log.h"
 #include "debug/profiler.h"
+#include "framework/scene_io_controller.h"
 #include "framework/component_edit.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
@@ -18,7 +19,7 @@
 
 namespace Vkm::Engine {
 
-void BottomPanel::draw(EditorContext& ec) {
+void BottomPanel::draw(EditorContext& ec, SceneIOController& sceneIO) {
     if (ImGui::BeginTabBar("##BottomTabs", ImGuiTabBarFlags_DrawSelectedOverline)) {
         if (ImGui::BeginTabItem("Assets")) {
             // The one tab that spends GPU time - the thumbnail bakes - so it
@@ -28,7 +29,7 @@ void BottomPanel::draw(EditorContext& ec) {
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Animation")) {
-            drawAnimationSection(ec);
+            drawAnimationSection(ec, sceneIO);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Errors")) {
@@ -85,7 +86,7 @@ void BottomPanel::drawErrorsSection(EngineErrorLog& errorLog) {
     ImGui::EndChild();
 }
 
-void BottomPanel::drawAnimationSection(EditorContext& ec) {
+void BottomPanel::drawAnimationSection(EditorContext& ec, SceneIOController& sceneIO) {
     FrameContext& ctx   = ec.frame;
     EditorState&  state = ec.state;
     Scene& scene = ctx.scene;
@@ -98,7 +99,7 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
 
     char nameBuf[64];
     getEntityDisplayName(scene, id, nameBuf, sizeof(nameBuf));
-    ImGui::Text("Target: %s  (#%u)", nameBuf, id.index);
+    ImGui::Text("Target: %s  (#%u)", nameBuf, id.slot());
 
     if (!scene.has<Transform>(id)) {
         ImGui::TextDisabled("Animation drives a Transform - add a Transform component first.");
@@ -109,10 +110,15 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
 
     auto editor = [&](Animation& anim) {
         // Undo snapshot. Authoring edits (keys, length, loop, speed) push one
-        // coalescing command at the end; play/pause/stop/scrub stay
-        // non-undoable (same policy as the Inspector's Animation card).
+        // coalescing command at the end; play/pause/stop stay non-undoable
+        // (same policy as the Inspector's Animation card).
         const Animation before = anim;
         bool changed = false;
+
+        // Scrubbing is the exception: posing the entity writes the authored
+        // Transform, which is what the scene file holds, so where it lands is
+        // captured as a Transform edit. That command coalesces, so a drag is one step.
+        const Transform beforeTf = tf;
 
         auto previewPose = [&]() {
             if (!anim.positionTrack.isEmpty()) tf.position = anim.positionTrack.getValue(anim.time);
@@ -170,9 +176,10 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
 
         ImGui::Spacing();
         {
-            const float laneH  = 16.0f;
+            const float laneH  = EditorStyle::px(16.0f);
             const float rulerH = EditorStyle::px(18.0f);
-            const float h = rulerH + laneH * 3.0f + 6.0f;
+            const float hitR   = EditorStyle::px(7.0f);
+            const float h = rulerH + laneH * 3.0f + EditorStyle::px(6.0f);
             ImVec2 p0 = ImGui::GetCursorScreenPos();
             float w = ImGui::GetContentRegionAvail().x;
             ImGui::InvisibleButton("##timeline", ImVec2(w, h));
@@ -214,7 +221,7 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
                 const auto& times = *lanes[i].times;
                 for (size_t k = 0; k < times.size(); ++k) {
                     float dx = timeToX(times[k]) - mp.x, dy = ly - mp.y;
-                    if (dx * dx + dy * dy <= 49.0f) { hovTrack = i; hovIdx = k; }
+                    if (dx * dx + dy * dy <= hitR * hitR) { hovTrack = i; hovIdx = k; }
                 }
             }
 
@@ -240,13 +247,16 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
 
             for (int i = 0; i < 3; ++i) {
                 float ly = laneY(i);
-                dl->AddText(ImVec2(p0.x + 3, ly - 7), lanes[i].c, lanes[i].n);
-                dl->AddLine(ImVec2(p0.x + 16, ly), ImVec2(p0.x + w, ly), EditorStyle::TIMELINE_LANE_U32);
+                dl->AddText(ImVec2(p0.x + EditorStyle::px(3.0f), ly - EditorStyle::px(7.0f)),
+                            lanes[i].c, lanes[i].n);
+                dl->AddLine(ImVec2(p0.x + EditorStyle::px(16.0f), ly), ImVec2(p0.x + w, ly),
+                            EditorStyle::TIMELINE_LANE_U32);
                 const auto& times = *lanes[i].times;
                 for (size_t k = 0; k < times.size(); ++k) {
                     bool hot = (i == hovTrack && k == hovIdx)
                             || (i == m_animDotTrack && k == m_animDotIdx);
-                    dl->AddCircleFilled(ImVec2(timeToX(times[k]), ly), hot ? 5.5f : 3.5f,
+                    dl->AddCircleFilled(ImVec2(timeToX(times[k]), ly),
+                                        hot ? EditorStyle::px(5.5f) : EditorStyle::px(3.5f),
                                         hot ? EditorStyle::HIGHLIGHT_U32 : lanes[i].c);
                 }
             }
@@ -398,6 +408,15 @@ void BottomPanel::drawAnimationSection(EditorContext& ec) {
             // tryMerge collapses per-frame drag edits (timeline dots, speed)
             // into one undo step.
             pushEdit<Animation>(scene, ctx.resources, state, id, before, anim, "Edit Animation");
+        }
+
+        // A scrub that changed nothing else, and never during play: an
+        // Animation edit pushed the same frame merges with neither, and the
+        // entity posed during play goes away at Stop.
+        if (!changed && !sceneIO.isPlaying()
+            && (tf.position != beforeTf.position || tf.rotation != beforeTf.rotation
+                                                 || tf.scale    != beforeTf.scale)) {
+            pushEdit<Transform>(scene, ctx.resources, state, id, beforeTf, tf, "Scrub Animation");
         }
     };
 

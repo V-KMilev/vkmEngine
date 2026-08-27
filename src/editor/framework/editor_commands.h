@@ -68,7 +68,7 @@ class TransformChangeCommand : public Command {
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
         bool tryMerge(Command& incoming) override;
-        bool addresses(uint32_t slotIndex) const override { return m_entity.index == slotIndex; }
+        bool addresses(uint32_t slotIndex) const override { return m_entity.slot() == slotIndex; }
 
     private:
         EntityId    m_entity;
@@ -183,7 +183,7 @@ class AddComponentCommand : public Command {
         void redo(Scene&, EditorState&) override;
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
-        bool addresses(uint32_t slotIndex) const override { return m_entity.index == slotIndex; }
+        bool addresses(uint32_t slotIndex) const override { return m_entity.slot() == slotIndex; }
 
     private:
         EntityId    m_entity;
@@ -206,7 +206,7 @@ class RemoveComponentCommand : public Command {
         void redo(Scene&, EditorState&) override;
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
-        bool addresses(uint32_t slotIndex) const override { return m_entity.index == slotIndex; }
+        bool addresses(uint32_t slotIndex) const override { return m_entity.slot() == slotIndex; }
 
     private:
         EntityId    m_entity;
@@ -234,7 +234,7 @@ class ComponentEditCommand : public Command {
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
         bool tryMerge(Command& incoming) override;
-        bool addresses(uint32_t slotIndex) const override { return m_entity.index == slotIndex; }
+        bool addresses(uint32_t slotIndex) const override { return m_entity.slot() == slotIndex; }
 
     private:
         EntityId    m_entity;
@@ -267,7 +267,7 @@ class ScriptEditCommand : public Command {
         void undo(Scene& scene, EditorState& state) override;
         const char* label() const override { return m_label; }
         bool tryMerge(Command& incoming) override;
-        bool addresses(uint32_t slotIndex) const override { return m_entity.index == slotIndex; }
+        bool addresses(uint32_t slotIndex) const override { return m_entity.slot() == slotIndex; }
 
         /**
          * @brief The entity's ScriptComponent as JSON, or empty when it has none.
@@ -527,7 +527,7 @@ class PlacePrefabCommand : public Command {
          */
         PlacePrefabCommand(ResourceManager& resources, PrefabInstance instance, EntityId root,
                            const Transform& at, const char* label)
-            : m_resources(&resources), m_instance(std::move(instance)), m_rootSlot(root.index),
+            : m_resources(&resources), m_instance(std::move(instance)), m_rootSlot(root.slot()),
               m_at(at), m_label(label) {}
 
         void redo(Scene&, EditorState&) override;
@@ -590,7 +590,7 @@ class PrefabOverrideCommand : public Command {
         void undo(Scene&, EditorState&) override;
         const char* label() const override { return m_label; }
         bool tryMerge(Command& incoming) override;
-        bool addresses(uint32_t slotIndex) const override { return m_root.index == slotIndex; }
+        bool addresses(uint32_t slotIndex) const override { return m_root.slot() == slotIndex; }
 
     private:
         /**
@@ -635,9 +635,9 @@ class ReparentCommand : public Command {
         // parents, so a step that could put an entity inside a subtree is as
         // outlived as one that moves the subtree's own entity.
         bool addresses(uint32_t slotIndex) const override {
-            return m_child.index == slotIndex
-                || m_oldParent.index == slotIndex
-                || m_newParent.index == slotIndex;
+            return m_child.slot() == slotIndex
+                || m_oldParent.slot() == slotIndex
+                || m_newParent.slot() == slotIndex;
         }
 
     private:

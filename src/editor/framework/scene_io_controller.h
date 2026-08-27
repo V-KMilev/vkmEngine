@@ -17,7 +17,8 @@ class MaterialPreviewSession;
  *
  * Holds the current scene path, performs Save / Save-As / Load, renders the
  * Save-As and Load-picker modals, and runs post-load editor housekeeping
- * (camera rebind, temporal-history invalidate) directly inside load().
+ * (hierarchy refresh, material-preview drop, selection re-resolve by Name,
+ * camera rebind) directly inside load().
  *
  * It also owns the in-memory play-mode snapshot: captureSnapshot() on Play
  * serializes the authored scene to memory, and restoreSnapshot() on Stop

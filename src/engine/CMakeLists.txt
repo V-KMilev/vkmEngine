@@ -13,10 +13,9 @@ file(GLOB_RECURSE VKM_CORE_SOURCES CONFIGURE_DEPENDS
     system/physics/*.cpp
     system/script/*.cpp
     system/sky/*.cpp
-    system/event/*.cpp
+    system/splash/*.cpp
     system/hierarchy/*.cpp
     system/ui/*.cpp
-    system/io/*.cpp
     platform/input/*.cpp
     platform/window/*.cpp
     platform/threading/*.cpp

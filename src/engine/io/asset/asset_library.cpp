@@ -29,8 +29,8 @@ static_assert(sizeof(TYPE_DIRS) / sizeof(TYPE_DIRS[0]) == static_cast<size_t>(As
 } // namespace
 
 AssetLibrary& AssetLibrary::get() {
-    static AssetLibrary instance;
-    return instance;
+    static AssetLibrary s_instance;
+    return s_instance;
 }
 
 std::string AssetLibrary::key(AssetType type, const std::string& name) {
@@ -127,9 +127,21 @@ bool AssetLibrary::save() const {
     nlohmann::json doc;
     doc["manifestVersion"] = MANIFEST_VERSION;
 
-    nlohmann::json assets = nlohmann::json::array();
+    // Written in key order rather than the map's bucket order: an unordered_map
+    // walked directly writes the same entries in a different order every save,
+    // rewriting the manifest whenever anything cooks.
+    std::vector<const std::string*> keys;
+    keys.reserve(m_records.size());
     for (const auto& [k, r] : m_records) {
-        (void)k;
+        (void)r;
+        keys.push_back(&k);
+    }
+    std::sort(keys.begin(), keys.end(),
+              [](const std::string* a, const std::string* b) { return *a < *b; });
+
+    nlohmann::json assets = nlohmann::json::array();
+    for (const std::string* k : keys) {
+        const AssetRecord& r = m_records.at(*k);
         nlohmann::json entry;
         entry["name"] = r.name;
         entry["type"] = Reflect::enumName(r.type);

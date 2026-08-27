@@ -5,6 +5,7 @@
 #include <string>
 
 #include "ecs/entity.h"
+#include "ecs/entity_ref.h"
 
 namespace Vkm::Engine {
 
@@ -49,6 +50,22 @@ namespace SceneSerializer {
                         const ResourceManager& resources);
 
     /**
+     * @brief Write every serialized component of @p id into @p out, naming the
+     *        entities they refer to through @p name.
+     *
+     * For a carrier with its own numbering: a prefab names an entity by its
+     * place in the file, where the overload above names it by its scene slot.
+     *
+     * @param scene     Scene holding the entity.
+     * @param id        Entity to serialize.
+     * @param out       JSON object to fill, keyed by component name.
+     * @param resources Resolves asset handles to their names.
+     * @param name      Names the entities the components refer to.
+     */
+    void saveComponents(const Scene& scene, EntityId id, nlohmann::json& out,
+                        const ResourceManager& resources, const EntityNamer& name);
+
+    /**
      * @brief Add every component present in @p src to @p entity.
      *
      * Hierarchy is deliberately absent: a parent may not exist yet when its
@@ -59,9 +76,10 @@ namespace SceneSerializer {
      * @param scene     Scene to add into.
      * @param entity    The entity receiving the components.
      * @param resources Resolves asset names back to handles.
+     * @param resolve   Reads the carrier's names for entities back to entities.
      */
     void loadComponents(const nlohmann::json& src, Scene& scene, EntityId entity,
-                        const ResourceManager& resources);
+                        const ResourceManager& resources, const EntityResolver& resolve);
 
     /**
      * @brief Save @p scene + the assets it references to @p path.

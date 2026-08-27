@@ -96,9 +96,9 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
     // add one there and this stops compiling until someone has said whether it
     // carries an asset handle. Nothing else catches that omission.
     [[maybe_unused]] const auto& [viewportX, viewportY, viewportWidth, viewportHeight,
-        surfaceHeight, camera, drawables, shadowCasters, lights, probes, decals,
+        surfaceWidth, surfaceHeight, camera, drawables, shadowCasters, lights, probes, decals,
         particlesAdditive, particlesAlpha, irradianceVolumes, skinMatrices, casterSkins,
-        settings, environment, ui, worldEpoch] = view;
+        settings, environment, ui, splash, worldEpoch] = view;
 
     // Drawables arrive clustered by (material, mesh) - that is the draw sort -
     // so consecutive repeats dominate at scale and the previous handle is worth

@@ -56,8 +56,9 @@ constexpr void forEachField(T& obj, Fn&& fn) {
 }
 
 /**
- * @brief Maps an enum to its value-ordered names. Specialise via
- *        VKM_ENUM_NAMES (below), which exposes:
+ * @brief Maps an enum to its value-ordered names.
+ *
+ * Specialise via VKM_ENUM_NAMES (below), which exposes:
  *
  *          static constexpr const char* const values[];  // index == enum value
  *          static constexpr std::size_t      count;       // == sizeof(values)

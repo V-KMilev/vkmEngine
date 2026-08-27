@@ -203,6 +203,14 @@ namespace PrefabOverrides {
                       std::is_same_v<T, Decal> || std::is_same_v<T, Animator> ||
                       std::is_same_v<T, AudioSource>) {
             return ComponentSerializer::save(component, resources);
+        } else if constexpr (std::is_same_v<T, Joint> || std::is_same_v<T, Ragdoll>) {
+            // By slot, the scene file's own number, because that is the
+            // document this value is stored in. The entity fields never reach
+            // an override - recordFields declines them, see namesAnEntity -
+            // so nothing here is ever read back in the prefab's namespace.
+            auto bySlot = [](EntityId e) { return e.slot(); };
+            const EntityNamer name(bySlot);
+            return ComponentSerializer::save(component, name);
         } else {
             return ComponentSerializer::save(component);
         }

@@ -41,7 +41,7 @@ constexpr uint32_t SCENE_SIZE = 512;
 // (yaw 35, pitch 20), shadowless. Directions are the light's travel direction.
 // The base rig is constant; requests rotate a copy around Y (lightYawDeg).
 const std::vector<LightData>& studioLights() {
-    static const std::vector<LightData> lights = [] {
+    static const std::vector<LightData> s_lights = [] {
         auto directional = [](const glm::vec3& dir, const glm::vec3& color, float intensity) {
             LightData l{};
             l.type        = LightType::Directional;
@@ -59,7 +59,7 @@ const std::vector<LightData>& studioLights() {
             directional({ 0.50f, -0.25f,  0.70f}, {1.00f, 0.95f, 0.85f}, 1.2f),  // rim: from behind
         };
     }();
-    return lights;
+    return s_lights;
 }
 
 } // namespace
@@ -116,6 +116,7 @@ uint32_t GLPreview::render(Vkm::GL::Context& gl, GLView& glView, const GLIBL& ib
     RenderView view;
     view.viewportWidth  = SCENE_SIZE;
     view.viewportHeight = SCENE_SIZE;
+    view.surfaceWidth   = SCENE_SIZE;
     view.surfaceHeight  = SCENE_SIZE;
     DrawableData drawable{};
     drawable.mesh         = req.mesh;
@@ -198,7 +199,7 @@ uint32_t GLPreview::render(Vkm::GL::Context& gl, GLView& glView, const GLIBL& ib
         m_skybox->setUniformMatrix4fv("u_projection", cam.projection);
         m_skybox->setUniform1f("u_iblIntensity", 1.0f);
         m_skybox->setUniform1i("u_hasSun", 0);
-        ibl.bindEnvCube(GLBindings::IBLTextureSlots::EnvCube);
+        ibl.bindEnvCube(GLBindings::IBLTextureSlots::ENV_CUBE);
         m_skyCube->draw();
         gl.setDepthWrite(true);
         gl.setDepthFunc(GL_LESS);
@@ -221,14 +222,14 @@ uint32_t GLPreview::render(Vkm::GL::Context& gl, GLView& glView, const GLIBL& ib
 
     // Never read - every preview light is shadowless - but the shader declares the slot
     // as sampler2DShadow, and the driver validates a declared sampler at draw time.
-    shadows.bind2D(GLBindings::ShadowTextureSlots::Atlas2D);
+    shadows.bind2D(GLBindings::ShadowTextureSlots::ATLAS_2D);
 
     m_drawables.clear();
     m_drawables.push_back(&view.drawables[0]);
     // No palette: the preview draws shaders/forward/pbr only, so a character
     // thumbnails in bind pose.
     const std::vector<InstanceRun>& runs = m_batcher.buildGrouped(m_drawables, glView, 0);
-    material->bind(GLBindings::UBOBindingPoints::Material);
+    material->bind(GLBindings::UBOBindingPoints::MATERIAL);
     material->bindTextures(glView);
     m_batcher.bindInstanceData();
     for (uint32_t i = 0; i < runs.size(); ++i) m_batcher.drawRun(runs[i], i);
@@ -247,7 +248,7 @@ uint32_t GLPreview::render(Vkm::GL::Context& gl, GLView& glView, const GLIBL& ib
     // Never read - the preview composites in default mode - but this shader
     // declares the atlas slot as a plain sampler2D, and the driver validates a
     // declared sampler at draw time.
-    shadows.bind2DRaw(GLBindings::ShadowTextureSlots::Atlas2DRaw);
+    shadows.bind2DRaw(GLBindings::ShadowTextureSlots::ATLAS_2D_RAW);
     m_scratch.bindColor(0);
     m_composite->setUniform1f("u_bloomStrength", 0.0f);
     m_composite->setUniform1i("u_renderMode", 0);

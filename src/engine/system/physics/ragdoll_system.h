@@ -45,11 +45,9 @@ EntityId ragdollOwnerOf(const Scene& scene, EntityId body,
  * in its bind pose that snaps before it falls.
  *
  * Registered at SystemStage::Simulation after SkeletalAnimationSystem, whose
- * pose it reads, and before PhysicsSystem, whose bodies it writes. Per frame
- * rather than per fixed tick, which is the rate the pose it copies is produced
- * at: the solver may take several substeps against one placement, and a
- * kinematic bone that holds still across them is the animation holding still,
- * not the bone falling behind it.
+ * pose it reads, and before PhysicsSystem, whose bodies it writes. All three
+ * run on the tick, so the bone transforms this writes are the ones the solver
+ * reads in the same step rather than whatever the last frame left.
  */
 class RagdollSystem : public System, public ISceneObserver {
     public:
@@ -64,7 +62,9 @@ class RagdollSystem : public System, public ISceneObserver {
 
     public:
         void init(FrameContext& ctx) override;
-        void update(FrameContext& ctx) override;
+        /// Simulation runs on the tick; nothing here answers to the frame.
+        void fixedUpdate(FrameContext& ctx) override;
+        bool hasFixedUpdate() const override { return true; }
 
         /// Drops the observer registration, so nothing calls a dead system.
         void shutdown() override;

@@ -299,7 +299,7 @@ std::string slotDetail(const ResourceManager& resources, const TextureHandle& sl
     return file.empty() ? texture.filePath : file;
 }
 
-}  // namespace
+} // namespace
 
 MaterialHandle MaterialEditorPanel::resolveTarget(EditorContext& ec) {
     EditorState&     state     = ec.state;
@@ -900,15 +900,15 @@ bool MaterialEditorPanel::drawParameters(ResourceManager& resources, EditorRende
 
 void MaterialEditorPanel::openTexturePicker(MaterialHandle owner,
                                             TextureHandle MaterialAsset::* member, bool srgb) {
-    m_texturePicker.options.popupId    = "PickTexture";
-    m_texturePicker.options.title      = "Pick Texture";
-    m_texturePicker.options.root       = ProjectPaths::assets();
-    m_texturePicker.options.recursive  = true;
-    m_texturePicker.options.kind       = AssetPicker::Kind::Files;
-    m_texturePicker.options.extensions = {".png", ".jpg", ".jpeg", ".tga", ".bmp"};
-    m_texturePicker.options.maxResults = 4000;
-    m_texturePicker.options.relativeTo = ProjectPaths::projectRoot();
-    m_texturePicker.options.hint       = srgb ? "sRGB: yes" : "sRGB: no";
+    m_texturePicker.options().popupId    = "PickTexture";
+    m_texturePicker.options().title      = "Pick Texture";
+    m_texturePicker.options().root       = ProjectPaths::assets();
+    m_texturePicker.options().recursive  = true;
+    m_texturePicker.options().kind       = AssetPicker::Kind::Files;
+    m_texturePicker.options().extensions = {".png", ".jpg", ".jpeg", ".tga", ".bmp"};
+    m_texturePicker.options().maxResults = 4000;
+    m_texturePicker.options().relativeTo = ProjectPaths::projectRoot();
+    m_texturePicker.options().hint       = srgb ? "sRGB: yes" : "sRGB: no";
     m_texturePicker.open();
 
     // The slot is identified by owner handle + member pointer rather than by
@@ -952,14 +952,14 @@ void MaterialEditorPanel::serviceTexturePicker(EditorContext& ec) {
 
 void MaterialEditorPanel::servicePbrFolder(EditorContext& ec) {
     if (m_requestPbrFolder) {
-        m_pbrFolderPicker.options.popupId    = "PBRFolder";
-        m_pbrFolderPicker.options.title      = "Load PBR Folder";
-        m_pbrFolderPicker.options.root       = ProjectPaths::assets();
-        m_pbrFolderPicker.options.recursive  = false;
-        m_pbrFolderPicker.options.kind       = AssetPicker::Kind::Directories;
-        m_pbrFolderPicker.options.extensions.clear();
-        m_pbrFolderPicker.options.relativeTo = ProjectPaths::projectRoot();
-        m_pbrFolderPicker.options.hint.clear();
+        m_pbrFolderPicker.options().popupId    = "PBRFolder";
+        m_pbrFolderPicker.options().title      = "Load PBR Folder";
+        m_pbrFolderPicker.options().root       = ProjectPaths::assets();
+        m_pbrFolderPicker.options().recursive  = false;
+        m_pbrFolderPicker.options().kind       = AssetPicker::Kind::Directories;
+        m_pbrFolderPicker.options().extensions.clear();
+        m_pbrFolderPicker.options().relativeTo = ProjectPaths::projectRoot();
+        m_pbrFolderPicker.options().hint.clear();
         m_pbrFolderPicker.open();
         m_requestPbrFolder = false;
     }

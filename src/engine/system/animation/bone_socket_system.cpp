@@ -114,7 +114,7 @@ void BoneSocketSystem::placeSockets(FrameContext& ctx, FaultsSeen& seen) {
         }
 
         const Animator& animator = scene.get<Animator>(rig);
-        const PoseSlice* slice   = ctx.poses->sliceOf(rig.index);
+        const PoseSlice* slice   = ctx.poses->sliceOf(rig.slot());
         if (!slice || !animator.skeleton || !resources.isAlive(animator.skeleton)) {
             seen.noPose = true;
             if (!m_noPoseLogged) {

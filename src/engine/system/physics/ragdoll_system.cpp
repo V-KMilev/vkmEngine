@@ -64,7 +64,7 @@ void RagdollSystem::onEntityDestroyed(EntityId id) {
     }
 }
 
-void RagdollSystem::update(FrameContext& ctx) {
+void RagdollSystem::fixedUpdate(FrameContext& ctx) {
     PROFILE_SCOPE("RagdollSystem");
 
     Scene& scene = ctx.scene;
@@ -104,7 +104,7 @@ void RagdollSystem::update(FrameContext& ctx) {
             HierarchyOperations::findInSelfOrDescendants<Animator>(scene, self);
 
         const PoseSlice* slice = nullptr;
-        if (ctx.poses && rigNode) slice = ctx.poses->sliceOf(rigNode.index);
+        if (ctx.poses && rigNode) slice = ctx.poses->sliceOf(rigNode.slot());
 
         const glm::mat4 rigWorld = rigNode
             ? HierarchyOperations::computeWorldMatrix(scene, rigNode)

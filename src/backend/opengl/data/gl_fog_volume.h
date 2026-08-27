@@ -47,7 +47,7 @@ class GLFogVolume {
          * passes that consume the fog is ctx.fogReady, published by the fog pass
          * once the volumes hold a frame's worth of scattering.
          */
-        bool ready() const { return static_cast<bool>(m_scatter); }
+        bool isReady() const { return static_cast<bool>(m_scatter); }
 
         /**
          * @brief Bind the scatter volume as a compute image.

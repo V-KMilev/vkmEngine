@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdint>
 
 #include "core/engine_config.h"
 
@@ -52,12 +53,29 @@ class Clock {
 
         float getDeltaTime() const { return m_deltaTime; }
         float getSimDelta() const  { return m_simDelta; }
-        float getFixedStep() const { return Config::FIXED_TIME_STEP; }
+        float getFixedStep() const { return m_fixedStep; }
         float getFrameRate() const { return m_deltaTime > 0.0f ? 1.0f / m_deltaTime : 0.0f; }
         float getFrameTime() const { return m_deltaTime * 1000.0f; }
 
         bool  isPaused() const     { return m_paused; }
         float getTimeScale() const { return m_timeScale; }
+
+        /**
+         * @brief Set the simulation cadence, in ticks per second.
+         *
+         * The host sets this when it reads a project, not per frame: every
+         * fixedUpdate in the engine is written against a step that does not
+         * change under it.
+         *
+         * @param ticksPerSecond Clamped to [Config::MIN_TICK_RATE,
+         *        Config::MAX_TICK_RATE].
+         */
+        void setTickRate(uint32_t ticksPerSecond) {
+            const uint32_t rate = ticksPerSecond < Config::MIN_TICK_RATE ? Config::MIN_TICK_RATE
+                                : ticksPerSecond > Config::MAX_TICK_RATE ? Config::MAX_TICK_RATE
+                                                                        : ticksPerSecond;
+            m_fixedStep = 1.0f / static_cast<float>(rate);
+        }
 
         /**
          * @brief Pause or resume simulation time.
@@ -99,6 +117,8 @@ class Clock {
     private:
         std::chrono::steady_clock::time_point m_last{};
         bool  m_started = false;
+
+        float m_fixedStep = 1.0f / static_cast<float>(Config::DEFAULT_TICK_RATE);
 
         float m_deltaTime   = 0.0f;
         float m_simDelta    = 0.0f;

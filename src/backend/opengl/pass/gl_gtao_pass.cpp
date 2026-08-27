@@ -31,8 +31,8 @@ void GLGTAOPass::execute(GLFrameContext& ctx) {
     beginFullscreen(ctx.gl);
 
     m_shader->bind();
-    ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SceneDepth);
-    ctx.sceneHDR.bindGBuffer(GLBindings::PostTextureSlots::SceneGBuffer);
+    ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SCENE_DEPTH);
+    ctx.sceneHDR.bindGBuffer(GLBindings::PostTextureSlots::SCENE_GBUFFER);
 
     m_shader->setUniformMatrix4fv("u_invProjection", view.camera.invProjection);
     m_shader->setUniform1f("u_proj11",    view.camera.projection[1][1]);

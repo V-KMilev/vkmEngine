@@ -16,11 +16,11 @@ namespace Vkm::Engine {
 /**
  * @brief Draws the UI overlay on top of the composited scene.
  *
- * The last pass: once Composite has resolved the scene to the backbuffer, this
- * streams the frame's UIDrawData (built by the UISystem, carried in the
- * RenderView) into a dynamic vertex buffer and draws it under an orthographic
- * projection over the viewport rect. Alpha-blended with depth off - a flat 2D
- * layer. A no-op when the draw list is empty.
+ * Once Composite has resolved the scene to the backbuffer, this streams the
+ * frame's UIDrawData (built by the UISystem, carried in the RenderView) into a
+ * dynamic vertex buffer and draws it under an orthographic projection over the
+ * viewport rect. Alpha-blended with depth off - a flat 2D layer. A no-op when
+ * the draw list is empty.
  */
 class GLUIPass : public GLPass {
     public:

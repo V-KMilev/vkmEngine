@@ -5,6 +5,7 @@
 #include <utility>
 #include <vector>
 
+#include "framework/scene_io_controller.h"
 #include "framework/component_edit.h"
 #include "framework/editor_common.h"
 #include "ui/editor_style.h"
@@ -47,7 +48,7 @@ bool isHierarchyNode(const Scene& scene, EntityId id) {
 }
 } // namespace
 
-void HierarchyPanel::draw(EditorContext& ec) {
+void HierarchyPanel::draw(EditorContext& ec, SceneIOController& sceneIO) {
     FrameContext& ctx   = ec.frame;
     EditorState&  state = ec.state;
     auto& scene     = ctx.scene;
@@ -153,12 +154,12 @@ void HierarchyPanel::draw(EditorContext& ec) {
                     if (state.isSelected(id)) f |= ImGuiTreeNodeFlags_Selected;
                     char name[64];
                     getEntityDisplayName(scene, id, name, sizeof(name));
-                    entityTreeNode(reinterpret_cast<void*>(static_cast<uintptr_t>(id.index)),
+                    entityTreeNode(reinterpret_cast<void*>(static_cast<uintptr_t>(id.slot())),
                                    f, entityIconKind(scene, id), name);
                     if (ImGui::IsItemClicked()) rowClickSelect(state, id);
-                    drawEntityContextMenu(scene, resources, state, id);
+                    drawEntityContextMenu(scene, resources, state, sceneIO, id);
                 } else {
-                    drawEntityNode(scene, resources, state, id);
+                    drawEntityNode(scene, resources, state, sceneIO, id);
                 }
             }
         }
@@ -179,7 +180,8 @@ void HierarchyPanel::draw(EditorContext& ec) {
 }
 
 void HierarchyPanel::drawEntityNode(Scene& scene, ResourceManager& resources,
-                                    EditorState& state, EntityId entity) {
+                                    EditorState& state, SceneIOController& sceneIO,
+                                    EntityId entity) {
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow
                              | ImGuiTreeNodeFlags_SpanAvailWidth
                              | ImGuiTreeNodeFlags_FramePadding;
@@ -194,7 +196,7 @@ void HierarchyPanel::drawEntityNode(Scene& scene, ResourceManager& resources,
     // Inline rename: the tree-node label becomes an InputText. Commit on
     // Enter / focus loss, cancel on Escape; F2 / double-click starts a session.
     if (m_renameTarget == entity) {
-        ImGui::PushID(static_cast<int>(entity.index));
+        ImGui::PushID(static_cast<int>(entity.slot()));
         if (m_renameFocusNeeded) {
             ImGui::SetKeyboardFocusHere();
             m_renameFocusNeeded = false;
@@ -232,7 +234,7 @@ void HierarchyPanel::drawEntityNode(Scene& scene, ResourceManager& resources,
     }
 
     bool nodeOpen = entityTreeNode(
-        reinterpret_cast<void*>(static_cast<uintptr_t>(entity.index)),
+        reinterpret_cast<void*>(static_cast<uintptr_t>(entity.slot())),
         flags, entityIconKind(scene, entity), name);
 
     if (state.selectedEntity == entity && ImGui::IsItemHovered()
@@ -249,7 +251,7 @@ void HierarchyPanel::drawEntityNode(Scene& scene, ResourceManager& resources,
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayNormal) && !ImGui::IsItemToggledOpen()) {
         ImGui::BeginTooltip();
         ImGui::TextUnformatted(name);
-        ImGui::TextDisabled("#%u", entity.index);
+        ImGui::TextDisabled("#%u", entity.slot());
         ImGui::Separator();
         char comps[160] = {};
         size_t off = 0;
@@ -306,18 +308,19 @@ void HierarchyPanel::drawEntityNode(Scene& scene, ResourceManager& resources,
 
     if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) rowClickSelect(state, entity);
 
-    drawEntityContextMenu(scene, resources, state, entity);
+    drawEntityContextMenu(scene, resources, state, sceneIO, entity);
 
     if (nodeOpen && hasChildren) {
         HierarchyOperations::forEachChild(scene, entity, [&](EntityId child) {
-            drawEntityNode(scene, resources, state, child);
+            drawEntityNode(scene, resources, state, sceneIO, child);
         });
         ImGui::TreePop();
     }
 }
 
 void HierarchyPanel::drawEntityContextMenu(Scene& scene, ResourceManager& resources,
-                                           EditorState& state, EntityId entity) {
+                                           EditorState& state, SceneIOController& sceneIO,
+                                           EntityId entity) {
     if (!ImGui::BeginPopupContextItem()) return;
 
     char ctxName[64];
@@ -338,11 +341,15 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, ResourceManager& resour
         else             EditorActions::deleteEntity(scene, state, entity);
     }
 
-    // Saving an instance back over its own prefab is how a prefab is edited, so
-    // this is offered whether or not the entity already is one.
-    if (ImGui::MenuItem("Save as Prefab")) {
+    // Saving an instance back over its own prefab is how a prefab is edited, so this
+    // is offered on any entity - but not during play, where the pose is where physics
+    // put it and writing that over the prefab loses the authored one for good.
+    const bool playing = sceneIO.isPlaying();
+    if (ImGui::MenuItem("Save as Prefab", nullptr, false, !playing)) {
         EditorActions::saveAsPrefab(scene, resources, state, entity);
     }
+    if (playing && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Stop the play session to save a prefab");
 
     if (scene.has<Hierarchy>(entity) && scene.get<Hierarchy>(entity).parent) {
         if (ImGui::MenuItem("Unparent")) {

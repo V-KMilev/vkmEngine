@@ -41,8 +41,12 @@ class ScreenTriangle {
         /// Unbind the empty VAO.
         void unbind() const { m_vao.unbind(); }
 
-        /// Issue the 3-vertex fullscreen draw. The VAO must already be bound
-        /// (call bind() first, or use draw() for the one-shot case).
+        /**
+         * @brief Issue the 3-vertex fullscreen draw.
+         *
+         * The VAO must already be bound: call bind() first, or draw() for the
+         * one-shot case.
+         */
         void emit() const { glDrawArrays(GL_TRIANGLES, 0, 3); }
 
         /// One-shot fullscreen triangle: bind + emit + unbind.

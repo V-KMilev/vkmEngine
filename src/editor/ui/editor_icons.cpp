@@ -10,7 +10,7 @@ namespace Vkm::Engine {
 
 namespace {
 
-ImFont* s_iconFont = nullptr;
+ImFont* g_iconFont = nullptr;
 
 // The disc an entity marker sits on. Dark and translucent rather than opaque,
 // so it lifts the glyph off a bright sky without hiding the geometry under it.
@@ -94,14 +94,14 @@ void encodeUtf8(ImWchar cp, char out[5]) {
 
 bool loadEditorIconFont(const char* path) {
     ImGuiIO& io = ImGui::GetIO();
-    s_iconFont  = io.Fonts->AddFontFromFileTTF(path, 15.0f);
-    return s_iconFont != nullptr;
+    g_iconFont  = io.Fonts->AddFontFromFileTTF(path, 15.0f);
+    return g_iconFont != nullptr;
 }
 
 void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 col) {
     // The designed set: the mapped Lucide glyph, centered in the (c, r) frame
     // the caller asked for.
-    if (s_iconFont) {
+    if (g_iconFont) {
         if (const ImWchar cp = iconCodepoint(icon)) {
             // Lucide art fills ~20/24 of its em, so the glyph is drawn at 2.3r
             // to occupy the (c, r) frame the caller reserved for it.
@@ -113,17 +113,17 @@ void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 co
             // icon fonts hang their art off the baseline, so em-box centering
             // sat every glyph slightly high (clipping tops in tight rows).
             ImVec2 pos;
-            ImFontBaked* baked = s_iconFont->GetFontBaked(sz);
+            ImFontBaked* baked = g_iconFont->GetFontBaked(sz);
             const ImFontGlyph* g = baked ? baked->FindGlyphNoFallback(static_cast<ImWchar>(cp)) : nullptr;
             if (g) {
                 pos = ImVec2(std::floor(c.x - (g->X0 + g->X1) * 0.5f),
                              std::floor(c.y - (g->Y0 + g->Y1) * 0.5f));
             } else {
-                const ImVec2 ts = s_iconFont->CalcTextSizeA(sz, FLT_MAX, 0.0f, txt);
+                const ImVec2 ts = g_iconFont->CalcTextSizeA(sz, FLT_MAX, 0.0f, txt);
                 pos = ImVec2(std::floor(c.x - ts.x * 0.5f),
                              std::floor(c.y - sz * 0.5f));
             }
-            dl->AddText(s_iconFont, sz, pos, col, txt);
+            dl->AddText(g_iconFont, sz, pos, col, txt);
             return;
         }
     }

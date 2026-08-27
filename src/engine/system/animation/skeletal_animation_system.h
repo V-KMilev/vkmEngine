@@ -37,9 +37,11 @@ struct SkeletonAsset;
  * crossed comes last and is serial again, because the EventBus is main-thread
  * only and the evaluate pass has no business publishing anything.
  *
- * Time advances only when simulation time elapsed, but composition runs every
- * frame regardless, so scrubbing an Animator in the editor while paused shows
- * the pose it names. Composition is idempotent, so that costs nothing.
+ * Time advances on the tick, because a clip is simulation. The pose those
+ * times name is composed there too, and again on every frame the clock is
+ * paused - which is what lets an Animator scrubbed in the editor show the pose
+ * its time names, with no tick to run. Composition is idempotent, so the paused
+ * path costs one rebuild and changes nothing else.
  */
 class SkeletalAnimationSystem : public System {
     public:
@@ -54,6 +56,8 @@ class SkeletalAnimationSystem : public System {
 
     public:
         void update(FrameContext& ctx) override;
+        void fixedUpdate(FrameContext& ctx) override;
+        bool hasFixedUpdate() const override { return true; }
 
     private:
         /**

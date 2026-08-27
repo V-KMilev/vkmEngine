@@ -44,6 +44,18 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
         out.name          = doc.value("name",          out.name);
         out.engineVersion = doc.value("engineVersion", out.engineVersion);
         out.entryScene    = doc.value("entryScene",    out.entryScene);
+        out.tickRate      = doc.value("tickRate",      out.tickRate);
+
+        // An entry with no image names nothing to show, so it is skipped rather
+        // than becoming a black pause of its own.
+        if (doc.contains("splash") && doc["splash"].is_array()) {
+            for (const nlohmann::json& entry : doc["splash"]) {
+                SplashEntry splash;
+                splash.image   = entry.value("image", std::string{});
+                splash.seconds = entry.value("seconds", splash.seconds);
+                if (!splash.image.empty()) out.splash.push_back(std::move(splash));
+            }
+        }
     } catch (const std::exception& e) {
         LOG_ERROR("Malformed '%s': %s", file.string().c_str(), e.what());
         return false;

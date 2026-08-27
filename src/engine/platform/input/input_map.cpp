@@ -1,8 +1,13 @@
+#define VKM_LOG_CATEGORY "INPUT"
+
 #include "platform/input/input_map.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <glm/common.hpp>
+
+#include "logger.h"
 
 #include "platform/window/input_handle.h"
 
@@ -21,13 +26,32 @@ constexpr float ACTIVE_THRESHOLD = 0.5f;
 
 } // namespace
 
+void InputMap::assignSlot(Action& entry, const std::string& action) {
+    if (entry.slot >= 0) return;
+    if (m_nextSlot >= MAX_INPUT_ACTIONS) {
+        LOG_WARNING("Input action '%s' is past the %u-action command limit; it is "
+                    "readable this frame but absent from every command",
+                    action.c_str(), MAX_INPUT_ACTIONS);
+        return;
+    }
+    entry.slot = static_cast<int>(m_nextSlot++);
+}
+
 void InputMap::define(const std::string& action, std::vector<InputBinding> bindings) {
     Action& entry = m_actions[action];
     entry.bindings = std::move(bindings);
+    assignSlot(entry, action);
 }
 
 void InputMap::addBinding(const std::string& action, InputBinding binding) {
-    m_actions[action].bindings.push_back(binding);
+    Action& entry = m_actions[action];
+    entry.bindings.push_back(binding);
+    assignSlot(entry, action);
+}
+
+int InputMap::indexOf(const std::string& action) const {
+    const Action* entry = find(action);
+    return entry ? entry->slot : -1;
 }
 
 void InputMap::clearBindings(const std::string& action) {
@@ -67,7 +91,33 @@ void InputMap::update(const InputHandle& input) {
 
         // Opposing bindings cancel, so holding both directions reads as zero.
         action.value = glm::clamp(value, -1.0f, 1.0f);
+
+        // Edges are latched here rather than read at tick time: one seen on a
+        // frame that no tick follows would otherwise be lost entirely.
+        if (action.slot < 0) continue;
+        const uint32_t bit = uint32_t(1) << action.slot;
+        const bool wasActive = std::abs(action.lastValue) >= ACTIVE_THRESHOLD;
+        const bool isActive  = std::abs(action.value)     >= ACTIVE_THRESHOLD;
+        if (isActive && !wasActive) m_pendingPressed  |= bit;
+        if (!isActive && wasActive) m_pendingReleased |= bit;
     }
+}
+
+void InputMap::beginTick(uint32_t tick) {
+    m_command.sequence = m_nextSequence++;
+    m_command.tick     = tick;
+    m_command.view     = m_view;
+    m_command.axis.fill(0.0f);
+    for (const auto& [_, action] : m_actions) {
+        if (action.slot >= 0) m_command.axis[static_cast<size_t>(action.slot)] = action.value;
+    }
+
+    // Drained, not copied: the second tick of a slow frame must not see the
+    // press the first one already consumed.
+    m_command.pressed  = m_pendingPressed;
+    m_command.released = m_pendingReleased;
+    m_pendingPressed  = 0;
+    m_pendingReleased = 0;
 }
 
 bool InputMap::held(const std::string& action) const {

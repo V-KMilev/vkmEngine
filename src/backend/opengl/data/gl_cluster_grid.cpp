@@ -22,7 +22,7 @@ void GLClusterGrid::init() {
 }
 
 void GLClusterGrid::bind() const {
-    if (m_ssbo) m_ssbo->bindBase(GLBindings::SSBOBindingPoints::ClusterGrid);
+    if (m_ssbo) m_ssbo->bindBase(GLBindings::SSBOBindingPoints::CLUSTER_GRID);
 }
 
 } // namespace Vkm::Engine

@@ -5,8 +5,8 @@
 namespace Vkm::Engine {
 
 AsyncLoadQueue& AsyncLoadQueue::get() {
-    static AsyncLoadQueue instance;
-    return instance;
+    static AsyncLoadQueue s_instance;
+    return s_instance;
 }
 
 void AsyncLoadQueue::pushTexture(TextureLoadCompletion completion) {

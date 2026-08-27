@@ -16,6 +16,14 @@ repo, and `Vkm::Engine::Project` (`src/engine/io/project.h`) is everything it sa
 | `name` | Display name; titles the window, names the packaged exe by default |
 | `engineVersion` | Engine version the project was authored against; logged on load |
 | `entryScene` | Scene to boot, relative to the project root |
+| `tickRate` | Simulation ticks per second; 64 by default, clamped to a sane range |
+
+`tickRate` is the project's rather than the engine's because it is not only a
+simulation detail: for a networked game it is the rate the wire is clocked by,
+and a competitive shooter and a turn-based game want different answers out of
+the same build. Each host applies it where it learns its project - the runtime
+once before the loop, the editor on every project open, since two projects
+opened in one session are two cadences.
 
 A missing or malformed `project.json` is **not** fatal - the defaults stand and
 an unnamed project opens, which is what a fresh directory should do.
@@ -135,8 +143,8 @@ non-zero cook.
 |-----------|---------------|--------------|------------|
 | Log file cannot be opened | exit 1 | exit 1 | exit 1 |
 | Window / GL context cannot be created | exit 1 (throws) | exit 1 (throws) | n/a - headless |
-| No gameplay module in the project's `bin/` | exit 1 | opens, logs INFO | n/a |
-| Module present but will not load (version, entry, unreadable) | exit 1 | opens, logs WARNING | n/a |
+| No gameplay module in the project's `bin/` | exit 1 | opens, logs WARNING | n/a |
+| Module present but will not load (version, entry, unreadable) | exit 1 | opens, logs ERROR | n/a |
 | Entry scene named but will not load (`SceneBoot::Failed`) | exit 1 | opens on the default scene; error toast and a Bottom > Errors entry | exit 1 |
 | No entry scene and no `vkmBuildScene` (`SceneBoot::Default`) | exit 1 | opens on the default scene | exit 0 - nothing to cook |
 | No entry scene, module builds the world (`SceneBoot::Project`) | plays it | opens it | exit 0 - nothing to cook |
@@ -150,12 +158,14 @@ reads `entryScene` and loads that file directly.
 Two judgments behind that table:
 
 - **A game is its module.** Behaviors are created through the registry the module
-  fills, so with no module `ComponentSerializer` drops every behavior in the
-  scene - one `[SCRIPT] [ERROR]` line each - and the runtime plays a world that
-  draws and does nothing. Exit 0 would report that as a game that played, which
-  is what the exit code is spent on here. The editor warns instead, because a
-  module that will not load is fixed by rebuilding it and reloading, and you
-  need the editor open to do that.
+  fills, so with no module `ComponentSerializer` can construct none of them. It
+  keeps each one as an `UnknownBehavior` - the type name and its property object,
+  held as text and written back out unread - so a save while the module is
+  missing loses nothing, and the runtime plays a world that draws and does
+  nothing. Exit 0 would report that as a game that played, which
+  is what the exit code is spent on here. The editor logs it and opens anyway,
+  because a module that will not load is fixed by rebuilding it and reloading,
+  and you need the editor open to do that.
 - **A broken entry scene is not fatal to the editor**, which is the thing you
   open a broken scene in. The default scene stands in carrying no save path, so
   a save cannot overwrite the file that failed to load; the reason is in the log
@@ -576,6 +586,22 @@ For every component, there is a `save(const T&) -> json` and a
 `load(const json&, T&)`. They are intentionally mechanical, one pair
 per component.
 
+Two kinds take a second argument, for the same reason: a reference cannot
+survive a file as the handle it is in memory. A component that names **assets**
+takes the `ResourceManager`, which turns a handle into a name and back. A
+component that names **entities** takes the carrier - an `EntityNamer` to save,
+an `EntityResolver` to load - because what an entity is called depends entirely
+on what is carrying the reference. A scene names it by its slot, a prefab by its
+place in the file, an undo snapshot by the slot it is restoring, and a
+connection will name it its own way.
+
+That symmetry is load-bearing rather than tidy. The same raw number means three
+different things depending on which carrier it came from - a live slot in this
+`Scene`, a slot saved in a file, a one-shifted index into a prefab's entity
+list - and a field like `Joint::connected` cannot say which. Taking the carrier
+as an argument makes the number impossible to read without naming the namespace
+it is in, and `EntityId` being its own type makes writing one back impossible.
+
 Today's coverage, the flat list in `scene_serializer.cpp`:
 
 - `Name`, `Transform`, `Camera`, `Light`, `Animation`
@@ -597,8 +623,11 @@ Today's coverage, the flat list in `scene_serializer.cpp`:
   part with no `shape` key - every part in a scene written before capsules
   existed - reads as a box.
 - `ScriptComponent` (JSON key `"Script"`): each behavior stored by its registered
-  type name and recreated through `BehaviorRegistry` on load (unknown types are
-  dropped), with its authored fields in a `properties` object beside it -
+  type name and recreated through `BehaviorRegistry` on load - a type the
+  registry does not know is kept verbatim as an `UnknownBehavior` and written
+  back out unread, because an unregistered type says the module is missing and
+  not that the author wants the behavior gone. Authored fields sit in a
+  `properties` object beside it -
   `Behavior::visitFields` walks them in both directions, and enums are written by
   name so reordering one does not invalidate saved scenes. See
   [Scripting](scripting.md).
@@ -613,8 +642,10 @@ both directions walk it. Render tuning (GTAO / bloom / MSAA / ...) lives in
 
 `Mesh` references handles by `name` rather than by `Storage` index;
 that is what makes assets a stable identity across save/load.
-`Hierarchy::parent` stores the old-file entity slot index, which the
-loader uses directly because entities are recreated at the same slot.
+`Hierarchy::parent` stores an index into the file's own entity table, not an
+`EntityId`, and it is the one component the flat list does not carry: the
+parent it names may not exist when the child is read, so `saveComponents`
+writes it and the loader's second pass wires it up once every entity exists.
 
 ### Adding a component to the round trip
 
@@ -626,10 +657,14 @@ Two localised edits, no registry table, no virtual dispatch:
    adds a third overload beside them, `emitAssetRefs(const T&, AssetRefs&)`,
    which records the handles it holds without writing anything.
 2. A row in `VKM_SCENE_COMPONENTS`, at the top of `component_serializer.h` -
-   `P(Type, "Key")`, or `R(Type, "Key")` when the component references assets
-   and its save/load take the `ResourceManager`. Saving, loading, the known-key
-   set behind the "unknown component key" drift warning, and the `assets` block
-   `saveAssetsForEntities` builds all expand from that one list.
+   `P(Type, "Key")` for a component that refers to nothing outside itself,
+   `R(Type, "Key")` when it names assets and its save/load take the
+   `ResourceManager`, `E(Type, "Key")` when it names entities and they take the
+   `EntityNamer` / `EntityResolver`. The letter says what the component refers
+   to, not what it is - every row is an ordinary data component. Saving,
+   loading, the known-key set behind the "unknown component key" drift warning,
+   and the `assets` block `saveAssetsForEntities` builds all expand from that
+   one list.
 
 Those were four hand-kept lists, and the failure was silent in both directions:
 a key that was saved and registered but never loaded round-tripped to nothing,
@@ -643,6 +678,12 @@ fails to compile at the walk, naming the component that needs one.
 The key is spelled out in the row rather than derived from the type name, since
 it is the format - `ScriptComponent` is stored as `"Script"`. `Hierarchy` is not
 a row: it is written explicitly and read by the loader's second pass.
+
+Scene load runs in two passes for the same reason an `E` row exists: every
+entity is created at its saved slot before any component is read, because a
+slot is only an entity once they all exist. The entry checks - an unusable id,
+a repeated one - belong to that first pass, since after it every id is alive
+and a second aliveness test would call every entity a duplicate of itself.
 
 The editor solves the same problem the same way one directory over
 (`VKM_EDITOR_SNAPSHOT_COMPONENTS`), and a component's *field* list is already

@@ -35,7 +35,7 @@ void GLParticlePass::drawBatch(const std::vector<ParticleData>& batch) {
     } else {
         m_instances->update(batch.data(), bytes);
     }
-    m_instances->bindBase(GLBindings::SSBOBindingPoints::Particles);
+    m_instances->bindBase(GLBindings::SSBOBindingPoints::PARTICLES);
 
     // Attribute-less: per-particle data is read from the SSBO by gl_InstanceID.
     m_vao.bind();

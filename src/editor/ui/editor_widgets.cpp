@@ -165,7 +165,7 @@ bool styledCollapsingHeader(const char* title, const ImVec4& accent,
         ImGui::GetColorU32(accent));
     return open;
 }
-}  // namespace
+} // namespace
 
 bool beginComponentCard(const char* title, const ImVec4& accent,
                         bool defaultOpen, bool* removeClicked) {
@@ -263,7 +263,7 @@ float keptWidth(const char* s, size_t head, size_t tail, size_t len) {
     return ImGui::CalcTextSize(s, s + head).x + ImGui::CalcTextSize(s + tail, s + len).x;
 }
 
-}  // namespace
+} // namespace
 
 void clippedLine(const char* text, float maxWidth, bool dim) {
     const char* str = (text && text[0]) ? text : "(unnamed)";
@@ -389,7 +389,7 @@ void getEntityDisplayName(const Scene& scene, EntityId id,
             return;
         }
     }
-    snprintf(buf, bufSize, "%s %u", entityLabelOf(scene, id).name, id.index);
+    snprintf(buf, bufSize, "%s %u", entityLabelOf(scene, id).name, id.slot());
 }
 
 namespace {

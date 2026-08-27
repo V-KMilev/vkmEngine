@@ -11,6 +11,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/epsilon.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include "logger.h"
@@ -52,6 +53,7 @@
 #include "system/physics/collision/narrowphase.h"
 #include "system/physics/collision/support.h"
 #include "system/physics/query/query.h"
+#include "system/script/script_component.h"
 
 namespace {
 
@@ -354,28 +356,10 @@ void simulate(Scene& scene, int ticks) {
     }
 }
 
-// The reason spherecast was built. A kerb is not a wall, and a character that
-// stops at one is a character that cannot use stairs.
-// A kerb is one step; a staircase is the same step taken eight times without
-// touching the ground in between, and only the first of those was ever tested.
-// The climb used to end the tick after it began - rising is what stops a riser
-// blocking - so the character mounted one tread and then bounced against the
-// next for as long as anyone held the key.
-// A body resting on a support narrower than itself. The SAT used to hand this
-// to the edge-edge case - two horizontal edges cross to a vertical axis, the
-// face normal's twin, and under a whisker of tilt the duplicate won by float
-// noise - so a four-point face manifold became one corner, and the position
-// correction rocked the body on that corner for ever at constant speed.
-// Every collider in a loaded scene is offered to rebuildMeshBvh, and almost
-// none of them have a mesh part. A bounds check that read the part before
-// proving it existed dereferenced a null pointer on the first box in the lab -
-// which the suite missed entirely, because no test had ever handed this a
-// collider that was not already a mesh.
 // The joint contract says `connected` may name an entity with no Rigidbody, and
 // that the joint then holds the body to a fixed point in the world. Combined
 // with an unset distance - "whatever they were apart on the first tick" - that
 // path read a map iterator the branch above had already proved to be end().
-
 void testDistanceJointPinnedToWorld() {
     std::printf("A rope pinned to a world point:\n");
 
@@ -413,9 +397,17 @@ void testDistanceJointPinnedToWorld() {
     check("a weight on an auto-length rope hangs where it started",
           std::fabs(y - 1.5f) < 0.15f);
     check("  and the length it measured is recorded",
-          std::fabs(scene.get<Joint>(weight).distance - 2.5f) < 0.05f);
+          std::fabs(scene.get<Joint>(weight).resolvedDistance - 2.5f) < 0.05f);
+    // The request outlives the answer: the measurement lands in
+    // resolvedDistance, so a saved scene still asks to be measured rather than
+    // carrying a length nobody chose.
+    check("  while the authored field still asks to be measured",
+          scene.get<Joint>(weight).distance < 0.0f);
 }
 
+// Every collider in a loaded scene is offered to rebuildMeshBvh, and almost
+// none of them have a mesh part, so the bounds check must prove the part exists
+// before reading it.
 void testRebuildMeshBvhWithoutMesh() {
     std::printf("Rebuilding a tree that has no mesh:\n");
 
@@ -446,6 +438,10 @@ void testRebuildMeshBvhWithoutMesh() {
           ragged.meshNodes.empty());
 }
 
+// A body resting on a support narrower than itself. Two horizontal edges cross
+// to a vertical axis that duplicates the face normal, and under a whisker of
+// tilt float noise can hand the SAT that duplicate: the four-point face
+// manifold becomes one corner, and the position correction rocks the body on it.
 void testRestOnNarrowSupport() {
     std::printf("Rest on a narrow support:\n");
 
@@ -581,6 +577,121 @@ void testPrefabKeepsItsJoints() {
     std::filesystem::remove(path);
 }
 
+// The unit a tick consumes. Input arrives on the frame clock and simulation
+// runs on the tick clock, so a fixed update reading frame state directly would
+// drop a tap taken between two ticks and repeat a press across every tick of a
+// slow frame; the command is built per tick to close both.
+// The latch surviving a frame with no tick, and draining so a second tick does
+// not re-see a press, are not covered: both need key events, and key state
+// reaches the engine only through GLFW callbacks.
+// A command has to say everything a tick did with it. Axes alone do not: a
+// character steers relative to a view, the view turns on the render clock, and
+// a tick that asks the scene for it reads whatever the last frame left there.
+void testCommandCarriesTheView() {
+    std::printf("A command carries the view it was aimed with:\n");
+
+    InputMap map;
+    const glm::quat aimed  = glm::angleAxis(glm::radians(90.0f),  Math::WORLD_UP);
+    const glm::quat turned = glm::angleAxis(glm::radians(-30.0f), Math::WORLD_UP);
+
+    map.setView(aimed);
+    map.beginTick(1);
+    check("the tick's command takes the view it was built with",
+          glm::all(glm::epsilonEqual(map.command().view, aimed, 1e-6f)));
+
+    // The frame turns the camera again, which is what a frame does. The tick
+    // already running must not follow it, or replaying its command walks
+    // somewhere the original did not.
+    map.setView(turned);
+    check("  and does not follow the view once it is built",
+          glm::all(glm::epsilonEqual(map.command().view, aimed, 1e-6f)));
+
+    map.beginTick(2);
+    check("  while the next tick takes the view as it now stands",
+          glm::all(glm::epsilonEqual(map.command().view, turned, 1e-6f)));
+}
+
+void testInputCommand() {
+    std::printf("Per-tick input command:\n");
+
+    InputMap map;
+    check("an undefined action has no command slot", map.indexOf("Nothing") < 0);
+
+    map.define("Move/Forward", { InputBinding{InputSource::Key, 87, 1.0f} });
+    map.define("Jump",         { InputBinding{InputSource::Key, 32, 1.0f} });
+    check("defining an action gives it a slot", map.indexOf("Move/Forward") == 0);
+    check("  and the next one the next slot", map.indexOf("Jump") == 1);
+
+    // Stable for the session: a replayed command has to mean what it meant when
+    // it was recorded, which it cannot if a slot moved under it.
+    map.addBinding("Move/Forward", InputBinding{InputSource::Key, 265, 1.0f});
+    map.define("Move/Forward", { InputBinding{InputSource::Key, 87, 1.0f} });
+    check("  and redefining an action keeps it", map.indexOf("Move/Forward") == 0);
+
+    // Before the first tick a reader gets "nothing held" rather than whatever
+    // the last session left, so a system that runs early is not fed stale input.
+    check("the pre-tick command is zeroed",
+          map.command().sequence == 0 && map.command().pressed == 0
+       && near(map.command().axis[0], 0.0f));
+
+    map.beginTick(7);
+    const InputCommand first = map.command();
+    check("a built command carries the tick it drives", first.tick == 7);
+    check("  and a sequence number of its own", first.sequence == 1);
+
+    map.beginTick(8);
+    check("the next tick is a new command", map.command().tick == 8
+       && map.command().sequence == 2);
+
+    // Sequence and tick are separate because a replay re-runs old ticks: the
+    // tick repeats, the sequence that acknowledged it does not.
+    check("  so sequence and tick are not the same number",
+          map.command().sequence != map.command().tick);
+
+    // An action past the cap is still readable at frame rate; it just has no
+    // room in a command, which is a warning rather than a failure.
+    for (int i = 0; i < static_cast<int>(MAX_INPUT_ACTIONS) + 4; ++i) {
+        map.define("Filler" + std::to_string(i), { InputBinding{InputSource::Key, 100 + i, 1.0f} });
+    }
+    check("an action past the command cap has no slot",
+          map.indexOf("Filler" + std::to_string(MAX_INPUT_ACTIONS + 3)) < 0);
+    check("  while the ones that fit kept theirs", map.indexOf("Move/Forward") == 0);
+}
+
+// The cadence a project asks for is the cadence fixedUpdate runs at, and for a
+// networked game the rate the wire is clocked by.
+void testTickRate() {
+    std::printf("Tick rate:\n");
+
+    Clock clock;
+    check("a fresh clock ticks at the engine default",
+          near(clock.getFixedStep(), 1.0f / static_cast<float>(Config::DEFAULT_TICK_RATE)));
+
+    clock.setTickRate(128);
+    check("a project's rate becomes the fixed step", near(clock.getFixedStep(), 1.0f / 128.0f));
+
+    // A hand-edited project.json is the reason for the bounds: a rate of zero
+    // is a step of zero, and a step of zero is a tick loop that never drains.
+    clock.setTickRate(0);
+    check("  zero is clamped rather than dividing by nothing",
+          clock.getFixedStep() > 0.0f
+       && near(clock.getFixedStep(), 1.0f / static_cast<float>(Config::MIN_TICK_RATE)));
+
+    clock.setTickRate(100000);
+    check("  and an absurd rate is clamped too",
+          near(clock.getFixedStep(), 1.0f / static_cast<float>(Config::MAX_TICK_RATE)));
+
+    // The accumulator is a duration, so a faster project buys more ticks per
+    // hitch rather than a longer stall.
+    clock.setTickRate(64);
+    const int budget = static_cast<int>(Config::MAX_FRAME_ACCUMULATOR / clock.getFixedStep());
+    check("  the hitch budget is ticks, not seconds of stall", budget >= 16);
+}
+
+// A kerb is one step; a staircase is the same step taken eight times without
+// touching the ground in between. The climb ends the tick after it begins -
+// rising is what stops a riser blocking - so a character that mounts one tread
+// must not bounce off the next.
 void testCharacterStaircase() {
     std::printf("Character staircase:\n");
 
@@ -618,6 +729,8 @@ void testCharacterStaircase() {
           highest < (HALF + RADIUS) + top + RISER);
 }
 
+// A kerb is not a wall, and a character that stops at one is a character that
+// cannot use stairs.
 void testCharacterStepUp() {
     std::printf("Character step-up:\n");
 
@@ -1505,6 +1618,58 @@ void testImportedHierarchy() {
               == group);
 }
 
+// No gameplay module is loaded here, so BehaviorRegistry is empty and every
+// type name in a scene document is unknown - the state the editor is in after a
+// failed build.
+void testUnknownBehaviorsSurviveASave() {
+    std::printf("A behavior whose module is missing:\n");
+
+    const nlohmann::json authored = {
+        {"behaviors", nlohmann::json::array({
+            {{"type", "LabWalker"},
+             {"properties", {{"speed", 6.5f}, {"jumpHeight", 1.25f}}}},
+            {{"type", "SpinMe"}, {"properties", {{"rpm", 30.0f}}}},
+        })}
+    };
+
+    ScriptComponent sc;
+    ComponentSerializer::load(authored, sc);
+
+    check("cannot be constructed", sc.behaviors.empty());
+    check("  but is kept, not dropped", sc.unknown.size() == 2);
+
+    // The property text is opaque here on purpose: the code that knows what
+    // "speed" means is the module that is not loaded.
+    const nlohmann::json again = ComponentSerializer::save(sc);
+    check("  and saving writes it back unchanged", again == authored);
+
+    // The list's order is the order the behaviors run in, so a held one has to
+    // remember where it sat. Appending them all at the end round-trips
+    // byte-identically here - every entry is unknown - and reorders the moment
+    // one type in the list is registered and the rest are not.
+    check("  remembering where each one sat",
+          sc.unknown.size() == 2 && sc.unknown[0].index == 0 && sc.unknown[1].index == 1);
+
+    // Recording the position is only half of it; the save has to read it back.
+    // A list that is entirely held round-trips in order either way, so the
+    // assertion has to put one out of order and watch it come back sorted -
+    // which is what an implementation that appends cannot do.
+    ScriptComponent shuffled;
+    shuffled.unknown.push_back({"Second", "{}", 1});
+    shuffled.unknown.push_back({"First",  "{}", 0});
+    const nlohmann::json emitted = ComponentSerializer::save(shuffled);
+    check("  and the save puts each one back at its own position",
+          emitted["behaviors"].size() == 2
+          && emitted["behaviors"][0]["type"] == "First"
+          && emitted["behaviors"][1]["type"] == "Second");
+
+    // The editor opens, saves, and opens again, so the loss to catch is the one
+    // that only shows on the second pass.
+    ScriptComponent reloaded;
+    ComponentSerializer::load(again, reloaded);
+    check("  through any number of saves", ComponentSerializer::save(reloaded) == authored);
+}
+
 // What survives being written down. A component whose fields round-trip is not
 // the same as one that still works afterwards, and both ragdolls and joints
 // carry a reference to another entity, which is the part that goes wrong.
@@ -1515,11 +1680,18 @@ void testComponentRoundTrip() {
     before.active = true;
     const glm::mat4 offset =
         glm::translate(glm::mat4(1.0f), {0.0f, 1.5f, 0.0f});
-    before.bones.push_back({3, EntityId{7, 2}, offset});
-    before.bones.push_back({5, EntityId{9, 1}, glm::mat4(1.0f)});
+    before.bones.push_back({3, EntityId{StorageIndex{7, 2}}, offset});
+    before.bones.push_back({5, EntityId{StorageIndex{9, 1}}, glm::mat4(1.0f)});
+
+    // A carrier naming entities by slot, which is what a scene file does, so a
+    // reference that survives this round trip survives a save and load.
+    auto bySlot   = [](EntityId e) { return e.slot(); };
+    auto toSlotId = [](uint32_t slot) { return EntityId{StorageIndex{slot, 0}}; };
+    const EntityNamer    name(bySlot);
+    const EntityResolver resolve(toSlotId);
 
     Ragdoll after;
-    ComponentSerializer::load(ComponentSerializer::save(before), after);
+    ComponentSerializer::load(ComponentSerializer::save(before, name), after, resolve);
 
     check("a ragdoll keeps its switch", after.active);
     // The bodies are entities the scene saves anyway. Losing the mapping does
@@ -1529,8 +1701,8 @@ void testComponentRoundTrip() {
     if (after.bones.size() == 2) {
         check("    naming the same bones", after.bones[0].bone == 3
                                         && after.bones[1].bone == 5);
-        check("    and the same body slots", after.bones[0].body.index == 7
-                                          && after.bones[1].body.index == 9);
+        check("    and the same body slots", after.bones[0].body.slot() == 7
+                                          && after.bones[1].body.slot() == 9);
         // Without this the body sits where the bone is, and every limb is
         // offset by half its own length the moment physics takes over.
         check("    keeping the offset from body to bone",
@@ -1539,17 +1711,17 @@ void testComponentRoundTrip() {
 
     Joint joint;
     joint.type = JointType::Distance;
-    joint.connected = EntityId{4, 3};
+    joint.connected = EntityId{StorageIndex{4, 3}};
     joint.anchor = {0.0f, 0.5f, 0.0f};
     joint.distance = 2.5f;
     joint.stiffness = 0.4f;
     joint.collideConnected = true;
 
     Joint loaded;
-    ComponentSerializer::load(ComponentSerializer::save(joint), loaded);
+    ComponentSerializer::load(ComponentSerializer::save(joint, name), loaded, resolve);
 
     check("a joint keeps its type", loaded.type == JointType::Distance);
-    check("  its connected slot", loaded.connected.index == 4);
+    check("  its connected slot", loaded.connected.slot() == 4);
     check("  its anchor", near(loaded.anchor.y, 0.5f));
     check("  its length and give", near(loaded.distance, 2.5f)
                                 && near(loaded.stiffness, 0.4f));
@@ -1638,7 +1810,7 @@ void testRagdollFallsTwice() {
         body.isKinematic = true;
     }
     scene.get<Ragdoll>(rig).active = true;
-    ragdolls.update(ctx);
+    ragdolls.fixedUpdate(ctx);
 
     check("activating a rested ragdoll wakes its bones",
           !scene.get<Rigidbody>(hips).sleeping
@@ -1647,7 +1819,7 @@ void testRagdollFallsTwice() {
     const float before =
         HierarchyOperations::computeWorldMatrix(scene, hips)[3][1];
     for (int i = 0; i < 200; ++i) {
-        ragdolls.update(ctx);
+        ragdolls.fixedUpdate(ctx);
         simulate(scene, 1);
     }
     const float after =
@@ -1953,7 +2125,7 @@ void testRagdollAsHitboxes() {
     WindowManager window;
     InputMap input;
     FrameContext ctx{scene, resources, clock, events, window, input};
-    ragdolls.update(ctx);
+    ragdolls.fixedUpdate(ctx);
 
     // Asked for limbs, because the character's own collider is in the way of an
     // unfiltered ray - which is itself the reason the bones are on their own
@@ -2016,6 +2188,9 @@ int main() {
     testRaycastFilters();
     testSpherecast();
     testCharacterStepUp();
+    testTickRate();
+    testInputCommand();
+    testCommandCarriesTheView();
     testCharacterStaircase();
     testJointStiffnessIsIterationIndependent();
     testJointWakesASleeper();
@@ -2031,6 +2206,7 @@ int main() {
     testOffsetMeshPartCollides();
     testImportedHierarchy();
     testComponentRoundTrip();
+    testUnknownBehaviorsSurviveASave();
     testQueryAgainstNewShapes();
     testRagdollFallsTwice();
     testRagdollPose();
