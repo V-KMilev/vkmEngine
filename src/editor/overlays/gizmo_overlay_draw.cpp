@@ -5,6 +5,7 @@
 #include <limits>
 #include <vector>
 
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include "framework/editor_common.h"
@@ -738,7 +739,7 @@ void GizmoOverlay::drawSkeletonGizmos(EditorContext& ec) {
 
     ec.frame.scene.forEach<Animator, Transform>(
             [&](EntityId id, const Animator& animator, const Transform& tf) {
-        const PoseSlice* slice = poses->sliceOf(id.index);
+        const PoseSlice* slice = poses->sliceOf(id.slot());
         if (!slice || slice->count == 0) return;
         if (!animator.skeleton || !resources.isAlive(animator.skeleton)) return;
         const SkeletonAsset& skeleton = resources.get(animator.skeleton);
@@ -785,7 +786,7 @@ void GizmoOverlay::drawSkeletonGizmos(EditorContext& ec) {
             for (int axis = 0; axis < 3; ++axis) {
                 const glm::vec3 dir = glm::vec3(world[b][axis]);
                 const float len = glm::length(dir);
-                if (len <= 1e-6f) continue;
+                if (len <= glm::epsilon<float>()) continue;
                 wireSegment(dl, vp, origin, origin + dir * (axisLength / len),
                             vpMin, vpSize, AXIS_COLS[axis], 1.5f);
             }

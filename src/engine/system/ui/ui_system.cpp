@@ -58,7 +58,7 @@ void UISystem::update(FrameContext& ctx) {
     std::sort(m_canvases.begin(), m_canvases.end(),
         [](const CanvasRef& a, const CanvasRef& b) {
             if (a.sortOrder != b.sortOrder) return a.sortOrder < b.sortOrder;
-            return a.entity.index < b.entity.index;
+            return a.entity.slot() < b.entity.slot();
         });
 
     // Each canvas spans the whole viewport.

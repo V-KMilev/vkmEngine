@@ -32,7 +32,9 @@ class AnimationSystem : public System {
         AnimationSystem& operator=(AnimationSystem && other) = delete;
 
     public:
-        void update(FrameContext& ctx) override;
+        /// Simulation runs on the tick; nothing here answers to the frame.
+        void fixedUpdate(FrameContext& ctx) override;
+        bool hasFixedUpdate() const override { return true; }
 
     private:
         static void applyAnimation(const Animation& animation, Transform& transform);

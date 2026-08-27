@@ -4,7 +4,6 @@
 #include <cmath>
 
 #include "core/clock.h"
-#include "core/math/random.h"
 #include "ecs/scene.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/component/core/world_transform.h"
@@ -15,7 +14,7 @@
 namespace Vkm::Engine {
 
 void ParticleSystem::update(FrameContext& ctx) {
-    PROFILE_SCOPE("ParticleSystem::update");
+    PROFILE_SCOPE("ParticleSystem");
 
     auto&       scene = ctx.scene;
     const float dt    = ctx.clock.getSimDelta();
@@ -54,9 +53,9 @@ void ParticleSystem::update(FrameContext& ctx) {
                 Particle p;
                 p.position = origin;
                 p.velocity = emitter.velocity + glm::vec3(
-                    Math::Random::range(-emitter.spread, emitter.spread),
-                    Math::Random::range(-emitter.spread, emitter.spread),
-                    Math::Random::range(-emitter.spread, emitter.spread));
+                    m_rng.nextFloat(-emitter.spread, emitter.spread),
+                    m_rng.nextFloat(-emitter.spread, emitter.spread),
+                    m_rng.nextFloat(-emitter.spread, emitter.spread));
                 p.age      = 0.0f;
                 p.lifetime = emitter.lifetime;
                 emitter.particles.push_back(p);

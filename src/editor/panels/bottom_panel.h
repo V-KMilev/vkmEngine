@@ -8,6 +8,7 @@
 namespace Vkm::Engine {
 
 struct EditorContext;
+class SceneIOController;
 class EngineErrorLog;
 
 /**
@@ -38,10 +39,10 @@ class BottomPanel {
         BottomPanel& operator=(BottomPanel && other) = delete;
 
     public:
-        void draw(EditorContext& ec);
+        void draw(EditorContext& ec, SceneIOController& sceneIO);
 
     private:
-        void drawAnimationSection(EditorContext& ec);
+        void drawAnimationSection(EditorContext& ec, SceneIOController& sceneIO);
         void drawErrorsSection(EngineErrorLog& errorLog);
 
     private:

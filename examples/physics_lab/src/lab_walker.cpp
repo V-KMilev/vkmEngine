@@ -123,48 +123,65 @@ void LabWalker::onStart() {
 }
 
 void LabWalker::onUpdate(float dt) {
+    // The camera follows the frame, not the tick: a mouse quantised to the
+    // simulation rate is felt at once, where steering a tick late is not.
+    followCamera(dt);
+
+    // Which leaves the tick unable to ask where the view points, because by the
+    // time it runs the answer has moved. Handed to the command instead, so a
+    // tick steers by the view its own input was aimed with.
+    Scene& scene = *context().scene;
+    scene.forEach<Camera, Transform>([&](EntityId, Camera& camera, Transform& view) {
+        if (camera.active) context().input->setView(view.rotation);
+    });
+}
+
+void LabWalker::onFixedUpdate(float dt) {
     Scene& scene = *context().scene;
     if (!scene.has<CharacterController>(m_entity)) return;
 
-    // Before the movement, not after it. Steering is read off the camera, so a
-    // camera placed afterwards means a frame where the stick is measured
-    // against a view the player has already turned away from - felt as the
-    // character setting off the old way for a step whenever the mouse moves.
-    followCamera(dt);
-
-    InputMap& input = *context().input;
+    // The command this tick was given, not whatever the device holds now: input
+    // arrives on the frame clock, so reading the device here would drop a tap
+    // taken between two ticks and repeat a press across every tick of a slow
+    // frame.
+    const InputMap& input = *context().input;
+    const InputCommand& command = input.command();
+    const auto axis = [&](const std::string& action) {
+        const int slot = input.indexOf(action);
+        return slot >= 0 ? command.axis[static_cast<size_t>(slot)] : 0.0f;
+    };
     const glm::vec2 stick = {
-        input.axis(ACTION_RIGHT)   - input.axis(ACTION_LEFT),
-        input.axis(ACTION_FORWARD) - input.axis(ACTION_BACK)
+        axis(ACTION_RIGHT)   - axis(ACTION_LEFT),
+        axis(ACTION_FORWARD) - axis(ACTION_BACK)
     };
 
     // Camera-relative, flattened: a course is walked while looking at it, and
     // world-relative controls make that unusable the moment the view turns.
+    // Taken from the command, not from the camera: the camera has turned since
+    // this tick's input was read, and a tick that asks it walks somewhere the
+    // same command replayed would not.
     glm::vec3 forward = {0.0f, 0.0f, -1.0f};
     glm::vec3 right   = {1.0f, 0.0f, 0.0f};   // screen-right is +X
-    scene.forEach<Camera, Transform>(
-            [&](EntityId, Camera& camera, Transform& view) {
-        if (!camera.active) return;
-        // Both come from the same rotation, and both are taken or neither is:
-        // a forward from the camera beside a right from the default is a basis
-        // that does not describe any view, and the character would strafe at an
-        // angle to what it walks.
-        const glm::vec3 look = Math::computeForward(view.rotation);
-        const glm::vec3 side = Math::computeRight(view.rotation);
-        const glm::vec3 flatLook = {look.x, 0.0f, look.z};
-        const glm::vec3 flatSide = {side.x, 0.0f, side.z};
 
-        // Straight down has no horizontal direction to steer by. The orbit's
-        // pitch clamp keeps the camera off it, so this is the case of some
-        // other camera being active rather than one this control can reach.
-        if (glm::dot(flatLook, flatLook) <= glm::epsilon<float>()) return;
-        if (glm::dot(flatSide, flatSide) <= glm::epsilon<float>()) return;
-
+    // Both come from the same rotation, and both are taken or neither is: a
+    // forward from the view beside a right from the default is a basis that
+    // describes no view, and the character would strafe at an angle to what it
+    // walks. Straight down has no horizontal direction at all, which is what
+    // the length test catches.
+    const glm::vec3 look = Math::computeForward(command.view);
+    const glm::vec3 side = Math::computeRight(command.view);
+    const glm::vec3 flatLook = {look.x, 0.0f, look.z};
+    const glm::vec3 flatSide = {side.x, 0.0f, side.z};
+    if (glm::dot(flatLook, flatLook) > glm::epsilon<float>()
+        && glm::dot(flatSide, flatSide) > glm::epsilon<float>()) {
         forward = glm::normalize(flatLook);
-        right = glm::normalize(flatSide);
-    });
+        right   = glm::normalize(flatSide);
+    }
 
-    const bool walking = input.held(ACTION_WALK);
+    // From the command like every other action: held() answers for the device
+    // this frame, and a tick that asks the device is the thing the command
+    // exists to stop. A bound key reads 1 or 0, so the halfway point splits it.
+    const bool walking = axis(ACTION_WALK) > 0.5f;
     const float speed = walking ? walkSpeed : runSpeed;
 
     glm::vec3 move = right * stick.x + forward * stick.y;
@@ -174,17 +191,14 @@ void LabWalker::onUpdate(float dt) {
 
     CharacterController& controller = scene.get<CharacterController>(m_entity);
     controller.moveInput = move;
-    if (input.pressed(ACTION_JUMP)) controller.jumpRequested = true;
+    const int jumpSlot = input.indexOf(ACTION_JUMP);
+    if (jumpSlot >= 0 && (command.pressed & (uint32_t(1) << jumpSlot))) {
+        controller.jumpRequested = true;
+    }
 
-    // Face the way it travels, which is the only thing that makes a strafe read
-    // as a turn.
-    //
-    // This aims the entity, and the entity's forward is -Z. A model has its own
-    // idea of which way it faces and no engine can know it - this one's toes
-    // are six units along +Z from its hips, so its art faces +Z and its rig
-    // node carries a half turn in the scene to agree. That correction belongs
-    // on the model rather than here, or every behavior that aims anything would
-    // need to know how each asset was authored.
+    // Face the way it travels: this aims the entity, whose forward is -Z. A
+    // model that faces another way carries the correction on its rig node in
+    // the scene, not here - see docs/reference/system/animation.md.
     if (moving && scene.has<Transform>(m_entity)) {
         Transform& body = scene.get<Transform>(m_entity);
         body.rotation = glm::slerp(body.rotation, Math::lookRotation(move),

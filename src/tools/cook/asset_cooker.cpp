@@ -1,4 +1,4 @@
-#define VKM_LOG_CATEGORY "ASSET_COOK"
+#define VKM_LOG_CATEGORY "COOK"
 
 #include "cook/asset_cooker.h"
 

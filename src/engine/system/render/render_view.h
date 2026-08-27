@@ -14,6 +14,7 @@
 #include "system/render/data/particle_data.h"
 #include "system/render/data/irradiance_volume_data.h"
 #include "system/render/render_settings.h"
+#include "system/splash/splash_frame.h"
 #include "system/ui/ui_draw_data.h"
 #include "ecs/environment.h"
 
@@ -36,6 +37,7 @@ struct RenderView {
     uint32_t viewportY      = 0;
     uint32_t viewportWidth  = 0;
     uint32_t viewportHeight = 0;
+    uint32_t surfaceWidth   = 0;                   ///< Full backbuffer width the viewport rect sits within (what a window-wide pass measures against).
     uint32_t surfaceHeight  = 0;                   ///< Full backbuffer height the viewport rect sits within (lets a bottom-left backend flip the rect).
 
     CameraData camera;
@@ -76,6 +78,7 @@ struct RenderView {
     RenderSettings                settings;        ///< Editable render tuning (copied from the RenderSystem each frame).
     Environment                   environment;     ///< Lighting environment (HDR/skybox), copied from the Scene each frame in build().
     UIDrawData                    ui;              ///< Screen-space UI overlay, copied from the UISystem's draw list each frame.
+    SplashFrame                   splash;          ///< Startup logo over black, copied from the SplashSystem each frame.
 
     /**
      * @brief Scene::epoch() at build time: which world these items came from.
@@ -96,6 +99,9 @@ struct RenderView {
          * emitted empty (cleared, not stale) and the rest is skipped.
          *
          * @param ui The UISystem's draw list for this frame, or null if none.
+         * @param splash The SplashSystem's product, or null once the sequence
+         *               is over. Survives the no-camera path like @p ui: the
+         *               startup frames it covers have no camera yet.
          * @param poses SkeletalAnimationSystem's pose for this frame, or null
          *              if nothing posed anything; every item resolves its
          *              palette out of it, so a null one draws bind poses. A
@@ -106,6 +112,7 @@ struct RenderView {
             const Scene& scene,
             const Visibility& visibility,
             const UIDrawData* ui,
+            const SplashFrame* splash,
             const PoseBuffer* poses
         );
 

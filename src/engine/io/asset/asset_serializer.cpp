@@ -30,9 +30,7 @@
 #include "system/script/script_component.h"
 #include "core/reflect.h"
 
-namespace Vkm::Engine {
-
-namespace AssetSerializer {
+namespace Vkm::Engine::AssetSerializer {
 
 namespace {
 
@@ -289,7 +287,7 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
     // disagree. A row with no emitAssetRefs overload stops the build here.
     ComponentSerializer::AssetRefs refs;
     for (EntityId id : entities) {
-        VKM_SCENE_COMPONENTS(VKM_SCENE_SKIP_P, VKM_SCENE_EMIT_R)
+        VKM_SCENE_COMPONENTS(VKM_SCENE_SKIP_P, VKM_SCENE_EMIT_R, VKM_SCENE_SKIP_P)
 
         // The other half of keeping a name the load could not resolve: without
         // an entry here the next load never asks the library for it, so the
@@ -519,12 +517,20 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources, Lo
     // Order matters: textures -> materials (which resolve texture refs by name)
     // -> skeletons -> clips (each names the rig its bone indices address) ->
     // meshes. Sounds depend on nothing and nothing on them, so they come last.
-    const auto [texC, texS] = loadAssetSection<TextureAsset      >(assetsJson, "textures",  AssetType::Texture,       assetFactory().createTexture,       "Texture",  resources, mode);
-    const auto [matC, matS] = loadAssetSection<MaterialAsset     >(assetsJson, "materials", AssetType::Material,      assetFactory().createMaterial,      "Material", resources, mode);
-    const auto [sklC, sklS] = loadAssetSection<SkeletonAsset     >(assetsJson, "skeletons", AssetType::Skeleton,      assetFactory().createSkeleton,      "Skeleton", resources, mode);
-    const auto [clpC, clpS] = loadAssetSection<AnimationClipAsset>(assetsJson, "clips",     AssetType::AnimationClip, assetFactory().createAnimationClip, "Clip",     resources, mode);
-    const auto [mshC, mshS] = loadAssetSection<MeshAsset         >(assetsJson, "meshes",    AssetType::Mesh,          assetFactory().createMesh,          "Mesh",     resources, mode);
-    const auto [sndC, sndS] = loadAssetSection<AudioClipAsset    >(assetsJson, "sounds",    AssetType::AudioClip,     assetFactory().createAudioClip,     "Sound",    resources, mode);
+    const AssetFactory& factory = assetFactory();
+
+    const auto [texC, texS] = loadAssetSection<TextureAsset>(
+        assetsJson, "textures", AssetType::Texture, factory.createTexture, "Texture", resources, mode);
+    const auto [matC, matS] = loadAssetSection<MaterialAsset>(
+        assetsJson, "materials", AssetType::Material, factory.createMaterial, "Material", resources, mode);
+    const auto [sklC, sklS] = loadAssetSection<SkeletonAsset>(
+        assetsJson, "skeletons", AssetType::Skeleton, factory.createSkeleton, "Skeleton", resources, mode);
+    const auto [clpC, clpS] = loadAssetSection<AnimationClipAsset>(
+        assetsJson, "clips", AssetType::AnimationClip, factory.createAnimationClip, "Clip", resources, mode);
+    const auto [mshC, mshS] = loadAssetSection<MeshAsset>(
+        assetsJson, "meshes", AssetType::Mesh, factory.createMesh, "Mesh", resources, mode);
+    const auto [sndC, sndS] = loadAssetSection<AudioClipAsset>(
+        assetsJson, "sounds", AssetType::AudioClip, factory.createAudioClip, "Sound", resources, mode);
 
     // Silent when the block asked for nothing new: a prefab carries its own
     // assets and is instantiated once per instance, per scene load, per
@@ -537,6 +543,4 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources, Lo
     return true;
 }
 
-} // namespace AssetSerializer
-
-} // namespace Vkm::Engine
+} // namespace Vkm::Engine::AssetSerializer

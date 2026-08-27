@@ -43,7 +43,7 @@ class Scene {
          * @return The created entity's id.
          */
         EntityId createEntity() {
-            return m_entityAllocator.allocate();
+            return EntityId{m_entityAllocator.allocate()};
         }
 
         /**
@@ -55,7 +55,7 @@ class Scene {
          * load, without any id-remap step.
          */
         EntityId createEntityAt(uint32_t index) {
-            return m_entityAllocator.allocateAt(index);
+            return EntityId{m_entityAllocator.allocateAt(index)};
         }
 
         /**
@@ -80,12 +80,12 @@ class Scene {
             detachFromHierarchy(*this, id);
 
             for (auto& set : m_components) {
-                if (set) set->removeIfPresent(id.index);
+                if (set) set->removeIfPresent(id.slot());
             }
-            m_entityAllocator.free(id);
+            m_entityAllocator.free(id.key);
         }
 
-        bool isAlive(EntityId id)           const { return m_entityAllocator.has(id); }
+        bool isAlive(EntityId id)           const { return m_entityAllocator.has(id.key); }
         bool isAliveAtIndex(uint32_t index) const { return m_entityAllocator.isAliveAtIndex(index); }
         size_t entityCount()                const { return m_entityAllocator.size(); }
 
@@ -101,7 +101,7 @@ class Scene {
          * @return The entity id for that slot, null when the slot is out of reach.
          */
         EntityId entityAt(uint32_t index) const {
-            return m_entityAllocator.handleAt(index);
+            return EntityId{m_entityAllocator.handleAt(index)};
         }
 
     public:
@@ -114,7 +114,7 @@ class Scene {
         auto& add(EntityId entity, T && component) {
             VKM_ASSERT(isAlive(entity), "Scene::add called with dead/stale entity");
             using U = std::remove_cv_t<std::remove_reference_t<T>>;
-            return getStorage<U>().add(entity.index, std::forward<T>(component));
+            return getStorage<U>().add(entity.slot(), std::forward<T>(component));
         }
 
         /**
@@ -124,8 +124,8 @@ class Scene {
         void remove(EntityId entity) {
             VKM_ASSERT(isAlive(entity), "Scene::remove called with dead/stale entity");
             auto* store = findStorage<T>();
-            if (store && store->contains(entity.index)) {
-                store->remove(entity.index);
+            if (store && store->contains(entity.slot())) {
+                store->remove(entity.slot());
             }
         }
 
@@ -136,7 +136,7 @@ class Scene {
         bool has(EntityId entity) const {
             VKM_ASSERT(isAlive(entity), "Scene::has called with dead/stale entity");
             auto* store = findStorage<T>();
-            return store && store->contains(entity.index);
+            return store && store->contains(entity.slot());
         }
 
         /**
@@ -147,7 +147,7 @@ class Scene {
             VKM_ASSERT(isAlive(entity), "Scene::get called with dead/stale entity");
             auto* store = findStorage<T>();
             VKM_ASSERT(store, "Scene::get called for unregistered component type");
-            return store->get(entity.index);
+            return store->get(entity.slot());
         }
 
         /**
@@ -158,7 +158,7 @@ class Scene {
             VKM_ASSERT(isAlive(entity), "Scene::get called with dead/stale entity");
             auto* store = findStorage<T>();
             VKM_ASSERT(store, "Scene::get called for unregistered component type");
-            return store->get(entity.index);
+            return store->get(entity.slot());
         }
 
         /**

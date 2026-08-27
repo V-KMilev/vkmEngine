@@ -54,27 +54,26 @@ does:
 | Stage      | Systems                                                                         |
 |------------|---------------------------------------------------------------------------------|
 | Input      | `CameraControllerSystem`                                                              |
-| Simulation | (EventBus flush), `AsyncLoaderSystem`, `BehaviorSystem`, `AnimationSystem`, `SkeletalAnimationSystem`, `ParticleSystem`, `PhysicsSystem`, `CharacterControllerSystem`, `SkySystem` |
+| Simulation | (EventBus flush), `SplashSystem` (the startup logo; frame-clock presentation, publishes `ctx.splash`), `AsyncLoaderSystem`, `BehaviorSystem`, `AnimationSystem`, `SkeletalAnimationSystem`, `ParticleSystem`, `PhysicsSystem`, `CharacterControllerSystem`, `SkySystem` |
 | Transform  | `BoneSocketSystem`, `HierarchySystem`, `UISystem` (the game UI; runs in **both** binaries), `AudioSystem` (after the world resolve it reads poses from) |
 | Visibility | `VisibilitySystem`                                                            |
 | Render     | `RenderSystem`                                                                |
 | UI         | `EditorSystem` (editor binary only)                                           |
-
-`FileWatcherSystem` is an Input-stage `System` the engine provides but `setupEngineApp`
-does not register today (see [system/io.md](system/io.md)).
 
 Place a new system by responsibility and let stage order schedule it - see
 [../guides/engine.md](../guides/engine.md#absolutes).
 
 ## fixedUpdate
 
-`System::fixedUpdate(FrameContext&)` runs on an accumulator clocked at the fixed
-timestep (1/60 s), clamped at a max accumulator (0.25 s) to prevent the
-spiral-of-death after a frame hitch. It is the deterministic-simulation hook
-(physics, networking tick); take the step length from `ctx.clock.getFixedStep()`,
-never from the frame delta. `System::hasFixedUpdate()` declares that a system has
-a real fixedUpdate body, and the loop calls `fixedUpdate()` only on the systems
-that answer true.
+`System::fixedUpdate(FrameContext&)` runs on an accumulator clocked at the
+project's tick rate (`project.json`'s `tickRate`, 64 by default), clamped at a
+max accumulator (0.25 s) to prevent the spiral-of-death after a frame hitch.
+The cap is a duration rather than a tick count, so a project that raises its
+rate buys more ticks per hitch rather than a longer stall. It is the
+deterministic-simulation hook (physics, networking tick); take the step length
+from `ctx.clock.getFixedStep()`, never from the frame delta.
+`System::hasFixedUpdate()` declares that a system has a real fixedUpdate body,
+and the loop calls `fixedUpdate()` only on the systems that answer true.
 
 ## FrameContext
 
@@ -96,17 +95,19 @@ struct FrameContext {
     const Visibility* visibility = nullptr;  // VisibilitySystem's culling result
     const PoseBuffer* poses      = nullptr;  // SkeletalAnimationSystem's rig poses
     const UIDrawData* ui         = nullptr;  // UISystem's draw list
+    const SplashFrame* splash    = nullptr;  // SplashSystem's logo + fade
 };
 ```
 
 Time is read off the clock, not the context: `ctx.clock.getDeltaTime()` is real
 elapsed seconds (input, camera, UI, file watching), `getSimDelta()` is that delta
 scaled by play state (0 while paused, exactly one step while single-stepping), and
-`getFixedStep()` is the constant 1/60 to use in `fixedUpdate()`. Simulation systems
-read the sim delta so pause, time-scale, and single-step apply uniformly; anything
-that must advance regardless of play state reads the real delta. A system reads
-the timeline its responsibility lives on, so `AudioSystem` runs every frame
-whether or not the simulation advanced - pausing a game must not cut its music
+`getFixedStep()` is the project's tick length, to use in `fixedUpdate()`.
+Simulation systems read the sim delta so pause, time-scale, and single-step
+apply uniformly; anything that must advance regardless of play state reads the
+real delta. A system reads the timeline its responsibility lives on, so
+`AudioSystem` runs every frame whether or not the simulation advanced - pausing
+a game must not cut its music
 (see [Audio](system/audio.md#time-pause-and-the-editor)).
 
 Gameplay gets the same split rather than a choice of system: a behavior's
@@ -125,7 +126,8 @@ Cross-cutting compile-time limits live in `core/engine_config.h` (treat it as th
 source of truth for exact names/values): `MAX_LIGHTS = 256`;
 `MAX_SHADOW_CASTERS_2D = 6` 2D atlas tiles (4 reserved for the first directional
 light's CSM cascades via `NUM_CASCADES`) + `MAX_SHADOW_CASTERS_CUBE = 2` cube
-slots; the `FIXED_TIME_STEP` (1/60) and the `MAX_FRAME_ACCUMULATOR` (0.25 s) cap.
+slots; `DEFAULT_TICK_RATE` (64) with `MIN_TICK_RATE` / `MAX_TICK_RATE` bounding
+what a project may ask for, and the `MAX_FRAME_ACCUMULATOR` (0.25 s) cap.
 The CMake build generates `shaders/_generated/engine_config.glsl` from this header
 so cross-language constants *can* be single-sourced - though the forward shaders
 still hand-define their copies today (see
@@ -140,7 +142,7 @@ Engine code, single include root `src/engine/`:
 | Path                       | Contents                                                                 |
 |----------------------------|--------------------------------------------------------------------------|
 | `core/`                    | `Engine`, `System`, `FrameContext`, `SystemStage`, `Clock`, `engine_config`, `reflect` |
-| `core/math/`               | math helpers (rotation, axes, random, easing)                            |
+| `core/math/`               | math helpers (rotation, axes, bounds, frustum, projection, random, easing) |
 | `core/memory/`             | `TypeId`, `SparseSet`, `SlotAllocator`, `StorageIndex`                   |
 | `ecs/`                     | `Scene`, `EntityId`, `Environment`                                        |
 | `ecs/component/core/`      | `Transform`, `WorldTransform`, `Hierarchy`, `Name`                       |
@@ -156,12 +158,11 @@ Engine code, single include root `src/engine/`:
 | `system/camera/`           | `CameraControllerSystem`                                                       |
 | `core/event/`              | `EventBus` (typed pub/sub; engine-owned infrastructure)                  |
 | `system/hierarchy/`        | `HierarchySystem`, `HierarchyOperations` (free functions)               |
-| `system/io/`               | `FileWatcherSystem` (polling hot-reload)                                       |
 | `system/physics/`          | `PhysicsSystem`, `CharacterControllerSystem`, `collision/`               |
 | `system/render/`           | `RenderSystem`, `RenderBackend`, `RenderView`, `RenderSettings`, `data/` |
 | `system/script/`           | `BehaviorSystem`, `Behavior`, `ReflectedBehavior`, `BehaviorRegistry`, `ScriptComponent`, `ScriptModule` (see [system/scripting.md](system/scripting.md)) |
-| `system/visibility/`       | `VisibilitySystem`, `Visibility`, `VisibilityContext`, `BoundsUtils`    |
-| `system/visibility/culling/` | `FrustumCuller`, `DistanceCulling`, `ScreenSizeCulling`                |
+| `system/visibility/`       | `VisibilitySystem`, `Visibility`, `VisibilityContext` (AABB helpers are `core/math/bounds.h`) |
+| `system/visibility/culling/` | `FrustumCuller`, `DistanceCuller`, `ScreenSizeCuller`                  |
 | `resource/`                | `ResourceManager`, `Resource`, `Handle`, `texture_format`               |
 | `resource/asset/`          | `MeshAsset`, `MaterialAsset`, `TextureAsset`, `FontAsset`, `SkeletonAsset`, `AnimationClipAsset`, `AudioClipAsset` |
 | `io/`                      | `json_vec`, `project_paths` (shared I/O helpers)                          |

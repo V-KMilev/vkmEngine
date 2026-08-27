@@ -1,9 +1,24 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
+
+#include "core/engine_config.h"
 
 namespace Vkm::Engine {
+
+/**
+ * @brief One logo a project shows at startup, and how long for.
+ *
+ * seconds is the time held at full opacity; the fade in and out are on top of
+ * it, so an entry occupies more wall time than it names.
+ */
+struct SplashEntry {
+    std::string image;            ///< Image to show, relative to the project root.
+    float       seconds = 1.5f;   ///< Time held at full opacity.
+};
 
 /**
  * @brief What a project.json says about the game it describes.
@@ -19,6 +34,10 @@ struct Project {
     std::string name         = "Untitled";  ///< Display name; titles the window.
     std::string engineVersion;              ///< Engine version this was authored against.
     std::string entryScene;                 ///< Scene to boot, relative to the project root.
+    uint32_t    tickRate = Config::DEFAULT_TICK_RATE;  ///< Simulation ticks per second.
+
+    /// Logos shown after the engine's own, in the order listed. Usually empty.
+    std::vector<SplashEntry> splash;
 };
 
 /**

@@ -180,10 +180,10 @@ bool GLInstanceBatcher::bindCullBuffers() {
     if (m_models.empty() || !m_visibleBuffer || !m_boundsBuffer || !m_runOfBuffer
         || !m_commandBuffer) return false;
 
-    m_boundsBuffer->bindBase(SSBO::CullBounds);
-    m_runOfBuffer->bindBase(SSBO::CullRunIndex);
-    m_commandBuffer->bindBase(SSBO::CullCommands);
-    VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::CullVisible, m_visibleBuffer->getID()));
+    m_boundsBuffer->bindBase(SSBO::CULL_BOUNDS);
+    m_runOfBuffer->bindBase(SSBO::CULL_RUN_INDEX);
+    m_commandBuffer->bindBase(SSBO::CULL_COMMANDS);
+    VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::CULL_VISIBLE, m_visibleBuffer->getID()));
 
     // From here the frame's draws read the index list the cull is about to write.
     m_culled = true;
@@ -194,9 +194,9 @@ void GLInstanceBatcher::bindInstanceData() const {
     // The transforms, and where each instance's bones start. The index buffer is
     // bound as a vertex attribute, not as storage - the fetch resolves the
     // indirection, so the shader never reads it.
-    VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::InstanceModels,  m_modelBuffer.id()));
-    VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::InstanceNormals, m_normalBuffer.id()));
-    if (m_skinning && m_skinBaseBuffer) m_skinBaseBuffer->bindBase(SSBO::InstanceSkinBase);
+    VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::INSTANCE_MODELS,  m_modelBuffer.id()));
+    VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::INSTANCE_NORMALS, m_normalBuffer.id()));
+    if (m_skinning && m_skinBaseBuffer) m_skinBaseBuffer->bindBase(SSBO::INSTANCE_SKIN_BASE);
 }
 
 void GLInstanceBatcher::drawRun(const InstanceRun& run, uint32_t runIndex) {

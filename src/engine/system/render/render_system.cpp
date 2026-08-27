@@ -23,10 +23,11 @@ void RenderSystem::update(FrameContext& ctx) {
     m_view.viewportY      = ctx.window.sceneViewportY();
     m_view.viewportWidth  = ctx.window.sceneViewportWidth();
     m_view.viewportHeight = ctx.window.sceneViewportHeight();
+    m_view.surfaceWidth   = static_cast<uint32_t>(ctx.window.getWidth());
     m_view.surfaceHeight  = static_cast<uint32_t>(ctx.window.getHeight());
     m_view.settings       = m_settings;
 
-    m_view.build(ctx.scene, *ctx.visibility, ctx.ui, ctx.poses);
+    m_view.build(ctx.scene, *ctx.visibility, ctx.ui, ctx.splash, ctx.poses);
     m_backend->render(m_view, ctx.resources);
 }
 

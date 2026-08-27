@@ -57,7 +57,7 @@ void GLFogPass::execute(GLFrameContext& ctx) {
     // The light SSBO, the cluster grid and the ShadowBlock UBO are bound already; the
     // 2D atlas is not, because the forward pass binds it and runs later. The inject
     // shader reads the sun's cascades from it and never samples the point-light cubes.
-    ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::Atlas2D);
+    ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::ATLAS_2D);
 
     ctx.fog.bindScatterImage(0, GL_WRITE_ONLY);
     m_inject->bind();

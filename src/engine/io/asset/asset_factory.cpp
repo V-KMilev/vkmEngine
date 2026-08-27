@@ -3,8 +3,8 @@
 namespace Vkm::Engine {
 
 AssetFactory& assetFactory() {
-    static AssetFactory f;
-    return f;
+    static AssetFactory s_factory;
+    return s_factory;
 }
 
 } // namespace Vkm::Engine

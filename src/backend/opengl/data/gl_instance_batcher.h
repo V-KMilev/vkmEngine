@@ -224,9 +224,13 @@ class GLInstanceBatcher {
         Vkm::GL::InstanceBuffer m_modelBuffer;   ///< Every instance's model matrix, batch order.
         Vkm::GL::InstanceBuffer m_normalBuffer;  ///< Every instance's normal matrix, batch order.
 
-        /// Which of them each drawn instance is. Vertex storage, because the
-        /// index arrives as an attribute so that GL's baseInstance offsets it
-        /// per run; also bound as storage, because the cull writes into it.
+        /**
+         * @brief Which of them each drawn instance is.
+         *
+         * Vertex storage, because the index arrives as an attribute so that
+         * GL's baseInstance offsets it per run; also bound as storage, because
+         * the cull writes into it.
+         */
         std::unique_ptr<Vkm::GL::VertexBuffer> m_visibleBuffer;
 
         std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_boundsBuffer;

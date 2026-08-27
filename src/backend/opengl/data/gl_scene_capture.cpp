@@ -92,7 +92,7 @@ void GLSceneCapture::captureCube(Vkm::GL::Context& gl, const glm::vec3& position
             m_skybox.setUniformMatrix4fv("u_projection", proj);
             m_skybox.setUniform1f("u_iblIntensity", 1.0f);
             m_skybox.setUniform1i("u_hasSun", 0);
-            m_ibl->bindEnvCube(GLBindings::IBLTextureSlots::EnvCube);
+            m_ibl->bindEnvCube(GLBindings::IBLTextureSlots::ENV_CUBE);
             m_cube->draw();
             gl.setDepthFunc(GL_LESS);
             gl.setDepthWrite(true);
@@ -111,7 +111,7 @@ void GLSceneCapture::captureCube(Vkm::GL::Context& gl, const glm::vec3& position
             const InstanceRun& run = runs[i];
             const GLMaterial* material = m_glView->getMaterial(run.material);
             if (material && material != boundMaterial) {
-                material->bind(GLBindings::UBOBindingPoints::Material);
+                material->bind(GLBindings::UBOBindingPoints::MATERIAL);
                 material->bindTextures(*m_glView);
                 boundMaterial = material;
             }
@@ -127,9 +127,9 @@ void bindOfflinePbrUniforms(Vkm::GL::Shader& pbr, const GLIBL& ibl, float iblInt
     pbr.setUniform1i("u_hasIBL", hasIBL ? 1 : 0);
     pbr.setUniform1f("u_iblIntensity", iblIntensity);
     if (hasIBL) {
-        ibl.bindIrradiance(GLBindings::IBLTextureSlots::Irradiance);
-        ibl.bindPrefilter(GLBindings::IBLTextureSlots::Prefilter);
-        ibl.bindBrdf(GLBindings::IBLTextureSlots::BrdfLUT);
+        ibl.bindIrradiance(GLBindings::IBLTextureSlots::IRRADIANCE);
+        ibl.bindPrefilter(GLBindings::IBLTextureSlots::PREFILTER);
+        ibl.bindBrdf(GLBindings::IBLTextureSlots::BRDF_LUT);
     }
     pbr.setUniform1i("u_hasSSAO", 0);
     pbr.setUniform1i("u_hasSceneColor", 0);

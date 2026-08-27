@@ -55,8 +55,8 @@ void GLDecalPass::execute(GLFrameContext& ctx) {
     ctx.gl.setCullFace(GL_FRONT);  // back faces only: one layer, and it survives the camera being inside the box
 
     m_shader->bind();
-    ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SceneDepth);
-    ctx.sceneHDR.bindGBuffer(GLBindings::PostTextureSlots::SceneGBuffer);
+    ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SCENE_DEPTH);
+    ctx.sceneHDR.bindGBuffer(GLBindings::PostTextureSlots::SCENE_GBUFFER);
 
     m_shader->setUniformMatrix4fv("u_viewProj",    view.camera.viewProjection);
     m_shader->setUniformMatrix4fv("u_invViewProj", view.camera.invViewProj);
@@ -71,7 +71,7 @@ void GLDecalPass::execute(GLFrameContext& ctx) {
     for (const DecalData& decal : view.decals) {
         const GLMaterial* material = glView.getMaterial(decal.material);
         if (!material) continue;
-        material->bind(GLBindings::UBOBindingPoints::Material);
+        material->bind(GLBindings::UBOBindingPoints::MATERIAL);
         material->bindTextures(glView);
 
         // Decals project along the entity's forward (+Z; see core/math/axes.h).

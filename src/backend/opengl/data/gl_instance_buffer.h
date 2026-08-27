@@ -33,14 +33,21 @@ class InstanceBuffer {
         InstanceBuffer() = default;
         ~InstanceBuffer() = default;
 
-        InstanceBuffer(const InstanceBuffer&) = delete;
-        InstanceBuffer& operator=(const InstanceBuffer&) = delete;
-        InstanceBuffer(InstanceBuffer&&) = delete;
-        InstanceBuffer& operator=(InstanceBuffer&&) = delete;
+        InstanceBuffer(const InstanceBuffer& other) = delete;
+        InstanceBuffer& operator=(const InstanceBuffer& other) = delete;
 
-        /// Upload @p count matrices. Orphan-grows the GL buffer when capacity
-        /// is exceeded; the buffer name stays the same, so previously-attached
-        /// VAO bindings remain valid.
+        InstanceBuffer(InstanceBuffer && other) = delete;
+        InstanceBuffer& operator=(InstanceBuffer && other) = delete;
+
+        /**
+         * @brief Upload @p count matrices, growing the buffer when they do not fit.
+         *
+         * The grow orphans the storage rather than replacing the buffer, so the
+         * GL name stays the same and VAO bindings attached earlier remain valid.
+         *
+         * @param data  Matrices to upload, tightly packed; read only for @p count.
+         * @param count How many matrices; zero uploads nothing.
+         */
         void update(const glm::mat4* data, uint32_t count) {
             m_instanceCount = count;
             if (count == 0) return;
@@ -62,8 +69,15 @@ class InstanceBuffer {
             }
         }
 
-        /// Install @p startIndex .. startIndex+3 as 4 per-instance vec4
-        /// attributes on @p vao. Always performs the setup (no caching).
+        /**
+         * @brief Install the matrix as four per-instance vec4 attributes.
+         *
+         * The setup runs every call - nothing is cached - so a VAO rebuilt for
+         * any other reason picks the bindings up again.
+         *
+         * @param vao        Vertex array the attributes are installed on.
+         * @param startIndex First of the four consecutive attribute slots used.
+         */
         void attachToVAO(Vkm::GL::VertexArray& vao, uint32_t startIndex = 4) {
             if (!m_buffer) return;
 

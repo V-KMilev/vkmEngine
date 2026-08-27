@@ -10,10 +10,9 @@
 
 #include <imgui.h>
 #include <glm/glm.hpp>
-
-#include "system/render/editor_render_hooks.h"  // GpuTextureId, for imTexture below
 #include <glm/gtc/type_ptr.hpp>
 
+#include "system/render/editor_render_hooks.h"  // GpuTextureId, for imTexture below
 #include "core/system.h"
 #include "ecs/component/animation/animation.h"
 #include "ecs/component/core/hierarchy.h"

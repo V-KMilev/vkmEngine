@@ -55,7 +55,7 @@ void GLGridPass::execute(GLFrameContext& ctx) {
     ctx.gl.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     m_shader->bind();
-    ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SceneDepth);
+    ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SCENE_DEPTH);
     m_shader->setUniformMatrix4fv("u_viewProj", viewProj);
     m_shader->setUniform3fv("u_camPos", view.camera.position);
     m_shader->setUniform1f("u_extent", extent);

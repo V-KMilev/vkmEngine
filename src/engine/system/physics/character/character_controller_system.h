@@ -35,7 +35,6 @@ class CharacterControllerSystem : public System {
         CharacterControllerSystem& operator=(CharacterControllerSystem && other) = delete;
 
     public:
-        void update(FrameContext& ctx) override {}
         void fixedUpdate(FrameContext& ctx) override;
 
         bool hasFixedUpdate() const override { return true; }

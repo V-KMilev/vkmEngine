@@ -6,7 +6,7 @@ any type can be a component without modifying Scene.
 ## Key files
 
 - `src/engine/ecs/scene.h` for the Scene registry
-- `src/engine/ecs/entity.h` for the `EntityId` alias
+- `src/engine/ecs/entity.h` for the `EntityId` type
 - `src/engine/ecs/component/` for all component types, grouped by subject:
   `core/`, `render/`, `animation/`, `physics/`, `ui/`, `prefab/`
 - `src/engine/core/memory/slot_allocator.h` for the entity handle allocator
@@ -18,14 +18,24 @@ any type can be a component without modifying Scene.
 Entities are lightweight handles:
 
 ```cpp
-using EntityId = StorageIndex;             // { uint32_t index, uint32_t generation }
+struct EntityId { StorageIndex key; };     // slot() and generation()
 ```
 
+- **Its own type**, wrapping a `StorageIndex` rather than aliasing one. A
+  resource handle is built on the same pair, and a function taking an asset
+  slot must not silently accept an entity - but the reason that matters most is
+  that an `EntityId` cannot be built from two loose numbers. A file's slot, a
+  prefab's index and a live handle are all bare integers that a field like
+  `Joint::connected` cannot tell apart; writing one into an entity field does
+  not compile.
 - **Generational.** A generation counter prevents use after free; a stale
   handle with the wrong generation is detected.
 - **Recycled.** Destroyed entity slots go onto a LIFO free list for reuse.
-- **Null sentinel.** Index 0 is reserved as null; `operator bool()` returns
-  `index != 0`.
+- **Null sentinel.** Index 0 is reserved as null; `operator bool()` is
+  `slot() != 0`.
+- **Scene-local, and only for now.** It names a slot in one `Scene` in one
+  session. Anything durable - a file, a prefab, an undo snapshot, a
+  connection - names an entity in its own terms and resolves it back.
 
 ```cpp
 EntityId entity = scene.createEntity();
@@ -34,9 +44,15 @@ scene.destroyEntity(entity);              // removes all components, recycles sl
 ```
 
 `Scene::createEntityAt(slotIndex)` exists for the scene loader, which
-recreates entities at their saved slot so cross-entity references in the
-file (e.g. `Hierarchy::parent` indices) resolve directly. See
-[IO and serialization](system/io.md) for the round-trip rules.
+recreates entities at their saved slot so a saved reference resolves directly.
+A slot becomes an entity in three lines of `Scene` and nowhere else.
+
+A component that references other entities takes the carrier that knows what
+it calls one - an `EntityNamer` to save, an `EntityResolver` to load - exactly
+as a component referencing assets takes the `ResourceManager`. So a scene names
+an entity by its slot, a prefab by its place in the file, and a connection will
+name it its own way, without any of them writing that number where a handle
+belongs. See [IO and serialization](system/io.md) for the round-trip rules.
 
 ## Components
 

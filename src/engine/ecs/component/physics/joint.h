@@ -54,6 +54,15 @@ struct Joint {
     float distance = -1.0f;
 
     /**
+     * @brief The length actually being held, once the solver has measured it.
+     *
+     * Runtime, and not serialized: `distance` is what the author wrote and must
+     * survive a save unchanged, including the negative that asks for a
+     * measurement. The measurement lands here, so the request is never spent.
+     */
+    float resolvedDistance = -1.0f;
+
+    /**
      * @brief How fast the joint closes the gap between its anchors, 0 to 1.
      *
      * A fraction of the remaining error removed per tick rather than a spring

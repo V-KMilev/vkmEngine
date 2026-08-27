@@ -21,8 +21,11 @@ struct DrawableData {
     MaterialHandle material;
     glm::mat4      model;
 
-    /// transpose(inverse(mat3(model))): correct normals under non-uniform scale.
-    /// Precomputed so the vertex shader skips a per-vertex matrix inverse.
+    /**
+     * @brief transpose(inverse(mat3(model))): normals under non-uniform scale.
+     *
+     * Precomputed so the vertex shader skips a per-vertex matrix inverse.
+     */
     glm::mat3      normalMatrix;
 
     /**

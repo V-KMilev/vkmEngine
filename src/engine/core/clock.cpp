@@ -17,10 +17,10 @@ void Clock::beginFrame() {
 }
 
 bool Clock::consumeFixedStep() {
-    if (m_accumulator < Config::FIXED_TIME_STEP) {
+    if (m_accumulator < m_fixedStep) {
         return false;
     }
-    m_accumulator -= Config::FIXED_TIME_STEP;
+    m_accumulator -= m_fixedStep;
     return true;
 }
 
@@ -29,7 +29,7 @@ float Clock::simDeltaFor(float realDelta) {
         return realDelta * m_timeScale;
     }
     if (m_pendingSteps > 0) {
-        const float stepped = static_cast<float>(m_pendingSteps) * Config::FIXED_TIME_STEP;
+        const float stepped = static_cast<float>(m_pendingSteps) * m_fixedStep;
         m_pendingSteps = 0;
         return stepped;
     }

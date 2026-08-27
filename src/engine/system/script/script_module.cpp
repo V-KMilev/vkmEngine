@@ -58,7 +58,14 @@ ScriptModule::~ScriptModule() {
 bool ScriptModule::load(const std::string& modulePath) {
     m_modulePath = modulePath;
     removeStaleCopies(std::filesystem::path(modulePath));
-    return loadCopyAndRegister();
+    if (loadCopyAndRegister()) return true;
+
+    // The log lines above name the reason; this is the one durable line for a
+    // reader who has only the editor's Errors tab. reload() reports its own.
+    reportError("Script", modulePath,
+        "Gameplay module failed to load; no behavior type is registered, so "
+        "behaviors in the scene are held as text and do not run.");
+    return false;
 }
 
 bool ScriptModule::loadCopyAndRegister() {
@@ -141,7 +148,17 @@ bool ScriptModule::reload(Scene& scene) {
             return false;
         }
         LOG_INFO("ScriptModule::reload: no module loaded, retrying load of '%s'", m_modulePath.c_str());
-        return loadCopyAndRegister();
+        if (!loadCopyAndRegister()) return false;
+
+        // A load with no registry kept each behavior as text, and this is the
+        // moment its type exists again - re-reading those documents through the
+        // now-filled registry is what turns them back into behaviors.
+        if (auto* storage = scene.storage<ScriptComponent>()) {
+            storage->forEach([&](uint32_t, ScriptComponent& sc) {
+                ComponentSerializer::load(ComponentSerializer::save(sc), sc);
+            });
+        }
+        return true;
     }
 
     // Saved while the current module is still loaded, because visitFields and
@@ -159,23 +176,26 @@ bool ScriptModule::reload(Scene& scene) {
     BehaviorRegistry::get().clear();
     m_lib.unload();
 
-    if (!loadCopyAndRegister()) {
-        // reportError, not the log alone: this is the destructive outcome -
-        // behaviors gone, the entities that carried them kept - and the editor
-        // has no log view for a reader to find it in afterwards.
-        reportError("Script", m_modulePath,
-            "Reload failed; behaviors were cleared (entities kept). Fix the build and "
-            "reload again to retry, then reload the scene to restore behaviors.");
-        return false;
-    }
+    const bool loaded = loadCopyAndRegister();
 
-    // Recreated through the new module's factories; entities and other
-    // components were never touched, so behaviors just start fresh.
+    // Put back either way: with the new module loaded these become behaviors
+    // again through its factories, and without one they come back as
+    // UnknownBehavior, held as text until a reload that works.
     for (auto& [id, data] : saved) {
         if (scene.isAlive(id) && scene.has<ScriptComponent>(id)) {
             ComponentSerializer::load(data, scene.get<ScriptComponent>(id));
         }
     }
+
+    if (!loaded) {
+        // reportError, not the log alone: behaviors have stopped running, and
+        // the editor has no log view for a reader to find that in afterwards.
+        reportError("Script", m_modulePath,
+            "Reload failed; behaviors are held as text and do not run. Fix the build "
+            "and reload again - nothing is lost, including on save.");
+        return false;
+    }
+
     LOG_INFO("Script reload complete (%zu entit(y/ies) restored)", saved.size());
     return true;
 }
