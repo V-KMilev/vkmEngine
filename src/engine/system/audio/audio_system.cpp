@@ -29,7 +29,7 @@ void AudioSystem::init(FrameContext& ctx) {
 
     // A host with no sound card, no driver, or no permission to open one is a
     // host the engine still runs on. open() says which it was.
-    m_device.open();
+    if (!m_silent) m_device.open();
 
     // Collect here, start in update(): emit() is synchronous and arrives from
     // whatever stage gameplay runs in, and a voice must not be created from

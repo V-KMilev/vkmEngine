@@ -39,6 +39,12 @@ class CharacterControllerSystem : public System {
 
         bool hasFixedUpdate() const override { return true; }
 
+        /**
+         * @brief Re-run during a replay: it moves the world from state and command, and
+         * running it twice over the same tick lands in the same place.
+         */
+        bool isReplayed() const override { return true; }
+
     private:
         // Edge latches, so each fault is named once per gap rather than once a
         // tick. Both are silent misbehaviours otherwise: a controller with no
