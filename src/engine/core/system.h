@@ -10,6 +10,7 @@ namespace Vkm::Engine {
     class ResourceManager;
     class EventBus;
     class InputMap;
+    class NetSession;
     class PoseBuffer;
     struct Visibility;
     struct UIDrawData;
@@ -79,6 +80,7 @@ struct FrameContext {
     EventBus&        events;
     WindowManager&   window;
     InputMap&        input;
+    NetSession&      net;
 
     const Visibility*  visibility = nullptr;
     const PoseBuffer*  poses      = nullptr;
@@ -113,6 +115,26 @@ class System {
          * Default false matches the default empty fixedUpdate.
          */
         virtual bool hasFixedUpdate() const { return false; }
+
+        /**
+         * @brief Whether this system may be re-run over a tick that already happened.
+         *
+         * A client predicts its own character forward and is later told what
+         * the server made of the same input. When the two disagree it re-runs
+         * every tick since from the server's answer, and a system that takes
+         * part in that must be a pure function of the world and the command:
+         * given the same state and the same input it does the same thing, and
+         * doing it twice is the same as doing it once.
+         *
+         * A system that fires anything - an event, a sound, an animation
+         * advancing by a fixed step - answers false and simply does not run in
+         * the replay pass. Its effect already happened on the live tick; doing
+         * it again is a footstep played twice for one step taken.
+         *
+         * Default false, and the default is the statement: a system opts in
+         * once somebody has reasoned about what re-running it means.
+         */
+        virtual bool isReplayed() const { return false; }
 
         /**
          * @brief Called once after all systems are registered, before the first update.

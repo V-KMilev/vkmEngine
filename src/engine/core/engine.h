@@ -12,6 +12,7 @@
 #include "core/clock.h"
 #include "core/event/event_bus.h"
 #include "platform/input/input_map.h"
+#include "net/net_session.h"
 
 namespace Vkm::Engine {
 
@@ -65,6 +66,17 @@ class Engine {
         const WindowManager& getWindow() const { return m_window; }
 
         /**
+         * @brief The session this end is playing in, offline until told otherwise.
+         *
+         * How an application starts a game: the runtime reads its arguments and
+         * calls host() or connect() on this, and the editor leaves it alone so
+         * Play runs a single-player world. Gameplay reaches it through
+         * FrameContext rather than here.
+         */
+        NetSession& getNet()             { return m_net; }
+        const NetSession& getNet() const { return m_net; }
+
+        /**
          * @brief Log "FPS: N (M ms)" to the console once a second.
          *
          * Opt-in and runtime-facing: the editor shows FPS in its status bar, so
@@ -106,10 +118,10 @@ class Engine {
         ResourceManager m_resources;
 
         Clock         m_clock;
-        uint32_t      m_tick = 0;   ///< Fixed steps run this session; stamped on each command.
         EventBus      m_events;
         InputMap      m_input;
         WindowManager m_window;
+        NetSession    m_net;
 
         std::array<std::vector<std::unique_ptr<System>>, static_cast<size_t>(SystemStage::Count)> m_systemsByStage;
 
