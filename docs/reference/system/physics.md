@@ -244,6 +244,12 @@ Per tick, per controller:
 1. `grounded = rb.supported && dot(rb.supportNormal, up) >= cos(maxSlopeAngle)`,
    and `groundNormal` mirrors the surface (world up when airborne). A wall is a
    resolved contact too, so touching is not the same question as standing.
+   Derived for **every** character, before the controller asks whose it is: it
+   is an observation rather than a decision, and the solver already publishes
+   `rb.supported` for every body it gathered. Stopping at the owned ones would
+   leave a character this end is only told about reporting airborne for a whole
+   match, and every game driving an animation off it showing a walking player
+   fall.
 2. Wake the body if there is input and it fell asleep - a sleeping body has its
    velocity zeroed by writeback, so anything asking it to move must wake it.
 3. Deflect the target along `blockNormal` if that surface is steeper than
