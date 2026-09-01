@@ -101,7 +101,10 @@ inline bool writeJsonFile(const std::filesystem::path& path, const nlohmann::jso
             LOG_ERROR_C("IO", "%s: cannot open '%s' for writing", what, tmp.string().c_str());
             return false;
         }
-        out << doc.dump(2);
+        // A trailing newline, because these are text files: without one a diff
+        // reports "no newline at end of file" on every write and a terminal
+        // runs the next prompt into the last brace.
+        out << doc.dump(2) << '\n';
         out.close();
         if (!out) {
             LOG_ERROR_C("IO", "%s: write to '%s' failed", what, tmp.string().c_str());

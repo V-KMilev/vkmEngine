@@ -7,6 +7,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "io/json_file.h"
 #include "logger.h"
 
 namespace fs = std::filesystem;
@@ -45,6 +46,8 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
         out.engineVersion = doc.value("engineVersion", out.engineVersion);
         out.entryScene    = doc.value("entryScene",    out.entryScene);
         out.tickRate      = doc.value("tickRate",      out.tickRate);
+        out.maxPlayers    = doc.value("maxPlayers",    out.maxPlayers);
+        out.netPort       = doc.value("netPort",       out.netPort);
 
         // An entry with no image names nothing to show, so it is skipped rather
         // than becoming a black pause of its own.
@@ -71,6 +74,29 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
                     out.name.c_str(), out.engineVersion.c_str(), APP_VERSION);
     }
     return true;
+}
+
+bool saveProject(const fs::path& projectRoot, const Project& project) {
+    const fs::path file = projectRoot / PROJECT_FILE;
+
+    // Read first, so a key this build knows nothing about survives being
+    // written by it. A missing or malformed file is not a reason to refuse:
+    // what comes out is then a document holding exactly what is known, which is
+    // what a project that has never been saved should get.
+    std::error_code ec;
+    nlohmann::json  doc = nlohmann::json::object();
+    if (fs::exists(file, ec) && (!detail::readJsonFile(file, doc, "project") || !doc.is_object())) {
+        doc = nlohmann::json::object();
+    }
+
+    doc["name"]          = project.name;
+    doc["engineVersion"] = project.engineVersion;
+    doc["entryScene"]    = project.entryScene;
+    doc["tickRate"]      = project.tickRate;
+    doc["maxPlayers"]    = project.maxPlayers;
+    doc["netPort"]       = project.netPort;
+
+    return detail::writeJsonFile(file, doc, "project");
 }
 
 fs::path findProjectRoot(const fs::path& start) {

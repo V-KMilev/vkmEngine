@@ -4,6 +4,7 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <cstdlib>
 #include <fstream>
 
 #include "logger.h"
@@ -12,9 +13,12 @@
 #include "debug/engine_error_log.h"
 #include "ecs/scene.h"
 #include "io/project.h"
+#include "asset_registration.h"
+#include "io/asset/asset_library.h"
 #include "io/project_paths.h"
 #include "io/scene/scene_serializer.h"
 #include "resource/resource_manager.h"
+#include "platform/library/dynamic_library.h"
 #include "system/script/script_module.h"
 
 #include "generator/default_scene.h"
@@ -56,11 +60,21 @@ bool bootHost(int argc, char** argv, const char* logFileName, const char* logger
     std::filesystem::current_path(ProjectPaths::engineRoot(), ec);
 
     const std::filesystem::path root = ProjectPaths::projectRoot();
-    std::filesystem::path logPath = root / "logs" / logFileName;
+    // A second copy of the same host, playing the same project, would otherwise
+    // interleave its lines into the first one's file - which is what two
+    // clients against one server looks like, and the case where the log matters
+    // most. VKM_LOG_SUFFIX names them apart; `vkm play` sets it.
+    std::string fileName = logFileName;
+    if (const char* suffix = std::getenv("VKM_LOG_SUFFIX"); suffix && *suffix) {
+        const std::filesystem::path named(fileName);
+        fileName = named.stem().string() + "-" + suffix + named.extension().string();
+    }
+
+    std::filesystem::path logPath = root / "logs" / fileName;
     if (!logFileWritable(logPath)) {
         // Named after the project: one state directory serves every game this
         // engine ships.
-        logPath = ProjectPaths::userLogs() / root.filename() / logFileName;
+        logPath = ProjectPaths::userLogs() / root.filename() / fileName;
         // Neither place will take it. Nothing can be logged, so stderr is the
         // only channel left to say why the host is not starting.
         if (!logFileWritable(logPath)) {
@@ -112,6 +126,28 @@ SceneBootResult bootProjectScene(
     LOG_INFO("Project '%s' supplies no scene of its own; opened the default scene",
              project.name.c_str());
     return {SceneBoot::Default, {}};
+}
+
+bool bootGameplayModule(ScriptModule& module, const char* verb) {
+    std::error_code ec;
+
+    // Cooked assets only: no Assimp, no image decode. Must precede scene I/O.
+    registerCookedAssetFactories();
+    AssetLibrary::get().load();
+
+    const std::filesystem::path modulePath =
+        ProjectPaths::projectBin() / DynamicLibrary::platformName("game");
+
+    if (!std::filesystem::exists(modulePath, ec)) {
+        LOG_ERROR("No gameplay module at '%s' - build the project before %s it",
+                  modulePath.string().c_str(), verb);
+        return false;
+    }
+    if (!module.load(modulePath.string())) {
+        LOG_ERROR("Gameplay module '%s' did not load", modulePath.string().c_str());
+        return false;
+    }
+    return true;
 }
 
 } // namespace Vkm::Engine
