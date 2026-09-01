@@ -11,14 +11,15 @@ namespace Vkm::Engine {
  * @brief The engine's frame clock: real + simulation time and the fixed-step accumulator.
  *
  * The engine owns one and calls beginFrame() at the top of each iteration. That
- * samples the real (wall-clock) delta, converts it into a simulation delta -
- * scaled while running, zero while paused, exactly N fixed steps' worth when
- * single-stepping - and tops up the fixed-step accumulator from that sim delta.
- * Systems read getDeltaTime() for real-time work (input / camera / UI),
- * getSimDelta() for simulation update() and getFixedStep() in fixedUpdate().
- * Pause, time-scale, and single-step all fall out of the one sim delta with no
- * special-casing in the loop. The editor drives the play state (setPaused /
- * requestStep); the runtime leaves the clock at 1x.
+ * samples the real (wall-clock) delta and tops the fixed-step accumulator up
+ * with it - scaled while running, nothing at all while paused. Steps asked for
+ * through requestStep() are held apart from it as a count rather than folded
+ * in as a span, which is what makes them exact at every tick rate. Systems read
+ * getDeltaTime() for real-time work (input / camera / UI), getSimDelta() for
+ * simulation update() and getFixedStep() in fixedUpdate(). Pause, time-scale
+ * and single-step all fall out of those two with no special-casing in the loop.
+ * The editor drives the play state (setPaused / requestStep); the runtime
+ * leaves the clock at 1x.
  */
 class Clock {
     public:
@@ -42,12 +43,17 @@ class Clock {
         void beginFrame();
 
         /**
-         * @brief Consume one fixed step from the accumulator; the main-loop fixedUpdate condition.
+         * @brief Take one fixed step if one is owed; the main-loop fixedUpdate condition.
          *
-         * @return True while at least one whole fixed step remains this frame (and
-         *         decrements the accumulator by one step); false once the frame's
-         *         fixed budget is spent. Use as the condition of a
-         *         `while (clock.consumeFixedStep()) { ... }` loop.
+         * A step that was asked for is taken first and exactly, then time that
+         * was measured. Which of the two it came from is not a caller's
+         * business, but that the count is drained first is: it is what keeps a
+         * commanded step from being rounded away at a rate whose step is not a
+         * binary fraction.
+         *
+         * @return True having taken a step, false once neither is owed. Use as
+         *         the condition of a `while (clock.consumeFixedStep()) { ... }`
+         *         loop.
          */
         bool consumeFixedStep();
 
@@ -71,23 +77,19 @@ class Clock {
          *        Config::MAX_TICK_RATE].
          */
         void setTickRate(uint32_t ticksPerSecond) {
-            const uint32_t rate = ticksPerSecond < Config::MIN_TICK_RATE ? Config::MIN_TICK_RATE
-                                : ticksPerSecond > Config::MAX_TICK_RATE ? Config::MAX_TICK_RATE
-                                                                        : ticksPerSecond;
-            m_fixedStep = 1.0f / static_cast<float>(rate);
+            m_fixedStep = 1.0f / static_cast<float>(Config::clampTickRate(ticksPerSecond));
         }
 
         /**
          * @brief Pause or resume simulation time.
          *
-         * Changing the pause state discards any single-steps queued via requestStep().
+         * Queued steps survive it. A step that was asked for is a tick that was
+         * asked for, and which way the play state happened to move afterwards
+         * is not a reason to lose it.
          *
          * @param paused True freezes simulation time (sim delta 0); false resumes it.
          */
-        void setPaused(bool paused) {
-            m_paused = paused;
-            m_pendingSteps = 0;
-        }
+        void setPaused(bool paused) { m_paused = paused; }
 
         /**
          * @brief Set the slow-motion / fast-forward multiplier applied while running.
@@ -102,17 +104,31 @@ class Clock {
         void setTimeScale(float scale) { m_timeScale = scale < 0.0f ? 0.0f : scale; }
 
         /**
-         * @brief Queue fixed-step advances to play out while paused (the editor "step").
+         * @brief Queue fixed-step advances, whatever the play state.
          *
-         * Non-positive counts are ignored; queued steps are consumed by the next
-         * beginFrame() while paused, that one frame feeding them all at once.
+         * Delivered as a count rather than as a span of seconds, and that is the
+         * whole of why it is separate from the accumulator: a fixed step is
+         * rarely a binary fraction, so asking for n and converting to n * step
+         * and back loses ticks at most rates - twenty asked at sixty hertz
+         * arrives as nineteen. Draining an integer is exact at every rate.
+         *
+         * Non-positive counts are ignored.
          *
          * @param steps Number of fixed steps to enqueue (default 1).
          */
         void requestStep(int steps = 1) { if (steps > 0) m_pendingSteps += steps; }
 
-    private:
-        float simDeltaFor(float realDelta);
+        /**
+         * @brief Which fixed step is running, counting from one.
+         *
+         * Zero until the first has run, so a reader can tell "before any tick"
+         * from "during the first". It advances if and only if consumeFixedStep()
+         * hands one out, which is what keeps it from being a second counter that
+         * can disagree with the loop it describes.
+         *
+         * @return The tick number.
+         */
+        uint32_t getTick() const { return m_tick; }
 
     private:
         std::chrono::steady_clock::time_point m_last{};
@@ -127,6 +143,14 @@ class Clock {
         bool  m_paused       = false;
         int   m_pendingSteps = 0;
         float m_timeScale    = 1.0f;
+
+        /**
+         * @brief Fixed steps handed out this session.
+         *
+         * Advanced only by the one function that hands them out, so it cannot describe
+         * a loop it is out of step with.
+         */
+        uint32_t m_tick = 0;
 };
 
 } // namespace Vkm::Engine
