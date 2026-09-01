@@ -8,4 +8,11 @@ target_link_libraries(vkm_engine_tests PRIVATE
     vkmEngine::vkm_warnings
 )
 
+# Where the shipped example projects are, so a test can open the scene of record
+# and check the format still reads it. A packaged SDK has no examples/ - the
+# test that uses this says so and passes rather than failing on a missing file.
+target_compile_definitions(vkm_engine_tests PRIVATE
+    VKM_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/examples"
+)
+
 add_test(NAME vkm_engine COMMAND vkm_engine_tests)
