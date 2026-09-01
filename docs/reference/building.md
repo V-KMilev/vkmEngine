@@ -30,14 +30,15 @@ cmake -B build -G Ninja
 # Build
 cmake --build build
 
-# Run (all three hosts build by default)
+# Run (every host builds by default)
 ./build/bin/vkm_editor examples/potion_runner    # edit a project
 ./build/bin/vkm_runtime examples/potion_runner   # play it
 ./build/bin/vkm_cook examples/potion_runner      # bake its assets, no window
+./build/bin/vkm_server examples/physics_lab      # serve it to players, no window
 build\bin\vkm_editor.exe        # Windows (MSYS2 + Clang)
 ```
 
-All three take **a project directory**, and all three apply the same rule: the
+Every one takes **a project directory**, and every one applies the same rule: the
 project is the one beside the executable, unless an argument names a different
 one. So a shipped game ships its exe next to its `project.json` and the player
 passes nothing. See [system/io.md](system/io.md#projects-and-the-three-roots) for
@@ -137,9 +138,9 @@ half a smoke test turns on.
 | `vkm_cook_app` | Executable | Headless asset cook: `vkm_cook` with no window, no GL context and no `Engine`, so it runs over SSH and on CI. Runs as `vkm_cook` |
 | `vkm_gl_tests` | Executable | vkmGL's context-free suite, registered with CTest as `vkm_gl`. Built by default; not installed. See [Tests](#tests) |
 
-Only the three host executables carry a suffix, and all three carry it so it
+Only the host executables carry a suffix, and all of them carry it so it
 reads as "this is the application" rather than "this one had a clash". A CMake
-target name must be unique across the project and two of the three are already
+target name must be unique across the project and two of them are already
 library names; the files never collide - `vkm_editor` sits beside
 `libvkm_editor.a`, and `vkm_editor.exe` beside `vkm_editor.dll` - so
 `OUTPUT_NAME` drops the suffix and nobody types it outside these build files.
@@ -162,7 +163,7 @@ cmake --install build --prefix /path/to/sdk
 ```
 
 ```
-<prefix>/bin/       the three hosts, the shared engine, and the vkm command
+<prefix>/bin/       the hosts, the shared engine, and the vkm command
 <prefix>/include/   the engine's public headers plus the third-party headers
                     they reach into
 <prefix>/lib/cmake/vkmEngine/   what find_package(vkmEngine) loads, plus the

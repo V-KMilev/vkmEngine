@@ -40,7 +40,7 @@ class Behavior {
         virtual std::unique_ptr<Behavior> clone() const = 0;      // deep copy for duplication
 
     protected:
-        BehaviorContext& context();     // scene / resources / window / events / input / clock
+        BehaviorContext& context();     // scene / resources / window / events / input / net / clock
         EntityId spawn();               // create a new entity
         void     destroy(EntityId);     // deferred until after the hook pass
         void     loadScene(const std::string& scenePath);  // deferred until the tick ends
@@ -54,9 +54,10 @@ class Behavior {
 struct BehaviorContext {
     Scene*                 scene;
     ResourceManager*       resources;
-    WindowManager*         window;
+    WindowManager*         window;      // null on a host that draws nothing
     EventBus*              events;
     InputMap*              input;
+    NetSession*            net;
     Clock*                 clock;
     std::vector<EntityId>* pendingDestroy;
     std::string*           pendingSceneLoad;
@@ -232,12 +233,20 @@ whole contract, and a behavior never has to read `BehaviorSystem` to learn what
    accumulator behind it is filled from the sim delta, so pause and time-scale
    already reach it. It is also on a *different clock from input*: actions are
    sampled once per render frame, and a fixed step runs zero or many times per
-   frame. So a fixed update reads `context().input->command()` - the per-tick
-   `InputCommand`, built from the axes as they stand plus the edges latched
-   since the previous tick - and never `held()` / `pressed()` / `axis()`, which
-   answer for the frame. Asking the frame queries from a fixed update drops a
-   tap taken between two ticks and repeats a press across every tick of a slow
-   frame.
+   frame. So a fixed update reads `command()` - the per-tick `InputCommand`,
+   built from the axes as they stand plus the edges latched since the previous
+   tick - and never `held()` / `pressed()` / `axis()`, which answer for the
+   frame. `command()` is the input driving *this* entity, which offline is the
+   local player's and on a server is the one that entity's player sent; a
+   single-player project can read `context().input->command()` for the same
+   thing. Asking the frame queries from a fixed update drops a tap taken
+   between two ticks and repeats a press across every tick of a slow frame.
+
+   Two more questions come with it, and a behavior that moves anything asks the
+   first: `isSimulated()` - does this end decide what happens to this entity -
+   and `isMine()` - is this the player sitting here. Both answer yes offline, so
+   a single-player behavior is unchanged by their existence. See
+   [networking.md](networking.md#what-a-project-writes).
 3. **`onRealtimeUpdate` is real time.** It runs every frame, paused or not, and
    `setTimeScale()` does not reach it either. Menu animation, unscaled timers,
    ducking the music, holding a key to quit - all of it lives here.

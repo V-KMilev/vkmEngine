@@ -17,6 +17,9 @@ repo, and `Vkm::Engine::Project` (`src/engine/io/project.h`) is everything it sa
 | `engineVersion` | Engine version the project was authored against; logged on load |
 | `entryScene` | Scene to boot, relative to the project root |
 | `tickRate` | Simulation ticks per second; 64 by default, clamped to a sane range |
+| `maxPlayers` | Seats the game has. A property of the game, not of a run: a scene with four characters authored into it is a four-player game wherever it is served |
+| `netPort` | Port the game is served on unless a run says otherwise, so serving a project and joining it need no argument to agree |
+| `splash` | Logos shown after the engine's own, in order. Usually empty |
 
 `tickRate` is the project's rather than the engine's because it is not only a
 simulation detail: for a networked game it is the rate the wire is clocked by,
@@ -27,6 +30,18 @@ opened in one session are two cadences.
 
 A missing or malformed `project.json` is **not** fatal - the defaults stand and
 an unnamed project opens, which is what a fresh directory should do.
+
+`saveProject` writes one back, for the editor's Project Settings window and for
+New Project. It is a read-modify-write: the file is parsed, the fields the struct
+describes are overwritten, and every other key is left exactly as it was, because
+a `project.json` is hand-authored as often as it is written by a tool and a
+writer that rebuilt the document would silently drop what it did not know about.
+`splash` is the one field read but not written - `loadProject` skips an entry
+naming no image, so writing the list back would delete it from the file.
+
+Saving stamps `engineVersion` with the running engine. That field is provenance
+rather than a format version - nothing refuses a file over it, it only warns -
+and what it records after a save is the engine that last wrote the file.
 
 `findProjectRoot(start)` accepts a directory *or any file inside it* and walks up
 looking for `project.json`, so passing a scene finds the project owning it.
@@ -90,7 +105,7 @@ Two consequences worth knowing before you add a path:
 
 ### Opening a project's world
 
-All three hosts open a project by one rule, in `bootProjectScene`
+Every host opens a project by one rule, in `bootProjectScene`
 (`src/tools/project_boot.h`), because they have to agree on it: the authored
 `entryScene`, else the world the project's module builds through `vkmBuildScene`,
 else the engine's default scene. **Exactly one** of them runs - seeding a scene

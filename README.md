@@ -13,9 +13,10 @@
 
 ## The engine
 
-Three binaries share one project directory. `vkm_editor` authors it, `vkm_runtime` plays it,
-`vkm_cook` bakes its assets without a window. Gameplay is C++ compiled into the project's own
-module and hot-reloaded while the editor stays open.
+Four binaries share one project directory. `vkm_editor` authors it, `vkm_runtime` plays it,
+`vkm_cook` bakes its assets without a window, and `vkm_server` serves it to players without
+one either. Gameplay is C++ compiled into the project's own module and hot-reloaded while the
+editor stays open.
 
 **Rendering.** A 19-pass forward pipeline: Forward+ clustered lighting, cascaded, spot and cube
 shadows, LTC area lights, IBL from an HDR or a procedural sky, reflection probes, baked
@@ -46,7 +47,7 @@ cmake --build build
 ```
 
 The engine runs **projects**: a directory with a `project.json`, its own scenes and
-assets, and its gameplay code built into its own `bin/`. All three executables find
+assets, and its gameplay code built into its own `bin/`. Every executable finds
 one the same way - the project beside the executable, unless an argument names a
 different one. `examples/` holds two complete ones.
 
@@ -96,7 +97,7 @@ src/
   backend/opengl/  OpenGL backend (flat gl_-prefixed includes)
   editor/          ImGui editor (panels, gizmo, framework, overlays, ui, input)
   tools/           Asset loaders and procedural generators (src/tools/)
-app/               The three executables + the bootstrap (setupEngineApp) two of them share
+app/               The four executables + the bootstrap (setupEngineApp) they share
 examples/          Complete projects (Potion Runner, Stress Arena) - gameplay lives here
 modules/
   vkmGL            Submodule: GL object wrappers + shader loading (vendors GLEW)

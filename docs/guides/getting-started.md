@@ -20,7 +20,7 @@ tar xf vkmEngine-1.4.0-Linux-x86_64-GNU-12.3.0.tar.xz
 export PATH="$PWD/vkmEngine-1.4.0/bin:$PATH"
 ```
 
-You now have `vkm`, plus the three hosts it drives.
+You now have `vkm`, plus the hosts it drives.
 
 ## Your first project
 

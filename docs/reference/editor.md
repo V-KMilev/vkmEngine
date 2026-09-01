@@ -56,6 +56,7 @@ overlays drawn on top.
 | Render Settings     | `panels/render_settings_panel.cpp`    | Render quality tuning: `RenderSettings` (debug view / grid / MSAA, texture filtering, GTAO, bloom, shadows, probes) plus the `VisibilitySystem` culling thresholds; opened from Window > Render Settings |
 | Material Editor     | `panels/material_editor_panel.cpp`          | The right panel's Material tab. One material under a live preview: a Base card, a grid of map tiles, and a card per secondary lobe the material actually uses |
 | Asset Browser       | `panels/asset_browser_panel.cpp`            | The bottom panel's Assets tab. One library for all six asset kinds: a kind rail, a uniform tile grid, and one verb slot per kind (import / create). Materials and meshes render thumbnails, a texture *is* its thumbnail, sounds audition from the tile |
+| Project Settings    | `panels/project_settings_panel.cpp`   | Floating window over what `project.json` records: name, entry scene, tick rate, engine version, and the seats and port the game is served with, plus a read-only list of what it replicates; opened from File > Project > Settings... |
 | Preferences         | `panels/preferences_panel.cpp`        | Floating editor/app settings window (Edit > Preferences, Ctrl+,)            |
 | Viewport Overlay    | `overlays/viewport_overlay.cpp`       | The axis navigation gizmo, top-right of the viewport (click an axis to snap the camera) |
 | Gizmo Overlay       | `overlays/gizmo_overlay.cpp`          | The transform gizmo's drawing and drag, and the viewport's click-to-pick     |
@@ -344,6 +345,22 @@ Sound** when it is not spatial, which is the same split by kind a `Light` makes
 between Dir / Point / Spot - and one carrying an `AudioListener` is a
 **Listener**; the tooltip digest lists both.
 
+### The identity header says what the other end will see
+
+"Will the other player see this thing" is a question an author asks while
+looking at the thing, so the answer sits under the entity's name rather than in
+a window of its own: the wire slot and which of its components replicate, or a
+warning that it is inside a prefab instance and so has no name on the wire at
+all. Both ends build such a subtree from the same prefab file and each allocates
+its children's slots locally, so the two disagree about what a slot is - the root
+replicates and the hierarchy carries the rest, which is right for anything posed
+the same way on both ends and wrong for a ragdoll
+([system/networking.md](system/networking.md#identity-is-the-scene-slot)).
+
+Drawn only for a project that replicates something, and only for an entity
+carrying some of it. Most entities are not on the wire, and a line saying so on
+every selection is one an author reads past within a day.
+
 ### A card greys what the scene, not the author, is writing
 
 The Light card on the scene's key light is the case: with **World > Procedural
@@ -554,7 +571,13 @@ each step composes paths or reads code the one before it put in place:
    stands in, carrying no save path - with an error toast, because the editor is
    where you fix that. The runtime refuses the same project instead; see
    [system/io.md](system/io.md#what-each-host-does-when-a-project-will-not-open).
-7. Push the project onto the recent list, so the project you are in is in its
+7. Build the wire schema from the new module's `vkmSetupNetwork`, the same entry
+   a runtime uses. The editor never hosts and never joins; it does this so
+   Project Settings and the inspector can tell an author what the game puts on
+   the wire. A project with no such entry gets an empty schema and neither
+   surface says anything. Edit > Reload Scripts rebuilds it too, because
+   unloading a module drops what it registered.
+8. Push the project onto the recent list, so the project you are in is in its
    own Recent Projects menu.
 
 A path that names a file rather than a directory still works - `findProjectRoot`

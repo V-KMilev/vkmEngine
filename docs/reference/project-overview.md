@@ -14,9 +14,9 @@ cmake --build build
 ./build/bin/vkm_runtime examples/potion_runner   # play it
 ```
 
-CMake 3.25+, Ninja, C++17, OpenGL 4.3 core. The build produces three executables
-- `vkm_editor`, `vkm_runtime`, and the headless `vkm_cook` - over a
-shared header-only bootstrap (`setupEngineApp` in `app/engine_app.h`). See
+CMake 3.25+, Ninja, C++17, OpenGL 4.3 core. The build produces four executables
+- `vkm_editor`, `vkm_runtime`, and the headless `vkm_cook` and `vkm_server` - over
+a shared header-only bootstrap (`setupEngineApp` in `app/engine_app.h`). See
 [building.md](building.md) for targets, modules, and flags.
 
 ## The engine runs projects
@@ -46,14 +46,14 @@ complete worked examples. See [system/io.md](system/io.md#projects-and-the-three
 - **`System`** - per-frame unit with `init` / `update` / `fixedUpdate` / `shutdown`.
   Each registers at exactly one `SystemStage`.
 - **`Engine`** - stack-constructible owner of the `Scene`, `ResourceManager`,
-  `WindowManager`, `Clock`, `EventBus`, `InputMap`, and the per-stage system list. **No
-  `Engine::get()` singleton.** Singletons are limited to a few process-wide
-  registries accessed via a static `get()`: `ThreadPool`, `AsyncLoadQueue`, and
-  `BehaviorRegistry`. Asset construction uses the `AssetFactory` function-pointer
+  `WindowManager`, `Clock`, `EventBus`, `InputMap`, `NetSession`, and the per-stage
+  system list. **No `Engine::get()` singleton.** Singletons are limited to a few
+  process-wide registries accessed via a static `get()`: `ThreadPool`,
+  `AsyncLoadQueue`, `BehaviorRegistry` and `NetSchema`. Asset construction uses the `AssetFactory` function-pointer
   seam; recoverable errors use the `reportError()` sink (captured by the
   editor-owned `EngineErrorLog`).
 - **`FrameContext`** - the per-frame bundle passed to every system. Services come
-  as references (scene, resources, clock, events, window, input), per-frame
+  as references (scene, resources, clock, events, window, input, net), per-frame
   products as pointers (`visibility`, `ui`). Time comes off the clock:
   `getDeltaTime()` (real), `getSimDelta()` (clock-scaled, pause/step-aware),
   `getFixedStep()` (the project's tick length, 1/64 by default). Simulation

@@ -4,7 +4,8 @@
 
 vkmEngine is built around an open, type-erased ECS and a stage-based system
 pipeline. The `Engine` class owns the `Scene`, `ResourceManager`, `WindowManager`,
-the `Clock`, the `EventBus`, the `InputMap`, and a per-stage list of systems. Each
+the `Clock`, the `EventBus`, the `InputMap`, the `NetSession`, and a per-stage
+list of systems. Each
 frame, stages run in declaration order; **within a stage, systems run sequentially
 in registration order.** There is no parallel layer scheduler - per-system data parallelism (via
 `ThreadPool`) is the scaling lever, not framework-level system parallelism.
@@ -26,6 +27,7 @@ Engine
   WindowManager     (GLFW window, input handle, frame limiter)
   Clock             (real + sim time, play / pause / step / time-scale)
   EventBus          (typed pub/sub, flushed at the top of Simulation)
+  NetSession        (the wire; brackets the frame, offline until told otherwise)
   InputMap          (named actions, resolved once per frame)
   m_systemsByStage  (one vector per SystemStage)
 ```
@@ -91,6 +93,7 @@ struct FrameContext {
     EventBus&        events;
     WindowManager&   window;
     InputMap&        input;
+    NetSession&      net;
 
     const Visibility* visibility = nullptr;  // VisibilitySystem's culling result
     const PoseBuffer* poses      = nullptr;  // SkeletalAnimationSystem's rig poses
@@ -157,6 +160,7 @@ Engine code, single include root `src/engine/`:
 | `system/audio/`            | `AudioSystem`, `AudioDevice` (the only engine file that includes the audio backend) |
 | `system/camera/`           | `CameraControllerSystem`                                                       |
 | `core/event/`              | `EventBus` (typed pub/sub; engine-owned infrastructure)                  |
+| `net/`                     | `NetSession` and the wire it speaks - schema, snapshots, commands, prediction, interpolation (see [system/networking.md](system/networking.md)). Engine-owned infrastructure like `EventBus`, not a `System` |
 | `system/hierarchy/`        | `HierarchySystem`, `HierarchyOperations` (free functions)               |
 | `system/physics/`          | `PhysicsSystem`, `CharacterControllerSystem`, `collision/`               |
 | `system/render/`           | `RenderSystem`, `RenderBackend`, `RenderView`, `RenderSettings`, `data/` |
