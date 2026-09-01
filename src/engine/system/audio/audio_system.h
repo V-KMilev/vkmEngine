@@ -75,6 +75,19 @@ class AudioSystem : public System {
         AudioDevice& device() { return m_device; }
 
         /**
+         * @brief Run without opening a device, for a host that plays to nobody.
+         *
+         * Set by the host before the first frame, because what a process is for
+         * is what its executable is: `vkm_server` referees a game it does not
+         * present. Everything below still runs - the rest of this system is
+         * written against a device that never opened - so this buys silence
+         * without a second path through it.
+         *
+         * @param silent True to leave the device closed.
+         */
+        void setSilent(bool silent = true) { m_silent = silent; }
+
+        /**
          * @brief The voice @p entity's AudioSource is being heard through.
          *
          * The other half of what an editor card needs and cannot work out for
@@ -242,6 +255,7 @@ class AudioSystem : public System {
 
     private:
         AudioDevice m_device;
+        bool        m_silent = false;
 
         /// Keyed by entity slot index; one voice per source, at most.
         std::unordered_map<uint32_t, ActiveVoice> m_voices;

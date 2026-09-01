@@ -15,10 +15,12 @@
 #include "ecs/scene.h"
 #include "ecs/environment.h"
 #include "ecs/component/core/transform.h"
+#include "ecs/component/physics/character_controller.h"
 #include "ecs/component/physics/collider.h"
 #include "ecs/component/physics/joint.h"
 #include "ecs/component/physics/rigidbody.h"
 #include "core/event/event_bus.h"
+#include "net/net_session.h"
 #include "system/physics/authoring/mesh_collider.h"
 #include "core/math/axes.h"
 #include "core/math/rotation.h"
@@ -257,7 +259,7 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
     // Scene-global like the Environment, but deliberately not part of it.
     const PhysicsSettings& physics = scene.physics();
 
-    if (!gatherBodies(scene)) return;
+    if (!gatherBodies(scene, ctx.net)) return;
 
     integrateForces(scene, physics, dt);
 
@@ -268,16 +270,21 @@ void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
 
     broadphase();
 
-    narrowphase(ctx.events);
+    narrowphase(ctx.events, ctx.net.replaying());
 
     wakeConnected(scene);
 
     solve(physics, dt);
 
-    writeback(scene, dt);
+    writeback(scene, ctx.net.replaying(), dt);
+
+    // After the solve, because it reads this tick's contacts - so the island
+    // applies from the next tick and the first tick of a contact still pushes
+    // an immovable body. The alternative is guessing before the narrowphase.
+    leaseContacts(scene, ctx.net);
 }
 
-bool PhysicsSystem::gatherBodies(Scene& scene) {
+bool PhysicsSystem::gatherBodies(Scene& scene, const NetSession& net) {
     PROFILE_SCOPE("Physics/Gather");
 
     auto* rbStorage = scene.storage<Rigidbody>();
@@ -312,6 +319,10 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
         frame.parentWorldInv = pose.parentWorldInv;
         frame.parentRot      = pose.parentRot;
         frame.worldRot       = worldRot;
+        // A body this end does not decide is immovable here and still collides,
+        // so a client's character stands on a crate and is stopped by one but
+        // never moves one. Asked once, here, and read by every phase after.
+        frame.decided        = net.simulates(id);
 
         const uint32_t bodyIndex = static_cast<uint32_t>(m_bodies.size());
         m_bodies.push_back(id);
@@ -324,7 +335,7 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
         // orientation integrates as identity and stays script-owned.
         pb.angularVelocity = rb.freezeRotation ? glm::vec3(0.0f) : rb.angularVelocity;
         // Sleeping or immovable bodies contribute infinite mass to the solver.
-        const bool frozen = isFrozen(rb, frame.invMass);
+        const bool frozen = isFrozen(rb, frame.invMass) || !frame.decided;
         pb.invMass = frozen ? 0.0f : frame.invMass;
         pb.invInertiaWorld = frozen ? glm::mat3(0.0f)
                                     : inverseInertiaWorld(frame.invInertiaLocal, worldRot);
@@ -350,7 +361,11 @@ bool PhysicsSystem::gatherBodies(Scene& scene) {
                                 collider->parts.begin(), collider->parts.end());
             proxy.position = worldPos;
             proxy.rotation = worldRot;
-            proxy.cullStatic = rb.isStatic || rb.isKinematic;
+            // During a replay only bodies this end decides can move, so a pair
+            // that cannot is worth never forming. Says so through the
+            // broadphase's existing static-against-static skip, not a new rule.
+            proxy.cullStatic = rb.isStatic || rb.isKinematic
+                            || (net.replaying() && !frame.decided);
             proxy.layer = rb.layer;
             proxy.collidesWith = rb.collidesWith;
             computeAABB(*collider, worldPos, worldRot, proxy.aabbMin, proxy.aabbMax);
@@ -412,7 +427,7 @@ void PhysicsSystem::broadphase() {
     }
 }
 
-void PhysicsSystem::narrowphase(EventBus& events) {
+void PhysicsSystem::narrowphase(EventBus& events, bool replaying) {
     PROFILE_SCOPE("Physics/Narrowphase");
 
     m_manifolds.clear();
@@ -610,15 +625,20 @@ void PhysicsSystem::narrowphase(EventBus& events) {
             const EntityId entityA = m_bodies[A.body];
             const EntityId entityB = m_bodies[B.body];
             if (trigger) {
-                if (A.isTrigger) events.enqueue(TriggerEvent{entityA, entityB});
-                if (B.isTrigger) events.enqueue(TriggerEvent{entityB, entityA});
+                // A replay re-runs a tick whose contacts were already
+                // reported, and a trigger entered twice for one entry is a
+                // behavior acting on something that did not happen.
+                if (A.isTrigger && !replaying) events.enqueue(TriggerEvent{entityA, entityB});
+                if (B.isTrigger && !replaying) events.enqueue(TriggerEvent{entityB, entityA});
             } else {
                 // Only a resolved contact supports the sleep test: a trigger
                 // holds nothing up, and a body asleep inside one would never
                 // be woken - wakeConnected walks manifolds, which skip them.
                 m_contacts[A.body].touched = true;
                 m_contacts[B.body].touched = true;
-                events.enqueue(CollisionEvent{entityA, entityB, contactPoint, contactNormal});
+                if (!replaying) {
+                    events.enqueue(CollisionEvent{entityA, entityB, contactPoint, contactNormal});
+                }
             }
         }
     }
@@ -628,6 +648,11 @@ void PhysicsSystem::wakeConnected(Scene& scene) {
     PROFILE_SCOPE("Physics/Wake");
 
     auto wake = [&](uint32_t idx, Rigidbody& rb) {
+        // The gather froze it deliberately. Handing its mass back would let one
+        // tick of contact move a body this end has no say over, which writeback
+        // then refuses - and the character walks into a hole nobody can see.
+        if (!m_bodyFrames[idx].decided) return;
+
         rb.sleeping = false;
         rb.sleepTimer = 0.0f;
         m_solverBodies[idx].invMass = m_bodyFrames[idx].invMass;
@@ -783,7 +808,70 @@ void PhysicsSystem::solve(const PhysicsSettings& physics, float dt) {
     solveJoints(m_solverBodies, m_joints, params);
 }
 
-void PhysicsSystem::writeback(Scene& scene, float dt) {
+void PhysicsSystem::leaseContacts(Scene& scene, NetSession& net) {
+    PROFILE_SCOPE("Physics/Lease");
+
+    if (net.role() != NetRole::Client) return;
+
+    const EntityId owner = net.localEntity();
+    if (!owner || !scene.isAlive(owner)) return;
+
+    uint32_t ownerBody = UINT32_MAX;
+    for (uint32_t i = 0; i < m_bodies.size(); ++i) {
+        if (m_bodies[i] == owner) { ownerBody = i; break; }
+    }
+    if (ownerBody == UINT32_MAX) return;
+
+    // Breadth-first over contacts and joints alike. A jointed pair is skipped
+    // before the shape tests, so without joints a shoved ragdoll would lease
+    // one limb and leave the joint hauling against a body the solver froze.
+    m_leased.clear();
+    m_leaseFrontier.clear();
+    m_leaseFrontier.push_back(ownerBody);
+    m_leaseReached.assign(m_bodies.size(), false);
+    m_leaseReached[ownerBody] = true;
+
+    const auto visit = [&](uint32_t from, uint32_t to) {
+        if (from >= m_leaseReached.size() || to >= m_leaseReached.size()) return;
+        if (!m_leaseReached[from] || m_leaseReached[to]) return;
+
+        // Never through an immovable body. A crate rests on the floor and the
+        // floor touches everything in the level, so a closure that stepped
+        // through statics would lease the whole world in two hops.
+        if (m_bodyFrames[to].invMass == 0.0f) return;
+
+        // Nor onto another player's character. That one is theirs to predict,
+        // and predicting it here means guessing at input this end never saw.
+        const EntityId entity = m_bodies[to];
+        if (scene.isAlive(entity) && scene.has<CharacterController>(entity)) return;
+
+        m_leaseReached[to] = true;
+        m_leaseFrontier.push_back(to);
+        m_leased.push_back(entity);
+    };
+
+    for (size_t head = 0; head < m_leaseFrontier.size(); ++head) {
+        const uint32_t at = m_leaseFrontier[head];
+
+        // Only outward from a body that can push: an immovable one is a wall,
+        // and what rests against a wall is not part of what this character is
+        // moving.
+        if (at != ownerBody && m_bodyFrames[at].invMass == 0.0f) continue;
+
+        for (const ContactManifold& manifold : m_manifolds) {
+            if (manifold.bodyA == at) visit(at, manifold.bodyB);
+            if (manifold.bodyB == at) visit(at, manifold.bodyA);
+        }
+        for (const JointConstraint& joint : m_joints) {
+            if (joint.bodyA == at) visit(at, joint.bodyB);
+            if (joint.bodyB == at) visit(at, joint.bodyA);
+        }
+    }
+
+    net.lease(m_leased);
+}
+
+void PhysicsSystem::writeback(Scene& scene, bool replaying, float dt) {
     PROFILE_SCOPE("Physics/Writeback");
 
     for (size_t k = 0; k < m_bodies.size(); ++k) {
@@ -791,11 +879,18 @@ void PhysicsSystem::writeback(Scene& scene, float dt) {
         Rigidbody& rb = scene.get<Rigidbody>(id);
         PhysicsBody& pb = m_solverBodies[k];
 
-        // Published before the early-outs below: a sleeping body resting on the
-        // floor is supported, and that is exactly when a controller asks.
-        rb.supported = m_contacts[k].touched;
-        rb.supportNormal = rb.supported ? m_contacts[k].support : Math::WORLD_UP;
-        rb.blockNormal   = rb.supported ? m_contacts[k].block   : Math::WORLD_UP;
+        // Published before the early-outs below, and for a body this end does
+        // not decide as well: a sleeping body resting on the floor is
+        // supported, and that is exactly when a controller asks. The one
+        // exception is a replay, where such a body was made unpairable and
+        // would report nothing under it - so it keeps what it last said.
+        const bool decided = m_bodyFrames[k].decided;
+        if (decided || !replaying) {
+            rb.supported     = m_contacts[k].touched;
+            rb.supportNormal = rb.supported ? m_contacts[k].support : Math::WORLD_UP;
+            rb.blockNormal   = rb.supported ? m_contacts[k].block   : Math::WORLD_UP;
+        }
+        if (!decided) continue;
 
         if (rb.isStatic) continue;
         if (rb.sleeping) {

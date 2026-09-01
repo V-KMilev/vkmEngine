@@ -2,6 +2,7 @@
 
 #include "system/script/behavior_system.h"
 
+#include <algorithm>
 #include <filesystem>
 
 #include <exception>
@@ -13,6 +14,7 @@
 #include "debug/engine_error_log.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
+#include "net/net_session.h"
 #include "platform/window/window_manager.h"
 #include "core/event/event_bus.h"
 #include "io/project_paths.h"
@@ -76,11 +78,24 @@ void BehaviorSystem::tickBehaviors(FrameContext& ctx, float dt, const char* hook
     // Snapshot who to tick before running anything. A hook is free to spawn an
     // entity and script it, which grows this very storage; iterating it live
     // would hand the loop a reference into a buffer that has since moved.
+
+    // A replay re-runs only the entities whose answer was disputed; gated
+    // rather than always filtered, because simulates() says yes off a client.
+    const bool replaying = ctx.net.replaying();
+
     m_tickList.clear();
     m_tickList.reserve(storage->size());
     storage->forEach([&](uint32_t entityIdx, ScriptComponent&) {
-        m_tickList.push_back(scene.entityAt(entityIdx));
+        const EntityId entity = scene.entityAt(entityIdx);
+        if (replaying && !ctx.net.simulates(entity)) return;
+        m_tickList.push_back(entity);
     });
+
+    // By slot, so the order is a function of the world rather than of every add
+    // and destroy a swap-and-pop SparseSet walk carries. Hooks write each
+    // other's components and queue events, so the order is part of the answer.
+    std::sort(m_tickList.begin(), m_tickList.end(),
+              [](EntityId a, EntityId b) { return a.slot() < b.slot(); });
 
     for (const EntityId id : m_tickList) {
         // Re-resolved every step: the entity may have been destroyed by an
@@ -174,9 +189,13 @@ void BehaviorSystem::init(FrameContext& ctx) {
     // session-stable - which the FrameContext service block is.
     m_context.scene     = &ctx.scene;
     m_context.resources = &ctx.resources;
-    m_context.window    = &ctx.window;
+    // Only when there is one. A host with no display still ticks, and a
+    // behavior asking for a window is asking whether it can read a device -
+    // handed one that answers zero, it reads that silently instead.
+    m_context.window    = ctx.window.isOpen() ? &ctx.window : nullptr;
     m_context.events    = &ctx.events;
     m_context.input     = &ctx.input;
+    m_context.net       = &ctx.net;
     m_context.clock     = &ctx.clock;
 
     // onDestroy for any entity-deletion path: register as a Scene observer, so

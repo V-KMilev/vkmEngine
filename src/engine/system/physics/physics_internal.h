@@ -68,6 +68,7 @@ struct ColliderProxy {
  */
 struct BodyFrame {
     bool      parented        = false;
+    bool      decided         = false;                            ///< This end decides where it goes; always true offline
     float     invMass         = 0.0f;                             ///< 1/mass this tick; 0 = static/kinematic
     glm::mat3 invInertiaLocal = glm::mat3(0.0f);                  ///< body-local inverse inertia; 0 = no rotational response
     glm::quat worldRot        = {1.0f, 0.0f, 0.0f, 0.0f};         ///< body world-space rotation this tick
