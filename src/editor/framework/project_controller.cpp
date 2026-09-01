@@ -46,7 +46,11 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
     // Re-root, so every path composed below resolves in this project.
     ProjectPaths::setProjectRoot(root);
 
-    Project project;
+    // Reset before the read, not after: loadProject leaves untouched fields
+    // alone, so opening a project with no maxPlayers would otherwise inherit the
+    // one left open.
+    Project& project = ec.state.project;
+    project = Project{};
     loadProject(root, project);
 
     // Set on every open, before anything in the project ticks: the rate belongs
@@ -79,6 +83,11 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
         LOG_WARNING("Project '%s' has no gameplay module", project.name.c_str());
     }
 
+    // The editor never hosts or joins, but it is where a game is authored, so an
+    // author has to be able to read what it puts on the wire. Built from the
+    // same entry a runtime uses, so the panel shows what a join would compare.
+    scriptModule.setupNetwork(ec.frame.net);
+
     // Whatever the project says it starts as, by the rule both binaries boot
     // with. One whose entry scene will not load still opens, and says so through
     // the engine's error sink.
@@ -92,8 +101,7 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
 
     // The window title is composed once per frame from the editor state (see
     // EditorSystem); setting it here as well would be overwritten next frame.
-    ec.state.projectName = project.name;
-    ec.state.sceneDirty  = false;
+    ec.state.sceneDirty = false;
 
     pushRecentPath(ec.state.recentProjects, root.string());
     // One slot, so the last push is the only one anyone sees. A project that

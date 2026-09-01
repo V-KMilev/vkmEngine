@@ -93,6 +93,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
             }
             ImGui::EndMenu();
         }
+        if (ImGui::MenuItem("Settings...##project")) state.showProjectSettings = true;
         ImGui::SeparatorText("Scene");
         if (ImGui::MenuItem("New", keyLabel(state.keybinds.newScene))) {
             state.requestSceneAction(EditorState::SceneAction::New);
