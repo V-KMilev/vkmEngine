@@ -88,6 +88,27 @@ class LabWalker : public ReflectedBehavior<LabWalker> {
         void play(const std::string& clip);
 
         /**
+         * @brief Pick the clip from what the character is doing.
+         *
+         * Runs for every walker, not only the one this end drives: another
+         * player's input never reaches this machine, so the clip has to come
+         * from the body's own replicated motion rather than from what was
+         * asked for. Airborne beats moving, and moving beats standing.
+         */
+        void chooseClip();
+
+        /**
+         * @brief Cast a ray from the eye, with every player where this one saw them.
+         *
+         * The lag-compensated question: a shooter aims at where a target is
+         * drawn, which on their screen is a fixed delay behind the server, so a
+         * server judging against the present would answer for a moment the
+         * shooter never saw. NetRewindScope puts the players back for the
+         * length of the call and restores them after.
+         */
+        void probe(Scene& scene);
+
+        /**
          * @brief Orbit the camera around the character and aim it at them.
          *
          * The angle is the player's and the distance is fixed; only the pivot
