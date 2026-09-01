@@ -8,6 +8,7 @@
 
 #include "ecs/entity.h"
 #include "framework/command_stack.h"
+#include "io/project.h"
 #include "input/editor_keybinds.h"
 #include "gizmo/transform_gizmo.h"
 #include "resource/asset/material_asset.h"
@@ -49,6 +50,7 @@ struct EditorState {
     ImVec2 rightPanelMax    = {};
     bool revealMaterialTab = false;             ///< Pending request to open the right panel on Material
     bool showRenderSettings = false;            ///< Render Settings window (pass toggles + per-effect tuning)
+    bool showProjectSettings = false;           ///< Project Settings window (what project.json records)
     bool showColliders      = false;            ///< Draw physics collider wireframes in the viewport (View menu)
     bool showBounds         = false;            ///< Draw per-entity world AABBs in the viewport (View menu)
     bool showSkeletons      = false;            ///< Draw posed rigs as bone segments in the viewport (View menu)
@@ -95,7 +97,7 @@ struct EditorState {
     std::vector<std::string> recentScenes;    ///< MRU list (absolute paths), most-recent first.
     std::vector<std::string> recentProjects;  ///< MRU project roots, most-recent first.
 
-    std::string projectName;              ///< What the open project calls itself; titles the window.
+    Project project;  ///< The open project.json, as read and as edited.
     static constexpr size_t MAX_RECENT_ENTRIES = 8;
 
     // Undo/redo history for every editor mutation on the command path.

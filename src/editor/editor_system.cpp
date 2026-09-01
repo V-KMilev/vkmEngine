@@ -265,7 +265,7 @@ void EditorSystem::update(FrameContext& ctx) {
     const bool cameraMoved = m_cameraController.takeCameraMoved();
     if (cameraMoved && !m_sceneIO.isPlaying()) m_state.markSceneDirty();
 
-    syncWindowTitle(ctx.window, m_state.projectName, m_sceneIO.path(), m_state.sceneDirty);
+    syncWindowTitle(ctx.window, m_state.project.name, m_sceneIO.path(), m_state.sceneDirty);
 
     m_materialPreviews.onFrameBegin();
 
@@ -303,6 +303,10 @@ void EditorSystem::update(FrameContext& ctx) {
     if (m_state.requestScriptReload) {
         m_state.requestScriptReload = false;
         if (m_scriptModule.reload(ctx.scene)) {
+            // A reload drops what the module registered, the wire schema with
+            // it. Rebuilt from the new module, or Project Settings would show
+            // the game replicating nothing until the next project open.
+            m_scriptModule.setupNetwork(ctx.net);
             m_state.pushToast(EditorState::ToastKind::Info, "Reloaded scripts");
         } else {
             // The durable record is the Errors tab entry ScriptModule::reload
@@ -500,6 +504,10 @@ void EditorSystem::update(FrameContext& ctx) {
     if (m_state.showRenderSettings) {
         PROFILE_SCOPE("Panel/RenderSettings");
         m_renderSettings.draw(ec);
+    }
+    if (m_state.showProjectSettings) {
+        PROFILE_SCOPE("Panel/ProjectSettings");
+        m_projectSettings.draw(ec);
     }
 
     // The gesture boundary, after every panel has had its chance to push. Both
