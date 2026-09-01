@@ -169,6 +169,18 @@ class InputMap {
         int indexOf(const std::string& action) const;
 
         /**
+         * @brief How many action slots are in use.
+         *
+         * The width of the part of a command that carries anything, so a wire
+         * encoding pays for the actions a game defined rather than for the
+         * thirty-two a command can hold. Both ends of a session must agree on
+         * it, which they do by running the same project.
+         *
+         * @return Slots assigned, at most MAX_INPUT_ACTIONS.
+         */
+        uint32_t actionCount() const { return m_nextSlot; }
+
+        /**
          * @brief Is the action active this frame? (any binding held)
          */
         bool held(const std::string& action) const;
