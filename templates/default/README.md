@@ -5,6 +5,12 @@
     vkm edit .      open it in the editor
     vkm cook .      bake assets (needs no window)
     vkm package .   assemble a standalone game
+    vkm serve .     host it for other machines (no window)
+    vkm play .      serve it and join it, from one terminal
+
+`serve` and `play` need a vkmSetupNetwork entry in src/module.cpp, which says
+what a joining player is given. Without one they refuse to start rather than
+serving a game nobody can be in.
 
 ## What is here
 

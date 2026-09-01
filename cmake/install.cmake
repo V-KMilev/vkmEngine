@@ -37,7 +37,7 @@ install(TARGETS vkm_render vkm_gl
 
 # The hosts. A packaged game is a renamed copy of vkm_runtime, so the binary
 # ships in the SDK rather than being rebuilt per game.
-install(TARGETS vkm_runtime_app vkm_editor_app vkm_cook_app
+install(TARGETS vkm_runtime_app vkm_editor_app vkm_cook_app vkm_server_app
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime)
 
 # src/engine ships and nothing else does: a project writes behaviors and builds

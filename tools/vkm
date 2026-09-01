@@ -30,6 +30,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -113,12 +114,62 @@ def sdk_version(root: Path) -> str | None:
 
 
 def host(root: Path, name: str) -> Path:
-    """Path to one of the three host executables, wherever this SDK keeps them."""
+    """Path to one of the host executables, wherever this SDK keeps them."""
     exe = name + (".exe" if os.name == "nt" else "")
     for candidate in (root / "bin" / exe, root / "build" / "bin" / exe):
         if candidate.exists():
             return candidate
     die(f"{name} not found under {root}. Build the engine first, or check the SDK.")
+
+
+def engine_lib_dirs(root: Path, runtime: Path) -> list[Path]:
+    """Every directory this SDK keeps engine shared libraries in.
+
+    Installed, they all sit beside the host. The engine's own build tree splits
+    them: what the engine builds lands in build/bin beside the hosts, and the
+    dependencies it builds out of modules/ land in build/lib. Both have to be
+    searched, because a package missing one starts on the machine that built it
+    - borrowing the library through the rpath that build baked in - and nowhere
+    else.
+    """
+    dirs = [runtime.parent]
+    for d in (root / "lib", root / "build" / "lib"):
+        if d.is_dir() and d not in dirs:
+            dirs.append(d)
+    return dirs
+
+
+def borrowed_libraries(exe: Path) -> list[str]:
+    """Libraries this executable resolves from outside its own directory.
+
+    The one failure a package cannot report for itself: it runs here and nowhere
+    else. Only the engine's own libraries are the package's to carry - the C
+    runtime and the graphics driver belong to the player's machine - so a line
+    is a fault only when it resolves somewhere the package does not own.
+
+    Answers empty where there is no ldd, which is every platform but Linux. That
+    is a check skipped rather than a check passed, and a Windows package is
+    still owed one.
+    """
+    try:
+        out = subprocess.run(["ldd", str(exe)], capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return []
+
+    here = str(exe.parent.resolve())
+    bad = []
+    for line in out.splitlines():
+        if "=>" not in line:
+            continue
+        name, _, rest = line.partition("=>")
+        path = rest.strip().split(" ")[0]
+        if not path.startswith("/"):
+            continue
+        if path.startswith(("/lib", "/usr/lib", "/lib64", "/usr/lib64")):
+            continue
+        if not path.startswith(here):
+            bad.append(f"{name.strip()} -> {path}")
+    return bad
 
 
 def die(msg: str):
@@ -271,14 +322,85 @@ def cmd_build(args) -> int:
     return run([cmake, "--build", build] + (["--config", args.config] if args.config else []))
 
 
-def _host_cmd(args, name) -> int:
+def _host_cmd(args, name, extra=()) -> int:
     d = project_dir(args.project)
-    return run([host(sdk_root(), name), d])
+    return run([host(sdk_root(), name), d, *extra])
 
 
-def cmd_run(args)  -> int: return _host_cmd(args, "vkm_runtime")
+def cmd_run(args) -> int:
+    return _host_cmd(args, "vkm_runtime",
+                     ["--connect", args.connect] if args.connect else [])
+
+
 def cmd_edit(args) -> int: return _host_cmd(args, "vkm_editor")
 def cmd_cook(args) -> int: return _host_cmd(args, "vkm_cook")
+
+
+def cmd_serve(args) -> int:
+    return _host_cmd(args, "vkm_server",
+                     ["--port", str(args.port)] if args.port else [])
+
+
+def cmd_play(args) -> int:
+    """Serve a project and join it, from one terminal.
+
+    The point is testing a game with more than one player in it, which otherwise
+    means a terminal per process and remembering which is which. Everything runs
+    against the same project directory, so the server and the clients boot the
+    same entry scene from the same module.
+
+    What this does NOT do is build the module or cook the assets - `vkm build`
+    does that, and a test harness that quietly built something would leave you
+    guessing whether you just tested your edit or the last one.
+    """
+    d = project_dir(args.project)
+    root = sdk_root()
+    server_exe = host(root, "vkm_server")
+    client_exe = host(root, "vkm_runtime")
+
+    address = f"127.0.0.1:{args.port}" if args.port else "127.0.0.1"
+    serve_args = ["--port", str(args.port)] if args.port else []
+
+    children = []
+    try:
+        print("+", " ".join(str(c) for c in [server_exe, d, *serve_args]))
+        children.append(subprocess.Popen([str(server_exe), str(d), *serve_args]))
+
+        # The server binds and loads a scene before it will answer, and a client
+        # that knocks first gives up rather than waiting. A second is more than
+        # enough on any machine that can run both.
+        time.sleep(1.0)
+        if children[0].poll() is not None:
+            die(f"the server exited before any client started (code {children[0].returncode})")
+
+        for n in range(1, args.players + 1):
+            print("+", " ".join(str(c) for c in [client_exe, d, "--connect", address]))
+            # Each client writes its own log. Without this they interleave into
+            # one file, which is the case the log matters most in.
+            env = {**os.environ, "VKM_LOG_SUFFIX": str(n)}
+            children.append(subprocess.Popen([str(client_exe), str(d), "--connect", address],
+                                             env=env))
+
+        # Ends when the server does, or when any client is closed: the point was
+        # to test them together, so one of them going means the run is over.
+        while True:
+            for child in children:
+                if child.poll() is not None:
+                    return child.returncode
+            time.sleep(0.2)
+    except KeyboardInterrupt:
+        return 0
+    finally:
+        # Clients first, so the server sees them leave rather than each one
+        # timing out against a socket already gone.
+        for child in reversed(children):
+            if child.poll() is None:
+                child.terminate()
+        for child in children:
+            try:
+                child.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                child.kill()
 
 
 # Engine data a package carries, and the only engine data an installed SDK has:
@@ -386,14 +508,16 @@ def cmd_package(args) -> int:
     runtime = host(root, "vkm_runtime")
     shutil.copy2(runtime, out / "bin" / (name + exe_suffix))
 
-    # Everything the executable loads, beside it, out of the directory the host
-    # itself was found in - <prefix>/bin installed, build/bin in the engine's own
-    # tree. Both carry an $ORIGIN rpath, so the package runs where it is unzipped.
+    # Everything the executable loads, beside it. Gathered from every directory
+    # this SDK keeps libraries in rather than only the host's own, because the
+    # engine's build tree splits them. The rpath is $ORIGIN, so once they are
+    # here the package runs where it is unzipped.
     copied = 0
-    for pattern in ("*.so*", "*.dll"):
-        for lib in runtime.parent.glob(pattern):
-            shutil.copy2(lib, out / "bin" / lib.name)
-            copied += 1
+    for libdir in engine_lib_dirs(root, runtime):
+        for pattern in ("*.so*", "*.dll"):
+            for lib in libdir.glob(pattern):
+                shutil.copy2(lib, out / "bin" / lib.name)
+                copied += 1
 
     # A glob that matches nothing raises nothing, so without this the one failure
     # that matters is silent: a package with no engine beside the executable
@@ -436,6 +560,14 @@ def cmd_package(args) -> int:
     if (d / "assets").is_dir():
         copy_except(d / "assets", out / "assets", import_sources(d))
 
+    # Asked of the package rather than assumed of the copy: the glob above can
+    # succeed and still miss one, and the result runs perfectly on this machine
+    # because the rpath the build baked in still points at the library it left
+    # behind. It is the player's machine that finds out.
+    if borrowed := borrowed_libraries(out / "bin" / (name + exe_suffix)):
+        die("the package borrows libraries it does not carry, so it would run "
+            "only on this machine:\n  " + "\n  ".join(borrowed))
+
     print(f"\npackaged {name} -> {out}")
     print(f"  run it with: {out / 'bin' / (name + exe_suffix)}")
     return 0
@@ -458,13 +590,30 @@ def main() -> int:
     p.set_defaults(fn=cmd_build)
 
     for name, help_text, fn in (
-        ("run",  "play the project",              cmd_run),
         ("edit", "open the project in the editor", cmd_edit),
         ("cook", "bake the project's assets",      cmd_cook),
     ):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("project", nargs="?")
         p.set_defaults(fn=fn)
+
+    p = sub.add_parser("run", help="play the project")
+    p.add_argument("project", nargs="?")
+    p.add_argument("--connect", metavar="HOST[:PORT]",
+                   help="join the game being served there instead of playing alone")
+    p.set_defaults(fn=cmd_run)
+
+    p = sub.add_parser("serve", help="host the project for players")
+    p.add_argument("project", nargs="?")
+    p.add_argument("--port", type=int, help="port to listen on (default: the project's)")
+    p.set_defaults(fn=cmd_serve)
+
+    p = sub.add_parser("play", help="serve the project and join it, from one terminal")
+    p.add_argument("project", nargs="?")
+    p.add_argument("-n", "--players", type=int, default=2, metavar="N",
+                   help="clients to start (default 2)")
+    p.add_argument("--port", type=int, help="port to serve on (default: the project's)")
+    p.set_defaults(fn=cmd_play)
 
     p = sub.add_parser("package", help="assemble a standalone game")
     p.add_argument("project", nargs="?")
