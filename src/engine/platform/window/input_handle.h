@@ -64,6 +64,7 @@ class KeyboardInputHandle {
          */
         void onKeyEvent(int key, bool pressed);
 
+    private:
         bool m_keyState[MAX_KEY + 1] = {};
 };
 

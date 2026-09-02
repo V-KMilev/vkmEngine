@@ -78,7 +78,17 @@ inline void fromJson(const nlohmann::json& j, char (&v)[N]) {
 template<typename E, typename = std::enable_if_t<std::is_enum_v<E>>>
 inline nlohmann::json toJson(E v) { return Reflect::enumName(v); }
 template<typename E, typename = std::enable_if_t<std::is_enum_v<E>>>
-inline void fromJson(const nlohmann::json& j, E& v) { v = Reflect::enumFromName<E>(j.get<std::string>()); }
+inline void fromJson(const nlohmann::json& j, E& v) {
+    const std::string name = j.get<std::string>();
+    // A name this build has no enumerator for leaves the field at the default
+    // the component was constructed with, and says so - the same answer the
+    // unknown-component-key and unknown-asset-type paths in this subsystem
+    // already give, rather than a valid-looking enumerator zero.
+    if (!Reflect::enumFromNameChecked(name, v)) {
+        LOG_WARNING("No enumerator called '%s' in this build; leaving the field at its default",
+                    name.c_str());
+    }
+}
 
 // Reflection driver. Phase-1 unqualified lookup at this definition site picks
 // up every overload declared above - no ADL needed, they and the templates all

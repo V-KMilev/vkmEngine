@@ -84,6 +84,11 @@ constexpr const char* enumName(Enum value) {
 
 /**
  * @brief Parse an enum from a name, falling back to value 0 when unknown.
+ *
+ * The fallback is a real enumerator, so a caller that needs to tell a match
+ * from a miss cannot do it by looking at the result - ask enumFromNameChecked.
+ * Both ends of the format share one compile-time table, so a file this build
+ * wrote cannot miss; a hand-edited one can.
  */
 template<typename Enum>
 Enum enumFromName(std::string_view name) {
@@ -92,6 +97,26 @@ Enum enumFromName(std::string_view name) {
         if (name == Names::values[i]) return static_cast<Enum>(i);
     }
     return static_cast<Enum>(0);
+}
+
+/**
+ * @brief Parse an enum from a name, saying whether the name was one.
+ *
+ * @param name  The serialized name to look up.
+ * @param[out] out Set to the matching enumerator, untouched on a miss so a
+ *                 caller keeps whatever default it constructed.
+ * @return False when this build has no enumerator by that name.
+ */
+template<typename Enum>
+bool enumFromNameChecked(std::string_view name, Enum& out) {
+    using Names = EnumNames<Enum>;
+    for (std::size_t i = 0; i < Names::count; ++i) {
+        if (name == Names::values[i]) {
+            out = static_cast<Enum>(i);
+            return true;
+        }
+    }
+    return false;
 }
 
 /**
