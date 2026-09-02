@@ -20,6 +20,18 @@ struct VisibilityContext {
     float maxDistanceSquared;    ///< Pre-computed maxDistance^2 for squared-distance comparisons.
     float screenSizeThresholdSq; ///< Pre-computed (minPixels / (projScaleY * viewportHeight))^2 for sqrt-free screen-size test.
 
+    /**
+     * @brief Whether the view divides by depth.
+     *
+     * Screen-size culling is the one stage that asks: its test is a world
+     * radius against a threshold that grows with distance, which describes
+     * apparent size under a perspective divide and nothing under an
+     * orthographic one, where a distant object is exactly as large as a near
+     * one. False turns that stage off rather than letting it delete what fills
+     * the viewport.
+     */
+    bool perspective = true;
+
 };
 
 } // namespace Vkm::Engine

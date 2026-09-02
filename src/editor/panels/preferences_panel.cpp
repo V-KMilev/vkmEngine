@@ -145,7 +145,10 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
         }
 
         if (m_rebindTarget == label) {
-            for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; ++k) {
+            // Keyboard only. The named range runs on through the gamepad and
+            // then the mouse buttons and wheel, so scanning all of it binds a
+            // shortcut to the click that was aiming at the next widget.
+            for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_GamepadStart; ++k) {
                 auto candidate = static_cast<ImGuiKey>(k);
                 if (candidate == ImGuiKey_LeftCtrl  || candidate == ImGuiKey_RightCtrl  ||
                     candidate == ImGuiKey_LeftShift || candidate == ImGuiKey_RightShift ||

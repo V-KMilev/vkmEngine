@@ -31,7 +31,8 @@ thread_local std::vector<uint32_t>  t_scratchTriangles;
 /**
  * @brief Nearest intersection of a ray with a sphere, ahead of the origin.
  *
- * @param origin Ray origin, sphere-relative already applied by the caller.
+ * @param origin Ray origin in the same frame as @p center; this subtracts one
+ *               from the other itself.
  * @param dir    Unit ray direction.
  * @param center Sphere centre.
  * @param radius Sphere radius.

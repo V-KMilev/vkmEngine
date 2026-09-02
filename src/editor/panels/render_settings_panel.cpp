@@ -1,5 +1,7 @@
 #include "panels/render_settings_panel.h"
 
+#include "framework/editor_commands.h"
+
 #include "framework/editor_common.h"
 #include "ui/editor_style.h"
 #include "ui/editor_dialogs.h"
@@ -127,9 +129,19 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
     if (beginComponentCard("Reflection Probes", EditorStyle::Accent::Effect, true)) {
         propCheckbox("Enabled", &s.probes, "Local IBL + parallax reflections, blended over the global IBL");
         if (ImGui::Button("Bake All Probes", ImVec2(-1, 0))) {
+            // bakeVersion is a reflected field, so bumping it edits the scene on
+            // disk as much as any inspector row does - one step for the gesture,
+            // not one per probe, because the author pressed one button.
+            auto batch = std::make_unique<CompositeCommand>("Bake all probes");
             ec.frame.scene.forEach<ReflectionProbe>(
-                [](EntityId, ReflectionProbe& probe) { probe.bakeVersion++; });
-            ec.state.markSceneDirty();
+                [&](EntityId probeId, ReflectionProbe& probe) {
+                    ReflectionProbe after = probe;
+                    ++after.bakeVersion;
+                    batch->add(std::make_unique<ComponentEditCommand<ReflectionProbe>>(
+                        probeId, probe, after, "Bake probe"));
+                    probe = after;
+                });
+            if (!batch->empty()) ec.state.commands.push(std::move(batch));
         }
     }
     endComponentCard();

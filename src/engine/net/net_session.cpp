@@ -710,7 +710,15 @@ bool NetSession::onWelcome(Scene& scene, BitReader& reader) {
         return false;
     }
     m_token = reader.u64();
-    if (reader.failed()) return true;
+    if (reader.failed()) {
+        // Treated like the slot check above rather than shrugged at: a Welcome
+        // that stops here leaves this end reporting itself as playing with no
+        // entity and a token the server will reject on every packet after.
+        m_lastError = "the server's welcome ended before it said who this end is";
+        LOG_ERROR("Welcome ended before the token; not joining");
+        close();
+        return false;
+    }
 
     m_localEntity = scene.isAliveAtIndex(slot) ? scene.entityAt(slot)
                                                : scene.createEntityAt(slot);
