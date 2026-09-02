@@ -155,11 +155,12 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     m_bloom.resize(view.viewportWidth, view.viewportHeight);
     m_hiz.resize(view.viewportWidth, view.viewportHeight);
 
-    // The AO target only exists while something reads it (the composite debug
-    // views sample it unconditionally, so any non-default view keeps it alive
-    // too). Once allocated it stays - toggles flip too often to thrash.
-    if (view.settings.gtao || view.settings.renderMode != RenderMode::Default)
-        m_ao.resize(view.viewportWidth, view.viewportHeight);
+    // The AO target only exists while the GTAO pass writes it. Its two readers
+    // both bind it behind ctx.aoReady, which only that pass sets, so a debug
+    // view no longer needs it allocated to sample safely - the shader asks
+    // u_hasAO and shows the unoccluded value instead. Once allocated it stays;
+    // the toggle flips too often to thrash a full-viewport target.
+    if (view.settings.gtao) m_ao.resize(view.viewportWidth, view.viewportHeight);
     // The multisample twin is allocated only while MSAA is on; at 4x it is the frame's
     // largest allocation. Which target the geometry passes then draw into, and what the
     // resolve passes do with it: docs/reference/system/rendering.md.

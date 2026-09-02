@@ -74,7 +74,9 @@ void GLDecalPass::execute(GLFrameContext& ctx) {
         material->bind(GLBindings::UBOBindingPoints::MATERIAL);
         material->bindTextures(glView);
 
-        // Decals project along the entity's forward (+Z; see core/math/axes.h).
+        // The entity's +Z column, which is its backward: the shader negates it
+        // (decal/fragment.shader, facing) so the projection runs along forward,
+        // which is -Z. Sent unnegated so the sign lives in one place.
         const glm::vec3 projDir = glm::normalize(glm::vec3(decal.model[2]));
 
         m_shader->setUniformMatrix4fv("u_model",    decal.model);
