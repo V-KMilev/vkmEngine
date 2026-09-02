@@ -1,6 +1,12 @@
 #pragma once
 
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
+
+#include "core/hash/fnv1a.h"
 
 namespace Vkm::Engine {
 
@@ -12,7 +18,7 @@ struct Project;
 /**
  * @brief Resolve the project, pin the working directory, and open the log file.
  *
- * The process prologue all three hosts share, and the order inside it is not
+ * The process prologue every host shares, and the order inside it is not
  * free to change - each step carries its reason where it stands in the .cpp.
  *
  * The working directory becomes the ENGINE root rather than the project's:
@@ -34,6 +40,43 @@ struct Project;
 bool bootHost(int argc, char** argv, const char* logFileName, const char* loggerTag);
 
 /**
+ * @brief Where a host's own flags begin, past the project directory.
+ *
+ * argv[1] names the project when it is given, and bootHost has already
+ * consumed it. Every host walks the rest for flags of its own and none of them
+ * should be re-deciding what argv[1] was - the rule lives here, next to the
+ * function that applies it.
+ *
+ * @param argc Argument count, as main received it.
+ * @param argv Argument vector, as main received it.
+ * @return The first index a host should read its own flags from.
+ */
+inline int firstFlagIndex(int argc, char** argv) {
+    return (argc > 1 && argv[1][0] != '-') ? 2 : 1;
+}
+
+/**
+ * @brief Register the cooked asset factories and load the project's gameplay module.
+ *
+ * The two playing hosts - the runtime and the server - open a project the same
+ * way: cooked factories only, no importers, then the asset library, then the
+ * module that fills the behavior registry. Both need it before any scene I/O,
+ * and both treat a missing or unloadable module as fatal where the editor only
+ * warns (../reference/system/io.md, "What each host does when a project will
+ * not open").
+ *
+ * @param module Receives the loaded module. Declare it before the Engine, so it
+ *               outlives one: behaviors are destroyed during Engine teardown and
+ *               their code must still be mapped then.
+ * @param verb   What this host was about to do with the project - "playing",
+ *               "serving" - for the message when there is no module to do it
+ *               with.
+ * @return False having logged the reason, which is the part that matters: built
+ *         against another engine version, missing its entry, or unreadable.
+ */
+bool bootGameplayModule(ScriptModule& module, const char* verb);
+
+/**
  * @brief Which world bootProjectScene left standing.
  *
  * There is always one, so this says whose it is rather than whether there is
@@ -46,6 +89,36 @@ enum class SceneBoot {
     Default,  ///< The project names no world of its own; the default scene stands in.
     Failed    ///< The project names an entry scene that did not load.
 };
+
+/**
+ * @brief A hash of the scene file at @p path, or zero when there is no file.
+ *
+ * Both ends of a game must have loaded the same world: a slot is an entity's
+ * name on the wire, and two ends whose scenes differ agree on every name and
+ * mean different things by all of them. The schema fingerprint catches a
+ * different build; this catches the same build with a stale scene, which is the
+ * one a developer actually produces.
+ *
+ * Zero means "no file behind this world" - a generated world, or the default
+ * scene standing in for a load that failed - and compares equal to nothing, so
+ * such a host neither offers nor demands agreement.
+ *
+ * @param path Absolute path of the entry scene, as SceneBootResult reports it.
+ * @return The hash, or zero.
+ */
+inline uint64_t fingerprintScene(const std::filesystem::path& path) {
+    if (path.empty()) return 0;
+
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return 0;
+
+    const std::string bytes((std::istreambuf_iterator<char>(in)),
+                            std::istreambuf_iterator<char>());
+    if (bytes.empty()) return 0;
+
+    const uint64_t hash = fnv1a64(bytes.data(), bytes.size());
+    return hash == 0 ? 1 : hash;  // zero is reserved for "no file"
+}
 
 /**
  * @brief Which world bootProjectScene left standing, and the file it came from.
@@ -73,7 +146,7 @@ struct SceneBootResult {
 /**
  * @brief Put the project's own world into @p scene.
  *
- * The rule a project opens by, in one place because all three hosts have to
+ * The rule a project opens by, in one place because every host has to
  * agree on it: the authored entryScene, else the world the project's module
  * generates, else the default scene. **Exactly one** of them runs - seeding a
  * scene before asking the project leaves a stray camera, light and cube sitting

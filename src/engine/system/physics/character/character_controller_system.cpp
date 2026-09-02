@@ -16,6 +16,7 @@
 #include "ecs/component/physics/collider.h"
 #include "ecs/component/physics/rigidbody.h"
 #include "ecs/component/core/transform.h"
+#include "net/net_session.h"
 #include "core/math/axes.h"
 #include "ecs/scene.h"
 #include "system/physics/body_pose.h"
@@ -181,15 +182,19 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
 
     scene.forEach<CharacterController, Rigidbody>(
             [&](EntityId id, CharacterController& cc, Rigidbody& rb) {
-        const Collider* collider = scene.has<Collider>(id) ? &scene.get<Collider>(id) : nullptr;
-        if (!collider || !collider->enabled || !hasCapsule(*collider)) sawNoCapsule = true;
-        if (!rb.freezeRotation) sawSpinnable = true;
+        // A character this end does not decide is left where the authority put
+        // it, standing included - which is why grounded is set below this gate.
+        // The CharacterController codec says why it cannot be worked out here.
+        if (!ctx.net.simulates(id)) return;
 
-        // Grounded is a question about the surface, not about touching: a wall
-        // is a resolved contact too, and standing on one is not standing.
+        // A wall is a resolved contact too, and standing on one is not standing.
         const float slopeLimit = std::cos(glm::radians(glm::clamp(cc.maxSlopeAngle, 0.0f, 90.0f)));
         cc.grounded = rb.supported && glm::dot(rb.supportNormal, Math::WORLD_UP) >= slopeLimit;
         cc.groundNormal = cc.grounded ? rb.supportNormal : Math::WORLD_UP;
+
+        const Collider* collider = scene.has<Collider>(id) ? &scene.get<Collider>(id) : nullptr;
+        if (!collider || !collider->enabled || !hasCapsule(*collider)) sawNoCapsule = true;
+        if (!rb.freezeRotation) sawSpinnable = true;
 
         // A body that dozed off has its velocity zeroed by the solver's
         // writeback, so anything asking it to move has to wake it first.

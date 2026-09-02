@@ -9,6 +9,9 @@
 #include "project_boot.h"
 #include "editor_system.h"
 #include "system/script/script_module.h"
+#include "gl_backend.h"
+#include "gl_debug.h"
+
 #include "app/engine_app.h"
 
 int main(int argc, char** argv) {
@@ -32,6 +35,12 @@ int main(int argc, char** argv) {
         // EditorSystem composes the real title - project, scene and modified
         // marker - from its first frame onward.
         auto sys = setupEngineApp(engine, AppConfig{"vkmEngine", true, false});
+
+        // The backend is the host's choice, not the bootstrap's. Here and now
+        // rather than inside setupEngineApp, so a host that draws nothing can
+        // include the same bootstrap and link no backend at all.
+        Vkm::GL::enableGLDebugLogging(false);
+        sys.render.setBackend(std::make_unique<Vkm::Engine::GLBackend>());
 
         engine.addSystem<Vkm::Engine::EditorSystem>(Vkm::Engine::SystemStage::UI,
             engine.getWindow().getWindowContext(),

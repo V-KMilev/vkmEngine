@@ -6,6 +6,8 @@
 
 namespace Vkm::Engine {
 
+class NetSession;
+
 class Scene;
 
 /**
@@ -76,6 +78,24 @@ class ScriptModule {
         bool buildScene(Scene& scene);
 
         /**
+         * @brief Let the module say what a player is, if the game takes players.
+         *
+         * Optional third entry, `vkmSetupNetwork`. The engine has no opinion
+         * about what a joining player should be given - a capsule, a ship, a
+         * cursor - so a project that takes players says so here, by setting the
+         * session's spawn callbacks and registering any component types of its
+         * own that have to replicate.
+         *
+         * A module without the entry is normal and silent: a single-player
+         * project never needs one, and one that has it still plays offline
+         * because a session with nobody in it behaves exactly as no session.
+         *
+         * @param session The session the host will host or join with.
+         * @return True if the module had the entry and it ran.
+         */
+        bool setupNetwork(NetSession& session);
+
+        /**
          * @brief Drop the loaded module and the behavior types it registered.
          *
          * A host that moves to a project bringing no code of its own has to
@@ -102,8 +122,19 @@ class ScriptModule {
          */
         bool loadCopyAndRegister();
 
+        /**
+         * @brief Drop everything the loaded module registered, before it is unmapped.
+         *
+         * The behavior factories, the wire schema's thunks and the session's spawn
+         * callbacks are all code living inside the module. A std::function or a
+         * function pointer that outlives the dlclose is a call into memory that is
+         * no longer mapped, so every path that unloads goes through here first.
+         */
+        void releaseRegistrations();
+
     private:
         DynamicLibrary m_lib;
+        NetSession*    m_net = nullptr;  ///< Session this module's entry wrote into.
         std::string    m_modulePath;
         std::string    m_loadedCopyPath;
         int            m_reloadCounter = 0;

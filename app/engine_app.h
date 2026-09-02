@@ -26,9 +26,6 @@
 #include "system/render/render_system.h"
 #include "platform/input/default_bindings.h"
 
-#include "gl_backend.h"
-#include "gl_debug.h"
-
 #include "resource/asset/font_asset.h"
 #include "font/font_baker.h"
 
@@ -56,6 +53,28 @@ struct AppConfig {
     const char* windowTitle;
     bool        startPaused;
     bool        logFps;
+
+    /**
+     * @brief Run with no window at all.
+     *
+     * For a host that referees rather than plays. The system stack is exactly
+     * the same either way, and that is the point: an authority that simulated
+     * differently from the clients it corrects would not be an authority. What
+     * is skipped is the window, the icon and the GL debug switch - none of
+     * which a simulation consults.
+     *
+     * The frame cap is not skipped with them. With no window there is no vsync
+     * and nothing to block on, so a loop left uncapped spins a core as fast as
+     * it can for frames nobody draws.
+     */
+    bool        headless = false;
+
+    /**
+     * @brief Frames a second a headless host holds itself to.
+     *
+     * Ignored when there is a window, which paces itself against the display.
+     */
+    uint32_t    headlessFrameRate = 128;
 };
 
 // System handles the caller may still need after bootstrap. The editor feeds
@@ -68,31 +87,37 @@ struct AppSystems {
     Vkm::Engine::RenderSystem&           render;
 };
 
-// Stands a ready-to-run engine app up in `engine`: the window, the standard
-// system stack, and the GL backend. The caller owns what differs per-binary -
-// gameplay registration (must happen before this, so the scene that follows can
-// create behaviors through the registry), the scene itself (bootProjectScene),
-// any extra systems (the editor adds EditorSystem), and the run loop.
+// Stands a ready-to-run engine app up in `engine`: the window and the standard
+// system stack. The caller owns what differs per-binary - the render backend
+// (or none, for a host that draws nothing), gameplay registration (must happen
+// before this, so the scene that follows can create behaviors through the
+// registry), the scene itself (bootProjectScene), any extra systems (the editor
+// adds EditorSystem), and the run loop.
 inline AppSystems setupEngineApp(Vkm::Engine::Engine& engine, const AppConfig& config) {
     // Bindings first: the systems below read input through named actions, and an
     // action with no binding is silently dead rather than an error.
     Vkm::Engine::installDefaultBindings(engine.getInput());
     auto& window = engine.getWindow();
-    window.createWindow(config.windowTitle);
-    // Here and nowhere earlier: glDebugMessageCallback is a GLEW pointer, null
-    // until createWindow has run glewInit, and enabling on a null one no-ops in
-    // silence. Async - synchronous validates every GL call on the calling thread.
-    Vkm::GL::enableGLDebugLogging(false);
-    window.setFramerate(0);
+    if (config.headless) {
+        // No window, and therefore no vsync and nothing for swapBuffers to block
+        // on - so the frame limiter is the only thing pacing the loop, and it is
+        // the difference between a server and a busy loop.
+        window.setFramerate(config.headlessFrameRate);
+    } else {
+        window.createWindow(config.windowTitle);
+        window.setFramerate(0);
+    }
     // A game's own icon if it ships one, the engine's otherwise: a shipped game
     // should not wear the engine's logo, but one that authored no icon still
     // gets an icon rather than a blank.
     const std::filesystem::path projectIcon =
         Vkm::Engine::ProjectPaths::assets() / "logo" / "icon.png";
     std::error_code iconEc;
-    window.setIcon(std::filesystem::exists(projectIcon, iconEc)
-        ? projectIcon.string()
-        : (Vkm::Engine::ProjectPaths::engineAssets() / "logo" / "vkm_engine_icon.png").string());
+    if (!config.headless) {
+        window.setIcon(std::filesystem::exists(projectIcon, iconEc)
+            ? projectIcon.string()
+            : (Vkm::Engine::ProjectPaths::engineAssets() / "logo" / "vkm_engine_icon.png").string());
+    }
 
     auto& cameraController =
         engine.addSystem<Vkm::Engine::CameraControllerSystem>(Vkm::Engine::SystemStage::Input);
@@ -133,11 +158,15 @@ inline AppSystems setupEngineApp(Vkm::Engine::Engine& engine, const AppConfig& c
         engine.addSystem<Vkm::Engine::VisibilitySystem>(Vkm::Engine::SystemStage::Visibility);
     auto& renderSystem = engine.addSystem<Vkm::Engine::RenderSystem>(Vkm::Engine::SystemStage::Render);
 
-    // The backend compiles its own shaders and owns its pass pipeline, so no
-    // shader-asset registration or pass wiring is needed at the app level.
-    renderSystem.setBackend(std::make_unique<Vkm::Engine::GLBackend>());
+    // Which backend a host draws with, or whether it draws at all, is the
+    // host's choice: naming one here would bind every includer to it, including
+    // the host that links none. RenderSystem::update returns without one.
 
-    ensureDefaultUIFont(engine.getResources());
+    // A host that presents nothing needs neither: the font is baked from a file
+    // in the engine's own asset directory, which a server shipped alone has no
+    // reason to carry, and the device is a mixer thread for an empty room.
+    if (config.headless) audioSystem.setSilent();
+    else                 ensureDefaultUIFont(engine.getResources());
 
     // No scene is seeded here: which one boots is the project's answer, given by
     // bootProjectScene after this returns. Seeding one would leave a stray

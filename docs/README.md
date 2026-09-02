@@ -112,4 +112,5 @@ docs/
       physics.md        fixed-step rigid bodies, box + capsule colliders, solver, character controller
       ui.md             screen-space in-game UI (canvas/element/image/text/button)
       audio.md          clips, sources, the listener, and the device seam
+      networking.md     authoritative server, client prediction, snapshots and commands
 ```

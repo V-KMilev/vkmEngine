@@ -1,5 +1,7 @@
 {
     "name": "New Project",
     "engineVersion": "@VKM_ENGINE_VERSION@",
-    "entryScene": ""
+    "entryScene": "",
+    "maxPlayers": 10,
+    "netPort": 27750
 }

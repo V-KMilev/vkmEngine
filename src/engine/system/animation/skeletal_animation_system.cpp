@@ -59,15 +59,15 @@ void SkeletalAnimationSystem::update(FrameContext& ctx) {
     ctx.poses = &m_poses;
 
     // Advancing a clip is the tick's; composing the pose it names is
-    // presentation, and no tick runs while paused. The step is already zero
-    // here, so this rebuilds the pose without advancing or crossing a marker.
+    // presentation, and no tick runs while paused. So the pose is rebuilt a
+    // zero-length step from where the last tick left it, and holds still.
     if (!ctx.clock.isPaused()) return;
 
     m_poses.clear();
     m_work.clear();
 
     FaultsSeen seen;
-    poseRigs(ctx, seen);
+    poseRigs(ctx, seen, 0.0f);
 
     m_clipMismatchLogged = seen.clipMismatch;
     m_rigMismatchLogged  = seen.rigMismatch;
@@ -82,7 +82,7 @@ void SkeletalAnimationSystem::fixedUpdate(FrameContext& ctx) {
     ctx.poses = &m_poses;
 
     FaultsSeen seen;
-    poseRigs(ctx, seen);
+    poseRigs(ctx, seen, ctx.clock.getFixedStep());
     publishMarkers(ctx);
 
     // Each latch holds only while its fault is still there, so fixing one is
@@ -93,7 +93,7 @@ void SkeletalAnimationSystem::fixedUpdate(FrameContext& ctx) {
     m_meshOffsetLogged   = seen.meshOffset;
 }
 
-void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen) {
+void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen, float step) {
     Scene& scene = ctx.scene;
 
     auto* animators = scene.storage<Animator>();
@@ -169,10 +169,7 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen) {
         stampDescendants(scene, resources, rig, work, seen);
     }
 
-    // No pause test: reaching a fixedUpdate means a step was consumed, and one
-    // is only consumed when simulation time elapsed - the editor's single step
-    // is paused and stepping at once.
-    const float simDelta = ctx.clock.getFixedStep();
+    const float simDelta = step;
     const size_t grain = (totalBones < MIN_PARALLEL_BONES)
         ? m_work.size()
         : std::max<size_t>(1, m_work.size() / (ThreadPool::get().threadCount() + 1));

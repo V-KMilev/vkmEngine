@@ -36,6 +36,28 @@ struct Project {
     std::string entryScene;                 ///< Scene to boot, relative to the project root.
     uint32_t    tickRate = Config::DEFAULT_TICK_RATE;  ///< Simulation ticks per second.
 
+    /**
+     * @brief How many players this game is for.
+     *
+     * A property of the game rather than of a run: a scene with four characters
+     * authored into it is a four-player game wherever it is served. A
+     * connection past the last seat is refused with a reason.
+     *
+     * Zero is not a special value - a game nobody can join is what a project
+     * that never mentions networking already is, by having no vkmSetupNetwork
+     * entry to say what a player is.
+     */
+    uint32_t    maxPlayers = 10;
+
+    /**
+     * @brief The port this game is served on unless a run says otherwise.
+     *
+     * Here so that serving a project and joining it need no argument to agree.
+     * Where a particular run listens is still deployment data, so vkm_server
+     * takes --port and it wins.
+     */
+    uint16_t    netPort = 27750;
+
     /// Logos shown after the engine's own, in the order listed. Usually empty.
     std::vector<SplashEntry> splash;
 };
@@ -52,6 +74,25 @@ struct Project {
  * @return True when a project.json was read and parsed.
  */
 bool loadProject(const std::filesystem::path& projectRoot, Project& out);
+
+/**
+ * @brief Write @p project back to the project.json at @p projectRoot.
+ *
+ * Read-modify-write: the file is parsed, the fields this struct describes are
+ * overwritten, and everything else in the document is left exactly as it was.
+ * A project.json is hand-authored as often as it is written by a tool, and a
+ * writer that rebuilt the document would quietly drop whatever it did not
+ * happen to know about.
+ *
+ * splash is the one field read but not written. loadProject skips an entry
+ * naming no image, so writing the list back would delete it from the file - and
+ * nothing edits splash, so there is nothing to write.
+ *
+ * @param projectRoot Directory holding project.json; it is created if missing.
+ * @param project     What to record.
+ * @return True when the file was written.
+ */
+bool saveProject(const std::filesystem::path& projectRoot, const Project& project);
 
 /**
  * @brief Locate the project a path refers to.
