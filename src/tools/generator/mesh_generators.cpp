@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "GENERATOR"
+
 #include "generator/mesh_generators.h"
 
 #include <cmath>
@@ -429,6 +431,17 @@ MeshAsset generateCone(float radius, float height, uint32_t segments) {
 }
 
 MeshAsset decimateMesh(const MeshAsset& src, uint32_t gridResolution) {
+    // A skinned mesh is refused rather than silently unskinned. Collapsing
+    // vertices to a grid cell merges bone bindings that were never the same
+    // weights, and a MeshAsset is skinned iff its skin stream is non-empty - so
+    // dropping it hands back an LOD that renders in the bind pose while LOD0
+    // animates, with nothing said at either end.
+    if (!src.skin.empty()) {
+        LOG_WARNING("'%s' is skinned; decimation would drop its bindings, so the "
+                    "source is returned unchanged", src.name().c_str());
+        return src;
+    }
+
     if (src.vertices.empty() || src.indices.size() < 3 || gridResolution < 1) {
         return src;
     }
