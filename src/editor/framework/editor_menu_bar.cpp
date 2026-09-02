@@ -61,6 +61,13 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
 
     // Lazy-loaded the first time we draw (the GL context is live by now).
     // Loaded unflipped so ImGui's top-left UVs render it upright.
+    //
+    // Its own GL object rather than a texture asset, which is the one place the
+    // editor reaches the GPU outside EditorRenderHooks. Routed through the seam
+    // it would have to be an asset in the project's ResourceManager - and that
+    // manager is swapped when a project opens, so the handle goes stale and the
+    // mark lands in the user's asset library as an unused import. The seam has
+    // no entry for an image the engine owns; adding one is a change to it.
     if (!m_logo) {
         m_logo = std::make_unique<Vkm::GL::Texture2D>(
             (ProjectPaths::engineAssets() / "logo" / "vkm_engine_mark.png").string(),

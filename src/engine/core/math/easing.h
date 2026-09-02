@@ -4,6 +4,8 @@
 
 #include <glm/gtx/easing.hpp>
 
+#include "logger.h"
+
 namespace Vkm::Engine {
 
 /**
@@ -106,30 +108,55 @@ namespace Easing {
     }
 
     /**
-     * @brief Stable name -> function (deserialization); unknown -> linear.
+     * @brief Stable name -> function (deserialization).
+     *
+     * A name this build does not carry says so and falls back to linear, rather
+     * than returning a curve the file did not ask for in silence.
      */
     inline EasingFunction byName(const char* name) {
         for (const Entry& e : EASINGS) {
             if (std::strcmp(name, e.name) == 0) return e.fn;
         }
+        LOG_WARNING("No easing called '%s'; using linear", name);
         return &linear;
     }
 
     /**
-     * @brief Function -> table index; unknown -> 0 (linear).
+     * @brief Function -> table index, or -1 for a function not in the table.
+     *
+     * Answers -1 rather than 0 because 0 is a real row: a miss and "linear"
+     * would otherwise be the same answer, which is what let an unrecognised
+     * curve serialize as linear with nothing said.
+     *
+     * A pointer can miss without anyone writing a custom curve. EASINGS is an
+     * inline table of lambda addresses in a header, and vkm_core is a shared
+     * library whose data carries no import annotation - so on Windows the
+     * editor's copy of the table and the engine's hold different addresses for
+     * the same curve, and a pointer chosen in one is unrecognisable in the
+     * other. Linux binds them to one copy and never sees it.
      */
     inline int indexOf(EasingFunction f) {
         for (int i = 0; i < EASING_COUNT; ++i) {
             if (EASINGS[i].fn == f) return i;
         }
-        return 0;
+        return -1;
     }
 
     /**
-     * @brief Function -> stable name (serialization); unknown -> "linear".
+     * @brief Function -> stable name, for serialization.
+     *
+     * A function the table does not know is written as linear, because a name
+     * is what the format carries and there is no other one to give it - but it
+     * says so first, since the curve an author chose is about to be lost.
      */
     inline const char* nameOf(EasingFunction f) {
-        return EASINGS[indexOf(f)].name;
+        const int i = indexOf(f);
+        if (i < 0) {
+            LOG_WARNING("An easing that is not in this build's table is being saved "
+                        "as linear; the curve it names will not come back");
+            return EASINGS[0].name;
+        }
+        return EASINGS[i].name;
     }
 
 } // namespace Easing

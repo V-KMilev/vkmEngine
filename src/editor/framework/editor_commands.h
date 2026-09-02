@@ -500,6 +500,38 @@ class DestroySubtreeCommand : public Command {
 };
 
 /**
+ * @brief Swap one subtree for another, undoable.
+ *
+ * For an operation that rebuilds an entity and everything under it rather than
+ * editing a field - building a ragdoll from a rig, and clearing one. Neither is
+ * an add, a remove or an edit of a component, so none of the commands above
+ * covers it: what changes is the shape of the subtree.
+ *
+ * Holds both states rather than replaying the operation, because the operation
+ * reads assets and settings that may not be the same next time. Restoring the
+ * subtree, in either direction, is what SubtreeSnapshot::apply already does -
+ * including re-stamping the entity references the bones carry.
+ */
+class SubtreeReplaceCommand : public Command {
+    public:
+        SubtreeReplaceCommand(SubtreeSnapshot before, SubtreeSnapshot after, const char* label)
+            : m_before(std::move(before)), m_after(std::move(after)), m_label(label) {}
+
+        void redo(Scene& scene, EditorState& state) override { swapTo(scene, state, m_after); }
+        void undo(Scene& scene, EditorState& state) override { swapTo(scene, state, m_before); }
+        const char* label() const override { return m_label; }
+        bool addresses(uint32_t slotIndex) const override;
+
+    private:
+        void swapTo(Scene& scene, EditorState& state, const SubtreeSnapshot& to);
+
+    private:
+        SubtreeSnapshot m_before;
+        SubtreeSnapshot m_after;
+        const char*     m_label;
+};
+
+/**
  * @brief Place an instance of a prefab into the scene, undoable.
  *
  * Redo rebuilds the instance from the prefab file rather than from a snapshot of

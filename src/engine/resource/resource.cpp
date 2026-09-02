@@ -8,7 +8,9 @@ namespace Vkm::Engine {
 
 namespace {
 // Deep-copy the source descriptor so a copied Resource owns its own json
-// (null stays null). Shared by the copy ctor and copy-assignment.
+// (null stays null). The copy constructor is its only caller: assignment is
+// deleted, so replacing an asset's contents goes through
+// ResourceManager::swapValue instead.
 std::unique_ptr<nlohmann::json> cloneSource(const std::unique_ptr<nlohmann::json>& src) {
     return src ? std::make_unique<nlohmann::json>(*src) : nullptr;
 }

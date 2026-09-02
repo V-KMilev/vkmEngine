@@ -242,9 +242,12 @@ int faceContact(const BoxShape& a, const BoxShape& b, int caseIndex, const glm::
  * @brief Closest point on segment [pa, pb] to an axis-aligned box of half-extents
  * @p h centred on the origin.
  *
- * Alternating projection: clamp the current segment point into the box, then
- * re-close onto the segment. Both sets are convex so this converges, and the
- * step test is what says when - the pass cap only stops a runaway.
+ * Solved exactly rather than iterated. The squared distance along the segment
+ * is piecewise quadratic - one parabola per stretch between slab crossings, of
+ * which there are at most six - so every stretch is evaluated in closed form
+ * and the smallest wins. No pass count, no convergence test, and no fixed point
+ * that is not the nearest pair, which is what the iterative form settled on
+ * often enough to report real millimetre overlaps as no contact at all.
  *
  * @param pa Segment start, in the box's local frame.
  * @param pb Segment end, in the box's local frame.

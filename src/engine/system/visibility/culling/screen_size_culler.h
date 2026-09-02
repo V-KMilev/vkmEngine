@@ -40,6 +40,15 @@ inline bool isVisible(
     const glm::vec3 worldHalfExtent = (boundsMax - boundsMin) * 0.5f;
     const float worldRadiusSq = glm::dot(worldHalfExtent, worldHalfExtent);
 
+    // Perspective only: this compares a world radius against a threshold that
+    // grows with depth, which is what apparent size does under a perspective
+    // divide and is not what it does under an orthographic one - there a
+    // distant object is exactly as large on screen as a near one. Applied to an
+    // orthographic view it would delete geometry that fills the viewport.
+    if (!context.perspective) {
+        return true;
+    }
+
     const glm::vec3 viewCenter = glm::vec3(context.view * glm::vec4(worldCenter, 1.0f));
     const float depth = -viewCenter.z;
 

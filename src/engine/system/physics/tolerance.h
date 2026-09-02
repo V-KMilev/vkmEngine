@@ -5,9 +5,8 @@ namespace Vkm::Engine::Physics {
 /**
  * @brief The tolerances collision and character movement are decided by.
  *
- * Gathered because they were scattered: four names and seven bare literals
- * across the subsystem, with no stated relationship between any of them, so
- * nothing said whether two 1e-4 were the same decision or a coincidence.
+ * One home, so that two tolerances with the same value are visibly the same
+ * decision rather than a coincidence a reader has to guess at.
  *
  * None of these is `glm::epsilon`, and the distinction is worth keeping. That
  * one answers "can this float be divided by", which is a question about the

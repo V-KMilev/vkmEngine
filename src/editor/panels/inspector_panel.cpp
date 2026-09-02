@@ -1031,7 +1031,11 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
             }
             ImGui::SameLine();
             if (ImGui::Button("Duplicate", ImVec2(bw, 0))) {
-                if (MaterialHandle nh = EditorActions::duplicateMaterial(resources, state, mesh.material, &mesh)) {
+                if (MaterialHandle nh = EditorActions::duplicateMaterial(resources, mesh.material)) {
+                    Mesh after = mesh;
+                    after.material = nh;
+                    state.commands.push(std::make_unique<ComponentEditCommand<Mesh>>(
+                        id, mesh, after, "Duplicate material"));
                     state.openMaterial(nh);
                     changed = true;
                 }
@@ -1698,15 +1702,16 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
                     const glm::vec3 scale = meshScaleRelativeTo(scene, id, meshNode);
                     Collider built;
                     built.parts.clear();
-                    m_meshColliderEmpty = addMeshCollider(built, asset, scale) == 0;
-                    if (!m_meshColliderEmpty) {
+                    const bool empty = addMeshCollider(built, asset, scale) == 0;
+                    m_meshColliderEmpty = empty ? id : EntityId{};
+                    if (!empty) {
                         built.isTrigger = col.isTrigger;
                         built.enabled   = col.enabled;
                         col = std::move(built);
                         changed = true;
                     }
                 }
-                if (m_meshColliderEmpty) {
+                if (m_meshColliderEmpty == id) {
                     ImGui::TextColored(EditorStyle::DANGER,
                         "That mesh has no whole triangle; the collider is unchanged.");
                 }
@@ -1870,13 +1875,24 @@ void InspectorPanel::drawRagdollSection(Scene& scene, ResourceManager& resources
         return changed;
     });
 
-    if (pending == Pending::Build && rigNode) {
-        const SkeletonAsset& rig = resources.get(scene.get<Animator>(rigNode).skeleton);
-        buildRagdoll(scene, id, rig, m_ragdollSettings);
-        state.markSceneDirty();
-    } else if (pending == Pending::Clear) {
-        clearRagdoll(scene, id);
-        state.markSceneDirty();
+    // Both rebuild the subtree under this entity, so both are recorded the same
+    // way: what it looked like before, and what the operation left. Writing the
+    // scene and calling markSceneDirty is what design.md 2.5 names as the
+    // mutation that works on screen and silently breaks undo.
+    if ((pending == Pending::Build && rigNode) || pending == Pending::Clear) {
+        SubtreeSnapshot before = SubtreeSnapshot::capture(scene, id);
+
+        if (pending == Pending::Build) {
+            const SkeletonAsset& rig = resources.get(scene.get<Animator>(rigNode).skeleton);
+            buildRagdoll(scene, id, rig, m_ragdollSettings);
+        } else {
+            clearRagdoll(scene, id);
+        }
+
+        SubtreeSnapshot after = SubtreeSnapshot::capture(scene, id);
+        state.commands.push(std::make_unique<SubtreeReplaceCommand>(
+            std::move(before), std::move(after),
+            pending == Pending::Build ? "Build ragdoll" : "Clear ragdoll"));
     }
 }
 

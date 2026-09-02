@@ -58,10 +58,8 @@ struct Animator {
      * Not serialized: it describes a play session rather than the authored
      * scene. The editor's transport writes it to preview a clip, and a preview
      * paused half an hour ago is not a decision about what a shipped scene does
-     * - `playOnStart` is. Serialized, it was: pressing Pause in the Animator
-     * card froze `playing: false` into the next save, with no dirty marker
-     * because previewing is correctly not an edit, and the character never
-     * animated again.
+     * - `playOnStart` is. Previewing is correctly not an edit, so nothing marks
+     * the scene dirty either: a value written that way must not reach a save.
      */
     bool playing = false;
 

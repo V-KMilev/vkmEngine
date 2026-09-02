@@ -16,6 +16,11 @@ struct Transform;
 /**
  * @brief Camera controller used in the editor, supporting free-fly and look controls.
  *
+ * Runs in the Input stage, before every system that reads a camera: it turns
+ * this frame's device state into a Transform, and a viewport that resolved
+ * world matrices in the Transform stage from last frame's camera would lag the
+ * pointer by a frame on every drag.
+ *
  * Disabled until something enables it (see @ref setEnabled), because right-drag
  * hides and grabs the pointer and only an authoring viewport has any business
  * doing that.

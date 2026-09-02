@@ -50,9 +50,10 @@ struct ScriptComponent {
     /**
      * @brief Behaviors held as text because no type of that name is registered.
      *
-     * Saved after the constructed ones, so a scene that round-trips with the
-     * module missing keeps every behavior and only reorders the missing ones
-     * to the end.
+     * Written back at the position each was read from, not appended - the order
+     * of a behavior list is the order they run in, and each entry carries the
+     * index it needs for that. So a scene that round-trips with the module
+     * missing keeps every behavior and the order they ran in.
      */
     std::vector<UnknownBehavior> unknown;
 };

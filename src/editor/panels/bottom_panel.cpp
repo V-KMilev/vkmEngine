@@ -286,11 +286,13 @@ void BottomPanel::drawAnimationSection(EditorContext& ec, SceneIOController& sce
             return ImGui::DragFloat3("##v", glm::value_ptr(out), 0.01f, 0.0f, 0.0f, "%.3f");
         };
         auto quatEditor = [this](size_t k, const glm::quat& in, glm::quat& out) -> bool {
-            // Gimbal-lock guard via the shared EulerCache helper.
-            m_rotEulerCache.sync(static_cast<int>(k), in);
+            // This row's own cache: a shared one is reseeded by every other
+            // keyframe drawn this frame, which is the guard defeating itself.
+            EulerCache<int>& cache = m_rotEulerCaches[static_cast<int>(k)];
+            cache.sync(static_cast<int>(k), in);
             ImGui::SetNextItemWidth(-1);
-            if (ImGui::DragFloat3("##v", m_rotEulerCache.degrees(), 0.25f, 0.0f, 0.0f, "%.1f deg")) {
-                out = m_rotEulerCache.toQuat();
+            if (ImGui::DragFloat3("##v", cache.degrees(), 0.25f, 0.0f, 0.0f, "%.1f deg")) {
+                out = cache.toQuat();
                 return true;
             }
             out = in;

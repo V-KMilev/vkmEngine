@@ -180,6 +180,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
         .maxDistance    = m_settings.maxDistance,
         .maxDistanceSquared = m_settings.maxDistance * m_settings.maxDistance,
         .screenSizeThresholdSq = screenThresholdSq,
+        .perspective = m_result.projection[3][3] == 0.0f,
     };
 
     // The sparse sets directly: the cull iterates them by index, in parallel.

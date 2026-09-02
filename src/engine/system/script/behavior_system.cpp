@@ -125,8 +125,17 @@ void BehaviorSystem::tickBehaviors(FrameContext& ctx, float dt, const char* hook
 void BehaviorSystem::dispatchEntityHook(Scene& scene, EntityId target, EntityId other,
                                         const char* hookName, void (Behavior::*hook)(EntityId)) {
     if (!scene.isAlive(target) || !scene.has<ScriptComponent>(target)) return;
-    ScriptComponent& sc = scene.get<ScriptComponent>(target);
-    for (auto& behavior : sc.behaviors) {
+
+    // Re-resolved every step, like tickBehaviors: a hook is handed the whole
+    // Scene, and one that removes any ScriptComponent move-assigns over this
+    // slot - freeing the very vector this loop is walking.
+    const size_t behaviorCount = scene.get<ScriptComponent>(target).behaviors.size();
+    for (size_t i = 0; i < behaviorCount; ++i) {
+        if (!scene.isAlive(target) || !scene.has<ScriptComponent>(target)) break;
+        ScriptComponent& sc = scene.get<ScriptComponent>(target);
+        if (i >= sc.behaviors.size()) break;
+
+        auto& behavior = sc.behaviors[i];
         if (!behavior || !behavior->m_started || behavior->m_disabled) continue;
         Behavior* b = behavior.get();
         guard(*b, hookName, [&] { (b->*hook)(other); });
