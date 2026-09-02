@@ -133,13 +133,22 @@ void WindowManager::createWindow(const std::string& title) {
         }
     });
 
+    // The titlebar X, into the same field requestClose() writes. Without this
+    // the loop reads a flag GLFW sets and we never see, and closing the window
+    // stops ending the program.
+    glfwSetWindowCloseCallback(m_windowHandle, [](GLFWwindow* w) {
+        if (auto* manager = static_cast<WindowManager*>(glfwGetWindowUserPointer(w))) {
+            manager->requestClose();
+        }
+    });
+
     m_inputHandle.setupCallbacks(m_windowHandle);
     LOG_INFO("Created window '%s' (%dx%d, refresh %dHz)",
         title.c_str(), m_width, m_height, getRefreshRate());
 }
 
 void WindowManager::setIcon(const std::string& path) {
-    if (!hasWindow("setIcon")) return;
+    if (!m_windowHandle) return;
     int width, height, channels;
     // Force 4 channels (RGBA) - GLFWimage expects 32-bit RGBA, top-left origin.
     unsigned char* pixels = stbi_load(path.c_str(), &width, &height, &channels, 4);
@@ -154,19 +163,22 @@ void WindowManager::setIcon(const std::string& path) {
 }
 
 bool WindowManager::shouldClose() const {
-    return glfwWindowShouldClose(m_windowHandle);
+    return m_closeRequested;
 }
 
 void WindowManager::requestClose() {
     LOG_INFO("Close requested");
-    glfwSetWindowShouldClose(m_windowHandle, GLFW_TRUE);
+    m_closeRequested = true;
+
+    // Mirrored so anything reading GLFW directly agrees, but the field is what
+    // the loop reads: a world with no window still has to be able to stop.
+    if (m_windowHandle) glfwSetWindowShouldClose(m_windowHandle, GLFW_TRUE);
 }
 
 void WindowManager::cancelClose() {
-    if (m_windowHandle) {
-        LOG_VERBOSE("Pending close cancelled");
-        glfwSetWindowShouldClose(m_windowHandle, GLFW_FALSE);
-    }
+    LOG_VERBOSE("Pending close cancelled");
+    m_closeRequested = false;
+    if (m_windowHandle) glfwSetWindowShouldClose(m_windowHandle, GLFW_FALSE);
 }
 
 void WindowManager::setTitle(const std::string& title) {
@@ -179,7 +191,7 @@ void WindowManager::swapBuffers() {
         // outruns the GPU the driver blocks here until the queue drains - a fat
         // SwapBuffers zone is the tell-tale of a GPU-bound frame.
         PROFILE_SCOPE("SwapBuffers");
-        glfwSwapBuffers(m_windowHandle);
+        if (m_windowHandle) glfwSwapBuffers(m_windowHandle);
     }
 
     {
@@ -249,6 +261,10 @@ void WindowManager::updateMode(WindowMode windowMode) {
 }
 
 void WindowManager::updateInput() {
+    // No device, nothing to read. Without this the frame makes ten GLFW calls
+    // that each fail the same way and are each discarded.
+    if (!m_windowHandle) return;
+
     // Cleared before the poll, because the scroll callback accumulates into it.
     m_inputHandle.getMouse().resetScrollDelta();
 
@@ -265,7 +281,7 @@ bool WindowManager::beginFrame() {
 
 void WindowManager::setVSync(bool enabled) {
     // Independent of the software FPS cap: leave the framelimiter alone.
-    if (!hasWindow("setVSync")) return;
+    if (!m_windowHandle) return;
 
     glfwMakeContextCurrent(m_windowHandle);
     // 0 = uncapped, 1 = vsync.
@@ -286,7 +302,7 @@ void WindowManager::setFramerate(int framerate) {
 }
 
 void WindowManager::setCursorMode(CursorMode mode) {
-    if (!hasWindow("setCursorMode")) return;
+    if (!m_windowHandle) return;
 
     auto glfwmode = GLFW_CURSOR_NORMAL;
     switch (mode) {
@@ -310,23 +326,17 @@ void WindowManager::setCursorMode(CursorMode mode) {
 }
 
 size_t WindowManager::getWidth() const {
-    if (!hasWindow("getWidth")) return 0;
+    if (!m_windowHandle) return 0;
     return m_width;
 }
 size_t WindowManager::getHeight() const {
-    if (!hasWindow("getHeight")) return 0;
+    if (!m_windowHandle) return 0;
     return m_height;
 }
 
 void WindowManager::setSize(int width, int height) {
     m_width = width;
     m_height = height;
-}
-
-bool WindowManager::hasWindow(const char* action) const {
-    if (m_windowHandle) return true;
-    LOG_ERROR("%s: window is not initialized", action);
-    return false;
 }
 
 int WindowManager::getRefreshRate() const {

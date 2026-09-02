@@ -36,12 +36,21 @@ to raise, not a tradeoff to make.
 A C++17 engine with an OpenGL 4.3 backend, for Windows and Linux, that **runs
 projects**. It holds no game of its own. A game is a directory - a
 `project.json`, its scenes and assets, and gameplay code built into its own
-module - and the same three executables (`vkm_editor`, `vkm_runtime`,
-`vkm_cook`) run any of them. Each finds a project by the same rule: *the project
+module - and the same four executables (`vkm_editor`, `vkm_runtime`, `vkm_cook`,
+`vkm_server`) run any of them. Each finds a project by the same rule: *the project
 beside the executable, unless an argument names a different one.*
 
 That separation is the engine's central idea, and most of the absolutes above
 exist to protect it.
+
+**What a process is, is which executable was run.** Serving is a host the same
+way baking is - `vkm_cook` was never `vkm_runtime --cook` - so hosting a game is
+`vkm_server`, not a flag. What a process should *do* is what arguments are for,
+which is why the address a client joins is one: a client is a runtime playing
+the game, and an address is data that changes between runs while what the
+process is does not. The runtime therefore has no `--host`: hosting is
+`vkm_server`, and somebody wanting to host and play serves the project and
+joins it.
 
 It is built to be **finished rather than rewritten**. Success is not how many
 features ship this year; it is whether the thing still holds up in three years
@@ -115,6 +124,7 @@ outcome and the reason.
 | Shader permutations      | Built, measured, reverted. No win on a GPU-bound frame. |
 | Draw-sort hoisting       | Built, measured, reverted. Same reason.               |
 | Buffer-stall fixes       | Built, measured, reverted. Same reason.               |
+| TCP for the wire         | Rejected. Its guarantees are the wrong ones and cannot be declined: in-order delivery means a lost segment stalls the snapshot describing the present behind one describing a moment already past, and retransmission re-sends state the next packet supersedes anyway. The design survives loss instead - see [../reference/system/networking.md](../reference/system/networking.md). Reliability exists where it is genuinely needed, for spawns, and rides the same datagrams. |
 | GJK replacing the narrowphase | Rejected as a replacement, adopted as an addition. The hand-written pair routines return up to 4 contact points; GJK+EPA returns one, and resting stability needs the manifold. Mesh triangles route through one GJK path instead of growing the pair matrix: a triangle is a convex point cloud, so the support machinery serves it without a routine of its own. |
 
 The pattern in the last three is the lesson: **the frame is GPU-bound**, so a
@@ -133,6 +143,12 @@ absolutes at the top state the rules; this is which pieces they protect:
 - **`Scene` and the ECS** - open, type-erased, no registration.
 - **`FrameContext`** - references are services, pointers are per-frame stage
   products.
+- **`NetSession`** - one object, three states. `simulates(entity)` is the
+  predicate that decides which end moves what, and offline it answers yes to
+  everything, so single-player is unchanged by its existence. Owned by `Engine`
+  by value like `Clock` and `EventBus`, and it brackets the frame rather than
+  taking part in it - see
+  [../reference/system/networking.md](../reference/system/networking.md).
 - **`Handle<T>` and `ResourceManager`** - assets owned once, referenced by
   handle, serialized by name.
 - **The scene, prefab, project and cooked asset formats** - see the clean-break
@@ -154,8 +170,8 @@ absolutes at the top state the rules; this is which pieces they protect:
 `EditorSystem` is the one system that holds references to others - the five in
 the `AppSystems` bundle (camera, UI, visibility, render, audio) plus the
 `ScriptModule` that owns the gameplay library, taken by constructor
-(`editor/editor_system.h:54-63`) and wired at
-`app/editor/main.cpp:36-38`. That is allowed because it is not participating in
+(`editor/editor_system.h:55-63`) and wired at
+`app/editor/main.cpp:45-47`. That is allowed because it is not participating in
 the frame's data flow: it is the authoring tool *driving* the engine, at the UI
 stage, after every producer has already run. Nothing else gets to do this. A
 system that finds itself wanting a reference to another system has a

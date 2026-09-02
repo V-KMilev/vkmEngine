@@ -64,6 +64,8 @@
 #include "system/script/script_component.h"
 #include "ui/audition_transport.h"
 #include "core/math/bounds.h"
+#include "net/wire/schema.h"
+#include "net/replication/silence.h"
 
 namespace Vkm::Engine {
 
@@ -568,6 +570,44 @@ void InspectorPanel::drawEmptySelectionState(EditorContext& ec) {
     }
 }
 
+namespace {
+
+// What the other end will see of this entity, said where an author is looking
+// at it. Drawn only for a project that replicates something and only for an
+// entity that carries some of it: most entities are not on the wire and do not
+// need telling so every time they are selected.
+void drawWireIdentity(const Scene& scene, EntityId id) {
+    const NetSchema& schema = NetSchema::get();
+    if (schema.size() == 0) return;
+
+    std::string carried;
+    for (const NetType& type : schema.types()) {
+        if (!type.has || !type.has(scene, id)) continue;
+        if (!carried.empty()) carried += ", ";
+        carried += type.name;
+    }
+    if (carried.empty()) return;
+
+    // The slot is the name on the wire and survives save and load, so this is
+    // true of the file rather than only of this session.
+    const NetSilence silence = netSilence(scene, id);
+    if (silence != NetSilence::None) {
+        static constexpr const char* WHY[] = {
+            "", "inside a prefab instance", "the animation places it", "it cannot move"
+        };
+        static_assert(std::size(WHY) == static_cast<size_t>(NetSilence::Count),
+                      "every reason an entity is off the wire needs a word for the author");
+
+        ImGui::TextColored(EditorStyle::WARNING, "Not on the wire: %s.",
+                           WHY[static_cast<size_t>(silence)]);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", toString(silence));
+        return;
+    }
+    ImGui::TextDisabled("Wire slot %u  -  %s", id.slot(), carried.c_str());
+}
+
+} // namespace
+
 void InspectorPanel::drawIdentityHeader(Scene& scene, ResourceManager& resources,
                                         EditorState& state, EntityId id) {
     // [icon] #41 [name...............]. Naming is opt-in - the inspector never
@@ -607,6 +647,8 @@ void InspectorPanel::drawIdentityHeader(Scene& scene, ResourceManager& resources
         }
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Add a Name component to rename this entity");
     }
+
+    drawWireIdentity(scene, id);
 }
 
 void InspectorPanel::drawUICanvasSection(Scene& scene, ResourceManager& resources,

@@ -9,6 +9,7 @@
 #include "ecs/scene.h"
 #include "platform/window/window_manager.h"
 #include "core/event/event_bus.h"
+#include "net/net_session.h"
 #include "platform/input/input_map.h"
 
 namespace Vkm::Engine {
@@ -36,9 +37,13 @@ class BehaviorFieldVisitor;
 struct BehaviorContext {
     Scene*                 scene            = nullptr;
     ResourceManager*       resources        = nullptr;
+
+    /// The only field here that can be null: a host that draws nothing has none.
     WindowManager*         window           = nullptr;
+
     EventBus*              events           = nullptr;
     InputMap*              input            = nullptr;
+    NetSession*            net              = nullptr;
     Clock*                 clock            = nullptr;
     std::vector<EntityId>* pendingDestroy   = nullptr;
     std::string*           pendingSceneLoad = nullptr;
@@ -184,6 +189,67 @@ class Behavior {
          * just before onStart() until teardown.
          */
         BehaviorContext& context() { return *m_ctx; }
+
+        /**
+         * @brief Whether this end decides what happens to this entity.
+         *
+         * True for everything in a single-player game and on a server, and on a
+         * client only for what that client owns. A behavior that moves its
+         * entity - a controller, a mover, anything that writes a Transform or a
+         * velocity - asks this first and returns when the answer is no, or it
+         * is guessing at a body it will be corrected on every snapshot.
+         *
+         * Reading state, drawing, playing a sound: those run everywhere, and
+         * asking this would make a remote player silent and invisible.
+         */
+        bool isSimulated() const {
+            return m_ctx->net->simulates(m_entity);
+        }
+
+        /**
+         * @brief Whether this entity belongs to the player at this end.
+         *
+         * What to ask before touching anything that is about *this* player -
+         * the camera, the mouse, the heads-up display. Not the same question as
+         * isSimulated(): a server simulates every player and owns none of them.
+         */
+        bool isMine() const {
+            return m_ctx->net->isMine(m_entity);
+        }
+
+        /**
+         * @brief Whether this tick already happened and is being run again.
+         *
+         * A client that predicted a tick wrongly re-runs every tick since from
+         * the server's answer. What a behavior computes must re-run - that is
+         * what a replay is for - but anything it *presents* must not: an
+         * animation chosen again is a clip restarted, a sound played again is a
+         * sound heard twice, and a replayed tick can choose differently from
+         * the live one because it is simulating from a different state.
+         *
+         * The engine draws the same line for systems, in System::isReplayed().
+         * This is that line one level down, for the code the engine cannot see.
+         *
+         * False offline and on a server, which never replay.
+         */
+        bool isReplaying() const { return m_ctx->net->replaying(); }
+
+        /**
+         * @brief The input driving this entity on the tick now running.
+         *
+         * The same call in all three roles, which is the point: offline and on
+         * the owning client it is the local player's command, and on a server
+         * it is what that entity's player sent, run on the tick they sent it
+         * for. An entity no player drives reads as nothing held.
+         *
+         * Read this rather than the device. A fixed update that asks the device
+         * misses a tap that began and ended between two ticks, repeats a press
+         * on every tick of a slow frame, and cannot be replayed - and a
+         * command that cannot be replayed cannot be predicted.
+         */
+        const InputCommand& command() const {
+            return m_ctx->net->commandFor(m_entity);
+        }
 
         /**
          * @brief Create a new (empty) entity; add components via context().scene.

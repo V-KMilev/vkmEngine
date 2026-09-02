@@ -1,3 +1,5 @@
+#define VKM_LOG_CATEGORY "LAB"
+
 #include "lab_walker.h"
 
 #include <cmath>
@@ -8,6 +10,8 @@
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include "logger.h"
+
 #include "core/math/axes.h"
 #include "core/math/rotation.h"
 #include "ecs/scene.h"
@@ -17,9 +21,13 @@
 #include "ecs/component/core/transform.h"
 #include "ecs/component/physics/character_controller.h"
 #include "ecs/component/render/camera.h"
+#include "net/net_session.h"
+#include "net/prediction/rewind.h"
+#include "net/wire/protocol.h"
 #include "platform/input/input_map.h"
 #include "platform/window/window_manager.h"
 #include "resource/resource_manager.h"
+#include "system/physics/query/query.h"
 
 namespace Vkm::Engine {
 
@@ -31,6 +39,7 @@ constexpr const char* ACTION_LEFT    = "lab.left";
 constexpr const char* ACTION_RIGHT   = "lab.right";
 constexpr const char* ACTION_WALK    = "lab.walk";
 constexpr const char* ACTION_JUMP    = "lab.jump";
+constexpr const char* ACTION_PROBE   = "lab.probe";
 
 void installBindings(InputMap& map) {
     const auto key = [](int code) {
@@ -42,7 +51,16 @@ void installBindings(InputMap& map) {
     map.define(ACTION_RIGHT,   { key(GLFW_KEY_D), key(GLFW_KEY_RIGHT) });
     map.define(ACTION_WALK,    { key(GLFW_KEY_LEFT_SHIFT) });
     map.define(ACTION_JUMP,    { key(GLFW_KEY_SPACE) });
+    map.define(ACTION_PROBE,   { key(GLFW_KEY_F) });
 }
+
+// Roughly where a capsule's head is. The probe is a stand-in for whatever a
+// game actually shoots with, so it wants the eye rather than the feet.
+constexpr float EYE_HEIGHT = 1.6f;
+
+// Far enough to cross the course, so a probe that reports nothing means nothing
+// was there rather than that the ray ran out.
+constexpr float PROBE_RANGE = 80.0f;
 
 // How far the stick travels before it counts as a direction rather than as
 // noise. Keys are digital and never land inside it, but an analog stick rests
@@ -50,6 +68,14 @@ void installBindings(InputMap& map) {
 // forever. Squared where it is used, so it reads as travel here and is compared
 // against a squared length there.
 constexpr float STICK_DEADZONE = 0.1f;
+
+/**
+ * @brief Below this a character is standing rather than walking, in metres a second.
+ *
+ * A body at rest still carries a little residual velocity from the solver, and a
+ * threshold of zero would flicker between idle and walk on every tick.
+ */
+constexpr float STANDING_SPEED = 0.35f;
 
 } // namespace
 
@@ -119,10 +145,14 @@ void LabWalker::onStart() {
     installBindings(*context().input);
     m_animator = HierarchyOperations::findInSelfOrDescendants<Animator>(
         *context().scene, m_entity);
-    play(idleClip.name);
 }
 
 void LabWalker::onUpdate(float dt) {
+    // One camera, and it follows the player at this end. Every walker in the
+    // world runs this behavior, including the other players' - so without this
+    // the last one updated wins and the camera snaps between characters.
+    if (!isMine()) return;
+
     // The camera follows the frame, not the tick: a mouse quantised to the
     // simulation rate is felt at once, where steering a tick late is not.
     followCamera(dt);
@@ -136,16 +166,47 @@ void LabWalker::onUpdate(float dt) {
     });
 }
 
+void LabWalker::chooseClip() {
+    // Presentation, so not on a tick that already happened: a replay picks a
+    // clip from a different state and the live tick picks it back, which is a
+    // character visibly fighting its own animation.
+    if (isReplaying()) return;
+
+    Scene& scene = *context().scene;
+    if (!scene.has<Rigidbody>(m_entity) || !scene.has<CharacterController>(m_entity)) return;
+
+    // From the body, not the input: another player's input never reaches this
+    // machine, and velocity and grounded both do. So the same three lines
+    // answer for every character, whichever end is asking.
+    const Rigidbody&           body  = scene.get<Rigidbody>(m_entity);
+    const CharacterController& walk  = scene.get<CharacterController>(m_entity);
+    const glm::vec3            flat  = {body.linearVelocity.x, 0.0f, body.linearVelocity.z};
+    const float                speed = glm::length(flat);
+
+    if (!walk.grounded)               play(jumpClip.name);
+    else if (speed < STANDING_SPEED)  play(idleClip.name);
+    else if (speed < runSpeed * 0.6f) play(walkClip.name);
+    else                              play(runClip.name);
+}
+
 void LabWalker::onFixedUpdate(float dt) {
     Scene& scene = *context().scene;
     if (!scene.has<CharacterController>(m_entity)) return;
 
-    // The command this tick was given, not whatever the device holds now: input
-    // arrives on the frame clock, so reading the device here would drop a tap
-    // taken between two ticks and repeat a press across every tick of a slow
-    // frame.
+    // Every walker in the world runs this, including the ones this end is only
+    // told about - and what they are doing is visible in what they are doing.
+    chooseClip();
+
+    // Only the end that decides this one's fate may move it. Asked before
+    // anything is written, not after.
+    if (!isSimulated()) return;
+
     const InputMap& input = *context().input;
-    const InputCommand& command = input.command();
+
+    // The command this tick was given, not what the device holds now: input
+    // arrives on the frame clock, so reading it here drops a tap taken between
+    // ticks. On a server this is the command this entity's own player sent.
+    const InputCommand& command = this->command();
     const auto axis = [&](const std::string& action) {
         const int slot = input.indexOf(action);
         return slot >= 0 ? command.axis[static_cast<size_t>(slot)] : 0.0f;
@@ -196,6 +257,11 @@ void LabWalker::onFixedUpdate(float dt) {
         controller.jumpRequested = true;
     }
 
+    const int probeSlot = input.indexOf(ACTION_PROBE);
+    if (probeSlot >= 0 && (command.pressed & (uint32_t(1) << probeSlot))) {
+        probe(scene);
+    }
+
     // Face the way it travels: this aims the entity, whose forward is -Z. A
     // model that faces another way carries the correction on its rig node in
     // the scene, not here - see docs/reference/system/animation.md.
@@ -205,12 +271,33 @@ void LabWalker::onFixedUpdate(float dt) {
                                    glm::min(1.0f, turnSpeed * dt));
     }
 
-    // Airborne beats moving, and moving beats standing: what the character is
-    // doing is decided by the engine's own answer, not by what was asked for.
-    if (!controller.grounded)  play(jumpClip.name);
-    else if (!moving)          play(idleClip.name);
-    else if (walking)          play(walkClip.name);
-    else                       play(runClip.name);
+}
+
+
+void LabWalker::probe(Scene& scene) {
+    NetSession& net = *context().net;
+    // Judged only where the world is decided. A client asking would be judging
+    // a shot against players it is drawing in the past on purpose, and its
+    // answer is not the one that counts.
+    if (!isAuthority(net.role())) return;
+    // Every player put back where this shooter saw them, for the length of this
+    // scope and no longer. Offline there is no history and nothing moves, which
+    // is the right answer for a world with one player in it.
+    NetRewindScope rewound(scene, net, m_entity);
+    const InputCommand& command = this->command();
+    const glm::vec3 eye  = scene.get<Transform>(m_entity).position
+                         + glm::vec3(0.0f, EYE_HEIGHT, 0.0f);
+    const glm::vec3 look = Math::computeForward(command.view);
+    // Past this end's own capsule, which the eye is standing inside.
+    QueryFilter filter;
+    filter.ignore = m_entity;
+    RayHit hit;
+    if (!raycast(scene, eye, look, PROBE_RANGE, hit)) {
+        LOG_INFO("Probe from player entity %u found nothing", m_entity.slot());
+        return;
+    }
+    LOG_INFO("Probe from player entity %u hit entity %u at %.2f m",
+             m_entity.slot(), hit.entity.slot(), hit.distance);
 }
 
 } // namespace Vkm::Engine

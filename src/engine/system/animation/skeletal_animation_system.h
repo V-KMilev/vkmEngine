@@ -120,8 +120,12 @@ class SkeletalAnimationSystem : public System {
          * @param ctx Frame context: the scene to walk, the assets to resolve
          *        against, and the clock that advances playback.
          * @param seen Collects the faults this frame ran into.
+         * @param step Seconds playback advances by. Handed in rather than read
+         *        off the clock, because a tick advances by the fixed step and a
+         *        paused repose advances by nothing - and getFixedStep is a rate,
+         *        so it cannot tell the two apart.
          */
-        void poseRigs(FrameContext& ctx, FaultsSeen& seen);
+        void poseRigs(FrameContext& ctx, FaultsSeen& seen, float step);
 
         /**
          * @brief Resolve @p handle to a clip this rig can actually play.

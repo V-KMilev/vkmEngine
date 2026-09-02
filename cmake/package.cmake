@@ -34,7 +34,7 @@ set(CPACK_PACKAGE_FILE_NAME
 set(CPACK_COMPONENTS_ALL Runtime Development)
 set(CPACK_COMPONENT_RUNTIME_DISPLAY_NAME     "Engine and hosts")
 set(CPACK_COMPONENT_RUNTIME_DESCRIPTION
-    "The three hosts, the shared engine libraries and the shaders they load.")
+    "The hosts, the shared engine libraries and the shaders they load.")
 set(CPACK_COMPONENT_DEVELOPMENT_DISPLAY_NAME "SDK")
 set(CPACK_COMPONENT_DEVELOPMENT_DESCRIPTION
     "Headers, CMake package and project template for building a game.")

@@ -170,6 +170,7 @@ add_subdirectory(examples/physics_lab)
 # is what lets one module file serve both the editor and the runtime.
 add_subdirectory(app/runtime)
 add_subdirectory(app/cooker)
+add_subdirectory(app/server)
 add_subdirectory(app/editor)
 
 # Every install rule lives in one file, after the targets it installs.

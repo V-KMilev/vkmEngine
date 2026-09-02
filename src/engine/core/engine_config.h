@@ -64,6 +64,23 @@ namespace Config {
     constexpr uint32_t MIN_TICK_RATE = 4;
     constexpr uint32_t MAX_TICK_RATE = 480;
 
+    /**
+     * @brief What a project's requested tick rate is honoured as.
+     *
+     * A project.json is hand-authored, so the number in it is whatever was
+     * typed. Anything that paces itself off that rate has to agree with the
+     * clock about what it actually became, or a headless host spins at a rate
+     * the simulation is not running at.
+     *
+     * @param ticksPerSecond The rate as asked for.
+     * @return It, brought inside [MIN_TICK_RATE, MAX_TICK_RATE].
+     */
+    constexpr uint32_t clampTickRate(uint32_t ticksPerSecond) {
+        return ticksPerSecond < MIN_TICK_RATE ? MIN_TICK_RATE
+             : ticksPerSecond > MAX_TICK_RATE ? MAX_TICK_RATE
+                                              : ticksPerSecond;
+    }
+
     // Cap on the simulation-time accumulator. Prevents a frame hitch from
     // queuing enough fixedUpdate ticks to outpace the next frame ("spiral
     // of death"). A quarter second is 16 ticks at the default rate; a project

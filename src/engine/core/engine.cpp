@@ -36,7 +36,7 @@ Engine::~Engine() = default;
 
 void Engine::run() {
     constexpr float FPS_LOG_INTERVAL = 1.0f;
-    float fpsLogTimer = 0.0f;
+    float statusTimer = 0.0f;
 
     // Ctrl+C in the terminal that launched the engine. Without this the signal
     // has nowhere to land: the loop only ends when the window reports itself
@@ -51,10 +51,22 @@ void Engine::run() {
 
         FrameContext ctx{
             m_scene, m_resources,
-            m_clock, m_events, m_window, m_input
+            m_clock, m_events, m_window, m_input, m_net
         };
 
         m_window.updateInput();
+
+        // Before the ticks that consume it, so a tick sees an arrived world
+        // rather than last frame's. The timers move on wall clock: a paused
+        // editor still has to notice a peer that has gone.
+        m_net.advance(m_clock.getDeltaTime());
+        m_net.receive(m_scene, m_resources);
+
+        // Drawn before the ticks that read it, so what the player's own
+        // character collides with this frame is where the world is shown to be
+        // rather than where the newest packet said it was.
+        m_net.interpolate(m_scene, m_clock.getDeltaTime(),
+                          1.0f / m_clock.getFixedStep());
 
         // Resolve actions once, so every frame-rate reader sees the same state.
         // This also latches the edges the next tick's command is built from.
@@ -64,10 +76,26 @@ void Engine::run() {
             initSystems(ctx);
         }
 
+        // Ticks that already happened, run again because the server disagreed.
+        // The event flush, InputMap::beginTick and every system answering false
+        // to isReplayed are absent - see networking.md, "Replay".
+        for (const InputCommand& command : m_net.replayCommands()) {
+            PROFILE_SCOPE("Replay");
+            m_net.beginReplayTick(command);
+            for (auto& stage : m_systemsByStage) {
+                for (auto& sys : stage) {
+                    if (sys->hasFixedUpdate() && sys->isReplayed()) sys->fixedUpdate(ctx);
+                }
+            }
+            m_net.endTick(m_scene, command.tick);
+        }
+        m_net.endReplay(m_scene);
+
         while (m_clock.consumeFixedStep()) {
             PROFILE_SCOPE("FixedUpdate");
             // The command this tick runs under, built before any system reads it.
-            m_input.beginTick(m_tick++);
+            m_input.beginTick(m_clock.getTick());
+            m_net.beginTick(m_clock.getTick(), m_input.command(), m_input.actionCount());
             for (size_t s = 0; s < m_systemsByStage.size(); ++s) {
                 PROFILE_SCOPE_NAMED(STAGE_NAMES[s]);
 
@@ -80,33 +108,57 @@ void Engine::run() {
                     if (sys->hasFixedUpdate()) sys->fixedUpdate(ctx);
                 }
             }
+
+            // What this tick left, kept so the server's answer about it can be
+            // compared rather than believed.
+            m_net.endTick(m_scene, m_clock.getTick());
         }
 
-        for (size_t s = 0; s < m_systemsByStage.size(); ++s) {
-            PROFILE_SCOPE_NAMED(STAGE_NAMES[s]);
+        {
+            // What a client draws for its own character is the simulation plus
+            // the correction not yet visibly worked off. In the component for
+            // this scope only, so no tick can simulate from it.
+            const NetSession::Drawn drawn(m_net, m_scene, m_clock.getDeltaTime());
 
-            // Whatever was queued outside a tick, or by the last tick of this
-            // frame. flush drains, so this never repeats what the loop above
-            // already delivered.
-            if (s == static_cast<size_t>(SystemStage::Simulation)) m_events.flush();
+            for (size_t s = 0; s < m_systemsByStage.size(); ++s) {
+                PROFILE_SCOPE_NAMED(STAGE_NAMES[s]);
 
-            for (auto& sys : m_systemsByStage[s]) {
-                sys->update(ctx);
+                // Whatever was queued outside a tick, or by the last tick of
+                // this frame. flush drains, so this never repeats what the loop
+                // above already delivered.
+                if (s == static_cast<size_t>(SystemStage::Simulation)) m_events.flush();
+
+                for (auto& sys : m_systemsByStage[s]) {
+                    sys->update(ctx);
+                }
             }
         }
+
+        // After the ticks that caused it, so a snapshot describes the world as
+        // it now stands rather than as it stood a frame ago.
+        m_net.send(m_scene, m_clock.getTick());
 
         m_window.swapBuffers();
 
-        if (m_fpsLog) {
-            fpsLogTimer += m_clock.getDeltaTime();
-            if (fpsLogTimer >= FPS_LOG_INTERVAL) {
-                fpsLogTimer = 0.0f;
+        // One line a second while a session is open, whether or not the frame
+        // rate is logged: somebody asking why the game feels as it does is
+        // asking about the connection, and the runtime has no panel to show it.
+        statusTimer += m_clock.getDeltaTime();
+        if (statusTimer >= FPS_LOG_INTERVAL) {
+            statusTimer = 0.0f;
+            if (m_fpsLog) {
                 LOG_INFO("FPS: %.0f (%.2f ms)", m_clock.getFrameRate(), m_clock.getFrameTime());
             }
+            if (!m_net.isOffline()) LOG_INFO("Net: %s", m_net.describe().c_str());
         }
 
         PROFILE_FRAME_MARK();
     }
+
+    // Said rather than simply stopped, while the socket is open and the peers
+    // still exist: one that is told frees its seat now rather than a timeout
+    // from now, and can say the game closed rather than appear to freeze.
+    m_net.close();
 
     if (g_interrupted.load(std::memory_order_relaxed)) {
         LOG_INFO("Interrupted - shutting down");

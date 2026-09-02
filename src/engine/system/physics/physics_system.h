@@ -18,6 +18,8 @@
 
 namespace Vkm::Engine {
 
+class NetSession;
+
 struct PhysicsSettings;
 
 class EventBus;
@@ -80,6 +82,12 @@ class PhysicsSystem : public System {
 
         bool hasFixedUpdate() const override { return true; }
 
+        /**
+         * @brief Re-run during a replay: it moves the world from state and command, and
+         * running it twice over the same tick lands in the same place.
+         */
+        bool isReplayed() const override { return true; }
+
     private:
         // fixedUpdate() phases, called in order. They share the member working
         // buffers (m_bodies / m_solverBodies / m_manifolds); cross-phase plain
@@ -90,10 +98,14 @@ class PhysicsSystem : public System {
          *
          * @param scene Scene whose rigidbody entities are gathered into m_bodies
          *              and the solver state.
+         * @param net   Who decides each body. Asked once here and stored on the
+         *              BodyFrame, because every phase after this one needs it:
+         *              a body this end does not decide is gathered immovable,
+         *              so it still collides and is never moved.
          * @return False when there are no simulated bodies this step, so the
          *         remaining phases can be skipped.
          */
-        bool gatherBodies(Scene& scene);
+        bool gatherBodies(Scene& scene, const NetSession& net);
 
         /**
          * @brief Apply gravity and damping to body velocities.
@@ -121,8 +133,13 @@ class PhysicsSystem : public System {
          * turns them into one.
          *
          * @param events Bus the collision / trigger events are enqueued on.
+         * @param replaying True while re-running ticks the server disagreed
+         *        with. Contacts are still produced; the events are not, because
+         *        the tick they belong to already reported them and a behavior
+         *        acting on the second report acts on something that did not
+         *        happen twice.
          */
-        void narrowphase(EventBus& events);
+        void narrowphase(EventBus& events, bool replaying);
 
         /**
          * @brief Wake any sleeping bodies struck this step, before the solve.
@@ -157,14 +174,38 @@ class PhysicsSystem : public System {
          * Reads m_contacts: the touched flag decides sleeping, and both normals
          * are published onto the Rigidbody for whatever reads them.
          *
-         * @param scene Scene whose Transforms are written back.
-         * @param dt    Fixed timestep, in seconds.
+         * @param scene     Scene whose Transforms are written back.
+         * @param replaying  True while re-running ticks the server disagreed
+         *                   with. Support is published for every body except,
+         *                   in a replay, one this end does not decide.
+         * @param dt        Fixed timestep, in seconds.
          */
-        void writeback(Scene& scene, float dt);
+        void writeback(Scene& scene, bool replaying, float dt);
+
+        /**
+         * @brief Tell the session which bodies this end's own character is on.
+         *
+         * A client predicts only what it owns, so a crate is immovable to it
+         * and a push is predicted as walking into a wall - then corrected when
+         * the server says the crate moved. This walks outward from the owned
+         * body across the contacts and joints of the tick that just ran and
+         * hands the session the island it found, which is what makes the push
+         * predictable rather than merely correctable.
+         *
+         * Only on a client with a character of its own. A server and an offline
+         * session already decide everything, so they pay one comparison.
+         *
+         * @param scene The world, for turning body indices back into entities.
+         * @param net   The session to report the island to.
+         */
+        void leaseContacts(Scene& scene, NetSession& net);
 
     private:
         std::vector<EntityId>        m_bodies;       ///< Live body entities this tick (indexes m_solverBodies)
         std::vector<PhysicsBody>     m_solverBodies; ///< Cached dynamic state, aligned with m_bodies
+        std::vector<EntityId>        m_leased;       ///< Scratch for leaseContacts
+        std::vector<uint32_t>        m_leaseFrontier;  ///< Its breadth-first queue
+        std::vector<bool>            m_leaseReached; ///< Which bodies it has already taken
         std::vector<ContactManifold> m_manifolds;    ///< Reused across ticks; clear() keeps capacity
         std::vector<JointConstraint> m_joints;       ///< This tick's joints, as body indices
 

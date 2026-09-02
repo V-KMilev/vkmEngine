@@ -62,6 +62,14 @@ constexpr const char* toString(WindowMode type) {
  * Encapsulates window creation, rendering-context management, input handling,
  * and frame-rate limiting. Constructed and owned by the Engine - not a
  * singleton; the engine holds the single instance.
+ *
+ * **A closed window accepts every request and performs none**, and reporters
+ * answer zero. The same shape the audio system uses for a machine with no
+ * sound card, and for the same reason: a host with no display is a world that
+ * still ticks, so asking it to set a cursor mode is not an error to log at
+ * frame rate - it is a no-op. Nothing here may leave the loop unable to end
+ * because there is no device, which is why closing is a field of this class
+ * rather than a question asked of GLFW.
  */
 class WindowManager {
     public:
@@ -84,13 +92,25 @@ class WindowManager {
         /**
          * @brief Sets the window/taskbar icon from an image file (PNG, etc.).
          *
-         * Decoded with stb_image to RGBA and handed to GLFW. No-op (with a log)
+         * Decoded with stb_image to RGBA and handed to GLFW. A silent no-op
          * if the window is not yet created or the file fails to load. Call after
          * createWindow().
          *
          * @param path Absolute path to the icon image.
          */
         void setIcon(const std::string& path);
+
+        /**
+         * @brief Whether a window exists at all.
+         *
+         * The question a caller asks before reading a device, rather than
+         * before issuing a command: commands on a closed window are no-ops by
+         * policy, but a reader that cannot tell "zero" from "no display" would
+         * take the first for the second.
+         *
+         * @return True when this manager owns an open window.
+         */
+        bool isOpen() const { return m_windowHandle != nullptr; }
 
         /**
          * @brief Checks if the window close event has been triggered.
@@ -255,18 +275,12 @@ class WindowManager {
          */
         int getRefreshRate() const;
 
-        /**
-         * @brief Guard for methods that need a live window: returns true if one
-         * exists, else logs "<action>: window is not initialized" and returns
-         * false so the caller can bail.
-         *
-         * @param action Caller name used in the log message.
-         */
-        bool hasWindow(const char* action) const;
-
     private:
         GLFWwindow* m_windowHandle = nullptr;
         std::string m_title;
+
+        /// Ours rather than GLFW's, so a windowless world can still be told to end.
+        bool m_closeRequested = false;
 
         int m_width  = 0;    ///< Framebuffer (drawable) width in pixels.
         int m_height = 0;    ///< Framebuffer (drawable) height in pixels.

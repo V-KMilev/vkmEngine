@@ -96,13 +96,22 @@ The directory tree encodes responsibility. Let it place your code:
 | Window, input, threading, dynamic library     | `src/engine/platform/<area>/`        |
 | Profiling and error-reporting facades         | `src/engine/debug/`                  |
 | Scene / asset / component (de)serialization   | `src/engine/io/`                     |
+| What goes on the wire, or who decides what     | `src/engine/net/` - not a system; see [engine.md](engine.md#5-what-everything-else-stands-on) |
 | GPU-specific work                             | `src/backend/opengl/`                |
 | A shader                                      | `shaders/<pass>/`                    |
 | Editor-only UI or interaction                 | `src/editor/` - and read [2.5](#25-four-editor-rules-that-fail-quietly) first |
 | Importing or generating an asset              | `src/tools/loader/` or `src/tools/generator/` |
 | Baking an asset into the form the runtime reads | `src/tools/cook/`                  |
-| Registering a system, or anything all three hosts do | `app/engine_app.h`            |
+| Registering a system, or anything every host does     | `app/engine_app.h`            |
 | Gameplay                                      | `examples/<project>/src/` - never in the engine |
+
+`src/engine/net/` is the row most likely to be read wrong, because it is the one
+that is not a system. `NetSession` is owned by `Engine` by value like `Clock`
+and `EventBus`, and it brackets the frame rather than taking part in it - so a
+change about *when* the wire is read or written belongs in `Engine::run`, and a
+system that wants to know who decides an entity asks `ctx.net.simulates(entity)`
+rather than reaching for a reference. The socket itself is the platform row
+above, in `platform/net/`.
 
 Two of those are easy to miss because they are not under `src/engine/`. A new
 asset kind splits: the type is a `Resource` subclass in `resource/asset/`, while
@@ -203,6 +212,18 @@ it expands from the `R` rows (`io/asset/asset_serializer.cpp:290-296`), so an
 `R` row with no overload is a compile error naming the component that needs one.
 [../reference/system/io.md](../reference/system/io.md#adding-a-component-to-the-round-trip)
 covers the same ground from the format's side.
+
+**A component that replicates is a fourth step, and it fails the same silent
+way.** Reflection, the serializer rows and the editor macros say nothing about
+the wire: a component can round-trip a save perfectly and never cross a
+connection. Give it `netEncode` / `netDecode` free functions beside it and
+register it from the project's `vkmSetupNetwork`
+([../reference/system/networking.md](../reference/system/networking.md#what-replicates)) -
+from there and nowhere else, because the schema is rebuilt each time that entry
+runs. Then ask the question that decides whether it should travel at all: is
+this a cause only the authority knows, or an effect every end recomputes? An
+effect on the wire is worse than wasteful - it arrives as a second writer for a
+value that already had one.
 
 None of this gives you authoring. The inspector card, the Create-menu entry and
 the hierarchy badge are hand-written under `src/editor/`, and two more macro
@@ -326,7 +347,7 @@ cmake --build build
 
 **You used it.** Not "the logic is correct" - you ran the thing and watched it
 work. Press Play, Pause, Stop. Open the panel. Load the scene and save it. All
-three hosts take a project directory:
+every host takes a project directory:
 
 ```sh
 ./build/bin/vkm_editor  examples/potion_runner   # edit a project
@@ -352,7 +373,7 @@ timeout 10 ./build/bin/vkm_runtime examples/potion_runner
 Most defects found in this engine were found by someone using it, and almost none
 by reading it. If a change has a visible result and you have not looked at it, it
 is not finished, and if you could not look, say so plainly rather than implying
-you did. Configure options, the three hosts' project-resolution rule and the
+you did. Configure options, the hosts' project-resolution rule and the
 shader conventions are in
 [../reference/building.md](../reference/building.md).
 

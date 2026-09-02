@@ -63,6 +63,13 @@ class BehaviorSystem : public System, public ISceneObserver {
         void update(FrameContext& ctx) override;
         void fixedUpdate(FrameContext& ctx) override;
         bool hasFixedUpdate() const override { return true; }
+
+        /**
+         * @brief Re-run during a replay: it moves the world from state and command, and
+         * running it twice over the same tick lands in the same place.
+         */
+        bool isReplayed() const override { return true; }
+
         void shutdown() override;
 
         /**

@@ -20,6 +20,8 @@ file(GLOB_RECURSE VKM_CORE_SOURCES CONFIGURE_DEPENDS
     platform/window/*.cpp
     platform/threading/*.cpp
     platform/library/*.cpp
+    platform/net/*.cpp
+    net/*.cpp
     debug/*.cpp
 )
 
@@ -87,6 +89,14 @@ target_compile_definitions(vkm_core PUBLIC
     # the module at load instead of crashing later.
     VKM_ENGINE_VERSION="${PROJECT_VERSION}"
 )
+
+# Winsock, for platform/net. It is not linked by anything else the engine
+# already pulls in - GLFW has no use for it - so without this the socket calls
+# resolve to nothing at link time. Private, like the other absorbed libraries:
+# the sockets live inside libvkm_core and nothing outside names a winsock type.
+if(WIN32)
+    target_link_libraries(vkm_core PRIVATE ws2_32)
+endif()
 
 # Tracy is linked privately for the same reason as glfw: its objects live inside
 # libvkm_core, and a consumer expanding a PROFILE_ macro resolves the symbols

@@ -24,6 +24,7 @@
 #include "panels/bottom_panel.h"
 #include "panels/preferences_panel.h"
 #include "panels/material_editor_panel.h"
+#include "panels/project_settings_panel.h"
 #include "panels/render_settings_panel.h"
 
 struct GLFWwindow;
@@ -176,12 +177,13 @@ class EditorSystem : public System {
         InspectorPanel   m_inspector;
         BottomPanel      m_bottom;
         ViewportOverlay  m_viewportOverlay;
-        GizmoOverlay     m_gizmoOverlay;
-        ViewportToolbar  m_viewportToolbar;
-        PlaybackBar      m_playbar;
-        PreferencesPanel m_preferences;
-        MaterialEditorPanel m_materialEditor;
-        RenderSettingsPanel m_renderSettings;
+        GizmoOverlay         m_gizmoOverlay;
+        ViewportToolbar      m_viewportToolbar;
+        PlaybackBar          m_playbar;
+        PreferencesPanel     m_preferences;
+        MaterialEditorPanel  m_materialEditor;
+        RenderSettingsPanel  m_renderSettings;
+        ProjectSettingsPanel m_projectSettings;
 };
 
 } // namespace Vkm::Engine

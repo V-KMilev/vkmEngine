@@ -63,7 +63,7 @@ Code lives under five include roots. Each has its own style:
 The editor has a root of its own (`src/editor/CMakeLists.txt:6`) *and* the
 engine's, so an editor `.cpp` includes `panels/`, `framework/` and `ui/` from the
 first and `core/`, `ecs/`, `system/` from the second - see
-`panels/inspector_panel.cpp:1-24`. The three hosts add the repo root instead
+`panels/inspector_panel.cpp:1-24`. The hosts add the repo root instead
 (`app/editor/CMakeLists.txt:18` and its siblings), which is why `app/` is spelled
 into the path.
 
@@ -84,10 +84,10 @@ Always include the **module path**, never the bare filename:
 **Engine code never reaches into `backend/` directly.** The backend is reached
 only through the abstract interfaces in `system/render/` - `RenderBackend` and
 `EditorRenderHooks`, and no third (see [engine.md](engine.md#absolutes) for why
-this seam matters). `app/engine_app.h:27` includes `gl_backend.h` and constructs
-`GLBackend` at `:114`; that is not an exception to the rule but the point of it -
-a host is the composition root, the one place allowed to pick which backend the
-engine gets.
+this seam matters). Each windowed host includes `gl_backend.h` and constructs
+`GLBackend`; that is not an exception to the rule but the point of it - a host
+is the composition root, the one place allowed to pick which backend the engine
+gets, or to pick none at all.
 
 Within a file, includes are grouped, each group separated by one blank line, in
 this order:

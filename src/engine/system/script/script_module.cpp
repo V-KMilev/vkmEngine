@@ -15,15 +15,19 @@
 #include "debug/engine_error_log.h"
 #include "ecs/scene.h"
 #include "io/scene/component_serializer.h"
+#include "net/wire/codecs.h"
+#include "net/wire/schema.h"
+#include "net/net_session.h"
 #include "system/script/behavior_registry.h"
 #include "system/script/script_component.h"
 
 namespace Vkm::Engine {
 
 namespace {
-using RegisterFn   = void (*)();
-using VersionFn    = const char* (*)();
-using BuildSceneFn = void (*)(Scene&);
+using RegisterFn     = void (*)();
+using VersionFn      = const char* (*)();
+using BuildSceneFn   = void (*)(Scene&);
+using SetupNetworkFn = void (*)(NetSession&);
 
 // Best-effort sweep of stale "<stem>.loaded.*.<ext>" copies left by previous
 // runs (a clean exit removes its own, but a crash can leave one). A copy still
@@ -42,11 +46,26 @@ void removeStaleCopies(const std::filesystem::path& src) {
 }
 } // namespace
 
-ScriptModule::~ScriptModule() {
-    // Before unloading: the factories close over this module's code, so the
-    // registry singleton's own teardown at process exit would run them after
-    // the dlclose below - a segfault in static destruction.
+void ScriptModule::releaseRegistrations() {
     BehaviorRegistry::get().clear();
+    NetSchema::get().clear();
+
+    // The session holds two lambdas that are this module's code, and assigning
+    // over a std::function runs the old target's manager - so they go before
+    // the dlclose, not after. The destructor does not come here, and says why.
+    if (m_net) m_net->onSpawn(nullptr, nullptr);
+    m_net = nullptr;
+}
+
+ScriptModule::~ScriptModule() {
+    // The registries only, and deliberately not the session: every host declares
+    // its module before its Engine, so the session and the two callbacks it
+    // holds are already destroyed by the time this runs and reaching for it
+    // would be a use-after-free. What the module registered is still cleared
+    // here, because the singletons outlive it and their own teardown would
+    // otherwise run its code after the dlclose below.
+    BehaviorRegistry::get().clear();
+    NetSchema::get().clear();
     // Unload before deleting so the copy file is no longer locked.
     m_lib.unload();
     if (!m_loadedCopyPath.empty()) {
@@ -56,6 +75,11 @@ ScriptModule::~ScriptModule() {
 }
 
 bool ScriptModule::load(const std::string& modulePath) {
+    // DynamicLibrary::load unloads whatever is open before it opens the next,
+    // so a failed load would otherwise leave the previous project's factories
+    // and wire thunks pointing into a library that is no longer there.
+    releaseRegistrations();
+
     m_modulePath = modulePath;
     removeStaleCopies(std::filesystem::path(modulePath));
     if (loadCopyAndRegister()) return true;
@@ -173,7 +197,7 @@ bool ScriptModule::reload(Scene& scene) {
         });
     }
 
-    BehaviorRegistry::get().clear();
+    releaseRegistrations();
     m_lib.unload();
 
     const bool loaded = loadCopyAndRegister();
@@ -203,7 +227,7 @@ bool ScriptModule::reload(Scene& scene) {
 void ScriptModule::unload() {
     if (!m_lib.isLoaded()) return;
 
-    BehaviorRegistry::get().clear();
+    releaseRegistrations();
     m_lib.unload();
     m_modulePath.clear();
 
@@ -222,6 +246,25 @@ bool ScriptModule::buildScene(Scene& scene) {
     if (!buildFn) return false;  // optional: most projects author a scene instead
 
     buildFn(scene);
+    return true;
+}
+
+bool ScriptModule::setupNetwork(NetSession& session) {
+    if (!m_lib.isLoaded()) return false;
+
+    // Built from nothing every time, so nothing a previous module registered
+    // survives into this one.
+    NetSchema::get().clear();
+    m_net = &session;
+
+    auto setupFn = reinterpret_cast<SetupNetworkFn>(m_lib.symbol("vkmSetupNetwork"));
+    if (!setupFn) return false;  // optional: a single-player project needs none
+
+    // The engine's own types first, and from one place, because the wire index
+    // is the identity and the fingerprint is order-sensitive - see
+    // NetSchema::fingerprint.
+    registerEngineNetTypes();
+    setupFn(session);
     return true;
 }
 
