@@ -26,9 +26,12 @@ using AnimationClipHandle = Handle<AnimationClipAsset>;
 using AudioClipHandle     = Handle<AudioClipAsset>;
 ```
 
-Each handle wraps a `StorageIndex` (index + generation), so stale handles
-are detected automatically; using a destroyed handle returns nothing
-without crashing.
+Each handle wraps a `StorageIndex` (index + generation), so a stale handle is
+*detectable* - ask `has(handle)` before reaching through one you did not just
+make. It is not safe to use: `get`, `edit` and `remove` assert on it, and
+`VKM_ASSERT` compiles to nothing in release, so a stale handle aborts a debug
+build and reads freed storage in a shipped one. The generation exists so you can
+tell, not so the manager can absorb the mistake.
 
 A handle is a *runtime* identity: it names a slot in one session's
 `ResourceManager`, which is why serialization stores names instead. The authored

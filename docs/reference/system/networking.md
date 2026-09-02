@@ -320,8 +320,9 @@ Measured: 117 bodies all awake and moving arrive in four snapshots, worst packet
 
 ### Commands: redundant, in order, once
 
-A command packet carries the newest **twelve** unacknowledged commands, not just
-this tick's. An axis recovers from loss on its own - the next packet says where
+A command packet carries the **oldest twelve** unacknowledged commands, not just
+this tick's - the oldest, because after a stutter those are the ones the server
+wants next, and sending the newest would strand them. An axis recovers from loss on its own - the next packet says where
 the stick is now. An edge does not: `pressed` is true for exactly one command,
 so one lost datagram loses that jump permanently and nothing reports an error.
 
