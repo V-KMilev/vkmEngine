@@ -408,8 +408,9 @@ class AudioDevice {
          * @brief Place the ear.
          *
          * @param position World position of the listener.
-         * @param forward World-space direction the listener faces (+Z in this
-         *        engine's convention).
+         * @param forward World-space direction the listener faces. The engine's
+         *        forward is -Z, so this is what Math::computeForward returns and
+         *        not the entity's +Z column.
          * @param up World-space up for the listener.
          */
         void setListener(const glm::vec3& position, const glm::vec3& forward, const glm::vec3& up);

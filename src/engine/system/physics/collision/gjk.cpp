@@ -417,11 +417,24 @@ bool gjkContact(const SupportShape& a, const SupportShape& b, Contact& out) {
     for (size_t i = 1; i < t_faces.size(); ++i) {
         if (t_faces[i].distance < t_faces[nearest].distance) nearest = i;
     }
-    if (t_faces.empty()
-        || glm::dot(t_faces[nearest].normal, t_faces[nearest].normal)
-               <= glm::epsilon<float>()) {
-        return false;
+    // EPA runs only after GJK has already proved these shapes intersect, so
+    // "no overlap" is not an answer available here: a degenerate polytope means
+    // the depth is unmeasurable, not that the contact is absent. Reporting one
+    // is a body the solver never separates, and it sinks through.
+    const auto usable = [](const Face& f) {
+        return glm::dot(f.normal, f.normal) > glm::epsilon<float>();
+    };
+    if (!t_faces.empty() && !usable(t_faces[nearest])) {
+        for (size_t i = 0; i < t_faces.size(); ++i) {
+            if (usable(t_faces[i]) && (!usable(t_faces[nearest]) ||
+                                       t_faces[i].distance < t_faces[nearest].distance)) {
+                nearest = i;
+            }
+        }
     }
+    // Only when no face in the whole polytope has a direction is there nothing
+    // to report, and then there is genuinely nothing to point the solver along.
+    if (t_faces.empty() || !usable(t_faces[nearest])) return false;
     contactFromFace(t_faces[nearest]);
     return true;
 }
