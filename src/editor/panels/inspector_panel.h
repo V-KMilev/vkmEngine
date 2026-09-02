@@ -151,7 +151,10 @@ class InspectorPanel {
         // The Connected combo's entries, rebuilt per frame because the list is
         // the scene. Members rather than locals so the per-frame churn reuses
         // one allocation instead of making two.
-        bool                     m_meshColliderEmpty = false;
+        /// The entity whose mesh-collider build found no whole triangle. Held as
+        /// an entity rather than a flag so the warning belongs to that entity and
+        /// not to the panel, which outlives the selection.
+        EntityId                 m_meshColliderEmpty;
         std::vector<EntityId>    m_jointCandidates;
         std::vector<std::string> m_jointCandidateLabels;
         std::vector<const char*> m_jointCandidateNames;

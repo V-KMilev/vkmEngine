@@ -436,8 +436,13 @@ void MaterialEditorPanel::drawIdentityRow(EditorContext& ec, MaterialHandle targ
     ImGui::Separator();
 
     if (ImGui::MenuItem("Duplicate")) {
-        if (MaterialHandle copy = EditorActions::duplicateMaterial(resources, state, target,
-                                                                   selectedMesh(ec))) {
+        if (MaterialHandle copy = EditorActions::duplicateMaterial(resources, target)) {
+            if (Mesh* mesh = selectedMesh(ec)) {
+                Mesh after = *mesh;
+                after.material = copy;
+                state.commands.push(std::make_unique<ComponentEditCommand<Mesh>>(
+                    state.selectedEntity, *mesh, after, "Duplicate material"));
+            }
             state.openMaterial(copy);
         }
     }
@@ -971,8 +976,10 @@ void MaterialEditorPanel::servicePbrFolder(EditorContext& ec) {
     if (!built) return;
 
     if (Mesh* mesh = selectedMesh(ec)) {
-        mesh->material = built;
-        ec.state.markSceneDirty();
+        Mesh after = *mesh;
+        after.material = built;
+        ec.state.commands.push(std::make_unique<ComponentEditCommand<Mesh>>(
+            ec.state.selectedEntity, *mesh, after, "Assign material"));
     }
     ec.state.openMaterial(built);
 }
