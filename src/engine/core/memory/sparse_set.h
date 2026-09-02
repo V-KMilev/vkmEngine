@@ -75,6 +75,11 @@ class SparseSet : public ISparseSet {
          */
         void remove(uint32_t key) {
             VKM_ASSERT(contains(key), "SparseSet::remove called with invalid key");
+            // Guarded as well as asserted, like Scene::destroyEntity and
+            // SlotAllocator::free: the assert is gone in release, and without
+            // this the line below indexes m_data with whatever m_dataIndex held
+            // for a key that was never in the set.
+            if (!contains(key)) return;
 
             uint32_t dataIdx = m_dataIndex[key];
             uint32_t lastIdx = static_cast<uint32_t>(m_data.size() - 1);
