@@ -432,6 +432,28 @@ void SubtreeSnapshot::apply(Scene& scene) const {
     }
 }
 
+void SubtreeReplaceCommand::swapTo(Scene& scene, EditorState& state, const SubtreeSnapshot& to) {
+    // The root's slot is the same in both snapshots - the operation rebuilt what
+    // hung off it, not the entity itself - so tearing down what is there now and
+    // applying the target is the whole of the swap in either direction.
+    if (!to.nodes.empty()) {
+        const EntityId root = scene.entityAt(to.nodes.front().snap.slotIndex);
+        if (scene.isAlive(root)) HierarchyOperations::destroyHierarchy(scene, root);
+    }
+    to.apply(scene);
+    state.hierarchyDirty = true;
+}
+
+bool SubtreeReplaceCommand::addresses(uint32_t slotIndex) const {
+    for (const auto& node : m_before.nodes) {
+        if (node.snap.slotIndex == slotIndex) return true;
+    }
+    for (const auto& node : m_after.nodes) {
+        if (node.snap.slotIndex == slotIndex) return true;
+    }
+    return false;
+}
+
 void DestroySubtreeCommand::redo(Scene& scene, EditorState& state) {
     if (m_snap.nodes.empty()) return;
     const uint32_t rootSlot = m_snap.nodes.front().snap.slotIndex;

@@ -171,12 +171,7 @@ std::string uniqueMaterialName(ResourceManager& resources, const std::string& ba
 }
 } // namespace
 
-MaterialHandle duplicateMaterial(
-    ResourceManager& resources,
-    EditorState& state,
-    MaterialHandle source,
-    Mesh* assignTo
-) {
+MaterialHandle duplicateMaterial(ResourceManager& resources, MaterialHandle source) {
     if (!source) return MaterialHandle{};
     const MaterialAsset& src = resources.get(source);
 
@@ -185,8 +180,6 @@ MaterialHandle duplicateMaterial(
         uniqueMaterialName(resources, src.name() + " copy"));
     if (!nh) return MaterialHandle{};
 
-    if (assignTo) assignTo->material = nh;
-    state.markSceneDirty();
     return nh;
 }
 

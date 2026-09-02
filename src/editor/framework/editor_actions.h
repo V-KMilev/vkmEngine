@@ -264,16 +264,11 @@ void commitStructureChange(EditorState& state);
  * non-null, also overwrites its material handle with the clone. Returns the new
  * handle, or a null handle on registration failure.
  *
- * Marks the scene dirty when @p assignTo is non-null (asset add alone does
- * not modify any entity, so the caller can decide if a scene-level edit
- * happened).
+ * Assigns it to nothing. A caller that wants the copy on an entity pushes a
+ * ComponentEditCommand for that itself: this has only a handle, and an edit
+ * nobody can undo is the one thing an editor mutation may not be.
  */
-MaterialHandle duplicateMaterial(
-    ResourceManager& resources,
-    EditorState& state,
-    MaterialHandle source,
-    Mesh* assignTo
-);
+MaterialHandle duplicateMaterial(ResourceManager& resources, MaterialHandle source);
 
 /**
  * @brief Create a fresh standalone PBR material from scratch.

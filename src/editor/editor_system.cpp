@@ -225,7 +225,7 @@ void drawToast(EditorState& state, float deltaTime) {
                             ImGuiCond_Always, ImVec2(0.0f, 1.0f));
     ImGui::PushStyleColor(ImGuiCol_WindowBg, bg);
     ImGui::PushStyleColor(ImGuiCol_Text,     ImVec4(1.0f, 1.0f, 1.0f, alpha));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, EditorStyle::px(6.0f));
     ImGui::Begin("##Toast", nullptr,
         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoInputs     | ImGuiWindowFlags_NoFocusOnAppearing |
@@ -428,7 +428,7 @@ void EditorSystem::update(FrameContext& ctx) {
                                            vp->WorkPos.y + vp->WorkSize.y - pad),
                                     ImGuiCond_Always, ImVec2(1.0f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.55f));
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, EditorStyle::px(6.0f));
             ImGui::Begin("##F5Hint", nullptr,
                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
                 ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoMove |
@@ -549,7 +549,8 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
 
     if (m_state.showHierarchy) {
         PROFILE_SCOPE("Panel/Hierarchy");
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6, 6));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                            ImVec2(EditorStyle::px(6.0f), EditorStyle::px(6.0f)));
         if (ImGui::BeginChild("##Hierarchy", ImVec2(leftW, mainH), ImGuiChildFlags_Borders)) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, themeSpacing);
             m_hierarchy.draw(ec, m_sceneIO);
@@ -608,7 +609,8 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
     }
 
     if (m_state.showInspector) {
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                            ImVec2(EditorStyle::px(8.0f), EditorStyle::px(6.0f)));
         if (ImGui::BeginChild("##Inspector", ImVec2(rightW, mainH), ImGuiChildFlags_Borders)) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, themeSpacing);
             drawRightTabs(ec);
@@ -626,7 +628,8 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
 
     if (m_state.showBottom) {
         PROFILE_SCOPE("Panel/Bottom");
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 6));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                            ImVec2(EditorStyle::px(8.0f), EditorStyle::px(6.0f)));
         if (ImGui::BeginChild("##Bottom", ImVec2(0, bottomH), ImGuiChildFlags_Borders)) {
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, themeSpacing);
             m_bottom.draw(ec, m_sceneIO);

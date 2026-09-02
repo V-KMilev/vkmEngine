@@ -1,5 +1,7 @@
 #pragma once
 
+#include <unordered_map>
+
 #include <cstddef>
 
 #include "panels/asset_browser_panel.h"
@@ -58,9 +60,16 @@ class BottomPanel {
         int    m_animDotTrack = -1;
         size_t m_animDotIdx   = 0;
 
-        // Euler-angle edit cache for the rotation keyframe editor, keyed by
-        // keyframe index. See EulerCache for the gimbal-lock rationale.
-        EulerCache<int> m_rotEulerCache;
+        /**
+         * @brief One euler cache per rotation keyframe row.
+         *
+         * Not one shared cache: a track draws every keyframe in the same frame,
+         * and EulerCache reseeds whenever its key changes - so a single instance
+         * is reseeded by the next row before the dragged one is drawn again, and
+         * the gimbal guard it exists to provide never survives a frame. The
+         * inspector can hold one because it draws a single entity's row.
+         */
+        std::unordered_map<int, EulerCache<int>> m_rotEulerCaches;
 };
 
 } // namespace Vkm::Engine
