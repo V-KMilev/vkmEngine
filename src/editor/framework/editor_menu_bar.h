@@ -1,6 +1,8 @@
 #pragma once
 
-#include "resource/asset/texture_asset.h"
+#include <memory>
+
+namespace Vkm::GL { class Texture2D; }
 
 namespace Vkm::Engine {
 
@@ -34,7 +36,7 @@ class EditorMenuBar {
         // Brand mark drawn at the left of the menu bar. Lazy-loaded on first
         // draw (needs a live GL context); unique_ptr so this header only needs a
         // forward declaration of Vkm::GL::Texture2D.
-        TextureHandle m_logo;   ///< The mark beside the File menu, loaded on first draw.
+        std::unique_ptr<Vkm::GL::Texture2D> m_logo;
         bool m_openAbout = false;  ///< About requested this frame; popup opens at menu-bar scope.
 };
 

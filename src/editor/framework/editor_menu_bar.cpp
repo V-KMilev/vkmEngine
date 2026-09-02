@@ -1,8 +1,5 @@
 #include "framework/editor_menu_bar.h"
 
-#include "loader/texture_loaders.h"
-#include "system/render/editor_render_hooks.h"
-
 #include <algorithm>
 #include <cstdarg>
 #include <cstdio>
@@ -11,6 +8,7 @@
 
 #include <imgui.h>
 
+#include "texture/gl_texture.h"
 
 #include "core/system.h"
 #include "core/clock.h"
@@ -61,20 +59,24 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         }
     };
 
-    // An ordinary texture asset reached through the authoring seam, not a GL
-    // object of our own: EditorRenderHooks is what the editor is given for
-    // exactly this, and a panel that constructs a Vkm::GL type is the editor
-    // reaching past both of the engine's named render seams.
+    // Lazy-loaded the first time we draw (the GL context is live by now).
+    // Loaded unflipped so ImGui's top-left UVs render it upright.
+    //
+    // Its own GL object rather than a texture asset, which is the one place the
+    // editor reaches the GPU outside EditorRenderHooks. Routed through the seam
+    // it would have to be an asset in the project's ResourceManager - and that
+    // manager is swapped when a project opens, so the handle goes stale and the
+    // mark lands in the user's asset library as an unused import. The seam has
+    // no entry for an image the engine owns; adding one is a change to it.
     if (!m_logo) {
-        m_logo = loadTexture((ProjectPaths::engineAssets() / "logo" / "vkm_engine_mark.png").string(),
-                             ec.frame.resources, /*srgb*/ true, /*generateMipmaps*/ false);
+        m_logo = std::make_unique<Vkm::GL::Texture2D>(
+            (ProjectPaths::engineAssets() / "logo" / "vkm_engine_mark.png").string(),
+            /*flipVertically*/ false);
     }
-    if (EditorRenderHooks* hooks = editorRenderHooks(ec.renderSystem.backend())) {
-        if (const GpuTextureId id = hooks->ensureTexture(m_logo, ec.frame.resources)) {
-            const float sz = ImGui::GetTextLineHeight();
-            ImGui::Image(imTexture(id), ImVec2(sz * 1.5f, sz * 1.5f));
-            ImGui::SameLine();
-        }
+    if (m_logo->getWidth() > 0) {
+        const float sz = ImGui::GetTextLineHeight();
+        ImGui::Image(imTexture(m_logo->getID()), ImVec2(sz * 1.5f, sz * 1.5f));
+        ImGui::SameLine();
     }
 
     if (ImGui::BeginMenu("File")) {
