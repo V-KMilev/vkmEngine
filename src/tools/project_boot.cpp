@@ -49,7 +49,7 @@ bool bootHost(int argc, char** argv, const char* logFileName, const char* logger
     // moves the CWD, and absolute(argv[1]) would then answer differently.
     // Nothing is logged yet - the log file lives under the root being decided.
     bool argNotAProject = false;
-    if (argc > 1) {
+    if (argc > 1 && argv[1][0] != '-') {
         const std::filesystem::path found = findProjectRoot(std::filesystem::absolute(argv[1], ec));
         if (found.empty()) argNotAProject = true;
         else               ProjectPaths::setProjectRoot(found);

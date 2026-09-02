@@ -27,6 +27,11 @@ world in code, and a project that authors scenes in the editor sets
 
 ## One thing that will catch you
 
-Forward is `+Z`, not `-Z`. A sun overhead needs a **positive** pitch, and
-`glm::quatLookAt` aims 180 degrees the other way. Nothing errors when you get
-this wrong - it just looks wrong.
+Forward is `-Z`, screen-right is `+X`, and up is `+Y` - glm's own convention,
+which is what `glm::quatLookAt` and every `Math::` helper already assume. Get it
+backwards and nothing errors; it just looks wrong, and the tell is controls that
+are mirrored rather than merely rotated.
+
+Take the direction from `Math::computeForward` rather than writing a sign
+yourself. Every place that broke when this convention was settled was a place
+that had hand-rolled it.

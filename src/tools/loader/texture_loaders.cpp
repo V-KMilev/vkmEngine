@@ -135,7 +135,20 @@ TextureHandle requestTextureAsync(
     // becomes two assets.
     const std::string ref      = ProjectPaths::toProjectRelative(filePath);
     const std::string resolved = ProjectPaths::resolveProjectPath(ref).string();
-    if (auto existing = resourceManager.findByName<TextureAsset>(ref)) return existing;
+    if (auto existing = resourceManager.findByName<TextureAsset>(ref)) {
+        // A texture's identity is its path, so the second caller gets the first
+        // caller's decode settings whatever it asked for. sRGB is the one that
+        // changes the pixels rather than the sampling - the same file wanted as
+        // albedo and as a normal map is read one way for both - so a request
+        // that disagrees says so instead of quietly handing back the other.
+        if (resourceManager.get(existing).srgb != srgb) {
+            LOG_WARNING("'%s' is already loaded as %s and is being asked for as %s; "
+                        "the loaded one is returned unchanged",
+                        ref.c_str(), resourceManager.get(existing).srgb ? "sRGB" : "linear",
+                        srgb ? "sRGB" : "linear");
+        }
+        return existing;
+    }
 
     // Stub asset: the finaliser overwrites only what the decode learned, so what
     // it cannot learn - mipmaps, sRGB, filter, wrap - is set here and survives
