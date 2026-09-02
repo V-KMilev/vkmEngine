@@ -635,8 +635,9 @@ Today's coverage, the flat list in `scene_serializer.cpp`:
   collider part
   writes its `shape` by name alongside every shape's fields, so switching a part
   to a capsule and back does not lose the half-extents it was authored with; a
-  part with no `shape` key - every part in a scene written before capsules
-  existed - reads as a box.
+  part with no `shape` key is refused: the read uses `at()`, so the missing key
+  throws and the scene loader's guard turns it into a load failure rather than a
+  silently different collider.
 - `ScriptComponent` (JSON key `"Script"`): each behavior stored by its registered
   type name and recreated through `BehaviorRegistry` on load - a type the
   registry does not know is kept verbatim as an `UnknownBehavior` and written
