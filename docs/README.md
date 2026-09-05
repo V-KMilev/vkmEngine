@@ -23,9 +23,9 @@ It has two halves:
 Do these in order. The first four are short and apply to *every* task; the fifth
 is whichever subsystem you're about to change.
 
-1. **Orient** - [reference/project-overview.md](reference/project-overview.md).
-   One page: what the engine is, the core model, system order, the rendering and
-   resource summary.
+1. **Orient** - [reference/architecture.md](reference/architecture.md). What the
+   engine is, how a project reaches it, the core model, system order, and the
+   rendering and resource summaries - then the same ground in detail.
 2. **What you are building** - [guides/engine.md](guides/engine.md). What the
    engine is for, the order it trades in when two good things conflict, and the
    questions already settled so nobody re-proposes them.
@@ -93,15 +93,15 @@ docs/
     review.md           how to tell a drifting design from a working one
     worked-example.md   one complete judgment, end to end
   reference/
-    project-overview.md one-page orientation (read 1st)
-    architecture.md     engine ownership, stages, FrameContext, directory tree, patterns
+    architecture.md     orientation and then detail: what the engine is, ownership,
+                        stages, FrameContext, directory tree, patterns (read 1st)
     ecs.md              Scene, entities, components, queries, hierarchy
     resources.md        ResourceManager, assets, handles, versioning, by-name identity
     threading.md        the shared-deque ThreadPool + parallelFor
     building.md         CMake targets, modules, flags
     editor.md           panels, gizmos, undo/redo, material preview
     system/
-      rendering.md      the fixed 19-pass forward pipeline + RenderView contract
+      rendering.md      the fixed forward pass list + RenderView contract
       lighting.md       five light types, LTC area lights, shadows, IBL, Forward+
       visibility.md     frustum / distance / screen-size culling
       hierarchy.md      world-transform resolve, HierarchyOperations

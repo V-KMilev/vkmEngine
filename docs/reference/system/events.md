@@ -50,11 +50,12 @@ on the frame thread (main thread today).
 events.unsubscribe<DamageEvent>(id);
 ```
 
-Returns `true` if the listener existed and was removed. **Cannot be
-called from inside a listener callback during emit/flush** - the system
-asserts, and a release build refuses the call and returns `false` rather
-than erasing under a walk that is already bounded. Listeners that need
-self-unsubscribe should `enqueue` a removal event for the next frame.
+Returns `true` if the listener existed and was removed. **Callable from inside a
+listener callback, including on itself**: `emit` and `flush` walk by index, so
+mid-dispatch the entry is emptied rather than erased and the empty slot is reaped
+once the outermost dispatch unwinds. A listener that subscribed during this same
+dispatch is waiting in the pending list and comes straight back out of it, so a
+one-shot can subscribe and cancel itself in one callback.
 
 ## Publishing
 
@@ -88,9 +89,8 @@ to push events, add a mutex to `Bus<EventT>` at that point.
 
 ## Caveats
 
-- Don't subscribe or unsubscribe from inside a listener callback during
-  `emit`/`flush`. Subscribing is *technically* safe (new listeners join
-  the next flush) but unsubscribing trips an assert and is refused.
+- Subscribing from inside a callback is safe: the new listener joins at the end
+  of the dispatch and hears the next event, not the one being delivered.
 - A listener that enqueues an event whose bus has already been flushed
   this frame will see that event fire on the *next* frame's flush.
 - Listeners are iterated by index against a frozen bound at flush

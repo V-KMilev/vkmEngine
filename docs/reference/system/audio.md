@@ -293,10 +293,10 @@ button or anything a behavior spawned, have no `Transform` at all. A spatial
 source without one is heard at the world origin, which the inspector names on
 the card, rather than being silently skipped with `playing` stuck true.
 
-Handedness works out with no correction. The engine's forward is `+Z` and
-screen-right is `-X` (`core/math/axes.h`), and the backend derives its own right
-vector as `cross(forward, up)`, which is `-X` for that basis - so a source at
-world `-X` is heard from the right speaker. The harness measures this rather
+Handedness works out with no correction. The engine's forward is `-Z` and up is
+`+Y` (`core/math/axes.h`), and the backend derives its own right vector as
+`cross(forward, up)`, which is `+X` for that basis - so a source at world `+X` is
+heard from the right speaker. The harness measures this rather
 than asserting it in prose.
 
 Doppler is off: nothing in the engine tracks velocity, so there is no shift to

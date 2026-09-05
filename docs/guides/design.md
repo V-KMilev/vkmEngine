@@ -53,13 +53,13 @@ new kind of problem - which is rare, and worth double-checking before assuming.
 If your system writes a pointer onto `FrameContext`, it owes that pointer on
 **every** return path, including the ones where it did nothing. Clear the buffer
 at the top of `update`, then work - not the other way round.
-`system/visibility/visibility_system.cpp:139-140` states the reason in place:
+`system/visibility/visibility_system.cpp` states the reason in place:
 
     // Cleared here, not at the serial gather, so the early-return paths below
     // still publish an empty result instead of last frame's stale entries.
 
-and `ctx.visibility = &m_result;` follows at all three exits (`:158`, `:191`,
-`:271`). `ui_system.cpp:26-28` and `skeletal_animation_system.cpp:54-56` open the
+and `ctx.visibility = &m_result;` follows at all three exits (, ,
+). `ui_system.cpp` and `skeletal_animation_system.cpp` open the
 same way.
 
 A consumer must tell "ran, found nothing" from "never ran", and a null can only
@@ -75,11 +75,11 @@ Most changes are settled by the first or second.
 ### 2.1 Does this already exist?
 
 Half-written abstractions are worse than none. If 80% of what you need is in
-`HierarchyOperations`, the `tools/generator/` helpers or a culling stage, extend
+`HierarchyOperations`, the `resource/generate/` helpers or a culling stage, extend
 that rather than starting a parallel utility. Search first - the engine has more
 reusable machinery than is obvious: `SparseSet<T>`, `SlotAllocator`,
 `parallelFor()` - a free function template in `Vkm::Engine`
-(`platform/threading/thread_pool.h:138`), not a `ThreadPool` method, and every
+(`platform/threading/thread_pool.h`), not a `ThreadPool` method, and every
 call site spells it unqualified - the `core/reflect.h` field reflection, and the
 event bus on `ctx.events`.
 
@@ -100,7 +100,7 @@ The directory tree encodes responsibility. Let it place your code:
 | GPU-specific work                             | `src/backend/opengl/`                |
 | A shader                                      | `shaders/<pass>/`                    |
 | Editor-only UI or interaction                 | `src/editor/` - and read [2.5](#25-four-editor-rules-that-fail-quietly) first |
-| Importing or generating an asset              | `src/tools/loader/` or `src/tools/generator/` |
+| Importing or generating an asset              | `src/tools/loader/` or `src/engine/resource/generate/` |
 | Baking an asset into the form the runtime reads | `src/tools/cook/`                  |
 | Registering a system, or anything every host does     | `app/engine_app.h`            |
 | Gameplay                                      | `examples/<project>/src/` - never in the engine |
@@ -117,7 +117,7 @@ Two of those are easy to miss because they are not under `src/engine/`. A new
 asset kind splits: the type is a `Resource` subclass in `resource/asset/`, while
 the code that *reads a file into it* is a loader in `src/tools/`. And a system is
 declared in `system/<name>/` but comes alive at one line in `setupEngineApp`,
-where every `addSystem<T>(stage)` call lives (`app/engine_app.h:89-110`) and
+where every `addSystem<T>(stage)` call lives (`app/engine_app.h`) and
 where the stage placement is argued in a comment beside it.
 
 If it fits nowhere obvious, the tree is telling you the design is off. Stop and
@@ -166,9 +166,9 @@ Three parts:
    reflected component the first two are one line each into the reflection
    driver.
 3. **Add its row to `VKM_SCENE_COMPONENTS`**
-   (`io/scene/component_serializer.h:75`), as a `P`, `R` or `E` row - the letter
+   (`io/scene/component_serializer.h`), as a `P`, `R` or `E` row - the letter
    says what the component refers to, and decides what its save and load are
-   handed (`:49-58`). Saving, loading, the known-key set and the scene's
+   handed. Saving, loading, the known-key set and the scene's
    `assets` block all expand from that one list, which is why it is a list: a
    component saved but never loaded is silent round-trip loss that the
    unknown-key warning cannot catch, because the key is known.
@@ -195,9 +195,9 @@ three rows sit on both sides of it. `Joint` and `Ragdoll` are the `E` rows:
 reflected, and hand-written anyway, because an entity reference cannot survive a
 file as the `EntityId` it is in memory - their save takes an `EntityNamer` and
 their load an `EntityResolver`, and the reflected half still goes through the
-driver in the first line of each (`component_serializer.cpp:165`, `:179`).
+driver in the first line of each (`component_serializer.cpp`, ).
 `Collider` is the third: it reflects `isTrigger` and `enabled` and writes its
-parts array and mesh point cloud by hand (`:225`), which is field iteration's
+parts array and mesh point cloud by hand, which is field iteration's
 reach again.
 
 Getting *that* one wrong is loud, not silent: `Reflect::Traits<T>` is left
@@ -208,7 +208,7 @@ is a compile error telling you to add the markup.
 beside it. That block says which assets the file needs, and a reference it does
 not name is one the next load resolves to nothing with nothing said at either
 end, because the component's own key was written correctly. The walk that fills
-it expands from the `R` rows (`io/asset/asset_serializer.cpp:290-296`), so an
+it expands from the `R` rows (`io/asset/asset_serializer.cpp`), so an
 `R` row with no overload is a compile error naming the component that needs one.
 [../reference/system/io.md](../reference/system/io.md#adding-a-component-to-the-round-trip)
 covers the same ground from the format's side.
@@ -228,9 +228,8 @@ value that already had one.
 None of this gives you authoring. The inspector card, the Create-menu entry and
 the hierarchy badge are hand-written under `src/editor/`, and two more macro
 lists decide what the editor can do with the component: absent from
-`VKM_EDITOR_SNAPSHOT_COMPONENTS` (`editor/framework/editor_commands.h:317`) it is
-one undo cannot resurrect, and absent from `VKM_EDITOR_COMMAND_COMPONENTS`
-(`:358`) the inspector cannot add, remove or edit it undoably at all. Both are
+`VKM_EDITOR_SNAPSHOT_COMPONENTS` (`editor/framework/editor_commands.h`) it is
+one undo cannot resurrect, and absent from `VKM_EDITOR_COMMAND_COMPONENTS` the inspector cannot add, remove or edit it undoably at all. Both are
 documented where they live and in
 [../reference/editor.md](../reference/editor.md#undo--redo).
 
@@ -245,25 +244,33 @@ and none of them is enforced by the compiler. Read these before the first change
   undo. On an entity inside a prefab instance it is a *different* command,
   `PrefabOverrideCommand`, because the value there is the prefab's patched by the
   instance's overrides.
+
+  This is the one convention in this list with a mechanism behind it.
+  `EditScope<T>` (`framework/component_edit.h`) holds the component open and
+  pushes the step when it closes, and `editStep` decides which of the three
+  commands that is - so a one-gesture edit is two lines and cannot forget. Reach
+  for it by default. `pushEdit` / `editStep` stay for a gesture that runs over
+  many frames - an inspector drag, a timeline scrub, the gizmo - which marks the
+  scene dirty as it goes and pushes one step at the end.
 - **Property rows go through the `prop*` wrappers, never raw ImGui.** 197 `prop*`
   calls in `src/editor` against 26 raw slider / drag / input / checkbox / colour
   calls, and those 26 are either not property rows or sit inside a `propRow`
   lambda - which is the wrapper, and is the escape hatch when no `prop*` fits the
-  widget you need. The reason is in `ui/editor_widgets.h:60-70`: the wrappers pass
+  widget you need. The reason is in `ui/editor_widgets.h`: the wrappers pass
   `PROP_CLAMP`, which closes the Ctrl+click text-entry hole that otherwise makes
   every bound in the inspector advisory. Reaching past `propRow` too is what
   loses the bound.
 - **Fixed metrics go through `EditorStyle::px(units)`**
-  (`ui/editor_style.h:118`) - design pixels at the 15px reference font, scaled to
+  (`ui/editor_style.h`) - design pixels at the 15px reference font, scaled to
   the loaded font size. Over 140 call sites across `src/editor`. A raw pixel
   literal looks right on your display and wrong on a scaled one, and nothing
   catches it.
   The one exception is the ImGui style itself: `applyEditorTheme(scale)`
-  (`ui/editor_theme.h:16`) is handed the window's content scale and passes it to
+  (`ui/editor_theme.h`) is handed the window's content scale and passes it to
   `ScaleAllSizes`, because those metrics are set before there is a font to
   measure.
 - **Dialogs use `beginDialog` / `dialogButtons` / `endDialog`**
-  (`ui/editor_dialogs.h:18-35`). The scaffold owns the Escape-cancels /
+  (`ui/editor_dialogs.h`). The scaffold owns the Escape-cancels /
   Enter-confirms contract, including the case where an active text field would
   otherwise swallow Enter in exactly the dialogs that need it.
 
@@ -274,15 +281,17 @@ the backend ([engine.md](engine.md#3-what-the-engine-refuses)) - so the whole
 procedure is inside `src/backend/opengl/pass/`:
 
 1. **Subclass `GLPass`** (`gl_pass.h`) and override `execute(GLFrameContext&)`.
-   The base carries the shared fullscreen preamble / epilogue and the
-   colour-chain promotion; use them rather than open-coding GL state.
-2. **Gate yourself in the first lines of `execute()`.** 15 of the 19 passes do -
-   `gl_bloom_pass.cpp:26` is `if (!ctx.view.settings.bloom) return;`,
-   `gl_decal_pass.cpp:44` is `if (view.decals.empty()) return;`. The backend runs
-   every pass unconditionally (`gl_backend.cpp:269-272`) and skips nothing,
+   The base carries the shared fullscreen preamble and the colour-chain
+   promotion; use them rather than open-coding GL state. There is no epilogue:
+   the backend resets depth test, blending and culling before every pass, so
+   nothing a pass changes outlives it.
+2. **Gate yourself in the first lines of `execute()`.** Most passes do -
+   `gl_bloom_pass.cpp` is `if (!ctx.view.settings.bloom) return;`,
+   `gl_decal_pass.cpp` is `if (view.decals.empty()) return;`. The backend runs
+   every pass unconditionally (`gl_backend.cpp`) and skips nothing,
    deliberately: only the pass knows what would make it a no-op, and the
    condition belongs with the knowledge.
-3. **Register it in the ordered list** at `gl_backend.cpp:94-113`, with a name.
+3. **Register it in the ordered list** at `gl_backend.cpp`, with a name.
    The list is the schedule - there is no graph and no dependency declaration,
    and the comment above it says only that the order is load-bearing, pointing at
    [../reference/system/rendering.md](../reference/system/rendering.md#the-passes-fixed-order)

@@ -48,7 +48,7 @@ RenderSystem::update(FrameContext)
         |-- opaque batch      group the opaque bucket into instanced runs (once, shared)
         |-- per-frame UBOs    camera, lights
         |-- partitionDrawables  split into opaque / alpha-mask / transparent
-        |-- run the 19 passes in order
+        |-- run the passes in order
         |-- probe update      re-bake new/moved/changed reflection probes
         |-- irradiance update re-bake the SH volume when its box/grid changed
 ```

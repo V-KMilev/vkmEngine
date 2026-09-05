@@ -226,18 +226,21 @@ measured identical to 32 x 18 while costing 2.3x the grid memory - because the
 cull is already tight enough that the lights left in a cluster genuinely
 overlap it. The cull pass itself is insensitive to the split (0.10 -> 0.11 ms).
 
-## Limits and the generated-constants contract
+## Limits and the shader prelude
 
-Cross-cutting limits live in `engine_config.h`. At configure time
-`cmake/generate_shader_config.cmake` mirrors them (under the same names) into
-`shaders/_generated/engine_config.glsl`, which the shaders `#include` through
-the engine's shader preprocessor (`preprocessShaderSource` in
-`modules/vkmGL/src/shader/gl_shader.cpp`, reached via `GraphicsShaderSource`) -
-C++ and GLSL share one source of truth. Do not re-define these values in a
-shader; include the generated file.
-(`_common/shadows.glsl` keeps its short local names as aliases:
-`SHADOW_MAX_2D` = `MAX_SHADOW_CASTERS_2D`, `SHADOW_MAX_CUBE` =
-`MAX_SHADOW_CASTERS_CUBE`.)
+Cross-cutting limits live in `engine_config.h`, and GLSL cannot read a C++
+header. `GLBackend::shaderConstants` writes them out as GLSL declarations from
+the C++ constants themselves, and `Vkm::GL::setShaderPrelude` puts that text
+under the `#version` of every stage the loader compiles - graphics and compute
+alike. So a shader simply uses `MAX_LIGHTS`, and there is no file to include and
+nothing to keep in step.
+
+This replaced a CMake script that regex-parsed three headers at configure time
+and wrote `shaders/_generated/*.glsl` into the source tree. The values reached
+the shaders through a build step, a generated file and an `#include`; changing
+one meant reconfiguring, and a renamed constant was a regex that quietly matched
+nothing. Do not re-define a prelude constant in a shader - GLSL rejects the
+redefinition, which is the check the generated file never had.
 
 | C++ constant (`engine_config.h`) | Value | Consumed by |
 |----------------------------------|-------|-------------|

@@ -75,10 +75,10 @@ Ask: if one more case arrived tomorrow, would this absorb it or grow again?
 
 `refusedDuringPlay()` is the whole state machine for "this operation must not run
 during play": a private question the two save paths remember to ask
-(`scene_io_controller.cpp:107`, `:141`). Every new operation has to remember it
+(`scene_io_controller.cpp`, ). Every new operation has to remember it
 too, and the one that forgets is a bug nobody sees until an author hits it. The
 state it guards is not modelled either. `isPlaying()`
-(`scene_io_controller.h:194`) is `!m_playSnapshot.empty()`, so "a session is
+(`scene_io_controller.h`) is `!m_playSnapshot.empty()`, so "a session is
 live" is a side effect of a buffer holding text, and the four call sites in four
 files each re-derive it from that.
 
