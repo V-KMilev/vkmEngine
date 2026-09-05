@@ -59,27 +59,20 @@ struct RagdollSettings {
  * @brief Build bodies and joints shaped like @p rig, and attach a Ragdoll.
  *
  * One capsule per bone long enough to matter, spanning it to its first child,
- * and a point joint to the parent's body at the bone's own origin. The result
- * is ordinary physics: nothing in the solver knows a rig is involved, which is
- * what lets a ragdoll stack, sleep and collide like anything else.
+ * and a point joint to the parent's body at the bone's own origin. The result is
+ * ordinary physics: nothing in the solver knows a rig is involved, which is what
+ * lets a ragdoll stack, sleep and collide like anything else.
  *
  * Idempotent by replacement: an entity that already carries a Ragdoll has its
- * bodies destroyed and rebuilt, so a rebuild after a rig change cannot leave
- * half a skeleton behind.
+ * bodies destroyed and rebuilt.
  *
  * @param scene Scene the bodies are created in.
- * @param rigEntity Entity the Ragdoll is added to. The bones are grouped under
- *        a node of their own, created as its child, so a rig lives inside the
- *        character it belongs to without burying whatever else it owns. It must
- *        not carry a scale: the solver ignores Transform
- *        scale and the hierarchy does not, so a scaled parent puts every limb
- *        somewhere the two disagree about. Art in the wrong units is scaled on
- *        the node that draws it, never on the node that collides.
- *
- *        The bones are *placed* in the frame of the Animator at or below it,
- *        which a model import puts on a child rather than on the entity the
- *        physics is authored on - so the frame and the parent are found
- *        separately and are usually not the same entity.
+ * @param rigEntity Entity the Ragdoll is added to; the bones are grouped under a
+ *        node created as its child. It must not carry a scale - the solver
+ *        ignores Transform scale and the hierarchy does not, so a scaled parent
+ *        puts every limb where the two disagree. The bones are *placed* in the
+ *        frame of the Animator at or below it, which an import puts on a child,
+ *        so the frame and the parent are usually different entities.
  * @param rig The skeleton to mirror.
  * @param settings Proportions.
  * @return How many bodies were created; zero when the rig has no usable bones.

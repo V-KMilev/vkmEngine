@@ -14,6 +14,8 @@
 #include "system/script/script_component.h"
 #include "system/script/behavior_registry.h"
 
+#include "system/script/module_entry.h"
+
 #include "lab_walker.h"
 
 namespace {
@@ -55,10 +57,7 @@ std::vector<Vkm::Engine::EntityId> authoredCharacters(Vkm::Engine::Scene& scene)
 // different engine rather than letting a layout mismatch surface later as a
 // crash somewhere unrelated. VKM_ENGINE_VERSION comes from the engine this
 // module linked, so rebuilding against a new SDK is all it ever needs.
-extern "C"
-#if defined(_WIN32)
-__declspec(dllexport)
-#endif
+VKM_MODULE_ENTRY
 const char* vkmModuleEngineVersion() { return VKM_ENGINE_VERSION; }
 
 // The only required entry: it populates the host's BehaviorRegistry so the
@@ -68,10 +67,7 @@ const char* vkmModuleEngineVersion() { return VKM_ENGINE_VERSION; }
 // world is authored and saved rather than generated at play time, so
 // project.json's entryScene names it and the host loads it - which is the path
 // a project made in the editor takes, and the one nothing else here exercised.
-extern "C"
-#if defined(_WIN32)
-__declspec(dllexport)
-#endif
+VKM_MODULE_ENTRY
 void vkmRegisterBehaviors() {
     using Vkm::Engine::BehaviorRegistry;
     using Vkm::Engine::LabWalker;
@@ -84,10 +80,7 @@ void vkmRegisterBehaviors() {
 // show an author what the game puts on the wire. Nothing here registers a
 // component type: this project replicates transforms and bodies, which the
 // engine registers itself.
-extern "C"
-#if defined(_WIN32)
-__declspec(dllexport)
-#endif
+VKM_MODULE_ENTRY
 void vkmSetupNetwork(Vkm::Engine::NetSession& session) {
     using namespace Vkm::Engine;
 

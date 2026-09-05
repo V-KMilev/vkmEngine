@@ -112,6 +112,23 @@ struct Rigidbody {
      * projects against it is already the reader that ignores it.
      */
     glm::vec3 blockNormal = {0.0f, 1.0f, 0.0f};
+
+    /**
+     * @brief Whether the solver treats this body as having infinite mass.
+     *
+     * Three things mean the same thing here - static, kinematic, and a mass a
+     * project authored as zero or negative - and three places ask the question:
+     * the inverse mass the solver runs on, the static-against-static skip in the
+     * broadphase, and the query filter's static/dynamic split. Asked three ways
+     * they disagree by a term, and the body that falls through the gap is a
+     * zero-mass dynamic one forming pairs nothing can move.
+     *
+     * @param rb The body to test.
+     * @return Whether nothing the solver does can move it.
+     */
+    static bool isImmovable(const Rigidbody& rb) {
+        return rb.isStatic || rb.isKinematic || rb.mass <= 0.0f;
+    }
 };
 
 // sleeping / sleepTimer / supported / supportNormal / blockNormal are

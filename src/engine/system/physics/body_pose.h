@@ -18,12 +18,14 @@ struct Transform;
  * Transform was already the world pose - the common case, and the one that costs
  * nothing. The two parent fields are only meaningful when it is true, and exist
  * for writeback, which has to put a solved world pose back where it came from.
+ * The parent's matrix rather than its inverse, because only the bodies that are
+ * actually written back need the inverse and a sleeping one is not among them.
  */
 struct BodyPose {
     glm::vec3 position = {0.0f, 0.0f, 0.0f};        ///< World position
     glm::quat rotation = {1.0f, 0.0f, 0.0f, 0.0f};  ///< World orientation
     bool      parented = false;                     ///< Came from a parent
-    glm::mat4 parentWorldInv = glm::mat4(1.0f);     ///< inverse(parent model)
+    glm::mat4 parentWorld = glm::mat4(1.0f);        ///< Parent model matrix
     glm::quat parentRot = {1.0f, 0.0f, 0.0f, 0.0f}; ///< Parent world rotation
 };
 

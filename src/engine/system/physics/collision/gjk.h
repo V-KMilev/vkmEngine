@@ -32,8 +32,8 @@ bool gjkOverlap(const SupportShape& a, const SupportShape& b);
  *
  * One contact point, not a manifold, which is why this supplements the
  * hand-written primitive routines rather than replacing them: a box resting on
- * a box needs four points to stay still. It is enough for a hull or a mesh
- * triangle, where the alternative is no contact at all.
+ * a box needs four points to stay still. It is enough for a mesh triangle,
+ * where the alternative is no contact at all.
  *
  * @param a First shape; the normal points away from this one.
  * @param b Second shape.

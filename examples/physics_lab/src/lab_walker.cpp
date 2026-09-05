@@ -87,7 +87,9 @@ void LabWalker::play(const std::string& clip) {
     if (!handle) return;
 
     Animator& animator = context().scene->get<Animator>(m_animator);
-    Animator::crossFadeTo(animator, handle, fadeSeconds);
+    // Every clip in the lab is a loop - idle, walk, run - so the incoming one
+    // always does.
+    Animator::crossFadeTo(animator, handle, fadeSeconds, /*looping*/ true);
     m_playing = clip;
 }
 
@@ -109,10 +111,9 @@ void LabWalker::followCamera(float dt) {
         m_framed = true;
     }
 
-    // The angle is the player's. Held rather than always-on, and on the right
-    // button, because that is the gesture the editor's own camera already uses
-    // and a runtime that grabbed the pointer outright would be one nobody could
-    // get out of.
+    // The angle is the player's. Held on the right button, the gesture the
+    // editor's own camera uses - a runtime that grabbed the pointer outright
+    // would be one nobody could get out of.
     if (context().window) {
         auto& mouse = context().window->getInputHandle().getMouse();
         if (mouse.isButtonPressed(GLFW_MOUSE_BUTTON_RIGHT)) {
@@ -216,19 +217,15 @@ void LabWalker::onFixedUpdate(float dt) {
         axis(ACTION_FORWARD) - axis(ACTION_BACK)
     };
 
-    // Camera-relative, flattened: a course is walked while looking at it, and
-    // world-relative controls make that unusable the moment the view turns.
-    // Taken from the command, not from the camera: the camera has turned since
-    // this tick's input was read, and a tick that asks it walks somewhere the
-    // same command replayed would not.
+    // Camera-relative and flattened, because a course is walked while looking at
+    // it. Taken from the command rather than the camera, which has turned since
+    // this tick's input was read - a replay of the same command must agree.
     glm::vec3 forward = {0.0f, 0.0f, -1.0f};
     glm::vec3 right   = {1.0f, 0.0f, 0.0f};   // screen-right is +X
 
     // Both come from the same rotation, and both are taken or neither is: a
-    // forward from the view beside a right from the default is a basis that
-    // describes no view, and the character would strafe at an angle to what it
-    // walks. Straight down has no horizontal direction at all, which is what
-    // the length test catches.
+    // forward from the view beside a right from the default describes no view.
+    // Straight down has no horizontal direction, which the length test catches.
     const glm::vec3 look = Math::computeForward(command.view);
     const glm::vec3 side = Math::computeRight(command.view);
     const glm::vec3 flatLook = {look.x, 0.0f, look.z};
@@ -292,7 +289,7 @@ void LabWalker::probe(Scene& scene) {
     QueryFilter filter;
     filter.ignore = m_entity;
     RayHit hit;
-    if (!raycast(scene, eye, look, PROBE_RANGE, hit)) {
+    if (!raycast(scene, eye, look, PROBE_RANGE, hit, filter)) {
         LOG_INFO("Probe from player entity %u found nothing", m_entity.slot());
         return;
     }

@@ -17,20 +17,17 @@ BodyPose worldPoseOf(Scene& scene, EntityId id, const Transform& local) {
     const EntityId parent = scene.get<Hierarchy>(id).parent;
     if (!parent) return pose;
 
-    // Walked rather than read out of WorldTransform. That component is written
-    // by the Transform stage, which runs after this one, so it is a frame stale
-    // where it exists and absent entirely on a body parented this tick - a
-    // ragdoll's bones, on the tick they are built. Bodies are parented shallowly
-    // and only some of them are parented at all, so the walk is cheap and it is
-    // right on the first tick as well as every later one.
-    const glm::mat4 selfWorld   = HierarchyOperations::computeWorldMatrix(scene, id);
+    // Walked rather than read out of WorldTransform, which the Transform stage
+    // writes after this one - a frame stale, and absent on a body parented this
+    // tick. One walk: the parent's chain is a prefix of this entity's.
     const glm::mat4 parentWorld = HierarchyOperations::computeWorldMatrix(scene, parent);
+    const glm::mat4 selfWorld   = parentWorld * Transform::computeModelMatrix(local);
 
-    pose.position       = glm::vec3(selfWorld[3]);
-    pose.rotation       = Math::worldRotationOf(selfWorld);
-    pose.parented       = true;
-    pose.parentWorldInv = glm::inverse(parentWorld);
-    pose.parentRot      = Math::worldRotationOf(parentWorld);
+    pose.position    = glm::vec3(selfWorld[3]);
+    pose.rotation    = Math::worldRotationOf(selfWorld);
+    pose.parented    = true;
+    pose.parentWorld = parentWorld;
+    pose.parentRot   = Math::worldRotationOf(parentWorld);
     return pose;
 }
 

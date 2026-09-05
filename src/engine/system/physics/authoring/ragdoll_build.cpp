@@ -79,10 +79,9 @@ void clearRagdoll(Scene& scene, EntityId rigEntity) {
         HierarchyOperations::destroyHierarchy(scene, ragdoll.root);
     }
 
-    // The bit the build took out of the owner's mask goes back. It is an
-    // authored, serialized field that nobody edited, and leaving it cleared
-    // means a character that once had a ragdoll quietly stops colliding with
-    // a whole layer.
+    // The bit the build took out of the owner's mask goes back: it is an authored,
+    // serialized field, and leaving it cleared means a character that once had a
+    // ragdoll quietly stops colliding with a whole layer.
     if (scene.has<Rigidbody>(rigEntity)) {
         scene.get<Rigidbody>(rigEntity).collidesWith |= ragdoll.boneLayer;
     }
@@ -94,9 +93,8 @@ uint32_t buildRagdoll(Scene& scene, EntityId rigEntity, const SkeletonAsset& rig
     if (rig.bones.empty()) return 0;
 
     // The frame the bones are composed in belongs to whatever carries the
-    // Animator, which an import puts under the entity the physics is on. Using
-    // the selected entity's frame instead would build a skeleton at the right
-    // shape in the wrong place, off by whatever the child's transform is.
+    // Animator, which an import puts under the entity the physics is on; the
+    // selected entity's frame builds the right shape in the wrong place.
     const EntityId poseEntity =
         HierarchyOperations::findInSelfOrDescendants<Animator>(scene, rigEntity);
     const EntityId frameEntity = poseEntity ? poseEntity : rigEntity;
@@ -140,10 +138,9 @@ uint32_t buildRagdoll(Scene& scene, EntityId rigEntity, const SkeletonAsset& rig
         scene.add(body, makeName(displayBoneName(rig.bones[i].name)));
         bornThisBuild.push_back(body);
 
-        // A capsule stands along local +Y, so the body is turned to point down
-        // the bone: the shortest arc from +Y onto it. Aiming through a look-at
-        // would need an up vector to be wrong about, and a spine points along
-        // the only one worth guessing.
+        // A capsule stands along local +Y, so the body turns down the bone by the
+        // shortest arc from +Y. A look-at would need an up vector to be wrong
+        // about, and a spine points along the only one worth guessing.
         const glm::quat aim = glm::rotation(glm::vec3(0.0f, 1.0f, 0.0f),
                                             along / length);
         const glm::vec3 centre = (head + tail) * 0.5f;
@@ -198,12 +195,9 @@ uint32_t buildRagdoll(Scene& scene, EntityId rigEntity, const SkeletonAsset& rig
             : settings.mass / static_cast<float>(ragdoll.bones.size());
         body.canSleep = true;
         body.layer = settings.boneLayer;
-        // And not with each other. Limbs are built overlapping - a shoulder's
-        // capsule reaches into the arm's, because both span a bone to its
-        // child - so a ragdoll that self-collides starts every activation by
-        // resolving interpenetration it was authored with, and throws itself
-        // apart. Adjacent bones are already spared by their joint; this is
-        // what spares a thigh from the other thigh.
+        // And not with each other: limbs are built overlapping, each spanning a
+        // bone to its child, so a self-colliding ragdoll starts every activation
+        // by resolving interpenetration it was authored with.
         body.collidesWith &= ~settings.boneLayer;
         scene.add(entry.body, std::move(body));
 
@@ -239,16 +233,9 @@ uint32_t buildRagdoll(Scene& scene, EntityId rigEntity, const SkeletonAsset& rig
         scene.get<Rigidbody>(rigEntity).collidesWith &= ~settings.boneLayer;
     }
 
-    // Parented last, and the poses converted with it. Everything above works
-    // in world space - the joints measure their anchors from world positions,
-    // and boneFromBody records a world offset - so the frame change happens
-    // once, after all of that is settled, rather than being threaded through it.
-    //
-    // Under the character is where anyone looking for a rig would look. What it
-    // costs is that the entity a ragdoll is built on must not carry a scale:
-    // the solver ignores Transform scale and the hierarchy does not, so a
-    // scaled parent puts every limb somewhere the two disagree about. Art in
-    // the wrong units is scaled on the node that draws it.
+    // Parented last, with the poses converted then: everything above works in
+    // world space, so the frame change happens once. The cost is that the entity a
+    // ragdoll is built on must not carry a scale - the solver ignores it.
     const EntityId root = scene.createEntity();
     scene.add(root, makeName("Ragdoll"));
     scene.add(root, Transform{});

@@ -39,6 +39,14 @@ glm::mat3 effectiveMassMatrix(const PhysicsBody& a, const PhysicsBody& b,
     return k;
 }
 
+/**
+ * @brief Fraction of a joint's position error corrected per tick.
+ *
+ * The same number the contact solver's soft step corrects a contact by: a joint
+ * correcting at its own private rate would fight the contacts for the same
+ * bodies.
+ */
+constexpr float JOINT_BAUMGARTE = 0.2f;
 
 } // namespace
 
@@ -47,12 +55,10 @@ void solveJoints(
     const std::vector<JointConstraint>& joints,
     const SolverParams& params
 ) {
-    // The same fraction-per-tick the contact solver corrects positions by,
-    // divided by the timestep because it buys a velocity and the velocity has
-    // a tick to act in. One knob for one concept: a joint that corrected at
-    // its own private rate would fight the contacts for the same bodies.
+    // Divided by the timestep because it buys a velocity and the velocity has
+    // a tick to act in.
     const float rate = params.dt > glm::epsilon<float>()
-                     ? params.baumgarte / params.dt
+                     ? JOINT_BAUMGARTE / params.dt
                      : 0.0f;
 
     for (int pass = 0; pass < params.iterations; ++pass) {
@@ -75,10 +81,9 @@ void solveJoints(
                 // is the whole separation and the correction is a vector.
                 const glm::mat3 k =
                     effectiveMassMatrix(a, b, joint.anchorA, joint.anchorB);
-                // Judged against the matrix's own scale: the determinant goes
-                // as inverse mass cubed, so a fixed epsilon read every joint
-                // between heavy bodies as singular and silently never solved
-                // it. Relative, it is a condition test and mass drops out.
+                // Judged against the matrix's own scale: the determinant goes as
+                // inverse mass cubed, so a fixed epsilon calls every joint between
+                // heavy bodies singular. Relative, mass drops out.
                 const float scale = (k[0][0] + k[1][1] + k[2][2]) / 3.0f;
                 const float measure = scale * scale * scale;
                 if (measure <= 0.0f
