@@ -21,36 +21,22 @@ class ResourceManager;
 /**
  * @brief The Asset Browser: one library of every asset kind the project holds.
  *
- * A kind rail down the left names the kinds; the pane beside it draws the
- * chosen kind as a grid of tiles. Every kind gets the same tile - one square
- * face, a name and a one-line detail, and the face is the same square whether
- * a thumbnail or a glyph fills it, so the lines under a row of them share a
- * baseline. The face is a rendered thumbnail where a kind has one and the
- * kind's glyph where it does not. That is the
- * editor's existing answer to the same question the viewport markers ask: a
- * tile's job is to say an asset is there, and the glyph says what kind, so a
- * sound does not need a picture invented for it to sit beside a mesh.
+ * A kind rail down the left, and beside it the chosen kind as a grid of tiles.
+ * Every kind gets the same tile - one square face, a name, a one-line detail -
+ * filled by a rendered thumbnail where a kind has one and by the kind's glyph
+ * where it does not, so a sound needs no picture invented for it to sit beside
+ * a mesh.
  *
- * The panel is deliberately not templated on an asset type. It walks a table
- * of AssetKind descriptors, each of which carries the small handful of
- * per-kind operations (enumerate, describe, preview, assign, rename, delete)
- * as function pointers; the body below them names no asset type at all. That
- * is what lets a kind with no thumbnail, or nothing on an entity to assign to,
- * join the same grid instead of being given a tab of its own.
+ * Deliberately not templated on an asset type: it walks a table of AssetKind
+ * descriptors, each carrying that kind's enumerate, describe, preview, assign,
+ * rename and delete as function pointers, so a kind with no thumbnail or nothing
+ * on an entity to assign to joins the same grid instead of being given a tab of
+ * its own. It shows the six kinds AssetType names and only those; why FontAsset
+ * is a Resource that does not belong here is in docs/reference/editor.md.
  *
- * It shows all six kinds AssetType names, and only those; why FontAsset is a
- * Resource that does not belong here is in docs/reference/editor.md.
- *
- * It has no window of its own. BottomPanel owns one of these and draws it as
- * a tab, so draw() submits the rail, the toolbar and the grid straight into
- * whatever region the tab bar hands it. A second way in - a floating copy off
- * the Window menu - would be a second place to fix every one of the bugs this
- * panel still has.
- *
- * Stateless w.r.t. assets - it reads ResourceManager every frame; only the
- * chosen kind, the tile size, the audition voice and the two cached helper
- * assets (a preview sphere for material thumbnails, a neutral material for
- * mesh thumbnails) live here.
+ * It has no window of its own - BottomPanel draws it as a tab - and keeps no
+ * asset state: only the chosen kind, the tile size, the audition voice and the
+ * two cached helper assets the thumbnails are rendered with.
  */
 class AssetBrowserPanel {
     public:
@@ -96,6 +82,10 @@ class AssetBrowserPanel {
         void drawGrid(EditorContext& ec);
         void drawRenameModal(EditorContext& ec);
         void drawDeleteModal(EditorContext& ec);
+        /// Configure the shared picker for images and raise it.
+        void openTextureImport();
+        /// Configure the shared picker for audio files and raise it.
+        void openSoundImport();
         void serviceTextureImport(EditorContext& ec);
         void serviceSoundImport(EditorContext& ec);
 
@@ -119,20 +109,14 @@ class AssetBrowserPanel {
         // separate so one in flight cannot be handed the other's file.
         AssetPicker m_texturePicker;
         AssetPicker m_soundPicker;
-        bool        m_requestTextureImport = false;
-        bool        m_requestSoundImport   = false;
 
         // The audition voice is remembered so a second play replaces the first
         // rather than layering a copy over it.
         VoiceId     m_previewVoice = 0;
 
-        // Which clip that voice came from, so the tile playing it is the tile
-        // that can hold it, cut it short and scrub it, while the rest offer
-        // only Play. The full handle rather than the id: a slot recycled by a
-        // remove and an add would otherwise hand a different clip a transport
-        // running against somebody else's sound. A graph swapped underneath it
-        // cannot: AudioSystem stops every voice when the asset epoch moves, so
-        // a handle from the manager that went away can never read as sounding.
+        // Which clip that voice came from, so only the tile playing it can hold,
+        // cut or scrub it. The full handle rather than the id, because a recycled
+        // slot would hand a different clip somebody else's transport.
         AudioClipHandle m_previewClip;
 
         // Re-acquired every draw via ensureAssets - no ready flag so a

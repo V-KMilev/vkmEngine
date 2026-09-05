@@ -44,10 +44,9 @@ class HierarchyPanel {
 
     private:
         char m_filter[64] = {};
-        char m_lastFilter[64] = {};
-        std::vector<EntityId> m_cachedRoots;
-        std::vector<EntityId> m_cachedFiltered;
-        size_t m_lastEntityCount = 0;
+        /// Scratch, rebuilt each frame; members only so the capacity survives.
+        std::vector<EntityId> m_roots;
+        std::vector<EntityId> m_filtered;
 
         // Inline-rename state. m_renameTarget == 0 (default-constructed
         // EntityId) means "no rename in progress". The buffer survives a

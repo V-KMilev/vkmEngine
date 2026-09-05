@@ -57,6 +57,11 @@ bool ProjectController::open(EditorContext& ec, ScriptModule& scriptModule,
     // to the project, and one editor session can open a second one.
     ec.frame.clock.setTickRate(project.tickRate);
 
+    // The look the project ships. Before EditorSettings::load below, which puts
+    // this editor's own view state - the debug buffer and the grid - back on
+    // top of it; the two sets are disjoint, so neither overwrites the other.
+    ec.renderSystem.getSettings() = project.render;
+
     // Emptied before the assets it references go away, through the teardown a
     // New Scene runs: behaviors get onDestroy while the old module still holds
     // their code, and the scene-scoped editor state belongs to the project left.

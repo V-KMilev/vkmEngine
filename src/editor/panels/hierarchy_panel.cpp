@@ -71,40 +71,29 @@ void HierarchyPanel::draw(EditorContext& ec, SceneIOController& sceneIO) {
     bool hasFilter = m_filter[0] != '\0';
 
     if (ImGui::BeginChild("##Tree", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()))) {
-        // Rebuild root list only when entities change (not every frame).
-        size_t currentCount = scene.entityCount();
-        bool wasDirty = state.hierarchyDirty || currentCount != m_lastEntityCount;
-        if (wasDirty) {
-            m_cachedRoots.clear();
-            m_cachedRoots.reserve(currentCount);
-            scene.forEachEntity([&](EntityId id) {
-                if (!isHierarchyNode(scene, id)) return;
-                bool isRoot = !scene.has<Hierarchy>(id) || !scene.get<Hierarchy>(id).parent;
-                if (isRoot) m_cachedRoots.push_back(id);
-            });
-            m_lastEntityCount = currentCount;
-            state.hierarchyDirty = false;
-        }
-
-        const auto& displayList = hasFilter ? m_cachedFiltered : m_cachedRoots;
+        // Rebuilt every frame, deliberately: the list is a function of the
+        // scene, and every way the scene can change would otherwise have to
+        // remember to say so. A cache bought less than the staleness it cost.
+        m_roots.clear();
+        m_roots.reserve(scene.entityCount());
+        scene.forEachEntity([&](EntityId id) {
+            if (!isHierarchyNode(scene, id)) return;
+            const bool isRoot = !scene.has<Hierarchy>(id) || !scene.get<Hierarchy>(id).parent;
+            if (isRoot) m_roots.push_back(id);
+        });
 
         if (hasFilter) {
-            // Only rebuild filtered list when filter text or entity count changes
-            bool filterChanged = std::strcmp(m_filter, m_lastFilter) != 0;
-            if (filterChanged || wasDirty) {
-                std::strncpy(m_lastFilter, m_filter, sizeof(m_lastFilter) - 1);
-                m_lastFilter[sizeof(m_lastFilter) - 1] = '\0';
-                m_cachedFiltered.clear();
-                // Search all entities (not just roots) so children are discoverable
-                scene.forEachEntity([&](EntityId id) {
-                    if (!isHierarchyNode(scene, id)) return;
-                    char name[64];
-                    getEntityDisplayName(scene, id, name, sizeof(name));
-                    if (matchesFilter(name, m_filter))
-                        m_cachedFiltered.push_back(id);
-                });
-            }
+            // Every entity, not just the roots, so a child is discoverable.
+            m_filtered.clear();
+            scene.forEachEntity([&](EntityId id) {
+                if (!isHierarchyNode(scene, id)) return;
+                char name[64];
+                getEntityDisplayName(scene, id, name, sizeof(name));
+                if (matchesFilter(name, m_filter)) m_filtered.push_back(id);
+            });
         }
+
+        const auto& displayList = hasFilter ? m_filtered : m_roots;
 
         // The scene's World node: not an entity, just the handle for editing
         // scene-global settings. Pinned at the top; selecting it shows those
@@ -219,10 +208,8 @@ void HierarchyPanel::drawEntityNode(Scene& scene, ResourceManager& resources,
                 PrefabOverrides::warnComponentIsPrefabs(scene, state, entity, "Name",
                                                         "is not stored in the scene");
             } else {
-                auto& n = scene.get<Name>(entity);
-                const Name before = n;
-                n = makeName(m_renameBuf);
-                pushEdit<Name>(scene, resources, state, entity, before, n, "Rename");
+                EditScope<Name> n(scene, resources, state, entity, "Rename");
+                *n = makeName(m_renameBuf);
             }
             state.markSceneDirty();
             m_renameTarget = {};
@@ -360,31 +347,29 @@ void HierarchyPanel::drawEntityContextMenu(Scene& scene, ResourceManager& resour
     if (scene.has<Transform>(entity)) {
         ImGui::Separator();
         if (ImGui::MenuItem("Reset Transform")) {
-            auto& t = scene.get<Transform>(entity);
-            const Transform before = t;
-            t.position = glm::vec3(0.0f);
-            t.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-            t.scale    = glm::vec3(1.0f);
-            pushEdit<Transform>(scene, resources, state, entity, before, t, "Reset Transform");
-            EditorActions::commitHierarchyMutation(state);
+            {
+                EditScope<Transform> t(scene, resources, state, entity, "Reset Transform");
+                t->position = glm::vec3(0.0f);
+                t->rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+                t->scale    = glm::vec3(1.0f);
+            }
+            state.markSceneDirty();
         }
     }
 
     if (scene.has<Light>(entity)) {
-        auto& light = scene.get<Light>(entity);
-        if (ImGui::MenuItem(light.enabled ? "Disable Light" : "Enable Light")) {
-            const Light before = light;
-            light.enabled = !light.enabled;
-            pushEdit<Light>(scene, resources, state, entity, before, light, "Toggle Light");
+        const bool lit = scene.get<Light>(entity).enabled;
+        if (ImGui::MenuItem(lit ? "Disable Light" : "Enable Light")) {
+            EditScope<Light> light(scene, resources, state, entity, "Toggle Light");
+            light->enabled = !lit;
         }
     }
 
     if (scene.has<Mesh>(entity)) {
-        auto& mesh = scene.get<Mesh>(entity);
-        if (ImGui::MenuItem(mesh.visible ? "Hide" : "Show")) {
-            const Mesh before = mesh;
-            mesh.visible = !mesh.visible;
-            pushEdit<Mesh>(scene, resources, state, entity, before, mesh, "Toggle Mesh Visibility");
+        const bool shown = scene.get<Mesh>(entity).visible;
+        if (ImGui::MenuItem(shown ? "Hide" : "Show")) {
+            EditScope<Mesh> mesh(scene, resources, state, entity, "Toggle Mesh Visibility");
+            mesh->visible = !shown;
         }
     }
 

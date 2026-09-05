@@ -76,7 +76,7 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
     // would fight the fly controller, both writing its Transform every frame. It
     // is still selectable, and its Camera params still editable.
     const bool canManipulate =
-           state.gizmoOperation != GizmoOperation::Select   // Select is pick-only, no handles
+           state.tool != EditorTool::Select                 // Select is pick-only, no handles
         && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)
         && ctx.visibility && ctx.visibility->hasCamera
         && ctx.scene.has<Transform>(state.selectedEntity)
@@ -140,10 +140,10 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
             && EditorActions::hasSelectedAncestor(ctx.scene, state.selection, state.selectedEntity);
     }
     if (m_gizmo.manipulate(drawList, ctx.visibility->view, subProj,
-                            state.gizmoOperation, state.gizmoMode, model,
+                            operationFor(state.tool), state.gizmoMode, model,
                             vpMin, vpWidth, vpHeight)) {
 
-        if (state.gizmoOperation == GizmoOperation::Rotate) {
+        if (state.tool == EditorTool::Rotate) {
             // For rotation: apply delta quaternion directly to start rotation
             // This completely bypasses matrix decomposition and avoids quaternion flips
             glm::quat deltaRot = m_gizmo.getDragRotation();
@@ -172,12 +172,12 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
                 auto snapValue = [](float v, float step) {
                     return std::round(v / step) * step;
                 };
-                if (state.gizmoOperation == GizmoOperation::Translate) {
+                if (state.tool == EditorTool::Translate) {
                     float s = state.snapTranslate;
                     pos.x = snapValue(pos.x, s);
                     pos.y = snapValue(pos.y, s);
                     pos.z = snapValue(pos.z, s);
-                } else if (state.gizmoOperation == GizmoOperation::Scale) {
+                } else if (state.tool == EditorTool::Scale) {
                     float s = state.snapScale;
                     scale.x = snapValue(scale.x, s);
                     scale.y = snapValue(scale.y, s);
@@ -214,17 +214,17 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
                        * glm::inverse(Transform::computeModelMatrix(t));
                 }
 
-                if (state.gizmoOperation == GizmoOperation::Translate) {
+                if (state.tool == EditorTool::Translate) {
                     const glm::vec3 worldStart =
                         glm::vec3(pw * glm::vec4(start.position, 1.0f));
                     t.position = glm::vec3(glm::inverse(pw)
                                  * glm::vec4(worldStart + worldDelta, 1.0f));
-                } else if (state.gizmoOperation == GizmoOperation::Rotate) {
+                } else if (state.tool == EditorTool::Rotate) {
                     const glm::quat parentRot = glm::quat_cast(glm::mat3(pw));
                     const glm::quat localRot  =
                         glm::inverse(parentRot) * worldRot * parentRot;
                     t.rotation = glm::normalize(localRot * start.rotation);
-                } else if (state.gizmoOperation == GizmoOperation::Scale) {
+                } else if (state.tool == EditorTool::Scale) {
                     t.scale = start.scale * ratio;
                 }
             }
@@ -286,13 +286,12 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
         const Mesh& mesh = ctx.scene.get<Mesh>(v.id);
         if (!mesh.mesh || !ctx.resources.isAlive(mesh.mesh)) continue;
         const auto& asset = ctx.resources.get(mesh.mesh);
-        if (!Math::hasValidBounds(asset.boundsMin, asset.boundsMax)) continue;
+        if (!asset.bounds().valid()) continue;
 
-        glm::vec3 worldMin, worldMax;
-        Math::localToWorldAABB(v.model, asset.boundsMin, asset.boundsMax, worldMin, worldMax);
+        const Math::AABB world = Math::transform(v.model, asset.bounds());
 
         float t;
-        if (Math::rayIntersectsAABB(rayOrigin, invDir, worldMin, worldMax, t) && t < nearestT) {
+        if (Math::rayIntersectsAABB(rayOrigin, invDir, world, t) && t < nearestT) {
             nearestT = t;
             hitEntity = v.id;
         }
@@ -336,11 +335,10 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
         const float radius = (light.type == LightType::Directional)
             ? 0.5f
             : std::clamp(light.radius * 0.2f, 0.3f, 3.0f);
-        const glm::vec3 lightMin = pos - glm::vec3(radius);
-        const glm::vec3 lightMax = pos + glm::vec3(radius);
+        const Math::AABB marker{pos - glm::vec3(radius), pos + glm::vec3(radius)};
 
         float t;
-        if (Math::rayIntersectsAABB(rayOrigin, invDir, lightMin, lightMax, t) && t < nearestT) {
+        if (Math::rayIntersectsAABB(rayOrigin, invDir, marker, t) && t < nearestT) {
             nearestT = t;
             hitEntity = id;
         }
@@ -370,9 +368,8 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
         pickMarker(id, resolvedWorldPosition(ctx.scene, id, transform));
     });
 
-    // Selection is editor UI state - it does not modify the scene. Setting
-    // sceneDirty here used to prompt the user to save just for clicking.
-    // hierarchyDirty is still raised so the Hierarchy panel re-highlights.
+    // Selection is editor UI state and does not modify the scene, so nothing here
+    // sets sceneDirty: clicking an entity is not a change to save.
     const bool ctrl  = ImGui::GetIO().KeyCtrl;
     const bool shift = ImGui::GetIO().KeyShift;
     if (hitEntity) {
@@ -383,7 +380,6 @@ void GizmoOverlay::handleViewportPick(EditorContext& ec) {
         // Click on empty space deselects (modified clicks leave the set alone)
         state.deselect();
     }
-    state.hierarchyDirty = true;
 }
 
 } // namespace Vkm::Engine

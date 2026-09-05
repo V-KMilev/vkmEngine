@@ -5,6 +5,8 @@
 
 #include "framework/asset_picker.h"
 
+#include "framework/play_snapshot.h"
+
 namespace Vkm::Engine {
 
 struct FrameContext;
@@ -123,29 +125,24 @@ class SceneIOController {
          *
          * Bakes every loaded asset into the cooked library first, for the reason
          * writeScene() does: the snapshot is the scene file format, which names
-         * its assets and nothing more, and a name is only restorable when the
-         * library holds a record for it. An asset imported during this session
-         * and never baked would come back as an empty slot.
+         * its assets, and a name is only restorable when the library holds a
+         * record for it. The session's whole asset list is recorded beside the
+         * scene, because the scene names only what it uses and an import nobody
+         * has assigned yet is in no component.
          *
-         * The session's whole asset list is recorded beside the scene, because
-         * the scene names only what it uses: an import nobody has assigned yet
-         * is in the Asset Browser and in no component, and restoring the scene
-         * alone would drop it. The bake above is what makes that list
-         * restorable too.
-         *
-         * May block while an import that has not landed yet finishes, since the
-         * cook waits on outstanding async loads - pressing Play seconds after
-         * Import Model waits for that model. A half-loaded scene is not one worth
-         * playing, but the pause is visible and is worth expecting.
+         * May block while an import that has not landed finishes, since the cook
+         * waits on outstanding async loads.
          *
          * @param ctx Frame context supplying the scene and resources to snapshot.
          * @param state Editor state whose dirty flag and history revision are
-         *              remembered for Stop - the first to put back, the second
-         *              to tell a session that edited from one that only ran -
-         *              and which receives a toast if the cook or the
-         *              serialization failed.
+         *              remembered for Stop, and which receives a toast if the
+         *              cook or the serialization failed.
+         * @return Whether a play session may begin. False only when the scene
+         *         could not be serialized at all: without a snapshot there is no
+         *         way back to the authored scene. A partial cook still answers
+         *         true, and the toast names what Stop may lose.
          */
-        void captureSnapshot(FrameContext& ctx, EditorState& state);
+        bool captureSnapshot(FrameContext& ctx, EditorState& state);
 
         /**
          * @brief Swap the captured snapshot back in (same housekeeping as load())
@@ -192,7 +189,7 @@ class SceneIOController {
          * @return true while the authored scene is held aside and the world on
          *         screen belongs to the simulation.
          */
-        bool isPlaying() const { return !m_playSnapshot.empty(); }
+        bool isPlaying() const { return m_play.held(); }
 
         /**
          * @brief Take @p path as the file the scene already in the world came from.
@@ -337,34 +334,9 @@ class SceneIOController {
 
         std::string m_currentScenePath;  ///< Empty until the user saves/loads once.
 
-        /**
-         * @brief In-memory play-mode snapshot of the scene. Non-empty only between
-         * captureSnapshot() (Play) and restoreSnapshot() (Stop).
-         */
-        std::string m_playSnapshot;
+        /// The world as Play found it, held until Stop. See PlaySnapshot.
+        PlaySnapshot m_play;
 
-        /**
-         * @brief The session's whole asset list at capture, as a serialized block.
-         *
-         * The scene above names only the assets the scene uses, which is what a
-         * scene file is; this is the rest. Held as text beside it so this header
-         * stays free of the JSON type, and because the two are one snapshot in
-         * two documents rather than a document and a cache.
-         */
-        std::string m_playAssets;
-        /**
-         * @brief EditorState::sceneDirty at capture time, restored on Stop so a play
-         * session leaves the dirty flag exactly as the user left it.
-         */
-        bool        m_playSnapshotDirty = false;
-        /**
-         * @brief CommandStack::revision() at capture time.
-         *
-         * The same number on Stop means the session left the history exactly as
-         * Play found it, which is what lets the restore keep it: the scene it
-         * puts back is the one those steps were made against, at the same ids.
-         */
-        unsigned long long m_playSnapshotHistory = 0;
         bool        m_openSaveAsPopup = false;
         char        m_saveAsBuffer[256] = "scene.json";
 
