@@ -259,17 +259,9 @@ void testASnapshotNeverOutgrowsThePacketItRidesIn() {
         body.angularVelocity = {0.0f, 2.0f, 0.0f};
     });
 
-    // Every budget across the range where the world does not fit. The
-    // connection's own entity is written wherever slot order puts it and is
-    // never deferred, so on exactly the budgets where everything else has just
-    // filled the packet, it is the one entry that can carry the body past the
-    // end - and the datagram it rides in was sized from that same budget, so
-    // the overflow has nowhere to go and the whole snapshot is lost. It arrives
-    // as a header with nothing behind it, which reads as a packet that would
-    // not decode: a symptom several steps from its cause.
-    // The owner is last in slot order on purpose: everything else has spent the
-    // budget by the time the write reaches it, which is the only arrangement
-    // where the entry that cannot be deferred is also the one with no room.
+    // Every budget across the range where the world does not fit. The owner's own
+    // entity is never deferred and is last in slot order here, so it is the one
+    // entry that can carry the body past the end of a packet already full.
     uint32_t over = 0;
     uint32_t worst = 0;
     uint32_t budgets = 0;

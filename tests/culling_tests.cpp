@@ -1,13 +1,12 @@
 #include "support.h"
 
 #include "core/math/frustum.h"
-#include "core/math/projection.h"
 
 namespace {
 
 // A camera at the origin looking down -Z, which is the engine's forward.
 glm::mat4 lookingForward(float fovY = glm::radians(60.0f), float zNear = 0.1f, float zFar = 100.0f) {
-    const glm::mat4 projection = Math::makePerspective(fovY, 16.0f / 9.0f, zNear, zFar);
+    const glm::mat4 projection = glm::perspective(fovY, 16.0f / 9.0f, zNear, zFar);
     const glm::mat4 view       = glm::lookAt(glm::vec3(0.0f), glm::vec3(0.0f, 0.0f, -1.0f),
                                              glm::vec3(0.0f, 1.0f, 0.0f));
     return projection * view;

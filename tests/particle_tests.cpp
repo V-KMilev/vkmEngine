@@ -12,12 +12,8 @@ namespace {
 // whatever the rule becomes.
 struct ParticleWorld {
     Scene           scene;
-    ResourceManager resources;
-    EventBus        events;
-    InputMap        input;
-    NetSession      net;
-    Clock           clock;
-    WindowManager   window;
+    TestFrame       frame{scene};
+    Clock&          clock = frame.clock;
     ParticleSystem  system;
     EntityId        emitter;
 
@@ -49,8 +45,7 @@ struct ParticleWorld {
             // Drained, or the request stays pending and the next beginFrame
             // reports two steps' worth - the sim delta would grow every tick.
             while (clock.consumeFixedStep()) {}
-            FrameContext ctx{scene, resources, clock, events, window, input, net};
-            system.update(ctx);
+            system.update(frame.ctx);
         }
     }
 };

@@ -271,10 +271,9 @@ void testAClientThatLosesItsServerDoesNotInheritTheWorld() {
 void testAStutterDoesNotCostTheTicksItRan() {
     std::printf("A frame that ran thirty-two ticks, and one packet to say so:\n");
 
-    // The clock runs up to a quarter of a second of ticks in one frame, which
-    // is thirty-two at 128 Hz, and a frame sends one packet. More commands than
-    // a packet holds is therefore ordinary after any stall - a window the
-    // compositor stopped drawing, a scene load, a hitch.
+    // The clock runs up to a quarter second of ticks in one frame - thirty-two at
+    // 128 Hz - and a frame sends one packet. More commands than a packet holds is
+    // ordinary after any stall.
     std::vector<InputCommand> made;
     for (uint32_t i = 0; i < 32; ++i) {
         InputCommand c;
@@ -316,12 +315,9 @@ void testAStutterDoesNotCostTheTicksItRan() {
           && *arrived.rbegin() == made.size() - 1);
     check("with none left behind on the client", pending.empty());
 
-    // What the server does with a backlog is a separate and deliberate thing:
-    // it drains faster than it fills, because a queue is input delay. Skipping
-    // an axis is free - the one that runs says where the stick is now - and an
-    // edge is not, so skipped edges are folded into the command that runs. The
-    // jump was on the oldest command of the burst, which is exactly the one
-    // sending the newest first would have stranded forever.
+    // A backlog drains faster than it fills, because a queue is input delay:
+    // skipping an axis is free, an edge is not, so skipped edges fold into the
+    // command that runs. The jump is on the oldest command of the burst.
     int jumps = 0;
     for (uint32_t tick = 0; tick < 40; ++tick) {
         if (server.take(2000 + tick).pressed & (1u << 2)) ++jumps;
@@ -353,11 +349,9 @@ void testAServerThatHasBeenUpAWhileStillTakesAJoin() {
     NetSession client;
     client.connect(NetAddress{0x7F000001u, server.localAddress().port});
 
-    // The server has been running for a while. Its tick is a count of its own
-    // ticks since it started, and a client that has just started is at nearly
-    // zero - the two clocks were never related and nothing tries to relate
-    // them. Four minutes at 128 Hz is enough to be past the jump the client
-    // refuses a header for.
+    // The server has been running a while and its tick counts from its own start,
+    // while a fresh client is near zero - the two clocks are unrelated. Four minutes
+    // at 128 Hz is past the jump a client refuses a header for.
     uint32_t serverTick = Config::MAX_TICK_RATE * 60 + 5000;
     uint32_t clientTick = 0;
 
@@ -446,13 +440,11 @@ void testStandingIsToldRatherThanGuessed() {
 
     PhysicsSystem serverPhysics, clientPhysics;
     CharacterControllerSystem serverWalk, clientWalk;
-    Clock clock;
-    EventBus events;
-    WindowManager window;
-    InputMap input;
-    ResourceManager resources;
-    FrameContext serverCtx{serverWorld, resources, clock, events, window, input, server};
-    FrameContext clientCtx{clientWorld, resources, clock, events, window, input, client};
+    TestFrame serverFrame(serverWorld, server);
+    TestFrame clientFrame(clientWorld, client);
+    FrameContext& serverCtx = serverFrame.ctx;
+    FrameContext& clientCtx = clientFrame.ctx;
+    ResourceManager& resources = serverFrame.resources;
 
     uint32_t tick = 0;
     const auto frame = [&]() {
@@ -532,13 +524,11 @@ void testAClientDoesNotMoveWhatItDoesNotOwn() {
     client.connect(NetAddress{0x7F000001u, server.localAddress().port});
 
     PhysicsSystem serverPhysics, clientPhysics;
-    Clock clock;
-    EventBus events;
-    WindowManager window;
-    InputMap input;
-    ResourceManager resources;
-    FrameContext serverCtx{serverWorld, resources, clock, events, window, input, server};
-    FrameContext clientCtx{clientWorld, resources, clock, events, window, input, client};
+    TestFrame serverFrame(serverWorld, server);
+    TestFrame clientFrame(clientWorld, client);
+    FrameContext& serverCtx = serverFrame.ctx;
+    FrameContext& clientCtx = clientFrame.ctx;
+    ResourceManager& resources = serverFrame.resources;
 
     uint32_t tick = 0;
     const auto frame = [&]() {
@@ -654,12 +644,10 @@ void testAClientPredictsWhatItIsPushing() {
     client.connect(NetAddress{0x7F000001u, server.localAddress().port});
 
     PhysicsSystem serverPhysics, clientPhysics;
-    Clock clock;
-    EventBus events;
-    WindowManager window;
-    InputMap input;
-    FrameContext serverCtx{serverWorld, resources, clock, events, window, input, server};
-    FrameContext clientCtx{clientWorld, resources, clock, events, window, input, client};
+    TestFrame serverFrame(serverWorld, server);
+    TestFrame clientFrame(clientWorld, client);
+    FrameContext& serverCtx = serverFrame.ctx;
+    FrameContext& clientCtx = clientFrame.ctx;
 
     uint32_t tick = 0;
     const auto frame = [&]() {

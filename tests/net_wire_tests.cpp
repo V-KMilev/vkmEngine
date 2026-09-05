@@ -47,7 +47,7 @@ void testBitsAreWrittenAndReadBack() {
 void testQuantisedValuesSurviveTheRoundTrip() {
     std::printf("What a body's state costs on the wire:\n");
 
-    constexpr float EXTENT = 512.0f;
+    constexpr float EXTENT = Quantize::WORLD_EXTENT;
 
     std::vector<uint8_t> bytes;
     const glm::vec3 position(123.456f, -7.891f, 0.0f);
@@ -56,7 +56,7 @@ void testQuantisedValuesSurviveTheRoundTrip() {
 
     {
         BitWriter out(bytes, 64);
-        for (int i = 0; i < 3; ++i) Quantize::writePosition(out, position[i], EXTENT);
+        for (int i = 0; i < 3; ++i) Quantize::writePosition(out, position[i]);
         Quantize::writeRotation(out, rotation);
         for (int i = 0; i < 3; ++i) Quantize::writeVelocity(out, velocity[i]);
         check("a full body state fits well inside a packet", !out.overflowed());
@@ -65,7 +65,7 @@ void testQuantisedValuesSurviveTheRoundTrip() {
 
     BitReader in(bytes.data(), bytes.size());
     glm::vec3 backPosition;
-    for (int i = 0; i < 3; ++i) backPosition[i] = Quantize::readPosition(in, EXTENT);
+    for (int i = 0; i < 3; ++i) backPosition[i] = Quantize::readPosition(in);
     const glm::quat backRotation = Quantize::readRotation(in);
     glm::vec3 backVelocity;
     for (int i = 0; i < 3; ++i) backVelocity[i] = Quantize::readVelocity(in);
@@ -82,15 +82,14 @@ void testQuantisedValuesSurviveTheRoundTrip() {
           glm::length(backVelocity - velocity) < 0.02f);
     check("and the whole read landed", !in.failed());
 
-    // Measured, not restated. A width copied from the encoder is a second
-    // source of truth that drifts silently - this one still said nine rotation
-    // bits after the encoder moved to eleven, and the check below is loose
-    // enough that it passed anyway.
+    // Measured, not restated: a width copied from the encoder is a second source
+    // of truth that drifts silently, and the check below is loose enough not to
+    // notice.
     std::vector<uint8_t> oneBody;
     BitWriter measure(oneBody, 256);
-    Quantize::writePosition(measure, 1.0f, EXTENT);
-    Quantize::writePosition(measure, 2.0f, EXTENT);
-    Quantize::writePosition(measure, 3.0f, EXTENT);
+    Quantize::writePosition(measure, 1.0f);
+    Quantize::writePosition(measure, 2.0f);
+    Quantize::writePosition(measure, 3.0f);
     measure.boolean(true);
     measure.boolean(false);
     Quantize::writeRotation(measure, glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
@@ -109,17 +108,17 @@ void testQuantisedValuesSurviveTheRoundTrip() {
     // Boundaries, where a fixed-point encoder is most likely to be wrong.
     std::vector<uint8_t> edge;
     BitWriter out(edge, 32);
-    Quantize::writePosition(out, -EXTENT, EXTENT);
-    Quantize::writePosition(out,  EXTENT, EXTENT);
-    Quantize::writePosition(out,  0.0f,   EXTENT);
+    Quantize::writePosition(out, -EXTENT);
+    Quantize::writePosition(out,  EXTENT);
+    Quantize::writePosition(out,  0.0f);
     Quantize::writeVelocity(out,  Quantize::MAX_SPEED * 2.0f);   // past the top
     out.finish();
 
     BitReader back(edge.data(), edge.size());
     check("the far edge of the world round-trips",
-          std::fabs(Quantize::readPosition(back, EXTENT) + EXTENT) < 0.002f);
-    check("  and the other one", std::fabs(Quantize::readPosition(back, EXTENT) - EXTENT) < 0.002f);
-    check("  and the origin is the origin", std::fabs(Quantize::readPosition(back, EXTENT)) < 0.002f);
+          std::fabs(Quantize::readPosition(back) + EXTENT) < 0.002f);
+    check("  and the other one", std::fabs(Quantize::readPosition(back) - EXTENT) < 0.002f);
+    check("  and the origin is the origin", std::fabs(Quantize::readPosition(back)) < 0.002f);
     check("a speed past the top is clamped, not wrapped",
           Quantize::readVelocity(back) > Quantize::MAX_SPEED - 0.02f);
 }
@@ -144,11 +143,9 @@ void testTheCommonestValuesSurviveExactly() {
           rotationErrorDegrees(glm::quat(1.0f, 0.0f, 0.0f, 0.0f), back) < 1e-4f);
     check("and a still one comes back still, exactly", still == 0.0f);
 
-    // Why exactly matters, and it is not tidiness. A rotation error is an
-    // angle, so what it costs on the ground grows with the size of the thing
-    // turned. The lab's floor is 62 m across; a quarter of a degree of error
-    // lifts one end of it and drops the other by a tenth of a metre, and a
-    // character standing on the low end finds nothing under it.
+    // A rotation error is an angle, so what it costs on the ground grows with the
+    // size of the thing turned: across the lab's 62 m floor, a quarter of a degree
+    // drops one end by a tenth of a metre and a character falls through it.
     float worst = 0.0f;
     for (int i = 0; i < 400; ++i) {
         const float angle = glm::radians(static_cast<float>(i) * 0.9f);
