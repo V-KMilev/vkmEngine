@@ -193,9 +193,71 @@ void testEachEventTypeHasItsOwnQueue() {
     check("each listener hears only its own type", pings == 2 && pongs == 1);
 }
 
+// A one-shot listener retires itself the moment it fires. The walk holds an
+// index into the listener vector, so the entry has to be emptied rather than
+// erased - erasing under the walk skips whoever moves into the freed slot.
+void testAListenerThatRetiresItself() {
+    std::printf("A listener that unsubscribes from inside its own callback:\n");
+
+    EventBus bus;
+    int firstHeard = 0;
+    int secondHeard = 0;
+
+    ListenerId first = 0;
+    first = bus.subscribe<Pong>([&](const Pong&) {
+        ++firstHeard;
+        bus.unsubscribe<Pong>(first);
+    });
+    bus.subscribe<Pong>([&](const Pong&) { ++secondHeard; });
+
+    bus.enqueue(Pong{});
+    bus.flush();
+    check("both listeners hear the first event", firstHeard == 1 && secondHeard == 1);
+
+    bus.enqueue(Pong{});
+    bus.flush();
+    check("the one that retired itself hears no more", firstHeard == 1);
+    // The listener that stayed is the assertion that matters: an erase under the
+    // walk would have moved it into the freed slot and skipped it.
+    check("and the one that stayed still hears",       secondHeard == 2);
+
+    bus.enqueue(Pong{});
+    bus.flush();
+    check("and goes on hearing",                       secondHeard == 3);
+}
+
+// A listener that subscribes during a dispatch is waiting in the pending list
+// rather than the live one, and a remove that only looked at the live list said
+// "nothing to remove" and then admitted it anyway - a subscription nobody could
+// cancel.
+void testAListenerRemovedBeforeItIsEverAdmitted() {
+    std::printf("A listener subscribed and removed inside the same dispatch:\n");
+
+    EventBus bus;
+    int lateHeard = 0;
+    ListenerId late = 0;
+    bool removed = false;
+
+    bus.subscribe<Pong>([&](const Pong&) {
+        if (late) return;
+        late    = bus.subscribe<Pong>([&](const Pong&) { ++lateHeard; });
+        removed = bus.unsubscribe<Pong>(late);
+    });
+
+    bus.enqueue(Pong{});
+    bus.flush();
+    check("removing it reports it was found", removed);
+
+    bus.enqueue(Pong{});
+    bus.flush();
+    check("and it is never called", lateHeard == 0);
+}
+
 } // namespace
 
 void runEcsTests() {
+    testAListenerThatRetiresItself();
+    testAListenerRemovedBeforeItIsEverAdmitted();
     testAFreedHandleNeverComesBackToLife();
     testASlotClaimedByIndexIsNotHandedOutAgain();
     testAllocatingPastTheEndFillsTheGap();

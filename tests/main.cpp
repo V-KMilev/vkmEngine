@@ -17,7 +17,9 @@ constexpr Suite SUITES[] = {
     {"core",        runCoreTests},
     {"ecs",         runEcsTests},
     {"physics",     runPhysicsTests},
+    {"resource",    runResourceTests},
     {"scene",       runSceneTests},
+    {"play",        runPlayTests},
     {"culling",     runCullingTests},
     {"animation",   runAnimationTests},
     {"particle",    runParticleTests},
@@ -26,6 +28,7 @@ constexpr Suite SUITES[] = {
     {"replication", runNetReplicationTests},
     {"prediction",  runNetPredictionTests},
     {"session",     runNetSessionTests},
+    {"docs",        runDocsTests},
 };
 
 void listSuites() {

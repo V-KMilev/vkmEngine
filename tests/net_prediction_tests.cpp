@@ -38,11 +38,9 @@ void testAJumpSurvivesTheNetworkLosingIt() {
     }
     check("packets did arrive eventually", delivered == 12);
 
-    // The server now runs the ticks in order, as it does in the frame loop.
-    // The jump has to be in tick 100 - it was pressed, and the player is owed
-    // it - and it has to be in exactly one tick. Every one of those twelve
-    // packets carried a copy, so a server that ran what arrived rather than
-    // what it had not yet run would jump twelve times from one keypress.
+    // The server runs the ticks in order, as it does in the frame loop. The jump
+    // belongs to tick 100 and to exactly one tick: all twelve packets carried a
+    // copy, so running what arrives jumps twelve times from one keypress.
     int jumps = 0;
     InputCommand ran;
     for (uint32_t tick = 100; tick < 120; ++tick) {
@@ -180,10 +178,9 @@ void testWhatAFrameOfInputCostsOnTheWire() {
 void testAPacketCannotTalkTheDecoderPastTheEndOfACommand() {
     std::printf("What a peer claiming more actions than exist is told:\n");
 
-    // A command holds a fixed number of action slots. The count is a byte on
-    // the wire, so a peer can claim 255 of them - by being a different build,
-    // by being corrupted in flight, or on purpose. The decoder indexes the
-    // array with it, so believing it writes off the end of the command.
+    // A command holds a fixed number of action slots, and the count is a byte on
+    // the wire, so a peer can claim 255 of them. The decoder indexes the array
+    // with it, so believing it writes off the end of the command.
     std::vector<InputCommand> window;
     window.push_back(walkCommand(1, 100, 1.0f, true));
 
@@ -285,10 +282,9 @@ void testTheWorldIsDrawnSmoothlyBetweenWhatArrives() {
 void testSmoothingNeverFeedsItselfItsOwnGuess() {
     std::printf("The error that compounds until a still body drifts away:\n");
 
-    // Presence in a snapshot is measured against what the receiver was last
-    // told. So if the smoothed value - which is deliberately a moment behind -
-    // is sitting in the component when the next snapshot lands, "unchanged"
-    // silently means "unchanged from the smoothed value", and the body walks.
+    // Presence in a snapshot is measured against what the receiver was last told,
+    // so a smoothed value - deliberately a moment behind - sitting in the component
+    // makes "unchanged" mean unchanged from that, and the body walks.
     NetInterpolation smoothing;
     Scene scene;
     const EntityId crate = scene.createEntity();
@@ -330,10 +326,9 @@ void testAPredictionThatWasWrongIsRunAgainRatherThanArguedWith() {
     NetSession client;
     client.connect(NetAddress{0x7F000001u, server.localAddress().port});
 
-    // The client believes it may walk. The server holds it against a wall the
-    // client does not know about, so every tick the client predicts is wrong by
-    // one more step - which is exactly the case a nudge closes slowly and a
-    // replay closes at once.
+    // The client believes it may walk, and the server holds it against a wall the
+    // client does not know about - so every predicted tick is wrong by one more
+    // step, the case a nudge closes slowly and a replay closes at once.
     bool pushing = false;
     const auto stepClient = [&](const InputCommand& command) {
         if (!clientWorld.isAlive(clientWalker)) return;
@@ -507,11 +502,9 @@ void testAShotIsJudgedAgainstWhatTheShooterCouldSee() {
     check("  and misses once the world is put back to the shooter's view",
           !hits(now, true));
 
-    // The point of the whole feature: the shooter's screen is showing it a
-    // moment already past, so a shot aimed there must be judged against that
-    // moment rather than against the present.
-    // Where the server puts the runner when it judges this player's shot -
-    // measured rather than guessed at, so the test says something exact.
+    // The shooter's screen is showing a moment already past, so the shot is judged
+    // against that moment rather than the present. Where the server puts the runner
+    // then is measured rather than guessed at, so this says something exact.
     float seenAt = 0.0f;
     {
         NetRewindScope scope(serverWorld, server, shooter);
