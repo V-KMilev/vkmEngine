@@ -8,17 +8,9 @@
 
 #include "platform/net/winsock_init.h"
 
+#include "platform/windows_api.h"
+
 #if defined(_WIN32)
-    // NOGDI is not optional here; see platform/net/winsock_init.h for why, and
-    // why the other two are guarded.
-    #ifndef WIN32_LEAN_AND_MEAN
-        #define WIN32_LEAN_AND_MEAN
-    #endif
-    #ifndef NOMINMAX
-        #define NOMINMAX
-    #endif
-    #define NOGDI
-    #include <winsock2.h>
     #include <ws2tcpip.h>
     #include <mstcpip.h>   // SIO_UDP_CONNRESET, on the toolchains that have it
 
@@ -205,10 +197,9 @@ bool UdpSocket::receive(std::vector<uint8_t>& out, NetAddress& from) {
                                      reinterpret_cast<char*>(buffer), sizeof(buffer), 0,
                                      reinterpret_cast<sockaddr*>(&sender), &senderSize);
         if (read < 0) {
-            // Windows reports a datagram too big for the buffer as an error
-            // where a POSIX read hands back the truncated head. The same packet
-            // deserves the same answer, so it takes the oversized path below
-            // rather than reading as a broken socket and ending the drain.
+            // Windows reports a datagram too big for the buffer as an error where
+            // POSIX hands back the truncated head. The same packet takes the same
+            // path, rather than reading as a broken socket and ending the drain.
             if (VKM_MSG_TOO_LONG) {
                 noteOversized(0);
                 continue;
