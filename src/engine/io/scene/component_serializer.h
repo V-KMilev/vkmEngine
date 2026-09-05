@@ -47,29 +47,24 @@ class ResourceManager;
  *
  * The letter says what a component refers to outside itself:
  *
- * P - refers to nothing outside itself; save and load take only the component.
- * R - refers to assets by name, so both take the ResourceManager as well
- *     (resolution happens against the staging RM on load) and an emitAssetRefs
- *     overload sits beside them.
- * E - refers to other entities, so save takes an EntityNamer and load an
- *     EntityResolver - the carrier that knows what it calls an entity. Joint
- *     names the body at the far end of it; Ragdoll names its group node and
- *     the body posing each bone.
+ * P - nothing outside itself; save and load take only the component.
+ * R - assets by name, so both take the ResourceManager as well (resolution
+ *     happens against the staging RM on load) and an emitAssetRefs overload
+ *     sits beside them.
+ * E - other entities, so save takes an EntityNamer and load an EntityResolver.
+ *     Joint names the body at the far end of it; Ragdoll names its group node
+ *     and the body posing each bone.
  *
  * The key is written out rather than derived from the type name, because it is
- * the format: ScriptComponent is stored as "Script", and a stringified type
- * name would change that silently.
+ * the format: ScriptComponent is stored as "Script".
  *
- * Saving, loading, the known-key set and the assets block that says what a
- * scene file needs all expand from this one list, so none of the four can
- * drift. A component saved but never loaded is silent round-trip data loss and
- * the unknown-key warning cannot catch it, because the key is known; an R row
- * whose assets nothing lists is the same loss one level down, because the
- * component's own key was written correctly and only the reference dies.
+ * Saving, loading, the known-key set and the assets block that says what a scene
+ * file needs all expand from this one list, so none of the four can drift - and
+ * a component saved but never loaded is round-trip data loss the unknown-key
+ * warning cannot catch, because the key is known.
  *
- * Hierarchy is not a row: SceneSerializer::saveComponents writes it explicitly
- * and the caller's pass 2 reads it, because the parent it names may not exist
- * yet when the entity is read.
+ * Hierarchy is not a row: SceneSerializer writes it explicitly and reads it in
+ * pass 2, because the parent it names may not exist when the entity is read.
  */
 #define VKM_SCENE_COMPONENTS(P, R, E)           \
     P(Name,             "Name")                 \

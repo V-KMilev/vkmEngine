@@ -2,6 +2,8 @@
 
 #include "io/asset/asset_cook.h"
 
+#include "core/hash/fnv1a.h"
+
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -249,15 +251,40 @@ bool verifyFileSize(std::istream& is, const std::filesystem::path& path, uint64_
     return true;
 }
 
-// Create parent dirs and open `path` (truncating) for a cooked write. The
+// Where a cooked write goes before it is anybody's business.
+std::filesystem::path tempFor(const std::filesystem::path& path) {
+    return std::filesystem::path(path).concat(".tmp");
+}
+
+// Create parent dirs and open a temporary beside `path` for a cooked write. The
 // returned stream is unopened on failure - check `if (!os)` at the call site.
+// Beside rather than at: the artifact wears its own name only once whole, which
+// is what commitCookedWrite does and why nothing measures a file for a torn one.
 std::ofstream openCookedWrite(const std::filesystem::path& path, const char* what) {
     std::error_code ec;
     std::filesystem::create_directories(path.parent_path(), ec);
 
-    std::ofstream os(path, std::ios::binary | std::ios::trunc);
+    std::ofstream os(tempFor(path), std::ios::binary | std::ios::trunc);
     if (!os) LOG_ERROR("Cooked %s '%s': cannot open for writing", what, path.string().c_str());
     return os;
+}
+
+// Close the temporary and move it onto the artifact's name in one step. Rename
+// within a directory is atomic, so the file either is not there or is complete -
+// there is no third state for a reader to detect.
+bool commitCookedWrite(std::ofstream& os, const std::filesystem::path& path, const char* what) {
+    os.close();
+
+    const std::filesystem::path temp = tempFor(path);
+    std::error_code ec;
+    std::filesystem::rename(temp, path, ec);
+    if (ec) {
+        LOG_ERROR("Cooked %s '%s': cannot publish (%s)", what, path.string().c_str(),
+                  ec.message().c_str());
+        std::filesystem::remove(temp, ec);
+        return false;
+    }
+    return true;
 }
 
 // Open `path` and validate its header + declared size against the expected
@@ -322,10 +349,21 @@ bool writeMesh(const std::filesystem::path& path, const MeshAsset& mesh, uint64_
         LOG_ERROR("Cooked mesh '%s': write failed", path.string().c_str());
         return false;
     }
-    return true;
+    return commitCookedWrite(os, path, "mesh");
 }
 
-bool isCookedCurrent(AssetType type, const std::filesystem::path& path, uint64_t recipeHash) {
+uint64_t cacheKey(uint64_t recipeAndCooker, AssetType type) {
+    uint16_t kind = 0;
+    uint16_t formatVersion = 0;
+    if (!cookedIdentity(type, kind, formatVersion)) return recipeAndCooker;
+
+    // Folded in through the shared hash, seeded with the recipe: a bump to any of
+    // the three lands the artifact under a name nothing looks for.
+    const uint16_t tag[2] = { kind, formatVersion };
+    return fnv1a64(tag, sizeof(tag), recipeAndCooker);
+}
+
+bool isCookedCurrent(AssetType type, const std::filesystem::path& path) {
     uint16_t expectKind = 0;
     uint16_t expectVersion = 0;
     if (!cookedIdentity(type, expectKind, expectVersion)) return false;
@@ -333,13 +371,12 @@ bool isCookedCurrent(AssetType type, const std::filesystem::path& path, uint64_t
     std::ifstream is(path, std::ios::binary);
     if (!is) return false;
 
+    // The name carried the recipe, the cooker and the layout; what is left to
+    // check is that this is one of ours and holds what the directory says. The
+    // kind is cheap and catches a composed-path mistake, which a hash cannot.
     CookedHeader header;
     if (readHeaderFields(is, header) != HeaderRead::Ok) return false;
-    if (header.assetKind != expectKind || header.formatVersion != expectVersion
-        || header.recipeHash != recipeHash) return false;
-
-    std::streamoff fileSize = 0;
-    return payloadFillsFile(is, header.payloadBytes, fileSize);
+    return header.assetKind == expectKind;
 }
 
 bool readMesh(const std::filesystem::path& path, MeshAsset& out, uint64_t* outHash) {
@@ -494,7 +531,7 @@ bool writeTexture(const std::filesystem::path& path, const TextureAsset& texture
         LOG_ERROR("Cooked texture '%s': write failed", path.string().c_str());
         return false;
     }
-    return true;
+    return commitCookedWrite(os, path, "texture");
 }
 
 bool readTexture(const std::filesystem::path& path, TextureAsset& out, uint64_t* outHash) {
@@ -588,7 +625,7 @@ bool writeSkeleton(const std::filesystem::path& path, const SkeletonAsset& skele
         LOG_ERROR("Cooked skeleton '%s': write failed", path.string().c_str());
         return false;
     }
-    return true;
+    return commitCookedWrite(os, path, "skeleton");
 }
 
 bool readSkeleton(const std::filesystem::path& path, SkeletonAsset& out, uint64_t* outHash) {
@@ -762,7 +799,7 @@ bool writeAnimationClip(const std::filesystem::path& path, const AnimationClipAs
         LOG_ERROR("Cooked clip '%s': write failed", path.string().c_str());
         return false;
     }
-    return true;
+    return commitCookedWrite(os, path, "clip");
 }
 
 bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& out, uint64_t* outHash) {
@@ -940,7 +977,7 @@ bool writeAudioClip(const std::filesystem::path& path, const AudioClipAsset& aud
         LOG_ERROR("Cooked sound '%s': write failed", p.c_str());
         return false;
     }
-    return true;
+    return commitCookedWrite(os, path, "sound");
 }
 
 bool readAudioClip(const std::filesystem::path& path, AudioClipAsset& out, uint64_t* outHash) {

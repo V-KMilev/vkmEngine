@@ -1,4 +1,4 @@
-#include "generator/default_scene.h"
+#include "resource/generate/default_scene.h"
 
 #include <glm/gtc/quaternion.hpp>
 
@@ -10,9 +10,9 @@
 #include "ecs/component/render/camera.h"
 #include "ecs/component/render/mesh.h"
 
-#include "generator/light_generators.h"
-#include "generator/material_generators.h"
-#include "generator/mesh_generators.h"
+#include "resource/generate/light_generators.h"
+#include "resource/generate/material_generators.h"
+#include "resource/generate/mesh_generators.h"
 
 namespace Vkm::Engine {
 
@@ -20,10 +20,9 @@ EntityId buildDefaultScene(Scene& scene, ResourceManager& resources) {
     const EntityId camera = scene.createEntity();
     Transform cameraTransform;
 
-    // Back along +Z, which forward being -Z makes the natural place to watch
-    // the origin from. Asked of lookRotation so the scene the engine generates
-    // for itself derives its one camera the way any other caller would, instead
-    // of naming angles that only hold for one convention.
+    // Back along +Z, which forward being -Z makes the natural place to watch the
+    // origin from. Asked of lookRotation rather than named as angles, which would
+    // only hold for one convention.
     cameraTransform.position = {0.0f, 2.0f, 6.0f};
     cameraTransform.rotation = Math::lookRotation(-cameraTransform.position);
 

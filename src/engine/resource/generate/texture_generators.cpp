@@ -1,4 +1,4 @@
-#include "generator/texture_generators.h"
+#include "resource/generate/texture_generators.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -7,6 +7,7 @@
 #include <nlohmann/json.hpp>
 
 #include "resource/resource_manager.h"
+#include "resource/asset_source_kind.h"
 
 namespace Vkm::Engine {
 
@@ -87,25 +88,25 @@ TextureAsset makeDefaultNormalAsset() {
 
 TextureHandle generateWhiteTexture(ResourceManager& rm) {
     return getOrCreateNamed(rm, "builtin:white",
-        {{"kind", "builtin"}, {"type", "white"}},
+        {{"kind", AssetSourceKind::BUILTIN}, {"type", "white"}},
         makeSolidColorAsset(glm::vec4(1.0f, 1.0f, 1.0f, 1.0f), false));
 }
 
 TextureHandle generateBlackTexture(ResourceManager& rm) {
     return getOrCreateNamed(rm, "builtin:black",
-        {{"kind", "builtin"}, {"type", "black"}},
+        {{"kind", AssetSourceKind::BUILTIN}, {"type", "black"}},
         makeSolidColorAsset(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), false));
 }
 
 TextureHandle generateNormalTexture(ResourceManager& rm) {
     return getOrCreateNamed(rm, "builtin:normal",
-        {{"kind", "builtin"}, {"type", "normal"}},
+        {{"kind", AssetSourceKind::BUILTIN}, {"type", "normal"}},
         makeDefaultNormalAsset());
 }
 
 TextureHandle generateGrayTexture(ResourceManager& rm) {
     return getOrCreateNamed(rm, "builtin:gray",
-        {{"kind", "builtin"}, {"type", "gray"}},
+        {{"kind", AssetSourceKind::BUILTIN}, {"type", "gray"}},
         makeSolidColorAsset(glm::vec4(0.5f, 0.5f, 0.5f, 1.0f), false));
 }
 
@@ -121,7 +122,7 @@ TextureHandle createSolidColorTexture(glm::vec4 color, ResourceManager& rm, bool
 
     TextureAsset tex = makeSolidColorAsset(color, srgb);
     nlohmann::json src;
-    src["kind"]  = "solid";
+    src["kind"]  = AssetSourceKind::SOLID;
     src["color"] = {color.r, color.g, color.b, color.a};
     src["srgb"]  = srgb;
     tex.sourceJson() = std::move(src);

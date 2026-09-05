@@ -14,6 +14,7 @@
 #include "core/memory/slot_allocator.h"
 #include "core/memory/sparse_set.h"
 #include "core/memory/types.h"
+#include "core/memory/type_registry.h"
 #include "resource/resource.h"
 #include "resource/resource_handle.h"
 
@@ -324,7 +325,7 @@ class ResourceManager {
          * entity is still pointing at a freed handle.
          */
         void clear() {
-            LOG_INFO_C("RESOURCE", "Clear (dropping %zu asset type(s))", m_slots.size());
+            LOG_INFO_C("RESOURCE", "Clear (dropping %zu asset type(s))", m_slots.count());
             m_slots.clear();
             ++m_epoch;
         }
@@ -347,8 +348,7 @@ class ResourceManager {
          * addPrivate, which works because findByName is O(1) now.
          */
         void swap(ResourceManager& other) noexcept {
-            using std::swap;
-            swap(m_slots, other.m_slots);
+            m_slots.swap(other.m_slots);
             ++m_epoch;
             ++other.m_epoch;
             LOG_INFO_C("RESOURCE", "Swap committed");
@@ -365,12 +365,7 @@ class ResourceManager {
          */
         template<typename T>
         void swapSlot(ResourceManager& other) noexcept {
-            using std::swap;
-            TypeId id = typeId<T>();
-            const size_t needed = static_cast<size_t>(id) + 1;
-            if (m_slots.size() < needed) m_slots.resize(needed);
-            if (other.m_slots.size() < needed) other.m_slots.resize(needed);
-            swap(m_slots[id], other.m_slots[id]);
+            m_slots.slot<T>().swap(other.m_slots.slot<T>());
             ++m_epoch;
             ++other.m_epoch;
         }
@@ -399,13 +394,11 @@ class ResourceManager {
 
         template<typename T>
         TypedSlot& getSlot() {
-            TypeId id = typeId<T>();
-            if (id >= m_slots.size()) m_slots.resize(id + 1);
-            if (!m_slots[id]) {
-                m_slots[id] = std::make_unique<TypedSlot>();
-                m_slots[id]->storage = std::make_unique<SparseSet<T>>();
-            }
-            return *m_slots[id];
+            return m_slots.ensure<T>([] {
+                auto slot = std::make_unique<TypedSlot>();
+                slot->storage = std::make_unique<SparseSet<T>>();
+                return slot;
+            });
         }
 
         /**
@@ -416,9 +409,7 @@ class ResourceManager {
          */
         template<typename T>
         const TypedSlot* trySlot() const {
-            TypeId id = typeId<T>();
-            if (id >= m_slots.size() || !m_slots[id]) return nullptr;
-            return m_slots[id].get();
+            return m_slots.find<T>();
         }
 
         template<typename T>
@@ -471,7 +462,7 @@ class ResourceManager {
         }
 
     private:
-        std::vector<std::unique_ptr<TypedSlot>> m_slots;
+        TypeRegistry<TypedSlot> m_slots;
 
         // Starts at 1 so a cache can hold 0 as "never synced" and repopulate on
         // its first pass without a special case.

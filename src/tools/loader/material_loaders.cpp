@@ -16,7 +16,8 @@
 #include "io/project_paths.h"
 #include "resource/resource_manager.h"
 #include "loader/texture_loaders.h"
-#include "generator/texture_generators.h"
+#include "resource/generate/texture_generators.h"
+#include "resource/asset_source_kind.h"
 
 namespace Vkm::Engine {
 
@@ -194,10 +195,9 @@ MaterialHandle buildFolderMaterial(const std::string& folderRef, ResourceManager
     );
 
     if (!metallicRoughnessPath.empty()) {
-        // Packed glTF map (G = roughness, B = metallic). Bind it to the dedicated
-        // packed slot so the shader samples the right channels; binding it to the
-        // separate metallic/roughness slots reads everything from .r and corrupts
-        // PBR. The MetallicRoughness texture-flag bit is derived from this handle.
+        // Packed glTF map (G = roughness, B = metallic), so it binds to the packed
+        // slot: the separate metallic/roughness slots read everything from .r. The
+        // MetallicRoughness flag bit is derived from this handle.
         material.metallicRoughnessTexture = loadOrFallback(
             metallicRoughnessPath,
             resourceManager,
@@ -284,7 +284,7 @@ MaterialHandle loadMaterialFromFolder(
         // it from, rediscovering the folder's textures as it goes.
         resourceManager.rename(handle, ref);
         resourceManager.edit(handle).sourceJson() = {
-            {"kind", "folder"},
+            {"kind", AssetSourceKind::FOLDER},
             {"path", ref}
         };
     }

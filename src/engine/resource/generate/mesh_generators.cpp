@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "GENERATOR"
 
-#include "generator/mesh_generators.h"
+#include "resource/generate/mesh_generators.h"
 
 #include <cmath>
 #include <algorithm>
@@ -313,10 +313,9 @@ MeshAsset generatePyramid(float baseSize, float height) {
     const glm::vec3 apex(0.0f, height, 0.0f);
     const glm::vec3 nDown(0.0f, -1.0f, 0.0f);
 
-    // Side normals derived from the actual slope so they stay correct for any
-    // baseSize/height (a fixed normal would only suit one set of proportions).
-    // Each side is wound (a, c, b) in mesh.indices below, so its front-face
-    // normal is cross((c)-a, (b)-a) - exactly what this returns (outward).
+    // Side normals derived from the slope, so they hold for any baseSize/height.
+    // Each side is wound (a, c, b) below, so its front-face normal is
+    // cross(c-a, b-a) - which is what this returns, pointing outward.
     auto faceNormal = [](const glm::vec3& a, const glm::vec3& b, const glm::vec3& c) {
         return glm::normalize(glm::cross(c - a, b - a));
     };
@@ -353,10 +352,9 @@ MeshAsset generatePyramid(float baseSize, float height) {
         Vertex{ apex, nLeft, glm::vec2(0.5f, 1.0f), tangent }
     };
 
-    // Base winds CCW seen from below (its -Y normal side). Each side winds
+    // Base winds CCW seen from below, its -Y normal side. Each side winds
     // (base-left, apex, base-right) so cross(v1-v0, v2-v0) points outward,
-    // matching the slope normals above - otherwise the sides face inward and
-    // get culled.
+    // matching the slope normals above.
     mesh.indices = {
         0, 1, 2,  2, 3, 0,      // Base
         4, 6, 5,                // Back
@@ -379,10 +377,9 @@ MeshAsset generateCone(float radius, float height, uint32_t segments) {
     const glm::vec3 nDown(0.0f, -1.0f, 0.0f);
     const glm::vec4 tangent(1.0f, 0.0f, 0.0f, 1.0f);
 
-    // The apex is one shared vertex for every side triangle, so its normal has to
-    // be the one direction the whole fan agrees on - the axis, which is what the
-    // ring of side normals averages to. Any single side's normal would light the
-    // tip as if it faced that side all the way round.
+    // The apex is one shared vertex for every side triangle, so its normal is the
+    // one direction the fan agrees on - the axis. Any single side's normal lights
+    // the tip as if it faced that side all the way round.
     const glm::vec3 tipNormal(0.0f, 1.0f, 0.0f);
     mesh.vertices.push_back(Vertex{ tip, tipNormal, glm::vec2(0.5f, 1.0f), tangent });
     uint32_t tipIndex = 0;
@@ -430,12 +427,75 @@ MeshAsset generateCone(float radius, float height, uint32_t segments) {
     return mesh;
 }
 
+MeshAsset generateCylinder(float radius, float height, uint32_t segments) {
+    MeshAsset mesh;
+
+    if (segments < 3) segments = 3;
+
+    const float halfHeight = height * 0.5f;
+    const float twoPi      = glm::two_pi<float>();
+
+    // Side wall: one quad per segment, with the seam column duplicated at u = 1.
+    for (uint32_t i = 0; i <= segments; ++i) {
+        const float u     = static_cast<float>(i) / static_cast<float>(segments);
+        const float theta = u * twoPi;
+        const float c     = std::cos(theta);
+        const float s     = std::sin(theta);
+
+        const glm::vec3 normal(c, 0.0f, s);
+        const glm::vec4 tangent(-s, 0.0f, c, 1.0f);
+
+        mesh.vertices.push_back({{c * radius, -halfHeight, s * radius}, normal, {u, 0.0f}, tangent});
+        mesh.vertices.push_back({{c * radius,  halfHeight, s * radius}, normal, {u, 1.0f}, tangent});
+    }
+
+    for (uint32_t i = 0; i < segments; ++i) {
+        const uint32_t a = i * 2;
+        mesh.indices.insert(mesh.indices.end(), {a, a + 1, a + 2, a + 2, a + 1, a + 3});
+    }
+
+    // Caps get their own rings so the rim normal stays hard. Each is a fan
+    // around a centre vertex; the bottom winds the other way to face -Y.
+    const glm::vec4 capTangent(1.0f, 0.0f, 0.0f, 1.0f);
+    for (int cap = 0; cap < 2; ++cap) {
+        const bool      top    = (cap == 0);
+        const float     y      = top ? halfHeight : -halfHeight;
+        const glm::vec3 normal = top ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(0.0f, -1.0f, 0.0f);
+
+        const uint32_t centre = static_cast<uint32_t>(mesh.vertices.size());
+        mesh.vertices.push_back({{0.0f, y, 0.0f}, normal, {0.5f, 0.5f}, capTangent});
+
+        for (uint32_t i = 0; i < segments; ++i) {
+            const float theta = static_cast<float>(i) / static_cast<float>(segments) * twoPi;
+            const float c     = std::cos(theta);
+            const float s     = std::sin(theta);
+
+            mesh.vertices.push_back({
+                {c * radius, y, s * radius},
+                normal,
+                {c * 0.5f + 0.5f, s * 0.5f + 0.5f},
+                capTangent
+            });
+        }
+
+        for (uint32_t i = 0; i < segments; ++i) {
+            const uint32_t a = centre + 1 + i;
+            const uint32_t b = centre + 1 + (i + 1) % segments;
+
+            if (top) mesh.indices.insert(mesh.indices.end(), {centre, a, b});
+            else     mesh.indices.insert(mesh.indices.end(), {centre, b, a});
+        }
+    }
+
+    mesh.boundsMin = glm::vec3(-radius, -halfHeight, -radius);
+    mesh.boundsMax = glm::vec3( radius,  halfHeight,  radius);
+    return mesh;
+}
+
 MeshAsset decimateMesh(const MeshAsset& src, uint32_t gridResolution) {
-    // A skinned mesh is refused rather than silently unskinned. Collapsing
-    // vertices to a grid cell merges bone bindings that were never the same
-    // weights, and a MeshAsset is skinned iff its skin stream is non-empty - so
-    // dropping it hands back an LOD that renders in the bind pose while LOD0
-    // animates, with nothing said at either end.
+    // A skinned mesh is refused rather than silently unskinned: collapsing
+    // vertices to a grid cell merges bindings that were never the same weights,
+    // and the result renders in the bind pose while LOD0 animates.
     if (!src.skin.empty()) {
         LOG_WARNING("'%s' is skinned; decimation would drop its bindings, so the "
                     "source is returned unchanged", src.name().c_str());

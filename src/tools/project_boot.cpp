@@ -21,7 +21,7 @@
 #include "platform/library/dynamic_library.h"
 #include "system/script/script_module.h"
 
-#include "generator/default_scene.h"
+#include "resource/generate/default_scene.h"
 
 namespace Vkm::Engine {
 
@@ -49,7 +49,7 @@ bool bootHost(int argc, char** argv, const char* logFileName, const char* logger
     // moves the CWD, and absolute(argv[1]) would then answer differently.
     // Nothing is logged yet - the log file lives under the root being decided.
     bool argNotAProject = false;
-    if (argc > 1 && argv[1][0] != '-') {
+    if (projectGivenInArgs(argc, argv)) {
         const std::filesystem::path found = findProjectRoot(std::filesystem::absolute(argv[1], ec));
         if (found.empty()) argNotAProject = true;
         else               ProjectPaths::setProjectRoot(found);
@@ -60,10 +60,9 @@ bool bootHost(int argc, char** argv, const char* logFileName, const char* logger
     std::filesystem::current_path(ProjectPaths::engineRoot(), ec);
 
     const std::filesystem::path root = ProjectPaths::projectRoot();
-    // A second copy of the same host, playing the same project, would otherwise
-    // interleave its lines into the first one's file - which is what two
-    // clients against one server looks like, and the case where the log matters
-    // most. VKM_LOG_SUFFIX names them apart; `vkm play` sets it.
+    // Two copies of the same host on one project would otherwise interleave their
+    // lines into one file - which is what two clients against a server look like.
+    // VKM_LOG_SUFFIX names them apart; `vkm play` sets it.
     std::string fileName = logFileName;
     if (const char* suffix = std::getenv("VKM_LOG_SUFFIX"); suffix && *suffix) {
         const std::filesystem::path named(fileName);

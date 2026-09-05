@@ -14,6 +14,32 @@
 namespace Vkm::Engine {
 
 /**
+ * @brief The material's texture maps, once, as (serialized key, member, GL slot).
+ *
+ * Eleven maps, and three places have to agree on them: the members themselves,
+ * the serializer's key table and the backend's slot-and-flag table. Each expands
+ * this and supplies only its own column, so a new map is one row rather than
+ * three edits that can be made two at a time.
+ *
+ * The Material editor's table is deliberately NOT expanded from here. It carries
+ * display labels and an authoring order - the common maps first, the packed ones
+ * after - which is editorial rather than a property of the map.
+ */
+#define VKM_MATERIAL_MAPS(X)                                                                          \
+    X(albedo,              albedoTexture,              ALBEDO,               Base color (RGBA; A feeds AlphaMask / Transparent)) \
+    X(normal,              normalTexture,              NORMAL,               Tangent-space normal map (RGB))                     \
+    X(metallicRoughness,   metallicRoughnessTexture,   METALLIC_ROUGHNESS,   Combined roughness (G) + metallic (B) in the glTF layout) \
+    X(metallic,            metallicTexture,            METALLIC,             Separate metalness (R channel))                     \
+    X(roughness,           roughnessTexture,           ROUGHNESS,            Separate roughness (R channel))                     \
+    X(ao,                  aoTexture,                  AO,                   Ambient occlusion (R channel))                      \
+    X(aoMetallicRoughness, aoMetallicRoughnessTexture, AO_METALLIC_ROUGHNESS, Combined AO (R) + roughness (G) + metallic (B))     \
+    X(emission,            emissionTexture,            EMISSION,             Emission (RGB))                                     \
+    X(height,              heightTexture,              HEIGHT,               Height field for parallax (R channel))              \
+    X(clearcoat,           clearcoatTexture,           CLEARCOAT,            Clearcoat strength mask (R channel))                \
+    X(transmission,        transmissionTexture,        TRANSMISSION,         Transmission mask (R channel))
+
+
+/**
  * @brief How the renderer draws a material - render path, not shading.
  *
  * Mirrors glTF alphaMode plus Unlit: Opaque and AlphaMask write depth and
@@ -79,17 +105,9 @@ struct MaterialAsset : public Resource {
     float heightScale = 0.0f;                    ///< Parallax-occlusion depth scale (0: off; 0.02-0.1 typical)
 
     // Texture maps - each multiplies its scalar/color factor when bound
-    TextureHandle albedoTexture;                 ///< Base color (RGBA; A feeds AlphaMask / Transparent)
-    TextureHandle normalTexture;                 ///< Tangent-space normal map (RGB)
-    TextureHandle metallicRoughnessTexture;      ///< Combined roughness (G) + metallic (B), glTF layout
-    TextureHandle metallicTexture;               ///< Separate metalness (R channel)
-    TextureHandle roughnessTexture;              ///< Separate roughness (R channel)
-    TextureHandle aoTexture;                     ///< Ambient occlusion (R channel)
-    TextureHandle aoMetallicRoughnessTexture;    ///< Combined AO (R) + roughness (G) + metallic (B)
-    TextureHandle emissionTexture;               ///< Emission (RGB)
-    TextureHandle heightTexture;                 ///< Height field for parallax (R channel)
-    TextureHandle clearcoatTexture;              ///< Clearcoat strength mask (R channel)
-    TextureHandle transmissionTexture;           ///< Transmission mask (R channel)
+#define VKM_MATERIAL_MAP_MEMBER(key, member, slot, doc) TextureHandle member;  ///< doc
+    VKM_MATERIAL_MAPS(VKM_MATERIAL_MAP_MEMBER)
+#undef VKM_MATERIAL_MAP_MEMBER
 };
 
 using MaterialHandle = Handle<MaterialAsset>;

@@ -22,7 +22,7 @@ inline nlohmann::json quatToJson(const glm::quat& q) { return {q.w, q.x, q.y, q.
 inline glm::vec2 jsonToVec2(const nlohmann::json& j, const glm::vec2& fallback = glm::vec2(0.0f)) {
     if (j.is_null()) return fallback;
     if (!j.is_array() || j.size() < 2) {
-        LOG_WARNING("jsonToVec2: expected a 2-element array, got '%s'; using fallback", j.dump().c_str());
+        LOG_WARNING_C("IO", "jsonToVec2: expected a 2-element array, got '%s'; using fallback", j.dump().c_str());
         return fallback;
     }
     return {j[0], j[1]};
@@ -30,7 +30,7 @@ inline glm::vec2 jsonToVec2(const nlohmann::json& j, const glm::vec2& fallback =
 inline glm::vec3 jsonToVec3(const nlohmann::json& j, const glm::vec3& fallback = glm::vec3(0.0f)) {
     if (j.is_null()) return fallback;
     if (!j.is_array() || j.size() < 3) {
-        LOG_WARNING("jsonToVec3: expected a 3-element array, got '%s'; using fallback", j.dump().c_str());
+        LOG_WARNING_C("IO", "jsonToVec3: expected a 3-element array, got '%s'; using fallback", j.dump().c_str());
         return fallback;
     }
     return {j[0], j[1], j[2]};
@@ -38,7 +38,7 @@ inline glm::vec3 jsonToVec3(const nlohmann::json& j, const glm::vec3& fallback =
 inline glm::vec4 jsonToVec4(const nlohmann::json& j, const glm::vec4& fallback = glm::vec4(0.0f)) {
     if (j.is_null()) return fallback;
     if (!j.is_array() || j.size() < 4) {
-        LOG_WARNING("jsonToVec4: expected a 4-element array, got '%s'; using fallback", j.dump().c_str());
+        LOG_WARNING_C("IO", "jsonToVec4: expected a 4-element array, got '%s'; using fallback", j.dump().c_str());
         return fallback;
     }
     return {j[0], j[1], j[2], j[3]};
@@ -46,7 +46,7 @@ inline glm::vec4 jsonToVec4(const nlohmann::json& j, const glm::vec4& fallback =
 inline glm::quat jsonToQuat(const nlohmann::json& j, const glm::quat& fallback = glm::quat(1.0f, 0.0f, 0.0f, 0.0f)) {
     if (j.is_null()) return fallback;
     if (!j.is_array() || j.size() < 4) {
-        LOG_WARNING("jsonToQuat: expected a 4-element array, got '%s'; using fallback", j.dump().c_str());
+        LOG_WARNING_C("IO", "jsonToQuat: expected a 4-element array, got '%s'; using fallback", j.dump().c_str());
         return fallback;
     }
     return glm::quat(static_cast<float>(j[0]), static_cast<float>(j[1]),

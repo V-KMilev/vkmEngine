@@ -7,6 +7,8 @@
 
 #include <glm/glm.hpp>
 
+#include "core/math/bounds.h"
+
 #include "resource/resource.h"
 #include "resource/resource_handle.h"
 
@@ -85,6 +87,15 @@ struct MeshAsset : public Resource {
 
     glm::vec3 boundsMin{0};           ///< Minimum AABB point in local space
     glm::vec3 boundsMax{0};           ///< Maximum AABB point in local space
+
+    /**
+     * @brief The local-space bounds as one box.
+     *
+     * The two fields stay as they are because the cooked format is written from
+     * them by name; this is how the rest of the engine asks, so a caller passes
+     * one box rather than restating the pairing at every site.
+     */
+    Math::AABB bounds() const noexcept { return {boundsMin, boundsMax}; }
 
     /**
      * @brief True while an async decode is in flight.
