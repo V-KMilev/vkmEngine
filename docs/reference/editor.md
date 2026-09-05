@@ -26,11 +26,17 @@ aggregate, so panels do not reach into each other.
 +---------------------------------------------------------------+
 ```
 
-The viewport renders into a dedicated render target; the editor calls
-`WindowManager::setSceneViewport(x, y, w, h)` so `FrameContext` carries
-the viewport rect, and `RenderSystem` draws into that rect. The result
-is presented as an ImGui image inside the docked viewport area, with
-overlays drawn on top.
+The viewport renders into a dedicated render target. The editor states the
+rect once a frame on `HostChrome` - the editor-to-engine channel `FrameContext`
+carries as `ctx.chrome` - and `RenderSystem`, `VisibilitySystem` and `UISystem`
+each read it back from there. The result is presented as an ImGui image inside
+the docked viewport area, with overlays drawn on top.
+
+`HostChrome` carries the other thing an authoring host knows and the engine
+does not: whether the host's own panels, rather than the scene, own the pointer
+and the keyboard this frame. The camera controller stops flying and the game UI
+stops hit-testing while they do. A runtime writes neither, and the defaults -
+the whole window, nobody holding anything - are what a shipped game wants.
 
 ## Key files
 
@@ -547,6 +553,22 @@ it - see Save as Prefab below.
 
 ## Opening a project
 
+The editor edits *a project*, and without one it says so rather than pretending
+otherwise. `EditorSystem::init` keeps the answer `ProjectController::open` gives
+it: on failure the editor draws a **project picker** - New, Open, and the recent
+list - and no workspace at all. There is no viewport, hierarchy or asset browser,
+because there is no world for them to be about, and every path they would compose
+resolves against the engine's own directory. That is not hypothetical: it is how
+`editor_settings.json`, `/scenes/`, `/cooked/` and `/library/` came to be ignored
+at the repository root.
+
+The `engineRoot()` fallback in `ProjectPaths::projectRoot` stays, and stays for
+the other hosts: for a packaged game "beside the executable" *is* the project,
+and `vkm_runtime` and `vkm_server` are right to take it. The rule tightens for
+the editor only, and it tightens to "a `project.json` must exist" rather than "an
+argument must be given" - so `vkm_editor` shipped beside a project still opens it
+with no argument.
+
 The editor edits *a project*, not the repo it was built in. `ProjectController`
 (`src/editor/framework/project_controller.h`) holds the one sequence that roots
 the editor in one, and re-roots it in place - no restart. Order matters, because
@@ -561,7 +583,11 @@ each step composes paths or reads code the one before it put in place:
    stack, material previews, play snapshot, saved-scene path and the whole
    `ResourceManager` go with it - a generated world never swaps the resources
    the way a scene load does.
-4. `AssetLibrary::get().load()` and the new project's own editor settings.
+4. `AssetLibrary::get().load()`, then the new project's look from its
+   `project.json` `render` block, then its own editor settings - in that order,
+   because the second is what the game ships and the third is this editor's view
+   of it. The two sets are disjoint (`visitShippedRenderFields` against
+   `visitRenderFields`), so neither overwrites the other.
 5. Swap the gameplay module to the new project's `bin/`, or unload it when the
    project brings none.
 6. Boot its scene through `bootProjectScene`, the same rule both binaries use,
@@ -656,6 +682,20 @@ re-raised by `performSceneAction` once the scene is safe.
   (so re-opening doesn't re-scan disk every frame).
 
 ### A play session owns the scene
+
+The four values a session turns on - the scene document, the session's whole
+asset list, the dirty flag and the undo revision - are `PlaySnapshot`
+(`framework/play_snapshot.h`), not four fields on the controller. They are only
+meaningful together and only between one capture and one restore, which is a
+state, and asking whether a session is running used to mean testing whether one
+of them happened to be a non-empty string.
+
+The controller still decides *when*: when to cook, what to do about a partial
+cook, what to tell the author, and what a restore does to the selection and the
+undo stack. A snapshot has no opinion about the session it belongs to. Because it
+has none, it also depends on nothing from the editor - a scene, a resource
+manager and two serializers - which is why the play/stop round trip is now
+covered by `vkm_engine_tests play`, and was not coverable before.
 
 Play snapshots the authored scene and hands the world to the simulation, so
 what the ECS holds during a session is the simulation's copy of one. Every
@@ -783,8 +823,8 @@ Both the Material Editor and the Asset Browser show live PBR previews.
 These are rendered by the backend's dedicated preview path
 (`RenderBackend::renderPreview`, backed by `GLPreview`) - **not** the full
 frame pipeline. It is a minimal forward + composite render of the material on
-a preview mesh into a small offscreen target, kept separate from the main
-19-pass path. Results are cached per asset (keyed by handle + version) with a
+a preview mesh into a small offscreen target, kept separate from the main pass
+list. Results are cached per asset (keyed by handle + version) with a
 small per-frame bake budget, so the Asset Browser grid amortizes thumbnail
 generation across frames while the Material Editor's live view re-renders each
 frame. Each kind gets its own key space (`previewKey`), and none of them is 0 -
@@ -792,8 +832,9 @@ that one is reserved for the Material Editor's live pane.
 
 Right-clicking a tile assigns it to the selected entity - a material or mesh to
 its `Mesh`, a sound to its `AudioSource`, a skeleton or a clip to its `Animator`
-- and that assignment is the same edit the Inspector's asset dropdown makes - so it takes the same road, `pushEdit`, which is what gives it an undo
-step and what turns it into a prefab override when the entity is an instance.
+- and that assignment is the same edit the Inspector's asset dropdown makes, so
+it takes the same road: an `EditScope<T>`, which is what gives it an undo step
+and what turns it into a prefab override when the entity is an instance.
 Writing the component directly here instead left the instance's override list
 empty while the viewport showed the new asset, and the next save wrote the
 prefab's own back over it with nothing said.
@@ -1219,6 +1260,10 @@ class CameraControllerSystem : public System {
 
 Keybindings are configurable through the keybinds system; see the
 Preferences window's Keybinds tab.
+
+The controller is registered by `vkm_editor`'s own `main()`, not by the shared
+bootstrap: right-drag hides and grabs the pointer, and a shipped game that never
+asked for that should not be able to reach a switch that turns it on.
 
 ### Flying the camera is an edit
 

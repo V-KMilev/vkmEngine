@@ -19,7 +19,7 @@ it (events -> gameplay -> animation -> physics). It opts into `fixedUpdate`.
 - `src/engine/system/script/behavior_registry.h` - name -> factory registry
 - `src/engine/system/script/behavior_system.h/.cpp` - `BehaviorSystem` (the driver)
 - `src/engine/system/script/script_module.h/.cpp` - `ScriptModule` (hot-reload of the gameplay DLL)
-- `src/engine/platform/library/dynamic_library.h/.cpp` - cross-platform `.dll`/`.so`/`.dylib` loader
+- `src/engine/platform/library/dynamic_library.h/.cpp` - the `.dll` / `.so` loader
 - `examples/<project>/src/` - a project's own behaviors + its `vkmRegisterBehaviors` / `vkmBuildScene` entry points. The engine ships none of its own
 
 ## Behavior
@@ -392,20 +392,30 @@ both hosts load it the same way through `ScriptModule` - `vkm_runtime` to play
 it, `vkm_editor` to edit it. There is no static-linked variant and no
 editor-only path; the shipped game and the edited game run the same binary.
 
-The host `dlopen`s the module and calls the `extern "C"` entry points it finds:
+The host `dlopen`s the module and calls the entry points it finds. All four are
+declared in `system/script/module_entry.h`, which a module includes and marks
+each definition with `VKM_MODULE_ENTRY`:
 
 | Entry | Signature | Required? | Purpose |
 |-------|-----------|-----------|---------|
 | `vkmModuleEngineVersion` | `const char* ()` | Yes | Reports the engine the module was built against; the host refuses a mismatch |
 | `vkmRegisterBehaviors` | `void ()` | Yes | Registers the project's behavior types into the engine's `BehaviorRegistry` |
 | `vkmBuildScene` | `void (Scene&)` | Optional | Builds the project's world in code. Projects whose scene is generated rather than authored use this instead of `entryScene` |
+| `vkmSetupNetwork` | `void (NetSession&)` | Optional | Says what a joining player is given; a project without it runs offline |
 
-**The signatures are the contract, and nothing enforces them.** These are
-`extern "C"`, so there is no mangling for the linker to disagree about: the host
+**The signatures matter and the loader cannot check them.** These have C
+linkage, so there is no mangling for the linker to disagree about: the host
 looks the symbol up by name, `reinterpret_cast`s it to the type above and calls
-it. A module that declares an extra parameter compiles, links and loads, and
-reads whatever the calling convention left in that register. Copy the signature
-from this table exactly.
+it. A module that declares an extra parameter would compile, link and load, and
+read whatever the calling convention left in that register. Including
+`module_entry.h` is what makes that a compile error instead - the declarations
+there are the same ones the table names, so a definition that disagrees does not
+build.
+
+`VKM_MODULE_ENTRY` also carries the Windows half. An entry has to leave the DLL
+under its own name, and MSVC exports nothing by default; that `__declspec` was
+written out at every entry, and a project that wrote only the `extern "C"` built
+a library whose symbols the host could not find, on one platform, at run time.
 
 **The version guard is an ABI guard.** The engine ships prebuilt libraries and is
 not ABI-stable between versions: struct layouts, inline functions and templates

@@ -1,5 +1,39 @@
 # Architecture
 
+The one page to read first, and the one to come back to. It starts at what the
+engine is and ends at the patterns it is built from; each subsystem has a deeper
+doc under [system/](system/).
+
+## Build and run
+
+```bash
+git submodule update --init --recursive
+cmake -B build -G Ninja
+cmake --build build
+./build/bin/vkm_editor examples/potion_runner    # edit a project
+./build/bin/vkm_runtime examples/potion_runner   # play it
+```
+
+CMake 3.25+, Ninja, C++17, OpenGL 4.3 core. The build produces four executables
+- `vkm_editor`, `vkm_runtime`, and the headless `vkm_cook` and `vkm_server` -
+over a shared header-only bootstrap (`setupEngineApp` in `app/engine_app.h`).
+See [building.md](building.md) for targets, modules, and flags.
+
+## The engine runs projects
+
+The engine holds no game of its own. A game is a **project**: a directory with a
+`project.json`, its own scenes, assets, and gameplay code built into its own
+`bin/`. Every executable finds one by the same rule - *the project beside the
+executable, unless an argument names a different one* - so a shipped game ships
+its exe next to its `project.json` and the player passes nothing.
+
+Three roots keep the halves apart: `engineRoot()` for what ships with the engine
+(shaders, default font, icons; read-only to a game), `projectRoot()` for what the
+game owns, and `userRoot()` for how one person likes their tools - the editor's
+recent-projects list and window layout, which follow the user rather than either
+of the other two. `examples/potion_runner` and `examples/stress_arena` are
+complete worked examples. See [system/io.md](system/io.md#projects-and-the-three-roots).
+
 ## Overview
 
 vkmEngine is built around an open, type-erased ECS and a stage-based system
@@ -11,9 +45,11 @@ in registration order.** There is no parallel layer scheduler - per-system data 
 `ThreadPool`) is the scaling lever, not framework-level system parallelism.
 
 There is no `Engine::get()` singleton. Engine is stack-constructible, so tests and
-headless tools spin up their own instance. Singletons are limited to a handful of
-process-wide registries reached via a static `get()`: `ThreadPool`,
-`AsyncLoadQueue`, and `BehaviorRegistry`. (Asset construction goes through the
+headless tools spin up their own instance. Singletons are limited to
+process-wide registries reached via a static `get()`. There are five, and the
+code is the list rather than this sentence -
+`grep -rn "static .*& get()" src/` names them: `ThreadPool`, `AsyncLoadQueue`,
+`BehaviorRegistry`, `AssetLibrary` and `NetSchema`. (Asset construction goes through the
 `AssetFactory` function-pointer seam in `io/asset/asset_factory.h`, not a singleton;
 recoverable errors go through the `reportError()` sink, captured by an
 editor-owned `EngineErrorLog`.) Profiling goes through `debug/profiler.h` (a
@@ -55,7 +91,7 @@ does:
 
 | Stage      | Systems                                                                         |
 |------------|---------------------------------------------------------------------------------|
-| Input      | `CameraControllerSystem`                                                              |
+| Input      | `CameraControllerSystem` (**editor binary only** - the fly controls are an authoring tool, so the authoring host is what registers them) |
 | Simulation | (EventBus flush), `SplashSystem` (the startup logo; frame-clock presentation, publishes `ctx.splash`), `AsyncLoaderSystem`, `BehaviorSystem`, `AnimationSystem`, `SkeletalAnimationSystem`, `ParticleSystem`, `PhysicsSystem`, `CharacterControllerSystem`, `SkySystem` |
 | Transform  | `BoneSocketSystem`, `HierarchySystem`, `UISystem` (the game UI; runs in **both** binaries), `AudioSystem` (after the world resolve it reads poses from) |
 | Visibility | `VisibilitySystem`                                                            |
@@ -94,6 +130,7 @@ struct FrameContext {
     WindowManager&   window;
     InputMap&        input;
     NetSession&      net;
+    HostChrome&      chrome;   // what an authoring host says about the frame
 
     const Visibility* visibility = nullptr;  // VisibilitySystem's culling result
     const PoseBuffer* poses      = nullptr;  // SkeletalAnimationSystem's rig poses
@@ -131,10 +168,9 @@ source of truth for exact names/values): `MAX_LIGHTS = 256`;
 light's CSM cascades via `NUM_CASCADES`) + `MAX_SHADOW_CASTERS_CUBE = 2` cube
 slots; `DEFAULT_TICK_RATE` (64) with `MIN_TICK_RATE` / `MAX_TICK_RATE` bounding
 what a project may ask for, and the `MAX_FRAME_ACCUMULATOR` (0.25 s) cap.
-The CMake build generates `shaders/_generated/engine_config.glsl` from this header
-so cross-language constants *can* be single-sourced - though the forward shaders
-still hand-define their copies today (see
-[system/lighting.md](system/lighting.md#limits-and-the-generated-constants-contract)).
+The GL backend writes these into every shader's prelude from the C++ constants
+themselves, so a shader uses `MAX_LIGHTS` without declaring it (see
+[system/lighting.md](system/lighting.md#limits-and-the-shader-prelude)).
 Per-system tunables (cull distance, camera sensitivity) live in a nested
 `Settings` struct on the owning system, not here.
 
@@ -188,7 +224,7 @@ OpenGL backend, `src/backend/opengl/` (flat `gl_`-prefixed includes):
 | `pass/`       | the passes: shadow, depth-prepass, resolve (depth + colour scopes), hi-z, occlusion-cull, gtao, skybox, cluster-cull, fog (compute + apply), forward, particle, decal, dof, bloom, grid, composite, ui |
 
 Editor (`src/editor/`): `EditorSystem` at the root; `framework/`, `panels/`,
-`overlays/`, `gizmo/`, `input/`, `ui/`. Tools (`src/tools/`): `generator/` plus
+`overlays/`, `gizmo/`, `input/`, `ui/`. Tools (`src/tools/`):
 the runtime-safe cooked loaders and `asset_registration.cpp` (the `cooked`/
 `inline` runtime factories) build into `vkm_tools`; the heavy importers
 (`loader/model_loaders`, `texture_loaders`, `material_loaders`) and the asset
@@ -228,6 +264,34 @@ seeing only `RenderBackend` through engine headers. Tools use their own root
 - `Vkm::GL::` for low-level OpenGL wrappers from `vkmGL` (`Shader`, `Context`, ...).
 - `Vkm::Log::` for `vkmLog` (`Logger`, `LogLevel`). The `LOG_*` and `VKM_ASSERT`
   macros qualify it themselves, so call sites never name it.
+
+## Rendering at a glance
+
+The engine builds a backend-agnostic `RenderView` snapshot each frame and hands
+it to a `RenderBackend` through one seam (`init` / `render`). The OpenGL backend
+runs a fixed pass list, in the order `GLBackend`'s constructor registers them -
+that list is the record, and it is twenty passes ending in the splash. There is
+no render-graph abstraction and no shader variant cache.
+
+Real features: five light types including LTC area lights, Forward+ clustered
+lighting, CSM + spot + point-cube shadows, IBL (HDR or procedural sky), GTAO with
+bent normals, froxel volumetric fog, baked SH irradiance volumes, reflection
+probes, projected decals, CPU billboard particles, MSAA, DoF, bloom, and a
+screen-space in-game UI (SDF text, buttons). Not present: TAA, SSR, FXAA, motion
+blur, lens flare, auto-exposure, contact shadows.
+
+Engine code never includes a `gl_*` header; `MaterialAsset` is the renderer
+contract. See [system/rendering.md](system/rendering.md) and
+[system/ui.md](system/ui.md).
+
+## Resources
+
+`ResourceManager` owns all assets (`MeshAsset`, `TextureAsset`, `MaterialAsset`,
+`FontAsset`, `SkeletonAsset`, `AnimationClipAsset`, `AudioClipAsset`) behind
+typed generational `Handle<T>`s. Assets are identified by a unique non-empty
+`name`; scene files reference them by name and resolve via `findByName`.
+`commit()` bumps a per-resource version so the backend skips unchanged uploads.
+See [resources.md](resources.md).
 
 ## Key design patterns
 

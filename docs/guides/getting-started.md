@@ -193,9 +193,15 @@ If you need to override the first (you are on your own):
 
 ## The one convention that will catch you
 
-**Forward is `+Z`, not `-Z`.** A sun overhead needs a *positive* pitch, and
-`glm::quatLookAt` aims 180 degrees the other way. Nothing errors when you get it
-wrong - the scene just looks wrong, usually unlit.
+**Forward is `-Z`, screen-right is `+X`, up is `+Y`** - right-handed, and glm's
+own convention, so `glm::quatLookAt` and the rest agree with the engine without
+being corrected. Ask through `Math::computeForward`, `computeRight` and
+`computeUp` rather than writing an axis out by hand: every place that broke
+during the 1.8.1 flip was a place that had hand-rolled one.
+
+Screen-right is `cross(forward, up)`. `cross(up, forward)` is the mirrored one
+and always was, whichever convention you think you are in. Nothing errors when
+you get it wrong - the scene just looks wrong, usually unlit.
 
 ## Where to go next
 

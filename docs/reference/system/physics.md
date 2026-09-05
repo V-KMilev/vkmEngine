@@ -148,10 +148,13 @@ PhysicsSystem::fixedUpdate(ctx)
      its BodyContacts (most upward, most horizontal). Enqueue CollisionEvent /
      TriggerEvent.
   6. Wake sleepers struck by a faster body.
-  7. solveContacts: PGS iterations of normal + friction impulses with restitution,
-     then a split-impulse pass for penetration correction.
-  8. Integrate velocities -> pose, write Transform back, publish the BodyContacts
-     onto the Rigidbody, update sleep state.
+  7. Seed each contact with the impulse its pair carried last tick, then
+     solveContacts: PGS iterations of normal + friction impulses, carrying both
+     the restitution target and the soft penetration-recovery term. Then the
+     joints, then the poses are integrated, then relaxContacts takes the
+     recovery velocity back out and the impulses are recorded for next tick.
+  8. Write the solved pose back through the body's frame, publish the
+     BodyContacts onto the Rigidbody, update sleep state.
      HierarchySystem re-resolves WorldTransform later in the same frame.
 ```
 
@@ -166,17 +169,62 @@ the whole subtree in the Transform stage that follows.
 
 `solveContacts` works against `PhysicsBody` (per-tick state decoupled from the
 Scene, addressed by index from each manifold), not the components directly. It
-runs `SolverParams::iterations` passes of normal + Coulomb-friction impulses with
-restitution, then a separate **split-impulse** pass that fills
-`pseudoLinear` / `pseudoAngular`. Those pseudo-velocities are integrated into the
-pose alongside the real velocities but never persisted, so penetration is removed
-without injecting energy.
+runs `SolverParams::iterations` passes of normal + Coulomb-friction impulses. Each
+normal impulse carries two things at once: the restitution target, and a **soft
+penetration-recovery term** - Catto's soft step, as shipped in Box2D v3.
+
+A contact is treated as a stiff, heavily damped spring. Three coefficients
+derived from (hertz, damping, `dt`) convert overlap into a target separation
+speed, soften the impulse that speed asks for, and bleed off the accumulated
+impulse so the spring cannot store energy across iterations. That last property
+is what makes one loop enough: this used to run a second full solve against a
+shadow pair of velocities (`pseudoLinear` / `pseudoAngular`) that were integrated
+into the pose and discarded, purely so that removing penetration did not inject
+kinetic energy. The damping keeps that energy out instead, so the second solver,
+the shadow velocities and the penetration slop are all gone.
 
 `SolverParams`: `iterations` (PGS passes, from `Environment::solverIterations`),
-`dt`, `baumgarte` (position-correction stiffness), `penetrationSlop` (allowed
-overlap before correction), `restitutionThreshold` (below this approach speed,
-ignore bounce). `Contact` accumulates `normalImpulse` / `tangentImpulse` across a
-tick's iterations so successive passes converge instead of fighting.
+`dt`, `restitutionThreshold` (below this approach speed, ignore bounce),
+`contactHertz` (30, clamped to half the tick rate - stiffer than that and the
+damping and relax passes can no longer keep it from ringing), `contactDamping`
+(10, well above 1 so a contact does not ring), `maxRecoverySpeed` (3 m/s, or a
+body spawned inside geometry resolves the overlap by launching), and
+`baumgarte`, which now serves only the joint solver.
+
+### What holds a stack up
+
+Three things, and a stack needs all three. Take any one away and five boxes
+settle into one another by a centimetre or more, lean, and fall asleep like
+that - which is what an author sees as boxes clipped through each other.
+
+**The impulses carry over.** `ContactCache` stores what each contacting pair
+was holding when the tick ended, matched next tick by contact position relative
+to body A, and `solveContacts` applies it before its first pass. Sequential
+impulses converge from wherever they start, and the bottom contact of a stack
+carries the weight of everything above it: found from zero, eight passes never
+quite arrive. Measured, seeding is worth about four times the iteration count.
+
+**The poses move between the two phases.** The biased passes hand an
+overlapping pair a velocity that separates it; `PhysicsSystem::solve` integrates
+the poses with that velocity still on them, and only then does `relaxContacts`
+run its unbiased passes to take it back off. Relaxing before the integration
+cancels the recovery instead of spending it, and the overlap never closes.
+
+**Friction is a cone on a fixed basis.** Each contact builds two tangents from
+its normal and accumulates an impulse on each, clamped together against
+`friction * normalImpulse` rather than per axis. The alternative - one impulse
+along the direction the contact happens to be sliding - re-derives that
+direction every pass, so the accumulated scalar means something different each
+time it is read; in a stack, where the lateral velocities are near zero and the
+direction flips freely, that is a tower shaking itself apart.
+
+What it costs: three extra passes over the contacts and a sort of them, about a
+quarter of the contact solve. A project that wants it back can drop
+`solverIterations` from 8 to 6 - with the impulses carrying over, six passes
+land within a centimetre of eight on an eight-box tower.
+
+`Contact` accumulates `normalImpulse` and the two tangent impulses across a
+tick's passes, and across ticks through the cache.
 
 ## The narrowphase
 

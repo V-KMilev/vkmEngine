@@ -1,0 +1,74 @@
+# vkmEngine API reference.
+#
+# Configured by cmake/docs.cmake; build with `cmake --build build --target docs`.
+# The output is the public surface a project compiles against, which is why the
+# editor, the backend and the tools are excluded rather than merely deprioritised:
+# a reader looking for how to write gameplay should not have to walk past
+# GLShaderCache to find Behavior.
+
+PROJECT_NAME           = "vkmEngine"
+PROJECT_NUMBER         = "@PROJECT_VERSION@"
+PROJECT_BRIEF          = "A C++17 engine that runs projects"
+OUTPUT_DIRECTORY       = "@DOXYGEN_OUTPUT_DIR@"
+CREATE_SUBDIRS         = NO
+
+INPUT                  = "@CMAKE_SOURCE_DIR@/src/engine" \
+                         "@CMAKE_SOURCE_DIR@/docs/api"
+FILE_PATTERNS          = *.h *.hpp *.inl *.dox
+RECURSIVE              = YES
+EXCLUDE_PATTERNS       = */build_info.h */detail/*
+
+# Headers only. A .cpp holds implementation comments written for whoever changes
+# the file, not for whoever calls it, and pulling them in doubles the page count
+# without adding a sentence a caller needs.
+EXTRACT_ALL            = NO
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = NO
+HIDE_UNDOC_MEMBERS     = YES
+HIDE_UNDOC_CLASSES     = YES
+
+# 92% of public types carry a doc block, so an undocumented one is an omission
+# worth being told about rather than a normal state.
+WARN_IF_UNDOCUMENTED   = YES
+WARN_AS_ERROR          = NO
+WARN_LOGFILE           = "@DOXYGEN_OUTPUT_DIR@/doxygen-warnings.log"
+
+JAVADOC_AUTOBRIEF      = NO
+QT_AUTOBRIEF           = NO
+MARKDOWN_SUPPORT       = YES
+AUTOLINK_SUPPORT       = YES
+BUILTIN_STL_SUPPORT    = YES
+SORT_MEMBER_DOCS       = NO
+SORT_BRIEF_DOCS        = NO
+
+# The engine's own macros, so a reflected component's field list and an enum's
+# name table render as what they are instead of as an unexpanded macro call.
+ENABLE_PREPROCESSING   = YES
+MACRO_EXPANSION        = YES
+EXPAND_ONLY_PREDEF     = YES
+PREDEFINED             = VKM_REFLECT_BEGIN(x)= \
+                         VKM_REFLECT_END()= \
+                         VKM_F(x)= \
+                         VKM_ENUM_NAMES(x)=
+
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+GENERATE_TREEVIEW      = YES
+DISABLE_INDEX          = NO
+FULL_SIDEBAR           = NO
+HTML_COLORSTYLE        = TOGGLE
+GENERATE_LATEX         = NO
+
+# Graphviz is available and the inheritance depth here is shallow, so the graphs
+# stay readable rather than becoming the wall they are in bigger engines.
+HAVE_DOT               = @DOXYGEN_HAVE_DOT@
+DOT_IMAGE_FORMAT       = svg
+INTERACTIVE_SVG        = YES
+CALL_GRAPH             = NO
+CALLER_GRAPH           = NO
+CLASS_GRAPH            = YES
+COLLABORATION_GRAPH    = NO
+INCLUDE_GRAPH          = NO
+INCLUDED_BY_GRAPH      = NO
+
+QUIET                  = YES
