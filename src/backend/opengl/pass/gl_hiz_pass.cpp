@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "pass/gl_hiz_pass.h"
 
 #include <GL/glew.h>
@@ -61,7 +59,6 @@ void GLHiZPass::execute(GLFrameContext& ctx) {
 
     hiz.allowAllSampling();
     hiz.unbindFbo();
-    endFullscreen(ctx.gl);
 
     hiz.markBuilt();
 }

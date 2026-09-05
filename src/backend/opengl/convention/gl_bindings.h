@@ -38,12 +38,9 @@ namespace GLBindings {
         constexpr uint32_t SKIN_PALETTE       = 5;  ///< Every skinned item's palette, end to end.
         constexpr uint32_t INSTANCE_SKIN_BASE = 6;  ///< Per-instance first bone in SKIN_PALETTE, batch order.
 
-        // The GPU occlusion cull's working set (3-9) and the per-instance
-        // transforms the camera batch's vertex stages read (10-12). Instance
-        // data lives in storage rather than vertex attributes so the cull can
-        // pick instances by writing an index instead of copying their matrices;
-        // see shaders/_common/instancing.glsl. The shadow pass is the deliberate
-        // exception and takes its matrices as attributes.
+        // The cull's working set (3-9) and the per-instance transforms the camera
+        // batch reads (10-12). Instance data is storage rather than attributes so
+        // the cull picks by index; the shadow pass takes matrices as attributes.
         constexpr uint32_t CULL_BOUNDS    = 3;
         constexpr uint32_t CULL_RUN_INDEX = 4;
         constexpr uint32_t CULL_VISIBLE   = 7;   // 8 is free: the cull reads bounds and writes indices, never matrices
@@ -59,9 +56,8 @@ namespace GLBindings {
     namespace ShadowTextureSlots {
         constexpr uint32_t ATLAS_2D     = 11;  ///< Tiled 2D depth atlas (sampler2DShadow).
         // The same atlas read as a depth image rather than as a shadow map, on a
-        // unit of its own. A comparison lives on the sampler bound to a unit, so
-        // one unit cannot serve both readings without whichever pass ran last
-        // deciding for the other - which is what it used to do.
+        // unit of its own: a comparison lives on the sampler bound to a unit, so
+        // one unit serving both readings lets the last pass decide for the next.
         constexpr uint32_t ATLAS_2D_RAW = 25;  ///< Tiled 2D depth atlas, no comparison (sampler2D).
         constexpr uint32_t CUBE_BASE    = 12;  ///< First point-light depth cube (samplerCube[]).
 
@@ -152,6 +148,38 @@ namespace GLBindings {
         constexpr int ROUGHNESS             = 1 << TextureSlots::ROUGHNESS;
         constexpr int AO_METALLIC_ROUGHNESS = 1 << TextureSlots::AO_METALLIC_ROUGHNESS;
     } // namespace MaterialTextureFlags
+
+    // The boundaries between the families above, checked rather than trusted:
+    // every number here is a unit or a binding point, and the only way one goes
+    // wrong is by meeting another. A comment that they do not overlap cannot fail.
+    namespace {
+        /**
+         * @brief Texture units this backend assumes exist.
+         *
+         * GL 4.3 guarantees 16 per stage; every desktop driver it targets reports
+         * at least 32, which the numbering above already relies on.
+         */
+        constexpr uint32_t MAX_TEXTURE_UNIT = 31;
+
+        static_assert(TextureSlots::AO_METALLIC_ROUGHNESS < ShadowTextureSlots::ATLAS_2D,
+                      "Material maps would overlap the shadow atlas slot");
+        static_assert(ShadowTextureSlots::CUBE_BASE > ShadowTextureSlots::ATLAS_2D,
+                      "The point-light cubes would overlap the 2D shadow atlas");
+        static_assert(IBLTextureSlots::ENV_CUBE < PostTextureSlots::SCENE_COLOR,
+                      "The IBL set would overlap the post-process inputs");
+        static_assert(PostTextureSlots::SSAO < ProbeTextureSlots::IRRADIANCE,
+                      "The post inputs would overlap the reflection-probe arrays");
+        static_assert(ProbeTextureSlots::PREFILTER < PostTextureSlots::FOG_VOLUME,
+                      "The probe arrays would overlap the fog volume");
+        static_assert(PostTextureSlots::FOG_VOLUME < ShadowTextureSlots::ATLAS_2D_RAW,
+                      "The fog volume would overlap the raw shadow atlas");
+        static_assert(ShadowTextureSlots::ATLAS_2D_RAW < IrradianceVolumeSlots::SH0,
+                      "The raw shadow atlas would overlap the irradiance volume");
+        static_assert(IrradianceVolumeSlots::SH3 < PostTextureSlots::HI_Z,
+                      "The irradiance volume would overlap the Hi-Z pyramid");
+        static_assert(PostTextureSlots::HI_Z <= MAX_TEXTURE_UNIT,
+                      "A texture unit past what the backend assumes the driver has");
+    } // namespace
 
 } // namespace GLBindings
 

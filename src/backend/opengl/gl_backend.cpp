@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <string>
+#include <sstream>
 
 #include <GL/glew.h>
 #include <glm/glm.hpp>
@@ -14,8 +15,10 @@
 #include "gl_pass.h"
 #include "gl_shader.h"
 #include "gl_shader_preprocess.h"
-#include "texture/gl_texture.h"
-#include "shader/gl_shader_reload.h"
+#include "data/gl_probe.h"
+#include "gl_texture.h"
+#include "loader/image_loaders.h"
+#include "gl_shader_reload.h"
 #include "pass/gl_shadow_pass.h"
 #include "pass/gl_depth_prepass.h"
 #include "pass/gl_resolve_pass.h"
@@ -45,9 +48,40 @@
 
 namespace Vkm::Engine {
 
+std::string GLBackend::shaderConstants() {
+    std::ostringstream out;
+
+    const uint32_t clusters = Config::CLUSTER_X * Config::CLUSTER_Y * Config::CLUSTER_Z;
+    out << "const int   MAX_LIGHTS              = " << Config::MAX_LIGHTS              << ";\n"
+        << "const int   MAX_SHADOW_CASTERS_2D   = " << Config::MAX_SHADOW_CASTERS_2D   << ";\n"
+        << "const int   MAX_SHADOW_CASTERS_CUBE = " << Config::MAX_SHADOW_CASTERS_CUBE << ";\n"
+        << "const int   CLUSTER_X               = " << Config::CLUSTER_X               << ";\n"
+        << "const int   CLUSTER_Y               = " << Config::CLUSTER_Y               << ";\n"
+        << "const int   CLUSTER_Z               = " << Config::CLUSTER_Z               << ";\n"
+        << "const int   MAX_LIGHTS_PER_CLUSTER  = " << Config::MAX_LIGHTS_PER_CLUSTER  << ";\n"
+        << "const int   NUM_CLUSTERS            = " << clusters                        << ";\n"
+        << "const int   MAX_PROBES              = "
+        << GLBindings::ProbeTextureSlots::MAX_PROBES << ";\n"
+        // A LOD index, so one less than the mip count each cube carries.
+        << "const float MAX_REFLECTION_LOD      = " << (GLIBL::PREFILTER_MIPS - 1)   << ".0;\n"
+        << "const float MAX_PROBE_LOD           = " << (GLProbeArray::PREFILTER_MIPS - 1) << ".0;\n";
+
+    // The composite pass switches on these; see VKM_RENDER_MODES.
+    int mode = 0;
+#define VKM_RENDER_MODE_GLSL(name, label, glsl) \
+    out << "const int   MODE_" #glsl " = " << mode++ << ";\n";
+    VKM_RENDER_MODES(VKM_RENDER_MODE_GLSL)
+#undef VKM_RENDER_MODE_GLSL
+
+    return out.str();
+}
+
+GLBackend::ConstantsInstalled::ConstantsInstalled() {
+    Vkm::GL::setShaderPrelude(OPENGL_GLSL_VERSION, shaderConstants());
+}
+
 GLBackend::GLBackend()
-    : RenderBackend(RenderBackendType::OpenGL)
-    , m_iblBaker(m_cubeConvolver)
+    : m_iblBaker(m_cubeConvolver)
     , m_irradianceBaker(m_sceneCapture) {}
 
 GLBackend::~GLBackend() = default;
@@ -72,22 +106,6 @@ bool GLBackend::init(WindowManager& window) {
     // so this just makes the frame-start default explicit.
     m_context.setFaceCulling(false);
 
-    // The scene target carries a G-buffer (view normal + roughness + metalness),
-    // written by the depth prepass and read by GTAO + the decal pass. Enable
-    // before the first resize, on the multisample target too.
-    m_sceneHDR.enableGBuffer();
-    m_sceneMS.enableGBuffer();
-
-    // The post chain's ping-pong scratches carry colour only - the post passes
-    // depth-test nothing and sample the geometry target's depth as a texture.
-    m_postA.setColorOnly();
-    m_postB.setColorOnly();
-
-    // Shaders omit their own #version; inject it from the requested GL context
-    // version (single source of truth) before the passes compile their programs.
-    // Covers compute stages too - they share the same loader.
-    Vkm::GL::setShaderVersion(OPENGL_GLSL_VERSION);
-
     // Passes compile their shaders, so this must run after the context exists.
     // The order is load-bearing; what each pass owes the next is documented at
     // docs/reference/system/rendering.md, "The passes (fixed order)".
@@ -111,10 +129,6 @@ bool GLBackend::init(WindowManager& window) {
     m_passes.push_back({"Composite",      std::make_unique<GLCompositePass>()});
     m_passes.push_back({"UI",             std::make_unique<GLUIPass>()});
     m_passes.push_back({"Splash",         std::make_unique<GLSplashPass>()});
-
-    // The GTAO pass is a fullscreen draw that samples the scene depth, so its
-    // own target carries the factor + packed bent normal and no depth buffer.
-    m_ao.setColorOnly();
 
     // Forward+ cluster light grid: allocate its SSBO now the context is live.
     m_clusterGrid.init();
@@ -155,10 +169,8 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     m_bloom.resize(view.viewportWidth, view.viewportHeight);
     m_hiz.resize(view.viewportWidth, view.viewportHeight);
 
-    // The AO target only exists while the GTAO pass writes it. Its two readers
-    // both bind it behind ctx.aoReady, which only that pass sets, so a debug
-    // view no longer needs it allocated to sample safely - the shader asks
-    // u_hasAO and shows the unoccluded value instead. Once allocated it stays;
+    // The AO target only exists while the GTAO pass writes it: its readers bind it
+    // behind ctx.aoReady, and the shader asks u_hasAO. Once allocated it stays -
     // the toggle flips too often to thrash a full-viewport target.
     if (view.settings.gtao) m_ao.resize(view.viewportWidth, view.viewportHeight);
     // The multisample twin is allocated only while MSAA is on; at 4x it is the frame's
@@ -166,8 +178,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // resolve passes do with it: docs/reference/system/rendering.md.
     const uint32_t samples = view.settings.msaaSamples;
     if (samples > 1) {
-        m_sceneMS.setSamples(samples, m_context);
-        m_sceneMS.resize(view.viewportWidth, view.viewportHeight);
+        m_sceneMS.resize(view.viewportWidth, view.viewportHeight, samples, m_context);
     } else {
         m_sceneMS.release();
     }
@@ -181,7 +192,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // The skybox samples the baked product, so re-baking when the sun or a sky
     // parameter moves carries the background with it.
     if (view.environment.sky.procedural) {
-        if (skyNeedsRebake(view.environment, sunDir)) {
+        if (m_bakedSky.changed(skySignature(view.environment, sunDir))) {
             bakeProceduralSky(view.environment, sunDir);
         }
     } else if (!view.environment.sky.hdrPath.empty() &&
@@ -208,7 +219,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     {
         PROFILE_SCOPE("Render/FrameUBOs");
         m_camera.update(view.camera);
-        m_lights.update(view.lights, m_shadowData);
+        m_lights.update(view.lights, m_shadowData.lightSlots());
         m_shadowData.uploadAndBind();
     }
 
@@ -250,7 +261,6 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         m_irradiance,
         m_hiz,
         m_skinPalette,
-        m_opaque,
         m_alphaMask,
         m_transparent,
         GLInstanceBatchView(m_opaqueBatcher)};
@@ -270,6 +280,14 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     for (const auto& entry : m_passes) {
         PROFILE_SCOPE_NAMED(entry.name);
         PROFILE_GPU_SCOPE_NAMED(entry.name);
+
+        // Every pass begins from the same state, so none has to put back what
+        // the one before it changed - a missing epilogue is only ever noticed by
+        // the next pass. Context caches these, so an agreeing pass pays nothing.
+        m_context.setDepthTest(true);
+        m_context.setBlending(false);
+        m_context.setFaceCulling(false);
+
         entry.pass->execute(ctx);
     }
 
@@ -286,16 +304,11 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // the next frame re-uploads.
     if (!view.irradianceVolumes.empty()) {
         const IrradianceVolumeData& iv = view.irradianceVolumes[0];
-        const BakedIrradiance& b = m_bakedIrradiance;
-        const bool dirty = !b.valid
-            || b.center != iv.center || b.halfExtents != iv.halfExtents
-            || b.resolutionX != iv.resolutionX || b.resolutionY != iv.resolutionY
-            || b.resolutionZ != iv.resolutionZ || b.bakeVersion != iv.bakeVersion;
-        if (dirty) {
+        const IrradianceSignature want{iv.center, iv.halfExtents, iv.resolutionX,
+                                       iv.resolutionY, iv.resolutionZ, iv.bakeVersion};
+        if (m_bakedIrradiance.changed(want)) {
             m_irradiance.resize(iv.resolutionX, iv.resolutionY, iv.resolutionZ);
             m_irradianceBaker.bake(m_context, m_irradiance, iv, view, m_view, m_ibl);
-            m_bakedIrradiance = { true, iv.center, iv.halfExtents,
-                                  iv.resolutionX, iv.resolutionY, iv.resolutionZ, iv.bakeVersion };
         }
     }
 
@@ -311,20 +324,13 @@ void GLBackend::bakeEnvironment(const std::string& path) {
     // A load failure leaves m_ibl not-ready (forward falls back to flat ambient).
     m_iblBaker.bake(m_context, m_ibl, path);
     m_bakedEnvPath    = path;
-    m_bakedSky.active = false;  // an HDR is baked now, not the procedural sky
+    m_bakedSky.invalidate();  // an HDR is baked now, not the procedural sky
 }
 
-bool GLBackend::skyNeedsRebake(const Environment& env, const glm::vec3& sunDir) const {
-    const BakedSky& b = m_bakedSky;
-    if (!b.active) return true;
-    if (env.sky.sunIntensity != b.sunIntensity) return true;
-    if (env.sky.rayleigh     != b.rayleigh)     return true;
-    if (env.sky.mie          != b.mie)          return true;
-    if (env.sky.mieG         != b.mieG)         return true;
-    if (env.night.radiance   != b.nightRadiance) return true;
-    if (env.moonDirection() != b.moonDir)       return true;
-    if (env.night.moonIntensity   != b.moonIntensity) return true;
-    return glm::dot(sunDir, b.sunDir) < 0.99995f;  // sun moved enough to matter
+GLBackend::SkySignature GLBackend::skySignature(const Environment& env, const glm::vec3& sunDir) {
+    return SkySignature{sunDir, env.sky.sunIntensity, env.sky.rayleigh, env.sky.mie,
+                        env.sky.mieG, env.night.radiance, env.moonDirection(),
+                        env.night.moonIntensity};
 }
 
 void GLBackend::bakeProceduralSky(const Environment& env, const glm::vec3& sunDir) {
@@ -342,8 +348,6 @@ void GLBackend::bakeProceduralSky(const Environment& env, const glm::vec3& sunDi
 
     m_iblBaker.bakeProcedural(m_context, m_ibl, sky);
 
-    m_bakedSky = {true, sunDir, env.sky.sunIntensity, env.sky.rayleigh, env.sky.mie, env.sky.mieG,
-                  env.night.radiance, sky.moonDir, env.night.moonIntensity};
     m_bakedEnvPath.clear();  // force an HDR re-bake if the user switches back
 }
 
@@ -362,7 +366,7 @@ void GLBackend::onWorldReplaced(const RenderView& view, const ResourceManager& r
     if (worldEpoch != m_worldEpoch) {
         m_worldEpoch = worldEpoch;
         m_probes.invalidate();    // cube captures: same probe pose, different scene
-        m_bakedIrradiance = {};   // SH volume: same box and grid, different scene
+        m_bakedIrradiance.invalidate();  // SH volume: same box and grid, different scene
         LOG_INFO("Scene replaced; baked captures of it dropped");
     }
 }
@@ -406,6 +410,36 @@ GpuTextureId GLBackend::ensureTexture(const TextureHandle& handle,
                                       const ResourceManager& resources) {
     m_view.ensureTexture(handle, resources);
     return textureId(handle);
+}
+
+GpuTextureId GLBackend::chromeImage(const std::string& path) {
+    if (const auto it = m_chromeImages.find(path); it != m_chromeImages.end()) {
+        return it->second ? static_cast<GpuTextureId>(it->second->getID()) : 0;
+    }
+
+    // Cached either way, failure included: a path that cannot be decoded must
+    // not be re-read every frame the chrome that wants it is drawn.
+    std::unique_ptr<Vkm::GL::Texture2D>& slot = m_chromeImages[path];
+
+    // Bottom-up, like every decode in the tree: the flip flag is process-wide and
+    // workers decode concurrently, so no caller changes it. A drawer whose UVs run
+    // the other way flips them at the draw.
+    const DecodedImage image = decodeImageRGBA(path);
+    if (!image.isValid()) {
+        LOG_ERROR("Chrome image '%s' could not be decoded", path.c_str());
+        return 0;
+    }
+
+    Vkm::GL::Texture2DParams params;
+    params.width           = image.width;
+    params.height          = image.height;
+    params.internalFormat  = GL_SRGB8_ALPHA8;
+    params.generateMipmaps = false;
+    params.minFilter       = Vkm::GL::TextureMinFilter::Linear;
+    params.data            = image.pixels.data();
+
+    slot = std::make_unique<Vkm::GL::Texture2D>(path, params);
+    return static_cast<GpuTextureId>(slot->getID());
 }
 
 uint32_t GLBackend::reloadChangedShaders() {

@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "pass/gl_grid_pass.h"
 
 #include <GL/glew.h>
@@ -12,7 +10,7 @@
 #include "gl_target.h"
 #include "convention/gl_bindings.h"
 #include "data/gl_mesh.h"
-#include "generator/mesh_generators.h"
+#include "resource/generate/mesh_generators.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {

@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "data/gl_lights.h"
 
 #include <algorithm>
@@ -7,7 +5,6 @@
 #include "gl_shader_storage_buffer.h"
 
 #include "convention/gl_bindings.h"
-#include "data/gl_shadow_data.h"
 #include "gl_buffer_upload.h"
 #include "system/render/data/light_data.h"
 
@@ -16,7 +13,8 @@ namespace Vkm::Engine {
 GLLights::GLLights()  = default;
 GLLights::~GLLights() = default;
 
-void GLLights::update(const std::vector<LightData>& lights, const GLShadowData& shadow) {
+void GLLights::update(const std::vector<LightData>& lights,
+                      GLShadowData::LightSlots shadowSlots) {
     LightsBuffer data{};
 
     const int count = std::min(static_cast<int>(lights.size()), MAX_LIGHTS);
@@ -31,7 +29,7 @@ void GLLights::update(const std::vector<LightData>& lights, const GLShadowData& 
         // shadowSlot (w): the atlas slot this light's depth map lives in, or -1.
         // Directional carries its cascade base; spot a 2D slot; point a cube slot.
         gpu.spot      = glm::vec4(light.innerConeAngle, light.outerConeAngle, 0.0f,
-                                  static_cast<float>(shadow.slotForLight(static_cast<uint32_t>(i))));
+                                  static_cast<float>(shadowSlots[static_cast<uint32_t>(i)]));
         gpu.axisU     = glm::vec4(light.axisU, light.twoSided ? 1.0f : 0.0f);
         gpu.axisV     = glm::vec4(light.axisV, 0.0f);
     }

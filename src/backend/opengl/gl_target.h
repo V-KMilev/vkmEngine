@@ -20,19 +20,45 @@ namespace Vkm::Engine {
  *
  * Passes draw into one of these instead of the backbuffer; later passes sample
  * its colour/depth/G-buffer (GTAO, decals, fog, DoF, refraction scene-grab).
- * Call enableGBuffer() once before the first resize() to add the G-buffer
- * attachment. The depth attachment is a sampleable texture so those passes can
- * reconstruct position from it.
+ * The depth attachment is a sampleable texture so those passes can reconstruct
+ * position from it.
  *
- * setSamples(N > 1) turns this into a render-only multisample target: its
- * attachments become renderbuffers (not sampleable) and the geometry passes
- * draw into it, then resolveColorTo / resolveGeometryTo blit-resolve it into a
- * single-sample GLTarget the screen-space passes sample. A single-sample target
- * (the default) is both drawn into and sampled directly.
+ * The layout is fixed at construction, not switched on afterwards. A contract
+ * spelled "call this once, before the first resize()" is one a caller can break,
+ * and breaking it *later* - after the target is allocated and drawn into - is
+ * the case that would be hard to find. A constructor argument cannot be got
+ * wrong at all.
+ *
+ * `resize(w, h, samples)` with samples > 1 makes this a render-only multisample
+ * target: its attachments become renderbuffers (not sampleable) and the
+ * geometry passes draw into it, then resolveColorTo / resolveGeometryTo
+ * blit-resolve it into a single-sample GLTarget the screen-space passes sample.
+ * A single-sample target is both drawn into and sampled directly.
  */
 class GLTarget {
     public:
-        GLTarget();
+        /**
+         * @brief What attachments this target carries.
+         *
+         * `Color` is for a target nothing depth-tests against: the post chain's
+         * ping-pong scratches and the GTAO factor sample the *geometry* target's
+         * depth as a texture, so a depth buffer of their own is ~8 MB of dead
+         * weight at 1080p. The G-buffer in the third is a second colour
+         * attachment carrying view normal + roughness + metalness, written by
+         * the depth prepass and read by GTAO and the decal pass.
+         */
+        enum class Layout {
+            Color,             ///< Colour only.
+            ColorDepth,        ///< Colour + sampleable depth.
+            ColorDepthGBuffer, ///< Both, plus the G-buffer.
+        };
+
+        /**
+         * @brief Build an unallocated target of @p layout; resize() gives it storage.
+         *
+         * @param layout Which attachments it will carry, for its whole life.
+         */
+        explicit GLTarget(Layout layout);
         ~GLTarget();
 
         GLTarget(const GLTarget& other) = delete;
@@ -43,35 +69,6 @@ class GLTarget {
 
     public:
         /**
-         * @brief Add a second colour attachment (view normal + roughness + metalness).
-         * Call once before the first resize().
-         */
-        void enableGBuffer() { m_hasGBuffer = true; }
-
-        /**
-         * @brief Make this a colour-only target: resize() then allocates no depth
-         * attachment. Call once before the first resize(), like enableGBuffer().
-         *
-         * For the post-chain scratch targets - the post passes depth-test
-         * nothing and sample the geometry target's depth as a texture, so a
-         * scratch depth buffer would be dead weight (~8 MB at 1080p).
-         */
-        void setColorOnly() { m_colorOnly = true; }
-
-        /**
-         * @brief Request @p samples-way multisampling. Call before the first
-         * resize(); changing it later forces a reallocation on the next resize.
-         *
-         * @p samples == 1 keeps the single-sample, sampleable texture target.
-         * @p samples > 1 makes this a render-only multisample (renderbuffer)
-         * target, clamped to the driver's cap (Context::maxSamples).
-         *
-         * @param samples Requested per-pixel sample count.
-         * @param gl      Context supplying the cached driver cap.
-         */
-        void setSamples(uint32_t samples, const Vkm::GL::Context& gl);
-
-        /**
          * @brief Sample count in effect (1 = single-sample).
          *
          * A report of this target's own state and nothing more. Which target the
@@ -81,6 +78,26 @@ class GLTarget {
          */
         uint32_t samples() const { return m_samples; }
 
+        /**
+         * @brief Allocate (or reallocate) the attachments at this size and sample count.
+         *
+         * A no-op when nothing changed, so a pass may call it every frame.
+         *
+         * @param width  Width in pixels; zero allocates nothing.
+         * @param height Height in pixels; zero allocates nothing.
+         * @param samples Per-pixel sample count, clamped to the driver's cap.
+         *                1 keeps the single-sample, sampleable texture target;
+         *                more makes it render-only renderbuffers.
+         * @param gl     Context supplying the cached sample cap.
+         */
+        void resize(uint32_t width, uint32_t height, uint32_t samples, const Vkm::GL::Context& gl);
+
+        /**
+         * @brief Allocate at this size, single-sampled.
+         *
+         * @param width  Width in pixels; zero allocates nothing.
+         * @param height Height in pixels; zero allocates nothing.
+         */
         void resize(uint32_t width, uint32_t height);
 
         /**
@@ -140,8 +157,7 @@ class GLTarget {
         uint32_t m_width   = 0;
         uint32_t m_height  = 0;
         uint32_t m_samples = 1;
-        bool     m_hasGBuffer = false;
-        bool     m_colorOnly  = false;
+        Layout   m_layout;
 
         Vkm::GL::FrameBuffer                m_fbo;
 

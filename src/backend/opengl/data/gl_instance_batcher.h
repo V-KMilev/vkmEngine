@@ -221,8 +221,8 @@ class GLInstanceBatcher {
         std::vector<uint32_t>  m_runOf;     ///< Which run each instance belongs to.
         std::vector<DrawCommand> m_commands;///< One per run, in runs() order.
 
-        Vkm::GL::InstanceBuffer m_modelBuffer;   ///< Every instance's model matrix, batch order.
-        Vkm::GL::InstanceBuffer m_normalBuffer;  ///< Every instance's normal matrix, batch order.
+        InstanceBuffer m_modelBuffer;   ///< Every instance's model matrix, batch order.
+        InstanceBuffer m_normalBuffer;  ///< Every instance's normal matrix, batch order.
 
         /**
          * @brief Which of them each drawn instance is.

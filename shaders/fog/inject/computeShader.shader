@@ -10,7 +10,6 @@
  * shadowed volume goes dark and light shafts fall out of the integration.
  */
 
-#include "../../_generated/engine_config.glsl"  // CLUSTER_*, MAX_LIGHTS, MAX_LIGHTS_PER_CLUSTER
 #include "../../_common/depth.glsl"
 #include "../../_common/lights.glsl"            // Light + LightsBlock + cluster grid + LIGHT_* + falloff
 #include "../../_common/shadows.glsl"           // ShadowBlock + sampleCSM: the sun's cascades

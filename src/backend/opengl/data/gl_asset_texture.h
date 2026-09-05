@@ -5,7 +5,7 @@
 
 #include "resource/texture_format.h"
 #include "system/render/render_settings.h"
-#include "texture/gl_texture.h"
+#include "gl_texture.h"
 
 namespace Vkm::Engine {
 
@@ -14,6 +14,10 @@ struct FontAsset;
 
 /**
  * @brief GPU copy of a 2D texture-shaped asset (wraps Vkm::GL::Texture2D).
+ *
+ * Named for the asset rather than for the GL object: `gl_texture.h` was already
+ * vkmGL's, and two headers of one name are two headers a flat include cannot
+ * tell apart.
  *
  * Uploads either a TextureAsset or a FontAsset's SDF atlas (fonts carry their
  * atlas as raw pixels, not as a TextureAsset), so GLView can table both behind

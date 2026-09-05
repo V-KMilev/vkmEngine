@@ -107,10 +107,8 @@ class GLShadowAtlas {
         std::vector<std::unique_ptr<Vkm::GL::TextureCube>> m_cubes;
 
         // Two sampler objects rather than one texture whose compare mode gets
-        // toggled. A sampler overrides the unit's sampling state, so the atlas
-        // can be read as a shadow map by one pass and as a depth image by
-        // another in the same frame without either changing state the other
-        // depends on. See bind2D.
+        // toggled: a sampler overrides the unit's state, so one pass can read the
+        // atlas as a shadow map while another reads it as depth. See bind2D.
         uint32_t m_cmpSampler = 0;
         uint32_t m_rawSampler = 0;
 };

@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "pass/gl_ui_pass.h"
 
 #include <GL/glew.h>
@@ -12,7 +10,7 @@
 #include "gl_vertex_array.h"
 #include "gl_vertex_buffer.h"
 #include "gl_vertex_buffer_layout.h"
-#include "texture/gl_texture.h"
+#include "gl_texture.h"
 
 #include "gl_frame_context.h"
 #include "gl_view.h"

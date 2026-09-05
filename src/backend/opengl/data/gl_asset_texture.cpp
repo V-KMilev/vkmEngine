@@ -1,11 +1,9 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
-#include "data/gl_texture.h"
+#include "data/gl_asset_texture.h"
 
 #include <string>
 
 #include "convention/gl_format_conversion.h"
-#include "texture/gl_texture.h"
+#include "gl_texture.h"
 
 #include "resource/asset/texture_asset.h"
 #include "resource/asset/font_asset.h"

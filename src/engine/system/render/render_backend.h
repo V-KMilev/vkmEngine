@@ -7,18 +7,10 @@ namespace Vkm::Engine {
     struct RenderView;
     class ResourceManager;
     class WindowManager;
+    class EditorRenderHooks;
 }
 
 namespace Vkm::Engine {
-
-/**
- * @brief Which graphics API a backend speaks.
- *
- * Tags the active backend; the human-readable identity is reported through info().
- */
-enum class RenderBackendType {
-    OpenGL,  ///< OpenGL-based rendering backend.
-};
 
 /**
  * @brief Human-readable backend identity for the editor status bar.
@@ -42,7 +34,7 @@ struct BackendInfo {
  */
 class RenderBackend {
     public:
-        explicit RenderBackend(RenderBackendType type) : m_type(type) {}
+        RenderBackend() = default;
         virtual ~RenderBackend() = default;
 
         RenderBackend(const RenderBackend& other) = delete;
@@ -52,7 +44,6 @@ class RenderBackend {
         RenderBackend& operator=(RenderBackend && other) = delete;
 
     public:
-        RenderBackendType type() const { return m_type; }
         BackendInfo info() const { return m_info; }
 
         /**
@@ -109,8 +100,19 @@ class RenderBackend {
          */
         virtual uint32_t maxAnisotropy() const { return 1; }
 
+        /**
+         * @brief The backend's authoring-only hooks, or null when it offers none.
+         *
+         * The second seam, and a backend opts into it by overriding this - which
+         * is a line a reader can find, where a `dynamic_cast` was a fact only the
+         * runtime knew. A host that draws nothing, or a backend built without
+         * offscreen support, answers null and the editor shows placeholders.
+         *
+         * @return Hooks the editor may use, or null.
+         */
+        virtual EditorRenderHooks* editorHooks() { return nullptr; }
+
     protected:
-        RenderBackendType m_type;
         BackendInfo m_info;
 };
 

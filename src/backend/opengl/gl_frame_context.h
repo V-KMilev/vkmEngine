@@ -8,11 +8,11 @@
 
 namespace Vkm::GL {
     class Context;
-    class ScreenTriangle;
 }
 
 namespace Vkm::Engine {
 
+class ScreenTriangle;
 struct RenderView;
 struct DrawableData;
 class GLView;
@@ -38,7 +38,7 @@ struct GLFrameContext {
     const RenderView&  view;             ///< This frame's scene snapshot.
     const GLView&      resources;        ///< GPU mirror of the assets the frame uses.
     Vkm::GL::Context&  gl;               ///< GL state manager (viewport / depth / clear).
-    Vkm::GL::ScreenTriangle& screenTri;  ///< Shared attribute-less fullscreen triangle (every post pass draws it).
+    ScreenTriangle& screenTri;  ///< Shared attribute-less fullscreen triangle (every post pass draws it).
     GLTarget&          sceneHDR;         ///< Single-sample resolved scene: sampled by the screen-space + post passes.
     GLTarget&          sceneRender;      ///< Where the geometry passes draw (the multisample target, or sceneHDR when MSAA is off).
     GLShadowAtlas&     shadowAtlas;      ///< Depth atlas: written by shadow pass, sampled by forward.
@@ -54,13 +54,14 @@ struct GLFrameContext {
 
     /**
      * @brief The frame's drawables split by draw bucket, once per frame by the
-     * backend (one material resolve each, not one per consuming pass). Opaque
-     * (incl. Unlit) is shared by the depth prepass + forward in view order.
+     * backend (one material resolve each, not one per consuming pass).
+     *
      * AlphaMask skips the prepass and draws in the forward pass with depth
      * writes on + alpha-to-coverage (so its edges anti-alias under MSAA).
-     * Transparent is forward-only, sorted back-to-front there.
+     * Transparent is forward-only, sorted back-to-front there. The opaque
+     * bucket is not here: both of its readers want it batched, so it arrives as
+     * `opaqueBatch` below and the flat list stays with the backend that owns it.
      */
-    const std::vector<const DrawableData*>& opaque;
     const std::vector<const DrawableData*>& alphaMask;
     const std::vector<const DrawableData*>& transparent;
 

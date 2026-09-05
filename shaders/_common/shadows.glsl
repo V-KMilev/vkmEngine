@@ -12,9 +12,6 @@
  * the graphics camera UBO.
  */
 
-#define SHADOW_MAX_2D   MAX_SHADOW_CASTERS_2D
-#define SHADOW_MAX_CUBE MAX_SHADOW_CASTERS_CUBE
-
 struct Shadow2D {
     mat4 lightVP;   // world -> light clip space
     vec4 atlas;     // xy = tile UV offset, zw = tile UV scale
@@ -32,12 +29,12 @@ layout(std140, binding = 3) uniform ShadowBlock {
     int  csmCount;       // active cascades
     int  _sp0;
     int  _sp1;
-    Shadow2D   s2d[SHADOW_MAX_2D];
-    ShadowCube scube[SHADOW_MAX_CUBE];
+    Shadow2D   s2d[MAX_SHADOW_CASTERS_2D];
+    ShadowCube scube[MAX_SHADOW_CASTERS_CUBE];
 } u_shadow;
 
 layout(binding = 11) uniform sampler2DShadow u_shadowAtlas;
-layout(binding = 12) uniform samplerCube u_shadowCube[SHADOW_MAX_CUBE];
+layout(binding = 12) uniform samplerCube u_shadowCube[MAX_SHADOW_CASTERS_CUBE];
 
 // 3x3 PCF sample of one 2D atlas tile. Returns 1 (lit) .. 0 (shadowed); off-map
 // or beyond-far reads as lit so geometry outside the map is never darkened.

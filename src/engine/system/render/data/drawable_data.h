@@ -4,6 +4,8 @@
 
 #include <glm/glm.hpp>
 
+#include "core/math/bounds.h"
+
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/material_asset.h"
 
@@ -36,8 +38,7 @@ struct DrawableData {
      * mean transforming the same bounds twice per frame for the same answer.
      * The shadow-caster list carries its bounds for the same reason.
      */
-    glm::vec3 worldMin;
-    glm::vec3 worldMax;
+    Math::AABB world;
 
     /**
      * @brief This item's bone palette inside RenderView::skinMatrices.

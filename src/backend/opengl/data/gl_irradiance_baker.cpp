@@ -25,7 +25,7 @@ GLIrradianceBaker::GLIrradianceBaker(GLSceneCapture& capture)
 GLIrradianceBaker::~GLIrradianceBaker() = default;
 
 void GLIrradianceBaker::ensureTargets() {
-    if (m_cube.valid()) return;
+    if (m_cube.isValid()) return;
 
     m_cube.create(CAPTURE_SIZE, 1, GL_RGB16F, GL_RGB, GL_FLOAT, false);
 

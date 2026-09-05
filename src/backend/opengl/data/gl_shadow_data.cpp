@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "data/gl_shadow_data.h"
 
 #include <algorithm>
@@ -353,10 +351,6 @@ void GLShadowData::fitPoint(const LightData& light, uint32_t lightIndex, uint32_
     e.params   = glm::vec4(light.shadowBias, 0.0f, 0.0f, 0.0f);
 
     m_lightSlot[lightIndex] = static_cast<int>(slot);
-}
-
-int GLShadowData::slotForLight(uint32_t lightIndex) const {
-    return lightIndex < m_lightCount ? m_lightSlot[lightIndex] : -1;
 }
 
 void GLShadowData::uploadAndBind() {

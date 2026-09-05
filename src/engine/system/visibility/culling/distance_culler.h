@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/math/bounds.h"
+
 #include <glm/glm.hpp>
 
 #include "system/visibility/visibility_context.h"
@@ -19,20 +21,18 @@ namespace DistanceCuller {
  * Always true when context.maxDistance is 0 or below, which is how distance
  * culling is switched off.
  *
- * @param boundsMin World-space AABB minimum.
- * @param boundsMax World-space AABB maximum.
+ * @param bounds World-space AABB.
  * @param context VisibilityContext with cameraPosition and maxDistance.
  */
 inline bool isVisible(
-    const glm::vec3& boundsMin,
-    const glm::vec3& boundsMax,
+    const Math::AABB& bounds,
     const VisibilityContext& context
 ) {
     if (context.maxDistance <= 0.0f) {
         return true;
     }
 
-    const glm::vec3 worldCenter = (boundsMin + boundsMax) * 0.5f;
+    const glm::vec3 worldCenter = bounds.center();
     const glm::vec3 delta = worldCenter - context.cameraPosition;
     const float distanceSquared = glm::dot(delta, delta);
 
