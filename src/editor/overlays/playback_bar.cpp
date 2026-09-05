@@ -8,12 +8,12 @@
 
 namespace Vkm::Engine {
 
+using EditorStyle::overlayButton;
+using EditorStyle::overlayGap;
+using EditorStyle::overlayPad;
+
 namespace {
-// Sizes in design px - font/DPI-relative via EditorStyle::px.
-float BTN() { return EditorStyle::px(26.0f); }
-float GAP() { return EditorStyle::px(4.0f);  }
-float PAD() { return EditorStyle::px(5.0f);  }
-constexpr int   CONTROLS = 3;  // play/pause, step, stop
+constexpr int CONTROLS = 3;  // play/pause, step, stop
 
 // Frame the viewport and name the mode while a session runs. Every panel stays
 // live inside one and Stop throws the world away, so a scene edited in play
@@ -34,7 +34,7 @@ void drawSessionMarker(EditorContext& ec, float barBottom) {
     const char* label = "PLAY MODE - edits are discarded on Stop";
     const float width = ImGui::GetWindowSize().x;
     ImGui::SetCursorPos(ImVec2((width - ImGui::CalcTextSize(label).x) * 0.5f,
-                               barBottom + GAP()));
+                               barBottom + overlayGap()));
     ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::WARNING);
     ImGui::TextUnformatted(label);
     ImGui::PopStyleColor();
@@ -48,14 +48,14 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     const bool playing = sceneIO.isPlaying();
     const bool paused  = clock.isPaused();
 
-    const float barH = BTN() + PAD() * 2.0f + 2.0f;
-    const float barW = BTN() * CONTROLS + GAP() * (CONTROLS - 1) + PAD() * 2.0f + 2.0f;
+    const float barH = overlayButton() + overlayPad() * 2.0f + 2.0f;
+    const float barW = overlayButton() * CONTROLS + overlayGap() * (CONTROLS - 1) + overlayPad() * 2.0f + 2.0f;
     ImVec2 ws = ImGui::GetWindowSize();
     ImGui::SetCursorPos(ImVec2((ws.x - barW) * 0.5f, 8.0f));
 
     ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::OVERLAY_BG);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PAD(), PAD()));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(GAP(), 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(overlayPad(), overlayPad()));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(overlayGap(), 0.0f));
 
     // A stepped tick is one tick of world, so it is one tick of sound: the voices
     // it started are held here, on the first draw after it ran. See
@@ -74,16 +74,20 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
                        running, true,
                        !playing ? "Play - snapshot the scene and run the simulation"
                                 : running ? "Pause - freeze the simulation"
-                                          : "Resume - continue the simulation", BTN())) {
-            if (!playing) sceneIO.captureSnapshot(ctx, ec.state);
-            // New paused state: pause if it was running, otherwise run (start
-            // from Edit mode, or resume a paused session).
-            clock.setPaused(running);
-            // The clock does not reach the mixer, so the transport holds the
-            // voices itself through the device it auditions with; see
-            // docs/reference/system/audio.md, "Two pauses wearing one word".
-            if (running) audio.pauseAllVoices();
-            else         audio.resumeAllVoices();
+                                          : "Resume - continue the simulation", overlayButton())) {
+            // A session that cannot be stopped must not be started: the
+            // snapshot is the only way back to the authored scene, so a clock
+            // that runs without one edits it irreversibly.
+            if (playing || sceneIO.captureSnapshot(ctx, ec.state)) {
+                // New paused state: pause if it was running, otherwise run
+                // (start from Edit mode, or resume a paused session).
+                clock.setPaused(running);
+                // The clock does not reach the mixer, so the transport holds the
+                // voices itself through the device it auditions with; see
+                // docs/reference/system/audio.md, "Two pauses wearing one word".
+                if (running) audio.pauseAllVoices();
+                else         audio.resumeAllVoices();
+            }
         }
 
         ImGui::SameLine();
@@ -91,20 +95,19 @@ void PlaybackBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         // while paused; from Edit mode it begins a paused play session first so
         // the step never mutates the authored scene irreversibly.
         if (iconButton("vpStep", EditorIcon::Step, false, paused,
-                       "Step one fixed tick (while paused)", BTN())) {
-            if (!playing) {
-                sceneIO.captureSnapshot(ctx, ec.state);
-                clock.setPaused(true);
+                       "Step one fixed tick (while paused)", overlayButton())) {
+            if (playing || sceneIO.captureSnapshot(ctx, ec.state)) {
+                if (!playing) clock.setPaused(true);
+                clock.requestStep(1);
+                m_stepPending = true;
             }
-            clock.requestStep(1);
-            m_stepPending = true;
         }
 
         ImGui::SameLine();
         // Stop: restore the snapshot (undoing every transform/spawn the sim
         // made) and return to Edit mode. Disabled when not in a play session.
         if (iconButton("vpStop", EditorIcon::Stop, false, playing,
-                       "Stop - restore the scene and return to Edit mode", BTN())) {
+                       "Stop - restore the scene and return to Edit mode", overlayButton())) {
             // The whole of Stop lives on the controller, because the quit guard
             // has to perform one too - a save cannot run inside a session.
             sceneIO.stopPlaySession(ctx, ec.state);

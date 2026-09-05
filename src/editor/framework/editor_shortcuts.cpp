@@ -57,10 +57,10 @@ void EditorShortcuts::process(EditorContext& ec, SceneIOController& sceneIO) {
 
     // Gizmo mode shortcuts (only when camera NOT in fly mode)
     if (!camera.isLooking()) {
-        if (isPressed(kb.gizmoSelect))      state.gizmoOperation = GizmoOperation::Select;
-        if (isPressed(kb.gizmoTranslate))   state.gizmoOperation = GizmoOperation::Translate;
-        if (isPressed(kb.gizmoRotate))      state.gizmoOperation = GizmoOperation::Rotate;
-        if (isPressed(kb.gizmoScale))       state.gizmoOperation = GizmoOperation::Scale;
+        if (isPressed(kb.gizmoSelect))      state.tool = EditorTool::Select;
+        if (isPressed(kb.gizmoTranslate))   state.tool = EditorTool::Translate;
+        if (isPressed(kb.gizmoRotate))      state.tool = EditorTool::Rotate;
+        if (isPressed(kb.gizmoScale))       state.tool = EditorTool::Scale;
         if (isPressed(kb.gizmoToggleSpace)) {
             state.gizmoMode = (state.gizmoMode == GizmoMode::Local) ? GizmoMode::World : GizmoMode::Local;
         }

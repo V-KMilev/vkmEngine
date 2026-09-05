@@ -41,7 +41,7 @@ void BottomPanel::draw(EditorContext& ec, SceneIOController& sceneIO) {
 }
 
 void BottomPanel::drawErrorsSection(EngineErrorLog& errorLog) {
-    auto entries = errorLog.snapshot();
+    const auto& entries = errorLog.entries();
     ImGui::Text("%zu entr%s (newest first, cap %zu)",
                 entries.size(), entries.size() == 1 ? "y" : "ies",
                 EngineErrorLog::CAPACITY);
@@ -57,7 +57,8 @@ void BottomPanel::drawErrorsSection(EngineErrorLog& errorLog) {
     if (ImGui::BeginChild("##engine_err_list",
                           ImVec2(0, ImGui::GetTextLineHeightWithSpacing() * 10), false,
                           ImGuiWindowFlags_HorizontalScrollbar)) {
-        for (const auto& e : entries) {
+        for (auto it = entries.rbegin(); it != entries.rend(); ++it) {
+            const auto& e = *it;
             const auto tt = std::chrono::system_clock::to_time_t(e.timestamp);
             std::tm tm{};
 #if defined(_WIN32)

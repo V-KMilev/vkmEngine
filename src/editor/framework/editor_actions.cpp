@@ -50,9 +50,9 @@
 #include "system/visibility/visibility.h"
 #include "core/math/bounds.h"
 #include "system/camera/camera_controller_system.h"
-#include "generator/light_generators.h"
-#include "generator/mesh_generators.h"
-#include "generator/material_generators.h"
+#include "resource/generate/light_generators.h"
+#include "resource/generate/mesh_generators.h"
+#include "resource/generate/material_generators.h"
 #include "loader/model_loaders.h"
 #include "io/project.h"
 #include "io/project_paths.h"
@@ -62,11 +62,6 @@
 
 namespace Vkm::Engine {
 namespace EditorActions {
-
-void commitHierarchyMutation(EditorState& state) {
-    state.hierarchyDirty = true;
-    state.markSceneDirty();
-}
 
 namespace {
 // Write a model matrix back into a local Transform (TRS), matching the gizmo's
@@ -141,7 +136,7 @@ void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
 
     state.commands.push(std::make_unique<ReparentCommand>(
         child, oldParent, toParent ? newParent : EntityId{}, before, after, label));
-    commitHierarchyMutation(state);
+    state.markSceneDirty();
 
     // An element outside every canvas stops drawing, and nothing else says so.
     // The move still happens - it is a legitimate step on the way somewhere -
@@ -151,11 +146,6 @@ void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
                         "UI elements are drawn by the canvas above them - this one has no "
                         "canvas ancestor now, so it will not appear");
     }
-}
-
-void commitStructureChange(EditorState& state) {
-    state.hierarchyDirty = true;
-    state.markSceneDirty();
 }
 
 namespace {
@@ -273,11 +263,9 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
             scene.add(entity, generateLight(LightType::Disk));
             break;
         case EntityKind::Character: {
-            // The pairing every DANGER line on the CharacterController card
-            // checks for: a capsule, a body that will not tip over or doze off,
-            // and the controller that drives them. Made together because made
-            // apart is three visits to the Add Component list and a card that
-            // spends them telling the author what is still missing.
+            // The pairing every DANGER line on the CharacterController card checks
+            // for: a capsule, a body that will not tip over or doze off, and the
+            // controller that drives them. Made apart it is three visits.
             ColliderPart part;
             part.shape = ColliderShape::Capsule;
             part.radius = 0.3f;
@@ -367,7 +355,7 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
     // element comes back as a root and stops being drawn.
     state.commands.push(std::make_unique<CreateEntityCommand>(
         EntitySnapshot::capture(scene, entity), "Create Entity", parentSlot));
-    commitStructureChange(state);
+    state.markSceneDirty();
     return entity;
 }
 
@@ -425,10 +413,8 @@ Duplicate duplicateOne(Scene& scene, ResourceManager& resources, EditorState& st
     snap.prefabEntity.reset();
 
     // A ragdoll's bones are entities it owns, and a snapshot copies the ids
-    // verbatim. A copy that kept them would drive the original's skeleton from
-    // two places and destroy it when the copy was deleted - the observer
-    // destroys what the component names. The copy has no bones until someone
-    // builds them, and saying so is the only honest value here.
+    // verbatim - so a copy that kept them would drive the original's skeleton and
+    // destroy it when the copy went. The copy has no bones until it is built.
     if (snap.ragdoll) {
         snap.ragdoll->bones.clear();
         snap.ragdoll->root = EntityId{};
@@ -448,7 +434,7 @@ void duplicateEntity(Scene& scene, ResourceManager& resources, EditorState& stat
     if (!copy.entity) return;
 
     state.commands.push(std::move(copy.step));
-    commitStructureChange(state);
+    state.markSceneDirty();
     state.selectEntity(copy.entity);
 }
 
@@ -475,7 +461,7 @@ void duplicateSelection(Scene& scene, ResourceManager& resources, EditorState& s
     if (clones.empty()) return;
 
     state.commands.push(std::move(batch));
-    commitStructureChange(state);
+    state.markSceneDirty();
 
     // The clones become the selection (first as active, like a fresh drag).
     state.selectEntity(clones.front());
@@ -533,7 +519,7 @@ void deleteSelection(Scene& scene, EditorState& state) {
     if (batch->empty()) return;
 
     state.commands.push(std::move(batch));
-    commitStructureChange(state);
+    state.markSceneDirty();
 }
 
 namespace {
@@ -621,7 +607,7 @@ EntityId placePrefab(Scene& scene, ResourceManager& resources, EditorState& stat
 
     state.commands.push(std::make_unique<PlacePrefabCommand>(
         resources, scene.get<PrefabInstance>(root), root, at, "Place Prefab"));
-    commitStructureChange(state);
+    state.markSceneDirty();
     state.selectEntity(root);
     return root;
 }
@@ -643,7 +629,7 @@ void deleteEntity(Scene& scene, EditorState& state, EntityId entity) {
     HierarchyOperations::destroyHierarchy(scene, entity);
     state.commands.push(std::make_unique<DestroySubtreeCommand>(
         std::move(snap), priorSel, label));
-    commitStructureChange(state);
+    state.markSceneDirty();
 }
 
 void undo(Scene& scene, EditorState& state) {
@@ -693,7 +679,7 @@ void focusOnSelected(FrameContext& ctx, EditorState& state, CameraControllerSyst
             ? HierarchyOperations::computeWorldMatrix(ctx.scene, state.selectedEntity)
             : Transform::computeModelMatrix(ctx.scene.get<Transform>(state.selectedEntity));
 
-        if (Math::hasValidBounds(asset.boundsMin, asset.boundsMax)) {
+        if (asset.bounds().valid()) {
             glm::vec3 localCenter = (asset.boundsMin + asset.boundsMax) * 0.5f;
             targetPos = glm::vec3(model * glm::vec4(localCenter, 1.0f));
 
@@ -728,12 +714,11 @@ void frameAll(FrameContext& ctx, CameraControllerSystem& camera) {
         const auto& mesh = ctx.scene.get<Mesh>(v.id);
         if (!mesh.mesh || !ctx.resources.isAlive(mesh.mesh)) continue;
         const auto& asset = ctx.resources.get(mesh.mesh);
-        if (!Math::hasValidBounds(asset.boundsMin, asset.boundsMax)) continue;
+        if (!asset.bounds().valid()) continue;
 
-        glm::vec3 wMin, wMax;
-        Math::localToWorldAABB(v.model, asset.boundsMin, asset.boundsMax, wMin, wMax);
-        mn = glm::min(mn, wMin);
-        mx = glm::max(mx, wMax);
+        const Math::AABB world = Math::transform(v.model, asset.bounds());
+        mn = glm::min(mn, world.min);
+        mx = glm::max(mx, world.max);
         any = true;
     }
     if (!any) return;
@@ -807,11 +792,9 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
 void ModelImportDialog::draw(Scene& scene, ResourceManager& resources, EditorState& state) {
     if (state.requestModelImport) {
         const std::filesystem::path appRoot = ProjectPaths::projectRoot();
-        m_picker.options().popupId    = "Import Model";
         m_picker.options().title      = "Import Model";
         m_picker.options().root       = ProjectPaths::assets();
         m_picker.options().recursive  = true;
-        m_picker.options().kind       = AssetPicker::Kind::Files;
         m_picker.options().extensions = {
             ".gltf", ".glb", ".obj", ".fbx", ".dae", ".stl", ".ply", ".3ds"
         };
@@ -826,7 +809,7 @@ void ModelImportDialog::draw(Scene& scene, ResourceManager& resources, EditorSta
         const ModelImport imported = importModelIntoScene(picked, resources, scene);
         if (imported.root) {
             state.selectEntity(imported.root);
-            commitStructureChange(state);
+            state.markSceneDirty();
         } else if (imported.ok) {
             // A file of clips and no mesh: the import worked and there is
             // nothing to select, which looked exactly like failure before -
@@ -864,11 +847,9 @@ void PlacePrefabDialog::draw(Scene& scene, ResourceManager& resources, EditorSta
     if (state.requestPlacePrefab) {
         state.requestPlacePrefab = false;
         if (hasAnyPrefab()) {
-            m_picker.options().popupId    = "Place Prefab";
             m_picker.options().title      = "Place Prefab";
             m_picker.options().root       = ProjectPaths::prefabs();
             m_picker.options().recursive  = true;
-            m_picker.options().kind       = AssetPicker::Kind::Files;
             m_picker.options().extensions = {".json"};
             // Project-relative, because that is what the instance stores and
             // what a scene carrying it has to resolve on another machine.
@@ -993,10 +974,9 @@ void NewProjectDialog::draw(EditorState& state) {
             m_open = false;
             ImGui::CloseCurrentPopup();
         } else {
-            // Said out here, because dialogButtons has already closed the popup
-            // by the time this runs - a message written inside it would be drawn
-            // to a dialog that is gone, which is how the likeliest failure of
-            // all, a name already taken, reported itself as success.
+            // Said out here: dialogButtons has already closed the popup by the
+            // time this runs, and a message written inside it would be drawn to a
+            // dialog that is gone - so a failure would read as success.
             state.pushToast(EditorState::ToastKind::Error, m_error);
             LOG_ERROR("New Project: %s", m_error.c_str());
         }

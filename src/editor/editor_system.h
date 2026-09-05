@@ -25,6 +25,7 @@
 #include "panels/preferences_panel.h"
 #include "panels/material_editor_panel.h"
 #include "panels/project_settings_panel.h"
+#include "panels/start_screen.h"
 #include "panels/render_settings_panel.h"
 
 struct GLFWwindow;
@@ -55,13 +56,12 @@ class EditorSystem : public System {
         EditorSystem(
             GLFWwindow* window,
             CameraControllerSystem& cameraController,
-            UISystem& uiSystem,
             VisibilitySystem& visibilitySystem,
             RenderSystem& renderSystem,
             AudioSystem& audioSystem,
             ScriptModule& scriptModule
         );
-        ~EditorSystem() override;
+        ~EditorSystem() override = default;
 
         EditorSystem(const EditorSystem& other) = delete;
         EditorSystem& operator=(const EditorSystem& other) = delete;
@@ -85,6 +85,17 @@ class EditorSystem : public System {
         void init(FrameContext& ctx) override;
 
         void update(FrameContext& ctx) override;
+
+        /**
+         * @brief Save the editor's settings and tear ImGui down.
+         *
+         * On the shutdown seam rather than in the destructor because both halves
+         * need a live window: the settings write reads the render system's
+         * state, and the ImGui backends hold a GL context and a GLFW window.
+         * Engine calls this at the end of run(), while both are certainly still
+         * there; a destructor runs at whatever point the host lets the Engine go.
+         */
+        void shutdown() override;
 
     private:
         static constexpr float SHADER_POLL_INTERVAL = 1.0f;  ///< Seconds between shader-source scans.
@@ -121,6 +132,7 @@ class EditorSystem : public System {
 
         void drawWorkspace(EditorContext& ec);
 
+
         /**
          * @brief Draw the right panel's tab bar and whichever tab is open.
          *
@@ -141,7 +153,6 @@ class EditorSystem : public System {
 
     private:
         CameraControllerSystem& m_cameraController;
-        UISystem&         m_uiSystem;
         RenderSystem&     m_renderSystem;
         VisibilitySystem& m_visibilitySystem;
         AudioSystem&      m_audioSystem;
@@ -172,6 +183,9 @@ class EditorSystem : public System {
         EditorActions::NewProjectDialog  m_newProject;
         EditorActions::OpenProjectDialog m_openProject;
 
+        /// Whether a project is open. False until ProjectController::open succeeds.
+        bool m_hasProject = false;
+
         EditorState      m_state;
         HierarchyPanel   m_hierarchy;
         InspectorPanel   m_inspector;
@@ -184,6 +198,7 @@ class EditorSystem : public System {
         MaterialEditorPanel  m_materialEditor;
         RenderSettingsPanel  m_renderSettings;
         ProjectSettingsPanel m_projectSettings;
+        StartScreen          m_startScreen;   ///< Drawn instead of the workspace when there is no project.
 };
 
 } // namespace Vkm::Engine

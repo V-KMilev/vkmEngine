@@ -265,31 +265,33 @@ float keptWidth(const char* s, size_t head, size_t tail, size_t len) {
 
 } // namespace
 
-void clippedLine(const char* text, float maxWidth, bool dim) {
+std::string elidedLine(const char* text, float maxWidth) {
     const char* str = (text && text[0]) ? text : "(unnamed)";
-    char buf[192];
-    if (ImGui::CalcTextSize(str).x > maxWidth) {
-        const size_t len    = std::strlen(str);
-        const float  budget = maxWidth - ImGui::CalcTextSize("...").x;
+    if (ImGui::CalcTextSize(str).x <= maxWidth) return str;
 
-        // Grown one character in from each end in turn, so the two halves stay
-        // the same length whichever end the wide characters are at.
-        size_t head = 0;
-        size_t tail = len;
-        for (;;) {
-            const size_t grownHead = utf8Next(str, head, len);
-            if (grownHead >= tail || keptWidth(str, grownHead, tail, len) > budget) break;
-            head = grownHead;
+    const size_t len    = std::strlen(str);
+    const float  budget = maxWidth - ImGui::CalcTextSize("...").x;
 
-            const size_t grownTail = utf8Prev(str, tail);
-            if (grownTail <= head || keptWidth(str, head, grownTail, len) > budget) break;
-            tail = grownTail;
-        }
-        snprintf(buf, sizeof(buf), "%.*s...%s", static_cast<int>(head), str, str + tail);
-        str = buf;
+    // Grown one character in from each end in turn, so the two halves stay
+    // the same length whichever end the wide characters are at.
+    size_t head = 0;
+    size_t tail = len;
+    for (;;) {
+        const size_t grownHead = utf8Next(str, head, len);
+        if (grownHead >= tail || keptWidth(str, grownHead, tail, len) > budget) break;
+        head = grownHead;
+
+        const size_t grownTail = utf8Prev(str, tail);
+        if (grownTail <= head || keptWidth(str, head, grownTail, len) > budget) break;
+        tail = grownTail;
     }
-    if (dim) ImGui::TextDisabled("%s", str);
-    else     ImGui::TextUnformatted(str);
+    return std::string(str, head) + "..." + std::string(str + tail);
+}
+
+void clippedLine(const char* text, float maxWidth, bool dim) {
+    const std::string line = elidedLine(text, maxWidth);
+    if (dim) ImGui::TextDisabled("%s", line.c_str());
+    else     ImGui::TextUnformatted(line.c_str());
 }
 
 bool matchesFilter(const char* text, const char* filter) {
@@ -307,11 +309,10 @@ bool matchesFilter(const char* text, const char* filter) {
 namespace {
 
 // What kind of thing an entity is, answered once for both the label the
-// hierarchy shows and the glyph beside it. The two used to be separate ladders
-// over the same components and had already diverged - the icons grew a
-// UIElement row the names never got, so a bare UI widget drew the widget glyph
-// beside the text "Entity 12", and the inspector's "name this entity" button
-// baked that string into a real Name.
+// hierarchy shows and the glyph beside it. Two ladders over the same components
+// diverge by a row, and the row they diverge by is the one a reader sees: a
+// glyph that says "UI widget" beside the text "Entity 12", which the
+// inspector's "name this entity" button then bakes into a real Name.
 //
 // Stays a hand-written ladder rather than a component->row table: a Light's
 // answer comes from its inner type, and a Mesh carrying an Animation reads
@@ -322,11 +323,9 @@ struct EntityLabel {
 };
 
 EntityLabel entityLabelOf(const Scene& scene, EntityId id) {
-    // Above everything: an instance is a prefab whatever else it carries, and
-    // that is the fact which constrains how it may be edited. Only the root
-    // holds one - PrefabEntity is stamped on every entity in the subtree, so a
-    // row for it would say "prefab" about an entire hierarchy and identify
-    // nothing.
+    // Above everything: an instance is a prefab whatever else it carries, and that
+    // is what constrains how it may be edited. Only the root holds one; PrefabEntity
+    // is on every entity in the subtree and would identify nothing.
     if (scene.has<PrefabInstance>(id)) return {"Prefab", EditorIcon::Prefab};
     if (scene.has<Camera>(id)) return {"Camera", EditorIcon::Camera};
     if (scene.has<Light>(id)) {
@@ -341,9 +340,8 @@ EntityLabel entityLabelOf(const Scene& scene, EntityId id) {
         return {"Light", EditorIcon::LightPoint};
     }
     // Before Mesh: an entity carrying an Animator is the rig whatever else it
-    // carries, and its meshes are the entities under it. A socket reads the
-    // same way - a sword riding a hand is a socket first and geometry second,
-    // because where it is attached is what someone is looking for.
+    // holds, and its meshes are the entities under it. A socket reads the same
+    // way - where a sword is attached is what someone is looking for.
     if (scene.has<Animator>(id)) return {"Rig", EditorIcon::Anim};
     if (scene.has<BoneSocket>(id)) return {"Socket", EditorIcon::Socket};
     if (scene.has<Mesh>(id)) {

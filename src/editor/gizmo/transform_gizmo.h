@@ -9,10 +9,12 @@
 namespace Vkm::Engine {
 
 /**
- * @brief Gizmo operation type. Select is a no-handle mode: picking only, no
- * manipulation handles drawn (GizmoOverlay skips manipulate() for it).
+ * @brief What the gizmo manipulates. One per set of handles it can draw.
+ *
+ * There is no Select here: that is a *tool* the author picks (see EditorTool),
+ * and the tool that draws no gizmo has no operation for the gizmo to perform.
  */
-enum class GizmoOperation { Translate, Rotate, Scale, Select };
+enum class GizmoOperation { Translate, Rotate, Scale };
 
 /**
  * @brief Gizmo coordinate space.
@@ -162,14 +164,19 @@ class TransformGizmo {
         bool planeQuadCorners(int i, const ImVec2 screenAxes[3], const bool axisOk[3],
                               ImVec2& qA, ImVec2& qB, ImVec2& qC) const;
 
-        static constexpr float GIZMO_SIZE_PIXELS  = 110.0f;
-        static constexpr float AXIS_HIT_RADIUS    = 10.0f;
-        static constexpr float PLANE_QUAD_FRAC    = 0.28f;
-        static constexpr float ARROW_HEAD_PIXELS  = 6.0f;
-        static constexpr float SCALE_BOX_HALF     = 4.0f;
+        // Design pixels at the editor's 15 px reference font, read through
+        // EditorStyle::px like every other metric in the editor. They were a
+        // gizmo-local scale against ImGui's 13 px default before, which is why
+        // they are not round numbers: these are what that scale rendered.
+        static constexpr float GIZMO_SIZE_PIXELS  = 127.0f;
+        static constexpr float AXIS_HIT_RADIUS    = 11.5f;
+        static constexpr float PLANE_QUAD_FRAC    = 0.28f;   ///< A fraction of the axis length, not a pixel size.
+        static constexpr float ARROW_HEAD_PIXELS  = 7.0f;
+        static constexpr float SCALE_BOX_HALF     = 4.6f;
+        static constexpr float CENTRE_DOT_RADIUS  = 3.5f;
         static constexpr int   CIRCLE_SEGMENTS    = 64;
-        static constexpr float LINE_THICKNESS      = 2.5f;
-        static constexpr float HIGHLIGHT_THICKNESS = 3.5f;
+        static constexpr float LINE_THICKNESS      = 2.9f;
+        static constexpr float HIGHLIGHT_THICKNESS = 4.0f;
 
         static constexpr ImU32 COLOR_X         = EditorStyle::AXIS_X_U32;
         static constexpr ImU32 COLOR_Y         = EditorStyle::AXIS_Y_U32;
@@ -188,7 +195,6 @@ class TransformGizmo {
         glm::vec3 m_cameraRight{1.0f, 0.0f, 0.0f};
         glm::vec3 m_gizmoOrigin{0.0f};
         float     m_screenFactor = 1.0f;
-        float     m_uiScale      = 1.0f;  ///< DPI scale (ImGui font size / 13).
         ImVec2    m_originScreen{0, 0};
         ImVec2    m_mousePos{0, 0};
         ImVec2    m_vpMin{0, 0};

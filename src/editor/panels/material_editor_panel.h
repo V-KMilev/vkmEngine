@@ -20,29 +20,24 @@ class ResourceManager;
 /**
  * @brief The Material tab: one material's parameters under a live 3D preview.
  *
- * It has no window of its own. EditorSystem draws it as the right panel's
- * second tab, beside the Inspector, because the two answer the same question
- * about the same selection at two depths - and because a material wants the
- * height a panel next to the viewport has and the bottom strip does not. A
- * second way in would be a second place to fix everything found here.
+ * It has no window of its own: EditorSystem draws it as the right panel's second
+ * tab, beside the Inspector, because the two answer the same question about the
+ * same selection at two depths - and a material wants the height a panel next to
+ * the viewport has.
  *
- * Which material it edits follows the selection, the way every other surface in
- * this panel does: picking an entity that carries one shows that one. A
- * material chosen by hand - from the chooser at the top, the Asset Browser, or
- * a New / Duplicate - outranks the selection until a different entity with a
- * material is picked, so a material nothing uses yet can still be worked on.
+ * Which material it edits follows the selection, except that one chosen by hand
+ * - the chooser at the top, the Asset Browser, a New or Duplicate - outranks it
+ * until a different entity carrying a material is picked, so a material nothing
+ * uses yet can still be worked on.
  *
- * The parameters are cut by what a material actually is rather than by the
- * shader's field list: a Base card and a grid of map tiles are always there,
- * and the five secondary lobes appear as cards only once the material uses
- * them. "Add Feature" turns one on, the card's own x turns it back off, and
- * nothing is offered twice.
+ * The parameters are cut by what a material is rather than by the shader's field
+ * list: a Base card and a grid of map tiles are always there, and the five
+ * secondary lobes appear as cards only once the material uses them.
  *
- * Edits are live: materials are shared by handle, so a change shows in the
- * preview and everywhere the material is drawn, and every one of them is an
- * undo step. The 3D preview goes through MaterialPreviewSession (which renders
- * via the backend's offscreen preview hooks) and is shown via ImGui::Image -
- * the editor never touches GL itself.
+ * Edits are live and every one is an undo step - materials are shared by handle,
+ * so a change shows everywhere the material is drawn. The preview goes through
+ * MaterialPreviewSession and the backend's offscreen hooks; the editor never
+ * touches GL itself.
  */
 class MaterialEditorPanel {
     public:
@@ -190,6 +185,15 @@ class MaterialEditorPanel {
         void serviceTexturePicker(EditorContext& ec);
 
         /**
+         * @brief Configure the folder picker and raise it.
+         *
+         * Beside openTexturePicker for the same reason: what the menu item does
+         * is open a picker, so the menu item opens the picker rather than
+         * raising a flag for the frame's second half to notice.
+         */
+        void openPbrFolder();
+
+        /**
          * @brief Run the "Load PBR Folder" picker and adopt the material it builds.
          *
          * @param ec Per-frame editor context; its target follows the new material.
@@ -213,7 +217,6 @@ class MaterialEditorPanel {
         // One picker per modal so each cache survives independent open/close.
         AssetPicker m_pbrFolderPicker;
         AssetPicker m_texturePicker;
-        bool        m_requestPbrFolder = false;
 
         /**
          * @brief The material + slot the active texture picker is editing,

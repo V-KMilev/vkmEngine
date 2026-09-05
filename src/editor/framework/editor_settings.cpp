@@ -6,6 +6,7 @@
 #include <fstream>
 #include <system_error>
 #include <type_traits>
+#include <string>
 
 #include <nlohmann/json.hpp>
 
@@ -27,13 +28,40 @@ using nlohmann::json;
  * Loaders with a lower version fall back to defaults rather than
  * guessing at fields that no longer exist or have different meanings.
  */
-constexpr int FILE_VERSION = 1;
+constexpr int FILE_VERSION = 2;
 
+/**
+ * @brief Write a bind as ImGui's name for the key, not as its enum value.
+ *
+ * `ImGuiKey` is an internal enumeration and has been renumbered before - the
+ * 1.87 keyboard rework moved every value. An ordinal in a settings file would
+ * survive that change and mean a different key afterwards, silently rebinding
+ * everything the user had set. The name is what ImGui itself promises.
+ *
+ * @param k The bind to write.
+ * @return An object with the key's name and the modifier mask.
+ */
 json keybindToJson(const KeyBind& k) {
-    return json{ {"key", static_cast<int>(k.key)}, {"mods", k.mods} };
+    return json{ {"key", ImGui::GetKeyName(k.key)}, {"mods", k.mods} };
 }
+
+/**
+ * @brief Read a bind back, resolving the key by name.
+ *
+ * A name this build does not know leaves @p k alone, so the field keeps the
+ * default it was constructed with rather than becoming unbound.
+ *
+ * @param j The object written by keybindToJson.
+ * @param k The bind to fill; untouched where the file says nothing usable.
+ */
 void keybindFromJson(const json& j, KeyBind& k) {
-    k.key  = static_cast<ImGuiKey>(j.value("key",  static_cast<int>(ImGuiKey_None)));
+    const std::string name = j.value("key", std::string{});
+    for (int candidate = ImGuiKey_NamedKey_BEGIN; candidate < ImGuiKey_NamedKey_END; ++candidate) {
+        if (name == ImGui::GetKeyName(static_cast<ImGuiKey>(candidate))) {
+            k.key = static_cast<ImGuiKey>(candidate);
+            break;
+        }
+    }
     k.mods = static_cast<uint8_t>(j.value("mods", 0));
 }
 
@@ -55,7 +83,7 @@ void visitScalarFields(State& state, Fn&& f) {
     f("rightPanelWidth",   state.rightPanelWidth);
     f("materialFloating",  state.materialFloating);
     f("bottomPanelHeight", state.bottomPanelHeight);
-    f("gizmoOperation",    state.gizmoOperation);
+    f("tool",              state.tool);
     f("gizmoMode",         state.gizmoMode);
     f("snapEnabled",       state.snapEnabled);
     f("snapTranslate",     state.snapTranslate);
@@ -64,32 +92,21 @@ void visitScalarFields(State& state, Fn&& f) {
 }
 
 /**
- * @brief The persisted RenderSettings fields, one (json-key, member) row each.
+ * @brief The render fields that are this editor's view state, not the game's.
+ *
+ * `renderMode` selects a debug buffer and `grid` draws editor chrome; neither
+ * is a look anybody ships, and both would be wrong to hand the next person who
+ * opens the project. Everything else moved to `project.json` - see
+ * `visitShippedRenderFields` in system/render/render_settings.h - because an
+ * author who turns bloom off has decided something about the game.
  *
  * Same single-list contract as visitScalarFields: load and save walk this one
- * function so the two directions can never drift. Machine-quality tuning
- * belongs here (not in the scene) by the Environment/RenderSettings split.
+ * function so the two directions can never drift.
  */
 template <typename Settings, typename Fn>
 void visitRenderFields(Settings& r, Fn&& f) {
-    f("renderMode",            r.renderMode);
-    f("gtao",                  r.gtao);
-    f("bloom",                 r.bloom);
-    f("probes",                r.probes);
-    f("occlusionCulling",      r.occlusionCulling);
-    f("gtaoRadius",            r.gtaoRadius);
-    f("gtaoIntensity",         r.gtaoIntensity);
-    f("gtaoPower",             r.gtaoPower);
-    f("gtaoBias",              r.gtaoBias);
-    f("bloomStrength",         r.bloomStrength);
-    f("bloomThreshold",        r.bloomThreshold);
-    f("bloomKnee",             r.bloomKnee);
-    f("bloomRadius",           r.bloomRadius);
-    f("msaaSamples",           r.msaaSamples);
-    f("textureFiltering",      r.textureFiltering);
-    f("textureAnisotropy",     r.textureAnisotropy);
-    f("shadowResolution",      r.shadowResolution);
-    f("grid",                  r.grid);
+    f("renderMode", r.renderMode);
+    f("grid",       r.grid);
 }
 
 /**
@@ -195,7 +212,8 @@ bool load(EditorState& state, RenderSettings& render) {
         }
     }
 
-    // Render settings (machine-quality tuning; absent keys keep defaults)
+    // The editor's own view state. What the game looks like lives in
+    // project.json and is applied when the project opens.
     if (j.contains("renderSettings")) {
         const auto& rs = j["renderSettings"];
         visitRenderFields(render, [&](const char* key, auto& member) {

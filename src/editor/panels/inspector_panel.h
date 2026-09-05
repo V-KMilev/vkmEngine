@@ -38,6 +38,57 @@ struct EditorContext;
  * says it in DANGER rather than WARNING is one page: docs/reference/editor.md,
  * "A card names what its component is waiting for".
  */
+/**
+ * @brief Every component card, once: the component and the method that draws it.
+ *
+ * The header's declarations and `draw`'s dispatch are the same list of
+ * twenty-six rows, in the same order, and both expand from here rather than
+ * being kept in step by hand.
+ *
+ * Order is the order the cards appear in the panel, which is the order the
+ * dispatch runs: Transform first because it is what an author looks at, the
+ * hierarchy row last because it is about the entity rather than about what it
+ * is made of.
+ *
+ * Every card takes the same pair - the context and the entity - so that this
+ * list can exist at all. The context is what makes that possible: a card that
+ * needs the audio device, the camera controller or the clock reaches them
+ * through it rather than through a signature of its own.
+ *
+ * The last two columns are the card's heading and its accent colour. A
+ * component's heading is wanted in five places - the card, its "Edit X" and
+ * "Remove X" history entries, the Add Component menu item and that item's
+ * "Add X" - and CardInfo below expands all five from this one, so a component
+ * cannot be called one thing in the inspector and another in undo.
+ */
+#define VKM_INSPECTOR_CARDS(X)                                                        \
+    X(Transform,           drawTransformSection,           "Transform",           Transform) \
+    X(Mesh,                drawMeshSection,                "Mesh",                Mesh)      \
+    X(Light,               drawLightSection,               "Light",               Light)     \
+    X(Rigidbody,           drawRigidbodySection,           "Rigidbody",           Physics)   \
+    X(Collider,            drawColliderSection,            "Collider",            Collider)  \
+    X(CharacterController, drawCharacterControllerSection, "Character Controller", Physics)  \
+    X(Joint,               drawJointSection,               "Joint",               Physics)   \
+    X(Ragdoll,             drawRagdollSection,             "Ragdoll",             Physics)   \
+    X(Camera,              drawCameraSection,              "Camera",              Camera)    \
+    X(ReflectionProbe,     drawReflectionProbeSection,     "Reflection Probe",    Probe)     \
+    X(Decal,               drawDecalSection,               "Decal",               Mesh)      \
+    X(ParticleEmitter,     drawParticleSection,            "Particle Emitter",    Light)     \
+    X(AudioSource,         drawAudioSourceSection,         "Audio Source",        Audio)     \
+    X(AudioListener,       drawAudioListenerSection,       "Audio Listener",      Audio)     \
+    X(IrradianceVolume,    drawIrradianceVolumeSection,    "Irradiance Volume",   Probe)     \
+    X(LOD,                 drawLODSection,                 "LOD",                 Mesh)      \
+    X(Animation,           drawAnimationSection,           "Animation",           Anim)      \
+    X(Animator,            drawAnimatorSection,            "Animator",            Anim)      \
+    X(BoneSocket,          drawBoneSocketSection,          "Bone Socket",         Anim)      \
+    X(ScriptComponent,     drawScriptSection,              "Script",              Script)    \
+    X(UICanvas,            drawUICanvasSection,            "UI Canvas",           UI)        \
+    X(UIElement,           drawUIElementSection,           "UI Element",          UI)        \
+    X(UIImage,             drawUIImageSection,             "UI Image",            UI)        \
+    X(UIText,              drawUITextSection,              "UI Text",             UI)        \
+    X(UIButton,            drawUIButtonSection,            "UI Button",           UI)        \
+    X(Hierarchy,           drawHierarchySection,           "Hierarchy",           Hierarchy)
+
 class InspectorPanel {
     public:
         InspectorPanel() = default;
@@ -58,70 +109,19 @@ class InspectorPanel {
         void drawEmptySelectionState(EditorContext& ec);
         void drawIdentityHeader(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
 
-        // Each section takes the EditorState so it can flag the scene as dirty
-        // when the user edits anything. Centralizing this avoids missing edits.
-        // The ResourceManager rides along wherever a card can produce a prefab
-        // override: the override's value is the field's serialized JSON, and
-        // serializing an asset reference resolves its handle to a name.
-        void drawPrefabSection(Scene& scene, EditorState& state, EntityId id);
-        void drawTransformSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawMeshSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawLightSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawRigidbodySection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawColliderSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        // The Camera card takes the whole context for the same reason the audio
-        // cards do: which camera is rendered from is the camera controller's
-        // answer, and it is not reachable from the scene alone.
-        void drawCameraSection(EditorContext& ec, EntityId id);
-        void drawReflectionProbeSection(Scene& scene, ResourceManager& resources,
-                                        EditorState& state, EntityId id);
-        void drawDecalSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        // Particles and Animation take it for the clock: both cards report on a
-        // simulation that only advances while the world runs, and the clock is
-        // what separates "nothing to show" from "not running".
-        void drawParticleSection(EditorContext& ec, EntityId id);
-        // The audio cards take the whole context: the clip preview button plays
-        // through the editor's audio device, which is not reachable from the
-        // scene or the asset graph.
-        void drawAudioSourceSection(EditorContext& ec, EntityId id);
-        void drawAudioListenerSection(EditorContext& ec, EntityId id);
-        void drawIrradianceVolumeSection(Scene& scene, ResourceManager& resources,
-                                         EditorState& state, EntityId id);
+        // Each section takes the EditorState, so an edit cannot be made without
+        // marking the scene dirty. The ResourceManager rides along wherever a card
+        // can produce an override: serializing an asset ref resolves it to a name.
+        void drawPrefabSection(EditorContext& ec, EntityId id);
         void drawWorldInspector(EditorContext& ec);
-        void drawLODSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawAnimationSection(EditorContext& ec, EntityId id);
-        void drawAnimatorSection(EditorContext& ec, EntityId id);
-        void drawBoneSocketSection(Scene& scene, ResourceManager& resources,
-                                   EditorState& state, EntityId id);
-        void drawCharacterControllerSection(Scene& scene, ResourceManager& resources,
-                                            EditorState& state, EntityId id);
 
-        /**
-         * @brief Joint: what it holds, to what, and where on each body.
-         *
-         * The connected entity is picked from the scene rather than typed,
-         * because a joint to a slot that does not exist is a joint that does
-         * nothing and says nothing.
-         */
-        void drawJointSection(Scene& scene, ResourceManager& resources,
-                              EditorState& state, EntityId id);
+        // The twenty-six component cards, declared from the one list above so
+        // that adding a card is a row rather than an edit in three files.
+#define VKM_INSPECTOR_CARD_DECL(Component, method, title, accent) \
+    void method(EditorContext& ec, EntityId id);
+        VKM_INSPECTOR_CARDS(VKM_INSPECTOR_CARD_DECL)
+#undef VKM_INSPECTOR_CARD_DECL
 
-        /**
-         * @brief Ragdoll: the switch, and the buttons that build and clear it.
-         *
-         * Building needs the rig, which comes from the entity's Animator - so
-         * the card says so when there is none, rather than offering a button
-         * that cannot work.
-         */
-        void drawRagdollSection(Scene& scene, ResourceManager& resources,
-                                EditorState& state, EntityId id);
-        void drawScriptSection(Scene& scene, EditorState& state, EntityId id);
-        void drawHierarchySection(Scene& scene, EditorState& state, EntityId id);
-        void drawUICanvasSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawUIElementSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawUIImageSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawUITextSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
-        void drawUIButtonSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id);
         void drawAddComponentMenu(Scene& scene, EditorState& state, EntityId id);
 
     private:
@@ -151,9 +151,12 @@ class InspectorPanel {
         // The Connected combo's entries, rebuilt per frame because the list is
         // the scene. Members rather than locals so the per-frame churn reuses
         // one allocation instead of making two.
-        /// The entity whose mesh-collider build found no whole triangle. Held as
-        /// an entity rather than a flag so the warning belongs to that entity and
-        /// not to the panel, which outlives the selection.
+        /**
+         * @brief The entity whose mesh-collider build found no whole triangle.
+         *
+         * An entity rather than a flag, so the warning belongs to that entity and
+         * not to the panel, which outlives the selection.
+         */
         EntityId                 m_meshColliderEmpty;
         std::vector<EntityId>    m_jointCandidates;
         std::vector<std::string> m_jointCandidateLabels;

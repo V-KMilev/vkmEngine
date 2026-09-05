@@ -246,6 +246,19 @@ inline void sectionLabel(const char* text) {
 void clippedLine(const char* text, float maxWidth, bool dim);
 
 /**
+ * @brief The same line, returned rather than drawn.
+ *
+ * For a caller placing text through the draw list instead of the cursor - a row
+ * that draws its own two lines over a selectable, say. The ellipsis rule lives
+ * once, here, so a drawn line and a placed one cut in the same place.
+ *
+ * @param text Line to elide; empty yields the "(unnamed)" placeholder.
+ * @param maxWidth Width the line must fit inside, in pixels.
+ * @return The line, cut mid-way with "..." when it does not fit.
+ */
+std::string elidedLine(const char* text, float maxWidth);
+
+/**
  * @brief Test whether a string contains a filter substring, case-insensitively.
  *
  * @param text Candidate string being filtered.
@@ -253,6 +266,32 @@ void clippedLine(const char* text, float maxWidth, bool dim);
  * @return true when filter occurs in text ignoring case (or filter is empty).
  */
 bool matchesFilter(const char* text, const char* filter);
+
+/**
+ * @brief The search box a type-to-narrow popup opens with.
+ *
+ * Five popups in the editor filter a list by typing, and each carried the same
+ * five lines: empty the needle and take the keyboard the frame the popup
+ * appears, size the field, draw it, rule off. Written once so they cannot
+ * drift, and so a popup that grows a filter gets the whole behaviour rather
+ * than four fifths of it - Escape clearing the box, in particular, which two
+ * of the five had and three did not.
+ *
+ * @param id    ImGui id fragment, unique within the popup ("##compFilter").
+ * @param buf   The needle, emptied whenever the popup appears.
+ * @param size  Capacity of @p buf, including the terminator.
+ * @param width Field width in framebuffer pixels; negative reaches the right
+ *              edge, which is ImGui's own convention.
+ */
+inline void popupSearchField(const char* id, char* buf, size_t size, float width = -1.0f) {
+    if (ImGui::IsWindowAppearing()) {
+        buf[0] = '\0';
+        ImGui::SetKeyboardFocusHere();
+    }
+    ImGui::SetNextItemWidth(width);
+    ImGui::InputTextWithHint(id, "Search...", buf, size, ImGuiInputTextFlags_EscapeClearsAll);
+    ImGui::Separator();
+}
 
 /**
  * @brief A MenuItem with a leading entity/tool glyph.

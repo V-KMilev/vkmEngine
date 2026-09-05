@@ -24,12 +24,38 @@ namespace Vkm::Engine {
  *
  * Owned by EditorSystem, passed as EditorState& to each panel's draw().
  */
+/**
+ * @brief What a viewport drag does: the four tools on the toolbar.
+ *
+ * Three of them are gizmo operations; Select is the one that draws no gizmo at
+ * all, which is why it is a tool rather than a fourth GizmoOperation - the
+ * gizmo would have nothing to do with it.
+ */
+enum class EditorTool { Select, Translate, Rotate, Scale };
+
+/**
+ * @brief The gizmo operation a tool asks the gizmo for.
+ *
+ * @param tool The active tool; Select answers Translate, which no caller ever
+ *             sees - GizmoOverlay draws no gizmo under Select.
+ * @return The matching operation.
+ */
+inline GizmoOperation operationFor(EditorTool tool) {
+    switch (tool) {
+        case EditorTool::Rotate: return GizmoOperation::Rotate;
+        case EditorTool::Scale:  return GizmoOperation::Scale;
+        case EditorTool::Select:
+        case EditorTool::Translate: break;
+    }
+    return GizmoOperation::Translate;
+}
+
 struct EditorState {
     EntityId selectedEntity{};               ///< The ACTIVE entity (last clicked); always in `selection` when set.
     std::vector<EntityId> selection;         ///< Every selected entity (multi-select set), active included.
     bool     worldSelected = false;
 
-    GizmoOperation gizmoOperation = GizmoOperation::Translate;
+    EditorTool     tool           = EditorTool::Translate;
     GizmoMode      gizmoMode      = GizmoMode::Local;
 
     bool  snapEnabled    = false;
@@ -58,16 +84,19 @@ struct EditorState {
     // Layout dimensions (pixels)
     float leftPanelWidth    = 260.0f;
     float rightPanelWidth   = 340.0f;
-    // Tall enough for one whole row of default-size asset tiles - face, name
-    // and detail line - because the panel's first tab is a grid and a row cut
-    // across the middle reads as a broken tile rather than as a short panel.
-    // Persisted per project, so this is what a project with no saved layout
-    // opens at.
+    // Tall enough for one whole row of default-size asset tiles - face, name and
+    // detail - because a row cut across the middle reads as a broken tile rather
+    // than a short panel. Persisted per project; this is the unsaved default.
     float bottomPanelHeight = 250.0f;
 
     bool viewportHovered = false;    ///< Whether mouse is over viewport
-    bool hierarchyDirty  = true;     ///< Set by entity ops, consumed by HierarchyPanel
     bool editorVisible   = true;     ///< Toggle entire editor UI (F5)
+    // Menus close the frame their item is clicked, taking any modal opened from
+    // inside them with it - so what a menu item does is ask, and the dialog that
+    // draws at menu-bar scope answers. They are flags on shared state rather
+    // than calls on the dialogs because each has several askers that cannot see
+    // the dialog: Import Model is raised by the menu bar, the Hierarchy's "+"
+    // menu and the Inspector's empty state.
     bool requestModelImport = false;  ///< Set by the Import Model menu item, consumed by the menu-bar dialog
     bool requestPlacePrefab = false;  ///< Set by the Create > Prefab item, consumed by the menu-bar dialog
     bool requestScriptReload = false; ///< Set by the Reload Scripts menu item, consumed by EditorSystem (hot-reload)

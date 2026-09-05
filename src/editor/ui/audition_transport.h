@@ -9,38 +9,29 @@ struct AudioClipAsset;
 /**
  * @brief Draw one clip audition's transport: Play / Pause / Resume, then Stop.
  *
- * The Inspector's Audio Source card and the Asset Browser's Sounds rows are
- * both asking to hear a clip, so they ask with one widget rather than two
- * vocabularies that drift apart. One button carries all three states, the way
- * both animation cards do it - the glyph is what pressing it will do next -
- * and Stop sits beside it, lit off the device rather than off a remembered id,
- * because an id outlives the voice it named: a one-shot ends on its own and
- * nothing here is told.
+ * The Inspector's Audio Source card and the Asset Browser's Sounds rows both ask
+ * to hear a clip, so they ask with one widget rather than two vocabularies that
+ * drift apart. One button carries all three states - the glyph is what pressing
+ * it will do next - and Stop is lit off the device rather than off a remembered
+ * id, because a one-shot ends on its own and nothing here is told.
  *
- * The audition is flat rather than positioned. A default VoiceParams is
- * spatial, and a spatial voice is measured against the scene's listener: in a
- * project that has none yet - which is exactly the project someone is
- * importing sounds into - it is silent, and in one that has an ear somewhere
- * it plays at whatever the world origin sounds like from there. Asking to hear
- * a file is not asking to hear it from anywhere.
+ * The audition is flat rather than positioned: a spatial voice is measured
+ * against the scene's listener, and a project being filled with imported sounds
+ * has none. Asking to hear a file is not asking to hear it from anywhere.
  *
- * It never touches the scene. Setting a source's `playing` flag instead would
- * be an edit - undoable, dirtying, and audible again on the next Play - when
- * all that was asked for was to hear the file. That is the rule both animation
- * cards follow: dirtying a scene every time somebody listens to something
- * would make the unsaved-changes prompt mean nothing.
+ * It never touches the scene. Setting a source's `playing` flag would be an
+ * edit - undoable, dirtying, audible again on the next Play - when all that was
+ * asked for was to hear the file.
  *
  * @param idStr Unique id fragment; both buttons derive their ids from it.
- * @param device Device the audition plays on. A closed one leaves the whole
- *        transport disabled and says why, rather than answering a press with
- *        silence.
+ * @param device Device the audition plays on. A closed one disables the whole
+ *        transport and says why, rather than answering a press with silence.
  * @param voice The caller's audition voice: replaced by Play, cleared by Stop.
- *        Play releases whatever it held first, so a second audition replaces
- *        the first rather than layering a copy over it - including when the
- *        voice belongs to another row.
+ *        Play releases whatever it held first, including another row's, so a
+ *        second audition replaces the first rather than layering over it.
  * @param mine Whether @p voice is the audition of the card or row being drawn.
- *        False offers Play alone, so a row can never hold or cut short a sound
- *        it is not showing.
+ *        False offers Play alone, so a row cannot cut short a sound it is not
+ *        showing.
  * @param clip Clip Play auditions; null leaves Play with nothing to start.
  * @param size Button side length in pixels.
  * @return True on the frame Play started a new audition, so the caller can
