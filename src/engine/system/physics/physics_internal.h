@@ -12,10 +12,11 @@ namespace Vkm::Engine {
 /**
  * @brief Broadphase and narrowphase view of one collidable body, cached per tick.
  *
- * `body` indexes the parallel solver-body array. `cullStatic` is true only for
- * permanently immovable bodies - static or kinematic - and a sleeping dynamic
- * body is deliberately not one: it keeps generating contacts, which is what
- * keeps whatever rests on it supported.
+ * `body` indexes the parallel solver-body array. `immovable` is true only for
+ * bodies nothing this tick can move - see Rigidbody::isImmovable, plus the
+ * bodies a replay is not deciding - and a sleeping dynamic body is deliberately
+ * not one: it keeps generating contacts, which is what keeps whatever rests on
+ * it supported.
  */
 struct ColliderProxy {
     uint32_t body = 0;
@@ -33,6 +34,25 @@ struct ColliderProxy {
     uint32_t partsCount = 0;
 
     /**
+     * @brief This body's parts already placed in world space, as two spans.
+     *
+     * Two monomorphic arrays rather than one tagged list, because the pair
+     * loops in the narrowphase are quadratic and a shape test inside them
+     * would run once per pairing instead of once per part.
+     *
+     * Filled at gather, once per body, rather than per pair: a floor appears in
+     * as many pairs as there are things standing on it, and placing it into
+     * world space per pair places it once for each of them. A mesh part is
+     * absent from both - it is thousands of triangles and only the handful under
+     * the other shape matter, so it is walked per pair against that shape's
+     * bound, which is what it carries a tree for.
+     */
+    uint32_t boxFirst    = 0;
+    uint32_t boxCount    = 0;
+    uint32_t capsuleFirst = 0;
+    uint32_t capsuleCount = 0;
+
+    /**
      * @brief The component this proxy was built from, for what did not copy.
      *
      * A mesh part's hierarchy lives on the Collider and is thousands of nodes;
@@ -46,7 +66,7 @@ struct ColliderProxy {
     glm::quat rotation = {1.0f, 0.0f, 0.0f, 0.0f};
     glm::vec3 aabbMin = {0.0f, 0.0f, 0.0f};
     glm::vec3 aabbMax = {0.0f, 0.0f, 0.0f};
-    bool cullStatic = false;
+    bool immovable = false;
 
     // Copied off the Rigidbody at gather, so the pair loop reads one struct
     // rather than reaching back into the scene per candidate pair.
@@ -72,7 +92,7 @@ struct BodyFrame {
     float     invMass         = 0.0f;                             ///< 1/mass this tick; 0 = static/kinematic
     glm::mat3 invInertiaLocal = glm::mat3(0.0f);                  ///< body-local inverse inertia; 0 = no rotational response
     glm::quat worldRot        = {1.0f, 0.0f, 0.0f, 0.0f};         ///< body world-space rotation this tick
-    glm::mat4 parentWorldInv  = glm::mat4(1.0f);                  ///< inverse(parent WorldTransform.model)
+    glm::mat4 parentWorld     = glm::mat4(1.0f);                  ///< Parent WorldTransform.model
     glm::quat parentRot       = {1.0f, 0.0f, 0.0f, 0.0f};         ///< parent world-space rotation
 };
 

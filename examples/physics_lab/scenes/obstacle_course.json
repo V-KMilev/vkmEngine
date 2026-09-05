@@ -99,16 +99,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 31.0,
                 0.5,
                 23.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -178,16 +176,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 32.0,
                 1.5,
                 0.5
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -257,16 +253,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 32.0,
                 1.5,
                 0.5
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -336,16 +330,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.5,
                 1.5,
                 23.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -415,16 +407,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.5,
                 1.5,
                 23.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -526,16 +516,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.2999999523162842,
                 0.10000000149011612,
                 2.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -605,16 +593,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.2999999523162842,
                 0.15000000596046448,
                 2.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -684,16 +670,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.2999999523162842,
                 0.20000000298023224,
                 2.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -763,16 +747,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.2999999523162842,
                 0.30000001192092896,
                 2.5999999046325684
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -842,16 +824,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.2999999523162842,
                 0.4000000059604645,
                 2.5999999046325684
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -921,16 +901,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 2.802940607070923,
                 0.17499999701976776,
                 2.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -1000,16 +978,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 2.5,
                 1.0499999523162842,
                 2.5
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -1079,16 +1055,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 2.0,
                 1.0499999523162842,
                 2.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -1158,16 +1132,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.10000000149011612,
                 3.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -1237,16 +1209,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 2.0,
                 1.0499999523162842,
                 2.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -1316,16 +1286,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 2.0,
                 1.0499999523162842,
                 4.5
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -1395,16 +1363,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.20000000298023224,
                 3.200000047683716,
                 0.20000000298023224
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -1474,16 +1440,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.20000000298023224,
                 3.200000047683716,
                 0.20000000298023224
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -1553,16 +1517,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 5.400000095367432,
                 0.20000000298023224,
                 0.20000000298023224
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -1632,16 +1594,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.550000011920929,
                 0.550000011920929,
                 0.550000011920929
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -1728,16 +1688,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.20000000298023224,
                 3.200000047683716,
                 0.20000000298023224
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -1807,16 +1765,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.20000000298023224,
                 3.200000047683716,
                 0.20000000298023224
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -1886,16 +1842,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 5.400000095367432,
                 0.20000000298023224,
                 0.20000000298023224
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -1965,16 +1919,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.550000011920929,
                 0.550000011920929,
                 0.550000011920929
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -2061,16 +2013,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.20000000298023224,
                 3.200000047683716,
                 0.20000000298023224
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -2140,16 +2090,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.20000000298023224,
                 3.200000047683716,
                 0.20000000298023224
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -2219,16 +2167,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 5.400000095367432,
                 0.20000000298023224,
                 0.20000000298023224
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -2298,16 +2244,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.550000011920929,
                 0.550000011920929,
                 0.550000011920929
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -2394,16 +2338,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 2.5,
                 1.0499999523162842,
                 5.75
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -2473,16 +2415,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.600000023841858,
                 1.0499999523162842,
                 2.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -2552,16 +2492,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.600000023841858,
                 1.0499999523162842,
                 2.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -2631,16 +2569,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.600000023841858,
                 1.0499999523162842,
                 2.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -2710,16 +2646,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.600000023841858,
                 1.0499999523162842,
                 2.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -2821,16 +2755,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.42500001192092896,
                 0.918749988079071,
                 2.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -2900,16 +2832,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.42500001192092896,
                 0.7875000238418579,
                 2.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -2979,16 +2909,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.42500001192092896,
                 0.65625,
                 2.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -3058,16 +2986,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.42500001192092896,
                 0.5249999761581421,
                 2.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -3137,16 +3063,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.42500001192092896,
                 0.39375001192092896,
                 2.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -3216,16 +3140,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.42500001192092896,
                 0.26249998807907104,
                 2.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -3295,16 +3217,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.42500001192092896,
                 0.13124999403953552,
                 2.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -3374,16 +3294,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -3453,16 +3371,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -3532,16 +3448,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -3611,16 +3525,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -3690,16 +3602,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -3769,16 +3679,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -3848,16 +3756,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -3927,16 +3833,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -4006,16 +3910,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -4085,16 +3987,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -4164,16 +4064,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -4243,16 +4141,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -4322,16 +4218,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -4401,16 +4295,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -4480,16 +4372,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -4559,16 +4449,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -4638,16 +4526,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -4717,16 +4603,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -4796,16 +4680,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -4875,16 +4757,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -4954,16 +4834,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -5033,16 +4911,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.07000000029802322,
                 0.44999998807907104,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -5112,16 +4988,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 5.5,
                 0.05999999865889549,
                 3.5
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -5191,16 +5065,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.44999998807907104,
                 0.44999998807907104,
                 0.44999998807907104
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -5270,16 +5142,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.44999998807907104,
                 0.44999998807907104,
                 0.44999998807907104
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -5349,16 +5219,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.44999998807907104,
                 0.44999998807907104,
                 0.44999998807907104
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -5428,16 +5296,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.44999998807907104,
                 0.44999998807907104,
                 0.44999998807907104
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -5507,16 +5373,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 2.0,
                 0.15000000596046448,
                 1.7000000476837158
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -5586,16 +5450,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.3499999940395355,
                 0.3499999940395355,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -5665,16 +5527,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 2.0,
                 0.15000000596046448,
                 1.7000000476837158
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -5744,16 +5604,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.3499999940395355,
                 0.3499999940395355,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -5823,16 +5681,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 2.0,
                 0.17499999701976776,
                 3.200000047683716
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -5902,16 +5758,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 3.0,
                 1.600000023841858,
                 3.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -6013,16 +5867,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 2.200000047683716,
                 0.17499999701976776,
                 2.0304291248321533
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -6092,16 +5944,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.20999999344348907,
                 1.149999976158142,
                 0.20999999344348907
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -6171,16 +6021,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.20999999344348907,
                 1.149999976158142,
                 0.20999999344348907
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -6250,16 +6098,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.20999999344348907,
                 1.149999976158142,
                 0.20999999344348907
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -6329,16 +6175,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.20999999344348907,
                 1.149999976158142,
                 0.20999999344348907
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -6408,16 +6252,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.20999999344348907,
                 1.149999976158142,
                 0.20999999344348907
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -6487,16 +6329,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.20999999344348907,
                 1.149999976158142,
                 0.20999999344348907
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -6566,16 +6406,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.20999999344348907,
                 1.149999976158142,
                 0.20999999344348907
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -6645,16 +6483,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.20999999344348907,
                 1.149999976158142,
                 0.20999999344348907
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -6724,16 +6560,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.20999999344348907,
                 1.149999976158142,
                 0.20999999344348907
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -6803,16 +6637,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.20999999344348907,
                 1.149999976158142,
                 0.20999999344348907
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -6882,16 +6714,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -6961,16 +6791,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -7040,16 +6868,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -7119,16 +6945,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -7198,16 +7022,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -7277,16 +7099,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -7356,16 +7176,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -7435,16 +7253,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -7514,16 +7330,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -7593,16 +7407,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -7672,16 +7484,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.800000011920929,
                 0.800000011920929,
                 0.800000011920929
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -7751,16 +7561,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.800000011920929,
                 0.800000011920929,
                 0.800000011920929
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -7830,16 +7638,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.800000011920929,
                 0.800000011920929,
                 0.800000011920929
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -7909,16 +7715,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.800000011920929,
                 0.800000011920929,
                 0.800000011920929
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -7988,16 +7792,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.25,
                 0.30000001192092896,
                 1.2000000476837158
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -8067,16 +7869,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 3.5,
                 0.11999999731779099,
                 1.0
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -8146,16 +7946,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.3499999940395355,
                 0.3499999940395355,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -8225,16 +8023,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.3499999940395355,
                 0.3499999940395355,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -8304,16 +8100,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.3499999940395355,
                 0.3499999940395355,
                 0.3499999940395355
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -8383,16 +8177,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.2999999523162842,
                 0.15000000596046448,
                 0.15000000596046448
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -8462,16 +8254,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.125,
                 2.1500000953674316,
                 0.125
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -8541,16 +8331,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.125,
                 2.1500000953674316,
                 0.125
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -8620,16 +8408,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.550000011920929,
                 0.550000011920929,
                 0.550000011920929
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -8716,16 +8502,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.2999999523162842,
                 0.15000000596046448,
                 0.15000000596046448
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -8795,16 +8579,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.125,
                 2.1500000953674316,
                 0.125
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -8874,16 +8656,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.125,
                 2.1500000953674316,
                 0.125
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -8953,16 +8733,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.550000011920929,
                 0.550000011920929,
                 0.550000011920929
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -9049,16 +8827,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.2999999523162842,
                 0.15000000596046448,
                 0.15000000596046448
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -9128,16 +8904,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.125,
                 2.1500000953674316,
                 0.125
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -9207,16 +8981,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.125,
                 2.1500000953674316,
                 0.125
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -9286,16 +9058,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.550000011920929,
                 0.550000011920929,
                 0.550000011920929
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -9382,16 +9152,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.2999999523162842,
                 0.15000000596046448,
                 0.15000000596046448
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -9461,16 +9229,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.125,
                 2.1500000953674316,
                 0.125
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -9540,16 +9306,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.125,
                 2.1500000953674316,
                 0.125
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -9619,16 +9383,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.550000011920929,
                 0.550000011920929,
                 0.550000011920929
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -9715,16 +9477,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.2999999523162842,
                 0.15000000596046448,
                 0.15000000596046448
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -9794,16 +9554,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.125,
                 2.1500000953674316,
                 0.125
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -9873,16 +9631,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.125,
                 2.1500000953674316,
                 0.125
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -9952,16 +9708,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.550000011920929,
                 0.550000011920929,
                 0.550000011920929
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -10048,16 +9802,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -10127,16 +9879,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -10206,16 +9956,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -10285,16 +10033,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -10364,16 +10110,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -10443,16 +10187,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -10522,16 +10264,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -10601,16 +10341,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -10680,16 +10418,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -10759,16 +10495,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 1.5,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -10838,16 +10572,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 1.5,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -10917,16 +10649,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 1.5,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -10996,16 +10726,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 1.5,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -11075,16 +10803,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 1.5,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -11154,16 +10880,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 1.5,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -11233,16 +10957,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.2999999523162842,
                 0.17499999701976776,
                 1.600000023841858
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -11312,16 +11034,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.2999999523162842,
                 0.17499999701976776,
                 1.600000023841858
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -11391,16 +11111,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.2999999523162842,
                 0.17499999701976776,
                 1.600000023841858
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -11470,16 +11188,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.2999999523162842,
                 0.17499999701976776,
                 1.600000023841858
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -11549,16 +11265,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.2999999523162842,
                 0.17499999701976776,
                 1.600000023841858
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -11628,16 +11342,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.2999999523162842,
                 0.17499999701976776,
                 1.600000023841858
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -11771,16 +11483,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.100000023841858,
                 0.15000000596046448,
                 1.100000023841858
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -11850,16 +11560,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.30000001192092896,
                 0.30000001192092896,
                 0.30000001192092896
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -11929,16 +11637,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.100000023841858,
                 0.15000000596046448,
                 1.100000023841858
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -12008,16 +11714,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.30000001192092896,
                 0.30000001192092896,
                 0.30000001192092896
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -12087,16 +11791,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.100000023841858,
                 0.15000000596046448,
                 1.100000023841858
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -12166,16 +11868,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.30000001192092896,
                 0.30000001192092896,
                 0.30000001192092896
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -12245,16 +11945,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.100000023841858,
                 0.15000000596046448,
                 1.100000023841858
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -12324,16 +12022,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.30000001192092896,
                 0.30000001192092896,
                 0.30000001192092896
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -12435,16 +12131,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.30000001192092896,
                 0.30000001192092896,
                 0.30000001192092896
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -12514,16 +12208,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.44999998807907104,
                 0.44999998807907104,
                 0.44999998807907104
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -12593,16 +12285,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.6000000238418579,
                 0.6000000238418579,
                 0.6000000238418579
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -12672,16 +12362,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.800000011920929,
                 0.800000011920929,
                 0.800000011920929
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -12783,16 +12471,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 1.5,
                 0.17499999701976776,
                 2.556065320968628
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -12862,16 +12548,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 2.5,
                 1.2000000476837158,
                 2.5
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -12973,16 +12657,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -13052,16 +12734,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -13131,16 +12811,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -13210,16 +12888,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -13289,16 +12965,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -13368,16 +13042,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -13447,16 +13119,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -13526,16 +13196,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -13605,16 +13273,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -13684,16 +13350,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -13763,16 +13427,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -13842,16 +13504,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -13921,16 +13581,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -14000,16 +13658,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -14079,16 +13735,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.4000000059604645,
                 0.4000000059604645,
                 0.4000000059604645
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -14158,16 +13812,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.6000000238418579,
                 0.6000000238418579,
                 0.6000000238418579
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -14237,16 +13889,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.6000000238418579,
                 0.6000000238418579,
                 0.6000000238418579
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -14316,16 +13966,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.6000000238418579,
                 0.6000000238418579,
                 0.6000000238418579
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -14395,16 +14043,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.6000000238418579,
                 0.6000000238418579,
                 0.6000000238418579
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -14474,16 +14120,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.6000000238418579,
                 0.6000000238418579,
                 0.6000000238418579
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -14553,16 +14197,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.6000000238418579,
                 0.6000000238418579,
                 0.6000000238418579
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -14632,16 +14274,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.6000000238418579,
                 0.6000000238418579,
                 0.6000000238418579
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -14711,16 +14351,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.5,
+              "radius": 0.5,
+              "shape": "Box",
+              "halfExtents": [
                 0.6000000238418579,
                 0.6000000238418579,
                 0.6000000238418579
-              ],
-              "halfHeight": 0.5,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.5,
-              "shape": "Box"
+              ]
             }
           ]
         },
@@ -15245,16 +14883,14 @@
                 0.8999999761581421,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.6100000143051147,
+              "radius": 0.30000001192092896,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.6100000143051147,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.30000001192092896,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -15785,8 +15421,7 @@
           "looping": true,
           "playOnStart": true,
           "skeleton": "bot:skeleton",
-          "speed": 1.0,
-          "time": 0.0
+          "speed": 1.0
         },
         "Hierarchy": {
           "parent": 212
@@ -16113,16 +15748,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.02851077914237976,
+              "radius": 0.022401325404644012,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.02851077914237976,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.022401325404644012,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -16189,16 +15822,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.02800758183002472,
+              "radius": 0.02200595661997795,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.02800758183002472,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.02200595661997795,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -16282,16 +15913,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.026101820170879364,
+              "radius": 0.020508572459220886,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.026101820170879364,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.020508572459220886,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -16375,16 +16004,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.047222863882780075,
+              "radius": 0.03710367903113365,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.047222863882780075,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.03710367903113365,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -16468,16 +16095,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.027340257540345192,
+              "radius": 0.021481631323695183,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.027340257540345192,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.021481631323695183,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -16561,16 +16186,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.06518131494522095,
+              "radius": 0.051213886588811874,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.06518131494522095,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.051213886588811874,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -16654,16 +16277,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.03034692443907261,
+              "radius": 0.02384401299059391,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.03034692443907261,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.02384401299059391,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -16747,16 +16368,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.07795625925064087,
+              "radius": 0.06125134602189064,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.07795625925064087,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.06125134602189064,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -16840,16 +16459,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.07932077348232269,
+              "radius": 0.06232346594333649,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.07932077348232269,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.06232346594333649,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -16933,16 +16550,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.03034559264779091,
+              "radius": 0.023842964321374893,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.03034559264779091,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.023842964321374893,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -17026,16 +16641,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.07795625925064087,
+              "radius": 0.06125134602189064,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.07795625925064087,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.06125134602189064,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -17119,16 +16732,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.07932077348232269,
+              "radius": 0.06232346594333649,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.07932077348232269,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.06232346594333649,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -17212,16 +16823,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.12424006313085556,
+              "radius": 0.09761718660593033,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.12424006313085556,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.09761718660593033,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -17305,16 +16914,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.12467784434556961,
+              "radius": 0.09796116501092911,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.12467784434556961,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.09796116501092911,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -17398,16 +17005,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.038687564432621,
+              "radius": 0.03039737045764923,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.038687564432621,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.03039737045764923,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -17491,16 +17096,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.025978699326515198,
+              "radius": 0.020411834120750427,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.025978699326515198,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.020411834120750427,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -17584,16 +17187,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.12423988431692123,
+              "radius": 0.09761705249547958,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.12423988431692123,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.09761705249547958,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -17677,16 +17278,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.12467795610427856,
+              "radius": 0.09796124696731567,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.12467795610427856,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.09796124696731567,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -17770,16 +17369,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.03868713974952698,
+              "radius": 0.030397040769457817,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.03868713974952698,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.030397040769457817,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -17863,16 +17460,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.025979232043027878,
+              "radius": 0.020412255078554153,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.025979232043027878,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.020412255078554153,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -17992,16 +17587,14 @@
                 0.8999999761581421,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.6100000143051147,
+              "radius": 0.30000001192092896,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.6100000143051147,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.30000001192092896,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -18532,8 +18125,7 @@
           "looping": true,
           "playOnStart": true,
           "skeleton": "bot:skeleton",
-          "speed": 1.0,
-          "time": 0.0
+          "speed": 1.0
         },
         "Hierarchy": {
           "parent": 243
@@ -18603,16 +18195,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.02851077914237976,
+              "radius": 0.022401325404644012,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.02851077914237976,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.022401325404644012,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -18679,16 +18269,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.02800758183002472,
+              "radius": 0.02200595661997795,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.02800758183002472,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.02200595661997795,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -18772,16 +18360,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.026101820170879364,
+              "radius": 0.020508572459220886,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.026101820170879364,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.020508572459220886,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -18865,16 +18451,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.047222863882780075,
+              "radius": 0.03710367903113365,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.047222863882780075,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.03710367903113365,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -18958,16 +18542,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.027340257540345192,
+              "radius": 0.021481631323695183,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.027340257540345192,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.021481631323695183,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -19051,16 +18633,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.06518131494522095,
+              "radius": 0.051213886588811874,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.06518131494522095,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.051213886588811874,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -19144,16 +18724,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.03034692443907261,
+              "radius": 0.02384401299059391,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.03034692443907261,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.02384401299059391,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -19237,16 +18815,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.07795625925064087,
+              "radius": 0.06125134602189064,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.07795625925064087,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.06125134602189064,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -19330,16 +18906,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.07932077348232269,
+              "radius": 0.06232346594333649,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.07932077348232269,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.06232346594333649,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -19423,16 +18997,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.03034559264779091,
+              "radius": 0.023842964321374893,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.03034559264779091,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.023842964321374893,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -19516,16 +19088,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.07795625925064087,
+              "radius": 0.06125134602189064,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.07795625925064087,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.06125134602189064,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -19609,16 +19179,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.07932077348232269,
+              "radius": 0.06232346594333649,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.07932077348232269,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.06232346594333649,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -19702,16 +19270,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.12424006313085556,
+              "radius": 0.09761718660593033,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.12424006313085556,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.09761718660593033,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -19795,16 +19361,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.12467784434556961,
+              "radius": 0.09796116501092911,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.12467784434556961,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.09796116501092911,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -19888,16 +19452,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.038687564432621,
+              "radius": 0.03039737045764923,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.038687564432621,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.03039737045764923,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -19981,16 +19543,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.025978699326515198,
+              "radius": 0.020411834120750427,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.025978699326515198,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.020411834120750427,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -20074,16 +19634,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.12423988431692123,
+              "radius": 0.09761705249547958,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.12423988431692123,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.09761705249547958,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -20167,16 +19725,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.12467795610427856,
+              "radius": 0.09796124696731567,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.12467795610427856,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.09796124696731567,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -20260,16 +19816,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.03868713974952698,
+              "radius": 0.030397040769457817,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.03868713974952698,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.030397040769457817,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -20353,16 +19907,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.025979232043027878,
+              "radius": 0.020412255078554153,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.025979232043027878,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.020412255078554153,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -20581,16 +20133,14 @@
                 0.8999999761581421,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.6100000143051147,
+              "radius": 0.30000001192092896,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.6100000143051147,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.30000001192092896,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -21121,8 +20671,7 @@
           "looping": true,
           "playOnStart": true,
           "skeleton": "bot:skeleton",
-          "speed": 1.0,
-          "time": 0.0
+          "speed": 1.0
         },
         "Hierarchy": {
           "parent": 270
@@ -21192,16 +20741,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.02851077914237976,
+              "radius": 0.022401325404644012,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.02851077914237976,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.022401325404644012,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -21268,16 +20815,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.02800758183002472,
+              "radius": 0.02200595661997795,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.02800758183002472,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.02200595661997795,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -21361,16 +20906,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.026101820170879364,
+              "radius": 0.020508572459220886,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.026101820170879364,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.020508572459220886,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -21454,16 +20997,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.047222863882780075,
+              "radius": 0.03710367903113365,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.047222863882780075,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.03710367903113365,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -21547,16 +21088,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.027340257540345192,
+              "radius": 0.021481631323695183,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.027340257540345192,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.021481631323695183,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -21640,16 +21179,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.06518131494522095,
+              "radius": 0.051213886588811874,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.06518131494522095,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.051213886588811874,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -21733,16 +21270,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.03034692443907261,
+              "radius": 0.02384401299059391,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.03034692443907261,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.02384401299059391,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -21826,16 +21361,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.07795625925064087,
+              "radius": 0.06125134602189064,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.07795625925064087,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.06125134602189064,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -21919,16 +21452,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.07932077348232269,
+              "radius": 0.06232346594333649,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.07932077348232269,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.06232346594333649,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -22012,16 +21543,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.03034559264779091,
+              "radius": 0.023842964321374893,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.03034559264779091,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.023842964321374893,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -22105,16 +21634,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.07795625925064087,
+              "radius": 0.06125134602189064,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.07795625925064087,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.06125134602189064,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -22198,16 +21725,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.07932077348232269,
+              "radius": 0.06232346594333649,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.07932077348232269,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.06232346594333649,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -22291,16 +21816,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.12424006313085556,
+              "radius": 0.09761718660593033,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.12424006313085556,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.09761718660593033,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -22384,16 +21907,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.12467784434556961,
+              "radius": 0.09796116501092911,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.12467784434556961,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.09796116501092911,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -22477,16 +21998,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.038687564432621,
+              "radius": 0.03039737045764923,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.038687564432621,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.03039737045764923,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -22570,16 +22089,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.025978699326515198,
+              "radius": 0.020411834120750427,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.025978699326515198,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.020411834120750427,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -22663,16 +22180,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.12423988431692123,
+              "radius": 0.09761705249547958,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.12423988431692123,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.09761705249547958,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -22756,16 +22271,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.12467795610427856,
+              "radius": 0.09796124696731567,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.12467795610427856,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.09796124696731567,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -22849,16 +22362,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.03868713974952698,
+              "radius": 0.030397040769457817,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.03868713974952698,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.030397040769457817,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -22942,16 +22453,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.025979232043027878,
+              "radius": 0.020412255078554153,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.025979232043027878,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.020412255078554153,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -23170,16 +22679,14 @@
                 0.8999999761581421,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.6100000143051147,
+              "radius": 0.30000001192092896,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.6100000143051147,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.30000001192092896,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -23710,8 +23217,7 @@
           "looping": true,
           "playOnStart": true,
           "skeleton": "bot:skeleton",
-          "speed": 1.0,
-          "time": 0.0
+          "speed": 1.0
         },
         "Hierarchy": {
           "parent": 297
@@ -23781,16 +23287,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.02851077914237976,
+              "radius": 0.022401325404644012,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.02851077914237976,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.022401325404644012,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -23857,16 +23361,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.02800758183002472,
+              "radius": 0.02200595661997795,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.02800758183002472,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.02200595661997795,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -23950,16 +23452,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.026101820170879364,
+              "radius": 0.020508572459220886,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.026101820170879364,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.020508572459220886,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -24043,16 +23543,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.047222863882780075,
+              "radius": 0.03710367903113365,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.047222863882780075,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.03710367903113365,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -24136,16 +23634,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.027340257540345192,
+              "radius": 0.021481631323695183,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.027340257540345192,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.021481631323695183,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -24229,16 +23725,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.06518131494522095,
+              "radius": 0.051213886588811874,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.06518131494522095,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.051213886588811874,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -24322,16 +23816,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.03034692443907261,
+              "radius": 0.02384401299059391,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.03034692443907261,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.02384401299059391,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -24415,16 +23907,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.07795625925064087,
+              "radius": 0.06125134602189064,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.07795625925064087,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.06125134602189064,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -24508,16 +23998,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.07932077348232269,
+              "radius": 0.06232346594333649,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.07932077348232269,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.06232346594333649,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -24601,16 +24089,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.03034559264779091,
+              "radius": 0.023842964321374893,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.03034559264779091,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.023842964321374893,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -24694,16 +24180,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.07795625925064087,
+              "radius": 0.06125134602189064,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.07795625925064087,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.06125134602189064,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -24787,16 +24271,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.07932077348232269,
+              "radius": 0.06232346594333649,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.07932077348232269,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.06232346594333649,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -24880,16 +24362,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.12424006313085556,
+              "radius": 0.09761718660593033,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.12424006313085556,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.09761718660593033,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -24973,16 +24453,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.12467784434556961,
+              "radius": 0.09796116501092911,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.12467784434556961,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.09796116501092911,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -25066,16 +24544,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.038687564432621,
+              "radius": 0.03039737045764923,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.038687564432621,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.03039737045764923,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -25159,16 +24635,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.025978699326515198,
+              "radius": 0.020411834120750427,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.025978699326515198,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.020411834120750427,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -25252,16 +24726,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.12423988431692123,
+              "radius": 0.09761705249547958,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.12423988431692123,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.09761705249547958,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -25345,16 +24817,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.12467795610427856,
+              "radius": 0.09796124696731567,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.12467795610427856,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.09796124696731567,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -25438,16 +24908,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.03868713974952698,
+              "radius": 0.030397040769457817,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.03868713974952698,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.030397040769457817,
-              "shape": "Capsule"
+              ]
             }
           ]
         },
@@ -25531,16 +24999,14 @@
                 0.0,
                 0.0
               ],
-              "half": [
+              "halfHeight": 0.025979232043027878,
+              "radius": 0.020412255078554153,
+              "shape": "Capsule",
+              "halfExtents": [
                 0.5,
                 0.5,
                 0.5
-              ],
-              "halfHeight": 0.025979232043027878,
-              "hullCount": 0,
-              "hullFirst": 0,
-              "radius": 0.020412255078554153,
-              "shape": "Capsule"
+              ]
             }
           ]
         },

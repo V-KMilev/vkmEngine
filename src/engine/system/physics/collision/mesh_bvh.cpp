@@ -138,10 +138,9 @@ void queryMeshBvh(const std::vector<MeshNode>& nodes,
             continue;
         }
 
-        // A tree deeper than the stack would be one of a million triangles
-        // built pathologically. Losing a branch loses contacts, where running
-        // off the end of the stack corrupts memory - so the near child is kept
-        // whenever there is room for one, and only the far one is dropped.
+        // Losing a branch loses contacts; running off the end of the stack
+        // corrupts memory. So the near child is kept whenever there is room, and
+        // only the far one is dropped.
         const uint32_t left = static_cast<uint32_t>(&node - nodes.data()) + 1;
         const int room = static_cast<int>(stack.size()) - top;
         if (room >= 2) stack[top++] = node.rightChild;

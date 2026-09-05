@@ -132,10 +132,9 @@ void closestSegmentSegment(
             s = glm::clamp(-c / a, 0.0f, 1.0f);
         } else {
             const float b = glm::dot(d1, d2);
-            // denom is a*e*sin^2 of the angle between the segments; measured
-            // against a*e it is the angle alone. Against the raw tolerance it
-            // was metres to the fourth against metres squared, and limb-length
-            // segments read as parallel a degree and a half apart.
+            // denom is a*e*sin^2 of the angle between the segments, so measuring
+            // it against a*e is measuring the angle alone; against a raw tolerance
+            // it is metres^4 against metres^2.
             const float denom = a * e - b * b;
             if (denom > Physics::DEGENERATE_SQ * a * e) {
                 s = glm::clamp((b * f - c * e) / denom, 0.0f, 1.0f);
@@ -257,16 +256,9 @@ int faceContact(const BoxShape& a, const BoxShape& b, int caseIndex, const glm::
 glm::vec3 closestOnSegmentToBox(const glm::vec3& pa, const glm::vec3& pb, const glm::vec3& h) {
     const glm::vec3 dir = pb - pa;
 
-    // Solved rather than iterated. The squared distance from the segment to the
-    // box is a piecewise quadratic in t: on any stretch where the same set of
-    // axes is outside the slab, the nearest point on the box moves affinely
-    // with t, so the distance is a parabola with one minimum. The breakpoints
-    // are where the segment crosses a slab plane - at most six - so evaluating
-    // each stretch exactly costs less than the alternating projection it
-    // replaces, and answers where that could not: projecting between two
-    // convex sets has fixed points that are not the nearest pair, and it
-    // settled on them often enough to report real millimetre overlaps as no
-    // contact at all.
+    // Solved rather than iterated: the squared distance from the segment to the
+    // box is a piecewise quadratic in t, and the breakpoints are where the segment
+    // crosses a slab plane - at most six, each stretch with one exact minimum.
     float cuts[8] = {0.0f, 1.0f};
     int cutCount = 2;
     for (int i = 0; i < 3; ++i) {
@@ -455,15 +447,9 @@ int contactBoxes(const BoxShape& a, const BoxShape& b, Contact* out) {
         for (int j = 0; j < 3; ++j)
             if (!tryAxis(glm::cross(a.axes[i], b.axes[j]), 6 + i * 3 + j)) return 0;
 
-    // An edge axis only wins over a face by a clear margin, never by float
-    // noise. Two horizontal edges of a box resting on another cross to a
-    // near-vertical axis - the face normal's own direction - and under a
-    // whisker of tilt that duplicate measures epsilon less overlap than the
-    // face it copies. Taken literally it turns a four-point face manifold into
-    // one corner contact, and a body held at one corner is a body the position
-    // correction rocks: it tips, the opposite corner becomes the contact, and
-    // it tips back, for ever. A genuine edge-edge crossing beats the face by
-    // far more than these margins.
+    // An edge axis wins over a face only by a clear margin, never by float noise:
+    // two box edges cross to a near-vertical duplicate of the face normal, and
+    // taken literally that turns a face manifold into a corner the solver rocks on.
     if (bestCase >= 6 && faceCase >= 0
         && bestOverlap >= faceOverlap * EDGE_PREFERENCE_REL - EDGE_PREFERENCE_ABS) {
         bestCase    = faceCase;

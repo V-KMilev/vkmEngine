@@ -334,16 +334,13 @@ bool gjkContact(const SupportShape& a, const SupportShape& b, Contact& out) {
         makeFace(t_hull, 1, 3, 2)
     });
 
-    // GJK has already proved the overlap, so from here every exit answers
-    // with a contact: an expansion that runs out of iterations, or meets a
-    // degenerate face, reports its best face so far rather than dropping an
-    // overlap it knows exists - which was a body free to tunnel on exactly
-    // the ticks the arithmetic was hardest.
+    // GJK has already proved the overlap, so every exit from here answers with a
+    // contact: running out of iterations or meeting a degenerate face reports the
+    // best face so far rather than dropping an overlap it knows exists.
     auto contactFromFace = [&](const Face& face) {
-        // Where on the two surfaces, not merely how far apart. A support
-        // point is whichever corner won a direction, which on a large flat
-        // body is metres from where the two actually meet - and an impulse
-        // applied there spins the body instead of stopping it.
+        // Where on the two surfaces, not merely how far apart: a support point is
+        // whichever corner won a direction, which on a large flat body is metres
+        // from where the two meet, and an impulse there spins it.
         const glm::vec3 onFace = face.normal * face.distance;
         const glm::vec3 weights = barycentric(onFace,
                                               t_hull[face.a].point,
@@ -417,10 +414,9 @@ bool gjkContact(const SupportShape& a, const SupportShape& b, Contact& out) {
     for (size_t i = 1; i < t_faces.size(); ++i) {
         if (t_faces[i].distance < t_faces[nearest].distance) nearest = i;
     }
-    // EPA runs only after GJK has already proved these shapes intersect, so
-    // "no overlap" is not an answer available here: a degenerate polytope means
-    // the depth is unmeasurable, not that the contact is absent. Reporting one
-    // is a body the solver never separates, and it sinks through.
+    // EPA runs only after GJK proved the shapes intersect, so "no overlap" is not
+    // an answer available here: a degenerate polytope means the depth is
+    // unmeasurable, and reporting none is a body the solver never separates.
     const auto usable = [](const Face& f) {
         return glm::dot(f.normal, f.normal) > glm::epsilon<float>();
     };
