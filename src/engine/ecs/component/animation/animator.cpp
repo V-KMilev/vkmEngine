@@ -2,7 +2,8 @@
 
 namespace Vkm::Engine {
 
-void Animator::crossFadeTo(Animator& animator, AnimationClipHandle clip, float seconds) {
+void Animator::crossFadeTo(Animator& animator, AnimationClipHandle clip, float seconds,
+                           bool looping) {
     // Already playing it: a caller asking for the clip that is running means
     // "keep going", not "start it again from zero".
     if (clip == animator.clip) return;
@@ -23,10 +24,12 @@ void Animator::crossFadeTo(Animator& animator, AnimationClipHandle clip, float s
         animator.fadeTime      = animator.time;
         animator.fadeRemaining = seconds;
         animator.fadeDuration  = seconds;
+        animator.fadeLooping   = animator.looping;
     }
 
     animator.clip    = clip;
     animator.time    = 0.0f;
+    animator.looping = looping;
     animator.playing = true;
 }
 
