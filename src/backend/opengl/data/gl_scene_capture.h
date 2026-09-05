@@ -90,7 +90,6 @@ class GLSceneCapture {
 
         GLCamera          m_camera;    ///< per-face camera UBO (binding 2)
         GLLights          m_lights;    ///< no-shadow lights SSBO (binding 0)
-        GLShadowData      m_noShadow;  ///< default-built: slotForLight() == -1 for every light
         GLInstanceBatcher m_batcher;   ///< instanced capture draws
 
         std::vector<const DrawableData*> m_opaque;

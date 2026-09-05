@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "pass/gl_depth_prepass.h"
 
 #include <GL/glew.h>

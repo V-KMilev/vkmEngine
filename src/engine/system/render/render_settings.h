@@ -27,25 +27,43 @@ enum class TextureFiltering : uint8_t {
 
 
 /**
+ * @brief Every output the composite pass can write, once.
+ *
+ * Three things are this list: the enum, the names the editor's combo shows, and
+ * the `MODE_*` constants the composite shader switches on. The third is a column
+ * here rather than something derived from the enum elsewhere, and the backend
+ * writes it into the shader prelude beside the `#version`.
+ *
+ * Columns: the enumerator, the label the editor shows, and the suffix the shader
+ * constant carries (`MODE_<suffix>`). The last two differ where a name reads
+ * better to a person than to a shader - "Light Clusters" against MODE_CLUSTERS -
+ * which is exactly what a mechanical derivation could not have known.
+ */
+#define VKM_RENDER_MODES(X)                                       \
+    X(Default,          "Default",           DEFAULT)             \
+    X(Depth,            "Depth",             DEPTH)               \
+    X(Normals,          "Normals",           NORMALS)             \
+    X(Roughness,        "Roughness",         ROUGHNESS)           \
+    X(Metalness,        "Metalness",         METALNESS)           \
+    X(AmbientOcclusion, "Ambient Occlusion", AMBIENT_OCCLUSION)   \
+    X(Bloom,            "Bloom",             BLOOM)               \
+    X(ShadowAtlas,      "Shadow Atlas",      SHADOW_ATLAS)        \
+    X(Fog,              "Fog",               FOG)                 \
+    X(GiOnly,           "GI Only",           GI_ONLY)             \
+    X(DirectOnly,       "Direct Only",       DIRECT_ONLY)         \
+    X(Clusters,         "Light Clusters",    CLUSTERS)
+
+/**
  * @brief What the composite pass writes to the screen.
  *
  * Default is the final tonemapped image; the rest blit an intermediate render
- * target for debugging. The MODE_* constants the composite shader switches on
- * are generated from this enum at configure time (render_modes.glsl).
+ * target for debugging - the indirect term alone, the direct sum alone, the
+ * Forward+ per-cluster light-count heatmap. Expanded from VKM_RENDER_MODES.
  */
 enum class RenderMode : uint8_t {
-    Default,
-    Depth,
-    Normals,
-    Roughness,
-    Metalness,
-    AmbientOcclusion,
-    Bloom,
-    ShadowAtlas,
-    Fog,
-    GiOnly,      ///< Indirect (ambient/IBL/GI) term only, tonemapped.
-    DirectOnly,  ///< Direct light sum only, tonemapped.
-    Clusters,    ///< Forward+ per-cluster light-count heatmap.
+#define VKM_RENDER_MODE_ENUMERATOR(name, label, glsl) name,
+    VKM_RENDER_MODES(VKM_RENDER_MODE_ENUMERATOR)
+#undef VKM_RENDER_MODE_ENUMERATOR
     Count,  ///< Enum size marker (reflection); not a selectable mode.
 };
 /**
@@ -107,6 +125,38 @@ struct RenderSettings {
 
 } // namespace Vkm::Engine
 
-VKM_ENUM_NAMES(::Vkm::Engine::RenderMode, "Default", "Depth", "Normals", "Roughness",
-               "Metalness", "Ambient Occlusion", "Bloom", "Shadow Atlas",
-               "Fog", "GI Only", "Direct Only", "Light Clusters")
+/**
+ * @brief The render fields a project ships, one (json-key, member) row each.
+ *
+ * One list, walked by both directions of both readers, so `project.json` and
+ * the editor can never drift about what a field is called.
+ *
+ * What is NOT here is the point of the split. `renderMode` selects a debug
+ * buffer and `grid` draws editor chrome: neither is a look anybody ships, and
+ * both stay in the editor's own settings. Everything else is the author's
+ * answer to what the game looks like, and by `ProjectPaths`' own test - "would
+ * you commit this?" - it is project data.
+ */
+template <typename Settings, typename Fn>
+void visitShippedRenderFields(Settings& r, Fn&& f) {
+    f("gtao",              r.gtao);
+    f("bloom",             r.bloom);
+    f("probes",            r.probes);
+    f("occlusionCulling",  r.occlusionCulling);
+    f("gtaoRadius",        r.gtaoRadius);
+    f("gtaoIntensity",     r.gtaoIntensity);
+    f("gtaoPower",         r.gtaoPower);
+    f("gtaoBias",          r.gtaoBias);
+    f("bloomStrength",     r.bloomStrength);
+    f("bloomThreshold",    r.bloomThreshold);
+    f("bloomKnee",         r.bloomKnee);
+    f("bloomRadius",       r.bloomRadius);
+    f("msaaSamples",       r.msaaSamples);
+    f("textureFiltering",  r.textureFiltering);
+    f("textureAnisotropy", r.textureAnisotropy);
+    f("shadowResolution",  r.shadowResolution);
+}
+
+#define VKM_RENDER_MODE_LABEL(name, label, glsl) label,
+VKM_ENUM_NAMES(::Vkm::Engine::RenderMode, VKM_RENDER_MODES(VKM_RENDER_MODE_LABEL))
+#undef VKM_RENDER_MODE_LABEL

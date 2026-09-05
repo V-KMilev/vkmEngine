@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "pass/gl_occlusion_cull_pass.h"
 
 #include <GL/glew.h>

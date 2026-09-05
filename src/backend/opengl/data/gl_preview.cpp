@@ -13,7 +13,7 @@
 
 #include "gl_context.h"
 #include "gl_shader.h"
-#include "texture/gl_texture.h"
+#include "gl_texture.h"
 
 #include "gl_view.h"
 #include "data/gl_ibl.h"
@@ -22,7 +22,7 @@
 #include "data/gl_scene_capture.h"
 #include "data/gl_shadow_atlas.h"
 #include "convention/gl_bindings.h"
-#include "generator/mesh_generators.h"
+#include "resource/generate/mesh_generators.h"
 #include "resource/resource_manager.h"
 #include "system/render/editor_render_hooks.h"
 #include "system/render/render_view.h"
@@ -72,7 +72,7 @@ void GLPreview::init() {
     m_composite = std::make_unique<Vkm::GL::Shader>("shaders/composite");
     m_skybox    = std::make_unique<Vkm::GL::Shader>("shaders/skybox");
     m_skyCube   = std::make_unique<GLMesh>(generateCube());
-    m_tri       = std::make_unique<Vkm::GL::ScreenTriangle>();
+    m_tri       = std::make_unique<ScreenTriangle>();
     m_scratch.resize(SCENE_SIZE, SCENE_SIZE);
 }
 
@@ -169,9 +169,9 @@ uint32_t GLPreview::render(Vkm::GL::Context& gl, GLView& glView, const GLIBL& ib
     cam.derive();
     m_camera.update(cam);
 
-    // m_noShadow is never built, so slotForLight() == -1 and the PBR shader
+    // An empty slot view answers -1 for every light, so the PBR shader
     // reads no shadow value (same trick as the probe baker).
-    m_lights.update(view.lights, m_noShadow);
+    m_lights.update(view.lights);
 
     m_scratch.bind(gl);
     gl.setDepthTest(true);

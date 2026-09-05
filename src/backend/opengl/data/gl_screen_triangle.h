@@ -4,7 +4,7 @@
 
 #include "gl_vertex_array.h"
 
-namespace Vkm::GL {
+namespace Vkm::Engine {
 
 /**
  * @brief Attribute-less full-screen triangle.
@@ -20,8 +20,10 @@ namespace Vkm::GL {
  *                                   for passes that loop over FBO mips /
  *                                   shaders while keeping the VAO bound.
  *
- * Lives in the backend rather than in vkmGL: a fullscreen-triangle draw is a
- * rendering idiom built on GL primitives, not a GL primitive itself.
+ * Lives in the backend, and in the backend's namespace: a fullscreen-triangle
+ * draw is a rendering idiom built on GL primitives, not a GL primitive itself.
+ * It sat in `Vkm::GL` while saying so, which is the one place a reader would
+ * have looked to disagree.
  */
 class ScreenTriangle {
     public:
@@ -47,17 +49,17 @@ class ScreenTriangle {
          * The VAO must already be bound: call bind() first, or draw() for the
          * one-shot case.
          */
-        void emit() const { glDrawArrays(GL_TRIANGLES, 0, 3); }
+        void emit() const { m_vao.drawArrays(GL_TRIANGLES, 0, 3); }
 
         /// One-shot fullscreen triangle: bind + emit + unbind.
         void draw() const {
             m_vao.bind();
-            glDrawArrays(GL_TRIANGLES, 0, 3);
+            m_vao.drawArrays(GL_TRIANGLES, 0, 3);
             m_vao.unbind();
         }
 
     private:
-        VertexArray m_vao;
+        Vkm::GL::VertexArray m_vao;
 };
 
-} // namespace Vkm::GL
+} // namespace Vkm::Engine

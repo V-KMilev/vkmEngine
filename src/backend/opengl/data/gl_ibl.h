@@ -5,7 +5,7 @@
 
 #include <GL/glew.h>
 
-#include "texture/gl_texture.h"
+#include "gl_texture.h"
 #include "gl_frame_buffer.h"
 #include "gl_texture_cube.h"
 #include "gl_context.h"
@@ -87,7 +87,7 @@ class GLIBL {
          */
         void attachEnvFace(const Vkm::GL::Context& gl, int face) const {
             m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
-                GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_envCube.id(), 0);
+                GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_envCube.getID(), 0);
             gl.setViewport(0, 0, ENV_SIZE, ENV_SIZE);
         }
         /**
@@ -103,7 +103,7 @@ class GLIBL {
          */
         void attachIrradianceFace(const Vkm::GL::Context& gl, int face) const {
             m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
-                GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_irradiance.id(), 0);
+                GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_irradiance.getID(), 0);
             gl.setViewport(0, 0, IRRADIANCE_SIZE, IRRADIANCE_SIZE);
         }
 
@@ -116,7 +116,7 @@ class GLIBL {
          */
         void attachPrefilterFace(const Vkm::GL::Context& gl, int face, int mip) const {
             m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
-                GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_prefilter.id(), mip);
+                GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_prefilter.getID(), mip);
             const int s = PREFILTER_SIZE >> mip;
             gl.setViewport(0, 0, s, s);
         }

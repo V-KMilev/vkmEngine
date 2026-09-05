@@ -108,7 +108,7 @@ class GLShadowPass : public GLPass {
         std::unique_ptr<Vkm::GL::Shader> m_depthCubeSkinned;   ///< The same, posed.
 
         const Vkm::GL::Shader*   m_bound = nullptr;  ///< The program that is current, reset each execute().
-        Vkm::GL::InstanceBuffer  m_instances;  ///< Per-caster model matrices (loc 4-7).
+        InstanceBuffer  m_instances;  ///< Per-caster model matrices (loc 4-7).
         std::vector<glm::mat4>   m_models;     ///< Flattened models of every surviving caster this tile/face.
 };
 

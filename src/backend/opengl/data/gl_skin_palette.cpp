@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "data/gl_skin_palette.h"
 
 #include "gl_shader_storage_buffer.h"

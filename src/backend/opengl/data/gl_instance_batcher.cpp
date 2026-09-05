@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "data/gl_instance_batcher.h"
 
 #include <algorithm>
@@ -28,8 +26,8 @@ bool byMaterialThenMesh(const DrawableData& a, const DrawableData& b) {
 void GLInstanceBatcher::append(const DrawableData& d, uint32_t runIndex) {
     m_models.push_back(d.model);
     m_normals.push_back(glm::mat4(d.normalMatrix));  // mat3 in the upper-left 3x3
-    m_bounds.emplace_back(d.worldMin, 0.0f);
-    m_bounds.emplace_back(d.worldMax, 0.0f);
+    m_bounds.emplace_back(d.world.min, 0.0f);
+    m_bounds.emplace_back(d.world.max, 0.0f);
     m_runOf.push_back(runIndex);
     if (m_skinning) m_skinBase.push_back(d.skinFirst);
 }

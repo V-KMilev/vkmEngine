@@ -37,15 +37,11 @@ class GLPass {
          * @brief Shared fullscreen-pass GL preamble: depth test, blending and face
          * culling all off. The post passes route through this so they can't
          * drift apart on which states they set.
+         *
+         * There is no matching epilogue: the backend resets depth test, blending
+         * and culling before every pass, so nothing a pass changes outlives it.
          */
         void beginFullscreen(Vkm::GL::Context& gl) const;
-
-        /**
-         * @brief Shared fullscreen-pass epilogue: re-enable depth testing (the
-         * following geometry pass sets its own func / write / cull). Mirrors
-         * beginFullscreen so the post passes don't each open-code the restore.
-         */
-        void endFullscreen(Vkm::GL::Context& gl) const;
 
         /**
          * @brief Move the scene into the colour chain if it is still on the

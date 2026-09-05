@@ -1,11 +1,9 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "data/gl_cube_convolver.h"
 
 #include "data/gl_mesh.h"
 #include "data/gl_cubemap.h"
 
-#include "generator/mesh_generators.h"
+#include "resource/generate/mesh_generators.h"
 
 namespace Vkm::Engine {
 

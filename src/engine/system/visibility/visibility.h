@@ -4,8 +4,12 @@
 
 #include <glm/glm.hpp>
 
+#include "core/math/bounds.h"
+
 #include "ecs/entity.h"
 #include "resource/asset/mesh_asset.h"
+
+
 
 namespace Vkm::Engine {
 
@@ -14,15 +18,14 @@ namespace Vkm::Engine {
  *
  * Combining the fields in one struct improves cache locality when iterating
  * visibility results (vs parallel vectors that cross cache lines). The AABB
- * is the result of localToWorldAABB on the mesh's local bounds with this
+ * is the result of Math::transform on the mesh's local bounds with this
  * entity's model matrix; picking consumes it directly instead of
  * re-transforming.
  */
 struct VisibleEntity {
     EntityId id;
     glm::mat4 model;
-    glm::vec3 worldMin{0.0f};
-    glm::vec3 worldMax{0.0f};
+    Math::AABB world;
 
     /**
      * @brief Geometry to draw, already resolved.

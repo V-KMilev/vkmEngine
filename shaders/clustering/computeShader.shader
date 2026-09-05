@@ -7,7 +7,6 @@
  * atomics - each cluster owns its own slot in the grid.
  */
 
-#include "../_generated/engine_config.glsl"  // CLUSTER_X/Y/Z, NUM_CLUSTERS, MAX_LIGHTS, MAX_LIGHTS_PER_CLUSTER
 #include "../_common/depth.glsl"
 
 // This pass fills the grid: take the writeonly cluster-grid variant.

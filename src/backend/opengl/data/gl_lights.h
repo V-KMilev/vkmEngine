@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 
 #include "core/engine_config.h"
+#include "data/gl_shadow_data.h"
 
 namespace Vkm::GL {
     class ShaderStorageBuffer;
@@ -13,7 +14,6 @@ namespace Vkm::GL {
 
 namespace Vkm::Engine {
     struct LightData;
-    class GLShadowData;
 }
 
 namespace Vkm::Engine {
@@ -76,7 +76,16 @@ class GLLights {
         GLLights& operator=(GLLights && other) = delete;
 
     public:
-        void update(const std::vector<LightData>& lights, const GLShadowData& shadow);
+        /**
+         * @brief Upload the frame's light list, tagging each with its shadow slot.
+         *
+         * @param lights      The frame's lights, capped at MAX_LIGHTS.
+         * @param shadowSlots Each light's slot in the shadow atlas; a default one
+         *                    means "none of them cast", which is what a preview
+         *                    or a probe capture wants.
+         */
+        void update(const std::vector<LightData>& lights,
+                    GLShadowData::LightSlots shadowSlots = {});
 
     private:
         std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_ssbo;

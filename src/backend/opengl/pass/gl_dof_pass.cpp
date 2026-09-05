@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "pass/gl_dof_pass.h"
 
 #include <GL/glew.h>
@@ -50,7 +48,6 @@ void GLDoFPass::execute(GLFrameContext& ctx) {
     ctx.screenTri.draw();
 
     ctx.flipColor();
-    endFullscreen(ctx.gl);
 }
 
 } // namespace Vkm::Engine

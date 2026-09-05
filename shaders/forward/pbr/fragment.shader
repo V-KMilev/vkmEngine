@@ -12,7 +12,6 @@
  * program for all materials (there is no compile-time variant cache).
  */
 
-#include "../../_generated/engine_config.glsl"  // MAX_LIGHTS, MAX_SHADOW_CASTERS_2D/_CUBE (generated from engine_config.h)
 #include "../../_common/lights.glsl"            // Light + LightsBlock + cluster grid + LIGHT_* + falloff
 #include "../../_common/depth.glsl"
 #include "../../_common/normal_codec.glsl"           // signNotZero, octDecode (GTAO bent normal)
@@ -292,7 +291,6 @@ float specularAA(vec3 N, float roughness) {
 
 #include "../../_common/brdf.glsl"  // distributionGGX (takes the GGX alpha)
 #include "../../_common/sh_l1.glsl"  // SH_Y*/SH_A*: the irradiance-volume projection <-> evaluation contract
-#include "../../_generated/render_modes.glsl"  // MODE_*, generated from the RenderMode enum
 
 // Height-correlated Smith visibility (already folds in the 1/(4 NoL NoV)).
 float visSmithCorrelated(float NdotV, float NdotL, float a) {

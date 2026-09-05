@@ -5,7 +5,7 @@
 
 #include <GL/glew.h>
 
-#include "texture/gl_texture.h"
+#include "gl_texture.h"
 #include "gl_frame_buffer.h"
 #include "gl_context.h"
 #include "gl_texture_cube.h"
@@ -81,7 +81,7 @@ class GLProbeArray {
          */
         void attachEnvFace(const Vkm::GL::Context& gl, int face) const {
             m_fbo->attachTexture2D(GL_COLOR_ATTACHMENT0,
-                GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_env.id(), 0);
+                GL_TEXTURE_CUBE_MAP_POSITIVE_X + face, m_env.getID(), 0);
             gl.setViewport(0, 0, m_envSize, m_envSize);
         }
         void generateEnvMips() const { m_env.generateMipmaps(); }

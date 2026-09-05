@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "RENDER"
-
 #include "system/render/render_view.h"
 
 #include <algorithm>
@@ -90,17 +88,24 @@ void RenderView::build(
     splash = splashFrame ? *splashFrame : SplashFrame{};
 
     if (!visibility.hasCamera) {
-        // No camera this frame: emit an empty snapshot, not a stale one.
-        drawables.clear();
-        lights.clear();
-        shadowCasters.clear();
-        probes.clear();
-        decals.clear();
-        particlesAdditive.clear();
-        particlesAlpha.clear();
-        irradianceVolumes.clear();
-        skinMatrices.clear();
-        casterSkins.clear();
+        // No camera this frame: an empty snapshot, not a stale one. Naming every
+        // member keeps it true, since a new list stops this compiling. The camera
+        // stands - half the passes read it, and a zeroed one is singular.
+        [[maybe_unused]] auto& [vpX, vpY, vpW, vpH, surfaceW, surfaceH, cameraData,
+            drawList, casterList, lightList, probeList, decalList, particlesAdd,
+            particlesBlend, volumeList, palettes, casterPalettes, renderSettings,
+            env, uiOverlay, splashState, epoch] = *this;
+
+        drawList.clear();
+        casterList.clear();
+        lightList.clear();
+        probeList.clear();
+        decalList.clear();
+        particlesAdd.clear();
+        particlesBlend.clear();
+        volumeList.clear();
+        palettes.clear();
+        casterPalettes.clear();
         return;
     }
 
@@ -195,6 +200,8 @@ void RenderView::buildDecals(const Scene& scene) {
 
     scene.forEach<Decal, Transform>(
         [&](EntityId id, const Decal& decal, const Transform& transform) {
+            if (!decal.enabled) return;
+
             const glm::mat4 model = resolvedWorldMatrix(scene, id, transform);
             decals.push_back({ model, glm::inverse(model), decal.material, decal.angleFade, decal.opacity });
         });
@@ -262,8 +269,8 @@ void RenderView::buildDrawables(const Scene& scene, const Visibility& visibility
         drawable.model        = entry.model;
         // Inverse-transpose once per drawable here, not per vertex in two shaders.
         drawable.normalMatrix = glm::transpose(glm::inverse(glm::mat3(entry.model)));
-        drawable.worldMin     = entry.worldMin;
-        drawable.worldMax     = entry.worldMax;
+        drawable.world.min     = entry.world.min;
+        drawable.world.max     = entry.world.max;
         drawable.castShadows  = mesh.castShadows;
         if (poses) {
             appendPose(*poses, entry.id, skinMatrices, drawable.skinFirst, drawable.skinCount);
@@ -292,8 +299,8 @@ void RenderView::buildShadowCasters(const Scene& scene, const Visibility& visibi
         ShadowCasterData caster;
         caster.mesh    = entry.mesh;
         caster.model   = entry.model;
-        caster.aabbMin = entry.worldMin;
-        caster.aabbMax = entry.worldMax;
+        caster.aabbMin = entry.world.min;
+        caster.aabbMax = entry.world.max;
         shadowCasters.push_back(caster);
 
         // Pushed in the same step as the caster it belongs to, because the two

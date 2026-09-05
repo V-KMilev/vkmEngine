@@ -9,12 +9,12 @@
 #include "logger.h"
 
 #include "gl_context.h"
-#include "texture/gl_texture.h"
-#include "target/gl_render_buffer.h"
+#include "gl_texture.h"
+#include "gl_render_buffer.h"
 
 namespace Vkm::Engine {
 
-GLTarget::GLTarget() = default;
+GLTarget::GLTarget(Layout layout) : m_layout(layout) {}
 GLTarget::~GLTarget() = default;
 
 namespace {
@@ -33,15 +33,6 @@ std::unique_ptr<Vkm::GL::Texture2D> makeTarget2D(
 }
 } // namespace
 
-void GLTarget::setSamples(uint32_t samples, const Vkm::GL::Context& gl) {
-    // Clamp to the driver cap (cached inside the Context); 1 keeps the
-    // single-sample path.
-    samples = std::clamp(samples, 1u, static_cast<uint32_t>(gl.maxSamples()));
-    if (samples == m_samples) return;
-    m_samples = samples;
-    m_width   = 0;  // force a rebuild on the next resize (dimensions unchanged)
-}
-
 void GLTarget::release() {
     // Deleting an attachment detaches it; the FBO object survives for the next
     // resize to re-attach to.
@@ -53,6 +44,18 @@ void GLTarget::release() {
     m_gbufferRB.reset();
     m_width  = 0;
     m_height = 0;
+}
+
+void GLTarget::resize(uint32_t width, uint32_t height, uint32_t samples,
+                      const Vkm::GL::Context& gl) {
+    // Clamp to the driver cap (cached inside the Context); 1 keeps the
+    // single-sample path.
+    samples = std::clamp(samples, 1u, static_cast<uint32_t>(gl.maxSamples()));
+    if (samples != m_samples) {
+        m_samples = samples;
+        m_width   = 0;  // force a rebuild below, even at unchanged dimensions
+    }
+    resize(width, height);
 }
 
 void GLTarget::resize(uint32_t width, uint32_t height) {
@@ -79,7 +82,7 @@ void GLTarget::resize(uint32_t width, uint32_t height) {
         m_depthRB->storageMultisample(s, GL_DEPTH_COMPONENT24, w, h);
         m_fbo.attachRenderBuffer(GL_DEPTH_ATTACHMENT, m_depthRB->getID());
 
-        if (m_hasGBuffer) {
+        if (m_layout == Layout::ColorDepthGBuffer) {
             m_gbufferRB = std::make_unique<Vkm::GL::RenderBuffer>();
             m_gbufferRB->storageMultisample(s, GL_RGBA16F, w, h);
             m_fbo.attachRenderBuffer(GL_COLOR_ATTACHMENT1, m_gbufferRB->getID());
@@ -91,13 +94,13 @@ void GLTarget::resize(uint32_t width, uint32_t height) {
 
         m_fbo.attachTexture2D(GL_COLOR_ATTACHMENT0, m_color->getID());
 
-        if (!m_colorOnly) {
+        if (m_layout != Layout::Color) {
             // Sampleable depth (24-bit), nearest so the post passes read exact depths.
             m_depth = makeTarget2D("scene_depth", width, height, GL_DEPTH_COMPONENT24, GL_DEPTH_COMPONENT);
             m_fbo.attachTexture2D(GL_DEPTH_ATTACHMENT, m_depth->getID());
         }
 
-        if (m_hasGBuffer) {
+        if (m_layout == Layout::ColorDepthGBuffer) {
             // View normal (octahedral) in rg, roughness in b, metalness in a.
             m_gbuffer = makeTarget2D("scene_gbuffer", width, height, GL_RGBA16F, GL_RGBA);
             m_fbo.attachTexture2D(GL_COLOR_ATTACHMENT1, m_gbuffer->getID());
@@ -124,7 +127,7 @@ void GLTarget::bindGBufferPass(const Vkm::GL::Context& gl) {
 
 void GLTarget::clearForFrame(const Vkm::GL::Context& gl) {
     m_fbo.bind();
-    if (m_hasGBuffer) {
+    if (m_layout == Layout::ColorDepthGBuffer) {
         const GLenum buffers[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
         m_fbo.setDrawBuffers(buffers, 2);
     } else {
@@ -181,7 +184,7 @@ void GLTarget::resolveGeometryTo(GLTarget& dst, bool gbuffer) {
     // G-buffer (colour attachment 1): the read-buffer / draw-buffer selection is
     // per-framebuffer state that persists across binds, so set each on its own
     // FBO first, then split the read (this) and draw (dst) binds for the blit.
-    if (gbuffer && m_hasGBuffer && dst.m_gbuffer) {
+    if (gbuffer && m_layout == Layout::ColorDepthGBuffer && dst.m_gbuffer) {
         m_fbo.setReadBuffer(GL_COLOR_ATTACHMENT1);       // this: read from colour 1
         dst.m_fbo.setDrawBuffer(GL_COLOR_ATTACHMENT1);   // dst: draw into colour 1 (draw FBO = dst)
         m_fbo.bind(GL_READ_FRAMEBUFFER);                 // read FBO = this (read buffer persists)

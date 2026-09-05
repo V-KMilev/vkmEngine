@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "pass/gl_bloom_pass.h"
 
 #include <GL/glew.h>
@@ -70,7 +68,6 @@ void GLBloomPass::execute(GLFrameContext& ctx) {
 
     ctx.screenTri.unbind();
     bloom.unbindFbo();
-    endFullscreen(ctx.gl);
 }
 
 } // namespace Vkm::Engine

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/reflect.h"
+
 #include "resource/asset/material_asset.h"
 
 namespace Vkm::Engine {
@@ -19,6 +21,24 @@ struct Decal {
     MaterialHandle material;          ///< Decal material; its albedo (with alpha) is projected.
     float          angleFade = 0.5f;  ///< Fade width where the surface normal turns away from the projector (0 = hard cut).
     float          opacity   = 1.0f;  ///< Overall blend strength.
+
+    /**
+     * @brief Whether this projector is in the frame at all.
+     *
+     * The same flag Light and ParticleEmitter carry, for the same reason: a
+     * decal turned off is not one drawn at zero opacity - it is one the pass
+     * never sees, so it costs nothing. Without it the only way to take a
+     * projector out was to remove the component and add it back, which loses
+     * everything authored on it.
+     */
+    bool enabled = true;
 };
 
 } // namespace Vkm::Engine
+
+VKM_REFLECT_BEGIN(::Vkm::Engine::Decal)
+    VKM_F(material),
+    VKM_F(angleFade),
+    VKM_F(opacity),
+    VKM_F(enabled)
+VKM_REFLECT_END()

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/math/bounds.h"
+
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 
@@ -23,28 +25,24 @@ namespace ScreenSizeCuller {
  * where screenSizeThresholdSq = (minPixels / (projScaleY * viewportHeight))^2
  * is pre-computed once per frame in VisibilityContext.
  *
- * @param boundsMin World-space AABB minimum.
- * @param boundsMax World-space AABB maximum.
+ * @param bounds World-space AABB.
  * @param context VisibilityContext with view, screenSizeThresholdSq.
  */
 inline bool isVisible(
-    const glm::vec3& boundsMin,
-    const glm::vec3& boundsMax,
+    const Math::AABB& bounds,
     const VisibilityContext& context
 ) {
     if (context.minPixels <= 0.0f) {
         return true;
     }
 
-    const glm::vec3 worldCenter = (boundsMin + boundsMax) * 0.5f;
-    const glm::vec3 worldHalfExtent = (boundsMax - boundsMin) * 0.5f;
+    const glm::vec3 worldCenter     = bounds.center();
+    const glm::vec3 worldHalfExtent = bounds.halfExtent();
     const float worldRadiusSq = glm::dot(worldHalfExtent, worldHalfExtent);
 
     // Perspective only: this compares a world radius against a threshold that
     // grows with depth, which is what apparent size does under a perspective
-    // divide and is not what it does under an orthographic one - there a
-    // distant object is exactly as large on screen as a near one. Applied to an
-    // orthographic view it would delete geometry that fills the viewport.
+    // divide. Under an orthographic one it would delete what fills the viewport.
     if (!context.perspective) {
         return true;
     }
