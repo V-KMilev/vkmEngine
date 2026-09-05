@@ -1,3 +1,5 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ec7b08f3e40939ae9caed8d2ace84300b99c3747de1e23bfe93f52250a4a9b63
-size 731
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- VKM Engine logo - small (VKM monogram only), straight-line vector. Ink #141414 for light backgrounds. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="61.5 -1.8 316.7 316.7" shape-rendering="geometricPrecision">
+  <g fill="#141414" fill-rule="evenodd"><path d="M 171.8,42.8 L 145.2,59.8 L 145.0,218.2 L 114.5,199.2 L 114.5,78.8 L 87.5,95.5 L 87.5,216.8 L 172.2,270.0 Z"/><path d="M 207.8,20.0 L 181.8,37.0 L 181.8,276.2 L 208.5,293.0 L 209.0,195.2 L 248.5,281.5 L 271.2,267.5 L 222.5,157.5 L 272.0,45.2 L 249.0,32.0 L 209.0,119.8 Z"/><path d="M 276.8,48.2 L 277.5,264.0 L 303.5,247.5 L 303.8,100.2 L 313.8,136.5 L 324.8,112.2 L 324.8,233.5 L 352.2,217.0 L 352.2,95.8 Z"/></g>
+</svg>
