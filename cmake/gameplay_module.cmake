@@ -1,4 +1,4 @@
-# vkm_add_gameplay_module(<name> SOURCES <files> [OUTPUT_NAME <n>] [PROJECT_DIR <d>])
+# vkm_add_gameplay_module(<name> SOURCES <files> [PROJECT_DIR <d>])
 #
 # The one recipe for the one shared library a project loads. Every project's
 # module is built the same way, so the SDK provides it rather than asking each
@@ -8,15 +8,17 @@
 # Included twice: by the top-level CMakeLists for the examples in this tree, and
 # by vkmEngineConfig.cmake for a project that found the engine. It names only
 # vkmEngine:: targets, which exist in both.
+#
+# The file is always called `game`. Every host resolves the module by that name
+# (project_boot.cpp, through DynamicLibrary::platformName), so a project that
+# named its output something else built a library nothing would ever load - the
+# parameter that allowed it was a second answer to a question with one.
 
 function(vkm_add_gameplay_module TARGET)
-    cmake_parse_arguments(VKM "" "OUTPUT_NAME;PROJECT_DIR" "SOURCES" ${ARGN})
+    cmake_parse_arguments(VKM "" "PROJECT_DIR" "SOURCES" ${ARGN})
 
     if(NOT VKM_SOURCES)
         message(FATAL_ERROR "vkm_add_gameplay_module(${TARGET}): SOURCES is required")
-    endif()
-    if(NOT VKM_OUTPUT_NAME)
-        set(VKM_OUTPUT_NAME game)
     endif()
     if(NOT VKM_PROJECT_DIR)
         set(VKM_PROJECT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
@@ -34,7 +36,7 @@ function(vkm_add_gameplay_module TARGET)
     # global default puts every project's import library in one directory under
     # the same name, and two projects configured in one tree collide there.
     set_target_properties(${TARGET} PROPERTIES
-        OUTPUT_NAME              ${VKM_OUTPUT_NAME}
+        OUTPUT_NAME              game
         RUNTIME_OUTPUT_DIRECTORY ${VKM_PROJECT_DIR}/bin
         LIBRARY_OUTPUT_DIRECTORY ${VKM_PROJECT_DIR}/bin
         ARCHIVE_OUTPUT_DIRECTORY ${VKM_PROJECT_DIR}/bin

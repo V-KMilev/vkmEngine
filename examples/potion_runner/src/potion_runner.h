@@ -16,61 +16,33 @@
 namespace Vkm::Engine {
 
 /**
- * @brief A Subway-Surfers-style endless runner, built as a single self-contained
+ * @brief A Subway-Surfers-style endless runner, built as one self-contained
  *        Behavior.
  *
  * Attach one instance to an otherwise empty "game" entity (see
- * src/game_module.cpp). On the first play tick it builds the whole visual
- * world procedurally from one in-code cube mesh - the ground, glowing side
- * pillars and high overhead arches, the player, pooled obstacles and coins -
- * then drives gameplay every frame.
+ * src/game_module.cpp). On the first play tick it builds the whole visual world
+ * procedurally from one in-code cube mesh - ground, pillars, arches, the player,
+ * pooled obstacles and coins - then drives gameplay every frame.
  *
- * Obstacles come in three flavours: hurdles you jump over, barriers you must
- * dodge by lane, and trains - tall metro cars (three liveries, lit windows,
- * tail lights) you board by running up the white ramp on a steady train's
- * nose; the jump is deliberately too short to reach a roof from the ground.
- * Coins sitting on a train roof are only reachable while riding and pay
- * double. Every so often a train starts a CONVOY: the next few obstacle
- * recycles become trains in the same lane with hoppable gaps, so the best
- * line is up on the roofs, leaping car to car - the Subway-Surfers elevated
- * stretch.
+ * Obstacles are hurdles to jump, barriers to dodge by lane, and trains to board
+ * up the ramp on a steady car's nose; the jump is deliberately too short to
+ * reach a roof from the ground, and roof coins pay double. Every so often a
+ * train starts a convoy - the next few recycles become trains in one lane with
+ * hoppable gaps - so the best line is up on the roofs.
  *
- * Beyond behaviors + UI, the game leans on the rest of the engine:
- *  - SkeletalAnimationSystem: one Animator on the player plays a looping stride
- *    clip (built in code, see runner_rig.h) whose cadence follows the run speed;
- *    the four limbs hang off its bones through BoneSockets. The clip carries a
- *    footstep marker at each footfall, so crossing one publishes an
- *    AnimationEvent and the runner's footsteps come from the animation rather
- *    than from a timer running beside it.
- *  - AnimationSystem: looping eased tracks drive every coin's spin/pulse.
- *  - AudioSystem: an AudioListener on the chase camera, and two synthesized
- *    clips (proc_audio.h) played as PlaySoundEvent requests rather than
- *    through an AudioSource. A footstep on each marker the stride announces -
- *    but only while alive and grounded, because what a marker means is
- *    gameplay's to decide - and a chime on each coin. Neither can be a source:
- *    footfalls at top speed arrive closer together than one speaker can
- *    retrigger, and so do the coins in a lane of four, so a shared source on
- *    the player would swallow every ping after the first - while a collected
- *    coin is switched off the instant it pays, leaving nothing to ride.
- *  - Lighting: point pools under the ceiling luminaires and spot headlights on
- *    trains (toggled per recycle via Light::enabled). Every light has a visible
- *    fixture emitting it. Sunless, the headlight spots take the 2D shadow
- *    atlas; scrollWorld hands the two cube slots to the ceiling lights nearest
- *    the player.
- *  - Physics: the player is a DYNAMIC body (freezeRotation keeps it upright).
- *    The solver owns gravity, jumps, landings and roof support against
- *    kinematic hull colliders; crashes are CollisionEvents with a non-top
- *    contact normal, coin pickup is a TriggerEvent, and death just unfreezes
- *    rotation to turn the same body into the crash ragdoll. The behavior owns
- *    the lateral axes (lane, bank, crouch refit) plus the ramp slope assist -
- *    the one interaction every character controller special-cases in code.
- *  - Camera component: fovY widens with speed; the crash needs no camera
- *    gimmicks - the ragdoll's launch, tumble and bounces are all solver output.
+ * What it leans on beyond behaviors and UI: a stride clip whose footstep markers
+ * publish AnimationEvents (so footsteps come from the animation, not a timer
+ * beside it); eased tracks spinning the coins; two synthesized clips played as
+ * PlaySoundEvent requests rather than through an AudioSource, because footfalls
+ * and coins arrive closer together than one source can retrigger; point pools
+ * and train headlights, each with a visible fixture; and a DYNAMIC player body
+ * the solver owns in gravity, jumps and landings, where death is unfreezing its
+ * rotation into a ragdoll. The behavior owns the lateral axes and the ramp
+ * assist - the interaction every character controller special-cases.
  *
- * One behavior owns all gameplay state, so there is no cross-behavior wiring,
- * and the persisted scene stays trivial (a camera and this entity) -
- * every mesh and material is runtime-generated and never serialized, keeping
- * the editor's play snapshot/restore cheap.
+ * One behavior owns all gameplay state, so nothing is wired between behaviors
+ * and the persisted scene stays trivial: a camera and this entity, with every
+ * mesh and material generated at runtime and never serialized.
  *
  * Controls: A/D or Left/Right switch lane, Space/W/Up jump, S/Down/Ctrl slide,
  * R or Enter restart.
@@ -354,9 +326,13 @@ class PotionRunner : public ReflectedBehavior<PotionRunner> {
         bool m_edgeJump    = false;
         bool m_edgeRestart = false;
 
-        /// Engine PCG32 (core/math/random.h), reseeded with RUN_SEED every run
-        /// so the track deals the same layout each time. Never cloned: clone()
-        /// copies only reflected fields, and a fresh run reseeds anyway.
+        /**
+         * @brief The track's layout stream.
+         *
+         * Engine PCG32, reseeded with RUN_SEED every run so the track deals the
+         * same layout each time. Never cloned: clone() copies only reflected
+         * fields, and a fresh run reseeds anyway.
+         */
         Math::Rng m_rng;
 };
 

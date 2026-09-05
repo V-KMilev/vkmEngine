@@ -7,11 +7,12 @@ namespace Vkm::Engine {
 /**
  * @brief Procedural sound for gameplay code, built without the tools module.
  *
- * The sibling of proc_mesh.h, and there for the same reason: an SDK installs
- * src/engine and nothing else, so a project cannot reach the importers - and
- * this project ships no audio file to import anyway, because its whole world is
- * generated. A clip is interleaved PCM and a rate, so a game can build one the
- * way it builds a cube.
+ * Here because the engine has no audio equivalent of its mesh generators: a
+ * project cannot reach the importers, and this one ships no audio file to
+ * import anyway, because its whole world is generated. A clip is interleaved
+ * PCM and a rate, so a game can build one the way it builds a cube - which it
+ * now does through the engine's own generateCube, this file's mesh sibling
+ * having moved into `resource/generate` where both examples could share it.
  */
 
 /**

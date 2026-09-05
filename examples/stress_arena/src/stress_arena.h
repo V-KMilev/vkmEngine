@@ -15,64 +15,29 @@ namespace Vkm::Engine {
 /**
  * @brief A profiling load: one scene that drives every engine subsystem at once.
  *
- * Built for capture, not for play. The point is to put the whole pipeline under
- * simultaneous, *representative* load - a daylit city block dense with geometry,
- * lights, shadows, transparency, particles, decals, physics and UI - so a Tracy
- * capture shows where frame time actually goes when nothing is idle. A scene
- * that stresses one subsystem at a time hides exactly the interactions worth
- * finding (shadow casters inflating the visibility pass, transparent draws
- * serialising behind the depth prepass, probe re-bakes landing on a frame that
- * was already long).
+ * Built for capture, not for play. The point is simultaneous, *representative*
+ * load - a daylit city block dense with geometry, lights, shadows, transparency,
+ * particles, decals, physics and UI - so a Tracy capture shows where frame time
+ * actually goes when nothing is idle. A scene that stresses one subsystem at a
+ * time hides the interactions worth finding: shadow casters inflating the
+ * visibility pass, transparent draws serialising behind the depth prepass, a
+ * probe re-bake landing on a frame that was already long.
  *
- * Just as important, almost nothing here holds still. A static scene is the easy
- * case for most of the pipeline: the cluster grid keeps its bins between frames,
- * culling sets barely change, instanced batches keep their membership, and the
- * ECS never allocates - so a still benchmark reports numbers a real game never
- * sees. Lights patrol, drones fly articulated rigs through the frustum, debris
- * spawns and dies continuously, the physics pile is blasted apart before it can
- * settle, and a few materials are rewritten every frame. See the motion dials.
+ * Attach one instance to an otherwise empty entity; the project's module seeds
+ * that entity in vkmBuildScene. On the first play tick it generates the world
+ * from three in-code meshes plus whatever the project has cooked, off a fixed
+ * seed and never touching the disk for the procedural half - so a given build
+ * produces the same load on every machine and two captures are comparable.
  *
- * Attach one instance to an otherwise empty entity; the project's module
- * seeds that entity in vkmBuildScene.
- * On the first play tick it generates the world procedurally from three in-code
- * meshes plus whatever the project has cooked, then drives it every frame. The
- * procedural half never touches the disk and the whole scene runs off a fixed
- * seed, so a given build produces the same load on every machine and every run -
- * two captures are comparable.
+ * Each dial below names the zone it loads. They are read once, at build, so a
+ * change needs a play restart, and the motion dials are what keep the scene out
+ * of the easy case a still benchmark measures.
  *
- * What each dial reaches, and the zone to watch in Tracy:
- *  - @ref propCount    - drawables. VisibilitySystem (cull), GLInstanceBatcher
- *                        (merge), GPU.Forward. Props share three meshes and a
- *                        small material palette, so this measures the batcher's
- *                        best case; @ref uniqueMaterials breaks it deliberately.
- *  - @ref towerCount   - static occluders with depth complexity: GPU.DepthPrepass
- *                        and GPU.GTAO care, the batcher does not.
- *  - @ref lightCount   - GPU.Cluster (light binning) and the forward pass's
- *                        per-cluster loop. The Forward+ path is what this exists
- *                        to bend.
- *  - @ref shadowLights - GPU.Shadow, one atlas tile per caster, plus the
- *                        shadow-caster gather on the CPU. The most expensive
- *                        dial per unit; keep it low unless it is the subject.
- *  - @ref emitterCount - ParticleSystem (CPU integration) and GPU.Particle
- *                        (sorted transparent billboards).
- *  - @ref decalCount   - GPU.Decal, which re-reads depth per projector.
- *  - @ref physicsBodies- PhysicsSystem: broadphase, narrowphase, and a solver
- *                        running @ref Environment::solverIterations passes on a
- *                        pile that never fully settles.
- *  - @ref animatedCount- AnimationSystem track evaluation + the HierarchySystem
- *                        walk their dirty transforms force.
- *  - @ref uiWidgetCount- UISystem layout and GPU.UI.
- *
- * Two capture modes, because they answer different questions. The scripted
- * camera (default) flies a fixed loop, so frame N of one capture is the same
- * viewpoint as frame N of the next and a regression shows up as a diff rather
- * than as noise. Press F to take manual control when a spike needs chasing to a
- * specific spot; the scripted path resumes from where it left off.
- *
- * Number keys toggle one subsystem each at runtime (see @ref readInput). That is
- * the fast attribution loop: hold a Tracy capture open, toggle a subsystem, and
- * read the delta off the frame graph directly instead of rebuilding with new
- * dial values.
+ * The scripted camera flies a fixed loop, so frame N of one capture is frame N
+ * of the next and a regression is a diff rather than noise; F takes manual
+ * control and the path resumes where it left off. The number keys toggle one
+ * subsystem each (@ref readInput), which reads its cost off an open capture
+ * instead of rebuilding with new dial values.
  */
 class StressArena : public ReflectedBehavior<StressArena> {
     public:
@@ -85,15 +50,15 @@ class StressArena : public ReflectedBehavior<StressArena> {
         // trivially dominates on a mid-range GPU - the state where the profile is
         // actually informative. Raise one at a time; they are read once, at
         // build, so a change needs a play restart.
-        int propCount = 4000;      ///< Scattered instanced props (cube/sphere/cylinder).
-        int towerCount = 180;      ///< Buildings, each a stack of boxes.
-        int lightCount = 220;      ///< Point + spot lights bound into the cluster grid.
-        int shadowLights = 6;      ///< How many of those cast shadows (atlas tiles).
-        int emitterCount = 40;     ///< Particle emitters (half additive sparks, half alpha smoke).
-        int decalCount = 80;       ///< Projected decals on the ground plane.
-        int physicsBodies = 220;   ///< Dynamic rigidbodies tumbling in the central pit.
-        int animatedCount = 1500;  ///< Props carrying an Animation track (a subset of propCount).
-        int uiWidgetCount = 48;    ///< HUD text/image widgets laid out every frame.
+        int propCount = 4000;      ///< Instanced props: VisibilitySystem, GLInstanceBatcher, GPU.Forward.
+        int towerCount = 180;      ///< Box-stack occluders, for GPU.DepthPrepass and GPU.GTAO.
+        int lightCount = 220;      ///< Point + spot lights: GPU.Cluster and the forward per-cluster loop.
+        int shadowLights = 6;      ///< How many of those cast: GPU.Shadow, one atlas tile each.
+        int emitterCount = 40;     ///< Emitters, half additive: ParticleSystem and GPU.Particle.
+        int decalCount = 80;       ///< Ground decals: GPU.Decal, which re-reads depth per projector.
+        int physicsBodies = 220;   ///< Bodies in the central pit: PhysicsSystem, broadphase to solver.
+        int animatedCount = 1500;  ///< Props with a track: AnimationSystem, and the transforms it dirties.
+        int uiWidgetCount = 48;    ///< HUD widgets laid out every frame: UISystem and GPU.UI.
         int reflectionProbes = 4;  ///< Reflection probes; each re-bakes six faces when it first appears.
         /**
          * @brief Instances of real cooked models scattered through the arena.
@@ -129,11 +94,9 @@ class StressArena : public ReflectedBehavior<StressArena> {
          */
         int uniqueMaterials = 12;
 
-        // Motion. A static scene is the easy case for most of the pipeline and
-        // hides the costs worth finding: the cluster grid stays coherent between
-        // frames, culling sets barely change, instanced batches keep their
-        // membership, and the ECS never allocates. These dials break all of that
-        // on purpose.
+        // Motion. A static scene is the easy case - the cluster grid stays
+        // coherent, culling sets barely change, batches keep their membership and
+        // the ECS never allocates. These dials break all of that on purpose.
 
         /**
          * @brief Lights that patrol an orbit instead of standing still.
@@ -373,16 +336,22 @@ class StressArena : public ReflectedBehavior<StressArena> {
         bool m_fogOn        = true;
         bool m_uiOn         = true;
 
-        /// Fixed seed, and used only while building: the whole world is placed
-        /// before the first update, so the layout is identical on every run and
-        /// two captures of the same build are comparable frame for frame.
+        /**
+         * @brief The build-time placement stream.
+         *
+         * Fixed seed, and used only while building: the whole world is placed
+         * before the first update, so two captures of one build are comparable
+         * frame for frame.
+         */
         Math::Rng m_rng;
 
-        /// Separate stream for the runtime churn. How many debris pieces spawn
-        /// in a given frame depends on that frame's dt, so drawing them from
-        /// m_rng would let frame pacing perturb the sequence - and a machine
-        /// that ran slightly faster would get a different world. Splitting the
-        /// streams keeps the build-time layout provably untouched by timing.
+        /**
+         * @brief The runtime churn stream, separate on purpose.
+         *
+         * How many debris pieces spawn in a frame depends on that frame's dt, so
+         * drawing them from m_rng would let frame pacing perturb the sequence and
+         * a faster machine would get a different world.
+         */
         Math::Rng m_churnRng;
 };
 } // namespace Vkm::Engine
