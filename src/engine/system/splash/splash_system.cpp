@@ -11,8 +11,6 @@
 
 #include "core/clock.h"
 #include "debug/profiler.h"
-#include "io/project.h"
-#include "io/project_paths.h"
 
 namespace Vkm::Engine {
 
@@ -34,14 +32,6 @@ void SplashSystem::add(const std::string& path, float hold) {
         return;
     }
     m_entries.push_back({path, hold});
-}
-
-void SplashSystem::init(FrameContext&) {
-    Project project;
-    loadProject(ProjectPaths::projectRoot(), project);
-    for (const SplashEntry& entry : project.splash) {
-        add(ProjectPaths::resolveProjectPath(entry.image).string(), entry.seconds);
-    }
 }
 
 void SplashSystem::update(FrameContext& ctx) {
