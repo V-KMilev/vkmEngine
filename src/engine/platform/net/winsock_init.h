@@ -18,12 +18,8 @@ namespace Vkm::Engine {
  *
  * A no-op returning true everywhere else, so callers have no platform branch.
  *
- * Every file that includes a winsock header needs the same three defines before
- * it, and NOGDI is the one that is not optional: winsock2.h pulls in windows.h,
- * whose GDI half defines ERROR as 0, and vkmLog's LogLevel::ERROR then fails to
- * parse. WIN32_LEAN_AND_MEAN and NOMINMAX are guarded because the MinGW
- * libstdc++ headers already define the second. platform/library/dynamic_library.cpp
- * does the same dance for the same reason.
+ * A file that needs a winsock or windows header includes platform/windows_api.h
+ * to get one; the defines and undefines that has to carry are its business.
  *
  * @return False when the library would not start, in which case nothing here
  *         can reach a network and the caller should say so rather than proceed.

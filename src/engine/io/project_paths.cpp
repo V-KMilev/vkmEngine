@@ -3,17 +3,9 @@
 #include <cstdlib>
 #include <system_error>
 
-#if defined(_WIN32)
-    // Guarded: the MinGW libstdc++ headers (pulled in via <filesystem>) already
-    // define NOMINMAX, so a bare redefine warns.
-    #ifndef WIN32_LEAN_AND_MEAN
-        #define WIN32_LEAN_AND_MEAN
-    #endif
-    #ifndef NOMINMAX
-        #define NOMINMAX
-    #endif
-    #include <windows.h>
-#else
+#include "platform/windows_api.h"
+
+#if !defined(_WIN32)
     #include <climits>
     #include <unistd.h>
 #endif

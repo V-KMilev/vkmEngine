@@ -9,17 +9,9 @@
 
 #include "platform/net/winsock_init.h"
 
+#include "platform/windows_api.h"
+
 #if defined(_WIN32)
-    // NOGDI is not optional here; see platform/net/winsock_init.h for why, and
-    // why the other two are guarded.
-    #ifndef WIN32_LEAN_AND_MEAN
-        #define WIN32_LEAN_AND_MEAN
-    #endif
-    #ifndef NOMINMAX
-        #define NOMINMAX
-    #endif
-    #define NOGDI
-    #include <winsock2.h>
     #include <ws2tcpip.h>
 #else
     #include <arpa/inet.h>
