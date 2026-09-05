@@ -51,6 +51,34 @@ bool runGuarded(Behavior& behavior, const char* hookName, Fn&& fn) {
     return true;
 }
 
+/**
+ * @brief Invoke @p fn on each of @p entity's behaviors, re-resolving as it goes.
+ *
+ * A hook is handed the whole Scene, so between one behavior and the next it may
+ * destroy its own entity, remove any ScriptComponent - which move-assigns over
+ * this slot and frees the very vector being walked - or add one, which can grow
+ * the storage and move it. So the entity is re-checked and the component
+ * re-fetched every step, and the walk ends early rather than running past a
+ * list that shrank under it.
+ *
+ * @param scene Scene holding the entity.
+ * @param entity Entity whose behaviors to visit; a dead one visits none.
+ * @param fn Called with each non-null behavior, in order.
+ */
+template<typename Fn>
+void forEachBehaviorOf(Scene& scene, EntityId entity, Fn&& fn) {
+    if (!scene.isAlive(entity) || !scene.has<ScriptComponent>(entity)) return;
+
+    const size_t behaviorCount = scene.get<ScriptComponent>(entity).behaviors.size();
+    for (size_t i = 0; i < behaviorCount; ++i) {
+        if (!scene.isAlive(entity) || !scene.has<ScriptComponent>(entity)) break;
+        ScriptComponent& sc = scene.get<ScriptComponent>(entity);
+        if (i >= sc.behaviors.size()) break;
+
+        if (Behavior* behavior = sc.behaviors[i].get()) fn(*behavior);
+    }
+}
+
 } // namespace
 
 template<typename Fn>
@@ -98,48 +126,25 @@ void BehaviorSystem::tickBehaviors(FrameContext& ctx, float dt, const char* hook
               [](EntityId a, EntityId b) { return a.slot() < b.slot(); });
 
     for (const EntityId id : m_tickList) {
-        // Re-resolved every step: the entity may have been destroyed by an
-        // earlier hook, and the storage may have moved since the snapshot.
-        if (!scene.isAlive(id) || !scene.has<ScriptComponent>(id)) continue;
-
-        const size_t behaviorCount = scene.get<ScriptComponent>(id).behaviors.size();
-        for (size_t i = 0; i < behaviorCount; ++i) {
-            if (!scene.isAlive(id) || !scene.has<ScriptComponent>(id)) break;
-            ScriptComponent& sc = scene.get<ScriptComponent>(id);
-            if (i >= sc.behaviors.size()) break;
-
-            auto& behavior = sc.behaviors[i];
-            if (!behavior || behavior->m_disabled) continue;
+        forEachBehaviorOf(scene, id, [&](Behavior& behavior) {
+            if (behavior.m_disabled) return;
             if (startIfNeeded) {
-                ensureStarted(*behavior, id);
-                if (behavior->m_disabled) continue;  // onStart threw
-            } else if (!behavior->m_started) {
-                continue;
+                ensureStarted(behavior, id);
+                if (behavior.m_disabled) return;  // onStart threw
+            } else if (!behavior.m_started) {
+                return;
             }
-            Behavior* b = behavior.get();
-            guard(*b, hookName, [&] { (b->*hook)(dt); });
-        }
+            guard(behavior, hookName, [&] { (behavior.*hook)(dt); });
+        });
     }
 }
 
 void BehaviorSystem::dispatchEntityHook(Scene& scene, EntityId target, EntityId other,
                                         const char* hookName, void (Behavior::*hook)(EntityId)) {
-    if (!scene.isAlive(target) || !scene.has<ScriptComponent>(target)) return;
-
-    // Re-resolved every step, like tickBehaviors: a hook is handed the whole
-    // Scene, and one that removes any ScriptComponent move-assigns over this
-    // slot - freeing the very vector this loop is walking.
-    const size_t behaviorCount = scene.get<ScriptComponent>(target).behaviors.size();
-    for (size_t i = 0; i < behaviorCount; ++i) {
-        if (!scene.isAlive(target) || !scene.has<ScriptComponent>(target)) break;
-        ScriptComponent& sc = scene.get<ScriptComponent>(target);
-        if (i >= sc.behaviors.size()) break;
-
-        auto& behavior = sc.behaviors[i];
-        if (!behavior || !behavior->m_started || behavior->m_disabled) continue;
-        Behavior* b = behavior.get();
-        guard(*b, hookName, [&] { (b->*hook)(other); });
-    }
+    forEachBehaviorOf(scene, target, [&](Behavior& behavior) {
+        if (!behavior.m_started || behavior.m_disabled) return;
+        guard(behavior, hookName, [&] { (behavior.*hook)(other); });
+    });
 }
 
 void BehaviorSystem::fireDestroy(Behavior& behavior) {
@@ -214,8 +219,10 @@ void BehaviorSystem::init(FrameContext& ctx) {
 
     // Physics overlaps -> behavior hooks. Collect here; dispatch in update()
     // once behaviors are started and with valid context.
-    m_context.events->subscribe<CollisionEvent>([this](const CollisionEvent& e) { m_collisions.push_back(e); });
-    m_context.events->subscribe<TriggerEvent>([this](const TriggerEvent& e) { m_triggers.push_back(e); });
+    m_collisionListener = m_context.events->subscribe<CollisionEvent>(
+        [this](const CollisionEvent& e) { m_collisions.push_back(e); });
+    m_triggerListener = m_context.events->subscribe<TriggerEvent>(
+        [this](const TriggerEvent& e) { m_triggers.push_back(e); });
 }
 
 void BehaviorSystem::onEntityDestroyed(EntityId entity) {
@@ -276,6 +283,16 @@ void BehaviorSystem::fixedUpdate(FrameContext& ctx) {
 }
 
 void BehaviorSystem::shutdown() {
+    // Both capture `this` and the bus outlives this system, so a surviving
+    // subscription is a call into a destroyed object the next time physics
+    // reports an overlap. AudioSystem::shutdown drops its listener the same way.
+    if (m_context.events) {
+        m_context.events->unsubscribe<CollisionEvent>(m_collisionListener);
+        m_context.events->unsubscribe<TriggerEvent>(m_triggerListener);
+        m_collisionListener = 0;
+        m_triggerListener   = 0;
+    }
+
     if (!m_context.scene) return;
     endSession(*m_context.scene);            // onDestroy + drop subscriptions while the bus lives
     m_context.scene->removeObserver(this);   // avoid a callback into this dying system
@@ -290,15 +307,23 @@ void BehaviorSystem::endSession(Scene& scene) {
     // when nothing ever started, which is when nothing can have queued.
     BehaviorContext* session = nullptr;
 
-    storage->forEach([&](uint32_t, ScriptComponent& sc) {
-        for (auto& behavior : sc.behaviors) {
-            if (!behavior) continue;
-            if (behavior->m_ctx) session = behavior->m_ctx;
-            fireDestroy(*behavior);
-            behavior->m_started  = false;
-            behavior->m_disabled = false;
-        }
+    // Collected before anything runs, like tickBehaviors and for the same
+    // reason: onDestroy is handed the whole Scene, and one that destroys
+    // another entity would be mutating the storage this walk is standing in.
+    std::vector<EntityId> scripted;
+    scripted.reserve(storage->size());
+    storage->forEach([&](uint32_t entityIdx, ScriptComponent&) {
+        scripted.push_back(scene.entityAt(entityIdx));
     });
+
+    for (const EntityId id : scripted) {
+        forEachBehaviorOf(scene, id, [&](Behavior& behavior) {
+            if (behavior.m_ctx) session = behavior.m_ctx;
+            fireDestroy(behavior);
+            behavior.m_started  = false;
+            behavior.m_disabled = false;
+        });
+    }
     if (!session) return;
 
     // What an onDestroy just asked for named the world going away and dies
@@ -309,11 +334,7 @@ void BehaviorSystem::endSession(Scene& scene) {
 }
 
 void BehaviorSystem::destroyEntityBehaviors(Scene& scene, EntityId entity) {
-    if (!scene.has<ScriptComponent>(entity)) return;
-    ScriptComponent& sc = scene.get<ScriptComponent>(entity);
-    for (auto& behavior : sc.behaviors) {
-        if (behavior) fireDestroy(*behavior);
-    }
+    forEachBehaviorOf(scene, entity, [](Behavior& behavior) { fireDestroy(behavior); });
 }
 
 } // namespace Vkm::Engine

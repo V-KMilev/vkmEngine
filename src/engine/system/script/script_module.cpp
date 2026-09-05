@@ -19,6 +19,7 @@
 #include "net/wire/schema.h"
 #include "net/net_session.h"
 #include "system/script/behavior_registry.h"
+#include "system/script/behavior_system.h"
 #include "system/script/script_component.h"
 
 namespace Vkm::Engine {
@@ -58,12 +59,9 @@ void ScriptModule::releaseRegistrations() {
 }
 
 ScriptModule::~ScriptModule() {
-    // The registries only, and deliberately not the session: every host declares
-    // its module before its Engine, so the session and the two callbacks it
-    // holds are already destroyed by the time this runs and reaching for it
-    // would be a use-after-free. What the module registered is still cleared
-    // here, because the singletons outlive it and their own teardown would
-    // otherwise run its code after the dlclose below.
+    // The registries only, never the session: every host declares its module
+    // before its Engine, so the session is already destroyed here. The registries
+    // outlive the module, so what it put in them is cleared before the dlclose.
     BehaviorRegistry::get().clear();
     NetSchema::get().clear();
     // Unload before deleting so the copy file is no longer locked.
@@ -108,9 +106,9 @@ bool ScriptModule::loadCopyAndRegister() {
         m_loadedCopyPath.clear();
     }
 
-    // Load a copy so the original stays writable for rebuilds (Windows locks a
-    // loaded DLL). Try successive names so a leftover/locked prior copy doesn't
-    // block us - clear the target first, then copy.
+    // Load a copy so the original stays writable for rebuilds - Windows locks a
+    // loaded DLL - and step past names a second editor still holds open, which
+    // removeStaleCopies cannot sweep. Sixteen is a ceiling, not a dependency.
     fs::path copy;
     bool copied = false;
     for (int attempt = 0; attempt < 16 && !copied; ++attempt) {
@@ -185,16 +183,23 @@ bool ScriptModule::reload(Scene& scene) {
         return true;
     }
 
-    // Saved while the current module is still loaded, because visitFields and
-    // typeName are its code, and the objects destroyed before the unload that
-    // takes their vtables with it.
+    // Saved while the module is still loaded, because visitFields and typeName
+    // are its code. Before onDestroy runs, so what is restored is the state the
+    // author edited rather than what a teardown left behind.
     std::vector<std::pair<EntityId, nlohmann::json>> saved;
     if (auto* storage = scene.storage<ScriptComponent>()) {
         storage->forEach([&](uint32_t entityIdx, ScriptComponent& sc) {
-            const EntityId id = scene.entityAt(entityIdx);
-            saved.emplace_back(id, ComponentSerializer::save(sc));
-            sc.behaviors.clear();
+            saved.emplace_back(scene.entityAt(entityIdx), ComponentSerializer::save(sc));
         });
+    }
+
+    // A reload ends these behaviors' lives, so they are told while the module
+    // that wrote onDestroy is still mapped - otherwise a listener or a queued
+    // request outlives the object that registered it.
+    BehaviorSystem::endSession(scene);
+
+    if (auto* storage = scene.storage<ScriptComponent>()) {
+        storage->forEach([](uint32_t, ScriptComponent& sc) { sc.behaviors.clear(); });
     }
 
     releaseRegistrations();
