@@ -8,31 +8,19 @@ namespace Vkm::Engine {
  * @brief Places every entity carrying a BoneSocket on the bone it names, out of
  *        the pose SkeletalAnimationSystem published this frame.
  *
- * Registered at SystemStage::Transform, ahead of HierarchySystem, because a
- * socket is a derived transform and that is the stage derived transforms belong
- * to. Both neighbours in that ordering are load-bearing:
+ * Registered at SystemStage::Transform, ahead of HierarchySystem, and both
+ * neighbours are load-bearing. After the pose, because `ctx.poses` is a
+ * per-frame product of the Simulation stage and reading it from Simulation would
+ * race the producer's registration order. Before the world resolve, because this
+ * writes the socket's *local* Transform and lets HierarchySystem turn it into a
+ * world matrix the same frame - writing its WorldTransform instead would trail
+ * the character by a frame, and leave a muzzle flash parented under the socket
+ * resolving against the frame before that.
  *
- * - **After the pose.** `ctx.poses` is a per-frame product of the Simulation
- *   stage. Reading it from Simulation would race the producer's registration
- *   order; reading it from Transform cannot.
- * - **Before the world resolve.** This writes the socket entity's *local*
- *   Transform and lets HierarchySystem turn it into a world matrix in the same
- *   frame, so the socket lands on the bone on the frame the character moves -
- *   including the very first frame, when there is no previous frame to have
- *   cached anything. The alternative, writing the socket's WorldTransform from
- *   the rig's, would read a matrix HierarchySystem last wrote a frame ago and
- *   trail the character by exactly one frame while it runs, which is invisible
- *   while it stands still. It would also leave anything parented *under* the
- *   socket - a muzzle flash under a gun - resolving against last frame's socket,
- *   because that walk has already happened by then.
+ * Placement is not gated on simulation time, for the reason composition is not:
+ * scrubbing an Animator while paused has to move what the character is holding.
  *
- * Placement is unconditional, not gated on simulation time, for the reason
- * composition is: scrubbing an Animator while paused has to move what the
- * character is holding, or a paused preview shows a pose the props disagree
- * with.
- *
- * A scene with no sockets pays one null storage check a frame and touches
- * nothing else - not the pose, not the hierarchy.
+ * A scene with no sockets pays one null storage check a frame.
  */
 class BoneSocketSystem : public System {
     public:

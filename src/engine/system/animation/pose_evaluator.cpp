@@ -140,7 +140,7 @@ PlaybackStep advancePlayback(Animator& animator, float duration, float fromDurat
     // The outgoing clip keeps playing while it fades, so the blend is between
     // two moving poses; one that runs out holds its last frame for the rest of
     // it. What `playing` names is the clip that was faded to.
-    advanceHead(animator.fadeTime, fromDuration, delta, animator.looping);
+    advanceHead(animator.fadeTime, fromDuration, delta, animator.fadeLooping);
 
     // Unscaled by speed: a blend length is a duration the caller asked for, not
     // one the playback rate moves under them.
