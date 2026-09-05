@@ -8,16 +8,6 @@
 
 namespace Vkm::Engine {
 
-/**
- * @brief How far from the origin a replicated position can be, in metres.
- *
- * Half a kilometre each way, which covers every world the engine has been
- * pointed at and costs twenty bits a coordinate at millimetre resolution. A
- * body past it is described at the boundary rather than dropped, because a
- * body that has left the world is already a bug in the game and refusing the
- * packet it rode in would punish every other body in it.
- */
-constexpr float NET_WORLD_EXTENT = 512.0f;
 
 /**
  * @brief A transform, as the wire carries it.

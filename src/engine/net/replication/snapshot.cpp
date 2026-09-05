@@ -80,7 +80,27 @@ struct Candidate {
 };
 
 /**
+ * @brief The most one component may occupy on the wire, per entity per snapshot.
+ *
+ * A ceiling rather than a growing buffer, because the thing it bounds is a
+ * *packet*: a component that encoded a kilobyte would take the whole budget and
+ * starve every other entity in the snapshot, and it would do it silently. Past
+ * it the component is dropped for that snapshot and the drop is logged, so a
+ * codec that has outgrown this says so instead of quietly winning.
+ *
+ * Two hundred and fifty-six bytes is wide: the largest codec the engine ships
+ * is a transform at nineteen. Raising it is a decision about the packet budget
+ * in NetSession, not about this buffer.
+ */
+constexpr uint32_t MAX_COMPONENT_BYTES = 256;
+
+/**
  * @brief Encode everything about one entity that differs from what was confirmed.
+ *
+ * Encoded once per connection, which is once per connection more than the bytes
+ * require - the encoding is the same for every peer and only the comparison
+ * against that peer's baseline differs. See engine.md, "Encoding a snapshot
+ * once per peer", for the trigger that would make it worth caching.
  *
  * @return False when nothing differs, so the entity is not described at all.
  */
@@ -103,12 +123,12 @@ bool buildCandidate(const Scene& scene, const NetSchema& schema, uint16_t sequen
         if (row.has && !row.has(scene, entity)) continue;
 
         std::vector<uint8_t> encoded;
-        BitWriter writer(encoded, 256);
+        BitWriter writer(encoded, MAX_COMPONENT_BYTES);
         if (!row.encode(scene, entity, writer)) continue;
         writer.finish();
         if (writer.overflowed()) {
-            LOG_ERROR("component '%s' encoded past its buffer; not replicated this snapshot",
-                      row.name.c_str());
+            LOG_ERROR("component '%s' encoded past its %u-byte limit; not replicated "
+                      "this snapshot", row.name.c_str(), MAX_COMPONENT_BYTES);
             continue;
         }
 

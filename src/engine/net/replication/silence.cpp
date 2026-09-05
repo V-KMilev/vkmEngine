@@ -5,6 +5,7 @@
 #include "ecs/component/physics/rigidbody.h"
 #include "ecs/component/prefab/prefab_instance.h"
 #include "ecs/scene.h"
+#include "system/hierarchy/hierarchy_operations.h"
 #include "system/physics/ragdoll_system.h"
 
 namespace Vkm::Engine {
@@ -14,13 +15,8 @@ bool isInsidePrefabInstance(const Scene& scene, EntityId entity) {
 
     // Upward from the parent, so the instance root itself answers false: it is
     // the one entity of the subtree that does replicate.
-    EntityId at = scene.get<Hierarchy>(entity).parent;
-    while (at && scene.isAlive(at)) {
-        if (scene.has<PrefabInstance>(at)) return true;
-        if (!scene.has<Hierarchy>(at)) break;
-        at = scene.get<Hierarchy>(at).parent;
-    }
-    return false;
+    return static_cast<bool>(HierarchyOperations::findInSelfOrAncestors<PrefabInstance>(
+        scene, scene.get<Hierarchy>(entity).parent));
 }
 bool isImmovable(const Scene& scene, EntityId entity) {
     return scene.has<Rigidbody>(entity) && scene.get<Rigidbody>(entity).isStatic;

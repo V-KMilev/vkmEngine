@@ -18,25 +18,21 @@ class Scene;
  * @brief Draws entities this end is only told about, between what it was told.
  *
  * A server sends the world thirty to sixty times a second and a client draws it
- * a hundred and forty-four times a second, so most frames have no news. Drawing
- * the newest thing heard makes everything a client does not own move in steps -
- * which is what a player calls stuttering, and no amount of bandwidth fixes it,
- * because the frames in between never had anything to say.
+ * a hundred and forty-four, so most frames have no news. Drawing the newest thing
+ * heard makes everything a client does not own move in steps, and no amount of
+ * bandwidth fixes it - the frames in between never had anything to say.
  *
- * So a client deliberately draws the past. It keeps the last few positions the
- * server gave for each entity, picks a moment slightly behind the newest one it
- * has heard, and draws where things were at that moment - which is a moment it
- * has real data on both sides of. The cost is that everything except the
- * player's own character is shown a fraction of a second late; the benefit is
- * that it moves smoothly and truthfully. Every game that feels good does this.
+ * So a client deliberately draws the past: it keeps the last few positions the
+ * server gave, picks a moment slightly behind the newest one, and draws where
+ * things were then - a moment it has real data on both sides of. The cost is
+ * that everything except the player's own character is shown a fraction of a
+ * second late.
  *
- * The delay is measured in ticks rather than seconds because a snapshot is
- * identified by the tick it describes, and because a project that raises its
- * tick rate should not have to re-tune this.
+ * The delay is measured in ticks rather than seconds, because a snapshot is
+ * identified by the tick it describes and a project that raises its tick rate
+ * should not have to re-tune this.
  *
- * The entity a client owns is never interpolated. It is predicted instead - the
- * player would notice their own character running late, and nobody notices a
- * crate doing it.
+ * The entity a client owns is never interpolated - it is predicted instead.
  */
 class NetInterpolation {
     public:

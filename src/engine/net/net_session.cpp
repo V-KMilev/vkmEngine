@@ -639,12 +639,9 @@ void NetSession::receiveAsServer(Scene& scene, ResourceManager& resources) {
             const uint64_t token = reader.u64();
             if (reader.failed() || token != peer->token) continue;
 
-            // And echoing it is the proof this address can receive, because the
-            // Welcome is the only place it was ever said. A sequence number
-            // cannot do this job: a sender writes the acknowledgement field
-            // itself, so a spoofed address could claim delivery of a packet it
-            // never got and take a seat that is a kilobyte a tick aimed at
-            // whoever it named.
+            // Echoing it is the proof this address can receive, the Welcome being
+            // the only place it was said. A sequence number cannot do this job: a
+            // sender writes the acknowledgement field itself.
             peer->answered = true;
         }
 
@@ -899,10 +896,9 @@ bool NetSession::vetHello(const NetAddress& from, BitReader& reader, uint32_t& a
     const uint64_t world       = reader.u64();
     if (reader.failed()) return false;
 
-    // Every refusal below is counted, and only the first says why: a line per
-    // refused packet is a server's disk spent from off the machine, and a
-    // captured Hello can be replayed with any of these fields changed. The
-    // count rides the status line once a second.
+    // Every refusal below is counted and only the first says why: a line per
+    // refused packet is a server's disk spent from off the machine. The count
+    // rides the status line once a second.
     if (fingerprint != NetSchema::get().fingerprint()) {
         if (m_refusedMismatch == 0) {
             LOG_ERROR("Refusing a join: a different build or project. This end "

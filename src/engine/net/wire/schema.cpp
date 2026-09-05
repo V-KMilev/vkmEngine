@@ -2,6 +2,10 @@
 
 #include "net/wire/schema.h"
 
+#include <string_view>
+
+#include "core/hash/fnv1a.h"
+
 #include "logger.h"
 
 namespace Vkm::Engine {
@@ -37,15 +41,13 @@ uint32_t NetSchema::fingerprint() const {
     // FNV-1a over each name and its policy, in order. Order participates
     // because the index is the wire identity: two ends registering the same
     // names in a different order agree on every name and on nothing else.
-    uint32_t hash = 2166136261u;
-    const auto mix = [&hash](uint8_t byte) {
-        hash ^= byte;
-        hash *= 16777619u;
-    };
+    uint32_t hash = FNV1A32_OFFSET_BASIS;
     for (const NetType& type : m_types) {
-        for (char c : type.name) mix(static_cast<uint8_t>(c));
-        mix(static_cast<uint8_t>(type.policy));
-        mix(0);
+        hash = fnv1a32(type.name, hash);
+        // The policy and a terminator, so two names that differ only where one
+        // ends cannot fold into the same bytes.
+        const char tail[2] = { static_cast<char>(type.policy), '\0' };
+        hash = fnv1a32(std::string_view(tail, sizeof(tail)), hash);
     }
     return hash;
 }
