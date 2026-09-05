@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/reflect.h"
+
 #include "resource/asset/audio_clip_asset.h"
 
 namespace Vkm::Engine {
@@ -13,31 +15,17 @@ namespace Vkm::Engine {
  * one-shot has finished, which is why it is one field rather than a request and
  * a status that could disagree.
  *
- * At most one sound plays per source. A second `playing = true` while the first
- * is still going does nothing - the source is a speaker, not a queue - so
- * overlapping copies of the same footstep want a source each. That is the
- * simple shape, and it is the one the ECS already gives: an entity per voice.
+ * At most one sound plays per source - the source is a speaker, not a queue - so
+ * overlapping copies of one footstep want a source each, which is the shape the
+ * ECS already gives. There is no playback position here either: the cursor is
+ * advanced by the mixer thread between frames, and AudioDevice::voiceCursor is
+ * where it is read.
  *
- * There is no playback position here, and that is a decision rather than an
- * omission. A voice's cursor is advanced by the mixer thread between frames, so
- * a field mirroring it would be a copy of a number that changes without the
- * scene; AudioDevice::voiceCursor carries both the reasoning and the read, and
- * the editor's card scrubs through it.
- *
- * `spatial` decides whether the entity's world position is heard at all. A 3D
- * source is positioned and attenuated by distance to the listener; a 2D one is
- * mixed flat, which is what music, narration and UI clicks want.
- *
- * A spatial source wants a MONO clip, and the reason is sharper than "stereo is
- * already positioned". The mixer routes each of a voice's channels to the
- * output channel it was authored for and attenuates it there, so nothing
- * crosses: a two-channel clip with sound in its first channel only is silent
- * out of the second output channel wherever the emitter is put, while the mono
- * equivalent swings across the pair as it passes the listener. A stereo clip
- * whose channels are identical is indistinguishable from mono, which is what
- * makes the mistake quiet - it is the wide ones that lose half their field.
- * The Inspector says so on the card, and AudioSystem says so once per clip for
- * the request path, which has no card.
+ * `spatial` decides whether the entity's world position is heard at all, and a
+ * spatial source wants a MONO clip: the mixer routes each channel to the output
+ * it was authored for, so half a stereo clip's field is unreachable wherever the
+ * emitter is put. docs/reference/system/audio.md, "A positioned source wants a
+ * mono clip", has the measurements.
  */
 struct AudioSource {
     AudioClipHandle clip;
@@ -57,10 +45,10 @@ struct AudioSource {
     /**
      * @brief Start playing on the first frame the simulation runs.
      *
-     * Deliberately gated on simulation time rather than on the source simply
-     * existing: in the editor, an unplayed scene is a paused one, and a source
-     * that started merely by being loaded would fill the editor with noise
-     * nobody asked to hear. It is the same rule a behavior's onStart follows.
+     * The authored half of the trio every component that plays something
+     * carries; see engine.md, "Authored state and session state on one
+     * component". Gated on simulation time rather than on the source existing,
+     * or the editor would fill with noise nobody asked to hear.
      */
     bool playOnStart = true;
 
@@ -81,24 +69,22 @@ struct AudioSource {
      */
     float maxDistance = 50.0f;
 
-    /**
-     * @brief Whether the source should be sounding right now.
-     *
-     * Runtime state, not serialized, for the same reason a behavior's started
-     * flag is not: it describes a play session rather than the authored scene,
-     * and a scene that came back from disk mid-sound would resume a noise whose
-     * beginning nobody heard. `playOnStart` is the authored half.
-     */
+    /// Whether the source should be sounding right now. Session state.
     bool playing = false;
 
-    /**
-     * @brief Whether playOnStart has already been honoured this session.
-     *
-     * Runtime state. Without it a one-shot with playOnStart would restart every
-     * frame after it ended, since `playing` falling back to false is exactly
-     * what "it finished" looks like.
-     */
+    /// Whether playOnStart has been honoured yet this session. Session state.
     bool started = false;
 };
 
 } // namespace Vkm::Engine
+
+VKM_REFLECT_BEGIN(::Vkm::Engine::AudioSource)
+    VKM_F(clip),
+    VKM_F(volume),
+    VKM_F(pitch),
+    VKM_F(loop),
+    VKM_F(spatial),
+    VKM_F(playOnStart),
+    VKM_F(minDistance),
+    VKM_F(maxDistance)
+VKM_REFLECT_END()

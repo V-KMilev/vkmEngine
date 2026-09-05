@@ -15,11 +15,20 @@ namespace Vkm::Engine {
 /**
  * @brief Fixed-size pool of worker threads draining a shared task queue.
  *
- * Process-wide singleton (get()); the constructor/destructor are private.
- * Used to back parallelFor; workers dequeue tasks in FIFO submission order
- * but execute them concurrently (no ordering of completion). Waiting is
- * per-batch (addTasks + waitForBatch), so a caller never blocks on work
- * someone else queued - the async asset decodes share this pool.
+ * Process-wide singleton (get()). Workers dequeue in submission order but
+ * execute concurrently, and waiting is per-batch (addTasks + waitForBatch), so a
+ * caller never blocks on work someone else queued - the async asset decodes
+ * share this pool.
+ *
+ * There are two queues, chosen by the shape of the call. `addTasks` carries a
+ * batch counter because someone is blocked in waitForBatch until it empties -
+ * that is the frame, and it is served first. `addTask` retires against nothing,
+ * because every caller is an asset decode, so it is served when the frame is not
+ * asking.
+ *
+ * That order cannot starve a decode: parallelFor blocks its caller until its own
+ * range is done, so at most one batch is alive at a time and a decode waits for
+ * one batch rather than a stream of them.
  */
 class ThreadPool {
     public:
@@ -44,6 +53,9 @@ class ThreadPool {
 
         /**
          * @brief Enqueue a single task and wake one worker.
+         *
+         * Refused after shutdown(), with a warning: nothing drains the queue
+         * again, so an enqueue there is work that is silently never done.
          *
          * @param task The work to run on a worker thread; consumed (moved into
          *             the queue).
@@ -120,7 +132,11 @@ class ThreadPool {
         std::atomic<bool> m_running;
 
         std::vector<std::thread> m_threads;
-        std::deque<QueuedTask> m_tasks;
+
+        /// Work the frame is blocked on: batches from addTasks. Drained first.
+        std::deque<QueuedTask> m_frameTasks;
+        /// Work nobody is waiting for: the asset decodes. Drained when idle.
+        std::deque<QueuedTask> m_backgroundTasks;
 
         std::mutex m_tasksMutex;
         std::condition_variable m_tasksCV;

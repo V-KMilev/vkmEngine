@@ -125,6 +125,17 @@ int main(int argc, char** argv) {
         Vkm::GL::enableGLDebugLogging(false);
         sys.render.setBackend(std::make_unique<Vkm::Engine::GLBackend>());
 
+        // The look the project ships, applied before its world is built.
+        sys.render.getSettings() = project.render;
+
+        // The game's own splash chain, behind the engine's mark - from the Project
+        // this host has already read, rather than a second read inside a system
+        // that has no business knowing what a project is.
+        for (const Vkm::Engine::SplashEntry& entry : project.splash) {
+            sys.splash.add(Vkm::Engine::ProjectPaths::resolveProjectPath(entry.image).string(),
+                           entry.seconds);
+        }
+
         engine.getClock().setTickRate(project.tickRate);
 
         // Anything but the project's own world leaves this game nothing to play:

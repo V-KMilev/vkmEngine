@@ -223,8 +223,8 @@ class WindowManager {
          * The two agree on an unscaled display and diverge under fractional /
          * HiDPI scaling, where GLFW reports window geometry and cursor positions
          * in screen coords but the drawable in pixels. Anything crossing from
-         * one to the other - an ImGui rect handed to setSceneViewport, a cursor
-         * position hit-tested against it - multiplies by this.
+         * one to the other - an ImGui rect handed to HostChrome::setViewport, a
+         * cursor position hit-tested against it - multiplies by this.
          *
          * @return The scale, or 1.0f when there is no window yet.
          */
@@ -236,9 +236,12 @@ class WindowManager {
          */
         GLFWwindow* getWindowContext() const;
 
+
+    private:
         /**
          * @brief Set the cached drawable dimensions. Called from the GLFW
-         * framebuffer-size callback.
+         * framebuffer-size callback, which is the only caller: nothing
+         * outside this class decides how big the drawable is.
          *
          * Thread safety: GLFW callbacks fire during glfwPollEvents() on the main
          * thread for single-window apps, so setSize/getWidth/getHeight are all
@@ -249,27 +252,6 @@ class WindowManager {
          */
         void setSize(int width, int height);
 
-        /**
-         * @brief Describe the rect inside the window the 3D scene renders into.
-         *
-         * Defaults to the full window. The editor calls this each frame after
-         * laying out its panels so the next frame's render system sees the
-         * viewport rect and sizes its FBOs / projection accordingly.
-         *
-         * @param x,y Top-left of the viewport in framebuffer pixels - the unit
-         *            glViewport takes, so a caller working in window screen
-         *            coords (the editor's ImGui rect) converts with
-         *            framebufferScale() first.
-         * @param w,h Viewport size in framebuffer pixels. 0 falls back to "use
-         *            the full window".
-         */
-        void setSceneViewport(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
-        uint32_t sceneViewportX()      const { return m_sceneVpX; }
-        uint32_t sceneViewportY()      const { return m_sceneVpY; }
-        uint32_t sceneViewportWidth()  const { return m_sceneVpW != 0 ? m_sceneVpW : static_cast<uint32_t>(m_width); }
-        uint32_t sceneViewportHeight() const { return m_sceneVpH != 0 ? m_sceneVpH : static_cast<uint32_t>(m_height); }
-
-    private:
         /**
          * @brief Returns the monitor's refresh rate (Hz) for this window.
          */
@@ -294,10 +276,6 @@ class WindowManager {
         // Scene viewport rect inside the window (set by the editor, read
         // by the engine when populating FrameContext). 0 in width/height
         // means "follow the window".
-        uint32_t m_sceneVpX = 0;
-        uint32_t m_sceneVpY = 0;
-        uint32_t m_sceneVpW = 0;
-        uint32_t m_sceneVpH = 0;
 };
 
 } // namespace Vkm::Engine
