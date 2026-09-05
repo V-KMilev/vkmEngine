@@ -2,6 +2,7 @@
 
 #include <nlohmann/json_fwd.hpp>
 
+#include "resource/asset_type.h"
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/material_asset.h"
@@ -21,14 +22,12 @@ class ResourceManager;
  * by calling the matching function pointer, which switches internally on the
  * source `kind`.
  */
+#define VKM_ASSET_FACTORY_FIELD(tag, type, name, dir) \
+    Handle<type> (*create##tag)(const nlohmann::json&, ResourceManager&) = nullptr;
 struct AssetFactory {
-    MeshHandle          (*createMesh)         (const nlohmann::json&, ResourceManager&) = nullptr;
-    TextureHandle       (*createTexture)      (const nlohmann::json&, ResourceManager&) = nullptr;
-    MaterialHandle      (*createMaterial)     (const nlohmann::json&, ResourceManager&) = nullptr;
-    SkeletonHandle      (*createSkeleton)     (const nlohmann::json&, ResourceManager&) = nullptr;
-    AnimationClipHandle (*createAnimationClip)(const nlohmann::json&, ResourceManager&) = nullptr;
-    AudioClipHandle     (*createAudioClip)    (const nlohmann::json&, ResourceManager&) = nullptr;
+    VKM_ASSET_KINDS(VKM_ASSET_FACTORY_FIELD)
 };
+#undef VKM_ASSET_FACTORY_FIELD
 
 AssetFactory& assetFactory();
 

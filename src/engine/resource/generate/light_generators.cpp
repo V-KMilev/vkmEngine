@@ -1,4 +1,4 @@
-#include "generator/light_generators.h"
+#include "resource/generate/light_generators.h"
 
 namespace Vkm::Engine {
 

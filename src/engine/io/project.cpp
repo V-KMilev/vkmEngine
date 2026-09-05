@@ -3,6 +3,7 @@
 #include "io/project.h"
 
 #include <fstream>
+#include <type_traits>
 #include <system_error>
 
 #include <nlohmann/json.hpp>
@@ -49,6 +50,31 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
         out.maxPlayers    = doc.value("maxPlayers",    out.maxPlayers);
         out.netPort       = doc.value("netPort",       out.netPort);
 
+        // Absent fields keep their defaults, so a project.json written before
+        // the render block existed opens as the engine's own look rather than
+        // as a black screen.
+        if (doc.contains("render") && doc["render"].is_object()) {
+            const nlohmann::json& render = doc["render"];
+            visitShippedRenderFields(out.render, [&](const char* key, auto& field) {
+                using Field = std::decay_t<decltype(field)>;
+                if (!render.contains(key)) return;
+                // An enum with a registered name table is written as its name,
+                // so a hand-edited project.json reads as one. One without a
+                // table has no names to write and travels as its value.
+                if constexpr (std::is_enum_v<Field> && Reflect::HAS_ENUM_NAMES<Field>) {
+                    if (render[key].is_string()) {
+                        Reflect::enumFromNameChecked(
+                            render[key].get<std::string>(), field);
+                    }
+                } else if constexpr (std::is_enum_v<Field>) {
+                    field = static_cast<Field>(
+                        render[key].get<std::underlying_type_t<Field>>());
+                } else {
+                    field = render[key].get<Field>();
+                }
+            });
+        }
+
         // An entry with no image names nothing to show, so it is skipped rather
         // than becoming a black pause of its own.
         if (doc.contains("splash") && doc["splash"].is_array()) {
@@ -79,10 +105,9 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
 bool saveProject(const fs::path& projectRoot, const Project& project) {
     const fs::path file = projectRoot / PROJECT_FILE;
 
-    // Read first, so a key this build knows nothing about survives being
-    // written by it. A missing or malformed file is not a reason to refuse:
-    // what comes out is then a document holding exactly what is known, which is
-    // what a project that has never been saved should get.
+    // Read first, so a key this build knows nothing about survives being written
+    // by it. A missing or malformed file is not a reason to refuse: what comes out
+    // is then a document holding exactly what is known.
     std::error_code ec;
     nlohmann::json  doc = nlohmann::json::object();
     if (fs::exists(file, ec) && (!detail::readJsonFile(file, doc, "project") || !doc.is_object())) {
@@ -95,6 +120,20 @@ bool saveProject(const fs::path& projectRoot, const Project& project) {
     doc["tickRate"]      = project.tickRate;
     doc["maxPlayers"]    = project.maxPlayers;
     doc["netPort"]       = project.netPort;
+
+    nlohmann::json render = nlohmann::json::object();
+    visitShippedRenderFields(const_cast<RenderSettings&>(project.render),
+                             [&](const char* key, auto& field) {
+        using Field = std::decay_t<decltype(field)>;
+        if constexpr (std::is_enum_v<Field> && Reflect::HAS_ENUM_NAMES<Field>) {
+            render[key] = Reflect::enumName(field);
+        } else if constexpr (std::is_enum_v<Field>) {
+            render[key] = static_cast<std::underlying_type_t<Field>>(field);
+        } else {
+            render[key] = field;
+        }
+    });
+    doc["render"] = std::move(render);
 
     return detail::writeJsonFile(file, doc, "project");
 }

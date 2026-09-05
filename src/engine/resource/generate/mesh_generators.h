@@ -89,6 +89,22 @@ MeshAsset generatePyramid(float baseSize = 1.0f, float height = 1.0f);
 MeshAsset generateCone(float radius = 0.5f, float height = 1.0f, uint32_t segments = 16);
 
 /**
+ * @brief Generate a capped cylinder standing on the Y axis, centred on the origin.
+ *
+ * The caps carry their own ring of vertices rather than sharing the wall's, so
+ * the rim stays a hard edge instead of averaging into a bevel that is not there.
+ * The wall duplicates its first column at u = 1 for the same reason in the other
+ * direction: a seam that wrapped would interpolate the whole texture backwards
+ * across one quad.
+ *
+ * @param radius   Radius of the wall and both caps (default: 0.5).
+ * @param height   Total height, so the ends sit at +/- height/2 (default: 1.0).
+ * @param segments Segments around the circumference; clamped up to 3 (default: 20).
+ * @return MeshAsset containing cylinder geometry.
+ */
+MeshAsset generateCylinder(float radius = 0.5f, float height = 1.0f, uint32_t segments = 20);
+
+/**
  * @brief Decimate a mesh by vertex clustering.
  *
  * Snaps vertices to a uniform grid over the mesh AABB, averages each occupied

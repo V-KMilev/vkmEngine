@@ -11,24 +11,20 @@ namespace Vkm::Engine {
  * Three roots, because three different things live on disk and they belong to
  * different people:
  *
- * - **engineRoot()** is what ships with the engine and is read-only to a game:
- *   shaders, the default UI font, editor icons. One copy serves every project.
- *   An SDK installed to /usr/local or Program Files is not writable, so nothing
- *   the engine produces may be addressed from here.
- * - **projectRoot()** is the game being made: its scenes, its art, its asset
- *   library and the cooked cache derived from it. This is the part a user owns,
- *   edits, and version-controls.
- * - **userRoot()** is how one person likes their tools: the recent-projects
- *   list, the editor's window layout. It follows the user across projects and
- *   across engine installs, and it is the only root guaranteed writable.
+ * - **engineRoot()** ships with the engine and is read-only to a game: shaders,
+ *   the default UI font, editor icons. An SDK installed to /usr/local or Program
+ *   Files is not writable, so nothing the engine produces is addressed from here.
+ * - **projectRoot()** is the game being made - scenes, art, the asset library and
+ *   the cooked cache derived from it. The part a user owns and version-controls.
+ * - **userRoot()** is how one person likes their tools: recent projects, the
+ *   editor's window layout. It follows the user across projects and installs, and
+ *   is the only root guaranteed writable.
  *
- * The split between the last two is the question "would you commit this?" A
- * scene is project data. A window layout is not - it belongs to whoever is
- * sitting in front of the editor, and writing it into a project would hand the
- * next person a layout they never chose.
+ * The split between the last two is the question "would you commit this?" A scene
+ * is project data; a window layout belongs to whoever is sitting in front of the
+ * editor.
  *
- * Callers compose specific files from these directories (e.g.
- * ProjectPaths::library() / "_manifest.json") rather than re-deriving a root.
+ * Callers compose files from these directories rather than re-deriving a root.
  */
 namespace ProjectPaths {
 

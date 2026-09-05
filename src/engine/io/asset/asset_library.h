@@ -92,11 +92,21 @@ class AssetLibrary {
          * Every type but Material has one; a material's canonical form is its
          * recipe, so nothing is ever written where this points for one.
          *
-         * @param type Asset type half of the identity.
-         * @param name Asset name half of the identity.
+         * The recipe hash is part of the *name*, which is the point. A cooked
+         * file is derived data, and derived data is addressed by what it was
+         * derived from: an artifact baked from a recipe that has since changed
+         * is not stale, it is a file nobody asks for. That turns a staleness
+         * check into a lookup that misses, and it is what lets the reader stop
+         * carrying one.
+         *
+         * @param type Asset type half of the subject's identity.
+         * @param name Asset name half of the subject's identity.
+         * @param recipeHash The cache key: the recipe, the cooker version and the
+         *        format version, as AssetCook::cacheKey mixes them.
          * @return Absolute path to the cooked file under the project cooked dir.
          */
-        static std::filesystem::path cookedPath(AssetType type, const std::string& name);
+        static std::filesystem::path cookedPath(AssetType type, const std::string& name,
+                                                uint64_t recipeHash);
 
         // Editor-only mutation. upsert replaces any existing record for (type,name).
         void upsert(AssetRecord record);

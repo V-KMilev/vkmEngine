@@ -24,6 +24,7 @@
 #include "resource/asset/skeleton_asset.h"
 #include "resource/asset/texture_asset.h"
 #include "system/async/async_loader_system.h"
+#include "resource/asset_source_kind.h"
 
 namespace Vkm::Engine::AssetCooker {
 
@@ -47,7 +48,7 @@ uint64_t hashRecipe(const nlohmann::json& recipe) {
 // from. It is not a recipe: cooking it would overwrite the library's account of
 // the import - the version-controlled source of truth - with a self-reference.
 bool isCookedPlaceholder(const nlohmann::json& source) {
-    return source.value("kind", std::string{}) == "cooked";
+    return source.value("kind", std::string{}) == AssetSourceKind::COOKED;
 }
 
 // An asset that cannot be cooked and that the library does not already hold is
@@ -100,7 +101,8 @@ bool isUpToDate(AssetType type, const std::string& name, uint64_t hash, CookedOu
     std::error_code ec;
     if (!std::filesystem::exists(AssetLibrary::recipePath(type, name), ec)) return false;
     if (cooked == CookedOutput::None) return true;
-    return AssetCook::isCookedCurrent(type, AssetLibrary::cookedPath(type, name), hash);
+    return AssetCook::isCookedCurrent(
+        type, AssetLibrary::cookedPath(type, name, AssetCook::cacheKey(hash, type)));
 }
 
 // The recipe is the half of the library a cook cannot regenerate, so it takes
@@ -135,7 +137,8 @@ bool cookMesh(const MeshAsset& mesh) {
     const uint64_t hash = hashRecipe(recipe);
 
     const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Mesh, mesh.name());
-    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::Mesh, mesh.name());
+    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(
+        AssetType::Mesh, mesh.name(), AssetCook::cacheKey(hash, AssetType::Mesh));
     if (isUpToDate(AssetType::Mesh, mesh.name(), hash, CookedOutput::Binary)) return true;
 
     if (!writeRecipeFile(recipePath, mesh.name(), "mesh", recipe)) return false;
@@ -161,7 +164,8 @@ bool cookTexture(const TextureAsset& tex) {
     const uint64_t hash = hashRecipe(recipe);
 
     const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Texture, tex.name());
-    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::Texture, tex.name());
+    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(
+        AssetType::Texture, tex.name(), AssetCook::cacheKey(hash, AssetType::Texture));
     if (isUpToDate(AssetType::Texture, tex.name(), hash, CookedOutput::Binary)) return true;
 
     if (!writeRecipeFile(recipePath, tex.name(), "texture", recipe)) return false;
@@ -185,7 +189,8 @@ bool cookSkeleton(const SkeletonAsset& skeleton) {
     const uint64_t hash = hashRecipe(recipe);
 
     const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Skeleton, skeleton.name());
-    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::Skeleton, skeleton.name());
+    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(
+        AssetType::Skeleton, skeleton.name(), AssetCook::cacheKey(hash, AssetType::Skeleton));
     if (isUpToDate(AssetType::Skeleton, skeleton.name(), hash, CookedOutput::Binary)) return true;
 
     if (!writeRecipeFile(recipePath, skeleton.name(), "skeleton", recipe)) return false;
@@ -209,7 +214,8 @@ bool cookAnimationClip(const AnimationClipAsset& clip) {
     const uint64_t hash = hashRecipe(recipe);
 
     const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::AnimationClip, clip.name());
-    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::AnimationClip, clip.name());
+    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(
+        AssetType::AnimationClip, clip.name(), AssetCook::cacheKey(hash, AssetType::AnimationClip));
     if (isUpToDate(AssetType::AnimationClip, clip.name(), hash, CookedOutput::Binary)) return true;
 
     if (!writeRecipeFile(recipePath, clip.name(), "animationClip", recipe)) return false;
@@ -234,7 +240,8 @@ bool cookAudioClip(const AudioClipAsset& clip) {
     const uint64_t hash = hashRecipe(recipe);
 
     const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::AudioClip, clip.name());
-    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(AssetType::AudioClip, clip.name());
+    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(
+        AssetType::AudioClip, clip.name(), AssetCook::cacheKey(hash, AssetType::AudioClip));
     if (isUpToDate(AssetType::AudioClip, clip.name(), hash, CookedOutput::Binary)) return true;
 
     if (!writeRecipeFile(recipePath, clip.name(), "audioClip", recipe)) return false;

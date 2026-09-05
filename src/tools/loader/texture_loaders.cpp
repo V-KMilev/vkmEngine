@@ -137,10 +137,8 @@ TextureHandle requestTextureAsync(
     const std::string resolved = ProjectPaths::resolveProjectPath(ref).string();
     if (auto existing = resourceManager.findByName<TextureAsset>(ref)) {
         // A texture's identity is its path, so the second caller gets the first
-        // caller's decode settings whatever it asked for. sRGB is the one that
-        // changes the pixels rather than the sampling - the same file wanted as
-        // albedo and as a normal map is read one way for both - so a request
-        // that disagrees says so instead of quietly handing back the other.
+        // one's decode settings. sRGB changes the pixels rather than the sampling,
+        // so a request that disagrees says so instead of being answered quietly.
         if (resourceManager.get(existing).srgb != srgb) {
             LOG_WARNING("'%s' is already loaded as %s and is being asked for as %s; "
                         "the loaded one is returned unchanged",
@@ -170,10 +168,9 @@ TextureHandle requestTextureAsync(
     // that reads it, where two racing decodes would not be ordered at all.
     stbi_set_flip_vertically_on_load(true);
 
-    // The task captures only the resolved path + the asset's identity:
-    // everything ResourceManager-touching happens on the main thread in
-    // AsyncLoaderSystem when the completion is drained, and the project root a
-    // reference resolves against is main-thread state.
+    // The task captures the resolved path and the asset's identity, nothing more:
+    // everything ResourceManager-touching happens on the main thread when
+    // AsyncLoaderSystem drains the completion.
     ThreadPool::get().addTask([handle, uid, resolved]() {
         int w = 0, h = 0, channels = 0;
         unsigned char* data = stbi_load(resolved.c_str(), &w, &h, &channels, 0);

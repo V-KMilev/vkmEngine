@@ -14,6 +14,7 @@
 #include "platform/threading/thread_pool.h"
 #include "resource/resource_manager.h"
 #include "system/async/async_load_queue.h"
+#include "resource/asset_source_kind.h"
 
 namespace Vkm::Engine {
 
@@ -25,7 +26,6 @@ struct CookedRequest {
     uint64_t              uid = 0;           ///< Identity of the stub the completion belongs to.
     bool                  dispatch = false;  ///< Kick off the off-thread read?
     std::filesystem::path path{};            ///< Cooked file (valid when dispatch).
-    uint64_t              expectHash = 0;    ///< Recipe hash to match (valid when dispatch).
 };
 
 // Shared preamble: the existing handle if the asset is already resident
@@ -46,14 +46,14 @@ CookedRequest<Asset> beginCookedRequest(const std::string& name, AssetType type,
 
     Asset stub;
     stub.loading = true;
-    stub.sourceJson() = {{"kind", "cooked"}, {"name", name}};
+    stub.sourceJson() = {{"kind", AssetSourceKind::COOKED}, {"name", name}};
 
     CookedRequest<Asset> req;
     req.handle     = resources.add(std::move(stub), name);
     req.uid        = resources.get(req.handle).uid();
     req.dispatch   = true;
-    req.path       = AssetLibrary::cookedPath(type, name);
-    req.expectHash = record->recipeHash;
+    req.path       = AssetLibrary::cookedPath(type, name,
+                                              AssetCook::cacheKey(record->recipeHash, type));
     return req;
 }
 
@@ -71,16 +71,15 @@ Handle<Asset> loadCookedSynchronous(const std::string& name, AssetType type, con
         return {};
     }
 
-    const std::filesystem::path path = AssetLibrary::cookedPath(type, name);
+    // No hash comparison: the path was composed from the key, so a file found
+    // there was baked from this recipe by this cooker for this layout. A stale
+    // artifact is not read and rejected, it is not looked for.
+    const std::filesystem::path path =
+        AssetLibrary::cookedPath(type, name, AssetCook::cacheKey(record->recipeHash, type));
     Asset decoded;
-    uint64_t gotHash = 0;
-    if (!read(path, decoded, &gotHash)) return {};
-    if (gotHash != record->recipeHash) {
-        LOG_ERROR("Cooked %s '%s': recipe hash mismatch - cache is stale", what, path.string().c_str());
-        return {};
-    }
+    if (!read(path, decoded, nullptr)) return {};
 
-    decoded.sourceJson() = {{"kind", "cooked"}, {"name", name}};
+    decoded.sourceJson() = {{"kind", AssetSourceKind::COOKED}, {"name", name}};
     return resources.add(std::move(decoded), name);
 }
 
@@ -92,16 +91,13 @@ MeshHandle requestCookedMeshAsync(const std::string& name, ResourceManager& reso
     auto req = beginCookedRequest<MeshAsset>(name, AssetType::Mesh, "mesh", resources);
     if (!req.dispatch) return req.handle;
 
-    ThreadPool::get().addTask([handle = req.handle, uid = req.uid, path = req.path,
-                               expectHash = req.expectHash]() {
+    ThreadPool::get().addTask([handle = req.handle, uid = req.uid, path = req.path]() {
         MeshLoadCompletion completion;
         completion.handle   = handle;
         completion.assetUid = uid;
 
         MeshAsset decoded;
-        uint64_t gotHash = 0;
-        const bool ok = AssetCook::readMesh(path, decoded, &gotHash);
-        if (ok && gotHash == expectHash) {
+        if (AssetCook::readMesh(path, decoded, nullptr)) {
             completion.vertices   = std::move(decoded.vertices);
             completion.indices    = std::move(decoded.indices);
             completion.skin       = std::move(decoded.skin);
@@ -110,8 +106,6 @@ MeshHandle requestCookedMeshAsync(const std::string& name, ResourceManager& reso
             completion.boundsMax  = decoded.boundsMax;
             completion.skinRadius = decoded.skinRadius;
             completion.success    = !completion.vertices.empty();
-        } else if (ok) {
-            LOG_ERROR("Cooked mesh '%s': recipe hash mismatch - cache is stale", path.string().c_str());
         }
         AsyncLoadQueue::get().pushMesh(std::move(completion));
     });
@@ -123,22 +117,17 @@ TextureHandle requestCookedTextureAsync(const std::string& name, ResourceManager
     auto req = beginCookedRequest<TextureAsset>(name, AssetType::Texture, "texture", resources);
     if (!req.dispatch) return req.handle;
 
-    ThreadPool::get().addTask([handle = req.handle, uid = req.uid, path = req.path,
-                               expectHash = req.expectHash]() {
+    ThreadPool::get().addTask([handle = req.handle, uid = req.uid, path = req.path]() {
         TextureLoadCompletion completion;
         completion.handle   = handle;
         completion.assetUid = uid;
 
         TextureAsset decoded;
-        uint64_t gotHash = 0;
-        const bool ok = AssetCook::readTexture(path, decoded, &gotHash);
-        if (ok && gotHash == expectHash) {
+        if (AssetCook::readTexture(path, decoded, nullptr)) {
             completion.params    = decoded.params;
             completion.hasParams = true;
             completion.pixelData = std::move(decoded.pixelData);
             completion.success   = !completion.pixelData.empty();
-        } else if (ok) {
-            LOG_ERROR("Cooked texture '%s': recipe hash mismatch - cache is stale", path.string().c_str());
         }
         AsyncLoadQueue::get().pushTexture(std::move(completion));
     });

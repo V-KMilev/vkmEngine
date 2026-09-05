@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "GENERATOR"
 
-#include "generator/lod_generator.h"
+#include "resource/generate/lod_generator.h"
 
 #include <algorithm>
 #include <string>
@@ -9,8 +9,9 @@
 
 #include "logger.h"
 
-#include "generator/mesh_generators.h"
+#include "resource/generate/mesh_generators.h"
 #include "resource/resource_manager.h"
+#include "resource/asset_source_kind.h"
 
 namespace Vkm::Engine {
 
@@ -73,7 +74,7 @@ LOD generateLOD(ResourceManager& resources, MeshHandle source, uint32_t extraLev
         // reaches the library is a mesh the scene file cannot resolve on load -
         // which would drop every level but the base on the next round trip.
         decimated.sourceJson() = {
-            {"kind", "decimate"},
+            {"kind", AssetSourceKind::DECIMATE},
             {"base", baseName},
             {"grid", cells},
         };

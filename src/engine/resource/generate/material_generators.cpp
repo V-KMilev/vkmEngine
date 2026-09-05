@@ -1,13 +1,14 @@
 #define VKM_LOG_CATEGORY "GENERATOR"
 
-#include "generator/material_generators.h"
+#include "resource/generate/material_generators.h"
 
 #include <nlohmann/json.hpp>
 
 #include "logger.h"
 
 #include "resource/resource_manager.h"
-#include "generator/texture_generators.h"
+#include "resource/generate/texture_generators.h"
+#include "resource/asset_source_kind.h"
 
 namespace Vkm::Engine {
 
@@ -30,7 +31,7 @@ MaterialHandle buildDefaultMaterial(ResourceManager& resourceManager) {
     auto handle = resourceManager.add(std::move(material), "material:default");
     // Stamp a source so SceneSerializer can recreate this on cold-start load.
     auto& asset = resourceManager.edit(handle);
-    asset.sourceJson() = {{"kind", "default"}};
+    asset.sourceJson() = {{"kind", AssetSourceKind::DEFAULT}};
     LOG_TRACE("Generated default material (handle: %u)", handle.id());
 
     return handle;
