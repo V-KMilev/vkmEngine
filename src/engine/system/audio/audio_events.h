@@ -9,27 +9,23 @@ namespace Vkm::Engine {
  * @brief A request to hear a clip once, from gameplay that owns no entity for it.
  *
  * AudioSource is the answer whenever there is a thing making the sound: it can
- * be stopped, moved, looped and read back. This is the answer when there is
- * not - a coin from a pool that recycles the instant it is collected, an
- * impact on a body about to be destroyed, or any sound that must overlap a
- * copy of itself, which one source cannot do because a source is a speaker
- * rather than a queue.
+ * be stopped, moved, looped and read back. This is the answer when there is not
+ * - a coin from a pool that recycles as it is collected, an impact on a body
+ * about to be destroyed, or any sound that must overlap a copy of itself, which
+ * one source cannot do.
  *
  *   context().events->emit(PlaySoundEvent{m_chime, params});
  *
- * What makes it safe to forget is that it hands back no id: nothing can stop
- * it, move it or ask whether it finished, so nothing has to own it. The voice
- * is not entered in AudioSystem's table - it plays to its end and the next
- * frame's sweep of finished voices releases it. Which is also why `loop` is
- * ignored: a sound with no end needs an id to stop it, so it needs a
- * component. Everything else in VoiceParams applies, position included, but
- * it is a position rather than a follow - a request is fixed where it was
- * made, and a sound that must travel with a moving emitter wants a source.
+ * It hands back no id, so nothing can stop it, move it or ask whether it
+ * finished, and nothing has to own it: the voice plays to its end and the next
+ * sweep of finished voices releases it. Which is why `loop` is ignored - a sound
+ * with no end needs an id to stop it, so it needs a component - and why a
+ * position here is a position rather than a follow.
  *
  * Emitted synchronously, so a request made during Simulation is heard in the
- * same frame's Transform stage, exactly as writing AudioSource::playing is.
- * Requests carry no priority and share the mixer's uncapped voice budget with
- * every source in the scene.
+ * same frame. Requests carry no priority and share the mixer's voice budget with
+ * every source in the scene; at the ceiling one is dropped rather than
+ * displacing a voice already playing, and the mixer says so once.
  */
 struct PlaySoundEvent {
     AudioClipHandle clip;

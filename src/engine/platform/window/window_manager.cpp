@@ -203,6 +203,10 @@ void WindowManager::swapBuffers() {
 }
 
 void WindowManager::updateMode(WindowMode windowMode) {
+    // Guarded like every sibling that touches the handle: a headless host has
+    // no window, and asking GLFW about a null one is not a monitor failure.
+    if (!m_windowHandle) return;
+
     GLFWmonitor* monitor = getCurrentMonitor(m_windowHandle);
     if (!monitor) {
         LOG_ERROR("Failed to get current monitor");
@@ -371,13 +375,6 @@ float WindowManager::framebufferScale() const {
 
 GLFWwindow* WindowManager::getWindowContext() const {
     return m_windowHandle;
-}
-
-void WindowManager::setSceneViewport(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
-    m_sceneVpX = x;
-    m_sceneVpY = y;
-    m_sceneVpW = w;
-    m_sceneVpH = h;
 }
 
 } // namespace Vkm::Engine
