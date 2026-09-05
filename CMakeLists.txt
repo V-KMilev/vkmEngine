@@ -37,13 +37,8 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_SKIP_BUILD_RPATH OFF)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH OFF)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH ON)
-if(APPLE)
-    set(CMAKE_BUILD_RPATH   "@loader_path")
-    set(CMAKE_INSTALL_RPATH "@loader_path;@loader_path/../lib")
-else()
-    set(CMAKE_BUILD_RPATH   "$ORIGIN")
-    set(CMAKE_INSTALL_RPATH "$ORIGIN;$ORIGIN/../lib")
-endif()
+set(CMAKE_BUILD_RPATH   "$ORIGIN")
+set(CMAKE_INSTALL_RPATH "$ORIGIN;$ORIGIN/../lib")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -91,10 +86,6 @@ endif()
 
 # Branch / commit / build-date -> PROJECT_* variables, recomputed each configure.
 include(cmake/git_metadata.cmake)
-
-# Derives shaders/_generated/ from the C++ headers, so a cross-language constant
-# has one source of truth instead of a hand-kept copy in each shader.
-include(cmake/generate_shader_config.cmake)
 
 # Warning flags shared by every first-party target. GCC/Clang dialect only -
 # MSVC spells these differently, so the generator expression leaves it alone.
@@ -179,3 +170,4 @@ include(cmake/install.cmake)
 # CPack, which turns that install tree into a downloadable archive. After the
 # install rules because it packages what they produce.
 include(cmake/package.cmake)
+include(cmake/docs.cmake)

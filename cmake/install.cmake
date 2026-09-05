@@ -94,10 +94,6 @@ endif()
 # Shaders are engine chrome: they ship with the engine and a project never edits
 # them. Everything a project owns - its scenes, its assets, its cooked library -
 # belongs to the project and is not the SDK's to install.
-# _generated included, not excluded: configure writes it into the SOURCE tree
-# (cmake/generate_shader_config.cmake), and the shaders #include from it - so a
-# package without it compiles nothing. It is gitignored because it is derived,
-# which is a different question from whether it ships.
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/shaders
         DESTINATION . COMPONENT Runtime)
 

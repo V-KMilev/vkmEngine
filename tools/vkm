@@ -512,11 +512,14 @@ def cmd_package(args) -> int:
     # this SDK keeps libraries in rather than only the host's own, because the
     # engine's build tree splits them. The rpath is $ORIGIN, so once they are
     # here the package runs where it is unzipped.
+    # follow_symlinks=False, so libglfw.so -> libglfw.so.3 -> libglfw.so.3.5
+    # arrives as two links and one file rather than three copies of the same
+    # 1.6 MB. The loader follows the SONAME, so the chain has to survive.
     copied = 0
     for libdir in engine_lib_dirs(root, runtime):
         for pattern in ("*.so*", "*.dll"):
             for lib in libdir.glob(pattern):
-                shutil.copy2(lib, out / "bin" / lib.name)
+                shutil.copy2(lib, out / "bin" / lib.name, follow_symlinks=False)
                 copied += 1
 
     # A glob that matches nothing raises nothing, so without this the one failure
