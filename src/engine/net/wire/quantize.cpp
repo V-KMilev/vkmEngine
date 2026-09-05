@@ -75,12 +75,12 @@ float fromSigned(uint32_t raw, float range, uint32_t width) {
 
 } // namespace
 
-void writePosition(BitWriter& out, float value, float extent) {
-    out.bits(toFixed(value, -extent, POSITION_STEP, positionBits(extent)), positionBits(extent));
+void writePosition(BitWriter& out, float value) {
+    out.bits(toFixed(value, -WORLD_EXTENT, POSITION_STEP, positionBits()), positionBits());
 }
 
-float readPosition(BitReader& in, float extent) {
-    return fromFixed(in.bits(positionBits(extent)), -extent, POSITION_STEP);
+float readPosition(BitReader& in) {
+    return fromFixed(in.bits(positionBits()), -WORLD_EXTENT, POSITION_STEP);
 }
 
 void writeRotation(BitWriter& out, const glm::quat& value) {

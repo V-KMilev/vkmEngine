@@ -18,10 +18,9 @@ static_assert(NET_PREFAB_PATH_MAX < (1u << PATH_BITS),
 } // namespace
 
 bool writeSpawn(BitWriter& out, const NetSpawn& spawn) {
-    // Checked here because the length field is PATH_BITS wide: a longer path
-    // would be written whole under a length that wrapped, and everything after
-    // it in the stream would be read at the wrong offset. readSpawn already
-    // refuses one, so without this the two ends disagree about what is legal.
+    // Checked here because the length field is PATH_BITS wide: a longer path is
+    // written whole under a length that wrapped, and the rest of the stream is
+    // read at the wrong offset. readSpawn refuses one too.
     if (spawn.prefab.empty() || spawn.prefab.size() > NET_PREFAB_PATH_MAX) return false;
 
     out.u8(static_cast<uint8_t>(NetEvent::Spawn));
@@ -60,10 +59,9 @@ bool readSpawn(BitReader& in, NetSpawn& spawn) {
     const float z = in.f32();
     if (in.failed()) return false;
 
-    // The only raw float on the wire - every other one is quantised into a
-    // range by construction and cannot be anything else. This one is whatever
-    // the sender put there, and a NaN is written straight into a Transform,
-    // where it spreads to every value computed from it and never comes back.
+    // The only raw float on the wire; every other one is quantised into a range
+    // by construction. This one is whatever the sender put there, and a NaN
+    // written into a Transform spreads to everything computed from it.
     if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) return false;
 
     spawn.at.position = glm::vec3(x, y, z);

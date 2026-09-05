@@ -15,31 +15,22 @@ class Scene;
  * @brief What one connection is known to hold, so the next snapshot says less.
  *
  * A snapshot carries a component only when its encoded bits differ from what
- * this connection has *confirmed receiving*. The delta is therefore on
- * presence, never on values, and that distinction is what makes it safe: a
- * value delta chains, so one lost packet poisons everything after it until a
- * full resend, whereas an absolute entry held back for three snapshots is
- * unconditionally correct the moment it lands.
+ * this connection has *confirmed receiving*. The delta is on presence, never on
+ * values, which is what makes it safe: a value delta chains, so one lost packet
+ * poisons everything after it, while an absolute entry held back for three
+ * snapshots is correct the moment it lands. It is also why joining and playing
+ * are one code path - a connection that has confirmed nothing differs from the
+ * world in every component, so its first snapshot is the whole world by the
+ * rule rather than by a special case.
  *
- * It is also why joining and playing are one code path with no separate
- * "send everything" mode. A connection that has confirmed nothing differs from
- * the world in every component, so its first snapshot is the whole world
- * because of the rule, not as a special case of it.
+ * Confirmed, not sent: folding a snapshot in when it is written describes a
+ * client that received it, and a client that did not is never told again. So
+ * what a snapshot said is held aside until its acknowledgement comes back, and
+ * dropped unfolded when it does not. Per connection, never shared, because two
+ * clients lose different packets.
  *
- * **Confirmed, not sent.** Folding a snapshot in when it is written would
- * describe a client that received it; a client that did not is then never told
- * again, because the server believes it already said so. A body that moves
- * through a burst of loss and then stops is frozen on that client for the rest
- * of the match. So what a snapshot said is held aside until the acknowledgement
- * for it comes back, and dropped unfolded when it does not.
- *
- * Per connection, never shared, for the same reason: two clients lose different
- * packets.
- *
- * Comparison is on encoded bits, not on floats. Two positions a micrometre
- * apart encode identically and a settled world goes quiet; compared as floats
- * it would dribble a body's worth of bits every tick for as long as the game
- * ran.
+ * Comparison is on encoded bits, not floats: two positions a micrometre apart
+ * encode identically and a settled world goes quiet.
  */
 class NetBaseline {
     public:
