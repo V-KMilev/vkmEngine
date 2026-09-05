@@ -22,21 +22,10 @@ void setParent(Scene& scene, EntityId child, EntityId parent) {
     VKM_ASSERT(child != parent, "HierarchyOperations::setParent: entity cannot parent itself");
 
     // Cycle: the new parent must not already be a descendant of the child.
-    {
-        EntityId ancestor = parent;
-        uint32_t depth = 0;
-        while (ancestor && depth < MAX_DEPTH) {
-            if (ancestor == child) {
-                LOG_WARNING("HierarchyOperations::setParent: cycle detected, ignoring");
-                return;
-            }
-            if (scene.has<Hierarchy>(ancestor)) {
-                ancestor = scene.get<Hierarchy>(ancestor).parent;
-            } else {
-                break;
-            }
-            ++depth;
-        }
+    // Making a node's own descendant its parent closes the graph into a ring.
+    if (child == parent || isAncestorOf(scene, child, parent)) {
+        LOG_WARNING_C("HIERARCHY", "HierarchyOperations::setParent: cycle detected, ignoring");
+        return;
     }
 
     removeFromParent(scene, child);
@@ -153,13 +142,25 @@ glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity) {
     return worldMatrix;
 }
 
-void destroyHierarchy(Scene& scene, EntityId entity) {
+namespace {
+
+void destroyHierarchyAt(Scene& scene, EntityId entity, uint32_t depth) {
     if (!scene.isAlive(entity)) return;
+
+    // Bounded like every other walk here. This one recurses, so a chain deeper
+    // than the engine supports is a stack the frame does not have rather than a
+    // loop it can leave.
+    if (depth >= MAX_DEPTH) {
+        detail::warnHierarchyCycle("subtree destroy");
+        return;
+    }
 
     // Destroy descendants depth-first. forEachChild snapshots the next sibling
     // before each call, so destroying the current child's subtree (which
     // unlinks it) can't strand the walk.
-    forEachChild(scene, entity, [&](EntityId child) { destroyHierarchy(scene, child); });
+    forEachChild(scene, entity, [&](EntityId child) {
+        destroyHierarchyAt(scene, child, depth + 1);
+    });
 
     removeFromParent(scene, entity);
 
@@ -167,6 +168,12 @@ void destroyHierarchy(Scene& scene, EntityId entity) {
     // Scene::destroyEntity, so every destroy path is covered without this op
     // knowing about them.
     scene.destroyEntity(entity);
+}
+
+} // namespace
+
+void destroyHierarchy(Scene& scene, EntityId entity) {
+    destroyHierarchyAt(scene, entity, 0);
 }
 
 } // namespace Vkm::Engine::HierarchyOperations

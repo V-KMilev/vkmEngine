@@ -55,12 +55,9 @@ namespace Config {
     // is clocked by.
     constexpr uint32_t DEFAULT_TICK_RATE = 64;
 
-    // Bounds on that, so a hand-edited project.json cannot ask for a step of
-    // zero (an infinite tick loop) or one so slow the simulation is unusable.
-    // Four, not one: the accumulator is capped at MAX_FRAME_ACCUMULATOR below,
-    // and a step longer than that cap can never be consumed - so a rate of 1, 2
-    // or 3 is a simulation whose fixedUpdate silently never runs. The
-    // static_assert after the cap keeps the two from drifting apart.
+    // Bounds on that: zero is an infinite tick loop, and a rate under four is a
+    // step longer than MAX_FRAME_ACCUMULATOR can ever consume - a fixedUpdate
+    // that silently never runs. The static_assert below pins the two together.
     constexpr uint32_t MIN_TICK_RATE = 4;
     constexpr uint32_t MAX_TICK_RATE = 480;
 

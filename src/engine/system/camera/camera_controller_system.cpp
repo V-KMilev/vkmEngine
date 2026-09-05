@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "CAMERA"
-
 #include "system/camera/camera_controller_system.h"
 
 #include <algorithm>
@@ -17,6 +15,7 @@
 #include "platform/input/input_map.h"
 
 #include "debug/profiler.h"
+#include "core/host_chrome.h"
 #include "core/clock.h"
 #include "core/math/axes.h"
 #include "core/math/rotation.h"
@@ -52,7 +51,6 @@ void CameraControllerSystem::reseedAnglesFromRotation(const glm::quat& rotation)
 
 void CameraControllerSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("CameraControllerSystem");
-    if (!m_enabled) return;
 
     // The active rendered camera, so the fly controls survive a scene load or a
     // "Set as Main Camera". A non-empty result is always a live entity with a
@@ -75,7 +73,7 @@ void CameraControllerSystem::update(FrameContext& ctx) {
     // ran" would do it for a right-click that went nowhere.
     const glm::vec3 position = transform.position;
     const glm::quat rotation = transform.rotation;
-    updateFlyMode(ctx.window, ctx.input, transform.position, transform.rotation, ctx.clock.getDeltaTime());
+    updateFlyMode(ctx, transform.position, transform.rotation);
     if (transform.position != position || transform.rotation != rotation) m_cameraMoved = true;
 }
 
@@ -85,12 +83,13 @@ bool CameraControllerSystem::takeCameraMoved() {
     return moved;
 }
 
-void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, const InputMap& input,
-                                           glm::vec3& position, glm::quat& rotation, float deltaTime) {
-    auto& inputHandle = windowManager.getInputHandle();
-    auto& mouse       = inputHandle.getMouse();
+void CameraControllerSystem::updateFlyMode(FrameContext& ctx, glm::vec3& position, glm::quat& rotation) {
+    WindowManager& windowManager = ctx.window;
+    const InputMap& input        = ctx.input;
+    auto& mouse                  = windowManager.getInputHandle().getMouse();
 
-    bool isRightMousePressed = !m_editorWantsMouse && mouse.isButtonPressed(GLFW_MOUSE_BUTTON_RIGHT);
+    bool isRightMousePressed = !ctx.chrome.capturesPointer()
+                            && mouse.isButtonPressed(GLFW_MOUSE_BUTTON_RIGHT);
 
     if (isRightMousePressed != m_isRightMousePressed) {
         windowManager.setCursorMode(isRightMousePressed ? CursorMode::Disabled : CursorMode::Normal);
@@ -115,9 +114,9 @@ void CameraControllerSystem::updateFlyMode(WindowManager& windowManager, const I
         position += forward * scrollDelta * m_settings.zoomSensitivity * m_settings.scrollMultiplier;
     }
 
-    if (m_editorWantsKeyboard) return;
+    if (ctx.chrome.capturesKeyboard()) return;
 
-    float speed = m_settings.moveSpeed * deltaTime;
+    float speed = m_settings.moveSpeed * ctx.clock.getDeltaTime();
     if (input.held(InputActions::BOOST)) {
         speed *= m_settings.speedBoost;
     }

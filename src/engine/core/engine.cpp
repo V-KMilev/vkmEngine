@@ -51,7 +51,7 @@ void Engine::run() {
 
         FrameContext ctx{
             m_scene, m_resources,
-            m_clock, m_events, m_window, m_input, m_net
+            m_clock, m_events, m_window, m_input, m_net, m_chrome
         };
 
         m_window.updateInput();

@@ -7,7 +7,6 @@
 #include "core/engine.h"
 #include "io/project_paths.h"
 
-#include "system/camera/camera_controller_system.h"
 #include "system/async/async_loader_system.h"
 #include "system/script/behavior_system.h"
 #include "system/sky/sky_system.h"
@@ -80,11 +79,10 @@ struct AppConfig {
 // System handles the caller may still need after bootstrap. The editor feeds
 // these into its EditorSystem; the runtime ignores the return value.
 struct AppSystems {
-    Vkm::Engine::CameraControllerSystem& camera;
-    Vkm::Engine::UISystem&               ui;
-    Vkm::Engine::AudioSystem&            audio;
-    Vkm::Engine::VisibilitySystem&       visibility;
-    Vkm::Engine::RenderSystem&           render;
+    Vkm::Engine::AudioSystem&      audio;
+    Vkm::Engine::SplashSystem&     splash;
+    Vkm::Engine::VisibilitySystem& visibility;
+    Vkm::Engine::RenderSystem&     render;
 };
 
 // Stands a ready-to-run engine app up in `engine`: the window and the standard
@@ -119,16 +117,14 @@ inline AppSystems setupEngineApp(Vkm::Engine::Engine& engine, const AppConfig& c
             : (Vkm::Engine::ProjectPaths::engineAssets() / "logo" / "vkm_engine_icon.png").string());
     }
 
-    auto& cameraController =
-        engine.addSystem<Vkm::Engine::CameraControllerSystem>(Vkm::Engine::SystemStage::Input);
     // First in the stage, so the frame it publishes is the one that frame's
     // render reads. It runs on the frame clock, not the simulation one: it fades
     // on while the rest is still loading, and while the editor's clock is paused.
     auto& splashSystem = engine.addSystem<Vkm::Engine::SplashSystem>(Vkm::Engine::SystemStage::Simulation);
     splashSystem.setFade(SPLASH_FADE_SECONDS);
-    // The mono mark: the splash ground is black, and the light-background logo
-    // is near-black ink on it. From the engine root, so a project with no assets
-    // directory of its own still shows it.
+    // The mono mark, from the engine root: the splash ground is black, and a
+    // project with no assets directory of its own still shows it. Only the
+    // engine's - the runtime appends the project's own chain from the Project.
     splashSystem.add(
         (Vkm::Engine::ProjectPaths::engineAssets() / "logo" / "vkm_engine_logo_mono.png").string(),
         VENDOR_SPLASH_SECONDS);
@@ -136,10 +132,9 @@ inline AppSystems setupEngineApp(Vkm::Engine::Engine& engine, const AppConfig& c
     engine.addSystem<Vkm::Engine::BehaviorSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::AnimationSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::SkeletalAnimationSystem>(Vkm::Engine::SystemStage::Simulation);
-    // After the pose it reads and before the bodies it writes, on the tick with
-    // the solve rather than per frame with the pose: the bone transforms it
-    // writes are what the solver reads next, so a per-frame write would vary a
-    // tick's starting shape with the last frame's length.
+    // After the pose it reads and before the bodies it writes, on the tick rather
+    // than per frame: what it writes is what the solver reads next, so a per-frame
+    // write would vary a tick's starting shape with the last frame's length.
     engine.addSystem<Vkm::Engine::RagdollSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::ParticleSystem>(Vkm::Engine::SystemStage::Simulation);
     engine.addSystem<Vkm::Engine::PhysicsSystem>(Vkm::Engine::SystemStage::Simulation);
@@ -150,7 +145,7 @@ inline AppSystems setupEngineApp(Vkm::Engine::Engine& engine, const AppConfig& c
     // which is what keeps an attachment on its bone rather than one frame behind.
     engine.addSystem<Vkm::Engine::BoneSocketSystem>(Vkm::Engine::SystemStage::Transform);
     engine.addSystem<Vkm::Engine::HierarchySystem>(Vkm::Engine::SystemStage::Transform);
-    auto& uiSystem = engine.addSystem<Vkm::Engine::UISystem>(Vkm::Engine::SystemStage::Transform);
+    engine.addSystem<Vkm::Engine::UISystem>(Vkm::Engine::SystemStage::Transform);
     // After the world resolve it reads poses from; see
     // docs/reference/system/audio.md, "Per-frame flow".
     auto& audioSystem = engine.addSystem<Vkm::Engine::AudioSystem>(Vkm::Engine::SystemStage::Transform);
@@ -175,5 +170,5 @@ inline AppSystems setupEngineApp(Vkm::Engine::Engine& engine, const AppConfig& c
     engine.getClock().setPaused(config.startPaused);
     engine.setFPSLog(config.logFps);
 
-    return AppSystems{cameraController, uiSystem, audioSystem, visibilitySystem, renderSystem};
+    return AppSystems{audioSystem, splashSystem, visibilitySystem, renderSystem};
 }
