@@ -1,8 +1,6 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "data/gl_fog_volume.h"
 
-#include "texture/gl_texture_3d.h"
+#include "gl_texture_3d.h"
 
 namespace Vkm::Engine {
 

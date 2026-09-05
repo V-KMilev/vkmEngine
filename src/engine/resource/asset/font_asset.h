@@ -52,7 +52,6 @@ struct FontAsset : public Resource {
     float pixelHeight = 0.0f;           ///< Pixel height the metrics were baked at.
     float ascent      = 0.0f;           ///< Baseline-to-top, in baked pixels (positive).
     float descent     = 0.0f;           ///< Baseline-to-bottom, in baked pixels (negative below the baseline).
-    float lineHeight  = 0.0f;           ///< Recommended line advance, in baked pixels.
 
     std::array<FontGlyph, GLYPH_COUNT> glyphs{};
 

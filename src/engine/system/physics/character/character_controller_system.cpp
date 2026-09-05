@@ -33,20 +33,17 @@ constexpr float MOVE_SPEED_SQ = 1e-4f;
  * @brief Turn @p target so it runs along the surface the body is pressed
  *        against instead of into it.
  *
- * A surface within the slope limit is ground rather than an obstacle, and the
- * caller's ground projection is what follows it; only something steeper
- * deflects. That one is taken flat - a wall that turned the target upward would
- * be a ramp the character climbs, and the whole point of the slope limit is that
- * it cannot. World up is the "nothing in the way" answer PhysicsSystem publishes
- * when a body touched nothing, and it is walkable at every slope limit, so no
- * separate test for "is there a contact at all" is needed here.
+ * A surface within the slope limit is ground rather than an obstacle and the
+ * caller's ground projection follows it; only something steeper deflects, and
+ * that one is taken flat - a wall that turned the target upward would be a ramp
+ * the slope limit exists to refuse. World up is what PhysicsSystem publishes when
+ * a body touched nothing, and it is walkable at every slope limit, so no separate
+ * "is there a contact" test is needed.
  *
  * Sliding along a wall is the controller's job rather than the solver's because
- * steering straight into one makes a normal force, Coulomb friction scales with
- * it, and whether the character glides or stops dead then depends on two
- * material numbers - at 25 degrees off the wall normal with default friction it
- * stops dead. A target that already runs along the wall never pushes into it,
- * so there is no normal force for friction to bite on.
+ * steering into one makes a normal force, friction scales with it, and whether
+ * the character glides or stops dead then depends on two material numbers. A
+ * target already running along the wall never pushes into it.
  *
  * @param target Desired velocity, world space.
  * @param blockNormal Rigidbody::blockNormal - the most horizontal contact normal.
@@ -192,7 +189,7 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
         cc.grounded = rb.supported && glm::dot(rb.supportNormal, Math::WORLD_UP) >= slopeLimit;
         cc.groundNormal = cc.grounded ? rb.supportNormal : Math::WORLD_UP;
 
-        const Collider* collider = scene.has<Collider>(id) ? &scene.get<Collider>(id) : nullptr;
+        const Collider* collider = scene.tryGet<Collider>(id);
         if (!collider || !collider->enabled || !hasCapsule(*collider)) sawNoCapsule = true;
         if (!rb.freezeRotation) sawSpinnable = true;
 
@@ -205,11 +202,9 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
             rb.sleepTimer = 0.0f;
         }
 
-        // Deflected before the ground projection, not after: this only ever
-        // turns the horizontal, so the slope-following vertical below is then
-        // computed for the direction the character actually ends up going.
-        // Mounting a step and sliding along a wall are alternatives, so which
-        // one applies is settled before the target is built.
+        // Deflected before the ground projection, not after: this only turns
+        // the horizontal, so the slope-following vertical below is computed for
+        // the direction the character ends up going.
         const glm::vec3 flatInput = {cc.moveInput.x, 0.0f, cc.moveInput.z};
         const float inputLenSq = glm::dot(flatInput, flatInput);
         const bool blocked = glm::dot(rb.blockNormal, Math::WORLD_UP) < slopeLimit;
@@ -221,11 +216,9 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
                             && capsuleOf(*collider, radius, halfHeight, offset)
                             && radius > 0.0f;
 
-        // Resolved the way PhysicsSystem and the queries resolve it, because
-        // stepTargetY is a world height and the probes are cast in world space.
-        // A character parented to anything - a lift, a vehicle, a prefab root -
-        // has a Transform in that parent's frame, and reading it raw put the
-        // feet wherever the parent happened to be.
+        // Resolved to world space, because stepTargetY is a world height and the
+        // probes are cast there: a character parented to a lift or a prefab root
+        // has a Transform in that parent's frame.
         glm::vec3 feet(0.0f);
         if (climbable) {
             const BodyPose pose = worldPoseOf(scene, id, scene.get<Transform>(id));
@@ -233,10 +226,9 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
                  - Math::WORLD_UP * (halfHeight + radius);
         }
 
-        // A climb ends by arriving, by the character no longer asking, or by
-        // its deadline - never because the step stopped blocking, since rising
-        // is exactly what un-blocks a riser and ending there ends every climb
-        // one tick in.
+        // A climb ends by arriving, by the character no longer asking, or by its
+        // deadline - never because the step stopped blocking, since rising is
+        // what un-blocks a riser.
         const bool wasStepping = cc.stepping;
         if (cc.stepping) {
             cc.stepTime += dt;
@@ -265,11 +257,9 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
             }
         }
 
-        // The rate that closes what is actually left, capped so the first tick
-        // does not teleport. Driven by the remaining distance rather than by
-        // the step limit, so a kerb rises by a kerb: asking for stepHeight at
-        // walking speed wanted 5.3 m/s, which is more than this controller's
-        // own jump and enough to rise a metre and a half off a doorstep.
+        // The rate that closes what is left, capped so the first tick does not
+        // teleport. Driven by the remaining distance rather than the step limit,
+        // so a kerb rises by a kerb and not by a jump's worth of speed.
         const float remaining = climbable ? cc.stepTargetY - feet.y : 0.0f;
         const float stepClimb = (cc.stepping && dt > 0.0f && remaining > 0.0f)
             ? glm::min(remaining / dt, cc.stepHeight / STEP_CLIMB_TIME)
@@ -304,12 +294,9 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
         const bool clamped = distance > step && !tiny;
         velocity += clamped ? delta * (step / distance) : delta;
 
-        // Set rather than steered toward, and set rather than raised. The
-        // acceleration limit describes how quickly a character changes its
-        // mind, and mounting a step is not one - metered through it the climb
-        // is still building speed when the ground it needs has gone. Assigning
-        // it is what makes the last tick of a climb ask for nothing, where
-        // taking the larger of the two would keep the previous tick's rate.
+        // Set rather than steered toward: the acceleration limit describes how
+        // fast a character changes its mind, and a climb metered through it is
+        // still building speed when the ground it needs has gone.
         if (cc.stepping) velocity.y = stepClimb;
 
         // A step ends by arriving, not by launching. Without this the tick that

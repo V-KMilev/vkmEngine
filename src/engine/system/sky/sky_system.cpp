@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "SKY"
-
 #include "system/sky/sky_system.h"
 
 #include <algorithm>

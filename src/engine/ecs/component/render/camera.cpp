@@ -12,12 +12,8 @@ EntityId findActiveCamera(const Scene& scene, EntityId cached) {
         return cached;
     }
 
-    EntityId active{};
-    scene.forEach<Camera, Transform>([&](EntityId id, const Camera& camera, const Transform&) {
-        if (active || !camera.active) return;
-        active = id;
-    });
-    return active;
+    return findLowestSlot<Camera, Transform>(scene,
+        [](const Camera& camera, const Transform&) { return camera.active; });
 }
 
 } // namespace Vkm::Engine

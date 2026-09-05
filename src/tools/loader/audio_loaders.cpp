@@ -18,6 +18,7 @@
 // miniaudio's implementation is provided once by the miniaudio module (linked
 // into vkm_core); here we need only the decoder declarations.
 #include "miniaudio.h"
+#include "resource/asset_source_kind.h"
 
 namespace Vkm::Engine {
 
@@ -109,7 +110,7 @@ AudioClipHandle loadAudioClip(const std::string& filePath, ResourceManager& reso
     LOG_VERBOSE("Loaded sound '%s' (%.2fs, %u channel(s), %u Hz)", ref.c_str(),
                 static_cast<double>(clip.duration()), clip.channels, clip.sampleRate);
 
-    clip.sourceJson() = {{"kind", "file"}, {"path", ref}};
+    clip.sourceJson() = {{"kind", AssetSourceKind::FILE}, {"path", ref}};
     // The reference is the clip's name: the identity a scene resolves it by.
     return resources.add(std::move(clip), ref);
 }

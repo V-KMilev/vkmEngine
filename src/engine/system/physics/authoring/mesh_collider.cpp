@@ -14,12 +14,9 @@ uint32_t addMeshCollider(Collider& collider, const MeshAsset& mesh,
                          const glm::vec3& scale) {
     if (mesh.indices.size() < 3) return 0;
 
-    // One mesh part per collider, enforced rather than described. The hierarchy
-    // below spans a single triangle range, so a second part would be collided
-    // through the first one's tree - silently, and only where the two happen to
-    // overlap. Refused rather than quietly replacing what is already there: a
-    // caller that asks twice meant to have both, and is owed the news that it
-    // cannot.
+    // One mesh part per collider, enforced rather than described: the tree below
+    // spans a single triangle range, so a second part would be collided through
+    // the first one's tree. Refused rather than replacing what is there.
     for (const ColliderPart& part : collider.parts) {
         if (part.shape != ColliderShape::Mesh) continue;
         LOG_WARNING("addMeshCollider: this collider already has a mesh part, "

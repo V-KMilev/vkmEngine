@@ -109,12 +109,13 @@ class GLPreview {
         std::unique_ptr<Vkm::GL::Shader>         m_composite; ///< tonemap HDR -> LDR
         std::unique_ptr<Vkm::GL::Shader>         m_skybox;    ///< sky backdrop (Background::Sky)
         std::unique_ptr<GLMesh>                  m_skyCube;   ///< unit cube for the sky draw
-        std::unique_ptr<Vkm::GL::ScreenTriangle> m_tri;       ///< fullscreen tonemap draw
+        std::unique_ptr<ScreenTriangle> m_tri;       ///< fullscreen tonemap draw
 
-        GLTarget          m_scratch;   ///< shared HDR scene target (fixed size)
+        /// Shared HDR scene target (fixed size). Depth, no G-buffer: a preview
+        /// draws geometry but runs none of the screen-space passes.
+        GLTarget          m_scratch{GLTarget::Layout::ColorDepth};
         GLCamera          m_camera;    ///< orbit camera UBO (binding 2)
         GLLights          m_lights;    ///< studio rig lights SSBO (binding 0)
-        GLShadowData      m_noShadow;  ///< default-built: every light shadowless
         GLInstanceBatcher m_batcher;   ///< single-drawable instanced draw
 
         std::vector<const DrawableData*> m_drawables;

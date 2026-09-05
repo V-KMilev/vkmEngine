@@ -1,0 +1,44 @@
+/**
+@mainpage vkmEngine API Reference
+
+A C++17 engine with an OpenGL 4.3 backend, for Windows and Linux, that **runs
+projects**. It holds no game of its own: a game is a directory - a
+`project.json`, its scenes and assets, and gameplay code built into its own
+module - and the same four executables run any of them.
+
+This is the generated reference for the types a project compiles against. It is
+not the manual. The manual is in `docs/`, and it is the better place to start:
+
+- @b guides/engine.md - what the engine is, what it refuses, what is settled
+- @b guides/getting-started.md - building a game against a released SDK
+- @b reference/ - how each subsystem actually works, in prose
+
+@section api_where Where to look first
+
+| If you are | Start at |
+|------------|----------|
+| Writing gameplay | Vkm::Engine::Behavior, Vkm::Engine::BehaviorContext |
+| Building a world in code | Vkm::Engine::Scene, Vkm::Engine::EntityId |
+| Loading or making assets | Vkm::Engine::ResourceManager, Vkm::Engine::Handle |
+| Reacting to things | Vkm::Engine::EventBus, Vkm::Engine::FrameContext |
+| Writing a system | Vkm::Engine::System, Vkm::Engine::SystemStage |
+
+@section api_conventions Conventions worth knowing before you read anything
+
+- **Forward is -Z, screen-right is +X, up is +Y** - right-handed, glm's own
+  convention. Ask through Vkm::Engine::Math::computeForward and friends rather
+  than writing an axis out by hand.
+- **Components are plain structs.** There is no registration step and no base
+  class; `scene.add<T>(entity, ...)` is the whole mechanism.
+- **Assets are referenced by Vkm::Engine::Handle, never by pointer**, and
+  serialized by *name* - the name is the identity that survives a save.
+- **Systems never call each other.** Vkm::Engine::FrameContext is the only
+  per-frame channel between them: references are services, pointers are
+  per-frame products that are null until their producer has run.
+
+@section api_stability What is stable
+
+Everything under `Vkm::Engine` that a project can include is public surface.
+`Vkm::GL` is the platform layer and is versioned separately. Anything in a
+`detail` namespace is not public and will move without notice.
+*/

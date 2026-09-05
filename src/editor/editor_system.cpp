@@ -14,6 +14,7 @@
 
 #include "logger.h"
 
+#include "core/host_chrome.h"
 #include "core/clock.h"
 #include "core/system.h"
 #include "debug/engine_error_log.h"
@@ -41,14 +42,12 @@ namespace Vkm::Engine {
 EditorSystem::EditorSystem(
     GLFWwindow* window,
     CameraControllerSystem& cameraController,
-    UISystem& uiSystem,
     VisibilitySystem& visibilitySystem,
     RenderSystem& renderSystem,
     AudioSystem& audioSystem,
     ScriptModule& scriptModule
 )
     : m_cameraController(cameraController)
-    , m_uiSystem(uiSystem)
     , m_renderSystem(renderSystem)
     , m_visibilitySystem(visibilitySystem)
     , m_audioSystem(audioSystem)
@@ -102,11 +101,6 @@ EditorSystem::EditorSystem(
 
     applyEditorTheme(uiScale);
 
-    // The fly controls are an authoring tool, so the editor is what asks for
-    // them. Off by default rather than switched off by the runtime: right-drag
-    // grabs the pointer, and a behavior reaches no system to give it back.
-    m_cameraController.setEnabled(true);
-
     // The grid defaults off engine-wide (it is an editor aid); the editor wants
     // it on out of the box. Set before init() reads the project's settings, so
     // a persisted value still wins.
@@ -121,7 +115,7 @@ EditorSystem::EditorSystem(
     LOG_INFO("Initialized");
 }
 
-EditorSystem::~EditorSystem() {
+void EditorSystem::shutdown() {
     LOG_TRACE("Shutting down, saving settings");
     setErrorSink(nullptr);
     EditorSettings::save(m_state, m_renderSystem.getSettings());
@@ -132,8 +126,11 @@ EditorSystem::~EditorSystem() {
 
 void EditorSystem::init(FrameContext& ctx) {
     EditorContext ec = makeContext(ctx);
-    m_project.open(ec, m_scriptModule, m_sceneIO, ProjectPaths::projectRoot().string(),
-                   ProjectController::OpenKind::Startup);
+    // Kept: without a project every path the editor composes resolves against
+    // the engine's own directory, so it shows a picker rather than a workspace.
+    m_hasProject = m_project.open(ec, m_scriptModule, m_sceneIO,
+                                  ProjectPaths::projectRoot().string(),
+                                  ProjectController::OpenKind::Startup);
 }
 
 EditorContext EditorSystem::makeContext(FrameContext& ctx) {
@@ -190,8 +187,12 @@ void EditorSystem::performSceneAction(EditorContext& ec, EditorState::SceneActio
             m_sceneIO.loadPath(ec.frame, ec.state, payload);
             break;
         case EditorState::SceneAction::OpenProject:
-            m_project.open(ec, m_scriptModule, m_sceneIO, payload,
-                           ProjectController::OpenKind::Switch);
+            // Kept, like the startup open: a failed switch leaves the editor
+            // where it was, and a first successful one is what turns the picker
+            // into a workspace.
+            m_hasProject = m_project.open(ec, m_scriptModule, m_sceneIO, payload,
+                                          ProjectController::OpenKind::Switch)
+                        || m_hasProject;
             break;
         case EditorState::SceneAction::None:
             break;
@@ -199,6 +200,41 @@ void EditorSystem::performSceneAction(EditorContext& ec, EditorState::SceneActio
 }
 
 namespace {
+
+/**
+ * @brief One ImGui frame: NewFrame on the way in, Render and submit on the way out.
+ *
+ * `NewFrame` and `Render` are a pair, and update() has three exits - a splash
+ * covering the whole surface, the editor hidden behind its toggle, and the
+ * ordinary one. A missed `Render` leaves a half-open frame that the next
+ * `NewFrame` asserts on, so the pairing is a scope rather than a line each exit
+ * remembers to write.
+ *
+ * The submit sits at the end of the editor's own stage, which runs after
+ * RenderSystem drew the scene: that is what puts the UI on top of it.
+ */
+class ImGuiFrame {
+    public:
+        ImGuiFrame() {
+            PROFILE_SCOPE("Editor/ImGuiNewFrame");
+            ImGui_ImplOpenGL3_NewFrame();
+            ImGui_ImplGlfw_NewFrame();
+            ImGui::NewFrame();
+        }
+
+        ~ImGuiFrame() {
+            PROFILE_SCOPE("Editor/ImGuiRender");
+            ImGui::Render();
+            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        }
+
+        ImGuiFrame(const ImGuiFrame& other) = delete;
+        ImGuiFrame& operator=(const ImGuiFrame& other) = delete;
+
+        ImGuiFrame(ImGuiFrame && other) = delete;
+        ImGuiFrame& operator=(ImGuiFrame && other) = delete;
+};
+
 void drawToast(EditorState& state, float deltaTime) {
     if (state.toastTimeRemaining <= 0.0f) return;
     state.toastTimeRemaining -= deltaTime;
@@ -275,9 +311,9 @@ void EditorSystem::update(FrameContext& ctx) {
     if (const unsigned long long total = m_errorLog.totalPushed();
             total > m_lastErrorTotal) {
         m_lastErrorTotal = total;
-        const auto recent = m_errorLog.snapshot();
+        const auto& recent = m_errorLog.entries();
         if (!recent.empty()) {
-            const auto& e = recent.front();
+            const auto& e = recent.back();
             m_state.pushToast(EditorState::ToastKind::Error,
                 "[" + e.category + "] " + e.source + " - see Bottom > Errors");
         }
@@ -339,27 +375,21 @@ void EditorSystem::update(FrameContext& ctx) {
     // Before anything else: the editor-toggle keybind is processed here so the
     // rebind UI in Preferences drives it, and the toggle sits in both the hidden
     // and visible branches because the ImGui frame exists in both.
-    {
-        PROFILE_SCOPE("Editor/ImGuiNewFrame");
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-    }
+    const ImGuiFrame imguiFrame;
 
-    // A splash covers the whole surface and the Render stage drew it before this
-    // one, so panels submitted now land on top of it. The frame is still closed:
-    // NewFrame and Render are a pair, and skipping Render leaks a half-open one.
-    if (ctx.splash && ctx.splash->isShowing()) {
-        ImGui::Render();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        return;
-    }
+    // A splash covers the whole surface, and the Render stage drew it before
+    // this one - so there is nothing worth submitting panels over.
+    if (ctx.splash && ctx.splash->isShowing()) return;
 
     if (isPressed(m_state.keybinds.toggleEditor)) {
         m_state.editorVisible = !m_state.editorVisible;
-        // Releasing input capture immediately on hide stops a held drag
-        // from continuing while the editor isn't drawing.
-        if (!m_state.editorVisible) m_panelResize.resetDragState();
+        // Ending both gestures on hide stops a held drag from continuing while
+        // the editor isn't drawing, and closes the undo step it was merging
+        // into - the hidden path never reaches the boundary below.
+        if (!m_state.editorVisible) {
+            m_panelResize.resetDragState();
+            m_state.commands.endGesture();
+        }
     }
     // Drawn before anything else, so it is visible whether the editor is shown
     // or hidden. It answers the pending request rather than acting on it -
@@ -405,14 +435,11 @@ void EditorSystem::update(FrameContext& ctx) {
     drawToast(m_state, ctx.clock.getDeltaTime());
 
     if (!m_state.editorVisible) {
-        m_cameraController.setEditorInputCapture(false, false);
-        m_uiSystem.setEditorPointerCapture(false);
+        ctx.chrome.setCapture(false, false);
 
         // No panels to layout this frame - let the 3D pipeline fill the
         // whole window next frame, not the stale viewport sub-rect.
-        ctx.window.setSceneViewport(0, 0,
-            static_cast<uint32_t>(ctx.window.getWidth()),
-            static_cast<uint32_t>(ctx.window.getHeight()));
+        ctx.chrome.setViewport(0, 0, 0, 0);
 
         // While the editor is hidden, draw a tiny corner hint so new users
         // know how to bring it back, naming the live (rebindable) toggle key.
@@ -438,8 +465,6 @@ void EditorSystem::update(FrameContext& ctx) {
             ImGui::PopStyleVar();
             ImGui::PopStyleColor();
         }
-        ImGui::Render();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         return;
     }
 
@@ -448,10 +473,9 @@ void EditorSystem::update(FrameContext& ctx) {
                        || m_gizmoOverlay.isGizmoOver()
                        || m_viewportToolbar.isHovered()
                        || m_playbar.isHovered();
-        m_cameraController.setEditorInputCapture(blockMouse, ImGui::GetIO().WantTextInput);
-        // The game UI lays out inside the same viewport rect the chrome above is
-        // drawn over, so it needs the same answer about who owns the pointer.
-        m_uiSystem.setEditorPointerCapture(blockMouse);
+        // Said once: the camera controller, the game UI and the viewport all
+        // need the same answer about who owns the pointer this frame.
+        ctx.chrome.setCapture(blockMouse, ImGui::GetIO().WantTextInput);
     }
 
     m_shortcuts.process(ec, m_sceneIO);
@@ -488,7 +512,8 @@ void EditorSystem::update(FrameContext& ctx) {
         m_openProject.draw(m_state);
         m_modelImport.draw(ctx.scene, ctx.resources, m_state);
         m_placePrefab.draw(ctx.scene, ctx.resources, m_state);
-        drawWorkspace(ec);
+        if (m_hasProject) drawWorkspace(ec);
+        else              m_startScreen.draw(ec);
 
     } else {
         ImGui::PopStyleColor();
@@ -515,15 +540,6 @@ void EditorSystem::update(FrameContext& ctx) {
     // while a keyboard-tweaked slider keeps its item active with the mouse up.
     if (!ImGui::IsAnyMouseDown() && !ImGui::IsAnyItemActive()) {
         m_state.commands.endGesture();
-    }
-
-    {
-        PROFILE_SCOPE("Editor/ImGuiRender");
-        // Runs after RenderSystem (Render stage) drew the scene this frame, so
-        // the UI composites on top. Submit is here rather than a separate
-        // backend hook now that everything is single-threaded.
-        ImGui::Render();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
     }
 }
 
@@ -573,7 +589,7 @@ void EditorSystem::drawWorkspace(EditorContext& ec) {
             // rather than to the full GLFW window. The rect is ImGui's, in
             // window screen coords; the engine wants framebuffer pixels.
             const float vpScale = ec.frame.window.framebufferScale();
-            ec.frame.window.setSceneViewport(
+            ec.frame.chrome.setViewport(
                 static_cast<uint32_t>(std::max(0.0f, vpMin.x * vpScale)),
                 static_cast<uint32_t>(std::max(0.0f, vpMin.y * vpScale)),
                 static_cast<uint32_t>(std::max(1.0f, centerW * vpScale)),
@@ -740,7 +756,7 @@ void EditorSystem::drawFloatingMaterial(EditorContext& ec) {
                     EditorStyle::px(4.0f), 0, EditorStyle::px(2.0f));
     }
     // Gated on the drag: a release over the panel that did not follow one is an
-    // ordinary click in the Inspector, and it used to close the window.
+    // ordinary click in the Inspector, and must not close the window.
     if (dragging && overPanel && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
         m_state.materialFloating = false;
     }

@@ -28,30 +28,46 @@ constexpr float POSITION_STEP = 0.001f;
 constexpr float MAX_SPEED = 200.0f;
 
 /**
- * @brief Bits a coordinate needs, for a world @p extent metres from the origin.
+ * @brief How far from the origin a replicated coordinate may be.
  *
- * @param extent Half the width of the world the game plays in.
- * @return Bit width, sized so the whole range fits at POSITION_STEP.
+ * Half a kilometre each way, which covers every world the engine has been
+ * pointed at and costs twenty bits a coordinate at millimetre resolution. A
+ * body past it is described at the boundary rather than dropped, because a body
+ * that has left the world is already a bug in the game and refusing the packet
+ * it rode in would punish every other body in it.
+ *
+ * A constant rather than a parameter, deliberately: the field's *width* is
+ * derived from it, so a writer and a reader that disagreed about the extent
+ * would disagree about how many bits to move and every field after it in the
+ * packet would decode as something else. There is no version of this that two
+ * ends may answer differently.
  */
-constexpr uint32_t positionBits(float extent) {
+constexpr float WORLD_EXTENT = 512.0f;
+
+/**
+ * @brief Bits one coordinate occupies on the wire.
+ *
+ * @return Bit width, sized so the whole of WORLD_EXTENT fits at POSITION_STEP.
+ */
+constexpr uint32_t positionBits() {
     uint32_t bits  = 1;
     float    range = 2.0f;
-    const float need = (extent * 2.0f) / POSITION_STEP;
+    const float need = (WORLD_EXTENT * 2.0f) / POSITION_STEP;
     while (range < need && bits < 32u) { range *= 2.0f; ++bits; }
     return bits;
 }
 
 /**
- * @brief Write @p value, a coordinate within @p extent of the origin.
+ * @brief Write @p value, a coordinate within WORLD_EXTENT of the origin.
  *
  * Clamped rather than refused. A body that has left the playable world is
  * already a bug in the game, and describing it wrongly at the boundary is a
  * better answer than refusing the whole packet it happened to be in.
  */
-void writePosition(BitWriter& out, float value, float extent);
+void writePosition(BitWriter& out, float value);
 
 /// Read back what writePosition wrote.
-float readPosition(BitReader& in, float extent);
+float readPosition(BitReader& in);
 
 /**
  * @brief Write a rotation as its three smallest components.

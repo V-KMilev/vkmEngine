@@ -15,3 +15,9 @@
 
 *.bin filter=lfs diff=lfs merge=lfs -text
 *.BIN filter=lfs diff=lfs merge=lfs -text
+# Images GitHub has to render in Markdown cannot be LFS pointers: the raw URL
+# the renderer follows returns the pointer text, so the image arrives broken.
+# Nothing is lost by exempting them - these are brand and documentation files of
+# a few KB, and LFS was never buying anything for them.
+assets/logo/** -filter -diff -merge -text
+assets/docs/** -filter -diff -merge -text

@@ -52,12 +52,4 @@ void EngineErrorLog::clearAll() {
     m_entries.clear();
 }
 
-std::vector<EngineErrorLog::Entry> EngineErrorLog::snapshot() const {
-    return std::vector<Entry>(m_entries.rbegin(), m_entries.rend());
-}
-
-std::size_t EngineErrorLog::size() const {
-    return m_entries.size();
-}
-
 } // namespace Vkm::Engine

@@ -135,14 +135,28 @@ asset reference on the panel already reports one the project cannot answer.
 
 ## Interaction
 
-The UISystem hit-tests the pointer (in viewport-local pixels) against each
-interactable `UIButton`'s resolved rect during the walk, but only **records
-candidates**; once the frame's draw list is complete, `resolveInteraction()`
-picks the **topmost** candidate under the pointer (the last in painter order,
-across canvases in sort order). Only that button hovers or presses -
-overlapping buttons never light up together. A press starts a click candidate
-on the topmost button; releasing over that same button **enqueues a
-`UIClickEvent`** through the frame's `EventBus` (`ctx.events`). Gameplay reacts the same way it would to any event:
+The UISystem hit-tests the pointer (in viewport-local pixels) during the walk
+but only **records candidates**; once the frame's draw list is complete,
+`resolveInteraction()` picks the **topmost** one under the pointer (the last in
+painter order, across canvases in sort order).
+
+A candidate is anything that *blocks* the pointer, not just a button: an element
+that draws - a `UIImage` or a `UIButton` - and whose `UIElement::blocksPointer`
+is true, which it is by default. That is what makes a pause menu behave like
+one. An opaque panel laid over the HUD wins the pointer against the buttons
+underneath it by the same rule that decides between two overlapping buttons, and
+a click on the panel reaches neither. Turn `blocksPointer` off for an overlay
+meant to be clicked through - a vignette, a crosshair, a damage flash. Text
+never blocks: a label over a button is a caption on it.
+
+Only the topmost blocker hovers or presses - overlapping buttons never light up
+together - and when it is not a button, nothing is armed at all. A press starts
+a click candidate on the topmost button; releasing over that same button
+**enqueues a `UIClickEvent`** through the frame's `EventBus` (`ctx.events`).
+
+`UIDrawData::pointerOverUI` says whether the pointer is over any blocker at all.
+Gameplay reads it off `ctx.ui` before acting on a click of its own, which is how
+a shot does not go through an open menu. Gameplay reacts the same way it would to any event:
 
 ```cpp
 subscribe<UIClickEvent>([this](const UIClickEvent& e) {
@@ -151,17 +165,20 @@ subscribe<UIClickEvent>([this](const UIClickEvent& e) {
 ```
 
 In the editor the pointer is shared with the editor's own chrome, so
-`EditorSystem` calls `UISystem::setEditorPointerCapture()` each frame with the
-same flag it hands the camera controller. While it is set the layout still runs
-and the overlay still draws, but nothing hit-tests - a click aimed at the
-viewport toolbar, the playbar or a gizmo does not also press the game button
-behind it. The runtime never sets it.
+`EditorSystem` states once a frame on `ctx.chrome` whether its panels have it;
+`UISystem` and the camera controller both read that one answer. While it is set
+the layout still runs and the overlay still draws, but nothing hit-tests - a
+click aimed at the viewport toolbar, the playbar or a gizmo does not also press
+the game button behind it. The runtime never sets it.
 
 ## The draw seam
 
 `UIDrawData` is a backend-agnostic POD: a flat `UIVertex` stream (screen-pixel
 position, uv, straight RGBA) plus `UIDrawCmd`s (a vertex range + a kind; Text
-commands carry the `FontHandle` whose atlas they sample). `RenderView` carries
+commands carry the `FontHandle` whose atlas they sample). A command is a change
+of draw state rather than a widget: consecutive runs that share a kind and a
+font and sit next to each other in the buffer merge, so a screen of forty solid
+panels is one draw call rather than forty. `RenderView` carries
 it exactly like the 3D snapshot, which keeps backends interchangeable - the GL
 backend is the only consumer today, but nothing in the frontend is GL-specific.
 

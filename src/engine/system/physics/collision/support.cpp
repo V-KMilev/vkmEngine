@@ -27,13 +27,11 @@ SupportShape supportOf(const CapsuleShape& capsule) {
     return shape;
 }
 
-SupportShape supportOfPoints(const glm::vec3* points, uint32_t count,
-                             float radius) {
+SupportShape supportOfPoints(const glm::vec3* points, uint32_t count) {
     SupportShape shape;
     shape.kind = SupportShape::Kind::Points;
     shape.points = points;
     shape.count = count;
-    shape.radius = radius;
     return shape;
 }
 
@@ -72,12 +70,7 @@ glm::vec3 support(const SupportShape& shape, const glm::vec3& direction) {
                 if (d > bestDot) { bestDot = d; best = i; }
             }
 
-            const glm::vec3 point = shape.points[best];
-            if (shape.radius <= 0.0f) return point;
-
-            const float lengthSq = glm::dot(direction, direction);
-            if (lengthSq <= glm::epsilon<float>()) return point;
-            return point + direction * (shape.radius / std::sqrt(lengthSq));
+            return shape.points[best];
         }
     }
     return glm::vec3(0.0f);

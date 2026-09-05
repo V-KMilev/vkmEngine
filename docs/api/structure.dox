@@ -1,0 +1,107 @@
+/**
+@file structure.dox
+@brief Directory documentation, so the generated site has a shape.
+
+Doxygen's default output for this engine would be one flat list of ~550
+declarations in `Vkm::Engine`, which is accurate and useless. These `@dir` blocks
+give the site the structure the source tree already has, without putting an
+`@ingroup` line on every declaration - a tax the source would pay forever to
+serve the site.
+*/
+
+/** @dir src/engine/ecs
+    @brief The ECS: entities, the open type-erased Scene, and every component.
+
+    Open and registration-free. A component is any plain struct; the storage is
+    one sparse set per type, and entity ids are generational so a stale one is
+    caught rather than reused. */
+
+/** @dir src/engine/ecs/component
+    @brief The components the engine itself understands.
+
+    Data only - no methods that do work, no base class. A system somewhere reads
+    each of these; a game adds its own the same way. */
+
+/** @dir src/engine/core
+    @brief Foundations: the frame contract, events, math, memory, hashing.
+
+    `System` and `FrameContext` live here, which is where the shape of a frame is
+    actually defined. */
+
+/** @dir src/engine/core/math
+    @brief Vector and matrix helpers on top of glm, and the engine's axis convention.
+
+    Ask an orientation through computeForward / computeRight / computeUp rather
+    than writing an axis by hand. */
+
+/** @dir src/engine/resource
+    @brief Assets: owned once by ResourceManager, referenced by Handle, named for serialization.
+
+    The name is the identity. A handle is a slot plus a generation and is only
+    meaningful to the manager that minted it, so what a scene file stores is the
+    name and what it resolves against is whatever manager is loading it. */
+
+/** @dir src/engine/resource/generate
+    @brief Procedural meshes, textures and materials a game can build at run time.
+
+    Here rather than in the tools module because a project links the engine and
+    not the tools: a game that generates its world needs a cube without importing
+    one. */
+
+/** @dir src/engine/io
+    @brief Reading and writing: scenes, prefabs, the project file, cooked assets.
+
+    Four formats with four different version gates, and none of them grows a
+    back-compatibility read path - see guides/engine.md section 5.1. */
+
+/** @dir src/engine/system
+    @brief The per-frame systems, one directory each.
+
+    Each is registered at exactly one stage and talks to the others only through
+    FrameContext. The stage order is Input, Simulation, Transform, Visibility,
+    Render, UI, and it is declared in one place: app/engine_app.h. */
+
+/** @dir src/engine/system/render
+    @brief The engine's whole view of rendering: RenderBackend, RenderView, EditorRenderHooks.
+
+    Deliberately small. Passes are a backend implementation detail and nothing
+    above this seam knows one exists. */
+
+/** @dir src/engine/system/physics
+    @brief Rigid bodies, collision, joints, ragdolls, character control and queries.
+
+    Deterministic by construction: the solver canonicalises on storage slot, so
+    the same world steps the same way twice. */
+
+/** @dir src/engine/system/script
+    @brief The gameplay boundary: Behavior, BehaviorContext, and the module that loads a game's code.
+
+    This is the surface a game is actually written against. */
+
+/** @dir src/engine/system/ui
+    @brief In-game UI: an ECS-authored tree resolved into one draw list per frame.
+
+    Not the editor's UI, which is ImGui and lives in src/editor. Nothing here
+    reaches ImGui at all. */
+
+/** @dir src/engine/net
+    @brief Networking: transport, wire format, replication and client prediction.
+
+    NetSession brackets the frame rather than taking part in it, and offline it
+    answers yes to everything - so single-player is unchanged by its existence. */
+
+/** @dir src/engine/platform
+    @brief The seam onto the operating system: window, input, threads, shared libraries, sockets. */
+
+/** @dir src/backend/opengl
+    @brief The OpenGL 4.3 backend. Not public API.
+
+    Engine code never includes a gl_* header; this exists behind RenderBackend
+    and is reached only through it. Documented here because it is part of the
+    tree, not because a project should name anything in it. */
+
+/** @dir src/editor
+    @brief The editor. Not public API, and not linked into a shipped game. */
+
+/** @dir src/tools
+    @brief Asset importers and the cooker. Editor- and cook-time only. */

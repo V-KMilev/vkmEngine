@@ -84,6 +84,7 @@ struct Joint {
 VKM_ENUM_NAMES(::Vkm::Engine::JointType, "Point", "Distance")
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::Joint)
+    VKM_F(type),
     VKM_F(anchor),
     VKM_F(connectedAnchor),
     VKM_F(distance),

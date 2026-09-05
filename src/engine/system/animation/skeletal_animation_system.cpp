@@ -58,32 +58,26 @@ void SkeletalAnimationSystem::update(FrameContext& ctx) {
     // the last pose rather than a null the render path reads as "no rig here".
     ctx.poses = &m_poses;
 
-    // Advancing a clip is the tick's; composing the pose it names is
+    // Advancing a clip is the tick's work; composing the pose it names is
     // presentation, and no tick runs while paused. So the pose is rebuilt a
-    // zero-length step from where the last tick left it, and holds still.
+    // zero-length step from where the last tick left it, and announces nothing.
     if (!ctx.clock.isPaused()) return;
-
-    m_poses.clear();
-    m_work.clear();
-
-    FaultsSeen seen;
-    poseRigs(ctx, seen, 0.0f);
-
-    m_clipMismatchLogged = seen.clipMismatch;
-    m_rigMismatchLogged  = seen.rigMismatch;
-    m_meshOffsetLogged   = seen.meshOffset;
+    run(ctx, 0.0f, /*announceMarkers*/ false);
 }
 
 void SkeletalAnimationSystem::fixedUpdate(FrameContext& ctx) {
     PROFILE_SCOPE("SkeletalAnimationSystem::fixed");
+    run(ctx, ctx.clock.getFixedStep(), /*announceMarkers*/ true);
+}
 
+void SkeletalAnimationSystem::run(FrameContext& ctx, float step, bool announceMarkers) {
     m_poses.clear();
     m_work.clear();
     ctx.poses = &m_poses;
 
     FaultsSeen seen;
-    poseRigs(ctx, seen, ctx.clock.getFixedStep());
-    publishMarkers(ctx);
+    poseRigs(ctx, seen, step);
+    if (announceMarkers) publishMarkers(ctx);
 
     // Each latch holds only while its fault is still there, so fixing one is
     // reported again if it comes back - which is why poseRigs reports into seen
@@ -122,18 +116,14 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen, floa
         work.fadeClip = resolveClip(resources, animator.fadeFrom, skeleton, seen);
         work.slice    = m_poses.addSlice(static_cast<uint32_t>(skeleton.bones.size()));
 
-        // An active ragdoll takes the rig over, and everything it needs is
-        // read here with everything else: the parallel pass never touches the
-        // scene, and the bone bodies' poses travel to the worker as values.
-        // The pointer is safe for the same reason the clip pointers are - no
-        // component is added or removed between this loop and that one.
+        // An active ragdoll takes the rig over, and what it needs is read here
+        // with everything else: the parallel pass never touches the scene, and
+        // no component is added or removed between this loop and that one.
         const EntityId rigEntity = scene.entityAt(work.entityIndex);
 
-        // Looked for above as well as here. An import puts the Animator on a
-        // node under the entity the physics is authored on, so a ragdoll added
-        // where everything else was added is a parent or two away - and asking
-        // the author to find the rig node instead is asking them to know how
-        // the importer builds a hierarchy.
+        // Looked for upward: an import puts the Animator on a node under the
+        // entity the physics is authored on, so the Ragdoll added where
+        // everything else was added is a parent or two away.
         const EntityId ragdollEntity =
             HierarchyOperations::findInSelfOrAncestors<Ragdoll>(scene, rigEntity);
         if (ragdollEntity) {
@@ -143,11 +133,9 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen, floa
                 work.ragdollBodies = gatherRagdollBodies(scene, ragdoll);
             }
         }
-        // Walked, not read off WorldTransform, and only where it is used: the
-        // bodies this is divided out of are walked the same way a few lines
-        // above, and WorldTransform is written by the Transform stage - a frame
-        // behind. Mixing the two put a moving character's ragdoll a frame of
-        // its own motion away from where the bodies actually were.
+        // Walked, not read off WorldTransform: the bodies this is divided out of
+        // are walked the same way above, and the Transform stage writes
+        // WorldTransform a frame behind - mixing the two is a frame of drift.
         if (work.ragdoll) {
             work.rigWorld = HierarchyOperations::computeWorldMatrix(scene, rigEntity);
         }
@@ -183,13 +171,9 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen, floa
             RigWork& work      = m_work[i];
             Animator& animator = animators->dataAt(work.animatorIndex);
 
-            // A ragdoll takes the rig over entirely, and that includes the
-            // clock: a body driven by the solver is not playing an animation,
-            // so its head does not move and its markers do not fire. Advancing
-            // anyway left a corpse taking footsteps - the markers are enqueued
-            // from work.step, which stays a zero-travel step here - and put the
-            // playback head somewhere nobody had watched it reach by the time
-            // the character got up.
+            // A ragdoll takes the rig over, and that includes the clock: a body
+            // driven by the solver is not playing an animation, so its head does
+            // not move and its markers - enqueued from work.step - do not fire.
             if (!work.ragdoll) {
                 work.step = advancePlayback(animator,
                                             work.clip     ? work.clip->duration     : 0.0f,

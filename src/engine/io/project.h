@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "core/engine_config.h"
+#include "system/render/render_settings.h"
 
 namespace Vkm::Engine {
 
@@ -60,6 +61,21 @@ struct Project {
 
     /// Logos shown after the engine's own, in the order listed. Usually empty.
     std::vector<SplashEntry> splash;
+
+    /**
+     * @brief What the game looks like, as the author left it.
+     *
+     * Here rather than in the editor's settings because it is the one render
+     * state that answers yes to ProjectPaths' "would you commit this?": an
+     * author who turns bloom off has decided something about the game, not
+     * about their machine. It lived in `editor_settings.json` before, which is
+     * both ignored by git and unread by every host except the editor - so a
+     * shipped game rendered with the in-class defaults no matter what anyone
+     * tuned.
+     *
+     * Debug view state is not in here; see visitShippedRenderFields.
+     */
+    RenderSettings render;
 };
 
 /**

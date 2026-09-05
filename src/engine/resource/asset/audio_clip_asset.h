@@ -13,26 +13,18 @@ namespace Vkm::Engine {
  * @brief A sound: fully decoded interleaved PCM, plus the rate and layout it was written at.
  *
  * Clips are decoded once, at load, and held as samples rather than as encoded
- * bytes with a decoder attached. That is one answer for a footstep and a music
- * bed alike, and it is the answer because a streamed clip would be the only
- * asset in the engine that keeps a file open past its load: a `Resource` is a
- * value a scene load builds in a staging ResourceManager and swaps in whole,
- * and a live decoder reading a file is not that. Playing then costs no decode,
- * which is what the footstep played fifty times a minute cares about.
+ * bytes with a decoder attached - one answer for a footstep and a music bed
+ * alike. A streamed clip would be the only asset in the engine keeping a file
+ * open past its load, and a `Resource` is a value a scene load builds in a
+ * staging manager and swaps in whole; a live decoder is not that.
  *
- * What it costs is visible rather than hidden: the cooked file IS these
- * samples, so a clip occupies as much memory as it does disk, and a project
- * that cannot afford a ten-minute music bed can see that before it ships one.
- * Streaming can arrive later as a second data source behind the same handle,
- * touching neither the component, the scene format nor this asset's identity -
- * which makes it a thing to add when a project needs it rather than a flag to
- * carry until one does.
+ * The cost is visible rather than hidden: the cooked file IS these samples, so a
+ * clip occupies as much memory as disk. Streaming can arrive later as a second
+ * data source behind the same handle, touching neither the component nor the
+ * scene format.
  *
- * Samples are 16-bit signed because that is what the source material already is
- * (wav and flac are 16- or 24-bit, and mp3 decodes to it losslessly at this
- * depth), and because the mixer converts to float once per buffer regardless.
- * Float storage would double the footprint to save a conversion that happens
- * anyway.
+ * Samples are 16-bit signed because that is what the source material already is,
+ * and because the mixer converts to float once per buffer regardless.
  */
 struct AudioClipAsset : public Resource {
     uint32_t sampleRate = 0;  ///< Frames per second, as authored; the mixer resamples if it differs.

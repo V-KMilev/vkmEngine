@@ -35,8 +35,7 @@ Mechanics do not admit judgment. Every one of these is a rule, not a default.
 - **A namespace you put definitions in closes with `} // namespace Name`.** A
   block that only forward-declares closes with a bare `}` -
   [section 2](#2-header-file-structure-h).
-- **Backend code is `Vkm::Engine`,** not `Vkm::GL`. The two GL primitives that
-  borrow vkmGL's namespace state their reason in their own headers -
+- **Backend code is `Vkm::Engine`,** not `Vkm::GL`. There is no exception -
   [section 4](#4-naming).
 - **No decorative separator comments** of any kind.
 - **No task, version or commit reference in a comment.** That is the commit's job.
@@ -60,11 +59,11 @@ Code lives under five include roots. Each has its own style:
 | `src/editor/`         | module-qualified, from **two** roots | `#include "panels/inspector_panel.h"` and `#include "ecs/scene.h"` |
 | `app/`                | repo-root-qualified              | `#include "app/engine_app.h"`            |
 
-The editor has a root of its own (`src/editor/CMakeLists.txt:6`) *and* the
+The editor has a root of its own (`src/editor/CMakeLists.txt`) *and* the
 engine's, so an editor `.cpp` includes `panels/`, `framework/` and `ui/` from the
 first and `core/`, `ecs/`, `system/` from the second - see
-`panels/inspector_panel.cpp:1-24`. The hosts add the repo root instead
-(`app/editor/CMakeLists.txt:18` and its siblings), which is why `app/` is spelled
+`panels/inspector_panel.cpp`. The hosts add the repo root instead
+(`app/editor/CMakeLists.txt` and its siblings), which is why `app/` is spelled
 into the path.
 
 Always include the **module path**, never the bare filename:
@@ -141,14 +140,14 @@ struct RenderView { /* ... */ };
 
 A type from *another* namespace needs a block of its own, and that block closes
 with a bare `}` - 46 of the 47 forward-declaration-only blocks in the tree do
-(`backend/opengl/gl_pass.h:3-9`). The `} // namespace Name` close is for a
+(`backend/opengl/gl_pass.h`). The `} // namespace Name` close is for a
 namespace you put definitions in.
 
 ### 2.1 Reflected types close the namespace first
 
 `VKM_REFLECT_BEGIN` opens `namespace Vkm::Engine::Reflect` itself, so it goes at
 **global scope, after the `} // namespace` close** - never inside the namespace
-the type lives in. From `ecs/component/core/transform.h:102-108`:
+the type lives in. From `ecs/component/core/transform.h`:
 
 ```cpp
 } // namespace Vkm::Engine
@@ -193,7 +192,7 @@ The single exception is `#define VKM_LOG_CATEGORY "..."`, which must precede the
 own-header include. The own header transitively pulls in `logger.h`, and
 `logger.h` defaults `VKM_LOG_CATEGORY` to `nullptr` if nothing set it first;
 defining it afterward triggers `-Wmacro-redefined`. Canonical opening, from
-`core/engine.cpp:1-14`:
+`core/engine.cpp`:
 
 ```cpp
 #define VKM_LOG_CATEGORY "CORE"
@@ -266,8 +265,8 @@ Helpers inside an anonymous namespace get no extra prefix (`detail_`,
 | File name        | snake_case                   | `render_view.h`, `gl_forward_pass.cpp` |
 
 The three lifetime prefixes mark state that outlives a call, which is what makes
-each of them a thread question: `g_interrupted` (`core/engine.cpp:28`) is written
-from a signal handler, `t_isWorker` (`platform/threading/thread_pool.cpp:14`) is
+each of them a thread question: `g_interrupted` (`core/engine.cpp`) is written
+from a signal handler, `t_isWorker` (`platform/threading/thread_pool.cpp`) is
 how a worker tells itself apart. A file-scope `g_` also goes in the anonymous
 namespace ([3.1](#31-file-local-helpers-go-in-an-anonymous-namespace)).
 
@@ -279,19 +278,18 @@ file's whole content lives in one, open it in the C++17 one-line form -
 each level separately.
 
 **The OpenGL backend is `Vkm::Engine`, not `Vkm::GL`.** `Vkm::GL` is vkmGL, the
-platform layer. 50 of the 53 headers under `src/backend/opengl/` open
-`Vkm::Engine`; 37 of the 39 `Vkm::GL` blocks in there are forward declarations of
-vkmGL types, and `gl_pass.h:3-9` shows both in the same file, four lines apart. A
-new backend file that opens `namespace Vkm::GL` compiles and puts its type in the
+platform layer. Every header under `src/backend/opengl/` that declares a type
+opens `Vkm::Engine`; every `Vkm::GL` block in there is a forward declaration of a
+vkmGL type, and `gl_pass.h` shows both in the same file, four lines apart. A new
+backend file that opens `namespace Vkm::GL` compiles and puts its type in the
 wrong library's namespace.
 
-The two that really do define into `Vkm::GL` are `data/gl_screen_triangle.h` and
-`data/gl_instance_buffer.h`, and each says why in its own `@brief`: both are GL
-primitives by kind - an attribute-less fullscreen draw, a per-instance matrix
-buffer - that vkmGL cannot own, one because it is a rendering idiom rather than a
-GL object and the other because glm has no business in a GL wrapper's API. That
-is the whole exception. A backend *type the engine renders through* is
-`Vkm::Engine`.
+There is no exception. `ScreenTriangle` and `InstanceBuffer` were one until 2.0 -
+GL primitives by kind, which vkmGL cannot own because one is a rendering idiom
+rather than a GL object and the other would put glm in a GL wrapper's API - and
+`ScreenTriangle`'s own `@brief` said it belongs to the backend while it sat in
+`Vkm::GL`. Where a type lives and which namespace it opens are the same
+question.
 
 ### 4.0 Do not redefine what glm or the standard library already names
 
@@ -364,7 +362,7 @@ class Clock {
 };
 ```
 
-(`core/clock.h:22-110`, trimmed to the shape.)
+(`core/clock.h`, trimmed to the shape.)
 
 ### 5.1 Vertical alignment
 
@@ -382,7 +380,7 @@ int   m_pendingSteps = 0;
 float m_timeScale    = 1.0f;
 ```
 
-(`core/clock.h:103-109`. The blank line is the point: the three time values align
+(`core/clock.h`. The blank line is the point: the three time values align
 with each other and the three play-state values with each other, and neither
 group aligns across the gap.)
 
@@ -390,11 +388,11 @@ group aligns across the gap.)
 
 In `src/engine` headers `&&` is spaced at 100 of its 114 declarator sites. The
 14 that are not are all one idea - a **forwarded callable or pack**: `Fn&& fn`,
-10 times out of 10 (`core/reflect.h:50`, `ecs/scene.h:186`,
-`core/memory/sparse_set.h:131`, `resource/resource_manager.h:306`, six more),
-plus `Args&&... args` (`core/engine.h:92`) and `auto&&... f`
-(`core/reflect.h:53`). The split is not rvalue-vs-forwarding -
-`Scene::add(EntityId, T && component)` (`ecs/scene.h:114`) is a forwarding
+10 times out of 10 (`core/reflect.h`, `ecs/scene.h`,
+`core/memory/sparse_set.h`, `resource/resource_manager.h`, six more),
+plus `Args&&... args` (`core/engine.h`) and `auto&&... f`
+(`core/reflect.h`). The split is not rvalue-vs-forwarding -
+`Scene::add(EntityId, T && component)` (`ecs/scene.h`) is a forwarding
 reference and is spaced. `Fn&&` reads as one token: the thing you hand a lambda
 to.
 
@@ -402,10 +400,10 @@ to.
 
 Break when the list does not fit, and keep one style within a single signature.
 Both forms are live and neither is the house style - full-breaks are outnumbered
-roughly four to one, and `render_view.h` uses each in the same class: `build` at
-`:105-110` full, `buildDrawables` at `:176-177` and `buildShadowCasters` at
-`:190-191` aligned to the open paren. Full-break when the parameters are long or
-each wants a `@param` beside it; align when the rest fit on the continuation.
+roughly four to one, and `render_view.h` uses each in the same class: `build`
+full-breaks, while `buildDrawables` and `buildShadowCasters` align to the open
+paren. Full-break when the parameters are long or each wants a `@param` beside
+it; align when the rest fit on the continuation.
 
 ```cpp
 void build(
@@ -433,7 +431,7 @@ Do not divide code with banner comments:
 
 Organize with `public:` / `private:`, blank lines, and `@brief` docs. (Runtime
 log strings are output, not code structure, and are exempt - the build dump at
-`debug/build_info.h:20-27` is the whole population; see
+`debug/build_info.h` is the whole population; see
 [13.3](#133-decorative-log-strings).)
 
 **Zero** tree-wide: `src/`, `app/`, `examples/` and `templates/` carry no banner
@@ -481,14 +479,12 @@ the work, so every line of it is a line of code the reader is not reading:
 Past three lines the comment is a diagnosis before it is a comment - one of three
 things has gone wrong and
 [implementation.md](implementation.md#6-comment-only-the-non-obvious-why) names
-them. The longest runs left in a function body are eleven lines, and both have
-the same tell - a second paragraph, with a bare `//` dividing it from the first.
-`editor/overlays/gizmo_overlay_draw.cpp:111-121` spends them above one
-`constexpr`; `tools/loader/model_loaders.cpp:278-288` above one `if`. A body
-comment that has grown a second paragraph has become a document, and a document
-goes under `docs/reference/` with a pointer left where it was.
-`backend/opengl/gl_backend.cpp:91-93` is what that looks like: three lines saying
-the pass order is load-bearing, and the order itself at
+them. **No run in a function body exceeds three lines**, tree-wide, so a fourth
+arriving in a diff is new. The tell to watch for is a second paragraph, with a
+bare `//` dividing it from the first: a body comment that has grown one has
+become a document, and a document goes under `docs/reference/` with a pointer
+left where it was. `backend/opengl/gl_backend.cpp` is what that looks like -
+three lines saying the pass order is load-bearing, and the order itself at
 [../reference/system/rendering.md](../reference/system/rendering.md#the-passes-fixed-order).
 
 **On a declaration, a comment is bounded by relevance to a caller.** A
@@ -500,7 +496,7 @@ would have cost, what invariant it holds, what a caller must not do.
 
 **A seam or a format earns twenty lines, and no number governs it.**
 `RenderBackend`, `EditorRenderHooks`, `AudioDevice` and
-`RenderView::skinMatrices` (`render_view.h:52-65`) each carry a long block, and
+`RenderView::skinMatrices` (`render_view.h`) each carry a long block, and
 each is right to: none of what they say is inferable from the signature, and
 deleting it would lose the only record of it. A declaration block is too long
 when a line of it is something the caller already knew, never when it passes a
@@ -512,7 +508,7 @@ What a declaration block may **not** do, at any length:
   against an objection; a comment states the constraint the choice protects. Cut
   the arguing clause, keep the constraint. *"Applying before pushing is
   deliberate and matches the rest of the editor"* is all clause and no
-  constraint; `editor/framework/editor_actions.h:303-304` is what is left when it
+  constraint; `editor/framework/editor_actions.h` is what is left when it
   goes - *"The rename is applied before the command is pushed: the command
   carries the reverse of an edit that has already happened"* - which says what
   state the command is built against and nothing about the choice being sound.
@@ -523,13 +519,13 @@ What a declaration block may **not** do, at any length:
 - **Narrate history.** What it used to be, what was tried, which release changed
   it. The log keeps that, accurately and forever. A block saying a filesystem
   walk *"used to lag with big asset trees"* dates itself against a reader who
-  cannot see what changed; `editor/framework/asset_picker.h:15-17` is the present
+  cannot see what changed; `editor/framework/asset_picker.h` is the present
   tense of the same constraint - a walk every frame the modal is open *"lags with
   big asset trees, so this one scans once when the popup opens"* - and it stays
   true.
 - **Restate what the signature already says.** `@param scene The scene` is
   nothing. `@param scene Scene whose Light components are gathered`
-  (`render_view.h:136`) is the half a caller could not have guessed.
+  (`render_view.h`) is the half a caller could not have guessed.
 
 Those four are the failure, not the length. A block that avoids all four is the
 right length whatever it measures.
@@ -595,7 +591,7 @@ Build files earn more explanation per line than C++ does. An `install()`
 destination, a generator expression, `PUBLIC` against `PRIVATE`, why a target is
 `INTERFACE` - none of that is inferable from the line it sits on, so a correct
 pass over CMake leaves far more standing than the same pass over `src/`.
-`CMakeLists.txt:20-22` spends three lines on why every target is
+`CMakeLists.txt` spends three lines on why every target is
 position-independent, and nothing else in the tree records it. What is about the
 build as a whole rather than about the line under it belongs in
 [../reference/building.md](../reference/building.md), with a one-line pointer
@@ -665,7 +661,7 @@ class RenderSystem : public System {
 };
 ```
 
-(`system/render/render_system.h:20-95`, trimmed to the shape.)
+(`system/render/render_system.h`, trimmed to the shape.)
 
 The second `private:` is not redundant. The state of an object is the thing a
 reader most often wants to find, and it should be in one place at the bottom of
@@ -673,7 +669,7 @@ every class in the engine, not somewhere in the middle of a particular one.
 
 A data-only struct is not this shape and is not meant to be. It has no `private:`
 section to put anything last in: its members are bare and come first, with any
-static helper after them (`ecs/component/core/transform.h:17-28`).
+static helper after them (`ecs/component/core/transform.h`).
 [4.1](#41-the-structclass-member-rule) is the rule that decides which of the two
 you are writing; this one applies once you have answered it.
 
@@ -705,20 +701,21 @@ instead of writing a move constructor. Lightweight value types (`StorageIndex`,
 ## 8. Templates
 
 - **A template anyone else can instantiate lives entirely in a header.** No
-  `.tpp`. Fourteen `.cpp`s define a template anyway, in three shapes, and all
+  `.tpp`. Sixteen `.cpp`s define a template anyway, in three shapes, and all
   three keep that rule rather than break it:
     - **File-local**, in the anonymous namespace
       [3.1](#31-file-local-helpers-go-in-an-anonymous-namespace) already mandates
-      (`io/scene/component_serializer.cpp:63-123`,
-      `io/asset/cooked_loader.cpp:22-89`). Twelve of the fourteen.
+      (`io/scene/component_serializer.cpp`'s reflection driver,
+      `io/asset/cooked_loader.cpp`'s request helpers). Thirteen of the
+      sixteen use only that shape.
     - **A private member template** whose only callers are in that same file -
-      `BehaviorSystem::guard` (declared `system/script/behavior_system.h:172-173`,
-      defined `behavior_system.cpp:54`) and `GLView::ensure`
-      (`backend/opengl/gl_view.h:175`, defined `gl_view.cpp:22`).
+      `BehaviorSystem::guard` (declared `system/script/behavior_system.h`,
+      defined `behavior_system.cpp`) and `GLView::ensure`
+      (`backend/opengl/gl_view.h`, defined `gl_view.cpp`).
     - **Explicitly instantiated,** where the header ends in `extern template`
       declarations and the `.cpp` holds the bodies plus one `template class` line
-      per instantiation. `editor/framework/editor_commands.h:759-765` and
-      `editor_commands.cpp:175-180` are the only case, and the reason is in the
+      per instantiation. `editor/framework/editor_commands.h` and
+      `editor_commands.cpp` are the only case, and the reason is in the
       header: every panel that pushes a command would otherwise carry the full
       bodies. The set of instantiations is closed, so no other translation unit
       can ask for one that is not there.
@@ -726,7 +723,7 @@ instead of writing a move constructor. Lightweight value types (`StorageIndex`,
   If a second translation unit could want an instantiation you have not named,
   it belongs in the header.
 - Use `if constexpr` for compile-time type dispatch instead of SFINAE. From
-  `system/script/reflected_behavior.h:35-60`, routing one reflected field by its
+  `system/script/reflected_behavior.h`, routing one reflected field by its
   type:
 
   ```cpp
@@ -783,23 +780,29 @@ instead of writing a move constructor. Lightweight value types (`StorageIndex`,
   `VKM_ASSERT(isAlive(entity), "Scene::add called with dead/stale entity")`.
 - **No exceptions in hot paths** - systems, ECS queries, rendering. Exceptions
   are reserved for startup, asset loading, and explicit recovery boundaries.
-- **An enum that indexes a table gets a `Count` sentinel and a `static_assert`
-  pinning the table's length to it.** `core/engine.cpp:18-22` (`STAGE_NAMES` vs
-  `SystemStage::Count`), `io/asset/asset_library.cpp:25-27` (`TYPE_DIRS` vs
-  `AssetType::Count`). Without it, adding an enumerator is a silent
-  out-of-bounds read at the next lookup.
+- **An enum that indexes a hand-written table gets a `Count` sentinel and a
+  `static_assert` pinning the table's length to it.** `core/engine.cpp`
+  (`STAGE_NAMES` vs `SystemStage::Count`) is the shape. Without it, adding an
+  enumerator is a silent out-of-bounds read at the next lookup.
+
+  A table generated from the same list as the enum needs no such assert, and
+  should not carry one: there is nothing left for it to compare. `TYPE_DIRS`
+  (`io/asset/asset_library.cpp`) expands from `VKM_ASSET_KINDS`, the one list the
+  `AssetType` enumerators come from, so a new kind brings its directory with it.
+  Reach for the assert when the two lists are genuinely separate; reach for one
+  list when they need not be.
 
 ### 9.1 Where `VKM_ASSERT` actually lives
 
-30 of the 31 uses are in `src/engine`, 29 of them in a foundation type - `Scene`,
-`SparseSet`, `SlotAllocator`, `ResourceManager`, `HierarchyOperations`, `Bus`,
-`Resource`. The thirtieth is in a System: `hierarchy_system.cpp:39` asserts the
+All 32 uses are in `src/engine`, and 30 of them are in a foundation type -
+`Scene`, `SparseSet`, `SlotAllocator`, `ResourceManager`, `HierarchyOperations`,
+`Resource`. The thirty-first is in a System: `hierarchy_system.cpp` asserts the
 `Hierarchy`-implies-`WorldTransform` pairing its own resolve reads through, and
-the thirty-first is `tools/generator/mesh_generators.cpp:81`. **Zero** in
+the thirty-second is `resource/generate/mesh_generators.cpp`. **Zero** in
 `src/backend`, `src/editor` or `app/`, which guard and degrade instead. And a
 destructive operation asserts *and* guards on the same condition, so a release
-build refuses rather than corrupts: `scene.h:72-73`,
-`resource_manager.h:133-134`, `slot_allocator.h:64-65` each pair the assert with
+build refuses rather than corrupts: `scene.h`,
+`resource_manager.h`, `slot_allocator.h` each pair the assert with
 `if (!cond) return;`. The assert is for the programmer who broke it; the guard is
 for the user who ships it.
 
@@ -810,39 +813,40 @@ An error reaches a human three ways, and they are not interchangeable. Pick by
 
 - **`LOG_ERROR` and friends** reach the developer's console. Always. Every
   failure logs.
-- **`reportError(category, source, message)`** (`debug/engine_error_log.h:76`)
+- **`reportError(category, source, message)`** (`debug/engine_error_log.h`)
   reaches the editor's Errors tab and the cooker's load summary. For a
   recoverable failure the **project author** caused: a throwing script hook, a
   scene asset that will not resolve, a gameplay module that will not load.
-- **`state.pushToast(ToastKind::...)`** (`editor/framework/editor_state.h:214`)
+- **`state.pushToast(ToastKind::...)`** (`editor/framework/editor_state.h`)
   reaches the author now, beside the gesture. For an **editor action** that
-  succeeded or failed. Editor-only - all 39 sites are in `src/editor`.
+  succeeded or failed. Editor-only - all 43 sites are in `src/editor`.
 
 `reportError` logs *and* appends, so it never wants a `LOG_ERROR` beside it. Only
-the editor and the cooker install a sink (`editor/editor_system.cpp:118`,
-`app/cooker/main.cpp:61`); the runtime installs none, so a shipped game keeps the
+the editor and the cooker install a sink (`editor/editor_system.cpp`,
+`app/cooker/main.cpp`); the runtime installs none, so a shipped game keeps the
 log line and nothing else.
 
 **An editor operation that fails takes the first channel and the third,** not
 `reportError` - the author caused nothing and there is nothing to file. The log
 line carries the path and the reason for whoever reads a console; the toast
 carries the filename for the author who just pressed the button.
-`framework/scene_io_controller.cpp:115-118`, `:210-213` and
-`framework/project_controller.cpp:34-35` are the shape.
+`framework/scene_io_controller.cpp` and `framework/project_controller.cpp` are
+the shape.
 
-The two are not always adjacent, and that is the part to get right: of the 18
-error toasts in `src/editor`, 5 have a `LOG_ERROR` beside them and the rest sit
+The two are not always adjacent, and that is the part to get right: of the 19
+error toasts in `src/editor`, 6 have a `LOG_ERROR` beside them and the rest sit
 above a call that already logged where it failed. So write the toast at the
 gesture and make sure something logged - not a second log line restating a
 message the layer below already printed.
 
 Logging is categorized: `#define VKM_LOG_CATEGORY "RENDER"` at the top of the
 `.cpp`, then `LOG_TRACE` / `LOG_INFO` / `LOG_WARNING` / `LOG_ERROR` with
-printf-style formatting. **A category names a subsystem, not a file** - 26 exist
-across the tree and one of them, `"BACKEND::GL"`, covers 41 of the 43 backend
-`.cpp`s - the two without it log nothing at all.
-Reuse the one your neighbours use; inventing a narrower one splits a subsystem's
-output across two filters for no gain.
+printf-style formatting. **A category names a subsystem, not a file** - 27 exist
+across the tree, and the widest, `"BACKEND::GL"`, is shared by all 11 backend
+`.cpp`s that log; the other 33 declare nothing because they log nothing. Reuse
+the one your neighbours use; inventing a narrower one splits a subsystem's
+output across two filters for no gain. **A file that logs nothing declares no
+category** - the define is inert there, and it reads as if the file logs.
 
 ---
 
@@ -857,7 +861,7 @@ output across two filters for no gain.
 - Iterate `SparseSet` densely instead of random access by id.
 - Use generational handles; check generation rather than storing raw pointers.
 - Early-continue / early-return over deep nesting. From
-  `system/visibility/visibility_system.cpp:262-269`:
+  `system/visibility/visibility_system.cpp`:
 
   ```cpp
   for (uint32_t i = 0; i < meshCount; ++i) {
@@ -896,13 +900,13 @@ conventions the macros cannot tell you:
   class name; the two systems with both entry points live suffix the second so
   the two do not merge under it - `BehaviorSystem::fixedUpdate` and
   `SkeletalAnimationSystem::fixedUpdate` open `PROFILE_SCOPE("...::fixed")`
-  (`system/script/behavior_system.cpp:240`,
-  `system/animation/skeletal_animation_system.cpp:82`).
-- **A backend pass opens no zone of its own.** `gl_backend.cpp:269-272` already
+  (`system/script/behavior_system.cpp`,
+  `system/animation/skeletal_animation_system.cpp`).
+- **A backend pass opens no zone of its own.** `gl_backend.cpp` already
   wraps every `execute()` in a `PROFILE_SCOPE_NAMED` *and* a
   `PROFILE_GPU_SCOPE_NAMED` keyed on the pass's registered name. Adding one
   inside `execute()` duplicates it. Sub-zones for phases within a pass are
-  welcome - `gl_shadow_pass.cpp:133,139,143` splits gather / upload / draw.
+  welcome - `gl_shadow_pass.cpp` splits gather / upload / draw.
 
 ---
 
@@ -977,11 +981,13 @@ Files under `src/backend/opengl/` use flat `gl_`-prefixed includes
 single internal unit; the flat form keeps its includes short. Engine code never
 reaches in - it sees only `RenderBackend` and friends.
 
-The cost of a flat root is that a name can collide with vkmGL's, which is flat
-too: `gl_texture.h` exists as both `src/backend/opengl/data/gl_texture.h` and
-`modules/vkmGL/src/texture/gl_texture.h`. A quoted include resolves relative to
-the including file first, so which one you get depends on where you are writing
-from. When you add a backend header, check the name is not already vkmGL's.
+vkmGL is flat too, and it exports **only** the flat form - so a vkmGL header has
+one spelling and a name that exists on both sides would be a header a quoted
+include could not tell apart (it resolves relative to the including file first,
+so which one you got depended on where you were writing from). There was exactly
+one such name, `gl_texture.h`; the backend's is `gl_asset_texture.h` now, named
+for the asset it mirrors. **When you add a backend header, check the name is not
+already vkmGL's.**
 
 ### 13.3 Decorative log strings
 
@@ -1018,7 +1024,7 @@ beside `getStorage()` (which *creates* the storage if it is missing),
 
 ### 13.6 A `System` subclass spells out the Rule of 5 it inherits
 
-`core/system.h:100-104` already deletes all four copy/move members, so
+`core/system.h` already deletes all four copy/move members, so
 [7.3](#73-non-copyable-non-movable-for-resource-owners) would let a stateless
 subclass omit them. All 18 write them out anyway, `sky_system.h`,
 `animation_system.h` and `async_loader_system.h` included, and those three hold
@@ -1027,7 +1033,7 @@ no data members at all. Match them: the block is how a reader recognises a
 
 A system's class `@brief` also carries what no signature can - **which
 `SystemStage` it runs at and why that one**, argued against a named sibling.
-`sky_system.h:27-28` is the model: "Runs in the Simulation stage, so the rotation
+`sky_system.h` is the model: "Runs in the Simulation stage, so the rotation
 it writes is in place before HierarchySystem resolves world transforms in the
 Transform stage."
 
@@ -1037,7 +1043,7 @@ Authored fields on `Behavior` subclasses are bare public members on a class,
 violating 4.1 deliberately: the field name is the serialized identity (scene JSON
 + inspector label), and an `m_` prefix would leak into both. Runtime-only state on
 behaviors still uses `m_`. The shipped model is `Spinner::degreesPerSecond`
-(`templates/default/src/game.h:22`); the two example projects use the same shape
+(`templates/default/src/game.h`); the two example projects use the same shape
 at larger scale (`examples/potion_runner/src/potion_runner.h`, 7 fields;
 `examples/stress_arena/src/stress_arena.h`, 22).
 
@@ -1046,28 +1052,36 @@ at larger scale (`examples/potion_runner/src/potion_runner.h`, 7 fields;
 `EditorStyle::px()` scales a design-time pixel by the loaded font size, and so
 by the display's content/DPI scale - neither is known at compile time and either
 can change while the editor runs. A layout number that needs it therefore cannot
-be a `constexpr`, and the shape it takes instead is a file-local nullary function
-in the anonymous namespace, ALL_CAPS like the constant it stands in for
-(`editor/overlays/viewport_toolbar.cpp:13-21`):
+be a `constexpr`. The shape it takes instead is a named nullary function, and
+where that function lives is decided by how many files have to agree on the
+number.
+
+A number two files must agree on lives with the other style values, in
+`editor/ui/editor_style.h`:
 
 ```cpp
-// Sizes in design px - font/DPI-relative via EditorStyle::px.
-/// Icon button side length.
-float BTN() { return EditorStyle::px(26.0f); }
-/// Spacing between groups.
-float SEP() { return EditorStyle::px(10.0f); }
-/// Toolbar inner padding.
-float PAD() { return EditorStyle::px(5.0f); }
-/// Inset from the viewport edge the overlay floats at.
-float INSET() { return EditorStyle::px(8.0f); }
+// The floating strips over the viewport - the toolbar and the playbar - are one
+// design, so they are one set of numbers. Kept per file they are two sets that
+// happen to agree.
+
+/// Side of an icon button on a viewport overlay strip.
+inline float overlayButton()   { return px(26.0f); }
+/// A strip's inner padding.
+inline float overlayPad()      { return px(5.0f); }
+/// Spacing between adjacent buttons in a strip.
+inline float overlayGap()      { return px(4.0f); }
 ```
 
-The name earns its place by being used more than once - `viewport_toolbar.cpp`
-has eight `BTN()` and four `PAD()`, `playback_bar.cpp` five and three. A single
-call site does not: `EditorStyle::px(8.0f)` at the one place it applies says the
-same thing with one fewer name to look up, and the sentence the declaration
-carried moves to the line above it. That is the whole rule - the indirection is
-for the numbers that must agree with each other, not for every number.
+`viewport_toolbar.cpp` and `playback_bar.cpp` both draw a strip of icon buttons
+over the viewport, and a reader looking at either one cannot tell whether the
+two agree by design or by coincidence - so the numbers say it, in one place, and
+each file pulls the ones it uses in with a `using` at the top of its namespace.
+
+A number only one file has is a different case, and does not earn a name: at its
+single call site `EditorStyle::px(8.0f)` says the same thing with one fewer name
+to look up, and the sentence its declaration carried moves to the line above it.
+That is the whole rule - the indirection is for the numbers that must agree with
+each other, not for every number.
 
 `EditorStyle::px()` reaching the call site directly is also the norm inside a
 panel, where the number is local to one card or row: `const float GAP =

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/reflect.h"
+
 #include "resource/asset/material_asset.h"
 #include "resource/asset/mesh_asset.h"
 
@@ -16,3 +18,10 @@ struct Mesh {
 };
 
 } // namespace Vkm::Engine
+
+VKM_REFLECT_BEGIN(::Vkm::Engine::Mesh)
+    VKM_F(mesh),
+    VKM_F(material),
+    VKM_F(visible),
+    VKM_F(castShadows)
+VKM_REFLECT_END()

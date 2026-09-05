@@ -53,35 +53,32 @@ struct PlaybackStep {
  * @brief Move @p animator's playback head(s) on by one frame, honouring loop and
  *        end of clip, and run down any fade in flight.
  *
- * Nothing moves while simulation time is stopped, so authoring a time while
- * paused is not immediately overwritten - the same rule AnimationSystem holds
- * for its tracks. A stopped animator holds its own head, but a fade in flight
- * still runs down: a one-shot clip that ends mid-blend would otherwise leave
- * the character at a weight no field names and nothing clears.
+ * Nothing moves while simulation time is stopped, so a time authored while paused
+ * is not immediately overwritten. A fade in flight still runs down: a one-shot
+ * that ends mid-blend would otherwise leave the character at a weight no field
+ * names and nothing clears.
  *
- * Wrapping is a floor-subtract rather than a modulo because a negative speed
- * has to come round to the end of the clip, and fmod of a negative time stays
- * negative. A clip run to its end without looping stops rather than clamping
- * silently, so `playing` reports what actually happened.
+ * Wrapping is a floor-subtract rather than a modulo, because a negative speed has
+ * to come round to the end of the clip and fmod of a negative time stays
+ * negative. A clip run to its end without looping stops rather than clamping, so
+ * `playing` reports what actually happened.
  *
  * The outgoing clip of a fade advances by the same delta but never stops the
- * animator: what is playing is the clip that was faded *to*, and an outgoing
- * one that runs out simply holds its last frame for the rest of the blend. The
- * fade itself counts down in unscaled simulation seconds, so a blend length is a
- * duration the caller can predict rather than one `speed` moves, and it reaches
- * its end whether or not the clip it is entering is still running.
+ * animator, and holds its last frame if it runs out first. The fade counts down
+ * in unscaled simulation seconds, so a blend length is a duration the caller can
+ * predict rather than one `speed` moves.
  *
  * `Animator::playOnStart` is honoured here, on the first frame with simulation
- * time to spend, rather than at load: that is what makes a rig start on Play
- * and hold its pose in a scene that is only open.
+ * time to spend, rather than at load: that is what makes a rig start on Play and
+ * hold its pose in a scene that is only open.
  *
  * @param animator Animator to advance, in place.
  * @param duration Length of the clip playing on it, in seconds; 0 disables wrapping.
  * @param fromDuration Length of the clip being faded out of; 0 disables its wrapping.
  * @param simDelta Simulation seconds elapsed this frame.
- * @return The sweep the *playing* head made. A stopped animator, a paused
- *         frame and a zero speed all report no travel, which is what stops any
- *         of them from announcing a marker.
+ * @return The sweep the *playing* head made. A stopped animator, a paused frame
+ *         and a zero speed all report no travel, which is what stops any of them
+ *         from announcing a marker.
  */
 PlaybackStep advancePlayback(Animator& animator, float duration, float fromDuration, float simDelta);
 
@@ -114,23 +111,19 @@ bool crossesMarker(const PlaybackStep& step, float marker, float duration);
  *        bounds into @p out, in one forward sweep over the bones.
  *
  * Free rather than a method on SkeletalAnimationSystem because it is a pure
- * function of the animation data: the system decides which rigs to pose and
- * when, this decides what a pose is. That also makes it directly checkable
- * against a hand-built skeleton at known times, which is the only way the
- * composed matrices get verified - a wrong multiply order looks entirely
+ * function of the animation data, which is also what makes it checkable against
+ * a hand-built skeleton at known times - a wrong multiply order looks entirely
  * plausible on screen.
  *
- * There is no intermediate array of local transforms. `parent < index` is a
- * validated format invariant, so a bone's parent is already composed by the
- * time the bone is reached and its local TRS never has to outlive one
- * iteration. A crossfade blends on that local TRS inside the same iteration,
- * before composition: blending composed matrices pulls a limb toward the
- * midpoint of two world positions and shortens it.
+ * There is no intermediate array of local transforms: `parent < index` is a
+ * validated format invariant, so a bone's parent is composed by the time the
+ * bone is reached. A crossfade blends on that local TRS before composition,
+ * because blending composed matrices pulls a limb toward the midpoint of two
+ * world positions and shortens it.
  *
- * A clip whose per-bone table is not parallel to @p skeleton is a clip bound to
- * a different rig; it is ignored and the bind pose stands, rather than indexed
- * past its end. That is checked for both clips independently, so a bad outgoing
- * clip cannot take the incoming one down with it.
+ * A clip whose per-bone table is not parallel to @p skeleton is bound to a
+ * different rig: it is ignored and the bind pose stands, checked for both clips
+ * independently so a bad outgoing clip cannot take the incoming one down.
  *
  * @param skeleton Rig being posed. Its three vectors are parallel and its bones
  *                 are ordered parent-before-child - both validated where a

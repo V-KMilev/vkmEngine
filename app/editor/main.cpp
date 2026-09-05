@@ -5,6 +5,8 @@
 #include "logger.h"
 
 #include "core/engine.h"
+#include "platform/input/default_bindings.h"
+#include "system/camera/camera_controller_system.h"
 #include "asset_registration.h"
 #include "project_boot.h"
 #include "editor_system.h"
@@ -42,9 +44,16 @@ int main(int argc, char** argv) {
         Vkm::GL::enableGLDebugLogging(false);
         sys.render.setBackend(std::make_unique<Vkm::Engine::GLBackend>());
 
+        // The fly controls are an authoring tool, so the authoring host registers
+        // them: right-drag hides and grabs the pointer, which a shipped game that
+        // never asked for it must not be able to get.
+        auto& cameraController = engine.addSystem<Vkm::Engine::CameraControllerSystem>(
+            Vkm::Engine::SystemStage::Input);
+        Vkm::Engine::installEditorBindings(engine.getInput());
+
         engine.addSystem<Vkm::Engine::EditorSystem>(Vkm::Engine::SystemStage::UI,
             engine.getWindow().getWindowContext(),
-            sys.camera, sys.ui, sys.visibility, sys.render, sys.audio, scriptModule);
+            cameraController, sys.visibility, sys.render, sys.audio, scriptModule);
 
         // The project opens from EditorSystem::init, on the same sequence File >
         // Open Project runs; see docs/reference/editor.md, "Opening a project".

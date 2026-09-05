@@ -10,29 +10,26 @@ namespace Vkm::Engine {
 /**
  * @brief Messages that must arrive, on a wire built to lose things.
  *
- * Almost nothing in this system needs delivering. State is superseded by the
+ * Almost nothing in this system needs delivering: state is superseded by the
  * next snapshot, input is carried a dozen times, and destruction is re-reported
- * until it is confirmed. What is left over is the small set of things that
- * happen once and change what the world *is* rather than where it is - a body
- * being created is the reason this exists - and for those, "the next packet
- * will say it again" is not true, because there is no next packet that would.
+ * until confirmed. What is left is the small set of things that happen once and
+ * change what the world *is* rather than where it is - a body being created is
+ * the reason this exists - for which there is no next packet that would say it
+ * again.
  *
- * The cheapest thing that works. Messages are numbered, the oldest unconfirmed
+ * The cheapest thing that works: messages are numbered, the oldest unconfirmed
  * ones ride in every packet until the receiver says it has them, and the
- * receiver delivers them strictly in order and exactly once. That is a sliding
- * window with a cumulative acknowledgement, which is the smallest shape that
- * gives all three guarantees at once - and it costs nothing when the queue is
- * empty, which is almost always.
+ * receiver delivers them in order and exactly once. A sliding window with a
+ * cumulative acknowledgement is the smallest shape giving all three at once, and
+ * it costs nothing while the queue is empty, which is almost always.
  *
- * The acknowledgement is cumulative on purpose: one number saying "I have
- * everything below this". A selective one would let a later message be
- * delivered while an earlier one is still missing, and then order is not a
- * guarantee any more but a usual outcome.
+ * Cumulative on purpose - one number saying "I have everything below this". A
+ * selective one would let a later message be delivered while an earlier one is
+ * missing, and then order is a usual outcome rather than a guarantee.
  *
- * Not built on NetConnection's packet acknowledgement, though that exists and
- * is tempting. That one answers "did this packet arrive", and a packet arriving
- * is not the same question as a message being applied - a packet can arrive and
- * be refused as stale. This tracks what the receiver has *taken*.
+ * Not built on NetConnection's packet acknowledgement: that answers whether a
+ * packet arrived, and a packet can arrive and be refused as stale. This tracks
+ * what the receiver has taken.
  */
 class NetReliable {
     public:

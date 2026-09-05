@@ -15,6 +15,19 @@ struct AudioClipAsset;
 using VoiceId = uint32_t;
 
 /**
+ * @brief The most voices the mixer will hold at once.
+ *
+ * The audio system's only unbounded resource, and the one place a game rather
+ * than an engine bug could exhaust it: PlaySoundEvent is fire-and-forget, so a
+ * gameplay loop that fires one per frame allocated one per frame. Well above
+ * anything a scene needs - a busy fight is tens of voices, and the mixer sums
+ * every one of them per callback - so a project that meets this ceiling has a
+ * runaway rather than a rich soundscape, which is why the answer at the limit
+ * is to say so rather than to make room.
+ */
+inline constexpr size_t MAX_ACTIVE_VOICES = 128;
+
+/**
  * @brief Everything the mixer needs to know about one voice, pushed every frame.
  *
  * A plain snapshot rather than a reference to the component, because the device
@@ -45,64 +58,25 @@ struct VoiceParams {
 /**
  * @brief The engine's whole surface onto the audio backend.
  *
- * This class is the seam: it is the only place in the engine that includes
- * miniaudio's header, and nothing above it - not the components, not the
- * system's callers, not gameplay - has any way to reach the backend. Swapping
- * the backend is re-implementing this file.
+ * The seam: the only place in the engine that includes miniaudio's header, so
+ * nothing above it - components, systems, gameplay - can reach the backend, and
+ * swapping backends is re-implementing this file.
  *
- * The backend owns the output device, the audio thread and its callback,
- * mixing, resampling, format conversion, the spatialization maths and each
- * voice's playback cursor. The engine owns everything with a name: which
- * clips exist (ResourceManager), which entities want to be heard (AudioSource),
- * where the ear is (AudioListener), and the lifetime of every voice - all of
- * which is driven from the main thread by AudioSystem, never from the mixer.
+ * The backend owns the output device, the audio thread, mixing, resampling, the
+ * spatialization maths and each voice's cursor. The engine owns everything with
+ * a name: which clips exist, which entities want to be heard, where the ear is,
+ * and how long a voice lives. A voice plays a clip's samples in place and shares
+ * ownership of them, so fifty footsteps cost fifty cursors and a sound outlives
+ * the graph it came from rather than reading freed memory.
  *
- * A voice plays a clip's samples in place rather than copying them, so fifty
- * footsteps cost fifty cursors and no duplicate PCM. It shares ownership of
- * those samples for as long as it lives, because the mixer reads them from the
- * audio thread while a scene load frees assets from the main one; that is what
- * makes a sound outlive the graph it came from instead of reading freed memory
- * until AudioSystem next runs.
+ * Main-thread only, render() included, and nothing here is guarded - see the
+ * page below before lending the offline mixer a thread. No device is a normal
+ * state: open() returns false, isOpen() stays false, every other call is a
+ * no-op, and the engine runs silently rather than refusing to run.
  *
- * No device is a normal state. On a headless cooker, a CI box, or a machine
- * whose driver is broken, open() returns false, isOpen() stays false, and every
- * other call becomes a no-op that costs a branch. The engine runs silently
- * rather than refusing to run, and says so once instead of once a frame.
- *
- * All of this, render() included, is main-thread only. Nothing here is guarded,
- * and it does not need to be: every engine call arrives from
- * AudioSystem::update or from an editor panel, both on the main thread, while
- * the mixer thread is miniaudio's own and reaches back only through the log
- * bridge. A second thread calling render() while the main one calls close()
- * reads a graph being torn down, which is a segfault rather than a wrong sample
- * - so a harness that lends the offline mixer a thread must join it before
- * closing the device. A lock would put a mutex in the frame's hot path to serve
- * a caller the engine does not have.
- *
- * Nothing outside vkm_core and vkm_cook can reach miniaudio at all: it is
- * linked privately, so its include path stops at those two targets and the
- * editor, the backend and gameplay cannot name the header even if they tried.
- * Inside them the path is target-wide, so "one file" describes this file's
- * discipline rather than something the build enforces.
- *
- * The known races are miniaudio's, and a vendored backend's bugs are ours to
- * carry. ThreadSanitizer reports two of them on every run that mixes while the
- * main thread pushes voice parameters: ma_gainer::masterVolume (a plain float,
- * written here by ma_sound_set_volume from apply(), read by the mixer in
- * ma_gainer_process_pcm_frames_internal) and ma_spatializer_listener::isEnabled
- * (a plain ma_bool32, written by setListenerActive, read by the mixer). A third
- * joins them only while something reads a playback cursor:
- * ma_audio_buffer_ref::cursor is a plain ma_uint64 the mixer advances and
- * voiceCursor() reads, and its one caller is the editor's audition card, where
- * a value a frame stale is a slider a pixel behind. Seeking is not part of
- * that: miniaudio hands a seek to the mixer through an atomic on purpose, which
- * is why seekVoice() is safe to call from here at all. All three are single
- * aligned scalars with no invariant spanning them, and miniaudio uses
- * ma_atomic_float for exactly this kind of field elsewhere -
- * ma_engine_node::volume and ma_device::masterVolumeFactor are both atomic - so
- * they read as oversights upstream rather than a design. They are left alone
- * deliberately: patching them means carrying a fork of the backend, and
- * quieting some of them from this side would hide the rest.
+ * The thread rules, the races ThreadSanitizer reports inside miniaudio and why
+ * they are left alone: docs/reference/system/audio.md, "Which thread may call
+ * the device" and "The known races are miniaudio's".
  */
 class AudioDevice {
     public:
@@ -463,6 +437,10 @@ class AudioDevice {
         std::unique_ptr<Backend> m_backend;
         bool                     m_open = false;
         float                    m_masterVolume = 1.0f;
+
+        /// Latched while the voice budget is full, so the warning is said once
+        /// per saturation rather than once per dropped sound.
+        bool                     m_voiceBudgetSpent = false;
 };
 
 } // namespace Vkm::Engine

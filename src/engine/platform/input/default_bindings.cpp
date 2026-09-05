@@ -17,6 +17,11 @@ InputBinding key(int code, float scale = 1.0f) {
 } // namespace
 
 void installDefaultBindings(InputMap& map) {
+    map.define(InputActions::UI_CLICK,
+               { InputBinding{InputSource::MouseButton, GLFW_MOUSE_BUTTON_LEFT, 1.0f} });
+}
+
+void installEditorBindings(InputMap& map) {
     // Paired keys on one axis, so opposing presses cancel in the map.
     map.define(InputActions::MOVE_FORWARD, { key(GLFW_KEY_W,  1.0f), key(GLFW_KEY_S, -1.0f) });
     map.define(InputActions::MOVE_RIGHT,   { key(GLFW_KEY_D,  1.0f), key(GLFW_KEY_A, -1.0f) });

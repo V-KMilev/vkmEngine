@@ -9,7 +9,9 @@
 #include "l_assert.h"
 
 #include "ecs/component/core/hierarchy.h"
+#include "core/memory/type_registry.h"
 #include "ecs/environment.h"
+#include "ecs/physics_settings.h"
 #include "ecs/entity.h"
 #include "ecs/scene_observer.h"
 #include "core/memory/slot_allocator.h"
@@ -53,6 +55,12 @@ class Scene {
          * slot indices they had on disk - that's what makes parent/child
          * indices (and editor selection mementos) directly valid after a
          * load, without any id-remap step.
+         *
+         * @param index The slot to claim; must not already hold a live entity.
+         * @return The new entity, or a null id when that slot was taken. A
+         *         caller that cannot rule that out has to check: writing
+         *         components onto a null id is not a smaller failure than the
+         *         double-owned slot this refuses to hand out.
          */
         EntityId createEntityAt(uint32_t index) {
             return EntityId{m_entityAllocator.allocateAt(index)};
@@ -79,9 +87,7 @@ class Scene {
             }
             detachFromHierarchy(*this, id);
 
-            for (auto& set : m_components) {
-                if (set) set->removeIfPresent(id.slot());
-            }
+            m_components.forEach([&](ISparseSet& set) { set.removeIfPresent(id.slot()); });
             m_entityAllocator.free(id.key);
         }
 
@@ -162,6 +168,35 @@ class Scene {
         }
 
         /**
+         * @brief The entity's T, or null when it has none.
+         *
+         * `has<T>(id) ? &get<T>(id) : nullptr` written once. That form is two
+         * sparse lookups where this is one, and it names the entity twice -
+         * which is a line a caller can write with two different entities in it,
+         * and one that gets copied.
+         *
+         * @tparam T Component type.
+         * @param entity Entity to look on; must be alive.
+         * @return Pointer to its component, or nullptr.
+         */
+        template<typename T>
+        T* tryGet(EntityId entity) {
+            VKM_ASSERT(isAlive(entity), "Scene::tryGet called with dead/stale entity");
+            auto* store = findStorage<T>();
+            if (!store || !store->contains(entity.slot())) return nullptr;
+            return &store->get(entity.slot());
+        }
+
+        /// @copydoc tryGet()
+        template<typename T>
+        const T* tryGet(EntityId entity) const {
+            VKM_ASSERT(isAlive(entity), "Scene::tryGet called with dead/stale entity");
+            const auto* store = findStorage<T>();
+            if (!store || !store->contains(entity.slot())) return nullptr;
+            return &store->get(entity.slot());
+        }
+
+        /**
          * @brief Number of live components of type T.
          */
         template<typename T>
@@ -177,6 +212,12 @@ class Scene {
          * With a single type, calls fn(EntityId, First&) for each live component.
          * With multiple types, iterates First and yields only entities that also
          * have all Rest types. Put the rarest component type first.
+         *
+         * The scene must not gain or lose a First while this runs - see
+         * SparseSet::forEach for what a swap-and-pop does to a walk in
+         * progress. Creating or destroying entities is the same thing by
+         * another name. A system that has to mutate collects what it will
+         * touch and acts on it after the walk.
          *
          * @tparam First Primary component type (iterated).
          * @tparam Rest  Additional required component types (checked per entity).
@@ -272,9 +313,7 @@ class Scene {
             // O(types + entities) rather than the O(entities x types) walk-and-
             // destroy: on a total reset every entity goes away at once, so nothing
             // needs detachFromHierarchy's partial-deletion guard.
-            for (auto& set : m_components) {
-                if (set) set->clear();
-            }
+            m_components.forEach([](ISparseSet& set) { set.clear(); });
             m_entityAllocator.clear();
             m_environment = Environment{};
             m_physics     = PhysicsSettings{};
@@ -284,13 +323,12 @@ class Scene {
         /**
          * @brief Compact every component SparseSet to reclaim wasted memory.
          *
-         * Called by SceneSerializer after load: the staging-then-swap path
-         * can leave the sparse array oversized for the slots it now holds.
+         * Called by SceneSerializer after load: the staging build grows every
+         * sparse array a key at a time, so each ends up holding the capacity a
+         * geometric growth reserved rather than the capacity it uses.
          */
         void compact() {
-            for (auto& set : m_components) {
-                if (set) set->compact();
-            }
+            m_components.forEach([](ISparseSet& set) { set.compact(); });
         }
 
         /**
@@ -307,7 +345,7 @@ class Scene {
         void swap(Scene& other) noexcept {
             using std::swap;
             m_entityAllocator.swap(other.m_entityAllocator);  // non-movable, member swap
-            swap(m_components, other.m_components);
+            m_components.swap(other.m_components);
             swap(m_environment, other.m_environment);
             swap(m_physics, other.m_physics);
             ++m_epoch;
@@ -380,12 +418,8 @@ class Scene {
          */
         template<typename T>
         SparseSet<T>& getStorage() {
-            TypeId id = typeId<T>();
-            if (id >= m_components.size())
-                m_components.resize(id + 1);
-            auto& ptr = m_components[id];
-            if (!ptr) ptr = std::make_unique<SparseSet<T>>();
-            return static_cast<SparseSet<T>&>(*ptr);
+            return static_cast<SparseSet<T>&>(m_components.ensure<T>(
+                [] { return std::make_unique<SparseSet<T>>(); }));
         }
 
         /**
@@ -399,16 +433,12 @@ class Scene {
          */
         template<typename T>
         SparseSet<T>* findStorage() {
-            TypeId id = typeId<T>();
-            if (id >= m_components.size() || !m_components[id]) return nullptr;
-            return static_cast<SparseSet<T>*>(m_components[id].get());
+            return static_cast<SparseSet<T>*>(m_components.find<T>());
         }
 
         template<typename T>
         const SparseSet<T>* findStorage() const {
-            TypeId id = typeId<T>();
-            if (id >= m_components.size() || !m_components[id]) return nullptr;
-            return static_cast<const SparseSet<T>*>(m_components[id].get());
+            return static_cast<const SparseSet<T>*>(m_components.find<T>());
         }
 
     private:
@@ -421,8 +451,38 @@ class Scene {
         uint64_t m_epoch = 0;
 
         SlotAllocator m_entityAllocator;
-        std::vector<std::unique_ptr<ISparseSet>> m_components;
+        TypeRegistry<ISparseSet> m_components;
         std::vector<ISceneObserver*> m_observers;  ///< Non-owning; each notified on entity destroy.
 };
+
+/**
+ * @brief The lowest-slot entity carrying @p First (and @p Rest) that @p pred accepts.
+ *
+ * "Which camera is the eye", "which light is the sun", "which listener are the
+ * ears" are all this question, and a scene is allowed to answer it ambiguously
+ * - two cameras can both be marked active. Something has to break the tie, and
+ * it cannot be iteration order: a `SparseSet` is packed, so removing any *other*
+ * entity of that type swaps the last element into the hole and reorders the
+ * walk. The eye would change because an unrelated camera was deleted.
+ *
+ * The lowest slot is stable under that, is the order an author sees in the
+ * hierarchy, and is the same tie-break the physics solver canonicalises on.
+ *
+ * @tparam First Component type iterated; put the rarest first as always.
+ * @tparam Rest  Further components the entity must also carry.
+ * @param scene The scene to search.
+ * @param pred  Called with (First&, Rest&...); true accepts the candidate.
+ * @return The winning entity, or a null id when nothing qualifies.
+ */
+template <typename First, typename... Rest, typename Pred>
+EntityId findLowestSlot(const Scene& scene, Pred pred) {
+    EntityId found{};
+    scene.forEach<First, Rest...>(
+        [&](EntityId id, const First& first, const Rest&... rest) {
+            if (!pred(first, rest...)) return;
+            if (!found || id.slot() < found.slot()) found = id;
+        });
+    return found;
+}
 
 } // namespace Vkm::Engine

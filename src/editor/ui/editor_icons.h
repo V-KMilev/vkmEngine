@@ -102,7 +102,10 @@ void drawEntityMarker(ImDrawList* dl, EditorIcon icon, ImVec2 center, ImU32 col)
  * @param active  Highlight with the accent color (toggle/selected state).
  * @param enabled When false the button is disabled and dimmed.
  * @param tooltip Optional hover tooltip (already formatted), may be null.
- * @param size    Button side length in pixels.
+ * @param size    Button side length in framebuffer pixels. Stated by every
+ *                caller: a default here would be a raw number that does not
+ *                scale with the font, which is the one thing an editor metric
+ *                must do.
  * @return true on the frame the button is pressed.
  */
 bool iconButton(
@@ -111,7 +114,7 @@ bool iconButton(
     bool active,
     bool enabled,
     const char* tooltip,
-    float size = 26.0f
+    float size
 );
 
 } // namespace Vkm::Engine

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/material_asset.h"
@@ -53,7 +54,12 @@ struct PreviewRequest {
 using GpuTextureId = uint64_t;
 
 /**
- * @brief Offscreen rendering a backend may offer for authoring tools.
+ * @brief What a backend may offer an authoring tool beyond drawing the frame.
+ *
+ * Two things, and they are here for the same reason: an offscreen render of one
+ * asset (the thumbnail behind every material and mesh in the browser), and read
+ * access to the GPU mirror of a texture the frame path uploaded (or an upload of
+ * one it never had reason to).
  *
  * Separate from RenderBackend on purpose: drawing a frame is what a backend is
  * *for*, while an asset thumbnail is an authoring convenience a shipped game
@@ -79,10 +85,29 @@ class EditorRenderHooks {
         virtual GpuTextureId renderPreview(const PreviewRequest& request,
                                            const ResourceManager& resources) = 0;
 
-        /// Last texture rendered for @p key, or 0 if there is none.
+        /**
+         * @brief The texture last rendered for @p key, without rendering one.
+         *
+         * What a panel drawing an already-requested preview reads each frame.
+         *
+         * @param key The request key the preview was rendered under.
+         * @return The backend's id for that preview, or 0 if there is none.
+         */
         virtual GpuTextureId previewTexture(uint64_t key) const = 0;
 
+        /**
+         * @brief Drop the cached target held for @p key.
+         *
+         * @param key The request key to forget; an unknown key is a no-op.
+         */
         virtual void releasePreview(uint64_t key) = 0;
+
+        /**
+         * @brief Drop every cached preview target.
+         *
+         * What a project close calls: the keys are derived from asset handles,
+         * and the next project's handles mean different assets.
+         */
         virtual void releaseAllPreviews() = 0;
 
         /**
@@ -112,18 +137,34 @@ class EditorRenderHooks {
          */
         virtual GpuTextureId ensureTexture(const TextureHandle& handle,
                                            const ResourceManager& resources) = 0;
+
+        /**
+         * @brief Upload an image the *engine* owns and return its texture id.
+         *
+         * The editor's own chrome - the brand mark in the menu bar - is not a
+         * project asset. Routed through the ResourceManager it would land in the
+         * user's asset library as an unused import and go stale every time
+         * opening a project swaps that manager. So it comes through here, which
+         * is the seam an authoring tool already reaches the GPU by, instead of
+         * the editor constructing a GL texture of its own.
+         *
+         * Cached by path; a repeat call re-uses the upload. The pixels arrive
+         * bottom-up, as every decode in the engine does, so a drawer whose UVs
+         * run from the top left flips them at the draw.
+         *
+         * @param path Absolute path to an image on disk.
+         * @return The backend's id for it, or 0 when it could not be decoded.
+         */
+        virtual GpuTextureId chromeImage(const std::string& path) = 0;
 };
 
 /**
  * @brief The backend's editor hooks, or null when it offers none.
  *
- * A cast rather than a method on RenderBackend, so the runtime interface does
- * not have to name this one.
- *
  * @param backend Active backend; null is answered with null.
  */
 inline EditorRenderHooks* editorRenderHooks(RenderBackend* backend) {
-    return dynamic_cast<EditorRenderHooks*>(backend);
+    return backend ? backend->editorHooks() : nullptr;
 }
 
 } // namespace Vkm::Engine

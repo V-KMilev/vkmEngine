@@ -35,7 +35,7 @@
 #include "platform/window/input_handle.h"
 #include "platform/window/glfw_include.h"
 #include "proc_audio.h"
-#include "proc_mesh.h"
+#include "resource/generate/mesh_generators.h"
 #include "resource/resource_manager.h"
 #include "runner_rig.h"
 #include "system/animation/animation_events.h"
@@ -332,7 +332,7 @@ void PotionRunner::buildWorld() {
     // default earth gravity - the crash reads floaty otherwise.
     m_scene->physics().gravity = {0.0f, -gravity, 0.0f};
 
-    m_cubeMesh   = m_resources->add(makeCubeMesh(), "potion:cube");
+    m_cubeMesh   = m_resources->add(generateCube(), "potion:cube");
 
     // Trackbed and structure, at the night-plausible albedos this function's
     // block explains. Roughness near 1 keeps grazing-angle Fresnel from

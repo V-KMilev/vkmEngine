@@ -4,6 +4,7 @@
 
 #include "logger.h"
 
+#include "core/host_chrome.h"
 #include "platform/window/window_manager.h"
 #include "system/render/render_backend.h"
 #include "debug/profiler.h"
@@ -19,10 +20,11 @@ void RenderSystem::update(FrameContext& ctx) {
     // The rect the scene draws into, plus the full backbuffer height a
     // bottom-left backend needs to flip it. The view is the only channel that
     // carries them, so they are simply refreshed every frame.
-    m_view.viewportX      = ctx.window.sceneViewportX();
-    m_view.viewportY      = ctx.window.sceneViewportY();
-    m_view.viewportWidth  = ctx.window.sceneViewportWidth();
-    m_view.viewportHeight = ctx.window.sceneViewportHeight();
+    const HostChrome::ViewportRect vp = ctx.chrome.viewport(ctx.window);
+    m_view.viewportX      = vp.x;
+    m_view.viewportY      = vp.y;
+    m_view.viewportWidth  = vp.width;
+    m_view.viewportHeight = vp.height;
     m_view.surfaceWidth   = static_cast<uint32_t>(ctx.window.getWidth());
     m_view.surfaceHeight  = static_cast<uint32_t>(ctx.window.getHeight());
     m_view.settings       = m_settings;

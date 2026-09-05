@@ -29,6 +29,7 @@
 #include "system/script/behavior_field_visitor.h"
 #include "system/script/script_component.h"
 #include "core/reflect.h"
+#include "resource/asset_source_kind.h"
 
 namespace Vkm::Engine::AssetSerializer {
 
@@ -43,19 +44,11 @@ struct TexField {
     const char* key;
     TextureHandle MaterialAsset::* member;
 };
+#define VKM_MATERIAL_MAP_FIELD(key, member, slot, doc) {#key, &MaterialAsset::member},
 constexpr std::array<TexField, 11> MATERIAL_TEXTURE_FIELDS = {{
-    {"albedo",              &MaterialAsset::albedoTexture},
-    {"normal",              &MaterialAsset::normalTexture},
-    {"metallicRoughness",   &MaterialAsset::metallicRoughnessTexture},
-    {"metallic",            &MaterialAsset::metallicTexture},
-    {"roughness",           &MaterialAsset::roughnessTexture},
-    {"ao",                  &MaterialAsset::aoTexture},
-    {"aoMetallicRoughness", &MaterialAsset::aoMetallicRoughnessTexture},
-    {"emission",            &MaterialAsset::emissionTexture},
-    {"height",              &MaterialAsset::heightTexture},
-    {"clearcoat",           &MaterialAsset::clearcoatTexture},
-    {"transmission",        &MaterialAsset::transmissionTexture},
+    VKM_MATERIAL_MAPS(VKM_MATERIAL_MAP_FIELD)
 }};
+#undef VKM_MATERIAL_MAP_FIELD
 
 using ::Vkm::Engine::detail::vec3ToJson;
 using ::Vkm::Engine::detail::vec4ToJson;
@@ -66,12 +59,11 @@ using ::Vkm::Engine::detail::jsonToVec4;
 
 nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& resources) {
     nlohmann::json src;
-    src["kind"] = "inline";
+    src["kind"] = AssetSourceKind::INLINE;
 
-    // Scalar / vector / enum fields are driven by reflection (the VKM_REFLECT
-    // block in resource/asset/material_asset.h), so adding a MaterialAsset field
-    // can't silently fall out of the save/load round trip. Texture refs resolve
-    // by name instead, below.
+    // Scalar / vector / enum fields are driven by reflection, so a new
+    // MaterialAsset field cannot silently fall out of the round trip. Texture
+    // refs resolve by name instead, below.
     Reflect::forEachField(m, [&](std::string_view name, const auto& val) {
         using V = std::decay_t<decltype(val)>;
         if      constexpr (std::is_same_v<V, MaterialType>) src[std::string(name)] = Reflect::enumName(val);
@@ -85,9 +77,8 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
         const TextureHandle& h = m.*f.member;
         if (!h) continue;
         const auto& tex = resources.get(h);
-        // Same rule as emitDescriptor, and warned about here rather than left
-        // to fire on every load: a hidden texture is not in the cooked
-        // manifest, so shipping its name in a public material's recipe writes
+        // Warned here rather than left to fire on every load: a hidden texture is
+        // not in the cooked manifest, so its name in a public material's recipe is
         // a reference that can never resolve.
         if (tex.isHidden()) {
             LOG_WARNING("Material texture slot '%s' refers to hidden asset '%s' - dropping ref",
@@ -113,12 +104,18 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
  */
 void applyInline(const nlohmann::json& src, MaterialAsset& m, const ResourceManager& resources) {
     // Mirror of materialToInline: reflection drives the scalar / vector / enum
-    // fields (a missing key keeps the current value, except type which resets
-    // to Opaque), textures resolve by name.
+    // fields and textures resolve by name. A missing key, or an enum name this
+    // build lacks, keeps the current value rather than becoming enumerator zero.
     Reflect::forEachField(m, [&](std::string_view name, auto& val) {
         using V = std::decay_t<decltype(val)>;
         const std::string key(name);
-        if      constexpr (std::is_same_v<V, MaterialType>) val = Reflect::enumFromName<MaterialType>(src.value(key, std::string("Opaque")));
+        if constexpr (std::is_same_v<V, MaterialType>) {
+            const std::string typeName = src.value(key, std::string{});
+            if (!typeName.empty() && !Reflect::enumFromNameChecked(typeName, val)) {
+                LOG_WARNING("Material '%s': no material type called '%s' in this build; "
+                            "leaving it as it was", m.name().c_str(), typeName.c_str());
+            }
+        }
         else if constexpr (std::is_same_v<V, glm::vec3>)    val = jsonToVec3(src.value(key, nlohmann::json{}), val);
         else if constexpr (std::is_same_v<V, glm::vec4>)    val = jsonToVec4(src.value(key, nlohmann::json{}), val);
         else                                                val = src.value(key, val);
@@ -304,10 +301,9 @@ nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<Entit
             // only walk that can see it.
             for (const auto& behavior : scene.get<ScriptComponent>(id).behaviors) {
                 if (!behavior) continue;
-                // visitFields is non-const because the editor and the loader
-                // write through it; this visitor only reads. No cast is needed
-                // to get there: a unique_ptr hands out a mutable referent even
-                // when the pointer itself is const.
+                // visitFields is non-const because the editor and the loader write
+                // through it; this visitor only reads, and a const unique_ptr still
+                // hands out a mutable referent.
                 behavior->visitFields(behaviorRefs);
             }
         }
@@ -430,8 +426,10 @@ bool resolveCookedSource(AssetType type, const std::string& name, nlohmann::json
     if (type == AssetType::Material) {
         return loadLibrarySource(type, name, outSource);
     }
-    if (AssetCook::isCookedCurrent(type, AssetLibrary::cookedPath(type, name), record->recipeHash)) {
-        outSource = nlohmann::json{{"kind", "cooked"}, {"name", name}};
+    if (AssetCook::isCookedCurrent(
+            type, AssetLibrary::cookedPath(type, name,
+                                           AssetCook::cacheKey(record->recipeHash, type)))) {
+        outSource = nlohmann::json{{"kind", AssetSourceKind::COOKED}, {"name", name}};
         return true;
     }
     // Not an error on its own: an editor or a cook re-imports and re-bakes,
@@ -495,10 +493,9 @@ std::pair<size_t, size_t> loadAssetSection(
         // and there is nothing to move; removing it would delete the live one.
         if (h == live) { ++skipped; continue; }
 
-        // The rebuilt contents go into the slot the live asset already sits in,
-        // so its handle keeps naming it - see ResourceManager::swapValue. The
-        // shell comes back holding the contents that were there and its own
-        // name, which is what lets it be removed like any other asset.
+        // The rebuilt contents go into the slot the live asset already sits in, so
+        // its handle keeps naming it. The shell comes back holding what was there,
+        // which is what lets it be removed like any other asset.
         resources.swapValue(live, resources.edit(h));
         resources.remove(h);
         ++skipped;

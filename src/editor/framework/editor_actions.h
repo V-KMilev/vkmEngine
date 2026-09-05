@@ -215,32 +215,20 @@ void focusOnSelected(FrameContext& ctx, EditorState& state, CameraControllerSyst
 void setActiveCamera(Scene& scene, EditorState& state, EntityId target);
 
 /**
- * @brief Commit a hierarchy mutation: panel rebuild plus scene save flag.
- *
- * Names the pair every structural edit owes the editor, because a call site
- * that remembered the panel rebuild and forgot markSceneDirty lost the user's
- * work at the next load with nothing said.
- */
-void commitHierarchyMutation(EditorState& state);
-
-/**
  * @brief Reparent @p child under @p newParent (null = unparent to root) while
  * keeping its world transform fixed, and push an undoable ReparentCommand.
  *
- * The engine-level setParent/removeFromParent keep the local Transform as-is
- * (loaders and the scene serializer rely on that), so an interactive reparent
- * must re-base the local Transform itself - otherwise the entity visibly jumps
- * by the old/new parent's world contribution. Decomposes the preserved world
- * matrix into the new parent's space (same math the transform gizmo uses).
+ * The engine-level setParent/removeFromParent keep the local Transform as-is,
+ * which loaders and the serializer rely on, so an interactive reparent re-bases
+ * it here - otherwise the entity jumps by the old and new parents' difference.
  *
- * An entity with no Transform is moved all the same, with the re-base skipped:
- * a UI element is placed in screen space by its canvas and has no world pose to
- * keep. The move is then reported when it leaves the element with no UICanvas
- * ancestor, because that is what stops it being drawn.
+ * An entity with no Transform is moved all the same, with the re-base skipped: a
+ * UI element is placed in screen space by its canvas. That move is reported when
+ * it leaves the element with no UICanvas ancestor, which stops it being drawn.
  *
- * A move that crosses into or out of a prefab instance is refused with a toast
- * instead: the instance's interior is the prefab's, and the scene stores none
- * of it, so either move would be lost on the next load without a word.
+ * A move that crosses into or out of a prefab instance is refused with a toast:
+ * the instance's interior belongs to the prefab and the scene stores none of it,
+ * so the move would be lost on the next load without a word.
  *
  * @param scene     Scene holding both entities.
  * @param state     Editor state receiving the history entry and any toast.
@@ -250,12 +238,6 @@ void commitHierarchyMutation(EditorState& state);
  */
 void reparentKeepingWorld(Scene& scene, EditorState& state, EntityId child,
                           EntityId newParent, const char* label);
-
-/**
- * @brief Mark a non-hierarchy structural change (add/remove entity, etc.).
- * Used by paths that don't have a specific entity to dirty.
- */
-void commitStructureChange(EditorState& state);
 
 /**
  * @brief Fork a material asset for safe per-entity edits.
@@ -284,16 +266,11 @@ MaterialHandle createNewMaterial(ResourceManager& resources, EditorState& state)
 /**
  * @brief Rename an asset, report the name it actually got, and make it undoable.
  *
- * The one place an asset is renamed from editor UI. Every rename affordance -
- * the Asset Browser's F2 modal, the Material Editor's own - calls this rather
- * than open-coding it, because the sequence has two parts a caller would not
- * guess.
- *
- * ResourceManager keeps names unique per type by suffixing a taken one, so the
- * asset may not end up called what was typed. This reads the name back and
- * toasts when it differs: an author who is not told goes looking for a name
- * nothing holds. It then pushes the undo step with the name that was *assigned*
- * rather than the one that was asked for, so redo repeats what happened.
+ * The one place an asset is renamed from editor UI, because the sequence has two
+ * parts a caller would not guess. ResourceManager keeps names unique per type by
+ * suffixing a taken one, so the asset may not end up called what was typed: this
+ * reads the name back, toasts when it differs, and pushes the undo step with the
+ * name that was assigned rather than the one that was asked for.
  *
  * The rename is applied before the command is pushed: the command carries the
  * reverse of an edit that has already happened.

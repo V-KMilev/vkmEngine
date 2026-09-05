@@ -1,8 +1,8 @@
 #pragma once
 
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
-#include "core/math/projection.h"
 #include "core/reflect.h"
 #include "ecs/entity.h"
 
@@ -46,23 +46,28 @@ struct Camera {
     static glm::mat4 computeProjection(const Camera& camera, float viewportAspect) {
         const float aspect = camera.aspect > 0.0f ? camera.aspect : viewportAspect;
         if (camera.projection == ProjectionType::Perspective) {
-            return Math::makePerspective(camera.fovY, aspect, camera.zNear, camera.zFar);
+            return glm::perspective(camera.fovY, aspect, camera.zNear, camera.zFar);
         } else {
-            return Math::makeOrthographic(camera.orthoHeight, aspect, camera.zNear, camera.zFar);
+            // Centred on the origin, so the half-height and the aspect are the
+            // whole frustum: an off-axis offset is a lens shift nothing authors.
+            const float halfWidth = camera.orthoHeight * aspect;
+            return glm::ortho(-halfWidth, halfWidth,
+                              -camera.orthoHeight, camera.orthoHeight,
+                              camera.zNear, camera.zFar);
         }
     }
 };
 
 /**
- * @brief The scene's active camera: the first entity whose Camera::active is set.
+ * @brief The scene's active camera: the lowest-slot entity whose Camera::active is set.
  *
  * The one definition of a rule three places have to agree on - the renderer
  * decides what to draw through it, the editor's fly controls decide what to
  * move, and a scene load decides what to re-bind to. A Transform is required
  * as well as a Camera, because a camera with no pose can neither be rendered
- * from nor flown. Ties go to storage order; an empty result means the scene has
- * no active camera, and callers own their own fallback policy rather than
- * inheriting one from here.
+ * from nor flown. Two active cameras are broken by lowest slot (see
+ * findLowestSlot); an empty result means the scene has no active camera, and
+ * callers own their own fallback policy rather than inheriting one from here.
  *
  * @param scene  The scene to search.
  * @param cached A previously returned entity, tested first as an O(1) fast

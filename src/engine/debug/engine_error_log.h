@@ -8,7 +8,7 @@
 namespace Vkm::Engine {
 
 /**
- * @brief Ring buffer of recoverable engine errors worth surfacing in the editor.
+ * @brief Bounded log of recoverable engine errors worth surfacing in the editor.
  *
  * Engine code reports recoverable errors through the free reportError() seam
  * below. reportError() always logs (so the headless runtime still records the
@@ -47,13 +47,16 @@ class EngineErrorLog {
         void clearAll();
 
         /**
-         * @brief Return a copy of the buffered entries, newest first.
+         * @brief The buffered entries, oldest first.
          *
-         * @return The buffered entries in reverse insertion order (most recent
-         *         error first).
+         * Returned by reference: the editor's Errors tab reads this every frame
+         * it is open, and the entries carry three strings each. Both readers
+         * want newest first and get there with a reverse iteration; that is
+         * cheaper than handing each of them a reversed copy.
+         *
+         * @return The live entry list, in insertion order.
          */
-        std::vector<Entry> snapshot() const;
-        std::size_t size() const;
+        const std::vector<Entry>& entries() const { return m_entries; }
 
         /**
          * @brief Monotonic count of distinct errors ever pushed. A deduped repeat

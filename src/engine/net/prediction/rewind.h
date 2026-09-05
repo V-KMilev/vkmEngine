@@ -96,7 +96,8 @@ class NetRewind {
  * The whole project-facing surface, and a scope rather than a wrapped query on
  * purpose: it serves raycast, spherecast and anything added later without a
  * wrapper each, and inside it a game writes the query it would have written
- * anyway.
+ * anyway. Offline and on a client it does nothing, so the same code is a plain
+ * query in a single-player game.
  *
  * @code
  * {
@@ -106,14 +107,9 @@ class NetRewind {
  * }
  * @endcode
  *
- * Offline and on a client it does nothing at all, so the same code is a plain
- * query in a single-player game.
- *
- * Read inside the braces, act outside them. Every rewound entity's transform is
- * restored exactly on the way out, so a knockback, a reposition, anything
- * written to a target while the world is rewound is thrown away - and the
- * closing brace is a long way from the line that wrote it. The query is what
- * belongs in here; what the hit causes belongs after.
+ * Read inside the braces, act outside them: every rewound transform is restored
+ * exactly on the way out, so a knockback written while the world is rewound is
+ * thrown away.
  */
 class NetRewindScope {
     public:

@@ -17,17 +17,41 @@ inline constexpr int MAX_CONTACTS_PER_MANIFOLD = 4;
  *
  * normal points from body A toward body B (push A along -normal, B along
  * +normal). penetration is the positive overlap depth along the normal.
- * The accumulated impulses persist across the solver's iterations within one
- * tick so successive passes converge instead of fighting each other.
+ *
+ * The accumulated impulses persist across the solver's iterations so successive
+ * passes converge instead of fighting each other - and across ticks, seeded from
+ * the last one by PhysicsSystem before the solve. A stack is the reason: the
+ * bottom contact of five boxes carries the weight of four, and a solver that
+ * starts every tick from zero has to rediscover that in its iteration budget.
+ * It never quite does, so the stack sinks into itself and leans as the four
+ * points of a face converge unevenly.
  */
 struct Contact {
     glm::vec3 point  = {0.0f, 0.0f, 0.0f};  ///< Contact position (world)
     glm::vec3 normal = {0.0f, 1.0f, 0.0f};  ///< Unit normal, A -> B
     float penetration = 0.0f;               ///< Positive overlap depth
 
-    float normalImpulse   = 0.0f;           ///< Accumulated normal impulse this tick
-    float tangentImpulse  = 0.0f;           ///< Accumulated friction impulse this tick
+    float normalImpulse   = 0.0f;           ///< Accumulated normal impulse, seeded from last tick
     float restitutionBias = 0.0f;           ///< Target separation speed (set once, pre-solve)
+
+    /**
+     * @brief Friction as two impulses along a basis fixed for the whole tick.
+     *
+     * Not one impulse along the direction the contact is sliding: that
+     * direction is re-derived every pass, so the accumulated scalar means
+     * something different each time it is read, and a pass that finds the
+     * sliding reversed applies the whole of it the wrong way. In a tall stack
+     * the lateral velocities are near zero and the direction flips freely,
+     * which is a tower shaking itself apart.
+     *
+     * Two impulses on a basis built from the normal have one meaning for the
+     * whole tick, are clamped together against the friction cone rather than
+     * separately, and can be carried into the next tick as a vector.
+     */
+    glm::vec3 tangent1 = {0.0f, 0.0f, 0.0f};
+    glm::vec3 tangent2 = {0.0f, 0.0f, 0.0f};
+    float tangentImpulse1 = 0.0f;
+    float tangentImpulse2 = 0.0f;
 
     /**
      * @brief Pre-solve constants: the lever arms and the normal-direction

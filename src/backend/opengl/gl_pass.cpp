@@ -15,10 +15,6 @@ void GLPass::beginFullscreen(Vkm::GL::Context& gl) const {
     gl.setFaceCulling(false);
 }
 
-void GLPass::endFullscreen(Vkm::GL::Context& gl) const {
-    gl.setDepthTest(true);
-}
-
 void GLPass::promoteColorChain(GLFrameContext& ctx) const {
     if (ctx.colorSrc != &ctx.sceneHDR) return;
     ctx.colorDst->blitColorFrom(*ctx.colorSrc);

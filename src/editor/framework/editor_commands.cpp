@@ -118,7 +118,6 @@ void AddComponentCommand<T>::redo(Scene& scene, EditorState& state) {
     // reference but an explicit-template-arg call would force rvalue bind.
     T copy = m_value;
     scene.add(e, std::move(copy));
-    state.hierarchyDirty = true;
 }
 
 template <typename T>
@@ -126,7 +125,6 @@ void AddComponentCommand<T>::undo(Scene& scene, EditorState& state) {
     const EntityId e = liveEntity(scene, m_entity);
     if (!e || !scene.has<T>(e)) return;
     scene.remove<T>(e);
-    state.hierarchyDirty = true;
 }
 
 template <typename T>
@@ -134,7 +132,6 @@ void RemoveComponentCommand<T>::redo(Scene& scene, EditorState& state) {
     const EntityId e = liveEntity(scene, m_entity);
     if (!e || !scene.has<T>(e)) return;
     scene.remove<T>(e);
-    state.hierarchyDirty = true;
 }
 
 template <typename T>
@@ -143,7 +140,6 @@ void RemoveComponentCommand<T>::undo(Scene& scene, EditorState& state) {
     if (!e || scene.has<T>(e)) return;
     T copy = m_snapshot;
     scene.add(e, std::move(copy));
-    state.hierarchyDirty = true;
 }
 
 template <typename T>
@@ -215,10 +211,9 @@ bool MaterialEditCommand::tryMerge(Command& incoming) {
     auto* p = dynamic_cast<MaterialEditCommand*>(&incoming);
     if (!p || p->m_handle.id() != m_handle.id()) return false;
 
-    // Copy-construct then move: a snapshot is a value, and copy-assigning one
-    // asset over another is deleted precisely so it cannot be done to a live
-    // one by accident. The identity these carry is nobody's - they were never
-    // in the manager - so the constructor leaving it at its defaults is right.
+    // Copy-construct then move: assigning one asset over another is deleted so it
+    // cannot happen to a live one by accident. These were never in the manager, so
+    // the identity the constructor leaves at its defaults is nobody's.
     m_after = MaterialAsset(p->m_after);
     return true;
 }
@@ -315,13 +310,19 @@ void EntitySnapshot::apply(Scene& scene, EntityId id) const {
 }
 
 void CreateEntityCommand::redo(Scene& scene, EditorState& state) {
-    EntityId e = scene.createEntityAt(m_snap.slotIndex);
+    // Refused rather than assumed: createEntityAt answers null when the slot is
+    // taken, and everything below would then write components onto a null id.
+    const EntityId e = scene.createEntityAt(m_snap.slotIndex);
+    if (!e) {
+        LOG_ERROR("Redo of '%s': slot %u is occupied; nothing recreated",
+            label(), m_snap.slotIndex);
+        return;
+    }
     m_snap.apply(scene, e);
     if (m_parentSlot && scene.isAliveAtIndex(m_parentSlot)) {
         const EntityId parent = scene.entityAt(m_parentSlot);
         HierarchyOperations::setParent(scene, e, parent);
     }
-    state.hierarchyDirty = true;
     state.selectEntity(e);
 }
 
@@ -329,7 +330,6 @@ void CreateEntityCommand::undo(Scene& scene, EditorState& state) {
     EntityId id = scene.entityAt(m_snap.slotIndex);
     if (!scene.isAlive(id)) return;
     scene.destroyEntity(id);
-    state.hierarchyDirty = true;
     if (state.selectedEntity == id) state.deselect();
 }
 
@@ -379,19 +379,18 @@ void SubtreeSnapshot::apply(Scene& scene) const {
     // components. Slot recycling means generations are bumped, but the
     // slot index is stable.
     for (const auto& node : nodes) {
-        EntityId e = scene.createEntityAt(node.snap.slotIndex);
+        const EntityId e = scene.createEntityAt(node.snap.slotIndex);
+        if (!e) {
+            LOG_ERROR("SubtreeSnapshot::apply: slot %u is occupied; "
+                "that entity is not coming back", node.snap.slotIndex);
+            continue;
+        }
         node.snap.apply(scene, e);
     }
 
-    // Pass 1b: re-stamp the references the components carry. A snapshot holds
-    // whole EntityIds, and every entity above came back with a bumped
-    // generation - so a Joint restored verbatim names a handle that no longer
-    // compares equal to anything, and the solver drops it. Silently: a
-    // resurrected ragdoll simply never moves again.
-    //
-    // A reference already alive is left alone; it points outside the subtree
-    // and was never invalidated. One whose slot came back here is re-read from
-    // the scene. Anything else named something that is genuinely gone.
+    // Pass 1b: re-stamp the references the components carry. Every entity above
+    // came back with a bumped generation, so a Joint restored verbatim names a
+    // handle nothing compares equal to and the solver drops it, silently.
     auto restamp = [&](EntityId stored) {
         if (!stored) return EntityId{};
         if (scene.isAlive(stored)) return stored;
@@ -441,7 +440,6 @@ void SubtreeReplaceCommand::swapTo(Scene& scene, EditorState& state, const Subtr
         if (scene.isAlive(root)) HierarchyOperations::destroyHierarchy(scene, root);
     }
     to.apply(scene);
-    state.hierarchyDirty = true;
 }
 
 bool SubtreeReplaceCommand::addresses(uint32_t slotIndex) const {
@@ -460,7 +458,6 @@ void DestroySubtreeCommand::redo(Scene& scene, EditorState& state) {
     EntityId root = scene.entityAt(rootSlot);
     if (!scene.isAlive(root)) return;
     HierarchyOperations::destroyHierarchy(scene, root);
-    state.hierarchyDirty = true;
     if (state.selectedEntity.slot() == rootSlot) state.deselect();
 }
 
@@ -473,7 +470,6 @@ bool DestroySubtreeCommand::addresses(uint32_t slotIndex) const {
 
 void DestroySubtreeCommand::undo(Scene& scene, EditorState& state) {
     m_snap.apply(scene);
-    state.hierarchyDirty = true;
     if (m_priorSelection.slot() != 0) {
         // Restore selection if the prior pick was anywhere inside the
         // resurrected subtree (the common case is the root itself).
@@ -491,6 +487,11 @@ void PlacePrefabCommand::redo(Scene& scene, EditorState& state) {
     // loader restores an instance: a command pushed after this one addresses
     // the placed entity by index, so the index has to still be that entity's.
     const EntityId root = scene.createEntityAt(m_rootSlot);
+    if (!root) {
+        LOG_ERROR("Redo of '%s': slot %u is occupied; the prefab is not placed",
+            label(), m_rootSlot);
+        return;
+    }
 
     // The pose goes on first because instantiateInto keeps a Transform the root
     // already carries and takes the prefab's authored one otherwise.
@@ -511,7 +512,6 @@ void PlacePrefabCommand::redo(Scene& scene, EditorState& state) {
         return;
     }
 
-    state.hierarchyDirty = true;
     state.selectEntity(root);
 }
 
@@ -519,7 +519,6 @@ void PlacePrefabCommand::undo(Scene& scene, EditorState& state) {
     const EntityId root = scene.entityAt(m_rootSlot);
     if (!scene.isAlive(root)) return;
     HierarchyOperations::destroyHierarchy(scene, root);
-    state.hierarchyDirty = true;
     if (state.selectedEntity.slot() == m_rootSlot) state.deselect();
 }
 
@@ -579,14 +578,12 @@ void ReparentCommand::redo(Scene& scene, EditorState& state) {
     const EntityId child = liveEntity(scene, m_child);
     if (!child) return;
     applyReparent(scene, child, m_newParent, m_after);
-    state.hierarchyDirty = true;
 }
 
 void ReparentCommand::undo(Scene& scene, EditorState& state) {
     const EntityId child = liveEntity(scene, m_child);
     if (!child) return;
     applyReparent(scene, child, m_oldParent, m_before);
-    state.hierarchyDirty = true;
 }
 
 void SetActiveCameraCommand::redo(Scene& scene, EditorState&) {

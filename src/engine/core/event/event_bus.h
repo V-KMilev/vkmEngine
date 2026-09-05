@@ -5,6 +5,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/memory/type_registry.h"
 #include "core/memory/types.h"
 #include "core/event/bus.h"
 
@@ -13,33 +14,21 @@ namespace Vkm::Engine {
 /**
  * @brief Typed pub/sub event dispatcher.
  *
- * Engine infrastructure, not a System: the Engine owns one by value (like the
- * Clock and WindowManager), carries it on every FrameContext, and calls
- * flush() at the top of the Simulation stage - the fixed, visible point where
- * queued events deliver. That point is reached once per fixed tick, and once
- * more per frame for whatever was queued outside a tick; flush drains, so the
- * second never repeats the first.
+ * Engine infrastructure, not a System: the Engine owns one by value, like the
+ * Clock, carries it on every FrameContext, and calls flush() at the top of the
+ * Simulation stage - the fixed, visible point where queued events deliver. That
+ * point is reached once per fixed tick and once more per frame for whatever was
+ * queued outside a tick; flush drains, so the second never repeats the first.
  *
  * Per-type listener and queue storage is created lazily on first use.
  *
- * Threading: main-thread only. emit / enqueue / subscribe / unsubscribe must
- * all happen on the frame thread. If a future subsystem (e.g. physics on a
- * worker) needs to push events, add a mutex to Bus<EventT> at that point.
+ * Main-thread only: emit, enqueue, subscribe and unsubscribe all happen on the
+ * frame thread, and a subsystem that wants to push events from a worker is the
+ * point at which Bus<EventT> would need a mutex.
  *
- * Caveats:
- *  - Don't subscribe or unsubscribe from inside a listener callback during
- *    emit/flush - it iterates the listener vector and a concurrent mutation
- *    would invalidate it (unsubscribe is asserted against; see Bus::remove).
- *  - A listener that enqueues an event whose bus has already been flushed will
- *    see that event fire on the next flush - the next tick's, or the frame's
- *    own if no tick follows in this frame.
- *
- * Usage:
- *   struct DamageEvent { EntityId target; int amount; };
- *   auto id = events.subscribe<DamageEvent>([](const DamageEvent& e) { ... });
- *   events.emit(DamageEvent{target, 50});       // sync
- *   events.enqueue(DamageEvent{target, 25});    // deferred until next flush()
- *   events.unsubscribe<DamageEvent>(id);
+ * Subscribing and unsubscribing from inside a callback are both allowed - a
+ * one-shot listener retiring itself is the case that shaped Bus::remove.
+ * docs/reference/system/events.md has the delivery rules and the caveats.
  */
 class EventBus {
     public:
@@ -105,10 +94,8 @@ class EventBus {
          */
         template<typename EventT>
         Bus<EventT>& bus() {
-            const TypeId id = typeId<EventT>();
-            if (id >= m_buses.size()) m_buses.resize(id + 1);
-            if (!m_buses[id]) m_buses[id] = std::make_unique<Bus<EventT>>();
-            return *static_cast<Bus<EventT>*>(m_buses[id].get());
+            return static_cast<Bus<EventT>&>(m_buses.ensure<EventT>(
+                [] { return std::make_unique<Bus<EventT>>(); }));
         }
 
         /**
@@ -116,13 +103,11 @@ class EventBus {
          */
         template<typename EventT>
         Bus<EventT>* findBus() {
-            const TypeId id = typeId<EventT>();
-            if (id >= m_buses.size() || !m_buses[id]) return nullptr;
-            return static_cast<Bus<EventT>*>(m_buses[id].get());
+            return static_cast<Bus<EventT>*>(m_buses.find<EventT>());
         }
 
     private:
-        std::vector<std::unique_ptr<IBus>> m_buses;
+        TypeRegistry<IBus> m_buses;
 };
 
 } // namespace Vkm::Engine

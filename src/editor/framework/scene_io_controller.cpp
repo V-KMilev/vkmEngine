@@ -27,8 +27,8 @@
 #include "cook/asset_cooker.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/font_asset.h"
-#include "generator/default_scene.h"
-#include "generator/light_generators.h"
+#include "resource/generate/default_scene.h"
+#include "resource/generate/light_generators.h"
 #include "system/camera/camera_controller_system.h"
 #include "system/script/behavior_system.h"
 #include "ui/editor_style.h"
@@ -168,11 +168,9 @@ void SceneIOController::requestSaveAs() {
 }
 
 void SceneIOController::requestLoad() {
-    m_loadPicker.options().popupId    = "Load Scene";
     m_loadPicker.options().title      = "Load Scene";
     m_loadPicker.options().root       = ProjectPaths::scenes();
     m_loadPicker.options().recursive  = false;
-    m_loadPicker.options().kind       = AssetPicker::Kind::Files;
     m_loadPicker.options().extensions = {".json"};
     m_loadPicker.options().relativeTo.clear();  // loadPath() wants an absolute path
     m_loadPicker.options().hint.clear();
@@ -234,9 +232,7 @@ bool SceneIOController::load(FrameContext& ctx, EditorState& state) {
 void SceneIOController::endPlaySession(FrameContext& ctx) {
     // The asset list is the snapshot's other half, and a session that has ended
     // is Edit mode - paused, and back at 1x whatever a script scaled it to.
-    m_playSnapshot.clear();
-    m_playAssets.clear();
-    m_playSnapshotDirty = false;
+    m_play.release();
     ctx.clock.setPaused(true);
     ctx.clock.setTimeScale(1.0f);
 }
@@ -301,11 +297,6 @@ void SceneIOController::afterSceneReplace(
     const std::string& priorSelectionName,
     const std::string& eventPath
 ) {
-    // The Hierarchy's cached root list otherwise rebuilds only when the entity
-    // count moves, so reloading the same scene - or Stop after a session that
-    // spawned nothing - would keep drawing the outgoing scene's ids.
-    state.hierarchyDirty = true;
-
     // The swap replaced the ResourceManager wholesale, so preview targets
     // keyed by the old asset handles are stale. Drop them; the Material
     // Editor / Asset Browser re-bake lazily on their next draw.
@@ -342,43 +333,34 @@ void SceneIOController::afterSceneReplace(
     m_cameraController.setCameraEntity(findActiveCamera(ctx.scene));
 }
 
-void SceneIOController::captureSnapshot(FrameContext& ctx, EditorState& state) {
+bool SceneIOController::captureSnapshot(FrameContext& ctx, EditorState& state) {
     // The snapshot is the scene file format, so it names assets the library has
     // to be able to hand back - an unbaked import would come back empty.
     const bool cooked = AssetCooker::cookAllAssets(ctx.resources);
 
-    m_playSnapshot = SceneSerializer::saveToString(ctx.scene, ctx.resources);
-    if (m_playSnapshot.empty()) {
+    if (!m_play.capture(ctx.scene, ctx.resources, state.sceneDirty, state.commands.revision())) {
         LOG_ERROR("SceneIOController::captureSnapshot: failed to serialize scene");
         state.pushToast(EditorState::ToastKind::Error,
-            "Play: could not snapshot scene (Stop will not restore)");
-        m_playAssets.clear();
-        return;
+            "Play: could not snapshot the scene, so Play is refused");
+        return false;
     }
-    // The scene document names only what the scene uses, so the session's whole
-    // list is recorded beside it - an unassigned import is in no component.
-    m_playAssets = AssetSerializer::saveAllAssets(ctx.resources).dump();
     // A partial cook does not stop Play, by the same rule the save follows: the
     // session is still worth entering, and the toast names what Stop may lose.
     if (!cooked) {
         state.pushToast(EditorState::ToastKind::Error,
             "Some assets did not cook; Stop may not restore them");
     }
-    // Simulation writes the ECS directly, so a session never dirties the scene
-    // on its own; the author editing inside one does, and the history revision
-    // beside the flag is what Stop reads that share off.
-    m_playSnapshotDirty   = state.sceneDirty;
-    m_playSnapshotHistory = state.commands.revision();
+    return true;
 }
 
 void SceneIOController::restoreSnapshot(FrameContext& ctx, EditorState& state) {
-    if (m_playSnapshot.empty()) return;
+    if (!m_play.held()) return;
 
     // Read before the swap moves either: the undo revision and the dirty flag
     // are how the session's authored work is told from what it merely simulated.
-    const bool historyMoved    = state.commands.revision() != m_playSnapshotHistory;
+    const bool historyMoved    = m_play.historyMoved(state.commands.revision());
     const bool discardingEdits = historyMoved
-                              || (state.sceneDirty && !m_playSnapshotDirty);
+                              || (state.sceneDirty && !m_play.dirtyAtCapture());
 
     const std::string priorSelectionName = cacheSelectionName(ctx, state);
 
@@ -386,15 +368,9 @@ void SceneIOController::restoreSnapshot(FrameContext& ctx, EditorState& state) {
     // their context is still valid, before the swap restores the snapshot.
     BehaviorSystem::endSession(ctx.scene);
 
-    // The assets first and in place, so the handles the undo history holds go on
-    // naming what they named; see docs/reference/editor.md, "What an open does
-    // to the session's imports". Ahead of the load, which resolves names.
-    if (nlohmann::json assets = nlohmann::json::parse(m_playAssets, nullptr, false);
-        !assets.is_discarded()) {
-        AssetSerializer::loadAssets(assets, ctx.resources, AssetSerializer::LoadMode::Reload);
-    }
-
-    if (!SceneSerializer::loadFromString(m_playSnapshot, ctx.scene, ctx.resources)) {
+    // Assets then scene, both from the snapshot; see docs/reference/editor.md,
+    // "What an open does to the session's imports".
+    if (!m_play.restoreInto(ctx.scene, ctx.resources)) {
         LOG_ERROR("SceneIOController::restoreSnapshot: failed to restore play snapshot");
         state.pushToast(EditorState::ToastKind::Error,
             "Stop: could not restore scene snapshot");
@@ -404,7 +380,7 @@ void SceneIOController::restoreSnapshot(FrameContext& ctx, EditorState& state) {
     // The session is over, so it ends the one way every path ends one: the
     // snapshot, its asset list and the clock go together. The dirty flag is
     // read out first because that is what endPlaySession resets.
-    const bool dirtyAtCapture = m_playSnapshotDirty;
+    const bool dirtyAtCapture = m_play.dirtyAtCapture();
     endPlaySession(ctx);
 
     // Kept when the session never touched it, dropped when it did; see

@@ -382,7 +382,7 @@ The runtime registers only the cooked set, so it links neither Assimp nor the
 image and sound decoders; the editor registers the recipe set instead, which falls through
 to the cooked functions and (re)cooks recipes into the cache.
 
-### Generators (`src/tools/generator/`)
+### Generators (`src/engine/resource/generate/`)
 
 | File                    | Provides                                                       |
 |-------------------------|----------------------------------------------------------------|
@@ -421,8 +421,8 @@ Two importer hazards are handled explicitly:
   Without it a fifth influence would be dropped *after* the weights were
   normalised against it.
 - `aiProcess_JoinIdenticalVertices` merges vertices on a key that omits skin
-  weights (Assimp's `Vertex.h:106-111`) and filters the merged-away ones out
-  (`JoinVerticesProcess.cpp:343`). Past that, `JoinVerticesProcess.cpp:354` only
+  weights (Assimp's `Vertex.h`) and filters the merged-away ones out
+  (`JoinVerticesProcess.cpp`). Past that, `JoinVerticesProcess.cpp` only
   rewrites a bone's weight list when the rewrite is non-empty - so a bone whose
   weights **all** landed on joined vertices keeps its pre-join vertex ids against
   the shrunken array. The importer bounds-checks every `mVertexId` and counts what

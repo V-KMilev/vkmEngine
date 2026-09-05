@@ -14,30 +14,20 @@ namespace Vkm::Engine {
  *        rig it hangs off.
  *
  * The socket is the attached entity itself, not a marker something else is
- * parented to. A separate marker would be a second entity per attachment, with
- * a Transform nobody authors, listed in the hierarchy and written to the scene
- * file - the same cost per attachment that an entity per bone would have been
- * per joint, for no information the socket does not already carry.
+ * parented to: a marker would be a second entity per attachment, with a
+ * Transform nobody authors, for no information this does not already carry.
  *
- * The entity must be a direct child of the entity carrying the Animator. That
- * is not a convenience: BoneSocketSystem writes this entity's *local* Transform
- * and lets HierarchySystem resolve it later in the same frame, which is what
- * keeps the socket on the bone the frame the character moves instead of one
- * behind. `parentWorld * local` only lands on the bone when the parent's world
- * matrix is the rig's, so a socket parented anywhere else is refused and named
- * rather than placed somewhere plausible and wrong.
+ * The entity must be a direct child of the one carrying the Animator.
+ * BoneSocketSystem writes this entity's *local* Transform and lets
+ * HierarchySystem resolve it later in the same frame, so `parentWorld * local`
+ * only lands on the bone while the parent's world matrix is the rig's - a socket
+ * parented anywhere else is refused and named rather than placed somewhere
+ * plausible and wrong. It also means the rig needs no EntityId here, so a socket
+ * survives prefabs, undo and scene load with nothing to remap.
  *
- * It also means the rig needs no EntityId here - it is whoever the Hierarchy
- * says the parent is - so a socket survives prefabs, undo and scene load with
- * nothing to remap, exactly like the skinned meshes beside it.
- *
- * The bone is named, never indexed. An index is what the pose arrays are
- * addressed by and it is one lookup cheaper, but it is a property of one export
- * of one rig: re-export a character with a joint inserted and every stored index
- * silently addresses its neighbour, which is a weapon that moves to the elbow
- * and no error anywhere. The name is the joint's durable identity - it is what
- * a clip binds by at cook time - so it is what an authored socket stores, for
- * the reason a prefab override stores a uid rather than a row number.
+ * The bone is named, never indexed. An index is a property of one export: insert
+ * a joint and every stored index addresses its neighbour, which is a weapon on
+ * the elbow and no error anywhere. The name is what a clip binds by at cook time.
  */
 struct BoneSocket {
     std::string bone;    ///< Bone name in the rig above; empty places nothing.

@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "pass/gl_skybox_pass.h"
 
 #include <cmath>
@@ -14,7 +12,7 @@
 #include "data/gl_ibl.h"
 #include "data/gl_mesh.h"
 #include "convention/gl_bindings.h"
-#include "generator/mesh_generators.h"
+#include "resource/generate/mesh_generators.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {

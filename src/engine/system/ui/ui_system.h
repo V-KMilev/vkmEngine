@@ -38,20 +38,6 @@ class UISystem : public System {
     public:
         void update(FrameContext& ctx) override;
 
-        /**
-         * @brief Notify the UI that the editor is capturing the pointer.
-         *
-         * The editor draws chrome (viewport toolbar, playbar, transform gizmo)
-         * over the same rect the game UI lays out in, so a click aimed at that
-         * chrome must not also press the button behind it. While capture is set
-         * the walk still runs and the overlay still draws - only the hit-test is
-         * suppressed. Called by EditorSystem each frame; the runtime leaves it
-         * false.
-         *
-         * @param capture True while the editor owns the pointer this frame.
-         */
-        void setEditorPointerCapture(bool capture) { m_editorPointerCapture = capture; }
-
     private:
         /**
          * @brief A visible canvas queued for this frame's walk, sortable by draw order.
@@ -84,13 +70,34 @@ class UISystem : public System {
          * @param entity     The UIElement entity to resolve.
          * @param parentRect Parent rect in screen pixels.
          * @param scale      Canvas pixel scale (reference px -> screen px).
+         * @param depth      How far down the canvas this call is. Bounded by
+         *                   HierarchyOperations::MAX_DEPTH like every other walk
+         *                   over the hierarchy - this one recurses, so a chain
+         *                   deeper than the engine supports is a stack the frame
+         *                   does not have rather than a loop it can leave.
          */
         void resolveElement(
             FrameContext& ctx,
             EntityId entity,
             const UIRect& parentRect,
-            float scale
+            float scale,
+            uint32_t depth
         );
+
+        /**
+         * @brief Add a run of vertices to the draw list, merging it where it can.
+         *
+         * A command is a change of draw state, not a widget: consecutive runs
+         * that share a kind and a font and sit next to each other in the vertex
+         * buffer are one draw call. A screen of forty solid panels was forty
+         * commands and is one.
+         *
+         * @param first Index of the run's first vertex.
+         * @param count How many vertices it holds.
+         * @param font  Atlas the run samples; empty for a solid fill.
+         * @param kind  What state the run is drawn with.
+         */
+        void appendCommand(uint32_t first, uint32_t count, FontHandle font, UIDrawKind kind);
 
         /**
          * @brief Append the two-triangle quad for @p entity's UIImage, if present.
@@ -146,15 +153,22 @@ class UISystem : public System {
         std::vector<CanvasRef> m_canvases;    ///< This frame's visible canvases, sorted; capacity reused.
         std::vector<ButtonHit> m_buttonHits;  ///< This frame's button candidates in painter order; capacity reused.
 
+        /**
+         * @brief Everything under the pointer that blocks it, in painter order.
+         *
+         * Buttons are in here too, which is the point: the topmost blocker
+         * decides, so a button covered by an opaque panel loses to the panel by
+         * the same rule that already decided between two overlapping buttons.
+         */
+        std::vector<EntityId> m_pointerBlockers;
+
         // Pointer interaction state.
         EntityId  m_pressedButton{};      ///< Button a press started over (the click candidate).
-        bool      m_prevMouseDown = false;  ///< Last frame's button state, for edge detection.
         glm::vec2 m_pointer{0.0f};        ///< Pointer in viewport-local pixels this frame.
         bool      m_mouseDown     = false;  ///< Primary button held this frame.
         bool      m_mouseDownEdge = false;  ///< Pressed this frame (was up).
         bool      m_mouseUpEdge   = false;  ///< Released this frame (was down).
 
-        bool      m_editorPointerCapture = false;  ///< Editor owns the pointer; skip hit-testing.
 };
 
 } // namespace Vkm::Engine

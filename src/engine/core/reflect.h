@@ -83,23 +83,6 @@ constexpr const char* enumName(Enum value) {
 }
 
 /**
- * @brief Parse an enum from a name, falling back to value 0 when unknown.
- *
- * The fallback is a real enumerator, so a caller that needs to tell a match
- * from a miss cannot do it by looking at the result - ask enumFromNameChecked.
- * Both ends of the format share one compile-time table, so a file this build
- * wrote cannot miss; a hand-edited one can.
- */
-template<typename Enum>
-Enum enumFromName(std::string_view name) {
-    using Names = EnumNames<Enum>;
-    for (std::size_t i = 0; i < Names::count; ++i) {
-        if (name == Names::values[i]) return static_cast<Enum>(i);
-    }
-    return static_cast<Enum>(0);
-}
-
-/**
  * @brief Parse an enum from a name, saying whether the name was one.
  *
  * @param name  The serialized name to look up.
@@ -146,12 +129,8 @@ inline constexpr bool HAS_ENUM_NAMES<Enum, std::void_t<decltype(EnumNames<Enum>:
 /**
  * @brief Macro shorthand for declaring a Traits specialisation.
  *
- * Invoke at GLOBAL SCOPE, after the type's namespace has closed, naming the
- * type in full (mirrors VKM_ENUM_NAMES):
- *
- *   namespace Vkm::Engine {
- *   struct Transform { ... };
- *   } // namespace Vkm::Engine
+ * Invoke at GLOBAL SCOPE, after the type's namespace has closed, naming the type
+ * in full (mirrors VKM_ENUM_NAMES):
  *
  *   VKM_REFLECT_BEGIN(::Vkm::Engine::Transform)
  *       VKM_F(position),
@@ -159,15 +138,14 @@ inline constexpr bool HAS_ENUM_NAMES<Enum, std::void_t<decltype(EnumNames<Enum>:
  *       VKM_F(scale)
  *   VKM_REFLECT_END()
  *
- * The macro opens Vkm::Engine::Reflect itself, which is why it can reach a
- * type in any namespace - a game's own types live in the game's namespace, and
- * reflection has to reach them there. Written inside a namespace it specialises
- * that namespace's Reflect instead, and the compiler says "'Traits' is not a
- * class template". VKM_F() looks up the `vkm_reflect_self` alias the macro
- * injects, so each field needn't repeat the type name.
+ * The macro opens Vkm::Engine::Reflect itself, which is how it reaches a type in
+ * any namespace - a game's own types live in the game's namespace. Written inside
+ * a namespace it specialises that namespace's Reflect instead, and the compiler
+ * says "'Traits' is not a class template". VKM_F() looks up the
+ * `vkm_reflect_self` alias the macro injects, so a field needs no type name.
  *
- * Fields omitted from the macro are NOT serialised - that's the mechanism for
- * "internal only" data.
+ * A field omitted from the macro is NOT serialised - that is the mechanism for
+ * internal-only data.
  */
 #define VKM_REFLECT_BEGIN(Type)                                              \
     namespace Vkm::Engine::Reflect {                                         \
@@ -200,7 +178,7 @@ inline constexpr bool HAS_ENUM_NAMES<Enum, std::void_t<decltype(EnumNames<Enum>:
  * It specialises EnumNames inside Vkm::Engine::Reflect, and fails the same way
  * VKM_REFLECT_BEGIN does when written inside a namespace.
  *
- * This one table is what enumName / enumFromName / drawEnumCombo read, so an
+ * This one table is what enumName / enumFromNameChecked / drawEnumCombo read, so an
  * enum's serialized names and its editor combo cannot drift. The enum must end
  * in a trailing `Count` sentinel: the static_assert ties the list length to it,
  * so adding a value without a name fails to compile.

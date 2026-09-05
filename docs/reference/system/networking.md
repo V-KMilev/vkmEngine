@@ -159,7 +159,7 @@ On `Behavior`, so a networked behavior reads like a single-player one:
 `isSimulated()` and `isMine()` are different questions and the difference matters:
 a server simulates every player and owns none of them.
 
-`command()` is the same call in all three roles. Offline and on the owning
+`command()` is the same call in every role. Offline and on the owning
 client it is the local player's input; on a server it is what that entity's
 player sent, run in the order they made it. An entity no player drives reads as
 nothing held.
@@ -761,10 +761,15 @@ Each of these is a decision with a reason, not an oversight.
   wait for a join protocol that carries the world's content rather than its
   state.
 
-- **A connection lost mid-game is a client that keeps playing.** The session
-  goes Offline, which answers yes to `simulates` for everything, so the client
-  becomes authoritative over a world nobody else can see. `isPlaying()` is what
-  a project asks to tell that apart; a game that never asks will not notice.
+- **A connection lost mid-game leaves the world holding still.** The session
+  goes to `NetRole::Disconnected` - deliberately *not* Offline, which is the
+  opposite state on the one question that matters: Offline decides everything
+  because there is nobody else, and a dropped client decides nothing because it
+  spent the session being told and has just lost the teller. Made Offline it
+  would inherit a world it had only ever been shown, every unowned body handed
+  to its physics at once from interpolated positions. What to do about it is the
+  game's - a message, a menu, a lobby - and `isDisconnected()` plus
+  `lastError()` say what happened. A game that never asks shows a frozen world.
 
 - **No fragmentation.** A datagram over 1200 bytes is refused, not split. One
   lost fragment loses all of it, and the budget exists so it never comes up.

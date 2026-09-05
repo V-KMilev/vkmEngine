@@ -44,6 +44,24 @@ constexpr uint16_t ANIMATION_CLIP_FORMAT_VERSION = 2;
 constexpr uint16_t AUDIO_CLIP_FORMAT_VERSION     = 1;
 
 /**
+ * @brief The complete cache key for one cooked artifact.
+ *
+ * Everything that decides whether a baked file is the right file: the recipe it
+ * was baked from, the cooker that baked it, and the layout that build reads. It
+ * goes in the artifact's *name*, so a change to any of the three does not make
+ * the old file stale - it makes it a file nobody looks for.
+ *
+ * The format versions above are part of it, which is why nothing reads one back
+ * and compares it: a reader that found the file has already matched it. They are
+ * still bumped when a layout changes, and a bump orphans exactly what it should.
+ *
+ * @param recipeAndCooker Hash of the recipe document mixed with the cooker version.
+ * @param type            Which asset kind, whose format version joins the mix.
+ * @return The key the artifact is filed under.
+ */
+uint64_t cacheKey(uint64_t recipeAndCooker, AssetType type);
+
+/**
  * @brief Bone count past which a rig is refused as corrupt rather than read.
  *
  * A rejection threshold, not a capability: a full character rig with face and
@@ -92,22 +110,20 @@ bool writeAudioClip    (const std::filesystem::path& path, const AudioClipAsset&
  * Sharing the answer is what keeps the two from disagreeing about whether a
  * file is usable and leaving a project that neither repairs nor loads.
  *
- * A file that is absent, not a cooked asset, of another kind, written to a
- * format version this build does not read, baked from a different recipe, or
- * shorter or longer than the payload its own header declares is not current.
- * The last of those is what an interrupted write leaves behind, since the
- * header goes to disk before the body it describes. A material is never
- * current: it has no cooked binary.
+ * A file that is absent, not a cooked asset, or of another kind is not current.
+ * The recipe and the format version are not asked about: they are in the name,
+ * and a file found under it has answered already. Nor is an interrupted write -
+ * the cooker renames a finished temporary onto the artifact, so a half-written
+ * file never wears the name. A material is never current: it has no binary.
  *
  * Says nothing to the log. A stale cache is a normal, recoverable state, and
  * what it means is the caller's to report.
  *
  * @param type Asset type the file is expected to hold.
- * @param path Cooked file to probe.
- * @param recipeHash Recipe hash the file must carry to count as current.
- * @return True when this build can read that file for that recipe.
+ * @param path Cooked file to probe - already named for the key it must match.
+ * @return True when this build can read that file.
  */
-bool isCookedCurrent(AssetType type, const std::filesystem::path& path, uint64_t recipeHash);
+bool isCookedCurrent(AssetType type, const std::filesystem::path& path);
 
 // Readers (both binaries). Fill `out` on success and, if `outHash` is non-null,
 // report the stored recipe hash. Return false (logging the reason) on any

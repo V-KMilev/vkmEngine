@@ -35,14 +35,6 @@ class SplashSystem : public System {
         SplashSystem& operator=(SplashSystem && other) = delete;
 
     public:
-        /**
-         * @brief Append whatever the project's project.json lists.
-         *
-         * Runs after the host has added its own, so the engine's mark comes
-         * first and the game's chain behind it.
-         */
-        void init(FrameContext& ctx) override;
-
         void update(FrameContext& ctx) override;
 
         /**

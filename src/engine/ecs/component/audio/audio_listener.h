@@ -54,9 +54,10 @@ struct AudioListener {
  * positioned source that there is no ear at all, and the viewport draws every
  * listener icon but that one dim. A Transform is required as well as an
  * AudioListener, because a listener with no pose has nowhere to measure a
- * distance from. Ties go to storage order; an empty result means the scene has
- * no ear, which is a normal state rather than an error - spatial sources go
- * silent and 2D ones play on.
+ * distance from. Two active listeners are broken by lowest slot (see
+ * findLowestSlot); an empty result means the scene has no ear, which is a
+ * normal state rather than an error - spatial sources go silent and 2D ones
+ * play on.
  *
  * Deliberately without findActiveCamera's cached-hint parameter: that exists
  * because two systems each keep a cached camera entity, and nothing on the

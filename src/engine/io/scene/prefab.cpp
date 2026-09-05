@@ -332,10 +332,9 @@ bool save(Scene& scene, EntityId root, const std::string& path,
         }
     }
 
-    // And the same refusal from the other direction: a root inside somebody
-    // else's instance is not this file's to define. Writing it would renumber
-    // that entity's uid and stamp an instance marker inside an instance, which
-    // is the nesting refused above, arrived at by re-parenting.
+    // And the same refusal from the other direction: a root inside somebody else's
+    // instance is not this file's to define, and writing it would stamp an
+    // instance marker inside an instance.
     if (isInsideInstance(scene, root)) {
         LOG_ERROR("Prefab::save: '%s' is part of a prefab instance; nested prefabs "
                   "are not supported", path.c_str());
@@ -477,10 +476,9 @@ bool instantiateInto(Scene& scene, ResourceManager& resources, const std::string
     created.reserve(entities.size());
     std::set<uint32_t> built;
 
-    // A failure leaves nothing of this call behind. Every entity the file names
-    // already exists by the time anything can fail, so the list is the whole of
-    // what to undo - including the one that failed, which is why it is not
-    // destroyed separately. The root is index 0 and belongs to the caller.
+    // A failure leaves nothing of this call behind: every entity the file names
+    // exists by the time anything can fail, so the list is the whole of what to
+    // undo. The root is index 0 and belongs to the caller.
     const auto abandon = [&]() {
         for (size_t i = created.size(); i-- > 1;) scene.destroyEntity(created[i]);
     };

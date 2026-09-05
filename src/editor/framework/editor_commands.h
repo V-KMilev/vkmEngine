@@ -10,6 +10,7 @@
 #include "ecs/entity.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/environment.h"
+#include "ecs/physics_settings.h"
 #include "ecs/component/animation/animation.h"
 #include "ecs/component/animation/animator.h"
 #include "ecs/component/animation/bone_socket.h"

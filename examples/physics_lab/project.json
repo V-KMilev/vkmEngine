@@ -1,6 +1,6 @@
 {
     "name": "Physics Lab",
-    "engineVersion": "0.7.2",
+    "engineVersion": "0.9.1",
     "entryScene": "scenes/obstacle_course.json",
     "tickRate": 128,
     "maxPlayers": 4

@@ -55,6 +55,7 @@
 #include "ecs/component/render/mesh.h"
 #include "system/async/async_load_queue.h"
 #include "system/hierarchy/hierarchy_operations.h"
+#include "resource/asset_source_kind.h"
 
 namespace Vkm::Engine {
 
@@ -162,11 +163,9 @@ class ImporterCache {
             std::shared_ptr<Assimp::Importer> importer;
         };
 
-        // LRU cap. Sized for a typical asset-import batch: a file is
-        // re-imported once per (mesh, material) an asset entry names,
-        // and a single model can split across several sub-models. 8
-        // entries comfortably covers the common case while keeping
-        // retained aiScene memory bounded - each entry is a few MB.
+        // LRU cap, sized for an import batch: a file is re-imported once per
+        // (mesh, material) an asset entry names. Eight covers that while keeping
+        // retained aiScene memory bounded, each entry being a few MB.
         static constexpr size_t MAX_CACHED = 8;
 
     private:
@@ -285,17 +284,9 @@ SkeletonAsset buildSkeleton(const aiScene* scene, const std::string& path) {
         for (size_t i = common - 1; i < chain.size(); ++i) needed.insert(chain[i]);
     }
 
-    // Two rigs in one file meet only at an ancestor belonging to neither, and
-    // merging them would invent a shared root and one bone numbering that
-    // neither rig has - so every clip in the file would bind to a rig that is
-    // not in it. The tell is that ancestor having bones down more than one of
-    // its branches while being no bone itself; a single rig either roots at a
-    // bone, or at the one container node above it.
-    //
-    // Read from the tree rather than from aiBone::mArmature. Assimp's FBX
-    // reader decomposes a node into $AssimpFbx$ helpers and points mArmature at
-    // the bone's own helper parent, so an ordinary rig reports as many
-    // armatures as it has joints - which refused every skinned FBX ever opened.
+    // Two rigs in one file would merge into a root neither has, so they are
+    // refused; the tell is an ancestor with bones down more than one branch. Read
+    // from the tree, because Assimp's FBX mArmature names a $AssimpFbx$ helper.
     if (offsets.find(rigRoot->mName.C_Str()) == offsets.end()) {
         size_t branches = 0;
         for (unsigned c = 0; c < rigRoot->mNumChildren; ++c) {
@@ -319,11 +310,9 @@ SkeletonAsset buildSkeleton(const aiScene* scene, const std::string& path) {
         out.bones.push_back({node->mName.C_Str(), parent});
         out.bindPose.push_back(transformOf(node->mTransformation));
         auto offset = offsets.find(node->mName.C_Str());
-        // A joint that influences no vertex still has to sit in the array to
-        // keep the chain connected. Nothing reads its inverse bind - only an
-        // Assimp bone produces a weight - so the inverse of its own bind
-        // transform stands in, which is what the offset matrix would be if the
-        // mesh already sat in rig space.
+        // A joint that influences no vertex still sits in the array to keep the
+        // chain connected. Nothing reads its inverse bind, so the inverse of its
+        // own bind transform stands in.
         out.inverseBind.push_back(offset != offsets.end() ? offset->second : glm::inverse(global));
         for (unsigned c = 0; c < node->mNumChildren; ++c) {
             if (needed.count(node->mChildren[c])) emit(node->mChildren[c], index, global);
@@ -337,7 +326,7 @@ SkeletonAsset buildSkeleton(const aiScene* scene, const std::string& path) {
         return {};
     }
 
-    out.sourceJson() = { {"kind", "model"}, {"path", path} };
+    out.sourceJson() = { {"kind", AssetSourceKind::MODEL}, {"path", path} };
     return out;
 }
 
@@ -485,10 +474,9 @@ AnimationClipAsset buildClip(const aiScene* scene, const std::string& path, int 
         return static_cast<float>(ticks / ticksPerSecond);
     };
 
-    // The rig it was bound against, which is not always the one in this file:
-    // an animation exported without skin has no rig of its own and binds to a
-    // named one instead. Passed rather than read off the asset, because a rig
-    // built here and not yet handed to the manager has no name yet.
+    // The rig it was bound against, which is not always the one in this file: an
+    // animation exported without skin binds to a named one. Passed rather than
+    // read off the asset, which has no name until the manager has it.
     out.skeleton = rigName;
     out.duration = std::max(0.0f, seconds(anim->mDuration));
     out.bones.resize(skeleton.bones.size());
@@ -519,10 +507,9 @@ AnimationClipAsset buildClip(const aiScene* scene, const std::string& path, int 
             out.scales.push_back(toVec3(channel->mScalingKeys[k].mValue));
         }
     }
-    // Not one channel found a bone. The clip animates some other rig, which for
-    // a named binding means the wrong name was given - and an empty clip plays
-    // as a rig standing still, which reads as a broken animation rather than as
-    // a mistake anyone can see.
+    // Not one channel found a bone: the clip animates some other rig, and an
+    // empty clip plays as a rig standing still - which reads as broken rather
+    // than as a mistake anyone can see.
     if (out.positions.empty() && out.rotations.empty() && out.scales.empty()) {
         LOG_ERROR("Clip '%s': none of its %u channels name a bone of rig '%s'; "
                   "it animates a different rig", clipName(path, clipIdx).c_str(),
@@ -540,7 +527,7 @@ AnimationClipAsset buildClip(const aiScene* scene, const std::string& path, int 
     // The recipe is regenerated from this on every cook, so a marker the author
     // wrote there and this load accepted has to go back into it - otherwise the
     // first save after an import quietly deletes the authoring it just read.
-    out.sourceJson() = { {"kind", "model"}, {"path", path}, {"clip", clipIdx} };
+    out.sourceJson() = { {"kind", AssetSourceKind::MODEL}, {"path", path}, {"clip", clipIdx} };
     // Only when it is not this file's own rig. Absent means "the file's", which
     // is what every clip imported before this existed already means.
     if (rigName != skeletonName(path)) out.sourceJson()["rig"] = rigName;
@@ -601,10 +588,9 @@ MeshAsset buildMesh(const aiScene* scene, const std::string& path, int meshIdx) 
     out.indices.reserve(static_cast<size_t>(m->mNumFaces) * 3);
     for (unsigned f = 0; f < m->mNumFaces; ++f) {
         const aiFace& face = m->mFaces[f];
-        // Triangles only. aiProcess_Triangulate splits polygons but leaves
-        // point and line primitives alone, and some exporters emit them; pushing
-        // a 1- or 2-index face into a triangle list shifts every triangle after
-        // it, which shows up as geometry that is subtly and inexplicably wrong.
+        // Triangles only: aiProcess_Triangulate leaves point and line primitives
+        // alone, and pushing a 1- or 2-index face into a triangle list shifts
+        // every triangle after it.
         if (face.mNumIndices != 3) continue;
         for (unsigned k = 0; k < 3; ++k)
             out.indices.push_back(face.mIndices[k]);
@@ -618,7 +604,7 @@ MeshAsset buildMesh(const aiScene* scene, const std::string& path, int meshIdx) 
         if (!skeleton.bones.empty()) appendSkin(m, skeleton, skeletonName(path), out);
     }
 
-    out.sourceJson()   = { {"kind", "model"}, {"path", path}, {"mesh", meshIdx} };
+    out.sourceJson()   = { {"kind", AssetSourceKind::MODEL}, {"path", path}, {"mesh", meshIdx} };
     out.computeAndSetBounds();
     return out;
 }
@@ -679,7 +665,7 @@ TextureHandle decodeEmbedded(
             return {};
         }
         nlohmann::json source = {
-            {"kind", "model-image"}, {"path", modelPath},
+            {"kind", AssetSourceKind::MODEL_IMAGE}, {"path", modelPath},
             {"ref",  ref},           {"sRGB", srgb},
         };
         TextureHandle h = addTexture(res, name, w, hh, px, srgb, std::move(source));
@@ -697,7 +683,7 @@ TextureHandle decodeEmbedded(
         rgba[i * 4 + 3] = emb->pcData[i].a;
     }
     nlohmann::json source = {
-        {"kind", "model-image"}, {"path", modelPath},
+        {"kind", AssetSourceKind::MODEL_IMAGE}, {"path", modelPath},
         {"ref",  ref},           {"sRGB", srgb},
     };
     return addTexture(res, name, w, hh, rgba.data(), srgb, std::move(source));
@@ -765,7 +751,7 @@ MaterialHandle buildMaterial(
     if (MaterialHandle e = res.findByName<MaterialAsset>(nm)) return e;
 
     MaterialAsset out;
-    out.sourceJson()   = { {"kind", "model"}, {"path", path}, {"material", matIdx} };
+    out.sourceJson()   = { {"kind", AssetSourceKind::MODEL}, {"path", path}, {"material", matIdx} };
 
     if (scene && matIdx >= 0 && matIdx < static_cast<int>(scene->mNumMaterials)) {
         const aiMaterial* mt = scene->mMaterials[matIdx];
@@ -826,10 +812,9 @@ MaterialHandle buildMaterial(
         if (mt->Get(AI_MATKEY_SHEEN_COLOR_FACTOR, sheen) == AI_SUCCESS)
             out.sheenColor = toVec3(sheen);
 
-        // KHR_materials_volume. thickness == 0 in glTF means thin-walled
-        // (no absorption); leave defaults so the shader skips Beer-Lambert.
-        // attenuationDistance defaults to +inf in glTF; we ship 1.0 so the
-        // editor can tweak something visible without divide-by-zero risk.
+        // KHR_materials_volume: thickness == 0 means thin-walled, so the defaults
+        // stay and the shader skips Beer-Lambert. glTF's attenuationDistance
+        // default is +inf; 1.0 ships instead, to keep it editable.
         if (mt->Get(AI_MATKEY_VOLUME_THICKNESS_FACTOR, f) == AI_SUCCESS)
             out.thicknessFactor = f;
         if (mt->Get(AI_MATKEY_VOLUME_ATTENUATION_DISTANCE, f) == AI_SUCCESS && f > 0.0f)
@@ -896,11 +881,6 @@ MeshAsset buildMeshFrom(const std::string& absolute, const std::string& ref, int
 
 } // namespace
 
-MeshAsset loadModelMesh(const std::string& path, int meshIndex) {
-    return buildMeshFrom(ProjectPaths::resolveProjectPath(path).string(),
-                         ProjectPaths::toProjectRelative(path), meshIndex);
-}
-
 MeshHandle requestModelMeshAsync(
     const std::string& path,
     int meshIndex,
@@ -921,7 +901,7 @@ MeshHandle requestModelMeshAsync(
     // the worker fills in real vertex data.
     MeshAsset stub;
     stub.loading = true;
-    stub.sourceJson() = { {"kind", "model"}, {"path", ref}, {"mesh", meshIndex} };
+    stub.sourceJson() = { {"kind", AssetSourceKind::MODEL}, {"path", ref}, {"mesh", meshIndex} };
     const MeshHandle handle = resources.add(std::move(stub), name);
     const uint64_t   uid    = resources.get(handle).uid();
 
@@ -976,12 +956,9 @@ AnimationClipHandle loadModelAnimationClip(
     const aiScene* scene = importer->GetScene();
     if (!scene) return {};
 
-    // Named a rig: bind to that one. The clip's bone indices are only meaningful
-    // against the rig they were resolved with, so the manager's copy is used
-    // directly rather than a rebuild of it - a rig that merely shares the name
-    // could have come from anywhere, but one the caller named is the one meant.
-    // This is what lets an animation exported without skin be used at all: it
-    // carries channels and no bind pose, so it has no rig of its own to bind to.
+    // Named a rig: bind to that one, through the manager's copy rather than a
+    // rebuild, because a clip's bone indices mean nothing except against the rig
+    // they were resolved with. It is what lets a skinless animation be used.
     if (!rig.empty()) {
         const SkeletonHandle handle = resources.findByName<SkeletonAsset>(rig);
         if (!handle) {
@@ -1064,12 +1041,9 @@ ModelImport importModelIntoScene(
         return {};
     }
 
-    // No mesh but animations: an animation exported without skin, which is one
-    // motion of a library meant for a rig sent separately. There is nothing to
-    // spawn - a clip is not a thing in the world - so the import is of the clips
-    // themselves, bound to a rig already loaded. One rig is unambiguous and is
-    // taken; more than one has to be said, and the clip-by-clip entry point is
-    // where it is said.
+    // No mesh but animations: a motion library for a rig sent separately. There
+    // is nothing to spawn, so the import is of the clips, bound to a rig already
+    // loaded - one is unambiguous, more than one has to be said clip by clip.
     if (aScene->mNumMeshes == 0) {
         if (aScene->mNumAnimations == 0) {
             LOG_ERROR("Model import failed '%s': it holds no mesh and no "
@@ -1158,9 +1132,8 @@ ModelImport importModelIntoScene(
     scene.add(root, makeName(stemOf(ref).c_str()));
 
     // A bone is an index in the skeleton asset, not an entity, so a node that is
-    // only a bone has nothing to be. Pruned as whole subtrees rather than node by
-    // node: a prop parented to a hand keeps the chain of bones that places it,
-    // and nothing is ever re-parented to an ancestor it did not sit under.
+    // only a bone has nothing to be. Pruned as whole subtrees, so a prop parented
+    // to a hand keeps the chain of bones that places it.
     std::unordered_set<std::string> boneNames;
     for (const Bone& bone : rig.bones) boneNames.insert(bone.name);
 

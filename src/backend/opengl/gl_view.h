@@ -13,7 +13,7 @@
 
 #include "data/gl_mesh.h"
 #include "data/gl_material.h"
-#include "data/gl_texture.h"
+#include "data/gl_asset_texture.h"
 
 namespace Vkm::GL {
     class Texture2D;
@@ -98,22 +98,15 @@ class GLView {
          * to every synced texture.
          *
          * Filtering is sampler state, not asset content, so it rides none of the
-         * version gates above: a texture uploaded twenty frames ago keeps the
-         * filtering it was built with until something re-applies it. Pushing the
-         * current setting over the table each frame covers both cases that need
-         * it - the setting moved, or a texture arrived after it last did -
-         * without either having to be detected.
+         * version gates above: a texture uploaded twenty frames ago keeps what it
+         * was built with. Pushing the current setting over the table each frame
+         * covers both cases - the setting moved, or a texture arrived after it
+         * last did - without either having to be detected, and costs a compare
+         * per texture with no GL call for one already filtered that way.
          *
-         * Offered rather than imposed: each texture resolves the setting against
-         * its own TextureParams::filterOverride, and one that states a filter
-         * keeps it. See resolveTextureFilter for which side wins and why.
-         *
-         * Cheap enough to mean it: a compare per texture, and no GL call for any
-         * texture already filtered that way.
-         *
-         * Font atlases are left out. They carry no mip chain, are drawn by a
-         * screen-space pass at a fixed scale, and have no minification for
-         * anisotropy to correct.
+         * Offered rather than imposed: each texture resolves it against its own
+         * TextureParams::filterOverride, and one that states a filter keeps it.
+         * Font atlases are left out - no mip chain, no minification to correct.
          *
          * @param mode          Base filter to offer; the two coarser modes,
          *                      Nearest and Bilinear, pin the degree to 1.

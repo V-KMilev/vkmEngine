@@ -19,7 +19,7 @@
 #include "framework/material_preview_session.h"
 #include "system/audio/audio_system.h"
 #include "system/render/render_system.h"
-#include "generator/mesh_generators.h"
+#include "resource/generate/mesh_generators.h"
 #include "loader/audio_loaders.h"
 #include "loader/texture_loaders.h"
 #include "io/project_paths.h"
@@ -329,28 +329,23 @@ GpuTextureId textureThumb(TileContext& tc, StorageIndex key, uint64_t) {
     return backend->ensureTexture(handle, tc.ec.frame.resources);
 }
 
-// Assignment. Each goes through pushEdit rather than writing the component,
-// which is what gives it an undo step and what turns it into a prefab override
-// when the entity is an instance. Writing the component here instead left the
-// instance's override list empty, and the next save wrote the prefab's own
-// asset back over the one on screen.
+// Assignment. Each holds the component open through an EditScope rather than
+// writing it, which is what gives it an undo step and what turns it into a
+// prefab override when the entity is an instance. Writing the component
+// directly instead left the instance's override list empty, and the next save
+// wrote the prefab's own asset back over the one on screen - so the scope is
+// not tidiness, it is the thing that stops that happening again.
 
 bool meshTarget(const Scene& scene, EntityId id) { return scene.has<Mesh>(id); }
 
 void assignMaterial(EditorContext& ec, EntityId id, StorageIndex key) {
-    Mesh& mesh = ec.frame.scene.get<Mesh>(id);
-    const Mesh before = mesh;
-    mesh.material = MaterialHandle{key};
-    pushEdit<Mesh>(ec.frame.scene, ec.frame.resources, ec.state, id, before, mesh,
-                   "Assign Material");
+    EditScope<Mesh> mesh(ec, id, "Assign Material");
+    mesh->material = MaterialHandle{key};
 }
 
 void assignMesh(EditorContext& ec, EntityId id, StorageIndex key) {
-    Mesh& mesh = ec.frame.scene.get<Mesh>(id);
-    const Mesh before = mesh;
-    mesh.mesh = MeshHandle{key};
-    pushEdit<Mesh>(ec.frame.scene, ec.frame.resources, ec.state, id, before, mesh,
-                   "Assign Mesh");
+    EditScope<Mesh> mesh(ec, id, "Assign Mesh");
+    mesh->mesh = MeshHandle{key};
 }
 
 // One Animator carries both halves of a rigged character - the rig and the clip
@@ -358,33 +353,24 @@ void assignMesh(EditorContext& ec, EntityId id, StorageIndex key) {
 bool animatorTarget(const Scene& scene, EntityId id) { return scene.has<Animator>(id); }
 
 void assignSkeleton(EditorContext& ec, EntityId id, StorageIndex key) {
-    Animator& animator = ec.frame.scene.get<Animator>(id);
-    const Animator before = animator;
-    animator.skeleton = SkeletonHandle{key};
-    pushEdit<Animator>(ec.frame.scene, ec.frame.resources, ec.state, id, before, animator,
-                       "Assign Skeleton");
+    EditScope<Animator> animator(ec, id, "Assign Skeleton");
+    animator->skeleton = SkeletonHandle{key};
 }
 
 void assignClip(EditorContext& ec, EntityId id, StorageIndex key) {
-    Animator& animator = ec.frame.scene.get<Animator>(id);
-    const Animator before = animator;
-    animator.clip = AnimationClipHandle{key};
+    EditScope<Animator> animator(ec, id, "Assign Clip");
+    animator->clip = AnimationClipHandle{key};
     // Cut rather than crossFadeTo: an authoring assignment answers "which clip
     // does this character play", and a blend started from the editor would run
     // down against a simulation clock the editor is not advancing.
-    animator.time = 0.0f;
-    pushEdit<Animator>(ec.frame.scene, ec.frame.resources, ec.state, id, before, animator,
-                       "Assign Clip");
+    animator->time = 0.0f;
 }
 
 bool audioTarget(const Scene& scene, EntityId id) { return scene.has<AudioSource>(id); }
 
 void assignSound(EditorContext& ec, EntityId id, StorageIndex key) {
-    AudioSource& source = ec.frame.scene.get<AudioSource>(id);
-    const AudioSource before = source;
-    source.clip = AudioClipHandle{key};
-    pushEdit<AudioSource>(ec.frame.scene, ec.frame.resources, ec.state, id, before, source,
-                          "Assign Sound");
+    EditScope<AudioSource> source(ec, id, "Assign Sound");
+    source->clip = AudioClipHandle{key};
 }
 
 // Usage walks: does anything in the project hold a reference to this asset.
@@ -686,8 +672,8 @@ void AssetBrowserPanel::drawToolbar(EditorContext& ec) {
                 }
                 break;
             case Verb::ImportModel:   ec.state.requestModelImport = true; break;
-            case Verb::ImportTexture: m_requestTextureImport     = true; break;
-            case Verb::ImportSound:   m_requestSoundImport       = true; break;
+            case Verb::ImportTexture: openTextureImport(); break;
+            case Verb::ImportSound:   openSoundImport();   break;
         }
     }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", kind.verbHint);
@@ -894,21 +880,17 @@ void AssetBrowserPanel::drawGrid(EditorContext& ec) {
     }
 }
 
-void AssetBrowserPanel::serviceTextureImport(EditorContext& ec) {
-    if (m_requestTextureImport) {
-        m_texturePicker.options().popupId    = "Import Texture";
-        m_texturePicker.options().title      = "Import Texture";
-        m_texturePicker.options().root       = ProjectPaths::assets();
-        m_texturePicker.options().recursive  = true;
-        m_texturePicker.options().kind       = AssetPicker::Kind::Files;
-        m_texturePicker.options().extensions = {".png", ".jpg", ".jpeg", ".tga", ".bmp"};
-        m_texturePicker.options().maxResults = 4000;
-        m_texturePicker.options().relativeTo = ProjectPaths::projectRoot();
-        m_texturePicker.options().hint       = "PNG / JPG / TGA / BMP, read as colour (sRGB)";
-        m_texturePicker.open();
-        m_requestTextureImport = false;
-    }
+void AssetBrowserPanel::openTextureImport() {
+    m_texturePicker.options().title      = "Import Texture";
+    m_texturePicker.options().root       = ProjectPaths::assets();
+    m_texturePicker.options().recursive  = true;
+    m_texturePicker.options().extensions = {".png", ".jpg", ".jpeg", ".tga", ".bmp"};
+    m_texturePicker.options().relativeTo = ProjectPaths::projectRoot();
+    m_texturePicker.options().hint       = "PNG / JPG / TGA / BMP, read as colour (sRGB)";
+    m_texturePicker.open();
+}
 
+void AssetBrowserPanel::serviceTextureImport(EditorContext& ec) {
     std::string picked;
     if (!m_texturePicker.draw(picked)) return;
 
@@ -932,21 +914,18 @@ void AssetBrowserPanel::serviceTextureImport(EditorContext& ec) {
     }
 }
 
-void AssetBrowserPanel::serviceSoundImport(EditorContext& ec) {
-    if (m_requestSoundImport) {
-        m_soundPicker.options().popupId    = "Import Sound";
-        m_soundPicker.options().title      = "Import Sound";
-        m_soundPicker.options().root       = ProjectPaths::assets();
-        m_soundPicker.options().recursive  = true;
-        m_soundPicker.options().kind       = AssetPicker::Kind::Files;
-        m_soundPicker.options().extensions = {".wav", ".mp3", ".flac"};
-        m_soundPicker.options().maxResults = 2000;
-        m_soundPicker.options().relativeTo = ProjectPaths::projectRoot();
-        m_soundPicker.options().hint       = "WAV / MP3 / FLAC";
-        m_soundPicker.open();
-        m_requestSoundImport = false;
-    }
+void AssetBrowserPanel::openSoundImport() {
+    m_soundPicker.options().title      = "Import Sound";
+    m_soundPicker.options().root       = ProjectPaths::assets();
+    m_soundPicker.options().recursive  = true;
+    m_soundPicker.options().extensions = {".wav", ".mp3", ".flac"};
+    m_soundPicker.options().maxResults = 2000;
+    m_soundPicker.options().relativeTo = ProjectPaths::projectRoot();
+    m_soundPicker.options().hint       = "WAV / MP3 / FLAC";
+    m_soundPicker.open();
+}
 
+void AssetBrowserPanel::serviceSoundImport(EditorContext& ec) {
     std::string picked;
     if (!m_soundPicker.draw(picked)) return;
 

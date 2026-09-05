@@ -103,7 +103,7 @@ fault.
 
 ### 5.1 The 62-line comment on `AudioDevice`
 
-`src/engine/system/audio/audio_device.h:45-106` carries a Doxygen block many
+`src/engine/system/audio/audio_device.h` carries a Doxygen block many
 times longer than anything else in the file. When this judgment was made it also
 carried four ALL-CAPS headings and one arguing clause. The instinct is to cut it
 to a brief and a paragraph.

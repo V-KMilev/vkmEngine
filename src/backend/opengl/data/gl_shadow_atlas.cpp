@@ -7,8 +7,8 @@
 #include "logger.h"
 
 #include "gl_context.h"
-#include "texture/gl_texture.h"
-#include "texture/gl_texture_cube.h"
+#include "gl_texture.h"
+#include "gl_texture_cube.h"
 #include "core/engine_config.h"
 
 namespace Vkm::Engine {
@@ -37,12 +37,9 @@ void GLShadowAtlas::init(uint32_t tileRes) {
     const uint32_t atlasW = SHADOW_ATLAS_COLS * m_tileRes;
     const uint32_t atlasH = SHADOW_ATLAS_ROWS * m_tileRes;
 
-    // One depth texture for the whole 2D atlas. Linear filtering, because the
-    // shaders sample it through a sampler2DShadow: the texture unit compares
-    // against four texels and returns the bilinear-weighted fraction that
-    // passed, so a tap yields a smooth ratio instead of a hard 0 or 1. Clamp so
-    // off-tile samples read the edge. Reassigning the unique_ptr frees any
-    // previous atlas, so a resolution change is a rebuild.
+    // One depth texture for the whole 2D atlas. Linear because the shaders sample
+    // it through a sampler2DShadow, which returns the bilinear-weighted fraction of
+    // four texels that passed; clamped so off-tile samples read the edge.
     Vkm::GL::Texture2DParams params;
     params.width          = atlasW;
     params.height         = atlasH;

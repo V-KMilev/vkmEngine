@@ -8,8 +8,6 @@
 
 #include <imgui.h>
 
-#include "texture/gl_texture.h"
-
 #include "core/system.h"
 #include "core/clock.h"
 #include "framework/editor_common.h"
@@ -18,6 +16,7 @@
 #include "framework/editor_actions.h"
 #include "io/project_paths.h"
 #include "platform/window/window_manager.h"
+#include "system/render/editor_render_hooks.h"
 #include "system/render/render_backend.h"
 #include "system/render/render_system.h"
 #include "ui/editor_style.h"
@@ -33,19 +32,14 @@ void historyItemLabel(char* buf, size_t n, const char* verb, const char* op) {
 }
 } // namespace
 
-// Defined here (not =default in the header) so the unique_ptr<Vkm::GL::Texture2D>
-// member sees the complete type for destruction.
-EditorMenuBar::EditorMenuBar()  = default;
-EditorMenuBar::~EditorMenuBar() = default;
-
 void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     if (!ImGui::BeginMenuBar()) return;
 
     FrameContext& ctx   = ec.frame;
     EditorState&  state = ec.state;
 
-    // The Edit and Entity menus both offer the selection trio on purpose, so
-    // it is emitted from one place - the two used to drift apart by hand.
+    // The Edit and Entity menus both offer the selection trio, so it is emitted
+    // from one place: two copies drift.
     const auto selectionItems = [&] {
         const bool haveSel = state.selectedEntity && ctx.scene.isAlive(state.selectedEntity);
         if (ImGui::MenuItem("Duplicate", keyLabel(state.keybinds.duplicate), false, haveSel)) {
@@ -59,24 +53,18 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
         }
     };
 
-    // Lazy-loaded the first time we draw (the GL context is live by now).
-    // Loaded unflipped so ImGui's top-left UVs render it upright.
-    //
-    // Its own GL object rather than a texture asset, which is the one place the
-    // editor reaches the GPU outside EditorRenderHooks. Routed through the seam
-    // it would have to be an asset in the project's ResourceManager - and that
-    // manager is swapped when a project opens, so the handle goes stale and the
-    // mark lands in the user's asset library as an unused import. The seam has
-    // no entry for an image the engine owns; adding one is a change to it.
-    if (!m_logo) {
-        m_logo = std::make_unique<Vkm::GL::Texture2D>(
-            (ProjectPaths::engineAssets() / "logo" / "vkm_engine_mark.png").string(),
-            /*flipVertically*/ false);
-    }
-    if (m_logo->getWidth() > 0) {
-        const float sz = ImGui::GetTextLineHeight();
-        ImGui::Image(imTexture(m_logo->getID()), ImVec2(sz * 1.5f, sz * 1.5f));
-        ImGui::SameLine();
+    // Through the render seam, not a texture of the editor's own: the mark is the
+    // engine's, so it must not land in the project's asset library. The UVs flip
+    // because the decode is bottom-up and ImGui's are not.
+    if (EditorRenderHooks* hooks = editorRenderHooks(ec.renderSystem.backend())) {
+        const GpuTextureId mark = hooks->chromeImage(
+            (ProjectPaths::engineAssets() / "logo" / "vkm_engine_mark.png").string());
+        if (mark) {
+            const float sz = ImGui::GetTextLineHeight();
+            ImGui::Image(imTexture(mark), ImVec2(sz * 1.5f, sz * 1.5f),
+                         ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.0f));
+            ImGui::SameLine();
+        }
     }
 
     if (ImGui::BeginMenu("File")) {

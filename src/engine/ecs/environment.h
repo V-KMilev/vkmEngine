@@ -87,18 +87,6 @@ struct FogSettings {
 };
 
 /**
- * @brief The physics world's own parameters, read once per fixed step.
- *
- * Scene-global like the Environment and deliberately not part of it: what the
- * world is lit by and what it falls at are unrelated. Owned by Scene, beside
- * the Environment.
- */
-struct PhysicsSettings {
-    glm::vec3 gravity          = {0.0f, -9.81f, 0.0f};  ///< World gravity (m/s^2).
-    int       solverIterations = 8;                     ///< PGS solver passes per fixed step.
-};
-
-/**
  * @brief Where a celestial body sits, in the authored angle form.
  *
  * The sun is authored as this pair and the moon is derived as one, so anything
@@ -224,11 +212,6 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::FogSettings)
     VKM_F(resolutionX),
     VKM_F(resolutionY),
     VKM_F(resolutionZ)
-VKM_REFLECT_END()
-
-VKM_REFLECT_BEGIN(::Vkm::Engine::PhysicsSettings)
-    VKM_F(gravity),
-    VKM_F(solverIterations)
 VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::Environment)

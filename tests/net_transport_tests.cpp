@@ -70,8 +70,8 @@ void testAnEmptyDatagramDoesNotEndTheDrain() {
     to.sin_addr.s_addr = htonl(0x7F000001u);
     to.sin_port        = htons(server.localAddress().port);
 
-    const auto raw = ::socket(AF_INET, SOCK_DGRAM, 0);
-    check("a raw sender opens", raw >= 0);
+    const RawSocket raw = rawSocketUdp();
+    check("a raw sender opens", rawSocketOpen(raw));
     check("an empty datagram is sent",
           ::sendto(raw, nullptr, 0, 0, reinterpret_cast<sockaddr*>(&to), sizeof(to)) == 0);
 
@@ -98,11 +98,7 @@ void testAnEmptyDatagramDoesNotEndTheDrain() {
     check("  whole", last.size() == sizeof(behind)
                   && std::memcmp(last.data(), behind, sizeof(behind)) == 0);
 
-#if defined(_WIN32)
-    ::closesocket(raw);
-#else
-    ::close(raw);
-#endif
+    rawSocketClose(raw);
 }
 
 void testAConversationKnowsWhatArrived() {
@@ -309,7 +305,7 @@ void testAMessageBlockRefusesWhatItCannotCarry() {
 
     // More than one packet's worth: the block carries what fits and the rest
     // waits, still in order.
-    NetReliable big, far;
+    NetReliable big, receiver;
     const std::vector<uint8_t> chunk(NetReliable::MAX_MESSAGE, 0x2Au);
     for (int i = 0; i < 6; ++i) big.queue(chunk.data(), chunk.size());
 
@@ -322,7 +318,7 @@ void testAMessageBlockRefusesWhatItCannotCarry() {
 
     std::vector<std::vector<uint8_t>> got;
     BitReader reader(packet.data(), packet.size());
-    check("and what it carried decodes", far.read(reader, got));
+    check("and what it carried decodes", receiver.read(reader, got));
     check("carrying fewer than were queued", got.size() < 6 && !got.empty());
     std::printf("      %zu of 6 messages of %zu bytes fit one packet\n",
                 got.size(), NetReliable::MAX_MESSAGE);

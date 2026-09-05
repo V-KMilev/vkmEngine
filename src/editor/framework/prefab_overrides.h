@@ -85,14 +85,12 @@ namespace PrefabOverrides {
      * @brief Record the fields that differ between @p before and @p after as
      *        overrides on the instance @p id belongs to.
      *
-     * Only the fields the edit actually changed are recorded. The alternative -
-     * comparing the component against the prefab's own value - would turn a
-     * load that could not resolve an asset name into an override that bakes the
-     * failure into the scene.
+     * Only the fields the edit changed are recorded. Comparing the component
+     * against the prefab's own value instead would turn a load that could not
+     * resolve an asset name into an override baking that failure into the scene.
      *
-     * The undo step is handed back rather than pushed: for an instance the value
-     * is the prefab patched by these entries, and a gizmo drag over a
-     * multi-selection needs that step inside the composite it pushes.
+     * The undo step is handed back rather than pushed: a gizmo drag over a
+     * multi-selection needs it inside the composite it pushes.
      *
      * @param scene     Scene holding the entity.
      * @param resources Resolves asset names to handles.
@@ -102,11 +100,9 @@ namespace PrefabOverrides {
      * @param after     The component's serialized value after it.
      * @param label     History entry text.
      * @return The undo step for the recorded override, or null when the edit is
-     *         not an override at all - @p id is not part of an instance, it is
-     *         the root's Transform, which is the instance's own pose, or the
-     *         prefab does not define that component and so has no value for an
-     *         override to differ from - and the caller should record the edit
-     *         the way it normally would.
+     *         not an override at all - not part of an instance, the root's own
+     *         Transform, or a component the prefab does not define - in which
+     *         case the caller records the edit the way it normally would.
      */
     std::unique_ptr<Command> recordFields(Scene& scene, ResourceManager& resources, EntityId id,
                                           const char* component, const nlohmann::json& before,
@@ -204,10 +200,9 @@ namespace PrefabOverrides {
                       std::is_same_v<T, AudioSource>) {
             return ComponentSerializer::save(component, resources);
         } else if constexpr (std::is_same_v<T, Joint> || std::is_same_v<T, Ragdoll>) {
-            // By slot, the scene file's own number, because that is the
-            // document this value is stored in. The entity fields never reach
-            // an override - recordFields declines them, see namesAnEntity -
-            // so nothing here is ever read back in the prefab's namespace.
+            // By slot, the scene file's own number, because that is the document
+            // this value is stored in. Entity fields never reach an override -
+            // recordFields declines them - so none is read back elsewhere.
             auto bySlot = [](EntityId e) { return e.slot(); };
             const EntityNamer name(bySlot);
             return ComponentSerializer::save(component, name);

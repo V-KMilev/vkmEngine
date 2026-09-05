@@ -12,7 +12,7 @@
 #include "gl_context.h"
 #include "data/gl_screen_triangle.h"
 #include "gl_frame_buffer.h"
-#include "texture/gl_texture.h"
+#include "gl_texture.h"
 
 #include "gl_frame_context.h"
 #include "loader/image_loaders.h"
@@ -98,7 +98,6 @@ void GLSplashPass::execute(GLFrameContext& ctx) {
     if (m_logo) m_logo->bindSlot(0);
 
     ctx.screenTri.draw();
-    endFullscreen(ctx.gl);
 }
 
 } // namespace Vkm::Engine

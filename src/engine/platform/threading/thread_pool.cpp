@@ -39,7 +39,14 @@ ThreadPool& ThreadPool::get() {
 void ThreadPool::addTask(std::function<void()> && task) {
     {
         std::lock_guard<std::mutex> lock(m_tasksMutex);
-        m_tasks.push_back(QueuedTask{std::move(task), nullptr});
+        // Nothing drains the queue once the pool is down, so an enqueue there
+        // is work silently never done. Refused and said so - unlike parallelFor,
+        // which can still run the loop on the thread that asked.
+        if (!m_running) {
+            LOG_WARNING("ThreadPool::addTask after shutdown; the task is dropped");
+            return;
+        }
+        m_backgroundTasks.push_back(QueuedTask{std::move(task), nullptr});
     }
 
     m_tasksCV.notify_one();
@@ -50,7 +57,7 @@ void ThreadPool::addTasks(std::vector<std::function<void()>> && tasks, std::atom
         std::lock_guard<std::mutex> lock(m_tasksMutex);
         pending += tasks.size();
         for (auto& task : tasks) {
-            m_tasks.push_back(QueuedTask{std::move(task), &pending});
+            m_frameTasks.push_back(QueuedTask{std::move(task), &pending});
         }
     }
 
@@ -80,7 +87,8 @@ void ThreadPool::shutdown() {
     }
 
     m_threads.clear();
-    m_tasks.clear();
+    m_frameTasks.clear();
+    m_backgroundTasks.clear();
 }
 
 void ThreadPool::process() {
@@ -90,13 +98,19 @@ void ThreadPool::process() {
         {
             std::unique_lock<std::mutex> lock(m_tasksMutex);
             m_tasksCV.wait(lock, [this]() {
-                return !m_tasks.empty() || !m_running;
+                return !m_frameTasks.empty() || !m_backgroundTasks.empty() || !m_running;
             });
 
-            if (m_tasks.empty() || !m_running) continue;
+            if (!m_running) continue;
 
-            queued = std::move(m_tasks.front());
-            m_tasks.pop_front();
+            // The frame first, and only then what nobody is waiting for. See
+            // the class comment for why this cannot starve a decode.
+            std::deque<QueuedTask>& queue =
+                !m_frameTasks.empty() ? m_frameTasks : m_backgroundTasks;
+            if (queue.empty()) continue;
+
+            queued = std::move(queue.front());
+            queue.pop_front();
         }
 
         // A throwing task must NOT skip the retire below: waitForBatch() would

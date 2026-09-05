@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "data/gl_mesh.h"
 
 #include <cstdint>
@@ -70,7 +68,7 @@ void GLMesh::draw() const {
     m_ibo->draw();
 }
 
-void GLMesh::attachInstances(Vkm::GL::InstanceBuffer& buffer, uint32_t startIndex) const {
+void GLMesh::attachInstances(InstanceBuffer& buffer, uint32_t startIndex) const {
     if (!m_vao) return;
     buffer.attachToVAO(*m_vao, startIndex);
 }

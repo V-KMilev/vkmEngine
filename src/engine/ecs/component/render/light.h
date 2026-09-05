@@ -65,8 +65,9 @@ struct Light {
  * that shows them - an inspector guessing at the rule separately is how a
  * light ends up presented as editable while something else is writing it. A
  * Transform is required as well as a Light, because a light with no pose has no
- * direction to be given. Ties go to storage order; an empty result means the
- * scene has no directional light, which is a scene the sky still renders over.
+ * direction to be given. Two directional lights are broken by lowest slot (see
+ * findLowestSlot); an empty result means the scene has no directional light,
+ * which is a scene the sky still renders over.
  *
  * @param scene The scene to search.
  * @return The key light entity, or {} when there is none.

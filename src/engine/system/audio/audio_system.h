@@ -21,30 +21,19 @@ struct AudioSource;
  * @brief Turns AudioSource and AudioListener components into what the mixer hears.
  *
  * Registered at SystemStage::Transform, after the world resolve, because every
- * pose it reads is one HierarchySystem produces there. A behavior that sets
- * AudioSource::playing during Simulation is still heard on that frame, since
- * Transform runs after Simulation rather than on the next frame.
+ * pose it reads is one HierarchySystem produces there - and a behavior that sets
+ * AudioSource::playing during Simulation is still heard on that frame.
  *
- * It is not gated on simulation time, and that is deliberate: a system reads
- * the timeline its responsibility lives on, and audio is presentation. It steps
- * no time of its own either - the mixer runs on the device's thread.
- * Pausing the simulation must not cut the music, silence a menu, or stop a UI
- * click from being heard - the world simply stops moving, so 3D positions stop
- * changing because nothing moved. The one thing pause does hold back is
- * AudioSource::playOnStart, which waits for simulation time to advance so that
- * an unplayed scene open in the editor stays quiet.
+ * Not gated on simulation time, deliberately: audio is presentation, so a paused
+ * world keeps its music, its menu and its UI clicks, and 3D positions stop
+ * changing only because nothing moved. The one thing pause holds back is
+ * playOnStart, so an unplayed scene open in the editor stays quiet. The editor's
+ * transport pause is a different pause and is held by the editor itself; see
+ * docs/reference/system/audio.md, "Two pauses wearing one word".
  *
- * The editor's transport pause is a different pause, and nothing in here learns
- * about it. The rule above is right for a shipped game, whose pause menu wants
- * its music kept; it is wrong for the transport, where the world was frozen
- * deliberately to be looked at and a level's ambience running on underneath is
- * noise nobody asked for. The editor holds the voices itself, through the
- * device() handle it already auditions clips with, so this system keeps exactly
- * the contract written above and a game that ships never inherits the editor's.
- *
- * A source's voice is owned here rather than on the component, so that
- * duplicating an entity, undoing a delete or instancing a prefab copies the
- * intent to play and never a live voice two entities would then fight over.
+ * A source's voice is owned here rather than on the component, so duplicating an
+ * entity, undoing a delete or instancing a prefab copies the intent to play and
+ * never a live voice two entities would fight over.
  */
 class AudioSystem : public System {
     public:
@@ -183,34 +172,16 @@ class AudioSystem : public System {
         /**
          * @brief Warn once that a positioned voice plays a clip whose channels cannot cross.
          *
-         * The backend mixes a voice's channels one-to-one into the output and
-         * attenuates each by the direction gain for the speaker it landed on,
-         * so a clip with more than one channel keeps whatever image the file
-         * was authored with: nothing crosses. Measured, a two-channel clip
-         * carrying sound in its first channel only is silent out of the second
-         * output channel at every position an emitter can be put in, while the
-         * mono equivalent swings across the pair. A clip whose channels happen
-         * to be identical is indistinguishable from mono, which is what makes
-         * the mistake quiet enough to need saying.
+         * The backend mixes a voice's channels one-to-one and attenuates each by
+         * the gain for the speaker it landed on, so half a stereo clip's field is
+         * unreachable from any position - and a clip whose channels are identical
+         * is indistinguishable from mono, which is what makes the mistake quiet.
+         * The measurements: docs/reference/system/audio.md, "A positioned source
+         * wants a mono clip".
          *
-         * The Inspector's card says the same thing at edit time, where the
-         * mistake is being made, and this is not a second opinion: a project
-         * that plays entirely through PlaySoundEvent owns no AudioSource, so
-         * there is no card to carry it. The pairing is the same one
-         * warnIfNoListener already has with the card's missing-ear line.
-         *
-         * Once per clip rather than once per world, which is where it parts
-         * company with warnIfNoListener: a scene has one ear and the absence of
-         * it is one fact, while two stereo clips on two sources are two
-         * separate authoring mistakes and collapsing them would leave the
-         * second unreported. Per world all the same, since stopEverything
-         * empties the set with the voices.
-         *
-         * Remembered against the clip's NAME rather than its handle, because a
-         * handle's id() is its slot index with the generation dropped: an asset
-         * removed and another added take the same slot, and the second would
-         * inherit the first's mark and never be reported. A name is the identity
-         * the scene format already uses, and the one this message prints.
+         * Once per clip rather than once per world, because two stereo clips are
+         * two authoring mistakes, and remembered against the clip's name: a
+         * handle's id is a slot index, which the next asset in that slot inherits.
          *
          * @param asset The clip itself, read for its channel count and name.
          * @param spatial Whether the voice about to start is positioned; a flat

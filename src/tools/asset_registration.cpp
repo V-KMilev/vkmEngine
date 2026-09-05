@@ -10,6 +10,7 @@
 #include "io/asset/asset_serializer.h"
 #include "io/asset/cooked_loader.h"
 #include "resource/resource_manager.h"
+#include "resource/asset_source_kind.h"
 
 namespace Vkm::Engine {
 
@@ -17,7 +18,7 @@ namespace Vkm::Engine {
 // AsyncLoaderSystem.
 MeshHandle createCookedMesh(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value("kind", std::string{});
-    if (kind == "cooked") {
+    if (kind == AssetSourceKind::COOKED) {
         return requestCookedMeshAsync(source.value("name", std::string{}), resources);
     }
     LOG_ERROR("No cooked mesh dispatch for kind '%s'", kind.c_str());
@@ -26,7 +27,7 @@ MeshHandle createCookedMesh(const nlohmann::json& source, ResourceManager& resou
 
 TextureHandle createCookedTexture(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value("kind", std::string{});
-    if (kind == "cooked") {
+    if (kind == AssetSourceKind::COOKED) {
         return requestCookedTextureAsync(source.value("name", std::string{}), resources);
     }
     LOG_ERROR("No cooked texture dispatch for kind '%s'", kind.c_str());
@@ -37,7 +38,7 @@ TextureHandle createCookedTexture(const nlohmann::json& source, ResourceManager&
 // in the assets block.
 MaterialHandle createCookedMaterial(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value("kind", std::string{});
-    if (kind == "inline") {
+    if (kind == AssetSourceKind::INLINE) {
         MaterialAsset mat;
         AssetSerializer::applyInline(source, mat, resources);
         auto handle = resources.add(std::move(mat));
@@ -51,7 +52,7 @@ MaterialHandle createCookedMaterial(const nlohmann::json& source, ResourceManage
 
 SkeletonHandle createCookedSkeleton(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value("kind", std::string{});
-    if (kind == "cooked") {
+    if (kind == AssetSourceKind::COOKED) {
         return loadCookedSkeleton(source.value("name", std::string{}), resources);
     }
     LOG_ERROR("No cooked skeleton dispatch for kind '%s'", kind.c_str());
@@ -60,7 +61,7 @@ SkeletonHandle createCookedSkeleton(const nlohmann::json& source, ResourceManage
 
 AnimationClipHandle createCookedAnimationClip(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value("kind", std::string{});
-    if (kind == "cooked") {
+    if (kind == AssetSourceKind::COOKED) {
         return loadCookedAnimationClip(source.value("name", std::string{}), resources);
     }
     LOG_ERROR("No cooked clip dispatch for kind '%s'", kind.c_str());
@@ -69,7 +70,7 @@ AnimationClipHandle createCookedAnimationClip(const nlohmann::json& source, Reso
 
 AudioClipHandle createCookedAudioClip(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value("kind", std::string{});
-    if (kind == "cooked") {
+    if (kind == AssetSourceKind::COOKED) {
         return loadCookedAudioClip(source.value("name", std::string{}), resources);
     }
     LOG_ERROR("No cooked sound dispatch for kind '%s'", kind.c_str());

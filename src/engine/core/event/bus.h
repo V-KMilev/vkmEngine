@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <algorithm>
 #include <functional>
 #include <utility>
 #include <vector>
@@ -63,28 +64,30 @@ class Bus : public IBus {
         /**
          * @brief Erase the listener with @p id.
          *
-         * Not callable from inside a listener during emit/flush: making
-         * mid-flush removal legal means dispatching from a snapshot copy of the
-         * listener list, which every frame on a hot bus would pay for a case
-         * nothing has needed. A call from there asserts, and is refused rather
-         * than acted on - emit/flush walk by index against a size read before
-         * the walk, so an erase under them runs off the end. A listener that
-         * must unsubscribe itself enqueues an event and removes on the next
-         * flush.
+         * Callable from inside a listener, on itself included: mid-dispatch the
+         * entry is emptied rather than erased, because emit and flush walk by
+         * index and an erase under them would move every later listener down one
+         * and skip whichever took the freed slot. The empty slot is skipped by
+         * the walk and reaped by admitPending once the outermost dispatch
+         * unwinds. One that subscribed during this same dispatch is waiting in
+         * m_pending instead, and comes straight back out of it - nothing walks
+         * that list until the dispatch has unwound, so it can be erased outright.
          *
          * @return true if it was found and erased.
          */
         bool remove(ListenerId id) {
-            VKM_ASSERT(m_flushDepth == 0,
-                "EventBus: unsubscribe is not allowed from inside a "
-                "listener callback during emit/flush");
-            if (m_flushDepth != 0) return false;
-
             for (auto it = m_listeners.begin(); it != m_listeners.end(); ++it) {
-                if (it->id == id) {
-                    m_listeners.erase(it);
-                    return true;
-                }
+                if (it->id != id) continue;
+
+                if (m_flushDepth != 0) it->cb = nullptr;
+                else                   m_listeners.erase(it);
+                return true;
+            }
+            for (auto it = m_pending.begin(); it != m_pending.end(); ++it) {
+                if (it->id != id) continue;
+
+                m_pending.erase(it);
+                return true;
             }
             return false;
         }
@@ -95,7 +98,9 @@ class Bus : public IBus {
         void emit(const EventT& event) {
             ++m_flushDepth;
             const size_t n = m_listeners.size();
-            for (size_t i = 0; i < n; ++i) m_listeners[i].cb(event);
+            for (size_t i = 0; i < n; ++i) {
+                if (m_listeners[i].cb) m_listeners[i].cb(event);
+            }
             --m_flushDepth;
             admitPending();
         }
@@ -127,7 +132,9 @@ class Bus : public IBus {
             ++m_flushDepth;
             const size_t n = m_listeners.size();
             for (auto& e : m_dispatch) {
-                for (size_t i = 0; i < n; ++i) m_listeners[i].cb(e);
+                for (size_t i = 0; i < n; ++i) {
+                    if (m_listeners[i].cb) m_listeners[i].cb(e);
+                }
             }
             --m_flushDepth;
             admitPending();
@@ -140,13 +147,23 @@ class Bus : public IBus {
         };
 
         /**
-         * @brief Move listeners that subscribed mid-dispatch into the live list.
+         * @brief Settle the listener list once the outermost dispatch has unwound.
          *
-         * Only once the outermost dispatch has unwound, so a nested emit cannot
-         * grow m_listeners under a walk further up the stack.
+         * Admits what subscribed mid-dispatch and reaps what unsubscribed. Both
+         * wait for the same moment and for the same reason: a walk further up
+         * the stack holds an index into m_listeners, and neither growing nor
+         * shrinking it under that walk is safe.
          */
         void admitPending() {
-            if (m_flushDepth != 0 || m_pending.empty()) return;
+            if (m_flushDepth != 0) return;
+
+            // Reaped here rather than at remove() for the reason above.
+            m_listeners.erase(
+                std::remove_if(m_listeners.begin(), m_listeners.end(),
+                               [](const Entry& e) { return !e.cb; }),
+                m_listeners.end());
+
+            if (m_pending.empty()) return;
             for (Entry& entry : m_pending) m_listeners.push_back(std::move(entry));
             m_pending.clear();
         }

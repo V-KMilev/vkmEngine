@@ -75,10 +75,9 @@ class SparseSet : public ISparseSet {
          */
         void remove(uint32_t key) {
             VKM_ASSERT(contains(key), "SparseSet::remove called with invalid key");
-            // Guarded as well as asserted, like Scene::destroyEntity and
-            // SlotAllocator::free: the assert is gone in release, and without
-            // this the line below indexes m_data with whatever m_dataIndex held
-            // for a key that was never in the set.
+            // Guarded as well as asserted, like Scene::destroyEntity: the assert
+            // is gone in release, and the line below would index m_data with
+            // whatever m_dataIndex held for a key never in the set.
             if (!contains(key)) return;
 
             uint32_t dataIdx = m_dataIndex[key];
@@ -130,6 +129,14 @@ class SparseSet : public ISparseSet {
          *
          * Calls fn(uint32_t key, T&) for each element in packed order.
          *
+         * The set must not be added to or removed from while this runs. Removal
+         * is swap-and-pop: it moves the last element into the hole, so removing
+         * the element the walk is standing on skips the one that was last, and
+         * an add can reallocate the dense array and leave the reference @p fn
+         * holds dangling. A caller that has to mutate collects the keys here
+         * and acts on them afterwards - which is what every mutating caller in
+         * the engine already does.
+         *
          * @param fn Callable with signature void(uint32_t, T&).
          */
         template<typename Fn>
@@ -165,22 +172,25 @@ class SparseSet : public ISparseSet {
         /**
          * @brief Shrink the sparse array to fit only live keys, reclaiming wasted memory.
          *
+         * Two kinds of slack: entries past the highest live key, which a resize
+         * drops, and the geometric over-allocation any grown vector carries,
+         * which only shrink_to_fit drops. A scene load leaves mostly the second
+         * kind - it adds keys in ascending order and removes none - so the
+         * shrink is unconditional and the resize is the special case.
+         *
          * The dense arrays are unaffected.
          */
         void compact() override {
             if (m_data.empty()) {
                 m_dataIndex.clear();
-                m_dataIndex.shrink_to_fit();
-                return;
+            } else {
+                uint32_t maxKey = 0;
+                for (uint32_t i = 0; i < m_dataId.size(); ++i) {
+                    if (m_dataId[i] > maxKey) maxKey = m_dataId[i];
+                }
+                if (maxKey + 1 < m_dataIndex.size()) m_dataIndex.resize(maxKey + 1);
             }
-            uint32_t maxKey = 0;
-            for (uint32_t i = 0; i < m_dataId.size(); ++i) {
-                if (m_dataId[i] > maxKey) maxKey = m_dataId[i];
-            }
-            if (maxKey + 1 < m_dataIndex.size()) {
-                m_dataIndex.resize(maxKey + 1);
-                m_dataIndex.shrink_to_fit();
-            }
+            m_dataIndex.shrink_to_fit();
         }
 
         /**
@@ -231,6 +241,10 @@ class SparseSet : public ISparseSet {
             VKM_ASSERT(key != 0, "SparseSet::add key 0 is reserved");
             ensureCapacity(key);
             VKM_ASSERT(!contains(key), "SparseSet::add key already present");
+            // Guarded as well as asserted, like remove() above: a release build
+            // would point the key at a second dense entry and strand the first.
+            // The element already there is the answer.
+            if (contains(key)) return m_data[m_dataIndex[key]];
 
             uint32_t dataIdx = static_cast<uint32_t>(m_data.size());
 
