@@ -117,7 +117,7 @@ namespace Easing {
         for (const Entry& e : EASINGS) {
             if (std::strcmp(name, e.name) == 0) return e.fn;
         }
-        LOG_WARNING("No easing called '%s'; using linear", name);
+        LOG_WARNING_C("ANIM", "No easing called '%s'; using linear", name);
         return &linear;
     }
 
@@ -152,7 +152,7 @@ namespace Easing {
     inline const char* nameOf(EasingFunction f) {
         const int i = indexOf(f);
         if (i < 0) {
-            LOG_WARNING("An easing that is not in this build's table is being saved "
+            LOG_WARNING_C("ANIM", "An easing that is not in this build's table is being saved "
                         "as linear; the curve it names will not come back");
             return EASINGS[0].name;
         }
