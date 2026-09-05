@@ -40,19 +40,30 @@ struct Project;
 bool bootHost(int argc, char** argv, const char* logFileName, const char* loggerTag);
 
 /**
- * @brief Where a host's own flags begin, past the project directory.
+ * @brief Whether argv[1] names a project directory rather than a flag.
  *
- * argv[1] names the project when it is given, and bootHost has already
- * consumed it. Every host walks the rest for flags of its own and none of them
- * should be re-deciding what argv[1] was - the rule lives here, next to the
- * function that applies it.
+ * The one place that decides it. bootHost consumes argv[1] when this is true,
+ * and every host then walks the rest for flags of its own; none of them should
+ * be re-deciding what argv[1] was, and bootHost should not be deciding it a
+ * second way from the answer it hands out.
+ *
+ * @param argc Argument count, as main received it.
+ * @param argv Argument vector, as main received it.
+ * @return Whether a project directory was given.
+ */
+inline bool projectGivenInArgs(int argc, char** argv) {
+    return argc > 1 && argv[1][0] != '-';
+}
+
+/**
+ * @brief Where a host's own flags begin, past the project directory.
  *
  * @param argc Argument count, as main received it.
  * @param argv Argument vector, as main received it.
  * @return The first index a host should read its own flags from.
  */
 inline int firstFlagIndex(int argc, char** argv) {
-    return (argc > 1 && argv[1][0] != '-') ? 2 : 1;
+    return projectGivenInArgs(argc, argv) ? 2 : 1;
 }
 
 /**

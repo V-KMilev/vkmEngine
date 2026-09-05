@@ -34,18 +34,7 @@ class Scene;
  */
 
 /**
- * @brief Build one aiMesh's geometry from a model file.
- *
- * Sets name + source on the asset so it round-trips through scene save/load.
- *
- * @param path Path to the model file to parse with Assimp.
- * @param meshIndex Assimp global mesh index to extract.
- * @return The built MeshAsset, or an empty MeshAsset on failure.
- */
-MeshAsset loadModelMesh(const std::string& path, int meshIndex);
-
-/**
- * @brief Non-blocking variant of loadModelMesh.
+ * @brief Build one aiMesh's geometry from a model file, without blocking.
  *
  * Registers a stub MeshAsset with loading=true, posts the Assimp parse +
  * vertex extraction to ThreadPool, and returns the handle immediately.
@@ -129,21 +118,17 @@ SkeletonHandle loadModelSkeleton(const std::string& path, ResourceManager& resou
  * @brief Build and register one of a model file's animations, bound to a rig.
  *
  * Named "<stem>:clip<index>" by Assimp's global animation index, so a re-import
- * relinks. Channels are resolved to bone indices here; one naming a node the rig
- * does not hold is dropped and counted.
+ * relinks, and idempotent by that name. Channels are resolved to bone indices
+ * here; one naming a node the rig does not hold is dropped and counted.
  *
  * The rig is the one in the same file unless @p rig names another. It has to be
  * nameable, because a rig is built from skin weights and an animation exported
- * without a mesh therefore has none of its own - which is how animation
- * libraries are distributed, one file per motion against a rig sent once.
+ * without a mesh has none of its own - which is how animation libraries are
+ * distributed, one file per motion against a rig sent once.
  *
- * Markers are authored rather than imported - no interchange format carries
- * one - so they arrive from the recipe beside the path and the index, and are
- * written back into the clip's own source descriptor so the next cook re-emits
- * the recipe with them still in it. One named nothing, or timed outside the
- * clip, is dropped and counted: it could never fire at the instant it names.
- *
- * Idempotent by name.
+ * Markers are authored rather than imported, so they arrive from the recipe and
+ * are written back into the clip's source descriptor for the next cook. One
+ * named nothing, or timed outside the clip, is dropped and counted.
  *
  * @param path Path to the model file to parse with Assimp.
  * @param clipIndex Assimp global animation index to extract.

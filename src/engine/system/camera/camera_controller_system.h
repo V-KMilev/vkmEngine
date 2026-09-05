@@ -21,9 +21,10 @@ struct Transform;
  * world matrices in the Transform stage from last frame's camera would lag the
  * pointer by a frame on every drag.
  *
- * Disabled until something enables it (see @ref setEnabled), because right-drag
- * hides and grabs the pointer and only an authoring viewport has any business
- * doing that.
+ * An authoring tool, so an authoring host is what registers it: right-drag
+ * hides and grabs the pointer, and a shipped game owns its own camera and
+ * cursor. A runtime never creates one, which is a stronger statement than
+ * creating one switched off.
  */
 class CameraControllerSystem : public System {
     public:
@@ -61,33 +62,6 @@ class CameraControllerSystem : public System {
          * controls for the same drag.
          */
         EntityId getCameraEntity() const { return m_cameraEntity; }
-
-        /**
-         * @brief Notify the controller that the editor UI is capturing input.
-         *
-         * When mouse capture is active, camera look/scroll is suppressed.
-         * When keyboard capture is active, WASD movement is suppressed.
-         * Called by EditorSystem each frame.
-         */
-        void setEditorInputCapture(bool mouse, bool keyboard) {
-            m_editorWantsMouse    = mouse;
-            m_editorWantsKeyboard = keyboard;
-        }
-
-        /**
-         * @brief Enable or disable the fly controls entirely.
-         *
-         * The controller is an authoring tool, so it starts OFF and the editor
-         * is what turns it on - the safe way round, because a host that never
-         * asks gets a controller that does nothing rather than one that takes
-         * the cursor. A shipped game owns its camera and cursor (gameplay
-         * drives both), and it has no way to reach this switch: BehaviorContext
-         * carries no systems. Disabled, update() is a no-op - no camera writes,
-         * no cursor-mode changes.
-         *
-         * @param enabled Whether the fly controls run.
-         */
-        void setEnabled(bool enabled) { m_enabled = enabled; }
 
         /**
          * @brief Resolve the active rendered camera and apply fly-mode motion.
@@ -143,8 +117,14 @@ class CameraControllerSystem : public System {
         bool takeCameraMoved();
 
     private:
-        void updateFlyMode(WindowManager& window, const InputMap& input,
-                           glm::vec3& position, glm::quat& rotation, float deltaTime);
+        /**
+         * @brief Apply this frame's look, dolly and move to a camera pose.
+         *
+         * @param ctx      The frame's context: window, input, chrome and clock.
+         * @param position Camera position, moved in place.
+         * @param rotation Camera rotation, overwritten while looking.
+         */
+        void updateFlyMode(FrameContext& ctx, glm::vec3& position, glm::quat& rotation);
 
         /**
          * @brief Compute a quaternion from yaw/pitch and write it to @p rotation.
@@ -202,21 +182,11 @@ class CameraControllerSystem : public System {
         float m_pitch = 0.0f;
         bool m_isRightMousePressed = false;
 
-        bool m_editorWantsMouse    = false;
-        bool m_editorWantsKeyboard = false;
         /**
          * @brief Set whenever a write of this controller's changed the camera's
          * pose; cleared by takeCameraMoved().
          */
         bool m_cameraMoved         = false;
-        /**
-         * @brief Whether the fly controls run; off until an editor asks.
-         *
-         * Right-button-down puts the window in CursorMode::Disabled - hidden,
-         * grabbed and re-centred every frame - which is what an authoring
-         * viewport wants and what a game that never asked for it must not get.
-         */
-        bool m_enabled             = false;
 };
 
 } // namespace Vkm::Engine

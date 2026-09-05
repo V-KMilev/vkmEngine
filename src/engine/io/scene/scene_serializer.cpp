@@ -24,7 +24,6 @@
 #include "ecs/component/core/missing_assets.h"
 #include "io/asset/asset_serializer.h"
 #include "io/scene/component_serializer.h"
-#include "system/physics/authoring/mesh_collider.h"
 #include "io/json_file.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/font_asset.h"
@@ -384,18 +383,16 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
     std::set<std::string> unknownKeys;  // dedup warnings - one per drift, not per entity
     const json noComponents = json::object();   // stand-in for an entity that has none
 
-    // Where the read is standing, for the catch below. The entity id is the
-    // useful half and is zero outside the entity loop, where the block name is
-    // all there is to say. Both are plain scalars rather than a formatted
-    // string: this is updated once per entity on every load.
+    // Where the read is standing, for the catch below - the entity id is zero
+    // outside the entity loop. Plain scalars rather than a formatted string,
+    // because this is updated once per entity on every load.
     uint32_t    entityBeingRead = 0;
     const char* blockBeingRead  = "entities";
 
     try {
-        // Every entity is created before any component is read, so a
-        // reference resolves where it is read. The id checks belong to this
-        // pass: afterwards every id is alive, and a second aliveness test
-        // would call each entity a duplicate of itself.
+        // Every entity is created before any component is read, so a reference
+        // resolves where it is read. The id checks belong to this pass: afterwards
+        // every id is alive, and each would test as a duplicate of itself.
         std::vector<EntityId> byEntry;
         byEntry.reserve(doc["entities"].size());
         for (const auto& entry : doc["entities"]) {
@@ -405,10 +402,9 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
                 byEntry.emplace_back();
                 continue;
             }
-            // A repeated id would allocate an already-live slot and add every
-            // component to it twice: SparseSet appends a second dense entry
-            // rather than overwriting, so the entity yields each component
-            // twice and a later remove swap-and-pops against a stale index.
+            // A repeated id allocates an already-live slot and adds every
+            // component twice: SparseSet appends rather than overwrites, and a
+            // later remove then swap-and-pops against a stale index.
             if (staging.isAliveAtIndex(id)) {
                 ++duplicateIds;
                 byEntry.emplace_back();
@@ -457,18 +453,16 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
                 PrefabInstance instance;
                 instance.source = entry.value("prefab", std::string{});
 
-                // Flatten uid -> component -> field back into the stored list.
-                // A value that will not parse is the one drift case that drops:
-                // it cannot be held in memory as text we could write back, and
-                // it can only come from a hand-edit.
+                // Flatten uid -> component -> field back into the stored list. A
+                // value that will not parse drops: it cannot be held in memory as
+                // text to write back, and only a hand-edit produces one.
                 if (entry.contains("overrides") && entry["overrides"].is_object()) {
                     for (const auto& [uidKey, comps] : entry["overrides"].items()) {
                         if (!comps.is_object()) continue;
 
-                        // The key is the address, so a key that is not a uid
-                        // addresses nothing. Parsed whole rather than as far as
-                        // it goes: strtoul's answer for "head" is 0, which is
-                        // the root, and the override would land there.
+                        // The key is the address, so one that is not a uid
+                        // addresses nothing. Parsed whole: strtoul reads "head" as
+                        // 0, the root, and the override would land there.
                         uint32_t uid = 0;
                         const char* last = uidKey.data() + uidKey.size();
                         const auto [stop, ec] = std::from_chars(uidKey.data(), last, uid);
@@ -547,18 +541,6 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             const EntityId childId  = staging.entityAt(childIdx);
             const EntityId parentId = staging.entityAt(parentIdx);
             HierarchyOperations::setParent(staging, childId, parentId);
-        }
-
-        // The tree over a mesh collider's triangles is derived, so it is not
-        // written to disk where it could disagree with them. PhysicsSystem
-        // rebuilds one it finds missing, but only on a tick - and a query is
-        // not a tick, so a freshly loaded level answered nothing against its
-        // own terrain until something moved. In the editor, where the
-        // simulation is not running, that is never.
-        if (auto* colliders = staging.storage<Collider>()) {
-            for (uint32_t i = 0; i < colliders->size(); ++i) {
-                rebuildMeshBvh(colliders->dataAt(i));
-            }
         }
 
         // Missing scene-global fields keep the staging scene's defaults; a

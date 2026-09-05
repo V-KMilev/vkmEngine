@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "pass/gl_resolve_pass.h"
 
 #include "gl_frame_context.h"

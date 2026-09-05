@@ -16,8 +16,6 @@
 #include "ecs/component/physics/rigidbody.h"
 #include "system/physics/body_pose.h"
 #include "system/physics/collision/mesh_bvh.h"
-#include "system/physics/collision/gjk.h"
-#include "system/physics/collision/support.h"
 #include "system/physics/tolerance.h"
 
 namespace Vkm::Engine {
@@ -397,10 +395,10 @@ bool sweepTriangle(const glm::vec3& a, const glm::vec3& b, const glm::vec3& c,
  * The single place a query decides what a shape is. Written as a switch with no
  * default so that adding a fifth shape does not compile until this is one of
  * the places that answered for it - the previous form treated everything that
- * was not a box as a capsule, which silently gave a hull and a mesh a phantom
- * capsule of whatever radius the part happened to carry.
+ * was not a box as a capsule, which silently gave a mesh a phantom capsule of
+ * whatever radius the part happened to carry.
  *
- * @param collider The part's collider, for the points a hull or mesh reads.
+ * @param collider The part's collider, for the points a mesh reads.
  * @param part Part to test.
  * @param center Its world-space centre.
  * @param basis The body's world rotation.
@@ -435,10 +433,9 @@ bool castPart(const Collider& collider, const ColliderPart& part,
         }
 
         case ColliderShape::Capsule: {
-            // The segment runs along the body's local +Y, which is the basis'
-            // second column already in world space. Sweeping a sphere against a
-            // capsule is a ray against the same capsule grown by the sphere's
-            // radius, so both cases are one call.
+            // The segment runs along local +Y, which the basis' second column
+            // already carries in world space. Sweeping a sphere is a ray against
+            // the same capsule grown by its radius, so both cases are one call.
             const glm::vec3 up = basis[1] * part.halfHeight;
             return rayCapsule(origin, dir, center - up, center + up,
                               part.radius + radius, t, normal);
@@ -500,8 +497,7 @@ bool castPart(const Collider& collider, const ColliderPart& part,
 // counts as static: it is what the solver treats as immovable, and a caller
 // asking for "the level" means the things that do not fall.
 bool passesMobility(const Rigidbody& rb, const QueryFilter& filter) {
-    const bool immovable = rb.isStatic || rb.isKinematic || rb.mass <= 0.0f;
-    return immovable ? filter.hitStatic : filter.hitDynamic;
+    return Rigidbody::isImmovable(rb) ? filter.hitStatic : filter.hitDynamic;
 }
 
 template <typename PartTest>

@@ -5,6 +5,7 @@
 namespace Vkm::Engine {
     class WindowManager;
     class Clock;
+    class HostChrome;
 
     class Scene;
     class ResourceManager;
@@ -53,23 +54,21 @@ enum class SystemStage : uint8_t {
  * The field types encode two kinds of state. References are engine-owned
  * SERVICES, valid for the whole session: time through the Clock, `events` the
  * gameplay bus flushed at the top of the Simulation stage, `input` sampled once
- * before any system runs so every reader agrees on what is held and where the
- * edges are.
+ * before any system runs so every reader agrees on the edges, `chrome` what an
+ * authoring host has said about the frame it draws over - nothing at all, in a
+ * shipped game.
  *
- * A system reads the timeline its responsibility lives on, not the timeline of
- * the stage it happens to sit in. Simulation state - animation, particles,
- * physics, gameplay's onUpdate - reads getSimDelta() in update() and
- * getFixedStep() in fixedUpdate(), which is what makes pause, single-step and
+ * A system reads the timeline its responsibility lives on, not the one its stage
+ * sits in. Simulation state - animation, particles, physics, onUpdate - reads
+ * getSimDelta() and getFixedStep(), which is what makes pause, single-step and
  * time-scale reach all of it without a case of their own. Presentation and
- * services - input, camera, the editor, async loading, audio, gameplay's
- * onRealtimeUpdate - run every frame regardless of the sim delta, on the real
- * delta where they need one at all, because pausing a game must not cut its
+ * services run every frame regardless, because pausing a game must not cut its
  * music or freeze the menu asking whether to quit.
  *
  * Pointers are per-frame PRODUCTS, null until their producer has run this frame:
  * `visibility` from VisibilitySystem, `poses` from SkeletalAnimationSystem, `ui`
  * from UISystem. Producers own the storage and reuse it across frames, so a
- * consumer must be registered after its producer - that ordering lives in
+ * consumer is registered after its producer - that ordering lives in
  * setupEngineApp.
  */
 struct FrameContext {
@@ -81,6 +80,7 @@ struct FrameContext {
     WindowManager&   window;
     InputMap&        input;
     NetSession&      net;
+    HostChrome&      chrome;
 
     const Visibility*  visibility = nullptr;
     const PoseBuffer*  poses      = nullptr;

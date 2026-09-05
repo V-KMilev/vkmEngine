@@ -5,7 +5,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
-#include "system/animation/animation_track.h"
+#include "ecs/component/animation/animation_track.h"
 
 namespace Vkm::Engine {
 
@@ -20,37 +20,25 @@ struct Animation {
     AnimationTrack<glm::vec3> scaleTrack;
 
     float length  = 0.0f;     ///< Explicit minimum length in seconds (0 = auto from last keyframe)
-    float time    = 0.0f;     ///< Current animation time in seconds
+    /// Playback head in seconds. Session state; see Animator::time for why it
+    /// is not serialized.
+    float time    = 0.0f;
     float speed   = 1.0f;     ///< Playback speed multiplier
     bool  looping = true;
 
     /**
      * @brief Start playing on the first frame the simulation runs.
      *
-     * The authored half, the way AudioSource splits the same pair. Gated on
-     * simulation time rather than on the component existing: in the editor an
-     * unplayed scene is a paused one, and an animation that ran merely because
-     * it was loaded would move the entity the author is placing.
+     * The authored half of the trio every component that plays something
+     * carries; see engine.md, "Authored state and session state on one
+     * component", for why only this one is serialized.
      */
     bool playOnStart = true;
 
-    /**
-     * @brief Whether the animation should be advancing right now.
-     *
-     * Runtime state, not serialized, for the same reason AudioSource::playing
-     * is not: it describes a play session rather than the authored scene. The
-     * editor's transport writes it to preview, and a preview left running is
-     * not a decision about what a shipped scene does - `playOnStart` is.
-     */
+    /// Whether the animation should be advancing right now. Session state.
     bool playing = false;
 
-    /**
-     * @brief Whether playOnStart has already been honoured this session.
-     *
-     * Runtime state. Without it a non-looping clip with playOnStart would
-     * restart every frame after it ended, since `playing` falling back to false
-     * is exactly what "it finished" looks like.
-     */
+    /// Whether playOnStart has been honoured yet this session. Session state.
     bool started = false;
 
     /**

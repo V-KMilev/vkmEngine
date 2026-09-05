@@ -21,6 +21,11 @@
 #include "data/gl_shadow_data.h"
 #include "data/gl_cube_convolver.h"
 #include "data/gl_scene_capture.h"
+#include <string>
+#include <unordered_map>
+
+#include "gl_texture.h"
+
 #include "data/gl_ibl.h"
 #include "data/gl_ibl_baker.h"
 #include "data/gl_bloom.h"
@@ -70,6 +75,10 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         GLBackend& operator=(GLBackend && other) = delete;
 
     public:
+        /// This backend is its own editor hooks; see RenderBackend::editorHooks.
+        EditorRenderHooks* editorHooks() override { return this; }
+
+    public:
         bool init(WindowManager& window) override;
         void render(const RenderView& view, const ResourceManager& resources) override;
 
@@ -82,33 +91,64 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         GpuTextureId textureId(const TextureHandle& handle) const override;
         GpuTextureId ensureTexture(const TextureHandle& handle,
                                    const ResourceManager& resources) override;
+        GpuTextureId chromeImage(const std::string& path) override;
         uint32_t reloadChangedShaders() override;
         uint32_t maxAnisotropy() const override;
+
+        /**
+         * @brief The engine constants every shader stage is compiled with.
+         *
+         * GLSL cannot see a C++ header, so a cross-language constant is either
+         * copied into each shader that needs it or written into GLSL by
+         * something that knows both. This writes them out from the constants
+         * themselves - `Config::MAX_LIGHTS`, the probe array's capacity, the
+         * IBL mip counts, the `MODE_*` ordinals - and `init` hands the text to
+         * the shader loader as a prelude, so a shader simply uses `MAX_LIGHTS`
+         * and declares nothing.
+         *
+         * Public and static so the GPU test suite can compile the shipped
+         * shaders exactly as the backend does, which is the only way to find
+         * out that they still compile without opening a window.
+         *
+         * @return GLSL declarations, ready to sit under the `#version` line.
+         */
+        static std::string shaderConstants();
+
+    private:
+        /**
+         * @brief Puts shaderConstants() in front of every shader this backend builds.
+         *
+         * A member rather than a call in init(), because several members below
+         * build a program in their own constructor and member construction runs
+         * before any function body of this class. Declared first, so the engine's
+         * constants are installed before the first of them asks for a shader -
+         * one built before that sees a prelude with nothing in it, and fails on
+         * every constant the source names.
+         */
+        struct ConstantsInstalled {
+            ConstantsInstalled();
+        };
 
     private:
         /**
          * @brief Drop every GPU cache the world it was built from has outlived.
          *
-         * Several caches avoid redundant GPU work by remembering what they last
-         * built and comparing it against values the scene supplies: asset handle
-         * and version for GLView, probe position and bakeVersion for the probe
-         * array, box and grid for the irradiance volume. Every one of those
-         * repeats exactly when what it is built from is replaced, so each would
-         * skip work it must redo and go on showing the previous scene.
+         * Several caches skip redundant GPU work by remembering what they last
+         * built and comparing it against what the scene supplies - handle and
+         * version for GLView, position and bakeVersion for the probe array, box
+         * and grid for the irradiance volume. Each of those repeats exactly when
+         * what it was built from is replaced, so each would skip work it must
+         * redo and go on showing the previous scene.
          *
-         * The two are replaced separately, and each drops what belongs to it.
-         * GLView mirrors assets, so it goes when the asset graph is swapped for
-         * another. The probe captures and the irradiance bake are pictures of a
-         * place in a world, so they go when the world is replaced - which a
-         * scene load does along with the graph, and the editor's play-stop
-         * restore does on its own, that one keeping the graph precisely so the
-         * handles the undo history holds still mean something.
+         * The asset graph and the world are replaced separately, and each drops
+         * what belongs to it: GLView mirrors assets, while the probe captures and
+         * the irradiance bake are pictures of a place. The editor's play-stop
+         * restore replaces the second alone, keeping the graph so the handles the
+         * undo history holds still mean something.
          *
-         * Detecting both here, once, is deliberate. The alternative is every
-         * cache inventing its own staleness test, which is exactly how the probe
-         * array and the irradiance volume came to be missed when GLView was
-         * fixed. A new cache belongs in this function, under whichever of the
-         * two it is a picture of.
+         * Detecting both here, once, is the point: a cache inventing its own
+         * staleness test is how the probe array and the irradiance volume came to
+         * be missed when GLView was fixed. A new cache belongs in this function.
          *
          * @param view The frame's view, carrying the world epoch.
          * @param resources The frame's resource manager, carrying the asset epoch.
@@ -139,17 +179,56 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         void bakeProceduralSky(const Environment& env, const glm::vec3& sunDir);
 
         /**
-         * @brief True when the procedural sky must be re-baked: the sun moved or a
-         * sky parameter changed since the last procedural bake.
+         * @brief A cached bake, and the signature it was baked from.
+         *
+         * A bake is skipped when nothing it depends on changed, and the way that
+         * goes wrong is always the same: a field joins the signature and is
+         * assigned where the bake happens, while the comparison that decides
+         * whether to bake lives somewhere else and is not updated - so the bake
+         * silently stops happening and nothing says so. Here the comparison is
+         * the signature's own `operator==` and one place records it, so the two
+         * cannot drift apart.
+         *
+         * @tparam Signature Everything the bake depends on, comparable for equality.
          */
-        bool skyNeedsRebake(const Environment& env, const glm::vec3& sunDir) const;
+        template <typename Signature>
+        class BakedFrom {
+            public:
+                BakedFrom()  = default;
+                ~BakedFrom() = default;
+
+                BakedFrom(const BakedFrom& other) = default;
+                BakedFrom& operator=(const BakedFrom& other) = default;
+
+                BakedFrom(BakedFrom && other) = default;
+                BakedFrom& operator=(BakedFrom && other) = default;
+
+            public:
+                /**
+                 * @brief Whether @p now differs from what is baked; adopts it if so.
+                 *
+                 * @param now What this frame would bake from.
+                 * @return Whether the bake has to run.
+                 */
+                bool changed(const Signature& now) {
+                    if (m_baked && m_last == now) return false;
+                    m_last  = now;
+                    m_baked = true;
+                    return true;
+                }
+
+                /// Forget what was baked, so the next changed() answers true.
+                void invalidate() { m_baked = false; }
+
+            private:
+                Signature m_last{};
+                bool      m_baked = false;
+        };
 
         /**
-         * @brief Signature of the procedural sky currently baked into m_ibl, so a
-         * frame re-bakes only when the sun or a parameter actually changes.
+         * @brief Everything the procedural sky bake depends on.
          */
-        struct BakedSky {
-            bool      active = false;
+        struct SkySignature {
             glm::vec3 sunDir{0.0f};
             float     sunIntensity = 0.0f;
             float     rayleigh     = 0.0f;
@@ -158,21 +237,60 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
             glm::vec3 nightRadiance{0.0f};
             glm::vec3 moonDir{0.0f};
             float     moonIntensity = 0.0f;
+
+            /**
+             * @brief Whether two skies are the same sky.
+             *
+             * Every term exact except the sun direction, which is compared by
+             * angle: it moves continuously, and re-baking a cubemap for a
+             * thousandth of a degree is a bake every frame the sun is animated.
+             *
+             * @param other The sky to compare against.
+             * @return Whether a bake of @p other would produce this one.
+             */
+            bool operator==(const SkySignature& other) const {
+                return sunIntensity  == other.sunIntensity
+                    && rayleigh      == other.rayleigh
+                    && mie           == other.mie
+                    && mieG          == other.mieG
+                    && nightRadiance == other.nightRadiance
+                    && moonDir       == other.moonDir
+                    && moonIntensity == other.moonIntensity
+                    && glm::dot(sunDir, other.sunDir) >= 0.99995f;
+            }
         };
 
         /**
-         * @brief Signature of the irradiance volume currently baked, so a frame
-         * re-bakes only when the box, grid, or bake version actually changes.
+         * @brief Everything the irradiance-volume bake depends on.
          */
-        struct BakedIrradiance {
-            bool      valid = false;
+        struct IrradianceSignature {
             glm::vec3 center{0.0f};
             glm::vec3 halfExtents{0.0f};
             uint32_t  resolutionX = 0, resolutionY = 0, resolutionZ = 0;
             uint32_t  bakeVersion = 0;
+
+            bool operator==(const IrradianceSignature& other) const {
+                return center      == other.center
+                    && halfExtents == other.halfExtents
+                    && resolutionX == other.resolutionX
+                    && resolutionY == other.resolutionY
+                    && resolutionZ == other.resolutionZ
+                    && bakeVersion == other.bakeVersion;
+            }
         };
 
+        /**
+         * @brief The sky the environment describes, as a bake signature.
+         *
+         * @param env The scene's environment.
+         * @param sunDir Direction to the sun, already derived from its angles.
+         * @return What baking that environment's procedural sky depends on.
+         */
+        static SkySignature skySignature(const Environment& env, const glm::vec3& sunDir);
+
     private:
+        ConstantsInstalled m_constants;   ///< First: everything below may compile a shader.
+
         Vkm::GL::Context m_context;
         GLView           m_view;
 
@@ -183,12 +301,18 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         // Batches the opaque bucket once per frame for both the depth prepass
         // and the forward pass (see GLFrameContext::opaqueBatch).
         GLInstanceBatcher m_opaqueBatcher;
-        Vkm::GL::ScreenTriangle m_screenTri;  ///< Shared fullscreen triangle, referenced by the frame context.
-        GLTarget      m_sceneHDR;    ///< Single-sample resolved scene (sampled by post). At 1x MSAA the geometry passes render straight into it.
-        GLTarget      m_sceneMS;     ///< Multisample scene the geometry passes render into when MSAA is on; resolved into m_sceneHDR.
-        GLTarget      m_postA;   ///< Colour-only post scratch (ping).
-        GLTarget      m_postB;   ///< Colour-only post scratch (pong).
-        GLTarget      m_ao;      ///< Colour-only GTAO factor target.
+        ScreenTriangle m_screenTri;  ///< Shared fullscreen triangle, referenced by the frame context.
+        /// Single-sample resolved scene (sampled by post). At 1x MSAA the geometry passes render straight into it.
+        GLTarget m_sceneHDR{GLTarget::Layout::ColorDepthGBuffer};
+        /// Multisample scene the geometry passes render into when MSAA is on; resolved into m_sceneHDR.
+        GLTarget m_sceneMS{GLTarget::Layout::ColorDepthGBuffer};
+        GLTarget m_postA{GLTarget::Layout::Color};   ///< Post scratch (ping).
+        GLTarget m_postB{GLTarget::Layout::Color};   ///< Post scratch (pong).
+        GLTarget m_ao{GLTarget::Layout::Color};      ///< GTAO factor + packed bent normal.
+
+        /// Images the host's own chrome asked for, by path. Uploaded once each,
+        /// and never touched by a project open - they are the engine's.
+        std::unordered_map<std::string, std::unique_ptr<Vkm::GL::Texture2D>> m_chromeImages;
 
         GLCamera      m_camera;
         GLLights      m_lights;
@@ -196,12 +320,9 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         GLShadowAtlas m_shadowAtlas;
         GLShadowData  m_shadowData;
 
-        // The rig every offline bake draws with, owned once here and lent to the
-        // three bakers below. Sharing it is what keeps the forward PBR
-        // ubershader and the convolution programs to a single compile each
-        // instead of one per baker. Declared before the bakers on purpose: they
-        // bind references to these in GLBackend's constructor, and member order
-        // is construction order.
+        // The rig every offline bake draws with, lent to the three bakers below:
+        // one compile of the PBR ubershader and the convolution programs rather
+        // than one per baker. Declared first, because they bind references to it.
         GLSceneCapture  m_sceneCapture;
         GLCubeConvolver m_cubeConvolver;
 
@@ -227,8 +348,8 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
 
         std::string m_bakedEnvPath;  ///< HDR path of the currently baked IBL; empty when none (or the sky is procedural).
 
-        BakedSky        m_bakedSky;
-        BakedIrradiance m_bakedIrradiance;
+        BakedFrom<SkySignature>        m_bakedSky;
+        BakedFrom<IrradianceSignature> m_bakedIrradiance;
 };
 
 } // namespace Vkm::Engine

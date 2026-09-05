@@ -8,11 +8,11 @@ namespace Vkm::GL {
     class VertexArray;
     class VertexBuffer;
     class IndexBuffer;
-    class InstanceBuffer;
 }
 
 namespace Vkm::Engine {
 
+class InstanceBuffer;
 struct MeshAsset;
 
 /**
@@ -62,7 +62,7 @@ class GLMesh {
          * @param buffer     Per-instance matrices, in draw order.
          * @param startIndex First of the four attribute slots the mat4 spans.
          */
-        void attachInstances(Vkm::GL::InstanceBuffer& buffer, uint32_t startIndex) const;
+        void attachInstances(InstanceBuffer& buffer, uint32_t startIndex) const;
 
         /**
          * @brief Point the VAO's instance-index attribute at @p buffer.

@@ -34,9 +34,9 @@ bool isUnitScale(const glm::vec3& scale) {
 } // namespace
 
 void netEncode(const Transform& value, BitWriter& out) {
-    Quantize::writePosition(out, value.position.x, NET_WORLD_EXTENT);
-    Quantize::writePosition(out, value.position.y, NET_WORLD_EXTENT);
-    Quantize::writePosition(out, value.position.z, NET_WORLD_EXTENT);
+    Quantize::writePosition(out, value.position.x);
+    Quantize::writePosition(out, value.position.y);
+    Quantize::writePosition(out, value.position.z);
     Quantize::writeRotation(out, value.rotation);
 
     const bool scaled = !isUnitScale(value.scale);
@@ -49,9 +49,9 @@ void netEncode(const Transform& value, BitWriter& out) {
 }
 
 void netDecode(Transform& value, BitReader& in) {
-    value.position.x = Quantize::readPosition(in, NET_WORLD_EXTENT);
-    value.position.y = Quantize::readPosition(in, NET_WORLD_EXTENT);
-    value.position.z = Quantize::readPosition(in, NET_WORLD_EXTENT);
+    value.position.x = Quantize::readPosition(in);
+    value.position.y = Quantize::readPosition(in);
+    value.position.z = Quantize::readPosition(in);
     value.rotation   = Quantize::readRotation(in);
 
     // Absent means one, not "leave it alone". One component at a time rather

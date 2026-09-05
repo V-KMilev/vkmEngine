@@ -19,7 +19,6 @@ uniform int  u_hasAO;        // 0 when GTAO is off and nothing wrote the AO targ
 uniform int  u_renderMode;   // 0 = final image, else a debug buffer (see MODE_* below)
 uniform mat4 u_projection;   // camera projection, for depth linearization (debug only)
 
-#include "../_generated/render_modes.glsl"  // MODE_*, generated from the RenderMode enum
 
 #include "../_common/normal_codec.glsl"  // signNotZero, octDecode
 #include "../_common/depth.glsl"

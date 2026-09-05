@@ -3,7 +3,6 @@
 #include "framework/asset_picker.h"
 
 #include <algorithm>
-#include <cfloat>
 #include <cstdio>
 #include <cctype>
 #include <system_error>
@@ -46,13 +45,11 @@ std::string displayName(
 } // namespace
 
 void AssetPicker::open() {
-    m_openRequested = true;
+    m_wantOpen = true;
+    rescan();
 }
 
-void AssetPicker::refreshIfNeeded() {
-    if (!m_openRequested) return;
-    m_openRequested = false;
-
+void AssetPicker::rescan() {
     m_entries.clear();
     m_paths.clear();
     m_filter[0] = '\0';
@@ -107,29 +104,13 @@ void AssetPicker::refreshIfNeeded() {
     }
     m_entries = std::move(e2);
     m_paths   = std::move(p2);
-
-    char titleId[160];
-    snprintf(titleId, sizeof(titleId), "%s###%s", m_options.title, m_options.popupId);
-    ImGui::OpenPopup(titleId);
 }
 
 bool AssetPicker::draw(std::string& outPath) {
-    refreshIfNeeded();
-
-    // Real title in the bar, stable id after ### (the raw popupId used to BE
-    // the visible title, so dialogs were named "PickEnvHdr").
-    char titleId[160];
-    snprintf(titleId, sizeof(titleId), "%s###%s", m_options.title, m_options.popupId);
-
     bool picked = false;
-    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
-                            ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(EditorStyle::px(520.0f), EditorStyle::px(400.0f)),
-                             ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSizeConstraints(
-        ImVec2(EditorStyle::px(380.0f), EditorStyle::px(260.0f)),
-        ImVec2(FLT_MAX, FLT_MAX));
-    if (ImGui::BeginPopupModal(titleId, nullptr, ImGuiWindowFlags_NoSavedSettings)) {
+    if (beginDialog(m_options.title, m_wantOpen,
+                    ImVec2(EditorStyle::px(520.0f), EditorStyle::px(400.0f)),
+                    ImVec2(EditorStyle::px(380.0f), EditorStyle::px(260.0f)))) {
         ImGui::TextDisabled("%s", m_options.root.string().c_str());
         // Say so when the listing was cut short. A partial list that looks
         // complete is the same failure as an empty one with no warning: the
@@ -204,12 +185,10 @@ bool AssetPicker::draw(std::string& outPath) {
             }
         }
 
-        if (!picked) {
-            bool want = true;  // lifetime is popup-managed; the flag is discarded
-            const DialogResult r = dialogButtons(want, "Open", selectionVisible);
-            if (r == DialogResult::Confirm) confirm(m_selected);
+        if (!picked && dialogButtons(m_wantOpen, "Open", selectionVisible) == DialogResult::Confirm) {
+            confirm(m_selected);
         }
-        ImGui::EndPopup();
+        endDialog();
     }
     return picked;
 }

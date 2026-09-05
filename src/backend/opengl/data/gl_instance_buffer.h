@@ -11,7 +11,7 @@
 #include "gl_vertex_buffer.h"
 #include "gl_error_handle.h"
 
-namespace Vkm::GL {
+namespace Vkm::Engine {
 
 /**
  * @brief GPU buffer of per-instance mat4 model matrices.
@@ -49,7 +49,6 @@ class InstanceBuffer {
          * @param count How many matrices; zero uploads nothing.
          */
         void update(const glm::mat4* data, uint32_t count) {
-            m_instanceCount = count;
             if (count == 0) return;
 
             const uint32_t dataSize = count * sizeof(glm::mat4);
@@ -101,8 +100,6 @@ class InstanceBuffer {
         /// GL name, for binding the same storage as an SSBO a compute stage reads or writes.
         uint32_t id() const { return m_buffer ? m_buffer->getID() : 0; }
 
-        uint32_t getInstanceCount() const { return m_instanceCount; }
-        uint32_t getCapacity()      const { return m_capacity; }
 
     private:
         static constexpr float    GROWTH_FACTOR = 1.5f;
@@ -111,7 +108,6 @@ class InstanceBuffer {
     private:
         std::unique_ptr<Vkm::GL::VertexBuffer> m_buffer;
         uint32_t m_capacity      = 0;
-        uint32_t m_instanceCount = 0;
 };
 
-} // namespace Vkm::GL
+} // namespace Vkm::Engine

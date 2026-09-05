@@ -19,18 +19,40 @@ namespace InputActions {
     inline constexpr const char* MOVE_RIGHT   = "Camera/Right";    ///< Axis: +right, -left.
     inline constexpr const char* MOVE_UP      = "Camera/Up";       ///< Axis: +up, -down.
     inline constexpr const char* BOOST        = "Camera/Boost";    ///< Held: move faster.
+
+    /**
+     * @brief Press, hold and release of the game UI's primary pointer button.
+     *
+     * A named action rather than a raw button because it is rebindable like
+     * anything else - a game on a gamepad presses its menus with a face button
+     * - and because the map already samples once a frame and keeps the previous
+     * value, which is the edge detection UISystem would otherwise carry itself
+     * and get subtly wrong the moment anything else read the same button.
+     */
+    inline constexpr const char* UI_CLICK     = "UI/Click";        ///< Press/release: activate.
 } // namespace InputActions
 
 /**
- * @brief Install the engine's default bindings into @p map.
+ * @brief Install the bindings every host's own systems read.
  *
- * Only the actions the engine's own systems read - currently the editor fly
- * camera. Games define their own on top; a project that loads a saved binding
- * file calls this first so an action missing from the file still has a sensible
- * default rather than being dead.
+ * Currently one: the game UI's primary button. Games define their own on top; a
+ * project that loads a saved binding file calls this first so an action missing
+ * from the file still has a sensible default rather than being dead.
  *
  * @param map The map to populate.
  */
 void installDefaultBindings(InputMap& map);
+
+/**
+ * @brief Install the fly camera's bindings.
+ *
+ * Separate because the camera controller is: it is an authoring tool, registered
+ * only by `vkm_editor`, so a runtime that installed its bindings would carry
+ * four actions nothing reads. Here rather than in the editor because the action
+ * names belong beside the system that reads them.
+ *
+ * @param map The map to populate.
+ */
+void installEditorBindings(InputMap& map);
 
 } // namespace Vkm::Engine

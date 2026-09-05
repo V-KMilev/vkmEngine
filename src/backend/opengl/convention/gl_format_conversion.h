@@ -4,7 +4,7 @@
 
 #include "resource/texture_format.h"
 #include "system/render/render_settings.h"
-#include "texture/gl_texture.h"
+#include "gl_texture.h"
 
 namespace Vkm::Engine {
 

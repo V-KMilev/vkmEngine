@@ -122,6 +122,19 @@ struct CullScratch {
  */
 class GLShadowData {
     public:
+        /**
+         * @brief A read-only view of the per-light shadow slots.
+         *
+         * Two members rather than std::span because the engine is C++17.
+         */
+        struct LightSlots {
+            const int* slots = nullptr;
+            uint32_t   count = 0;
+
+            /// @return The slot of the light at @p index, or -1 when it has none.
+            int operator[](uint32_t index) const { return index < count ? slots[index] : -1; }
+        };
+
         GLShadowData();
         ~GLShadowData();
 
@@ -142,9 +155,17 @@ class GLShadowData {
         void build(const RenderView& view);
 
         /**
-         * @brief Packed shadowSlot for the light at @p lightIndex (-1 = no shadow).
+         * @brief The packed shadow slot of each light this frame, -1 for none.
+         *
+         * Parallel to `RenderView::lights` for as far as it goes; a light past
+         * the end has no shadow. Handed out as a span rather than queried one
+         * light at a time so that a caller with no shadows at all - the preview
+         * rig, the probe capture - passes an empty one instead of holding a
+         * whole default-built GLShadowData to answer -1 with.
+         *
+         * @return A view of the slots, in light order; valid until the next build().
          */
-        int slotForLight(uint32_t lightIndex) const;
+        LightSlots lightSlots() const { return {m_lightSlot, m_lightCount}; }
 
         /**
          * @brief The 2D depth jobs (directional cascades + spots) for this frame.

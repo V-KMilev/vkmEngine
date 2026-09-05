@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "pass/gl_gtao_pass.h"
 
 #include <GL/glew.h>
@@ -43,7 +41,6 @@ void GLGTAOPass::execute(GLFrameContext& ctx) {
 
     ctx.screenTri.draw();
 
-    endFullscreen(ctx.gl);
     ctx.aoReady = true;
 }
 

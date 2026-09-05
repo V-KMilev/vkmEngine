@@ -22,6 +22,7 @@
 #include "io/json_vec.h"
 #include "core/reflect.h"
 #include "resource/resource_manager.h"
+#include "system/physics/authoring/mesh_collider.h"
 #include "system/script/behavior.h"
 #include "system/script/behavior_field_visitor.h"
 #include "system/script/behavior_registry.h"
@@ -80,10 +81,9 @@ inline nlohmann::json toJson(E v) { return Reflect::enumName(v); }
 template<typename E, typename = std::enable_if_t<std::is_enum_v<E>>>
 inline void fromJson(const nlohmann::json& j, E& v) {
     const std::string name = j.get<std::string>();
-    // A name this build has no enumerator for leaves the field at the default
-    // the component was constructed with, and says so - the same answer the
-    // unknown-component-key and unknown-asset-type paths in this subsystem
-    // already give, rather than a valid-looking enumerator zero.
+    // A name this build has no enumerator for leaves the field at the default the
+    // component was constructed with, and says so - rather than a valid-looking
+    // enumerator zero.
     if (!Reflect::enumFromNameChecked(name, v)) {
         LOG_WARNING("No enumerator called '%s' in this build; leaving the field at its default",
                     name.c_str());
@@ -116,31 +116,130 @@ inline std::enable_if_t<Reflect::IS_REFLECTED<T>> fromJson(const nlohmann::json&
     loadReflected(j, v);
 }
 
-template<typename T>
-nlohmann::json saveReflected(const T& obj) {
+// A Handle is not a leaf the plain toJson set can carry: writing one needs the
+// ResourceManager to turn it into the name that is its serialized identity, and
+// reading one needs the same manager to turn the name back. That context is the
+// only reason a component holding an asset had to be written out by hand, so it
+// is threaded through the driver rather than worked around beside it.
+template<typename T>  struct IsHandle                     : std::false_type {};
+template<typename A>  struct IsHandle<Handle<A>>          : std::true_type  {};
+
+// A vector is a JSON array of whatever its element is, decided by the same
+// dispatch - so a vector of reflected structs, of handles, or of leaves all work
+// without three rules. This is what let Collider's parts and LOD's levels stop
+// being written out by hand.
+template<typename T>     struct IsVector                     : std::false_type {};
+template<typename E, typename A> struct IsVector<std::vector<E, A>> : std::true_type {};
+
+// Defined further down, beside the unresolved-reference list it appends to.
+template<typename Asset>
+Handle<Asset> resolveAssetRef(const ResourceManager& r, const std::string& name,
+                              const char* what, const char* field);
+
+/**
+ * @brief Stand-in context for a component that names no assets.
+ *
+ * Most components do not, and asking every one of them to be handed a
+ * ResourceManager it will not use would put the parameter in twenty signatures
+ * to serve four. A handle reached with this in hand is a static_assert rather
+ * than a runtime surprise: the component needs the other overload.
+ */
+struct NoResources {};
+
+template<typename T, typename Ctx>
+nlohmann::json saveReflected(const T& obj, const Ctx& ctx);
+template<typename T, typename Ctx>
+void loadReflected(const nlohmann::json& j, T& obj, const Ctx& ctx);
+
+/**
+ * @brief One value to JSON, whatever kind of value it is.
+ *
+ * The recursion point: a handle becomes its name, a reflected struct becomes an
+ * object, a vector becomes an array of this same question asked again, and
+ * anything else is a leaf the toJson set already knows. Vectors of reflected
+ * structs work because of the third case calling the second.
+ */
+template<typename V, typename Ctx>
+nlohmann::json valueToJson(const V& val, const Ctx& ctx) {
+    if constexpr (IsHandle<V>::value) {
+        static_assert(!std::is_same_v<Ctx, NoResources>,
+                      "a component holding a Handle<T> serializes through the "
+                      "ResourceManager overload - the name is the identity");
+        return val ? ctx.get(val).name() : std::string{};
+    } else if constexpr (IsVector<V>::value) {
+        nlohmann::json arr = nlohmann::json::array();
+        for (const auto& element : val) arr.push_back(valueToJson(element, ctx));
+        return arr;
+    } else if constexpr (Reflect::IS_REFLECTED<V>) {
+        return saveReflected(val, ctx);
+    } else {
+        return toJson(val);
+    }
+}
+
+/**
+ * @brief The same question in the other direction.
+ *
+ * @param field The name this value is stored under, used as the label an
+ *              unresolved asset reference is reported with.
+ */
+template<typename V, typename Ctx>
+void valueFromJson(const nlohmann::json& j, V& val, const Ctx& ctx, const char* field) {
+    if constexpr (IsHandle<V>::value) {
+        static_assert(!std::is_same_v<Ctx, NoResources>,
+                      "a component holding a Handle<T> serializes through the "
+                      "ResourceManager overload - the name is the identity");
+        using Asset = typename V::resource_t;
+        val = resolveAssetRef<Asset>(ctx, j.is_string() ? j.get<std::string>() : std::string{},
+                                     Reflect::enumName(ASSET_TYPE<Asset>), field);
+    } else if constexpr (IsVector<V>::value) {
+        val.clear();
+        if (!j.is_array()) return;
+        val.reserve(j.size());
+        for (const nlohmann::json& element : j) {
+            typename V::value_type item{};
+            valueFromJson(element, item, ctx, field);
+            val.push_back(std::move(item));
+        }
+    } else if constexpr (Reflect::IS_REFLECTED<V>) {
+        loadReflected(j, val, ctx);
+    } else {
+        fromJson(j, val);
+    }
+}
+
+template<typename T, typename Ctx>
+nlohmann::json saveReflected(const T& obj, const Ctx& ctx) {
     nlohmann::json out = nlohmann::json::object();
     ::Vkm::Engine::Reflect::forEachField(obj, [&](std::string_view name, const auto& val) {
-        out[std::string(name)] = toJson(val);
+        out[std::string(name)] = valueToJson(val, ctx);
     });
     return out;
 }
 
-template<typename T>
-void loadReflected(const nlohmann::json& j, T& obj) {
+template<typename T, typename Ctx>
+void loadReflected(const nlohmann::json& j, T& obj, const Ctx& ctx) {
     ::Vkm::Engine::Reflect::forEachField(obj, [&](std::string_view name, auto& val) {
-        auto it = j.find(std::string(name));
-        if (it != j.end()) fromJson(*it, val);
+        const std::string key(name);
+        auto it = j.find(key);
+        if (it != j.end()) valueFromJson(*it, val, ctx, key.c_str());
     });
 }
 
+template<typename T>
+nlohmann::json saveReflected(const T& obj) { return saveReflected(obj, NoResources{}); }
+
+template<typename T>
+void loadReflected(const nlohmann::json& j, T& obj) { loadReflected(j, obj, NoResources{}); }
+
 } // namespace
 
-// Component save / load. Reflectable components are one-line passthroughs into
-// the reflection driver. Hand-written where reflection cannot carry it: every R
-// and E row, because it names an asset or an entity; and Collider, Animation
-// and ScriptComponent, whose data is not a flat field list - parts, tracks
-// behind private accessors, polymorphic behaviors. Animator is an R row that
-// also persists less than it holds: blend state is transient by design.
+// Component save / load. The driver carries leaves, enums, nested reflected
+// structs, vectors and Handle<T>, so most components are one-line passthroughs.
+// Hand-written where it cannot reach: Ragdoll names entities, Animation's tracks
+// sit behind private accessors, ScriptComponent holds polymorphic behaviors.
+// A component that persists less than it holds says so by reflecting fewer
+// fields, not by a function that skips them.
 
 nlohmann::json save(const Environment& env) {
     return saveReflected(env);
@@ -172,26 +271,23 @@ nlohmann::json save(const CharacterController& cc)          { return saveReflect
 void load(const nlohmann::json& j, CharacterController& cc) { loadReflected(j, cc); }
 
 nlohmann::json save(const Joint& joint, const EntityNamer& name) {
-    nlohmann::json out = saveReflected(joint);   // anchors, distance, stiffness
-    out["type"] = Reflect::enumName(joint.type);
+    // Everything but the entity reference, `type` included: the driver carries
+    // enums, and it is the one place that says what an unknown name means.
+    nlohmann::json out = saveReflected(joint);
     out["connected"] = name(joint.connected);
     return out;
 }
 void load(const nlohmann::json& j, Joint& out, const EntityResolver& resolve) {
     loadReflected(j, out);
-    if (j.contains("type")) {
-        out.type = Reflect::enumFromName<JointType>(j.at("type").get<std::string>());
-    }
     out.connected = resolve(j.value("connected", 0u));
 }
 
 nlohmann::json save(const Ragdoll& r, const EntityNamer& name) {
     nlohmann::json out = saveReflected(r);   // active
 
-    // The bones travel with it. They are the mapping from a body back to the
-    // bone it poses, and the bodies are entities the scene saves anyway - so
-    // dropping the mapping does not save a ragdoll without its bodies, it saves
-    // a ragdoll that has forgotten them, beside a loose skeleton that falls.
+    // The bones travel with it: they map a body back to the bone it poses, and
+    // the bodies are entities the scene saves anyway - so dropping the mapping
+    // saves a ragdoll that has forgotten them beside a loose skeleton.
     nlohmann::json bones = nlohmann::json::array();
     for (const RagdollBone& bone : r.bones) {
         nlohmann::json entry;
@@ -231,67 +327,14 @@ void load(const nlohmann::json& j, Ragdoll& r, const EntityResolver& resolve) {
     }
 }
 
-nlohmann::json save(const Collider& c) {
-    nlohmann::json j = saveReflected(c);   // isTrigger + enabled
-    nlohmann::json arr = nlohmann::json::array();
-    for (const ColliderPart& p : c.parts) {
-        // Every shape's fields are written whatever the tag says, so switching a
-        // part to a capsule in the inspector and back does not quietly forget
-        // the half-extents it was authored with.
-        arr.push_back({
-            {"shape",      Reflect::enumName(p.shape)},
-            {"center",     vec3ToJson(p.center)},
-            {"half",       vec3ToJson(p.halfExtents)},
-            {"radius",     p.radius},
-            {"halfHeight", p.halfHeight},
-            {"meshFirst",  p.meshFirst},
-            {"meshCount",  p.meshCount},
-        });
-    }
-    j["parts"] = std::move(arr);
+nlohmann::json save(const Collider& c) { return saveReflected(c); }
 
-    if (!c.meshPoints.empty()) {
-        nlohmann::json points = nlohmann::json::array();
-        for (const glm::vec3& point : c.meshPoints) {
-            points.push_back(vec3ToJson(point));
-        }
-        j["mesh"] = std::move(points);
-    }
-    return j;
-}
 void load(const nlohmann::json& j, Collider& c) {
-    loadReflected(j, c);   // isTrigger + enabled
-
-    // A missing key keeps the default unit box; a written-but-empty array is
-    // a collider someone emptied, and saying "unit box" to that is inventing
-    // geometry the scene does not have.
-    auto it = j.find("parts");
-    if (it == j.end() || !it->is_array()) return;
-    c.parts.clear();
-    if (it->empty()) return;
-
-    c.parts.reserve(it->size());
-    for (const auto& e : *it) {
-        // at() preserves the throw-on-missing-key behavior (caught by the scene
-        // loader's guard); jsonToVec3 adds bounds-checked, logged array reads.
-        ColliderPart p;
-        p.shape       = Reflect::enumFromName<ColliderShape>(e.at("shape").get<std::string>());
-        p.center      = jsonToVec3(e.at("center"));
-        p.halfExtents = jsonToVec3(e.at("half"));
-        p.radius      = e.at("radius").get<float>();
-        p.halfHeight  = e.at("halfHeight").get<float>();
-        // Absent on every collider written before convex parts existed, and on
-        // every one that has none. value() rather than at() for that reason.
-        p.meshFirst   = e.value("meshFirst", 0u);
-        p.meshCount   = e.value("meshCount", 0u);
-        c.parts.push_back(p);
-    }
-
-    c.meshPoints.clear();
-    auto points = j.find("mesh");
-    if (points == j.end() || !points->is_array()) return;
-    c.meshPoints.reserve(points->size());
-    for (const auto& point : *points) c.meshPoints.push_back(jsonToVec3(point));
+    loadReflected(j, c);
+    // The tree is derived from the triangles, so it is never written to disk
+    // where it could disagree. Rebuilt here rather than by the first caller that
+    // needs it: a query is not a tick, and in the editor nothing ticks at all.
+    rebuildMeshBvh(c);
 }
 
 namespace {
@@ -342,18 +385,10 @@ std::vector<UnresolvedRef> takeUnresolvedRefs() {
 UnresolvedScope::~UnresolvedScope() { takeUnresolvedRefs(); }
 
 nlohmann::json save(const Mesh& m, const ResourceManager& resources) {
-    return {
-        {"mesh",        m.mesh     ? resources.get(m.mesh).name()     : std::string{}},
-        {"material",    m.material ? resources.get(m.material).name() : std::string{}},
-        {"visible",     m.visible},
-        {"castShadows", m.castShadows},
-    };
+    return saveReflected(m, resources);
 }
 void load(const nlohmann::json& j, Mesh& m, const ResourceManager& resources) {
-    m.mesh        = resolveAssetRef<MeshAsset>    (resources, j.value("mesh",     std::string{}), "mesh", "mesh");
-    m.material    = resolveAssetRef<MaterialAsset>(resources, j.value("material", std::string{}), "material", "material");
-    m.visible     = j.value("visible",     m.visible);
-    m.castShadows = j.value("castShadows", m.castShadows);
+    loadReflected(j, m, resources);
 }
 void emitAssetRefs(const Mesh& m, AssetRefs& refs) {
     if (m.mesh)     refs.meshes.push_back(m.mesh);
@@ -361,22 +396,10 @@ void emitAssetRefs(const Mesh& m, AssetRefs& refs) {
 }
 
 nlohmann::json save(const Animator& a, const ResourceManager& resources) {
-    return {
-        {"skeleton", a.skeleton ? resources.get(a.skeleton).name() : std::string{}},
-        {"clip",     a.clip     ? resources.get(a.clip).name()     : std::string{}},
-        {"time",        a.time},
-        {"speed",       a.speed},
-        {"playOnStart", a.playOnStart},
-        {"looping",     a.looping},
-    };
+    return saveReflected(a, resources);
 }
 void load(const nlohmann::json& j, Animator& a, const ResourceManager& resources) {
-    a.skeleton = resolveAssetRef<SkeletonAsset>     (resources, j.value("skeleton", std::string{}), "skeleton", "skeleton");
-    a.clip     = resolveAssetRef<AnimationClipAsset>(resources, j.value("clip",     std::string{}), "clip", "clip");
-    a.time        = j.value("time",        a.time);
-    a.speed       = j.value("speed",       a.speed);
-    a.playOnStart = j.value("playOnStart", a.playOnStart);
-    a.looping     = j.value("looping",     a.looping);
+    loadReflected(j, a, resources);
 }
 void emitAssetRefs(const Animator& a, AssetRefs& refs) {
     // fadeFrom is runtime state that no save writes, so it names nothing a
@@ -389,25 +412,10 @@ nlohmann::json save(const BoneSocket& s)          { return saveReflected(s); }
 void load(const nlohmann::json& j, BoneSocket& s) { loadReflected(j, s); }
 
 nlohmann::json save(const LOD& l, const ResourceManager& resources) {
-    nlohmann::json levels = nlohmann::json::array();
-    for (const LODLevel& level : l.levels) {
-        if (!level.mesh) continue;   // an unresolved level would load as a hole in the ramp
-        levels.push_back({
-            {"mesh",        resources.get(level.mesh).name()},
-            {"maxDistance", level.maxDistance},
-        });
-    }
-    return {{"levels", levels}, {"bias", l.bias}};
+    return saveReflected(l, resources);
 }
 void load(const nlohmann::json& j, LOD& l, const ResourceManager& resources) {
-    l.bias = j.value("bias", l.bias);
-    if (!j.contains("levels")) return;
-    for (const auto& entry : j["levels"]) {
-        MeshHandle mesh = resolveAssetRef<MeshAsset>(
-            resources, entry.value("mesh", std::string{}), "LOD mesh", nullptr);
-        if (!mesh) continue;
-        l.levels.push_back({mesh, entry.value("maxDistance", 0.0f)});
-    }
+    loadReflected(j, l, resources);
 }
 void emitAssetRefs(const LOD& l, AssetRefs& refs) {
     for (const LODLevel& level : l.levels) {
@@ -416,16 +424,10 @@ void emitAssetRefs(const LOD& l, AssetRefs& refs) {
 }
 
 nlohmann::json save(const Decal& d, const ResourceManager& resources) {
-    return {
-        {"material",  d.material ? resources.get(d.material).name() : std::string{}},
-        {"angleFade", d.angleFade},
-        {"opacity",   d.opacity},
-    };
+    return saveReflected(d, resources);
 }
 void load(const nlohmann::json& j, Decal& d, const ResourceManager& resources) {
-    d.material  = resolveAssetRef<MaterialAsset>(resources, j.value("material", std::string{}), "material", "material");
-    d.angleFade = j.value("angleFade", d.angleFade);
-    d.opacity   = j.value("opacity",   d.opacity);
+    loadReflected(j, d, resources);
 }
 void emitAssetRefs(const Decal& d, AssetRefs& refs) {
     if (d.material) refs.materials.push_back(d.material);
@@ -438,26 +440,10 @@ nlohmann::json save(const ReflectionProbe& p)          { return saveReflected(p)
 void load(const nlohmann::json& j, ReflectionProbe& p) { loadReflected(j, p); }
 
 nlohmann::json save(const AudioSource& s, const ResourceManager& resources) {
-    return {
-        {"clip",        s.clip ? resources.get(s.clip).name() : std::string{}},
-        {"volume",      s.volume},
-        {"pitch",       s.pitch},
-        {"loop",        s.loop},
-        {"spatial",     s.spatial},
-        {"playOnStart", s.playOnStart},
-        {"minDistance", s.minDistance},
-        {"maxDistance", s.maxDistance},
-    };
+    return saveReflected(s, resources);
 }
 void load(const nlohmann::json& j, AudioSource& s, const ResourceManager& resources) {
-    s.clip        = resolveAssetRef<AudioClipAsset>(resources, j.value("clip", std::string{}), "sound", "clip");
-    s.volume      = j.value("volume",      s.volume);
-    s.pitch       = j.value("pitch",       s.pitch);
-    s.loop        = j.value("loop",        s.loop);
-    s.spatial     = j.value("spatial",     s.spatial);
-    s.playOnStart = j.value("playOnStart", s.playOnStart);
-    s.minDistance = j.value("minDistance", s.minDistance);
-    s.maxDistance = j.value("maxDistance", s.maxDistance);
+    loadReflected(j, s, resources);
 }
 void emitAssetRefs(const AudioSource& s, AssetRefs& refs) {
     if (s.clip) refs.sounds.push_back(s.clip);
@@ -530,7 +516,6 @@ nlohmann::json save(const Animation& a) {
         {"position", saveTrack(a.positionTrack, [](const glm::vec3& v) { return vec3ToJson(v); })},
         {"rotation", saveTrack(a.rotationTrack, [](const glm::quat& q) { return quatToJson(q); })},
         {"scale",    saveTrack(a.scaleTrack,    [](const glm::vec3& v) { return vec3ToJson(v); })},
-        {"time",        a.time},
         {"length",      a.length},
         {"speed",       a.speed},
         {"playOnStart", a.playOnStart},
@@ -542,7 +527,6 @@ void load(const nlohmann::json& j, Animation& a) {
     if (j.contains("position")) loadTrack(j["position"], a.positionTrack, [](const nlohmann::json& v) { return jsonToVec3(v); });
     if (j.contains("rotation")) loadTrack(j["rotation"], a.rotationTrack, [](const nlohmann::json& v) { return jsonToQuat(v); });
     if (j.contains("scale"))    loadTrack(j["scale"],    a.scaleTrack,    [](const nlohmann::json& v) { return jsonToVec3(v); });
-    a.time        = j.value("time",        a.time);
     a.length      = j.value("length",      a.length);
     a.speed       = j.value("speed",       a.speed);
     a.playOnStart = j.value("playOnStart", a.playOnStart);
@@ -614,10 +598,9 @@ class BehaviorJsonReader : public BehaviorFieldVisitor {
             if (cur().contains(name)) v = jsonToVec3(cur()[name], v);
         }
         void field(const char* name, std::string& v) override {
-            // Type-checked, following enumField's keep-current rule rather than
-            // the numeric leaves' bare get<>(): free text is the field a
-            // hand-edited scene is likeliest to have got wrong, and a throw here
-            // costs the whole load rather than one value.
+            // Type-checked, keeping the current value rather than throwing: free
+            // text is what a hand-edited scene is likeliest to have got wrong, and
+            // a throw here costs the whole load rather than one value.
             if (cur().contains(name) && cur()[name].is_string()) v = cur()[name].get<std::string>();
         }
 
@@ -651,12 +634,9 @@ class BehaviorJsonReader : public BehaviorFieldVisitor {
 nlohmann::json save(const ScriptComponent& sc) {
     nlohmann::json behaviors = nlohmann::json::array();
 
-    // A held one goes back at the position it was read from, not on the end.
-    // This list's order is the order the behaviors run in, so appending would
-    // rewrite it on the first save of a scene opened while its module was
-    // missing. Written back exactly as read, because the code that knows what
-    // these properties mean is in that module; parsed rather than emitted as a
-    // string so the file stays one document.
+    // A held one goes back where it was read from: this list's order is the order
+    // the behaviors run in. Written back exactly as read, because the module that
+    // knows what these properties mean is the one that is missing.
     const auto emitHeldAt = [&](size_t position) {
         for (const UnknownBehavior& kept : sc.unknown) {
             if (kept.index != position) continue;

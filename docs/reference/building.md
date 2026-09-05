@@ -17,6 +17,24 @@ cd vkmEngine
 git submodule update --init --recursive
 ```
 
+### What the clone does not carry
+
+`assets/` is ignored, and the engine ships none of the art it was developed
+against - no models, no environment maps. A clone builds and runs without them;
+what is missing is only what a scene names, so an empty `assets/envs/` means the
+environment picker lists nothing rather than the editor failing to open. The two
+examples that build their worlds in code need nothing at all, and the one that
+does not - `physics_lab` - carries its own source art and asset recipes inside
+the project, which is why those two directories are the standing exceptions in
+`.gitignore`.
+
+Test art is whatever you point it at. What the engine was developed against, if
+you want the same: Khronos' glTF sample models (`DamagedHelmet`,
+`DragonAttenuation`, `Sponza`, `BrainStem`) and any equirectangular `.hdr`
+dropped in `assets/envs/`. The one fixture the repo does own is generated rather
+than stored - `tools/make_multimesh_rig.py <out.gltf>` writes the multi-mesh rig
+that `docs/reference/system/animation.md` describes.
+
 ## Build Commands
 
 An in-source build is refused rather than warned about, and a configure that
@@ -249,7 +267,6 @@ shaders/
   ibl/          # equirect/, irradiance/, prefilter/, brdf/  (IBL bake)
   gtao/  bloom/  skybox/  composite/  grid/
   clustering/  fog/  dof/  decal/  particle/  irradiance/  ui/
-  _generated/   # engine_config.glsl, generated from engine_config.h at configure time
 ```
 
 Each folder contains the program's source files, named after the GL stage they
@@ -269,10 +286,10 @@ Vkm::GL::Shader pbr("shaders/forward/pbr");
 ```
 
 The engine's own shader preprocessor resolves `#include` directives between
-`.shader`/`.glsl` files (cycle-safe). `shaders/_generated/engine_config.glsl` is
-derived from `engine_config.h` so cross-language constants have one C++ source -
-though the forward shaders currently still hand-define their copies (see
-[lighting.md](system/lighting.md#limits-and-the-generated-constants-contract)).
+`.shader`/`.glsl` files (cycle-safe). It also prepends a prelude - the
+`#version` and the engine's cross-language constants - which `GLBackend` builds
+from the C++ constants themselves; see
+[lighting.md](system/lighting.md#limits-and-the-shader-prelude).
 
 ## Compiler Flags
 

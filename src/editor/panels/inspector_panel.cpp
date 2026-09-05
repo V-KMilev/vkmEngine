@@ -42,8 +42,8 @@
 #include "framework/editor_commands.h"
 #include "framework/editor_common.h"
 #include "framework/prefab_overrides.h"
-#include "generator/light_generators.h"
-#include "generator/lod_generator.h"
+#include "resource/generate/light_generators.h"
+#include "resource/generate/lod_generator.h"
 #include "io/asset/asset_library.h"
 #include "io/project_paths.h"
 #include "io/scene/scene_serializer.h"
@@ -70,6 +70,27 @@
 namespace Vkm::Engine {
 
 namespace {
+
+/**
+ * @brief A component's heading, accent and history-entry text, from one row.
+ *
+ * The three labels are `static inline` strings rather than literals because
+ * they are built from the heading; the commands they end up in hold a
+ * `const char*`, which is why they have to live as long as the program does.
+ */
+template <typename T>
+struct CardInfo;
+
+#define VKM_INSPECTOR_CARD_INFO(Component, method, title, accent)              \
+    template <> struct CardInfo<Component> {                                   \
+        static constexpr const char* TITLE = title;                            \
+        static const ImVec4& accentColor() { return EditorStyle::Accent::accent; } \
+        static inline const std::string ADD    = std::string("Add ")    + title; \
+        static inline const std::string EDIT   = std::string("Edit ")   + title; \
+        static inline const std::string REMOVE = std::string("Remove ") + title; \
+    };
+VKM_INSPECTOR_CARDS(VKM_INSPECTOR_CARD_INFO)
+#undef VKM_INSPECTOR_CARD_INFO
 
 // The scale between the entity a collider is authored on and the node the art
 // actually hangs from. An import puts the mesh on a child with a unit fix-up of
@@ -99,35 +120,31 @@ constexpr float CLIP_PLANE_SEPARATION = 0.001f;
 // bridge serialization uses).
 class BehaviorFieldInspector : public BehaviorFieldVisitor {
     public:
+        // Through propRow like every hand-written card row: it owns the label
+        // column, the id scope and the width, so a behavior's fields line up
+        // with the component fields above them by construction rather than by
+        // two pieces of code agreeing.
         void field(const char* name, float& v) override {
-            drawPropertyLabel(name);
-            ImGui::SetNextItemWidth(-1.0f);
-            if (ImGui::DragFloat(widgetId(name).text, &v, 0.1f)) m_changed = true;
+            m_changed |= propRow(name, nullptr,
+                [&] { return ImGui::DragFloat("##v", &v, 0.1f); });
         }
         void field(const char* name, int& v) override {
-            drawPropertyLabel(name);
-            ImGui::SetNextItemWidth(-1.0f);
-            if (ImGui::DragInt(widgetId(name).text, &v)) m_changed = true;
+            m_changed |= propRow(name, nullptr, [&] { return ImGui::DragInt("##v", &v); });
         }
         void field(const char* name, bool& v) override {
-            drawPropertyLabel(name);
-            if (ImGui::Checkbox(widgetId(name).text, &v)) m_changed = true;
+            m_changed |= propRow(name, nullptr, [&] { return ImGui::Checkbox("##v", &v); });
         }
         void field(const char* name, glm::vec3& v) override {
-            drawPropertyLabel(name);
-            ImGui::SetNextItemWidth(-1.0f);
-            if (ImGui::DragFloat3(widgetId(name).text, glm::value_ptr(v), 0.1f)) m_changed = true;
+            m_changed |= propRow(name, nullptr,
+                [&] { return ImGui::DragFloat3("##v", glm::value_ptr(v), 0.1f); });
         }
         void field(const char* name, std::string& v) override {
-            drawPropertyLabel(name);
-            ImGui::SetNextItemWidth(-1.0f);
-            if (ImGui::InputText(widgetId(name).text, &v)) m_changed = true;
+            m_changed |= propRow(name, nullptr, [&] { return ImGui::InputText("##v", &v); });
         }
 
         void enumField(const char* name, int& index, const char* const* names, std::size_t count) override {
-            drawPropertyLabel(name);
-            ImGui::SetNextItemWidth(-1.0f);
-            if (ImGui::Combo(widgetId(name).text, &index, names, static_cast<int>(count))) m_changed = true;
+            m_changed |= propRow(name, nullptr,
+                [&] { return ImGui::Combo("##v", &index, names, static_cast<int>(count)); });
         }
 
         // Asset reference: a combo over what the project's library holds of that
@@ -136,18 +153,12 @@ class BehaviorFieldInspector : public BehaviorFieldVisitor {
         // block on save, which is what makes the asset load in the first place.
         void assetField(const char* name, std::string& assetName, AssetType type) override {
             drawPropertyLabel(name);
-            ImGui::SetNextItemWidth(-1.0f);
-            if (ImGui::BeginCombo(widgetId(name).text, assetName.empty() ? "(none)" : assetName.c_str())) {
+            ImGui::PushID(name);
+            if (ImGui::BeginCombo("##v", assetName.empty() ? "(none)" : assetName.c_str())) {
                 // Built inside the combo, like pickAsset's: closed, it costs
                 // nothing; open, it is the library as it stands this frame.
                 static char s_assetFilter[48] = {};
-                if (ImGui::IsWindowAppearing()) {
-                    s_assetFilter[0] = '\0';
-                    ImGui::SetKeyboardFocusHere();
-                }
-                ImGui::SetNextItemWidth(-1.0f);
-                ImGui::InputTextWithHint("##assetFilter", "Search...", s_assetFilter, sizeof(s_assetFilter));
-                ImGui::Separator();
+                popupSearchField("##assetFilter", s_assetFilter, sizeof(s_assetFilter));
 
                 if (ImGui::Selectable("(none)", assetName.empty())) {
                     assetName.clear();
@@ -168,6 +179,7 @@ class BehaviorFieldInspector : public BehaviorFieldVisitor {
             if (!assetName.empty() && !AssetLibrary::get().find(type, assetName)) {
                 ImGui::TextColored(EditorStyle::DANGER, "Not in this project's library.");
             }
+            ImGui::PopID();
         }
 
         // Nested struct: a collapsing tree node. When open it pushes an ID scope,
@@ -179,38 +191,6 @@ class BehaviorFieldInspector : public BehaviorFieldVisitor {
         void endStruct() override { ImGui::TreePop(); }
 
         bool changed() const { return m_changed; }
-
-    private:
-        /**
-         * @brief One field's hidden ImGui label, owned by the expression using it.
-         *
-         * ImGui takes the label as the widget's identity, so it has to outlive
-         * the call. Returned by value rather than written into a member: a
-         * shared buffer would alias the moment two labels were built in one
-         * expression, and nothing about the signature would say so.
-         *
-         * The buffer is sized for a behavior field name, which is a C++
-         * identifier, plus the "##" that hides it.
-         */
-        struct WidgetId {
-            char text[80] = {};
-        };
-
-        /**
-         * @brief Build the hidden label for field @p name.
-         *
-         * Uniqueness across behaviors comes from the per-behavior PushID in
-         * drawScriptSection, so this only has to separate one behavior's fields
-         * from each other.
-         *
-         * @param name Reflected field name.
-         * @return The label, valid for as long as the returned value lives.
-         */
-        static WidgetId widgetId(const char* name) {
-            WidgetId id;
-            snprintf(id.text, sizeof(id.text), "##%s", name);
-            return id;
-        }
 
     private:
         bool m_changed = false;
@@ -281,13 +261,7 @@ bool pickBone(const char* comboId, const SkeletonAsset* skeleton, std::string& b
             ImGui::CloseCurrentPopup();
         } else {
             static char s_boneFilter[48] = {};
-            if (ImGui::IsWindowAppearing()) {
-                s_boneFilter[0] = '\0';
-                ImGui::SetKeyboardFocusHere();
-            }
-            ImGui::SetNextItemWidth(-1.0f);
-            ImGui::InputTextWithHint("##boneFilter", "Search...", s_boneFilter, sizeof(s_boneFilter));
-            ImGui::Separator();
+            popupSearchField("##boneFilter", s_boneFilter, sizeof(s_boneFilter));
 
             // Clearing the bone is a state a socket passes through on its way from
             // one joint to another, so it is offered rather than reachable only by
@@ -377,13 +351,15 @@ constexpr bool CARD_OWNS_MORE_THAN_ITSELF = std::is_same_v<T, Ragdoll>;
 // receives the live component and returns whether any field was edited.
 // Ordering matters: the edit push happens before endComponentCard, the remove
 // push after.
+//
+// The heading, the accent and both history entries come from CardInfo<T>, so a
+// card states what it is once - in the list in the header - rather than four
+// times in its own call.
 template <typename T, typename DrawFields>
 void editComponentCard(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id,
-                       const char* title, const ImVec4& accent,
-                       const char* editLabel, const char* removeLabel,
                        DrawFields drawFields) {
     bool remove = false;
-    const bool open = beginComponentCard(title, accent, true,
+    const bool open = beginComponentCard(CardInfo<T>::TITLE, CardInfo<T>::accentColor(), true,
                                          CARD_OWNS_MORE_THAN_ITSELF<T> ? nullptr : &remove);
     if (open) {
         drawOverrideRows(scene, resources, state, id, PrefabOverrides::COMPONENT_KEY<T>);
@@ -392,7 +368,8 @@ void editComponentCard(Scene& scene, ResourceManager& resources, EditorState& st
         const T before = component;  // pre-edit value for the undo command
         const bool changed = drawFields(component);
         if (changed) {
-            pushEdit<T>(scene, resources, state, id, before, component, editLabel);
+            pushEdit<T>(scene, resources, state, id, before, component,
+                        CardInfo<T>::EDIT.c_str());
         }
     }
     endComponentCard();
@@ -400,9 +377,10 @@ void editComponentCard(Scene& scene, ResourceManager& resources, EditorState& st
         // Snapshot before removal so undo can restore the exact component.
         T snap = scene.get<T>(id);
         scene.remove<T>(id);
-        state.commands.push(std::make_unique<RemoveComponentCommand<T>>(id, std::move(snap), removeLabel));
+        state.commands.push(std::make_unique<RemoveComponentCommand<T>>(
+            id, std::move(snap), CardInfo<T>::REMOVE.c_str()));
         state.markSceneDirty();
-        PrefabOverrides::warnComponentIsPrefabs(scene, state, id, title,
+        PrefabOverrides::warnComponentIsPrefabs(scene, state, id, CardInfo<T>::TITLE,
                                                 "comes back from the prefab on the next load");
     }
 }
@@ -487,35 +465,15 @@ void InspectorPanel::draw(EditorContext& ec) {
     ImGui::Separator();
     ImGui::Spacing();
 
-    drawPrefabSection(scene, state, id);
+    drawPrefabSection(ec, id);
 
-    if (scene.has<Transform>(id))  drawTransformSection(scene, ctx.resources, state, id);
-    if (scene.has<Mesh>(id))       drawMeshSection(scene, ctx.resources, state, id);
-    if (scene.has<Light>(id))      drawLightSection(scene, ctx.resources, state, id);
-    if (scene.has<Rigidbody>(id))  drawRigidbodySection(scene, ctx.resources, state, id);
-    if (scene.has<Collider>(id))   drawColliderSection(scene, ctx.resources, state, id);
-    if (scene.has<CharacterController>(id))
-        drawCharacterControllerSection(scene, ctx.resources, state, id);
-    if (scene.has<Joint>(id))      drawJointSection(scene, ctx.resources, state, id);
-    if (scene.has<Ragdoll>(id))    drawRagdollSection(scene, ctx.resources, state, id);
-    if (scene.has<Camera>(id))     drawCameraSection(ec, id);
-    if (scene.has<ReflectionProbe>(id)) drawReflectionProbeSection(scene, ctx.resources, state, id);
-    if (scene.has<Decal>(id))          drawDecalSection(scene, ctx.resources, state, id);
-    if (scene.has<ParticleEmitter>(id)) drawParticleSection(ec, id);
-    if (scene.has<AudioSource>(id))     drawAudioSourceSection(ec, id);
-    if (scene.has<AudioListener>(id))   drawAudioListenerSection(ec, id);
-    if (scene.has<IrradianceVolume>(id)) drawIrradianceVolumeSection(scene, ctx.resources, state, id);
-    if (scene.has<LOD>(id))            drawLODSection(scene, ctx.resources, state, id);
-    if (scene.has<Animation>(id))  drawAnimationSection(ec, id);
-    if (scene.has<Animator>(id))   drawAnimatorSection(ec, id);
-    if (scene.has<BoneSocket>(id)) drawBoneSocketSection(scene, ctx.resources, state, id);
-    if (scene.has<ScriptComponent>(id)) drawScriptSection(scene, state, id);
-    if (scene.has<UICanvas>(id))   drawUICanvasSection(scene, ctx.resources, state, id);
-    if (scene.has<UIElement>(id))  drawUIElementSection(scene, ctx.resources, state, id);
-    if (scene.has<UIImage>(id))    drawUIImageSection(scene, ctx.resources, state, id);
-    if (scene.has<UIText>(id))     drawUITextSection(scene, ctx.resources, state, id);
-    if (scene.has<UIButton>(id))   drawUIButtonSection(scene, ctx.resources, state, id);
-    if (scene.has<Hierarchy>(id))  drawHierarchySection(scene, state, id);
+    // One walk over the card list, in its order: these rows and the header's
+    // declarations both expand from VKM_INSPECTOR_CARDS, so a card cannot be
+    // declared and left undrawn.
+#define VKM_INSPECTOR_CARD_DRAW(Component, method, title, accent) \
+    if (scene.has<Component>(id)) method(ec, id);
+    VKM_INSPECTOR_CARDS(VKM_INSPECTOR_CARD_DRAW)
+#undef VKM_INSPECTOR_CARD_DRAW
 
     ImGui::Spacing();
     ImGui::Separator();
@@ -651,11 +609,12 @@ void InspectorPanel::drawIdentityHeader(Scene& scene, ResourceManager& resources
     drawWireIdentity(scene, id);
 }
 
-void InspectorPanel::drawUICanvasSection(Scene& scene, ResourceManager& resources,
-                                         EditorState& state, EntityId id) {
-    editComponentCard<UICanvas>(scene, resources, state, id, "UI Canvas", EditorStyle::Accent::UI,
-                                "Edit UI Canvas", "Remove UI Canvas",
-        [&](UICanvas& c) {
+void InspectorPanel::drawUICanvasSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState& state = ec.state;
+
+    editComponentCard<UICanvas>(scene, resources, state, id, [&](UICanvas& c) {
             bool changed = false;
             changed |= propEnumCombo("Scale Mode", c.scaleMode);
             changed |= propDrag("Reference Height", &c.referenceHeight, 1.0f, 1.0f, 8192.0f, "%.0f",
@@ -667,11 +626,12 @@ void InspectorPanel::drawUICanvasSection(Scene& scene, ResourceManager& resource
         });
 }
 
-void InspectorPanel::drawUIElementSection(Scene& scene, ResourceManager& resources,
-                                          EditorState& state, EntityId id) {
-    editComponentCard<UIElement>(scene, resources, state, id, "UI Element", EditorStyle::Accent::UI,
-                                 "Edit UI Element", "Remove UI Element",
-        [&](UIElement& e) {
+void InspectorPanel::drawUIElementSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState& state = ec.state;
+
+    editComponentCard<UIElement>(scene, resources, state, id, [&](UIElement& e) {
             bool changed = false;
             changed |= propRow("Anchor", "Parent anchor point, 0..1 (top-left to bottom-right).",
                 [&] { return ImGui::DragFloat2("##v", glm::value_ptr(e.anchor), 0.005f, 0.0f, 1.0f, "%.3f", PROP_CLAMP); });
@@ -682,6 +642,10 @@ void InspectorPanel::drawUIElementSection(Scene& scene, ResourceManager& resourc
             changed |= propRow("Size", "Element size, in reference pixels.",
                 [&] { return ImGui::DragFloat2("##v", glm::value_ptr(e.size), 0.5f, 0.0f, 8192.0f, "%.1f", PROP_CLAMP); });
             changed |= propCheckbox("Visible", &e.visible, "Hides this element and its whole subtree.");
+            changed |= propCheckbox("Blocks pointer", &e.blocksPointer,
+                "Stops a click reaching what is behind. Off for a decorative "
+                "overlay meant to be clicked through. Only consulted on an "
+                "element that draws - an image or a button.");
 
             // The default outcome of Create > UI with nothing selected; two
             // lines, like the Bone Socket card: what is wrong, then the fix.
@@ -693,22 +657,24 @@ void InspectorPanel::drawUIElementSection(Scene& scene, ResourceManager& resourc
         });
 }
 
-void InspectorPanel::drawUIImageSection(Scene& scene, ResourceManager& resources,
-                                        EditorState& state, EntityId id) {
-    editComponentCard<UIImage>(scene, resources, state, id, "UI Image", EditorStyle::Accent::UI,
-                               "Edit UI Image", "Remove UI Image",
-        [&](UIImage& i) {
+void InspectorPanel::drawUIImageSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState& state = ec.state;
+
+    editComponentCard<UIImage>(scene, resources, state, id, [&](UIImage& i) {
             const bool changed = propColor4("Color", glm::value_ptr(i.color));
             warnNoUIElement(scene, id);
             return changed;
         });
 }
 
-void InspectorPanel::drawUITextSection(Scene& scene, ResourceManager& resources,
-                                       EditorState& state, EntityId id) {
-    editComponentCard<UIText>(scene, resources, state, id, "UI Text", EditorStyle::Accent::UI,
-                              "Edit UI Text", "Remove UI Text",
-        [&](UIText& t) {
+void InspectorPanel::drawUITextSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState& state = ec.state;
+
+    editComponentCard<UIText>(scene, resources, state, id, [&](UIText& t) {
             bool changed = false;
             changed |= propString("Text", t.text);
             changed |= propString("Font", t.font, "Baked SDF font asset name (e.g. ui:roboto).");
@@ -736,11 +702,12 @@ void InspectorPanel::drawUITextSection(Scene& scene, ResourceManager& resources,
         });
 }
 
-void InspectorPanel::drawUIButtonSection(Scene& scene, ResourceManager& resources,
-                                         EditorState& state, EntityId id) {
-    editComponentCard<UIButton>(scene, resources, state, id, "UI Button", EditorStyle::Accent::UI,
-                                "Edit UI Button", "Remove UI Button",
-        [&](UIButton& b) {
+void InspectorPanel::drawUIButtonSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState& state = ec.state;
+
+    editComponentCard<UIButton>(scene, resources, state, id, [&](UIButton& b) {
             bool changed = false;
             changed |= propString("Event Id", b.eventId, "Identifier the UIClickEvent carries when this button fires.");
             changed |= propCheckbox("Interactable", &b.interactable);
@@ -775,14 +742,8 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         // Type-to-narrow: 16+ component types no longer fit one eyeful.
         // Focused on open, like the Hierarchy filter.
         static char s_componentFilter[48] = {};
-        if (ImGui::IsWindowAppearing()) {
-            s_componentFilter[0] = '\0';
-            ImGui::SetKeyboardFocusHere();
-        }
-        ImGui::SetNextItemWidth(EditorStyle::px(200.0f));
-        ImGui::InputTextWithHint("##compFilter", "Search...",
-                                 s_componentFilter, sizeof(s_componentFilter));
-        ImGui::Separator();
+        popupSearchField("##compFilter", s_componentFilter, sizeof(s_componentFilter),
+                         EditorStyle::px(200.0f));
         // The line above the button is gone by the time the menu is open, so the
         // add says it again, naming what was added.
         const auto warnPrefabOnly = [&](const char* label) {
@@ -804,11 +765,12 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
             sectionDrawn   = true;
         };
 
-        // Each add routes through AddComponentCommand so undo can drop the
-        // component the user just added; the type is deduced from the
-        // prototype value.
-        auto addItem = [&](const char* label, auto value, const char* addLabel) {
+        // Each add routes through AddComponentCommand so undo can drop it, and
+        // the item's text and history entry come from CardInfo - so the menu and
+        // the card it opens carry the same words by construction.
+        auto addItem = [&](auto value) {
             using T = decltype(value);
+            const char* label = CardInfo<T>::TITLE;
             if (scene.has<T>(id)) return;
             if (!matchesFilter(label, s_componentFilter)) return;
 
@@ -816,7 +778,8 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
             if (!ImGui::MenuItem(label)) return;
 
             scene.add(id, value);
-            state.commands.push(std::make_unique<AddComponentCommand<T>>(id, std::move(value), addLabel));
+            state.commands.push(std::make_unique<AddComponentCommand<T>>(
+                id, std::move(value), CardInfo<T>::ADD.c_str()));
             state.markSceneDirty();
             warnPrefabOnly(label);
         };
@@ -825,59 +788,64 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         // ecs/component/ - the menu and the tree teach one structure. Core and
         // prefab are absent: an entity is born with one, only prefabs write the other.
         section("Render");
-        addItem("Mesh", Mesh{}, "Add Mesh");
-        addItem("Light", generateLight(LightType::Point), "Add Light");
+        addItem(Mesh{});
+        addItem(generateLight(LightType::Point));
         Camera cam;
         cam.active = false;
-        addItem("Camera", cam, "Add Camera");
-        addItem("Decal", Decal{}, "Add Decal");
-        addItem("LOD", LOD{}, "Add LOD");
-        addItem("Particle Emitter", ParticleEmitter{}, "Add Particle Emitter");
-        addItem("Reflection Probe", ReflectionProbe{}, "Add Reflection Probe");
-        addItem("Irradiance Volume", IrradianceVolume{}, "Add Irradiance Volume");
+        addItem(cam);
+        addItem(Decal{});
+        addItem(LOD{});
+        addItem(ParticleEmitter{});
+        addItem(ReflectionProbe{});
+        addItem(IrradianceVolume{});
 
         section("Animation");
-        addItem("Animation", Animation{}, "Add Animation");
-        addItem("Animator", Animator{}, "Add Animator");
-        addItem("Bone Socket", BoneSocket{}, "Add Bone Socket");
+        addItem(Animation{});
+        addItem(Animator{});
+        addItem(BoneSocket{});
 
         section("Audio");
-        addItem("Audio Source", AudioSource{}, "Add Audio Source");
-        addItem("Audio Listener", AudioListener{}, "Add Audio Listener");
+        addItem(AudioSource{});
+        addItem(AudioListener{});
 
         section("Physics");
-        addItem("Rigidbody", Rigidbody{}, "Add Rigidbody");
-        addItem("Collider", Collider{}, "Add Collider");
-        addItem("Character Controller", CharacterController{}, "Add Character Controller");
-        addItem("Joint", Joint{}, "Add Joint");
-        addItem("Ragdoll", Ragdoll{}, "Add Ragdoll");
+        addItem(Rigidbody{});
+        addItem(Collider{});
+        addItem(CharacterController{});
+        addItem(Joint{});
+        addItem(Ragdoll{});
 
         section("UI");
-        addItem("UI Canvas", UICanvas{}, "Add UI Canvas");
-        addItem("UI Element", UIElement{}, "Add UI Element");
-        addItem("UI Image", UIImage{}, "Add UI Image");
-        addItem("UI Text", UIText{}, "Add UI Text");
-        addItem("UI Button", UIButton{}, "Add UI Button");
+        addItem(UICanvas{});
+        addItem(UIElement{});
+        addItem(UIImage{});
+        addItem(UIText{});
+        addItem(UIButton{});
 
         // ScriptComponent is move-only, so it cannot ride the value-copying
         // AddComponentCommand. ScriptEditCommand holds the serialized component
         // instead - the same step the Script card pushes for everything else.
         section("Script");
-        if (!scene.has<ScriptComponent>(id) && matchesFilter("Script", s_componentFilter)) {
+        if (!scene.has<ScriptComponent>(id)
+                && matchesFilter(CardInfo<ScriptComponent>::TITLE, s_componentFilter)) {
             drawPendingSection();
-            if (ImGui::MenuItem("Script")) {
+            if (ImGui::MenuItem(CardInfo<ScriptComponent>::TITLE)) {
                 scene.add(id, ScriptComponent{});
                 state.commands.push(std::make_unique<ScriptEditCommand>(
-                    id, std::string{}, ScriptEditCommand::capture(scene, id), "Add Script"));
+                    id, std::string{}, ScriptEditCommand::capture(scene, id),
+                    CardInfo<ScriptComponent>::ADD.c_str()));
                 state.markSceneDirty();
-                warnPrefabOnly("Script");
+                warnPrefabOnly(CardInfo<ScriptComponent>::TITLE);
             }
         }
         ImGui::EndPopup();
     }
 }
 
-void InspectorPanel::drawPrefabSection(Scene& scene, EditorState& state, EntityId id) {
+void InspectorPanel::drawPrefabSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    EditorState& state = ec.state;
+
     const EntityId root = PrefabOverrides::instanceRoot(scene, id);
     if (!root) return;
 
@@ -934,10 +902,14 @@ void InspectorPanel::drawPrefabSection(Scene& scene, EditorState& state, EntityI
     endComponentCard();
 }
 
-void InspectorPanel::drawTransformSection(Scene& scene, ResourceManager& resources,
-                                          EditorState& state, EntityId id) {
+void InspectorPanel::drawTransformSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState& state = ec.state;
+
     // Transform is intrinsic - no remove affordance.
-    const bool open = beginComponentCard("Transform", EditorStyle::Accent::Transform, true);
+    const bool open = beginComponentCard(CardInfo<Transform>::TITLE,
+                                         CardInfo<Transform>::accentColor(), true);
     if (open) {
         drawOverrideRows(scene, resources, state, id, PrefabOverrides::COMPONENT_KEY<Transform>);
 
@@ -976,11 +948,12 @@ void InspectorPanel::drawTransformSection(Scene& scene, ResourceManager& resourc
     endComponentCard();
 }
 
-void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
-                                     EditorState& state, EntityId id) {
-    editComponentCard<Mesh>(scene, resources, state, id, "Mesh", EditorStyle::Accent::Mesh,
-                            "Edit Mesh", "Remove Mesh",
-                            [&](Mesh& mesh) {
+void InspectorPanel::drawMeshSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState& state = ec.state;
+
+    editComponentCard<Mesh>(scene, resources, state, id, [&](Mesh& mesh) {
         bool changed = false;
 
         changed |= propCheckbox("Visible", &mesh.visible);
@@ -990,7 +963,7 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
             const auto& asset = resources.get(mesh.mesh);
             ImGui::TextDisabled("%zu verts, %zu tris",
                 asset.vertices.size(), asset.indices.size() / 3);
-            if (Math::hasValidBounds(asset.boundsMin, asset.boundsMax)) {
+            if (asset.bounds().valid()) {
                 glm::vec3 ext = asset.boundsMax - asset.boundsMin;
                 ImGui::TextDisabled("Bounds: %.1f x %.1f x %.1f", ext.x, ext.y, ext.z);
             }
@@ -1050,16 +1023,17 @@ void InspectorPanel::drawMeshSection(Scene& scene, ResourceManager& resources,
     });
 }
 
-void InspectorPanel::drawLightSection(Scene& scene, ResourceManager& resources,
-                                      EditorState& state, EntityId id) {
+void InspectorPanel::drawLightSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState& state = ec.state;
+
     // While the procedural sky is on, SkySystem writes this light's rotation,
     // colour and intensity from the Environment every frame. Asked through
     // findKeyLight so the card and the system cannot disagree which light it is.
     const bool skyDriven = scene.environment().sky.procedural && findKeyLight(scene) == id;
 
-    editComponentCard<Light>(scene, resources, state, id, "Light", EditorStyle::Accent::Light,
-                             "Edit Light", "Remove Light",
-                             [&](Light& light) {
+    editComponentCard<Light>(scene, resources, state, id, [&](Light& light) {
         bool changed = false;
 
         if (skyDriven) {
@@ -1142,11 +1116,9 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
         ImGui::SameLine();
         if (ImGui::SmallButton("Browse...")) {
             const std::filesystem::path appRoot = ProjectPaths::projectRoot();
-            m_envPicker.options().popupId    = "PickEnvHdr";
             m_envPicker.options().title      = "Pick Environment HDR";
             m_envPicker.options().root       = ProjectPaths::envs();
             m_envPicker.options().recursive  = false;
-            m_envPicker.options().kind       = AssetPicker::Kind::Files;
             m_envPicker.options().extensions = {".hdr"};
             m_envPicker.options().relativeTo = appRoot;
             m_envPicker.options().hint.clear();
@@ -1283,12 +1255,12 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
     endComponentCard();
 }
 
-void InspectorPanel::drawReflectionProbeSection(Scene& scene, ResourceManager& resources,
-                                                EditorState& state, EntityId id) {
-    editComponentCard<ReflectionProbe>(scene, resources, state, id, "Reflection Probe",
-                                       EditorStyle::Accent::Probe,
-                                       "Edit Reflection Probe", "Remove Reflection Probe",
-                                       [&](ReflectionProbe& probe) {
+void InspectorPanel::drawReflectionProbeSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState& state = ec.state;
+
+    editComponentCard<ReflectionProbe>(scene, resources, state, id, [&](ReflectionProbe& probe) {
         bool changed = false;
 
         // Box half-extents: the influence + parallax-correction box. Should
@@ -1317,12 +1289,16 @@ void InspectorPanel::drawReflectionProbeSection(Scene& scene, ResourceManager& r
     });
 }
 
-void InspectorPanel::drawDecalSection(Scene& scene, ResourceManager& resources,
-                                     EditorState& state, EntityId id) {
-    editComponentCard<Decal>(scene, resources, state, id, "Decal", EditorStyle::Accent::Mesh,
-                             "Edit Decal", "Remove Decal",
-                             [&](Decal& decal) {
+void InspectorPanel::drawDecalSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState& state = ec.state;
+
+    editComponentCard<Decal>(scene, resources, state, id, [&](Decal& decal) {
         bool changed = false;
+
+        changed |= propCheckbox("Enabled", &decal.enabled,
+                                "Off takes the projector out of the pass entirely");
 
         // The projected material: its albedo (with alpha) is what lands on the surface.
         changed |= pickAsset<MaterialAsset>("##DecalMatPick", "Material", resources, decal.material);
@@ -1345,10 +1321,7 @@ void InspectorPanel::drawParticleSection(EditorContext& ec, EntityId id) {
     Scene&           scene     = ec.frame.scene;
     ResourceManager& resources = ec.frame.resources;
 
-    editComponentCard<ParticleEmitter>(scene, resources, ec.state, id, "Particle Emitter",
-                                       EditorStyle::Accent::Light,
-                                       "Edit Particle Emitter", "Remove Particle Emitter",
-                                       [&](ParticleEmitter& e) {
+    editComponentCard<ParticleEmitter>(scene, resources, ec.state, id, [&](ParticleEmitter& e) {
         bool changed = false;
 
         changed |= propCheckbox("Emitting", &e.emitting);
@@ -1389,10 +1362,7 @@ void InspectorPanel::drawAudioSourceSection(EditorContext& ec, EntityId id) {
     Scene&           scene     = ec.frame.scene;
     ResourceManager& resources = ec.frame.resources;
 
-    editComponentCard<AudioSource>(scene, resources, ec.state, id, "Audio Source",
-                                   EditorStyle::Accent::Audio,
-                                   "Edit Audio Source", "Remove Audio Source",
-                                   [&](AudioSource& source) {
+    editComponentCard<AudioSource>(scene, resources, ec.state, id, [&](AudioSource& source) {
         bool changed = false;
 
         changed |= pickAsset<AudioClipAsset>("##SoundPick", "Clip", resources, source.clip);
@@ -1496,10 +1466,7 @@ void InspectorPanel::drawAudioListenerSection(EditorContext& ec, EntityId id) {
     Scene&           scene     = ec.frame.scene;
     ResourceManager& resources = ec.frame.resources;
 
-    editComponentCard<AudioListener>(scene, resources, ec.state, id, "Audio Listener",
-                                     EditorStyle::Accent::Audio,
-                                     "Edit Audio Listener", "Remove Audio Listener",
-                                     [&](AudioListener& listener) {
+    editComponentCard<AudioListener>(scene, resources, ec.state, id, [&](AudioListener& listener) {
         bool changed = false;
 
         changed |= propCheckbox("Active", &listener.active,
@@ -1530,12 +1497,12 @@ void InspectorPanel::drawAudioListenerSection(EditorContext& ec, EntityId id) {
     });
 }
 
-void InspectorPanel::drawIrradianceVolumeSection(Scene& scene, ResourceManager& resources,
-                                                 EditorState& state, EntityId id) {
-    editComponentCard<IrradianceVolume>(scene, resources, state, id, "Irradiance Volume",
-                                        EditorStyle::Accent::Probe,
-                                        "Edit Irradiance Volume", "Remove Irradiance Volume",
-                                        [&](IrradianceVolume& v) {
+void InspectorPanel::drawIrradianceVolumeSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState& state = ec.state;
+
+    editComponentCard<IrradianceVolume>(scene, resources, state, id, [&](IrradianceVolume& v) {
         bool changed = false;
 
         changed |= propDrag3("Box Size", glm::value_ptr(v.halfExtents), 0.1f, 0.1f, 1000.0f, "%.1f");
@@ -1557,11 +1524,12 @@ void InspectorPanel::drawIrradianceVolumeSection(Scene& scene, ResourceManager& 
     });
 }
 
-void InspectorPanel::drawRigidbodySection(Scene& scene, ResourceManager& resources,
-                                          EditorState& state, EntityId id) {
-    editComponentCard<Rigidbody>(scene, resources, state, id, "Rigidbody", EditorStyle::Accent::Physics,
-                                 "Edit Rigidbody", "Remove Rigidbody",
-                                 [&](Rigidbody& rb) {
+void InspectorPanel::drawRigidbodySection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState& state = ec.state;
+
+    editComponentCard<Rigidbody>(scene, resources, state, id, [&](Rigidbody& rb) {
         bool changed = false;
 
         changed |= propDrag("Mass", &rb.mass, 0.1f, 0.0f, 1000.0f, "%.2f");
@@ -1606,10 +1574,12 @@ void InspectorPanel::drawRigidbodySection(Scene& scene, ResourceManager& resourc
     });
 }
 
-void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resources, EditorState& state, EntityId id) {
-    editComponentCard<Collider>(scene, resources, state, id, "Collider", EditorStyle::Accent::Collider,
-                                "Edit Collider", "Remove Collider",
-                                [&](Collider& col) {
+void InspectorPanel::drawColliderSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState& state = ec.state;
+
+    editComponentCard<Collider>(scene, resources, state, id, [&](Collider& col) {
         bool changed = false;
 
         // A collider is a set of parts. A single part is editable here; a
@@ -1623,10 +1593,9 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
             changed |= drawVec3Control("Center", glm::value_ptr(part.center), 0.0f, 0.05f);
             switch (part.shape) {
                 case ColliderShape::Capsule:
-                    // The segment runs along the entity's local +Y, so the
-                    // capsule stands 2*(halfHeight + radius) tall; the total is
-                    // spelled out because that is the number an author is
-                    // matching to a model.
+                    // The segment runs along local +Y, so the capsule stands
+                    // 2*(halfHeight + radius) tall - spelled out because that is
+                    // the number an author matches to a model.
                     changed |= propDrag("Radius", &part.radius, 0.01f, 0.001f,
                                         1000.0f, "%.3f");
                     changed |= propDrag("Half Height", &part.halfHeight, 0.01f,
@@ -1662,13 +1631,9 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
             ImGui::TextDisabled("%zu parts (mesh-fitted)", col.parts.size());
         }
 
-        // Detail 1 is a single box (the scaled bounds); higher detail voxelizes
-        // the mesh into a box compound that hugs it. Entity scale is baked in,
-        // the solver ignoring Transform scale.
-        // Same problem the other way up: an import leaves the geometry on the
-        // nodes that draw, and the physics goes on the root where the Rigidbody
-        // is. Without looking down, every one of these buttons is missing on
-        // the only entity it makes sense to press them from.
+        // Detail 1 is the scaled bounds, higher a box compound hugging the mesh,
+        // with entity scale baked in because the solver ignores it. Looked for
+        // downward: an import leaves the geometry below the entity physics is on.
         const EntityId meshNode =
             HierarchyOperations::findInSelfOrDescendants<Mesh>(scene, id);
         if (meshNode && scene.get<Mesh>(meshNode).mesh) {
@@ -1677,7 +1642,7 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
                 ImGui::Spacing();
                 ImGui::TextDisabled("Shape from '%s'", scene.get<Name>(meshNode).value);
             }
-            if (Math::hasValidBounds(asset.boundsMin, asset.boundsMax)) {
+            if (asset.bounds().valid()) {
                 ImGui::Spacing();
                 propSliderInt("Detail", &m_colliderFitDetail, 1, COLLIDER_FIT_MAX_DETAIL,
                     "1 = one box; higher = a tighter box compound (more boxes = heavier)");
@@ -1689,16 +1654,13 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
                     changed = true;
                 }
 
-                // The other way to take a shape from the same mesh: the
-                // geometry itself, for something that does not move. It
-                // replaces the parts, because a fitted box compound beside it
-                // would collide twice.
+                // The other way to take a shape from the same mesh - the
+                // geometry itself, for something that does not move. It replaces
+                // the parts, which would otherwise collide twice.
                 if (ImGui::Button("Make Mesh Collider", ImVec2(-1.0f, 0.0f))) {
                     // Built beside the collider and swapped in only if it came
-                    // to something. Clearing first and hoping left an author
-                    // with no collider at all when the mesh had no whole
-                    // triangle in it - a button that removes what it cannot
-                    // replace.
+                    // to something: a mesh with no whole triangle would leave an
+                    // author with no collider at all.
                     const glm::vec3 scale = meshScaleRelativeTo(scene, id, meshNode);
                     Collider built;
                     built.parts.clear();
@@ -1731,22 +1693,19 @@ void InspectorPanel::drawColliderSection(Scene& scene, ResourceManager& resource
     });
 }
 
-void InspectorPanel::drawJointSection(Scene& scene, ResourceManager& resources,
-                                      EditorState& state, EntityId id) {
-    editComponentCard<Joint>(scene, resources, state, id, "Joint",
-                             EditorStyle::Accent::Physics,
-                             "Edit Joint", "Remove Joint", [&](Joint& joint) {
+void InspectorPanel::drawJointSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState& state = ec.state;
+
+    editComponentCard<Joint>(scene, resources, state, id, [&](Joint& joint) {
         bool changed = false;
 
         changed |= propEnumCombo("Type", joint.type);
 
-        // Picked from the scene rather than typed: a joint naming a slot that
-        // does not exist holds nothing and says nothing about it. Built each
-        // frame because the list is the scene, and the scene changes.
-        // Every entity, not only the named ones: a joint tied to something
-        // unnamed used to show "None", which is what an unset joint shows, and
-        // picking anything from the list then overwrote a connection the author
-        // could not see they had.
+        // Picked from the scene rather than typed, and rebuilt each frame
+        // because the list is the scene. Every entity, not only the named ones:
+        // an unnamed target reads as "None" and is overwritten unseen.
         m_jointCandidates.clear();
         m_jointCandidateLabels.clear();
         m_jointCandidateNames.clear();
@@ -1816,19 +1775,19 @@ void InspectorPanel::drawJointSection(Scene& scene, ResourceManager& resources,
     });
 }
 
-void InspectorPanel::drawRagdollSection(Scene& scene, ResourceManager& resources,
-                                        EditorState& state, EntityId id) {
-    // What the buttons asked for, run after the card rather than inside it.
-    // Building removes and re-adds the component, and clearing removes it - and
-    // the card holds a reference to it across the whole draw, which those would
-    // leave dangling for the edit it pushes afterwards.
+void InspectorPanel::drawRagdollSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState& state = ec.state;
+
+    // What the buttons asked for, run after the card rather than inside it: the
+    // card holds a reference to the component across the whole draw, and both
+    // operations remove it.
     enum class Pending { None, Build, Clear };
     Pending pending = Pending::None;
     EntityId rigNode{};
 
-    editComponentCard<Ragdoll>(scene, resources, state, id, "Ragdoll",
-                               EditorStyle::Accent::Physics,
-                               "Edit Ragdoll", "Remove Ragdoll", [&](Ragdoll& ragdoll) {
+    editComponentCard<Ragdoll>(scene, resources, state, id, [&](Ragdoll& ragdoll) {
         bool changed = false;
 
         changed |= propCheckbox("Active", &ragdoll.active,
@@ -1837,17 +1796,13 @@ void InspectorPanel::drawRagdollSection(Scene& scene, ResourceManager& resources
 
         ImGui::TextDisabled("%zu simulated bone(s)", ragdoll.bones.size());
 
-        // A model import puts the Animator on a node below the entity the
-        // physics is authored on, so the rig is looked for downward rather than
-        // demanded here - otherwise the button is dead on the entity every
-        // author would select.
         // Offered before the rig is looked for, because clearing does not need
-        // one: the bones are ordinary entities, and whether the skeleton that
-        // shaped them still loads has nothing to do with destroying them. Below
-        // the rig check it was unreachable in the one case that most wants it -
-        // a ragdoll whose skeleton went away.
+        // one: the bones are ordinary entities, and a ragdoll whose skeleton went
+        // away is the case that most wants the button.
         if (ImGui::Button("Clear", ImVec2(-1.0f, 0.0f))) pending = Pending::Clear;
 
+        // Looked for downward: an import puts the Animator below the entity the
+        // physics is authored on.
         rigNode = HierarchyOperations::findInSelfOrDescendants<Animator>(scene, id);
         const bool hasRig = rigNode
                          && scene.get<Animator>(rigNode).skeleton
@@ -1875,10 +1830,9 @@ void InspectorPanel::drawRagdollSection(Scene& scene, ResourceManager& resources
         return changed;
     });
 
-    // Both rebuild the subtree under this entity, so both are recorded the same
-    // way: what it looked like before, and what the operation left. Writing the
-    // scene and calling markSceneDirty is what design.md 2.5 names as the
-    // mutation that works on screen and silently breaks undo.
+    // Both rebuild the subtree, so both record what it looked like before and
+    // what the operation left - a scene write plus markSceneDirty is the
+    // mutation design.md 2.5 names as the one that breaks undo.
     if ((pending == Pending::Build && rigNode) || pending == Pending::Clear) {
         SubtreeSnapshot before = SubtreeSnapshot::capture(scene, id);
 
@@ -1901,9 +1855,7 @@ void InspectorPanel::drawCameraSection(EditorContext& ec, EntityId id) {
     ResourceManager& resources = ec.frame.resources;
     EditorState&     state     = ec.state;
 
-    editComponentCard<Camera>(scene, resources, state, id, "Camera", EditorStyle::Accent::Camera,
-                              "Edit Camera", "Remove Camera",
-                              [&](Camera& cam) {
+    editComponentCard<Camera>(scene, resources, state, id, [&](Camera& cam) {
         bool changed = false;
 
         changed |= propEnumCombo("Projection", cam.projection);
@@ -1958,11 +1910,12 @@ void InspectorPanel::drawCameraSection(EditorContext& ec, EntityId id) {
     });
 }
 
-void InspectorPanel::drawLODSection(Scene& scene, ResourceManager& resources,
-                                    EditorState& state, EntityId id) {
-    editComponentCard<LOD>(scene, resources, state, id, "LOD", EditorStyle::Accent::Mesh,
-                           "Edit LOD", "Remove LOD",
-                           [&](LOD& lod) {
+void InspectorPanel::drawLODSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState& state = ec.state;
+
+    editComponentCard<LOD>(scene, resources, state, id, [&](LOD& lod) {
         bool changed = false;
 
         changed |= propSlider("Bias", &lod.bias, 0.1f, 4.0f,
@@ -2002,9 +1955,7 @@ void InspectorPanel::drawAnimationSection(EditorContext& ec, EntityId id) {
     Scene&           scene     = ec.frame.scene;
     ResourceManager& resources = ec.frame.resources;
 
-    editComponentCard<Animation>(scene, resources, ec.state, id, "Animation", EditorStyle::Accent::Anim,
-                                 "Edit Animation", "Remove Animation",
-                                 [&](Animation& anim) {
+    editComponentCard<Animation>(scene, resources, ec.state, id, [&](Animation& anim) {
         // Only authoring edits (length, keyframes, Play On Start) set `changed`,
         // so play / pause / stop / scrub stay non-undoable. The snapshot does
         // hold time and playing, so an undo also restores the scrub position.
@@ -2081,9 +2032,7 @@ void InspectorPanel::drawAnimatorSection(EditorContext& ec, EntityId id) {
     Scene&           scene     = ec.frame.scene;
     ResourceManager& resources = ec.frame.resources;
 
-    editComponentCard<Animator>(scene, resources, ec.state, id, "Animator", EditorStyle::Accent::Anim,
-                                "Edit Animator", "Remove Animator",
-                                [&](Animator& animator) {
+    editComponentCard<Animator>(scene, resources, ec.state, id, [&](Animator& animator) {
         bool changed = false;
 
         changed |= pickAsset<SkeletonAsset>("##RigPick",  "Rig",  resources, animator.skeleton);
@@ -2171,12 +2120,12 @@ void InspectorPanel::drawAnimatorSection(EditorContext& ec, EntityId id) {
     });
 }
 
-void InspectorPanel::drawBoneSocketSection(Scene& scene, ResourceManager& resources,
-                                           EditorState& state, EntityId id) {
-    editComponentCard<BoneSocket>(scene, resources, state, id, "Bone Socket",
-                                  EditorStyle::Accent::Anim,
-                                  "Edit Bone Socket", "Remove Bone Socket",
-                                  [&](BoneSocket& socket) {
+void InspectorPanel::drawBoneSocketSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState& state = ec.state;
+
+    editComponentCard<BoneSocket>(scene, resources, state, id, [&](BoneSocket& socket) {
         bool changed = false;
 
         // The rig is the parent and only the parent: BoneSocketSystem writes
@@ -2230,12 +2179,12 @@ void InspectorPanel::drawBoneSocketSection(Scene& scene, ResourceManager& resour
     });
 }
 
-void InspectorPanel::drawCharacterControllerSection(Scene& scene, ResourceManager& resources,
-                                                    EditorState& state, EntityId id) {
-    editComponentCard<CharacterController>(scene, resources, state, id, "Character Controller",
-                                           EditorStyle::Accent::Physics,
-                                           "Edit Character Controller", "Remove Character Controller",
-                                           [&](CharacterController& cc) {
+void InspectorPanel::drawCharacterControllerSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    ResourceManager& resources = ec.frame.resources;
+    EditorState& state = ec.state;
+
+    editComponentCard<CharacterController>(scene, resources, state, id, [&](CharacterController& cc) {
         bool changed = false;
 
         changed |= propDrag("Jump Speed", &cc.jumpSpeed, 0.1f, 0.0f, 100.0f, "%.2f m/s");
@@ -2294,7 +2243,10 @@ void InspectorPanel::drawCharacterControllerSection(Scene& scene, ResourceManage
     });
 }
 
-void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityId id) {
+void InspectorPanel::drawScriptSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    EditorState& state = ec.state;
+
     // The field widgets write into the behavior itself, and a behavior list is
     // move-only, so there is no pair of values for the copying command path to
     // hold. The serialized component is that pair, read before anything moves it.
@@ -2308,7 +2260,8 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
     };
 
     bool remove = false;
-    const bool open = beginComponentCard("Script", EditorStyle::Accent::Script, true, &remove);
+    const bool open = beginComponentCard(CardInfo<ScriptComponent>::TITLE,
+                                         CardInfo<ScriptComponent>::accentColor(), true, &remove);
     if (open) {
         auto& sc = scene.get<ScriptComponent>(id);
 
@@ -2393,14 +2346,8 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
             } else {
                 // Same type-to-narrow affordance as Add Component.
                 static char s_behaviorFilter[48] = {};
-                if (ImGui::IsWindowAppearing()) {
-                    s_behaviorFilter[0] = '\0';
-                    ImGui::SetKeyboardFocusHere();
-                }
-                ImGui::SetNextItemWidth(EditorStyle::px(200.0f));
-                ImGui::InputTextWithHint("##behaviorFilter", "Search...",
-                                         s_behaviorFilter, sizeof(s_behaviorFilter));
-                ImGui::Separator();
+                popupSearchField("##behaviorFilter", s_behaviorFilter,
+                                 sizeof(s_behaviorFilter), EditorStyle::px(200.0f));
                 for (const std::string& name : names) {
                     if (!matchesFilter(name.c_str(), s_behaviorFilter)) continue;
                     if (ImGui::MenuItem(name.c_str())) {
@@ -2428,8 +2375,12 @@ void InspectorPanel::drawScriptSection(Scene& scene, EditorState& state, EntityI
     }
 }
 
-void InspectorPanel::drawHierarchySection(Scene& scene, EditorState& state, EntityId id) {
-    const bool open = beginComponentCard("Hierarchy", EditorStyle::Accent::Hierarchy, false);
+void InspectorPanel::drawHierarchySection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+    EditorState& state = ec.state;
+
+    const bool open = beginComponentCard(CardInfo<Hierarchy>::TITLE,
+                                         CardInfo<Hierarchy>::accentColor(), false);
     if (open) {
         const auto& h = scene.get<Hierarchy>(id);
 

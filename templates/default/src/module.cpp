@@ -1,15 +1,10 @@
-// The three entry points a host looks for in a gameplay module.
+// The entry points a host looks for in a gameplay module. What each is for is
+// documented where VKM_MODULE_ENTRY is - system/script/module_entry.h - so this
+// file shows what to write rather than repeating why.
 //
-// vkmRegisterBehaviors is required: it is how the engine learns the names in a
-// scene file map to your types. vkmBuildScene is optional - a project whose
-// world is authored in the editor sets entryScene in project.json instead, and
-// this function is then never called.
-//
-// vkmSetupNetwork is optional too, and a game played over a wire needs it: it
-// says what a joining player is given and registers any component of yours that
-// has to replicate. Without it `vkm serve` refuses to start, and the maxPlayers
-// and netPort in project.json have nothing to act on. See
-// docs/reference/system/networking.md.
+// One note the header cannot make: without vkmSetupNetwork, `vkm serve` refuses
+// to start and the maxPlayers and netPort in project.json have nothing to act
+// on. See docs/reference/system/networking.md.
 #include "system/script/behavior_registry.h"
 #include "ecs/scene.h"
 #include "ecs/component/core/name.h"
@@ -18,30 +13,19 @@
 #include "ecs/component/render/light.h"
 #include "system/script/script_component.h"
 
+#include "system/script/module_entry.h"
+
 #include "game.h"
 
-// Reported back to the host at load: it refuses a module built against a
-// different engine rather than letting a layout mismatch surface as a crash
-// somewhere unrelated. VKM_ENGINE_VERSION comes from the engine you linked, so
-// rebuilding against a new SDK is all this ever needs.
-extern "C"
-#if defined(_WIN32)
-__declspec(dllexport)
-#endif
+VKM_MODULE_ENTRY
 const char* vkmModuleEngineVersion() { return VKM_ENGINE_VERSION; }
 
-extern "C"
-#if defined(_WIN32)
-__declspec(dllexport)
-#endif
+VKM_MODULE_ENTRY
 void vkmRegisterBehaviors() {
     Vkm::Engine::BehaviorRegistry::get().registerBehavior<Game::Spinner>();
 }
 
-extern "C"
-#if defined(_WIN32)
-__declspec(dllexport)
-#endif
+VKM_MODULE_ENTRY
 void vkmBuildScene(Vkm::Engine::Scene& scene) {
     // Forward is -Z, so an unrotated camera at +Z faces the origin. Use
     // Math::computeForward to ask an orientation which way it points rather

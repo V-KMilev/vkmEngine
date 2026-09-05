@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/reflect.h"
+
 #include <vector>
 
 #include "resource/asset/mesh_asset.h"
@@ -44,3 +46,13 @@ struct LOD {
 };
 
 } // namespace Vkm::Engine
+
+VKM_REFLECT_BEGIN(::Vkm::Engine::LODLevel)
+    VKM_F(mesh),
+    VKM_F(maxDistance)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(::Vkm::Engine::LOD)
+    VKM_F(levels),
+    VKM_F(bias)
+VKM_REFLECT_END()

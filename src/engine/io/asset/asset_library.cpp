@@ -22,9 +22,11 @@ namespace {
 constexpr uint32_t MANIFEST_VERSION = 1;
 
 // Directory an asset type keeps its files in, under both library() and cooked().
-constexpr const char* TYPE_DIRS[] = {"meshes", "textures", "materials", "skeletons", "clips", "sounds"};
-static_assert(sizeof(TYPE_DIRS) / sizeof(TYPE_DIRS[0]) == static_cast<size_t>(AssetType::Count),
-              "TYPE_DIRS must stay in sync with AssetType");
+// From the one list, so there is nothing left for the static_assert that used
+// to guard this to catch: the directory and the kind are the same row now.
+#define VKM_ASSET_DIR(tag, type, name, dir) dir,
+constexpr const char* TYPE_DIRS[] = { VKM_ASSET_KINDS(VKM_ASSET_DIR) };
+#undef VKM_ASSET_DIR
 
 } // namespace
 
@@ -48,8 +50,16 @@ std::filesystem::path AssetLibrary::recipePath(AssetType type, const std::string
     return ProjectPaths::library() / TYPE_DIRS[static_cast<size_t>(type)] / (uidFor(type, name) + ".json");
 }
 
-std::filesystem::path AssetLibrary::cookedPath(AssetType type, const std::string& name) {
-    return ProjectPaths::cooked() / TYPE_DIRS[static_cast<size_t>(type)] / (uidFor(type, name) + ".vkmc");
+std::filesystem::path AssetLibrary::cookedPath(AssetType type, const std::string& name,
+                                               uint64_t recipeHash) {
+    // The subject's uid stays in the name ahead of the key, so a cooked
+    // directory can still be read by a person: it says which asset a file
+    // belongs to, and the key beside it says which version of it.
+    std::array<char, 17> key{};
+    std::snprintf(key.data(), key.size(), "%016llx",
+                  static_cast<unsigned long long>(recipeHash));
+    return ProjectPaths::cooked() / TYPE_DIRS[static_cast<size_t>(type)]
+         / (uidFor(type, name) + "-" + key.data() + ".vkmc");
 }
 
 void AssetLibrary::load() {
@@ -83,8 +93,7 @@ void AssetLibrary::load() {
     for (const auto& entry : *assets) {
         AssetRecord r;
         const std::string typeStr = entry.value("type", std::string{});
-        r.type = Reflect::enumFromName<AssetType>(typeStr);
-        if (Reflect::enumName(r.type) != typeStr) {   // unknown tag falls back to value 0
+        if (!Reflect::enumFromNameChecked(typeStr, r.type)) {
             LOG_WARNING("Asset library: entry with unknown type '%s', skipping", typeStr.c_str());
             continue;
         }

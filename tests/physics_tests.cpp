@@ -85,7 +85,7 @@ void testRaycastFilters() {
     std::printf("Raycast - filters and ordering:\n");
 
     Scene scene;
-    const EntityId far  = addBody(scene, {5.0f, 0.0f, 0.0f}, ColliderShape::Box);
+    const EntityId farBox = addBody(scene, {5.0f, 0.0f, 0.0f}, ColliderShape::Box);
     const EntityId near_ = addBody(scene, {2.0f, 0.0f, 0.0f}, ColliderShape::Box);
     RayHit hit;
 
@@ -98,7 +98,7 @@ void testRaycastFilters() {
     skipNear.ignore = near_;
     check("ignore skips that entity",
           raycast(scene, {0,0,0}, {1,0,0}, 100.0f, hit, skipNear)
-              && hit.entity == far);
+              && hit.entity == farBox);
 
     QueryFilter dynamicOnly;
     dynamicOnly.hitStatic = false;
@@ -107,7 +107,7 @@ void testRaycastFilters() {
 
     scene.get<Collider>(near_).isTrigger = true;
     check("a trigger is passed through by default",
-          raycast(scene, {0,0,0}, {1,0,0}, 100.0f, hit) && hit.entity == far);
+          raycast(scene, {0,0,0}, {1,0,0}, 100.0f, hit) && hit.entity == farBox);
     QueryFilter withTriggers;
     withTriggers.hitTriggers = true;
     check("hitTriggers sees it",
@@ -117,7 +117,7 @@ void testRaycastFilters() {
 
     scene.get<Collider>(near_).enabled = false;
     check("a disabled collider is not in the query",
-          raycast(scene, {0,0,0}, {1,0,0}, 100.0f, hit) && hit.entity == far);
+          raycast(scene, {0,0,0}, {1,0,0}, 100.0f, hit) && hit.entity == farBox);
 }
 
 // A sweep answers a different question from a ray: not whether something is in
@@ -408,11 +408,9 @@ void testCollisionLayers() {
     check("  leaving the owner colliding with everything else",
           (ownerMask & ~boneLayer) == ~boneLayer);
 
-    // And the bones do not hit each other. Each capsule spans its bone to that
-    // bone's child, so limbs are built overlapping; a rig that self-collides
-    // spends its first tick resolving interpenetration it was authored with and
-    // throws itself apart. A joint already spares adjacent bones - this is what
-    // spares one thigh from the other.
+    // And the bones do not hit each other: each capsule spans its bone to that
+    // bone's child, so limbs are built overlapping and a rig that self-collides
+    // spends its first tick throwing itself apart.
     bool anyBoneSelfCollides = false;
     for (const RagdollBone& bone : rigged.get<Ragdoll>(owner).bones) {
         const Rigidbody& body = rigged.get<Rigidbody>(bone.body);
@@ -963,24 +961,17 @@ void testRagdoll() {
     check("clearing a ragdoll destroys its bodies",
           !scene.has<Ragdoll>(rig) && scene.entityCount() == before - 5);
 
-    // And so does destroying the character. The hierarchy takes the group node
-    // and the bones under it, but a bone that something moved out of the group
-    // is not covered by that, which is what the observer is for - so this has
-    // to hold whether or not the two ever disagree.
+    // And so does destroying the character: the hierarchy takes the group node and
+    // the bones under it, but a bone moved out of the group is the observer's job -
+    // so this has to hold whether or not the two ever disagree.
     Scene owned;
     const EntityId doomed = owned.createEntity();
     owned.add<Transform>(doomed, Transform{});
     buildRagdoll(owned, doomed, skeleton);
 
     RagdollSystem lifetime;
-    ResourceManager ownedRes;
-    Clock ownedClock;
-    EventBus ownedEvents;
-    WindowManager ownedWindow;
-    InputMap ownedInput;
-    NetSession ownedNet;
-    FrameContext ownedCtx{owned, ownedRes, ownedClock, ownedEvents,
-                          ownedWindow, ownedInput, ownedNet};
+    TestFrame ownedFrame(owned);
+    FrameContext& ownedCtx = ownedFrame.ctx;
     lifetime.init(ownedCtx);
 
     const size_t withRagdoll = owned.entityCount();
@@ -1007,13 +998,8 @@ void testRagdollFallsTwice() {
     check("a rig to knock down", buildRagdoll(scene, rig, makeTestRig()) == 4);
 
     RagdollSystem ragdolls;
-    ResourceManager resources;
-    Clock clock;
-    EventBus events;
-    WindowManager window;
-    InputMap input;
-    NetSession net;
-    FrameContext ctx{scene, resources, clock, events, window, input, net};
+    TestFrame frame(scene);
+    FrameContext& ctx = frame.ctx;
     ragdolls.init(ctx);
 
     const EntityId hips = scene.get<Ragdoll>(rig).bones[0].body;
@@ -1105,10 +1091,9 @@ void testRagdollPose() {
     check("the pose is relative to the rig, not the world",
           nearly(global[slice + 0][3][0], 0.0f));
 
-    // The bound the visibility pass sizes a skinned mesh from. A composer that
-    // writes poses and no bound leaves whatever the last writer left, and a
-    // ragdoll culled by its own stale bound stops being drawn at exactly the
-    // moment it starts moving.
+    // The bound the visibility pass sizes a skinned mesh from: a composer that
+    // writes poses and no bound leaves whatever the last writer left, and the
+    // ragdoll is culled as it starts moving.
     const PoseSlice& bound = poses.slices().front();
     check("the pose publishes a bound the visibility pass can use",
           bound.originMax.y > bound.originMin.y && bound.maxBoneScale >= 1.0f);
@@ -1156,13 +1141,8 @@ void testRagdollAsHitboxes() {
     // Held to the pose rather than falling, which is what an inactive ragdoll
     // is for: the bones are where the animation put them.
     RagdollSystem ragdolls;
-    ResourceManager resources;
-    Clock clock;
-    EventBus events;
-    WindowManager window;
-    InputMap input;
-    NetSession net;
-    FrameContext ctx{scene, resources, clock, events, window, input, net};
+    TestFrame frame(scene);
+    FrameContext& ctx = frame.ctx;
     ragdolls.fixedUpdate(ctx);
 
     // Asked for limbs, because the character's own collider is in the way of an
@@ -1192,10 +1172,9 @@ void testRagdollAsHitboxes() {
     check("something that is not a limb has no owner",
           !ragdollOwnerOf(scene, character, nullptr));
 
-    // The same ray with the bones masked out. Asserted as two facts rather than
-    // as "it missed, or what it found was not a bone": that disjunction was
-    // satisfied by the miss alone, and a mask that excluded nothing would have
-    // passed it just as well.
+    // The same ray with the bones masked out, asserted as two facts rather than as
+    // "it missed, or what it found was not a bone" - that disjunction is satisfied
+    // by the miss alone, and a mask excluding nothing would pass it.
     QueryFilter withoutBones;
     withoutBones.layerMask = ~RagdollSettings{}.boneLayer;
     RayHit other;
@@ -1278,11 +1257,9 @@ void testCharacterStepUp() {
     check("  and steps back down off the far edge",
           descended.x > 4.5f && descended.y < (HALF + RADIUS) + KERB * 0.5f);
 
-    // Mounting is not jumping, and every assertion above passed while it was.
-    // The climb asked for stepHeight at walking speed - 5.3 m/s, more than this
-    // controller's own jump - and never took it back, so a doorstep launched
-    // the character a metre and a half into the air and the trace still ended
-    // with them standing on the kerb.
+    // Mounting is not jumping, and every assertion above passes while it is: a
+    // climb that asks for stepHeight at walking speed launches the character off a
+    // doorstep, and the trace still ends with them standing on the kerb.
     Scene hop;
     addBox(hop, {0.0f, -0.5f, 0.0f}, {8.0f, 0.5f, 4.0f});
     addBox(hop, {3.0f, KERB * 0.5f, 0.0f}, {1.0f, KERB * 0.5f, 4.0f});
@@ -1473,6 +1450,149 @@ void testTheSameWorldSimulatesTheSameWay() {
     }
 }
 
+// A trigger that cannot move itself still has to see what moves through it.
+// The broadphase skips a pair whose ends are both permanently immovable, and
+// `immovable` is true for kinematic as well as static - so a static checkpoint
+// and the kinematic platform patrolling into it were never paired, and the
+// trigger never fired. Box2D 3.1 fixed the same bug for the same reason: Catto
+// found sensors "built on top of the contact system" was the wrong choice.
+//
+// A dynamic body was always seen, which is why this went unnoticed.
+void testStaticTriggerSeesKinematic() {
+    std::printf("A trigger that cannot move itself:\n");
+
+    Scene scene;
+
+    const EntityId gate = addBox(scene, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f});
+    scene.get<Collider>(gate).isTrigger = true;
+
+    // Kinematic rather than static: a patrolling platform is the case this is
+    // actually about, and it is the one the pair loop threw away.
+    const EntityId platform = addBox(scene, {0.5f, 0.0f, 0.0f}, {0.5f, 0.5f, 0.5f});
+    Rigidbody& moving = scene.get<Rigidbody>(platform);
+    moving.isStatic    = false;
+    moving.isKinematic = true;
+
+    TestFrame frame(scene);
+    FrameContext& ctx = frame.ctx;
+    EventBus& events  = frame.events;
+
+    int fired = 0;
+    EntityId reportedTrigger;
+    EntityId reportedOther;
+    events.subscribe<TriggerEvent>([&](const TriggerEvent& event) {
+        ++fired;
+        reportedTrigger = event.trigger;
+        reportedOther   = event.other;
+    });
+
+    PhysicsSystem physics;
+    physics.fixedUpdate(ctx);
+    events.flush();
+
+    check("it sees the kinematic body standing in it", fired == 1);
+    check("and names itself as the trigger",           reportedTrigger == gate);
+    check("and the body that entered as the other",    reportedOther == platform);
+
+    // The other half of the same rule: a trigger resolves nothing. If the pair
+    // had reached the solver, the platform would have been pushed out of it.
+    check("and does not push it out",
+          nearly(scene.get<Transform>(platform).position.x, 0.5f));
+}
+
+
+// Sleep is decided per contact island, not per body: a crate that sleeps while
+// the stack under it settles is immovable to the solver, and the stack moves out
+// from under it. This holds the lower box awake by hand and asserts the upper
+// one stays awake with it, though by every measure of its own it is fast asleep.
+void testAStackSleepsTogetherOrNotAtAll() {
+    std::printf("A stack settling, and what may sleep in it:\n");
+
+    Scene scene;
+    addBox(scene, {0.0f, -0.5f, 0.0f}, {8.0f, 0.5f, 8.0f});   // floor, static
+
+    const EntityId lower = addFallingBody(scene, {0.0f, 0.5f, 0.0f}, 0.5f);
+    const EntityId upper = addFallingBody(scene, {0.0f, 1.5f, 0.0f}, 0.5f);
+    // addFallingBody opts out of sleeping; this test is about sleeping.
+    scene.get<Rigidbody>(lower).canSleep = true;
+    scene.get<Rigidbody>(upper).canSleep = true;
+
+    TestFrame frame(scene);
+    FrameContext& ctx = frame.ctx;
+    PhysicsSystem physics;
+
+    // Below the wake threshold, deliberately: a partner faster than WAKE_SPEED_SQ
+    // wakes a sleeper by a separate rule, so a brisk shove would pass without
+    // islands. The island rule answers the stack that creeps into place.
+    constexpr float CREEP = 0.2f;   // 0.04 m^2/s^2, against a 0.25 wake threshold
+
+    for (int tick = 0; tick < 120; ++tick) {
+        scene.get<Rigidbody>(lower).sleeping = false;
+        scene.get<Rigidbody>(lower).sleepTimer = 0.0f;
+        scene.get<Rigidbody>(lower).linearVelocity.x = (tick % 2 == 0) ? CREEP : -CREEP;
+        physics.fixedUpdate(ctx);
+    }
+
+    check("the box still creeping is awake", !scene.get<Rigidbody>(lower).sleeping);
+    check("and it creeps too slowly to wake anything",
+          CREEP * CREEP < 0.25f);
+    check("so the one resting on it stays awake by island, not by being woken",
+          !scene.get<Rigidbody>(upper).sleeping);
+
+    // Let go, and the island settles as one.
+    for (int tick = 0; tick < 240; ++tick) physics.fixedUpdate(ctx);
+
+    check("once nothing disturbs it the stack sleeps",
+          scene.get<Rigidbody>(lower).sleeping && scene.get<Rigidbody>(upper).sleeping);
+}
+
+// What a contact solver is judged by, and what nothing here measured: five
+// boxes resting on each other rest *on* each other. A solver that starts every
+// tick from zero rediscovers the weight of the stack in its iteration budget
+// and never quite does, so the tower settles into itself a centimetre at a
+// time, leans as the four corners of a face converge unevenly, and falls
+// asleep like that - which is a tower an author sees clipped through itself
+// and cannot fix.
+//
+// The bound is per contact rather than per box: the tolerance a face rests
+// within is what the contact spring compresses under the load above it, and
+// the fifth box carries the sum of four of them.
+void testAStackRestsOnItselfRatherThanInsideItself() {
+    std::printf("Five boxes stacked, once they have settled:\n");
+
+    constexpr int   BOXES     = 5;
+    constexpr float REST_SLOP = 0.004f;   // per contact, the spring's compression
+
+    Scene scene;
+    addBox(scene, {0.0f, -0.5f, 0.0f}, {8.0f, 0.5f, 8.0f});   // floor, static
+
+    std::vector<EntityId> tower;
+    for (int i = 0; i < BOXES; ++i) {
+        tower.push_back(addFallingBody(scene, {0.0f, 0.5f + static_cast<float>(i), 0.0f}, 0.5f));
+        scene.get<Rigidbody>(tower.back()).canSleep = true;
+    }
+
+    simulate(scene, 240);
+
+    bool held = true, upright = true, inPlace = true;
+    for (int i = 0; i < BOXES; ++i) {
+        const Transform& t = scene.get<Transform>(tower[i]);
+        const float wanted = 0.5f + static_cast<float>(i);
+        const glm::vec3 up = t.rotation * glm::vec3(0.0f, 1.0f, 0.0f);
+
+        // Every contact under this box may give by the slop, and no more.
+        held    = held    && (wanted - t.position.y) < REST_SLOP * static_cast<float>(i + 1);
+        upright = upright && up.y > std::cos(glm::radians(1.0f));
+        inPlace = inPlace && glm::length(glm::vec2(t.position.x, t.position.z)) < 0.02f;
+    }
+
+    check("no box rests inside the one below it", held);
+    check("  the tower is still standing straight", upright);
+    check("  and it has not walked off its own footprint", inPlace);
+    check("  and it is asleep, at rest rather than settling still",
+          scene.get<Rigidbody>(tower[BOXES - 1]).sleeping);
+}
+
 } // namespace
 
 void runPhysicsTests() {
@@ -1498,6 +1618,9 @@ void runPhysicsTests() {
     testRagdollFallsTwice();
     testRagdollPose();
     testRagdollAsHitboxes();
+    testStaticTriggerSeesKinematic();
+    testAStackSleepsTogetherOrNotAtAll();
+    testAStackRestsOnItselfRatherThanInsideItself();
     testCharacterStaircase();
     testCharacterStepUp();
     testStepUpPastOwnBones();

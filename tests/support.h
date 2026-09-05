@@ -44,13 +44,14 @@
 #include "net/replication/silence.h"
 #include "net/replication/spawn.h"
 #include "platform/net/udp_socket.h"
+#include "platform/net/winsock_init.h"
 
 // UdpSocket::send refuses a zero-length datagram on purpose - this end never
 // emits one. A peer elsewhere is under no such rule, so exercising what happens
 // when one arrives means sending it the way the network can.
-#if defined(_WIN32)
-    #include <winsock2.h>
-#else
+#include "platform/windows_api.h"
+
+#if !defined(_WIN32)
     #include <arpa/inet.h>
     #include <netinet/in.h>
     #include <sys/socket.h>
@@ -60,6 +61,7 @@
 #include "core/math/axes.h"
 #include "core/math/rotation.h"
 #include "core/event/event_bus.h"
+#include "core/host_chrome.h"
 #include "core/system.h"
 #include "ecs/scene.h"
 #include "ecs/component/core/transform.h"
@@ -90,6 +92,9 @@
 #include "resource/resource_manager.h"
 #include "system/physics/character/character_controller_system.h"
 #include "system/physics/physics_system.h"
+#include "system/physics/physics_events.h"
+#include "resource/generate/mesh_generators.h"
+#include "resource/generate/texture_generators.h"
 #include "system/physics/collision/gjk.h"
 #include "system/physics/collision/narrowphase.h"
 #include "system/physics/collision/support.h"
@@ -99,6 +104,27 @@
 using namespace Vkm::Engine;
 
 inline int g_failures = 0;
+
+// A socket the suites open directly, for the datagrams UdpSocket refuses to
+// emit. It is a signed descriptor on POSIX and an unsigned handle on Windows,
+// where `>= 0` is a comparison the compiler can answer without looking.
+#if defined(_WIN32)
+    using RawSocket = SOCKET;
+    inline bool rawSocketOpen(RawSocket s)  { return s != INVALID_SOCKET; }
+    inline void rawSocketClose(RawSocket s) { ::closesocket(s); }
+#else
+    using RawSocket = int;
+    inline bool rawSocketOpen(RawSocket s)  { return s >= 0; }
+    inline void rawSocketClose(RawSocket s) { ::close(s); }
+#endif
+
+// Opened through here rather than by calling socket() at the site: on Windows
+// the library has to be started before its first entry point, and a suite that
+// happens to open a UdpSocket first is one edit away from not doing so.
+inline RawSocket rawSocketUdp() {
+    ensureWinsock();
+    return ::socket(AF_INET, SOCK_DGRAM, 0);
+}
 
 /**
  * @brief The angle between two rotations, in degrees.
@@ -207,17 +233,35 @@ inline EntityId addCharacter(Scene& scene, float radius, float halfHeight,
     return id;
 }
 
+// The services a FrameContext refers to, owned so a test can stand one up in a
+// line. Every system takes a frame context, so every system test needs all of
+// them live whether it cares about them or not; keeping the list here means a
+// new field on FrameContext is one edit rather than one per suite.
+struct TestFrame {
+    ResourceManager resources;
+    Clock           clock;
+    EventBus        events;
+    WindowManager   window;   // never given a window: nothing here draws
+    InputMap        input;
+    NetSession      ownedNet;
+    HostChrome      chrome;
+    FrameContext    ctx;
+
+    explicit TestFrame(Scene& scene)
+        : ctx{scene, resources, clock, events, window, input, ownedNet, chrome} {}
+
+    // For the networking suites, where the session under test is built by the
+    // test and the context has to refer to that one rather than to ownedNet.
+    TestFrame(Scene& scene, NetSession& session)
+        : ctx{scene, resources, clock, events, window, input, session, chrome} {}
+};
+
 // Drive the two systems the way the Simulation stage does - physics first, then
 // the controller reading this tick's contacts - for long enough to walk into
 // something two metres away.
 inline void simulate(Scene& scene, int ticks) {
-    ResourceManager resources;
-    Clock clock;
-    EventBus events;
-    WindowManager window;   // never given a window: nothing here draws
-    InputMap input;
-    NetSession net;
-    FrameContext ctx{scene, resources, clock, events, window, input, net};
+    TestFrame frame(scene);
+    FrameContext& ctx = frame.ctx;
 
     PhysicsSystem physics;
     CharacterControllerSystem controller;
@@ -226,10 +270,9 @@ inline void simulate(Scene& scene, int ticks) {
     for (int tick = 0; tick < ticks; ++tick) {
         physics.fixedUpdate(ctx);
         controller.fixedUpdate(ctx);
-        // The Transform stage, which the app runs every frame and which a
-        // parented body's pose is resolved through. Without it a ragdoll's
-        // bones - children of the character since they are its rig - would be
-        // read in the wrong frame here and only here.
+        // The Transform stage, which the app runs every frame and a parented
+        // body's pose resolves through: without it a ragdoll's bones, children of
+        // the character, would be read in the wrong frame here and only here.
         hierarchy.update(ctx);
     }
 }

@@ -24,24 +24,20 @@ struct SkeletonAsset;
  *        FrameContext::poses.
  *
  * Registered at SystemStage::Simulation immediately after AnimationSystem,
- * because it advances clip time and that is state over time; it has to precede
- * the Visibility stage, which bounds a posed character, and the Render stage,
- * which draws one. It writes no Transform, so it cannot contend with
- * AnimationSystem, PhysicsSystem or HierarchySystem - which is a direct
- * consequence of bones being indices rather than entities.
+ * because it advances clip time; it has to precede the Visibility stage, which
+ * bounds a posed character, and Render, which draws one. It writes no Transform,
+ * so it cannot contend with the other three systems - a consequence of bones
+ * being indices rather than entities.
  *
- * Allocation and mapping are serial and cheap (one pass over the Animators, one
- * walk of their subtrees); only the evaluation is parallel, and it is safe for
- * the same reason AnimationSystem's is - each rig writes its own disjoint slice
- * of the pose arrays and its own Animator. Announcing the markers each rig
- * crossed comes last and is serial again, because the EventBus is main-thread
- * only and the evaluate pass has no business publishing anything.
+ * Allocation and mapping are serial and cheap; only the evaluation is parallel,
+ * safe because each rig writes its own disjoint slice of the pose arrays.
+ * Announcing the markers each rig crossed comes last and is serial again,
+ * because the EventBus is main-thread only.
  *
- * Time advances on the tick, because a clip is simulation. The pose those
- * times name is composed there too, and again on every frame the clock is
- * paused - which is what lets an Animator scrubbed in the editor show the pose
- * its time names, with no tick to run. Composition is idempotent, so the paused
- * path costs one rebuild and changes nothing else.
+ * Time advances on the tick, because a clip is simulation, and the pose those
+ * times name is composed on every frame the clock is paused as well - which is
+ * what lets an Animator scrubbed in the editor show the pose its time names.
+ * Composition is idempotent, so the paused path costs one rebuild.
  */
 class SkeletalAnimationSystem : public System {
     public:
@@ -108,6 +104,22 @@ class SkeletalAnimationSystem : public System {
             bool rigMismatch  = false;
             bool meshOffset   = false;
         };
+
+        /**
+         * @brief Rebuild the whole pose buffer for one advance of the head.
+         *
+         * The frame path and the tick path differ in exactly two things - how
+         * far the head moves, and whether anything it crossed is announced - so
+         * they are two calls to this rather than two copies of it. A paused
+         * repose advances by nothing and announces nothing, because nothing was
+         * crossed; a tick advances by the fixed step and announces what it
+         * passed.
+         *
+         * @param ctx Frame context; receives the published pose buffer.
+         * @param step Seconds playback advances by.
+         * @param announceMarkers Whether crossed clip markers reach the bus.
+         */
+        void run(FrameContext& ctx, float step, bool announceMarkers);
 
         /**
          * @brief Pose every rig in the scene into the already-cleared buffer.

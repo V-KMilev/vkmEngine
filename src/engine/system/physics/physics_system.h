@@ -15,6 +15,7 @@
 #include "system/physics/collision/support.h"
 #include "system/physics/solver/joint_solver.h"
 #include "system/physics/solver/solver.h"
+#include "system/physics/solver/contact_cache.h"
 
 namespace Vkm::Engine {
 
@@ -46,27 +47,6 @@ class Scene;
  * HierarchySystem rebuilds the whole subtree later in the same frame.
  */
 class PhysicsSystem : public System {
-    public:
-        /**
-         * @brief One proxy's parts, expanded into world space for a pair.
-         *
-         * One array per shape rather than one tagged list, so the pair loops
-         * stay branch-free. Bundled because the two are one idea - what this
-         * side of the pair looks like.
-         *
-         * A mesh part is absent on purpose: it is thousands of triangles and
-         * only the handful under the other shape matter, so it is walked per
-         * pair against that shape's bound rather than expanded here.
-         *
-         * Public because the expansion that fills one is file-local to the
-         * implementation, which makes this the shape of an argument rather than
-         * a detail of the state.
-         */
-        struct PairShapes {
-            std::vector<BoxShape>     boxes;
-            std::vector<CapsuleShape> capsules;
-        };
-
     public:
         PhysicsSystem() = default;
         ~PhysicsSystem() override = default;
@@ -180,6 +160,15 @@ class PhysicsSystem : public System {
          *                   in a replay, one this end does not decide.
          * @param dt        Fixed timestep, in seconds.
          */
+        /**
+         * @brief Put whole contact islands to sleep, or none of their members.
+         *
+         * A body resting alone may sleep; a body resting on a stack that is
+         * still settling may not, however still it happens to be this tick.
+         * Everything that can push everything else sleeps together.
+         */
+        void sleepIslands(Scene& scene, bool replaying);
+
         void writeback(Scene& scene, bool replaying, float dt);
 
         /**
@@ -202,12 +191,39 @@ class PhysicsSystem : public System {
 
     private:
         std::vector<EntityId>        m_bodies;       ///< Live body entities this tick (indexes m_solverBodies)
-        std::vector<PhysicsBody>     m_solverBodies; ///< Cached dynamic state, aligned with m_bodies
+
+        /**
+         * @brief Cached dynamic state, aligned with m_bodies - and then longer.
+         *
+         * A joint whose other end has a pose but no rigidbody pins to that point
+         * in the world, and the solver reaches it the only way it reaches
+         * anything: as a body index. Those anchors are appended past the real
+         * bodies, so `m_solverBodies.size() >= m_bodies.size()` and everything
+         * that walks bodies to write results back - writeback, the island pass,
+         * the joint sort's slot lookup - walks m_bodies and therefore stops
+         * before them. That is the whole mechanism: an anchor is a body nothing
+         * owns, so nothing writes it anywhere.
+         */
+        std::vector<PhysicsBody>     m_solverBodies;
         std::vector<EntityId>        m_leased;       ///< Scratch for leaseContacts
         std::vector<uint32_t>        m_leaseFrontier;  ///< Its breadth-first queue
         std::vector<bool>            m_leaseReached; ///< Which bodies it has already taken
         std::vector<ContactManifold> m_manifolds;    ///< Reused across ticks; clear() keeps capacity
+        ContactCache                 m_contactCache; ///< What held each pair last tick, to start this one from
         std::vector<JointConstraint> m_joints;       ///< This tick's joints, as body indices
+
+        /**
+         * @brief Entity slot -> this tick's body index, or NO_BODY.
+         *
+         * A vector rather than a hash map because the key is already a dense
+         * small integer: the slot allocator hands them out from zero and
+         * recycles them. Kept across ticks for its capacity - it is refilled
+         * every tick, never grown from nothing.
+         */
+        std::vector<uint32_t> m_bodyIndexBySlot;
+
+        /// No body this tick holds that slot.
+        static constexpr uint32_t NO_BODY = ~0u;
 
         /**
          * @brief Body pairs a joint holds together, packed as (low << 32) | high.
@@ -231,8 +247,8 @@ class PhysicsSystem : public System {
         std::vector<uint32_t>                      m_sorted;  ///< X-sorted proxy order (broadphase)
         std::vector<std::pair<uint32_t, uint32_t>> m_pairs;   ///< Candidate proxy-index pairs (broadphase)
 
-        PairShapes m_shapesA;   ///< A's parts, expanded for the current pair
-        PairShapes m_shapesB;   ///< B's parts, expanded for the current pair
+        std::vector<BoxShape>     m_shapeBoxes;    ///< Every proxy's boxes in world space, end to end
+        std::vector<CapsuleShape> m_shapeCapsules; ///< Every proxy's capsules in world space, end to end
 
         std::vector<uint32_t> m_meshCandidates;  ///< Triangles a tree walk found
 };

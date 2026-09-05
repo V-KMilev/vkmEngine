@@ -21,13 +21,18 @@ namespace Vkm::Engine {
 
 namespace {
 
-// Every backend miniaudio knows except the null one, in its own priority order.
-// ma_engine's own default list ends in the null backend, which would succeed on
-// a machine with no audio hardware and mix into nowhere.
-constexpr std::array<ma_backend, 12> PLAYBACK_BACKENDS = {
-    ma_backend_wasapi, ma_backend_dsound, ma_backend_winmm,  ma_backend_coreaudio,
-    ma_backend_sndio,  ma_backend_audio4, ma_backend_oss,    ma_backend_pulseaudio,
-    ma_backend_alsa,   ma_backend_jack,   ma_backend_aaudio, ma_backend_opensl,
+// The backends for the platforms this engine runs on, in miniaudio's own
+// priority order. Stated rather than defaulted for one reason: ma_engine's
+// default list ends in the null backend, which succeeds on a machine with no
+// audio hardware and mixes into nowhere.
+//
+// Only Windows and Linux, because that is what the engine supports (see
+// engine.md). Naming CoreAudio, sndio, AAudio and OpenSL as well described a
+// portability nobody has: the platform layer, the window and the backend do not
+// build there, so an audio backend that would have worked is not a port.
+constexpr std::array<ma_backend, 7> PLAYBACK_BACKENDS = {
+    ma_backend_wasapi, ma_backend_dsound, ma_backend_winmm,
+    ma_backend_pulseaudio, ma_backend_alsa, ma_backend_jack, ma_backend_oss,
 };
 
 // How long a stopped voice takes to reach silence. The measurement behind the
@@ -314,6 +319,23 @@ uint64_t AudioDevice::render(float* frames, uint64_t frameCount) {
 
 VoiceId AudioDevice::play(const AudioClipAsset& clip, const VoiceParams& params) {
     if (!m_open || clip.sampleCount() == 0 || clip.channels == 0) return 0;
+
+    // Refused rather than stolen: the oldest voice is as likely to be a deliberate
+    // loop as a one-shot, and cutting a game's music for an overflowing footstep is
+    // the worse failure. AudioSystem reaps finished voices each frame.
+    if (m_backend->voices.size() >= MAX_ACTIVE_VOICES) {
+        if (!m_voiceBudgetSpent) {
+            m_voiceBudgetSpent = true;
+            LOG_WARNING("Audio voice budget of %zu reached; further sounds are "
+                        "dropped until voices free up. A game firing one "
+                        "PlaySoundEvent a frame is the usual cause.",
+                        MAX_ACTIVE_VOICES);
+        }
+        return 0;
+    }
+    // Said once per saturation rather than once per run, so a game that drifts
+    // into it a second time says so a second time.
+    m_voiceBudgetSpent = false;
 
     auto voice = std::make_unique<Backend::Voice>();
     voice->samples = clip.samples;

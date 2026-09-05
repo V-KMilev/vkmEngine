@@ -112,7 +112,22 @@ struct Collider {
 
 VKM_ENUM_NAMES(::Vkm::Engine::ColliderShape, "Box", "Capsule", "Mesh")
 
+// Every shape's fields are reflected whatever the tag says, so switching a part
+// to a capsule in the inspector and back does not quietly forget the
+// half-extents it was authored with.
+VKM_REFLECT_BEGIN(::Vkm::Engine::ColliderPart)
+    VKM_F(shape),
+    VKM_F(center),
+    VKM_F(halfExtents),
+    VKM_F(radius),
+    VKM_F(halfHeight),
+    VKM_F(meshFirst),
+    VKM_F(meshCount)
+VKM_REFLECT_END()
+
 VKM_REFLECT_BEGIN(::Vkm::Engine::Collider)
     VKM_F(isTrigger),
-    VKM_F(enabled)
+    VKM_F(enabled),
+    VKM_F(parts),
+    VKM_F(meshPoints)
 VKM_REFLECT_END()

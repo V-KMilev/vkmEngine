@@ -107,7 +107,7 @@ The chosen handle is published as `VisibleEntity::mesh`, so the render path
 never looks at the `LOD` component. An entity without one publishes its `Mesh`
 handle unchanged.
 
-Levels can be authored by hand or generated: `generateLOD` (`tools/generator/
+Levels can be authored by hand or generated: `generateLOD` (`resource/generate/
 lod_generator.h`, exposed as **Generate Levels** on the inspector's LOD card)
 decimates the source mesh, registers each level as a named asset
 (`<mesh>:lod1`) so it serializes like any other, and drops a level that
@@ -194,10 +194,10 @@ bounds unchanged - which is the right box for both, since neither moves.
 
 `core/math/bounds.h` exposes two helpers used inside the culling loop:
 
-- `localToWorldAABB` transforms a local AABB to world space in 18
+- `Math::transform` takes a `Math::AABB` from local to world space in 18
   multiplications (Arvo) instead of 128 (transform all 8 corners and
   refit).
-- `hasValidBounds` rejects degenerate zero-size bounds with
+- `AABB::valid()` rejects degenerate zero-size bounds with
   `dot(extent, extent) > epsilon`.
 
 ## Configuration

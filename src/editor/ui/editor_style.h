@@ -124,4 +124,19 @@ inline float px(float units) {
 /// Width reserved for aligned property labels.
 inline float labelWidth() { return px(100.0f); }
 
+// The floating strips over the viewport - the toolbar and the playbar - are one
+// design, so they are one set of numbers. Kept per file they are two sets that
+// happen to agree.
+
+/// Side of an icon button on a viewport overlay strip.
+inline float overlayButton()   { return px(26.0f); }
+/// A strip's inner padding.
+inline float overlayPad()      { return px(5.0f); }
+/// Spacing between adjacent buttons in a strip.
+inline float overlayGap()      { return px(4.0f); }
+/// Spacing between groups of buttons in a strip.
+inline float overlayGroupGap() { return px(10.0f); }
+/// Inset from the viewport edge a strip floats at.
+inline float overlayInset()    { return px(8.0f); }
+
 } // namespace Vkm::Engine::EditorStyle

@@ -65,8 +65,8 @@ Handle<FontAsset> bakeFontSDF(
     }
 
     const float scale = stbtt_ScaleForPixelHeight(&font, pixelHeight);
-    int ascent = 0, descent = 0, lineGap = 0;
-    stbtt_GetFontVMetrics(&font, &ascent, &descent, &lineGap);
+    int ascent = 0, descent = 0;
+    stbtt_GetFontVMetrics(&font, &ascent, &descent, nullptr);
     const float pixelDistScale = static_cast<float>(SDF_ONEDGE) / static_cast<float>(SDF_PADDING);
 
     std::vector<BakedGlyph> baked;
@@ -118,7 +118,6 @@ Handle<FontAsset> bakeFontSDF(
     fontAsset.pixelHeight = pixelHeight;
     fontAsset.ascent      = ascent * scale;
     fontAsset.descent     = descent * scale;
-    fontAsset.lineHeight  = (ascent - descent + lineGap) * scale;
 
     constexpr float INV_ATLAS = 1.0f / static_cast<float>(ATLAS_SIZE);
     for (size_t i = 0; i < baked.size(); ++i) {

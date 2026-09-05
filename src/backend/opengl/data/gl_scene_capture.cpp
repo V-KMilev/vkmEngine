@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "data/gl_scene_capture.h"
 
 #include <GL/glew.h>
@@ -12,7 +10,7 @@
 #include "data/gl_ibl.h"
 #include "data/gl_material.h"
 #include "data/gl_mesh.h"
-#include "generator/mesh_generators.h"
+#include "resource/generate/mesh_generators.h"
 #include "gl_view.h"
 #include "system/render/data/camera_data.h"
 #include "system/render/render_view.h"
@@ -35,10 +33,10 @@ void GLSceneCapture::begin(const RenderView& view, const GLView& glView, const G
     m_glView = &glView;
     m_ibl    = &ibl;
 
-    // No-shadow lights: m_noShadow is default-built, so slotForLight() == -1 for
+    // No-shadow lights: an empty slot view answers -1 for
     // every light and the PBR shader skips shadow sampling (the camera's shadow
     // atlas does not cover these viewpoints).
-    m_lights.update(view.lights, m_noShadow);
+    m_lights.update(view.lights);
 
     // Group the opaque drawables once - the same geometry feeds every face of
     // every cube captured after this.

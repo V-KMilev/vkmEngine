@@ -18,7 +18,7 @@ not overlap:
 ## Key files
 
 - `src/engine/system/animation/animation_system.h` - AnimationSystem
-- `src/engine/system/animation/animation_track.h` - AnimationTrack<T> (keyframe storage lives here)
+- `src/engine/ecs/component/animation/animation_track.h` - AnimationTrack<T> (keyframe storage lives beside the component that holds it)
 - `src/engine/core/math/easing.h` - easing functions (interpolation curves)
 - `src/engine/ecs/component/animation/animation.h` - Animation component
 - `src/engine/system/animation/skeletal_animation_system.h` - SkeletalAnimationSystem
@@ -60,13 +60,15 @@ struct Animation {
     AnimationTrack<glm::vec3> scaleTrack;
 
     float length  = 0.0f;   // explicit minimum length (0 = auto from last keyframe)
-    float time    = 0.0f;   // current playback time
     float speed   = 1.0f;   // playback multiplier
     bool  looping = true;
 
     bool  playOnStart = true;   // authored: start on the first simulated frame
-    bool  playing     = false;  // runtime: advancing right now (not serialized)
-    bool  started     = false;  // runtime: playOnStart already honoured
+
+    // Transient - runtime only, never serialized.
+    float time        = 0.0f;   // the playback head
+    bool  playing     = false;  // advancing right now
+    bool  started     = false;  // playOnStart already honoured
 
     static float computeDuration(const Animation&);  // = max(each track's last keyframe, length)
 };
@@ -160,20 +162,21 @@ struct Animator {
     SkeletonHandle      skeleton;   // the rig posed
     AnimationClipHandle clip;       // empty holds the bind pose
 
-    float time    = 0.0f;
     float speed   = 1.0f;
-    bool  looping = true;
+    bool  looping = true;       // the clip in `clip`, not the animator
     bool  playOnStart = true;   // authored: start on the first simulated frame
 
     // Transient - runtime only, never serialized.
+    float time    = 0.0f;       // the playback head
     bool  playing = false;      // advancing right now
     bool  started = false;      // playOnStart already honoured
     AnimationClipHandle fadeFrom;
     float               fadeTime      = 0.0f;
     float               fadeRemaining = 0.0f;
     float               fadeDuration  = 0.0f;
+    bool                fadeLooping   = true;   // the outgoing clip's own answer
 
-    static void crossFadeTo(Animator&, AnimationClipHandle, float seconds);
+    static void crossFadeTo(Animator&, AnimationClipHandle, float seconds, bool looping);
 };
 ```
 
@@ -182,14 +185,13 @@ struct Animator {
 held on the mesh would mean three clocks drifting apart, or two of the three
 silently frozen in bind pose.
 
-The repo carries no rigged model to see that in, so it carries a file that is
-nothing but the case. `assets/models/multimesh_rig.gltf` is three skinned
-meshes over one skin, one skeleton and one clip, each weighting a different
-subset of the joints. Import it and the hierarchy shows one rig entity carrying
-one `Animator`, the three meshes parented under it, and all three resolving the
-same `PoseSlice`. It is authored rather than exported -
-`tools/make_multimesh_rig.py` writes it, every joint a pure translation - so the
-bind matrices can be checked by eye. `BrainStem.glb`, if a project has it, is
+The repo ships no models, so what it carries for this is the recipe rather than
+the artifact: `tools/make_multimesh_rig.py <out.gltf>` writes a file that is
+nothing but the case - three skinned meshes over one skin, one skeleton and one
+clip, each weighting a different subset of the joints. Import it and the
+hierarchy shows one rig entity carrying one `Animator`, the three meshes
+parented under it, and all three resolving the same `PoseSlice`. Every joint is
+a pure translation, so the bind matrices can be checked by eye. `BrainStem.glb`, if a project has it, is
 the same shape at scale: 59 skinned meshes over one 18-bone rig.
 
 **There is no `SkinnedMesh` component.** A mesh is skinned exactly when its
@@ -214,15 +216,28 @@ press Ctrl+S for an unrelated reason, and the scene file holds `playing: false`
 for a character that is never going to animate again, with nothing having warned
 and nothing to undo.
 
+**`time` is the session's too**, and for the same measured reason: the timeline
+and the Animator card both scrub it without an undo step, so persisting it meant
+a head position nobody chose riding into the next save. A start phase a game
+wants - two characters half a lap apart - is set by the behavior that spawns
+them, which is where "they should not be in step" is actually decided.
+
 ## Crossfading
 
 ```cpp
-Animator::crossFadeTo(scene.get<Animator>(character), runClip, 0.2f);
+Animator::crossFadeTo(scene.get<Animator>(character), runClip, 0.2f, /*looping*/ true);
 ```
 
 One fade, two slots. The clip being left moves into `fadeFrom` and **keeps
 playing** at its own head, so a run fading into a walk does not freeze one foot
-while the other keeps moving. The countdown runs in unscaled simulation seconds,
+while the other keeps moving.
+
+Whether a clip loops belongs to that clip, so the incoming one's answer is an
+argument here and the outgoing one's is parked on `fadeLooping`. It is taken
+rather than assigned by the caller around the call because only this can capture
+the outgoing clip's answer before the incoming one overwrites it - a death
+fading out of a walk has to clamp at its own last frame for the half second the
+blend lasts, not start again. The countdown runs in unscaled simulation seconds,
 because "blend over 0.2 seconds" is a duration the caller can predict, while
 `speed` is about how fast the clips themselves run.
 
@@ -346,36 +361,38 @@ the sound still starts on the frame the event lands.
 
 Every claim above is a statement about how many events landed on a bus over a
 run of frames, so the marker harness counts them off a real
-`SkeletalAnimationSystem` posing a real `Scene`. It drives the `Clock` through
-`requestStep()` - the editor's own single-step path - so each frame is exactly
-one fixed step and the expected counts are arithmetic rather than a tolerance:
+`SkeletalAnimationSystem` posing a real `Scene` (`tests/animation_tests.cpp`).
+It drives the `Clock` through `requestStep()` - the editor's own single-step
+path - so each frame is exactly one fixed step and the expected counts are
+arithmetic rather than a tolerance:
 
-- a looping clip announces each of three markers exactly as often as its laps
-  say, over hundreds of frames, with no marker twice in a row and no frame
-  announcing more than the one marker it crossed
-- a negative `speed` comes back over them the same number of times
-- a non-looping clip announces the marker on its very last frame when the head
-  lands there, and nothing after it stops
+- a looping clip announces each of three markers exactly ten times over ten
+  laps, with no marker twice in a row and no frame announcing more than the one
+  marker it crossed
+- a negative `speed` comes back over them the same number of times, in the
+  reverse order
+- a non-looping clip announces its end marker on the frame the head lands there
+  and nothing after it stops - which frame that is depends on how sixty float
+  additions accumulate, so the test runs until the head clamps rather than
+  naming one
 - a crossfade whose incoming and outgoing clips both carry markers announces
   **only** the incoming clip's, with the fade verifiably still in flight
-- three hundred paused frames announce nothing and move nothing, and the frame
-  that resumes announces the one marker one step reaches
+- three hundred paused frames announce nothing and move nothing, and the frames
+  that resume announce the one marker a lap reaches
 - a head scrubbed past a marker announces nothing, and neither does a stopped
   `Animator` over three hundred running frames
-- two characters on one clip, half a lap apart, each announce for themselves and
-  each on their own phase's schedule
-- markers survive the cook byte for byte, a time outside the clip is refused by
-  both the writer and the reader, and a recipe's authored markers are dropped
-  when nameless or out of range, sorted, and written back into the clip's source
-- and the shipped example's own rig, clip and footstep sound - compiled straight
-  out of `examples/potion_runner/src` - place four limbs on their joints, fire
-  two footsteps per stride at cadence 1 and four at cadence 2, and produce
-  measurable signal in a real offline mix
+- two characters on one clip, half a lap apart, each announce for themselves
 
-What it cannot say is whether a footstep lands where the eye says the foot does.
-Nothing there watches a heel meet the ground, hears a step arrive early against
-the pose, or judges whether a marker at the quarter point is where an animator
-would have put it. That needs a person watching the runner with the sound on.
+What it does not cover is the cook: whether markers survive the cooked file byte
+for byte, and whether a recipe's authored markers are sorted and range-checked
+on the way in, are claims about `io/asset` rather than about this system, and
+nothing tests them.
+
+What no test can say is whether a footstep lands where the eye says the foot
+does. Nothing here watches a heel meet the ground, hears a step arrive early
+against the pose, or judges whether a marker at the quarter point is where an
+animator would have put it. That needs a person watching the runner with the
+sound on.
 
 ## The pose, and the palette derived from it
 

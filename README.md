@@ -33,7 +33,7 @@ pipeline, compile-time field reflection, a job system and a typed event bus.
 overrides, material and render-settings panels, an asset browser, and a cooking pipeline that
 turns source art into engine formats.
 
-<img src="docs/images/in_engine_editor.png" alt="The editor">
+<img src="assets/docs/in_engine_editor.png" alt="The editor">
 
 ## Quick Start
 

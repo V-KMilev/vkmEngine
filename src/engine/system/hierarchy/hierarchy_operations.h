@@ -4,6 +4,8 @@
 
 #include <glm/glm.hpp>
 
+#include "logger.h"
+
 #include "ecs/scene.h"
 #include "ecs/component/core/hierarchy.h"
 #include "ecs/component/core/transform.h"
@@ -55,6 +57,8 @@ glm::mat4 computeWorldMatrix(const Scene& scene, EntityId entity);
  */
 constexpr uint32_t MAX_DEPTH = 32;
 
+namespace detail {
+
 /**
  * @brief Entities a downward search will visit before giving up.
  *
@@ -63,8 +67,31 @@ constexpr uint32_t MAX_DEPTH = 32;
  * import is exactly when someone reaches for a search. Set far above any real
  * subtree - a rig is tens of bones, a level prop a handful - so a search that
  * hits it has found a loop rather than a large model.
+ *
+ * Internal, unlike MAX_DEPTH: nothing outside sizes anything by it.
  */
 constexpr size_t MAX_SEARCH_NODES = 4096;
+
+/**
+ * @brief Report a walk that ran into its bound, once for the process.
+ *
+ * Reaching either bound means the hierarchy has a cycle, and a cycle makes every
+ * later walk hit it too - so the second report names the same broken data as the
+ * first. Without this the failure is silent and indistinguishable from an honest
+ * miss, which is the worst shape for it: a component that is present reads as
+ * absent, and nothing says why.
+ *
+ * @param what Which bound was reached, for the line.
+ */
+inline void warnHierarchyCycle(const char* what) {
+    static bool s_warned = false;
+    if (s_warned) return;
+    s_warned = true;
+    LOG_WARNING_C("HIERARCHY", "Hierarchy walk hit its %s bound - the hierarchy has a cycle, "
+                "so searches through it will report misses that are not misses", what);
+}
+
+} // namespace detail
 
 /**
  * @brief Iterate over all direct children of an entity.
@@ -116,7 +143,11 @@ EntityId findInSelfOrDescendants(const Scene& scene, EntityId root) {
     // makes this queue grow for as long as memory lasts, and a malformed
     // import is exactly when someone reaches for a search.
     std::vector<EntityId> pending = { root };
-    for (size_t i = 0; i < pending.size() && pending.size() < MAX_SEARCH_NODES; ++i) {
+    for (size_t i = 0; i < pending.size(); ++i) {
+        if (pending.size() >= detail::MAX_SEARCH_NODES) {
+            detail::warnHierarchyCycle("breadth-first search");
+            return {};
+        }
         EntityId found{};
         forEachChild(scene, pending[i], [&](EntityId child) {
             if (!found && scene.has<T>(child)) found = child;
@@ -144,12 +175,45 @@ EntityId findInSelfOrAncestors(const Scene& scene, EntityId leaf) {
     EntityId at = leaf;
     // Bounded by the same depth limit the resolve pass follows, so a hierarchy
     // that somehow formed a cycle stops rather than hanging the frame.
-    for (uint32_t step = 0; at && step < MAX_DEPTH; ++step) {
+    for (uint32_t step = 0; at; ++step) {
+        if (step >= MAX_DEPTH) {
+            detail::warnHierarchyCycle("ancestor-chain");
+            return {};
+        }
         if (scene.has<T>(at)) return at;
         if (!scene.has<Hierarchy>(at)) return {};
         at = scene.get<Hierarchy>(at).parent;
     }
     return {};
+}
+
+/**
+ * @brief Whether @p ancestor lies on @p node's chain of parents.
+ *
+ * The question a reparent has to ask before it moves anything: making a node's
+ * own descendant its parent closes the graph into a ring, and every walk in the
+ * engine would then run to its depth bound instead of ending.
+ *
+ * @param scene Scene to walk.
+ * @param ancestor The entity that might be above.
+ * @param node The entity to walk up from, exclusive - an entity is not its own
+ *             ancestor, so passing the same id twice answers false.
+ * @return Whether @p ancestor is a strict ancestor of @p node.
+ */
+inline bool isAncestorOf(const Scene& scene, EntityId ancestor, EntityId node) {
+    if (!ancestor || !node) return false;
+
+    EntityId at = node;
+    for (uint32_t step = 0; ; ++step) {
+        if (step >= MAX_DEPTH) {
+            detail::warnHierarchyCycle("ancestor-chain");
+            return false;
+        }
+        if (!scene.has<Hierarchy>(at)) return false;
+        at = scene.get<Hierarchy>(at).parent;
+        if (!at) return false;
+        if (at == ancestor) return true;
+    }
 }
 
 /**

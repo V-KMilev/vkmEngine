@@ -106,32 +106,23 @@ bool readCommands(BitReader& in, uint32_t actionCount, std::vector<InputCommand>
  * One command is run per tick, in the order the player made them, and never
  * more than once. That ordering is the whole contract: the client predicted
  * tick N by running command N, so the server must run command N as one whole
- * tick too, or the two ends compute different answers from the same input and
- * the client is corrected forever.
+ * tick too, or the two ends compute different answers from the same input.
  *
- * They are **not** addressed by tick number. The two ends count ticks on
- * separate clocks - each started when its own process did - so a command
- * labelled with the client's tick 400 means nothing against the server's tick
- * 400. Matching them up needs the client to run far enough ahead that its
- * commands land just before the server wants them, and a control loop to keep
- * it there; run in order from a queue instead, the same property falls out with
- * no clock to synchronise and nothing to drift. What the client's tick number
- * is still good for is being handed back in a snapshot, so the client knows
- * which of its own predicted moments the server has now judged.
+ * They are not addressed by tick number. The two ends count ticks on separate
+ * clocks, each started when its own process did, so the client's tick 400 means
+ * nothing against the server's. Run in order from a queue, the matching falls
+ * out with no clock to synchronise; the client's number is still handed back in
+ * a snapshot, so a client knows which predicted moment has been judged.
  *
  * The same command arrives many times, because every packet repeats the last
- * twelve. It is run once: an edge consumed twice is a double jump from one
- * keypress.
+ * twelve, and is run once: an edge consumed twice is a double jump.
  *
  * When the queue is empty the tick still runs - the server cannot wait for a
- * packet. The previous command's axes are repeated, because a held key is still
- * held, and its edges are cleared, because a press already fired once and
- * repeating it fires the action again for every tick of the gap.
+ * packet. The previous command's axes repeat, because a held key is still held,
+ * and its edges are cleared, because a press already fired.
  *
- * When the queue grows past what a link's jitter needs, it is drained slightly
- * faster than it fills. A backlog is latency: every command behind it waits, so
- * a client that ran fast for a moment would otherwise add that moment to its
- * own input delay for the rest of the match.
+ * When the queue grows past what a link's jitter needs it drains slightly faster
+ * than it fills: a backlog is latency every later command waits behind.
  */
 class NetCommandBuffer {
     public:

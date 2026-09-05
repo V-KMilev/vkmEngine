@@ -1,29 +1,11 @@
 # vkm_core - ECS, resources, IO, platform, and the non-render systems.
-file(GLOB_RECURSE VKM_CORE_SOURCES CONFIGURE_DEPENDS
-    core/*.cpp
-    ecs/*.cpp
-    io/*.cpp
-    resource/*.cpp
-    system/animation/*.cpp
-    system/audio/*.cpp
-    system/particle/*.cpp
-    system/async/*.cpp
-    system/camera/*.cpp
-    system/visibility/*.cpp
-    system/physics/*.cpp
-    system/script/*.cpp
-    system/sky/*.cpp
-    system/splash/*.cpp
-    system/hierarchy/*.cpp
-    system/ui/*.cpp
-    platform/input/*.cpp
-    platform/window/*.cpp
-    platform/threading/*.cpp
-    platform/library/*.cpp
-    platform/net/*.cpp
-    net/*.cpp
-    debug/*.cpp
-)
+# Everything under src/engine except the render system, which is its own shared
+# library below. Enumerated as one sweep and one removal rather than as a list of
+# directories: a list has to be edited to add a subsystem, and the edit is
+# invisible when it is forgotten - the new .cpp simply does not link.
+file(GLOB_RECURSE VKM_CORE_SOURCES CONFIGURE_DEPENDS *.cpp)
+file(GLOB_RECURSE VKM_RENDER_SOURCES CONFIGURE_DEPENDS system/render/*.cpp)
+list(REMOVE_ITEM VKM_CORE_SOURCES ${VKM_RENDER_SOURCES})
 
 # Shared, not static: a gameplay module has to reach engine symbols without
 # carrying a second copy of them, and one shared library both it and the host
@@ -133,8 +115,7 @@ if(VKM_PROFILER)
 endif()
 
 # vkm_render - render system, backend-neutral interface, and render view.
-file(GLOB_RECURSE VKM_RENDER_SOURCES CONFIGURE_DEPENDS system/render/*.cpp)
-
+# Its sources are globbed above, where they are also removed from vkm_core's.
 add_library(vkm_render SHARED ${VKM_RENDER_SOURCES})
 
 set_target_properties(vkm_render PROPERTIES

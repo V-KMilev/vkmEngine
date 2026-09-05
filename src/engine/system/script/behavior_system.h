@@ -17,32 +17,27 @@ class EventBus;
 /**
  * @brief Drives the lifecycle of every entity's ScriptComponent behaviors.
  *
- * Registered at SystemStage::Simulation, before PhysicsSystem, so scripts set
+ * Registered at SystemStage::Simulation, before PhysicsSystem, so a script sets
  * up state for physics to integrate the same frame. On an instance's first
  * simulation tick it injects the engine context and calls onStart(), then
- * onUpdate(simDelta) on every frame simulation time advanced and
+ * onUpdate(simDelta) whenever simulation time advanced and
  * onFixedUpdate(fixedStep) on every fixed tick - so pause, step and Stop reach
- * all three with one gate.
+ * all three through one gate.
  *
  * onRealtimeUpdate(realDelta) runs on top of that, every frame, paused or not,
- * and only on behaviors that have already started. Starting is deliberately
- * not something it does: a behavior belongs to a play session, only simulation
- * time begins one, and in the editor paused is also Edit mode - so a scene
- * merely open in the editor runs nothing over the authored world. The deferred
- * destroy() and loadScene() requests drain after that pass rather than after
- * the simulation one, which is what lets a paused game quit to its menu; they
- * belong to the session that made them, and endSession() discards them. A
- * scene loaded on a frozen frame still starts nothing until the clock runs, so
- * gameplay that quits to a menu resumes it in the same breath.
+ * and only on behaviors that have already started: a behavior belongs to a play
+ * session, only simulation time begins one, and in the editor paused is also
+ * Edit mode. The deferred destroy() and loadScene() requests drain after that
+ * pass rather than the simulation one, which is what lets a paused game quit to
+ * its menu; endSession() discards them.
  *
- * Subscribes to physics CollisionEvent / TriggerEvent and dispatches them to
- * the involved entities' onCollision / onTrigger hooks during update (after
- * onStart, before the deferred-destroy drain - so a collision handler may
- * destroy its own entity safely).
+ * Physics CollisionEvent and TriggerEvent are dispatched to the entities'
+ * onCollision / onTrigger during update, after onStart and before the deferred
+ * destroy drain, so a collision handler may destroy its own entity.
  *
- * Every hook runs under a catch net: a throwing behavior is reported via
- * reportError() and disabled, never fatal. onDestroy fires via endSession()
- * (play stop / shutdown) and destroyEntityBehaviors() (entity deletion).
+ * Every hook runs under a catch net: a throwing behavior is reported through
+ * reportError() and disabled, never fatal. onDestroy fires from endSession()
+ * and from destroyEntityBehaviors().
  */
 class BehaviorSystem : public System, public ISceneObserver {
     public:
@@ -191,6 +186,11 @@ class BehaviorSystem : public System, public ISceneObserver {
     private:
         std::vector<CollisionEvent> m_collisions;
         std::vector<TriggerEvent>   m_triggers;
+
+        /// The two physics subscriptions, kept so shutdown can drop them: both
+        /// capture `this`, and the bus outlives this system.
+        ListenerId m_collisionListener = 0;
+        ListenerId m_triggerListener   = 0;
 
         /**
          * @brief Entities to tick this pass, snapshotted before any hook runs.

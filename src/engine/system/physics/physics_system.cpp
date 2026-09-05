@@ -21,7 +21,6 @@
 #include "ecs/component/physics/rigidbody.h"
 #include "core/event/event_bus.h"
 #include "net/net_session.h"
-#include "system/physics/authoring/mesh_collider.h"
 #include "core/math/axes.h"
 #include "core/math/rotation.h"
 #include "system/hierarchy/hierarchy_operations.h"
@@ -53,9 +52,46 @@ float horizontalLengthSq(const glm::vec3& normal) {
 }
 
 float dynamicInverseMass(const Rigidbody& rb) {
-    if (rb.isStatic || rb.isKinematic || rb.mass <= 0.0f) return 0.0f;
+    if (Rigidbody::isImmovable(rb)) return 0.0f;
     return 1.0f / rb.mass;
 }
+
+/**
+ * @brief Disjoint sets over the tick's bodies, for grouping what rests together.
+ *
+ * Path-halving find and union by size, which is enough for a few thousand bodies
+ * and a few thousand pairs once a tick. Rebuilt each tick rather than kept:
+ * contacts are a per-tick fact and an island that outlived them would be a
+ * second, staler answer to the same question.
+ */
+class BodyIslands {
+    public:
+        explicit BodyIslands(size_t count) : m_parent(count), m_size(count, 1) {
+            for (size_t i = 0; i < count; ++i) m_parent[i] = static_cast<uint32_t>(i);
+        }
+
+    public:
+        uint32_t find(uint32_t i) {
+            while (m_parent[i] != i) {
+                m_parent[i] = m_parent[m_parent[i]];
+                i = m_parent[i];
+            }
+            return i;
+        }
+
+        void join(uint32_t a, uint32_t b) {
+            a = find(a);
+            b = find(b);
+            if (a == b) return;
+            if (m_size[a] < m_size[b]) std::swap(a, b);
+            m_parent[b] = a;
+            m_size[a]  += m_size[b];
+        }
+
+    private:
+        std::vector<uint32_t> m_parent;
+        std::vector<uint32_t> m_size;
+};
 
 // A body the integrator and solver leave alone: asleep or immovable (static,
 // kinematic, or non-positive mass). Takes the tick's inverse mass rather than
@@ -90,11 +126,11 @@ void shapeBounds(const SupportShape& shape, glm::vec3& min, glm::vec3& max) {
 }
 
 // Half-extent of one part's own local-space AABB. A capsule's is its radius on
-// the two axes across the segment and radius + halfHeight along it; a hull's or
-// a mesh's is whatever its points reach, halfExtents saying nothing about
-// either. Both read the same buffer, so both take the same branch - a mesh
-// falling through to halfExtents gave a sixteen-metre floor a half-metre bound,
-// and bodies landed on it only where they happened to be near its origin.
+// the two axes across the segment and radius + halfHeight along it; a mesh's is
+// whatever its points reach, halfExtents saying nothing about it. Both read the
+// same buffer, so both take the same branch - a mesh falling through to
+// halfExtents gave a sixteen-metre floor a half-metre bound, and bodies landed
+// on it only where they happened to be near its origin.
 glm::vec3 partLocalExtent(const Collider& collider, const ColliderPart& part) {
     switch (part.shape) {
         case ColliderShape::Box:
@@ -118,13 +154,6 @@ glm::vec3 partLocalExtent(const Collider& collider, const ColliderPart& part) {
             break;
     }
     return part.halfExtents;
-}
-
-bool hasMeshPart(const Collider& collider) {
-    for (const ColliderPart& part : collider.parts) {
-        if (part.shape == ColliderShape::Mesh) return true;
-    }
-    return false;
 }
 
 glm::mat3 localInverseInertia(const Rigidbody& rb, const Collider* collider) {
@@ -189,11 +218,13 @@ void computeAABB(
             mn = glm::min(center - axis, center + axis) - glm::vec3(part.radius);
             mx = glm::max(center - axis, center + axis) + glm::vec3(part.radius);
         } else {
-            // A hull's bound is its points'; a box's is its half-extents. Both
+            // A mesh's bound is its points'; a box's is its half-extents. Both
             // are then the same problem: an oriented box put into world space.
             const glm::vec3 extent = partLocalExtent(collider, part);
             model[3] = glm::vec4(center, 1.0f);
-            Math::localToWorldAABB(model, -extent, extent, mn, mx);
+            const Math::AABB world = Math::transform(model, {-extent, extent});
+            mn = world.min;
+            mx = world.max;
         }
         outMin = glm::min(outMin, mn);
         outMax = glm::max(outMax, mx);
@@ -206,16 +237,15 @@ bool aabbOverlap(const ColliderProxy& a, const ColliderProxy& b) {
         && a.aabbMin.z <= b.aabbMax.z && a.aabbMax.z >= b.aabbMin.z;
 }
 
-// Place one proxy's parts in world space, sorted into one array per shape. Two
-// monomorphic arrays rather than one tagged list: the pair loops below are
-// quadratic, so the shape test belongs here, once per part, not inside them.
-void expandSubShapes(const ColliderProxy& p, const std::vector<ColliderPart>& parts,
-                     PhysicsSystem::PairShapes& out) {
-    std::vector<BoxShape>& boxes = out.boxes;
-    std::vector<CapsuleShape>& capsules = out.capsules;
-
-    boxes.clear();
-    capsules.clear();
+// Place one proxy's parts in world space, appending each into the shared array
+// for its shape and recording the two spans on the proxy. Called once per body
+// at gather; see ColliderProxy for why the arrays are split by shape and why a
+// mesh part is not one of them.
+void expandSubShapes(ColliderProxy& p, const std::vector<ColliderPart>& parts,
+                     std::vector<BoxShape>& boxes,
+                     std::vector<CapsuleShape>& capsules) {
+    p.boxFirst     = static_cast<uint32_t>(boxes.size());
+    p.capsuleFirst = static_cast<uint32_t>(capsules.size());
 
     const glm::mat3 r = glm::mat3_cast(p.rotation);
 
@@ -230,13 +260,8 @@ void expandSubShapes(const ColliderProxy& p, const std::vector<ColliderPart>& pa
                 capsules.push_back({center - axis, center + axis, part.radius});
                 break;
             }
-            case ColliderShape::Mesh: {
-                // Not expanded here. A mesh is thousands of triangles and only
-                // the handful under the other shape matter, so it is walked per
-                // pair against that shape's bound instead - which is the whole
-                // reason it carries a tree.
-                break;
-            }
+            case ColliderShape::Mesh:
+                break;  // see ColliderProxy: walked per pair, not expanded
             case ColliderShape::Box:
                 boxes.push_back({center, {r[0], r[1], r[2]}, part.halfExtents});
                 break;
@@ -246,6 +271,8 @@ void expandSubShapes(const ColliderProxy& p, const std::vector<ColliderPart>& pa
         }
     }
 
+    p.boxCount     = static_cast<uint32_t>(boxes.size())    - p.boxFirst;
+    p.capsuleCount = static_cast<uint32_t>(capsules.size()) - p.capsuleFirst;
 }
 
 } // namespace
@@ -294,6 +321,8 @@ bool PhysicsSystem::gatherBodies(Scene& scene, const NetSession& net) {
     m_solverBodies.clear();
     m_proxies.clear();
     m_proxyParts.clear();   // capacity kept: the parts are POD, so no per-body allocation
+    m_shapeBoxes.clear();
+    m_shapeCapsules.clear();
     m_bodyFrames.clear();
 
     const uint32_t rbCount = static_cast<uint32_t>(rbStorage->size());
@@ -304,7 +333,7 @@ bool PhysicsSystem::gatherBodies(Scene& scene, const NetSession& net) {
 
         Rigidbody& rb = rbStorage->dataAt(i);
         const Transform& t = scene.get<Transform>(id);
-        const Collider* collider = scene.has<Collider>(id) ? &scene.get<Collider>(id) : nullptr;
+        const Collider* collider = scene.tryGet<Collider>(id);
 
         BodyFrame frame;
         // Defensively re-derive mass properties so editor edits to mass/collider
@@ -316,7 +345,7 @@ bool PhysicsSystem::gatherBodies(Scene& scene, const NetSession& net) {
         const glm::vec3 worldPos = pose.position;
         const glm::quat worldRot = pose.rotation;
         frame.parented       = pose.parented;
-        frame.parentWorldInv = pose.parentWorldInv;
+        frame.parentWorld    = pose.parentWorld;
         frame.parentRot      = pose.parentRot;
         frame.worldRot       = worldRot;
         // A body this end does not decide is immovable here and still collides,
@@ -344,13 +373,6 @@ bool PhysicsSystem::gatherBodies(Scene& scene, const NetSession& net) {
         m_solverBodies.push_back(pb);
 
         if (collider && collider->enabled) {
-            // A scene load reads the triangles back and not the tree, which is
-            // derived: rebuilt here, once, rather than written to disk where it
-            // could disagree with the triangles it describes.
-            const bool needsTree = collider->meshNodes.empty()
-                && hasMeshPart(*collider);
-            if (needsTree) rebuildMeshBvh(scene.get<Collider>(id));
-
             ColliderProxy proxy;
             proxy.body = bodyIndex;
             proxy.collider = collider;
@@ -364,11 +386,13 @@ bool PhysicsSystem::gatherBodies(Scene& scene, const NetSession& net) {
             // During a replay only bodies this end decides can move, so a pair
             // that cannot is worth never forming. Says so through the
             // broadphase's existing static-against-static skip, not a new rule.
-            proxy.cullStatic = rb.isStatic || rb.isKinematic
-                            || (net.replaying() && !frame.decided);
+            proxy.immovable = Rigidbody::isImmovable(rb)
+                           || (net.replaying() && !frame.decided);
             proxy.layer = rb.layer;
             proxy.collidesWith = rb.collidesWith;
             computeAABB(*collider, worldPos, worldRot, proxy.aabbMin, proxy.aabbMax);
+            // Once per body, not once per pair it turns out to be in.
+            expandSubShapes(proxy, m_proxyParts, m_shapeBoxes, m_shapeCapsules);
             m_proxies.push_back(proxy);
         }
     }
@@ -416,7 +440,10 @@ void PhysicsSystem::broadphase() {
         for (size_t b = a + 1; b < m_sorted.size(); ++b) {
             const ColliderProxy& pb = m_proxies[m_sorted[b]];
             if (pb.aabbMin.x > pa.aabbMax.x) break;  // sorted on X: no further overlap
-            if (pa.cullStatic && pb.cullStatic) continue;
+            // Neither end can move, so no contact resolves into anything -
+            // unless one is asking rather than resolving. A trigger pair still
+            // builds no manifold of its own: `record` returns early.
+            if (pa.immovable && pb.immovable && !pa.isTrigger && !pb.isTrigger) continue;
 
             // Both ways round, so "does A hit B" cannot depend on which was
             // asked. A pair that fails this is not a pair.
@@ -437,9 +464,21 @@ void PhysicsSystem::narrowphase(EventBus& events, bool replaying) {
     // manifolds. They all carry the same bodyA/bodyB, which is what lets the
     // solver take them as they come.
 
+    // The proxies' shapes were placed in world space once each, at gather.
+    const auto boxesOf = [&](const ColliderProxy& p) {
+        return std::pair{m_shapeBoxes.data() + p.boxFirst, p.boxCount};
+    };
+    const auto capsulesOf = [&](const ColliderProxy& p) {
+        return std::pair{m_shapeCapsules.data() + p.capsuleFirst, p.capsuleCount};
+    };
+
     for (const auto& pair : m_pairs) {
         const ColliderProxy& A = m_proxies[pair.first];
         const ColliderProxy& B = m_proxies[pair.second];
+        const auto [boxesA, boxCountA] = boxesOf(A);
+        const auto [boxesB, boxCountB] = boxesOf(B);
+        const auto [capsulesA, capsuleCountA] = capsulesOf(A);
+        const auto [capsulesB, capsuleCountB] = capsulesOf(B);
 
         if (!m_jointedPairs.empty()) {
             const uint64_t low  = glm::min(A.body, B.body);
@@ -448,9 +487,6 @@ void PhysicsSystem::narrowphase(EventBus& events, bool replaying) {
         }
 
         const bool trigger = A.isTrigger || B.isTrigger;
-
-        expandSubShapes(A, m_proxyParts, m_shapesA);
-        expandSubShapes(B, m_proxyParts, m_shapesB);
 
         bool anyContact = false;
         glm::vec3 contactPoint(0.0f);
@@ -492,27 +528,27 @@ void PhysicsSystem::narrowphase(EventBus& events, bool replaying) {
             }
         };
 
-        for (const BoxShape& sa : m_shapesA.boxes)
-            for (const BoxShape& sb : m_shapesB.boxes)
-                record(contactBoxes(sa, sb, scratch));
+        for (uint32_t i = 0; i < boxCountA; ++i)
+            for (uint32_t j = 0; j < boxCountB; ++j)
+                record(contactBoxes(boxesA[i], boxesB[j], scratch));
 
-        for (const CapsuleShape& ca : m_shapesA.capsules)
-            for (const BoxShape& sb : m_shapesB.boxes)
-                record(contactCapsuleBox(ca, sb, scratch));
+        for (uint32_t i = 0; i < capsuleCountA; ++i)
+            for (uint32_t j = 0; j < boxCountB; ++j)
+                record(contactCapsuleBox(capsulesA[i], boxesB[j], scratch));
 
         // B's capsules against A's boxes. Capsule-vs-box is not symmetric, so it
         // runs capsule-first and the normals are flipped back to A -> B here.
-        for (const CapsuleShape& cb : m_shapesB.capsules) {
-            for (const BoxShape& sa : m_shapesA.boxes) {
-                const int n = contactCapsuleBox(cb, sa, scratch);
+        for (uint32_t i = 0; i < capsuleCountB; ++i) {
+            for (uint32_t j = 0; j < boxCountA; ++j) {
+                const int n = contactCapsuleBox(capsulesB[i], boxesA[j], scratch);
                 for (int c = 0; c < n; ++c) scratch[c].normal = -scratch[c].normal;
                 record(n);
             }
         }
 
-        for (const CapsuleShape& ca : m_shapesA.capsules)
-            for (const CapsuleShape& cb : m_shapesB.capsules)
-                record(contactCapsuleCapsule(ca, cb, scratch));
+        for (uint32_t i = 0; i < capsuleCountA; ++i)
+            for (uint32_t j = 0; j < capsuleCountB; ++j)
+                record(contactCapsuleCapsule(capsulesA[i], capsulesB[j], scratch));
 
         // Anything against a mesh. Only the triangles under the other shape
         // are fetched, and a triangle is convex, so one support-driven routine
@@ -530,12 +566,9 @@ void PhysicsSystem::narrowphase(EventBus& events, bool replaying) {
             // every triangle coming out of it.
             const glm::mat3 rotation = glm::mat3_cast(meshProxy.rotation);
             const glm::mat3 toLocal = glm::transpose(rotation);
-            // Where the triangles actually are: the body's pose and the part's
-            // own centre. The tree is built over the raw points, so the query
-            // bound has to come back to that space through both - the same two
-            // terms the placement below applies in the other direction. Take
-            // only one of them and the bound is offset from the nodes by the
-            // other, and a slab test that misses returns no candidate at all.
+            // The tree is built over the raw points, so the query bound comes
+            // back to that space through both the body's pose and the part's
+            // centre - one without the other offsets it and the slab test misses.
             const glm::vec3 origin =
                 meshProxy.position + rotation * meshPart.center;
             const glm::vec3 corners[2] = {min - origin, max - origin};
@@ -567,23 +600,18 @@ void PhysicsSystem::narrowphase(EventBus& events, bool replaying) {
                 const SupportShape& second = meshIsA ? other : face;
                 if (!gjkContact(first, second, scratch[0])) continue;
 
-                // The triangle decides the direction, not EPA. A triangle is a
-                // zero-thickness hull, so its Minkowski difference with a body
-                // is symmetric about its plane and the shallowest way out flips
-                // the moment the body's centre crosses it - at which point the
-                // position pass drives the body down through the floor instead
-                // of back up onto it. The winding says which side is outside,
-                // and it has been sitting in the buffer unread.
+                // The triangle decides the direction, not EPA: a zero-thickness
+                // hull is symmetric about its plane, so the shallowest way out
+                // flips as the centre crosses it. The winding says which side.
                 const glm::vec3 edge = glm::cross(world[1] - world[0],
                                                   world[2] - world[0]);
                 const float edgeLenSq = glm::dot(edge, edge);
                 if (edgeLenSq > Physics::DEGENERATE_SQ) {
                     const glm::vec3 faceNormal = edge / std::sqrt(edgeLenSq);
 
-                    // How far the body reaches past the face, measured along
-                    // the face - never along EPA's answer. The two agree while
-                    // the body is on the outside, and it is exactly when they
-                    // stop agreeing that this matters.
+                    // How far the body reaches past the face, measured along the
+                    // face - never along EPA's answer. The two agree while the
+                    // body is outside, and it matters when they stop.
                     const glm::vec3 deepest = support(other, -faceNormal);
                     const float depth = glm::dot(world[0] - deepest, faceNormal);
                     if (depth <= 0.0f) continue;
@@ -603,21 +631,13 @@ void PhysicsSystem::narrowphase(EventBus& events, bool replaying) {
 
         forEachMeshPart(A, m_proxyParts, [&](const Collider& c,
                                             const ColliderPart& p) {
-            for (const BoxShape& sb : m_shapesB.boxes) {
-                meshAgainst(A, c, p, supportOf(sb), true);
-            }
-            for (const CapsuleShape& cb : m_shapesB.capsules) {
-                meshAgainst(A, c, p, supportOf(cb), true);
-            }
+            for (uint32_t i = 0; i < boxCountB; ++i)     meshAgainst(A, c, p, supportOf(boxesB[i]), true);
+            for (uint32_t i = 0; i < capsuleCountB; ++i) meshAgainst(A, c, p, supportOf(capsulesB[i]), true);
         });
         forEachMeshPart(B, m_proxyParts, [&](const Collider& c,
                                             const ColliderPart& p) {
-            for (const BoxShape& sa : m_shapesA.boxes) {
-                meshAgainst(B, c, p, supportOf(sa), false);
-            }
-            for (const CapsuleShape& ca : m_shapesA.capsules) {
-                meshAgainst(B, c, p, supportOf(ca), false);
-            }
+            for (uint32_t i = 0; i < boxCountA; ++i)     meshAgainst(B, c, p, supportOf(boxesA[i]), false);
+            for (uint32_t i = 0; i < capsuleCountA; ++i) meshAgainst(B, c, p, supportOf(capsulesA[i]), false);
         });
         if (anyContact) {
             // Enqueued, not emitted: listeners fire on the next EventBus flush,
@@ -684,10 +704,9 @@ void PhysicsSystem::wakeConnected(Scene& scene) {
         rouse(manifold.bodyA, manifold.bodyB);
     }
 
-    // Joints too, and they are the case that needed saying: a jointed pair
-    // generates no manifold on purpose, so a body asleep on the end of one was
-    // a nail. Pulling the other end did nothing, for as long as the pull
-    // lasted, because the solver treats a sleeper as immovable.
+    // Joints too: a jointed pair generates no manifold on purpose, so pulling
+    // one end while the other sleeps does nothing - the solver treats a sleeper
+    // as immovable.
     for (const JointConstraint& joint : m_joints) {
         rouse(joint.bodyA, joint.bodyB);
     }
@@ -702,11 +721,16 @@ void PhysicsSystem::gatherJoints(Scene& scene) {
     auto* storage = scene.storage<Joint>();
     if (!storage) return;
 
-    // Entity -> this tick's body index. Built from the bodies actually gathered,
+    // Slot -> this tick's body index. Built from the bodies actually gathered,
     // so a joint to something not simulated resolves to nothing and is dropped.
-    std::unordered_map<uint32_t, uint32_t> indexOf;
-    indexOf.reserve(m_bodies.size());
-    for (uint32_t i = 0; i < m_bodies.size(); ++i) indexOf[m_bodies[i].slot()] = i;
+    uint32_t maxSlot = 0;
+    for (const EntityId body : m_bodies) maxSlot = std::max(maxSlot, body.slot());
+    m_bodyIndexBySlot.assign(static_cast<size_t>(maxSlot) + 1, NO_BODY);
+    for (uint32_t i = 0; i < m_bodies.size(); ++i) m_bodyIndexBySlot[m_bodies[i].slot()] = i;
+
+    const auto bodyIndexOf = [&](uint32_t slot) {
+        return slot < m_bodyIndexBySlot.size() ? m_bodyIndexBySlot[slot] : NO_BODY;
+    };
 
     const uint32_t count = static_cast<uint32_t>(storage->size());
     for (uint32_t i = 0; i < count; ++i) {
@@ -717,20 +741,19 @@ void PhysicsSystem::gatherJoints(Scene& scene) {
         // moved in.
         if (!joint.connected || !scene.isAlive(joint.connected)) continue;
 
-        const auto a = indexOf.find(self.slot());
-        if (a == indexOf.end()) continue;
+        const uint32_t bodyA = bodyIndexOf(self.slot());
+        if (bodyA == NO_BODY) continue;
 
-        const auto b = indexOf.find(joint.connected.slot());
+        const uint32_t connected = bodyIndexOf(joint.connected.slot());
         uint32_t bodyB = 0;
         glm::mat3 rotB(1.0f);
-        if (b != indexOf.end()) {
-            bodyB = b->second;
+        if (connected != NO_BODY) {
+            bodyB = connected;
             rotB = glm::mat3_cast(m_bodyFrames[bodyB].worldRot);
         } else if (scene.has<Transform>(joint.connected)) {
-            // The documented world pin: connected has a pose but no body, so
-            // the joint holds to that point in the world. A synthetic static
-            // body carries it through the solver - appended after the real
-            // ones, so nothing writes it back.
+            // The world pin: connected has a pose but no body, so the joint
+            // holds to that point. A synthetic static body carries it through the
+            // solver, appended after the real ones so nothing writes it back.
             const glm::mat4 world =
                 HierarchyOperations::computeWorldMatrix(scene, joint.connected);
             PhysicsBody anchor;
@@ -742,25 +765,24 @@ void PhysicsSystem::gatherJoints(Scene& scene) {
             continue;
         }
 
-        const glm::mat3 rotA = glm::mat3_cast(m_bodyFrames[a->second].worldRot);
+        const glm::mat3 rotA = glm::mat3_cast(m_bodyFrames[bodyA].worldRot);
 
         JointConstraint constraint;
-        constraint.bodyA = a->second;
+        constraint.bodyA = bodyA;
         constraint.bodyB = bodyB;
         constraint.anchorA = rotA * joint.anchor;
         constraint.anchorB = rotB * joint.connectedAnchor;
         constraint.stiffness = glm::clamp(joint.stiffness, 0.0f, 1.0f);
 
         if (joint.type == JointType::Distance) {
-            // Unset: whatever the two were apart when the joint first ran. An
-            // authored rope has a length someone chose; one built at play time
-            // has the length it was built with, and asking the author to
-            // compute it is asking them to do the solver's arithmetic.
+            // Unset: whatever the two were apart when the joint first ran. A
+            // rope built at play time has the length it was built with, and
+            // computing it is the solver's arithmetic, not the author's.
             if (joint.distance >= 0.0f) {
                 joint.resolvedDistance = joint.distance;
             } else if (joint.resolvedDistance < 0.0f) {
                 const glm::vec3 worldA =
-                    m_solverBodies[a->second].position + constraint.anchorA;
+                    m_solverBodies[bodyA].position + constraint.anchorA;
                 const glm::vec3 worldB =
                     m_solverBodies[bodyB].position + constraint.anchorB;
                 joint.resolvedDistance = glm::length(worldB - worldA);
@@ -800,12 +822,30 @@ void PhysicsSystem::solve(const PhysicsSettings& physics, float dt) {
     SolverParams params;
     params.iterations = physics.solverIterations;
     params.dt = dt;
+
+    // Seeded before, recorded after: what a pair needed last tick is what it
+    // needs now, and a solve that starts from it holds a stack instead of
+    // rediscovering its own weight eight passes at a time.
+    m_contactCache.seed(m_manifolds, m_bodies, m_solverBodies);
     solveContacts(m_solverBodies, m_manifolds, params);
 
     // After the contacts, not beside them. A joint resolved first would pull a
     // body into a surface the contact pass then pushes it out of, and the two
     // would trade the body back and forth for as long as both were unhappy.
     solveJoints(m_solverBodies, m_joints, params);
+
+    // The poses move here rather than in writeback, because what separates an
+    // overlapping pair is the recovery velocity being spent on distance - and
+    // the relax pass below exists to take that velocity back once it has been.
+    // Integrated in the world frame the solver ran in; writeback maps it home.
+    for (size_t k = 0; k < m_bodies.size(); ++k) {
+        PhysicsBody& body = m_solverBodies[k];
+        if (body.invMass == 0.0f) continue;
+        body.position += body.linearVelocity * dt;
+    }
+
+    relaxContacts(m_solverBodies, m_manifolds, params);
+    m_contactCache.record(m_manifolds, m_bodies, m_solverBodies);
 }
 
 void PhysicsSystem::leaseContacts(Scene& scene, NetSession& net) {
@@ -879,11 +919,9 @@ void PhysicsSystem::writeback(Scene& scene, bool replaying, float dt) {
         Rigidbody& rb = scene.get<Rigidbody>(id);
         PhysicsBody& pb = m_solverBodies[k];
 
-        // Published before the early-outs below, and for a body this end does
-        // not decide as well: a sleeping body resting on the floor is
-        // supported, and that is exactly when a controller asks. The one
-        // exception is a replay, where such a body was made unpairable and
-        // would report nothing under it - so it keeps what it last said.
+        // Published before the early-outs below: a sleeping body resting on the
+        // floor is supported, and that is when a controller asks. In a replay an
+        // unpairable body keeps what it last said instead.
         const bool decided = m_bodyFrames[k].decided;
         if (decided || !replaying) {
             rb.supported     = m_contacts[k].touched;
@@ -904,44 +942,92 @@ void PhysicsSystem::writeback(Scene& scene, bool replaying, float dt) {
 
         Transform& t = scene.get<Transform>(id);
         const BodyFrame& frame = m_bodyFrames[k];
-        const glm::vec3 linear = pb.linearVelocity + pb.pseudoLinear;
-        const glm::vec3 angular = pb.angularVelocity + pb.pseudoAngular;
+        const glm::vec3 angular = pb.angularVelocity;
 
-        // Integrate the pose in WORLD space (the frame the solver ran in), then
-        // map it back to the entity's local Transform - an identity map for a
-        // root, parent-relative for a parented body.
-        const glm::vec3 worldPos = pb.position + linear * dt;
+        // The position was integrated in the solve, between the pass that asks
+        // for an overlap back and the pass that takes the asking velocity out
+        // again. The rotation is integrated here, from the velocity that
+        // survived both.
+        const glm::vec3 worldPos = pb.position;
         const glm::quat worldRotOld = frame.parented ? frame.parentRot * t.rotation : t.rotation;
         const glm::quat spin(0.0f, angular.x, angular.y, angular.z);
         const glm::quat worldRot = glm::normalize(worldRotOld + 0.5f * spin * worldRotOld * dt);
 
         if (frame.parented) {
-            t.position = glm::vec3(frame.parentWorldInv * glm::vec4(worldPos, 1.0f));
+            t.position = glm::vec3(glm::inverse(frame.parentWorld) * glm::vec4(worldPos, 1.0f));
             t.rotation = glm::normalize(glm::conjugate(frame.parentRot) * worldRot);
         } else {
             t.position = worldPos;
             t.rotation = worldRot;
         }
 
-        // canSleep opts a body out of sleeping entirely - script-driven
-        // characters must never doze off, or their velocity writes get zeroed
-        // and the solver treats them as immovable mid-gameplay.
+        // canSleep opts a body out entirely - a script-driven character that
+        // dozes off has its velocity writes zeroed. The timer is this body's
+        // own; whether it may act on it is sleepIslands' answer.
         if (!rb.isKinematic && rb.canSleep) {
             const float linSq = glm::dot(rb.linearVelocity, rb.linearVelocity);
             const float angSq = glm::dot(rb.angularVelocity, rb.angularVelocity);
             const bool resting = m_contacts[k].touched && linSq < SLEEP_LINEAR_SQ
                                  && angSq < SLEEP_ANGULAR_SQ;
-            if (resting) {
-                rb.sleepTimer += dt;
-                if (rb.sleepTimer >= SLEEP_DELAY) {
-                    rb.sleeping = true;
-                    rb.linearVelocity = glm::vec3(0.0f);
-                    rb.angularVelocity = glm::vec3(0.0f);
-                }
-            } else {
-                rb.sleepTimer = 0.0f;
-            }
+            if (resting) rb.sleepTimer += dt;
+            else         rb.sleepTimer  = 0.0f;
         }
+    }
+
+    sleepIslands(scene, replaying);
+}
+
+void PhysicsSystem::sleepIslands(Scene& scene, bool replaying) {
+    PROFILE_SCOPE("Physics/Sleep");
+
+    // The unit is the island, not the body: everything that can push everything
+    // else sleeps together or not at all. A crate that sleeps while the stack
+    // under it settles is immovable to the solver, and the stack slides out.
+    BodyIslands islands(m_solverBodies.size());
+
+    // Only dynamic pairs join. A static floor is in contact with everything
+    // resting on it, so letting statics carry the union would put every body in
+    // the level into one island and nothing would ever sleep.
+    for (const ContactManifold& manifold : m_manifolds) {
+        if (m_solverBodies[manifold.bodyA].invMass == 0.0f) continue;
+        if (m_solverBodies[manifold.bodyB].invMass == 0.0f) continue;
+        islands.join(manifold.bodyA, manifold.bodyB);
+    }
+    // Joints too: a body hanging off another is held by it, and a sleeper on the
+    // end of a swinging rope is a body simulated no further.
+    for (const JointConstraint& joint : m_joints) {
+        if (m_solverBodies[joint.bodyA].invMass == 0.0f) continue;
+        if (m_solverBodies[joint.bodyB].invMass == 0.0f) continue;
+        islands.join(joint.bodyA, joint.bodyB);
+    }
+
+    // Ready means every dynamic member has held still long enough. One member
+    // that is awake, opted out, or simply younger than the delay keeps its whole
+    // island awake, which is the point.
+    std::vector<uint8_t> ready(m_solverBodies.size(), 1);
+    for (size_t k = 0; k < m_bodies.size(); ++k) {
+        if (!m_bodyFrames[k].decided) continue;
+        const Rigidbody& rb = scene.get<Rigidbody>(m_bodies[k]);
+        if (rb.isStatic || rb.isKinematic || m_solverBodies[k].invMass == 0.0f) continue;
+
+        const bool memberReady = rb.canSleep && rb.sleepTimer >= SLEEP_DELAY;
+        if (!memberReady) ready[islands.find(static_cast<uint32_t>(k))] = 0;
+    }
+
+    for (size_t k = 0; k < m_bodies.size(); ++k) {
+        if (!m_bodyFrames[k].decided) continue;
+        Rigidbody& rb = scene.get<Rigidbody>(m_bodies[k]);
+        if (rb.isStatic || rb.isKinematic || !rb.canSleep) continue;
+        if (m_solverBodies[k].invMass == 0.0f) continue;
+        if (!ready[islands.find(static_cast<uint32_t>(k))]) continue;
+
+        // A replay must not put a body to sleep: the tick is being re-run from a
+        // server correction, and sleeping is a decision about the live timeline.
+        if (replaying) continue;
+
+        rb.sleeping        = true;
+        rb.linearVelocity  = glm::vec3(0.0f);
+        rb.angularVelocity = glm::vec3(0.0f);
     }
 }
 

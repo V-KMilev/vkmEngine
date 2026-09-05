@@ -14,31 +14,11 @@ namespace Vkm::Engine {
  *
  * The four identity fields are the manager's to write and everyone else's to
  * read, which is why they are private with ResourceManager as the one friend.
- * The manager keeps a per-type name -> storage index map and guarantees a name
- * is non-empty and unique within its type; a name assigned through `edit()`
- * after `add()` would leave that map holding the old string, and
- * `findByName(newName)` would return nothing for the rest of the session.
- * Assign a name when the asset goes in - `add(asset, name)` - and change one
- * afterwards with `rename(handle, name)`.
- *
- * What the four mean:
- *
- * `name()` is the serializable identity. A scene file records the name, not the
- * handle, and `findByName` resolves it back to a handle on load; a code-
- * generated asset that is not meant to survive serialization still gets one,
- * because add() insists.
- *
- * `version()` is the change counter the backend keys GPU re-uploads on: GLView
- * rebuilds a slot only when this moves, so a slider drag re-uploads one
- * material rather than the cache. `ResourceManager::commit` is what moves it.
- *
- * `uid()` names the asset itself rather than the slot it sits in. A completion
- * that crossed a worker hop compares the uid it was minted against with the one
- * it finds, and so tells its asset apart from a stranger that has since
- * recycled the slot.
- *
- * `isHidden()` marks an asset that pickers, the Asset Browser and the scene
- * saver skip; `ResourceManager::addPrivate` is what sets it.
+ * The manager keeps a per-type name -> storage index map, so a name assigned
+ * through `edit()` after `add()` would leave that map holding the old string and
+ * `findByName` would answer nothing for the rest of the session: name an asset
+ * when it goes in - `add(asset, name)` - and change one afterwards with
+ * `rename(handle, name)`.
  *
  * A subclass is a plain data struct - bare public members of its own - loaded,
  * saved and looked up generically through this base.
@@ -62,11 +42,9 @@ class Resource {
          * by passing one.
          */
         Resource(const Resource& other);
-        // Deleted rather than defined. Assigning one asset's base over another
-        // silently drops the uid and version the copy constructor deliberately
-        // omits, so a caller replacing an asset's contents gets an identity the
-        // manager never issued. ResourceManager::swapValue is the door for that,
-        // and it is the only one - this deletion is what keeps it so.
+        // Deleted rather than defined: assigning one asset's base over another
+        // drops the uid and version the copy constructor omits, so the result is
+        // an identity the manager never issued. swapValue is the only door.
         Resource& operator=(const Resource& other) = delete;
 
         Resource(Resource && other) noexcept;

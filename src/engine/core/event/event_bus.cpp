@@ -12,10 +12,8 @@ void EventBus::flush() {
     // never-before-seen type, which lazily creates a bus and can reallocate
     // m_buses. The Bus objects are heap-stable, so the pointers stay valid.
     std::vector<IBus*> active;
-    active.reserve(m_buses.size());
-    for (auto& bus : m_buses) {
-        if (bus) active.push_back(bus.get());
-    }
+    active.reserve(m_buses.count());
+    m_buses.forEach([&](IBus& bus) { active.push_back(&bus); });
     for (IBus* bus : active) {
         bus->flush();
     }

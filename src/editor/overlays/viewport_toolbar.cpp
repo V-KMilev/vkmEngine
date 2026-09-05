@@ -9,16 +9,13 @@
 
 namespace Vkm::Engine {
 
+using EditorStyle::overlayButton;
+using EditorStyle::overlayGap;
+using EditorStyle::overlayGroupGap;
+using EditorStyle::overlayInset;
+using EditorStyle::overlayPad;
+
 namespace {
-// Sizes in design px - font/DPI-relative via EditorStyle::px.
-/// Icon button side length.
-float BTN() { return EditorStyle::px(26.0f); }
-/// Spacing between groups.
-float SEP() { return EditorStyle::px(10.0f); }
-/// Toolbar inner padding.
-float PAD() { return EditorStyle::px(5.0f); }
-/// Inset from the viewport edge the overlay floats at.
-float INSET() { return EditorStyle::px(8.0f); }
 
 void tipFor(char* buf, size_t n, const char* name, const KeyBind& bind) {
     char key[24];
@@ -30,11 +27,11 @@ void tipFor(char* buf, size_t n, const char* name, const KeyBind& bind) {
 void ViewportToolbar::drawViewMode(EditorContext& ec) {
     RenderSettings& settings = ec.renderSystem.getSettings();
 
-    ImGui::SetCursorPos(ImVec2(INSET(), INSET()));
+    ImGui::SetCursorPos(ImVec2(overlayInset(), overlayInset()));
     ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::OVERLAY_BG);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PAD(), PAD()));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(overlayPad(), overlayPad()));
 
-    const float h = ImGui::GetFrameHeight() + PAD() * 2.0f;
+    const float h = ImGui::GetFrameHeight() + overlayPad() * 2.0f;
     if (ImGui::BeginChild("##ViewportViewMode", ImVec2(EditorStyle::px(160.0f), h),
             ImGuiChildFlags_Borders)) {
         ImGui::SetNextItemWidth(-1.0f);
@@ -56,43 +53,42 @@ void ViewportToolbar::draw(EditorContext& ec) {
 
     const auto& kb = state.keybinds;
 
-    auto tool = [&](const char* id, EditorIcon icon, GizmoOperation op,
+    auto tool = [&](const char* id, EditorIcon icon, EditorTool which,
                     const char* name, const KeyBind& bind) {
         char tip[80];
         tipFor(tip, sizeof(tip), name, bind);
-        if (iconButton(id, icon, state.gizmoOperation == op, true, tip, BTN()))
-            state.gizmoOperation = op;
+        if (iconButton(id, icon, state.tool == which, true, tip, overlayButton())) state.tool = which;
         ImGui::SameLine();
     };
 
-    const float toolbarH = BTN() + PAD() * 2.0f + 2.0f;
+    const float toolbarH = overlayButton() + overlayPad() * 2.0f + 2.0f;
     ImVec2 ws = ImGui::GetWindowSize();
     float padY = ImGui::GetStyle().WindowPadding.y;
-    ImGui::SetCursorPos(ImVec2(INSET(), ws.y - padY - toolbarH - INSET()));
+    ImGui::SetCursorPos(ImVec2(overlayInset(), ws.y - padY - toolbarH - overlayInset()));
 
     ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::OVERLAY_BG);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(PAD(), PAD()));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(EditorStyle::px(4.0f), 0.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(overlayPad(), overlayPad()));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(overlayGap(), 0.0f));
 
     if (ImGui::BeginChild("##ViewportToolbar", ImVec2(0, toolbarH),
             ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_Borders)) {
 
-        tool("sel", EditorIcon::Select,    GizmoOperation::Select,    "Select", kb.gizmoSelect);
-        tool("mov", EditorIcon::Move,      GizmoOperation::Translate, "Move",   kb.gizmoTranslate);
-        tool("rot", EditorIcon::Rotate,    GizmoOperation::Rotate,    "Rotate", kb.gizmoRotate);
-        tool("scl", EditorIcon::Scale,     GizmoOperation::Scale,     "Scale",  kb.gizmoScale);
+        tool("sel", EditorIcon::Select,    EditorTool::Select,    "Select", kb.gizmoSelect);
+        tool("mov", EditorIcon::Move,      EditorTool::Translate, "Move",   kb.gizmoTranslate);
+        tool("rot", EditorIcon::Rotate,    EditorTool::Rotate,    "Rotate", kb.gizmoRotate);
+        tool("scl", EditorIcon::Scale,     EditorTool::Scale,     "Scale",  kb.gizmoScale);
 
-        ImGui::SameLine(0, SEP());
+        ImGui::SameLine(0, overlayGroupGap());
         bool world = state.gizmoMode == GizmoMode::World;
         char spcTip[80];
         tipFor(spcTip, sizeof(spcTip), world ? "Space: World" : "Space: Local",
                kb.gizmoToggleSpace);
         if (iconButton("spc", world ? EditorIcon::SpaceWorld : EditorIcon::SpaceLocal,
-                       false, true, spcTip, BTN()))
+                       false, true, spcTip, overlayButton()))
             state.gizmoMode = world ? GizmoMode::Local : GizmoMode::World;
         ImGui::SameLine();
         if (iconButton("snp", EditorIcon::Snap, state.snapEnabled, true,
-                       "Grid snap (hold Ctrl for temporary)", BTN()))
+                       "Grid snap (hold Ctrl for temporary)", overlayButton()))
             state.snapEnabled = !state.snapEnabled;
 
         bool haveSel = state.selectedEntity && ctx.scene.isAlive(state.selectedEntity);
@@ -102,19 +98,19 @@ void ViewportToolbar::draw(EditorContext& ec) {
         tipFor(delTip, sizeof(delTip), "Delete", kb.deleteEntity);
         tipFor(frameTip, sizeof(frameTip), "Frame All", kb.frameAll);
 
-        ImGui::SameLine(0, SEP());
-        if (iconButton("dup", EditorIcon::Duplicate, false, haveSel, dupTip, BTN()))
+        ImGui::SameLine(0, overlayGroupGap());
+        if (iconButton("dup", EditorIcon::Duplicate, false, haveSel, dupTip, overlayButton()))
             EditorActions::duplicateSelection(ctx.scene, ctx.resources, state);
         ImGui::SameLine();
-        if (iconButton("foc", EditorIcon::Focus, false, haveSel, focTip, BTN()))
+        if (iconButton("foc", EditorIcon::Focus, false, haveSel, focTip, overlayButton()))
             EditorActions::focusOnSelected(ctx, state, camera);
         ImGui::SameLine();
-        if (iconButton("del", EditorIcon::Trash, false, haveSel, delTip, BTN()))
+        if (iconButton("del", EditorIcon::Trash, false, haveSel, delTip, overlayButton()))
             EditorActions::deleteSelection(ctx.scene, state);
 
-        ImGui::SameLine(0, SEP());
+        ImGui::SameLine(0, overlayGroupGap());
         if (iconButton("frameAll", EditorIcon::FrameAll, false, true,
-                       frameTip, BTN()))
+                       frameTip, overlayButton()))
             EditorActions::frameAll(ctx, camera);
 
         m_hovered = ImGui::IsWindowHovered(

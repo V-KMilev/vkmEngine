@@ -1,5 +1,10 @@
 #pragma once
 
+#include <string>
+
+#include "framework/asset_picker.h"
+#include "io/project.h"
+
 namespace Vkm::Engine {
 
 struct EditorContext;
@@ -18,6 +23,11 @@ struct EditorContext;
  * written when someone says so. Not on the command stack either: that history
  * is scene-scoped and thrown away by the next scene load, so an undo of a
  * project-level change would silently do nothing.
+ *
+ * Which is why the window says whether what it shows has been written yet. A
+ * field edited here and left unsaved looks exactly like one that was saved,
+ * and the next thing to read project.json - a runtime, a server, a cook - reads
+ * the file rather than what is on screen.
  */
 class ProjectSettingsPanel {
     public:
@@ -36,6 +46,28 @@ class ProjectSettingsPanel {
          * title-bar X clears it.
          */
         void draw(EditorContext& ec);
+
+    private:
+        /**
+         * @brief Whether the fields this window edits differ from what was written.
+         *
+         * The fields, not the whole Project: Save also stamps the engine version
+         * and takes the render settings live off the render system, so a
+         * comparison of everything would read as unsaved from the first frame
+         * anybody moved a quality slider.
+         *
+         * @param a One project.
+         * @param b The other.
+         * @return Whether every field this window shows is equal.
+         */
+        static bool sameEditedFields(const Project& a, const Project& b);
+
+    private:
+        AssetPicker m_scenePicker;
+
+        /// The project as it was last known written, and the root it belongs to.
+        Project     m_saved;
+        std::string m_savedRoot;
 };
 
 } // namespace Vkm::Engine

@@ -19,41 +19,21 @@ class ResourceManager;
  * A prefab is a scene fragment: the same per-entity component shape a scene
  * uses, for one entity and its descendants, in its own file. Instancing one
  * builds those entities fresh, so editing the prefab changes every instance the
- * next time a scene is loaded.
+ * next time a scene is loaded. A scene stores an instance as a reference plus
+ * the root's Transform and whatever fields an override names; everything else
+ * belongs to the prefab.
  *
- * A scene stores an instance as a reference plus the root's Transform, not as
- * the expanded entities. What varies per instance is exactly that Transform and
- * the fields an override names; everything else belongs to the prefab.
+ * Referenced by path rather than through the AssetLibrary, because nothing cooks
+ * them - they are authored JSON, read as-is, like scenes - and each file carries
+ * the same assets block a scene does, which is what lets one be instantiated
+ * into a scene that never held its meshes.
  *
- * Prefabs are referenced by path rather than through the AssetLibrary because
- * nothing cooks them - they are authored JSON, read as-is, like scenes.
+ * Hand-editable, so every entry point here reports a document it cannot use and
+ * returns rather than throwing: the callers are an editor showing a toast beside
+ * its file picker, and a scene load with other entities still to build.
  *
- * A prefab carries the same **assets block** a scene does, for the subtree it
- * describes, and every entry point that reads components out of it loads that
- * block first. Component references are asset names, and a name resolves to
- * nothing unless something already loaded it, so without it a prefab was only
- * instantiable where something else happened to have loaded its meshes.
- *
- * Prefabs are hand-editable, so every entry point here reports a document it
- * cannot use and returns rather than throwing: the callers are an editor showing
- * a toast beside its file picker and a scene load with other entities to build.
- *
- * **Per-instance overrides.** A scene may store field deltas against an
- * instance, addressed by @ref PrefabEntity uid, component key and field key.
- * They are stored, never re-derived by diffing the built subtree against the
- * file: a load that could not resolve an asset name writes a different value
- * than it read, so a diff would manufacture overrides out of load failures, and
- * a missing prefab file would erase every override in the scene.
- *
- * **When the prefab changes underneath an override** the override is kept,
- * reported once, and not applied. The cases are: the uid is gone, the component
- * is gone, the field is gone, the value's type no longer matches, the root's
- * Transform (which is the instance's own pose and could never have taken
- * effect), and Script (a behavior's authored values are the prefab's on every
- * instance - the component is one field holding the whole list, so the only
- * override the format can spell is a wholesale replacement of it). Keeping the
- * entry means renaming a field and renaming it back does not lose the user's
- * edit.
+ * The override format, and what happens when a prefab changes underneath one:
+ * docs/reference/system/io.md, "Per-instance overrides".
  */
 namespace Prefab {
 
@@ -142,20 +122,16 @@ namespace Prefab {
     /**
      * @brief Build a prefab into an entity that already exists.
      *
-     * The scene loader restores entities at their saved slot, so it must create
-     * the instance root itself and fill it afterwards; letting the prefab
-     * allocate the root would take a slot another entity is waiting for.
+     * The scene loader restores entities at their saved slot, so it creates the
+     * instance root itself: letting the prefab allocate one would take a slot
+     * another entity is waiting for. @p root receives the prefab root's
+     * components and children, and keeps its own Transform - the instance's pose
+     * belongs to whoever placed it.
      *
-     * @p root receives the prefab root's components and children. Its Transform
-     * is left alone - the instance's pose belongs to whoever placed it, not to
-     * the prefab.
-     *
-     * The caller marks @p root as a @ref PrefabInstance itself, unlike the
-     * @ref instantiate overloads which create the root and mark it. The scene
-     * loader has to: the overrides it read off the file belong on the component
-     * before the subtree is built from it. Without the marker the result is a
-     * loose copy - the next scene save writes the whole subtree inline and the
-     * link to the prefab is gone.
+     * The caller marks @p root as a @ref PrefabInstance, unlike the @ref
+     * instantiate overloads which create the root and mark it: the overrides read
+     * off the file belong on the component before the subtree is built from it.
+     * Without the marker the result is a loose copy the next save writes inline.
      *
      * @param scene     Scene to build into.
      * @param resources Resolves asset names to handles.

@@ -19,6 +19,7 @@
 #include "ecs/component/render/lod.h"
 #include "ecs/component/render/mesh.h"
 
+#include "core/host_chrome.h"
 #include "core/math/bounds.h"
 #include "system/animation/pose_buffer.h"
 #include "system/visibility/visibility_context.h"
@@ -35,19 +36,16 @@ namespace {
  * @brief The box this frame's pose actually occupies, in the mesh's own space.
  *
  * A posed character's bind-pose box is under-sized by construction, and the GPU
- * occlusion cull keeps conservatively: an under-sized box does not over-draw, it
- * deletes geometry that was visible. A character that raises an arm out of its
- * bind box would vanish.
+ * occlusion cull keeps conservatively - an under-sized box does not over-draw, it
+ * deletes geometry that was visible, so a character raising an arm vanishes.
  *
- * The pose publishes what it knows - the box of the posed bone origins, in rig
- * space, and the largest scale any bone carries - and the mesh knows the rest:
- * `skinRadius` is how far a vertex sits from the bone that moves it, so the
- * origins box inflated by it contains the skin. The scale multiplies the radius
+ * The pose publishes the box of the posed bone origins in rig space and the
+ * largest scale any bone carries; the mesh knows the rest, `skinRadius` being how
+ * far a vertex sits from the bone that moves it. The scale multiplies the radius
  * because a bone scaled 2x stretches its skin twice as far from the joint.
  *
- * The radius is measured in mesh space and applied in rig space, which is exact
- * while the bind transform between them is rigid - it is a recentring in every
- * real rig - and conservative in the direction that matters otherwise, because
+ * The radius is measured in mesh space and applied in rig space: exact while the
+ * bind transform between them is rigid, and conservative otherwise, because
  * `maxBoneScale` is floored at 1.
  *
  * @param mesh Mesh being bounded.
@@ -143,8 +141,9 @@ void VisibilitySystem::update(FrameContext& ctx) {
     m_result.hasCamera = false;
 
     // Cameras in auto-aspect mode (aspect <= 0) track the viewport.
-    const float vpW = static_cast<float>(ctx.window.sceneViewportWidth());
-    const float vpH = static_cast<float>(ctx.window.sceneViewportHeight());
+    const HostChrome::ViewportRect viewport = ctx.chrome.viewport(ctx.window);
+    const float vpW = static_cast<float>(viewport.width);
+    const float vpH = static_cast<float>(viewport.height);
     const float viewportAspect = vpH > 0.0f ? vpW / vpH : 16.0f / 9.0f;
 
     if (!resolveActiveCamera(ctx.scene, viewportAspect)) {
@@ -166,7 +165,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
 
     // Pre-compute screen-size threshold for sqrt-free test
     const float projScaleY = m_result.projection[1][1];
-    const float vpHeight = static_cast<float>(ctx.window.sceneViewportHeight());
+    const float vpHeight = vpH;
     const float denom = projScaleY * vpHeight;
     const float screenThresholdSq = (denom > 0.0f)
         ? (m_settings.minPixels * m_settings.minPixels) / (denom * denom)
@@ -220,7 +219,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
             if (!transformStorage->contains(entityIdx)) return;
 
             const auto& meshAsset = resources.get(mesh.mesh);
-            if (!Math::hasValidBounds(meshAsset.boundsMin, meshAsset.boundsMax)) return;
+            if (!meshAsset.bounds().valid()) return;
 
             const Transform& transform = transformStorage->get(entityIdx);
 
@@ -233,8 +232,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
             glm::vec3 localMin, localMax;
             poseLocalBounds(meshAsset, poses, entityIdx, localMin, localMax);
 
-            glm::vec3 worldMin, worldMax;
-            Math::localToWorldAABB(modelMatrix, localMin, localMax, worldMin, worldMax);
+            const Math::AABB world = Math::transform(modelMatrix, {localMin, localMax});
 
             // Every valid mesh, not just the camera-visible ones, so the
             // caster gather below reaches off-screen occluders. LOD resolves
@@ -242,16 +240,15 @@ void VisibilitySystem::update(FrameContext& ctx) {
             m_scratch[i] = VisibleEntity{
                 ctx.scene.entityAt(entityIdx),
                 modelMatrix,
-                worldMin,
-                worldMax,
-                selectLOD(mesh, lodStorage, entityIdx, worldMin, worldMax, context)
+                world,
+                selectLOD(mesh, lodStorage, entityIdx, world.min, world.max, context)
             };
             m_casterFlags[i] = mesh.castShadows ? 1 : 0;
 
             // The camera-visibility culls only set the visible flag.
-            if (!FrustumCuller::isVisible(worldMin, worldMax, context)) return;
-            if (!DistanceCuller::isVisible(worldMin, worldMax, context)) return;
-            if (!ScreenSizeCuller::isVisible(worldMin, worldMax, context)) return;
+            if (!FrustumCuller::isVisible(world, context)) return;
+            if (!DistanceCuller::isVisible(world, context)) return;
+            if (!ScreenSizeCuller::isVisible(world, context)) return;
 
             m_visibleFlags[i] = 1;
         });

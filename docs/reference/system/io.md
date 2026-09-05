@@ -19,7 +19,7 @@ repo, and `Vkm::Engine::Project` (`src/engine/io/project.h`) is everything it sa
 | `tickRate` | Simulation ticks per second; 64 by default, clamped to a sane range |
 | `maxPlayers` | Seats the game has. A property of the game, not of a run: a scene with four characters authored into it is a four-player game wherever it is served |
 | `netPort` | Port the game is served on unless a run says otherwise, so serving a project and joining it need no argument to agree |
-| `splash` | Logos shown after the engine's own, in order. Usually empty |
+| `splash` | Logos the **runtime** shows after the engine's own, in order. Usually empty; the editor shows only the engine's mark, because the editor is not the game |
 
 `tickRate` is the project's rather than the engine's because it is not only a
 simulation detail: for a networked game it is the rate the wire is clocked by,
@@ -88,8 +88,17 @@ because `bootHost` creates the per-project subdirectory it writes into.
 
 `editor_settings.json` is the deliberate exception: it stays in the project root,
 because most of what it holds (panel widths for this project's layout, recent
-scenes, the render tuning this project is authored against) is per-project. A
-project you are authoring is writable by definition.
+scenes, which debug buffer the viewport is showing) is per-project. A project you
+are authoring is writable by definition.
+
+What the *game* looks like is not in it. `project.json` carries a `render` block
+- the pass toggles and their parameters - because it answers yes to this
+section's own question, "would you commit this?": an author who turns bloom off
+has decided something about the game, not about their machine. It used to live
+in `editor_settings.json`, which git ignores and no host but the editor reads, so
+a shipped game rendered with the in-class defaults however the project had been
+tuned. The two fields that stay behind are `renderMode` and `grid`: a debug
+buffer and editor chrome, which no player should ever be handed.
 
 Two consequences worth knowing before you add a path:
 
@@ -384,6 +393,25 @@ After load, the caller should:
 `SceneIOController` in the editor handles these.
 
 ## Cooked assets: AssetSerializer, AssetLibrary, AssetFactory
+
+A cooked artifact is named for what it was derived from, not for its subject:
+`<uid>-<key>.vkmc`, where the key mixes the recipe, the cooker version and the
+kind's format version (`AssetCook::cacheKey`). Derived data addressed by its
+source is the whole trick, and three things fall out of it:
+
+- **Staleness is a lookup that misses.** An artifact baked from a recipe that has
+  since changed is not stale, it is a file nobody asks for. The loader no longer
+  reads a header and compares a hash to find that out.
+- **A format bump orphans exactly what it should.** The version is in the name,
+  so a reader that found the file has already matched it. The constants still
+  have to be bumped when a layout changes; they are no longer read back.
+- **An interrupted cook leaves nothing behind.** The writer builds beside the
+  artifact and renames onto it, and rename within a directory is atomic - so the
+  file either is not there or is whole. There is no third state, which is why
+  nothing measures a payload against a file length any more.
+
+The subject's uid stays in front of the key so the directory is still readable by
+a person: it says which asset a file belongs to, and the key says which version.
 
 The asset pipeline is **cooked-content + an asset database**. The *recipe* (the
 original `source` JSON-with-`kind` descriptor a generator/importer produces) is

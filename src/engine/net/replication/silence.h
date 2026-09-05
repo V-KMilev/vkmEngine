@@ -28,28 +28,21 @@ bool isInsidePrefabInstance(const Scene& scene, EntityId entity);
 /**
  * @brief Is @p entity a ragdoll bone the animation is placing this tick?
  *
- * Such a bone is deliberately not replicated, and this is asked on both ends
- * for the same reason: the sender has nothing to say about it and the receiver
- * must not be told, because each is already working it out.
+ * Such a bone is deliberately not replicated, and this is asked on both ends for
+ * the same reason: the sender has nothing to say about it and the receiver must
+ * not be told, because each is already working it out. While a ragdoll is
+ * inactive its bodies are kinematic and placed from the animated pose, and the
+ * clip is chosen from the body's velocity, which does replicate. Measured on
+ * physics_lab, four characters of twenty bones: 96% of every snapshot.
  *
- * While a ragdoll is inactive its bodies are kinematic and placed from the
- * animated pose every tick (`RagdollSystem`), and the clip is chosen from the
- * body's velocity, which does replicate. So both ends derive the same skeleton
- * from the same input, and sending it spends the packet describing what the
- * receiver was about to work out anyway. Measured on physics_lab, where four
- * characters carry twenty bones each: 96% of every snapshot, leaving the props
- * and the other players to compete for what was left.
+ * Active, this is false and the bones replicate - the solver drives them then,
+ * and the pose follows. Which is why `Ragdoll::active` is on the wire: a client
+ * that missed the switch would pose twenty bones from a walk cycle while the
+ * server had a body falling.
  *
- * Active, this is false and the bones replicate. The solver drives them then
- * and the pose follows them rather than the other way round, so they are the
- * answer instead of a copy of it - which is also why `Ragdoll::active` is on
- * the wire: a client that missed the switch would pose twenty bones from a walk
- * cycle while the server had a body falling.
- *
- * The phases need not match. Each end advances its own clip time, so two ends
- * hold the same walk at different points in it - invisible, because a kinematic
- * bone decides nothing while it is inactive, and answered by the first snapshot
- * after the ragdoll switches on.
+ * The phases need not match. Each end advances its own clip time, which is
+ * invisible while a kinematic bone decides nothing, and answered by the first
+ * snapshot after the ragdoll switches on.
  */
 bool isPosedByAnimation(const Scene& scene, EntityId entity);
 

@@ -12,39 +12,23 @@
 #include "system/script/behavior_registry.h"
 #include "system/script/script_component.h"
 
+#include "system/script/module_entry.h"
+
 #include "potion_runner.h"
 
-// Entries a host resolves after loading this module.
-//
-// vkmRegisterBehaviors is the required one: it populates the host's
-// BehaviorRegistry so scenes can name this project's behaviors.
-// Reported back to the host at load. It refuses a module built against a
-// different engine rather than letting a layout mismatch surface later as a
-// crash somewhere unrelated. VKM_ENGINE_VERSION comes from the engine this
-// module linked, so rebuilding against a new SDK is all it ever needs.
-extern "C"
-#if defined(_WIN32)
-__declspec(dllexport)
-#endif
+VKM_MODULE_ENTRY
 const char* vkmModuleEngineVersion() { return VKM_ENGINE_VERSION; }
 
-extern "C"
-#if defined(_WIN32)
-__declspec(dllexport)
-#endif
+VKM_MODULE_ENTRY
 void vkmRegisterBehaviors() {
     Vkm::Engine::BehaviorRegistry::get().registerBehavior<Vkm::Engine::PotionRunner>();
 }
 
-// vkmBuildScene is the optional one. This game's world is generated, not
-// authored: the persisted scene is a chase camera and one entity carrying the
-// behavior, and every prop is built at play time. There is nothing for
-// project.json's entryScene to point at, so the project says what it starts as
-// here instead.
-extern "C"
-#if defined(_WIN32)
-__declspec(dllexport)
-#endif
+// This game's world is generated, not authored: the persisted scene is a chase
+// camera and one entity carrying the behavior, and every prop is built at play
+// time. There is nothing for project.json's entryScene to point at, so the
+// project says what it starts as here instead.
+VKM_MODULE_ENTRY
 void vkmBuildScene(Vkm::Engine::Scene& scene) {
 
         auto& registry = Vkm::Engine::BehaviorRegistry::get();

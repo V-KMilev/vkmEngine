@@ -16,6 +16,11 @@ namespace {
 // cross product of the two is noise, and the plane it defines flips from one
 // side of the axis to the other under the mouse.
 constexpr float MIN_DRAG_PLANE_CROSS = 1e-5f;
+
+// How edge-on a rotation ring may turn before it stops being drawn - and
+// therefore before it stops being clickable. Shared by the draw and the hit
+// test so the two cannot disagree about which half of the ring is there.
+constexpr float RING_FACING_MIN = 0.05f;
 } // namespace
 
 bool TransformGizmo::project(const glm::vec3& worldPos, ImVec2& out) const {
@@ -55,7 +60,7 @@ float TransformGizmo::computeScreenFactor(const glm::vec3& gizmoOrigin) const {
 
     // Desired size in NDC, scaled with UI/DPI so the gizmo isn't a tiny
     // overlay on a 4K display.
-    float ndcDesired = (GIZMO_SIZE_PIXELS * m_uiScale) / (m_vpWidth * 0.5f);
+    float ndcDesired = EditorStyle::px(GIZMO_SIZE_PIXELS) / (m_vpWidth * 0.5f);
     return ndcDesired / ndcLength;
 }
 
@@ -154,10 +159,6 @@ bool TransformGizmo::manipulate(
     m_vpMin = vpMin;
     m_vpWidth = vpWidth;
     m_vpHeight = vpHeight;
-    // Font size 13 is ImGui's documented default. On high-DPI displays the
-    // font grows and so should the gizmo's hit/visual scale.
-    m_uiScale = std::max(1.0f, ImGui::GetFontSize() / 13.0f);
-
     glm::mat4 invView = glm::inverse(view);
     m_cameraPos   = glm::vec3(invView[3]);
     m_cameraDir   = -glm::normalize(glm::vec3(invView[2]));
@@ -215,7 +216,6 @@ bool TransformGizmo::manipulate(
                 case GizmoOperation::Translate: modified = handleTranslationDrag(model, axes); break;
                 case GizmoOperation::Rotate:    modified = handleRotationDrag(model, axes);    break;
                 case GizmoOperation::Scale:     modified = handleScaleDrag(model, axes);       break;
-                case GizmoOperation::Select:    break;  // unreachable: skipped in GizmoOverlay
             }
 
             if (modified) {
@@ -240,7 +240,6 @@ bool TransformGizmo::manipulate(
                 case GizmoOperation::Translate: m_hovered = hitTestTranslation(screenAxes, axisOk); break;
                 case GizmoOperation::Rotate:    m_hovered = hitTestRotation(axes);                  break;
                 case GizmoOperation::Scale:     m_hovered = hitTestScale(screenAxes, axisOk);       break;
-                case GizmoOperation::Select:    m_hovered = GizmoElement::None;                     break;
             }
         } else {
             m_hovered = GizmoElement::None;
@@ -303,7 +302,6 @@ bool TransformGizmo::manipulate(
             case GizmoOperation::Translate: drawTranslationGizmo(drawList, screenAxes, axisOk); break;
             case GizmoOperation::Rotate:    drawRotationGizmo(drawList, axes);                  break;
             case GizmoOperation::Scale:     drawScaleGizmo(drawList, screenAxes, axisOk);       break;
-            case GizmoOperation::Select:    break;  // unreachable: skipped in GizmoOverlay
         }
 
         drawList->PopClipRect();
@@ -337,13 +335,13 @@ GizmoElement TransformGizmo::hitTestTranslation(const ImVec2 screenAxes[3],
         if (!(hasNeg && hasPos)) return GIZMO_PLANES[i];
     }
 
-    float bestDist = (AXIS_HIT_RADIUS * m_uiScale) + 1.0f;
+    float bestDist = EditorStyle::px(AXIS_HIT_RADIUS) + 1.0f;
     GizmoElement bestElem = GizmoElement::None;
 
     for (int i = 0; i < 3; ++i) {
         if (!axisOk[i]) continue;
         float d = distPointToSegment2D(m_mousePos, m_originScreen, screenAxes[i]);
-        if (d < (AXIS_HIT_RADIUS * m_uiScale) && d < bestDist) {
+        if (d < EditorStyle::px(AXIS_HIT_RADIUS) && d < bestDist) {
             bestDist = d;
             bestElem = GIZMO_AXES[i];
         }
@@ -356,7 +354,7 @@ GizmoElement TransformGizmo::hitTestRotation(const glm::vec3 axes[3]) const {
     glm::vec3 rayDir = screenToRay(m_mousePos);
     float ringRadius = m_screenFactor;
 
-    float bestDist = (AXIS_HIT_RADIUS * m_uiScale) + 1.0f;
+    float bestDist = EditorStyle::px(AXIS_HIT_RADIUS) + 1.0f;
     GizmoElement bestElem = GizmoElement::None;
 
     for (int i = 0; i < 3; ++i) {
@@ -364,6 +362,13 @@ GizmoElement TransformGizmo::hitTestRotation(const glm::vec3 axes[3]) const {
         if (t < 0.0f) continue;
 
         glm::vec3 hit = m_cameraPos + rayDir * t;
+
+        // The same facing test the draw applies, so a click lands on the half of
+        // the ring that is shown: the far side is faded to nothing where it turns
+        // edge-on, and would otherwise still answer the ray.
+        const float faceDot = glm::dot(glm::normalize(m_cameraPos - hit), axes[i]);
+        if (std::abs(faceDot) <= RING_FACING_MIN) continue;
+
         float distFromCenter = glm::length(hit - m_gizmoOrigin);
 
         float diff = std::abs(distFromCenter - ringRadius);
@@ -379,7 +384,7 @@ GizmoElement TransformGizmo::hitTestRotation(const glm::vec3 axes[3]) const {
             (hitScreen.y - hitOffScreen.y) * (hitScreen.y - hitOffScreen.y)
         );
 
-        if (pixelDiff < (AXIS_HIT_RADIUS * m_uiScale) && pixelDiff < bestDist) {
+        if (pixelDiff < EditorStyle::px(AXIS_HIT_RADIUS) && pixelDiff < bestDist) {
             bestDist = pixelDiff;
             bestElem = GIZMO_AXES[i];
         }
@@ -391,7 +396,7 @@ GizmoElement TransformGizmo::hitTestRotation(const glm::vec3 axes[3]) const {
 GizmoElement TransformGizmo::hitTestScale(const ImVec2 screenAxes[3],
                                           const bool axisOk[3]) const {
     // Same as translation axis test (lines) plus box handle at endpoints
-    float bestDist = (AXIS_HIT_RADIUS * m_uiScale) + 1.0f;
+    float bestDist = EditorStyle::px(AXIS_HIT_RADIUS) + 1.0f;
     GizmoElement bestElem = GizmoElement::None;
 
     for (int i = 0; i < 3; ++i) {
@@ -400,14 +405,14 @@ GizmoElement TransformGizmo::hitTestScale(const ImVec2 screenAxes[3],
         float dx = m_mousePos.x - screenAxes[i].x;
         float dy = m_mousePos.y - screenAxes[i].y;
         float boxDist = std::max(std::abs(dx), std::abs(dy));
-        if (boxDist < (SCALE_BOX_HALF * m_uiScale) + 4.0f && boxDist < bestDist) {
+        if (boxDist < EditorStyle::px(SCALE_BOX_HALF + 4.0f) && boxDist < bestDist) {
             bestDist = boxDist;
             bestElem = GIZMO_AXES[i];
             continue;
         }
 
         float d = distPointToSegment2D(m_mousePos, m_originScreen, screenAxes[i]);
-        if (d < (AXIS_HIT_RADIUS * m_uiScale) && d < bestDist) {
+        if (d < EditorStyle::px(AXIS_HIT_RADIUS) && d < bestDist) {
             bestDist = d;
             bestElem = GIZMO_AXES[i];
         }
@@ -514,7 +519,7 @@ void TransformGizmo::drawTranslationGizmo(ImDrawList* dl, const ImVec2 screenAxe
         ImU32 col = colorForElement(GIZMO_AXES[i], hl);
         float thick = (GIZMO_AXES[i] == hl) ? HIGHLIGHT_THICKNESS : LINE_THICKNESS;
 
-        dl->AddLine(m_originScreen, screenAxes[i], col, thick * m_uiScale);
+        dl->AddLine(m_originScreen, screenAxes[i], col, EditorStyle::px(thick));
 
         // Arrow head (triangle)
         ImVec2 dir(screenAxes[i].x - m_originScreen.x, screenAxes[i].y - m_originScreen.y);
@@ -523,7 +528,7 @@ void TransformGizmo::drawTranslationGizmo(ImDrawList* dl, const ImVec2 screenAxe
             dir.x /= len;
             dir.y /= len;
             ImVec2 perp(-dir.y, dir.x);
-            float headSize = ARROW_HEAD_PIXELS * m_uiScale;
+            float headSize = EditorStyle::px(ARROW_HEAD_PIXELS);
             ImVec2 tip = screenAxes[i];
             ImVec2 base1(tip.x - dir.x * headSize * 2.0f + perp.x * headSize,
                          tip.y - dir.y * headSize * 2.0f + perp.y * headSize);
@@ -533,7 +538,7 @@ void TransformGizmo::drawTranslationGizmo(ImDrawList* dl, const ImVec2 screenAxe
         }
     }
 
-    dl->AddCircleFilled(m_originScreen, 3.0f * m_uiScale, IM_COL32(255, 255, 255, 200), 8);
+    dl->AddCircleFilled(m_originScreen, EditorStyle::px(CENTRE_DOT_RADIUS), IM_COL32(255, 255, 255, 200), 8);
 }
 
 void TransformGizmo::drawRotationGizmo(ImDrawList* dl, const glm::vec3 axes[3]) {
@@ -545,19 +550,12 @@ void TransformGizmo::drawRotationGizmo(ImDrawList* dl, const glm::vec3 axes[3]) 
 
     for (int i = 0; i < 3; ++i) {
         ImU32 col = colorForElement(GIZMO_AXES[i], hl);
-        float thick = ((GIZMO_AXES[i] == hl) ? HIGHLIGHT_THICKNESS : LINE_THICKNESS) * m_uiScale;
+        const float thick = EditorStyle::px((GIZMO_AXES[i] == hl) ? HIGHLIGHT_THICKNESS : LINE_THICKNESS);
 
-        // Generate circle points on the plane perpendicular to this axis
-        glm::vec3 normal = axes[i];
-
-        // Find two vectors perpendicular to the normal
-        glm::vec3 tangent;
-        if (std::abs(glm::dot(normal, glm::vec3(0, 1, 0))) < 0.99f) {
-            tangent = glm::normalize(glm::cross(normal, glm::vec3(0, 1, 0)));
-        } else {
-            tangent = glm::normalize(glm::cross(normal, glm::vec3(1, 0, 0)));
-        }
-        glm::vec3 bitangent = glm::cross(normal, tangent);
+        // The plane the ring lies in, perpendicular to this axis.
+        const glm::vec3 normal = axes[i];
+        glm::vec3 tangent, bitangent;
+        orthoBasis(normal, tangent, bitangent);
 
         ImVec2 prevPt{};
         bool   prevOk = false;
@@ -577,7 +575,7 @@ void TransformGizmo::drawRotationGizmo(ImDrawList* dl, const glm::vec3 axes[3]) 
                 glm::vec3 toCamera = glm::normalize(m_cameraPos - midWorld);
                 float faceDot = glm::dot(toCamera, normal);
 
-                if (std::abs(faceDot) > 0.05f || GIZMO_AXES[i] == hl) {
+                if (std::abs(faceDot) > RING_FACING_MIN || GIZMO_AXES[i] == hl) {
                     float alpha = std::abs(faceDot);
                     alpha = std::clamp(alpha * 3.0f, 0.2f, 1.0f);
                     ImU32 segCol = col;
@@ -593,23 +591,23 @@ void TransformGizmo::drawRotationGizmo(ImDrawList* dl, const glm::vec3 axes[3]) 
         }
     }
 
-    dl->AddCircleFilled(m_originScreen, 3.0f * m_uiScale, IM_COL32(255, 255, 255, 200), 8);
+    dl->AddCircleFilled(m_originScreen, EditorStyle::px(CENTRE_DOT_RADIUS), IM_COL32(255, 255, 255, 200), 8);
 }
 
 void TransformGizmo::drawScaleGizmo(ImDrawList* dl, const ImVec2 screenAxes[3],
                                     const bool axisOk[3]) {
     GizmoElement hl = m_dragging ? m_active : m_hovered;
-    const float scale = m_uiScale;
 
     for (int i = 0; i < 3; ++i) {
         if (!axisOk[i]) continue;
         ImU32 col = colorForElement(GIZMO_AXES[i], hl);
-        float thick = ((GIZMO_AXES[i] == hl) ? HIGHLIGHT_THICKNESS : LINE_THICKNESS) * scale;
+        const float thick =
+            EditorStyle::px((GIZMO_AXES[i] == hl) ? HIGHLIGHT_THICKNESS : LINE_THICKNESS);
 
         dl->AddLine(m_originScreen, screenAxes[i], col, thick);
 
         // Box handle at endpoint
-        const float half = SCALE_BOX_HALF * scale;
+        const float half = EditorStyle::px(SCALE_BOX_HALF);
         ImVec2 boxMin(screenAxes[i].x - half, screenAxes[i].y - half);
         ImVec2 boxMax(screenAxes[i].x + half, screenAxes[i].y + half);
         dl->AddRectFilled(boxMin, boxMax, col);

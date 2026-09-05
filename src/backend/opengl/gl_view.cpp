@@ -8,14 +8,14 @@
 
 #include "logger.h"
 
-#include "texture/gl_texture.h"
+#include "gl_texture.h"
 
 #include "resource/resource_manager.h"
 #include "system/render/render_view.h"
 
 #include "data/gl_mesh.h"
 #include "data/gl_material.h"
-#include "data/gl_texture.h"
+#include "data/gl_asset_texture.h"
 
 namespace Vkm::Engine {
 

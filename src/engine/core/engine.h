@@ -11,6 +11,7 @@
 #include "core/system.h"
 #include "core/clock.h"
 #include "core/event/event_bus.h"
+#include "core/host_chrome.h"
 #include "platform/input/input_map.h"
 #include "net/net_session.h"
 
@@ -64,6 +65,15 @@ class Engine {
 
         WindowManager& getWindow()             { return m_window; }
         const WindowManager& getWindow() const { return m_window; }
+
+        /**
+         * @brief What an authoring host says about the frame it draws over.
+         *
+         * Exposed for the host that writes it; systems read it off the frame
+         * context. A runtime never touches it.
+         */
+        HostChrome& getChrome()             { return m_chrome; }
+        const HostChrome& getChrome() const { return m_chrome; }
 
         /**
          * @brief The session this end is playing in, offline until told otherwise.
@@ -122,6 +132,7 @@ class Engine {
         InputMap      m_input;
         WindowManager m_window;
         NetSession    m_net;
+        HostChrome    m_chrome;
 
         std::array<std::vector<std::unique_ptr<System>>, static_cast<size_t>(SystemStage::Count)> m_systemsByStage;
 

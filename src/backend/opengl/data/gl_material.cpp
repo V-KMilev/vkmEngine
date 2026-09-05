@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "data/gl_material.h"
 
 #include <GL/glew.h>
@@ -7,7 +5,7 @@
 #include "convention/gl_bindings.h"
 #include "gl_uniform_buffer.h"
 #include "gl_view.h"
-#include "texture/gl_texture.h"
+#include "gl_texture.h"
 
 namespace Vkm::Engine {
 
@@ -21,17 +19,12 @@ struct MapBinding {
     int                            flag;
 };
 constexpr MapBinding MATERIAL_MAPS[] = {
-    {&MaterialAsset::albedoTexture,              GLBindings::TextureSlots::ALBEDO,                GLBindings::MaterialTextureFlags::ALBEDO},
-    {&MaterialAsset::normalTexture,              GLBindings::TextureSlots::NORMAL,                GLBindings::MaterialTextureFlags::NORMAL},
-    {&MaterialAsset::metallicRoughnessTexture,   GLBindings::TextureSlots::METALLIC_ROUGHNESS,    GLBindings::MaterialTextureFlags::METALLIC_ROUGHNESS},
-    {&MaterialAsset::aoTexture,                  GLBindings::TextureSlots::AO,                    GLBindings::MaterialTextureFlags::AO},
-    {&MaterialAsset::emissionTexture,            GLBindings::TextureSlots::EMISSION,              GLBindings::MaterialTextureFlags::EMISSION},
-    {&MaterialAsset::heightTexture,              GLBindings::TextureSlots::HEIGHT,                GLBindings::MaterialTextureFlags::HEIGHT},
-    {&MaterialAsset::clearcoatTexture,           GLBindings::TextureSlots::CLEARCOAT,             GLBindings::MaterialTextureFlags::CLEARCOAT},
-    {&MaterialAsset::transmissionTexture,        GLBindings::TextureSlots::TRANSMISSION,          GLBindings::MaterialTextureFlags::TRANSMISSION},
-    {&MaterialAsset::metallicTexture,            GLBindings::TextureSlots::METALLIC,              GLBindings::MaterialTextureFlags::METALLIC},
-    {&MaterialAsset::roughnessTexture,           GLBindings::TextureSlots::ROUGHNESS,             GLBindings::MaterialTextureFlags::ROUGHNESS},
-    {&MaterialAsset::aoMetallicRoughnessTexture, GLBindings::TextureSlots::AO_METALLIC_ROUGHNESS, GLBindings::MaterialTextureFlags::AO_METALLIC_ROUGHNESS},
+#define VKM_MATERIAL_MAP_BINDING(key, member, slot, doc)      \
+    {&MaterialAsset::member,                                     \
+     GLBindings::TextureSlots::slot,                             \
+     GLBindings::MaterialTextureFlags::slot},
+    VKM_MATERIAL_MAPS(VKM_MATERIAL_MAP_BINDING)
+#undef VKM_MATERIAL_MAP_BINDING
 };
 
 } // namespace

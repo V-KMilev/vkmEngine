@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cfloat>
 
 #include <imgui.h>
 
@@ -28,18 +29,35 @@ enum class DialogResult {
  *       endDialog();
  *   }
  *
+ * A dialog sizes itself to its content unless given a size - right for a
+ * question, wrong for a list the author resizes and keeps resized.
+ *
  * @param title    The modal's ImGui title (also its popup id).
  * @param wantOpen Dialog-visible intent; cleared here when the popup was
  *                 dismissed by any path that skipped dialogButtons.
+ * @param initialSize Size on the first open, in framebuffer pixels; the author's
+ *                    own size wins afterwards. Zero fits the content instead.
+ * @param minimumSize Smallest the author may drag it to. Read only when
+ *                    @p initialSize is given.
  * @return Whether the modal is open; content + dialogButtons + endDialog run
  *         only when true.
  */
-inline bool beginDialog(const char* title, bool& wantOpen) {
+inline bool beginDialog(const char* title, bool& wantOpen,
+                        ImVec2 initialSize = ImVec2(0.0f, 0.0f),
+                        ImVec2 minimumSize = ImVec2(0.0f, 0.0f)) {
     if (wantOpen && !ImGui::IsPopupOpen(title)) ImGui::OpenPopup(title);
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(),
                             ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-    const bool open = ImGui::BeginPopupModal(title, nullptr,
-        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoSavedSettings;
+    if (initialSize.x > 0.0f) {
+        ImGui::SetNextWindowSize(initialSize, ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSizeConstraints(minimumSize, ImVec2(FLT_MAX, FLT_MAX));
+    } else {
+        flags |= ImGuiWindowFlags_AlwaysAutoResize;
+    }
+
+    const bool open = ImGui::BeginPopupModal(title, nullptr, flags);
     if (!open) wantOpen = false;
     return open;
 }
@@ -49,18 +67,13 @@ inline bool beginDialog(const char* title, bool& wantOpen) {
  *
  * Closes the popup and clears @p wantOpen when any result fires. Escape always
  * cancels; Enter confirms while @p confirmEnabled and either no text field has
- * the keyboard or @p fieldCommitted says one just committed. ImGui holds
+ * the keyboard or @p fieldCommitted says one just committed - ImGui holds
  * WantTextInput while a field is active, which would otherwise swallow Enter in
- * exactly the dialogs that most need it, so a field wanting Enter to confirm
- * passes its ImGuiInputTextFlags_EnterReturnsTrue result as @p fieldCommitted -
- * the caller decides whether a commit means confirm, this still owns closing
- * the popup.
+ * the dialogs that most need it.
  *
  * The alt label has no default and stands ahead of both flags, so nothing but a
- * label can land in its slot and it cannot be reached past one; the old order,
- * with a flag ahead of the label, is refused below rather than silently drawing
- * two buttons. A surplus label in a flag's slot does still convert to true, so
- * what the compiler settles is the row, not the whole argument list.
+ * label can land in its slot; the old order, with a flag ahead of the label, is
+ * refused below rather than silently drawing two buttons.
  *
  * @param wantOpen       The same intent flag beginDialog received.
  * @param confirmLabel   Rightmost (accent, default) action.
@@ -145,13 +158,13 @@ inline DialogResult dialogButtons(bool& wantOpen, const char* confirmLabel,
 }
 
 /**
- * @brief Refuse the old parameter order, which put a flag ahead of the labels.
+ * @brief Refuse a call that puts a flag ahead of the labels.
  *
- * dialogButtons(want, "Save", true, "Don't Save") is the shape a call written
- * against that order keeps: no overload takes a bool third, so it would resolve
- * to the two-button one, bind the label to fieldCommitted and draw a dialog
- * missing its third button with Enter confirming unprompted. An exact match on
- * const char* outranks that bool conversion, so the call lands here and fails.
+ * dialogButtons(want, "Save", true, "Don't Save") has no overload taking a bool
+ * third, so it would otherwise resolve to the two-button one, bind the label to
+ * fieldCommitted and draw a dialog missing its third button with Enter
+ * confirming unprompted. An exact match on const char* outranks that bool
+ * conversion, so the call lands here and fails.
  *
  * @param wantOpen       The same intent flag beginDialog received.
  * @param confirmLabel   Rightmost (accent, default) action.
@@ -171,9 +184,8 @@ inline void endDialog() { ImGui::EndPopup(); }
  *
  * A rename is typing, so the field takes the keyboard the frame the dialog
  * appears with the old name selected, and Enter answers it - reaching back for
- * the mouse is the whole gesture spent twice. Written once because it had been
- * written twice: the Asset Browser's copy and the Material tab's drifted the
- * moment one of them was fixed.
+ * the mouse is the whole gesture spent twice. One copy, shared by the Asset
+ * Browser and the Material tab, because two drift.
  *
  * The caller owns the buffer and does the renaming; this owns the look and the
  * keyboard contract. @p open is cleared by any path that closes the dialog, so

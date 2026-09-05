@@ -1,5 +1,3 @@
-#define VKM_LOG_CATEGORY "BACKEND::GL"
-
 #include "data/gl_camera.h"
 
 #include "gl_uniform_buffer.h"

@@ -38,14 +38,17 @@ void composeRagdollPose(
     if (count == 0 || !out.slice) return;
 
     // Which body poses which bone, so the walk below is a lookup rather than a
-    // search per bone.
-    std::vector<const RagdollBone*> driver(count, nullptr);
-    std::vector<const RagdollBodyPose*> pose(count, nullptr);
+    // search per bone. thread_local because this runs in the animation system's
+    // parallel pass, and two fresh vectors per rig per tick is an allocation.
+    thread_local std::vector<const RagdollBone*> t_driver;
+    thread_local std::vector<const RagdollBodyPose*> t_pose;
+    t_driver.assign(count, nullptr);
+    t_pose.assign(count, nullptr);
     for (size_t b = 0; b < ragdoll.bones.size(); ++b) {
         const RagdollBone& entry = ragdoll.bones[b];
         if (entry.bone >= 0 && static_cast<size_t>(entry.bone) < count) {
-            driver[static_cast<size_t>(entry.bone)] = &entry;
-            if (b < bodies.size()) pose[static_cast<size_t>(entry.bone)] = &bodies[b];
+            t_driver[static_cast<size_t>(entry.bone)] = &entry;
+            if (b < bodies.size()) t_pose[static_cast<size_t>(entry.bone)] = &bodies[b];
         }
     }
 
@@ -56,16 +59,15 @@ void composeRagdollPose(
     const glm::mat4 toRig = glm::inverse(rigWorld);
 
     for (size_t i = 0; i < count; ++i) {
-        const RagdollBone* entry = driver[i];
-        const bool simulated = entry && pose[i] && pose[i]->simulated;
+        const RagdollBone* entry = t_driver[i];
+        const bool simulated = entry && t_pose[i] && t_pose[i]->simulated;
 
         if (simulated) {
-            out.global[i] = toRig * pose[i]->world * entry->boneFromBody;
+            out.global[i] = toRig * t_pose[i]->world * entry->boneFromBody;
         } else {
-            // Not simulated: carried by whatever is above it, in the shape it
-            // was bound in. A tip bone has nothing to simulate and a skipped
-            // one was too short to be worth it; both still have to be posed, or
-            // the hand comes off at the wrist.
+            // Not simulated: carried by whatever is above it, in the shape it was
+            // bound in. A tip bone and a bone too short to be worth simulating
+            // both still have to be posed, or the hand comes off at the wrist.
             const glm::mat4 local = i < skeleton.bindPose.size()
                 ? Transform::computeModelMatrix(skeleton.bindPose[i])
                 : glm::mat4(1.0f);
@@ -77,11 +79,9 @@ void composeRagdollPose(
             ? out.global[i] * skeleton.inverseBind[i]
             : out.global[i];
 
-        // The same bound composePose publishes, for the same reason: the
-        // visibility pass sizes a skinned mesh from the pose it is drawn in,
-        // and a slice that never says where its bones went keeps whatever the
-        // last writer left. A ragdoll that falls out of its own stale bound
-        // stops being drawn - at exactly the moment it starts moving.
+        // The same bound composePose publishes, for the same reason: visibility
+        // sizes a skinned mesh from the pose it is drawn in, and a ragdoll that
+        // falls out of a stale bound stops being drawn as it starts moving.
         const glm::vec3 origin(out.global[i][3]);
         originMin = glm::min(originMin, origin);
         originMax = glm::max(originMax, origin);
@@ -91,12 +91,11 @@ void composeRagdollPose(
                      glm::length(glm::vec3(out.global[i][2])))));
     }
 
-    if (count == 0) originMin = originMax = glm::vec3(0.0f);
-    if (out.slice) {
-        out.slice->originMin    = originMin;
-        out.slice->originMax    = originMax;
-        out.slice->maxBoneScale = maxScale;
-    }
+    // Both guarded on above: a zero-bone rig and a null slice each returned
+    // before the sweep, so the sweep ran at least once and the slice is there.
+    out.slice->originMin    = originMin;
+    out.slice->originMax    = originMax;
+    out.slice->maxBoneScale = maxScale;
 }
 
 } // namespace Vkm::Engine

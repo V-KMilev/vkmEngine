@@ -15,7 +15,7 @@ namespace Vkm::Engine {
  * answers it, and answering it is all GJK ever needs - so one intersection
  * routine serves every pair of shapes that can, rather than a routine per pair.
  * That is what stops the narrowphase growing as the square of the shape count
- * when convex hulls and mesh triangles arrive.
+ * as shapes are added - mesh triangles being the one that arrived.
  *
  * The primitives keep their hand-written pair routines regardless. Those return
  * up to four contact points and this returns one, and a box resting on a box
@@ -65,16 +65,14 @@ SupportShape supportOf(const CapsuleShape& capsule);
  *
  * The hull of the points is what GJK sees whether or not the caller computed
  * one: a support query returns an extreme point, and every extreme point of a
- * set is a vertex of its hull. A pre-built hull is therefore an optimisation -
- * fewer points to scan - and never a correctness requirement.
+ * set is a vertex of its hull. Its one caller is the mesh narrowphase, handing
+ * over a triangle.
  *
  * @param points World-space points; the span must outlive the shape.
  * @param count  How many.
- * @param radius Sweep radius, for a rounded hull; zero for a sharp one.
  * @return The point set, as the only thing GJK reads.
  */
-SupportShape supportOfPoints(const glm::vec3* points, uint32_t count,
-                             float radius = 0.0f);
+SupportShape supportOfPoints(const glm::vec3* points, uint32_t count);
 
 /**
  * @brief The furthest point of @p shape along @p direction.

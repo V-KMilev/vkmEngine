@@ -91,6 +91,55 @@ struct ViewportOverlayScope {
 
     bool valid() const { return dl != nullptr; }
 
+    // The wire primitives, with the four values this scope already holds bound
+    // in. Passed through instead - `wireSphere(dl, vp, pos, r, 32, vpMin,
+    // vpSize, col, 1.0f)` - they are four arguments of ceremony around two of
+    // meaning, at thirty call sites, each of which has to unpack them first.
+    void segment(const glm::vec3& a, const glm::vec3& b, ImU32 col,
+                 float thickness = 1.0f) const {
+        wireSegment(dl, vp, a, b, vpMin, vpSize, col, thickness);
+    }
+
+    void arc(const glm::vec3& center, const glm::vec3& axisA, const glm::vec3& axisB,
+             float radius, float from, float to, int segments, ImU32 col,
+             float thickness = 1.0f) const {
+        wireArc(dl, vp, center, axisA, axisB, radius, from, to, segments,
+                vpMin, vpSize, col, thickness);
+    }
+
+    void circle(const glm::vec3& center, const glm::vec3& axisA, const glm::vec3& axisB,
+                float radius, int segments, ImU32 col, float thickness = 1.0f) const {
+        wireCircle(dl, vp, center, axisA, axisB, radius, segments, vpMin, vpSize,
+                   col, thickness);
+    }
+
+    void sphere(const glm::vec3& center, float radius, int segments, ImU32 col,
+                float thickness = 1.0f) const {
+        wireSphere(dl, vp, center, radius, segments, vpMin, vpSize, col, thickness);
+    }
+
+    void arrow(const glm::vec3& from, const glm::vec3& to, ImU32 col,
+               float thickness, float headLen, float headWidth) const {
+        arrowLine(dl, vp, from, to, vpMin, vpSize, col, thickness, headLen, headWidth);
+    }
+
+    void box(const glm::vec3& pos, const glm::quat& rot, const glm::vec3& halfExtents,
+             ImU32 col, float thickness = EditorStyle::px(1.5f)) const {
+        wireBox(dl, vp, pos, rot, halfExtents, vpMin, vpSize, col, thickness);
+    }
+
+    void capsule(const glm::vec3& center, const glm::quat& rot, float radius,
+                 float halfHeight, int segments, ImU32 col,
+                 float thickness = EditorStyle::px(1.5f)) const {
+        wireCapsule(dl, vp, center, rot, radius, halfHeight, segments, vpMin, vpSize,
+                    col, thickness);
+    }
+
+    /// Where a world point lands on screen, or false when it is behind the eye.
+    bool project(const glm::vec3& p, ImVec2& out) const {
+        return projectToViewport(vp, p, vpMin, vpSize, out);
+    }
+
     glm::mat4   vp{1.0f};
     ImVec2      vpMin{0, 0};
     ImVec2      vpSize{0, 0};
@@ -101,24 +150,15 @@ struct ViewportOverlayScope {
 // A mesh collider drawn as its own triangles. Exact rather than approximate,
 // because the whole reason to reach for this shape is that no box describes the
 // geometry - a bounding wireframe would show the thing it is not.
-void drawMeshColliderWires(ImDrawList* dl, const glm::mat4& vp,
+void drawMeshColliderWires(const ViewportOverlayScope& scope,
                            const Collider& col, const ColliderPart& part,
-                           const glm::vec3& center, const glm::mat3& r,
-                           ImVec2 vpMin, ImVec2 vpSize, ImU32 color) {
+                           const glm::vec3& center, const glm::mat3& r, ImU32 color) {
     const uint32_t last = part.meshFirst + part.meshCount;
     if (last > col.meshPoints.size()) return;
 
-    // A level's collision mesh is tens of thousands of triangles and drawing
-    // every edge of it costs more than the frame it is meant to explain. Past
-    // this it is stepped through, which keeps the shape legible and the cost
-    // flat - the alternative is a viewport that stalls on the thing an author
-    // turned the overlay on to look at.
-    //
-    // Low, because each triangle is three lines and each line is four vertices
-    // in the draw list: at 2000 that was 24,000 vertices a frame, per mesh
-    // collider, streamed through a buffer that exists to carry a few hundred.
-    // A wireframe is there to say where the surface is, and a quarter of one
-    // says that as well as all of it.
+    // A level's collision mesh is tens of thousands of triangles, so past this it
+    // is stepped through: the shape stays legible and the cost stays flat. Low,
+    // because each triangle is three lines and each line four draw-list vertices.
     constexpr uint32_t MAX_DRAWN = 400;
     const uint32_t triangles = part.meshCount / 3;
     const uint32_t step = triangles > MAX_DRAWN ? triangles / MAX_DRAWN : 1;
@@ -128,9 +168,9 @@ void drawMeshColliderWires(ImDrawList* dl, const glm::mat4& vp,
         const glm::vec3 a = center + r * col.meshPoints[base + 0];
         const glm::vec3 b = center + r * col.meshPoints[base + 1];
         const glm::vec3 c = center + r * col.meshPoints[base + 2];
-        wireSegment(dl, vp, a, b, vpMin, vpSize, color, 1.0f);
-        wireSegment(dl, vp, b, c, vpMin, vpSize, color, 1.0f);
-        wireSegment(dl, vp, c, a, vpMin, vpSize, color, 1.0f);
+        scope.segment(a, b, color, 1.0f);
+        scope.segment(b, c, color, 1.0f);
+        scope.segment(c, a, color, 1.0f);
     }
 }
 } // namespace
@@ -139,10 +179,7 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
     ViewportOverlayScope scope(ec);
     if (!scope.valid()) return;
 
-    const glm::mat4 vp     = scope.vp;
-    const ImVec2    vpMin  = scope.vpMin;
-    const ImVec2    vpSize = scope.vpSize;
-    ImDrawList*     dl     = scope.dl;
+    ImDrawList* dl = scope.dl;
 
     ec.frame.scene.forEach<Light, Transform>([&](EntityId id, const Light& light, const Transform& tf) {
         if (!light.enabled) return;
@@ -162,7 +199,7 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
         // wireframe overlays it.
         {
             ImVec2 sp;
-            if (projectToViewport(vp, pos, vpMin, vpSize, sp)) {
+            if (scope.project(pos, sp)) {
                 const EditorIcon glyph =
                     light.type == LightType::Directional ? EditorIcon::LightDir :
                     light.type == LightType::Point       ? EditorIcon::LightPoint :
@@ -193,12 +230,12 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
 
                 // Disc outline (perpendicular to dir) so the user can see the
                 // light origin distinctly from the rays.
-                wireCircle(dl, vp, pos, right, udir, discR, 16, vpMin, vpSize, col,
+                scope.circle(pos, right, udir, discR, 16, col,
                            EditorStyle::px(1.5f));
 
                 for (const glm::vec3& off : offsets) {
                     const glm::vec3 start = pos + off;
-                    arrowLine(dl, vp, start, start + dir * L, vpMin, vpSize, col,
+                    scope.arrow(start, start + dir * L, col,
                               EditorStyle::px(2.0f), EditorStyle::px(12.0f),
                               EditorStyle::px(6.0f));
                 }
@@ -206,7 +243,7 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
             }
             case LightType::Point: {
                 const float r = std::max(0.05f, light.radius);
-                wireSphere(dl, vp, pos, r, 32, vpMin, vpSize, col, 1.0f);
+                scope.sphere(pos, r, 32, col, 1.0f);
                 break;
             }
             case LightType::Spot: {
@@ -223,17 +260,16 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
                 glm::vec3 bitangent = glm::cross(dir, tangent);
 
                 // Base ring + 4 spokes from the apex to its quarter points.
-                wireCircle(dl, vp, baseC, tangent, bitangent, baseR, 32,
-                           vpMin, vpSize, col, 1.0f);
+                scope.circle(baseC, tangent, bitangent, baseR, 32, col, 1.0f);
 
                 ImVec2 apexSp;
-                if (projectToViewport(vp, pos, vpMin, vpSize, apexSp)) {
+                if (scope.project(pos, apexSp)) {
                     for (int k = 0; k < 4; ++k) {
                         const float t = k * glm::half_pi<float>();
                         const glm::vec3 p = baseC
                             + (tangent * std::cos(t) + bitangent * std::sin(t)) * baseR;
                         ImVec2 sp;
-                        if (projectToViewport(vp, p, vpMin, vpSize, sp))
+                        if (scope.project(p, sp))
                             dl->AddLine(apexSp, sp, col, 1.0f);
                     }
                 }
@@ -260,7 +296,7 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
                     ImVec2 sp[4];
                     bool   ok[4];
                     for (int i = 0; i < 4; ++i) {
-                        ok[i] = projectToViewport(vp, corners[i], vpMin, vpSize, sp[i]);
+                        ok[i] = scope.project(corners[i], sp[i]);
                     }
                     for (int i = 0; i < 4; ++i) {
                         const int j = (i + 1) & 3;
@@ -268,16 +304,16 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
                     }
                 } else {
                     // Disk: right/up already carry the radius, so unit radius here.
-                    wireCircle(dl, vp, pos, right, up, 1.0f, 32, vpMin, vpSize, col, 1.5f);
+                    scope.circle(pos, right, up, 1.0f, 32, col, 1.5f);
                 }
 
                 // Emission arrow toward the lit hemisphere (+dir). Two-sided
                 // emitters get a second arrow on the back so the user can see
                 // the emission is bidirectional.
-                arrowLine(dl, vp, pos, pos + dir * 0.5f, vpMin, vpSize, col, EditorStyle::px(1.5f),
+                scope.arrow(pos, pos + dir * 0.5f, col, EditorStyle::px(1.5f),
                   EditorStyle::px(8.5f), EditorStyle::px(4.0f));
                 if (light.twoSided)
-                    arrowLine(dl, vp, pos, pos - dir * 0.5f, vpMin, vpSize, col, EditorStyle::px(1.5f),
+                    scope.arrow(pos, pos - dir * 0.5f, col, EditorStyle::px(1.5f),
                   EditorStyle::px(8.5f), EditorStyle::px(4.0f));
 
                 // The distance beyond which the light contributes nothing, drawn
@@ -289,7 +325,7 @@ void GizmoOverlay::drawLightGizmos(EditorContext& ec) {
                     : IM_COL32(static_cast<int>(light.color.r * 200),
                                static_cast<int>(light.color.g * 200),
                                static_cast<int>(light.color.b * 200), 80);
-                wireSphere(dl, vp, pos, rr, 24, vpMin, vpSize, fade, 1.0f);
+                scope.sphere(pos, rr, 24, fade, 1.0f);
                 break;
             }
             case LightType::Count: break;
@@ -301,8 +337,7 @@ void GizmoOverlay::drawProbeGizmos(EditorContext& ec) {
     ViewportOverlayScope scope(ec);
     if (!scope.valid()) return;
 
-    const glm::mat4 vp = scope.vp;
-    ImDrawList*     dl = scope.dl;
+    ImDrawList* dl = scope.dl;
 
     ec.frame.scene.forEach<ReflectionProbe, Transform>([&](EntityId id, const ReflectionProbe& probe, const Transform& tf) {
         const bool  selected = (ec.state.isSelected(id));
@@ -312,13 +347,12 @@ void GizmoOverlay::drawProbeGizmos(EditorContext& ec) {
         const glm::vec3 e   = probe.halfExtents;
 
         // The world-axis-aligned influence box (wireBox with no rotation).
-        wireBox(dl, vp, pos, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), e,
-                ec.viewportPos, ec.viewportSize, col,
+        scope.box(pos, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), e, col,
                 EditorStyle::px(selected ? 2.0f : 1.5f));
 
         // Centre marker: the point the probe captures the scene from.
         ImVec2 sp;
-        if (projectToViewport(vp, pos, ec.viewportPos, ec.viewportSize, sp))
+        if (scope.project(pos, sp))
             dl->AddCircleFilled(sp, EditorStyle::px(selected ? 4.0f : 3.0f), col);
     });
 
@@ -329,8 +363,7 @@ void GizmoOverlay::drawProbeGizmos(EditorContext& ec) {
 
         const glm::vec3 pos = resolvedWorldPosition(ec.frame.scene, id, tf);
 
-        wireBox(dl, vp, pos, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), volume.halfExtents,
-                ec.viewportPos, ec.viewportSize, col,
+        scope.box(pos, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), volume.halfExtents, col,
                 EditorStyle::px(selected ? 2.0f : 1.5f));
 
         // The probe grid itself is only worth the clutter for the selected volume -
@@ -350,7 +383,7 @@ void GizmoOverlay::drawProbeGizmos(EditorContext& ec) {
                     // Texel centres - the exact positions the baker captures from.
                     const glm::vec3 t = (glm::vec3(x, y, z) + 0.5f) / resf;
                     ImVec2 pp;
-                    if (projectToViewport(vp, boxMin + boxSize * t, ec.viewportPos, ec.viewportSize, pp))
+                    if (scope.project(boxMin + boxSize * t, pp))
                         dl->AddCircleFilled(pp, EditorStyle::px(2.0f), col);
                 }
             }
@@ -362,8 +395,7 @@ void GizmoOverlay::drawEffectGizmos(EditorContext& ec) {
     ViewportOverlayScope scope(ec);
     if (!scope.valid()) return;
 
-    const glm::mat4 vp = scope.vp;
-    ImDrawList*     dl = scope.dl;
+    ImDrawList* dl = scope.dl;
 
     ec.frame.scene.forEach<Decal, Transform>([&](EntityId id, const Decal&, const Transform& tf) {
         const bool  selected = (ec.state.isSelected(id));
@@ -372,15 +404,14 @@ void GizmoOverlay::drawEffectGizmos(EditorContext& ec) {
         // The Transform's scale IS the projection box (a unit cube), so the
         // box gizmo is the decal's whole authoring model.
         const glm::vec3 pos = resolvedWorldPosition(ec.frame.scene, id, tf);
-        wireBox(dl, vp, pos, tf.rotation, tf.scale * 0.5f,
-                ec.viewportPos, ec.viewportSize, col,
+        scope.box(pos, tf.rotation, tf.scale * 0.5f, col,
                 EditorStyle::px(selected ? 2.0f : 1.5f));
 
         // Projection direction: decals project along the entity's forward.
         const glm::vec3 fwd = Math::computeForward(tf.rotation);
         ImVec2 a, b;
-        if (projectToViewport(vp, pos, ec.viewportPos, ec.viewportSize, a) &&
-            projectToViewport(vp, pos + fwd * (tf.scale.z * 0.75f), ec.viewportPos, ec.viewportSize, b))
+        if (scope.project(pos, a) &&
+            scope.project(pos + fwd * (tf.scale.z * 0.75f), b))
             dl->AddLine(a, b, col, EditorStyle::px(selected ? 2.0f : 1.5f));
     });
 
@@ -391,7 +422,7 @@ void GizmoOverlay::drawEffectGizmos(EditorContext& ec) {
 
         const glm::vec3 pos = resolvedWorldPosition(ec.frame.scene, id, tf);
         ImVec2 sp;
-        if (!projectToViewport(vp, pos, ec.viewportPos, ec.viewportSize, sp)) return;
+        if (!scope.project(pos, sp)) return;
         dl->AddCircle(sp, EditorStyle::px(selected ? 6.0f : 5.0f), col, 0,
                       EditorStyle::px(selected ? 2.0f : 1.5f));
         dl->AddCircleFilled(sp, EditorStyle::px(2.0f), col);
@@ -400,8 +431,7 @@ void GizmoOverlay::drawEffectGizmos(EditorContext& ec) {
         const float speed = glm::length(e.velocity);
         if (speed > 1e-4f) {
             ImVec2 tip;
-            if (projectToViewport(vp, pos + (e.velocity / speed) * 0.75f,
-                                  ec.viewportPos, ec.viewportSize, tip))
+            if (scope.project(pos + (e.velocity / speed) * 0.75f, tip))
                 dl->AddLine(sp, tip, col, EditorStyle::px(selected ? 2.0f : 1.5f));
         }
     });
@@ -411,10 +441,7 @@ void GizmoOverlay::drawAudioGizmos(EditorContext& ec) {
     ViewportOverlayScope scope(ec);
     if (!scope.valid()) return;
 
-    const glm::mat4 vp     = scope.vp;
-    const ImVec2    vpMin  = scope.vpMin;
-    const ImVec2    vpSize = scope.vpSize;
-    ImDrawList*     dl     = scope.dl;
+    ImDrawList* dl = scope.dl;
 
     Scene&                 scene     = ec.frame.scene;
     const ResourceManager& resources = ec.frame.resources;
@@ -435,7 +462,7 @@ void GizmoOverlay::drawAudioGizmos(EditorContext& ec) {
         const glm::vec3 pos = resolvedWorldPosition(scene, id, tf);
 
         ImVec2 sp;
-        if (projectToViewport(vp, pos, vpMin, vpSize, sp)) {
+        if (scope.project(pos, sp)) {
             // A 2D source is drawn where its Transform is, but the mixer ignores
             // that pose - and the radiating arcs are exactly what the two kinds
             // differ by, so keeping or dropping them is the pair.
@@ -457,10 +484,8 @@ void GizmoOverlay::drawAudioGizmos(EditorContext& ec) {
         // Deliberately not clamped against each other: a maxDistance at or under
         // minDistance disables attenuation, and the outer sphere drawn inside the
         // inner one is that fact. Clamping would lie about what the mixer does.
-        wireSphere(dl, vp, pos, std::max(0.05f, source.minDistance), 24,
-                   vpMin, vpSize, AUDIO_COL, 1.0f);
-        wireSphere(dl, vp, pos, std::max(0.05f, source.maxDistance), 24,
-                   vpMin, vpSize, AUDIO_COL_DIM, 1.0f);
+        scope.sphere(pos, std::max(0.05f, source.minDistance), 24, AUDIO_COL, 1.0f);
+        scope.sphere(pos, std::max(0.05f, source.maxDistance), 24, AUDIO_COL_DIM, 1.0f);
     });
 
     const EntityId ear      = findActiveListener(scene);
@@ -484,14 +509,13 @@ void GizmoOverlay::drawAudioGizmos(EditorContext& ec) {
         const glm::quat rot = resolvedWorldRotation(scene, id, tf);
 
         ImVec2 sp;
-        if (projectToViewport(vp, pos, vpMin, vpSize, sp))
+        if (scope.project(pos, sp))
             drawEntityMarker(dl, EditorIcon::Listener, sp, col);
 
         // Which way the ear faces decides which speaker a source lands in, and
         // forward here is +Z. That is the engine's one convention whose wrong
         // answer looks plausible instead of failing, so the arrow is the check.
-        arrowLine(dl, vp, pos, pos + Math::computeForward(rot) * 0.8f,
-                  vpMin, vpSize, col, EditorStyle::px(1.5f),
+        scope.arrow(pos, pos + Math::computeForward(rot) * 0.8f, col, EditorStyle::px(1.5f),
                   EditorStyle::px(8.5f), EditorStyle::px(4.0f));
     });
 }
@@ -500,8 +524,8 @@ void GizmoOverlay::drawCameraGizmos(EditorContext& ec) {
     ViewportOverlayScope scope(ec);
     if (!scope.valid()) return;
 
-    const glm::mat4 vp = scope.vp;
-    ImDrawList*     dl = scope.dl;
+    ImDrawList* dl = scope.dl;
+
     const EntityId activeCamId = ec.cameraController.getCameraEntity();
 
     ec.frame.scene.forEach<Camera, Transform>([&](EntityId id, const Camera& cam, const Transform& tf) {
@@ -560,17 +584,15 @@ void GizmoOverlay::drawCameraGizmos(EditorContext& ec) {
         };
 
         ImVec2 apexSp;
-        bool haveApex = projectToViewport(vp, pos, ec.viewportPos, ec.viewportSize, apexSp);
+        bool haveApex = scope.project(pos, apexSp);
 
         ImVec2 nearSp[4]{};
         bool haveNear[4] = {};
         ImVec2 farSp[4]{};
         bool haveFar[4] = {};
         for (int i = 0; i < 4; ++i) {
-            haveNear[i] = projectToViewport(vp, nearCorners[i],
-                ec.viewportPos, ec.viewportSize, nearSp[i]);
-            haveFar[i]  = projectToViewport(vp, farCorners[i],
-                ec.viewportPos, ec.viewportSize, farSp[i]);
+            haveNear[i] = scope.project(nearCorners[i], nearSp[i]);
+            haveFar[i]  = scope.project(farCorners[i], farSp[i]);
         }
 
         // Perspective: spokes from apex to near corners (gives the "FOV
@@ -621,10 +643,7 @@ void GizmoOverlay::drawColliderGizmos(EditorContext& ec) {
     ViewportOverlayScope scope(ec);
     if (!scope.valid()) return;
 
-    const glm::mat4 vp     = scope.vp;
-    const ImVec2    vpMin  = scope.vpMin;
-    const ImVec2    vpSize = scope.vpSize;
-    ImDrawList*     dl     = scope.dl;
+    ImDrawList* dl = scope.dl;
 
     // Physics evaluates a collider in the entity's world frame - position and
     // rotation, no scale - so the wireframe is drawn the same way and is exactly
@@ -640,18 +659,16 @@ void GizmoOverlay::drawColliderGizmos(EditorContext& ec) {
             const glm::vec3 center = pos + r * part.center;
             switch (part.shape) {
                 case ColliderShape::Capsule:
-                    wireCapsule(dl, vp, center, rot, part.radius, part.halfHeight,
-                                COLLIDER_CAPSULE_SEGMENTS, vpMin, vpSize, color);
+                    scope.capsule(center, rot, part.radius, part.halfHeight,
+                                COLLIDER_CAPSULE_SEGMENTS, color);
                     break;
 
                 case ColliderShape::Mesh:
-                    drawMeshColliderWires(dl, vp, col, part, center, r,
-                                          vpMin, vpSize, color);
+                    drawMeshColliderWires(scope, col, part, center, r, color);
                     break;
 
                 case ColliderShape::Box:
-                    wireBox(dl, vp, center, rot, part.halfExtents,
-                            vpMin, vpSize, color);
+                    scope.box(center, rot, part.halfExtents, color);
                     break;
 
                 case ColliderShape::Count:
@@ -665,10 +682,7 @@ void GizmoOverlay::drawJointGizmos(EditorContext& ec) {
     ViewportOverlayScope scope(ec);
     if (!scope.valid()) return;
 
-    const glm::mat4 vp     = scope.vp;
-    const ImVec2    vpMin  = scope.vpMin;
-    const ImVec2    vpSize = scope.vpSize;
-    ImDrawList*     dl     = scope.dl;
+    ImDrawList* dl = scope.dl;
 
     Scene& scene = ec.frame.scene;
     scene.forEach<Joint, Transform>([&](EntityId id, const Joint& joint, const Transform& tf) {
@@ -682,7 +696,7 @@ void GizmoOverlay::drawJointGizmos(EditorContext& ec) {
             + resolvedWorldRotation(scene, id, tf) * joint.anchor;
 
         ImVec2 spA;
-        const bool onA = projectToViewport(vp, anchorA, vpMin, vpSize, spA);
+        const bool onA = scope.project(anchorA, spA);
 
         // A joint whose connected entity is gone or empty holds to a world
         // point; there is nothing to draw a rope to, so the anchor stands alone.
@@ -700,7 +714,7 @@ void GizmoOverlay::drawJointGizmos(EditorContext& ec) {
             + resolvedWorldRotation(scene, joint.connected, ct) * joint.connectedAnchor;
 
         ImVec2 spB;
-        const bool onB = projectToViewport(vp, anchorB, vpMin, vpSize, spB);
+        const bool onB = scope.project(anchorB, spB);
         if (onA && onB) {
             dl->AddLine(spA, spB, color, EditorStyle::px(1.5f));
             dl->AddCircleFilled(spA, EditorStyle::px(3.0f), color);
@@ -710,7 +724,7 @@ void GizmoOverlay::drawJointGizmos(EditorContext& ec) {
         // The glyph sits at the midpoint, where it reads as the relationship
         // rather than as either body.
         ImVec2 mid;
-        if (projectToViewport(vp, (anchorA + anchorB) * 0.5f, vpMin, vpSize, mid)) {
+        if (scope.project((anchorA + anchorB) * 0.5f, mid)) {
             drawEntityMarker(dl, EditorIcon::Joint, mid, color);
         }
     });
@@ -720,13 +734,10 @@ void GizmoOverlay::drawSkeletonGizmos(EditorContext& ec) {
     ViewportOverlayScope scope(ec);
     if (!scope.valid()) return;
 
+    ImDrawList* dl = scope.dl;
+
     const PoseBuffer* poses = ec.frame.poses;
     if (!poses) return;
-
-    const glm::mat4 vp     = scope.vp;
-    const ImVec2    vpMin  = scope.vpMin;
-    const ImVec2    vpSize = scope.vpSize;
-    ImDrawList*     dl     = scope.dl;
 
     const ResourceManager& resources = ec.frame.resources;
     const std::vector<glm::mat4>& global = poses->global();
@@ -763,7 +774,7 @@ void GizmoOverlay::drawSkeletonGizmos(EditorContext& ec) {
             const glm::vec3 origin(world[b][3]);
             boneMin = glm::min(boneMin, origin);
             boneMax = glm::max(boneMax, origin);
-            onScreen[b] = projectToViewport(vp, origin, vpMin, vpSize, screen[b]) ? 1 : 0;
+            onScreen[b] = scope.project(origin, screen[b]) ? 1 : 0;
         }
 
         for (uint32_t b = 0; b < slice->count; ++b) {
@@ -787,8 +798,7 @@ void GizmoOverlay::drawSkeletonGizmos(EditorContext& ec) {
                 const glm::vec3 dir = glm::vec3(world[b][axis]);
                 const float len = glm::length(dir);
                 if (len <= glm::epsilon<float>()) continue;
-                wireSegment(dl, vp, origin, origin + dir * (axisLength / len),
-                            vpMin, vpSize, AXIS_COLS[axis], 1.5f);
+                scope.segment(origin, origin + dir * (axisLength / len), AXIS_COLS[axis], 1.5f);
             }
         }
     });
@@ -798,18 +808,15 @@ void GizmoOverlay::drawBoundsGizmos(EditorContext& ec) {
     ViewportOverlayScope scope(ec);
     if (!scope.valid()) return;
 
-    const glm::mat4 vp     = scope.vp;
-    const ImVec2    vpMin  = scope.vpMin;
-    const ImVec2    vpSize = scope.vpSize;
-    ImDrawList*     dl     = scope.dl;
+    ImDrawList* dl = scope.dl;
 
     // World-space AABB of every visible entity, already computed by the
     // visibility pass (an axis-aligned box is wireBox with no rotation).
     for (const VisibleEntity& e : ec.frame.visibility->entries) {
-        if (e.worldMin == e.worldMax) continue;
-        const glm::vec3 center = (e.worldMin + e.worldMax) * 0.5f;
-        const glm::vec3 he     = (e.worldMax - e.worldMin) * 0.5f;
-        wireBox(dl, vp, center, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), he, vpMin, vpSize, BOUNDS_COL);
+        if (e.world.min == e.world.max) continue;
+        const glm::vec3 center = (e.world.min + e.world.max) * 0.5f;
+        const glm::vec3 he     = (e.world.max - e.world.min) * 0.5f;
+        scope.box(center, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), he, BOUNDS_COL);
     }
 }
 
@@ -817,24 +824,21 @@ void GizmoOverlay::drawSelectionOutline(EditorContext& ec) {
     ViewportOverlayScope scope(ec);
     if (!scope.valid()) return;
 
-    if (ec.state.selection.empty()) return;
+    ImDrawList* dl = scope.dl;
 
-    const glm::mat4 vp     = scope.vp;
-    const ImVec2    vpMin  = scope.vpMin;
-    const ImVec2    vpSize = scope.vpSize;
-    ImDrawList*     dl     = scope.dl;
+    if (ec.state.selection.empty()) return;
 
     // Outline every selected entity's world AABB; the active one gets the
     // full highlight, the rest a dimmer tint. Only mesh entities are in the
     // visible set; lights / probes / cameras highlight their own gizmos.
     const ImU32 secondary = IM_COL32(255, 210, 50, 130);
     for (const VisibleEntity& e : ec.frame.visibility->entries) {
-        if (e.worldMin == e.worldMax || !ec.state.isSelected(e.id)) continue;
-        const glm::vec3 center = (e.worldMin + e.worldMax) * 0.5f;
-        const glm::vec3 he     = (e.worldMax - e.worldMin) * 0.5f;
+        if (e.world.min == e.world.max || !ec.state.isSelected(e.id)) continue;
+        const glm::vec3 center = (e.world.min + e.world.max) * 0.5f;
+        const glm::vec3 he     = (e.world.max - e.world.min) * 0.5f;
         const ImU32 col = (e.id == ec.state.selectedEntity)
             ? EditorStyle::HIGHLIGHT_U32 : secondary;
-        wireBox(dl, vp, center, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), he, vpMin, vpSize, col);
+        scope.box(center, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), he, col);
     }
 }
 

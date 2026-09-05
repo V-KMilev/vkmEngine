@@ -68,10 +68,9 @@ void testImportedHierarchy() {
     check("  with the component where it was asked for",
           offset.has<Ragdoll>(body));
 
-    // The hips bone sits a metre up the rig; in the rig node's frame that is
-    // 10 across and 3 up, and in the root's it would be 10 across and 1. Asked
-    // in world, because a bone is parented to the character it belongs to and
-    // so its own Transform is measured from there.
+    // The hips bone sits a metre up the rig: 10 across and 3 up in the rig node's
+    // frame, 10 across and 1 in the root's. Asked in world, because a bone's own
+    // Transform is measured from the character it is parented to.
     const EntityId hips = offset.get<Ragdoll>(body).bones[0].body;
     const glm::vec3 at =
         glm::vec3(HierarchyOperations::computeWorldMatrix(offset, hips)[3]);
@@ -277,17 +276,15 @@ void testUnknownBehaviorsSurviveASave() {
     const nlohmann::json again = ComponentSerializer::save(sc);
     check("  and saving writes it back unchanged", again == authored);
 
-    // The list's order is the order the behaviors run in, so a held one has to
-    // remember where it sat. Appending them all at the end round-trips
-    // byte-identically here - every entry is unknown - and reorders the moment
-    // one type in the list is registered and the rest are not.
+    // The list's order is the order the behaviors run in, so a held one remembers
+    // where it sat. Appending round-trips identically while every entry is unknown,
+    // and reorders the moment one of them is registered.
     check("  remembering where each one sat",
           sc.unknown.size() == 2 && sc.unknown[0].index == 0 && sc.unknown[1].index == 1);
 
-    // Recording the position is only half of it; the save has to read it back.
-    // A list that is entirely held round-trips in order either way, so the
-    // assertion has to put one out of order and watch it come back sorted -
-    // which is what an implementation that appends cannot do.
+    // Recording the position is half of it; the save has to read it back. A wholly
+    // held list round-trips in order either way, so this puts one out of order and
+    // watches it come back sorted.
     ScriptComponent shuffled;
     shuffled.unknown.push_back({"Second", "{}", 1});
     shuffled.unknown.push_back({"First",  "{}", 0});
@@ -357,6 +354,68 @@ void testAProjectSurvivesBeingWritten() {
     check("and the splash list it never writes",
           doc.contains("splash") && doc["splash"].is_array() && doc["splash"].size() == 1);
 
+    // The look the game ships with. A project.json naming no render block -
+    // which the hand-authored one above does not - opens as the engine's own
+    // defaults rather than as everything switched off.
+    const RenderSettings defaults;
+    check("a project with no render block keeps the engine's look",
+          reread.render.bloom == defaults.bloom && reread.render.gtao == defaults.gtao);
+
+    Project tuned = reread;
+    tuned.render.bloom            = !defaults.bloom;
+    tuned.render.bloomStrength    = 0.375f;
+    tuned.render.textureFiltering = TextureFiltering::Nearest;
+    tuned.render.renderMode       = RenderMode::Normals;   // editor view state
+    check("a tuned look writes", saveProject(root, tuned));
+
+    Project shipped;
+    check("and reads back", loadProject(root, shipped));
+    check("carrying the toggle",  shipped.render.bloom == !defaults.bloom);
+    check("and the value",        nearly(shipped.render.bloomStrength, 0.375f));
+    check("and the named enum",   shipped.render.textureFiltering == TextureFiltering::Nearest);
+
+    // The half that must NOT travel: a debug buffer is this editor's view, not
+    // the game's look, and shipping it would hand a player a normals pass.
+    check("but not the debug view",
+          shipped.render.renderMode == defaults.renderMode);
+    {
+        std::ifstream in(root / "project.json");
+        nlohmann::json written;
+        in >> written;
+        check("which is not even written",
+              written.contains("render") && !written["render"].contains("renderMode"));
+    }
+
+    std::filesystem::remove_all(root, ec);
+}
+
+// The predicate the editor's empty state rests on. A directory with no
+// project.json above it is not a project, `ProjectController::open` refuses it,
+// and the editor draws a picker rather than a workspace over a world that is
+// not there.
+void testWhatIsAndIsNotAProject() {
+    std::printf("What counts as a project:\n");
+
+    const std::filesystem::path root =
+        std::filesystem::temp_directory_path() / "vkm_project_predicate";
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    std::filesystem::create_directories(root / "scenes", ec);
+
+    check("a bare directory is not one", findProjectRoot(root).empty());
+    check("  nor is anything inside it", findProjectRoot(root / "scenes").empty());
+
+    { std::ofstream out(root / "project.json"); out << R"({"name":"Probe"})"; }
+
+    check("a directory holding project.json is one",
+          !findProjectRoot(root).empty());
+    // Accepting a path inside the project is what lets an author drop a scene
+    // file on the editor and have it find the project around it.
+    check("  and so is anything inside it",
+          !findProjectRoot(root / "scenes").empty());
+    check("  which resolves to the directory itself, not the child",
+          findProjectRoot(root / "scenes") == findProjectRoot(root));
+
     std::filesystem::remove_all(root, ec);
 }
 
@@ -378,9 +437,8 @@ void testTheSceneOfRecordStillOpens() {
     }
 
     // This binary wires no asset factories, so every mesh and material the file
-    // names resolves to nothing and says so. That is the format behaving as
-    // designed - a reference that did not resolve is kept, not erased - and the
-    // errors below belong to the load, not to a failure.
+    // names resolves to nothing and says so. A reference that did not resolve is
+    // kept rather than erased, so the errors below are the format working.
     std::printf("      (the unresolved-asset errors below are expected: no factories here)\n");
 
     Scene world;
@@ -397,10 +455,9 @@ void testTheSceneOfRecordStillOpens() {
     });
     check("carrying the four characters it is authored with", characters == 4);
 
-    // Every character starts on something. A capsule authored in the air is a
-    // character that falls on load, plays its jump clip while it does, and
-    // reads as an animation bug rather than as the scene being wrong - which is
-    // exactly how this was found.
+    // Every character starts on something: a capsule authored in the air falls on
+    // load, plays its jump clip while it does, and reads as an animation bug
+    // rather than as the scene being wrong.
     bool allResting = true;
     world.forEach<CharacterController, Collider>(
             [&](EntityId id, CharacterController&, Collider& collider) {
@@ -416,11 +473,111 @@ void testTheSceneOfRecordStillOpens() {
 
 } // namespace
 
+// A component naming assets goes through the same reflection driver as one
+// naming none, because the driver carries Handle<T>. This is the round trip that
+// says the handle arrives as the same asset on the other side, and that the
+// fields beside it survive the journey.
+void testAssetHandlesSurviveARoundTrip() {
+    std::printf("A component that names an asset, written down and read back:\n");
+
+    Scene scene;
+    ResourceManager resources;
+    resources.add(generateCube(), "test:cube");
+
+    const EntityId prop = scene.createEntity();
+    scene.add<Transform>(prop, Transform{});
+    Mesh mesh;
+    mesh.mesh        = resources.findByName<MeshAsset>("test:cube");
+    mesh.visible     = true;
+    mesh.castShadows = false;          // the non-default, so a lost field shows
+    scene.add<Mesh>(prop, std::move(mesh));
+
+    Animator animator;
+    animator.speed       = 2.5f;
+    animator.playOnStart = false;
+    animator.looping     = false;
+    animator.playing     = true;       // transient: must NOT survive
+    scene.add<Animator>(prop, std::move(animator));
+
+    check("the mesh names an asset", bool(scene.get<Mesh>(prop).mesh));
+
+    const std::string document = SceneSerializer::saveToString(scene, resources);
+    check("  the scene saves", !document.empty());
+
+    // The name is the identity, so the far end resolves it against its own
+    // manager - which is the whole point of storing a name rather than a slot.
+    Scene back;
+    ResourceManager backResources;
+    backResources.add(generateCube(), "test:cube");
+    check("  and loads back", SceneSerializer::loadFromString(document, back, backResources));
+
+    EntityId landed{};
+    back.forEach<Mesh>([&](EntityId id, Mesh&) { landed = id; });
+    check("  with the mesh entity", bool(landed));
+
+    const Mesh& read = back.get<Mesh>(landed);
+    check("  the handle resolved against the far manager", bool(read.mesh));
+    check("  to the asset of that name",
+          read.mesh == backResources.findByName<MeshAsset>("test:cube"));
+    check("  and the flag beside it survived", read.castShadows == false);
+
+    const Animator& anim = back.get<Animator>(landed);
+    check("  the animator's authored fields survived",
+          nearly(anim.speed, 2.5f) && !anim.playOnStart && !anim.looping);
+    // Reflection expresses "transient" by not listing the field, so this is the
+    // assertion that the reflect block did not quietly gain one.
+    check("  and its transient playback state did not", anim.playing == false);
+
+    // A vector of reflected structs, which is what stopped Collider and LOD
+    // being written out by hand. Two parts, so an off-by-one in the array walk
+    // shows up as a count rather than as a value.
+    Scene compound;
+    ResourceManager none;
+    const EntityId body = compound.createEntity();
+    compound.add<Transform>(body, Transform{});
+    Collider collider;
+    collider.isTrigger = true;
+    collider.parts.clear();
+    ColliderPart box;
+    box.shape       = ColliderShape::Box;
+    box.halfExtents = {2.0f, 3.0f, 4.0f};
+    ColliderPart capsule;
+    capsule.shape      = ColliderShape::Capsule;
+    capsule.radius     = 0.25f;
+    capsule.halfHeight = 1.5f;
+    capsule.center     = {0.0f, 5.0f, 0.0f};
+    collider.parts = {box, capsule};
+    compound.add<Collider>(body, std::move(collider));
+
+    const std::string doc = SceneSerializer::saveToString(compound, none);
+    Scene readBack;
+    ResourceManager readResources;
+    check("a collider of two parts saves and loads",
+          SceneSerializer::loadFromString(doc, readBack, readResources));
+
+    EntityId got{};
+    readBack.forEach<Collider>([&](EntityId e, Collider&) { got = e; });
+    check("  the entity is there", bool(got));
+    const Collider& shape = readBack.get<Collider>(got);
+    check("  with both parts",     shape.parts.size() == 2);
+    check("  the box first",       shape.parts.size() == 2
+                                && shape.parts[0].shape == ColliderShape::Box
+                                && sameDirection(shape.parts[0].halfExtents, {2.0f, 3.0f, 4.0f}));
+    check("  the capsule second",  shape.parts.size() == 2
+                                && shape.parts[1].shape == ColliderShape::Capsule
+                                && nearly(shape.parts[1].radius, 0.25f)
+                                && nearly(shape.parts[1].halfHeight, 1.5f)
+                                && sameDirection(shape.parts[1].center, {0.0f, 5.0f, 0.0f}));
+    check("  and the flag beside them", shape.isTrigger);
+}
+
 void runSceneTests() {
     testImportedHierarchy();
     testComponentRoundTrip();
     testSceneRoundTripKeepsReferences();
     testUnknownBehaviorsSurviveASave();
     testAProjectSurvivesBeingWritten();
+    testWhatIsAndIsNotAProject();
     testTheSceneOfRecordStillOpens();
+    testAssetHandlesSurviveARoundTrip();
 }

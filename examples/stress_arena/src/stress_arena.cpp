@@ -38,7 +38,7 @@
 #include "platform/window/glfw_include.h"
 #include "platform/input/input_map.h"
 #include "platform/window/input_handle.h"
-#include "proc_mesh.h"
+#include "resource/generate/mesh_generators.h"
 #include "resource/asset/texture_asset.h"
 #include "resource/resource_manager.h"
 #include "system/hierarchy/hierarchy_operations.h"
@@ -214,7 +214,7 @@ TextureAsset makeGroundTexture() {
  * @return The unit cube with its UVs scaled to GROUND_TILE_WORLD per repeat.
  */
 MeshAsset makeGroundMesh(const glm::vec3& extents) {
-    MeshAsset mesh = makeCubeMesh();
+    MeshAsset mesh = generateCube();
     const glm::vec2 tiles(extents.x / GROUND_TILE_WORLD, extents.z / GROUND_TILE_WORLD);
     for (Vertex& vertex : mesh.vertices) vertex.uv *= tiles;
     return mesh;
@@ -225,14 +225,12 @@ MeshAsset makeGroundMesh(const glm::vec3& extents) {
  *
  * Golden-angle (Vogel) placement: consecutive indices land far apart in angle
  * while the radius grows as a square root, which spreads points evenly by *area*
- * instead of by radius. Drawing the angle and radius at random - which is what
- * this scene did first - clumps badly at these counts, and a radius drawn with a
- * squared bias piles everything against the inner edge on top of that. The
- * result read as one continuous carpet rather than as thousands of objects.
+ * rather than by radius. A random angle and radius clumps badly at these counts
+ * and reads as one continuous carpet.
  *
- * Even coverage is not only cosmetic. A carpet means huge overdraw in the near
- * field and nothing small enough for the screen-size cull to ever reject, so it
- * quietly profiles a different renderer than the one being shipped.
+ * Even coverage is not cosmetic here. A carpet means huge overdraw in the near
+ * field and nothing small enough for the screen-size cull to reject, so it
+ * profiles a different renderer than the one being shipped.
  *
  * The jitter is a fraction of the local spacing, so it breaks up the visible
  * lattice without letting neighbours collide again.
@@ -452,9 +450,9 @@ MaterialHandle StressArena::makeMaterial(const MaterialAsset& source, const char
 }
 
 void StressArena::buildMaterials() {
-    m_cube       = m_resources->add(makeCubeMesh(), "stress:cube");
-    m_sphere     = m_resources->add(makeSphereMesh(24, 12), "stress:sphere");
-    m_cylinder   = m_resources->add(makeCylinderMesh(20), "stress:cylinder");
+    m_cube       = m_resources->add(generateCube(), "stress:cube");
+    m_sphere     = m_resources->add(generateSphere(24, 12), "stress:sphere");
+    m_cylinder   = m_resources->add(generateCylinder(0.5f, 1.0f, 20), "stress:cylinder");
 
     // One mesh per ground slab shape, so the paving keeps the same world scale
     // across all four and meets cleanly at the seams. Two shapes, two meshes,
@@ -467,10 +465,10 @@ void StressArena::buildMaterials() {
     // Coarser builds of the round shapes for the far LOD levels. A cube has no
     // detail to drop, so it has no levels and keeps its single mesh - which is
     // also the case that proves LOD is opt-in per entity rather than global.
-    m_sphereMid = m_resources->add(makeSphereMesh(12, 6), "stress:sphere_mid");
-    m_sphereLow = m_resources->add(makeSphereMesh(6, 4),  "stress:sphere_low");
-    m_cylMid    = m_resources->add(makeCylinderMesh(10),  "stress:cyl_mid");
-    m_cylLow    = m_resources->add(makeCylinderMesh(6),   "stress:cyl_low");
+    m_sphereMid = m_resources->add(generateSphere(12, 6), "stress:sphere_mid");
+    m_sphereLow = m_resources->add(generateSphere(6, 4),  "stress:sphere_low");
+    m_cylMid    = m_resources->add(generateCylinder(0.5f, 1.0f, 10),  "stress:cyl_mid");
+    m_cylLow    = m_resources->add(generateCylinder(0.5f, 1.0f, 6),   "stress:cyl_low");
 
     // Mid-grey architecture, roughly 40-55% albedo. Dark surfaces would swallow
     // the daylight and hide exactly the shadowing and GI this scene exists to
@@ -1623,21 +1621,9 @@ void StressArena::setAnimationsEnabled(bool enabled) {
 }
 
 void StressArena::setDecalsEnabled(bool enabled) {
-    // Decal carries no enable flag, so the component itself comes and goes -
-    // which is the only way to take the projector out of the pass rather than
-    // just making it invisible while still paying for it.
     for (EntityId decal : m_decals) {
-        if (!m_scene->isAlive(decal)) continue;
-
-        if (enabled && !m_scene->has<Decal>(decal)) {
-            Decal component;
-            component.material  = m_matDecal;
-            component.angleFade = 0.6f;
-            component.opacity   = 0.7f;
-            m_scene->add(decal, std::move(component));
-        } else if (!enabled && m_scene->has<Decal>(decal)) {
-            m_scene->remove<Decal>(decal);
-        }
+        if (!m_scene->isAlive(decal) || !m_scene->has<Decal>(decal)) continue;
+        m_scene->get<Decal>(decal).enabled = enabled;
     }
 }
 

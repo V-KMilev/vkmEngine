@@ -1,5 +1,7 @@
 #pragma once
 
+#include "core/math/bounds.h"
+
 #include <glm/glm.hpp>
 
 #include "system/visibility/visibility_context.h"
@@ -20,16 +22,14 @@ namespace FrustumCuller {
  * Thin wrapper over Math::frustumIntersectsAABB (core/math/frustum.h), which
  * holds the actual center + half-extent half-space test.
  *
- * @param boundsMin World-space AABB minimum.
- * @param boundsMax World-space AABB maximum.
+ * @param bounds World-space AABB.
  * @param context VisibilityContext with frustum.
  */
 inline bool isVisible(
-    const glm::vec3& boundsMin,
-    const glm::vec3& boundsMax,
+    const Math::AABB& bounds,
     const VisibilityContext& context
 ) {
-    return Math::frustumIntersectsAABB(context.frustum, boundsMin, boundsMax);
+    return Math::frustumIntersectsAABB(context.frustum, bounds.min, bounds.max);
 }
 
 } // namespace FrustumCuller

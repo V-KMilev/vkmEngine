@@ -102,7 +102,7 @@ class GLIBLBaker {
         Vkm::GL::Shader m_brdf;
 
         GLCubeConvolver&        m_convolver;  ///< Shared irradiance + prefilter convolution (and the unit cube)
-        Vkm::GL::ScreenTriangle m_brdfTri;    ///< Attribute-less fullscreen triangle for the BRDF LUT
+        ScreenTriangle m_brdfTri;    ///< Attribute-less fullscreen triangle for the BRDF LUT
 };
 
 } // namespace Vkm::Engine

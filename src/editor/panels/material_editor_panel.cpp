@@ -10,13 +10,14 @@
 #include <utility>
 #include <vector>
 
+#include "core/hash/fnv1a.h"
 #include "ecs/component/render/decal.h"
 #include "framework/editor_common.h"
 #include "framework/editor_commands.h"
 #include "framework/editor_actions.h"
 #include "framework/material_preview_session.h"
-#include "generator/mesh_generators.h"
-#include "generator/texture_generators.h"
+#include "resource/generate/mesh_generators.h"
+#include "resource/generate/texture_generators.h"
 #include "io/project_paths.h"
 #include "loader/material_loaders.h"
 #include "loader/texture_loaders.h"
@@ -39,12 +40,12 @@ uint64_t previewVersion(uint64_t materialVersion, uint32_t shapeId,
         std::memcpy(&b, &f, sizeof(b));
         return static_cast<uint64_t>(b);
     };
-    uint64_t h = 1469598103934665603ull;  // FNV-1a offset basis
+    uint64_t h = FNV1A_OFFSET_BASIS;
     for (uint64_t v : { materialVersion, static_cast<uint64_t>(shapeId),
                         static_cast<uint64_t>(shape),
                         floatBits(yaw), floatBits(pitch), floatBits(distance),
                         static_cast<uint64_t>(background), floatBits(lightYaw) }) {
-        h = (h ^ v) * 1099511628211ull;
+        h = fnv1a64(&v, sizeof(v), h);
     }
     return h;
 }
@@ -339,14 +340,7 @@ void MaterialEditorPanel::drawChooser(EditorContext& ec, MaterialHandle target, 
 
     // Type-to-narrow, focused on open: the same affordance Add Component has,
     // and a project can hold more materials than one list is worth scrolling.
-    if (ImGui::IsWindowAppearing()) {
-        m_chooserFilter[0] = '\0';
-        ImGui::SetKeyboardFocusHere();
-    }
-    ImGui::SetNextItemWidth(-1);
-    ImGui::InputTextWithHint("##matFilter", "Search...", m_chooserFilter, sizeof(m_chooserFilter),
-                             ImGuiInputTextFlags_EscapeClearsAll);
-    ImGui::Separator();
+    popupSearchField("##matFilter", m_chooserFilter, sizeof(m_chooserFilter));
 
     // Snapshotted once so ImGuiListClipper can window the visible rows.
     std::vector<std::pair<MaterialHandle, const MaterialAsset*>> rows;
@@ -460,7 +454,7 @@ void MaterialEditorPanel::drawIdentityRow(EditorContext& ec, MaterialHandle targ
             state.openMaterial(fresh);
         }
     }
-    if (ImGui::MenuItem("Load PBR Folder...")) m_requestPbrFolder = true;
+    if (ImGui::MenuItem("Load PBR Folder...")) openPbrFolder();
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Build a material from a folder of maps named the usual way");
     }
@@ -905,13 +899,10 @@ bool MaterialEditorPanel::drawParameters(ResourceManager& resources, EditorRende
 
 void MaterialEditorPanel::openTexturePicker(MaterialHandle owner,
                                             TextureHandle MaterialAsset::* member, bool srgb) {
-    m_texturePicker.options().popupId    = "PickTexture";
     m_texturePicker.options().title      = "Pick Texture";
     m_texturePicker.options().root       = ProjectPaths::assets();
     m_texturePicker.options().recursive  = true;
-    m_texturePicker.options().kind       = AssetPicker::Kind::Files;
     m_texturePicker.options().extensions = {".png", ".jpg", ".jpeg", ".tga", ".bmp"};
-    m_texturePicker.options().maxResults = 4000;
     m_texturePicker.options().relativeTo = ProjectPaths::projectRoot();
     m_texturePicker.options().hint       = srgb ? "sRGB: yes" : "sRGB: no";
     m_texturePicker.open();
@@ -955,20 +946,18 @@ void MaterialEditorPanel::serviceTexturePicker(EditorContext& ec) {
     m_pendingSlot = nullptr;
 }
 
-void MaterialEditorPanel::servicePbrFolder(EditorContext& ec) {
-    if (m_requestPbrFolder) {
-        m_pbrFolderPicker.options().popupId    = "PBRFolder";
-        m_pbrFolderPicker.options().title      = "Load PBR Folder";
-        m_pbrFolderPicker.options().root       = ProjectPaths::assets();
-        m_pbrFolderPicker.options().recursive  = false;
-        m_pbrFolderPicker.options().kind       = AssetPicker::Kind::Directories;
-        m_pbrFolderPicker.options().extensions.clear();
-        m_pbrFolderPicker.options().relativeTo = ProjectPaths::projectRoot();
-        m_pbrFolderPicker.options().hint.clear();
-        m_pbrFolderPicker.open();
-        m_requestPbrFolder = false;
-    }
+void MaterialEditorPanel::openPbrFolder() {
+    m_pbrFolderPicker.options().title      = "Load PBR Folder";
+    m_pbrFolderPicker.options().root       = ProjectPaths::assets();
+    m_pbrFolderPicker.options().recursive  = false;
+    m_pbrFolderPicker.options().kind       = AssetPicker::Kind::Directories;
+    m_pbrFolderPicker.options().extensions.clear();
+    m_pbrFolderPicker.options().relativeTo = ProjectPaths::projectRoot();
+    m_pbrFolderPicker.options().hint.clear();
+    m_pbrFolderPicker.open();
+}
 
+void MaterialEditorPanel::servicePbrFolder(EditorContext& ec) {
     std::string folder;
     if (!m_pbrFolderPicker.draw(folder)) return;
 

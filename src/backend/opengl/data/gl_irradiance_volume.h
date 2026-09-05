@@ -66,9 +66,6 @@ class GLIrradianceVolume {
         void markReady() { m_ready = true; }
 
         bool     isReady() const { return m_ready; }
-        uint32_t sizeX()   const { return m_x; }
-        uint32_t sizeY()   const { return m_y; }
-        uint32_t sizeZ()   const { return m_z; }
 
     private:
         std::unique_ptr<Vkm::GL::Texture3D> m_sh[SH_COEFFS];

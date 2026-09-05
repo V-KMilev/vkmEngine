@@ -43,6 +43,19 @@ struct UIElement {
     glm::vec2 size     = {100.0f, 100.0f};  ///< Element size, in canvas reference pixels.
     bool      visible  = true;              ///< Skip this element and its whole subtree when false.
 
+    /**
+     * @brief Whether this element stops a pointer reaching what is behind it.
+     *
+     * True by default, and consulted only on an element that draws something -
+     * a UIImage or a UIButton. A pause menu is an opaque panel with buttons on
+     * it, and a click on the panel is a click on the menu rather than on
+     * whatever the menu covers.
+     *
+     * Set it false for a decorative overlay meant to be clicked through - a
+     * vignette, a crosshair, a damage flash.
+     */
+    bool      blocksPointer = true;
+
     UIRect screenRect = {};                 ///< Resolved rect in screen pixels (written by UISystem).
 };
 
@@ -55,5 +68,6 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::UIElement)
     VKM_F(pivot),
     VKM_F(position),
     VKM_F(size),
-    VKM_F(visible)
+    VKM_F(visible),
+    VKM_F(blocksPointer)
 VKM_REFLECT_END()

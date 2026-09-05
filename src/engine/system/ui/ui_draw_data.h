@@ -57,9 +57,19 @@ struct UIDrawData {
     std::vector<UIVertex>  vertices;
     std::vector<UIDrawCmd> commands;
 
+    /**
+     * @brief Whether the pointer is over an element that blocks it.
+     *
+     * The question gameplay has to be able to ask before acting on a click:
+     * firing a weapon through an open pause menu is the bug this exists to
+     * prevent, and every project would otherwise write its own isMouseOverHUD.
+     */
+    bool pointerOverUI = false;
+
     void clear() {
         vertices.clear();
         commands.clear();
+        pointerOverUI = false;
     }
 };
 

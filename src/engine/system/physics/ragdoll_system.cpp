@@ -55,10 +55,9 @@ void RagdollSystem::onEntityDestroyed(EntityId id) {
         m_scene->destroyEntity(bone.body);
     }
 
-    // The node they hung under goes too. It is a child of the entity being
-    // destroyed, so a hierarchy teardown would have taken it - but a plain
-    // destroyEntity does not, and an empty rig node outliving its character is
-    // exactly the litter this observer exists to prevent.
+    // The node they hung under goes too: a hierarchy teardown would have taken
+    // it, but a plain destroyEntity leaves an empty rig node outliving its
+    // character.
     if (ragdoll.root && m_scene->isAlive(ragdoll.root)) {
         HierarchyOperations::destroyHierarchy(*m_scene, ragdoll.root);
     }
@@ -85,12 +84,9 @@ void RagdollSystem::fixedUpdate(FrameContext& ctx) {
                     || !scene.has<Rigidbody>(bone.body)) continue;
                 Rigidbody& body = scene.get<Rigidbody>(bone.body);
                 body.isKinematic = false;
-                // Woken as well as unfrozen. A ragdoll that has come to rest is
-                // asleep where it landed, and while it is inactive the bones
-                // are kinematic - which skips the sleep test rather than
-                // clearing it. Handed back to the solver still asleep, they are
-                // bodies it treats as immovable: the character dies, gets up,
-                // and the second death never falls.
+                // Woken as well as unfrozen: a ragdoll at rest is asleep where
+                // it landed, and kinematic bones skip the sleep test rather than
+                // clearing it - handed back asleep, the second death never falls.
                 body.sleeping = false;
                 body.sleepTimer = 0.0f;
             }
@@ -110,21 +106,17 @@ void RagdollSystem::fixedUpdate(FrameContext& ctx) {
             ? HierarchyOperations::computeWorldMatrix(scene, rigNode)
             : glm::mat4(1.0f);
 
-        // The bones are children of this entity, so their Transform is its
-        // frame rather than the world's. The pose arrives in world space and
-        // comes back through here - the same conversion writeback does when the
-        // solver hands a world pose to a parented body.
-        // The frame the bodies are stored in, which is the node they hang
-        // under rather than the character itself.
+        // The pose arrives in world space, and the bones are children, so it
+        // comes back through the frame they hang under - the rig node rather than
+        // the character itself.
         const EntityId under = ragdoll.root ? ragdoll.root : self;
         const glm::mat4 toParent =
             glm::inverse(HierarchyOperations::computeWorldMatrix(scene, under));
 
         for (const RagdollBone& bone : ragdoll.bones) {
-            // Alive before has: has() asserts on a stale handle, and a
-            // ragdoll resurrected by an editor undo names bones that died
-            // with the original. Such a ragdoll simply stops posing bodies -
-            // the rig follows the animation as though it were never built.
+            // Alive before has: has() asserts on a stale handle, and a ragdoll
+            // resurrected by an editor undo names bones that died with the
+            // original.
             if (!bone.body || !scene.isAlive(bone.body)
                 || !scene.has<Rigidbody>(bone.body)) continue;
 

@@ -53,11 +53,9 @@ void testMathConvention() {
     check("a quarter turn about up sends forward to -right",
           sameDirection(Math::computeForward(quarter), -right));
 
-    // The pair the flip broke, and broke silently: a look control maps
-    // angles to a rotation and reverses it to re-derive them, and the flip
-    // moved one side. The camera flew correctly and jumped the moment anything
-    // took hold of one it had not moved - which passes a quick try, because
-    // the first thing anyone does still works.
+    // A look control maps angles to a rotation and reverses it to re-derive them,
+    // so the two have to agree. Where they do not, a camera flies correctly and
+    // jumps the moment anything takes hold of one it had not moved.
     bool anglesRoundTrip = true;
     bool pitchRaises = true;
     for (float yawDeg : {0.0f, 37.0f, -120.0f, 179.0f}) {
