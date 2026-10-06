@@ -1,5 +1,5 @@
 {
-    "name": "Potion Runner",
-    "engineVersion": "0.9.1",
-    "entryScene": ""
+  "engineVersion": "0.10.0",
+  "entryScene": "",
+  "name": "Potion Runner"
 }

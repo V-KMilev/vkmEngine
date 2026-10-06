@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include <glm/glm.hpp>
 
@@ -10,26 +11,45 @@
 #include "system/script/reflected_behavior.h"
 
 namespace Vkm::Engine {
+    class Scene;
+}
+
+namespace Lab {
+
+using namespace Vkm::Engine;
+
+/**
+ * @brief The characters this scene was authored with, in a fixed order.
+ *
+ * Players are handed one of these, not one built at join time: a character
+ * built on the server after load would exist there only, and the client would
+ * draw nothing. Authored ones sit at the same slots on both ends.
+ *
+ * @param scene Scene to search; a character has a CharacterController and a ScriptComponent.
+ * @return The characters, sorted by slot so every machine and run agrees.
+ */
+std::vector<EntityId> authoredCharacters(Scene& scene);
+
+/**
+ * @brief Whether @p entity is the character the player drives when there is no session.
+ *
+ * Offline, isMine() and isSimulated() are true for every entity, so without a
+ * seat every character would move as one. The seat is the first authored one.
+ *
+ * @param scene Scene holding the characters.
+ * @param entity Entity to ask about.
+ * @return True for the first authored character only.
+ */
+bool isOfflineSeat(Scene& scene, EntityId entity);
 
 /**
  * @brief Drives the lab's character: input to movement, movement to animation.
  *
- * Deliberately thin. Everything deciding how the character behaves lives in the
- * engine - CharacterControllerSystem turns moveInput into velocity, resolves
- * ground, and mounts what it can - so this writes intent and reads back what
- * happened. A behavior reimplementing any of that would be testing itself
- * rather than the engine, which is the opposite of what a lab is for.
- *
- * Movement is camera-relative, because a course you walk around is unusable if
- * "forward" means the world's +Z rather than the way you are looking.
- *
- * The clips are authored rather than found by name in code: they are what the
- * scene references, and what the scene references is what the cooker bakes.
+ * Writes camera-relative intent; CharacterControllerSystem decides the motion.
+ * Clips are authored references so the cooker bakes them.
  */
 class LabWalker : public ReflectedBehavior<LabWalker> {
     public:
-        static constexpr const char* TYPE_NAME = "LabWalker";
-
         void onStart() override;
         void onUpdate(float dt) override;
         void onFixedUpdate(float dt) override;
@@ -37,20 +57,13 @@ class LabWalker : public ReflectedBehavior<LabWalker> {
     public:
         /**
          * @brief Speed with nothing held, in metres per second.
-         *
-         * Running is the default because crossing the course at a walk is
-         * tedious, and a lab nobody crosses tests nothing. The walk key is the
-         * exception rather than the rule for the same reason.
          */
         float runSpeed = 4.0f;
 
         /**
          * @brief Speed while the walk key is held, in metres per second.
          *
-         * Matches what the walk clip was authored at - 1.8m of travel over
-         * 1.03s - so the feet meet the ground instead of skating. An in-place
-         * clip has no opinion about speed, so the two are only ever as matched
-         * as someone makes them.
+         * Matches the walk clip (1.8m over 1.03s) so the feet do not skate.
          */
         float walkSpeed = 1.75f;
 
@@ -59,11 +72,6 @@ class LabWalker : public ReflectedBehavior<LabWalker> {
 
         /**
          * @brief How far the camera orbits from the character, in metres.
-         *
-         * Fixed. The camera turns around the character rather than trailing
-         * its facing, which is also what breaks a loop: movement is
-         * camera-relative, so a camera that followed the character's facing
-         * moved the meaning of "forward" every time the character turned.
          */
         float followDistance = 4.5f;
 
@@ -81,6 +89,16 @@ class LabWalker : public ReflectedBehavior<LabWalker> {
 
     private:
         /**
+         * @brief Whether this walker stands idle because there is no session.
+         *
+         * Offline the ownership questions cannot pick one walker out; isOfflineSeat
+         * does. With a session open this is always false.
+         *
+         * @return True offline for every walker but the seat.
+         */
+        bool isUnseatedOffline();
+
+        /**
          * @brief Crossfade to @p clip unless it is already the one playing.
          *
          * @param clip Name of the clip to play; ignored when empty or unknown.
@@ -90,32 +108,24 @@ class LabWalker : public ReflectedBehavior<LabWalker> {
         /**
          * @brief Pick the clip from what the character is doing.
          *
-         * Runs for every walker, not only the one this end drives: another
-         * player's input never reaches this machine, so the clip has to come
-         * from the body's own replicated motion rather than from what was
-         * asked for. Airborne beats moving, and moving beats standing.
+         * Reads the body's replicated motion, not input, so it works for every
+         * walker. Airborne beats moving, and moving beats standing.
          */
         void chooseClip();
 
         /**
          * @brief Cast a ray from the eye, with every player where this one saw them.
          *
-         * The lag-compensated question: a shooter aims at where a target is
-         * drawn, which on their screen is a fixed delay behind the server, so a
-         * server judging against the present would answer for a moment the
-         * shooter never saw. NetRewindScope puts the players back for the
-         * length of the call and restores them after.
+         * Lag-compensated: NetSession::Rewind puts the players back to what the
+         * shooter saw for the length of the call.
          */
-        void probe(Scene& scene);
+        void probe();
 
         /**
          * @brief Orbit the camera around the character and aim it at them.
          *
-         * The angle is the player's and the distance is fixed; only the pivot
-         * follows, and it follows a position rather than a facing. That is what
-         * keeps camera-relative movement stable - a camera that trailed the
-         * character's facing turned every time the character did, which moved
-         * the direction of "forward" under the player's hand mid-step.
+         * The pivot follows position, never facing: a camera that trailed facing
+         * would move "forward" under the player's hand mid-step.
          *
          * @param dt Frame delta, seconds.
          */
@@ -124,28 +134,29 @@ class LabWalker : public ReflectedBehavior<LabWalker> {
     private:
         EntityId m_animator{};
         std::string m_playing;
+        bool m_offlineSeat = false;   ///< See isOfflineSeat
 
         float m_orbitYaw = 0.0f;      ///< Where the player has turned the camera
         float m_orbitPitch = 0.0f;
         glm::vec3 m_pivot{0.0f};      ///< The point orbited, chasing the body
-        bool m_framed = false;        ///< Whether the orbit has been seeded yet
+        bool m_framed = false;        ///< Orbit seeded yet
 };
 
-} // namespace Vkm::Engine
+} // namespace Lab
 
-VKM_REFLECT_BEGIN(::Vkm::Engine::LabWalker)
-    VKM_F(runSpeed),
-    VKM_F(walkSpeed),
-    VKM_F(turnSpeed),
-    VKM_F(fadeSeconds),
-    VKM_F(followDistance),
-    VKM_F(aimHeight),
-    VKM_F(followLag),
-    VKM_F(lookSensitivity),
-    VKM_F(minPitch),
-    VKM_F(maxPitch),
-    VKM_F(idleClip),
-    VKM_F(walkClip),
-    VKM_F(runClip),
+VKM_REFLECT_BEGIN(::Lab::LabWalker)
+    VKM_F(runSpeed)
+    VKM_F(walkSpeed)
+    VKM_F(turnSpeed)
+    VKM_F(fadeSeconds)
+    VKM_F(followDistance)
+    VKM_F(aimHeight)
+    VKM_F(followLag)
+    VKM_F(lookSensitivity)
+    VKM_F(minPitch)
+    VKM_F(maxPitch)
+    VKM_F(idleClip)
+    VKM_F(walkClip)
+    VKM_F(runClip)
     VKM_F(jumpClip)
 VKM_REFLECT_END()

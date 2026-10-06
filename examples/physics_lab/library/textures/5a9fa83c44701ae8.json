@@ -1,0 +1,13 @@
+{
+  "name": "texture:solid:FFFFFFFF:Data",
+  "source": {
+    "color": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "kind": "solid",
+    "usage": "Data"
+  }
+}

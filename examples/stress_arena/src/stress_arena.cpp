@@ -19,7 +19,6 @@
 #include "io/asset/asset_library.h"
 #include "io/asset/cooked_loader.h"
 #include "ecs/component/animation/animation.h"
-#include "ecs/component/core/name.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/component/physics/collider.h"
 #include "ecs/component/physics/rigidbody.h"
@@ -35,91 +34,63 @@
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
 #include "ecs/component/ui/ui_text.h"
+#include "ecs/hierarchy_operations.h"
 #include "platform/window/glfw_include.h"
 #include "platform/input/input_map.h"
-#include "platform/window/input_handle.h"
+#include "platform/input/input_handle.h"
 #include "resource/generate/mesh_generators.h"
 #include "resource/asset/texture_asset.h"
 #include "resource/resource_manager.h"
-#include "system/hierarchy/hierarchy_operations.h"
 
-namespace Vkm::Engine {
+namespace Arena {
 
 namespace {
 
-// The arena is a square city block centred on the origin. Everything is placed
-// inside this radius so the scripted camera never flies out of the lit region
-// and leaves the profile measuring empty sky.
-//
-// Sized so the scatter below has room to breathe: the same object count over a
-// small footprint packs into a continuous carpet, which is both unreadable and
-// misleading to profile - overdraw goes through the roof and nothing ever
-// resolves as an individual mesh for the size cull to reject.
+// A square city block centred on the origin; everything is placed inside this radius.
 constexpr float ARENA_HALF = 150.0f;
 constexpr float GROUND_Y   = 0.0f;
 
-// The pit the physics pile falls into, at the centre of the block. Bodies that
-// tumble past its rim are relaunched rather than left to sleep - a settled pile
-// stops exercising the solver, which is the opposite of what this scene is for.
+// The pit the physics pile falls into, at the centre of the block.
 constexpr float PIT_HALF  = 14.0f;
 constexpr float PIT_DEPTH = 3.0f;
 
-// How deep the ground slabs reaching around that pit are. At file scope rather
-// than local to buildGround because the paving's UVs are scaled to the slab
-// carrying them, so the mesh for each shape is sized from this too.
 constexpr float GROUND_BAND = (ARENA_HALF - PIT_HALF) * 0.5f;
 
-// Placement zones, outward from the centre. Everything the camera looks *at*
-// goes inside PROP_ZONE_OUTER; the towers form a ring beyond CAM_RADIUS. The
-// camera therefore flies a clear lane between the two, which matters for more
-// than looks: a path that runs through the buildings spends much of the loop
-// with the near plane inside a wall, and then the capture is measuring the
-// inside of a box rather than the scene.
+// Placement zones, outward. The camera flies the clear lane between props and
+// towers; a path through the buildings would put the near plane inside walls.
 constexpr float PROP_ZONE_INNER  = PIT_HALF + 6.0f;
 constexpr float PROP_ZONE_OUTER  = 92.0f;
 constexpr float TOWER_ZONE_INNER = 118.0f;
 constexpr float TOWER_ZONE_OUTER = ARENA_HALF - 8.0f;
 
-// Scripted camera: a circuit in that clear lane, looking inward across the
-// block rather than down into it. The height oscillates so the frame alternates
-// between street level (heavy overdraw, many lights in frustum) and a raised
-// view (heavy draw count, deep clusters) - one loop covers both.
-//
-// The look target sits above the camera's own mean height on purpose. Aiming
-// down at the pit filled the frame with ground and left the skybox off screen,
-// which quietly drops the sky out of the very profile it belongs in; a
-// level-to-rising view keeps the horizon and the far skyline in shot.
+// The height oscillates between street level (overdraw, many lights) and a raised
+// view (draw count, deep clusters).
 constexpr float CAM_RADIUS     = 104.0f;
 constexpr float CAM_HEIGHT     = 26.0f;
 constexpr float CAM_HEIGHT_AMP = 11.0f;
-// Just above the prop field rather than up at the tower tops: high enough to
-// keep the horizon and sky in frame, low enough that the scene - not empty sky -
-// is what fills it, since empty sky is the one thing here that costs nothing to
-// draw and so is the least useful thing to point the profiler at.
+// Low enough that the scene, not the sky, fills the frame.
 constexpr float CAM_LOOK_Y     = 4.0f;
+
+// 2D atlas tiles left after the sun's cascades, for the moving drone spots.
+constexpr int MOVING_SHADOW_CASTERS =
+    static_cast<int>(Config::MAX_SHADOW_CASTERS_2D) - static_cast<int>(Config::NUM_CASCADES);
 
 constexpr uint64_t ARENA_SEED = 0xC0FFEEu;
 // Second PCG stream for the runtime churn, so it cannot disturb the layout draw.
 constexpr uint64_t CHURN_STREAM = 0x51ED2701u;
 
-// The arena's own actions. Named rather than keyed so the bindings below are
-// the only place a key appears, and a capture session can rebind them without
-// touching this file.
-constexpr const char* ACTION_LIGHTS    = "Stress/ToggleLights";
-constexpr const char* ACTION_SHADOWS   = "Stress/ToggleShadows";
-constexpr const char* ACTION_PROPS     = "Stress/ToggleProps";
-constexpr const char* ACTION_PARTICLES = "Stress/ToggleParticles";
-constexpr const char* ACTION_PHYSICS   = "Stress/TogglePhysics";
-constexpr const char* ACTION_ANIM      = "Stress/ToggleAnimation";
-constexpr const char* ACTION_DECALS    = "Stress/ToggleDecals";
-constexpr const char* ACTION_FOG       = "Stress/ToggleFog";
-constexpr const char* ACTION_UI        = "Stress/ToggleUI";
-constexpr const char* ACTION_RESET     = "Stress/ResetToggles";
-constexpr const char* ACTION_CAMERA    = "Stress/ToggleCamera";
+constexpr const char* ACTION_LIGHTS    = "Toggle/Lights";
+constexpr const char* ACTION_SHADOWS   = "Toggle/Shadows";
+constexpr const char* ACTION_PROPS     = "Toggle/Props";
+constexpr const char* ACTION_PARTICLES = "Toggle/Particles";
+constexpr const char* ACTION_PHYSICS   = "Toggle/Physics";
+constexpr const char* ACTION_ANIM      = "Toggle/Animation";
+constexpr const char* ACTION_DECALS    = "Toggle/Decals";
+constexpr const char* ACTION_FOG       = "Toggle/Fog";
+constexpr const char* ACTION_UI        = "Toggle/UI";
+constexpr const char* ACTION_RESET     = "Toggle/Reset";
+constexpr const char* ACTION_CAMERA    = "Toggle/Camera";
 
-/**
- * @brief Bind the arena's actions to the number row, plus F for the camera.
- */
 void installStressBindings(InputMap& map) {
     const auto key = [](int code) { return InputBinding{InputSource::Key, code, 1.0f}; };
     map.define(ACTION_LIGHTS,    { key(GLFW_KEY_1) });
@@ -135,25 +106,15 @@ void installStressBindings(InputMap& map) {
     map.define(ACTION_CAMERA,    { key(GLFW_KEY_F) });
 }
 
-// The paving the ground is surfaced with, generated rather than imported. The
-// arena ships no source art, and a floor of flat colour leaves every texture
-// unit in the frame idle - so the profile describes a renderer that never
-// samples anything, and nothing in the scene can show what a filtering change
-// does to a surface either.
+// Generated paving: the arena ships no source art.
 constexpr uint32_t GROUND_TEXTURE_SIZE = 512;
-constexpr uint32_t GROUND_SLABS        = 4;      ///< Paving slabs per texture edge.
-constexpr float    GROUND_TILE_WORLD   = 7.5f;   ///< World units per repeat of the paving.
+constexpr uint32_t GROUND_SLABS        = 4;      ///< Per texture edge.
+constexpr float    GROUND_TILE_WORLD   = 7.5f;   ///< World units per repeat.
 
 /**
  * @brief Generate the ground's albedo map: paving slabs, grout and grain.
  *
- * Three frequencies on purpose. The grout lines are the coarse structure, the
- * per-slab tint stops neighbours reading as one surface, and the per-texel
- * grain is the fine detail no single mip level can carry - which is the part
- * that goes first when a surface is sampled at a glancing angle.
- *
- * Drawn from the arena's fixed seed, so the same pixels come out on every run
- * and two captures stay comparable.
+ * Drawn from the arena's fixed seed, so every run gets the same pixels.
  *
  * @return An sRGB RGBA8 texture that tiles seamlessly, with mipmaps requested.
  */
@@ -170,11 +131,8 @@ TextureAsset makeGroundTexture() {
     texture.params.type           = TexturePixelType::UnsignedByte;
     texture.params.wrapS          = TextureWrapMode::Repeat;
     texture.params.wrapT          = TextureWrapMode::Repeat;
-    texture.srgb                  = true;
     texture.pixelData.resize(static_cast<size_t>(SIZE) * SIZE * 4);
 
-    // Slab tints drawn up front so the pixel loop only looks one up, which
-    // keeps the pattern independent of the order the pixels are visited.
     Math::Rng rng(ARENA_SEED);
     float slabTint[GROUND_SLABS * GROUND_SLABS];
     for (float& tint : slabTint) tint = rng.nextFloat(0.38f, 0.54f);
@@ -182,11 +140,10 @@ TextureAsset makeGroundTexture() {
     for (uint32_t y = 0; y < SIZE; ++y) {
         for (uint32_t x = 0; x < SIZE; ++x) {
             const bool grout = (x % SLAB) < GROUT || (y % SLAB) < GROUT;
-            const float base = grout ? 0.13f
-                                     : slabTint[(y / SLAB) * GROUND_SLABS + (x / SLAB)];
+            const float base = grout ? 0.13f : slabTint[(y / SLAB) * GROUND_SLABS + (x / SLAB)];
             const float value = glm::clamp(base + rng.nextFloat(-0.045f, 0.045f), 0.0f, 1.0f);
 
-            // A hair warm, so the paving does not read as a pure grey card.
+            // A hair warm, not a pure grey card.
             uint8_t* pixel = &texture.pixelData[(static_cast<size_t>(y) * SIZE + x) * 4];
             pixel[0] = static_cast<uint8_t>(value * 255.0f);
             pixel[1] = static_cast<uint8_t>(value * 251.0f);
@@ -200,15 +157,7 @@ TextureAsset makeGroundTexture() {
 /**
  * @brief A ground slab's mesh: a cube whose UVs repeat the paving across it.
  *
- * The cube carries 0..1 UVs per face, so one copy of the paving would stretch
- * over the whole slab - no repetition, and therefore near enough one mip level
- * everywhere. Tiling the UVs puts the texture back at a human scale, which is
- * what makes the far half of the floor a minification problem at all.
- *
- * The count has to come from the slab's size rather than be fixed, because the
- * slabs are not one shape: a repeat count that reads correctly on the wide
- * bands stretches the paving into rectangles on the strips beside the pit, at a
- * different scale again, and every seam between them shows it.
+ * The repeat count comes from the slab's size, because the slabs differ in shape.
  *
  * @param extents Full width, height and depth of the slab this mesh is for.
  * @return The unit cube with its UVs scaled to GROUND_TILE_WORLD per repeat.
@@ -223,19 +172,10 @@ MeshAsset makeGroundMesh(const glm::vec3& extents) {
 /**
  * @brief Place item @p index of @p count evenly across a ground annulus.
  *
- * Golden-angle (Vogel) placement: consecutive indices land far apart in angle
- * while the radius grows as a square root, which spreads points evenly by *area*
- * rather than by radius. A random angle and radius clumps badly at these counts
- * and reads as one continuous carpet.
+ * Golden-angle (Vogel) placement spreads points evenly by area; random placement
+ * clumps at these counts. Jitter scales with local spacing, so neighbours never collide.
  *
- * Even coverage is not cosmetic here. A carpet means huge overdraw in the near
- * field and nothing small enough for the screen-size cull to reject, so it
- * profiles a different renderer than the one being shipped.
- *
- * The jitter is a fraction of the local spacing, so it breaks up the visible
- * lattice without letting neighbours collide again.
- *
- * @param index   Item index; consecutive values are spread apart, not adjacent.
+ * @param index   Item index; consecutive values land far apart.
  * @param count   Total items sharing the annulus, which sets the spacing.
  * @param inner   Inner radius of the annulus.
  * @param outer   Outer radius.
@@ -243,21 +183,26 @@ MeshAsset makeGroundMesh(const glm::vec3& extents) {
  * @param jitter  Jitter as a fraction of local spacing (0 = a perfect lattice).
  * @return A ground-plane position; Y is left at zero for the caller to set.
  */
-glm::vec3 scatterOnGround(int index, int count, float inner, float outer,
-                          Math::Rng& rng, float jitter = 0.4f) {
+glm::vec3 scatterOnGround(
+    int index,
+    int count,
+    float inner,
+    float outer,
+    Math::Rng& rng,
+    float jitter = 0.4f
+) {
     constexpr float GOLDEN_ANGLE = 2.39996323f;
 
     const int   total = std::max(1, count);
     const float u     = (static_cast<float>(index) + 0.5f) / static_cast<float>(total);
     const float radius = std::sqrt(inner * inner + u * (outer * outer - inner * inner));
 
-    // Mean centre-to-centre distance at this density, used to size the jitter.
+    // Mean centre-to-centre distance at this density.
     const float spacing = (outer - inner) / std::sqrt(static_cast<float>(total));
 
     const float radial  = rng.nextFloat(-1.0f, 1.0f) * spacing * jitter;
     const float jittered = glm::clamp(radius + radial, inner, outer);
-    // Convert the same linear jitter into an angle at this radius, so the
-    // spacing stays even rather than tightening toward the middle.
+    // The same linear jitter as an angle, so spacing does not tighten toward the middle.
     const float angular = rng.nextFloat(-1.0f, 1.0f) * spacing * jitter / std::max(1.0f, jittered);
 
     const float theta = static_cast<float>(index) * GOLDEN_ANGLE + angular;
@@ -265,19 +210,22 @@ glm::vec3 scatterOnGround(int index, int count, float inner, float outer,
 }
 
 /**
- * @brief A looping spin about Y, for props that should keep the AnimationSystem
- *        and the hierarchy's dirty-transform walk busy.
+ * @brief A looping spin about Y.
  *
- * Three keys 120 degrees apart with linear easing, so each slerp takes the short
- * way round and the rotation rate stays constant across the loop.
+ * Linear keys 120 degrees apart, so each slerp takes the short way at a constant rate.
+ *
+ * @param period Seconds per full revolution.
+ * @param phase  Seconds into the loop it starts at.
+ * @return A playing, looping Animation.
  */
 Animation makeSpin(float period, float phase) {
     Animation anim;
-    anim.rotationTrack.setEasing(&Easing::linear);
+    anim.rotationTrack.setEasing(Easing::Linear);
     for (int k = 0; k <= 3; ++k) {
         anim.rotationTrack.addKeyframe(
             period * static_cast<float>(k) / 3.0f,
-            glm::angleAxis(glm::two_pi<float>() * static_cast<float>(k) / 3.0f, Math::WORLD_AXIS_Y));
+            glm::angleAxis(glm::two_pi<float>() * static_cast<float>(k) / 3.0f, Math::WORLD_AXIS_Y)
+        );
     }
     anim.time    = phase;
     anim.playing = true;
@@ -286,12 +234,16 @@ Animation makeSpin(float period, float phase) {
 }
 
 /**
- * @brief A looping vertical bob, so some animated props write a position track
- *        (a different code path in the track evaluator than rotation).
+ * @brief A looping vertical bob, to exercise the position track.
+ *
+ * @param period Seconds per rise and fall.
+ * @param height Peak lift above the prop's resting position.
+ * @param phase  Seconds into the loop it starts at.
+ * @return A playing, looping Animation.
  */
 Animation makeBob(float period, float height, float phase) {
     Animation anim;
-    anim.positionTrack.setEasing(Easing::byName("easeInOutSine"));
+    anim.positionTrack.setEasing(Easing::EaseInOutSine);
     anim.positionTrack.addKeyframe(0.0f,          {0.0f, 0.0f, 0.0f});
     anim.positionTrack.addKeyframe(period * 0.5f, {0.0f, height, 0.0f});
     anim.positionTrack.addKeyframe(period,        {0.0f, 0.0f, 0.0f});
@@ -302,16 +254,16 @@ Animation makeBob(float period, float height, float phase) {
 }
 
 /**
- * @brief A breathing scale pulse: the third single-track shape, and the only one
- *        that changes an entity's world bounds every frame.
+ * @brief A breathing scale pulse.
  *
- * That matters beyond the track evaluator - a prop whose extent keeps changing
- * cannot have its culling result reused, so this is what makes the screen-size
- * cull recompute rather than coast.
+ * @param period Seconds per swell and return.
+ * @param amount Peak growth, as a fraction of the prop's scale.
+ * @param phase  Seconds into the loop it starts at.
+ * @return A playing, looping Animation.
  */
 Animation makePulse(float period, float amount, float phase) {
     Animation anim;
-    anim.scaleTrack.setEasing(Easing::byName("easeInOutSine"));
+    anim.scaleTrack.setEasing(Easing::EaseInOutSine);
     anim.scaleTrack.addKeyframe(0.0f,          glm::vec3(1.0f));
     anim.scaleTrack.addKeyframe(period * 0.5f, glm::vec3(1.0f + amount));
     anim.scaleTrack.addKeyframe(period,        glm::vec3(1.0f));
@@ -322,34 +274,33 @@ Animation makePulse(float period, float amount, float phase) {
 }
 
 /**
- * @brief All three tracks at once: the worst case for the evaluator, since a
- *        clip driving position, rotation and scale together costs three
- *        keyframe searches and three interpolations per entity per frame.
+ * @brief Position, rotation and scale tracks at once: the evaluator's worst case.
  *
- * A scene of single-track clips quietly measures a third of what a real
- * animated character costs.
+ * @param period Seconds per circuit of the hop.
+ * @param radius Radius of the circle the hops trace.
+ * @param height Peak of each hop.
+ * @param phase  Seconds into the loop it starts at.
+ * @return A playing, looping Animation.
  */
 Animation makeOrbitHop(float period, float radius, float height, float phase) {
     Animation anim;
-    anim.positionTrack.setEasing(Easing::byName("easeInOutSine"));
-    anim.rotationTrack.setEasing(&Easing::linear);
-    anim.scaleTrack.setEasing(Easing::byName("easeInOutSine"));
+    anim.positionTrack.setEasing(Easing::EaseInOutSine);
+    anim.rotationTrack.setEasing(Easing::Linear);
+    anim.scaleTrack.setEasing(Easing::EaseInOutSine);
 
-    // Four position keys tracing a square-ish loop, three rotation keys for a
-    // constant-rate spin, and a scale squash on the down beats.
     for (int k = 0; k <= 4; ++k) {
         const float t     = period * static_cast<float>(k) / 4.0f;
         const float angle = glm::half_pi<float>() * static_cast<float>(k);
-        anim.positionTrack.addKeyframe(t, {
-            std::cos(angle) * radius,
-            (k % 2 == 0) ? 0.0f : height,
-            std::sin(angle) * radius
-        });
+        anim.positionTrack.addKeyframe(
+            t,
+            {std::cos(angle) * radius, (k % 2 == 0) ? 0.0f : height, std::sin(angle) * radius}
+        );
     }
     for (int k = 0; k <= 3; ++k) {
         anim.rotationTrack.addKeyframe(
             period * static_cast<float>(k) / 3.0f,
-            glm::angleAxis(glm::two_pi<float>() * static_cast<float>(k) / 3.0f, Math::WORLD_AXIS_Y));
+            glm::angleAxis(glm::two_pi<float>() * static_cast<float>(k) / 3.0f, Math::WORLD_AXIS_Y)
+        );
     }
     anim.scaleTrack.addKeyframe(0.0f,          glm::vec3(1.0f));
     anim.scaleTrack.addKeyframe(period * 0.25f, glm::vec3(0.8f, 1.25f, 0.8f));
@@ -369,58 +320,47 @@ void StressArena::onStart() {
     if (m_built) return;
     m_built = true;
 
-    m_scene     = context().scene;
-    m_resources = context().resources;
-    m_window    = context().window;
     m_rng.seed(ARENA_SEED);
-    installStressBindings(*context().input);
+    installStressBindings(input());
     m_churnRng.seed(ARENA_SEED, CHURN_STREAM);
 
-    // Procedural rather than an HDR file, for the same reason nothing here is
-    // loaded: baked from parameters, the lighting is identical on every machine.
-    // It follows the sun and re-bakes only when that or a parameter moves.
-    Environment& environment = m_scene->environment();
-    environment.sky.showSkybox    = true;
+    // Procedural, not an HDR file, so the lighting is identical on every machine.
+    Environment& environment = scene().environment();
+    environment.sky.showSkybox = true;
     environment.sky.procedural = true;
-    environment.sky.intensity     = 1.0f;
+    environment.sky.intensity  = 1.0f;
 
-    // Mid-morning and off-axis, so the towers cast shadows down onto the block
-    // rather than across the arena and the cascades cover a varied depth range.
-    // Mie stays modest - a large term at this elevation washes the sky white.
-    environment.sky.lightColor          = {1.0f, 0.96f, 0.90f};
-    environment.sky.lightIntensity      = 3.2f;
-    environment.sky.sunElevation        = 70.0f;
-    environment.sky.sunAzimuth          = -145.0f;
-    environment.sky.sunIntensity     = 22.0f;
-    environment.sky.rayleigh         = 1.0f;
-    environment.sky.mie              = 0.7f;
-    environment.sky.mieG             = 0.76f;
-    environment.sky.sunDiscIntensity = 15.0f;
+    // Off-axis, so tower shadows fall onto the block and the cascades span varied
+    // depth. A large Mie term at this elevation washes the sky white.
+    environment.sky.lightColor        = {1.0f, 0.96f, 0.90f};
+    environment.sky.lightIntensity    = 3.2f;
+    environment.sky.sunElevation      = 70.0f;
+    environment.sky.sunAzimuth        = -145.0f;
+    environment.sky.sunIntensity      = 22.0f;
+    environment.sky.rayleigh          = 1.0f;
+    environment.sky.mie               = 0.7f;
+    environment.sky.mieG              = 0.76f;
+    environment.sky.sunDiscIntensity  = 15.0f;
 
-    // On by default: one of the heaviest passes and the one most often left out
-    // of a benchmark. Thin enough to read as aerial haze rather than a fog bank,
-    // and the froxel grid costs the same either way. Key 8 takes it out.
-    environment.fog.enabled    = true;
-    environment.fog.density    = 0.006f;
-    environment.fog.height     = 18.0f;
+    // On: one of the heaviest passes. Thin enough to read as haze; the froxel grid
+    // costs the same either way.
+    environment.fog.enabled       = true;
+    environment.fog.density       = 0.006f;
+    environment.fog.height        = 18.0f;
     environment.fog.heightFalloff = 0.05f;
-    environment.fog.anisotropy = 0.7f;
+    environment.fog.anisotropy    = 0.7f;
 
-    m_scene->physics().gravity = {0.0f, -18.0f, 0.0f};
+    scene().physics().gravity = {0.0f, -18.0f, 0.0f};
 
-    m_scene->forEach<Camera>([&](EntityId id, Camera& camera) {
-        if (!m_camera) {
-            m_camera = id;
-            camera.zFar  = 600.0f;   // the far towers must stay in frustum
-            camera.zNear = 0.2f;
+    m_camera = findActiveCamera(scene());
+    if (Camera* camera = scene().tryGet<Camera>(m_camera)) {
+        camera->zFar  = CAMERA_FAR;
+        camera->zNear = 0.2f;
 
-            // The pass early-outs at amount 0, so without this a capture would
-            // be missing it entirely. Modest: enough for a real circle of
-            // confusion on the far skyline, which is what the pass costs.
-            camera.dofAmount     = 0.35f;
-            camera.focusDistance = CAM_RADIUS;
-        }
-    });
+        // The DoF pass early-outs at amount 0.
+        camera->dofAmount     = 0.35f;
+        camera->focusDistance = CAM_RADIUS;
+    }
 
     buildMaterials();
     buildGround();
@@ -435,65 +375,72 @@ void StressArena::onStart() {
     buildDrones();
     buildUI();
 
-    LOG_INFO("built: %zu props, %zu lights (%d shadowed, %zu moving), %zu emitters, "
-             "%zu decals, %zu bodies, %zu animated, %zu drones, %d materials",
-             m_props.size(), m_lights.size(), shadowLights, m_patrol.size(),
-             m_emitters.size(), m_decals.size(), m_bodies.size(), m_spinners.size(),
-             m_drones.size(), uniqueMaterials);
-    LOG_INFO("keys: 1 lights  2 shadows  3 props  4 particles  5 physics  "
-             "6 anim  7 decals  8 fog  9 UI  0 all   F camera");
+    // Casters are the built set: the static points plus the sun and the drone lamps.
+    LOG_INFO(
+        "built: %zu props, %zu lights (%zu shadowed, %zu moving), %zu emitters, "
+        "%zu decals, %zu bodies, %zu animated, %zu drones, %d materials",
+        m_props.size(),
+        m_lights.size(),
+        m_shadowCasters.size(),
+        m_patrol.size(),
+        m_emitters.size(),
+        m_decals.size(),
+        m_bodies.size(),
+        m_spinners.size(),
+        m_drones.size(),
+        uniqueMaterials
+    );
+    LOG_INFO(
+        "keys: 1 lights  2 shadows  3 props  4 particles  5 physics  "
+        "6 anim  7 decals  8 fog  9 UI  0 all   F camera"
+    );
 }
 
 MaterialHandle StressArena::makeMaterial(const MaterialAsset& source, const char* name) {
     MaterialAsset material = source;
-    return m_resources->add(std::move(material), name);
+    return resources().add(std::move(material), name);
 }
 
 void StressArena::buildMaterials() {
-    m_cube       = m_resources->add(generateCube(), "stress:cube");
-    m_sphere     = m_resources->add(generateSphere(24, 12), "stress:sphere");
-    m_cylinder   = m_resources->add(generateCylinder(0.5f, 1.0f, 20), "stress:cylinder");
+    m_cube       = resources().add(generateCube(), "stress:cube");
+    m_sphere     = resources().add(generateSphere(24, 12), "stress:sphere");
+    m_cylinder   = resources().add(generateCylinder(0.5f, 1.0f, 20), "stress:cylinder");
 
     // One mesh per ground slab shape, so the paving keeps the same world scale
-    // across all four and meets cleanly at the seams. Two shapes, two meshes,
-    // one extra instanced draw.
-    m_groundBand = m_resources->add(makeGroundMesh({ARENA_HALF * 2.0f, 1.0f, GROUND_BAND * 2.0f}),
-                                    "stress:ground_band");
-    m_groundSide = m_resources->add(makeGroundMesh({GROUND_BAND * 2.0f, 1.0f, PIT_HALF * 2.0f}),
-                                    "stress:ground_side");
+    // across all four and meets cleanly at the seams.
+    m_groundBand = resources().add(
+        makeGroundMesh({ARENA_HALF * 2.0f, 1.0f, GROUND_BAND * 2.0f}),
+        "stress:ground_band"
+    );
+    m_groundSide = resources().add(
+        makeGroundMesh({GROUND_BAND * 2.0f, 1.0f, PIT_HALF * 2.0f}),
+        "stress:ground_side"
+    );
 
-    // Coarser builds of the round shapes for the far LOD levels. A cube has no
-    // detail to drop, so it has no levels and keeps its single mesh - which is
-    // also the case that proves LOD is opt-in per entity rather than global.
-    m_sphereMid = m_resources->add(generateSphere(12, 6), "stress:sphere_mid");
-    m_sphereLow = m_resources->add(generateSphere(6, 4),  "stress:sphere_low");
-    m_cylMid    = m_resources->add(generateCylinder(0.5f, 1.0f, 10),  "stress:cyl_mid");
-    m_cylLow    = m_resources->add(generateCylinder(0.5f, 1.0f, 6),   "stress:cyl_low");
+    m_sphereMid = resources().add(generateSphere(12, 6), "stress:sphere_mid");
+    m_sphereLow = resources().add(generateSphere(6, 4),  "stress:sphere_low");
+    m_cylMid    = resources().add(generateCylinder(0.5f, 1.0f, 10),  "stress:cyl_mid");
+    m_cylLow    = resources().add(generateCylinder(0.5f, 1.0f, 6),   "stress:cyl_low");
 
-    // Mid-grey architecture, roughly 40-55% albedo. Dark surfaces would swallow
-    // the daylight and hide exactly the shadowing and GI this scene exists to
-    // put under load.
+    // Mid-grey, roughly 40-55% albedo: dark surfaces would hide the shadowing and GI.
     MaterialAsset base;
     base.roughness = 0.85f;
     base.metallic  = 0.0f;
 
-    // The one textured surface here. White albedo because the scalar multiplies
-    // the map, so anything darker would tint the paving rather than leave it as
-    // authored.
+    // White: the scalar multiplies the map, so anything darker would tint it.
     MaterialAsset ground = base;
     ground.albedo        = {1.0f, 1.0f, 1.0f, 1.0f};
-    ground.albedoTexture = m_resources->add(makeGroundTexture(), "stress:ground_albedo");
+    ground.albedoTexture = resources().add(makeGroundTexture(), "stress:ground_albedo");
     m_matGround = makeMaterial(ground, "stress:ground");
 
     base.albedo    = {0.55f, 0.54f, 0.51f, 1.0f};
     base.roughness = 0.7f;
     m_matTower = makeMaterial(base, "stress:tower");
 
-    // Each entry varies the parameters the PBR shader branches on, so the
-    // forward pass is not measured on one uniform BRDF: a share of the palette
-    // carries clearcoat, anisotropy or sheen, each lighting a different lobe.
-    m_propMaterials.reserve(static_cast<size_t>(uniqueMaterials));
-    for (int i = 0; i < uniqueMaterials; ++i) {
+    // A share of the palette carries clearcoat, anisotropy or sheen, which the shader branches on.
+    const int paletteSize = std::max(1, uniqueMaterials);
+    m_propMaterials.reserve(static_cast<size_t>(paletteSize));
+    for (int i = 0; i < paletteSize; ++i) {
         MaterialAsset m;
         m.albedo    = glm::vec4(frand(0.15f, 0.9f), frand(0.15f, 0.9f), frand(0.15f, 0.9f), 1.0f);
         m.metallic  = (i % 3 == 0) ? frand(0.7f, 1.0f) : frand(0.0f, 0.25f);
@@ -515,15 +462,14 @@ void StressArena::buildMaterials() {
         m_propMaterials.push_back(makeMaterial(m, name.c_str()));
     }
 
-    // Transparent glass: forces the sorted transparent queue and the
-    // transmission path, which the opaque props never touch.
+    // Forces the sorted transparent queue and the transmission path.
     MaterialAsset glass;
-    glass.type         = MaterialType::Transparent;
-    glass.albedo       = {0.75f, 0.85f, 0.95f, 0.32f};
-    glass.roughness    = 0.08f;
-    glass.metallic     = 0.0f;
-    glass.transmission = 0.85f;
-    glass.ior          = 1.45f;
+    glass.type            = MaterialType::Transparent;
+    glass.albedo          = {0.75f, 0.85f, 0.95f, 0.32f};
+    glass.roughness       = 0.08f;
+    glass.metallic        = 0.0f;
+    glass.transmission    = 0.85f;
+    glass.ior             = 1.45f;
     glass.thicknessFactor = 0.4f;
     m_matGlass = makeMaterial(glass, "stress:glass");
 
@@ -533,9 +479,7 @@ void StressArena::buildMaterials() {
     chrome.roughness = 0.06f;
     m_matChrome = makeMaterial(chrome, "stress:chrome");
 
-    // Emissive fixtures still need to clear the bloom threshold in daylight, so
-    // this is brighter than a night scene would want - the bloom pass has to see
-    // something above threshold or it profiles an empty bright-pass.
+    // Bright enough to clear the bloom threshold in daylight.
     MaterialAsset emissive;
     emissive.albedo           = {1.0f, 0.88f, 0.62f, 1.0f};
     emissive.emission         = {1.0f, 0.80f, 0.45f};
@@ -543,31 +487,33 @@ void StressArena::buildMaterials() {
     emissive.roughness        = 0.4f;
     m_matEmissive = makeMaterial(emissive, "stress:emissive");
 
-    // Decal albedo alpha is what the projector blends on, so it must be < 1.
+    // The projector blends on albedo alpha, so it must be < 1.
     MaterialAsset decal;
-    decal.type   = MaterialType::Transparent;
-    decal.albedo = {0.05f, 0.06f, 0.09f, 0.8f};
+    decal.type      = MaterialType::Transparent;
+    decal.albedo    = {0.05f, 0.06f, 0.09f, 0.8f};
     decal.roughness = 0.9f;
     m_matDecal = makeMaterial(decal, "stress:decal");
 }
 
-EntityId StressArena::spawnMesh(MeshHandle mesh, MaterialHandle material, const char* name,
-                                const glm::vec3& position, const glm::vec3& scale) {
-    EntityId entity = m_scene->createEntity();
-    m_scene->add(entity, makeName(name));
-    m_scene->add(entity, Mesh{mesh, material});
+EntityId StressArena::spawnMesh(
+    MeshHandle mesh,
+    MaterialHandle material,
+    const char* name,
+    const glm::vec3& position,
+    const glm::vec3& scale
+) {
+    EntityId entity = spawn(name);
+    scene().add(entity, Mesh{mesh, material});
 
     Transform transform;
     transform.position = position;
     transform.scale    = scale;
-    m_scene->add(entity, std::move(transform));
+    scene().add(entity, std::move(transform));
     return entity;
 }
 
 void StressArena::buildGround() {
-    // Four slabs around a central opening rather than one full-extent slab: the
-    // pit below only means anything if something can fall into it. The bands run
-    // full width along Z and meet the pit's edge along X.
+    // Four slabs around an opening, so things can fall into the pit.
     const glm::vec3 slabs[4] = {
         { 0.0f, GROUND_Y - 0.5f,  PIT_HALF + GROUND_BAND},
         { 0.0f, GROUND_Y - 0.5f, -PIT_HALF - GROUND_BAND},
@@ -580,35 +526,42 @@ void StressArena::buildGround() {
     };
 
     for (int i = 0; i < 4; ++i) {
-        EntityId ground = spawnMesh(i < 2 ? m_groundBand : m_groundSide, m_matGround, "Ground",
-                                    slabs[i], halves[i] * 2.0f);
-        // The ground can never occlude anything from a light above it, so keeping
-        // it out of the shadow pass costs nothing and saves a draw per tile.
-        m_scene->get<Mesh>(ground).castShadows = false;
+        EntityId ground = spawnMesh(
+            i < 2 ? m_groundBand : m_groundSide,
+            m_matGround,
+            "Ground",
+            slabs[i],
+            halves[i] * 2.0f
+        );
+        // The ground occludes nothing from lights above it.
+        scene().get<Mesh>(ground).castShadows = false;
 
         Rigidbody rb;
-        rb.isStatic = true;
-        m_scene->add(ground, std::move(rb));
+        rb.motion = RigidbodyMotion::Static;
+        scene().add(ground, std::move(rb));
 
         Collider col;
         col.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, halves[i]}};
-        m_scene->add(ground, std::move(col));
+        scene().add(ground, std::move(col));
     }
 
-    // Pit floor and four walls, so the physics pile has something to pack
-    // against instead of scattering across the whole block.
-    EntityId floor = spawnMesh(m_cube, m_matTower, "Pit Floor",
-                               {0.0f, GROUND_Y - PIT_DEPTH, 0.0f},
-                               {PIT_HALF * 2.0f, 0.5f, PIT_HALF * 2.0f});
-    m_scene->get<Mesh>(floor).castShadows = false;
+    // Walls, so the pile packs instead of scattering across the block.
+    EntityId floor = spawnMesh(
+        m_cube,
+        m_matTower,
+        "Pit Floor",
+        {0.0f, GROUND_Y - PIT_DEPTH, 0.0f},
+        {PIT_HALF * 2.0f, 0.5f, PIT_HALF * 2.0f}
+    );
+    scene().get<Mesh>(floor).castShadows = false;
 
     Rigidbody floorBody;
-    floorBody.isStatic = true;
-    m_scene->add(floor, std::move(floorBody));
+    floorBody.motion = RigidbodyMotion::Static;
+    scene().add(floor, std::move(floorBody));
 
     Collider floorCol;
     floorCol.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, {PIT_HALF, 0.25f, PIT_HALF}}};
-    m_scene->add(floor, std::move(floorCol));
+    scene().add(floor, std::move(floorCol));
 
     for (int i = 0; i < 4; ++i) {
         const bool  alongX = (i % 2) == 0;
@@ -621,25 +574,30 @@ void StressArena::buildGround() {
             : glm::vec3(PIT_HALF, PIT_DEPTH * 0.5f, 0.5f);
 
         EntityId wall = spawnMesh(m_cube, m_matTower, "Pit Wall", position, half * 2.0f);
-        m_scene->get<Mesh>(wall).castShadows = false;
+        scene().get<Mesh>(wall).castShadows = false;
 
         Rigidbody wallBody;
-        wallBody.isStatic = true;
-        m_scene->add(wall, std::move(wallBody));
+        wallBody.motion = RigidbodyMotion::Static;
+        scene().add(wall, std::move(wallBody));
 
         Collider wallCol;
         wallCol.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, half}};
-        m_scene->add(wall, std::move(wallCol));
+        scene().add(wall, std::move(wallCol));
     }
 }
 
 void StressArena::buildTowers() {
-    // Towers ring the block but leave the pit clear. Each is a stack of boxes
-    // with a glass band and a lit crown, so the silhouette has depth complexity
-    // for the prepass and mixed queues for the forward pass.
+    // Stacked boxes, a glass band and a lit crown: depth complexity for the prepass
+    // and mixed queues for the forward pass.
     for (int i = 0; i < towerCount; ++i) {
-        const glm::vec3 base = scatterOnGround(i, towerCount, TOWER_ZONE_INNER,
-                                              TOWER_ZONE_OUTER, m_rng, 0.55f);
+        const glm::vec3 base = scatterOnGround(
+            i,
+            towerCount,
+            TOWER_ZONE_INNER,
+            TOWER_ZONE_OUTER,
+            m_rng,
+            0.55f
+        );
 
         const int   floors = m_rng.nextInt(2, 7);
         const float width  = frand(4.0f, 9.0f);
@@ -648,20 +606,20 @@ void StressArena::buildTowers() {
 
         for (int f = 0; f < floors; ++f) {
             const float height = frand(3.0f, 6.0f);
-            // Every third floor is the glass band.
             const MaterialHandle material = (f % 3 == 1) ? m_matGlass : m_matTower;
 
-            spawnMesh(m_cube, material, "Tower",
-                      {base.x, y + height * 0.5f, base.z},
-                      {width, height, depth});
+            spawnMesh(m_cube, material, "Tower", {base.x, y + height * 0.5f, base.z}, {width, height, depth});
             y += height;
         }
 
-        // Lit crown: an emissive cap, so the bloom pass always has bright
-        // sources spread across the frame rather than clustered in one spot.
-        spawnMesh(m_cube, m_matEmissive, "Tower Crown",
-                  {base.x, y + 0.4f, base.z},
-                  {width * 0.55f, 0.8f, depth * 0.55f});
+        // Emissive cap: bloom sources spread across the frame.
+        spawnMesh(
+            m_cube,
+            m_matEmissive,
+            "Tower Crown",
+            {base.x, y + 0.4f, base.z},
+            {width * 0.55f, 0.8f, depth * 0.55f}
+        );
     }
 }
 
@@ -670,51 +628,56 @@ void StressArena::buildProps() {
     m_spinners.reserve(static_cast<size_t>(animatedCount));
 
     for (int i = 0; i < propCount; ++i) {
-        const glm::vec3 spot = scatterOnGround(i, propCount, PROP_ZONE_INNER,
-                                              PROP_ZONE_OUTER, m_rng);
+        const glm::vec3 spot = scatterOnGround(i, propCount, PROP_ZONE_INNER, PROP_ZONE_OUTER, m_rng);
         const float scale = frand(0.5f, 2.2f);
 
         const int shape = i % 3;
         const MeshHandle mesh = (shape == 0) ? m_cube : (shape == 1) ? m_sphere : m_cylinder;
 
-        // A slice of props take chrome instead of the palette so there are
-        // smooth metals scattered everywhere for the probes to show up in.
+        // Some chrome, so the probes have smooth metals to show in.
         const MaterialHandle material = (i % 23 == 0)
             ? m_matChrome
             : m_propMaterials[static_cast<size_t>(i) % m_propMaterials.size()];
 
-        EntityId prop = spawnMesh(mesh, material, "Prop",
-            {spot.x, GROUND_Y + scale * 0.5f, spot.z}, glm::vec3(scale));
+        EntityId prop = spawnMesh(
+            mesh,
+            material,
+            "Prop",
+            {spot.x, GROUND_Y + scale * 0.5f, spot.z},
+            glm::vec3(scale)
+        );
 
         m_props.push_back(prop);
 
-        // Round props drop tessellation with distance; cubes have nothing to
-        // drop. Thresholds are deliberately short for the arena's scale so the
-        // switch is exercised across the camera loop rather than never reached.
+        // Short thresholds, so the camera loop crosses them.
         if (lodEnabled && shape != 0) {
             LOD lod;
             if (shape == 1) lod.levels = { {m_sphere,   35.0f}, {m_sphereMid, 70.0f}, {m_sphereLow, 0.0f} };
             else            lod.levels = { {m_cylinder, 35.0f}, {m_cylMid,    70.0f}, {m_cylLow,    0.0f} };
-            m_scene->add(prop, std::move(lod));
+            scene().add(prop, std::move(lod));
         }
 
-        // Spread across all four clip shapes, so the evaluator is measured on its
-        // real mix rather than one branch: rotation, position, scale - which also
-        // keeps the culling bounds moving - and one clip driving all three.
         if (static_cast<int>(m_spinners.size()) < animatedCount) {
             switch (i % 4) {
                 case 0:
-                    m_scene->add(prop, makeSpin(frand(2.0f, 6.0f), frand(0.0f, 4.0f)));
+                    scene().add(prop, makeSpin(frand(2.0f, 6.0f), frand(0.0f, 4.0f)));
                     break;
                 case 1:
-                    m_scene->add(prop, makeBob(frand(1.5f, 4.0f), frand(0.5f, 2.5f), frand(0.0f, 3.0f)));
+                    scene().add(prop, makeBob(frand(1.5f, 4.0f), frand(0.5f, 2.5f), frand(0.0f, 3.0f)));
                     break;
                 case 2:
-                    m_scene->add(prop, makePulse(frand(1.2f, 3.5f), frand(0.2f, 0.7f), frand(0.0f, 3.0f)));
+                    scene().add(prop, makePulse(frand(1.2f, 3.5f), frand(0.2f, 0.7f), frand(0.0f, 3.0f)));
                     break;
                 default:
-                    m_scene->add(prop, makeOrbitHop(frand(3.0f, 7.0f), frand(0.6f, 2.4f),
-                                                    frand(0.8f, 2.6f), frand(0.0f, 5.0f)));
+                    scene().add(
+                        prop,
+                        makeOrbitHop(
+                            frand(3.0f, 7.0f),
+                            frand(0.6f, 2.4f),
+                            frand(0.8f, 2.6f),
+                            frand(0.0f, 5.0f)
+                        )
+                    );
                     break;
             }
             m_spinners.push_back(prop);
@@ -725,10 +688,11 @@ void StressArena::buildProps() {
 void StressArena::buildLights() {
     m_lights.reserve(static_cast<size_t>(lightCount));
 
+    // Counted, not indexed: only point lights take static caster tiles (see shadowLights).
+    int pointCasters = 0;
+
     for (int i = 0; i < lightCount; ++i) {
-        // Two thirds light the prop field, the rest the tower ring so the skyline
-        // is not a black cutout. Spread evenly for the same reason the props are:
-        // clustered lights pile into one cell, which is not the binning to measure.
+        // A third light the tower ring, so the skyline is not a black cutout.
         const bool  inField = (i % 3) != 0;
         const glm::vec3 spot = inField
             ? scatterOnGround(i, lightCount, PIT_HALF, PROP_ZONE_OUTER, m_rng, 0.5f)
@@ -736,97 +700,82 @@ void StressArena::buildLights() {
         const float height  = inField ? frand(4.0f, 18.0f) : frand(8.0f, 34.0f);
         const glm::vec3 position(spot.x, GROUND_Y + height, spot.z);
 
-        EntityId entity = m_scene->createEntity();
-        m_scene->add(entity, makeName("Light"));
+        EntityId entity = spawn("Light");
 
         Transform transform;
         transform.position = position;
-        // Spots point down and outward; the rotation is only read for spots.
-        // Negative because forward is -Z, so a positive turn about X
-        // tilts a spot up rather than down.
+        // Read only for spots. Negative: with forward -Z, a positive turn about X tilts up.
         transform.rotation = glm::angleAxis(-frand(0.6f, 1.4f), Math::WORLD_AXIS_X);
-        m_scene->add(entity, std::move(transform));
+        scene().add(entity, std::move(transform));
 
         Light light;
-        // A third are spots: they take a cheaper 2D atlas tile than a point
-        // light's cube, so the mix decides what the shadow pass actually costs.
         light.type  = (i % 3 == 0) ? LightType::Spot : LightType::Point;
         light.color = glm::vec3(frand(0.5f, 1.0f), frand(0.5f, 1.0f), frand(0.6f, 1.0f));
-        // Sized to read against daylight without blowing out: the cluster pass
-        // costs the same whatever the intensity, so this is purely so the frame
-        // stays legible while several hundred of them are in it.
         light.intensity = frand(8.0f, 22.0f);
         light.radius    = frand(10.0f, 24.0f);
         light.innerConeAngle = 0.35f;
         light.outerConeAngle = 0.7f;
-        // Only the first shadowLights cast: the atlas has a fixed tile budget,
-        // and every extra caster is a full extra scene pass.
-        light.castShadows = (i < shadowLights);
-        m_scene->add(entity, std::move(light));
+        // Only static points (the first movingLights patrol), up to the cube budget:
+        // the 2D tiles belong to the cascades and drone spots.
+        const bool casts = light.type == LightType::Point && i >= movingLights && pointCasters < shadowLights;
+        light.castShadows = casts;
+        if (casts) ++pointCasters;
+        scene().add(entity, std::move(light));
 
-        // Every light gets a visible emissive fixture. Without one the frame
-        // reads as light with no source, and the bloom pass has nothing to
-        // threshold where the brightness actually comes from.
-        EntityId fixture = spawnMesh(m_sphere, m_matEmissive, "Light Fixture",
-                                     position, glm::vec3(0.45f));
-        m_scene->get<Mesh>(fixture).castShadows = false;
+        // A visible fixture, so bloom has a source where the light is.
+        EntityId fixture = spawnMesh(m_sphere, m_matEmissive, "Light Fixture", position, glm::vec3(0.45f));
+        scene().get<Mesh>(fixture).castShadows = false;
 
         m_lights.push_back(entity);
+        if (casts) m_shadowCasters.push_back(entity);
 
-        // The first movingLights entries patrol instead of standing still.
-        // Recorded here rather than derived later so the orbit keeps the radius
-        // and height the light was placed at, and the ring stays evenly spread.
+        // The orbit keeps the radius and height the light was placed at.
         if (i < movingLights) {
-            m_patrol.push_back(PatrolLight{
-                entity, fixture, glm::length(glm::vec2(spot.x, spot.z)), height,
+            PatrolLight patrol{
+                entity,
+                fixture,
+                glm::length(glm::vec2(spot.x, spot.z)),
+                height,
                 frand(0.10f, 0.55f) * (i % 2 == 0 ? 1.0f : -1.0f),
                 frand(0.0f, glm::two_pi<float>()),
                 frand(1.0f, 4.0f)
-            });
+            };
+            m_patrol.push_back(patrol);
         }
     }
 
-    // One directional key light: it drives the CSM cascades, which no point or
-    // spot light reaches, and the procedural sky bakes its atmosphere around this
-    // direction, so the two stay consistent.
-    EntityId sun = m_scene->createEntity();
-    m_scene->add(sun, makeName("Sun"));
+    EntityId sun = spawn("Sun");
 
     Transform sunTransform;
-    // No rotation here: with the procedural sky on, SkySystem points this light
-    // from the environment's sun angles every frame, so setting it would only be
-    // overwritten. Where the sun is, is set in onStart with the rest of the sky.
-    m_scene->add(sun, std::move(sunTransform));
+    // No rotation: with the procedural sky on, SkySystem aims it from the sun angles
+    // every frame.
+    scene().add(sun, std::move(sunTransform));
 
     Light sunLight;
     sunLight.type           = LightType::Directional;
-    // Colour and intensity are the sky's now, set in onStart with the angles:
-    // SkySystem drives this light so it can hand over to moonlight after dark.
+    // Colour and intensity come from the sky, set in onStart.
     sunLight.castShadows    = true;
     sunLight.shadowDistance = 280.0f;
-    m_scene->add(sun, std::move(sunLight));
+    scene().add(sun, std::move(sunLight));
 
     m_lights.push_back(sun);
+    m_shadowCasters.push_back(sun);
 }
 
 void StressArena::buildEmitters() {
     m_emitters.reserve(static_cast<size_t>(emitterCount));
 
     for (int i = 0; i < emitterCount; ++i) {
-        const glm::vec3 spot = scatterOnGround(i, emitterCount, PIT_HALF + 4.0f,
-                                              PROP_ZONE_OUTER, m_rng);
+        const glm::vec3 spot = scatterOnGround(i, emitterCount, PIT_HALF + 4.0f, PROP_ZONE_OUTER, m_rng);
 
-        EntityId entity = m_scene->createEntity();
-        m_scene->add(entity, makeName("Emitter"));
+        EntityId entity = spawn("Emitter");
 
         Transform transform;
         transform.position = {spot.x, GROUND_Y + 1.0f, spot.z};
-        m_scene->add(entity, std::move(transform));
+        scene().add(entity, std::move(transform));
 
         ParticleEmitter emitter;
-        // Half additive sparks, half alpha smoke: the two blend modes sort and
-        // draw separately, so a mix measures the real transparent path rather
-        // than one homogeneous batch.
+        // Half additive sparks, half alpha smoke: the blend modes sort and draw separately.
         const bool sparks = (i % 2) == 0;
         emitter.additive     = sparks;
         emitter.rate         = sparks ? frand(60.0f, 140.0f) : frand(20.0f, 50.0f);
@@ -835,19 +784,25 @@ void StressArena::buildEmitters() {
         emitter.velocity     = sparks ? glm::vec3(0.0f, 5.0f, 0.0f) : glm::vec3(0.0f, 1.6f, 0.0f);
         emitter.spread       = sparks ? 2.4f : 0.8f;
         emitter.acceleration = sparks ? glm::vec3(0.0f, -6.0f, 0.0f) : glm::vec3(0.0f, 0.5f, 0.0f);
-        emitter.startColor   = sparks ? glm::vec4(1.0f, 0.75f, 0.30f, 1.0f)
-                                      : glm::vec4(0.55f, 0.58f, 0.65f, 0.5f);
-        emitter.endColor     = sparks ? glm::vec4(1.0f, 0.20f, 0.05f, 0.0f)
-                                      : glm::vec4(0.30f, 0.32f, 0.38f, 0.0f);
+        emitter.startColor   = sparks
+            ? glm::vec4(1.0f, 0.75f, 0.30f, 1.0f)
+            : glm::vec4(0.55f, 0.58f, 0.65f, 0.5f);
+        emitter.endColor     = sparks
+            ? glm::vec4(1.0f, 0.20f, 0.05f, 0.0f)
+            : glm::vec4(0.30f, 0.32f, 0.38f, 0.0f);
         emitter.startSize    = sparks ? 0.18f : 1.2f;
         emitter.endSize      = sparks ? 0.02f : 3.4f;
         emitter.softness     = sparks ? 0.3f : 1.0f;
-        m_scene->add(entity, std::move(emitter));
+        scene().add(entity, std::move(emitter));
 
-        // The brazier the sparks come off.
-        EntityId source = spawnMesh(m_cylinder, m_matEmissive, "Brazier",
-            {spot.x, GROUND_Y + 0.4f, spot.z}, {1.1f, 0.8f, 1.1f});
-        m_scene->get<Mesh>(source).castShadows = false;
+        EntityId source = spawnMesh(
+            m_cylinder,
+            m_matEmissive,
+            "Brazier",
+            {spot.x, GROUND_Y + 0.4f, spot.z},
+            {1.1f, 0.8f, 1.1f}
+        );
+        scene().get<Mesh>(source).castShadows = false;
 
         m_emitters.push_back(entity);
     }
@@ -857,67 +812,60 @@ void StressArena::buildDecals() {
     m_decals.reserve(static_cast<size_t>(decalCount));
 
     for (int i = 0; i < decalCount; ++i) {
-        const glm::vec3 spot = scatterOnGround(i, decalCount, PIT_HALF,
-                                              PROP_ZONE_OUTER, m_rng);
+        const glm::vec3 spot = scatterOnGround(i, decalCount, PIT_HALF, PROP_ZONE_OUTER, m_rng);
 
-        EntityId entity = m_scene->createEntity();
-        m_scene->add(entity, makeName("Decal"));
+        EntityId entity = spawn("Decal");
 
         Transform transform;
-        // Sit above the ground and project down: the box's Y extent is the
-        // projection depth, so it must reach the surface it marks.
+        // The box's Y extent is the projection depth, so it must reach the ground.
         transform.position = {spot.x, GROUND_Y + 2.0f, spot.z};
         transform.rotation = glm::angleAxis(frand(0.0f, glm::two_pi<float>()), Math::WORLD_AXIS_Y);
         transform.scale    = glm::vec3(frand(3.0f, 8.0f), 5.0f, frand(3.0f, 8.0f));
-        m_scene->add(entity, std::move(transform));
+        scene().add(entity, std::move(transform));
 
         Decal decal;
         decal.material  = m_matDecal;
         decal.angleFade = 0.6f;
         decal.opacity   = frand(0.35f, 0.9f);
-        m_scene->add(entity, std::move(decal));
+        scene().add(entity, std::move(decal));
 
         m_decals.push_back(entity);
     }
 }
 
 void StressArena::buildProbes() {
-    // Each bakes six faces on first sight, throttled to one probe per frame, so
-    // they show up as a burst of long frames at startup and then settle. That
-    // burst is worth capturing: it is what a player sees on level load.
+    // Each bakes six faces on first sight (throttled by GLProbeManager): long frames at startup.
     for (int i = 0; i < reflectionProbes; ++i) {
-        const float angle  = glm::two_pi<float>() * static_cast<float>(i) / static_cast<float>(std::max(1, reflectionProbes));
+        const float angle  = glm::two_pi<float>() * static_cast<float>(i)
+            / static_cast<float>(std::max(1, reflectionProbes));
         const float radius = ARENA_HALF * 0.45f;
 
-        EntityId entity = m_scene->createEntity();
-        m_scene->add(entity, makeName("Reflection Probe"));
+        EntityId entity = spawn("Reflection Probe");
 
         Transform transform;
         transform.position = {std::cos(angle) * radius, GROUND_Y + 10.0f, std::sin(angle) * radius};
-        m_scene->add(entity, std::move(transform));
+        scene().add(entity, std::move(transform));
 
         ReflectionProbe probe;
         probe.halfExtents = glm::vec3(ARENA_HALF * 0.5f, 22.0f, ARENA_HALF * 0.5f);
         probe.resolution  = 256;
         probe.intensity   = 1.0f;
-        m_scene->add(entity, std::move(probe));
+        scene().add(entity, std::move(probe));
     }
 
-    // One irradiance volume over the whole block, so the diffuse GI path is
-    // exercised alongside the specular probes.
-    EntityId volume = m_scene->createEntity();
-    m_scene->add(volume, makeName("Irradiance Volume"));
+    // Exercises the diffuse GI path beside the specular probes.
+    EntityId volume = spawn("Irradiance Volume");
 
     Transform transform;
     transform.position = {0.0f, GROUND_Y + 14.0f, 0.0f};
-    m_scene->add(volume, std::move(transform));
+    scene().add(volume, std::move(transform));
 
     IrradianceVolume irradiance;
     irradiance.halfExtents = glm::vec3(ARENA_HALF, 20.0f, ARENA_HALF);
     irradiance.resolutionX = 12;
     irradiance.resolutionY = 4;
     irradiance.resolutionZ = 12;
-    m_scene->add(volume, std::move(irradiance));
+    scene().add(volume, std::move(irradiance));
 }
 
 void StressArena::buildPhysics() {
@@ -928,7 +876,8 @@ void StressArena::buildPhysics() {
         const glm::vec3 position(
             frand(-PIT_HALF + 2.0f, PIT_HALF - 2.0f),
             GROUND_Y + frand(2.0f, 40.0f),
-            frand(-PIT_HALF + 2.0f, PIT_HALF - 2.0f));
+            frand(-PIT_HALF + 2.0f, PIT_HALF - 2.0f)
+        );
 
         const MaterialHandle material =
             m_propMaterials[static_cast<size_t>(i) % m_propMaterials.size()];
@@ -939,14 +888,13 @@ void StressArena::buildPhysics() {
         rb.mass        = size * size * size * 8.0f;
         rb.restitution = 0.35f;
         rb.friction    = 0.45f;
-        // These must keep moving to be worth measuring: a slept body leaves the
-        // solver entirely, and a pile that settles quietly stops being a load.
+        // Must keep moving: the solver skips every pair a slept body rests in.
         rb.canSleep = false;
-        m_scene->add(entity, std::move(rb));
+        scene().add(entity, std::move(rb));
 
         Collider col;
         col.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, glm::vec3(size * 0.5f)}};
-        m_scene->add(entity, std::move(col));
+        scene().add(entity, std::move(col));
 
         m_bodies.push_back(entity);
     }
@@ -957,13 +905,11 @@ void StressArena::buildModels() {
 
     AssetLibrary& library = AssetLibrary::get();
 
-    // Discover what the project actually has rather than hardcoding names; the
-    // list is sorted, so the same meshes are picked on every run.
+    // Discovered, not hardcoded; the list is sorted, so every run picks the same meshes.
     const std::vector<std::string> meshNames = library.namesOf(AssetType::Mesh);
     const std::vector<std::string> textureNames = library.namesOf(AssetType::Texture);
 
-    // Skip the engine's own generated primitives - those are the procedural
-    // shapes the props already use, and re-adding them would measure nothing new.
+    // Skip the engine's generated primitives; the props already use them.
     std::vector<std::string> usable;
     for (const std::string& name : meshNames) {
         if (name.rfind("mesh:generator:", 0) == 0) continue;
@@ -975,26 +921,20 @@ void StressArena::buildModels() {
         return;
     }
 
-    // Bounded by what the project actually has; instances spread across whatever
-    // is taken. Every kind costs a cooked read at startup, so this is the dial
-    // that decides how long the load screen is as well as how varied the scene.
+    // Every kind costs a cooked read at startup.
     const size_t kinds = std::min(usable.size(), static_cast<size_t>(std::max(1, modelKinds)));
 
-    // Textured materials built from cooked albedo maps. Sampling a real texture
-    // is a different cost from the props' flat colours, and it is the only thing
-    // in the scene that exercises the texture bindings in GLMaterial.
     std::vector<MaterialHandle> materials;
     for (size_t i = 0; i < textureNames.size() && materials.size() < 8; ++i) {
-        // "#s" marks an sRGB-cooked texture, which is what an albedo map is;
-        // the linear ones are normal/ORM maps and would read as flat colour here.
-        if (textureNames[i].size() < 2 ||
-            textureNames[i].compare(textureNames[i].size() - 2, 2, "#s") != 0) continue;
+        // "#s" marks an sRGB-cooked texture, i.e. an albedo map; linear ones are normal/ORM.
+        const std::string& texture = textureNames[i];
+        if (texture.size() < 2 || texture.compare(texture.size() - 2, 2, "#s") != 0) continue;
 
         MaterialAsset m;
         m.albedo        = {1.0f, 1.0f, 1.0f, 1.0f};
         m.roughness     = 0.65f;
         m.metallic      = 0.0f;
-        m.albedoTexture = requestCookedTextureAsync(textureNames[i], *m_resources);
+        m.albedoTexture = loadCookedTexture(texture, resources());
         if (!m.albedoTexture) continue;
 
         const std::string name = "stress:model_mat_" + std::to_string(materials.size());
@@ -1004,7 +944,7 @@ void StressArena::buildModels() {
 
     m_models.reserve(kinds);
     for (size_t k = 0; k < kinds; ++k) {
-        MeshHandle mesh = requestCookedMeshAsync(usable[k], *m_resources);
+        MeshHandle mesh = loadCookedMesh(usable[k], resources());
         if (!mesh) continue;
         m_models.push_back(ModelKind{mesh, {}, {}, false});
         ++m_unfittedKinds;
@@ -1018,53 +958,65 @@ void StressArena::buildModels() {
     for (int i = 0; i < modelInstances; ++i) {
         ModelKind& kind = m_models[static_cast<size_t>(i) % m_models.size()];
 
-        // Offset the index so models interleave with the props rather than
-        // landing on the same golden-angle spiral and shadowing them.
-        const glm::vec3 spot = scatterOnGround(i * 3 + 1, modelInstances * 3,
-                                              PIT_HALF + 8.0f, PROP_ZONE_OUTER, m_rng);
+        // Offset, so models interleave with the props instead of sharing their spiral.
+        const glm::vec3 spot = scatterOnGround(
+            i * 3 + 1,
+            modelInstances * 3,
+            PIT_HALF + 8.0f,
+            PROP_ZONE_OUTER,
+            m_rng
+        );
         const float size = frand(2.5f, 7.0f);
 
-        EntityId entity = spawnMesh(kind.mesh,
-            materials[static_cast<size_t>(i) % materials.size()], "Model",
-            {spot.x, GROUND_Y, spot.z}, glm::vec3(1.0f));
+        EntityId entity = spawnMesh(
+            kind.mesh,
+            materials[static_cast<size_t>(i) % materials.size()],
+            "Model",
+            {spot.x, GROUND_Y, spot.z},
+            glm::vec3(1.0f)
+        );
 
-        m_scene->get<Transform>(entity).rotation =
+        scene().get<Transform>(entity).rotation =
             glm::angleAxis(frand(0.0f, glm::two_pi<float>()), Math::WORLD_AXIS_Y);
 
         kind.instances.push_back(entity);
         kind.sizes.push_back(size);
     }
 
-    LOG_INFO("models: %zu kinds, %d instances, %zu textured materials",
-             m_models.size(), modelInstances, materials.size());
+    LOG_INFO(
+        "models: %zu kinds, %d instances, %zu textured materials",
+        m_models.size(),
+        modelInstances,
+        materials.size()
+    );
 }
 
 void StressArena::updateModelScales() {
-    // Every kind is fitted within the first seconds and never again, so this
-    // drops out of the frame entirely rather than rescanning the list forever.
     if (m_unfittedKinds == 0) return;
 
-    // A cooked mesh comes back as an empty stub filled in off-thread, so bounds
-    // land some frames later - and the source meshes are authored at wildly
-    // different extents, so each kind is fitted the frame its vertices arrive.
+    // Sources vary wildly in extent, so each kind is fitted the frame its vertices arrive.
     for (ModelKind& kind : m_models) {
         if (kind.fitted) continue;
 
-        const MeshAsset& asset = m_resources->get(kind.mesh);
+        const MeshAsset& asset = resources().get(kind.mesh);
         if (asset.loading || asset.vertices.empty()) continue;
 
         const glm::vec3 extent = asset.boundsMax - asset.boundsMin;
         const float     longest = std::max({extent.x, extent.y, extent.z});
-        if (longest <= 1e-4f) { kind.fitted = true; --m_unfittedKinds; continue; }
+        if (longest <= glm::epsilon<float>()) {
+            kind.fitted = true;
+            --m_unfittedKinds;
+            continue;
+        }
 
         for (size_t i = 0; i < kind.instances.size(); ++i) {
-            if (!m_scene->isAlive(kind.instances[i])) continue;
+            Transform* held = scene().tryGet<Transform>(kind.instances[i]);
+            if (!held) continue;
 
-            Transform& transform = m_scene->get<Transform>(kind.instances[i]);
+            Transform& transform = *held;
             const float scale = kind.sizes[i] / longest;
             transform.scale = glm::vec3(scale);
-            // Sit the model on the ground: its local origin is wherever the
-            // exporter left it, so lift by the scaled distance to its underside.
+            // The origin is wherever the exporter left it, so lift by the scaled underside.
             transform.position.y = GROUND_Y - asset.boundsMin.y * scale;
         }
         kind.fitted = true;
@@ -1079,45 +1031,41 @@ void StressArena::buildDrones() {
         const float radius = frand(PIT_HALF + 10.0f, PROP_ZONE_OUTER);
         const float height = frand(10.0f, 30.0f);
 
-        // Body: the only part this behavior moves.
-        EntityId body = spawnMesh(m_cube, m_matChrome, "Drone",
-                                  {radius, height, 0.0f}, {1.6f, 0.5f, 2.4f});
+        EntityId body = spawnMesh(m_cube, m_matChrome, "Drone", {radius, height, 0.0f}, {1.6f, 0.5f, 2.4f});
 
-        // Arm, then rotor: the chain exists so the rig is three deep. Every
-        // scattered prop is a root, so without it the depth-bucketed resolve in
-        // HierarchySystem never runs past depth 0 and its cost stays invisible.
-        EntityId arm = spawnMesh(m_cube, m_matTower, "Drone Arm",
-                                 {0.0f, 0.0f, 0.0f}, {0.25f, 0.9f, 0.25f});
-        m_scene->get<Transform>(arm).position = {0.0f, 0.6f, 0.0f};
-        HierarchyOperations::setParent(*m_scene, arm, body);
+        EntityId arm = spawnMesh(m_cube, m_matTower, "Drone Arm", {0.0f, 0.0f, 0.0f}, {0.25f, 0.9f, 0.25f});
+        scene().get<Transform>(arm).position = {0.0f, 0.6f, 0.0f};
+        HierarchyOperations::setParent(scene(), arm, body);
 
-        EntityId rotor = spawnMesh(m_cylinder, m_matEmissive, "Drone Rotor",
-                                   {0.0f, 0.0f, 0.0f}, {2.6f, 0.08f, 2.6f});
-        m_scene->get<Transform>(rotor).position = {0.0f, 0.55f, 0.0f};
-        HierarchyOperations::setParent(*m_scene, rotor, arm);
-        // Spun by the AnimationSystem, not by hand: an animated node inside a
-        // moved subtree is the realistic case, and it dirties the chain from
-        // two different sources in the same frame.
-        m_scene->add(rotor, makeSpin(0.35f, frand(0.0f, 0.35f)));
+        EntityId rotor = spawnMesh(
+            m_cylinder,
+            m_matEmissive,
+            "Drone Rotor",
+            {0.0f, 0.0f, 0.0f},
+            {2.6f, 0.08f, 2.6f}
+        );
+        scene().get<Transform>(rotor).position = {0.0f, 0.55f, 0.0f};
+        HierarchyOperations::setParent(scene(), rotor, arm);
+        // Animated, so the chain is dirtied from two sources in one frame.
+        scene().add(rotor, makeSpin(0.35f, frand(0.0f, 0.35f)));
 
-        // A quarter carry a downward spot. These are the only shadow casters in
-        // the scene that move, so their atlas tile re-renders a different
-        // frustum every frame rather than the same one.
-        Drone drone{body, EntityId{}, radius, height,
-                    frand(0.12f, 0.42f) * (i % 2 == 0 ? 1.0f : -1.0f),
-                    frand(0.0f, glm::two_pi<float>())};
+        Drone drone{
+            body,
+            EntityId{},
+            radius,
+            height,
+            frand(0.12f, 0.42f) * (i % 2 == 0 ? 1.0f : -1.0f),
+            frand(0.0f, glm::two_pi<float>())
+        };
         if (i % 4 == 0) {
-            EntityId lamp = m_scene->createEntity();
-            m_scene->add(lamp, makeName("Drone Lamp"));
+            EntityId lamp = spawn("Drone Lamp", body);
 
             Transform lampTransform;
             lampTransform.position = {0.0f, -0.4f, 0.0f};
-            // Point straight down. Forward is -Z, so the quarter turn goes
-            // the other way than it did when forward was +Z
-            // tips it from horizontal to floorward.
+            // Straight down: with forward -Z, the floorward quarter turn about X is negative.
             lampTransform.rotation =
                 glm::angleAxis(-glm::half_pi<float>(), Math::WORLD_AXIS_X);
-            m_scene->add(lamp, std::move(lampTransform));
+            scene().add(lamp, std::move(lampTransform));
 
             Light spot;
             spot.type           = LightType::Spot;
@@ -1126,96 +1074,87 @@ void StressArena::buildDrones() {
             spot.radius         = 45.0f;
             spot.innerConeAngle = 0.25f;
             spot.outerConeAngle = 0.5f;
-            spot.castShadows    = false;   // promoted below, within the atlas budget
-            m_scene->add(lamp, std::move(spot));
-
-            HierarchyOperations::setParent(*m_scene, lamp, body);
+            spot.castShadows    = false;   // promoted below
+            scene().add(lamp, std::move(spot));
             drone.lamp = lamp;
         }
 
         m_drones.push_back(drone);
     }
 
-    // Hand a couple of atlas tiles to moving casters. Taken from the budget
-    // rather than added to it, so toggling shadows still measures the same
-    // number of tiles - only now some of them move.
+    // Only as many as there are tiles left; a surplus caster draws unshadowed.
     int promoted = 0;
     for (Drone& drone : m_drones) {
-        if (promoted >= 2) break;
-        if (!drone.lamp || !m_scene->isAlive(drone.lamp)) continue;
-        m_scene->get<Light>(drone.lamp).castShadows = true;
+        if (promoted >= MOVING_SHADOW_CASTERS) break;
+        Light* lamp = scene().tryGet<Light>(drone.lamp);
+        if (!lamp) continue;
+        lamp->castShadows = true;
+        m_shadowCasters.push_back(drone.lamp);
         ++promoted;
     }
 }
 
 void StressArena::updatePatrolLights() {
     for (PatrolLight& light : m_patrol) {
-        if (!m_scene->isAlive(light.entity)) continue;
+        Transform* at = scene().tryGet<Transform>(light.entity);
+        if (!at) continue;
 
         const float angle = light.phase + m_motionTime * light.speed;
         const glm::vec3 position(
             std::cos(angle) * light.radius,
             GROUND_Y + light.height + std::sin(angle * 2.3f) * light.bobAmp,
-            std::sin(angle) * light.radius);
+            std::sin(angle) * light.radius
+        );
 
-        m_scene->get<Transform>(light.entity).position = position;
-        if (m_scene->isAlive(light.fixture)) {
-            m_scene->get<Transform>(light.fixture).position = position;
+        at->position = position;
+        if (Transform* fixture = scene().tryGet<Transform>(light.fixture)) {
+            fixture->position = position;
         }
     }
 }
 
 void StressArena::updateDrones() {
     for (Drone& drone : m_drones) {
-        if (!m_scene->isAlive(drone.body)) continue;
+        Transform* held = scene().tryGet<Transform>(drone.body);
+        if (!held) continue;
 
         const float angle = drone.phase + m_motionTime * drone.speed;
-        Transform& transform = m_scene->get<Transform>(drone.body);
+        Transform& transform = *held;
         transform.position = {
             std::cos(angle) * drone.radius,
             GROUND_Y + drone.height + std::sin(angle * 1.9f) * 2.5f,
             std::sin(angle) * drone.radius
         };
-        // Bank into the turn and face along the tangent. The half turn is
-        // forward moving from +Z to -Z: the yaw was measured from +Z
-        // and the circle it is flown around did not change.
-        transform.rotation =
-            glm::angleAxis(-angle, Math::WORLD_AXIS_Y) *
-            glm::angleAxis(std::sin(angle * 1.9f) * 0.25f, Math::WORLD_AXIS_Z) *
-            glm::angleAxis(glm::pi<float>(), Math::WORLD_AXIS_Y);
+        // Bank and face the tangent; the half turn maps yaw from +Z onto forward -Z.
+        transform.rotation = glm::angleAxis(-angle, Math::WORLD_AXIS_Y)
+            * glm::angleAxis(std::sin(angle * 1.9f) * 0.25f, Math::WORLD_AXIS_Z)
+            * glm::angleAxis(glm::pi<float>(), Math::WORLD_AXIS_Y);
     }
 }
 
 void StressArena::updateDebris(float dt) {
-    // Age out the live pieces first, so a piece spawned this frame is not
-    // immediately considered for destruction.
+    // Age first, so a piece spawned this frame is not considered for destruction.
     for (size_t i = 0; i < m_debris.size();) {
         Debris& piece = m_debris[i];
         piece.life -= dt;
 
-        if (piece.life > 0.0f && m_scene->isAlive(piece.entity)) {
+        if (piece.life > 0.0f && scene().isAlive(piece.entity)) {
             ++i;
             continue;
         }
 
-        if (m_scene->isAlive(piece.entity)) destroy(piece.entity);
-        // Swap-and-pop: order carries no meaning here and this keeps the
-        // per-frame cost flat no matter how many are live.
+        if (scene().isAlive(piece.entity)) destroy(piece.entity);
         m_debris[i] = m_debris.back();
         m_debris.pop_back();
     }
 
     if (debrisRate <= 0.0f) return;
 
-    // Cap the live set so a high rate cannot run the entity count away and turn
-    // the capture into a memory test instead of a churn test.
     constexpr size_t MAX_LIVE = 900;
 
     m_debrisAccum += debrisRate * dt;
     while (m_debrisAccum >= 1.0f) {
-        // Only the fraction is kept while capped, matching ParticleSystem:
-        // banking whole spawns discharges them the moment pieces start expiring.
-        // The shipped rate never reaches the cap, but debrisRate is a dial.
+        // Keep only the fraction while capped, or banked spawns burst once pieces expire.
         if (m_debris.size() >= MAX_LIVE) {
             m_debrisAccum -= std::floor(m_debrisAccum);
             break;
@@ -1226,38 +1165,43 @@ void StressArena::updateDebris(float dt) {
         const float radius = m_churnRng.nextFloat(PIT_HALF, PROP_ZONE_OUTER);
         const float size   = m_churnRng.nextFloat(0.25f, 0.8f);
 
-        // The shared cube: the churn being measured is entity lifetime, not
-        // geometry upload, so every piece batches with the props.
-        EntityId piece = spawnMesh(m_cube,
+        // The shared cube, so pieces batch with the props: the churn is entity lifetime.
+        EntityId piece = spawnMesh(
+            m_cube,
             m_propMaterials[static_cast<size_t>(m_debris.size()) % m_propMaterials.size()],
             "Debris",
-            {std::cos(angle) * radius,
-             GROUND_Y + m_churnRng.nextFloat(14.0f, 26.0f),
-             std::sin(angle) * radius},
-            glm::vec3(size));
+            {
+                std::cos(angle) * radius,
+                GROUND_Y + m_churnRng.nextFloat(14.0f, 26.0f),
+                std::sin(angle) * radius
+            },
+            glm::vec3(size)
+        );
 
-        // Shadow-casting is off: a piece that lives two seconds is not worth a
-        // shadow re-render, and this keeps the churn measuring the ECS and the
-        // draw list rather than the shadow pass.
-        m_scene->get<Mesh>(piece).castShadows = false;
+        // No shadows: the churn measures the ECS and the draw list.
+        scene().get<Mesh>(piece).castShadows = false;
 
         Rigidbody rb;
         rb.mass            = size * 4.0f;
         rb.restitution     = 0.4f;
         rb.friction        = 0.4f;
         rb.canSleep        = false;
-        rb.linearVelocity  = {m_churnRng.nextFloat(-6.0f, 6.0f),
-                              m_churnRng.nextFloat(-2.0f, 4.0f),
-                              m_churnRng.nextFloat(-6.0f, 6.0f)};
-        rb.angularVelocity = {m_churnRng.nextFloat(-6.0f, 6.0f),
-                              m_churnRng.nextFloat(-6.0f, 6.0f),
-                              m_churnRng.nextFloat(-6.0f, 6.0f)};
-        m_scene->add(piece, std::move(rb));
+        rb.linearVelocity  = {
+            m_churnRng.nextFloat(-6.0f, 6.0f),
+            m_churnRng.nextFloat(-2.0f, 4.0f),
+            m_churnRng.nextFloat(-6.0f, 6.0f)
+        };
+        rb.angularVelocity = {
+            m_churnRng.nextFloat(-6.0f, 6.0f),
+            m_churnRng.nextFloat(-6.0f, 6.0f),
+            m_churnRng.nextFloat(-6.0f, 6.0f)
+        };
+        scene().add(piece, std::move(rb));
 
         Collider col;
         col.parts   = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, glm::vec3(size * 0.5f)}};
-        col.enabled = m_physicsOn;   // spawned mid-toggle, so honour the current state
-        m_scene->add(piece, std::move(col));
+        col.enabled = m_physicsOn;
+        scene().add(piece, std::move(col));
 
         m_debris.push_back(Debris{piece, m_churnRng.nextFloat(2.5f, 5.0f)});
     }
@@ -1270,22 +1214,24 @@ void StressArena::updateBlast(float dt) {
     if (m_blastTimer > 0.0f) return;
     m_blastTimer = blastInterval;
 
-    // Radial impulse from the pit floor. Without this the pile packs down, its
-    // contacts stabilise, and the solver coasts - so the physics zone would
-    // report the cost of a settled stack rather than a working one.
+    // Radial impulse from the pit floor.
     const glm::vec3 origin(0.0f, GROUND_Y - PIT_DEPTH, 0.0f);
     for (EntityId body : m_bodies) {
-        if (!m_scene->isAlive(body)) continue;
+        const Transform* at = scene().tryGet<Transform>(body);
+        Rigidbody*       held = at ? scene().tryGet<Rigidbody>(body) : nullptr;
+        if (!held) continue;
 
-        const glm::vec3 offset = m_scene->get<Transform>(body).position - origin;
+        const glm::vec3 offset = at->position - origin;
         const float     dist   = std::max(1.0f, glm::length(offset));
 
-        Rigidbody& rb = m_scene->get<Rigidbody>(body);
+        Rigidbody& rb = *held;
         rb.linearVelocity  += (offset / dist) * (28.0f / dist) + glm::vec3(0.0f, 9.0f, 0.0f);
-        rb.angularVelocity += glm::vec3(m_churnRng.nextFloat(-5.0f, 5.0f),
-                                        m_churnRng.nextFloat(-5.0f, 5.0f),
-                                        m_churnRng.nextFloat(-5.0f, 5.0f));
-        rb.sleeping = false;
+        rb.angularVelocity += glm::vec3(
+            m_churnRng.nextFloat(-5.0f, 5.0f),
+            m_churnRng.nextFloat(-5.0f, 5.0f),
+            m_churnRng.nextFloat(-5.0f, 5.0f)
+        );
+        Rigidbody::wake(rb);
     }
 }
 
@@ -1298,84 +1244,61 @@ void StressArena::updateMaterialPulse() {
         const float phase = m_motionTime * 2.0f + static_cast<float>(i) * 0.7f;
         const float glow  = 0.5f + 0.5f * std::sin(phase);
 
-        MaterialAsset& material = m_resources->edit(handle);
+        MaterialAsset& material = resources().edit(handle);
         material.emission         = glm::vec3(0.9f, 0.45f, 0.15f) * glow;
         material.emissiveStrength = 1.0f + glow * 3.0f;
-        // commit bumps the version, which is what makes GLView re-upload this
-        // material's UBO next sync. That path is dead in a scene of fixed
-        // materials and hot in any game that pulses, flashes or fades.
-        m_resources->commit(handle);
+        // commit bumps the version, so GLView re-uploads the UBO next sync.
+        resources().commit(handle);
     }
 }
 
 void StressArena::buildUI() {
-    EntityId canvas = m_scene->createEntity();
-    m_scene->add(canvas, makeName("HUD"));
-    m_scene->add(canvas, UICanvas{});
+    EntityId canvas = spawn("HUD");
+    scene().add(canvas, UICanvas{});
     m_hudCanvas = canvas;
 
-    // The two readout lines, rewritten once a second in refreshUI. Anchored to
-    // the top-left so they stay clear of the toggle grid on the right.
     auto addLine = [&](const char* name, float y, float pixelSize, const glm::vec4& color) {
-        EntityId line = m_scene->createEntity();
-        m_scene->add(line, makeName(name));
-
-        UIElement element;
-        element.anchor   = {0.0f, 0.0f};
-        element.pivot    = {0.0f, 0.0f};
-        element.position = {24.0f, y};
-        element.size     = {900.0f, 40.0f};
-        m_scene->add(line, std::move(element));
+        EntityId line = spawn(name, canvas);
+        scene().add(line, UIElement::at({0.0f, 0.0f}, {24.0f, y}, {900.0f, 40.0f}));
 
         UIText text;
         text.text      = "warming up";
         text.pixelSize = pixelSize;
         text.color     = color;
-        m_scene->add(line, std::move(text));
-
-        HierarchyOperations::setParent(*m_scene, line, canvas);
+        scene().add(line, std::move(text));
         return line;
     };
 
     m_uiStats   = addLine("Stats",   18.0f, 28.0f, {0.85f, 0.92f, 1.00f, 1.0f});
     m_uiToggles = addLine("Toggles", 56.0f, 18.0f, {0.70f, 0.78f, 0.90f, 0.95f});
 
-    // Filler widgets. These exist to give the UI layout walk and the UI draw
-    // pass real work - a HUD of two labels measures nothing.
+    // Filler widgets, to load the UI layout walk and draw pass.
     m_uiWidgets.reserve(static_cast<size_t>(uiWidgetCount));
     for (int i = 0; i < uiWidgetCount; ++i) {
-        EntityId widget = m_scene->createEntity();
-        m_scene->add(widget, makeName("Widget"));
+        EntityId widget = spawn("Widget", canvas);
+        const float column = static_cast<float>(i % 6);
+        const float row    = static_cast<float>(i / 6);
+        const glm::vec2 position{-20.0f - column * 108.0f, 20.0f + row * 40.0f};
+        scene().add(widget, UIElement::at({1.0f, 0.0f}, position, {100.0f, 32.0f}));
 
-        UIElement element;
-        element.anchor   = {1.0f, 0.0f};
-        element.pivot    = {1.0f, 0.0f};
-        element.position = {-20.0f - static_cast<float>(i % 6) * 108.0f,
-                             20.0f + static_cast<float>(i / 6) * 40.0f};
-        element.size     = {100.0f, 32.0f};
-        m_scene->add(widget, std::move(element));
-
-        // Alternate image and text so both UI draw paths carry load.
+        // Alternate image and text, to load both draw paths.
         if (i % 2 == 0) {
             UIImage image;
             image.color = {frand(0.2f, 0.9f), frand(0.2f, 0.9f), frand(0.4f, 1.0f), 0.55f};
-            m_scene->add(widget, std::move(image));
+            scene().add(widget, std::move(image));
         } else {
             UIText text;
             text.text      = "SLOT " + std::to_string(i);
             text.pixelSize = 18.0f;
             text.color     = {0.75f, 0.85f, 1.0f, 0.9f};
-            m_scene->add(widget, std::move(text));
+            scene().add(widget, std::move(text));
         }
-
-        HierarchyOperations::setParent(*m_scene, widget, canvas);
         m_uiWidgets.push_back(widget);
     }
 }
 
 void StressArena::onUpdate(float dt) {
-    // One clock for every scripted motion, so the whole scene stays phase-locked
-    // and two runs of the same build are frame-comparable.
+    // One clock for every scripted motion, so the scene stays phase-locked.
     m_motionTime += dt;
 
     readInput();
@@ -1391,25 +1314,45 @@ void StressArena::onUpdate(float dt) {
 }
 
 void StressArena::readInput() {
-    const InputMap& input = *context().input;
+    const InputMap& input = this->input();
 
-    // Edges come from the map, which samples once a frame for every reader, so
-    // there is no per-key "was it down" state to keep here.
-    if (input.pressed(ACTION_LIGHTS))    { m_lightsOn     = !m_lightsOn;     setLightsEnabled(m_lightsOn); }
-    if (input.pressed(ACTION_SHADOWS))   { m_shadowsOn    = !m_shadowsOn;    setShadowsEnabled(m_shadowsOn); }
-    if (input.pressed(ACTION_PROPS))     { m_propsOn      = !m_propsOn;      setPropsVisible(m_propsOn); }
-    if (input.pressed(ACTION_PARTICLES)) { m_particlesOn  = !m_particlesOn;  setParticlesEnabled(m_particlesOn); }
-    if (input.pressed(ACTION_PHYSICS))   { m_physicsOn    = !m_physicsOn;    setPhysicsEnabled(m_physicsOn); }
-    if (input.pressed(ACTION_ANIM))      { m_animationsOn = !m_animationsOn; setAnimationsEnabled(m_animationsOn); }
-    if (input.pressed(ACTION_DECALS))    { m_decalsOn     = !m_decalsOn;     setDecalsEnabled(m_decalsOn); }
+    if (input.pressed(ACTION_LIGHTS)) {
+        m_lightsOn = !m_lightsOn;
+        setLightsEnabled(m_lightsOn);
+    }
+    if (input.pressed(ACTION_SHADOWS)) {
+        m_shadowsOn = !m_shadowsOn;
+        setShadowsEnabled(m_shadowsOn);
+    }
+    if (input.pressed(ACTION_PROPS)) {
+        m_propsOn = !m_propsOn;
+        setPropsVisible(m_propsOn);
+    }
+    if (input.pressed(ACTION_PARTICLES)) {
+        m_particlesOn = !m_particlesOn;
+        setParticlesEnabled(m_particlesOn);
+    }
+    if (input.pressed(ACTION_PHYSICS)) {
+        m_physicsOn = !m_physicsOn;
+        setPhysicsEnabled(m_physicsOn);
+    }
+    if (input.pressed(ACTION_ANIM)) {
+        m_animationsOn = !m_animationsOn;
+        setAnimationsEnabled(m_animationsOn);
+    }
+    if (input.pressed(ACTION_DECALS)) {
+        m_decalsOn = !m_decalsOn;
+        setDecalsEnabled(m_decalsOn);
+    }
     if (input.pressed(ACTION_FOG)) {
         m_fogOn = !m_fogOn;
-        m_scene->environment().fog.enabled = m_fogOn;
+        scene().environment().fog.enabled = m_fogOn;
     }
-    if (input.pressed(ACTION_UI)) { m_uiOn = !m_uiOn; setUIVisible(m_uiOn); }
+    if (input.pressed(ACTION_UI)) {
+        m_uiOn = !m_uiOn;
+        setUIVisible(m_uiOn);
+    }
 
-    // 0 restores everything, so a capture can be returned to the reference load
-    // without restarting play.
     if (input.pressed(ACTION_RESET)) {
         m_lightsOn = m_shadowsOn = m_propsOn = m_particlesOn = true;
         m_physicsOn = m_animationsOn = m_decalsOn = m_fogOn = m_uiOn = true;
@@ -1421,72 +1364,65 @@ void StressArena::readInput() {
         setAnimationsEnabled(true);
         setDecalsEnabled(true);
         setUIVisible(true);
-        m_scene->environment().fog.enabled = true;
+        scene().environment().fog.enabled = true;
     }
 
-    // F hands the camera to the engine's free-fly controller and back.
+    // F pauses the camera; the loop resumes from where it stopped.
     if (input.pressed(ACTION_CAMERA)) {
         scriptedCamera = !scriptedCamera;
-        LOG_INFO("camera: %s", scriptedCamera ? "scripted" : "free");
+        LOG_INFO("camera: %s", scriptedCamera ? "scripted" : "held");
     }
 }
 
 void StressArena::updateCamera(float dt) {
-    if (!m_camera || !m_scene->isAlive(m_camera)) return;
     if (!scriptedCamera) return;
+    Transform* view = scene().tryGet<Transform>(m_camera);
+    if (!view) return;
 
     m_camTime += dt;
 
-    // A cut jumps most of the way round the loop at once, so culling sets, batch
-    // membership and every newly-referenced asset turn over in one frame. The
-    // worst case for frame coherence, and a deliberate spike - hence opt-in.
     if (cameraCutInterval > 0.0f) {
         m_cutTimer -= dt;
         if (m_cutTimer <= 0.0f) {
             m_cutTimer = cameraCutInterval;
-            m_camTime += cameraLoopTime * 0.41f;   // not a clean fraction, so cuts do not repeat a pose
+            m_camTime += cameraLoopTime * 0.41f;   // not a clean fraction, so poses do not repeat
         }
     }
 
     const float loop = (cameraLoopTime > 0.1f) ? cameraLoopTime : 0.1f;
     const float t    = m_camTime / loop * glm::two_pi<float>();
 
-    // Circle the block while the height oscillates at a different rate, so the
-    // path does not repeat exactly each lap until both cycles realign - one
-    // capture therefore covers street level and overview without a cut.
+    // Height oscillates at a different rate, so laps do not repeat exactly.
     const glm::vec3 position(
         std::cos(t) * CAM_RADIUS,
         GROUND_Y + CAM_HEIGHT + std::sin(t * 1.7f) * CAM_HEIGHT_AMP,
-        std::sin(t) * CAM_RADIUS);
+        std::sin(t) * CAM_RADIUS
+    );
 
     const glm::vec3 target(0.0f, GROUND_Y + CAM_LOOK_Y, 0.0f);
     const glm::vec3 forward = glm::normalize(target - position);
 
-    // Keep the focal plane on whatever the camera is looking at, the way a game
-    // camera would, so the in-focus band moves through the scene over the loop
-    // instead of sitting at a fixed depth the whole capture.
-    if (m_scene->has<Camera>(m_camera)) {
-        m_scene->get<Camera>(m_camera).focusDistance = glm::distance(position, target);
+    // Focus on the look target.
+    if (Camera* camera = scene().tryGet<Camera>(m_camera)) {
+        camera->focusDistance = glm::distance(position, target);
     }
 
-    Transform& transform = m_scene->get<Transform>(m_camera);
-    transform.position = position;
-    transform.rotation = Math::lookRotation(forward);
+    view->position = position;
+    view->rotation = Math::lookRotation(forward);
 }
 
 void StressArena::updatePhysics() {
     if (!m_physicsOn) return;
 
-    // Relaunch anything that has left the pit or come to rest at the bottom.
-    // The pile must stay agitated: a settled stack drops out of the solver's
-    // active set, and the physics zone quietly stops measuring anything.
+    // Relaunch anything that has left the pit.
     for (EntityId body : m_bodies) {
-        if (!m_scene->isAlive(body)) continue;
+        Transform* held = scene().tryGet<Transform>(body);
+        if (!held) continue;
 
-        Transform& transform = m_scene->get<Transform>(body);
-        const bool escaped = std::abs(transform.position.x) > PIT_HALF + 6.0f ||
-                             std::abs(transform.position.z) > PIT_HALF + 6.0f ||
-                             transform.position.y < GROUND_Y - PIT_DEPTH - 6.0f;
+        Transform& transform = *held;
+        const bool escaped = std::abs(transform.position.x) > PIT_HALF + 6.0f
+            || std::abs(transform.position.z) > PIT_HALF + 6.0f
+            || transform.position.y < GROUND_Y - PIT_DEPTH - 6.0f;
         if (!escaped) continue;
 
         transform.position = {
@@ -1495,13 +1431,14 @@ void StressArena::updatePhysics() {
             m_churnRng.nextFloat(-PIT_HALF + 2.0f, PIT_HALF - 2.0f)
         };
 
-        Rigidbody& rb = m_scene->get<Rigidbody>(body);
-        rb.linearVelocity  = {m_churnRng.nextFloat(-2.0f, 2.0f), 0.0f,
-                              m_churnRng.nextFloat(-2.0f, 2.0f)};
-        rb.angularVelocity = {m_churnRng.nextFloat(-3.0f, 3.0f),
-                              m_churnRng.nextFloat(-3.0f, 3.0f),
-                              m_churnRng.nextFloat(-3.0f, 3.0f)};
-        rb.sleeping = false;
+        Rigidbody& rb = scene().get<Rigidbody>(body);
+        rb.linearVelocity  = {m_churnRng.nextFloat(-2.0f, 2.0f), 0.0f, m_churnRng.nextFloat(-2.0f, 2.0f)};
+        rb.angularVelocity = {
+            m_churnRng.nextFloat(-3.0f, 3.0f),
+            m_churnRng.nextFloat(-3.0f, 3.0f),
+            m_churnRng.nextFloat(-3.0f, 3.0f)
+        };
+        Rigidbody::wake(rb);
     }
 }
 
@@ -1515,106 +1452,94 @@ void StressArena::refreshUI(float dt) {
     m_statsTimer = 0.0f;
     m_frames     = 0;
 
-    // Tracy owns the real numbers. These lines exist so a capture can be read
-    // back against the load that produced it: at a glance, which subsystems
-    // were in the frame and whether the camera was on its scripted path.
+    // Tracy owns the real numbers; these let a capture be read against its load.
     char buffer[256];
 
-    if (m_scene->isAlive(m_uiStats)) {
-        // Entity count and live debris are here because they are the two numbers
-        // that move on their own: if a capture looks off, the first question is
-        // whether the churn was actually running at the rate it claims.
-        std::snprintf(buffer, sizeof(buffer),
+    if (UIText* stats = scene().tryGet<UIText>(m_uiStats)) {
+        std::snprintf(
+            buffer,
+            sizeof(buffer),
             "%.1f fps   %.2f ms   %zu entities   %zu debris   camera:%s",
-            static_cast<double>(fps), static_cast<double>(ms),
-            m_scene->entityCount(), m_debris.size(),
-            scriptedCamera ? "scripted [F]" : "free [F]");
-        m_scene->get<UIText>(m_uiStats).text = buffer;
+            static_cast<double>(fps),
+            static_cast<double>(ms),
+            scene().entityCount(),
+            m_debris.size(),
+            scriptedCamera ? "scripted [F]" : "held [F]"
+        );
+        stats->text = buffer;
     }
 
-    if (m_scene->isAlive(m_uiToggles)) {
-        std::snprintf(buffer, sizeof(buffer),
+    if (UIText* toggles = scene().tryGet<UIText>(m_uiToggles)) {
+        std::snprintf(
+            buffer,
+            sizeof(buffer),
             "1 light:%s  2 shadow:%s  3 props:%s  4 fx:%s  5 phys:%s  "
             "6 anim:%s  7 decal:%s  8 fog:%s  9 ui:%s  0 reset",
-            m_lightsOn ? "on" : "OFF", m_shadowsOn ? "on" : "OFF",
-            m_propsOn ? "on" : "OFF", m_particlesOn ? "on" : "OFF",
-            m_physicsOn ? "on" : "OFF", m_animationsOn ? "on" : "OFF",
-            m_decalsOn ? "on" : "OFF", m_fogOn ? "on" : "OFF",
-            m_uiOn ? "on" : "OFF");
-        m_scene->get<UIText>(m_uiToggles).text = buffer;
+            m_lightsOn ? "on" : "OFF",
+            m_shadowsOn ? "on" : "OFF",
+            m_propsOn ? "on" : "OFF",
+            m_particlesOn ? "on" : "OFF",
+            m_physicsOn ? "on" : "OFF",
+            m_animationsOn ? "on" : "OFF",
+            m_decalsOn ? "on" : "OFF",
+            m_fogOn ? "on" : "OFF",
+            m_uiOn ? "on" : "OFF"
+        );
+        toggles->text = buffer;
     }
 }
 
 void StressArena::setLightsEnabled(bool enabled) {
     for (EntityId light : m_lights) {
-        if (m_scene->isAlive(light)) m_scene->get<Light>(light).enabled = enabled;
+        if (Light* held = scene().tryGet<Light>(light)) held->enabled = enabled;
     }
-    // Drone lamps live on the rigs, not in m_lights, and would otherwise stay
-    // lit with the toggle reading "off".
+    // Drone lamps are not in m_lights.
     for (Drone& drone : m_drones) {
-        if (drone.lamp && m_scene->isAlive(drone.lamp)) {
-            m_scene->get<Light>(drone.lamp).enabled = enabled;
-        }
+        if (Light* lamp = scene().tryGet<Light>(drone.lamp)) lamp->enabled = enabled;
     }
 }
 
 void StressArena::setShadowsEnabled(bool enabled) {
-    // Only the lights that were built as casters are restored, so toggling
-    // shadows back on cannot silently promote all lightCount lights to casters
-    // and change the load being measured.
-    for (size_t i = 0; i < m_lights.size(); ++i) {
-        if (!m_scene->isAlive(m_lights[i])) continue;
-        const bool caster = (static_cast<int>(i) < shadowLights) || (i + 1 == m_lights.size());
-        m_scene->get<Light>(m_lights[i]).castShadows = enabled && caster;
-    }
-    // The moving casters are the interesting half of the shadow cost, so they
-    // have to follow the same toggle. Which drones were promoted is recorded by
-    // their current flag, so only re-enable the two that already had it.
-    int promoted = 0;
-    for (Drone& drone : m_drones) {
-        if (!drone.lamp || !m_scene->isAlive(drone.lamp)) continue;
-        if (promoted >= 2) break;
-        m_scene->get<Light>(drone.lamp).castShadows = enabled;
-        ++promoted;
+    // Which lights cast is decided at build, against the atlas budget; this only toggles it.
+    for (EntityId caster : m_shadowCasters) {
+        if (Light* held = scene().tryGet<Light>(caster)) held->castShadows = enabled;
     }
 }
 
 void StressArena::setPropsVisible(bool visible) {
     for (EntityId prop : m_props) {
-        if (m_scene->isAlive(prop)) m_scene->get<Mesh>(prop).visible = visible;
+        if (Mesh* mesh = scene().tryGet<Mesh>(prop)) mesh->visible = visible;
     }
 }
 
 void StressArena::setParticlesEnabled(bool enabled) {
     for (EntityId emitter : m_emitters) {
-        if (m_scene->isAlive(emitter)) m_scene->get<ParticleEmitter>(emitter).emitting = enabled;
+        if (ParticleEmitter* e = scene().tryGet<ParticleEmitter>(emitter)) e->emitting = enabled;
     }
 }
 
 void StressArena::setPhysicsEnabled(bool enabled) {
-    // Disabling the collider drops the body out of the broadphase entirely,
-    // which is what takes the solver cost to zero; leaving the Rigidbody alone
-    // means re-enabling resumes from the pose it stopped at.
+    // A disabled collider leaves the broadphase but the body still integrates, so
+    // the pile falls away; updatePhysics relaunches what escaped once back on.
     for (EntityId body : m_bodies) {
-        if (m_scene->isAlive(body)) m_scene->get<Collider>(body).enabled = enabled;
+        if (Collider* col = scene().tryGet<Collider>(body)) col->enabled = enabled;
     }
-    // Debris carries bodies too. New pieces read m_physicsOn at spawn, so this
-    // only has to cover the ones already live.
+    // Live debris too; new pieces read m_physicsOn at spawn.
     for (Debris& piece : m_debris) {
-        if (m_scene->isAlive(piece.entity)) m_scene->get<Collider>(piece.entity).enabled = enabled;
+        if (Collider* col = scene().tryGet<Collider>(piece.entity)) col->enabled = enabled;
     }
 }
 
 void StressArena::setAnimationsEnabled(bool enabled) {
     for (EntityId spinner : m_spinners) {
-        if (m_scene->isAlive(spinner)) m_scene->get<Animation>(spinner).playing = enabled;
+        if (Animation* anim = scene().tryGet<Animation>(spinner)) anim->playing = enabled;
     }
-    // Rotors are animated but are not props, so they are not in m_spinners.
+    // Rotors are not in m_spinners.
     for (Drone& drone : m_drones) {
-        if (!m_scene->isAlive(drone.body)) continue;
-        HierarchyOperations::forEachChild(*m_scene, drone.body, [&](EntityId arm) {
-            HierarchyOperations::forEachChild(*m_scene, arm, [&](EntityId rotor) {
-                if (m_scene->has<Animation>(rotor)) m_scene->get<Animation>(rotor).playing = enabled;
+        if (!scene().isAlive(drone.body)) continue;
+        HierarchyOperations::forEachChild(scene(), drone.body, [&](EntityId arm) {
+            HierarchyOperations::forEachChild(scene(), arm, [&](EntityId rotor) {
+                if (Animation* anim = scene().tryGet<Animation>(rotor)) anim->playing = enabled;
             });
         });
     }
@@ -1622,15 +1547,12 @@ void StressArena::setAnimationsEnabled(bool enabled) {
 
 void StressArena::setDecalsEnabled(bool enabled) {
     for (EntityId decal : m_decals) {
-        if (!m_scene->isAlive(decal) || !m_scene->has<Decal>(decal)) continue;
-        m_scene->get<Decal>(decal).enabled = enabled;
+        if (Decal* held = scene().tryGet<Decal>(decal)) held->enabled = enabled;
     }
 }
 
 void StressArena::setUIVisible(bool visible) {
-    if (m_hudCanvas && m_scene->isAlive(m_hudCanvas)) {
-        m_scene->get<UICanvas>(m_hudCanvas).visible = visible;
-    }
+    if (UICanvas* hud = scene().tryGet<UICanvas>(m_hudCanvas)) hud->visible = visible;
 }
 
-} // namespace Vkm::Engine
+} // namespace Arena

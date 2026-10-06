@@ -1,8 +1,7 @@
 {
-  "name": "bot:skeleton",
+  "name": "assets/bot.fbx:skeleton",
   "source": {
     "kind": "model",
     "path": "assets/bot.fbx"
-  },
-  "type": "skeleton"
+  }
 }
