@@ -12,12 +12,16 @@
 
 namespace Vkm::Engine::detail {
 
-// Open and parse a JSON file. On failure logs an error tagged with @p what and
-// returns false, leaving @p out untouched.
-//
-// Uses the explicit-category log variant because this is an inline call in a
-// header (see logger.h): the file's VKM_LOG_CATEGORY isn't reliably in scope, and
-// every consumer lives in the "IO" subsystem.
+/**
+ * @brief Open and parse a JSON file.
+ *
+ * Logs as IO explicitly: a header cannot rely on the includer's VKM_LOG_CATEGORY.
+ *
+ * @param path The file to read.
+ * @param out  Receives the document; untouched on failure.
+ * @param what What the document is, for the log line.
+ * @return False, having logged, when the file will not open or parse.
+ */
 inline bool readJsonFile(const std::filesystem::path& path, nlohmann::json& out, const char* what) {
     std::ifstream in(path);
     if (!in) {
@@ -33,24 +37,16 @@ inline bool readJsonFile(const std::filesystem::path& path, nlohmann::json& out,
     return true;
 }
 
-// Replace every non-finite number under @p node with 0, naming each one in the
-// log: @p what tags the document and @p path is the scratch buffer the field's
-// address is built in, grown and trimmed as the walk descends rather than
-// rebuilt per node.
-//
-// JSON cannot write an infinity or a NaN, so nlohmann::json dumps both as
-// `null` - and a null where a float was is a type error the component loaders
-// throw on, which aborts the whole load. One unrepresentable field would cost
-// every entity in the file, so the document is checked where it is built rather
-// than where it is read: the engine does not write a document it cannot read
-// back. Zero is what a field with no value gets; the field was already wrong -
-// an infinite volume is silent and an infinite position is nowhere - and the
-// log says which one, so the author can set it to what they meant.
-//
-// The read side is deliberately left strict. Teaching the loaders that `null`
-// means "keep the default" would make it a legal token in every scalar field of
-// the scene format, permanently, where this changes nothing about what a
-// well-formed file looks like - a finite number still writes exactly as it did.
+/**
+ * @brief Replace every non-finite number under @p node with 0, logging each.
+ *
+ * nlohmann::json dumps inf and NaN as `null`, which the loaders throw on, so the
+ * check is on write. Reads stay strict so `null` never becomes a legal scalar.
+ *
+ * @param node The subtree to walk.
+ * @param what What the document is, for the log line.
+ * @param path Scratch for the field's address; holds @p node's.
+ */
 inline void writeNonFiniteAsZero(nlohmann::json& node, const char* what, std::string& path) {
     if (node.is_object()) {
         const std::size_t parent = path.size();
@@ -72,25 +68,37 @@ inline void writeNonFiniteAsZero(nlohmann::json& node, const char* what, std::st
         }
         return;
     }
-    // Integers cannot be non-finite, so only the float nodes are asked.
     if (!node.is_number_float() || std::isfinite(node.get<double>())) return;
 
     LOG_WARNING_C("IO", "%s: %s is not a finite number; written as 0", what, path.c_str());
     node = 0.0;
 }
 
-// Hold @p doc to the rule above, from its root.
+/**
+ * @brief Hold @p doc to the rule above, from its root.
+ *
+ * @param doc  The document to walk.
+ * @param what What the document is, for the log line.
+ */
 inline void writeNonFiniteAsZero(nlohmann::json& doc, const char* what) {
     std::string path;
     writeNonFiniteAsZero(doc, what, path);
 }
 
-// Write @p doc to @p path, creating parent directories as needed. The dump goes
-// to a sibling temp file that is renamed over the target only once the stream
-// says it wrote cleanly, so a full disk or a crash mid-write leaves the previous
-// file intact instead of a truncated one. Returns false (logging, tagged with
-// @p what) on any failure; the caller must not report a save it did not get.
-inline bool writeJsonFile(const std::filesystem::path& path, const nlohmann::json& doc, const char* what) {
+/**
+ * @brief Write @p doc to @p path, creating parent directories as needed.
+ *
+ * Writes a sibling temp file and renames it over the target, so a failed write
+ * leaves the previous file intact.
+ *
+ * @param path The file to write.
+ * @param doc  The document; mutable because non-finite numbers are zeroed.
+ * @param what What the document is, for the log line.
+ * @return False, having logged, on any failure.
+ */
+inline bool writeJsonFile(const std::filesystem::path& path, nlohmann::json& doc, const char* what) {
+    writeNonFiniteAsZero(doc, what);
+
     std::error_code ec;
     if (!path.parent_path().empty()) std::filesystem::create_directories(path.parent_path(), ec);
 
@@ -101,9 +109,7 @@ inline bool writeJsonFile(const std::filesystem::path& path, const nlohmann::jso
             LOG_ERROR_C("IO", "%s: cannot open '%s' for writing", what, tmp.string().c_str());
             return false;
         }
-        // A trailing newline, because these are text files: without one a diff
-        // reports "no newline at end of file" on every write and a terminal
-        // runs the next prompt into the last brace.
+        // Trailing newline, or every diff reports "no newline at end of file".
         out << doc.dump(2) << '\n';
         out.close();
         if (!out) {
@@ -114,8 +120,14 @@ inline bool writeJsonFile(const std::filesystem::path& path, const nlohmann::jso
     }
     std::filesystem::rename(tmp, path, ec);
     if (ec) {
-        LOG_ERROR_C("IO", "%s: rename '%s' -> '%s' failed: %s", what,
-            tmp.string().c_str(), path.string().c_str(), ec.message().c_str());
+        LOG_ERROR_C(
+            "IO",
+            "%s: rename '%s' -> '%s' failed: %s",
+            what,
+            tmp.string().c_str(),
+            path.string().c_str(),
+            ec.message().c_str()
+        );
         std::filesystem::remove(tmp, ec);
         return false;
     }

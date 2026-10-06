@@ -12,9 +12,9 @@ class ResourceManager;
 /**
  * @brief Load a PBR material from a texture folder with automatic file detection.
  *
- * Searches the folder for the common PBR naming patterns - Color/Albedo/
- * BaseColor/Diffuse and Emission/Emissive (sRGB), Normal, Roughness, Metallic,
- * AO and packed MetallicRoughness/ORM (linear) - across .jpg, .jpeg, .png,
+ * Searches the folder for the common PBR naming patterns - Color/Albedo/Diffuse
+ * and Emission/Emissive (colour), Normal (a normal), and Roughness, Metallic,
+ * AO, Height and packed MetallicRoughness/ORM (data) - across .jpg, .jpeg, .png,
  * .tga and .bmp.
  *
  * The folder path is the material's name, and the load is idempotent by it:
@@ -24,9 +24,6 @@ class ResourceManager;
  * @param resourceManager Resource manager to add the material to
  * @return Handle to the loaded material, or an invalid handle if the folder is missing
  */
-MaterialHandle loadMaterialFromFolder(
-    const std::string& folderPath,
-    ResourceManager& resourceManager
-);
+MaterialHandle loadMaterialFromFolder(const std::string& folderPath, ResourceManager& resourceManager);
 
 } // namespace Vkm::Engine
