@@ -1,4 +1,5 @@
 {
+  "description": "Characters, ragdolls and joints on an obstacle course - and the multiplayer sample.",
   "engineVersion": "0.10.0",
   "entryScene": "scenes/obstacle_course.json",
   "maxPlayers": 4,

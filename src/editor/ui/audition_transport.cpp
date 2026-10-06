@@ -11,8 +11,14 @@
 
 namespace Vkm::Engine {
 
-bool auditionTransport(const char* idStr, AudioDevice& device, VoiceId& voice,
-                       bool mine, const AudioClipAsset* clip, float size) {
+bool auditionTransport(
+    const char* idStr,
+    AudioDevice& device,
+    VoiceId& voice,
+    bool mine,
+    const AudioClipAsset* clip,
+    float size
+) {
     const bool open     = device.isOpen();
     const bool live     = mine && device.isVoiceActive(voice);
     const bool held     = live && device.isVoicePaused(voice);
@@ -22,12 +28,13 @@ bool auditionTransport(const char* idStr, AudioDevice& device, VoiceId& voice,
     char id[48];
 
     snprintf(id, sizeof(id), "%sPlay", idStr);
-    if (iconButton(id, sounding ? EditorIcon::Pause : EditorIcon::Play, sounding,
-                   open && (clip != nullptr || live),
-                   !open     ? "No audio device - this cannot be heard"
-                   : sounding ? "Pause the audition"
-                   : held     ? "Resume the audition"
-                              : "Audition the clip (does not change the scene)", size)) {
+    const EditorIcon icon = sounding ? EditorIcon::Pause : EditorIcon::Play;
+    const bool enabled = open && (clip != nullptr || live);
+    const char* tooltip = !open ? "No audio device - this cannot be heard"
+        : sounding ? "Pause the audition"
+        : held ? "Resume the audition"
+        : "Audition the clip (does not change the scene)";
+    if (iconButton(id, icon, sounding, enabled, tooltip, size)) {
         if (sounding) {
             device.pauseVoice(voice);
         } else if (held) {
@@ -41,11 +48,9 @@ bool auditionTransport(const char* idStr, AudioDevice& device, VoiceId& voice,
         }
     }
 
-    // Matches the Inspector card's other rows.
     ImGui::SameLine(0, EditorStyle::px(8.0f));
     snprintf(id, sizeof(id), "%sStop", idStr);
-    // A held voice stops here like any other: it is a place in a clip, not a
-    // sound that has already finished.
+    // A held voice stops like any other: it is a place in a clip, not a finished sound.
     if (iconButton(id, EditorIcon::Stop, false, live, "Stop the audition", size)) {
         device.stopVoice(voice);
         voice = 0;
@@ -54,8 +59,7 @@ bool auditionTransport(const char* idStr, AudioDevice& device, VoiceId& voice,
     return started;
 }
 
-void auditionScrubber(const char* idStr, AudioDevice& device, VoiceId voice,
-                      float duration, float width) {
+void auditionScrubber(const char* idStr, AudioDevice& device, VoiceId voice, float duration, float width) {
     if (duration <= 0.0f) return;
 
     const bool live = device.isVoiceActive(voice);
@@ -68,7 +72,7 @@ void auditionScrubber(const char* idStr, AudioDevice& device, VoiceId voice,
     float cursor = live ? device.voiceCursor(voice) : 0.0f;
     ImGui::BeginDisabled(!live);
     ImGui::SetNextItemWidth(width);
-    if (ImGui::SliderFloat(label, &cursor, 0.0f, duration, timeFmt, PROP_CLAMP))
+    if (sliderFloat(label, &cursor, 0.0f, duration, timeFmt))
         device.seekVoice(voice, cursor);
     ImGui::EndDisabled();
 }

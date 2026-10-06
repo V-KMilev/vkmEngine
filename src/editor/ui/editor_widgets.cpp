@@ -2,13 +2,18 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <iterator>
+#include <string_view>
 #include <vector>
 
 #include <imgui.h>
+#include <imgui_internal.h>
 
 #include "ui/editor_style.h"
+#include "core/utf8.h"
 #include "ecs/scene.h"
 #include "ecs/component/animation/animation.h"
 #include "ecs/component/animation/animator.h"
@@ -34,51 +39,186 @@
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
+#include "ecs/component/ui/ui_scroll.h"
 #include "ecs/component/ui/ui_text.h"
 
 namespace Vkm::Engine {
 
-bool drawVec3Control(const char* label, float* values,
-                     float resetValue, float speed) {
+namespace {
+
+// The value's position in [lo, hi] as 0..1, mapped as ImGui maps a click (logarithmic too).
+float sliderShare(ImGuiDataType type, const void* v, const void* lo, const void* hi, ImGuiSliderFlags flags) {
+    double value = 0.0, low = 0.0, high = 0.0;
+    if (type == ImGuiDataType_S32) {
+        value = *static_cast<const int*>(v);
+        low   = *static_cast<const int*>(lo);
+        high  = *static_cast<const int*>(hi);
+    } else {
+        value = *static_cast<const float*>(v);
+        low   = *static_cast<const float*>(lo);
+        high  = *static_cast<const float*>(hi);
+    }
+    if (high == low) return 0.0f;
+    double share = (value - low) / (high - low);
+    if ((flags & ImGuiSliderFlags_Logarithmic) && low > 0.0 && high > 0.0 && value > 0.0)
+        share = std::log(value / low) / std::log(high / low);
+    return static_cast<float>(std::clamp(share, 0.0, 1.0));
+}
+
+} // namespace
+
+bool sliderScalar(
+    const char* id,
+    ImGuiDataType type,
+    void* v,
+    const void* lo,
+    const void* hi,
+    const char* format,
+    ImGuiSliderFlags flags
+) {
+    // Typed into, it is ImGui's own text field.
+    if (ImGui::TempInputIsActive(ImGui::GetCurrentWindow()->GetID(id)))
+        return ImGui::SliderScalar(id, type, v, lo, hi, format, flags);
+
+    // ImGui draws the frame; grab and text are drawn here, text last.
+    const ImVec4 clear(0.0f, 0.0f, 0.0f, 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_SliderGrab, clear);
+    ImGui::PushStyleColor(ImGuiCol_SliderGrabActive, clear);
+    ImGui::PushStyleColor(ImGuiCol_Text, clear);
+    const bool changed = ImGui::SliderScalar(id, type, v, lo, hi, format, flags);
+    ImGui::PopStyleColor(3);
+    if (!ImGui::IsItemVisible()) return changed;
+
+    // ImGui's grab track: two pixels in from each end, less the grab width (an int's one step).
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const ImVec2 min = ImGui::GetItemRectMin();
+    const ImVec2 max = ImGui::GetItemRectMax();
+    const float pad = 2.0f;
+    const float track = (max.x - min.x) - pad * 2.0f;
+    float grab = style.GrabMinSize;
+    if (type == ImGuiDataType_S32) {
+        const float steps = static_cast<float>(*static_cast<const int*>(hi) - *static_cast<const int*>(lo));
+        if (steps >= 0.0f) grab = std::max(track / (steps + 1.0f), style.GrabMinSize);
+    }
+    grab = std::min(grab, track);
+    const float edge = min.x + pad + grab * 0.5f
+        + sliderShare(type, v, lo, hi, flags) * (track - grab);
+
+    const bool lit = ImGui::IsItemActive() || ImGui::IsItemHovered();
+    ImDrawList* draw = ImGui::GetWindowDrawList();
+    ImVec4 fill = ImGui::GetStyleColorVec4(ImGuiCol_SliderGrab);
+    fill.w *= lit ? 0.50f : 0.36f;
+    draw->AddRectFilled(
+        min,
+        ImVec2(edge, max.y),
+        ImGui::GetColorU32(fill),
+        style.FrameRounding,
+        ImDrawFlags_RoundCornersLeft
+    );
+
+    char text[64];
+    const char* end = text + ImGui::DataTypeFormatString(text, IM_ARRAYSIZE(text), type, v, format);
+    ImGui::RenderTextClipped(min, max, text, end, nullptr, ImVec2(0.5f, 0.5f));
+    return changed;
+}
+
+bool beginCombo(const char* id, const char* preview, ImGuiComboFlags flags) {
+    ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_FrameBg));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::GetStyleColorVec4(ImGuiCol_FrameBgHovered));
+    const bool open = ImGui::BeginCombo(id, preview, flags);
+    ImGui::PopStyleColor(2);
+    return open;
+}
+
+bool comboList(const char* id, int* index, const char* const* labels, int count) {
+    const char* preview = (*index >= 0 && *index < count) ? labels[*index] : "?";
+    if (!beginCombo(id, preview)) return false;
+    bool changed = false;
+    for (int i = 0; i < count; ++i) {
+        const bool selected = (i == *index);
+        if (ImGui::Selectable(labels[i], selected) && !selected) {
+            *index  = i;
+            changed = true;
+        }
+        if (selected) ImGui::SetItemDefaultFocus();
+    }
+    ImGui::EndCombo();
+    return changed;
+}
+
+bool beginOverlayStrip(const char* id, ImVec2 size) {
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::OVERLAY_BG);
+    ImGui::PushStyleColor(ImGuiCol_Border, EditorStyle::OVERLAY_EDGE);
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, EditorStyle::overlayRounding());
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_WindowPadding,
+        ImVec2(EditorStyle::overlayPad(), EditorStyle::overlayPad())
+    );
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_ItemSpacing,
+        ImVec2(EditorStyle::overlayGap(), EditorStyle::overlayGap())
+    );
+    ImGuiChildFlags flags = ImGuiChildFlags_Borders;
+    if (size.x <= 0.0f) flags |= ImGuiChildFlags_AutoResizeX;
+    if (size.y <= 0.0f) flags |= ImGuiChildFlags_AutoResizeY;
+    return ImGui::BeginChild(
+        id,
+        size,
+        flags,
+        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
+    );
+}
+
+void endOverlayStrip() {
+    ImGui::EndChild();
+    ImGui::PopStyleVar(3);
+    ImGui::PopStyleColor(2);
+}
+
+bool drawVec3Control(const char* label, float* values, float resetValue, float speed, float lo, float hi) {
     bool changed = false;
     ImGui::PushID(label);
 
     float lineHeight = ImGui::GetFrameHeight();
-    ImVec2 buttonSize(lineHeight + EditorStyle::px(2.0f), lineHeight);
-    // Floored, because the share left over goes to zero on a narrow panel and the
-    // three drags disappear - a Transform card reduced to axis buttons with no
-    // number to drag. Overflowing is the lesser failure; the panel resizes.
-    float inputWidth = std::max((ImGui::GetContentRegionAvail().x - EditorStyle::labelWidth()
-                                 - buttonSize.x * 3 - ImGui::GetStyle().ItemSpacing.x * 5) / 3.0f,
-                                ImGui::GetFontSize() * 2.5f);
+    ImVec2 buttonSize(lineHeight * 0.8f, lineHeight);
+    // Floored, or the drags vanish on a narrow panel; overflowing is the lesser failure.
+    const float spareWidth = ImGui::GetContentRegionAvail().x - EditorStyle::labelWidth()
+        - buttonSize.x * 3 - ImGui::GetStyle().ItemSpacing.x * 5;
+    float inputWidth = std::max(spareWidth / 3.0f, ImGui::GetFontSize() * 2.5f);
 
-    // Column measured from the row's start (card-indent aware), like
-    // drawPropertyLabel.
-    const float startX = ImGui::GetCursorPosX();
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextUnformatted(label);
-    ImGui::SameLine(startX + EditorStyle::labelWidth());
+    // The full width drawPropertyLabel sets is spent on the X button.
+    drawPropertyLabel(label);
 
     static const struct {
         const char*   button;
         const char*   drag;
         const ImVec4& color;
         const ImVec4& hover;
-    } axes[3] = {
+    } AXES[3] = {
         { "X", "##X", EditorStyle::AXIS_X, EditorStyle::AXIS_X_HOV },
         { "Y", "##Y", EditorStyle::AXIS_Y, EditorStyle::AXIS_Y_HOV },
         { "Z", "##Z", EditorStyle::AXIS_Z, EditorStyle::AXIS_Z_HOV },
     };
 
+    // The button only shows on hover: solid RGB blocks on every row would be the loudest thing.
+    auto tint = [](ImVec4 c, float a) {
+        c.w = a;
+        return c;
+    };
     for (int i = 0; i < 3; ++i) {
-        ImGui::PushStyleColor(ImGuiCol_Button, axes[i].color);
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, axes[i].hover);
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, axes[i].hover);
-        if (ImGui::Button(axes[i].button, buttonSize)) { values[i] = resetValue; changed = true; }
-        ImGui::PopStyleColor(3);
+        ImGui::PushStyleColor(ImGuiCol_Text, AXES[i].hover);
+        ImGui::PushStyleColor(ImGuiCol_Button, tint(AXES[i].color, 0.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, tint(AXES[i].color, 0.25f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, tint(AXES[i].color, 0.40f));
+        if (ImGui::Button(AXES[i].button, buttonSize)) {
+            values[i] = resetValue;
+            changed = true;
+        }
+        ImGui::PopStyleColor(4);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Reset %s", AXES[i].button);
         ImGui::SameLine(0, EditorStyle::px(2.0f));
         ImGui::SetNextItemWidth(inputWidth);
-        changed |= ImGui::DragFloat(axes[i].drag, &values[i], speed, 0.0f, 0.0f, "%.2f");
+        changed |= ImGui::DragFloat(AXES[i].drag, &values[i], speed, lo, hi, "%.2f", PROP_CLAMP);
         if (i < 2) ImGui::SameLine(0, EditorStyle::px(6.0f));
     }
 
@@ -89,9 +229,8 @@ bool drawVec3Control(const char* label, float* values,
 void drawPropertyLabel(const char* label) {
     ImGui::AlignTextToFramePadding();
 
-    // A fixed column measured from the row's start, card indent included -
-    // measured from the window edge, a wide label inside an indented card slides
-    // under its widget. A long label ellipsizes rather than pushing the widget.
+    // Measured from the row's start, indent included, or a label in an indented card slides
+    // under its widget. A long label ellipsizes.
     const float startX = ImGui::GetCursorPosX();
     const float colW   = EditorStyle::labelWidth();
     const float maxW   = colW - ImGui::GetStyle().ItemSpacing.x;
@@ -120,36 +259,31 @@ void drawPropertyLabel(const char* label) {
 namespace {
 struct CardState {
     ImVec4 accent;
-    float  startY = 0.0f;   // body top, screen-space y
-    float  lineX  = 0.0f;   // left accent-line x, screen-space
-    int    frame  = 0;      // the ImGui frame that pushed it
+    float  startY = 0.0f;   ///< Body top, screen-space y.
+    float  lineX  = 0.0f;   ///< Left accent-line x, screen-space.
+    int    frame  = 0;      ///< The ImGui frame that pushed it.
     bool   open   = false;
 };
-// Accessor instead of a bare global, so the lifetime stays explicit.
-// thread_local because the only context where it is valid is the ImGui-owning
-// thread.
+
+// The cards begun and not yet ended; ImGui, and so every card, is on one thread.
 std::vector<CardState>& cardStack() {
-    thread_local std::vector<CardState> s;
-    return s;
+    static std::vector<CardState> s_cards;
+    return s_cards;
 }
-// A function, not a constant: px() reads the live font and there is no ImGui
-// context yet when a file-scope initializer runs.
+// A function: px() needs an ImGui context, absent when file-scope initializers run.
 float cardIndent() { return EditorStyle::px(14.0f); }
 
-// Tinted, accent-stripped CollapsingHeader (no body/end pairing). File-local -
-// only beginComponentCard below uses it.
-bool styledCollapsingHeader(const char* title, const ImVec4& accent,
-                            bool defaultOpen) {
+// Tinted, accent-stripped CollapsingHeader (no body/end pairing).
+bool styledCollapsingHeader(const char* title, const ImVec4& accent, bool defaultOpen) {
     ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_SpanAvailWidth
-                             | ImGuiTreeNodeFlags_AllowOverlap
-                             | ImGuiTreeNodeFlags_FramePadding;
+        | ImGuiTreeNodeFlags_AllowOverlap
+        | ImGuiTreeNodeFlags_FramePadding;
     if (defaultOpen) flags |= ImGuiTreeNodeFlags_DefaultOpen;
 
     ImGui::PushStyleColor(ImGuiCol_Header,        EditorStyle::CARD_HEADER);
     ImGui::PushStyleColor(ImGuiCol_HeaderHovered, EditorStyle::CARD_HEADER_HOV);
     ImGui::PushStyleColor(ImGuiCol_HeaderActive,  EditorStyle::CARD_HEADER_ACT);
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding,
-                        ImVec2(EditorStyle::px(8.0f), EditorStyle::px(7.0f)));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(EditorStyle::px(8.0f), EditorStyle::px(7.0f)));
     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, EditorStyle::px(4.0f));
 
     const bool open = ImGui::CollapsingHeader(title, flags);
@@ -161,17 +295,16 @@ bool styledCollapsingHeader(const char* title, const ImVec4& accent,
 
     // Accent strip welded to the header's left edge.
     ImGui::GetWindowDrawList()->AddRectFilled(
-        ImVec2(rMin.x, rMin.y), ImVec2(rMin.x + EditorStyle::px(3.0f), rMax.y),
-        ImGui::GetColorU32(accent));
+        ImVec2(rMin.x, rMin.y),
+        ImVec2(rMin.x + EditorStyle::px(3.0f), rMax.y),
+        ImGui::GetColorU32(accent)
+    );
     return open;
 }
 } // namespace
 
-bool beginComponentCard(const char* title, const ImVec4& accent,
-                        bool defaultOpen, bool* removeClicked) {
-    // A card whose end was skipped would otherwise sit on this stack for the
-    // rest of the session, shifting every later card's guide line. ImGui resets
-    // its own id and indent stacks per frame; this one follows.
+bool beginComponentCard(const char* title, const ImVec4& accent, bool defaultOpen, bool* removeClicked) {
+    // Reset per frame, as ImGui's stacks are, so a skipped end cannot shift later cards.
     std::vector<CardState>& stack = cardStack();
     if (!stack.empty() && stack.back().frame != ImGui::GetFrameCount()) stack.clear();
 
@@ -182,8 +315,7 @@ bool beginComponentCard(const char* title, const ImVec4& accent,
     const ImVec2 rMin = ImGui::GetItemRectMin();
 
     if (removeClicked) {
-        ImGui::SameLine(ImGui::GetContentRegionAvail().x
-                        + ImGui::GetCursorPosX() - EditorStyle::px(20.0f));
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x + ImGui::GetCursorPosX() - EditorStyle::px(20.0f));
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
         ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::DANGER);
         if (ImGui::SmallButton("x")) *removeClicked = true;
@@ -207,7 +339,7 @@ bool beginComponentCard(const char* title, const ImVec4& accent,
 
 void endComponentCard() {
     std::vector<CardState>& stack = cardStack();
-    // No matching begin, so there is no PushID of ours to pop either.
+    // No matching begin, so no PushID to pop.
     if (stack.empty()) return;
 
     const CardState st = stack.back();
@@ -217,46 +349,19 @@ void endComponentCard() {
         ImGui::Spacing();
         const float endY = ImGui::GetCursorScreenPos().y;
         ImGui::Unindent(cardIndent());
-        const ImU32 c = ImGui::GetColorU32(ImVec4(
-            st.accent.x, st.accent.y, st.accent.z, 0.30f));
+        const ImU32 c = ImGui::GetColorU32(ImVec4(st.accent.x, st.accent.y, st.accent.z, 0.30f));
         ImGui::GetWindowDrawList()->AddLine(
-            ImVec2(st.lineX, st.startY), ImVec2(st.lineX, endY), c,
-            EditorStyle::px(2.0f));
+            ImVec2(st.lineX, st.startY),
+            ImVec2(st.lineX, endY),
+            c,
+            EditorStyle::px(2.0f)
+        );
     }
     ImGui::PopID();
     ImGui::Spacing();
 }
 
-bool drawEasingCombo(const char* id, EasingFunction& easing) {
-    const int current = Easing::indexOf(easing);
-    ImGui::SetNextItemWidth(-1);
-    if (!ImGui::BeginCombo(id, Easing::EASINGS[current].name)) return false;
-
-    bool changed = false;
-    for (int i = 0; i < Easing::EASING_COUNT; ++i) {
-        const bool selected = (i == current);
-        if (ImGui::Selectable(Easing::EASINGS[i].name, selected)) {
-            easing = Easing::byIndex(i);
-            changed = true;
-        }
-        if (selected) ImGui::SetItemDefaultFocus();
-    }
-    ImGui::EndCombo();
-    return changed;
-}
-
 namespace {
-// Byte offsets of the next / previous character. Never land inside a UTF-8
-// sequence: a lone continuation byte renders as the font's replacement box.
-size_t utf8Next(const char* s, size_t i, size_t len) {
-    for (++i; i < len && (s[i] & 0xC0) == 0x80; ++i) {}
-    return i;
-}
-
-size_t utf8Prev(const char* s, size_t i) {
-    for (--i; i > 0 && (s[i] & 0xC0) == 0x80; --i) {}
-    return i;
-}
 
 /// Width of a line keeping [0, head) and [tail, len) with the ellipsis between.
 float keptWidth(const char* s, size_t head, size_t tail, size_t len) {
@@ -272,20 +377,110 @@ std::string elidedLine(const char* text, float maxWidth) {
     const size_t len    = std::strlen(str);
     const float  budget = maxWidth - ImGui::CalcTextSize("...").x;
 
-    // Grown one character in from each end in turn, so the two halves stay
-    // the same length whichever end the wide characters are at.
+    // Alternate ends, so the halves stay equal in characters; never cut inside a
+    // UTF-8 sequence, which renders a box.
+    const std::string_view view(str, len);
     size_t head = 0;
     size_t tail = len;
     for (;;) {
-        const size_t grownHead = utf8Next(str, head, len);
+        size_t grownHead = head;
+        Utf8::next(view, grownHead);
         if (grownHead >= tail || keptWidth(str, grownHead, tail, len) > budget) break;
         head = grownHead;
 
-        const size_t grownTail = utf8Prev(str, tail);
+        const size_t grownTail = Utf8::previous(view, tail);
         if (grownTail <= head || keptWidth(str, head, grownTail, len) > budget) break;
         tail = grownTail;
     }
     return std::string(str, head) + "..." + std::string(str + tail);
+}
+
+void emptyStateHeading(EditorIcon icon, const char* headline, const char* detail, int actionRows) {
+    const ImVec2 region    = ImGui::GetContentRegionAvail();
+    const float  glyphSize = EditorStyle::px(56.0f);
+    const float  lineH     = ImGui::GetTextLineHeightWithSpacing();
+    const float  blockH    = glyphSize + lineH * 2.0f
+        + ImGui::GetFrameHeight() * static_cast<float>(actionRows)
+        + EditorStyle::px(24.0f);
+    ImGui::Dummy(ImVec2(0.0f, std::max(0.0f, (region.y - blockH) * 0.35f)));
+
+    const ImVec2 cur = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(ImVec2(0.0f, glyphSize));
+    drawEditorIcon(
+        ImGui::GetWindowDrawList(),
+        icon,
+        ImVec2(cur.x + region.x * 0.5f, cur.y + glyphSize * 0.5f),
+        glyphSize * 0.40f,
+        ImGui::GetColorU32(ImGuiCol_TextDisabled)
+    );
+
+    ImGui::Spacing();
+    centreNextItem(ImGui::CalcTextSize(headline).x);
+    ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::HEADER_TEXT);
+    ImGui::TextUnformatted(headline);
+    ImGui::PopStyleColor();
+    // Wrapped, not clipped, when the panel is narrower than the line.
+    const float detailW = ImGui::CalcTextSize(detail).x;
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    if (detailW <= region.x) {
+        centreNextItem(detailW);
+        ImGui::TextUnformatted(detail);
+    } else {
+        ImGui::TextWrapped("%s", detail);
+    }
+    ImGui::PopStyleColor();
+    ImGui::Spacing();
+}
+
+void centreNextItem(float width) {
+    ImGui::SetCursorPosX(std::max(0.0f, (ImGui::GetContentRegionAvail().x - width) * 0.5f));
+}
+
+bool tileFace(
+    ImTextureID picture,
+    float face,
+    const ImVec4& accent,
+    EditorIcon glyph,
+    const ImVec4& glyphColor,
+    ImVec2& faceMin,
+    ImVec2& faceMax
+) {
+    faceMin = ImGui::GetCursorScreenPos();
+
+    const ImVec4 inert = ImGui::GetStyleColorVec4(ImGuiCol_Button);
+    ImGui::SetNextItemAllowOverlap();
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 0.0f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, inert);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, inert);
+    const bool clicked = picture
+        ? ImGui::ImageButton("##face", picture, ImVec2(face, face), ImVec2(0, 1), ImVec2(1, 0))
+        : ImGui::Button("##face", ImVec2(face, face));
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar();
+    faceMax = ImGui::GetItemRectMax();
+
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    if (ImGui::IsItemHovered()) {
+        dl->AddRect(faceMin, faceMax, ImGui::GetColorU32(accent), 0.0f, 0, EditorStyle::px(2.0f));
+    }
+    if (!picture) {
+        drawEditorIcon(
+            dl,
+            glyph,
+            ImVec2((faceMin.x + faceMax.x) * 0.5f, (faceMin.y + faceMax.y) * 0.5f),
+            face * 0.22f,
+            ImGui::GetColorU32(glyphColor)
+        );
+    }
+    return clicked;
+}
+
+void tileStrip(ImVec2 faceMin, ImVec2 faceMax, const ImVec4& color) {
+    ImGui::GetWindowDrawList()->AddRectFilled(
+        faceMin,
+        ImVec2(faceMin.x + EditorStyle::px(3.0f), faceMax.y),
+        ImGui::GetColorU32(color)
+    );
 }
 
 void clippedLine(const char* text, float maxWidth, bool dim) {
@@ -299,8 +494,11 @@ bool matchesFilter(const char* text, const char* filter) {
     for (const char* p = text; *p; ++p) {
         const char* s = filter;
         const char* t = p;
-        while (*s && *t && tolower(static_cast<unsigned char>(*s)) ==
-                            tolower(static_cast<unsigned char>(*t))) { ++s; ++t; }
+        while (*s && *t
+            && tolower(static_cast<unsigned char>(*s)) == tolower(static_cast<unsigned char>(*t))) {
+            ++s;
+            ++t;
+        }
         if (!*s) return true;
     }
     return false;
@@ -308,40 +506,40 @@ bool matchesFilter(const char* text, const char* filter) {
 
 namespace {
 
-// What kind of thing an entity is, answered once for both the label the
-// hierarchy shows and the glyph beside it. Two ladders over the same components
-// diverge by a row, and the row they diverge by is the one a reader sees: a
-// glyph that says "UI widget" beside the text "Entity 12", which the
-// inspector's "name this entity" button then bakes into a real Name.
-//
-// Stays a hand-written ladder rather than a component->row table: a Light's
-// answer comes from its inner type, and a Mesh carrying an Animation reads
-// "Animated Mesh" while keeping the plain mesh glyph. Order is precedence.
 struct EntityLabel {
     const char* name;
     EditorIcon  icon;
 };
 
+// One row per LightType, in order; the viewport marker wears the same glyph.
+constexpr EntityLabel LIGHT_LABELS[] = {
+    {"Dir Light",   EditorIcon::LightDir},
+    {"Point Light", EditorIcon::LightPoint},
+    {"Spot Light",  EditorIcon::LightSpot},
+    {"Rect Light",  EditorIcon::LightRect},
+    {"Disk Light",  EditorIcon::LightDisk},
+};
+static_assert(
+    std::size(LIGHT_LABELS) == static_cast<size_t>(LightType::Count),
+    "every light type needs a label and a glyph"
+);
+
+EntityLabel lightLabelOf(LightType type) {
+    const auto index = static_cast<size_t>(type);
+    return index < std::size(LIGHT_LABELS)
+        ? LIGHT_LABELS[index]
+        : EntityLabel{"Light", EditorIcon::LightPoint};
+}
+
+// Order is precedence. A Light answers by its type, and a Mesh carrying an
+// Animation reads "Animated Mesh" while keeping the plain mesh glyph.
 EntityLabel entityLabelOf(const Scene& scene, EntityId id) {
-    // Above everything: an instance is a prefab whatever else it carries, and that
-    // is what constrains how it may be edited. Only the root holds one; PrefabEntity
-    // is on every entity in the subtree and would identify nothing.
+    // First: being a prefab constrains editing. Only the root holds PrefabInstance;
+    // PrefabEntity is on the whole subtree.
     if (scene.has<PrefabInstance>(id)) return {"Prefab", EditorIcon::Prefab};
     if (scene.has<Camera>(id)) return {"Camera", EditorIcon::Camera};
-    if (scene.has<Light>(id)) {
-        switch (scene.get<Light>(id).type) {
-            case LightType::Directional: return {"Dir Light",   EditorIcon::LightDir};
-            case LightType::Point:       return {"Point Light", EditorIcon::LightPoint};
-            case LightType::Spot:        return {"Spot Light",  EditorIcon::LightSpot};
-            case LightType::Rect:        return {"Rect Light",  EditorIcon::LightRect};
-            case LightType::Disk:        return {"Disk Light",  EditorIcon::LightDisk};
-            case LightType::Count:       break;  // enum-size sentinel, never stored
-        }
-        return {"Light", EditorIcon::LightPoint};
-    }
-    // Before Mesh: an entity carrying an Animator is the rig whatever else it
-    // holds, and its meshes are the entities under it. A socket reads the same
-    // way - where a sword is attached is what someone is looking for.
+    if (const Light* light = scene.tryGet<Light>(id)) return lightLabelOf(light->type);
+    // Before Mesh: an Animator makes it the rig (its meshes are children); a socket likewise.
     if (scene.has<Animator>(id)) return {"Rig", EditorIcon::Anim};
     if (scene.has<BoneSocket>(id)) return {"Socket", EditorIcon::Socket};
     if (scene.has<Mesh>(id)) {
@@ -354,20 +552,19 @@ EntityLabel entityLabelOf(const Scene& scene, EntityId id) {
     if (scene.has<IrradianceVolume>(id)) return {"GI Volume", EditorIcon::Volume};
     if (scene.has<Decal>(id))            return {"Decal",     EditorIcon::Decal};
     if (scene.has<ParticleEmitter>(id))  return {"Emitter",   EditorIcon::Particle};
-    if (scene.has<AudioSource>(id)) {
-        return scene.get<AudioSource>(id).spatial
+    if (const AudioSource* source = scene.tryGet<AudioSource>(id)) {
+        return source->spatial
             ? EntityLabel{"Sound",    EditorIcon::Audio}
             : EntityLabel{"2D Sound", EditorIcon::Audio2D};
     }
     if (scene.has<AudioListener>(id))    return {"Listener",  EditorIcon::Listener};
     if (scene.has<UIButton>(id))         return {"Button",    EditorIcon::UIButton};
     if (scene.has<UIText>(id))           return {"Text",      EditorIcon::UIText};
+    if (scene.has<UIScroll>(id))         return {"Scroll",    EditorIcon::UIScroll};
     if (scene.has<UIImage>(id))          return {"Panel",     EditorIcon::UIImage};
     if (scene.has<UICanvas>(id))         return {"Canvas",    EditorIcon::UICanvas};
     if (scene.has<UIElement>(id))        return {"Widget",    EditorIcon::UIWidget};
-    // Physics rows sit below the visual ones on purpose: a crate keeps its mesh
-    // glyph however it collides, and these catch what has no other face - a
-    // character capsule, a ragdoll's bones, an invisible blocker.
+    // Below the visual rows: a crate keeps its mesh glyph; these catch what has no other face.
     if (scene.has<CharacterController>(id)) return {"Character", EditorIcon::Character};
     if (scene.has<Ragdoll>(id))          return {"Ragdoll",   EditorIcon::Ragdoll};
     if (scene.has<Joint>(id))            return {"Jointed Body", EditorIcon::Joint};
@@ -378,28 +575,21 @@ EntityLabel entityLabelOf(const Scene& scene, EntityId id) {
 
 } // namespace
 
-void getEntityDisplayName(const Scene& scene, EntityId id,
-                          char* buf, size_t bufSize) {
-    if (scene.has<Name>(id)) {
-        const auto& name = scene.get<Name>(id);
-        if (name.value[0] != '\0') {
-            snprintf(buf, bufSize, "%s", name.value);
-            return;
-        }
+void getEntityDisplayName(const Scene& scene, EntityId id, char* buf, size_t bufSize) {
+    const Name* name = scene.tryGet<Name>(id);
+    if (name && name->value[0] != '\0') {
+        snprintf(buf, bufSize, "%s", name->value);
+        return;
     }
     snprintf(buf, bufSize, "%s %u", entityLabelOf(scene, id).name, id.slot());
 }
 
 namespace {
-// One source of truth for the entity-row glyph size, so the reserved
-// label space and the drawn icon always agree.
-float rowIconRadius() { return ImGui::GetFontSize() * 0.62f; }
+// Shared by the reserved label space and the drawn icon.
+float rowIconRadius() { return ImGui::GetFontSize() * 0.52f; }
 
-// Leading spaces that clear the glyph, so a row's text starts to the
-// right of the icon drawn into that gap. An optional id keeps ImGui ids
-// stable when names collide.
-void iconPaddedLabel(char* out, size_t n, const char* name,
-                     const char* idStr) {
+// Leading spaces that clear the glyph; an optional id keeps ImGui ids stable when names collide.
+void iconPaddedLabel(char* out, size_t n, const char* name, const char* idStr) {
     const float sw = ImGui::CalcTextSize(" ").x;
     int pad = (sw > 0.0f)
         ? static_cast<int>((rowIconRadius() * 2.0f + EditorStyle::px(6.0f)) / sw) + 1 : 4;
@@ -413,9 +603,13 @@ void iconPaddedLabel(char* out, size_t n, const char* name,
 }
 void drawRowGlyph(EditorIcon ic, float startX, ImVec2 rmin, float rh) {
     const float iconR = rowIconRadius();
-    drawEditorIcon(ImGui::GetWindowDrawList(), ic,
-        ImVec2(startX + iconR, rmin.y + rh * 0.5f), iconR,
-        ImGui::GetColorU32(ImGuiCol_Text));
+    drawEditorIcon(
+        ImGui::GetWindowDrawList(),
+        ic,
+        ImVec2(startX + iconR, rmin.y + rh * 0.5f),
+        iconR,
+        ImGui::GetColorU32(ImGuiCol_Text)
+    );
 }
 } // namespace
 
@@ -423,18 +617,36 @@ EditorIcon entityIconKind(const Scene& scene, EntityId id) {
     return entityLabelOf(scene, id).icon;
 }
 
+EditorIcon lightIcon(LightType type) {
+    return lightLabelOf(type).icon;
+}
+
 void inlineIcon(EditorIcon icon, float size, ImU32 color) {
     const ImVec2 p = ImGui::GetCursorScreenPos();
     ImGui::Dummy(ImVec2(size, size));
-    drawEditorIcon(ImGui::GetWindowDrawList(), icon,
-        ImVec2(p.x + size * 0.5f, p.y + size * 0.5f), size * 0.40f, color);
+    drawEditorIcon(
+        ImGui::GetWindowDrawList(),
+        icon,
+        ImVec2(p.x + size * 0.5f, p.y + size * 0.5f),
+        size * 0.40f,
+        color
+    );
 }
 
-bool entityTreeNode(const void* idPtr, ImGuiTreeNodeFlags flags,
-                    EditorIcon icon, const char* name) {
+bool entityTreeNode(const void* idPtr, ImGuiTreeNodeFlags flags, EditorIcon icon, const char* name) {
     char label[96];
     iconPaddedLabel(label, sizeof(label), name, nullptr);
+    // Touching rows read as one list and fit more.
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_FramePadding,
+        ImVec2(ImGui::GetStyle().FramePadding.x, EditorStyle::px(3.0f))
+    );
+    ImGui::PushStyleVar(
+        ImGuiStyleVar_ItemSpacing,
+        ImVec2(ImGui::GetStyle().ItemSpacing.x, EditorStyle::px(1.0f))
+    );
     const bool open = ImGui::TreeNodeEx(const_cast<void*>(idPtr), flags, "%s", label);
+    ImGui::PopStyleVar(2);
     const ImVec2 rmin = ImGui::GetItemRectMin();
     const float  rh   = ImGui::GetItemRectSize().y;
     drawRowGlyph(icon, rmin.x + ImGui::GetTreeNodeToLabelSpacing(), rmin, rh);
@@ -450,8 +662,7 @@ bool iconMenuItem(EditorIcon icon, const char* label, const char* shortcut, bool
     return pressed;
 }
 
-bool entitySelectable(const char* idStr, bool selected,
-                      EditorIcon icon, const char* name) {
+bool entitySelectable(const char* idStr, bool selected, EditorIcon icon, const char* name) {
     char label[96];
     iconPaddedLabel(label, sizeof(label), name, idStr);
     const ImVec2 p = ImGui::GetCursorScreenPos();

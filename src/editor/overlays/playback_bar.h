@@ -6,36 +6,67 @@ struct EditorContext;
 class SceneIOController;
 
 /**
- * @brief Top-centre simulation HUD (Play/Pause, Step, Stop) with play mode.
+ * @brief Top-centre simulation HUD (Play/Pause, Step, Stop, Eject) with play mode.
  *
- * A small floating icon bar in the viewport (same look as the bottom-left
- * tool box) that drives play mode + the engine's Clock:
- *  - Edit mode (no snapshot): Play captures a scene snapshot, then runs the
- *    Clock so physics/animation/scripts tick. Step enters a paused
- *    play session and advances one fixed tick.
- *  - Play mode (snapshot held): Play/Pause toggles the clock; Step advances
- *    one fixed tick while paused; Stop restores the snapshot and returns to
- *    Edit mode - undoing every transform/spawn the simulation made.
+ * Play snapshots the scene and runs the Clock; Step enters a paused session and advances
+ * one tick; Stop restores the snapshot; Eject toggles the editor's view of the game.
  *
- * Pause, Resume and Step also hold and release the voices the mixer is playing,
- * which the Clock cannot do for them: audio runs off the frame rather than off
- * simulation time, so that a shipped game's pause menu keeps its music. Here
- * the world was frozen to be looked at, so the bar reaches the device itself.
- * A step is a pause with one tick in the middle, so it ends the way a pause
- * does - what the tick set going is heard for that tick and then held.
- *
- * The snapshot + restore live on SceneIOController (a restore is just an
- * in-memory reload), so the bar drives play mode through it.
+ * Pause, Resume and Step also hold and release mixer voices, since audio runs off the
+ * frame, not simulation time. A step ends like a pause: its tick is heard, then held.
  */
 class PlaybackBar {
     public:
-        void draw(EditorContext& ec, SceneIOController& sceneIO);
+        PlaybackBar() = default;
+        ~PlaybackBar() = default;
+
+        PlaybackBar(const PlaybackBar& other) = delete;
+        PlaybackBar& operator=(const PlaybackBar& other) = delete;
+
+        PlaybackBar(PlaybackBar && other) = delete;
+        PlaybackBar& operator=(PlaybackBar && other) = delete;
+
+    public:
+        /**
+         * @brief Draw the bar, and the play-mode frame and caption while a session runs.
+         *
+         * Centred on the viewport, within the span the other top-row overlays leave free.
+         *
+         * @param ec      The frame's editor context.
+         * @param sceneIO The session the buttons drive.
+         * @param left    The free span's left end, in viewport coordinates.
+         * @param right   Its right end.
+         */
+        void draw(EditorContext& ec, SceneIOController& sceneIO, float left, float right);
 
         /**
-         * @brief True while the mouse is over the bar (so the viewport does not
-         * also treat the click as a pick / camera input).
+         * @brief Answer the transport keybinds: Play / Stop, Pause / Resume, Eject / Return.
+         *
+         * Runs even when the bar is hidden or the game has the keyboard - they are the way
+         * out of a session that grabbed the cursor; the caller asks
+         * InputOwnership::editorHasSessionKeys first. None repeats while held. A game bound
+         * to the same keys sees them first; a pause withdraws only the edges latched for the
+         * next tick.
+         *
+         * @param ec For the keybinds, the clock and the input.
+         * @param sceneIO The session the keys drive.
+         */
+        void processKeys(EditorContext& ec, SceneIOController& sceneIO);
+
+        /**
+         * @brief Whether the mouse was over the bar as last drawn.
+         *
+         * @return True over it, so the viewport does not also take the click.
          */
         bool isHovered() const { return m_hovered; }
+
+    private:
+        /**
+         * @brief The first button: start a running session, or pause or resume the current one.
+         *
+         * @param ec For the clock and the audio device.
+         * @param sceneIO Snapshots a start.
+         */
+        void playOrPause(EditorContext& ec, SceneIOController& sceneIO);
 
     private:
         bool m_hovered = false;
@@ -43,10 +74,7 @@ class PlaybackBar {
         /**
          * @brief Whether a stepped tick has been queued and not yet held.
          *
-         * Set when Step queues the tick, read on the next draw - by which time
-         * the Clock has fed the step, the systems have run against it and any
-         * voice it started exists. There is no earlier moment: the bar draws in
-         * the UI stage, after the frame it is asking for has already happened.
+         * Read on the next draw, the first moment the tick has run and its voices exist.
          */
         bool m_stepPending = false;
 };

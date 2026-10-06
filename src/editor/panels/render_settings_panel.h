@@ -5,13 +5,10 @@ namespace Vkm::Engine {
 struct EditorContext;
 
 /**
- * @brief Render Settings window: pass toggles + per-effect tuning.
+ * @brief Render Settings window: pass toggles, per-effect tuning and culling thresholds.
  *
- * A floating, closeable window (Window > Render Settings) that edits the
- * RenderSystem's live RenderSettings - debug view, GTAO, bloom,
- * shadows and reflection probes - plus the VisibilitySystem culling
- * thresholds. Immediate-apply (no command stack); these are render/app
- * config, not scene edits.
+ * Edits the live RenderSettings immediately, outside the command stack; only Bake All
+ * Probes edits the scene, as an undoable step.
  */
 class RenderSettingsPanel {
     public:
@@ -26,13 +23,14 @@ class RenderSettingsPanel {
 
     public:
         /**
-         * @brief Draws the window while state.showRenderSettings is true; the
-         * title-bar X clears it.
+         * @brief Draw the window while EditorState::showRenderSettings is set; the title-bar X clears it.
+         *
+         * @param ec Context whose RenderSettings are edited.
          */
         void draw(EditorContext& ec);
 
     private:
-        bool m_confirmReset = false;  ///< Reset-to-defaults dialog intent.
+        bool m_confirmReset = false;  ///< Reset-to-defaults dialog is open.
 };
 
 } // namespace Vkm::Engine

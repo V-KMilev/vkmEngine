@@ -20,96 +20,148 @@
 #include "debug/engine_error_log.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
-#include "framework/editor_context.h"
-#include "framework/editor_settings.h"
+#include "chrome/dock_layout.h"
+#include "chrome/editor_status_bar.h"
+#include "panels/errors_panel.h"
+#include "editor_context.h"
+#include "editor_settings.h"
 #include "input/editor_keybinds.h"
+#include "input/editor_shortcuts.h"
 #include "ui/editor_style.h"
 #include "ui/editor_dialogs.h"
 #include "ui/editor_icons.h"
 #include "platform/window/window_manager.h"
-#include "system/camera/camera_controller_system.h"
+#include "system/audio/audio_system.h"
+#include "input/camera_controller_system.h"
 #include "system/splash/splash_frame.h"
-#include "system/ui/ui_system.h"
+#include "system/ui/ui_draw_data.h"
 #include "system/render/render_system.h"
-#include "system/render/editor_render_hooks.h"
 #include "system/script/script_module.h"
-#include "system/render/render_view.h"
 #include "ui/editor_theme.h"
 #include "io/project_paths.h"
+#include "session/project_controller.h"
 
 namespace Vkm::Engine {
+
+namespace {
+
+/**
+ * @brief Load the text and icon fonts at their unscaled design size.
+ *
+ * Not pre-multiplied by a scale: ImGui rasterises a glyph at the size it is drawn,
+ * so the declared size is a base and the scale factors below apply per frame.
+ * A failure leaves the ImGui default font and square icon placeholders.
+ */
+void buildEditorFonts() {
+    ImGuiIO& io = ImGui::GetIO();
+
+    static std::string s_fontPath =
+        (ProjectPaths::engineFonts() / "Roboto-Medium.ttf").string();
+    if (!io.Fonts->AddFontFromFileTTF(s_fontPath.c_str(), EditorStyle::REFERENCE_FONT_SIZE)) {
+        LOG_WARNING("Editor font %s failed to load; using the ImGui default", s_fontPath.c_str());
+    }
+
+    static std::string s_iconPath =
+        (ProjectPaths::engineFonts() / "lucide.ttf").string();
+    if (!loadEditorIconFont(s_iconPath.c_str())) {
+        LOG_WARNING("Icon font %s failed to load; icons will draw as placeholders", s_iconPath.c_str());
+    }
+}
+
+/**
+ * @brief The two factors the editor's size is the product of.
+ *
+ * Kept apart because they change at different times: the display's moves with the
+ * window, the user's is where somebody disagrees with it.
+ */
+struct UiScale {
+    float dpi  = 1.0f;
+    float user = 1.0f;
+
+    float product() const { return dpi * user; }
+};
+
+/**
+ * @brief Read the display's content scale and fold the user's multiplier in.
+ *
+ * Cheap and side-effect free, so a caller can ask every frame.
+ *
+ * @param window Window whose content scale gives the display's factor.
+ * @param userScale The user's multiplier, which Preferences holds in range.
+ * @return Both factors.
+ */
+UiScale resolveUiScale(GLFWwindow* window, float userScale) {
+    float scaleX = 1.0f, scaleY = 1.0f;
+    glfwGetWindowContentScale(window, &scaleX, &scaleY);
+    // Clamped at 1: below it would shrink the font rather than leave it alone.
+    return UiScale{std::max(scaleX, 1.0f), userScale};
+}
+
+/**
+ * @brief Put @p scale into effect for the frames that follow.
+ *
+ * The theme is re-applied with their product because ImGui's own metrics are
+ * absolute pixels that do not follow the font; what the editor draws itself does,
+ * through EditorStyle::px().
+ *
+ * @param scale The factors to install.
+ */
+void applyUiScale(const UiScale& scale) {
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.FontScaleDpi  = scale.dpi;
+    style.FontScaleMain = scale.user;
+
+    applyEditorTheme(scale.product());
+}
+
+} // namespace
 
 EditorSystem::EditorSystem(
     GLFWwindow* window,
     CameraControllerSystem& cameraController,
-    VisibilitySystem& visibilitySystem,
     RenderSystem& renderSystem,
+    RenderSettings& render,
     AudioSystem& audioSystem,
+    BehaviorSystem& behaviorSystem,
     ScriptModule& scriptModule
 )
     : m_cameraController(cameraController)
     , m_renderSystem(renderSystem)
-    , m_visibilitySystem(visibilitySystem)
+    , m_render(render)
     , m_audioSystem(audioSystem)
+    , m_behaviorSystem(behaviorSystem)
     , m_scriptModule(scriptModule)
     , m_materialPreviews(renderSystem)
-    , m_sceneIO(cameraController, m_materialPreviews)
+    , m_sceneIO(cameraController, m_materialPreviews, behaviorSystem)
 {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
 
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    // Floating windows (Preferences, Render Settings) move only by their
-    // title bar - dragging inside the body must not drag the window, so a
-    // drag that means something to the content stays with the content.
+    // Multi-viewport stays off: a panel dragged out would be a second GLFW window
+    // with its own context to share, for a layout the dockspace already gives.
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+    // Windows move by title bar only, so a drag on the content stays with the content.
     io.ConfigWindowsMoveFromTitleBarOnly = true;
 
-    // Under the user root (see docs/reference/system/io.md, "Which root owns a
-    // path"), and static because ImGui holds the c_str for its whole lifetime -
-    // a project-rooted path would go stale on the next Open Project anyway.
+    // Static because ImGui holds the c_str for its lifetime. User root: see
+    // docs/reference/io.md, "Which root owns a path".
     static std::string s_iniPath = (ProjectPaths::userRoot() / "imgui.ini").string();
     io.IniFilename = s_iniPath.c_str();
+    // Otherwise ImGui writes a log into the working directory.
+    io.LogFilename = nullptr;
 
-    // A real TTF instead of ImGui's 13 px bitmap default; Roboto Medium already
-    // ships with the engine, so the editor reuses it. Sized against the window's
-    // content scale so text stays crisp on HiDPI displays.
-    float scaleX = 1.0f, scaleY = 1.0f;
-    glfwGetWindowContentScale(window, &scaleX, &scaleY);
-    // Clamped at 1 because a scale below it would shrink the font rather than
-    // leave it alone. The theme reads the same number, so chrome and text are
-    // never scaled by two different ones.
-    const float uiScale = std::max(scaleX, 1.0f);
-    {
-        const float fontSize = std::floor(15.0f * uiScale);
-        static std::string s_fontPath =
-            (ProjectPaths::engineFonts() / "Roboto-Medium.ttf").string();
-        if (!io.Fonts->AddFontFromFileTTF(s_fontPath.c_str(), fontSize)) {
-            LOG_WARNING("Editor font %s failed to load; using the ImGui default",
-                        s_fontPath.c_str());
-        }
-
-        // The icon font (Lucide). It ships with the engine, so a failure means
-        // the file was removed; the editor still runs, with square placeholders.
-        static std::string s_iconPath =
-            (ProjectPaths::engineFonts() / "lucide.ttf").string();
-        if (!loadEditorIconFont(s_iconPath.c_str())) {
-            LOG_WARNING("Icon font %s failed to load; icons will draw as placeholders",
-                        s_iconPath.c_str());
-        }
-    }
-
-    applyEditorTheme(uiScale);
-
-    // The grid defaults off engine-wide (it is an editor aid); the editor wants
-    // it on out of the box. Set before init() reads the project's settings, so
-    // a persisted value still wins.
-    m_renderSystem.getSettings().grid = true;
+    buildEditorFonts();
+    // EditorSettings::loadUser runs in init(), so this is the display's scale;
+    // update() installs the user's on the first frame.
+    const UiScale scale = resolveUiScale(window, m_state.prefs.uiScale);
+    applyUiScale(scale);
+    m_appliedUiScale = scale.product();
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init("#version 430");
+    ImGui_ImplOpenGL3_Init(("#version " + std::to_string(OPENGL_GLSL_VERSION)).c_str());
 
-    // Capture engine-reported recoverable errors into our log for the Errors tab.
     setErrorSink(&m_errorLog);
 
     LOG_INFO("Initialized");
@@ -118,7 +170,12 @@ EditorSystem::EditorSystem(
 void EditorSystem::shutdown() {
     LOG_TRACE("Shutting down, saving settings");
     setErrorSink(nullptr);
-    EditorSettings::save(m_state, m_renderSystem.getSettings());
+    if (m_state.projectOpen) {
+        m_sceneIO.rememberView(m_state);
+        EditorSettings::save(m_state, m_render);
+    } else {
+        EditorSettings::saveUser(m_state);
+    }
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
@@ -126,11 +183,16 @@ void EditorSystem::shutdown() {
 
 void EditorSystem::init(FrameContext& ctx) {
     EditorContext ec = makeContext(ctx);
-    // Kept: without a project every path the editor composes resolves against
-    // the engine's own directory, so it shows a picker rather than a workspace.
-    m_hasProject = m_project.open(ec, m_scriptModule, m_sceneIO,
-                                  ProjectPaths::projectRoot().string(),
-                                  ProjectController::OpenKind::Startup);
+    EditorSettings::loadUser(m_state);
+    // Without a project every path resolves against the engine's own directory,
+    // so the editor shows a picker rather than a workspace.
+    ProjectController::open(
+        ec,
+        m_scriptModule,
+        m_sceneIO,
+        ProjectPaths::projectRoot().string(),
+        ProjectController::OpenKind::Startup
+    );
 }
 
 EditorContext EditorSystem::makeContext(FrameContext& ctx) {
@@ -139,7 +201,6 @@ EditorContext EditorSystem::makeContext(FrameContext& ctx) {
         m_state,
         m_cameraController,
         m_renderSystem,
-        m_visibilitySystem,
         m_materialPreviews,
         m_audioSystem,
         m_errorLog,
@@ -154,12 +215,10 @@ void EditorSystem::resolveSceneAction(EditorContext& ec) {
 
     switch (state.actionStage) {
         case EditorState::ActionStage::Ask:
-            // Nothing to lose: a scene with no unsaved edits needs no prompt.
             if (!state.sceneDirty) state.actionStage = EditorState::ActionStage::Run;
             break;
         case EditorState::ActionStage::Saving:
-            // The Save answer either lands, or the author backs out of the
-            // Save-As it opened - which withdraws the action along with it.
+            // Backing out of the Save-As the answer opened withdraws the action.
             if (!state.sceneDirty) state.actionStage = EditorState::ActionStage::Run;
             else if (!m_sceneIO.isSaveDialogActive()) state.clearSceneAction();
             break;
@@ -174,8 +233,11 @@ void EditorSystem::resolveSceneAction(EditorContext& ec) {
     performSceneAction(ec, action, payload);
 }
 
-void EditorSystem::performSceneAction(EditorContext& ec, EditorState::SceneAction action,
-                                      const std::string& payload) {
+void EditorSystem::performSceneAction(
+    EditorContext& ec,
+    EditorState::SceneAction action,
+    const std::string& payload
+) {
     switch (action) {
         case EditorState::SceneAction::Quit:
             ec.frame.window.requestClose();
@@ -187,12 +249,13 @@ void EditorSystem::performSceneAction(EditorContext& ec, EditorState::SceneActio
             m_sceneIO.loadPath(ec.frame, ec.state, payload);
             break;
         case EditorState::SceneAction::OpenProject:
-            // Kept, like the startup open: a failed switch leaves the editor
-            // where it was, and a first successful one is what turns the picker
-            // into a workspace.
-            m_hasProject = m_project.open(ec, m_scriptModule, m_sceneIO, payload,
-                                          ProjectController::OpenKind::Switch)
-                        || m_hasProject;
+            ProjectController::open(
+                ec,
+                m_scriptModule,
+                m_sceneIO,
+                payload,
+                ProjectController::OpenKind::Requested
+            );
             break;
         case EditorState::SceneAction::None:
             break;
@@ -204,14 +267,9 @@ namespace {
 /**
  * @brief One ImGui frame: NewFrame on the way in, Render and submit on the way out.
  *
- * `NewFrame` and `Render` are a pair, and update() has three exits - a splash
- * covering the whole surface, the editor hidden behind its toggle, and the
- * ordinary one. A missed `Render` leaves a half-open frame that the next
- * `NewFrame` asserts on, so the pairing is a scope rather than a line each exit
- * remembers to write.
- *
- * The submit sits at the end of the editor's own stage, which runs after
- * RenderSystem drew the scene: that is what puts the UI on top of it.
+ * A missed `Render` leaves a half-open frame the next `NewFrame` asserts on, so the
+ * pairing is a scope. The submit lands after RenderSystem drew the scene, so the UI
+ * is on top.
  */
 class ImGuiFrame {
     public:
@@ -243,277 +301,385 @@ void drawToast(EditorState& state, float deltaTime) {
         return;
     }
 
-    // Fade the last 0.4s so the toast doesn't pop out.
+    // Fade the last 0.4s rather than pop out.
     const float alpha = std::min(1.0f, state.toastTimeRemaining / 0.4f);
 
     ImVec4 bg;
     switch (state.toastKind) {
-        case EditorState::ToastKind::Error:   bg = EditorStyle::TOAST_ERROR_BG;   break;
-        case EditorState::ToastKind::Warning: bg = EditorStyle::TOAST_WARNING_BG; break;
-        default:                              bg = EditorStyle::TOAST_INFO_BG;    break;
+        case ToastKind::Error:   bg = EditorStyle::TOAST_ERROR_BG;   break;
+        case ToastKind::Warning: bg = EditorStyle::TOAST_WARNING_BG; break;
+        default:                 bg = EditorStyle::TOAST_INFO_BG;    break;
     }
     bg.w = 0.95f * alpha;
 
+    // Above the status bar rather than over it.
     const ImGuiViewport* vp = ImGui::GetMainViewport();
-    const float pad = 12.0f;
-    ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + pad,
-                                    vp->WorkPos.y + vp->WorkSize.y - pad),
-                            ImGuiCond_Always, ImVec2(0.0f, 1.0f));
+    const float pad = EditorStyle::px(12.0f);
+    ImGui::SetNextWindowPos(
+        ImVec2(vp->WorkPos.x + pad, vp->WorkPos.y + vp->WorkSize.y - pad - EditorStatusBar::height()),
+        ImGuiCond_Always,
+        ImVec2(0.0f, 1.0f)
+    );
     ImGui::PushStyleColor(ImGuiCol_WindowBg, bg);
     ImGui::PushStyleColor(ImGuiCol_Text,     ImVec4(1.0f, 1.0f, 1.0f, alpha));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, EditorStyle::px(6.0f));
-    ImGui::Begin("##Toast", nullptr,
-        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
-        ImGuiWindowFlags_NoInputs     | ImGuiWindowFlags_NoFocusOnAppearing |
-        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
+    const ImGuiWindowFlags toastFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove
+        | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoFocusOnAppearing
+        | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
+    ImGui::Begin("##Toast", nullptr, toastFlags);
     ImGui::TextUnformatted(state.toastMessage.c_str());
     ImGui::End();
-    ImGui::PopStyleVar();
     ImGui::PopStyleColor(2);
 }
 
-// The single writer of the window title: "<project> - <file> [*] - vkmEngine".
-// One place owns the format - anything else setting the title is overwritten
-// here on the next frame. Compared against its own last output so the GLFW
-// call happens only when the content actually changed.
-void syncWindowTitle(WindowManager& window, const std::string& project,
-                     const std::string& path, bool dirty) {
-    static std::string s_last;
-    const std::string fname = path.empty()
-        ? "untitled" : std::filesystem::path(path).filename().string();
-    std::string title = (project.empty() ? std::string() : project + " - ")
-                      + fname + (dirty ? " *" : "") + " - vkmEngine";
-    if (title != s_last) {
-        window.setTitle(title);
-        s_last = std::move(title);
-    }
+// Compared against its last write's inputs, so an unchanged title builds no
+// string and calls no GLFW.
+void syncWindowTitle(WindowManager& window, const std::string& project, const std::string& path, bool dirty) {
+    static std::string s_project;
+    static std::string s_path;
+    static int         s_dirty = -1;   // neither answer, so the first call writes
+    if (project == s_project && path == s_path && static_cast<int>(dirty) == s_dirty) return;
+    s_project = project;
+    s_path    = path;
+    s_dirty   = dirty ? 1 : 0;
+
+    const std::string fname = path.empty() ? "untitled" : std::filesystem::path(path).filename().string();
+    const std::string prefix = project.empty() ? std::string() : project + " - ";
+    window.setTitle(prefix + fname + (dirty ? " *" : "") + " - vkmEngine");
 }
 } // namespace
 
-void EditorSystem::update(FrameContext& ctx) {
-    PROFILE_SCOPE("EditorSystem");
+void EditorSystem::applyUiScaleIfMoved(FrameContext& ctx) {
+    const UiScale scale = resolveUiScale(ctx.window.getWindowContext(), m_state.prefs.uiScale);
+    if (scale.product() == m_appliedUiScale) return;
+    applyUiScale(scale);
+    m_appliedUiScale = scale.product();
+}
 
-    EditorContext ec = makeContext(ctx);
+void EditorSystem::applyPreferences(FrameContext& ctx) {
+    const Preferences& prefs = m_state.prefs;
+    m_cameraController.setSettings(prefs.camera);
 
-    // Taken every frame either way, so a session's own flying does not sit in
-    // the flag until the next Stop; see docs/reference/editor.md, "Flying the
-    // camera is an edit".
-    const bool cameraMoved = m_cameraController.takeCameraMoved();
-    if (cameraMoved && !m_sceneIO.isPlaying()) m_state.markSceneDirty();
+    WindowManager& window = ctx.window;
+    if (m_sceneIO.isPlaying() || !window.isOpen()) return;
+    if (window.vsync() != prefs.vsync)     window.setVSync(prefs.vsync);
+    if (window.mode() != prefs.windowMode) window.updateMode(prefs.windowMode);
 
+    const bool focused = glfwGetWindowAttrib(window.getWindowContext(), GLFW_FOCUSED) != 0;
+    const int  idleCap = prefs.fpsCap > 0 ? std::min(prefs.fpsCap, IDLE_FRAMERATE) : IDLE_FRAMERATE;
+    const int  cap     = focused ? prefs.fpsCap : idleCap;
+    if (window.framerate() != cap) window.setFramerate(cap);
+}
+
+void EditorSystem::pollShaderReload(FrameContext& ctx) {
+    m_shaderPollTimer += ctx.clock.getDeltaTime();
+    if (m_shaderPollTimer < DISK_POLL_INTERVAL) return;
+    m_shaderPollTimer = 0.0f;
+
+    RenderBackend* backend = m_renderSystem.backend();
+    if (!backend) return;
+
+    const uint32_t reloaded = backend->reloadChangedShaders();
+    if (reloaded > 0) {
+        m_state.pushToast(ToastKind::Info, "Reloaded " + std::to_string(reloaded) + " shader(s)");
+    }
+}
+
+void EditorSystem::pollScriptRebuild(FrameContext& ctx) {
+    m_scriptPollTimer += ctx.clock.getDeltaTime();
+    if (m_scriptPollTimer < DISK_POLL_INTERVAL) return;
+    m_scriptPollTimer = 0.0f;
+
+    // Watched even if it did not load: that is the module whose next build should land.
+    const std::filesystem::path& path = m_scriptModule.modulePath();
+    if (path.empty()) return;
+
+    std::error_code ec;
+    const auto stamp = std::filesystem::last_write_time(path, ec);
+
+    // The first look sets what "unchanged" is, or opening a project would read as a
+    // rebuild. A module not built yet is recorded as absent, so its first build differs.
+    if (path != m_scriptModulePath) {
+        m_scriptModulePath  = path;
+        m_scriptModuleStamp = ec ? std::filesystem::file_time_type{} : stamp;
+        return;
+    }
+    if (ec) return;   // mid-write, or no module on disk; the next poll asks again
+    if (stamp == m_scriptModuleStamp) {
+        m_scriptModuleSettling = {};
+        return;
+    }
+    // A linker moves the stamp in several passes; act once it has held for a poll.
+    if (stamp != m_scriptModuleSettling) {
+        m_scriptModuleSettling = stamp;
+        return;
+    }
+    m_scriptModuleStamp = stamp;
+
+    if (m_sceneIO.isPlaying()) {
+        m_state.pushToast(ToastKind::Info, "Scripts rebuilt - File > Reload Scripts to pick them up");
+        return;
+    }
+
+    m_state.pushToast(ToastKind::Info, "Scripts rebuilt - reloading");
+    m_state.requestScriptReload = true;
+}
+
+void EditorSystem::serviceScriptReload(FrameContext& ctx) {
+    if (!m_state.requestScriptReload) return;
+    m_state.requestScriptReload = false;
+
+    // A reload runs every onStart again, where a game builds its world, so a running
+    // session would get a second world beside the first. Stopping restores the scene.
+    const bool wasPlaying = m_sceneIO.isPlaying();
+
+    // Stop rebuilds the scene through its serializer, leaving no component set the
+    // module created (those hold its code). An edit scene takes the same round trip.
+    if (!wasPlaying && !m_sceneIO.captureSnapshot(ctx, m_state)) {
+        const char* message =
+            "Script reload refused: the scene could not be snapshotted, so the old "
+            "module stays loaded";
+        m_state.pushToast(ToastKind::Error, message);
+        return;
+    }
+    m_sceneIO.stopPlaySession(ctx, m_state);
+    // A failed restore kept the old world, sets and all; the module stays until a Stop succeeds.
+    if (m_sceneIO.isPlaying()) return;
+
+    // AudioSystem would see Stop's graph change only after the reload; end the sounds now.
+    m_audioSystem.stopEverything();
+    if (!m_scriptModule.reload(ctx.scene, m_behaviorSystem, ctx.events)) {
+        m_state.pushToast(
+            ToastKind::Error,
+            "Script reload failed - see the Errors panel. Fix the build and reload again."
+        );
+        return;
+    }
+
+    // A reload drops the wire schema the module registered; rebuilt here, or Project
+    // Settings shows the game replicating nothing until the next project open.
+    m_scriptModule.setupNetwork(ctx.net);
+
+    // Back into a session as Play does: snapshot, then clock. A snapshot that will
+    // not serialize leaves the editor stopped rather than running with no way back.
+    if (wasPlaying && m_sceneIO.captureSnapshot(ctx, m_state)) ctx.clock.setPaused(false);
+
+    m_state.pushToast(ToastKind::Info, wasPlaying ? "Reloaded scripts - play restarted" : "Reloaded scripts");
+}
+
+void EditorSystem::serviceFrame(FrameContext& ctx) {
     syncWindowTitle(ctx.window, m_state.project.name, m_sceneIO.path(), m_state.sceneDirty);
 
     m_materialPreviews.onFrameBegin();
 
-    // Surface newly-reported errors as a toast (the persistent list is in
-    // Bottom > Errors). totalPushed ignores repeats, so a behavior that throws
-    // then gets disabled toasts exactly once.
+    // totalPushed ignores repeats, so a behavior that throws then gets disabled
+    // toasts exactly once.
     if (const unsigned long long total = m_errorLog.totalPushed();
             total > m_lastErrorTotal) {
         m_lastErrorTotal = total;
         const auto& recent = m_errorLog.entries();
         if (!recent.empty()) {
             const auto& e = recent.back();
-            m_state.pushToast(EditorState::ToastKind::Error,
-                "[" + e.category + "] " + e.source + " - see Bottom > Errors");
+            m_state.pushToast(
+                ToastKind::Error,
+                "[" + e.category + "] " + e.source + " - see the Errors panel"
+            );
         }
     }
 
-    // Polled rather than watched: a filesystem watcher is a per-platform
-    // dependency for what a once-a-second scan of a few dozen files answers.
-    // Editor-only - a shipped runtime has no shader sources to watch.
-    m_shaderPollTimer += ctx.clock.getDeltaTime();
-    if (m_shaderPollTimer >= SHADER_POLL_INTERVAL) {
-        m_shaderPollTimer = 0.0f;
-        if (RenderBackend* backend = m_renderSystem.backend()) {
-            const uint32_t reloaded = backend->reloadChangedShaders();
-            if (reloaded > 0) {
-                m_state.pushToast(EditorState::ToastKind::Info,
-                    "Reloaded " + std::to_string(reloaded) + " shader(s)");
-            }
-        }
-    }
+    pollShaderReload(ctx);
+    pollScriptRebuild(ctx);
+    serviceScriptReload(ctx);
 
-    // Hot-reload the gameplay module on request (Edit > Reload Scripts);
-    // behaviors are serialized and recreated, entities untouched.
-    if (m_state.requestScriptReload) {
-        m_state.requestScriptReload = false;
-        if (m_scriptModule.reload(ctx.scene)) {
-            // A reload drops what the module registered, the wire schema with
-            // it. Rebuilt from the new module, or Project Settings would show
-            // the game replicating nothing until the next project open.
-            m_scriptModule.setupNetwork(ctx.net);
-            m_state.pushToast(EditorState::ToastKind::Info, "Reloaded scripts");
-        } else {
-            // The durable record is the Errors tab entry ScriptModule::reload
-            // reports; this is the glance-level notice that points at it.
-            m_state.pushToast(EditorState::ToastKind::Error,
-                "Script reload failed - see Bottom > Errors. Fix the build and reload again.");
-        }
-    }
+    // Before any UI reads the selection.
+    m_state.pruneSelection(ctx.scene);
 
-    // Selection hygiene: deletes / scene swaps can leave dead ids in the
-    // multi-select set - prune once per frame before any UI reads it.
-    m_state.selection.erase(
-        std::remove_if(m_state.selection.begin(), m_state.selection.end(),
-            [&](EntityId id) { return !id || !ctx.scene.isAlive(id); }),
-        m_state.selection.end());
-    if (m_state.selectedEntity && !ctx.scene.isAlive(m_state.selectedEntity)) {
-        m_state.selectedEntity = m_state.selection.empty() ? EntityId{}
-                                                           : m_state.selection.back();
-    }
-
-    // A titlebar close is a request like any other: withdraw it and put it
-    // through the guard, which raises it again once the scene is safe.
+    // Put a titlebar close through the guard, which raises it again once the scene is safe.
     if (ctx.window.shouldClose()) {
         ctx.window.cancelClose();
         m_state.requestSceneAction(EditorState::SceneAction::Quit);
     }
+}
 
+void EditorSystem::drawUnsavedChangesDialog(FrameContext& ctx) {
+    bool want = m_state.pendingAction != EditorState::SceneAction::None
+        && m_state.actionStage == EditorState::ActionStage::Ask;
+
+    if (beginDialog("Unsaved Changes", want)) {
+        ImGui::TextUnformatted("This scene has unsaved changes.");
+        ImGui::Spacing();
+        const char* shownPath = m_sceneIO.path().empty() ? "(untitled scene)" : m_sceneIO.path().c_str();
+        ImGui::TextDisabled("%s", shownPath);
+
+        switch (dialogButtons(want, "Save", "Don't Save")) {
+            case DialogResult::Confirm:
+                // The save is for the authored scene Stop puts back, and a save
+                // inside a session is refused, so end the session first.
+                m_sceneIO.stopPlaySession(ctx, m_state);
+                m_sceneIO.save(ctx, m_state);
+                m_state.actionStage = EditorState::ActionStage::Saving;
+                break;
+            case DialogResult::Alt:
+                m_state.actionStage = EditorState::ActionStage::Run;
+                break;
+            case DialogResult::Cancel:
+                m_state.clearSceneAction();
+                break;
+            default: break;
+        }
+        endDialog();
+    }
+
+    // Dismissed unanswered: drop the request, or the prompt reopens with no way out.
+    if (!want && m_state.pendingAction != EditorState::SceneAction::None
+            && m_state.actionStage == EditorState::ActionStage::Ask) {
+        m_state.clearSceneAction();
+    }
+}
+
+void EditorSystem::drawHiddenHint() {
+    const ImGuiViewport* vp = ImGui::GetMainViewport();
+    const float pad = EditorStyle::px(10.0f);
+
+    // Fits the longest KeyLabel plus the sentence around it.
+    char hint[80];
+    snprintf(
+        hint,
+        sizeof(hint),
+        "Press %s to show editor",
+        keyLabel(m_state.prefs.keybinds.toggleEditor).buf
+    );
+
+    const ImVec2 corner(vp->WorkPos.x + vp->WorkSize.x - pad, vp->WorkPos.y + vp->WorkSize.y - pad);
+    ImGui::SetNextWindowPos(corner, ImGuiCond_Always, ImVec2(1.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.55f));
+    const ImGuiWindowFlags hintFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs
+        | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoMove
+        | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize;
+    ImGui::Begin("##EditorHiddenHint", nullptr, hintFlags);
+    ImGui::TextDisabled("%s", hint);
+    ImGui::End();
+    ImGui::PopStyleColor();
+}
+
+InputSignals EditorSystem::inputSignals(const FrameContext& ctx) const {
+    InputSignals signals;
+    signals.popupOpen = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopup);
+    if (m_editorVisible) {
+        signals.viewportHovered = m_viewportHovered;
+        signals.overlayHovered  = m_viewportToolbar.isHovered() || m_playbar.isHovered()
+            || m_viewportOverlay.isHovered();
+        signals.gizmoHovered    = m_gizmoOverlay.isGizmoOver();
+        signals.gizmoDragging   = m_gizmoOverlay.isGizmoUsing();
+    } else {
+        // Hidden, the scene is the whole window, under nothing but a modal.
+        signals.viewportHovered = !signals.popupOpen;
+    }
+    signals.gameUIHovered  = ctx.ui && ctx.ui->pointerTarget;
+    signals.cursorCaptured = ctx.window.cursorMode() == CursorMode::Disabled;
+    signals.playing        = m_sceneIO.isPlaying();
+    signals.ejected        = m_sceneIO.isEjected();
+    signals.typing         = ImGui::GetIO().WantTextInput;
+    signals.rebinding      = m_preferences.isCapturingKey();
+    return signals;
+}
+
+void EditorSystem::update(FrameContext& ctx) {
+    PROFILE_SCOPE("EditorSystem");
+
+    applyUiScaleIfMoved(ctx);
+    applyPreferences(ctx);
+
+    EditorContext ec = makeContext(ctx);
+
+    serviceFrame(ctx);
     resolveSceneAction(ec);
 
-    // Before anything else: the editor-toggle keybind is processed here so the
-    // rebind UI in Preferences drives it, and the toggle sits in both the hidden
-    // and visible branches because the ImGui frame exists in both.
+    // After the game's systems, and not while the editor's view holds the cursor.
+    if (!m_cameraController.isLooking()) m_sceneIO.holdEjectedCursorFree(ctx);
+
+    ec.input = resolveInputOwnership(inputSignals(ctx));
+    // A grabbed cursor's click is the fly camera's or the game's, never a panel's.
+    ImGuiIO& io = ImGui::GetIO();
+    if (ec.input.pointer == PointerOwner::Captured) io.ConfigFlags |= ImGuiConfigFlags_NoMouse;
+    else                                            io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+    // Nor are the game's keys a panel's: arrows would navigate the last panel
+    // touched, and Space press what they land on.
+    if (ec.input.gameHasKeyboard()) io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableKeyboard;
+    else                            io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    // While a session shows the game's camera, the right button and cursor are the game's.
+    m_cameraController.setActive(!ec.input.gameHasViewport());
+
+    // The editor-toggle keybind is read inside the frame, where ImGui's key state is
+    // this frame's, and before the hidden branch, so it works shown or hidden.
     const ImGuiFrame imguiFrame;
 
-    // A splash covers the whole surface, and the Render stage drew it before
-    // this one - so there is nothing worth submitting panels over.
+    // A splash covers the whole surface; nothing is worth submitting panels over.
     if (ctx.splash && ctx.splash->isShowing()) return;
 
-    if (isPressed(m_state.keybinds.toggleEditor)) {
-        m_state.editorVisible = !m_state.editorVisible;
-        // Ending both gestures on hide stops a held drag from continuing while
-        // the editor isn't drawing, and closes the undo step it was merging
-        // into - the hidden path never reaches the boundary below.
-        if (!m_state.editorVisible) {
-            m_panelResize.resetDragState();
-            m_state.commands.endGesture();
-        }
-    }
-    // Drawn before anything else, so it is visible whether the editor is shown
-    // or hidden. It answers the pending request rather than acting on it -
-    // resolveSceneAction performs what it approves, outside the ImGui frame.
-    {
-        bool want = m_state.pendingAction != EditorState::SceneAction::None
-                 && m_state.actionStage == EditorState::ActionStage::Ask;
-        if (beginDialog("Unsaved Changes", want)) {
-            ImGui::TextUnformatted("This scene has unsaved changes.");
-            ImGui::Spacing();
-            ImGui::TextDisabled("%s", m_sceneIO.path().empty()
-                ? "(untitled scene)" : m_sceneIO.path().c_str());
-
-            switch (dialogButtons(want, "Save", "Don't Save")) {
-                case DialogResult::Confirm:
-                    // The scene this save is for is the authored one Stop puts
-                    // back, not the simulation's copy - and a save inside a
-                    // session is refused outright, so end the session first.
-                    m_sceneIO.stopPlaySession(ctx, m_state);
-                    m_sceneIO.save(ctx, m_state);
-                    m_state.actionStage = EditorState::ActionStage::Saving;
-                    break;
-                case DialogResult::Alt:
-                    m_state.actionStage = EditorState::ActionStage::Run;
-                    break;
-                case DialogResult::Cancel:
-                    m_state.clearSceneAction();
-                    break;
-                default: break;
-            }
-            endDialog();
-        }
-        // Dismissed without answering (Escape, or the window closing): the
-        // request goes with it, or the prompt reopens with no way out.
-        if (!want && m_state.pendingAction != EditorState::SceneAction::None
-                && m_state.actionStage == EditorState::ActionStage::Ask) {
-            m_state.clearSceneAction();
+    // Before the hidden branch too: these leave a session whose game has the keyboard
+    // and the cursor.
+    if (ec.input.editorHasSessionKeys()) {
+        m_playbar.processKeys(ec, m_sceneIO);
+        if (isPressed(m_state.prefs.keybinds.toggleEditor, false)) {
+            m_editorVisible = !m_editorVisible;
+            // Close the undo step a held drag was merging into; the hidden path never
+            // reaches the gesture boundary below.
+            if (!m_editorVisible) m_state.commands.endGesture();
         }
     }
 
-    // Toast renders in both visible/hidden paths - failure feedback should
-    // not vanish just because F5 was pressed.
+    // Drawn shown or hidden: a hidden prompt has no way out, and hidden failure
+    // feedback is lost.
+    drawUnsavedChangesDialog(ctx);
     drawToast(m_state, ctx.clock.getDeltaTime());
 
-    if (!m_state.editorVisible) {
-        ctx.chrome.setCapture(false, false);
+    ctx.chrome.setCapture(ec.input.hostHoldsPointer(), ec.input.hostHoldsKeyboard());
+    m_cameraController.setCapture(ec.input.panelsHoldPointer(), ec.input.panelsHoldKeyboard());
 
-        // No panels to layout this frame - let the 3D pipeline fill the
-        // whole window next frame, not the stale viewport sub-rect.
+    if (!m_editorVisible) {
+        // Next frame fills the whole window, not the stale viewport sub-rect.
         ctx.chrome.setViewport(0, 0, 0, 0);
-
-        // While the editor is hidden, draw a tiny corner hint so new users
-        // know how to bring it back, naming the live (rebindable) toggle key.
-        {
-            const ImGuiViewport* vp = ImGui::GetMainViewport();
-            const float pad = EditorStyle::px(10.0f);
-            // Wide enough for the longest KeyLabel plus the sentence around it,
-            // so a rebound chord is never cut off mid-word.
-            char hint[80];
-            snprintf(hint, sizeof(hint), "Press %s to show editor",
-                     keyLabel(m_state.keybinds.toggleEditor).buf);
-            ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x - pad,
-                                           vp->WorkPos.y + vp->WorkSize.y - pad),
-                                    ImGuiCond_Always, ImVec2(1.0f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.55f));
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, EditorStyle::px(6.0f));
-            ImGui::Begin("##F5Hint", nullptr,
-                ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
-                ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoMove |
-                ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
-            ImGui::TextDisabled("%s", hint);
-            ImGui::End();
-            ImGui::PopStyleVar();
-            ImGui::PopStyleColor();
-        }
+        drawHiddenHint();
         return;
     }
 
-    {
-        bool blockMouse = (!m_state.viewportHovered && !m_cameraController.isLooking())
-                       || m_gizmoOverlay.isGizmoOver()
-                       || m_viewportToolbar.isHovered()
-                       || m_playbar.isHovered();
-        // Said once: the camera controller, the game UI and the viewport all
-        // need the same answer about who owns the pointer this frame.
-        ctx.chrome.setCapture(blockMouse, ImGui::GetIO().WantTextInput);
-    }
-
-    m_shortcuts.process(ec, m_sceneIO);
+    if (ec.input.editorHasKeys()) EditorShortcuts::process(ec, m_sceneIO);
 
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
 
+    // Hosts the menu bar, dockspace and status bar, but is no window of the layout:
+    // nothing docks into it, it never comes to the front, and it is not in the ini.
     ImGuiWindowFlags rootFlags = ImGuiWindowFlags_NoDecoration
-                               | ImGuiWindowFlags_NoMove
-                               | ImGuiWindowFlags_NoResize
-                               | ImGuiWindowFlags_NoBringToFrontOnFocus
-                               | ImGuiWindowFlags_NoSavedSettings
-                               | ImGuiWindowFlags_MenuBar;
+        | ImGuiWindowFlags_NoMove
+        | ImGuiWindowFlags_NoResize
+        | ImGuiWindowFlags_NoBringToFrontOnFocus
+        | ImGuiWindowFlags_NoNavFocus
+        | ImGuiWindowFlags_NoDocking
+        | ImGuiWindowFlags_NoSavedSettings
+        | ImGuiWindowFlags_MenuBar;
 
-    // Full-viewport host: square it (theme WindowRounding=6 would round the
-    // top corners and leave triangular gaps in the menu bar). Floating
-    // windows still keep their rounding.
+    // Square, or the theme's rounding leaves triangular gaps in the menu bar's corners.
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0, 0, 0, 0));
 
+    bool workspace = false;
     if (ImGui::Begin("##Editor", nullptr, rootFlags)) {
         ImGui::PopStyleColor();
         ImGui::PopStyleVar(3);
 
         PROFILE_SCOPE("Editor/Panels");
         m_menuBar.draw(ec, m_sceneIO);
-        // The three dialogs are owned here rather than by the menu bar, because
-        // each serves more than one place that asks for it and a menu closes the
-        // frame its item is clicked.
         m_newProject.draw(m_state);
         m_openProject.draw(m_state);
         m_modelImport.draw(ctx.scene, ctx.resources, m_state);
         m_placePrefab.draw(ctx.scene, ctx.resources, m_state);
-        if (m_hasProject) drawWorkspace(ec);
-        else              m_startScreen.draw(ec);
+        workspace = m_state.projectOpen;
+        if (workspace) drawWorkspace(ec);
+        else           m_startScreen.draw(ec);
 
     } else {
         ImGui::PopStyleColor();
@@ -521,7 +687,10 @@ void EditorSystem::update(FrameContext& ctx) {
     }
     ImGui::End();
 
-    // Separate floating window; drawn after the root so it stacks on top.
+    // Only beside the dockspace they dock into; without one this frame they would float.
+    if (workspace) drawPanels(ec);
+
+    // Floating windows, drawn after the root so they stack on top.
     if (m_state.showPreferences) {
         PROFILE_SCOPE("Panel/Preferences");
         m_preferences.draw(ec);
@@ -535,232 +704,188 @@ void EditorSystem::update(FrameContext& ctx) {
         m_projectSettings.draw(ec);
     }
 
-    // The gesture boundary, after every panel has had its chance to push. Both
-    // halves are needed: a gizmo drag holds the mouse with no ImGui item active,
-    // while a keyboard-tweaked slider keeps its item active with the mouse up.
+    // The gesture boundary, after every panel could push. A gizmo drag holds the mouse
+    // with no item active; a keyboard-tweaked slider stays active with the mouse up.
     if (!ImGui::IsAnyMouseDown() && !ImGui::IsAnyItemActive()) {
         m_state.commands.endGesture();
     }
 }
 
+namespace {
+
+/**
+ * @brief Begin one of the workspace's dockable panels.
+ *
+ * In the panel colour, so a docked panel reads as part of the frame around the
+ * viewport. Padding is popped after Begin, so a popup opened inside gets the theme's.
+ * The caller ends the window whatever this returns. No focus on appearing:
+ * a group shown again would open on whichever window began last, not the tab it was
+ * left on.
+ *
+ * @param name    The window's name, one of dock_layout.h's.
+ * @param padding The window's padding, in screen pixels.
+ * @return Whether the window is showing - not a tab behind another.
+ */
+bool beginPanel(const char* name, ImVec2 padding) {
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, padding);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyleColorVec4(ImGuiCol_ChildBg));
+    const bool showing = ImGui::Begin(
+        name,
+        nullptr,
+        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoFocusOnAppearing
+    );
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar();
+    return showing;
+}
+
+} // namespace
+
 void EditorSystem::drawWorkspace(EditorContext& ec) {
-    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const ImGuiID dockspace = ImGui::GetID("##Workspace");
 
-    // Zero spacing tiles the panel children edge-to-edge; each panel restores
-    // the theme spacing inside its child, so its content - and every popup
-    // opened from it, which snapshots the style at Begin - keeps that rhythm.
-    const ImVec2 themeSpacing = ImGui::GetStyle().ItemSpacing;
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    const ImVec2 size(avail.x, std::max(1.0f, avail.y - EditorStatusBar::height()));
+
+    if (m_state.requestResetLayout || !hasLayout(dockspace)) {
+        m_state.requestResetLayout = false;
+        buildDefaultLayout(dockspace, size.x, size.y);
+    }
+
+    // No item spacing, or the status bar is pushed past the bottom edge.
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+    ImGui::DockSpace(dockspace, size);
+    {
+        PROFILE_SCOPE("Panel/StatusBar");
+        EditorStatusBar::draw(ec);
+    }
+    ImGui::PopStyleVar();
+}
 
-    float toolbarH = ImGui::GetCursorPosY();
-    float statusBarH = ImGui::GetFrameHeight() + 4;
-    float bottomH = m_state.showBottom ? m_state.bottomPanelHeight : 0.0f;
-    float mainH = viewport->WorkSize.y - toolbarH - statusBarH - bottomH;
-
-    float leftW  = m_state.showHierarchy ? m_state.leftPanelWidth : 0.0f;
-    float rightW = m_state.showInspector ? m_state.rightPanelWidth : 0.0f;
-
-    // Track panel edge positions for border-less resize detection
-    ImVec2 panelAreaStart = ImGui::GetCursorScreenPos();
+void EditorSystem::drawPanels(EditorContext& ec) {
+    const ImVec2 sidePad(EditorStyle::px(6.0f), EditorStyle::px(6.0f));
+    const ImVec2 panelPad(EditorStyle::px(8.0f), EditorStyle::px(6.0f));
 
     if (m_state.showHierarchy) {
         PROFILE_SCOPE("Panel/Hierarchy");
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
-                            ImVec2(EditorStyle::px(6.0f), EditorStyle::px(6.0f)));
-        if (ImGui::BeginChild("##Hierarchy", ImVec2(leftW, mainH), ImGuiChildFlags_Borders)) {
-            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, themeSpacing);
-            m_hierarchy.draw(ec, m_sceneIO);
-            ImGui::PopStyleVar();
-        }
-        ImGui::EndChild();
-        ImGui::PopStyleVar();
-        ImGui::SameLine(0, 0);
+        if (beginPanel(HIERARCHY_WINDOW, sidePad)) m_hierarchy.draw(ec, m_sceneIO);
+        ImGui::End();
     }
 
-    {
-        PROFILE_SCOPE("Panel/Viewport");
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
-        float centerW = viewport->WorkSize.x - leftW - rightW;
-        ImVec2 vpMin = ImGui::GetCursorScreenPos();
-        if (ImGui::BeginChild("##Viewport", ImVec2(centerW, mainH), ImGuiChildFlags_None)) {
-            ec.viewportPos  = vpMin;
-            ec.viewportSize = ImVec2(centerW, mainH);
-            // The engine sizes next frame's FBOs and projection to this rect
-            // rather than to the full GLFW window. The rect is ImGui's, in
-            // window screen coords; the engine wants framebuffer pixels.
-            const float vpScale = ec.frame.window.framebufferScale();
-            ec.frame.chrome.setViewport(
-                static_cast<uint32_t>(std::max(0.0f, vpMin.x * vpScale)),
-                static_cast<uint32_t>(std::max(0.0f, vpMin.y * vpScale)),
-                static_cast<uint32_t>(std::max(1.0f, centerW * vpScale)),
-                static_cast<uint32_t>(std::max(1.0f, mainH   * vpScale)));
-            m_state.viewportHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
-            m_viewportOverlay.drawNoCameraNotice(ec);
-            m_viewportOverlay.drawNavigationGizmo(ec);
-            m_gizmoOverlay.drawLightGizmos(ec);
-            m_gizmoOverlay.drawCameraGizmos(ec);
-            m_gizmoOverlay.drawProbeGizmos(ec);
-            m_gizmoOverlay.drawEffectGizmos(ec);
-            m_gizmoOverlay.drawAudioGizmos(ec);
-            if (m_state.showColliders) {
-                m_gizmoOverlay.drawColliderGizmos(ec);
-                m_gizmoOverlay.drawJointGizmos(ec);
-            }
-            if (m_state.showBounds)    m_gizmoOverlay.drawBoundsGizmos(ec);
-            if (m_state.showSkeletons) m_gizmoOverlay.drawSkeletonGizmos(ec);
-            m_gizmoOverlay.drawSelectionOutline(ec);
-            m_gizmoOverlay.drawTransformGizmo(ec);
-            m_viewportToolbar.draw(ec);
-            m_viewportToolbar.drawViewMode(ec);
-            m_playbar.draw(ec, m_sceneIO);
-            if (!m_viewportToolbar.isHovered() && !m_playbar.isHovered()
-                    && !m_viewportOverlay.isHovered())
-                m_gizmoOverlay.handleViewportPick(ec);
-        } else {
-            m_state.viewportHovered = false;
-        }
-        ImGui::EndChild();
-        ImGui::PopStyleColor();
-        ImGui::SameLine(0, 0);
-    }
+    drawViewport(ec);
 
     if (m_state.showInspector) {
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
-                            ImVec2(EditorStyle::px(8.0f), EditorStyle::px(6.0f)));
-        if (ImGui::BeginChild("##Inspector", ImVec2(rightW, mainH), ImGuiChildFlags_Borders)) {
-            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, themeSpacing);
-            drawRightTabs(ec);
-            ImGui::PopStyleVar();
+        if (beginPanel(INSPECTOR_WINDOW, panelPad)) {
+            PROFILE_SCOPE("Panel/Inspector");
+            m_inspector.draw(ec, m_sceneIO);
         }
-        ImGui::EndChild();
+        ImGui::End();
 
-        // Read after EndChild, which is where ImGui makes the child itself the
-        // last item. Before it, these are whatever widget the Inspector drew
-        // last - which is a rectangle inside the panel rather than the panel.
-        m_state.rightPanelMin = ImGui::GetItemRectMin();
-        m_state.rightPanelMax = ImGui::GetItemRectMax();
-        ImGui::PopStyleVar();
-    }
-
-    if (m_state.showBottom) {
-        PROFILE_SCOPE("Panel/Bottom");
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
-                            ImVec2(EditorStyle::px(8.0f), EditorStyle::px(6.0f)));
-        if (ImGui::BeginChild("##Bottom", ImVec2(0, bottomH), ImGuiChildFlags_Borders)) {
-            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, themeSpacing);
-            m_bottom.draw(ec, m_sceneIO);
-            ImGui::PopStyleVar();
+        // Answered this frame or not at all: left set, it would take the focus back the
+        // next time the window is shown.
+        if (m_state.revealMaterial) {
+            ImGui::SetNextWindowFocus();
+            m_state.revealMaterial = false;
         }
-        ImGui::EndChild();
-        ImGui::PopStyleVar();
-    }
-
-    drawFloatingMaterial(ec);
-
-
-    m_panelResize.process(m_state, panelAreaStart, mainH,
-                          viewport->WorkSize.x, m_gizmoOverlay.isGizmoUsing());
-
-    ImGui::PopStyleVar(); // ItemSpacing
-
-    {
-        PROFILE_SCOPE("Panel/StatusBar");
-        m_statusBar.draw(ec);
-    }
-}
-
-void EditorSystem::drawRightTabs(EditorContext& ec) {
-    if (!ImGui::BeginTabBar("##RightTabs", ImGuiTabBarFlags_DrawSelectedOverline)) return;
-
-    if (ImGui::BeginTabItem("Inspector")) {
-        PROFILE_SCOPE("Panel/Inspector");
-        m_inspector.draw(ec);
-        ImGui::EndTabItem();
-    }
-
-    // The request is answered by this frame's bar or not at all: left set, it
-    // would take the tab back the next time the panel is shown.
-    ImGuiTabItemFlags materialFlags = ImGuiTabItemFlags_None;
-    if (m_state.revealMaterialTab) {
-        materialFlags = ImGuiTabItemFlags_SetSelected;
-        m_state.revealMaterialTab = false;
-    }
-    if (!m_state.materialFloating) {
-        const bool open = ImGui::BeginTabItem("Material", nullptr, materialFlags);
-
-        // Asked of the tab itself, before its body: a drag that leaves the bar
-        // is a request to detach, and the distance keeps a click from being one.
-        if (ImGui::IsItemHovered() && !ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-            ImGui::SetTooltip("Drag out to open in a window");
-        }
-        if (ImGui::IsItemActive() &&
-            ImGui::IsMouseDragging(ImGuiMouseButton_Left, EditorStyle::px(24.0f))) {
-            m_state.materialFloating = true;
-            m_state.materialDetachAt = ImGui::GetMousePos();
-        }
-
-        if (open) {
+        if (beginPanel(MATERIAL_WINDOW, panelPad)) {
             PROFILE_SCOPE("Panel/MaterialEditor");
             m_materialEditor.draw(ec);
-            ImGui::EndTabItem();
         }
+        ImGui::End();
     }
 
-    ImGui::EndTabBar();
+    if (m_state.showAssets) {
+        if (beginPanel(ASSETS_WINDOW, panelPad)) {
+            PROFILE_SCOPE("Panel/AssetBrowser");
+            m_assetBrowser.draw(ec);
+        }
+        ImGui::End();
+        if (beginPanel(ANIMATION_WINDOW, panelPad)) {
+            PROFILE_SCOPE("Panel/Animation");
+            m_animation.draw(ec, m_sceneIO);
+        }
+        ImGui::End();
+        if (beginPanel(ERRORS_WINDOW, panelPad)) drawErrorsPanel(ec.errorLog);
+        ImGui::End();
+    }
 }
 
-void EditorSystem::drawFloatingMaterial(EditorContext& ec) {
-    if (!m_state.materialFloating) return;
+void EditorSystem::drawViewport(EditorContext& ec) {
+    PROFILE_SCOPE("Panel/Viewport");
 
-    if (m_state.materialDetachAt.x != 0.0f || m_state.materialDetachAt.y != 0.0f) {
-        // Under the cursor that pulled it out, so the window arrives where the
-        // hand already is rather than wherever it was last left.
-        ImGui::SetNextWindowPos(m_state.materialDetachAt, ImGuiCond_Always, ImVec2(0.5f, 0.0f));
-        m_state.materialDetachAt = {};
+    // No tab while alone in its node, so the scene fills it; ImGui's corner triangle
+    // brings the tab back.
+    ImGuiWindowClass viewportClass;
+    viewportClass.DockNodeFlagsOverrideSet = ImGuiDockNodeFlags_AutoHideTabBar;
+    ImGui::SetNextWindowClass(&viewportClass);
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    const ImGuiWindowFlags viewportFlags = ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar
+        | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoCollapse
+        | ImGuiWindowFlags_NoFocusOnAppearing;
+    const bool showing = ImGui::Begin(VIEWPORT_WINDOW, nullptr, viewportFlags);
+    ImGui::PopStyleVar();
+
+    // Overlays place themselves in their window's coordinates, so they get one exactly
+    // the scene's rect, tab bar or not.
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
+    const ImVec2 vpMin = ImGui::GetCursorScreenPos();
+    const ImVec2 vpSize = ImGui::GetContentRegionAvail();
+    const ImGuiWindowFlags areaFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
+    if (showing && ImGui::BeginChild("##ViewportArea", ImVec2(0, 0), ImGuiChildFlags_None, areaFlags)) {
+        ec.viewportPos  = vpMin;
+        ec.viewportSize = vpSize;
+        // Next frame renders to this rect; ImGui's screen coords become framebuffer pixels.
+        const float vpScale = ec.frame.window.framebufferScale();
+        ec.frame.chrome.setViewport(
+            static_cast<uint32_t>(std::max(0.0f, vpMin.x * vpScale)),
+            static_cast<uint32_t>(std::max(0.0f, vpMin.y * vpScale)),
+            static_cast<uint32_t>(std::max(1.0f, vpSize.x * vpScale)),
+            static_cast<uint32_t>(std::max(1.0f, vpSize.y * vpScale))
+        );
+        m_viewportHovered = nextViewportHover(
+            m_viewportHovered,
+            ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows),
+            ec.input
+        );
+
+        // A viewport too small to hold the axes clear of the strips draws none.
+        const float inset      = EditorStyle::overlayInset();
+        const float needWidth  = inset + ViewportToolbar::toolStripWidth()
+            + EditorStyle::overlayGroupGap() + ViewportOverlay::reach();
+        const float needHeight = ViewportToolbar::viewBarBottom()
+            + EditorStyle::overlayGroupGap() + ViewportOverlay::reach();
+        const bool  axesFit    = vpSize.x >= needWidth && vpSize.y >= needHeight;
+        m_viewportOverlay.drawNoCameraNotice(ec);
+        m_viewportOverlay.drawNavigationGizmo(ec, axesFit && m_cameraController.isActive());
+        m_gizmoOverlay.drawLightGizmos(ec);
+        m_gizmoOverlay.drawCameraGizmos(ec);
+        m_gizmoOverlay.drawProbeGizmos(ec);
+        m_gizmoOverlay.drawEffectGizmos(ec);
+        m_gizmoOverlay.drawAudioGizmos(ec);
+        if (m_state.showColliders) {
+            m_gizmoOverlay.drawColliderGizmos(ec);
+            m_gizmoOverlay.drawJointGizmos(ec);
+        }
+        if (m_state.showBounds)    m_gizmoOverlay.drawBoundsGizmos(ec);
+        if (m_state.showSkeletons) m_gizmoOverlay.drawSkeletonGizmos(ec);
+        m_gizmoOverlay.drawSelectionOutline(ec);
+        m_gizmoOverlay.drawTransformGizmo(ec);
+        m_viewportToolbar.draw(ec);
+        m_viewportToolbar.drawViewBar(ec);
+        m_playbar.draw(
+            ec,
+            m_sceneIO,
+            inset + ViewportToolbar::toolStripWidth() + EditorStyle::overlayGroupGap(),
+            vpSize.x - inset - ViewportToolbar::viewBarWidth() - EditorStyle::overlayGroupGap()
+        );
+        m_gizmoOverlay.handleViewportPick(ec);
+    } else {
+        m_viewportHovered = nextViewportHover(m_viewportHovered, false, ec.input);
     }
-    ImGui::SetNextWindowSize(ImVec2(EditorStyle::px(520.0f), EditorStyle::px(680.0f)),
-                             ImGuiCond_FirstUseEver);
-
-    // Closing re-docks rather than hiding: a window that can be lost behind the
-    // viewport is the complaint that moved this panel out of one, so the close
-    // box gives it back to the tab bar instead of making it vanish.
-    bool open = true;
-    const bool wasBegun = ImGui::Begin("Material Editor", &open);
-
-    // Dragged by its title bar, with nothing inside it holding the mouse. There
-    // is no public "is this window moving", and this is what moving one looks
-    // like from outside.
-    const bool dragging = ImGui::IsWindowFocused() && !ImGui::IsAnyItemActive() &&
-                          ImGui::IsMouseDragging(ImGuiMouseButton_Left);
-    const ImVec2 mouse = ImGui::GetMousePos();
-    const bool overPanel = m_state.showInspector &&
-        mouse.x >= m_state.rightPanelMin.x && mouse.x <= m_state.rightPanelMax.x &&
-        mouse.y >= m_state.rightPanelMin.y && mouse.y <= m_state.rightPanelMax.y;
-
-    if (wasBegun) {
-        PROFILE_SCOPE("Panel/MaterialEditor");
-        m_materialEditor.draw(ec);
-    }
+    if (showing) ImGui::EndChild();
+    ImGui::PopStyleColor();
     ImGui::End();
-
-    if (dragging && overPanel) {
-        // Painted over everything, because the panel it lands in is behind the
-        // window being dragged onto it.
-        ImDrawList* fg = ImGui::GetForegroundDrawList();
-        ImVec4 wash = EditorStyle::Accent::MatBase;
-        wash.w = 0.18f;
-        fg->AddRectFilled(m_state.rightPanelMin, m_state.rightPanelMax,
-                          ImGui::GetColorU32(wash), EditorStyle::px(4.0f));
-        fg->AddRect(m_state.rightPanelMin, m_state.rightPanelMax,
-                    ImGui::GetColorU32(EditorStyle::Accent::MatBase),
-                    EditorStyle::px(4.0f), 0, EditorStyle::px(2.0f));
-    }
-    // Gated on the drag: a release over the panel that did not follow one is an
-    // ordinary click in the Inspector, and must not close the window.
-    if (dragging && overPanel && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-        m_state.materialFloating = false;
-    }
-    if (!open) m_state.materialFloating = false;
 }
 
 } // namespace Vkm::Engine
