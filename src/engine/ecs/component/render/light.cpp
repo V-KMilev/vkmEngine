@@ -6,10 +6,10 @@
 namespace Vkm::Engine {
 
 EntityId findKeyLight(const Scene& scene) {
-    return findLowestSlot<Light, Transform>(scene,
-        [](const Light& light, const Transform&) {
-            return light.type == LightType::Directional;
-        });
+    const auto isKey = [](const Light& light, const Transform&) {
+        return light.enabled && light.type == LightType::Directional;
+    };
+    return findLowestSlot<Light, Transform>(scene, isKey);
 }
 
 } // namespace Vkm::Engine

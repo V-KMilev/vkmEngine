@@ -1,34 +1,44 @@
-layout (location = 0) in vec3 aPos;
-layout (location = 1) in vec3 aNormal;
-layout (location = 2) in vec2 aUV;
-layout (location = 3) in vec4 aTangent;       // xyz = tangent, w = handedness
-#include "../../_common/instancing.glsl"
-#include "../../_common/instancing_normal.glsl"
-#include "../../_common/camera.glsl"
+// SKINNED (forward/pbr_skinned) poses position, normal and tangent by the bone palette first.
+layout(location = ATTR_POSITION) in vec3 aPos;
+layout(location = ATTR_NORMAL) in vec3 aNormal;
+layout(location = ATTR_UV) in vec2 aUV;
+layout(location = ATTR_TANGENT) in vec4 aTangent;  // xyz = tangent, w = handedness
+#include "../../instancing.glsl"
+#ifdef SKINNED
+#include "../../skinning.glsl"
+#include "../../skinning_instanced.glsl"
+#endif
+#include "../../camera.glsl"
 
 out vec3 vWorldPos;
 out vec3 vNormal;
 out vec2 vUV;
 out vec3 vTangent;
-out vec3 vBitangent;
+out float vHandedness;   // the fragment rebuilds B from it
 
-// Bit-exact position across programs so the depth prepass and this pass agree
-// under LEQUAL early-Z (the prepass declares gl_Position invariant too).
+// Bit-exact with the depth prepass so the two agree under LEQUAL early-Z.
 invariant gl_Position;
 
 void main() {
     const mat4 model = instanceModel();
-    vec4 worldPos = model * vec4(aPos, 1.0);
+#ifdef SKINNED
+    const uint base  = instanceSkinBase();
+    const mat3 skin3 = mat3(skinMatrix(base));
+    vec4 worldPos    = skinnedWorldPosition(model, base);
+    vec3 normal      = skin3 * aNormal;
+    vec3 tangent     = skin3 * aTangent.xyz;
+#else
+    vec4 worldPos    = model * vec4(aPos, 1.0);
+    vec3 normal      = aNormal;
+    vec3 tangent     = aTangent.xyz;
+#endif
     vWorldPos = worldPos.xyz;
 
-    // Per-instance normal matrix (precomputed inverse-transpose) - correct normals
-    // under non-uniform scale, no per-vertex matrix inverse.
-    vNormal    = normalize(instanceNormalMatrix() * aNormal);
+    vNormal = normalize(normalMatrix(model) * normal);
 
-    // Tangent is a surface direction (model matrix); bitangent from the stored
-    // handedness. The fragment shader re-normalises and builds the TBN basis.
-    vTangent   = normalize(mat3(model) * aTangent.xyz);
-    vBitangent = cross(vNormal, vTangent) * aTangent.w;
+    // A surface direction, so the model matrix, not the normal matrix.
+    vTangent = normalize(mat3(model) * tangent);
+    vHandedness = aTangent.w;
 
     vUV = aUV;
     gl_Position = u_camera.viewProjection * worldPos;

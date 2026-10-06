@@ -4,27 +4,27 @@
 #include <memory>
 #include <vector>
 
+#include "gl_shader.h"
+
 #include "gl_pass.h"
-#include "gl_vertex_array.h"
+
+#include "system/render/data/particle_data.h"
 
 namespace Vkm::GL {
-    class Shader;
     class ShaderStorageBuffer;
 }
 
 namespace Vkm::Engine {
 
-struct ParticleData;
+class ScreenTriangle;
+struct RenderView;
 
 /**
  * @brief Draws the frame's particles as camera-facing billboards.
  *
- * Runs after the forward pass so particles land in the scene target and depth-test
- * against the geometry already there (without writing depth). Additive emitters
- * draw first (order-independent), then the back-to-front-sorted alpha ones.
- *
- * Attribute-less: instances live in an SSBO the vertex stage indexes, so a batch
- * is one instanced 4-vertex draw with no vertex buffer to maintain.
+ * Runs after the forward pass, depth-tested without writing depth. Additive emitters draw first,
+ * then alpha ones, which arrive unsorted and are sorted back-to-front here; each fogs at its own
+ * depth. Attribute-less: instances live in an SSBO, so a batch is one instanced 4-vertex draw.
  */
 class GLParticlePass : public GLPass {
     public:
@@ -37,20 +37,44 @@ class GLParticlePass : public GLPass {
         GLParticlePass(GLParticlePass && other) = delete;
         GLParticlePass& operator=(GLParticlePass && other) = delete;
 
+    public:
         void execute(GLFrameContext& ctx) override;
 
     private:
         /**
-         * @brief Upload @p batch to the instance SSBO and draw it as one
-         * instanced quad call (the vertex shader expands each particle).
+         * @brief One alpha particle's place in the far-to-near order.
+         *
+         * Eight bytes with a distance measured once per particle; the sorted order is applied to
+         * the particles afterwards in one pass.
          */
-        void drawBatch(const std::vector<ParticleData>& batch);
+        struct ParticleOrder {
+            float    distanceSq;  ///< Squared distance from the eye; the sort key.
+            uint32_t index;       ///< The particle's place in the unsorted list.
+        };
 
     private:
-        std::unique_ptr<Vkm::GL::Shader>              m_shader;
+        /**
+         * @brief Order the view's alpha particles far-to-near into m_sorted.
+         *
+         * @param view The particles, and the eye they are sorted from.
+         */
+        void sortAlpha(const RenderView& view);
+
+        /**
+         * @brief Upload @p batch to the instance SSBO and draw it as one instanced quad call.
+         *
+         * @param batch    The billboards to draw.
+         * @param emptyVao The frame's attribute-less VAO, which the draw binds.
+         */
+        void drawBatch(const std::vector<ParticleData>& batch, const ScreenTriangle& emptyVao);
+
+    private:
+        Vkm::GL::Shader                               m_shader;
         std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_instances;
-        uint32_t                                      m_capacity = 0;  ///< Instances the SSBO can hold.
-        Vkm::GL::VertexArray                          m_vao;           ///< Empty VAO: core profile needs one bound to draw.
+        uint32_t                                      m_capacity = 0;  ///< Bytes the SSBO can hold.
+
+        std::vector<ParticleOrder> m_order;   ///< Sort keys; capacity kept across frames.
+        std::vector<ParticleData>  m_sorted;  ///< The alpha particles, far to near.
 };
 
 } // namespace Vkm::Engine

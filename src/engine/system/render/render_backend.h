@@ -2,20 +2,23 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
+#include <vector>
+
+#include "resource/resource_handle.h"
 
 namespace Vkm::Engine {
-    struct RenderView;
-    class ResourceManager;
-    class WindowManager;
-    class EditorRenderHooks;
-}
 
-namespace Vkm::Engine {
+struct RenderView;
+struct TextureAsset;
+class ResourceManager;
+class WindowManager;
+class EditorRenderHooks;
 
 /**
- * @brief Human-readable backend identity for the editor status bar.
+ * @brief Human-readable backend identity, for a status display.
  *
- * Deliberately generic: swapping backends changes the strings, never the call site.
+ * Generic strings: another backend changes them, never the call site.
  */
 struct BackendInfo {
     std::string api;     ///< e.g. "OpenGL 4.6"
@@ -23,14 +26,11 @@ struct BackendInfo {
 };
 
 /**
- * @brief The single seam between the engine and the graphics API.
+ * @brief The frame's seam between the engine and the graphics API.
  *
- * The engine hands the backend one POD RenderView per frame; the backend owns
- * everything below this line - the API context, GPU resource mirror, passes,
- * and presentation. Nothing above this interface holds an API object, so
- * swapping backends is just destroying one implementation and constructing
- * another: there is no GPU state to migrate, and the new backend re-uploads
- * what it needs from the handles in the next RenderView.
+ * The backend gets one POD RenderView per frame and owns all GPU state below
+ * this line; the window owns the API context and Engine::run presents. Nothing
+ * above holds an API object.
  */
 class RenderBackend {
     public:
@@ -44,75 +44,92 @@ class RenderBackend {
         RenderBackend& operator=(RenderBackend && other) = delete;
 
     public:
-        BackendInfo info() const { return m_info; }
-
         /**
          * @brief Bring the backend up against the window.
          *
-         * Acquires / makes-current the API context or surface and creates any
-         * persistent GPU state. Returns false if the backend cannot run here,
-         * so a failed runtime swap can keep the previous backend instead.
+         * The window's API context is current. False when the device cannot run
+         * this backend.
+         *
+         * @param window The window whose context the backend draws into.
+         * @return True when the backend can draw.
          */
         virtual bool init(WindowManager& window) = 0;
 
         /**
-         * @brief Draw and present one frame.
+         * @brief Draw one frame into the window's back buffer, for the engine loop to present.
          *
-         * The view carries the viewport rect and the surface height, so a size
-         * change needs no separate notification: a backend that has to react to
-         * one (recreating a swapchain, say) compares against its own cached
-         * values here, which is where that state belongs.
+         * The view carries the viewport and surface size; a backend detects a
+         * resize by comparing against its own cached values.
          *
-         * @param view      Backend-agnostic snapshot of what to draw this frame.
-         * @param resources Resolves the view's handles to asset data; the backend
-         *                  mirrors that onto the GPU, uploading only what changed.
+         * @param view      What to draw this frame.
+         * @param resources Resolves the view's handles; only changed data is uploaded.
          */
         virtual void render(const RenderView& view, const ResourceManager& resources) = 0;
 
         /**
+         * @brief Read back the frame render() last drew, as the window shows it.
+         *
+         * The viewport after every pass, UI included. Called right after render()
+         * in the same frame, so a backend presenting in render() reads first.
+         * Leaves no API state behind.
+         *
+         * @param view   The view render() was handed; its viewport is the rect read.
+         * @param pixels Replaced with tightly packed 8-bit RGB, top row first.
+         * @return False, with @p pixels empty, when this backend cannot read back.
+         */
+        virtual bool readFrame(const RenderView& view, std::vector<uint8_t>& pixels) {
+            pixels.clear();
+            return false;
+        }
+
+        /**
          * @brief Recompile shaders whose source changed on disk - a dev hook.
          *
-         * Cheap enough to call every frame: the common answer is "nothing
-         * changed", which costs a directory scan and a timestamp compare. A
-         * shader that no longer compiles keeps the program it had and logs the
-         * error, so a half-finished edit never takes the renderer down.
+         * Cheap enough per frame (a directory scan and timestamp compare). A
+         * failing edit keeps the old program and logs. A no-op without sources on disk.
          *
-         * A backend that compiles shaders ahead of time, or a packaged build
-         * with no sources on disk, leaves this a no-op.
-         *
-         * @return Number of shaders recompiled; 0 when nothing changed.
+         * @return Number of shaders recompiled.
          */
         virtual uint32_t reloadChangedShaders() { return 0; }
 
         /**
          * @brief The highest anisotropic-filtering degree this backend can honour.
          *
-         * A hardware ceiling, not a preference: it is what the driver reports,
-         * so it belongs on the same side of the seam as the driver. 1 means
-         * none - the API, the device, or this backend does not offer it, and
-         * sampling stays trilinear.
+         * What the driver reports; a setting should offer nothing above it.
          *
-         * The editor offers no level above this, which is the whole point of
-         * surfacing it: a setting that reads 16x on a machine that stops at 8x
-         * is a lie, even though the backend would clamp it and render correctly.
-         *
-         * @return Maximum degree; at least 1.
+         * @return Maximum degree; 1 means none.
          */
         virtual uint32_t maxAnisotropy() const { return 1; }
 
         /**
-         * @brief The backend's authoring-only hooks, or null when it offers none.
+         * @brief Whether the backend holds its own copy of a texture's pixels.
          *
-         * The second seam, and a backend opts into it by overriding this - which
-         * is a line a reader can find, where a `dynamic_cast` was a fact only the
-         * runtime knew. A host that draws nothing, or a backend built without
-         * offscreen support, answers null and the editor shows placeholders.
+         * Asked before the CPU copy is freed (see RenderSystem::releaseUploadedPixels).
+         *
+         * @param texture The texture asked about.
+         * @param version Its asset's current Resource::version.
+         * @return True only when the backend's copy is of that version.
+         */
+        virtual bool holdsPixels(
+            const Handle<TextureAsset>& texture,
+            uint64_t version
+        ) const { return false; }
+
+        /**
+         * @brief The backend's authoring-only hooks, or null when it offers none.
          *
          * @return Hooks the editor may use, or null.
          */
         virtual EditorRenderHooks* editorHooks() { return nullptr; }
 
+    public:
+        BackendInfo info() const { return m_info; }
+
     protected:
+        /// What info() reports, once init() knows the API and the device.
+        void setInfo(BackendInfo info) { m_info = std::move(info); }
+
+    private:
         BackendInfo m_info;
 };
 

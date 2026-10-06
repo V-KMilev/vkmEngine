@@ -1,27 +1,33 @@
 /**
  * IBL bake - GGX prefiltered specular, one roughness per mip.
  *
- * Importance-samples the environment cubemap with the GGX distribution. The
- * bake pass sets u_roughness per mip level (0 at mip 0 .. 1 at the last mip).
+ * Importance-samples the environment with GGX; u_roughness runs 0 at mip 0 to 1 at the last mip.
  */
-
 in vec3 vLocalPos;
 
 out vec4 FragColor;
 
-uniform samplerCube u_envCube;
+layout(binding = BAKE_SLOT_SOURCE) uniform samplerCube u_envCube;
 uniform float u_roughness;
 
-#include "../../_common/constants.glsl"
-#include "../../_common/sampling.glsl"
-#include "../../_common/brdf.glsl"
-const uint  SAMPLE_COUNT = 1024u;
+#include "../../constants.glsl"
+#include "../../sampling.glsl"
+#include "../../brdf.glsl"
+
+const uint SAMPLE_COUNT = 1024u;
 
 void main() {
     vec3 N = normalize(vLocalPos);
     vec3 V = N;  // split-sum approximation: view = reflection = normal
 
-    // Solid angle of one env-cube texel (used for Karis mip selection).
+    // A mirror's every sample would be L = N at level 0; mip 0 is three quarters of the bake, so it
+    // takes that one read rather than a thousand.
+    if (u_roughness <= 0.0) {
+        FragColor = vec4(textureLod(u_envCube, N, 0.0).rgb, 1.0);
+        return;
+    }
+
+    // Solid angle of one env-cube texel, for Karis mip selection.
     float envRes = float(textureSize(u_envCube, 0).x);
     float saTexel = 4.0 * PI / (6.0 * envRes * envRes);
 
@@ -35,16 +41,15 @@ void main() {
 
         float NdotL = max(dot(N, L), 0.0);
         if (NdotL > 0.0) {
-            // Karis "prefiltered importance sampling": sample a coarser env
-            // mip when the GGX pdf is low, so bright pixels (the sun) do not
-            // alias into fireflies/sparkle on rough metal.
+            // Karis prefiltered importance sampling: a low pdf reads a coarser mip, so the sun
+            // does not alias into fireflies on rough metal.
             float NdotH    = max(dot(N, H), 0.0);
-            // The shared distributionGGX takes the GGX alpha (roughness^2).
+            // distributionGGX takes the GGX alpha (roughness^2).
             float D        = distributionGGX(NdotH, u_roughness * u_roughness);
-            float pdf      = (D * NdotH / (4.0 * NdotH)) + 1e-4;
+            // pdf of L is D * NdotH / (4 * VdotH); V is N here, so it is D / 4.
+            float pdf      = D * 0.25 + 1e-4;
             float saSample = 1.0 / (float(SAMPLE_COUNT) * pdf + 1e-4);
-            float mip      = (u_roughness < 1e-3)
-                           ? 0.0 : 0.5 * log2(saSample / saTexel);
+            float mip      = 0.5 * log2(saSample / saTexel);
 
             prefiltered += textureLod(u_envCube, L, max(mip, 0.0)).rgb * NdotL;
             totalWeight += NdotL;

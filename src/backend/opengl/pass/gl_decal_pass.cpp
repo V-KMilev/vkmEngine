@@ -10,29 +10,16 @@
 #include "gl_target.h"
 #include "gl_view.h"
 #include "convention/gl_bindings.h"
-#include "data/gl_material.h"
-#include "data/gl_mesh.h"
-#include "resource/generate/mesh_generators.h"
+#include "asset/gl_material.h"
+#include "asset/gl_mesh.h"
+#include "storage/gl_shadow_atlas.h"
+#include "core/math/rotation.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {
 
-namespace {
-// Flat ambient the decal is lit with on top of the sun, so a decal in shadow
-// still reads instead of going black.
-constexpr float DECAL_AMBIENT = 0.25f;
-
-glm::vec3 sunRadiance(const RenderView& view) {
-    for (const LightData& light : view.lights) {
-        if (light.type == LightType::Directional) return light.color * light.intensity;
-    }
-    return glm::vec3(0.0f);
-}
-} // namespace
-
 GLDecalPass::GLDecalPass()
-    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/decal"))
-    , m_cube(std::make_unique<GLMesh>(generateCube())) {}
+    : m_shader("shaders/decal") {}
 
 GLDecalPass::~GLDecalPass() = default;
 
@@ -50,21 +37,29 @@ void GLDecalPass::execute(GLFrameContext& ctx) {
     ctx.gl.setBlending(true);
     ctx.gl.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     ctx.gl.setFaceCulling(true);
-    ctx.gl.setCullFace(GL_FRONT);  // back faces only: one layer, and it survives the camera being inside the box
+    // Back faces only: one layer, and it survives the camera being inside the box.
+    ctx.gl.setCullFace(GL_FRONT);
 
-    m_shader->bind();
-    ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SCENE_DEPTH);
-    ctx.sceneHDR.bindGBuffer(GLBindings::PostTextureSlots::SCENE_GBUFFER);
+    m_shader.bind();
+    bindFog(ctx, m_shader);
+    ctx.sceneHDR.bindTexture(GLTarget::Attachment::Depth, GLBindings::PostTextureSlots::SCENE_DEPTH);
+    ctx.sceneHDR.bindTexture(GLTarget::Attachment::GBuffer, GLBindings::PostTextureSlots::SCENE_GBUFFER);
+    // The cascades: compared on one unit, raw on the other for the soft path's
+    // blocker search.
+    ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::ATLAS_2D);
+    ctx.shadowAtlas.bind2DRaw(GLBindings::ShadowTextureSlots::ATLAS_2D_RAW);
 
-    m_shader->setUniformMatrix4fv("u_viewProj",    view.camera.viewProjection);
-    m_shader->setUniformMatrix4fv("u_invViewProj", view.camera.invViewProj);
-    m_shader->setUniformMatrix4fv("u_invView",     view.camera.invView);
-    m_shader->setUniform2f("u_screenSize",
-                           static_cast<float>(view.viewportWidth),
-                           static_cast<float>(view.viewportHeight));
-    m_shader->setUniform3fv("u_sunDir",   ctx.sunDir);
-    m_shader->setUniform3fv("u_sunColor", sunRadiance(view));
-    m_shader->setUniform1f("u_ambient",   DECAL_AMBIENT * view.environment.sky.intensity);
+    // The key light (see lowestSlotDirectional), so a decal agrees with the surface under it.
+    // The cascades are the lowest-slot directional caster's (GLShadowData::build): the key
+    // light's exactly when it casts.
+    const LightData* key = lowestSlotDirectional(view.lights);
+    m_shader.setUniform3fv("u_sunDir",   key ? -key->direction : ctx.sunDir);
+    m_shader.setUniform3fv("u_sunColor", key ? key->color * key->intensity : glm::vec3(0.0f));
+    m_shader.setUniform1i("u_sunShadowed", (key && key->castShadows) ? 1 : 0);
+
+    // The environment's light as the surface under the decal takes it, occlusion included.
+    bindAmbient(ctx, m_shader);
+    bindAO(ctx, m_shader);
 
     for (const DecalData& decal : view.decals) {
         const GLMaterial* material = glView.getMaterial(decal.material);
@@ -72,23 +67,18 @@ void GLDecalPass::execute(GLFrameContext& ctx) {
         material->bind(GLBindings::UBOBindingPoints::MATERIAL);
         material->bindTextures(glView);
 
-        // The entity's +Z column, which is its backward: the shader negates it
-        // (decal/fragment.shader, facing) so the projection runs along forward,
-        // which is -Z. Sent unnegated so the sign lives in one place.
-        const glm::vec3 projDir = glm::normalize(glm::vec3(decal.model[2]));
+        // A decal projects along its forward; a surface facing back up that ray
+        // is the one it lands on.
+        const glm::vec3 projDir = Math::computeForward(Math::worldRotationOf(decal.model));
 
-        m_shader->setUniformMatrix4fv("u_model",    decal.model);
-        m_shader->setUniformMatrix4fv("u_invModel", decal.invModel);
-        m_shader->setUniform3fv("u_projDir",  projDir);
-        m_shader->setUniform1f("u_angleFade", decal.angleFade);
-        m_shader->setUniform1f("u_opacity",   decal.opacity);
+        m_shader.setUniformMatrix4fv("u_model",    decal.model);
+        m_shader.setUniformMatrix4fv("u_invModel", decal.invModel);
+        m_shader.setUniform3fv("u_projDir",  projDir);
+        m_shader.setUniform1f("u_angleFade", decal.angleFade);
+        m_shader.setUniform1f("u_opacity",   decal.opacity);
 
-        m_cube->draw();
+        ctx.unitCube.draw();
     }
-
-    ctx.gl.setBlending(false);
-    ctx.gl.setFaceCulling(false);
-    ctx.gl.setDepthTest(true);
 }
 
 } // namespace Vkm::Engine

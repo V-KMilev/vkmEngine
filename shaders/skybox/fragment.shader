@@ -1,52 +1,52 @@
 /**
  * Skybox fragment shader.
  *
- * Samples the baked environment cubemap and outputs LINEAR radiance into the
- * HDR target - the composite pass owns tonemap + gamma, so the sky tone-maps
- * consistently with lit geometry. For the procedural sky, the sharp things the
- * env cube cannot hold are added analytically on top: the sun disc by day, and
- * the stars and moon once the sun is down.
+ * The baked environment cubemap as linear radiance; for the procedural sky, the sun disc, stars and
+ * moon the cube cannot hold are added analytically. Fogged at the far plane, so the horizon fades
+ * into the fog; with no sky it is the prepass's black, still fogged.
  */
+
+#include "../fog.glsl"
 
 in vec3 vDir;
 
 out vec4 FragColor;
 
-layout(binding = 17) uniform samplerCube u_envCube;
+layout(binding = IBL_SLOT_ENV_CUBE) uniform samplerCube u_envCube;
 uniform float u_iblIntensity;
+uniform int   u_hasSky;  // 0 = no sky to show: the background is black, then fogged
 
 uniform int   u_hasSun;            // 1 = draw the analytic discs (procedural sky)
 uniform vec3  u_sunDir;            // direction TO the sun, normalized
-uniform float u_sunCosOuter;      // cos(angularRadius): disc edge
-uniform float u_sunCosInner;      // cos(0.8 * angularRadius): fully-bright core
-uniform float u_sunDiscIntensity; // disc radiance
+uniform float u_sunCosOuter;       // cos(angularRadius): disc edge
+uniform float u_sunCosInner;       // cos(0.8 * angularRadius): fully-bright core
+uniform float u_sunDiscIntensity;  // disc radiance
+uniform vec3  u_sunColor;          // the disc's tint: the sunlight through the atmosphere
 
-uniform vec3  u_moonDir;           // direction TO the moon, normalized
+uniform vec3  u_moonDir;        // direction TO the moon, normalized
 uniform float u_moonCosOuter;
 uniform float u_moonCosInner;
 uniform float u_moonIntensity;
-uniform float u_starIntensity;     // 0 disables the star field
+uniform float u_starIntensity;  // 0 disables the star field
 uniform float u_starDensity;
 
-#include "../_common/sky.glsl"
+#include "../sky.glsl"
 
 void main() {
     vec3 dir   = normalize(vDir);
-    vec3 color = texture(u_envCube, dir).rgb * u_iblIntensity;
+    vec3 color = vec3(0.0);
+    if (u_hasSky == 1) color = texture(u_envCube, dir).rgb * u_iblIntensity;
 
-    if (u_hasSun == 1) {
+    if (u_hasSky == 1 && u_hasSun == 1) {
         float night = skyNightFactor(u_sunDir);
 
-        // The sun disc goes with the daylight that justifies it. Without this it
-        // would keep burning through the night sky from below the horizon, where
-        // there is no ground in the skybox to hide it.
+        // Fades with the daylight, or it would burn through the night sky from below the horizon.
         float sun = skyDisc(dir, u_sunDir, u_sunCosOuter, u_sunCosInner);
-        color += sun * (1.0 - night) * u_sunDiscIntensity * vec3(1.0, 0.96, 0.9);
+        color += sun * (1.0 - night) * u_sunDiscIntensity * u_sunColor;
 
         if (night > 0.0) {
-            // Stars sit behind the moon and below the horizon alike: the sky is
-            // a backdrop, and clipping them at the horizon line would only draw
-            // attention to an edge the atmosphere already softens.
+            // Not clipped at the horizon: that would draw attention to an edge the atmosphere
+            // already softens.
             float stars = skyStarField(dir, u_starDensity);
             color += stars * night * u_starIntensity * vec3(0.92, 0.95, 1.0);
 
@@ -55,5 +55,6 @@ void main() {
         }
     }
 
-    FragColor = vec4(color, 1.0);
+    vec4 fog = fragmentFog();
+    FragColor = vec4(color * fog.a + fog.rgb, 1.0);
 }

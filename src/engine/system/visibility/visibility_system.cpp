@@ -2,8 +2,9 @@
 
 #include "system/visibility/visibility_system.h"
 
-#include <algorithm>
 #include <cstring>
+
+#include <glm/gtc/constants.hpp>
 
 #include "logger.h"
 
@@ -22,11 +23,9 @@
 #include "core/host_chrome.h"
 #include "core/math/bounds.h"
 #include "system/animation/pose_buffer.h"
-#include "system/visibility/visibility_context.h"
-
-#include "system/visibility/culling/frustum_culler.h"
-#include "system/visibility/culling/screen_size_culler.h"
-#include "system/visibility/culling/distance_culler.h"
+#include "system/render/render_settings.h"
+#include "system/visibility/culling.h"
+#include "system/visibility/host_view.h"
 
 namespace Vkm::Engine {
 
@@ -35,32 +34,19 @@ namespace {
 /**
  * @brief The box this frame's pose actually occupies, in the mesh's own space.
  *
- * A posed character's bind-pose box is under-sized by construction, and the GPU
- * occlusion cull keeps conservatively - an under-sized box does not over-draw, it
- * deletes geometry that was visible, so a character raising an arm vanishes.
- *
- * The pose publishes the box of the posed bone origins in rig space and the
- * largest scale any bone carries; the mesh knows the rest, `skinRadius` being how
- * far a vertex sits from the bone that moves it. The scale multiplies the radius
- * because a bone scaled 2x stretches its skin twice as far from the joint.
- *
- * The radius is measured in mesh space and applied in rig space: exact while the
- * bind transform between them is rigid, and conservative otherwise, because
- * `maxBoneScale` is floored at 1.
+ * The bind-pose box under-sizes a posed character, and an under-sized box culls
+ * visible geometry. The posed bone-origin box is padded by `skinRadius` times
+ * the largest bone scale; measured in mesh space, applied in rig space: exact
+ * for a rigid bind transform, else conservative, as `maxBoneScale` is floored at 1.
  *
  * @param mesh Mesh being bounded.
- * @param poses This frame's poses, or null when nothing posed anything.
- * @param entityIdx Entity slot the mesh sits on.
+ * @param slice The mesh's rig slice this frame, or null when nothing poses it.
  * @param outMin Filled with the low corner of the local-space box.
  * @param outMax Filled with the high corner.
  */
-void poseLocalBounds(const MeshAsset& mesh, const PoseBuffer* poses, uint32_t entityIdx,
-                     glm::vec3& outMin, glm::vec3& outMax) {
+void poseLocalBounds(const MeshAsset& mesh, const PoseSlice* slice, glm::vec3& outMin, glm::vec3& outMax) {
     outMin = mesh.boundsMin;
     outMax = mesh.boundsMax;
-    if (!poses || mesh.skin.empty()) return;
-
-    const PoseSlice* slice = poses->sliceOf(entityIdx);
     if (!slice || slice->count == 0) return;
 
     const glm::vec3 pad(mesh.skinRadius * slice->maxBoneScale);
@@ -68,21 +54,35 @@ void poseLocalBounds(const MeshAsset& mesh, const PoseBuffer* poses, uint32_t en
     outMax = slice->originMax + pad;
 }
 
+// What the cull records about each object, for the serial gather.
+constexpr uint8_t STATE_DRAWN   = 1u << 0;  ///< Goes into the scene-wide list.
+constexpr uint8_t STATE_VISIBLE = 1u << 1;  ///< The camera sees it.
+constexpr uint8_t STATE_CASTS   = 1u << 2;  ///< Goes into the scene list's caster prefix.
+
 /**
  * @brief Pick the geometry for this entity at this distance.
  *
- * Falls through to the Mesh component's own handle when the entity has no LOD
- * component, which is the common case and costs one storage lookup.
+ * Distance is to the bounds centre, not the origin, so an object whose pivot
+ * sits far from its body does not pop.
  *
- * Distance is measured to the bounds centre rather than the origin so a long
- * object does not pop when its pivot happens to sit far from its body.
- *
+ * @tparam LODStorage The LOD component's storage.
+ * @param mesh       Its handle is the full-detail level, and the fallback.
+ * @param lodStorage Null when the scene has no LOD components.
+ * @param entityIdx  The entity's slot, which keys its LOD.
+ * @param worldMin   World bounds' low corner.
+ * @param worldMax   World bounds' high corner.
+ * @param context    Supplies the camera position and LOD distance scale.
  * @return The chosen mesh; never empty when the Mesh component had one.
  */
 template <typename LODStorage>
-MeshHandle selectLOD(const Mesh& mesh, const LODStorage* lodStorage, uint32_t entityIdx,
-                     const glm::vec3& worldMin, const glm::vec3& worldMax,
-                     const VisibilityContext& context) {
+MeshHandle selectLOD(
+    const Mesh& mesh,
+    const LODStorage* lodStorage,
+    uint32_t entityIdx,
+    const glm::vec3& worldMin,
+    const glm::vec3& worldMax,
+    const VisibilityContext& context
+) {
     if (!lodStorage || !lodStorage->contains(entityIdx)) return mesh.mesh;
 
     const LOD& lod = lodStorage->get(entityIdx);
@@ -91,54 +91,89 @@ MeshHandle selectLOD(const Mesh& mesh, const LODStorage* lodStorage, uint32_t en
     const glm::vec3 centre = (worldMin + worldMax) * 0.5f;
     const glm::vec3 delta  = centre - context.cameraPosition;
     const float distance   = glm::length(delta);
-    const float scaled     = distance / glm::max(lod.bias, 0.001f);
+    const float bias       = glm::max(lod.bias, glm::epsilon<float>());
+    const float scaled     = distance * context.lodDistanceScale / bias;
 
     for (const LODLevel& level : lod.levels) {
         if (scaled <= level.maxDistance) return level.mesh ? level.mesh : mesh.mesh;
     }
 
-    // Past the last threshold the coarsest level keeps drawing; removing the
-    // entity is DistanceCuller's decision, not this one's.
+    // Past the last threshold the coarsest level keeps drawing; culling is Culling::isNearEnough's call.
     const MeshHandle& last = lod.levels.back().mesh;
     return last ? last : mesh.mesh;
 }
 
 } // namespace
 
-bool VisibilitySystem::resolveActiveCamera(Scene& scene, float viewportAspect) {
-    // No fallback when the scene has no active camera: the renderer publishes
-    // hasCamera = false and draws nothing, rather than inheriting whatever the
-    // editor's fly controls happen to still be pointed at.
-    m_cachedCameraEntity = findActiveCamera(scene, m_cachedCameraEntity);
-    if (!m_cachedCameraEntity) return false;
+void VisibilitySystem::publishCamera(
+    const Camera& camera,
+    const glm::vec3& position,
+    const glm::quat& rotation,
+    float viewportAspect,
+    EntityId entity
+) {
+    Transform pose;
+    pose.position = position;
+    pose.rotation = rotation;
 
-    const Camera&    camera    = scene.get<Camera>(m_cachedCameraEntity);
-    const Transform& transform = scene.get<Transform>(m_cachedCameraEntity);
+    const glm::mat4 projection = Camera::computeProjection(camera, viewportAspect);
+    CameraData&     data       = m_result.camera;
+    data = CameraData::from(Transform::computeView(pose), projection, position);
+    data.focusDistance = camera.focusDistance;
+    data.dofAmount     = camera.dofAmount;
+    data.dofMaxBlur    = camera.dofMaxBlur;
 
-    // A camera parented to a rig (player root, boom arm) has to render from
-    // its resolved world pose - the local Transform is only its offset
-    // inside that rig.
-    Transform pose = transform;
-    pose.position  = resolvedWorldPosition(scene, m_cachedCameraEntity, transform);
-    pose.rotation  = resolvedWorldRotation(scene, m_cachedCameraEntity, transform);
+    m_result.cameraEntity = entity;
+    m_result.hasCamera    = true;
+}
 
-    m_result.projection     = Camera::computeProjection(camera, viewportAspect);
-    m_result.view           = Transform::computeView(pose);
-    m_result.cameraPosition = pose.position;
-    m_result.focusDistance  = camera.focusDistance;
-    m_result.dofAmount      = camera.dofAmount;
-    m_result.hasCamera      = true;
+bool VisibilitySystem::resolveCamera(const FrameContext& ctx, float viewportAspect) {
+    const Scene& scene = ctx.scene;
+    const HostView* host = ctx.hostView;
+    if (host && !host->through) {
+        publishCamera(host->camera, host->position, host->rotation, viewportAspect, {});
+        return true;
+    }
+
+    // No fallback without an active camera: the frame draws nothing rather than
+    // inheriting a host's last view.
+    EntityId entity;
+    if (host) {
+        entity = host->through;
+    } else {
+        // A replaced world reuses slots, so the held camera could name a stranger.
+        if (scene.epoch() != m_cameraEpoch) {
+            m_cameraEpoch        = scene.epoch();
+            m_cachedCameraEntity = {};
+        }
+        m_cachedCameraEntity = findActiveCamera(scene, m_cachedCameraEntity);
+        entity = m_cachedCameraEntity;
+    }
+    const Camera*    camera    = scene.tryGet<Camera>(entity);
+    const Transform* transform = scene.tryGet<Transform>(entity);
+    if (!camera || !transform) return false;
+
+    // A camera parented to a rig renders from its world pose, not its local offset.
+    publishCamera(
+        *camera,
+        resolvedWorldPosition(scene, entity, *transform),
+        resolvedWorldRotation(scene, entity, *transform),
+        viewportAspect,
+        entity
+    );
     return true;
 }
 
 void VisibilitySystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("VisibilitySystem");
 
-    // Cleared here, not at the serial gather, so the early-return paths below
-    // still publish an empty result instead of last frame's stale entries.
-    m_result.entries.clear();
-    m_result.shadowCasters.clear();
-    m_result.hasCamera = false;
+    // Cleared here, not at the gather, so early returns publish an empty result, not last frame's.
+    RenderObjects& objects = m_result.objects;
+    objects.visible.clear();
+    objects.scene.clear();
+    objects.casterCount = 0;
+    m_result.hasCamera    = false;
+    m_result.cameraEntity = {};
 
     // Cameras in auto-aspect mode (aspect <= 0) track the viewport.
     const HostChrome::ViewportRect viewport = ctx.chrome.viewport(ctx.window);
@@ -146,11 +181,9 @@ void VisibilitySystem::update(FrameContext& ctx) {
     const float vpH = static_cast<float>(viewport.height);
     const float viewportAspect = vpH > 0.0f ? vpW / vpH : 16.0f / 9.0f;
 
-    if (!resolveActiveCamera(ctx.scene, viewportAspect)) {
-        // A supported state, not a failure: the render side has a documented
-        // empty-snapshot path for it. Logged on the edge only - a scene between
-        // cameras would otherwise repeat the line at frame rate.
-        if (!m_noCameraLogged) {
+    if (!resolveCamera(ctx, viewportAspect)) {
+        // A supported state (see RenderView::build); logged on the edge only.
+        if (!ctx.hostView && !m_noCameraLogged) {
             LOG_WARNING("No active camera found for visibility");
             m_noCameraLogged = true;
         }
@@ -159,32 +192,34 @@ void VisibilitySystem::update(FrameContext& ctx) {
     }
     m_noCameraLogged = false;
 
-    // resolveActiveCamera filled m_result.{view, projection, cameraPosition,
-    // hasCamera}; downstream systems read those directly.
-    const glm::mat4 viewProjection = m_result.projection * m_result.view;
+    const CameraData& eye = m_result.camera;
 
-    // Pre-compute screen-size threshold for sqrt-free test
-    const float projScaleY = m_result.projection[1][1];
-    const float vpHeight = vpH;
-    const float denom = projScaleY * vpHeight;
+    const float projScaleY = eye.projection[1][1];
+    const float denom = projScaleY * vpH;
     const float screenThresholdSq = (denom > 0.0f)
-        ? (m_settings.minPixels * m_settings.minPixels) / (denom * denom)
+        ? (ctx.render.cullMinPixels * ctx.render.cullMinPixels) / (denom * denom)
         : 0.0f;
 
+    // A narrower view magnifies, so a level holds further out; orthographic keeps the reference.
+    const bool  perspective      = eye.projection[3][3] == 0.0f;
+    const bool  magnifies        = perspective && projScaleY > 0.0f;
+    const float lodDistanceScale = magnifies ? LOD::REFERENCE_P11 / projScaleY : 1.0f;
+
     VisibilityContext context{
-        .frustum        = Math::extractFrustum(viewProjection),
-        .cameraPosition = m_result.cameraPosition,
-        .view           = m_result.view,
-        .minPixels      = m_settings.minPixels,
-        .maxDistance    = m_settings.maxDistance,
-        .maxDistanceSquared = m_settings.maxDistance * m_settings.maxDistance,
+        .frustum               = Math::extractFrustum(eye.viewProjection),
+        .cameraPosition        = eye.position,
+        .view                  = eye.view,
+        .minPixels             = ctx.render.cullMinPixels,
+        .maxDistance           = ctx.render.cullMaxDistance,
+        .maxDistanceSquared    = ctx.render.cullMaxDistance * ctx.render.cullMaxDistance,
         .screenSizeThresholdSq = screenThresholdSq,
-        .perspective = m_result.projection[3][3] == 0.0f,
+        .lodDistanceScale      = lodDistanceScale,
+        .perspective           = perspective,
     };
 
     // The sparse sets directly: the cull iterates them by index, in parallel.
-    auto* meshStorage           = ctx.scene.storage<Mesh>();
-    auto* transformStorage      = ctx.scene.storage<Transform>();
+    auto*       meshStorage           = ctx.scene.storage<Mesh>();
+    auto*       transformStorage      = ctx.scene.storage<Transform>();
     const auto* worldTransformStorage = ctx.scene.storage<WorldTransform>();
 
     if (!meshStorage || !transformStorage) {
@@ -198,14 +233,15 @@ void VisibilitySystem::update(FrameContext& ctx) {
     const auto* lodStorage = ctx.scene.storage<LOD>();
     const PoseBuffer* poses = ctx.poses;
 
-    // Persistent flat arrays - resize reuses capacity (no alloc after first frame).
-    // Each thread writes to disjoint indices, so zero contention / zero atomics.
-    m_visibleFlags.resize(meshCount);
-    m_casterFlags.resize(meshCount);
-    m_scratch.resize(meshCount);
+    // Persistent: a steady scene allocates nothing. Each index has one writer, so no atomics.
+    m_state.resize(meshCount);
+    objects.models.resize(meshCount);
+    objects.bounds.resize(meshCount);
+    objects.draws.resize(meshCount);
+    objects.skinFirst.resize(meshCount);
+    m_result.entities.resize(meshCount);
 
-    std::memset(m_visibleFlags.data(), 0, meshCount);
-    std::memset(m_casterFlags.data(), 0, meshCount);
+    std::memset(m_state.data(), 0, meshCount);
 
     {
         PROFILE_SCOPE("Visibility/Cull");
@@ -215,7 +251,8 @@ void VisibilitySystem::update(FrameContext& ctx) {
             const Mesh& mesh = meshStorage->dataAt(idx);
 
             if (!mesh.visible) return;
-            if (!mesh.mesh) return;
+            // Nothing to shade it with draws and casts nothing, decided once for every list.
+            if (!mesh.mesh || !mesh.material) return;
             if (!transformStorage->contains(entityIdx)) return;
 
             const auto& meshAsset = resources.get(mesh.mesh);
@@ -223,47 +260,55 @@ void VisibilitySystem::update(FrameContext& ctx) {
 
             const Transform& transform = transformStorage->get(entityIdx);
 
-            const glm::mat4 modelMatrix = (worldTransformStorage && worldTransformStorage->contains(entityIdx))
+            const bool hasWorld = worldTransformStorage && worldTransformStorage->contains(entityIdx);
+            const glm::mat4 modelMatrix = hasWorld
                 ? worldTransformStorage->get(entityIdx).model
                 : Transform::computeModelMatrix(transform);
 
-            // The pose moves the geometry, so it is the pose that says how big
-            // the box has to be; an unskinned mesh answers its own bind bounds.
+            // The pose sizes a skinned mesh's box; an unskinned one keeps its bind bounds.
+            const bool skinned = poses && !meshAsset.skin.empty();
+            const PoseSlice* slice = skinned ? poses->sliceOf(ctx.scene.entityAt(entityIdx)) : nullptr;
             glm::vec3 localMin, localMax;
-            poseLocalBounds(meshAsset, poses, entityIdx, localMin, localMax);
+            poseLocalBounds(meshAsset, slice, localMin, localMax);
 
             const Math::AABB world = Math::transform(modelMatrix, {localMin, localMax});
 
-            // Every valid mesh, not just the camera-visible ones, so the
-            // caster gather below reaches off-screen occluders. LOD resolves
-            // here because here is where the distance is known.
-            m_scratch[i] = VisibleEntity{
-                ctx.scene.entityAt(entityIdx),
-                modelMatrix,
-                world,
-                selectLOD(mesh, lodStorage, entityIdx, world.min, world.max, context)
+            // Every valid mesh, not just visible ones, so the scene-wide gather reaches
+            // off-screen occluders.
+            objects.models[i]      = modelMatrix;
+            objects.bounds[i]      = world;
+            objects.draws[i]       = ObjectDraw{
+                selectLOD(mesh, lodStorage, entityIdx, world.min, world.max, context),
+                mesh.material,
+                slice ? slice->count : 0u
             };
-            m_casterFlags[i] = mesh.castShadows ? 1 : 0;
+            objects.skinFirst[i]   = slice ? slice->first : 0u;
+            m_result.entities[i]   = ctx.scene.entityAt(entityIdx);
 
-            // The camera-visibility culls only set the visible flag.
-            if (!FrustumCuller::isVisible(world, context)) return;
-            if (!DistanceCuller::isVisible(world, context)) return;
-            if (!ScreenSizeCuller::isVisible(world, context)) return;
+            uint8_t state = STATE_DRAWN;
+            if (mesh.castShadows) state |= STATE_CASTS;
 
-            m_visibleFlags[i] = 1;
+            if (Math::frustumIntersectsAABB(context.frustum, world)
+                && Culling::isNearEnough(world, context)
+                && Culling::isLargeEnough(world, context)) {
+                state |= STATE_VISIBLE;
+            }
+            m_state[i] = state;
         });
     }
 
-    // Serial gather: sequential reads into the persistent m_result buffers,
-    // already cleared at the top of update().
+    // Casters first, as the prefix RenderObjects::casterCount counts.
     PROFILE_SCOPE("Visibility/Gather");
     for (uint32_t i = 0; i < meshCount; ++i) {
-        const bool visible = m_visibleFlags[i] != 0;
-        const bool caster  = m_casterFlags[i]  != 0;
-        if (!visible && !caster) continue;
+        const uint8_t state = m_state[i];
+        if ((state & STATE_DRAWN) == 0) continue;
 
-        if (visible) m_result.entries.push_back(m_scratch[i]);
-        if (caster)  m_result.shadowCasters.push_back(m_scratch[i]);
+        if (state & STATE_VISIBLE) objects.visible.push_back(i);
+        if (state & STATE_CASTS)   objects.scene.push_back(i);
+    }
+    objects.casterCount = static_cast<uint32_t>(objects.scene.size());
+    for (uint32_t i = 0; i < meshCount; ++i) {
+        if ((m_state[i] & (STATE_DRAWN | STATE_CASTS)) == STATE_DRAWN) objects.scene.push_back(i);
     }
 
     ctx.visibility = &m_result;

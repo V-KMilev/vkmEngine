@@ -1,37 +1,29 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
+
 #include "core/system.h"
-#include "core/memory/types.h"
 #include "system/visibility/visibility.h"
 
 namespace Vkm::Engine {
 
+struct Camera;
+
 /**
- * @brief Builds the per-frame Visibility result (visible entities + shadow casters).
+ * @brief Builds the per-frame Visibility result (every scene mesh, and which of them the camera sees).
  *
- * Runs in the Visibility stage. Finds the active camera (cached for O(1)
- * re-lookup, falling back to a scene scan), then culls every Mesh in parallel
- * through frustum -> distance -> screen-size tests. The result is published on
- * FrameContext::visibility for the render side (RenderSystem, editor picking).
- * Shadow casters are gathered separately so off-screen occluders survive
- * frustum culling.
+ * Runs after the Transform stage, whose world transforms it culls. Views through
+ * FrameContext::hostView when offered, else the active camera; culls every Mesh
+ * in parallel (frustum -> distance -> screen size) and publishes on
+ * FrameContext::visibility. Every drawable mesh is also gathered, seen or not,
+ * so off-screen occluders and offline captures survive frustum culling.
  */
 class VisibilitySystem : public System {
     public:
-        /**
-         * @brief Tunable cull thresholds for the visibility pass.
-         *
-         * Mirrored into the VisibilityContext at the start of each frame, where
-         * the raw thresholds are pre-squared for the sqrt-free distance and
-         * screen-size tests.
-         */
-        struct Settings {
-            float minPixels   = 3.0f;    ///< Screen-pixel cull threshold.
-            float maxDistance = 500.0f;  ///< World-space cull distance.
-        };
-
         VisibilitySystem() = default;
         ~VisibilitySystem() override = default;
 
@@ -44,33 +36,45 @@ class VisibilitySystem : public System {
     public:
         void update(FrameContext& ctx) override;
 
-        Settings&       getSettings()       { return m_settings; }
-        const Settings& getSettings() const { return m_settings; }
-        void setSettings(const Settings& s) { m_settings = s; }
-
     private:
         /**
-         * @brief Resolve the active camera into m_result (view / projection /
-         * cameraPosition / hasCamera) and refresh the camera-entity cache.
+         * @brief Resolve the view this frame renders through into m_result.
          *
-         * Tries the cached entity first (O(1)); on a miss, scans for the first
-         * active camera. The pose comes from the camera's WorldTransform when it
-         * has one, so a camera parented to a rig renders from the rig's place
-         * rather than its own local offset. Returns false (m_result.hasCamera
-         * left false) when none is found.
+         * A host's free view, else the scene camera it names, else the active
+         * camera (cached, scanned on a miss). A camera's pose is its resolved
+         * world pose, so one parented to a rig renders from the rig's place.
+         *
+         * @param ctx            Supplies the scene and host view.
+         * @param viewportAspect Taken by a camera in auto-aspect mode.
+         * @return false, with m_result.hasCamera left false, when there is
+         *         nothing to render through.
          */
-        bool resolveActiveCamera(Scene& scene, float viewportAspect);
+        bool resolveCamera(const FrameContext& ctx, float viewportAspect);
+
+        /**
+         * @brief Write one camera's matrices, position and depth of field into m_result.
+         *
+         * @param camera         Projection and depth-of-field parameters.
+         * @param position       Eye, world space.
+         * @param rotation       Eye, world space.
+         * @param viewportAspect Used while camera.aspect <= 0.
+         * @param entity         The scene camera, or empty for a free view.
+         */
+        void publishCamera(
+            const Camera& camera,
+            const glm::vec3& position,
+            const glm::quat& rotation,
+            float viewportAspect,
+            EntityId entity
+        );
 
     private:
-        Settings m_settings;
-
         EntityId m_cachedCameraEntity{};
+        uint64_t m_cameraEpoch = 0;  ///< Scene::epoch() of the held camera.
         Visibility m_result;
-        bool m_noCameraLogged = false;  ///< Edge latch so the no-camera warning fires once per gap.
+        bool m_noCameraLogged = false;  ///< The no-camera warning fires once per gap.
 
-        std::vector<uint8_t>       m_visibleFlags;
-        std::vector<uint8_t>       m_casterFlags;
-        std::vector<VisibleEntity> m_scratch;  ///< Cull result per Mesh index; the flags say which ones the gather may read.
+        std::vector<uint8_t> m_state;  ///< Per object: the cull's STATE_* bits.
 };
 
 } // namespace Vkm::Engine
