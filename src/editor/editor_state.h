@@ -143,6 +143,11 @@ struct EditorState : CommandHost {
     bool requestScriptReload = false; ///< Consumed by EditorSystem (hot-reload)
     bool requestNewProject   = false; ///< Consumed by NewProjectDialog
     std::string newProjectTemplate;   ///< The project it copies; empty for templates/default
+
+    /// A vkm command for BuildController: the words after `vkm`, and a project to open once
+    /// it succeeds (after `vkm new`). Empty for none.
+    std::vector<std::string> requestVkm;
+    std::string              requestVkmOpens;
     bool requestOpenProject  = false; ///< Consumed by OpenProjectDialog
     bool requestResetLayout  = false; ///< Consumed by the workspace before its dockspace
 

@@ -1,17 +1,10 @@
-#define VKM_LOG_CATEGORY "EDITOR"
-
 #include "chrome/new_project_dialog.h"
 
 #include <cstdio>
-#include <system_error>
 
 #include <imgui.h>
-#include <nlohmann/json.hpp>
-
-#include "logger.h"
 
 #include "editor_state.h"
-#include "io/json_file.h"
 #include "io/project_paths.h"
 #include "ui/editor_dialogs.h"
 #include "ui/editor_style.h"
@@ -24,88 +17,6 @@ namespace {
 std::filesystem::path defaultTemplate() { return ProjectPaths::engineRoot() / "templates" / "default"; }
 
 } // namespace
-
-bool NewProjectDialog::create(
-    const std::filesystem::path& source,
-    const std::filesystem::path& dest,
-    std::string& error
-) {
-    namespace fs = std::filesystem;
-    std::error_code ec;
-
-    if (fs::exists(dest, ec) && !fs::is_empty(dest, ec)) {
-        error = "That directory already exists and is not empty";
-        return false;
-    }
-
-    if (!fs::is_regular_file(source / "project.json", ec)) {
-        error = "No project to copy at " + source.string();
-        return false;
-    }
-
-    // The source is a runnable project, so what running it wrote is skipped, by name.
-    // Must match `vkm new` (tools/vkmcli/project.py); docs_tests holds the two to one set.
-    static const char* const GENERATED[] = {
-        "build",
-        "bin",
-        "dist",
-        "cooked",
-        "logs",
-        "__pycache__",
-        "editor_settings.json"
-    };
-    const auto isGenerated = [&](const std::string& name) {
-        for (const char* generated : GENERATED) {
-            if (name == generated) return true;
-        }
-        return false;
-    };
-
-    fs::create_directories(dest, ec);
-    for (fs::recursive_directory_iterator it(source, ec), end;
-         !ec && it != end; it.increment(ec)) {
-        std::error_code entryEc;
-        const bool directory = it->is_directory(entryEc);
-        if (isGenerated(it->path().filename().string())) {
-            if (directory) it.disable_recursion_pending();
-            continue;
-        }
-        const fs::path relative = fs::relative(it->path(), source, entryEc);
-        if (entryEc) continue;
-
-        if (directory) fs::create_directories(dest / relative, entryEc);
-        else           fs::copy_file(
-            it->path(),
-            dest / relative,
-            fs::copy_options::overwrite_existing,
-            entryEc
-        );
-        if (entryEc) {
-            error = "Could not copy the project: " + entryEc.message();
-            return false;
-        }
-    }
-    if (ec) {
-        error = "Could not read the project to copy: " + ec.message();
-        return false;
-    }
-
-    // Stamped with this engine: the host compares the string against its own, and
-    // the module's build refuses another minor release (vkm_check_engine_version).
-    const fs::path projectFile = dest / "project.json";
-    nlohmann::json doc;
-    if (!detail::readJsonFile(projectFile, doc, "project")) {
-        error = "The copied project.json could not be read";
-        return false;
-    }
-    doc["name"]          = dest.filename().string();
-    doc["engineVersion"] = APP_VERSION;
-    if (!detail::writeJsonFile(projectFile, doc, "project")) {
-        error = "Could not write project.json";
-        return false;
-    }
-    return true;
-}
 
 void NewProjectDialog::draw(EditorState& state) {
     if (state.requestNewProject) {
@@ -156,16 +67,10 @@ void NewProjectDialog::draw(EditorState& state) {
 
     const DialogResult r = dialogButtons(m_open, "Create", named && !parent.empty(), entered);
     if (r == DialogResult::Confirm) {
-        std::string error;
-        if (create(m_source, dest, error)) {
-            state.requestSceneAction(EditorState::SceneAction::OpenProject, dest.string());
-            m_nameBuffer[0] = '\0';
-        } else {
-            // A toast: dialogButtons has already closed the popup, so a message
-            // drawn inside it would never show.
-            state.pushToast(ToastKind::Error, error);
-            LOG_ERROR("New Project: %s", error.c_str());
-        }
+        // vkm makes it, as `vkm new` would from a terminal; the Build window shows how it went.
+        state.requestVkm = {"new", dest.string(), "-t", m_source.filename().string()};
+        state.requestVkmOpens = dest.string();
+        m_nameBuffer[0] = '\0';
     }
     endDialog();
 }
