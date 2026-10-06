@@ -1,6 +1,6 @@
 {
   "description": "An endless runner built in code from one cube, as a single Behavior.",
-  "engineVersion": "1.0.0",
+  "engineVersion": "1.0.1",
   "entryScene": "",
   "name": "Potion Runner"
 }
