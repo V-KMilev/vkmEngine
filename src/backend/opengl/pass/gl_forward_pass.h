@@ -56,6 +56,17 @@ class GLForwardPass : public GLPass {
         void drawBatch(GLFrameContext& ctx, const GLInstanceBatcher& batch);
 
         /**
+         * @brief The Wireframe view's lines: the opaque and alpha-masked draws again, as lines.
+         *
+         * Blended over what they shaded, pulled toward the camera so the surface they lie on
+         * does not hide them, and cut where the cutout cut. Transparent surfaces draw none.
+         *
+         * @param ctx   For the batches and the context.
+         * @param posed Whether the skinned program is in use this frame.
+         */
+        void drawWireframe(GLFrameContext& ctx, bool posed);
+
+        /**
          * @brief Bind @p shader and give it this frame's uniforms.
          *
          * Once per program per frame, as uniform state is per program. The textures bindAmbient

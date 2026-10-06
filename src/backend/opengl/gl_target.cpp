@@ -33,7 +33,7 @@ namespace Out = GLBindings::FragmentOutputs;
 constexpr AttachmentSpec SPECS[] = {
     {GL_COLOR_ATTACHMENT0 + Out::COLOR,          GL_RGBA16F,           true,  "target_color"},
     {GL_DEPTH_ATTACHMENT,                        GL_DEPTH_COMPONENT24, false, "target_depth"},
-    {GL_COLOR_ATTACHMENT0 + Out::GBUFFER,        GL_RGBA16F,           false, "target_gbuffer"},
+    {GL_COLOR_ATTACHMENT0 + Out::GBUFFER,        GL_RG16F,             false, "target_gbuffer"},
     {GL_COLOR_ATTACHMENT0 + Out::REFLECT_WEIGHT, GL_RGBA8,             false, "target_reflect_weight"},
     {GL_COLOR_ATTACHMENT0 + Out::REFLECT_ENV,    GL_R11F_G11F_B10F,    false, "target_reflect_env"},
 };
