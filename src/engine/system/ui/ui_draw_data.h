@@ -5,71 +5,71 @@
 
 #include <glm/glm.hpp>
 
+#include "ecs/entity.h"
+#include "ecs/component/ui/ui_element.h"
 #include "resource/asset/font_asset.h"
+#include "resource/asset/texture_asset.h"
 
 namespace Vkm::Engine {
 
 /**
  * @brief One vertex of the UI's 2D triangle stream.
  *
- * `pos` is in screen pixels (top-left origin); the backend's UI pass maps it to
- * clip space with an orthographic projection. `uv` is the atlas coordinate for
- * image and text commands (ignored by solid fills). `color` is straight
- * (non-premultiplied) RGBA.
+ * `pos` is screen pixels, top-left origin; `color` is straight RGBA. A solid carries
+ * its quad's shape on every vertex for the fragment stage. Glyphs (UI_TEXT_MARK) and
+ * the `image` flag are per-vertex, so solids, text and pictures share a draw call.
  */
 struct UIVertex {
     glm::vec2 pos;
-    glm::vec2 uv;
+    glm::vec2 uv;      ///< Atlas coordinates for text; the quad's own 0..1 for a solid.
     glm::vec4 color;
+    /// Quad width and height (screen px), corner radius (UI_TEXT_MARK on a glyph), border width.
+    glm::vec4 shape;
+    glm::vec4 border;  ///< Solid only: the border's colour.
+    float     image;   ///< Solid only: 1 when tinted by its run's image, 0 when flat.
 };
 
-/**
- * @brief What a draw command samples, so the backend picks the matching state.
- */
-enum class UIDrawKind : uint8_t {
-    Solid = 0,  ///< Flat colour, no texture.
-    Text  = 1,  ///< Sample the command's font atlas as an SDF.
-};
+/// A glyph's corner radius: negative, as no solid's is. See GLBackend::shaderConstants.
+constexpr float UI_TEXT_MARK = -1.0f;
 
 /**
  * @brief A contiguous run of UI vertices that share draw state.
  *
- * The UISystem appends vertices and emits one command per run; the backend draws
- * each command's [firstVertex, firstVertex + vertexCount) range with the state
- * its kind names. Text commands carry the FontHandle whose SDF atlas the run
- * samples; `font` is empty for Solid fills.
+ * `font` and `image` are empty when nothing in the run samples them.
  */
 struct UIDrawCmd {
     uint32_t   firstVertex = 0;
     uint32_t   vertexCount = 0;
-    FontHandle font        = {};
-    UIDrawKind kind        = UIDrawKind::Solid;
+
+    /**
+     * @brief Screen-pixel scissor rect, viewport-relative; the whole viewport when unclipped.
+     */
+    UIRect clip = {};
+
+    FontHandle    font  = {};
+    TextureHandle image = {};
 };
 
 /**
- * @brief The backend-agnostic UI overlay snapshot for one frame.
+ * @brief The backend-agnostic UI overlay for one frame, published on FrameContext::ui.
  *
- * Built by the UISystem and copied into the RenderView, mirroring how the 3D
- * scene snapshot reaches the backend. The vectors keep their capacity across
- * frames; clear() resets the contents without freeing.
+ * clear() keeps the vectors' capacity.
  */
 struct UIDrawData {
     std::vector<UIVertex>  vertices;
     std::vector<UIDrawCmd> commands;
 
     /**
-     * @brief Whether the pointer is over an element that blocks it.
+     * @brief The topmost element under the pointer that blocks it, or none.
      *
-     * The question gameplay has to be able to ask before acting on a click:
-     * firing a weapon through an open pause menu is the bug this exists to
-     * prevent, and every project would otherwise write its own isMouseOverHUD.
+     * Tells a host whether a click was aimed at the scene behind.
      */
-    bool pointerOverUI = false;
+    EntityId pointerTarget{};
 
     void clear() {
         vertices.clear();
         commands.clear();
-        pointerOverUI = false;
+        pointerTarget = {};
     }
 };
 

@@ -3,7 +3,7 @@
 #include "io/asset/asset_serializer.h"
 
 #include <array>
-#include <filesystem>
+#include <exception>
 #include <string>
 #include <type_traits>
 #include <unordered_set>
@@ -16,15 +16,16 @@
 #include "ecs/component/render/decal.h"
 #include "ecs/component/render/lod.h"
 #include "ecs/component/render/mesh.h"
+#include "debug/engine_error_log.h"
 #include "ecs/scene.h"
 #include "ecs/component/core/missing_assets.h"
 #include "resource/resource_manager.h"
-#include "io/asset/asset_cook.h"
 #include "io/asset/asset_factory.h"
 #include "io/asset/asset_library.h"
-#include "io/json_file.h"
+#include "io/asset/cooked_loader.h"
 #include "io/json_vec.h"
 #include "io/scene/component_serializer.h"
+#include "io/scene/scene_serializer.h"
 #include "system/script/behavior.h"
 #include "system/script/behavior_field_visitor.h"
 #include "system/script/script_component.h"
@@ -37,15 +38,15 @@ namespace {
 
 /**
  * @brief Texture fields on MaterialAsset, paired with their stable JSON key.
- * Used by both save (collect referenced textures, emit handle names) and
- * load (the "inline" material factory resolves these refs by name).
  */
 struct TexField {
     const char* key;
     TextureHandle MaterialAsset::* member;
 };
+// Sized from the macro, not a number beside it: a removed map would leave a {nullptr, nullptr} row the
+// walks below take as a real slot.
 #define VKM_MATERIAL_MAP_FIELD(key, member, slot, doc) {#key, &MaterialAsset::member},
-constexpr std::array<TexField, 11> MATERIAL_TEXTURE_FIELDS = {{
+constexpr std::array<TexField, MATERIAL_MAP_COUNT> MATERIAL_TEXTURE_FIELDS = {{
     VKM_MATERIAL_MAPS(VKM_MATERIAL_MAP_FIELD)
 }};
 #undef VKM_MATERIAL_MAP_FIELD
@@ -61,9 +62,8 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
     nlohmann::json src;
     src["kind"] = AssetSourceKind::INLINE;
 
-    // Scalar / vector / enum fields are driven by reflection, so a new
-    // MaterialAsset field cannot silently fall out of the round trip. Texture
-    // refs resolve by name instead, below.
+    // Reflection drives scalar / vector / enum fields, so a new MaterialAsset field cannot fall out of the
+    // round trip. Texture refs resolve by name, below.
     Reflect::forEachField(m, [&](std::string_view name, const auto& val) {
         using V = std::decay_t<decltype(val)>;
         if      constexpr (std::is_same_v<V, MaterialType>) src[std::string(name)] = Reflect::enumName(val);
@@ -77,12 +77,14 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
         const TextureHandle& h = m.*f.member;
         if (!h) continue;
         const auto& tex = resources.get(h);
-        // Warned here rather than left to fire on every load: a hidden texture is
-        // not in the cooked manifest, so its name in a public material's recipe is
-        // a reference that can never resolve.
+        // Warned here, not on every load: a hidden texture is not in the cooked manifest, so its name in a
+        // public material's recipe can never resolve.
         if (tex.isHidden()) {
-            LOG_WARNING("Material texture slot '%s' refers to hidden asset '%s' - dropping ref",
-                f.key, tex.name().c_str());
+            LOG_WARNING(
+                "Material texture slot '%s' refers to hidden asset '%s' - dropping ref",
+                f.key,
+                tex.name().c_str()
+            );
             continue;
         }
         if (tex.name().empty()) {
@@ -95,30 +97,28 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
     return src;
 }
 
-/**
- * @brief Apply an "inline" material descriptor to an existing MaterialAsset,
- * resolving texture refs via findByName.
- *
- * Public (declared in asset_serializer.h) so asset_registration.cpp can hand it
- * to the inline material factory.
- */
 void applyInline(const nlohmann::json& src, MaterialAsset& m, const ResourceManager& resources) {
-    // Mirror of materialToInline: reflection drives the scalar / vector / enum
-    // fields and textures resolve by name. A missing key, or an enum name this
-    // build lacks, keeps the current value rather than becoming enumerator zero.
+    // Mirror of materialToInline. A missing key, or an enum name this build lacks, keeps the current value
+    // rather than becoming enumerator zero.
     Reflect::forEachField(m, [&](std::string_view name, auto& val) {
         using V = std::decay_t<decltype(val)>;
         const std::string key(name);
         if constexpr (std::is_same_v<V, MaterialType>) {
             const std::string typeName = src.value(key, std::string{});
             if (!typeName.empty() && !Reflect::enumFromNameChecked(typeName, val)) {
-                LOG_WARNING("Material '%s': no material type called '%s' in this build; "
-                            "leaving it as it was", m.name().c_str(), typeName.c_str());
+                LOG_WARNING(
+                    "Material '%s': no material type called '%s' in this build; leaving it as it was",
+                    m.name().c_str(),
+                    typeName.c_str()
+                );
             }
+        } else if constexpr (std::is_same_v<V, glm::vec3>) {
+            val = jsonToVec3(src.value(key, nlohmann::json{}), val);
+        } else if constexpr (std::is_same_v<V, glm::vec4>) {
+            val = jsonToVec4(src.value(key, nlohmann::json{}), val);
+        } else {
+            val = src.value(key, val);
         }
-        else if constexpr (std::is_same_v<V, glm::vec3>)    val = jsonToVec3(src.value(key, nlohmann::json{}), val);
-        else if constexpr (std::is_same_v<V, glm::vec4>)    val = jsonToVec4(src.value(key, nlohmann::json{}), val);
-        else                                                val = src.value(key, val);
     });
 
     if (src.contains("textures") && src["textures"].is_object()) {
@@ -128,11 +128,13 @@ void applyInline(const nlohmann::json& src, MaterialAsset& m, const ResourceMana
             if (texName.empty()) continue;
             const TextureHandle h = resources.findByName<TextureAsset>(texName);
             if (!h) {
-                // Keep whatever is in the slot rather than zeroing it. The
-                // name did not resolve in this graph - a typo, a dependency not
-                // loaded yet - and a null slot draws as transparent black.
-                LOG_WARNING("Material texture ref '%s' ('%s') unresolved; keeping previous slot value",
-                    f.key, texName.c_str());
+                // Keep the slot rather than zeroing it: the name may be a typo or not loaded yet, and a
+                // null slot draws as transparent black.
+                LOG_WARNING(
+                    "Material texture ref '%s' ('%s') unresolved; keeping previous slot value",
+                    f.key,
+                    texName.c_str()
+                );
                 continue;
             }
             m.*f.member = h;
@@ -145,12 +147,11 @@ namespace {
 /**
  * @brief Emit one name-only asset reference into @p target.
  *
- * The asset's data lives in the cooked library (keyed by name); the scene only
- * records the reference. Two kinds of asset cannot be referenced at all and are
- * skipped here, so that every emitter is held to the rule rather than each
- * remembering it: an unnamed one has no key, and a hidden one (editor preview
- * primitives, thumbnail materials) is deliberately absent from the cooked
- * manifest, so its name would name nothing on load.
+ * Skipped here, so every emitter keeps the rule: an unnamed asset has no key, and a hidden one is absent
+ * from the cooked manifest, so its name would name nothing on load.
+ *
+ * @param target The section array the reference is appended to.
+ * @param asset  The asset to name.
  */
 void emitDescriptor(nlohmann::json& target, const Resource& asset) {
     if (asset.isHidden()) return;
@@ -164,10 +165,11 @@ void emitDescriptor(nlohmann::json& target, const Resource& asset) {
 /**
  * @brief Emit a name-only reference that was authored as a name, not held as a handle.
  *
- * The emitters above dedup by handle id; a behavior's reference has no handle to
- * dedup by, and the name may well be one a component already listed. So the
- * section itself is what gets checked. It runs once per authored reference
- * rather than once per entity, over lists a scene keeps short.
+ * With no handle to dedup by, and a name a component may already have listed, the section itself is
+ * checked - a scan over lists a scene keeps short.
+ *
+ * @param target The section array the reference is appended to.
+ * @param name   The authored asset name; skipped when the section already has it.
  */
 void emitNamedRef(nlohmann::json& target, const std::string& name) {
     for (const auto& entry : target) {
@@ -179,165 +181,136 @@ void emitNamedRef(nlohmann::json& target, const std::string& name) {
 /**
  * @brief Collects (kind, name) for every asset a behavior's authored fields name.
  *
- * Every method but assetField is a no-op: a behavior's numbers, text and enums
- * say nothing about which assets a scene needs. beginStruct still returns true,
- * because an AssetRef nested inside a reflected struct is as much a reference as
- * one at the top level.
+ * Only assetField collects. beginStruct returns true: an AssetRef nested in a reflected struct is as
+ * much a reference as one at the top level.
  */
 class BehaviorAssetRefs : public BehaviorFieldVisitor {
+    public:
+        /**
+         * @brief Collect into @p refs, after whatever it already holds.
+         *
+         * @param refs The list each reference is appended to.
+         */
+        explicit BehaviorAssetRefs(std::vector<std::pair<AssetType, std::string>>& refs)
+            : m_refs(refs) {}
+        ~BehaviorAssetRefs() override = default;
+
+        BehaviorAssetRefs(const BehaviorAssetRefs& other) = delete;
+        BehaviorAssetRefs& operator=(const BehaviorAssetRefs& other) = delete;
+
+        BehaviorAssetRefs(BehaviorAssetRefs && other) = delete;
+        BehaviorAssetRefs& operator=(BehaviorAssetRefs && other) = delete;
+
     public:
         void field(const char* name, float& value)       override {}
         void field(const char* name, int& value)         override {}
         void field(const char* name, bool& value)        override {}
+        void field(const char* name, glm::vec2& value)   override {}
         void field(const char* name, glm::vec3& value)   override {}
+        void field(const char* name, glm::vec4& value)   override {}
+        void field(const char* name, glm::quat& value)   override {}
         void field(const char* name, std::string& value) override {}
 
         void enumField(const char* name, int& index, const char* const* names, std::size_t count) override {}
 
         void assetField(const char* name, std::string& assetName, AssetType type) override {
-            if (assetName.empty()) return;   // the field references nothing
+            if (assetName.empty()) return;
             m_refs.emplace_back(type, assetName);
         }
 
         bool beginStruct(const char* name) override { return true; }
         void endStruct() override {}
 
-    public:
-        const std::vector<std::pair<AssetType, std::string>>& refs() const { return m_refs; }
-
     private:
-        std::vector<std::pair<AssetType, std::string>> m_refs;
+        std::vector<std::pair<AssetType, std::string>>& m_refs;
 };
 
 } // namespace
 
 #define VKM_SCENE_SKIP_P(Type, Key)
 #define VKM_SCENE_EMIT_R(Type, Key) \
-    if (scene.has<Type>(id)) ComponentSerializer::emitAssetRefs(scene.get<Type>(id), refs);
+    if (const Type* held = scene.tryGet<Type>(id)) ComponentSerializer::emitAssetRefs(*held, refs.handles);
 
-nlohmann::json saveAssetsForEntities(const Scene& scene, const std::vector<EntityId>& entities,
-                                     const ResourceManager& resources) {
-    nlohmann::json meshes    = nlohmann::json::array();
-    nlohmann::json textures  = nlohmann::json::array();
-    nlohmann::json materials = nlohmann::json::array();
-    nlohmann::json skeletons = nlohmann::json::array();
-    nlohmann::json clips     = nlohmann::json::array();
-    nlohmann::json sounds    = nlohmann::json::array();
+void collectAssetRefs(
+    const Scene& scene,
+    EntityId id,
+    const ResourceManager& resources,
+    EntityAssetRefs& refs
+) {
+    // The components that name assets are the R rows of VKM_SCENE_COMPONENTS.
+    // A row with no emitAssetRefs overload stops the build here.
+    VKM_SCENE_COMPONENTS(VKM_SCENE_SKIP_P, VKM_SCENE_EMIT_R, VKM_SCENE_SKIP_P)
 
-    std::unordered_set<uint32_t> seenMeshes;
-    std::unordered_set<uint32_t> seenMaterials;
-    std::unordered_set<uint32_t> seenTextures;
-    std::unordered_set<uint32_t> seenSkeletons;
-    std::unordered_set<uint32_t> seenClips;
-    std::unordered_set<uint32_t> seenSounds;
-
-    auto emitTexture = [&](const TextureHandle& h) {
-        if (!h) return;
-        if (!seenTextures.insert(h.id()).second) return;
-        emitDescriptor(textures, resources.get(h));
-    };
-
-    auto emitMesh = [&](const MeshHandle& h) {
-        if (!h || !seenMeshes.insert(h.id()).second) return;
-        emitDescriptor(meshes, resources.get(h));
-    };
-
-    auto emitMaterial = [&](const MaterialHandle& h) {
-        if (!h || !seenMaterials.insert(h.id()).second) return;
-        const auto& asset = resources.get(h);
-        // Checked here and not left to emitDescriptor because hidden gates the
-        // texture walk below too: a thumbnail material must not drag its
-        // textures into the user's scene.
-        if (asset.isHidden()) return;
-        // Name-only reference; the cooker has already written the material's
-        // canonical inline form to the library under this name.
-        emitDescriptor(materials, asset);
-        // Pull the material's textures into the reference list too, so the
-        // loader recreates them first.
-        for (const auto& f : MATERIAL_TEXTURE_FIELDS) emitTexture(asset.*f.member);
-    };
-
-    auto emitSkeleton = [&](const SkeletonHandle& h) {
-        if (!h || !seenSkeletons.insert(h.id()).second) return;
-        emitDescriptor(skeletons, resources.get(h));
-    };
-
-    auto emitClip = [&](const AnimationClipHandle& h) {
-        if (!h || !seenClips.insert(h.id()).second) return;
-        emitDescriptor(clips, resources.get(h));
-    };
-
-    auto emitSound = [&](const AudioClipHandle& h) {
-        if (!h || !seenSounds.insert(h.id()).second) return;
-        emitDescriptor(sounds, resources.get(h));
-    };
-
-    BehaviorAssetRefs behaviorRefs;
-
-    // The references with a name and no handle behind them. A behavior's
-    // authored field is one; so is one the last load could not resolve, which
-    // the entity kept precisely so this document can still name it.
-    std::vector<std::pair<AssetType, std::string>> namedRefs;
-
-    // The components that name assets are the R rows of VKM_SCENE_COMPONENTS -
-    // the list the save and the load expand from too, so the three cannot
-    // disagree. A row with no emitAssetRefs overload stops the build here.
-    ComponentSerializer::AssetRefs refs;
-    for (EntityId id : entities) {
-        VKM_SCENE_COMPONENTS(VKM_SCENE_SKIP_P, VKM_SCENE_EMIT_R, VKM_SCENE_SKIP_P)
-
-        // The other half of keeping a name the load could not resolve: without
-        // an entry here the next load never asks the library for it, so the
-        // reference stays broken even once the library holding it is back.
-        if (scene.has<MissingAssets>(id)) {
-            for (const MissingAssetRef& ref : scene.get<MissingAssets>(id).refs) {
-                if (ref.type == AssetType::Count) continue;   // not a kind the library files
-                namedRefs.emplace_back(ref.type, ref.name);
-            }
-        }
-        if (scene.has<ScriptComponent>(id)) {
-            // A behavior names its assets in authored fields rather than through
-            // handles, so the reference lives behind visitFields and this is the
-            // only walk that can see it.
-            for (const auto& behavior : scene.get<ScriptComponent>(id).behaviors) {
-                if (!behavior) continue;
-                // visitFields is non-const because the editor and the loader write
-                // through it; this visitor only reads, and a const unique_ptr still
-                // hands out a mutable referent.
-                behavior->visitFields(behaviorRefs);
-            }
+    // Without an assets-block entry the next load never asks the library for an unresolved name, so it
+    // stays broken even once the library has it back.
+    for (const MissingAssetRef& ref : SceneSerializer::unresolvedRefs(scene, resources, id)) {
+        if (ref.type == AssetType::Count) continue;   // not a kind the library files
+        refs.names.emplace_back(ref.type, ref.name);
+    }
+    if (const ScriptComponent* script = scene.tryGet<ScriptComponent>(id)) {
+        // A behavior names assets in authored fields, not handles, so only visitFields can see them.
+        BehaviorAssetRefs behaviorRefs(refs.names);
+        for (const auto& behavior : script->behaviors) {
+            if (!behavior) continue;
+            // visitFields is non-const because a visitor may write; this one only reads, and a const
+            // unique_ptr still hands out a mutable referent.
+            behavior->visitFields(behaviorRefs);
         }
     }
+}
 
-    for (const MeshHandle& h : refs.meshes)             emitMesh(h);
-    for (const MaterialHandle& h : refs.materials)      emitMaterial(h);
-    for (const SkeletonHandle& h : refs.skeletons)      emitSkeleton(h);
-    for (const AnimationClipHandle& h : refs.clips)     emitClip(h);
-    for (const AudioClipHandle& h : refs.sounds)        emitSound(h);
+nlohmann::json saveAssetsForEntities(
+    const Scene& scene,
+    const std::vector<EntityId>& entities,
+    const ResourceManager& resources
+) {
+    // One section per kind, indexed by AssetType, with the handles already in it.
+    struct Section {
+        nlohmann::json               entries = nlohmann::json::array();
+        std::unordered_set<uint32_t> seen;
+    };
+    std::array<Section, static_cast<size_t>(AssetType::Count)> sections;
 
-    // Flat, by name: an authored reference has no handle to walk into, so a
-    // material named this way arrives without the textures emitMaterial would
-    // have pulled in with it. No behavior field names one today.
-    namedRefs.insert(namedRefs.end(), behaviorRefs.refs().begin(), behaviorRefs.refs().end());
-    for (const auto& [type, name] : namedRefs) {
-        switch (type) {
-            case AssetType::Mesh:          emitNamedRef(meshes,    name); break;
-            case AssetType::Texture:       emitNamedRef(textures,  name); break;
-            case AssetType::Material:      emitNamedRef(materials, name); break;
-            case AssetType::Skeleton:      emitNamedRef(skeletons, name); break;
-            case AssetType::AnimationClip: emitNamedRef(clips,     name); break;
-            case AssetType::AudioClip:     emitNamedRef(sounds,    name); break;
-            case AssetType::Count:         break;
-        }
+    // The asset the first time a handle is seen, and null every time after.
+    const auto emit = [&](const auto& handle) {
+        using Asset = typename std::decay_t<decltype(handle)>::resource_t;
+        Section& section = sections[static_cast<size_t>(ASSET_TYPE<Asset>)];
+        const Asset* already = nullptr;
+        if (!handle || !section.seen.insert(handle.id()).second) return already;
+        const Asset& asset = resources.get(handle);
+        emitDescriptor(section.entries, asset);
+        return &asset;
+    };
+
+    EntityAssetRefs collected;
+    for (EntityId id : entities) collectAssetRefs(scene, id, resources, collected);
+    const ComponentSerializer::AssetRefs& refs = collected.handles;
+
+    for (const MeshHandle& h : refs.meshes)             emit(h);
+    for (const MaterialHandle& h : refs.materials) {
+        // Its textures too, so the loader recreates them first - unless hidden: a thumbnail material must
+        // not drag its textures into the user's scene.
+        const MaterialAsset* material = emit(h);
+        if (!material || material->isHidden()) continue;
+        for (const auto& f : MATERIAL_TEXTURE_FIELDS) emit(material->*f.member);
+    }
+    for (const SkeletonHandle& h : refs.skeletons)      emit(h);
+    for (const AnimationClipHandle& h : refs.clips)     emit(h);
+    for (const AudioClipHandle& h : refs.sounds)        emit(h);
+    for (const TextureHandle& h : refs.textures)        emit(h);
+
+    // Flat, by name: with no handle to walk into, a material named this way arrives without its textures.
+    for (const auto& [type, name] : collected.names) {
+        if (type == AssetType::Count) continue;
+        emitNamedRef(sections[static_cast<size_t>(type)].entries, name);
     }
 
+    // A section is keyed by its kind's library directory name, one list for both.
     nlohmann::json out;
-    out["textures"]  = std::move(textures);
-    out["meshes"]    = std::move(meshes);
-    out["materials"] = std::move(materials);
-    out["skeletons"] = std::move(skeletons);
-    out["clips"]     = std::move(clips);
-    out["sounds"]    = std::move(sounds);
+#define VKM_ASSET_SECTION_OUT(tag, type, name, dir) \
+    out[dir] = std::move(sections[static_cast<size_t>(AssetType::tag)].entries);
+    VKM_ASSET_KINDS(VKM_ASSET_SECTION_OUT)
+#undef VKM_ASSET_SECTION_OUT
     return out;
 }
 
@@ -362,19 +335,62 @@ nlohmann::json everyAssetOfType(const ResourceManager& resources) {
     return section;
 }
 
+/**
+ * @brief Remove every asset of one kind whose name the section does not carry.
+ *
+ * Handles are collected first: removal swap-and-pops the storage being walked. An absent section says
+ * nothing about its kind, so nothing of that kind is dropped.
+ *
+ * @tparam Asset Resource type this section holds.
+ * @param assetsJson The whole document.
+ * @param key Section name within it.
+ * @param resources Graph to prune.
+ * @return How many were removed.
+ */
+template<typename Asset>
+size_t dropSectionExtras(const nlohmann::json& assetsJson, const char* key, ResourceManager& resources) {
+    const auto section = assetsJson.find(key);
+    if (section == assetsJson.end() || !section->is_array()) return 0;
+
+    std::unordered_set<std::string> keep;
+    for (const nlohmann::json& entry : *section) {
+        if (entry.is_object() && entry.contains("name") && entry["name"].is_string()) {
+            keep.insert(entry["name"].get<std::string>());
+        }
+    }
+
+    std::vector<Handle<Asset>> doomed;
+    resources.template forEachOfType<Asset>([&](Handle<Asset> handle, const Asset& asset) {
+        if (asset.isHidden() || keep.count(asset.name()) > 0) return;
+        doomed.push_back(handle);
+    });
+    for (const Handle<Asset>& handle : doomed) resources.remove(handle);
+    return doomed.size();
+}
+
 } // namespace
 
 nlohmann::json saveAllAssets(const ResourceManager& resources) {
     nlohmann::json out;
-    // No dependency order to keep: these are names, and loadAssets reads the
-    // sections in the order it needs them whatever order they were written in.
-    out["textures"]  = everyAssetOfType<TextureAsset      >(resources);
-    out["materials"] = everyAssetOfType<MaterialAsset     >(resources);
-    out["skeletons"] = everyAssetOfType<SkeletonAsset     >(resources);
-    out["clips"]     = everyAssetOfType<AnimationClipAsset>(resources);
-    out["meshes"]    = everyAssetOfType<MeshAsset         >(resources);
-    out["sounds"]    = everyAssetOfType<AudioClipAsset    >(resources);
+    // No dependency order to keep: these are names, and loadAssets reads sections in the order it needs.
+#define VKM_ASSET_SECTION_ALL(tag, type, name, dir) out[dir] = everyAssetOfType<type>(resources);
+    VKM_ASSET_KINDS(VKM_ASSET_SECTION_ALL)
+#undef VKM_ASSET_SECTION_ALL
     return out;
+}
+
+size_t dropAssetsNotIn(const nlohmann::json& assetsJson, ResourceManager& resources) {
+    if (!assetsJson.is_object()) return 0;
+
+    // The kinds saveAllAssets writes, from the same list, so what is pruned is what could be recorded.
+    size_t dropped = 0;
+#define VKM_ASSET_SECTION_DROP(tag, type, name, dir) \
+    dropped += dropSectionExtras<type>(assetsJson, dir, resources);
+    VKM_ASSET_KINDS(VKM_ASSET_SECTION_DROP)
+#undef VKM_ASSET_SECTION_DROP
+
+    if (dropped > 0) LOG_INFO("Dropped %zu asset(s) the session created", dropped);
+    return dropped;
 }
 
 nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& resources) {
@@ -386,87 +402,82 @@ nlohmann::json saveAssetsForScene(const Scene& scene, const ResourceManager& res
 
 namespace {
 
-/**
- * @brief Load the `source` object from a library recipe file (a material's inline
- * form). Returns false (logging) if the file is missing or malformed.
- */
-bool loadLibrarySource(AssetType type, const std::string& name, nlohmann::json& outSource) {
-    const std::filesystem::path path = AssetLibrary::recipePath(type, name);
-    nlohmann::json doc;
-    if (!detail::readJsonFile(path, doc, "Asset library recipe")) return false;
-    if (!doc.contains("source")) {
-        LOG_ERROR("Asset library recipe %s has no 'source'", path.string().c_str());
-        return false;
-    }
-    outSource = doc["source"];
-    return true;
+// The kind's cooked load; a material has none.
+template<typename Asset>
+Handle<Asset> loadCooked(const std::string& name, ResourceManager& rm) {
+    if constexpr (std::is_same_v<Asset, MeshAsset>)               return loadCookedMesh(name, rm);
+    else if constexpr (std::is_same_v<Asset, TextureAsset>)       return loadCookedTexture(name, rm);
+    else if constexpr (std::is_same_v<Asset, SkeletonAsset>)      return loadCookedSkeleton(name, rm);
+    else if constexpr (std::is_same_v<Asset, AnimationClipAsset>) return loadCookedAnimationClip(name, rm);
+    else if constexpr (std::is_same_v<Asset, AudioClipAsset>)     return loadCookedAudioClip(name, rm);
+    else static_assert(Reflect::DEPENDENT_FALSE<Asset>, "loadCooked: this kind has no cooked load");
 }
 
 /**
- * @brief Resolve a name-only asset reference to the source its factory needs: the
- * cooked binary when the cache can still serve it, otherwise the recipe it was
- * baked from. Returns false if the name is not in the manifest.
+ * @brief Build one asset from the library: its cooked file when this build can read one, else its recipe.
  *
- * The cooked file is a cache and the recipe is the source of truth, so the cache
- * is asked first and the recipe answers whenever it cannot. That order is what
- * makes `cooked/` regenerable in practice rather than only on paper: a build
- * that bumped a format version reads the recipe instead, the cooker bakes a
- * current binary from it, and the project repairs itself. Resolving straight to
- * the cooked file would leave the recipe written and never read, and the only
- * way back would be re-importing the source art by hand.
+ * The recipe is the source of truth: after a cooker version bump it is read and the next cook re-bakes. A
+ * material has no cooked file; its recipe is its runtime form.
+ *
+ * @tparam Asset    Resource type to build.
+ * @param name      The asset's library name.
+ * @param resources The asset graph to build into.
+ * @return The asset, or an invalid handle, having logged, when neither source serves it.
  */
-bool resolveCookedSource(AssetType type, const std::string& name, nlohmann::json& outSource) {
-    const AssetRecord* record = AssetLibrary::get().find(type, name);
-    if (!record) {
-        LOG_ERROR("Asset '%s' (%s) has no entry in the asset library manifest",
-            name.c_str(), Reflect::enumName(type));
-        return false;
+template<typename Asset>
+Handle<Asset> loadFromLibrary(const std::string& name, ResourceManager& resources) {
+    constexpr AssetType TYPE = ASSET_TYPE<Asset>;
+    nlohmann::json recipe;
+    if constexpr (std::is_same_v<Asset, MaterialAsset>) {
+        if (!AssetLibrary::readRecipe(TYPE, name, recipe)) return {};
+        MaterialAsset material;
+        applyInline(recipe, material, resources);
+        return resources.add(std::move(material));
+    } else {
+        if (const Handle<Asset> cooked = loadCooked<Asset>(name, resources)) return cooked;
+
+        const RecipeImport<Asset> import = recipeImport<Asset>();
+        const char* what = Reflect::enumName(TYPE);
+        if (!import) {
+            LOG_ERROR(
+                "%s '%s': no cooked file this build can read, and this host imports no recipes",
+                what,
+                name.c_str()
+            );
+            return {};
+        }
+        LOG_INFO("%s '%s': no cooked file this build can read; importing its recipe", what, name.c_str());
+        if (!AssetLibrary::readRecipe(TYPE, name, recipe)) return {};
+        return import(recipe, resources);
     }
-    // A material has no cooked binary to prefer - its recipe is its runtime form.
-    if (type == AssetType::Material) {
-        return loadLibrarySource(type, name, outSource);
-    }
-    if (AssetCook::isCookedCurrent(
-            type, AssetLibrary::cookedPath(type, name,
-                                           AssetCook::cacheKey(record->recipeHash, type)))) {
-        outSource = nlohmann::json{{"kind", AssetSourceKind::COOKED}, {"name", name}};
-        return true;
-    }
-    // Not an error on its own: an editor or a cook re-imports and re-bakes,
-    // while the runtime refuses the recipe kind on the next line - and that pair
-    // of lines is the diagnosis.
-    LOG_INFO("%s '%s': no cooked file this build can use; falling back to its recipe",
-        Reflect::enumName(type), name.c_str());
-    return loadLibrarySource(type, name, outSource);
 }
 
 /**
- * @brief Recreate one asset section (textures / materials / meshes) from its
- * JSON array, dispatching each name-only reference through @p factory and
- * renaming the result to the recorded name. Returns {created, already-present}.
+ * @brief Recreate one asset kind's section from its JSON array.
  *
- * Under LoadMode::Reload a name the graph already holds is rebuilt into that
- * same slot rather than left alone: the fresh asset is built, moved onto the
- * live one, committed so the backend re-uploads it, and the shell it arrived in
- * is dropped. Every handle out there keeps pointing at the asset it named,
- * now holding what the document says it holds.
+ * Each reference is built by loadFromLibrary and renamed to the recorded name. Under
+ * LoadMode::Reload a held material is rebuilt into its own slot (moved onto the live one, committed for
+ * re-upload, the shell dropped), so every handle keeps naming it.
+ *
+ * @tparam Asset     Resource type the section holds.
+ * @param assetsJson The whole assets block.
+ * @param sectionKey The section's key, its kind's library directory name.
+ * @param resources  The asset graph to build into.
+ * @param mode       What to do about a name the graph already holds.
+ * @return {created, already present}.
  */
 template<typename Asset>
 std::pair<size_t, size_t> loadAssetSection(
-    const nlohmann::json& assetsJson, const char* sectionKey, AssetType type,
-    Handle<Asset> (*factory)(const nlohmann::json&, ResourceManager&),
-    const char* what, ResourceManager& resources, LoadMode mode) {
+    const nlohmann::json& assetsJson,
+    const char* sectionKey,
+    ResourceManager& resources,
+    LoadMode mode
+) {
+    constexpr AssetType TYPE = ASSET_TYPE<Asset>;
+    const char* what = Reflect::enumName(TYPE);
     size_t created = 0, skipped = 0;
     auto it = assetsJson.find(sectionKey);
     if (it == assetsJson.end() || !it->is_array() || it->empty()) return {created, skipped};
-
-    // Loop-invariant: a null dispatch means this binary was built without the
-    // factory wired (e.g. the runtime with no recipe importers). Bail once
-    // rather than re-checking and logging per entry.
-    if (!factory) {
-        LOG_ERROR("No %s dispatch wired (misconfigured binary?) - skipping section", what);
-        return {created, skipped};
-    }
 
     for (const auto& entry : *it) {
         const std::string name = entry.value("name", std::string{});
@@ -474,14 +485,44 @@ std::pair<size_t, size_t> loadAssetSection(
             LOG_WARNING("%s entry missing 'name' - skipping", what);
             continue;
         }
+        // Reload rebuilds a material alone; LoadMode::Reload says why.
         const Handle<Asset> live = resources.findByName<Asset>(name);
-        if (live && mode == LoadMode::Create) { ++skipped; continue; }
+        const bool rebuild = mode == LoadMode::Reload && std::is_same_v<Asset, MaterialAsset>;
+        if (live && !rebuild) {
+            ++skipped;
+            continue;
+        }
 
-        nlohmann::json source;
-        if (!resolveCookedSource(type, name, source)) continue;
-        Handle<Asset> h = factory(source, resources);
+        // A hand-edited recipe can hold a wrong-typed value that throws: that costs this asset, named, not
+        // the scene; its references stay unresolved, as a missing one's do.
+        const size_t held = resources.countOfType<Asset>();
+        Handle<Asset> h;
+        try {
+            h = loadFromLibrary<Asset>(name, resources);
+        } catch (const std::exception& e) {
+            reportError(
+                "Asset",
+                std::string(what) + " '" + name + "'",
+                "its recipe " + AssetLibrary::recipePath(TYPE, name).string()
+                    + " does not read (" + e.what() + "); left unresolved"
+            );
+            continue;
+        }
         if (!h) {
             LOG_WARNING("%s '%s' could not be recreated - skipping", what, name.c_str());
+            continue;
+        }
+        // An importer dedupes by its own identity (a texture by its path), so it can answer with an asset
+        // held under another name; renaming or moving that takes it from everything resolving it.
+        if (h != live && resources.countOfType<Asset>() == held
+            && resources.get(h).name() != name) {
+            LOG_WARNING(
+                "%s '%s': its recipe resolves to '%s', which is an asset of its own; "
+                    "left unresolved (two library entries import the same source)",
+                what,
+                name.c_str(),
+                resources.get(h).name().c_str()
+            );
             continue;
         }
         if (!live) {
@@ -489,18 +530,37 @@ std::pair<size_t, size_t> loadAssetSection(
             ++created;
             continue;
         }
-        // A factory that answered with the asset already there rebuilt nothing
-        // and there is nothing to move; removing it would delete the live one.
-        if (h == live) { ++skipped; continue; }
+        // A load answering with the live asset rebuilt nothing; removing it would delete the live one.
+        if (h == live) {
+            ++skipped;
+            continue;
+        }
 
-        // The rebuilt contents go into the slot the live asset already sits in, so
-        // its handle keeps naming it. The shell comes back holding what was there,
-        // which is what lets it be removed like any other asset.
+        // The rebuilt contents go into the live slot so its handle keeps naming it; the shell comes back
+        // holding the old contents and is removed like any other asset.
         resources.swapValue(live, resources.edit(h));
         resources.remove(h);
         ++skipped;
     }
     return {created, skipped};
+}
+
+// One kind's section: its key and type come from its row of VKM_ASSET_KINDS.
+std::pair<size_t, size_t> loadSection(
+    AssetType type,
+    const nlohmann::json& assetsJson,
+    ResourceManager& resources,
+    LoadMode mode
+) {
+    switch (type) {
+#define VKM_LOAD_SECTION(tag, Asset, kindName, dir) \
+        case AssetType::tag:                         \
+            return loadAssetSection<Asset>(assetsJson, dir, resources, mode);
+        VKM_ASSET_KINDS(VKM_LOAD_SECTION)
+#undef VKM_LOAD_SECTION
+        case AssetType::Count: break;
+    }
+    return {0, 0};
 }
 
 } // namespace
@@ -511,31 +571,21 @@ bool loadAssets(const nlohmann::json& assetsJson, ResourceManager& resources, Lo
         return false;
     }
 
-    // Order matters: textures -> materials (which resolve texture refs by name)
-    // -> skeletons -> clips (each names the rig its bone indices address) ->
-    // meshes. Sounds depend on nothing and nothing on them, so they come last.
-    const AssetFactory& factory = assetFactory();
+    size_t      created = 0;
+    size_t      skipped = 0;
+    std::string tally;
+    for (const AssetType type : ASSET_DEPENDENCY_ORDER) {
+        const auto [made, kept] = loadSection(type, assetsJson, resources, mode);
+        created += made;
+        skipped += kept;
+        if (made > 0) {
+            tally += (tally.empty() ? "" : ", ") + std::to_string(made) + " " + Reflect::enumName(type);
+        }
+    }
 
-    const auto [texC, texS] = loadAssetSection<TextureAsset>(
-        assetsJson, "textures", AssetType::Texture, factory.createTexture, "Texture", resources, mode);
-    const auto [matC, matS] = loadAssetSection<MaterialAsset>(
-        assetsJson, "materials", AssetType::Material, factory.createMaterial, "Material", resources, mode);
-    const auto [sklC, sklS] = loadAssetSection<SkeletonAsset>(
-        assetsJson, "skeletons", AssetType::Skeleton, factory.createSkeleton, "Skeleton", resources, mode);
-    const auto [clpC, clpS] = loadAssetSection<AnimationClipAsset>(
-        assetsJson, "clips", AssetType::AnimationClip, factory.createAnimationClip, "Clip", resources, mode);
-    const auto [mshC, mshS] = loadAssetSection<MeshAsset>(
-        assetsJson, "meshes", AssetType::Mesh, factory.createMesh, "Mesh", resources, mode);
-    const auto [sndC, sndS] = loadAssetSection<AudioClipAsset>(
-        assetsJson, "sounds", AssetType::AudioClip, factory.createAudioClip, "Sound", resources, mode);
-
-    // Silent when the block asked for nothing new: a prefab carries its own
-    // assets and is instantiated once per instance, per scene load, per
-    // duplicate and per undo of one.
-    if (texC + matC + sklC + clpC + mshC + sndC > 0) {
-        LOG_INFO("%zu texture(s), %zu material(s), %zu rig(s), %zu clip(s), %zu mesh(es), "
-            "%zu sound(s) created; %zu+%zu+%zu+%zu+%zu+%zu skipped (already loaded)",
-            texC, matC, sklC, clpC, mshC, sndC, texS, matS, sklS, clpS, mshS, sndS);
+    // Silent when nothing is new: a prefab's assets block is loaded again every time the prefab is read.
+    if (created > 0) {
+        LOG_INFO("Assets created: %s; %zu already loaded", tally.c_str(), skipped);
     }
     return true;
 }

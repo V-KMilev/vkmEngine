@@ -3,19 +3,29 @@
 #include "cook/asset_cooker.h"
 
 #include <filesystem>
+#include <functional>
+#include <mutex>
+#include <set>
 #include <string>
 #include <system_error>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
 #include "logger.h"
 
-#include "core/hash/fnv1a.h"
+#include "cook/cook_key.h"
+#include "cook/mesh_processing.h"
+#include "cook/texture_bake.h"
+#include "core/fnv1a.h"
 #include "core/reflect.h"
 #include "io/asset/asset_cook.h"
+#include "io/asset/asset_factory.h"
 #include "io/asset/asset_library.h"
 #include "io/asset/asset_serializer.h"
-#include "io/json_file.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/audio_clip_asset.h"
@@ -23,6 +33,7 @@
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
 #include "resource/asset/texture_asset.h"
+#include "platform/threading/thread_pool.h"
 #include "system/async/async_loader_system.h"
 #include "resource/asset_source_kind.h"
 
@@ -30,286 +41,355 @@ namespace Vkm::Engine::AssetCooker {
 
 namespace {
 
-// Bump when the cook OUTPUT changes (vertex layout, mip policy, importer flags)
-// to force assets to re-cook from their recipes on next save without touching
-// those recipes - it is folded into the recipe hash, so all stored hashes go
-// stale at once.
-constexpr uint32_t COOKER_VERSION = 2;
-
-uint64_t hashRecipe(const nlohmann::json& recipe) {
-    const std::string dump = recipe.dump();
-    const uint64_t recipeHash = fnv1a64(dump);
-    const uint32_t version = COOKER_VERSION;
-    return fnv1a64(&version, sizeof(version), recipeHash);
+// A decimated level is baked from its base mesh's output, not from a file.
+bool isDecimated(const nlohmann::json& recipe) {
+    return recipe.value("kind", std::string{}) == AssetSourceKind::DECIMATE;
 }
 
-// An asset that came back from the cooked cache carries the loader's stand-in
-// source, which records the name it was read by and nothing about where it came
-// from. It is not a recipe: cooking it would overwrite the library's account of
-// the import - the version-controlled source of truth - with a self-reference.
+// The asset a recipe is derived from: a decimated level's base, or a clip's rig from another
+// file. An empty name depends on nothing.
+struct Dependency {
+    AssetType   type = AssetType::Count;
+    std::string name;
+};
+
+Dependency dependencyOf(const nlohmann::json& recipe) {
+    if (isDecimated(recipe)) return {AssetType::Mesh, recipe.value(AssetSourceKey::BASE, std::string{})};
+    return {AssetType::Skeleton, recipe.value(AssetSourceKey::RIG, std::string{})};
+}
+
+/**
+ * @brief What a record holds about where an asset came from.
+ */
+struct RecipeKey {
+    uint64_t                 hash = 0;  ///< AssetRecord::recipeHash.
+    std::vector<std::string> sources;   ///< AssetRecord::sources.
+};
+
+// The half of a key that reads the source art's bytes; see foldSourceContent.
+RecipeKey keySources(const nlohmann::json& recipe) {
+    RecipeKey key;
+    key.sources = sourceFiles(recipe.value(AssetSourceKey::PATH, std::string{}));
+    key.hash    = fnv1a64(recipe.dump());
+    for (const std::string& file : key.sources) key.hash = foldSourceContent(file, key.hash);
+    return key;
+}
+
+// @p key with its dependency's recorded key folded in, which moves when a base is cooked again.
+RecipeKey withDependency(RecipeKey key, const nlohmann::json& recipe) {
+    const Dependency dependency = dependencyOf(recipe);
+    key.hash = foldDependency(dependency.type, dependency.name, key.hash);
+    return key;
+}
+
+// A record's recipeHash, read off disk. The cooker's version is not in it: AssetCook::cacheKey
+// adds that to the file's name.
+RecipeKey keyRecipe(const nlohmann::json& recipe) {
+    return withDependency(keySources(recipe), recipe);
+}
+
+/**
+ * @brief The art-reading half of an asset's key, as a cook in this session read it.
+ *
+ * Kept while version and recipe are unchanged, so a save does not reread the art. A key read
+ * from re-exported bytes would file what memory holds, made from the old ones, under them.
+ */
+struct RememberedKey {
+    uint64_t  version = 0;  ///< Resource::version() when it was read.
+    uint64_t  recipe  = 0;  ///< The recipe document's own hash then.
+    RecipeKey key;
+};
+
+// By uid, on the cooking thread. Each cook keeps only what it asked about.
+std::unordered_map<uint64_t, RememberedKey> g_lastCookKeys;
+std::unordered_map<uint64_t, RememberedKey> g_thisCookKeys;
+
+// keyRecipe for an asset a cook holds, reading its art only the first time.
+RecipeKey sessionKey(const Resource& asset, const nlohmann::json& recipe) {
+    const uint64_t recipeHash = fnv1a64(recipe.dump());
+    const auto     last       = g_lastCookKeys.find(asset.uid());
+    RememberedKey  remembered;
+    if (last != g_lastCookKeys.end() && last->second.version == asset.version()
+        && last->second.recipe == recipeHash) {
+        remembered = last->second;
+    } else {
+        remembered = {asset.version(), recipeHash, keySources(recipe)};
+    }
+    g_thisCookKeys[asset.uid()] = remembered;
+    return withDependency(remembered.key, recipe);
+}
+
+// The loader's stand-in source for a cooked-cache asset: cooking it would overwrite the library's
+// version-controlled recipe with a self-reference.
 bool isCookedPlaceholder(const nlohmann::json& source) {
     return source.value("kind", std::string{}) == AssetSourceKind::COOKED;
 }
 
-// An asset that cannot be cooked and that the library does not already hold is
-// one the save writes a name-only reference to and the next load cannot resolve.
-// Say so now, while whoever pressed save can still act on it.
+// An uncookable asset the library lacks is saved as a name the next load cannot resolve; say so
+// while the user can act.
 void warnUnlisted(AssetType type, const std::string& name) {
     if (AssetLibrary::get().find(type, name)) return;
-    LOG_WARNING("Cooker: %s '%s' has nothing to cook and no library entry; a scene "
-                "referencing it will not load", Reflect::enumName(type), name.c_str());
+    LOG_WARNING(
+        "Cooker: %s '%s' has nothing to cook and no library entry; a scene referencing it will not load",
+        Reflect::enumName(type),
+        name.c_str()
+    );
 }
 
-// A recipe that produced nothing is a different thing from an asset that never
-// had one, and only the first is the cooker's failure. A project is free to
-// build meshes in code and name them - both examples do - and the cook has
-// nothing to say about those beyond the warning above. But an asset the loader
-// went to the recipe for and came back empty from means the source art did not
-// load, and this cook cannot produce the file the manifest promises.
-//
-// Reachable for meshes and textures alone: they are the kinds that import off
-// the ThreadPool, and every other kind is simply never registered when its
-// import fails.
-bool reportUnbaked(AssetType type, const std::string& name) {
-    LOG_ERROR("Cooker: %s '%s' has a recipe but nothing to bake; its source did not load",
-              Reflect::enumName(type), name.c_str());
-    return false;
+// Artifacts being baked on the ThreadPool. A bake releases its claim under this lock when it
+// ends; nothing goes back through the main thread.
+std::mutex                      g_bakingMutex;
+std::set<std::filesystem::path> g_baking;
+
+bool isBaking(const std::filesystem::path& path) {
+    const std::lock_guard<std::mutex> lock(g_bakingMutex);
+    return g_baking.count(path) > 0;
 }
 
-// Whether a type's cook writes a binary beside its recipe. A material's recipe
-// IS its runtime form - AssetSerializer reads that file straight back - so it has
-// none, and nothing is ever written where its cookedPath() points.
-enum class CookedOutput { None, Binary };
+// Bake @p path on the ThreadPool unless already under way; delete @p previous once it lands.
+void bakeInBackground(
+    const std::filesystem::path& path,
+    const std::filesystem::path& previous,
+    std::function<bool(const std::filesystem::path&)> write
+) {
+    {
+        const std::lock_guard<std::mutex> lock(g_bakingMutex);
+        if (!g_baking.insert(path).second) return;
+    }
+    ThreadPool::get().addTask([path, previous, write = std::move(write)]() {
+        if (write(path)) {
+            std::error_code ec;
+            if (previous != path) std::filesystem::remove(previous, ec);
+        } else {
+            // Loads fall back to the recipe, and the next cook bakes it again.
+            LOG_ERROR("Cooker: the background bake of '%s' failed", path.string().c_str());
+        }
+        const std::lock_guard<std::mutex> lock(g_bakingMutex);
+        g_baking.erase(path);
+    });
+}
 
-// Whether an already-recorded asset can be skipped this save. A manifest record
-// asserts that the recipe was written and, for the types that have one, the
-// cooked binary too, so both are checked rather than the hash alone: a record
-// whose files have since gone missing would otherwise report success over a
-// project that no longer loads. The hash stays the first test because it is what
-// makes an unchanged asset free; what it adds is one stat per asset per save.
-//
-// The cooked half asks whether the file is USABLE, not whether it is there, and
-// asks it through the same probe the loader resolves sources with. A file this
-// build cannot read is not an output that can be skipped, and the two sides
-// disagreeing about that is the one way a project ends up repairable by neither:
-// the loader falling back to the recipe every load while the cooker declares the
-// stale binary current and never rewrites it.
-bool isUpToDate(AssetType type, const std::string& name, uint64_t hash, CookedOutput cooked) {
+// A material's recipe IS its runtime form, so nothing is written where its cookedPath() points.
+template<typename Asset>
+constexpr bool WRITES_BINARY = !std::is_same_v<Asset, MaterialAsset>;
+
+// Whether a kind's bake may run on the ThreadPool: the two that take seconds. The rest are copies.
+template<typename Asset>
+constexpr bool BAKES_IN_BACKGROUND = std::is_same_v<Asset, MeshAsset> || std::is_same_v<Asset, TextureAsset>;
+
+// Whether a recorded asset can be skipped: the recipe and, for a kind with one, the binary must
+// exist, not just the hash. The binary uses the loader's probe; one still baking counts as
+// current, since a second bake would race it for the temporary.
+bool isUpToDate(AssetType type, const std::string& name, uint64_t hash, bool writesBinary) {
     const AssetRecord* existing = AssetLibrary::get().find(type, name);
     if (!existing || existing->recipeHash != hash) return false;
 
     std::error_code ec;
     if (!std::filesystem::exists(AssetLibrary::recipePath(type, name), ec)) return false;
-    if (cooked == CookedOutput::None) return true;
-    return AssetCook::isCookedCurrent(
-        type, AssetLibrary::cookedPath(type, name, AssetCook::cacheKey(hash, type)));
+    if (!writesBinary) return true;
+    const std::filesystem::path path = AssetLibrary::cookedPath(type, name, hash);
+    return isBaking(path) || AssetCook::isCookedCurrent(type, path);
 }
 
-// The recipe is the half of the library a cook cannot regenerate, so it takes
-// the same temp-and-rename write every other document does. A recipe truncated
-// in place would be recorded under the current hash, skipped by every later
-// cook, and rejected by every later load.
-bool writeRecipeFile(const std::filesystem::path& path, const std::string& name,
-                     const char* typeTag, const nlohmann::json& source) {
-    nlohmann::json doc;
-    doc["name"]   = name;
-    doc["type"]   = typeTag;
-    doc["source"] = source;
-    return detail::writeJsonFile(path, doc, "Cooker recipe");
-}
+// What the asset holds once its import landed; empty means the source did not load.
+bool hasContent(const MeshAsset& mesh)          { return !mesh.loading && !mesh.vertices.empty(); }
+bool hasContent(const TextureAsset& texture)    { return !texture.loading && !texture.pixelData.empty(); }
+bool hasContent(const SkeletonAsset& skeleton)  { return !skeleton.bones.empty(); }
+bool hasContent(const AnimationClipAsset& clip) { return !clip.bones.empty(); }
+bool hasContent(const AudioClipAsset& clip)     { return clip.sampleCount() > 0; }
 
-// The cook* helpers return false only on a real cook failure (recipe / cooked
-// write); a skip - unnamed, nothing to bake, or already up to date - returns
-// true, so cookAllAssets can distinguish failures from no-ops.
-bool cookMesh(const MeshAsset& mesh) {
-    if (mesh.name().empty()) return true;
-
-    // Nothing to bake: never had a recipe, or it was read back from the cooked
-    // cache and the library already holds the recipe it was baked from.
-    if (!mesh.hasSource() || isCookedPlaceholder(mesh.sourceJson())) {
-        warnUnlisted(AssetType::Mesh, mesh.name());
-        return true;
-    }
-    if (mesh.loading || mesh.vertices.empty()) return reportUnbaked(AssetType::Mesh, mesh.name());
-
-    AssetLibrary& lib = AssetLibrary::get();
-    const nlohmann::json& recipe = mesh.sourceJson();
-    const uint64_t hash = hashRecipe(recipe);
-
-    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Mesh, mesh.name());
-    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(
-        AssetType::Mesh, mesh.name(), AssetCook::cacheKey(hash, AssetType::Mesh));
-    if (isUpToDate(AssetType::Mesh, mesh.name(), hash, CookedOutput::Binary)) return true;
-
-    if (!writeRecipeFile(recipePath, mesh.name(), "mesh", recipe)) return false;
-    if (!AssetCook::writeMesh(cookedPath, mesh, hash)) return false;
-
-    lib.upsert({AssetType::Mesh, mesh.name(), hash});
-    LOG_INFO("Cooked mesh '%s' (%zu verts, %zu indices)",
-             mesh.name().c_str(), mesh.vertices.size(), mesh.indices.size());
+// Write each kind's artifact and say what was baked. A mesh is reordered on a copy: the asset is
+// the graph's, and the cook only reads it.
+bool writeCooked(const std::filesystem::path& path, const MeshAsset& mesh) {
+    MeshAsset baked = mesh;
+    optimizeMeshForGpu(baked);
+    if (!AssetCook::writeMesh(path, baked)) return false;
+    LOG_INFO(
+        "Cooked mesh '%s' (%zu verts, %zu indices)",
+        baked.name().c_str(),
+        baked.vertices.size(),
+        baked.indices.size()
+    );
     return true;
 }
 
-bool cookTexture(const TextureAsset& tex) {
-    if (tex.name().empty()) return true;
-
-    if (!tex.hasSource() || isCookedPlaceholder(tex.sourceJson())) {
-        warnUnlisted(AssetType::Texture, tex.name());
-        return true;
-    }
-    if (tex.loading || tex.pixelData.empty()) return reportUnbaked(AssetType::Texture, tex.name());
-
-    AssetLibrary& lib = AssetLibrary::get();
-    const nlohmann::json& recipe = tex.sourceJson();
-    const uint64_t hash = hashRecipe(recipe);
-
-    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Texture, tex.name());
-    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(
-        AssetType::Texture, tex.name(), AssetCook::cacheKey(hash, AssetType::Texture));
-    if (isUpToDate(AssetType::Texture, tex.name(), hash, CookedOutput::Binary)) return true;
-
-    if (!writeRecipeFile(recipePath, tex.name(), "texture", recipe)) return false;
-    if (!AssetCook::writeTexture(cookedPath, tex, hash)) return false;
-
-    lib.upsert({AssetType::Texture, tex.name(), hash});
-    LOG_INFO("Cooked texture '%s' (%ux%u)", tex.name().c_str(), tex.params.width, tex.params.height);
+// The asset keeps its decoded pixels; the file gets the mip chain and blocks.
+bool writeCooked(const std::filesystem::path& path, const TextureAsset& source) {
+    TextureAsset baked;
+    if (!bakeTexture(source, baked) || !AssetCook::writeTexture(path, baked)) return false;
+    LOG_INFO(
+        "Cooked texture '%s' (%ux%u, %u level(s)%s)",
+        source.name().c_str(),
+        source.params.width,
+        source.params.height,
+        baked.params.mipLevels,
+        isCompressedFormat(baked.params.internalFormat) ? ", block-compressed" : ""
+    );
     return true;
 }
 
-bool cookSkeleton(const SkeletonAsset& skeleton) {
-    if (skeleton.name().empty()) return true;
-
-    if (!skeleton.hasSource() || skeleton.bones.empty() || isCookedPlaceholder(skeleton.sourceJson())) {
-        warnUnlisted(AssetType::Skeleton, skeleton.name());
-        return true;
-    }
-
-    AssetLibrary& lib = AssetLibrary::get();
-    const nlohmann::json& recipe = skeleton.sourceJson();
-    const uint64_t hash = hashRecipe(recipe);
-
-    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Skeleton, skeleton.name());
-    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(
-        AssetType::Skeleton, skeleton.name(), AssetCook::cacheKey(hash, AssetType::Skeleton));
-    if (isUpToDate(AssetType::Skeleton, skeleton.name(), hash, CookedOutput::Binary)) return true;
-
-    if (!writeRecipeFile(recipePath, skeleton.name(), "skeleton", recipe)) return false;
-    if (!AssetCook::writeSkeleton(cookedPath, skeleton, hash)) return false;
-
-    lib.upsert({AssetType::Skeleton, skeleton.name(), hash});
+bool writeCooked(const std::filesystem::path& path, const SkeletonAsset& skeleton) {
+    if (!AssetCook::writeSkeleton(path, skeleton)) return false;
     LOG_INFO("Cooked skeleton '%s' (%zu bones)", skeleton.name().c_str(), skeleton.bones.size());
     return true;
 }
 
-bool cookAnimationClip(const AnimationClipAsset& clip) {
-    if (clip.name().empty()) return true;
-
-    if (!clip.hasSource() || clip.bones.empty() || isCookedPlaceholder(clip.sourceJson())) {
-        warnUnlisted(AssetType::AnimationClip, clip.name());
-        return true;
-    }
-
-    AssetLibrary& lib = AssetLibrary::get();
-    const nlohmann::json& recipe = clip.sourceJson();
-    const uint64_t hash = hashRecipe(recipe);
-
-    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::AnimationClip, clip.name());
-    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(
-        AssetType::AnimationClip, clip.name(), AssetCook::cacheKey(hash, AssetType::AnimationClip));
-    if (isUpToDate(AssetType::AnimationClip, clip.name(), hash, CookedOutput::Binary)) return true;
-
-    if (!writeRecipeFile(recipePath, clip.name(), "animationClip", recipe)) return false;
-    if (!AssetCook::writeAnimationClip(cookedPath, clip, hash)) return false;
-
-    lib.upsert({AssetType::AnimationClip, clip.name(), hash});
-    LOG_INFO("Cooked clip '%s' (%.2fs, %zu bones)", clip.name().c_str(),
-             static_cast<double>(clip.duration), clip.bones.size());
+bool writeCooked(const std::filesystem::path& path, const AnimationClipAsset& clip) {
+    if (!AssetCook::writeAnimationClip(path, clip)) return false;
+    LOG_INFO(
+        "Cooked clip '%s' (%.2fs, %zu bones)",
+        clip.name().c_str(),
+        static_cast<double>(clip.duration),
+        clip.bones.size()
+    );
     return true;
 }
 
-bool cookAudioClip(const AudioClipAsset& clip) {
-    if (clip.name().empty()) return true;
-
-    if (!clip.hasSource() || clip.sampleCount() == 0 || isCookedPlaceholder(clip.sourceJson())) {
-        warnUnlisted(AssetType::AudioClip, clip.name());
-        return true;
-    }
-
-    AssetLibrary& lib = AssetLibrary::get();
-    const nlohmann::json& recipe = clip.sourceJson();
-    const uint64_t hash = hashRecipe(recipe);
-
-    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::AudioClip, clip.name());
-    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(
-        AssetType::AudioClip, clip.name(), AssetCook::cacheKey(hash, AssetType::AudioClip));
-    if (isUpToDate(AssetType::AudioClip, clip.name(), hash, CookedOutput::Binary)) return true;
-
-    if (!writeRecipeFile(recipePath, clip.name(), "audioClip", recipe)) return false;
-    if (!AssetCook::writeAudioClip(cookedPath, clip, hash)) return false;
-
-    lib.upsert({AssetType::AudioClip, clip.name(), hash});
-    LOG_INFO("Cooked sound '%s' (%.2fs, %u channel(s), %u Hz)", clip.name().c_str(),
-             static_cast<double>(clip.duration()), clip.channels, clip.sampleRate);
+bool writeCooked(const std::filesystem::path& path, const AudioClipAsset& clip) {
+    if (!AssetCook::writeAudioClip(path, clip)) return false;
+    LOG_INFO(
+        "Cooked sound '%s' (%.2fs, %u channel(s), %u Hz)",
+        clip.name().c_str(),
+        static_cast<double>(clip.duration()),
+        clip.channels,
+        clip.sampleRate
+    );
     return true;
 }
 
-bool cookMaterial(const MaterialAsset& mat, const ResourceManager& resources) {
-    if (mat.name().empty()) return true;
+/**
+ * @brief Record one asset in the library and write its artifact, unless both are current.
+ *
+ * The previous record's artifact is deleted once replaced, or cooked/ grows a file per re-cook. A
+ * background bake works on a copy taken only once there is something to bake; loads fall back to
+ * the recipe until it lands.
+ *
+ * @tparam Asset The asset type being cooked.
+ * @param asset  The asset; its name is its key in the library.
+ * @param recipe What the artifact is derived from, and what the key is hashed from.
+ * @param bake   Whether a mesh's or texture's artifact is written before this returns or after.
+ * @return False when the recipe, the record or the artifact could not be written.
+ */
+template<typename Asset>
+bool cookThrough(const Asset& asset, const nlohmann::json& recipe, Bake bake) {
+    constexpr AssetType TYPE = ASSET_TYPE<Asset>;
+    const std::string& name = asset.name();
+    RecipeKey          key  = sessionKey(asset, recipe);
+    const uint64_t     hash = key.hash;
 
-    AssetLibrary& lib = AssetLibrary::get();
-    // A material's canonical inline form is both its editable source of truth and
-    // its runtime form; no binary cook is needed.
-    const nlohmann::json inlineSource = AssetSerializer::materialToInline(mat, resources);
-    const uint64_t hash = hashRecipe(inlineSource);
+    if (isUpToDate(TYPE, name, hash, WRITES_BINARY<Asset>)) return true;
 
-    const std::filesystem::path recipePath = AssetLibrary::recipePath(AssetType::Material, mat.name());
-    if (isUpToDate(AssetType::Material, mat.name(), hash, CookedOutput::None)) return true;
+    if (!AssetLibrary::writeRecipe(TYPE, name, recipe)) return false;
+    const std::filesystem::path cookedPath = AssetLibrary::cookedPath(TYPE, name, hash);
+    const bool now = !BAKES_IN_BACKGROUND<Asset> || bake == Bake::Now;
+    if constexpr (WRITES_BINARY<Asset>) {
+        if (now && !writeCooked(cookedPath, asset)) return false;
+    }
 
-    if (!writeRecipeFile(recipePath, mat.name(), "material", inlineSource)) return false;
+    const AssetRecord* previous = AssetLibrary::get().find(TYPE, name);
+    const std::filesystem::path previousPath = previous
+        ? AssetLibrary::cookedPath(TYPE, name, previous->recipeHash)
+        : cookedPath;
+    AssetLibrary::get().upsert({TYPE, name, hash, std::move(key.sources)});
 
-    lib.upsert({AssetType::Material, mat.name(), hash});
-    LOG_INFO("Cooked material '%s'", mat.name().c_str());
+    if constexpr (!WRITES_BINARY<Asset>) {
+        LOG_INFO("Cooked material '%s'", name.c_str());
+    } else if (!now) {
+        bakeInBackground(cookedPath, previousPath, [baked = asset](const std::filesystem::path& path) {
+            return writeCooked(path, baked);
+        });
+    } else if (previousPath != cookedPath) {
+        std::error_code ec;
+        std::filesystem::remove(previousPath, ec);
+    }
     return true;
+}
+
+/**
+ * @brief Cook one asset, or say why there is nothing to cook.
+ *
+ * A material's recipe is computed from what it holds. Any other kind's is the source it was
+ * imported from; one with none, or served from the cooked cache, has nothing to re-cook, and one
+ * whose import produced nothing is an error, since the manifest would promise a file nothing made.
+ *
+ * @tparam Asset     The asset type being cooked.
+ * @param asset      The asset; unnamed ones are skipped.
+ * @param resources  Resolves a material's texture handles to names.
+ * @param bake       Passed to cookThrough.
+ * @return False only on a real failure; a skip returns true.
+ */
+template<typename Asset>
+bool cookAsset(const Asset& asset, const ResourceManager& resources, Bake bake) {
+    if constexpr (!WRITES_BINARY<Asset>) {
+        return cookThrough(asset, AssetSerializer::materialToInline(asset, resources), bake);
+    } else {
+        constexpr AssetType TYPE = ASSET_TYPE<Asset>;
+        if (!asset.hasSource() || isCookedPlaceholder(asset.sourceJson())) {
+            warnUnlisted(TYPE, asset.name());
+            return true;
+        }
+        if (!hasContent(asset)) {
+            LOG_ERROR(
+                "Cooker: %s '%s' has a recipe but nothing to bake; its source did not load",
+                Reflect::enumName(TYPE),
+                asset.name().c_str()
+            );
+            return false;
+        }
+        return cookThrough(asset, asset.sourceJson(), bake);
+    }
+}
+
+// Every asset of one kind and one side of the derived split; how many failed.
+template<typename Asset>
+size_t cookEach(const ResourceManager& resources, bool derived, Bake bake) {
+    size_t failed = 0;
+    resources.forEachOfType<Asset>([&](Handle<Asset>, const Asset& asset) {
+        if (asset.isHidden() || asset.name().empty()) return;
+        if ((asset.hasSource() && isDecimated(asset.sourceJson())) != derived) return;
+        if (!cookAsset(asset, resources, bake)) ++failed;
+    });
+    return failed;
+}
+
+size_t cookPass(AssetType type, bool derived, const ResourceManager& resources, Bake bake) {
+    switch (type) {
+#define VKM_COOK_PASS(tag, Asset, kindName, dir) \
+        case AssetType::tag: return cookEach<Asset>(resources, derived, bake);
+        VKM_ASSET_KINDS(VKM_COOK_PASS)
+#undef VKM_COOK_PASS
+        case AssetType::Count: break;
+    }
+    return 0;
+}
+
+// Calls @p pass for every kind in ASSET_DEPENDENCY_ORDER, a derived asset after every base: a
+// decimated level is keyed by its base's recorded key, which a later re-cook of the base would move.
+template<typename Pass>
+void inDependencyOrder(Pass&& pass) {
+    for (const AssetType type : ASSET_DEPENDENCY_ORDER) {
+        for (const bool derived : {false, true}) pass(type, derived);
+    }
 }
 
 } // namespace
 
-bool cookAllAssets(ResourceManager& resources) {
+bool cookAllAssets(ResourceManager& resources, Bake bake) {
     LOG_INFO("Cooking assets into the library...");
+    g_lastCookKeys = std::move(g_thisCookKeys);
+    g_thisCookKeys.clear();
 
-    // Land every asset still decoding: a host with a frame loop does this
-    // through AsyncLoaderSystem, and the cooker has no frames.
     size_t failed = awaitAsyncLoads(resources) ? 0 : 1;
-
-    // Textures first, then materials (which reference textures by name), then
-    // skeletons, then the clips and meshes that name one - matching the load
-    // order so a downstream consumer is consistent.
-    resources.forEachOfType<TextureAsset>([&](TextureHandle, const TextureAsset& tex) {
-        if (!tex.isHidden() && !cookTexture(tex)) ++failed;
-    });
-    resources.forEachOfType<MaterialAsset>([&](MaterialHandle, const MaterialAsset& mat) {
-        if (!mat.isHidden() && !cookMaterial(mat, resources)) ++failed;
-    });
-    resources.forEachOfType<SkeletonAsset>([&](SkeletonHandle, const SkeletonAsset& skeleton) {
-        if (!skeleton.isHidden() && !cookSkeleton(skeleton)) ++failed;
-    });
-    resources.forEachOfType<AnimationClipAsset>([&](AnimationClipHandle, const AnimationClipAsset& clip) {
-        if (!clip.isHidden() && !cookAnimationClip(clip)) ++failed;
-    });
-    resources.forEachOfType<MeshAsset>([&](MeshHandle, const MeshAsset& mesh) {
-        if (!mesh.isHidden() && !cookMesh(mesh)) ++failed;
-    });
-    // Sounds reference nothing and nothing references them by anything but a
-    // name, so where they sit in this order is arbitrary; last keeps the chain
-    // above reading as the dependency order it is.
-    resources.forEachOfType<AudioClipAsset>([&](AudioClipHandle, const AudioClipAsset& clip) {
-        if (!clip.isHidden() && !cookAudioClip(clip)) ++failed;
+    inDependencyOrder([&](AssetType type, bool derived) {
+        failed += cookPass(type, derived, resources, bake);
     });
 
-    // A failed cook leaves the manifest referencing a cooked file that was never
-    // written; surface it instead of saving silently as if everything succeeded.
+    // A failed asset writes no record this cook; whatever it had recorded before stands.
     if (failed > 0) {
-        LOG_ERROR("Cooker: %zu asset(s) failed to cook; manifest may reference missing cooked files", failed);
+        LOG_ERROR(
+            "Cooker: %zu asset(s) failed to cook; their manifest records are left as they were",
+            failed
+        );
     }
 
     bool saved = AssetLibrary::get().save();
@@ -317,6 +397,108 @@ bool cookAllAssets(ResourceManager& resources) {
         LOG_ERROR("Cooker: failed to save the asset library manifest");
     }
     return failed == 0 && saved;
+}
+
+namespace {
+
+// One asset the sweep re-imports.
+struct StaleAsset {
+    AssetType      type = AssetType::Count;
+    std::string    name;
+    nlohmann::json recipe;
+};
+
+// Run the recipe through the host's import, filed under the manifest's (the scene's) name.
+template<typename Asset>
+bool importAs(const StaleAsset& stale, ResourceManager& resources) {
+    const RecipeImport<Asset> import = recipeImport<Asset>();
+    if (!import) return false;
+    const Handle<Asset> handle = import(stale.recipe, resources);
+    if (!handle) return false;
+    resources.rename(handle, stale.name);
+    return true;
+}
+
+bool importRecipe(const StaleAsset& stale, ResourceManager& resources) {
+    switch (stale.type) {
+        case AssetType::Mesh:          return importAs<MeshAsset>(stale, resources);
+        case AssetType::Texture:       return importAs<TextureAsset>(stale, resources);
+        case AssetType::Skeleton:      return importAs<SkeletonAsset>(stale, resources);
+        case AssetType::AnimationClip: return importAs<AnimationClipAsset>(stale, resources);
+        case AssetType::AudioClip:     return importAs<AudioClipAsset>(stale, resources);
+        case AssetType::Material:      // its recipe is its runtime form; never stale
+        case AssetType::Count:         break;
+    }
+    return false;
+}
+
+} // namespace
+
+bool cookStaleAssets() {
+    const AssetLibrary& library = AssetLibrary::get();
+
+    std::vector<StaleAsset> stale;
+    std::vector<StaleAsset> dependencies;
+    std::set<std::pair<AssetType, std::string>> staleNames;
+    std::set<std::pair<AssetType, std::string>> dependencyNames;
+
+    // In dependency order: a derived asset is stale when its base is, as its key folds the base's.
+    // A material has no binary to re-bake.
+    const auto sweep = [&](AssetType type, bool derived) {
+        if (type == AssetType::Material) return;
+        for (const std::string& name : library.namesOf(type)) {
+            nlohmann::json recipe;
+            if (!AssetLibrary::readRecipe(type, name, recipe)) {
+                LOG_WARNING(
+                    "Cooker: %s '%s' is in the manifest with no recipe to check it against",
+                    Reflect::enumName(type),
+                    name.c_str()
+                );
+                continue;
+            }
+            if (isDecimated(recipe) != derived) continue;
+
+            const uint64_t recorded   = library.find(type, name)->recipeHash;
+            const Dependency depends  = dependencyOf(recipe);
+            const bool baseMoved      = staleNames.count({depends.type, depends.name}) > 0;
+            const bool recipeMoved    = keyRecipe(recipe).hash != recorded;
+            const bool artifactMissed = !AssetCook::isCookedCurrent(
+                type,
+                AssetLibrary::cookedPath(type, name, recorded)
+            );
+            if (!baseMoved && !recipeMoved && !artifactMissed) continue;
+
+            // Its base must be in the graph for it to import; the cook finds the base current.
+            if (!depends.name.empty() && !baseMoved
+                && dependencyNames.insert({depends.type, depends.name}).second) {
+                nlohmann::json base;
+                if (AssetLibrary::readRecipe(depends.type, depends.name, base)) {
+                    dependencies.push_back({depends.type, depends.name, std::move(base)});
+                }
+            }
+            staleNames.insert({type, name});
+            stale.push_back({type, name, std::move(recipe)});
+        }
+    };
+    inDependencyOrder(sweep);
+
+    if (stale.empty()) return true;
+    LOG_INFO("Cooker: %zu asset(s) changed since they were baked; re-importing them", stale.size());
+
+    ResourceManager resources;
+    size_t failed = 0;
+    for (const std::vector<StaleAsset>* list : {&dependencies, &stale}) {
+        for (const StaleAsset& import : *list) {
+            if (importRecipe(import, resources)) continue;
+            LOG_ERROR(
+                "Cooker: %s '%s' did not import from its recipe",
+                Reflect::enumName(import.type),
+                import.name.c_str()
+            );
+            ++failed;
+        }
+    }
+    return cookAllAssets(resources) && failed == 0;
 }
 
 } // namespace Vkm::Engine::AssetCooker

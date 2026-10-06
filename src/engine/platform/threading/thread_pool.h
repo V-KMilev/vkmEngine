@@ -4,6 +4,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <deque>
+#include <exception>
 #include <functional>
 #include <mutex>
 #include <thread>
@@ -13,24 +14,62 @@
 namespace Vkm::Engine {
 
 /**
- * @brief Fixed-size pool of worker threads draining a shared task queue.
+ * @brief Fixed-size pool of worker threads draining two task queues.
  *
- * Process-wide singleton (get()). Workers dequeue in submission order but
- * execute concurrently, and waiting is per-batch (addTasks + waitForBatch), so a
- * caller never blocks on work someone else queued - the async asset decodes
- * share this pool.
- *
- * There are two queues, chosen by the shape of the call. `addTasks` carries a
- * batch counter because someone is blocked in waitForBatch until it empties -
- * that is the frame, and it is served first. `addTask` retires against nothing,
- * because every caller is an asset decode, so it is served when the frame is not
- * asking.
- *
- * That order cannot starve a decode: parallelFor blocks its caller until its own
- * range is done, so at most one batch is alive at a time and a decode waits for
- * one batch rather than a stream of them.
+ * Waiting is per-batch, so a caller never blocks on work someone else queued. Batches (the frame
+ * is blocked on them) are served before addTask's background tasks. That cannot starve the
+ * background for long: only the frame fills the batch queue, and a batch must be joined within
+ * the frame that added it.
  */
 class ThreadPool {
+    public:
+        /**
+         * @brief A run of tasks addressed by index, queued as one entry.
+         *
+         * The task is borrowed, not copied, so a batch of any size allocates nothing. The batch
+         * and its task must outlive the matching waitForBatch().
+         */
+        class Batch {
+            public:
+                /**
+                 * @brief A batch of @p count tasks, each a call of @p task with its index.
+                 *
+                 * @tparam Fn Callable taking a size_t index.
+                 * @param count How many indices, counted from 0.
+                 * @param task Called once per index, on a worker or in waitForBatch; borrowed, not copied.
+                 */
+                template<typename Fn>
+                Batch(size_t count, const Fn& task)
+                    : m_run([](const void* body, size_t index) { (*static_cast<const Fn*>(body))(index); })
+                    , m_task(&task)
+                    , m_count(count)
+                {}
+
+                /// Refused: a temporary task is gone before a worker reaches it.
+                template<typename Fn>
+                Batch(size_t count, const Fn && task) = delete;
+
+                ~Batch() = default;
+
+                Batch(const Batch& other) = delete;
+                Batch& operator=(const Batch& other) = delete;
+
+                Batch(Batch && other) = delete;
+                Batch& operator=(Batch && other) = delete;
+
+            private:
+                friend class ThreadPool;
+
+            private:
+                void (*m_run)(const void* task, size_t index);
+                const void* m_task;
+                size_t      m_count;
+                size_t      m_claimed = 0;          ///< Indices handed out; guarded by the pool's mutex.
+                std::exception_ptr m_error;         ///< First an index threw; guarded by the pool's mutex.
+
+                std::atomic<size_t> m_pending{0};   ///< Indices queued and not yet retired.
+        };
+
     public:
         ThreadPool(const ThreadPool& other) = delete;
         ThreadPool& operator=(const ThreadPool& other) = delete;
@@ -40,81 +79,71 @@ class ThreadPool {
 
     public:
         /**
-         * @brief Access the process-wide thread pool.
+         * @brief Access the process-wide thread pool, constructed on first use.
          *
-         * The pool is constructed on first use (Meyers singleton) and shared by
-         * every caller for the lifetime of the process.
-         *
-         * @return Reference to the single process-wide pool.
+         * @return The single pool.
          */
         static ThreadPool& get();
-
-        size_t threadCount() const { return m_threads.size(); }
 
         /**
          * @brief Enqueue a single task and wake one worker.
          *
-         * Refused after shutdown(), with a warning: nothing drains the queue
-         * again, so an enqueue there is work that is silently never done.
+         * Refused with a warning after shutdown(), when nothing drains the queue.
          *
-         * @param task The work to run on a worker thread; consumed (moved into
-         *             the queue).
+         * @param task The work to run on a worker thread.
          */
         void addTask(std::function<void()> && task);
 
         /**
-         * @brief Enqueue a batch of tasks under one lock and wake all workers.
+         * @brief Queue every index of @p batch as one entry and wake all workers.
          *
-         * Cheaper than repeated addTask for many tasks at once. @p pending is
-         * raised by the batch size here and dropped as each of its tasks
-         * retires - even one that throws - so waitForBatch() blocks on this
-         * batch alone and not on whatever else is in the queue.
+         * Refused after shutdown() with the counter left at zero, so waitForBatch() returns.
          *
-         * @param tasks The work to run on worker threads; consumed (moved into
-         *              the queue).
-         * @param pending The caller's completion counter for this batch; it
-         *                must outlive the tasks, which the matching
-         *                waitForBatch() guarantees.
+         * @param batch The batch to run; it and its task must outlive waitForBatch().
          */
-        void addTasks(std::vector<std::function<void()>> && tasks, std::atomic<size_t>& pending);
+        void addBatch(Batch& batch);
 
         /**
-         * @brief Block the caller until every task of one batch has retired.
+         * @brief Block the caller until every index of @p batch has retired.
          *
-         * Returns immediately when the batch is already done (or was never
-         * submitted), so the serial path of parallelFor pays nothing.
+         * The caller first runs every index no worker has claimed. An index that throws still
+         * retires; the first exception thrown is rethrown here, whichever thread ran it.
          *
-         * @param pending The counter handed to addTasks for that batch.
+         * @param batch The batch handed to addBatch.
          */
-        void waitForBatch(std::atomic<size_t>& pending);
+        void waitForBatch(Batch& batch);
 
         /**
          * @brief Join the workers now, ahead of the pool's own destruction.
          *
-         * Tasks already started run to completion; queued ones are dropped.
-         * Call this while the objects those tasks write into are still alive:
-         * the pool is a function-local static, so its destructor runs after
-         * other singletons' (reverse construction order) and a decode landing
-         * then would push into a destroyed queue. Idempotent; once the workers
-         * are gone parallelFor sweeps serially.
+         * Started tasks finish; queued ones are dropped but still retire, so no waiter blocks.
+         * Call before main returns: the static's destructor runs after the singletons tasks write
+         * into, and on Windows inside DLL unload, where a join hangs. Idempotent.
          */
         void shutdown();
 
         /**
-         * @brief True when called from a thread owned by the pool. parallelFor
-         * must not be re-entered from inside a task body - with every worker
-         * blocked on chunks queued behind them, nothing is left to run them.
+         * @brief True when called from a thread owned by the pool.
+         *
+         * parallelFor sweeps serially on a worker. Not for safety (a nested call would finish):
+         * the other threads are busy, so nested chunks would only come back at a lock each.
+         *
+         * @return True on a pool worker, false on any other thread.
          */
         static bool isWorkerThread();
 
+        size_t threadCount() const { return m_threads.size(); }
+
     private:
         /**
-         * @brief One queued task plus the batch counter it retires against
-         *        (null for a fire-and-forget addTask).
+         * @brief One unit of queued work: an owned task, or an index of a Batch.
+         *
+         * A batch stays one queue entry until its last index is claimed.
          */
         struct QueuedTask {
-            std::function<void()> function;
-            std::atomic<size_t>*  pending = nullptr;
+            std::function<void()> function;           ///< When not a batch's.
+            Batch*                batch   = nullptr;
+            size_t                index   = 0;        ///< Once claimed.
         };
 
     private:
@@ -122,36 +151,57 @@ class ThreadPool {
         ~ThreadPool();
 
         /**
-         * @brief Worker loop: pop and run tasks until shutdown, retiring each
-         * against its batch counter (even on exception) and signalling
-         * waiters when a batch reaches zero.
+         * @brief Worker loop: pop and run tasks until shutdown.
          */
         void process();
+
+        /**
+         * @brief Run one claimed index of @p batch and retire it, even when it throws.
+         *
+         * The first throw is kept on the batch for waitForBatch to rethrow.
+         *
+         * @param batch The batch the index was claimed from.
+         * @param index The claimed index.
+         */
+        void runIndex(Batch& batch, size_t index);
+
+        /**
+         * @brief Drop @p pending by one finished task, waking waiters when it empties.
+         *
+         * The drop to zero takes the queue lock so the notify cannot land between a waiter reading
+         * nonzero and sleeping. The counter is untouched after the decrement: its owner may be gone.
+         *
+         * @param pending The batch counter the task was queued against.
+         */
+        void retire(std::atomic<size_t>& pending);
 
     private:
         std::atomic<bool> m_running;
 
         std::vector<std::thread> m_threads;
 
-        /// Work the frame is blocked on: batches from addTasks. Drained first.
-        std::deque<QueuedTask> m_frameTasks;
-        /// Work nobody is waiting for: the asset decodes. Drained when idle.
-        std::deque<QueuedTask> m_backgroundTasks;
+        std::deque<QueuedTask> m_frameTasks;       ///< From addBatch; drained first.
+        std::deque<QueuedTask> m_backgroundTasks;  ///< From addTask; drained when idle.
 
         std::mutex m_tasksMutex;
         std::condition_variable m_tasksCV;
-        std::condition_variable m_doneCV;   ///< Signalled when a batch counter drops to 0
+        std::condition_variable m_doneCV;   ///< A batch counter dropped to 0
 };
 
 /**
- * @brief Run @p function over the index range [0, count) split into @p grain-sized
- * chunks across the pool, with the calling thread handling the first chunk.
- * @p function may take a size_t index or no arguments. Re-entry from a worker
- * thread falls back to a serial sweep to avoid self-deadlock. Blocks until the
- * whole range is done.
+ * @brief Run @p function over [0, count) in @p grain-sized chunks across the pool, the caller
+ *        running the first.
+ *
+ * Serial on a worker thread. Blocks until done, then rethrows the caller's chunk's exception,
+ * else the first a queued chunk threw.
+ *
+ * @tparam Function Callable taking a size_t index, or no arguments.
+ * @param count    Number of indices, counted from 0.
+ * @param grain    Indices per chunk; 0 is taken as 1.
+ * @param function Called once per index, on whichever thread runs its chunk.
  */
 template<class Function>
-void parallelFor(size_t count, size_t grain, Function && function) {
+void parallelFor(size_t count, size_t grain, Function&& function) {
     if (count == 0) {
         return;
     }
@@ -166,9 +216,6 @@ void parallelFor(size_t count, size_t grain, Function && function) {
         }
     };
 
-    // Re-entering parallelFor from inside a worker risks deadlock: every worker
-    // could end up waiting on chunks queued behind the workers themselves. Fall
-    // back to a serial sweep on the calling worker thread.
     if (ThreadPool::isWorkerThread()) {
         for (size_t i = 0; i < count; ++i) invokeAt(i);
         return;
@@ -176,67 +223,55 @@ void parallelFor(size_t count, size_t grain, Function && function) {
 
     auto& pool = ThreadPool::get();
 
-    // Nobody to hand chunks to once the pool has been shut down (or on a
-    // platform that reported no cores) - a submission there would never retire.
+    // No workers after shutdown (or with no cores reported): a submission would never retire.
     if (pool.threadCount() == 0) {
         for (size_t i = 0; i < count; ++i) invokeAt(i);
         return;
     }
 
-    // This call's own completion count: the pool is shared with the async asset
-    // decodes, so waiting on anything global would park the caller behind an
-    // unrelated texture read.
-    std::atomic<size_t> pending{0};
+    // Chunk 0 is the caller's; batch index i is chunk i + 1.
+    const size_t chunks = (count - 1) / grain + 1;
+    const auto runChunk = [&](size_t chunk) {
+        const size_t end = std::min(count, (chunk + 1) * grain);
+        for (size_t index = chunk * grain; index < end; ++index) invokeAt(index);
+    };
+    const auto runQueued = [&](size_t task) { runChunk(task + 1); };
+    ThreadPool::Batch batch(chunks - 1, runQueued);
 
-    // Every queued task holds pointers into this frame, so the wait has to run
-    // on the unwinding path too - the caller's own chunk below can throw. Armed
-    // before addTasks, which raises the count before it queues anything.
-    struct BatchWait {
-        ~BatchWait() { pool.waitForBatch(pending); }
+    pool.addBatch(batch);
 
-        ThreadPool&          pool;
-        std::atomic<size_t>& pending;
-    } batchWait{pool, pending};
-
-    if (grain < count) {
-        std::vector<std::function<void()>> tasks;
-        for (size_t i = grain; i < count; i += grain) {
-            size_t start = i;
-            size_t end = std::min(i + grain, count);
-
-            tasks.emplace_back([start, end, &invokeAt]() {
-                for (size_t i = start; i < end; ++i) {
-                    invokeAt(i);
-                }
-            });
+    // Queued indices reach into this frame, so join before the caller's exception leaves it;
+    // that exception, not a queued chunk's, propagates.
+    try {
+        runChunk(0);
+    } catch (...) {
+        try {
+            pool.waitForBatch(batch);
+        } catch (...) {
         }
-        pool.addTasks(std::move(tasks), pending);
+        throw;
     }
-
-    grain = std::min(grain, count);
-
-    // The calling thread takes the first chunk instead of spinning idle in the
-    // wait; with grain >= count that is the whole range, and the pool is unused.
-    for (size_t i = 0; i < grain; ++i) {
-        invokeAt(i);
-    }
+    pool.waitForBatch(batch);
 }
 
 /**
- * @brief parallelFor with an auto-chosen grain: ranges below MIN_PARALLEL run inline
- * to dodge dispatch overhead; larger ranges are split evenly across all
- * workers plus the calling thread.
+ * @brief parallelFor with an auto-chosen grain, inline below MIN_PARALLEL items.
+ *
+ * Larger ranges split evenly across the workers plus the calling thread.
+ *
+ * @tparam Function Callable taking a size_t index, or no arguments.
+ * @param count    Number of indices, counted from 0.
+ * @param function Called once per index, on whichever thread runs its chunk.
  */
 template<class Function>
-void parallelFor(size_t count, Function && function) {
+void parallelFor(size_t count, Function&& function) {
     auto& pool = ThreadPool::get();
 
-    // Below this many items the pool's dispatch cost (mutex, a notify_all wake
-    // of every worker, a done-CV round trip) dwarfs the per-item work, so grain
-    // == count makes the call below sweep serially on the calling thread.
+    // Below this the dispatch cost (mutex, notify_all, done-CV round trip) dwarfs the work;
+    // grain == count sweeps serially.
     constexpr size_t MIN_PARALLEL = 2048;
 
-    // The +1 is for the main thread.
+    // The +1 is the calling thread, which runs a chunk too.
     const size_t grain = (count < MIN_PARALLEL)
         ? count
         : count / (pool.threadCount() + 1);

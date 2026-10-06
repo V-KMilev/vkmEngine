@@ -2,49 +2,79 @@
 
 #include "gl_view.h"
 
+#include <algorithm>
+#include <type_traits>
 #include <vector>
 
 #include <GL/glew.h>
 
 #include "logger.h"
+#include "debug/profiler.h"
 
 #include "gl_texture.h"
 
 #include "resource/resource_manager.h"
 #include "system/render/render_view.h"
 
-#include "data/gl_mesh.h"
-#include "data/gl_material.h"
-#include "data/gl_asset_texture.h"
+#include "asset/gl_mesh.h"
+#include "asset/gl_material.h"
+#include "asset/gl_asset_texture.h"
 
 namespace Vkm::Engine {
 
 template <typename GLT, typename AssetT>
-void GLView::ensure(GLResourceTable<GLT>& table, const Handle<AssetT>& handle, const ResourceManager& resources) {
-    if (!handle) return;
+bool GLView::ensure(
+    GLResourceTable<GLT>& table,
+    const Handle<AssetT>& handle,
+    const ResourceManager& resources
+) {
+    if (!handle) return false;
 
     const uint32_t id         = handle.id();
     const uint32_t generation = handle.key.generation;
-    const AssetT& asset = resources.get(handle);
 
     if (id >= table.slots.size()) {
         table.slots.resize(id + 1);
     }
 
     auto& slot = table.slots[id];
+    if (slot.gl && slot.generation == generation && slot.checked == m_syncStamp) return false;
+
+    const AssetT& asset = resources.get(handle);
+    bool uploaded = true;
     if (!slot.gl || slot.generation != generation) {
-        slot.gl         = std::make_unique<GLT>(asset);
+        // A mesh is a range in the pool, and the pool is this mirror's.
+        if constexpr (std::is_same_v<AssetT, MeshAsset>) {
+            slot.gl = std::make_unique<GLT>(m_meshPool, asset);
+        } else {
+            slot.gl = std::make_unique<GLT>(asset);
+        }
         slot.version    = asset.version();
         slot.generation = generation;
     } else if (slot.version != asset.version()) {
         slot.gl->update(asset);
         slot.version = asset.version();
+    } else {
+        uploaded = false;
     }
+    // A texture built since the filtering last moved takes it now; nothing
+    // walks the table again until the setting does. Font atlases keep their own.
+    if constexpr (std::is_same_v<AssetT, TextureAsset>) {
+        if (uploaded) slot.gl->applyFiltering(m_filtering, m_anisotropy);
+    }
+    slot.checked = m_syncStamp;
+    return true;
+}
+
+template <typename GLT, typename AssetT>
+const GLT* GLView::find(const GLResourceTable<GLT>& table, const Handle<AssetT>& handle) const {
+    if (!handle || handle.id() >= table.slots.size()) return nullptr;
+    const auto& slot = table.slots[handle.id()];
+    return slot.generation == handle.key.generation ? slot.gl.get() : nullptr;
 }
 
 void GLView::invalidate() {
-    // m_reportedMissing is dropped along with the tables: a name that failed to load in
-    // the old graph deserves a fresh warning if it fails again in the new one.
+    // m_reportedMissing goes too: a name failing again in the new graph deserves a fresh warning.
     m_meshes.slots.clear();
     m_materials.slots.clear();
     m_textures.slots.clear();
@@ -53,6 +83,9 @@ void GLView::invalidate() {
 }
 
 void GLView::setTextureFiltering(TextureFiltering mode, float maxAnisotropy) {
+    if (mode == m_filtering && maxAnisotropy == m_anisotropy) return;
+    m_filtering  = mode;
+    m_anisotropy = maxAnisotropy;
     for (auto& slot : m_textures.slots) {
         if (!slot.gl) continue;
         slot.gl->applyFiltering(mode, maxAnisotropy);
@@ -61,27 +94,26 @@ void GLView::setTextureFiltering(TextureFiltering mode, float maxAnisotropy) {
 
 void GLView::ensureTexture(const TextureHandle& handle, const ResourceManager& resources) {
     if (!handle) return;
+    // Asked between syncs, for the texture as it is now, not as the last sync saw it.
+    ++m_syncStamp;
     ensure(m_textures, handle, resources);
     reportIfMissing(handle, resources);
 }
 
 void GLView::reportIfMissing(const TextureHandle& handle, const ResourceManager& resources) {
     const TextureAsset& asset = resources.get(handle);
-    // Still in flight is not a failure - it resolves on a later frame, and the
-    // placeholder covers the gap meanwhile.
-    if (asset.loading || !asset.pixelData.empty()) return;
+    // Still in flight is not a failure; the placeholder covers the gap.
+    if (asset.loading || getTexture(handle)) return;
 
-    // Settled with nothing in it: the decode failed or the file was never
-    // there. Say so once per asset - the checkerboard shows that something is
-    // wrong, this says which file, which is the part you cannot see on screen.
+    // Settled empty: the decode failed or the file was never there. Said once per asset.
     if (!m_reportedMissing.insert(handle.id()).second) return;
 
-    LOG_WARNING("Texture '%s' has no pixels (path '%s') - drawing the missing-texture placeholder",
-        asset.name().c_str(), asset.filePath.c_str());
+    LOG_WARNING("Texture '%s' has no pixels - drawing the missing-texture placeholder", asset.name().c_str());
 }
 
 void GLView::ensureMaterial(const MaterialHandle& handle, const ResourceManager& resources) {
-    ensure(m_materials, handle, resources);
+    // Its maps were checked with it the first time this stamp reached it.
+    if (!ensure(m_materials, handle, resources)) return;
 
     const GLMaterial* material = getMaterial(handle);
     if (!material) return;
@@ -92,81 +124,109 @@ void GLView::ensureMaterial(const MaterialHandle& handle, const ResourceManager&
 }
 
 void GLView::sync(const RenderView& view, const ResourceManager& resources) {
-    // Naming every RenderView member is what keeps the walk below complete:
-    // add one there and this stops compiling until someone has said whether it
-    // carries an asset handle. Nothing else catches that omission.
-    [[maybe_unused]] const auto& [viewportX, viewportY, viewportWidth, viewportHeight,
-        surfaceWidth, surfaceHeight, camera, drawables, shadowCasters, lights, probes, decals,
-        particlesAdditive, particlesAlpha, irradianceVolumes, skinMatrices, casterSkins,
-        settings, environment, ui, splash, worldEpoch] = view;
+    // Naming every RenderView member keeps the walk below complete: add one and this stops
+    // compiling until someone says whether it carries an asset handle.
+    [[maybe_unused]] const auto& [
+        viewportX,
+        viewportY,
+        viewportWidth,
+        viewportHeight,
+        surfaceWidth,
+        surfaceHeight,
+        camera,
+        hasCamera,
+        objects,
+        lights,
+        probes,
+        decals,
+        particlesAdditive,
+        particlesAlpha,
+        irradianceVolume,
+        hasIrradianceVolume,
+        skinMatrices,
+        settings,
+        environment,
+        ui,
+        splash,
+        worldEpoch
+    ] = view;
 
-    // Drawables arrive clustered by (material, mesh) - that is the draw sort -
-    // so consecutive repeats dominate at scale and the previous handle is worth
-    // remembering.
-    MaterialHandle lastMaterial;
-    MeshHandle     lastMesh;
-    for (const DrawableData& d : drawables) {
-        if (d.mesh != lastMesh) {
-            lastMesh = d.mesh;
-            ensure(m_meshes, d.mesh, resources);
+    // A new stamp, so each asset is checked once however many objects share it.
+    ++m_syncStamp;
+
+    if (objects) {
+        const std::vector<ObjectDraw>& draws = objects->draws;
+        {
+            PROFILE_SCOPE("SyncAssets/Drawables");
+            for (const uint32_t object : objects->visible) {
+                ensure(m_meshes, draws[object].mesh, resources);
+                ensureMaterial(draws[object].material, resources);
+            }
         }
-        if (d.material == lastMaterial) continue;
-        lastMaterial = d.material;
-        ensureMaterial(d.material, resources);
+
+        // The scene list's materials are left out (see GLSceneCapture), but
+        // for the casters, which lead the list: a cutout casts through its map.
+        {
+            PROFILE_SCOPE("SyncAssets/SceneMeshes");
+            const size_t casters = std::min<size_t>(objects->casterCount, objects->scene.size());
+            for (size_t i = 0; i < objects->scene.size(); ++i) {
+                const uint32_t object = objects->scene[i];
+                ensure(m_meshes, draws[object].mesh, resources);
+                if (i < casters) ensureMaterial(draws[object].material, resources);
+            }
+        }
     }
 
-    // Casters arrive in storage order rather than sorted, so the repeat-skip is
-    // incidental here - but the list is scene-sized and the compare is free.
-    MeshHandle lastCasterMesh;
-    for (const ShadowCasterData& caster : shadowCasters) {
-        if (caster.mesh == lastCasterMesh) continue;
-        lastCasterMesh = caster.mesh;
-        ensure(m_meshes, caster.mesh, resources);
-    }
-
-    // Decals are gathered scene-wide too, and a decal material is usually its
-    // own (a scorch, a bullet hole) rather than one some visible drawable
-    // happens to share - so without this walk the decal pass skips every one.
+    // Decals are gathered scene-wide, and a decal's material is usually its own.
     for (const DecalData& decal : decals) {
         ensureMaterial(decal.material, resources);
     }
 
-    // Font atlases live inside FontAssets (not the texture slot), so ensure
-    // them straight off the overlay's text commands.
-    for (const UIDrawCmd& cmd : ui.commands) {
-        ensure(m_fontAtlases, cmd.font, resources);
+    // Font atlases live inside FontAssets, so ensure them off the text commands; images are
+    // ordinary textures.
+    if (ui) {
+        for (const UIDrawCmd& cmd : ui->commands) {
+            ensure(m_fontAtlases, cmd.font, resources);
+            if (!cmd.image) continue;
+            ensure(m_textures, cmd.image, resources);
+            reportIfMissing(cmd.image, resources);
+        }
     }
 }
 
 const GLMesh* GLView::getMesh(const MeshHandle& handle) const {
-    if (!handle) return nullptr;
-    const uint32_t id = handle.id();
-    return id < m_meshes.slots.size() ? m_meshes.slots[id].gl.get() : nullptr;
+    return find(m_meshes, handle);
 }
 
 const GLMaterial* GLView::getMaterial(const MaterialHandle& handle) const {
-    if (!handle) return nullptr;
-    const uint32_t id = handle.id();
-    return id < m_materials.slots.size() ? m_materials.slots[id].gl.get() : nullptr;
+    return find(m_materials, handle);
 }
 
 const Vkm::GL::Texture2D* GLView::getTexture(const TextureHandle& handle) const {
-    if (!handle) return nullptr;
-    const uint32_t id = handle.id();
-    if (id >= m_textures.slots.size() || !m_textures.slots[id].gl) return nullptr;
-    // A texture whose pixels never arrived is not usable data: report it absent
-    // so the caller substitutes the placeholder instead of sampling undefined
-    // contents.
-    if (!m_textures.slots[id].gl->hasPixels()) return nullptr;
-    return &m_textures.slots[id].gl->getTexture();
+    // Pixels never arrived: absent, so the caller substitutes the placeholder.
+    const GLTexture* texture = find(m_textures, handle);
+    return texture && texture->hasPixels() ? &texture->getTexture() : nullptr;
+}
+
+bool GLView::holdsPixels(const TextureHandle& handle, uint64_t version) const {
+    return getTexture(handle) && m_textures.slots[handle.id()].version == version;
+}
+
+uint64_t GLView::textureUploadId(const TextureHandle& handle) const {
+    if (!getTexture(handle)) return 0;
+    return m_textures.slots[handle.id()].gl->uploadId();
+}
+
+const Vkm::GL::Texture2D* GLView::getFontAtlas(const FontHandle& handle) const {
+    const GLTexture* atlas = find(m_fontAtlases, handle);
+    return atlas && atlas->hasPixels() ? &atlas->getTexture() : nullptr;
 }
 
 const Vkm::GL::Texture2D& GLView::missingTexture() const {
     if (m_missingTexture) return *m_missingTexture;
 
-    // 8x8 magenta-on-black checker. Magenta because nothing in a PBR scene is
-    // legitimately that colour, and a checker because a flat fill can pass for
-    // an authored material while a grid at any scale reads as "not a texture".
+    // Magenta because nothing in a PBR scene is legitimately that colour; a checker because a
+    // flat fill can pass for an authored material.
     constexpr uint32_t SIZE  = 8;
     constexpr uint32_t CHECK = 2;   // pixels per square
     std::vector<uint8_t> pixels(SIZE * SIZE * 4);
@@ -189,8 +249,7 @@ const Vkm::GL::Texture2D& GLView::missingTexture() const {
     params.type            = GL_UNSIGNED_BYTE;
     params.wrapS           = Vkm::GL::TextureWrap::Repeat;
     params.wrapT           = Vkm::GL::TextureWrap::Repeat;
-    // Nearest, and no mips: the point is to stay a hard-edged grid at every
-    // distance rather than blurring into flat magenta far away.
+    // Nearest, no mips: a hard-edged grid at every distance, not flat magenta far away.
     params.minFilter       = Vkm::GL::TextureMinFilter::Nearest;
     params.magFilter       = Vkm::GL::TextureMagFilter::Nearest;
     params.generateMipmaps = false;
@@ -198,13 +257,6 @@ const Vkm::GL::Texture2D& GLView::missingTexture() const {
 
     m_missingTexture = std::make_unique<Vkm::GL::Texture2D>("missing", params);
     return *m_missingTexture;
-}
-
-const Vkm::GL::Texture2D* GLView::getFontAtlas(const FontHandle& handle) const {
-    if (!handle) return nullptr;
-    const uint32_t id = handle.id();
-    if (id >= m_fontAtlases.slots.size() || !m_fontAtlases.slots[id].gl) return nullptr;
-    return &m_fontAtlases.slots[id].gl->getTexture();
 }
 
 } // namespace Vkm::Engine

@@ -1,21 +1,17 @@
 #pragma once
 
-#include <memory>
+#include "gl_shader.h"
 
 #include "gl_pass.h"
-
-namespace Vkm::GL {
-    class Shader;
-}
 
 namespace Vkm::Engine {
 
 /**
  * @brief Resolves the HDR scene target to the backbuffer.
  *
- * Runs last: binds the default framebuffer, samples the frame's HDR target, and
- * tonemaps + gamma-corrects it across a fullscreen triangle - where the pipeline
- * goes from linear HDR back to a displayable image.
+ * Tonemaps and sRGB-encodes (`linearToSrgb`, `shaders/color.glsl`) the HDR target into the
+ * default framebuffer. The backbuffer is plain 8-bit with no sRGB conversion of its own, so the
+ * encode, the dither and the blending of everything drawn later happen in display values.
  */
 class GLCompositePass : public GLPass {
     public:
@@ -32,7 +28,7 @@ class GLCompositePass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        std::unique_ptr<Vkm::GL::Shader> m_shader;
+        Vkm::GL::Shader m_shader;
 };
 
 } // namespace Vkm::Engine

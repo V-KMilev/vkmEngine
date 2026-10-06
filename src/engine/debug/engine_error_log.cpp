@@ -9,7 +9,6 @@
 namespace Vkm::Engine {
 
 namespace {
-// The single optional sink; the runtime leaves it null.
 EngineErrorLog* g_sink = nullptr;
 } // namespace
 
@@ -43,8 +42,7 @@ void EngineErrorLog::push(std::string category, std::string source, std::string 
     ++m_totalPushed;
 
     if (m_entries.size() > CAPACITY) {
-        m_entries.erase(m_entries.begin(),
-                        m_entries.begin() + (m_entries.size() - CAPACITY));
+        m_entries.erase(m_entries.begin(), m_entries.begin() + (m_entries.size() - CAPACITY));
     }
 }
 

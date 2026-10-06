@@ -1,8 +1,8 @@
 # The generated API reference.
 #
 # Optional: doxygen is not a build dependency, and its absence is not an error -
-# it means the `docs` target is not offered. Nothing else in the build looks at
-# it. Run with `cmake --build build --target docs`; the site lands in
+# it means the `docs` target is not offered. Run with
+# `cmake --build build --target docs`; the site lands in
 # build/docs/html and the undocumented-symbol warnings in
 # build/docs/doxygen-warnings.log, which is the file worth reading after a
 # release: it is the list of public surface that shipped without a sentence.

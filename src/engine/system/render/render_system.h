@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 
 #include "core/system.h"
 #include "system/render/render_backend.h"
@@ -12,10 +13,8 @@ namespace Vkm::Engine {
 /**
  * @brief The engine's entry point into rendering.
  *
- * Runs in the Render stage. Each frame it snapshots the visible scene into a
- * RenderView (reused across frames for its capacity) and hands that to the
- * active backend, which does the actual drawing. RenderSystem owns the backend
- * and the snapshot - nothing graphics-API-specific lives here.
+ * Runs after Visibility, whose product it draws. Builds the RenderView each
+ * frame and hands it to the backend it owns; nothing here is API-specific.
  */
 class RenderSystem : public System {
     public:
@@ -32,68 +31,77 @@ class RenderSystem : public System {
         /**
          * @brief Run one frame of rendering.
          *
-         * Applies any pending backend swap first. A no-op until a backend is
-         * installed.
+         * A no-op with no backend. Writes any screenshot requested via
+         * WindowManager::saveScreenshot.
+         *
+         * @param ctx The frame: its scene, Visibility product and window.
          */
         void update(FrameContext& ctx) override;
 
         /**
-         * @brief Install a backend, hot-swappable at runtime.
+         * @brief Bring a backend up against the window and draw through it.
          *
-         * The swap is applied at the start of the next update(): the incoming
-         * backend is brought up (init) against the window first, and only on
-         * success does it replace - and destroy - the current one. A backend
-         * that fails to init is dropped and the current one keeps running, so a
-         * bad swap never leaves a black screen.
+         * Called once, at startup, with the window's API context current. Throws
+         * std::runtime_error when init fails, so the host exits rather than run a black window.
+         *
+         * @param backend The backend to install.
+         * @param window  The window it draws into.
          */
-        void setBackend(std::unique_ptr<RenderBackend> backend);
+        void setBackend(std::unique_ptr<RenderBackend> backend, WindowManager& window);
 
         /**
-         * @brief Identity of the active backend for the editor's status displays.
+         * @brief Free each texture's CPU pixels once the backend holds them.
          *
-         * Empty strings until a backend is installed.
+         * For a host that never reads pixels after upload (a cooking host keeps
+         * them). After each frame, textures the backend holdsPixels for are
+         * released; params stay.
+         *
+         * @param release Whether to release them.
+         */
+        void releaseUploadedPixels(bool release) { m_releaseUploadedPixels = release; }
+
+        /**
+         * @brief Identity of the active backend, for status displays.
+         *
+         * @return Empty strings until one is installed.
          */
         BackendInfo backendInfo() const { return m_backend ? m_backend->info() : BackendInfo{}; }
 
         /**
          * @brief The active backend's anisotropic-filtering ceiling.
          *
-         * 1 until a backend is installed, and 1 on hardware offering none, so a
-         * caller can treat it as "the highest level worth asking for" either way.
+         * @return Maximum degree; 1 with no backend or no support.
          */
         uint32_t maxAnisotropy() const { return m_backend ? m_backend->maxAnisotropy() : 1; }
 
         /**
-         * @brief The active backend, or nullptr before the first install.
+         * @brief The active backend, or nullptr before setBackend().
          *
-         * Non-owning; for editor/tooling that needs backend-specific access.
+         * @return The backend (non-owning), or nullptr.
          */
         RenderBackend* backend() const { return m_backend.get(); }
 
-        /**
-         * @brief Editable render tuning: pass toggles and their parameters.
-         *
-         * The editor's Render Settings panel mutates this, and it is copied
-         * into the RenderView each frame.
-         */
-        RenderSettings& getSettings() { return m_settings; }
-        const RenderSettings& getSettings() const { return m_settings; }
-
     private:
         /**
-         * @brief Apply a queued backend swap, if one is pending.
+         * @brief Write the frame the backend just drew to @p path as a PNG.
          *
-         * Runs at the top of update() so a swap from setup or the editor lands
-         * on the next frame.
+         * @param path From the window's request.
          */
-        void installPending(FrameContext& ctx);
+        void writeScreenshot(const std::string& path);
+
+        /**
+         * @brief Release the pixels of every texture the backend now holds.
+         *
+         * @param resources The graph walked.
+         */
+        void releaseHeldPixels(ResourceManager& resources) const;
 
     private:
         std::unique_ptr<RenderBackend> m_backend;
-        std::unique_ptr<RenderBackend> m_pending;
 
-        RenderView     m_view;
-        RenderSettings m_settings;
+        RenderView m_view;
+
+        bool m_releaseUploadedPixels = false;
 };
 
 } // namespace Vkm::Engine

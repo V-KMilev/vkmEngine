@@ -3,8 +3,12 @@
 #include "system/async/async_loader_system.h"
 
 #include <chrono>
+#include <cstdint>
 #include <thread>
+#include <unordered_set>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 #include "logger.h"
 
@@ -12,65 +16,97 @@
 #include "resource/asset/mesh_asset.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/texture_asset.h"
-#include "resource/texture_format.h"
 #include "system/async/async_load_queue.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
-// How long awaitAsyncLoads waits before calling an in-flight load lost. Bounded
-// by the largest model a project imports, so it is generous; it is only ever
-// reached when a completion is never pushed at all.
-constexpr auto LOAD_TIMEOUT = std::chrono::seconds(30);
-
-// Meshes and textures are the two kinds that decode off the ThreadPool; every
-// other kind is finished before its loader returns.
-size_t inFlightCount(const ResourceManager& resources) {
-    size_t pending = 0;
+/**
+ * @brief The uid of every asset in @p resources still waiting on its decode.
+ *
+ * @param resources Graph to scan.
+ * @return The uids of its MeshAssets and TextureAssets whose `loading` flag is set.
+ */
+std::unordered_set<uint64_t> inFlight(const ResourceManager& resources) {
+    std::unordered_set<uint64_t> pending;
     resources.forEachOfType<MeshAsset>([&](MeshHandle, const MeshAsset& mesh) {
-        if (mesh.loading) ++pending;
+        if (mesh.loading) pending.insert(mesh.uid());
     });
     resources.forEachOfType<TextureAsset>([&](TextureHandle, const TextureAsset& tex) {
-        if (tex.loading) ++pending;
+        if (tex.loading) pending.insert(tex.uid());
     });
     return pending;
 }
 
 /**
- * @brief Finalise one batch of drained completions against the ResourceManager.
+ * @brief The completions among @p drained that land on an asset in @p pending.
  *
- * Shared skeleton for both asset kinds. The liveness guard is not optional:
- * rm.get on an asset destroyed between the worker pushing and this drain
- * (editor deletion) is UB. The loading flag is always cleared; the asset is
- * committed (bumping its version so the backend re-uploads) only when @p apply
- * reports success.
+ * Every other one goes back on the queue through @p putBack.
  *
- * The handle alone is not enough to identify the target. A scene load swaps the
- * whole asset graph, and the incoming one restarts at the same indices and
- * generations, so a completion minted against the outgoing graph still looks
- * alive - it just names a stranger. The uid recorded at request time is what
- * tells the two apart.
+ * @tparam Completion The queue's completion type.
+ * @param drained Completions just drained; consumed.
+ * @param pending Uids of this graph's assets still loading.
+ * @param putBack The queue's push for this completion type.
+ * @return This graph's completions.
  */
-template <typename Completion, typename Apply>
-void finalize(ResourceManager& rm, std::vector<Completion> completions, Apply apply) {
-    for (auto& c : completions) {
+template <typename Completion>
+std::vector<Completion> keepOwn(
+    std::vector<Completion> drained,
+    const std::unordered_set<uint64_t>& pending,
+    void (AsyncLoadQueue::*putBack)(Completion)
+) {
+    std::vector<Completion> own;
+    for (Completion& c : drained) {
+        if (pending.count(c.assetUid) > 0) own.push_back(std::move(c));
+        else (AsyncLoadQueue::get().*putBack)(std::move(c));
+    }
+    return own;
+}
+
+// Whether a decode produced anything to draw.
+bool hasContent(const MeshAsset& mesh)       { return !mesh.vertices.empty(); }
+bool hasContent(const TextureAsset& texture) { return !texture.pixelData.empty(); }
+
+/**
+ * @brief Land one batch of drained completions on their assets.
+ *
+ * Liveness is checked first: rm.edit on an asset destroyed since the push reads a freed slot. The
+ * uid, not the handle, identifies the target, since a replacement graph reuses indices and
+ * generations (see ResourceManager::epoch). The decode is swapped into the slot, which keeps its
+ * identity and source and moves its version; a failed one only clears the loading flag.
+ *
+ * @tparam Asset MeshAsset or TextureAsset.
+ * @param rm Resource manager holding the target assets.
+ * @param completions The batch to land; consumed.
+ */
+template <typename Asset>
+void finalize(ResourceManager& rm, std::vector<LoadCompletion<Asset>> completions) {
+    for (LoadCompletion<Asset>& c : completions) {
         if (!c.handle) continue;
         if (!rm.isAlive(c.handle)) {
             LOG_VERBOSE("Async handle %u dead before completion landed - dropping", c.handle.id());
             continue;
         }
 
-        auto& asset = rm.edit(c.handle);
-        if (asset.uid() != c.assetUid) {
-            LOG_VERBOSE("Async completion for a replaced asset (slot %u, now '%s') - dropping",
-                c.handle.id(), asset.name().c_str());
+        Asset& live = rm.edit(c.handle);
+        if (live.uid() != c.assetUid) {
+            LOG_VERBOSE(
+                "Async completion for a replaced asset (slot %u, now '%s') - dropping",
+                c.handle.id(),
+                live.name().c_str()
+            );
             continue;
         }
 
-        const bool applied = apply(asset, c);
-        asset.loading = false;
-        if (applied) rm.commit(c.handle);
+        if (!hasContent(c.decoded)) {
+            LOG_WARNING("Async decode failed for '%s' - leaving asset empty", live.name().c_str());
+            live.loading = false;
+            continue;
+        }
+        if (live.hasSource()) c.decoded.sourceJson() = live.sourceJson();
+        c.decoded.loading = false;
+        rm.swapValue(c.handle, c.decoded);
     }
 }
 
@@ -78,60 +114,34 @@ void finalize(ResourceManager& rm, std::vector<Completion> completions, Apply ap
 
 void finalizeAsyncLoads(ResourceManager& rm) {
     AsyncLoadQueue& queue = AsyncLoadQueue::get();
-
-    finalize(rm, queue.drainTextures(), [](TextureAsset& asset, TextureLoadCompletion& c) {
-        if (!c.success || c.pixelData.empty()) {
-            LOG_WARNING("Async texture decode failed for '%s' - leaving asset empty",
-                asset.filePath.c_str());
-            return false;
-        }
-
-        if (c.hasParams) {
-            // Cooked texture: params (incl. format/sRGB/wrap/filter) are exact.
-            asset.params = c.params;
-            asset.srgb   = (c.params.internalFormat == TextureInternalFormat::SRGB8 ||
-                            c.params.internalFormat == TextureInternalFormat::SRGBA8);
-        } else {
-            asset.params.width          = c.width;
-            asset.params.height         = c.height;
-            asset.params.internalFormat = inferInternalFormat(c.channels, asset.srgb);
-            asset.params.format         = inferFormat(c.channels);
-            asset.params.type           = TexturePixelType::UnsignedByte;
-        }
-        asset.pixelData = std::move(c.pixelData);
-        return true;
-    });
-
-    // The worker computed bounds alongside vertex extraction, so this is a pure move.
-    finalize(rm, queue.drainMeshes(), [](MeshAsset& asset, MeshLoadCompletion& c) {
-        if (!c.success || c.vertices.empty()) {
-            LOG_WARNING("Async mesh decode failed for '%s' - leaving asset empty",
-                asset.name().c_str());
-            return false;
-        }
-
-        asset.vertices   = std::move(c.vertices);
-        asset.indices    = std::move(c.indices);
-        asset.skin       = std::move(c.skin);
-        asset.skeleton   = std::move(c.skeleton);
-        asset.boundsMin  = c.boundsMin;
-        asset.boundsMax  = c.boundsMax;
-        asset.skinRadius = c.skinRadius;
-        return true;
-    });
+    finalize(rm, queue.drainTextures());
+    finalize(rm, queue.drainMeshes());
 }
 
-bool awaitAsyncLoads(ResourceManager& resources) {
-    const auto deadline = std::chrono::steady_clock::now() + LOAD_TIMEOUT;
+bool awaitAsyncLoads(ResourceManager& resources, std::chrono::milliseconds patience) {
+    AsyncLoadQueue& queue = AsyncLoadQueue::get();
+    auto   deadline  = std::chrono::steady_clock::now() + patience;
+    size_t waitingOn = SIZE_MAX;
     for (;;) {
-        finalizeAsyncLoads(resources);
-        const size_t pending = inFlightCount(resources);
-        if (pending == 0) return true;
-        if (std::chrono::steady_clock::now() >= deadline) {
-            LOG_ERROR("%zu asset(s) still loading after %llds; giving up on them",
-                pending, static_cast<long long>(LOAD_TIMEOUT.count()));
+        const std::unordered_set<uint64_t> pending = inFlight(resources);
+        if (pending.empty()) return true;
+        const auto now = std::chrono::steady_clock::now();
+        if (pending.size() < waitingOn) {
+            waitingOn = pending.size();
+            deadline  = now + patience;
+        }
+        if (now >= deadline) {
+            LOG_ERROR(
+                "%zu asset(s) still loading after %lld ms with none landing; giving up on them",
+                pending.size(),
+                static_cast<long long>(patience.count())
+            );
             return false;
         }
+        // This graph's completions only - the declaration says why.
+        finalize(resources, keepOwn(queue.drainTextures(), pending, &AsyncLoadQueue::pushTexture));
+        finalize(resources, keepOwn(queue.drainMeshes(), pending, &AsyncLoadQueue::pushMesh));
+        if (inFlight(resources).empty()) return true;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }

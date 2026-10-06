@@ -1,1 +1,1 @@
-#include "../../_common/cube_capture.vert.glsl"
+#include "../../cube_capture.vert.glsl"

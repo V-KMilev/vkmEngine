@@ -1,5 +1,6 @@
 {
-    "name": "Stress Arena",
-    "engineVersion": "0.9.1",
-    "entryScene": ""
+  "description": "A profiling load that drives every subsystem at once.",
+  "engineVersion": "0.10.0",
+  "entryScene": "",
+  "name": "Stress Arena"
 }

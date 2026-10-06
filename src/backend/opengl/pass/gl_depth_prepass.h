@@ -1,33 +1,21 @@
 #pragma once
 
-#include <memory>
+#include "gl_shader.h"
 
 #include "gl_pass.h"
-#include "data/gl_instance_batcher.h"
-
-namespace Vkm::GL {
-    class Shader;
-}
+#include "frame/gl_instance_batcher.h"
 
 namespace Vkm::Engine {
 
 /**
  * @brief Lays down opaque depth before the forward pass for early-Z.
  *
- * Renders the opaque / unlit batch into the scene target, priming its depth so
- * the forward pass can run with LEQUAL + depth writes off and let the GPU reject
- * hidden fragments before the expensive PBR shader. Also writes the G-buffer
- * (view normal + roughness + metalness) into colour attachment 1 for the GTAO +
- * decal passes, and clears the HDR target's attachments for the frame.
- * Alpha-masked geometry is not in this batch: it primes its own depth in the
- * forward pass, where alpha-to-coverage can anti-alias the cutout, so no albedo
- * is sampled here. The pass is unconditional: the forward pass assumes primed
- * depth (LEQUAL, writes off) and never clears.
+ * Primes depth for the opaque/unlit batch so GLForwardPass runs LEQUAL with depth writes off,
+ * writes the G-buffer (view normal, roughness, metalness) to colour attachment 1, and owns the
+ * scene target's clear, so it is unconditional. Alpha-masked geometry is not in this batch.
  *
- * Two programs, differing only in their vertex stage: skinned runs lead the
- * batch, so the pass switches once. Both compute gl_Position from the same
- * expression the forward pass does, which is what keeps the primed depth usable
- * under LEQUAL early-Z for characters as well as for rocks.
+ * Skinned runs sort after static ones, so the two programs switch once. Both must compute
+ * gl_Position as the forward programs do, or the primed depth is unusable under LEQUAL.
  */
 class GLDepthPrepass : public GLPass {
     public:
@@ -44,8 +32,8 @@ class GLDepthPrepass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        std::unique_ptr<Vkm::GL::Shader> m_shader;         ///< Static geometry.
-        std::unique_ptr<Vkm::GL::Shader> m_skinnedShader;  ///< Same, with the vertices posed by the frame's palette.
+        Vkm::GL::Shader m_shader;         ///< Static geometry.
+        Vkm::GL::Shader m_skinnedShader;  ///< Skinned, posed by the frame's palette.
 };
 
 } // namespace Vkm::Engine

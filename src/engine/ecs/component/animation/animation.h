@@ -19,31 +19,30 @@ struct Animation {
     AnimationTrack<glm::quat> rotationTrack;
     AnimationTrack<glm::vec3> scaleTrack;
 
-    float length  = 0.0f;     ///< Explicit minimum length in seconds (0 = auto from last keyframe)
-    /// Playback head in seconds. Session state; see Animator::time for why it
-    /// is not serialized.
-    float time    = 0.0f;
+    float length  = 0.0f;     ///< Minimum length in seconds (0 = last keyframe)
+    float time    = 0.0f;     ///< Playback head in seconds; session state, unserialized.
     float speed   = 1.0f;     ///< Playback speed multiplier
     bool  looping = true;
 
     /**
      * @brief Start playing on the first frame the simulation runs.
      *
-     * The authored half of the trio every component that plays something
-     * carries; see engine.md, "Authored state and session state on one
-     * component", for why only this one is serialized.
+     * The only one of playOnStart / playing / started that is serialized; see engine.md,
+     * "Authored state and session state on one component".
      */
     bool playOnStart = true;
 
-    /// Whether the animation should be advancing right now. Session state.
+    /// Session state.
     bool playing = false;
 
-    /// Whether playOnStart has been honoured yet this session. Session state.
+    /// Whether playOnStart has been honoured this session. Session state.
     bool started = false;
 
     /**
-     * @brief The animation's effective length: the latest keyframe across all
-     *        three tracks, or the explicit @ref length, whichever is greater.
+     * @brief The effective length: the latest keyframe of the three tracks, or @ref length if greater.
+     *
+     * @param animation Component measured.
+     * @return Length in seconds.
      */
     static float computeDuration(const Animation& animation) {
         return std::max({

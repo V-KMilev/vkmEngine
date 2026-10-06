@@ -1,5 +1,6 @@
 #pragma once
 
+#include <type_traits>
 #include <vector>
 
 #include "core/system.h"
@@ -17,27 +18,11 @@ class EventBus;
 /**
  * @brief Drives the lifecycle of every entity's ScriptComponent behaviors.
  *
- * Registered at SystemStage::Simulation, before PhysicsSystem, so a script sets
- * up state for physics to integrate the same frame. On an instance's first
- * simulation tick it injects the engine context and calls onStart(), then
- * onUpdate(simDelta) whenever simulation time advanced and
- * onFixedUpdate(fixedStep) on every fixed tick - so pause, step and Stop reach
- * all three through one gate.
- *
- * onRealtimeUpdate(realDelta) runs on top of that, every frame, paused or not,
- * and only on behaviors that have already started: a behavior belongs to a play
- * session, only simulation time begins one, and in the editor paused is also
- * Edit mode. The deferred destroy() and loadScene() requests drain after that
- * pass rather than the simulation one, which is what lets a paused game quit to
- * its menu; endSession() discards them.
- *
- * Physics CollisionEvent and TriggerEvent are dispatched to the entities'
- * onCollision / onTrigger during update, after onStart and before the deferred
- * destroy drain, so a collision handler may destroy its own entity.
- *
- * Every hook runs under a catch net: a throwing behavior is reported through
- * reportError() and disabled, never fatal. onDestroy fires from endSession()
- * and from destroyEntityBehaviors().
+ * Runs before PhysicsSystem in Simulation, so physics integrates script state the same
+ * frame. Destroy requests drain after each fixed tick and the frame pass; loadScene()
+ * after the frame pass only. Contacts are dispatched after onStart and before the
+ * destroy drain, so a handler may destroy its own entity. A throwing hook is reported
+ * through reportError() and the behavior disabled.
  */
 class BehaviorSystem : public System, public ISceneObserver {
     public:
@@ -57,129 +42,121 @@ class BehaviorSystem : public System, public ISceneObserver {
         void init(FrameContext& ctx) override;
         void update(FrameContext& ctx) override;
         void fixedUpdate(FrameContext& ctx) override;
-        bool hasFixedUpdate() const override { return true; }
 
         /**
-         * @brief Re-run during a replay: it moves the world from state and command, and
-         * running it twice over the same tick lands in the same place.
+         * @brief Re-run during a replay: it moves the world from state and command, repeatably.
+         *
+         * @return Always true.
          */
         bool isReplayed() const override { return true; }
 
         void shutdown() override;
 
         /**
-         * @brief ISceneObserver: fire script onDestroy on @p entity's behaviors
-         *        just before Scene removes its ScriptComponent.
+         * @brief ISceneObserver: fire onDestroy on @p entity's behaviors before its ScriptComponent goes.
          *
-         * Registered via Scene::addObserver() in init(), so it covers every destroy
-         * path (raw Scene::destroyEntity and destroyHierarchy alike).
+         * Runs inside Scene::destroyEntity, whatever called it.
+         *
+         * @param entity The entity being destroyed.
          */
         void onEntityDestroyed(EntityId entity) override;
 
         /**
-         * @brief Fire onDestroy on every started behavior in @p scene, drop their
-         *        subscriptions, reset their started/disabled flags, and discard
-         *        the destroy() / loadScene() requests the session queued.
+         * @brief End the session: onDestroy on every started behavior, reset, and discard queued requests.
          *
-         * Tears down a whole scene's running behaviors: on play stop (before the
-         * snapshot swaps the played scene away) and at shutdown (while the
-         * EventBus is still alive). Static because the editor's stop path has
-         * no BehaviorSystem handle - friendship with Behavior is class-wide,
-         * and the queues are reached through a behavior's own bound context.
+         * Drops subscriptions and the started/disabled flags. Call while the module is
+         * loaded and the EventBus alive. Queued destroy() / loadScene() requests named the
+         * world being torn down, so they go too.
          *
-         * The requests go because they named the world being torn down: a
-         * deferred one drains on the next frame, paused frames included, and in
-         * the editor that frame is Edit mode over the authored scene.
+         * @param scene Scene whose session ends.
          */
-        static void endSession(Scene& scene);
+        void endSession(Scene& scene);
 
         /**
-         * @brief Fire onDestroy on @p entity's started behaviors, just before
-         *        its ScriptComponent is destroyed (entity deletion).
+         * @brief Fire onDestroy on @p entity's started behaviors, before its ScriptComponent goes.
          *
-         * The work behind onEntityDestroyed(); static so the editor's stop path
-         * can reuse it without a BehaviorSystem handle. A no-op if the entity has
-         * no started behaviors.
+         * @param scene Scene holding the entity.
+         * @param entity Entity whose behaviors are told.
          */
         static void destroyEntityBehaviors(Scene& scene, EntityId entity);
 
     private:
         /**
-         * @brief Fire onStart once on @p behavior, binding m_context first.
+         * @brief Run @p behavior's onStart if it has not run yet.
          *
-         * No-op if the behavior has already started. Runs under the catch net:
-         * a throw is reported and the behavior is disabled.
-         *
-         * @param behavior The behavior to start.
-         * @param entity   The entity owning @p behavior, bound into its context.
+         * @param behavior Behavior to start.
+         * @param entity   Entity it is attached to.
          */
         void ensureStarted(Behavior& behavior, EntityId entity);
+
         /**
-         * @brief Drive @p hook on every enabled behavior in the scene.
-         *
-         * The caller drains deferred destroys afterwards, at its own point.
+         * @brief Drive @p hook on every enabled behavior in the scene; the caller drains destroys.
          *
          * @param ctx           Frame context supplying the scene to walk.
          * @param dt            Elapsed time handed to the hook.
-         * @param hookName      Human-readable hook name, used in error reporting.
-         * @param hook          The void(float) member hook to invoke on each behavior.
-         * @param startIfNeeded Whether a behavior that has not started yet is started
-         *        here (the simulation passes) or skipped entirely (the realtime pass,
-         *        which must not begin a play session).
+         * @param hookName      Hook name for error reports.
+         * @param hook          Member hook to invoke on each behavior.
+         * @param startIfNeeded Start unstarted behaviors (simulation passes) or skip
+         *                      them (the realtime pass, which must not begin a session).
          */
-        void tickBehaviors(FrameContext& ctx, float dt, const char* hookName,
-                           void (Behavior::*hook)(float), bool startIfNeeded);
+        void tickBehaviors(
+            FrameContext& ctx,
+            float dt,
+            const char* hookName,
+            void (Behavior::*hook)(float),
+            bool startIfNeeded
+        );
+
         /**
-         * @brief Deliver an entity-targeted hook (onCollision/onTrigger) to a
-         *        target entity's started behaviors.
+         * @brief Drive a contact hook on every enabled behavior of @p target.
          *
-         * @param scene    Scene holding the behaviors to dispatch to.
-         * @param target   Entity whose started behaviors receive the hook.
-         * @param other    The other entity passed to the hook (the contact partner).
-         * @param hookName Human-readable hook name, used in error reporting.
-         * @param hook     The void(EntityId) member hook to invoke on each behavior.
+         * @tparam Arg     What the hook takes: a Collision, or the other entity.
+         * @param scene    Scene holding the target.
+         * @param target   Entity whose behaviors hear the contact.
+         * @param arg      The contact as @p target sees it.
+         * @param hookName Hook name for error reports.
+         * @param hook     Member hook to invoke.
          */
-        void dispatchEntityHook(Scene& scene, EntityId target, EntityId other, const char* hookName, void (Behavior::*hook)(EntityId));
+        template<typename Arg>
+        void dispatchEntityHook(
+            Scene& scene,
+            EntityId target,
+            const std::remove_reference_t<Arg>& arg,
+            const char* hookName,
+            void (Behavior::*hook)(Arg)
+        );
+
         /**
-         * @brief Apply queued destroy() requests via destroyHierarchy.
-         *
-         * Run after the hook pass so a behavior can safely destroy its own
-         * entity without freeing the ScriptComponent mid-iteration.
+         * @brief Apply queued destroy() requests, after the hook pass so none frees a component mid-walk.
          *
          * @param scene Scene the pending entities are destroyed from.
          */
         void drainPendingDestroy(Scene& scene);
 
         /**
-         * @brief Perform a scene load a behavior asked for, if any.
+         * @brief Load the scene a behavior asked for, if one did.
          *
-         * Runs at the end of the hook pass because the load destroys every
-         * entity - including the one whose behavior requested it - so anywhere
-         * earlier would free a behavior while it is still on the stack.
-         *
-         * @param ctx Frame context supplying the scene and resources to load into.
+         * @param ctx Frame context whose scene and resources are replaced.
          */
         void drainPendingSceneLoad(FrameContext& ctx);
+
         /**
-         * @brief Run a hook body under the catch net.
+         * @brief Run a hook body; a throw is reported via reportError() and disables the behavior.
          *
-         * On throw it logs the failure via reportError() and disables the
-         * behavior so it is skipped thereafter.
-         *
-         * @tparam Fn       Callable type invoked as the hook body.
-         * @param  behavior The behavior whose hook is running (disabled on throw).
-         * @param  hookName Human-readable hook name, used in error reporting.
-         * @param  fn       The hook body to invoke.
+         * @tparam Fn       Hook body type.
+         * @param  behavior Behavior whose hook is running.
+         * @param  hookName Hook name for error reports.
+         * @param  fn       Hook body to invoke.
          */
         template<typename Fn>
         static void guard(Behavior& behavior, const char* hookName, Fn&& fn);
+
         /**
-         * @brief Fire onDestroy on a started behavior.
+         * @brief Fire onDestroy on @p behavior if it started, then drop its subscriptions.
          *
-         * Catches a throwing onDestroy but does not disable the behavior, since
-         * it is being torn down anyway.
+         * A throw is caught without disabling: the session is over either way.
          *
-         * @param behavior The behavior to send onDestroy to.
+         * @param behavior Behavior to send onDestroy to.
          */
         static void fireDestroy(Behavior& behavior);
 
@@ -187,24 +164,25 @@ class BehaviorSystem : public System, public ISceneObserver {
         std::vector<CollisionEvent> m_collisions;
         std::vector<TriggerEvent>   m_triggers;
 
-        /// The two physics subscriptions, kept so shutdown can drop them: both
-        /// capture `this`, and the bus outlives this system.
+        /// Swapped out of the queues above, since a handler may queue more; members for capacity.
+        std::vector<CollisionEvent> m_dispatchCollisions;
+        std::vector<TriggerEvent>   m_dispatchTriggers;
+
+        /// Kept so shutdown can drop them: both capture `this`, and the bus outlives this system.
         ListenerId m_collisionListener = 0;
         ListenerId m_triggerListener   = 0;
 
         /**
          * @brief Entities to tick this pass, snapshotted before any hook runs.
          *
-         * A hook that spawns an entity and gives it a ScriptComponent grows the
-         * component storage mid-iteration, which reallocates it and leaves a
-         * reference into the old buffer - a use-after-free with nothing to show
-         * for it. Walking a snapshot and re-resolving each entity means the
-         * storage may move underneath the pass without consequence. Kept as a
-         * member for its capacity.
+         * A hook adding a ScriptComponent may reallocate the storage, so each entity is
+         * re-resolved from the snapshot. A member for its capacity.
          */
         std::vector<EntityId> m_tickList;
 
         std::vector<EntityId> m_pendingDestroy;
+        /// Walked by drainPendingDestroy; a member for its capacity.
+        std::vector<EntityId> m_destroying;
         std::string           m_pendingSceneLoad;  ///< Scene a behavior asked for; empty when none.
 
         BehaviorContext m_context;

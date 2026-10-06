@@ -7,19 +7,12 @@ namespace Vkm::Test {
 /**
  * @brief A real OpenGL context with no window and no display.
  *
- * The engine's own context comes from GLFW, which needs a platform - X11,
- * Wayland - and a build machine has neither. That is why `src/backend/opengl`
- * has never had a test: not because the code resists one, but because nothing
- * could hand it a context to run against.
+ * The engine's context comes from GLFW, which needs X11 or Wayland; a build
+ * machine has neither. EGL's `EGL_EXT_platform_device` opens the GPU directly and
+ * makes a context current with no surface. Only the tests use it.
  *
- * EGL can, through `EGL_EXT_platform_device`: it opens the GPU directly and
- * makes a context current with no surface at all. This is a *second* way to get
- * a context and it exists only here, in the tests - the engine still goes
- * through GLFW, because a game needs the window that comes with it.
- *
- * Absence is not failure. A machine with no EGL, no device, or a driver too old
- * for a 4.5 core context reports `available() == false` and the suite says it
- * skipped rather than failing, so the tests stay runnable where there is no GPU.
+ * Absence is not failure: with no EGL, no device or too old a driver,
+ * `available() == false` and the suite skips, so the tests run without a GPU.
  */
 class GLContext {
     public:
@@ -36,14 +29,26 @@ class GLContext {
         /// True when a context is current and GL calls will do something.
         bool available() const { return m_available; }
 
-        /// Why there is no context, for the line the suite prints when it skips.
+        /// Why there is no context, for the suite's skip line.
         const std::string& reason() const { return m_reason; }
 
-        /// GL_VERSION as the driver reports it, empty when unavailable.
+        /// GL_VERSION, empty when unavailable.
         const std::string& version() const { return m_version; }
 
-        /// GL_RENDERER, which is the line worth printing: it names the GPU.
+        /// GL_RENDERER: names the GPU.
         const std::string& renderer() const { return m_renderer; }
+
+        /**
+         * @brief Give the context a default framebuffer: an off-screen pbuffer.
+         *
+         * A whole frame ends on the default framebuffer (see
+         * GLPass::bindBackbufferViewport), which a surfaceless context lacks.
+         *
+         * @param width  Surface width in pixels.
+         * @param height Surface height in pixels.
+         * @return False when the device offers no pbuffer; the context stays as it was.
+         */
+        bool attachSurface(int width, int height);
 
     private:
         bool        m_available = false;
@@ -52,7 +57,8 @@ class GLContext {
         std::string m_renderer;
 
         void*       m_display = nullptr;   ///< EGLDisplay, opaque so EGL stays out of this header
-        void*       m_context = nullptr;   ///< EGLContext, likewise
+        void*       m_context = nullptr;   ///< EGLContext
+        void*       m_surface = nullptr;   ///< EGLSurface once attachSurface has made one
 };
 
 } // namespace Vkm::Test

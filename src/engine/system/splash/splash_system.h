@@ -11,17 +11,9 @@ namespace Vkm::Engine {
 /**
  * @brief Shows the vendor logo, then the project's, over black at startup.
  *
- * The sequence lives on the system rather than in a boot scene, so it survives
- * the editor's first frame replacing the world with the project's scene.
- *
- * Runs in the Simulation stage on update(), which is the frame clock rather
- * than the tick: a splash is presentation and must keep fading while the
- * simulation is paused, which is what the editor is doing behind it. Nothing
- * here reads a fixed step or writes anything a tick can see.
- *
- * The sequence runs once, over the first seconds of the process, and is then
- * over for good - there is no state to re-enter, which is why Play and Stop do
- * not show it again.
+ * Lives on the system rather than in a boot scene, so it survives a world swap.
+ * Steps on the frame clock, not the tick, so it keeps fading while paused. Runs
+ * once per process.
  */
 class SplashSystem : public System {
     public:
@@ -40,31 +32,21 @@ class SplashSystem : public System {
         /**
          * @brief Append @p path to the sequence.
          *
-         * An entry whose file is not there is dropped with a log line rather
-         * than shown as a black pause. Whether the file is also decodable is
-         * the backend's answer to give, and it gives it the same way.
+         * A missing file is dropped with a log line rather than shown as a black pause.
          *
          * @param path Image to show, as an absolute path.
-         * @param hold Seconds at full opacity, on top of the two fades.
+         * @param hold Seconds at full opacity, besides the two fades.
          */
         void add(const std::string& path, float hold);
 
         /**
-         * @brief Set the fade at each end of every entry, in seconds.
+         * @brief Set the fade at each end of every entry.
          *
-         * Uniform across the whole sequence. Zero cuts.
-         *
-         * @param seconds Fade length; the same one is used in and out.
+         * @param seconds Fade length, in and out; zero cuts.
          */
         void setFade(float seconds) { m_fade = seconds; }
 
     private:
-        /**
-         * @brief One logo and how long it is up for.
-         *
-         * `hold` is the time at full opacity; the fades are on top of it, so an
-         * entry occupies fade + hold + fade seconds in total.
-         */
         struct Entry {
             std::string path;
             float       hold = 0.0f;
@@ -74,8 +56,8 @@ class SplashSystem : public System {
         std::vector<Entry> m_entries;
         size_t             m_current = 0;      ///< Index into m_entries; == size() when done.
         float              m_elapsed = 0.0f;   ///< Seconds into the current entry.
-        float              m_fade    = 0.5f;   ///< Fade at each end of an entry, in seconds.
-        SplashFrame        m_frame;            ///< This frame's product, published on ctx.splash.
+        float              m_fade    = 0.5f;   ///< Seconds.
+        SplashFrame        m_frame;            ///< Published on ctx.splash.
 };
 
 } // namespace Vkm::Engine

@@ -10,7 +10,7 @@ This is the generated reference for the types a project compiles against. It is
 not the manual. The manual is in `docs/`, and it is the better place to start:
 
 - @b guides/engine.md - what the engine is, what it refuses, what is settled
-- @b guides/getting-started.md - building a game against a released SDK
+- @b getting-started.md - building a game against a released SDK
 - @b reference/ - how each subsystem actually works, in prose
 
 @section api_where Where to look first

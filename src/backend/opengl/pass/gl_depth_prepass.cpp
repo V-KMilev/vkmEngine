@@ -9,68 +9,51 @@
 #include "gl_target.h"
 #include "gl_view.h"
 #include "convention/gl_bindings.h"
-#include "data/gl_material.h"
-#include "data/gl_skin_palette.h"
+#include "asset/gl_material.h"
+#include "frame/gl_object_buffer.h"
+#include "frame/gl_skin_palette.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {
 
 GLDepthPrepass::GLDepthPrepass()
-    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/forward/prepass"))
-    , m_skinnedShader(std::make_unique<Vkm::GL::Shader>("shaders/forward/prepass_skinned")) {}
+    : m_shader("shaders/forward/prepass")
+    , m_skinnedShader("shaders/forward/prepass_skinned") {}
 
 GLDepthPrepass::~GLDepthPrepass() = default;
 
 void GLDepthPrepass::execute(GLFrameContext& ctx) {
-    const RenderView& view   = ctx.view;
-    const GLView&     glView = ctx.resources;
+    const GLView& glView = ctx.resources;
 
-    // Re-assert the scene clear colour: offscreen renderers (material previews, probe
-    // bakes) set their own backdrop between frames, and the stored colour is applied
-    // at clear.
+    // Set each frame: an offscreen renderer may set its own backdrop between frames.
+    // Background G-buffer pixels must stay zero, since their alpha is metalness.
     ctx.gl.setClearColor(glm::vec4(0.0f));
     ctx.sceneRender.clearForFrame(ctx.gl);
-    ctx.gl.setDepthTest(true);
-    ctx.gl.setDepthWrite(true);
     ctx.gl.setDepthFunc(GL_LESS);
-    ctx.gl.setBlending(false);
     ctx.gl.setFaceCulling(true);
     ctx.gl.setCullFace(GL_BACK);
     ctx.sceneRender.bindGBufferPass(ctx.gl);
 
-    // Uniform state is per program in GL, so the view matrix has to be set on each of
-    // them, not once on whichever happens to be bound.
-    m_shader->bind();
-    m_shader->setUniformMatrix4fv("u_view", view.camera.view);
+    ctx.objects.bind();
+    if (ctx.skinPalette.count() > 0) ctx.skinPalette.bind();
 
-    if (ctx.skinPalette.count() > 0) {
-        m_skinnedShader->bind();
-        m_skinnedShader->setUniformMatrix4fv("u_view", view.camera.view);
-        ctx.skinPalette.bind();
-    }
-
-    // The material bindings are context state, not program state, so the cache below
-    // survives a program switch.
+    // Material bindings are context state, so this cache survives a program switch.
     const GLMaterial* boundMaterial = nullptr;
     const Vkm::GL::Shader* boundProgram = nullptr;
-    ctx.opaqueBatch.bindInstanceData();
 
-    const std::vector<InstanceRun>& runs = ctx.opaqueBatch.runs();
-    for (uint32_t i = 0; i < runs.size(); ++i) {
-        const InstanceRun& run = runs[i];
-
-        Vkm::GL::Shader& program = run.skinned ? *m_skinnedShader : *m_shader;
+    for (const InstanceDraw& draw : ctx.opaqueBatch.draws()) {
+        Vkm::GL::Shader& program = draw.skinned ? m_skinnedShader : m_shader;
         if (&program != boundProgram) {
             program.bind();
             boundProgram = &program;
         }
 
-        const GLMaterial* material = glView.getMaterial(run.material);
+        const GLMaterial* material = glView.getMaterial(draw.material);
         if (material && material != boundMaterial) {
             material->bind(GLBindings::UBOBindingPoints::MATERIAL);
             boundMaterial = material;
         }
-        ctx.opaqueBatch.draw(run, i);
+        ctx.opaqueBatch.draw(draw);
     }
 }
 

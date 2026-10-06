@@ -7,22 +7,19 @@
 namespace Vkm::Engine {
 
 /**
- * @brief Flattened irradiance volume for the frame.
- *
- * Snapshotted from the scene's IrradianceVolume components so the backend never
- * searches the scene. The backend bakes an SH probe grid filling the box, then
- * the forward pass samples it for indirect diffuse inside that box.
+ * @brief Flattened irradiance volume for the frame (see GLIrradianceVolume).
  */
 struct IrradianceVolumeData {
-    glm::vec3 center;       ///< World-space box centre (from the WorldTransform when parented).
-    glm::vec3 halfExtents;  ///< Box half-size.
+    glm::vec3 center;       ///< World space.
+    glm::vec3 halfExtents;
 
     uint32_t resolutionX;   ///< Probe counts per axis.
     uint32_t resolutionY;
     uint32_t resolutionZ;
 
-    float    intensity;     ///< Linear-HDR multiplier on the volume's contribution.
-    uint32_t bakeVersion;   ///< Re-bake trigger (snapshot of the component's bakeVersion).
+    float    intensity;     ///< Linear-HDR multiplier.
+    float    blendDistance; ///< Fade-in depth inside the box, metres.
+    uint32_t bakeVersion;   ///< Re-bake trigger.
 };
 
 } // namespace Vkm::Engine

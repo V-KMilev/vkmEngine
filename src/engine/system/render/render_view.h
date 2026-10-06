@@ -6,10 +6,9 @@
 #include <glm/glm.hpp>
 
 #include "system/render/data/camera_data.h"
-#include "system/render/data/drawable_data.h"
 #include "system/render/data/light_data.h"
-#include "system/render/data/shadow_caster_data.h"
 #include "system/render/data/probe_data.h"
+#include "system/render/data/render_objects.h"
 #include "system/render/data/decal_data.h"
 #include "system/render/data/particle_data.h"
 #include "system/render/data/irradiance_volume_data.h"
@@ -23,179 +22,98 @@ namespace Vkm::Engine {
 class Scene;
 class PoseBuffer;
 struct Visibility;
+struct LiveParticles;
 
 /**
- * @brief The backend-agnostic snapshot handed to RenderBackend::render each frame.
+ * @brief The backend-agnostic view of the frame handed to RenderBackend::render.
  *
- * This is the whole engine -> backend contract: every backend consumes exactly
- * this struct, which is what makes them interchangeable. build() refills it from
- * the visible set the VisibilitySystem already produced, reusing the vectors'
- * capacity across frames.
+ * The whole engine -> backend contract besides the asset graph. build() refills
+ * it each frame: what it gathers from the scene it owns; other systems' products
+ * it borrows by pointer, valid until the next build().
  */
 struct RenderView {
+    /// Viewport rect within the backbuffer, top-left origin (surfaceHeight flips it).
     uint32_t viewportX      = 0;
     uint32_t viewportY      = 0;
     uint32_t viewportWidth  = 0;
     uint32_t viewportHeight = 0;
-    uint32_t surfaceWidth   = 0;                   ///< Full backbuffer width the viewport rect sits within (what a window-wide pass measures against).
-    uint32_t surfaceHeight  = 0;                   ///< Full backbuffer height the viewport rect sits within (lets a bottom-left backend flip the rect).
+    uint32_t surfaceWidth   = 0;  ///< Full backbuffer width.
+    uint32_t surfaceHeight  = 0;  ///< Full backbuffer height.
 
     CameraData camera;
-    std::vector<DrawableData>     drawables;
-    std::vector<ShadowCasterData> shadowCasters;
-    std::vector<LightData>        lights;
-    std::vector<ProbeData>        probes;
-    std::vector<DecalData>        decals;
-    std::vector<ParticleData>     particlesAdditive;  ///< Billboard particles from additive emitters (order-independent).
-    std::vector<ParticleData>     particlesAlpha;     ///< Billboard particles from alpha emitters, sorted back-to-front.
-    std::vector<IrradianceVolumeData> irradianceVolumes;  ///< Baked-GI volumes in the scene.
+    /**
+     * @brief Whether a camera resolved this frame.
+     *
+     * Without one the scene lists are left empty and say nothing about the
+     * scene, so a backend keeps its per-probe or per-volume captures.
+     */
+    bool       hasCamera = false;
 
     /**
-     * @brief Every skinned item's bone palette, end to end.
+     * @brief Every object the frame can draw, and the lists naming which each reader draws.
      *
-     * One flat array rather than a palette per item, because the backend
-     * uploads it once per frame into a single storage buffer and each instance
-     * finds its own bones through the `skinFirst` it carries. Both drawables and
-     * shadow casters index into this one array; an entity in both lists has its
-     * palette copied twice, which is a megabyte a frame at a hundred hundred-bone
-     * characters and a change confined to this file if it ever measures.
-     *
-     * Empty on a frame that posed nothing, which is the frame-level fact the
-     * backend keys its whole skinned half off: no palette means no skinned run,
-     * no per-instance palette base, and no skinned program bound anywhere.
+     * Borrowed from the cull's Visibility. Never null once build() has run.
      */
-    std::vector<glm::mat4> skinMatrices;
+    const RenderObjects* objects = nullptr;
+
+    std::vector<LightData>            lights;
+    std::vector<ProbeData>            probes;
+    std::vector<DecalData>            decals;
+    std::vector<ParticleData>         particlesAdditive;  ///< Order-independent.
+    std::vector<ParticleData>         particlesAlpha;     ///< Unsorted; the backend orders them.
 
     /**
-     * @brief Where each shadow caster's bones sit in skinMatrices.
+     * @brief The scene's baked-GI volume, meaningful while @ref hasIrradianceVolume.
      *
-     * Parallel to `shadowCasters`, index for index, and empty when the frame
-     * posed nothing - see ShadowCasterSkin for why it rides alongside the
-     * casters rather than inside them.
+     * One only (see GLIrradianceVolume); chosen by findIrradianceVolume.
      */
-    std::vector<ShadowCasterSkin> casterSkins;
+    IrradianceVolumeData irradianceVolume{};
+    bool                 hasIrradianceVolume = false;
 
-    RenderSettings                settings;        ///< Editable render tuning (copied from the RenderSystem each frame).
-    Environment                   environment;     ///< Lighting environment (HDR/skybox), copied from the Scene each frame in build().
-    UIDrawData                    ui;              ///< Screen-space UI overlay, copied from the UISystem's draw list each frame.
-    SplashFrame                   splash;          ///< Startup logo over black, copied from the SplashSystem each frame.
+    /**
+     * @brief The frame's bone palettes: PoseBuffer::palette(), borrowed whole.
+     *
+     * One flat buffer; an object finds its bones through `skinFirst`. Null on a
+     * frame that posed nothing, so a backend can skip all skinned work.
+     */
+    const std::vector<glm::mat4>* skinMatrices = nullptr;
+
+    RenderSettings                settings;
+    Environment                   environment;
+    const UIDrawData*             ui = nullptr;  ///< Borrowed; null when the UISystem has not run.
+    SplashFrame                   splash;
 
     /**
      * @brief Scene::epoch() at build time: which world these items came from.
      *
-     * A replaced world reuses the entity slots and poses of the one before it,
-     * so a backend cache of what a place looked like - a baked probe, a baked
-     * irradiance volume - cannot tell that it is now a capture of a scene that
-     * is gone. Carried here because the backend is handed a view, not a scene.
+     * A replaced world reuses entity slots and poses, so a backend's baked
+     * captures need this to tell they belong to a scene that is gone.
      */
     uint64_t worldEpoch = 0;
 
     public:
         /**
-         * @brief Refill the snapshot for the current frame.
+         * @brief Refill the view for the current frame.
          *
-         * The @p ui overlay is independent of the camera, so it survives the
-         * no-camera path: with no active camera this frame the 3D snapshot is
-         * emitted empty (cleared, not stale) and the rest is skipped.
+         * With no active camera the 3D half is emitted empty (cleared, not
+         * stale); @p ui and @p splash still pass through.
          *
-         * @param ui The UISystem's draw list for this frame, or null if none.
-         * @param splash The SplashSystem's product, or null once the sequence
-         *               is over. Survives the no-camera path like @p ui: the
-         *               startup frames it covers have no camera yet.
-         * @param poses SkeletalAnimationSystem's pose for this frame, or null
-         *              if nothing posed anything; every item resolves its
-         *              palette out of it, so a null one draws bind poses. A
-         *              buffer holding no slices counts as null: the whole
-         *              backend keys its skinned half off an empty palette.
+         * @param scene      Scene the lights, probes, decals, emitters and volume are gathered from.
+         * @param visibility This frame's cull: its camera, and the borrowed @ref objects.
+         * @param ui The UISystem's draw list, or null.
+         * @param splash The SplashSystem's product, or null once the sequence is over.
+         * @param poses This frame's pose, or null (or empty) when nothing posed:
+         *              objects then draw bind poses.
+         * @param particles ParticleSystem's live particles, or null if it has not run.
          */
         void build(
             const Scene& scene,
             const Visibility& visibility,
             const UIDrawData* ui,
             const SplashFrame* splash,
-            const PoseBuffer* poses
+            const PoseBuffer* poses,
+            const LiveParticles* particles
         );
-
-    private:
-        /**
-         * @brief Flatten the active camera's matrices and position into CameraData.
-         *
-         * Precomputes invProjection once here so the backend never inverts the
-         * projection per frame.
-         *
-         * @param visibility Culled set carrying the active camera resolved this frame.
-         */
-        void buildCamera(const Visibility& visibility);
-
-        /**
-         * @brief Snapshot every enabled light into world space.
-         *
-         * Includes the area-light axes (axisU/axisV) derived from each light's
-         * world rotation.
-         *
-         * @param scene Scene whose Light components are gathered.
-         */
-        void buildLights(const Scene& scene);
-
-        /**
-         * @brief Snapshot every reflection probe into world space.
-         *
-         * @param scene Scene whose ReflectionProbe components are gathered.
-         */
-        void buildProbes(const Scene& scene);
-
-        /**
-         * @brief Snapshot every decal into world space (box transform + its inverse).
-         *
-         * @param scene Scene whose Decal components are gathered.
-         */
-        void buildDecals(const Scene& scene);
-
-        /**
-         * @brief Flatten every emitter's live particles into billboard instances.
-         *
-         * Size and colour are evaluated from each particle's age. Alpha
-         * particles are sorted back-to-front against the camera; additive ones
-         * need no order, their blend being commutative.
-         *
-         * @param scene Scene whose ParticleEmitter components are gathered.
-         */
-        void buildParticles(const Scene& scene);
-
-        /**
-         * @brief Snapshot every irradiance volume into world space.
-         *
-         * @param scene Scene whose IrradianceVolume components are gathered.
-         */
-        void buildIrradianceVolumes(const Scene& scene);
-
-        /**
-         * @brief Snapshot one drawable per visible entity that resolves a mesh and material.
-         *
-         * Entities with no usable mesh+material pair are skipped, so the drawable
-         * count may be smaller than the visible-entity count.
-         *
-         * @param scene      Scene supplying mesh, material, and transform components.
-         * @param visibility Culled set listing the entities to emit drawables for.
-         * @param poses      This frame's poses, appended into skinMatrices, or
-         *                   null when the frame posed nothing.
-         */
-        void buildDrawables(const Scene& scene, const Visibility& visibility,
-                            const PoseBuffer* poses);
-
-        /**
-         * @brief Snapshot the scene-wide shadow-caster set with world-space AABBs.
-         *
-         * Casters are gathered independently of the visible set so off-screen
-         * occluders still contribute to shadows.
-         *
-         * @param scene      Scene supplying mesh and transform components.
-         * @param visibility Culled set carrying the gathered shadow-caster entities.
-         * @param poses      This frame's poses, appended into skinMatrices and
-         *                   casterSkins, or null when the frame posed nothing.
-         */
-        void buildShadowCasters(const Scene& scene, const Visibility& visibility,
-                                const PoseBuffer* poses);
 };
 
 } // namespace Vkm::Engine

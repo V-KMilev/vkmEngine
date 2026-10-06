@@ -1,19 +1,33 @@
 #pragma once
 
+#include <exception>
 #include <functional>
 #include <memory>
+#include <string>
+#include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
+#include "logger.h"
+
+#include "core/reflect.h"
+#include "debug/engine_error_log.h"
+
 #include "ecs/entity.h"
 #include "ecs/scene.h"
+#include "ecs/component/core/name.h"
+#include "ecs/hierarchy_operations.h"
 #include "platform/window/window_manager.h"
+#include "system/render/render_settings.h"
 #include "core/event/event_bus.h"
 #include "net/net_session.h"
+#include "system/physics/physics_events.h"
 #include "platform/input/input_map.h"
 
 namespace Vkm::Engine {
 
+class Behavior;
 class Clock;
 class ResourceManager;
 class BehaviorSystem;
@@ -22,54 +36,110 @@ class BehaviorFieldVisitor;
 /**
  * @brief Everything gameplay code may reach, bundled behind one pointer.
  *
- * Owned by the BehaviorSystem and stable for the whole session - unlike the
- * per-frame FrameContext, whose lifetime ends every frame. That stability is
- * what lets a behavior's subscribe() lambdas keep using the context after the
- * hook pass that created them has returned.
- *
- * This is also the gameplay capability surface: a field belongs here exactly
- * when behaviors are meant to use it. The Clock qualifies because
- * onRealtimeUpdate outlives a pause: a behavior may pause, resume, scale time
- * and read any delta, and still be ticking afterwards to undo it. What it must
- * not call is beginFrame() or consumeFixedStep() - those belong to the main
- * loop, and driving them from a hook corrupts the frame the hook is in.
+ * Session-stable, unlike FrameContext, so subscribe() lambdas may keep using it.
+ * A field belongs here exactly when behaviors are meant to use it.
  */
 struct BehaviorContext {
     Scene*                 scene            = nullptr;
     ResourceManager*       resources        = nullptr;
 
-    /// The only field here that can be null: a host that draws nothing has none.
+    /// The only nullable field: a host that draws nothing has none.
     WindowManager*         window           = nullptr;
 
     EventBus*              events           = nullptr;
     InputMap*              input            = nullptr;
     NetSession*            net              = nullptr;
     Clock*                 clock            = nullptr;
+    RenderSettings*        render           = nullptr;
     std::vector<EntityId>* pendingDestroy   = nullptr;
     std::string*           pendingSceneLoad = nullptr;
 };
 
+namespace detail {
+
+/**
+ * @brief The event type a listener takes, read off its call operator's parameter.
+ *
+ * @tparam Fn A non-generic lambda, a function object or a function pointer.
+ */
+template<typename Fn>
+struct ListenerEvent : ListenerEvent<decltype(&Fn::operator())> {};
+
+template<typename C, typename R, typename A>
+struct ListenerEvent<R (C::*)(A) const> {
+    using type = std::decay_t<A>;
+};
+
+template<typename C, typename R, typename A>
+struct ListenerEvent<R (C::*)(A)> {
+    using type = std::decay_t<A>;
+};
+
+template<typename R, typename A>
+struct ListenerEvent<R (*)(A)> {
+    using type = std::decay_t<A>;
+};
+
+/**
+ * @brief The event Behavior::subscribe listens for: EventT when named, else the callback's parameter.
+ *
+ * A specialisation, not a conditional, so a named type never asks a generic lambda.
+ *
+ * @tparam EventT Type the caller named, or void.
+ * @tparam Fn     Callback type.
+ */
+template<typename EventT, typename Fn>
+struct SubscribedEvent {
+    using type = EventT;
+};
+
+template<typename Fn>
+struct SubscribedEvent<void, Fn> {
+    using type = typename ListenerEvent<Fn>::type;
+};
+
+} // namespace detail
+
+/**
+ * @brief The first behavior on @p entity whose typeName() is @p typeName.
+ *
+ * @param scene    Scene holding the entity.
+ * @param entity   Entity to look on; a dead one, or one with no ScriptComponent, has none.
+ * @param typeName Registered behavior name.
+ * @return The behavior, owned by the entity's ScriptComponent, or null.
+ */
+Behavior* findBehaviorNamed(Scene& scene, EntityId entity, std::string_view typeName);
+
+/// @copydoc findBehaviorNamed(Scene&, EntityId, std::string_view)
+const Behavior* findBehaviorNamed(const Scene& scene, EntityId entity, std::string_view typeName);
+
+/**
+ * @brief @p entity's behavior of type T, or null when it has none.
+ *
+ * Inside a behavior, Behavior::findBehavior says the same without the scene.
+ *
+ * @tparam T Behavior subclass with a VKM_REFLECT block.
+ * @param scene  Scene holding the entity.
+ * @param entity Entity to look on; a dead one has none.
+ * @return The first T attached to @p entity, or nullptr.
+ */
+template<typename T>
+T* findBehavior(Scene& scene, EntityId entity) {
+    return static_cast<T*>(findBehaviorNamed(scene, entity, Reflect::Traits<T>::NAME));
+}
+
+/// @copydoc findBehavior(Scene&, EntityId)
+template<typename T>
+const T* findBehavior(const Scene& scene, EntityId entity) {
+    return static_cast<const T*>(findBehaviorNamed(scene, entity, Reflect::Traits<T>::NAME));
+}
+
 /**
  * @brief Base class for native C++ gameplay behaviors.
  *
- * The engine's MonoBehaviour / ActorComponent analogue: subclass it, override
- * the lifecycle hooks, and attach instances to an entity through a
- * ScriptComponent. BehaviorSystem drives the hooks during play mode and binds
- * its BehaviorContext before onStart(), so hooks reach the engine through
- * context() and the spawn()/destroy()/subscribe() helpers.
- *
- * Non-copyable and non-movable: instances are owned by unique_ptr inside
- * ScriptComponent. Deep-copy for entity duplication goes through clone().
- *
- * Events: emit/enqueue via context().events directly. To listen, use
- * subscribe<E>() - it auto-unsubscribes when the behavior is destroyed, so
- * there's no manual cleanup (a raw subscribe on the bus would dangle once this
- * instance dies). Subscription callbacks may use context() freely: it is
- * session-stable, not per-frame.
- *
- * Header-only, and nothing forces it: every method below is a one-line
- * forwarder over the context and subscribe() is a template, so a .cpp would
- * hold nothing.
+ * Attached through a ScriptComponent. The context is bound before onStart(), so no
+ * accessor works in a constructor; being session-stable, they are safe from a
+ * subscribe() callback and not worth caching.
  */
 class Behavior {
     public:
@@ -86,20 +156,15 @@ class Behavior {
         /**
          * @brief Called on the first simulation tick this instance runs in play mode.
          *
-         * Always a simulation tick: onRealtimeUpdate never starts a behavior, so
-         * an entity spawned while paused waits for time to flow again, and a
-         * scene merely sitting open in the editor runs nothing at all.
+         * Never from onRealtimeUpdate, so one spawned while paused waits for time to flow.
          */
         virtual void onStart() {}
 
         /**
          * @brief Called every variable-step frame on which simulation time advanced.
          *
-         * Simulation time is the timeline gameplay lives on. While the game is
-         * paused - which in the editor is also Edit mode - this does not run at
-         * all, rather than run with a zero delta, so a per-frame counter or an
-         * input edge written here cannot tick while the world is frozen. Work
-         * that must continue through a pause goes in onRealtimeUpdate.
+         * Skipped entirely while paused (and in editor Edit mode), never run with a zero
+         * delta; work that must continue goes in onRealtimeUpdate.
          *
          * @param dt Elapsed simulation time this frame, in seconds; always > 0.
          */
@@ -108,99 +173,274 @@ class Behavior {
         /**
          * @brief Called every frame on real time, paused or not.
          *
-         * The hook for what a frozen world must not freeze: a pause menu's
-         * animation, an unscaled timer, ducking the music, holding a key to
-         * quit. @p dt is the real frame delta, so setTimeScale() does not reach
-         * it either.
+         * Only for started behaviors, so build a pause menu in onStart and toggle
+         * UIElement::visible rather than spawning it on pause.
          *
-         * Only behaviors that have already started receive it, and it starts
-         * none itself - so a pause menu is built in onStart and shown by
-         * toggling UIElement::visible, not spawned when the pause happens.
-         *
-         * @param dt Elapsed real time this frame, in seconds; always > 0.
+         * @param dt Real frame delta in seconds, untouched by setTimeScale(); always > 0.
          */
         virtual void onRealtimeUpdate(float dt) {}
 
         /**
-         * @brief Called on each fixed-step tick (opt-in).
+         * @brief Called on each fixed-step tick; fed from simulation time, so pause and time-scale apply.
          *
-         * Only invoked for behaviors that override it; left empty otherwise.
-         * The accumulator behind it is fed from simulation time, so pause and
-         * time-scale reach these steps with no gate of their own.
-         *
-         * @param dt Fixed timestep (fixedDeltaTime), in seconds.
+         * @param dt Fixed timestep (Clock::getFixedStep()), in seconds.
          */
         virtual void onFixedUpdate(float dt) {}
 
         /**
-         * @brief Called when a non-trigger contact with @p other occurs this tick.
+         * @brief Called on the first tick this entity touches another, in a resolved (non-trigger) contact.
          *
-         * @param other The entity this one collided with.
+         * @code
+         * void Crate::onCollisionEnter(const Collision& hit) {
+         *     if (hit.normal.y > 0.7f) LOG_INFO("landed on %u", hit.other.slot());
+         * }
+         * @endcode
+         *
+         * @param hit Who, where, and the normal from them into this entity.
          */
-        virtual void onCollision(EntityId other) {}
+        virtual void onCollisionEnter(const Collision& hit) {}
 
         /**
-         * @brief Called when this entity's trigger overlapped @p other this tick.
+         * @brief Called on each later tick the contact lasts.
          *
-         * @param other The entity that overlapped this trigger.
+         * Not while both bodies rest (asleep or static); waking does not enter again.
+         *
+         * @param hit The contact this tick.
          */
-        virtual void onTrigger(EntityId other) {}
+        virtual void onCollisionStay(const Collision& hit) {}
 
         /**
-         * @brief Called when this instance is torn down.
+         * @brief Called on the first tick the contact is over.
          *
-         * Fires on entity removal, play stop, or engine shutdown.
+         * Including when the other was destroyed or disabled, so it may be dead. An
+         * entity destroyed while touching hears nothing.
+         *
+         * @param hit Who it stopped touching; its point and normal are zero.
+         */
+        virtual void onCollisionExit(const Collision& hit) {}
+
+        /**
+         * @brief Called on the first tick @p other overlaps this entity's trigger.
+         *
+         * @param other The entity that entered.
+         */
+        virtual void onTriggerEnter(EntityId other) {}
+
+        /**
+         * @brief Called on each later tick @p other is still inside, on onCollisionStay's terms.
+         *
+         * @param other The entity still inside.
+         */
+        virtual void onTriggerStay(EntityId other) {}
+
+        /**
+         * @brief Called on the first tick @p other no longer overlaps, on onCollisionExit's terms.
+         *
+         * @param other The entity that left; it may no longer be alive.
+         */
+        virtual void onTriggerExit(EntityId other) {}
+
+        /**
+         * @brief Called on entity removal, and when the session ends (see BehaviorSystem::endSession).
          */
         virtual void onDestroy() {}
 
         /**
-         * @brief Stable type name, identical to this type's BehaviorRegistry key.
+         * @brief Stable type name, identical to this type's BehaviorRegistry key; serialization uses it.
          *
-         * Single source of truth shared with registration: a subclass declares
-         * `static constexpr const char* TYPE_NAME` and returns it here, and
-         * BehaviorRegistry::registerBehavior<T>() keys off the same constant.
-         * Serialization round-trips the behavior by this name.
+         * @return The type's registered name.
          */
         virtual const char* typeName() const = 0;
 
         /**
-         * @brief Visit the behavior's reflected authoring fields.
+         * @brief Visit the behavior's reflected authoring fields; ReflectedBehavior generates it.
          *
-         * The editor inspector and the serializer use this to read/write fields
-         * through a `Behavior*` without knowing the concrete type. Default does
-         * nothing; ReflectedBehavior generates it from the VKM_REFLECT markup.
+         * @param visitor Visited once per reflected field, in markup order.
          */
         virtual void visitFields(BehaviorFieldVisitor& visitor) {}
 
         /**
-         * @brief Deep copy for entity duplication.
+         * @brief Deep copy for entity duplication; authored fields only, the context is rebound.
          *
-         * Copy only authored fields; the engine context and started flag are
-         * rebound on the new instance by BehaviorSystem.
+         * @return A new instance of the same type carrying the authored fields.
          */
         virtual std::unique_ptr<Behavior> clone() const = 0;
 
     protected:
         /**
-         * @brief The engine capability surface: scene, resources, window, events.
+         * @brief The entity this behavior is attached to.
          *
-         * Session-stable (owned by the BehaviorSystem), so it is safe to use
-         * from subscribe() callbacks too, not just inside hooks. Valid from
-         * just before onStart() until teardown.
+         * @return The owning entity; null until bound, just before onStart.
          */
-        BehaviorContext& context() { return *m_ctx; }
+        EntityId entity() const { return m_entity; }
+
+        /**
+         * @brief This entity's T, or null when it has none.
+         *
+         * @code
+         * if (Transform* body = tryGet<Transform>()) body->position += step;
+         * @endcode
+         *
+         * @tparam T Component type.
+         * @return Pointer to this entity's T, or nullptr.
+         */
+        template<typename T>
+        T* tryGet() { return m_ctx->scene->tryGet<T>(m_entity); }
+
+        /// @copydoc tryGet()
+        template<typename T>
+        const T* tryGet() const { return m_ctx->scene->tryGet<T>(m_entity); }
+
+        /**
+         * @brief This entity's T, which it must have.
+         *
+         * @tparam T Component type; the entity must carry one.
+         * @return Reference to this entity's T.
+         */
+        template<typename T>
+        T& get() { return m_ctx->scene->get<T>(m_entity); }
+
+        /// @copydoc get()
+        template<typename T>
+        const T& get() const { return m_ctx->scene->get<T>(m_entity); }
+
+        /**
+         * @brief Whether this entity carries a T.
+         *
+         * @tparam T Component type.
+         * @return True when this entity has one.
+         */
+        template<typename T>
+        bool has() const { return m_ctx->scene->has<T>(m_entity); }
+
+        /**
+         * @brief Give this entity a T.
+         *
+         * @tparam T Component type; the entity must not already have one.
+         * @param component Component to store.
+         * @return Reference to it in the scene's storage.
+         */
+        template<typename T>
+        auto& add(T && component) {
+            return m_ctx->scene->add(m_entity, std::forward<T>(component));
+        }
+
+        /**
+         * @brief This entity's behavior of type T, or null when it has none.
+         *
+         * @tparam T Behavior subclass with a VKM_REFLECT block.
+         * @return The first T attached to this entity, or nullptr.
+         */
+        template<typename T>
+        T* findBehavior() { return findBehavior<T>(m_entity); }
+
+        /**
+         * @brief @p other's behavior of type T, or null when it has none.
+         *
+         * @code
+         * if (Health* health = findBehavior<Health>(hit.other)) health->damage(10.0f);
+         * @endcode
+         *
+         * Not worth caching: the entity may die and its slot be reused between hooks.
+         *
+         * @tparam T Behavior subclass with a VKM_REFLECT block.
+         * @param other Entity to look on; a dead one has none.
+         * @return The first T attached to @p other, or nullptr.
+         */
+        template<typename T>
+        T* findBehavior(EntityId other) { return Vkm::Engine::findBehavior<T>(*m_ctx->scene, other); }
+
+        /**
+         * @brief The free findBehavior, which the member overloads would otherwise hide.
+         *
+         * @tparam T Behavior subclass with a VKM_REFLECT block.
+         * @param world  Scene holding the entity.
+         * @param entity Entity to look on; a dead one has none.
+         * @return The first T attached to @p entity, or nullptr.
+         */
+        template<typename T>
+        static T* findBehavior(Scene& world, EntityId entity) {
+            return Vkm::Engine::findBehavior<T>(world, entity);
+        }
+
+        /// @copydoc findBehavior(Scene&, EntityId)
+        template<typename T>
+        static const T* findBehavior(const Scene& world, EntityId entity) {
+            return Vkm::Engine::findBehavior<T>(world, entity);
+        }
+
+        /**
+         * @brief The scene this behavior's entity lives in.
+         *
+         * @return The session's scene.
+         */
+        Scene& scene() { return *m_ctx->scene; }
+
+        /**
+         * @brief The assets this session holds, to look one up or add one.
+         *
+         * @return The session's resource manager.
+         */
+        ResourceManager& resources() { return *m_ctx->resources; }
+
+        /**
+         * @brief The event bus's sending half, to emit or enqueue on.
+         *
+         * Not the bus: a listener on it would outlive this instance; use subscribe().
+         *
+         * @return A sender over the session's bus.
+         */
+        EventSender events() { return EventSender(*m_ctx->events); }
+
+        /**
+         * @brief The quality settings the frame is drawn at; a write lands on the next frame.
+         *
+         * @return The session's render settings.
+         */
+        RenderSettings& render() { return *m_ctx->render; }
+
+        /**
+         * @brief Named input actions, for the frame queries and to define bindings.
+         *
+         * A fixed update reads command() instead: `input().pressed(command(), "Jump")`.
+         *
+         * @return The session's input map.
+         */
+        InputMap& input() { return *m_ctx->input; }
+
+        /**
+         * @brief The wire, or an offline session that answers as though local.
+         *
+         * @return The session's network session.
+         */
+        NetSession& net() { return *m_ctx->net; }
+
+        /**
+         * @brief Real and simulation time, and the play state behind them.
+         *
+         * A game may pause and resume through this. Never call beginFrame() or
+         * consumeFixedStep(): they belong to the main loop.
+         *
+         * @return The session's clock.
+         */
+        Clock& clock() { return *m_ctx->clock; }
+        const Clock& clock() const { return *m_ctx->clock; }
+
+        /**
+         * @brief The window, or null on a host that draws nothing, such as a dedicated server.
+         *
+         * @return The window, or nullptr.
+         */
+        WindowManager* window() { return m_ctx->window; }
 
         /**
          * @brief Whether this end decides what happens to this entity.
          *
-         * True for everything in a single-player game and on a server, and on a
-         * client only for what that client owns. A behavior that moves its
-         * entity - a controller, a mover, anything that writes a Transform or a
-         * velocity - asks this first and returns when the answer is no, or it
-         * is guessing at a body it will be corrected on every snapshot.
+         * True offline and on a server; on a client only for what it owns. Ask before
+         * writing a Transform or velocity, never before drawing or playing a sound, or
+         * a remote player goes silent and invisible.
          *
-         * Reading state, drawing, playing a sound: those run everywhere, and
-         * asking this would make a remote player silent and invisible.
+         * @return True when this end simulates the entity.
          */
         bool isSimulated() const {
             return m_ctx->net->simulates(m_entity);
@@ -209,9 +449,10 @@ class Behavior {
         /**
          * @brief Whether this entity belongs to the player at this end.
          *
-         * What to ask before touching anything that is about *this* player -
-         * the camera, the mouse, the heads-up display. Not the same question as
-         * isSimulated(): a server simulates every player and owns none of them.
+         * Ask before touching the camera, mouse or HUD. Not isSimulated(): a server
+         * simulates every player and owns none.
+         *
+         * @return True when the local player owns the entity.
          */
         bool isMine() const {
             return m_ctx->net->isMine(m_entity);
@@ -220,102 +461,164 @@ class Behavior {
         /**
          * @brief Whether this tick already happened and is being run again.
          *
-         * A client that predicted a tick wrongly re-runs every tick since from
-         * the server's answer. What a behavior computes must re-run - that is
-         * what a replay is for - but anything it *presents* must not: an
-         * animation chosen again is a clip restarted, a sound played again is a
-         * sound heard twice, and a replayed tick can choose differently from
-         * the live one because it is simulating from a different state.
+         * A mispredicting client replays ticks. Computation must re-run, but nothing
+         * presented (an animation, a sound) may. False offline and on a server.
          *
-         * The engine draws the same line for systems, in System::isReplayed().
-         * This is that line one level down, for the code the engine cannot see.
-         *
-         * False offline and on a server, which never replay.
+         * @return True during a replayed tick.
          */
         bool isReplaying() const { return m_ctx->net->replaying(); }
 
         /**
          * @brief The input driving this entity on the tick now running.
          *
-         * The same call in all three roles, which is the point: offline and on
-         * the owning client it is the local player's command, and on a server
-         * it is what that entity's player sent, run on the tick they sent it
-         * for. An entity no player drives reads as nothing held.
+         * Offline, the local player's, whatever the entity; online, its driving player's,
+         * or nothing held. Read this, not the device, which misses taps between ticks,
+         * repeats presses on slow frames and cannot be replayed.
          *
-         * Read this rather than the device. A fixed update that asks the device
-         * misses a tap that began and ended between two ticks, repeats a press
-         * on every tick of a slow frame, and cannot be replayed - and a
-         * command that cannot be replayed cannot be predicted.
+         * @return The command for this entity on this tick.
          */
         const InputCommand& command() const {
             return m_ctx->net->commandFor(m_entity);
         }
 
         /**
-         * @brief Create a new (empty) entity; add components via context().scene.
+         * @brief Create a new, empty entity; add components to it through scene().
          *
-         * Safe from a hook, including attaching a ScriptComponent to the new
-         * entity: BehaviorSystem walks a snapshot and re-resolves each entity,
-         * so growing the component storage mid-pass moves it underneath the
-         * loop without consequence. A behavior added during a pass starts on
-         * the next one - the same rule destroy() follows in the other
-         * direction.
+         * Safe from a hook; a behavior added during a pass starts on the next. Local to
+         * this end, so a client warns once; use NetSession::spawn on the server instead.
+         *
+         * @return The new entity.
          */
-        EntityId spawn() { return m_ctx->scene->createEntity(); }
+        EntityId spawn() {
+            if (m_ctx->net->role() == NetRole::Client) warnSpawnOnClient();
+            return m_ctx->scene->createEntity();
+        }
 
         /**
-         * @brief Destroy @p entity and its subtree.
+         * @brief Create an entity carrying @p name.
          *
-         * Deferred until after the current hook pass, so destroying your own
-         * entity is safe, and drained on a paused frame too, so
-         * onRealtimeUpdate may use it. Routed through HierarchyOperations, and
-         * fires onDestroy on the affected behaviors.
+         * @param name Human-readable name; truncated into Name's fixed buffer.
+         * @return The new entity.
          */
-        void destroy(EntityId entity) { m_ctx->pendingDestroy->push_back(entity); }
+        EntityId spawn(const char* name) {
+            const EntityId entity = spawn();
+            m_ctx->scene->add(entity, makeName(name));
+            return entity;
+        }
+
+        /**
+         * @brief Create an entity carrying @p name, parented under @p parent.
+         *
+         * Parenting is HierarchyOperations::setParent.
+         *
+         * @param name Human-readable name; truncated into Name's fixed buffer.
+         * @param parent Entity to attach it under; must be alive.
+         * @return The new entity.
+         */
+        EntityId spawn(const char* name, EntityId parent) {
+            const EntityId entity = spawn(name);
+            HierarchyOperations::setParent(*m_ctx->scene, entity, parent);
+            return entity;
+        }
+
+        /**
+         * @brief Destroy @p entity and its subtree, firing onDestroy.
+         *
+         * Deferred past the hook pass, so destroying your own entity is safe; drained on
+         * paused frames too.
+         *
+         * @param target Root of the subtree to destroy.
+         */
+        void destroy(EntityId target) { m_ctx->pendingDestroy->push_back(target); }
+
+        /**
+         * @brief Destroy this behavior's own entity and its subtree, deferred likewise.
+         */
+        void destroy() { destroy(m_entity); }
 
         /**
          * @brief Load @p scenePath, replacing everything currently in the scene.
          *
-         * Deferred to the end of the hook pass, and it has to be: the load
-         * destroys every entity including the one whose behavior asked for it,
-         * so doing it inline would free this object mid-call. Requesting twice
-         * in one pass keeps the last request - the scene can only become one
-         * thing. The drain runs on paused frames as well, so a pause menu's
-         * "quit to the main menu" works while the world is frozen - but nothing
-         * in the scene that arrives starts until simulation time flows, and
-         * this behavior is destroyed by the load, so a paused caller resumes
-         * the clock itself or loads a world that can never run.
+         * Deferred to the end of the hook pass, since it destroys the caller; the last
+         * request wins. Works while paused, but the new scene starts only once time
+         * flows, so a paused caller must resume the clock itself.
          *
          * @param scenePath Scene file, relative to the project root.
          */
         void loadScene(const std::string& scenePath) { *m_ctx->pendingSceneLoad = scenePath; }
 
         /**
-         * @brief Subscribe to events of type EventT for this behavior's lifetime.
+         * @brief Listen for an event until the behavior is destroyed or the session ends.
          *
-         * The subscription is dropped automatically when the behavior is
-         * destroyed, or when the play session ends, so there is nothing to
-         * clean up by hand.
+         * @code
+         * subscribe([this](const UIClickEvent& click) { onClick(click); });
+         * @endcode
+         *
+         * Name the type (`subscribe<UIClickEvent>(...)`) only for a generic lambda.
+         *
+         * @tparam EventT Event type to listen for; deduced when left out.
+         * @tparam Fn Callable taking `const EventT&`.
+         * @param callback Called with each event; a throw is reported but does not disable.
          */
-        template<typename EventT>
-        void subscribe(std::function<void(const EventT&)> callback) {
-            if (!m_ctx) return;
+        template<typename EventT = void, typename Fn>
+        void subscribe(Fn&& callback) {
+            using Event = typename detail::SubscribedEvent<EventT, std::decay_t<Fn>>::type;
+            std::function<void(const Event&)> listener = std::forward<Fn>(callback);
+            // Null only before binding, so this is a subscribe from a constructor.
+            if (!m_ctx) {
+                LOG_ERROR(
+                    "A behavior subscribed before it started; "
+                    "subscribe() belongs in onStart(), not the constructor"
+                );
+                return;
+            }
+            // Guarded, or a throw would unwind through the bus and out of the frame.
             EventBus* events = m_ctx->events;
-            const ListenerId id = events->subscribe<EventT>(std::move(callback));
-            m_subscriptions.push_back([events, id]() { events->unsubscribe<EventT>(id); });
+            const ListenerId id = events->subscribe<Event>(
+                [this, listener = std::move(listener)](const Event& event) {
+                    runGuarded("event listener", [&] { listener(event); });
+                }
+            );
+            m_subscriptions.push_back([events, id]() { events->unsubscribe<Event>(id); });
         }
 
     private:
         friend class BehaviorSystem;
 
         /**
-         * @brief Bind the entity identity and the engine capability surface.
+         * @brief Run @p fn, reporting anything it throws against this behavior.
          *
-         * Called by BehaviorSystem before onStart. The context is the system's
-         * own session-stable BehaviorContext, so one pointer covers everything
-         * the accessors and helpers reach.
+         * @param hookName Named in the report beside the behavior's type.
+         * @param fn       Gameplay call to make.
+         * @return True if @p fn threw, leaving the consequence to the caller.
+         */
+        template<typename Fn>
+        bool runGuarded(const char* hookName, Fn&& fn) {
+            try {
+                fn();
+                return false;
+            } catch (const std::exception& e) {
+                reportError("Behavior", hookLabel(hookName), e.what());
+            } catch (...) {
+                reportError("Behavior", hookLabel(hookName), "non-std exception");
+            }
+            return true;
+        }
+
+        /**
+         * @brief "Type / hook", built only on a throw so a guarded call never allocates.
          *
-         * @param entity  The entity this behavior is attached to.
+         * @param hookName Hook or callback that threw.
+         * @return The error report's source label.
+         */
+        std::string hookLabel(const char* hookName) const {
+            return std::string(typeName()) + " / " + hookName;
+        }
+
+        /**
+         * @brief Bind the entity identity and the engine capability surface, before onStart.
+         *
+         * @param entity  Entity this behavior is attached to.
          * @param context The BehaviorSystem's stable capability bundle.
          */
         void bindContext(EntityId entity, BehaviorContext& context) {
@@ -324,21 +627,25 @@ class Behavior {
         }
 
         /**
-         * @brief Drop all subscribe<E>() listeners.
+         * @brief Drop all subscribe() listeners.
          *
-         * Run from the destructor and, while the EventBus is guaranteed alive,
-         * by BehaviorSystem::endSession at play stop and shutdown, so it never
-         * unsubscribes from a dead bus.
+         * Run by BehaviorSystem::fireDestroy while the bus lives, so the destructor's
+         * call never touches a dead bus.
          */
         void clearSubscriptions() {
             for (auto& unsubscribe : m_subscriptions) unsubscribe();
             m_subscriptions.clear();
         }
 
-    protected:
-        EntityId m_entity{};
+        /**
+         * @brief Say, once per process, that a connected client made an entity of its own.
+         *
+         * Defined in vkm_core, or each module copy would hold its own latch.
+         */
+        static void warnSpawnOnClient();
 
     private:
+        EntityId         m_entity{};
         BehaviorContext* m_ctx = nullptr;
 
         std::vector<std::function<void()>> m_subscriptions;

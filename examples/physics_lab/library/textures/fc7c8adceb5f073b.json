@@ -1,0 +1,13 @@
+{
+  "name": "texture:solid:8080FFFF:Normal",
+  "source": {
+    "color": [
+      0.5,
+      0.5,
+      1.0,
+      1.0
+    ],
+    "kind": "solid",
+    "usage": "Normal"
+  }
+}

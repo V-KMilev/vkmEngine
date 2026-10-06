@@ -3,7 +3,6 @@
 #include "platform/net/net_address.h"
 
 #include <cstdio>
-#include <cstring>
 
 #include "logger.h"
 
@@ -44,33 +43,18 @@ bool resolveHost(const std::string& host, uint32_t& out) {
 NetAddress NetAddress::parse(const std::string& text, uint16_t fallbackPort) {
     if (text.empty()) return {};
 
-    // inet_pton and the resolver are both winsock entry points, and this runs
-    // while parsing a command line, before any socket has started the library.
-    // Without it every --connect fails on Windows and says nothing.
+    // inet_pton and the resolver are winsock entry points; no socket may exist yet.
     if (!ensureWinsock()) return {};
 
-    // Split on the last colon, so a future bracketed form does not silently
-    // parse its own separators.
+    // On the last colon, so a bracketed form cannot split on its own separators.
     std::string host = text;
     uint16_t    port = fallbackPort;
 
     const size_t colon = text.rfind(':');
     if (colon != std::string::npos) {
         host = text.substr(0, colon);
-        const std::string tail = text.substr(colon + 1);
-
-        // Refused rather than partly read: "host:" and "host:abc" name a port
-        // the caller meant and this cannot supply, and quietly using the
-        // fallback would connect somewhere they did not ask for.
-        if (tail.empty()) return {};
-
-        unsigned long parsed = 0;
-        for (const char c : tail) {
-            if (c < '0' || c > '9') return {};
-            parsed = parsed * 10u + static_cast<unsigned long>(c - '0');
-            if (parsed > 65535u) return {};
-        }
-        port = static_cast<uint16_t>(parsed);
+        // "host:" and "host:abc" are refused, not given the fallback.
+        if (!parsePort(text.substr(colon + 1), port)) return {};
     }
 
     if (host.empty() || port == 0) return {};
@@ -91,11 +75,31 @@ NetAddress NetAddress::parse(const std::string& text, uint16_t fallbackPort) {
     return address;
 }
 
+bool NetAddress::parsePort(const std::string& text, uint16_t& port) {
+    if (text.empty()) return false;
+    uint32_t parsed = 0;
+    for (const char c : text) {
+        if (c < '0' || c > '9') return false;
+        parsed = parsed * 10u + static_cast<uint32_t>(c - '0');
+        if (parsed > 65535u) return false;
+    }
+    if (parsed == 0) return false;
+    port = static_cast<uint16_t>(parsed);
+    return true;
+}
+
 std::string NetAddress::toString() const {
     char text[32];
-    std::snprintf(text, sizeof(text), "%u.%u.%u.%u:%u",
-                  (ipv4 >> 24) & 0xFFu, (ipv4 >> 16) & 0xFFu,
-                  (ipv4 >> 8) & 0xFFu, ipv4 & 0xFFu, port);
+    std::snprintf(
+        text,
+        sizeof(text),
+        "%u.%u.%u.%u:%u",
+        (ipv4 >> 24) & 0xFFu,
+        (ipv4 >> 16) & 0xFFu,
+        (ipv4 >> 8) & 0xFFu,
+        ipv4 & 0xFFu,
+        port
+    );
     return text;
 }
 

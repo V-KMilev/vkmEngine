@@ -11,37 +11,29 @@ class Scene;
 /**
  * @brief What a query struck: which entity, where, and the surface it hit.
  *
- * `normal` points back along the incoming ray, out of the surface, so a caller
- * can slide, reflect or step against it without checking which side it started
- * on. A ray that begins already inside a body reports it at distance zero, with
- * the normal pointing back at the caster.
+ * `normal` points out of the surface, back along the ray. A ray starting inside a body hits it at
+ * distance zero; where the shape gives no outward direction (inside a box) the normal points at the caster.
  */
 struct RayHit {
-    EntityId  entity   = {};                      ///< The body that was struck
-    float     distance = 0.0f;                    ///< Along the ray, in metres
-    glm::vec3 point    = {0.0f, 0.0f, 0.0f};      ///< World-space contact point
-    glm::vec3 normal   = {0.0f, 1.0f, 0.0f};      ///< Outward surface normal
+    EntityId  entity   = {};                  ///< The body that was struck
+    float     distance = 0.0f;                ///< Along the ray, in metres
+    glm::vec3 point    = {0.0f, 0.0f, 0.0f};  ///< World-space contact point
+    glm::vec3 normal   = {0.0f, 1.0f, 0.0f};  ///< Outward surface normal
 };
 
 /**
  * @brief Which bodies a query is allowed to see.
  *
- * The defaults are what a gameplay caster wants: solid bodies only, triggers
- * left alone. `ignore` exists because the overwhelmingly common query is one a
- * body casts from inside itself, and a hit on the caster is never the answer.
+ * `ignore` is for the common query a body casts from inside itself.
  */
 struct QueryFilter {
-    EntityId ignore      = {};      ///< Never hit; the caster, usually
-    bool     hitTriggers = false;   ///< Include colliders marked isTrigger
-    bool     hitStatic   = true;    ///< Include static and kinematic bodies
-    bool     hitDynamic  = true;    ///< Include dynamic bodies
+    EntityId ignore      = {};     ///< Never hit; the caster, usually
+    bool     hitTriggers = false;  ///< Include colliders marked isTrigger
+    bool     hitStatic   = true;   ///< Include Static and Kinematic bodies, by their authored motion
+    bool     hitDynamic  = true;   ///< Include Dynamic bodies, a ragdoll's posed bones among them
 
     /**
-     * @brief Which layers may be hit, as a mask of their bits.
-     *
-     * The same layers collision uses, so a query can be asked in the terms the
-     * world is already organised by - "the level, not the characters" is a mask
-     * rather than a list of entities to ignore. Everything by default.
+     * @brief Which layers may be hit, as a mask of the bits collision uses; everything by default.
      */
     int layerMask = ~0;
 };
@@ -49,23 +41,15 @@ struct QueryFilter {
 /**
  * @brief Cast a ray through the scene and return the nearest body it strikes.
  *
- * Sees exactly what the simulation sees: an entity with both a Rigidbody and an
- * enabled Collider. A Collider without a Rigidbody is in no broadphase, and is
- * in no query either - one definition of the physics world, so a ray can never
- * report a wall that a character would walk through.
- *
- * Queries read the scene directly rather than the tick's cached proxies, so the
- * answer describes where bodies are at the moment of the call rather than where
- * they were when physics last ran. That costs a walk of the scene's bodies per
- * call: there is no acceleration structure behind this yet, and the first shape
- * that needs one is the triangle mesh.
+ * Sees entities with a Rigidbody and an enabled Collider, plus animation-driven ragdoll bones; a
+ * Collider without a Rigidbody is in no query. Reads the scene directly, so the answer is where bodies
+ * are now, at the cost of walking every body per call; a mesh's own tree is walked along the ray.
  *
  * @param scene       Scene whose bodies are asked.
  * @param origin      World-space start of the ray.
- * @param direction   Direction to cast; normalized internally, so callers may
- *                    pass any non-zero vector.
- * @param maxDistance How far to look, in metres. Non-positive finds nothing.
- * @param[out] out    The nearest hit; untouched when the call returns false.
+ * @param direction   Any non-zero vector; normalized internally.
+ * @param maxDistance How far to look, in metres; non-positive finds nothing.
+ * @param[out] out    The nearest hit, ties to the lower entity slot so every end agrees; untouched on false.
  * @param filter      Which bodies may be hit.
  * @return True when something was struck within @p maxDistance.
  */
@@ -81,23 +65,15 @@ bool raycast(
 /**
  * @brief Sweep a sphere through the scene and stop it at the first body it meets.
  *
- * The question a character asks that a ray cannot answer. A ray reports whether
- * something is in the way; a sweep reports where a body of a given size would
- * come to rest, which is what deciding a step-up, a ledge grab or a spawn point
- * actually needs. `distance` is how far the sphere travelled, `point` is where
- * it touched, and `normal` is the surface it touched - so the stopped centre is
- * `origin + normalize(direction) * distance`.
- *
- * Sees the same bodies as raycast, under the same filter, with the same caveat
- * about there being no acceleration structure yet. A radius of zero or less is
- * answered by raycast itself rather than by a second implementation of it.
+ * The stopped centre is `origin + normalize(direction) * distance`. Sees what raycast sees, at the same
+ * cost.
  *
  * @param scene       Scene whose bodies are asked.
  * @param origin      World-space centre the sphere starts at.
- * @param radius      Sphere radius. Zero or less defers to raycast.
- * @param direction   Direction to sweep; normalized internally.
+ * @param radius      Sphere radius; zero or less defers to raycast.
+ * @param direction   Normalized internally.
  * @param maxDistance How far the centre may travel, in metres.
- * @param[out] out    The nearest hit; untouched when the call returns false.
+ * @param[out] out    The nearest hit, ties broken as raycast does; untouched on false.
  * @param filter      Which bodies may be hit.
  * @return True when the sphere meets something within @p maxDistance.
  */

@@ -1,73 +1,74 @@
 /**
- * Ground-Truth Ambient Occlusion (Jimenez et al. 2016, horizon-slice integral).
- *
- * Reads the opaque depth + G-buffer (octahedral view-normal) the depth prepass
- * laid down, reconstructs view-space position, and for a handful of slices
- * sweeps screen-space horizons to both sides. Per slice it integrates the
- * cosine-weighted visibility arc between the two horizons (the closed-form GTAO
- * integral), so unlike a plain occlusion count the result is the actual
- * normal-weighted AO. Output is a single factor in [0,1] (1 = unoccluded) the
- * forward pass multiplies into the ambient/IBL term.
- *
- * Works entirely in view space from depth + the G-buffer normal - no world-space
- * data needed. Interleaved-gradient rotation per pixel hides slice banding.
+ * Ground-Truth Ambient Occlusion (Jimenez et al. 2016), in view space from the
+ * G-buffer normal and the prefiltered depth mips. Per slice it sweeps horizons
+ * both ways, each step at the mip its pixel length picks (see
+ * prefilter/compute.shader), and integrates the cosine-weighted visible arc.
+ * Writes the raw integral (visibility.glsl) and bent normal; denoise/compute.shader
+ * averages and shapes it.
  */
-
 in vec2 vUV;
 
-out vec4 FragColor;  // r = AO, gb = octahedral bent normal (view space)
+out vec4 FragColor;  // r = encoded visibility, gb = octahedral bent normal (view space)
 
-layout(binding = 19) uniform sampler2D u_sceneDepth;     // scene depth
-layout(binding = 20) uniform sampler2D u_sceneGBuffer;   // oct view-normal.xy, roughness, metalness
+// Oct view-normal, roughness, metalness.
+layout(binding = POST_SLOT_SCENE_GBUFFER) uniform sampler2D u_sceneGBuffer;
+// Linear view depth, as a mip chain.
+layout(binding = POST_SLOT_AO_DEPTH)      uniform sampler2D u_depthMips;
 
-uniform mat4  u_invProjection;
-uniform float u_proj11;     // projection[1][1]: world radius -> screen
-uniform float u_radius;     // world-space sample radius
-uniform float u_intensity;  // occlusion strength
-uniform float u_power;      // contrast curve
-uniform float u_bias;       // view-space self-occlusion guard
+uniform float u_maxMip;  // the chain's last level
+uniform float u_radius;  // world-space sample radius
 
-const int   SLICES  = 3;
-const int   STEPS   = 5;
-#include "../_common/constants.glsl"
-#include "../_common/depth.glsl"
-const float HALF_PI = 1.57079632679;
+// Few, because the denoise averages 25 pixels' worth of them.
+const int SLICES = 2;
+const int STEPS  = 4;
 
-#include "../_common/normal_codec.glsl"  // signNotZero, octDecode, octEncode
+// Taken off each horizon cosine so a flat surface's own depth steps (quantised
+// depth, coarse mips) never self-occlude. A guard, not a look: not a setting.
+const float HORIZON_BIAS = 0.03;
 
-float interleavedGradient(vec2 p) {
-    return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
-}
+#include "../constants.glsl"
+#include "depth_mips.glsl"
+#include "../noise.glsl"
+#include "../camera.glsl"
 
-// Closed-form inner integral of cosine-weighted visibility between the view
-// vector and a horizon at signed angle h, for a normal at signed angle n
-// (both measured in the slice plane, relative to V).
+#include "../normal_codec.glsl"
+#include "visibility.glsl"
+
+// Closed-form cosine-weighted visibility between V and a horizon at signed
+// angle h, for a normal at signed angle n (both in the slice plane, from V).
 float arc(float h, float n) {
     return 0.25 * (-cos(2.0 * h - n) + cos(n) + 2.0 * h * sin(n));
 }
 
 void main() {
-    float depth = texture(u_sceneDepth, vUV).r;
-    if (depth >= 1.0) { FragColor = vec4(1.0, 0.0, 0.0, 1.0); return; }   // sky: nothing to occlude
+    // projection[0][0] takes a view x to the screen, [1][1] a world radius.
+    float proj00      = u_camera.projection[0][0];
+    float proj11      = u_camera.projection[1][1];
+    bool  perspective = cameraIsPerspective();
 
-    vec3 P = viewPosFromDepth(vUV, depth, u_invProjection);
+    float z = texelFetch(u_depthMips, ivec2(gl_FragCoord.xy), 0).r;
+    // The sky: nothing to occlude.
+    if (z >= SKY_DEPTH) { FragColor = vec4(encodeVisibility(1.0), 0.0, 0.0, 1.0); return; }
+
+    vec3 P = viewPosFromLinearDepth(vUV, z, proj00, proj11, perspective);
     vec3 N = octDecode(texture(u_sceneGBuffer, vUV).rg);
-    vec3 V = normalize(-P);
+    vec3 V = perspective ? normalize(-P) : vec3(0.0, 0.0, 1.0);
 
-    // World radius -> screen-space UV radius at this depth; cap the near-camera
-    // blowup so a surface right at the lens does not sample the whole screen.
-    float radiusUV = min(u_radius * u_proj11 / (2.0 * max(-P.z, 1e-3)), 0.25);
+    // World radius -> per-axis UV radius, true at any aspect. The cap keeps a
+    // surface at the lens from sampling the whole screen.
+    float depthScale   = perspective ? max(-P.z, 1e-3) : 1.0;
+    float radiusUV     = min(u_radius * proj11 / (2.0 * depthScale), 0.25);
+    vec2  radiusAxisUV = radiusUV * vec2(proj00 / proj11, 1.0);
 
-    float noise = interleavedGradient(gl_FragCoord.xy);
+    float noise      = effectNoise(gl_FragCoord.xy, NOISE_GTAO);
     float visibility = 0.0;
-    vec3  bent      = vec3(0.0);  // average unoccluded direction, accumulated per slice
+    vec3  bent       = vec3(0.0);  // average unoccluded direction, accumulated per slice
 
     for (int s = 0; s < SLICES; ++s) {
         float phi = (float(s) + noise) * (PI / float(SLICES));
         vec2  dir = vec2(cos(phi), sin(phi));
 
-        // Slice plane = span(V, dir). Project the normal into it and find its
-        // signed angle n relative to V.
+        // Slice plane = span(V, dir); n is the projected normal's signed angle from V.
         vec3  dir3     = vec3(dir, 0.0);
         vec3  sliceN   = cross(dir3, V);
         float sliceLen = length(sliceN);
@@ -87,46 +88,46 @@ void main() {
         float cHorizon2 = -1.0;  // +dir side
         for (int t = 1; t <= STEPS; ++t) {
             float st  = (float(t) - 0.5 * noise) / float(STEPS);
-            vec2  off = dir * radiusUV * st;
+            vec2  off = dir * radiusAxisUV * st;
+
+            // Far steps read coarse levels so fetches stay local; the constant
+            // puts the first coarser level at about ten pixels.
+            float mip = clamp(log2(length(off * u_camera.viewport)) - 3.3, 0.0, u_maxMip);
 
             vec2 uvP = vUV + off;
             if (all(greaterThanEqual(uvP, vec2(0.0))) && all(lessThanEqual(uvP, vec2(1.0)))) {
-                vec3  sh   = viewPosFromDepth(uvP, texture(u_sceneDepth, uvP).r, u_invProjection) - P;
+                float zP   = textureLod(u_depthMips, uvP, mip).r;
+                vec3  sh   = viewPosFromLinearDepth(uvP, zP, proj00, proj11, perspective) - P;
                 float len  = length(sh);
-                float c    = dot(sh, V) / max(len, 1e-4) - u_bias;
+                float c    = dot(sh, V) / max(len, 1e-4) - HORIZON_BIAS;
                 float fall = clamp(1.0 - len / u_radius, 0.0, 1.0);   // distant occluders fade out
                 cHorizon2  = max(cHorizon2, mix(-1.0, c, fall));
             }
             vec2 uvN = vUV - off;
             if (all(greaterThanEqual(uvN, vec2(0.0))) && all(lessThanEqual(uvN, vec2(1.0)))) {
-                vec3  sh   = viewPosFromDepth(uvN, texture(u_sceneDepth, uvN).r, u_invProjection) - P;
+                float zN   = textureLod(u_depthMips, uvN, mip).r;
+                vec3  sh   = viewPosFromLinearDepth(uvN, zN, proj00, proj11, perspective) - P;
                 float len  = length(sh);
-                float c    = dot(sh, V) / max(len, 1e-4) - u_bias;
+                float c    = dot(sh, V) / max(len, 1e-4) - HORIZON_BIAS;
                 float fall = clamp(1.0 - len / u_radius, 0.0, 1.0);
                 cHorizon1  = max(cHorizon1, mix(-1.0, c, fall));
             }
         }
 
-        // Convert horizon cosines to signed angles, clamp to the normal's
-        // hemisphere, and accumulate the cosine-weighted arc.
-        float h1 = n + max(-acos(clamp(cHorizon1, -1.0, 1.0)) - n, -HALF_PI);
-        float h2 = n + min( acos(clamp(cHorizon2, -1.0, 1.0)) - n,  HALF_PI);
+        // Horizon cosines to signed angles, clamped to the normal's hemisphere.
+        float h1 = n + max(-acos(clamp(cHorizon1, -1.0, 1.0)) - n, -0.5 * PI);
+        float h2 = n + min( acos(clamp(cHorizon2, -1.0, 1.0)) - n,  0.5 * PI);
         visibility += projNLen * (arc(h1, n) + arc(h2, n));
 
-        // Bent normal: the visible arc's bisector, in this slice's (V, ortho)
-        // basis, weighted like the visibility so occluded slices count less.
+        // The visible arc's bisector, weighted like the visibility.
         float bentAngle = (h1 + h2) * 0.5;
         bent += projNLen * (V * cos(bentAngle) + ortho * sin(bentAngle));
     }
 
     visibility /= float(SLICES);
 
-    // visibility >= 1 on open surfaces -> AO clamps to 1 (no false darkening);
-    // occluders pull it down. Intensity scales the occluded part, power adds bite.
-    float ao = clamp(1.0 - u_intensity * (1.0 - visibility), 0.0, 1.0);
-
     // Fall back to the geometric normal where every slice was degenerate.
     vec3 bentN = (dot(bent, bent) > 1e-8) ? normalize(bent) : N;
 
-    FragColor = vec4(pow(ao, u_power), octEncode(bentN), 1.0);
+    FragColor = vec4(encodeVisibility(visibility), octEncode(bentN), 1.0);
 }

@@ -12,11 +12,19 @@ namespace Vkm::Engine {
 /**
  * @brief Lightweight slot allocator that issues generation-safe handles.
  *
- * Manages a pool of indices with generation counters for stale-handle detection
- * and a free list for O(1) slot recycling. Does not store any per-slot data - only
- * the metadata needed for allocation, deallocation, and validation.
+ * Generation counters detect stale handles; a free list recycles in O(1). Stores
+ * no per-slot data.
  */
 class SlotAllocator {
+    public:
+        /**
+         * @brief The highest index allocateAt will claim.
+         *
+         * allocateAt grows the table to an index often read from a file or a
+         * datagram, so this bounds what a file or a peer can make it allocate.
+         */
+        static constexpr uint32_t MAX_CLAIMED_INDEX = 1u << 22;
+
     public:
         SlotAllocator() : m_generation({GenerationIndex{}}) {}
         ~SlotAllocator() = default;
@@ -27,26 +35,19 @@ class SlotAllocator {
         SlotAllocator(SlotAllocator && other) = delete;
         SlotAllocator& operator=(SlotAllocator && other) = delete;
 
-        /**
-         * @brief Swap internal state with another allocator.
-         *
-         * Lets the containing Scene support a staging-then-swap load path without
-         * breaking the no-copy/no-move invariant.
-         */
-        void swap(SlotAllocator& other) noexcept {
-            using std::swap;
-            swap(m_generation, other.m_generation);
-            swap(m_freeList,   other.m_freeList);
-            swap(m_liveCount,  other.m_liveCount);
-        }
-
     public:
         /**
          * @brief Allocate a new handle with a unique index and current generation.
-         * @return A StorageIndex handle with index > 0 and a valid generation.
+         *
+         * @param[out] recycled True when the slot came off the free list (used
+         *        before, or an allocateAt gap); false when freshly grown, so
+         *        nothing keyed by its index can be under it.
+         * @return A handle with index > 0.
          */
-        StorageIndex allocate() {
-            uint32_t idx = allocateSlot();
+        StorageIndex allocate(bool* recycled = nullptr) {
+            bool reused = false;
+            const uint32_t idx = allocateSlot(reused);
+            if (recycled) *recycled = reused;
             m_generation[idx].setAlive(true);
             ++m_liveCount;
             return StorageIndex{idx, m_generation[idx].generation()};
@@ -55,10 +56,9 @@ class SlotAllocator {
         /**
          * @brief Free a handle, bumping its generation and recycling the slot.
          *
-         * Must be alive (asserts). A handle that is not is refused rather than
-         * acted on, because the damage is not confined to the caller: freeing a
-         * slot twice underflows m_liveCount, and size() is what the prefab and
-         * override walks bound their iteration by.
+         * A dead handle asserts and is refused: freeing twice underflows m_liveCount.
+         *
+         * @param id Live handle to free.
          */
         void free(StorageIndex id) {
             VKM_ASSERT(has(id), "SlotAllocator::free called with invalid handle");
@@ -71,8 +71,8 @@ class SlotAllocator {
         }
 
         /**
-         * @brief Test whether a handle is still valid (alive with matching generation).
-         * @param id The handle to validate.
+         * @brief Test whether a handle is still valid.
+         * @param id Handle to validate.
          * @return True if alive and generation matches.
          */
         bool has(StorageIndex id) const {
@@ -83,20 +83,11 @@ class SlotAllocator {
         }
 
         /**
-         * @brief Number of currently live (allocated and not freed) slots.
-         */
-        size_t size() const { return m_liveCount; }
-
-        /**
          * @brief Rebuild the handle naming a sparse slot, generation included.
          *
-         * Total, with the same bounds tolerance as isAliveAtIndex below: an
-         * index past the allocator's reach yields the null handle instead of
-         * reading out of bounds. A slot that is in reach but dead yields its
-         * real generation, which is what makes the handle compare unequal to
-         * the live one and fail has().
+         * A dead slot yields its real generation, so the handle fails has().
          *
-         * @param index The sparse slot index.
+         * @param index Sparse slot index.
          * @return The handle for that slot, null when the index is out of reach.
          */
         StorageIndex handleAt(uint32_t index) const {
@@ -107,9 +98,8 @@ class SlotAllocator {
         /**
          * @brief Check whether @p index currently holds a live slot.
          *
-         * Tolerant of indices past the allocator's reach - they report false
-         * rather than reading out of bounds. Slot 0 is reserved and always
-         * reports false.
+         * @param index Sparse slot index; out of reach is fine.
+         * @return True when that slot is live; never for slot 0.
          */
         bool isAliveAtIndex(uint32_t index) const {
             return index > 0
@@ -120,36 +110,29 @@ class SlotAllocator {
         /**
          * @brief Allocate a slot at a specific index.
          *
-         * Used by SceneSerializer so loaded entities keep the slot indices they
-         * had at save time (eliminates id-remap on Hierarchy::parent etc.).
+         * For a loader whose entities keep their saved slot indices. Gaps grown
+         * across go onto the free list. A claimed slot still in the free list
+         * is skipped when popped, not erased (a linear find per call).
          *
-         * Reaching a sparse index - entities saved at 1, 2, 6, ... - grows the
-         * table across the gap, and the dead placeholder slots that creates go
-         * onto the free list, so allocate() reuses the gap and size() counts
-         * only live slots. Left off it, every gap permanently leaks a slot and
-         * entityCount() over-reports for the life of the scene.
-         *
-         * The claimed slot may itself still be sitting in the free list. It is
-         * left there and skipped when it comes up rather than searched for and
-         * erased: erasing is a linear find plus a mid-vector shift per call,
-         * and a scene whose indices have gaps calls this once per entity with
-         * the gaps accumulating in the list - quadratic in entity count for any
-         * scene that has ever had something deleted.
-         *
-         * @param index Slot to claim; must be free and must not be slot 0.
-         * @return The handle for the newly live slot.
+         * @param index Slot to claim; must be free.
+         * @return The new handle, or null for slot 0, an index past
+         *         MAX_CLAIMED_INDEX (test for these: the index often comes from
+         *         outside the process), or a live slot (also asserts).
          */
         StorageIndex allocateAt(uint32_t index) {
-            VKM_ASSERT(index > 0, "SlotAllocator::allocateAt: slot 0 is reserved");
+            if (index == 0 || index > MAX_CLAIMED_INDEX) return {};
 
+            // Highest first, so popping from the back hands the gap out lowest first.
             const uint32_t oldSize = static_cast<uint32_t>(m_generation.size());
             while (m_generation.size() <= index) m_generation.push_back({});
-            for (uint32_t gap = oldSize; gap < index; ++gap) m_freeList.push_back(gap);
+            for (uint32_t gap = index; gap-- > oldSize;) m_freeList.push_back(gap);
 
-            VKM_ASSERT(!m_generation[index].alive(),
-                "SlotAllocator::allocateAt: slot %u already alive", index);
-            // Guarded as well as asserted: a release build refuses rather than
-            // handing out a slot two owners would then share.
+            VKM_ASSERT(
+                !m_generation[index].alive(),
+                "SlotAllocator::allocateAt: slot %u already alive",
+                index
+            );
+            // Guarded too, so without asserts two owners never share a slot.
             if (m_generation[index].alive()) return {};
 
             m_generation[index].setAlive(true);
@@ -160,8 +143,8 @@ class SlotAllocator {
         /**
          * @brief Invoke fn(index) for every currently-alive slot.
          *
-         * Index 0 is reserved as the null/invalid slot and is never yielded. Order
-         * is ascending by slot index (not allocation order).
+         * @tparam Fn Callable taking a uint32_t slot index.
+         * @param fn Called once per live slot, ascending by index; never slot 0.
          */
         template<typename Fn>
         void forEach(Fn&& fn) const {
@@ -171,50 +154,78 @@ class SlotAllocator {
         }
 
         /**
-         * @brief Reset every slot to dead in one pass, bumping generations
-         * so any outstanding handles correctly compare as stale.
-         *
-         * O(slots) - used by Scene::clear for total reset, far cheaper than
-         * iterating live entities and free()-ing each one when the goal is
-         * to drop everything. Slot 0 stays reserved (untouched).
+         * @brief Reset every slot to dead, bumping generations so outstanding handles go stale.
          */
         void clear() {
             m_freeList.clear();
             m_freeList.reserve(m_generation.size());
-            for (uint32_t i = 1; i < m_generation.size(); ++i) {
+            // Highest first, so slot 1 comes out next, as from a new allocator.
+            for (uint32_t i = static_cast<uint32_t>(m_generation.size()); i-- > 1;) {
                 if (m_generation[i].alive()) {
                     m_generation[i].setAlive(false);
                     m_generation[i].bumpGeneration();
                 }
-                m_freeList.push_back(i);   // dead either way, so re-allocatable
+                m_freeList.push_back(i);
             }
             m_liveCount = 0;
         }
+
+        /**
+         * @brief Swap internal state with another allocator.
+         *
+         * For Scene's staging-then-swap load, without copying or moving.
+         *
+         * @param other Allocator to trade state with.
+         */
+        void swap(SlotAllocator& other) noexcept {
+            using std::swap;
+            swap(m_generation, other.m_generation);
+            swap(m_freeList,   other.m_freeList);
+            swap(m_liveCount,  other.m_liveCount);
+        }
+
+        /**
+         * @brief Number of live slots.
+         *
+         * @return The live slot count.
+         */
+        size_t size() const { return m_liveCount; }
+
+        /**
+         * @brief Number of slots the table spans, live or free, slot 0 included.
+         *
+         * @return One past the highest slot ever handed out.
+         */
+        size_t extent() const { return m_generation.size(); }
 
     private:
         /**
          * @brief Obtain a free slot index, recycling first.
          *
+         * @param[out] reused Whether the index came off the free list.
          * @return The index of an allocatable slot.
          */
-        uint32_t allocateSlot() {
-            // Skip anything allocateAt claimed while it sat in the list. Each
-            // stale entry is discarded once, so the scan stays amortised O(1).
+        uint32_t allocateSlot(bool& reused) {
+            // Skip slots allocateAt claimed; each is discarded once, so amortised O(1).
             while (!m_freeList.empty()) {
                 const uint32_t idx = m_freeList.back();
                 m_freeList.pop_back();
-                if (!m_generation[idx].alive()) return idx;
+                if (!m_generation[idx].alive()) {
+                    reused = true;
+                    return idx;
+                }
             }
 
-            uint32_t idx = static_cast<uint32_t>(m_generation.size());
+            reused = false;
+            const uint32_t idx = static_cast<uint32_t>(m_generation.size());
             m_generation.push_back({});
             return idx;
         }
 
     private:
-        std::vector<GenerationIndex> m_generation; ///< Per-slot alive flag + generation counter
-        std::vector<uint32_t> m_freeList;          ///< Recycled slot indices; may hold slots allocateAt has since claimed
-        size_t m_liveCount = 0;                    ///< Live slots, tracked rather than derived from the free list
+        std::vector<GenerationIndex> m_generation;
+        std::vector<uint32_t> m_freeList;   ///< May hold slots allocateAt has since claimed.
+        size_t m_liveCount = 0;
 };
 
 } // namespace Vkm::Engine

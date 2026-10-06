@@ -1,39 +1,73 @@
 #pragma once
 
-#include <imgui.h>
-
 namespace Vkm::Engine {
 
 struct EditorContext;
 
 /**
- * @brief Floating in-viewport tool box (bottom-left), Unity/Unreal style.
+ * @brief The viewport's own controls: the tool strip and the view bar.
  *
- * Compact button strip for switching the active manipulation tool
- * (Select / Move / Rotate / Scale), toggling Local/World space and snap,
- * and acting on the current selection (duplicate / focus / delete).
- * Drawn inside the viewport child window, on top of the 3D scene.
+ * Both sizes are fixed, so the overlays around them are placed without waiting a frame.
  */
 class ViewportToolbar {
     public:
+        ViewportToolbar() = default;
+        ~ViewportToolbar() = default;
+
+        ViewportToolbar(const ViewportToolbar& other) = delete;
+        ViewportToolbar& operator=(const ViewportToolbar& other) = delete;
+
+        ViewportToolbar(ViewportToolbar && other) = delete;
+        ViewportToolbar& operator=(ViewportToolbar && other) = delete;
+
+    public:
+        /**
+         * @brief Draw the tool strip (tools, space, snap) down the viewport's left edge.
+         *
+         * @param ec The frame's editor context.
+         */
         void draw(EditorContext& ec);
 
         /**
-         * @brief Small top-left viewport overlay: the shading/debug view
-         * dropdown (RenderMode) - a quick switch without opening the Render
-         * Settings window.
+         * @brief Draw the view bar in the viewport's top-right corner.
+         *
+         * The RenderMode, the camera looked through, and Frame All and Focus.
+         *
+         * @param ec The frame's editor context.
          */
-        void drawViewMode(EditorContext& ec);
+        void drawViewBar(EditorContext& ec);
 
         /**
-         * @brief True while the mouse is over the toolbar (so the viewport does not
-         * also treat the click as a pick / camera input).
+         * @brief Whether the mouse was over the tool strip or the view bar as last drawn.
+         *
+         * @return True over either, so the viewport does not also take the click.
          */
-        bool isHovered() const { return m_hovered || m_viewModeHovered; }
+        bool isHovered() const { return m_hovered || m_viewBarHovered; }
+
+        /**
+         * @brief The tool strip's outer width.
+         *
+         * @return Screen pixels.
+         */
+        static float toolStripWidth();
+
+        /**
+         * @brief The view bar's outer width.
+         *
+         * @return Screen pixels.
+         */
+        static float viewBarWidth();
+
+        /**
+         * @brief How far down the viewport the view bar reaches, inset included.
+         *
+         * @return Screen pixels from the viewport's top edge.
+         */
+        static float viewBarBottom();
 
     private:
-        bool m_hovered = false;          ///< Tool strip hovered this frame.
-        bool m_viewModeHovered = false;  ///< View-mode overlay hovered this frame.
+        bool m_hovered        = false;  ///< Tool strip.
+        bool m_viewBarHovered = false;  ///< View bar.
 };
 
 } // namespace Vkm::Engine

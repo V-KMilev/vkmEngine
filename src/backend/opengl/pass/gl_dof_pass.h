@@ -1,20 +1,15 @@
 #pragma once
 
-#include <memory>
+#include "gl_shader.h"
 
 #include "gl_pass.h"
-
-namespace Vkm::GL {
-    class Shader;
-}
 
 namespace Vkm::Engine {
 
 /**
  * @brief Depth of field: a circle-of-confusion disk blur over the resolved scene.
  *
- * Fullscreen, using the same scratch ping-pong as fog-apply. Driven by the
- * active camera's focus distance + DoF amount; a no-op when the amount is zero.
+ * Fullscreen, through the colour chain's ping-pong; a no-op when the camera's DoF amount is zero.
  */
 class GLDoFPass : public GLPass {
     public:
@@ -27,10 +22,11 @@ class GLDoFPass : public GLPass {
         GLDoFPass(GLDoFPass && other) = delete;
         GLDoFPass& operator=(GLDoFPass && other) = delete;
 
+    public:
         void execute(GLFrameContext& ctx) override;
 
     private:
-        std::unique_ptr<Vkm::GL::Shader> m_shader;
+        Vkm::GL::Shader m_shader;
 };
 
 } // namespace Vkm::Engine

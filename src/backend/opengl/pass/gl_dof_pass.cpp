@@ -5,7 +5,7 @@
 
 #include "gl_shader.h"
 #include "gl_context.h"
-#include "data/gl_screen_triangle.h"
+#include "gl_screen_triangle.h"
 
 #include "gl_frame_context.h"
 #include "gl_target.h"
@@ -14,13 +14,8 @@
 
 namespace Vkm::Engine {
 
-namespace {
-// Blur radius (pixels) at full circle of confusion.
-constexpr float MAX_BLUR_RADIUS = 12.0f;
-} // namespace
-
 GLDoFPass::GLDoFPass()
-    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/dof")) {}
+    : m_shader("shaders/dof") {}
 
 GLDoFPass::~GLDoFPass() = default;
 
@@ -28,22 +23,18 @@ void GLDoFPass::execute(GLFrameContext& ctx) {
     const RenderView& view = ctx.view;
     if (view.camera.dofAmount <= 0.0f) return;
 
-    // Into the free scratch while sampling the current colour, then flip the
-    // chain.
+    // Into the free scratch while sampling the current colour, then flip the chain.
     ctx.colorDst->bind(ctx.gl);
-    beginFullscreen(ctx.gl);
+    ctx.gl.setDepthTest(false);
 
-    m_shader->bind();
-    ctx.colorSrc->bindColor(GLBindings::PostTextureSlots::SCENE_COLOR);
-    ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SCENE_DEPTH);
+    m_shader.bind();
+    ctx.colorSrc->bindTexture(GLTarget::Attachment::Color, GLBindings::PostTextureSlots::SCENE_COLOR);
+    ctx.sceneHDR.bindTexture(GLTarget::Attachment::Depth, GLBindings::PostTextureSlots::SCENE_DEPTH);
 
-    m_shader->setUniformMatrix4fv("u_projection", view.camera.projection);
-    m_shader->setUniform1f("u_focusDistance", view.camera.focusDistance);
-    m_shader->setUniform1f("u_amount",        view.camera.dofAmount);
-    m_shader->setUniform1f("u_maxRadius",     MAX_BLUR_RADIUS);
-    m_shader->setUniform2f("u_texel",
-                           1.0f / static_cast<float>(view.viewportWidth),
-                           1.0f / static_cast<float>(view.viewportHeight));
+    m_shader.setUniform1f("u_focusDistance", view.camera.focusDistance);
+    m_shader.setUniform1f("u_amount",        view.camera.dofAmount);
+    // A share of the picture's height, so a lens looks the same at 1080p and at 4K.
+    m_shader.setUniform1f("u_maxRadius", view.camera.dofMaxBlur * static_cast<float>(view.viewportHeight));
 
     ctx.screenTri.draw();
 

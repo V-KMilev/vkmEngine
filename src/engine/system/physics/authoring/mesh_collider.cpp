@@ -2,101 +2,102 @@
 
 #include "system/physics/authoring/mesh_collider.h"
 
+#include <vector>
+
 #include "logger.h"
 
 #include "resource/asset/mesh_asset.h"
+#include "resource/resource_manager.h"
 #include "system/physics/collision/mesh_bvh.h"
-#include "system/physics/tolerance.h"
 
 namespace Vkm::Engine {
 
-uint32_t addMeshCollider(Collider& collider, const MeshAsset& mesh,
-                         const glm::vec3& scale) {
-    if (mesh.indices.size() < 3) return 0;
+namespace {
 
-    // One mesh part per collider, enforced rather than described: the tree below
-    // spans a single triangle range, so a second part would be collided through
-    // the first one's tree. Refused rather than replacing what is there.
+const ColliderPart* meshPartOf(const Collider& collider) {
     for (const ColliderPart& part : collider.parts) {
-        if (part.shape != ColliderShape::Mesh) continue;
-        LOG_WARNING("addMeshCollider: this collider already has a mesh part, "
-                    "and one hierarchy spans one part; the second is refused");
-        return 0;
+        if (part.shape == ColliderShape::Mesh) return &part;
     }
+    return nullptr;
+}
 
-    const uint32_t first = static_cast<uint32_t>(collider.meshPoints.size());
+/// Every whole triangle of @p mesh, scaled, three corners each.
+std::vector<glm::vec3> trianglesOf(const MeshAsset& mesh, const glm::vec3& scale) {
+    std::vector<glm::vec3> points;
     const size_t triangles = mesh.indices.size() / 3;
-
-    collider.meshPoints.reserve(collider.meshPoints.size() + triangles * 3);
+    points.reserve(triangles * 3);
     for (size_t t = 0; t < triangles; ++t) {
         bool whole = true;
         for (size_t c = 0; c < 3; ++c) {
-            const uint32_t index = mesh.indices[t * 3 + c];
-            if (index >= mesh.vertices.size()) { whole = false; break; }
+            if (mesh.indices[t * 3 + c] >= mesh.vertices.size()) {
+                whole = false;
+                break;
+            }
         }
-        // A triangle naming a vertex the mesh does not have would put a corner
-        // at the origin and a face across the level; dropped, with the two
-        // corners that were fine, since a partial triangle is not one.
+        // An out-of-range index would put a corner at the origin; the whole triangle is dropped.
         if (!whole) continue;
 
         for (size_t c = 0; c < 3; ++c) {
-            const uint32_t index = mesh.indices[t * 3 + c];
-            collider.meshPoints.push_back(mesh.vertices[index].position * scale);
+            points.push_back(mesh.vertices[mesh.indices[t * 3 + c]].position * scale);
         }
     }
+    return points;
+}
 
-    const uint32_t added =
-        static_cast<uint32_t>(collider.meshPoints.size()) - first;
-    if (added < 3) {
-        collider.meshPoints.resize(first);
+} // namespace
+
+uint32_t addMeshCollider(
+    Collider& collider,
+    MeshHandle mesh,
+    const ResourceManager& resources,
+    const glm::vec3& scale
+) {
+    if (meshPartOf(collider)) {
+        LOG_WARNING(
+            "addMeshCollider: this collider already has a mesh part, and a "
+            "collider holds one set of triangles; the second is refused"
+        );
         return 0;
     }
 
     ColliderPart part;
-    part.shape = ColliderShape::Mesh;
-    part.meshFirst = first;
-    part.meshCount = added;
+    part.shape     = ColliderShape::Mesh;
+    part.mesh      = mesh;
+    part.meshScale = scale;
     collider.parts.push_back(part);
+    syncMeshCollider(collider, resources);
 
-    rebuildMeshBvh(collider);
-    return added / 3;
+    if (collider.meshPoints.empty()) {
+        collider.parts.pop_back();
+        collider.meshBuiltFrom = MeshColliderSource{};
+        return 0;
+    }
+    return static_cast<uint32_t>(collider.meshPoints.size() / 3);
 }
 
-void rebuildMeshBvh(Collider& collider) {
-    // The hierarchy spans one mesh part, so a collider is allowed one. Two
-    // would need a tree apiece and a part-to-tree mapping, for a shape whose
-    // whole point is being the single piece of static geometry a body sits on.
-    ColliderPart* mesh = nullptr;
-    for (ColliderPart& part : collider.parts) {
-        if (part.shape != ColliderShape::Mesh) continue;
-        mesh = &part;
-        break;
-    }
-    if (!mesh || mesh->meshCount < 3) {
-        collider.meshNodes.clear();
-        return;
-    }
+bool syncMeshCollider(Collider& collider, const ResourceManager& resources) {
+    const ColliderPart* part  = meshPartOf(collider);
+    const MeshAsset*    asset = part ? resources.tryGet(part->mesh) : nullptr;
 
-    // Bounds-checked like every other reader of this span: a part whose range
-    // runs past the buffer describes triangles that are not there, and slicing
-    // to it walks off the end rather than answering nothing.
-    const size_t last = static_cast<size_t>(mesh->meshFirst) + mesh->meshCount;
-    if (last > collider.meshPoints.size()) {
-        collider.meshNodes.clear();
-        return;
+    MeshColliderSource source;
+    if (asset) {
+        source.uid     = asset->uid();
+        source.version = asset->version();
+        source.scale   = part->meshScale;
+    }
+    const MeshColliderSource& built = collider.meshBuiltFrom;
+    if (source.uid == built.uid && source.version == built.version && source.scale == built.scale) {
+        return false;
     }
 
-    // The build reorders, so the triangles are lifted out, sorted and put back
-    // rather than sorted in place across a buffer other parts also index into.
-    std::vector<glm::vec3> triangles(
-        collider.meshPoints.begin() + mesh->meshFirst,
-        collider.meshPoints.begin() + mesh->meshFirst + mesh->meshCount);
+    collider.meshBuiltFrom = source;
+    collider.meshPoints.clear();
+    collider.meshNodes.clear();
+    if (!asset) return true;
 
-    collider.meshNodes = buildMeshBvh(triangles);
-
-    for (uint32_t i = 0; i < mesh->meshCount; ++i) {
-        collider.meshPoints[mesh->meshFirst + i] = triangles[i];
-    }
+    collider.meshPoints = trianglesOf(*asset, part->meshScale);
+    collider.meshNodes  = buildMeshBvh(collider.meshPoints);
+    return true;
 }
 
 } // namespace Vkm::Engine

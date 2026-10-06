@@ -1,26 +1,18 @@
 #pragma once
 
 #include "core/system.h"
+#include "debug/fault_latch.h"
 
 namespace Vkm::Engine {
 
 /**
- * @brief Places every entity carrying a BoneSocket on the bone it names, out of
- *        the pose SkeletalAnimationSystem published this frame.
+ * @brief Places every entity carrying a BoneSocket on its bone, from the pose SkeletalAnimationSystem
+ *        published this frame.
  *
- * Registered at SystemStage::Transform, ahead of HierarchySystem, and both
- * neighbours are load-bearing. After the pose, because `ctx.poses` is a
- * per-frame product of the Simulation stage and reading it from Simulation would
- * race the producer's registration order. Before the world resolve, because this
- * writes the socket's *local* Transform and lets HierarchySystem turn it into a
- * world matrix the same frame - writing its WorldTransform instead would trail
- * the character by a frame, and leave a muzzle flash parented under the socket
- * resolving against the frame before that.
- *
- * Placement is not gated on simulation time, for the reason composition is not:
- * scrubbing an Animator while paused has to move what the character is holding.
- *
- * A scene with no sockets pays one null storage check a frame.
+ * Runs in SystemStage::Transform: after the Simulation stage that produces `ctx.poses` (reading it there
+ * would race registration order), and ahead of HierarchySystem, which turns the *local* Transform written
+ * here into a world matrix the same frame. Not gated on simulation time: scrubbing an Animator has to
+ * move what the character holds.
  */
 class BoneSocketSystem : public System {
     public:
@@ -38,36 +30,21 @@ class BoneSocketSystem : public System {
 
     private:
         /**
-         * @brief What this frame's pass ran into, so a latch clears once the
-         *        fault it named is gone instead of staying stuck after a fix.
-         */
-        struct FaultsSeen {
-            bool noPose    = false;
-            bool unrooted  = false;
-            bool noBone    = false;
-        };
-
-        /**
          * @brief Write every socket's local Transform from its bone.
          *
-         * The whole pass lives here so update() has a single place to write the
-         * latches from: an early exit - no sockets at all - clears them like any
-         * other frame, which is what stops a fault that has gone away from
-         * suppressing its own next report.
-         *
-         * @param ctx Frame context: the scene to walk, the assets the rigs
-         *        resolve against, and this frame's pose.
-         * @param seen Collects the faults this frame ran into.
+         * @param ctx Scene, assets and this frame's pose.
          */
-        void placeSockets(FrameContext& ctx, FaultsSeen& seen);
+        void placeSockets(FrameContext& ctx);
 
     private:
-        // Edge latches, so each fault is named once per gap and not once a
-        // frame. All three are silent on screen: an unplaced socket stays where
-        // it last was, which for a moved one is a plausible-looking lie.
-        bool m_noPoseLogged   = false;  ///< Nothing posed the rig this socket hangs off.
-        bool m_unrootedLogged = false;  ///< Not a direct child of an entity carrying an Animator.
-        bool m_noBoneLogged   = false;  ///< The rig has no bone of that name.
+        // Each is silent on screen (an unplaced socket stays where it was), so each is logged; one latch
+        // per fault, so one never silences another.
+        FaultLatch m_noPublishedPose;  ///< No pose was published this frame.
+        FaultLatch m_noTransform;      ///< The socket entity has no Transform to place.
+        FaultLatch m_unrooted;         ///< Not a direct child of an entity carrying an Animator.
+        FaultLatch m_noSkeleton;       ///< The rig's Animator names no live skeleton.
+        FaultLatch m_bonelessSkeleton; ///< The rig's skeleton has no bones.
+        FaultLatch m_noBone;           ///< The rig has no bone of that name.
 };
 
 } // namespace Vkm::Engine

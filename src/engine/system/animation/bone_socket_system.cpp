@@ -24,17 +24,18 @@ namespace Vkm::Engine {
 namespace {
 
 const char* nameOf(const Scene& scene, EntityId entity) {
-    return scene.has<Name>(entity) ? scene.get<Name>(entity).value : "<unnamed>";
+    const Name* name = scene.tryGet<Name>(entity);
+    return name ? name->value : "<unnamed>";
 }
 
 /**
  * @brief Resolve a socket's bone index, memoising it on the socket.
  *
- * Re-runs when either half of the pairing changes - a different rig, or a
- * different bone name - so SkeletonAsset::indexOf stays the once-per-pairing
- * call it says it is rather than a hundred string compares per socket per
- * frame. Failure is memoised too: a name the rig does not carry resolves to -1
- * once, instead of rescanning the whole bone list every frame to fail again.
+ * Failure is memoised too, so a missing name is not rescanned every frame.
+ *
+ * @param socket Socket whose boneIndex is brought up to date.
+ * @param rig Skeleton the index is resolved against.
+ * @param skeleton The asset @p rig names.
  */
 void resolveBone(BoneSocket& socket, SkeletonHandle rig, const SkeletonAsset& skeleton) {
     if (socket.resolvedRig == rig && socket.resolvedName == socket.bone) return;
@@ -49,32 +50,31 @@ void resolveBone(BoneSocket& socket, SkeletonHandle rig, const SkeletonAsset& sk
 void BoneSocketSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("BoneSocketSystem");
 
-    FaultsSeen seen;
-    placeSockets(ctx, seen);
+    placeSockets(ctx);
 
-    // Each latch holds only while its fault is still there, so a socket that is
-    // fixed and then broken again is reported again - which is why placeSockets
-    // reports into seen and every exit it takes lands on these three lines.
-    m_noPoseLogged   = seen.noPose;
-    m_unrootedLogged = seen.unrooted;
-    m_noBoneLogged   = seen.noBone;
+    // Here rather than in placeSockets, so every exit it takes closes the pass.
+    m_noPublishedPose.endPass();
+    m_noTransform.endPass();
+    m_unrooted.endPass();
+    m_noSkeleton.endPass();
+    m_bonelessSkeleton.endPass();
+    m_noBone.endPass();
 }
 
-void BoneSocketSystem::placeSockets(FrameContext& ctx, FaultsSeen& seen) {
+void BoneSocketSystem::placeSockets(FrameContext& ctx) {
     Scene& scene = ctx.scene;
 
     auto* sockets = scene.storage<BoneSocket>();
     if (!sockets || sockets->size() == 0) return;
 
-    // A scheduling fault rather than an authoring one, and it disables every
-    // socket in the scene at once, so it is named here rather than per entity.
+    // A scheduling fault that disables every socket at once, so named here rather than per entity.
     if (!ctx.poses) {
-        seen.noPose = true;
-        if (!m_noPoseLogged) {
-            LOG_WARNING("%zu bone socket(s) but no pose was published this frame - "
-                        "SkeletalAnimationSystem has to run before BoneSocketSystem",
-                        sockets->size());
-            m_noPoseLogged = true;
+        if (m_noPublishedPose.report()) {
+            LOG_WARNING(
+                "%zu bone socket(s) but no pose was published this frame - "
+                "SkeletalAnimationSystem has to run before BoneSocketSystem",
+                sockets->size()
+            );
         }
         return;
     }
@@ -86,72 +86,82 @@ void BoneSocketSystem::placeSockets(FrameContext& ctx, FaultsSeen& seen) {
         BoneSocket& socket    = sockets->dataAt(i);
         const EntityId entity = scene.entityAt(sockets->keyAt(i));
 
-        if (!scene.has<Transform>(entity)) {
-            seen.unrooted = true;
-            if (!m_unrootedLogged) {
-                LOG_WARNING("Bone socket '%s' has no Transform to place",
-                            nameOf(scene, entity));
-                m_unrootedLogged = true;
+        Transform* placed = scene.tryGet<Transform>(entity);
+        if (!placed) {
+            if (m_noTransform.report()) {
+                LOG_WARNING("Bone socket '%s' has no Transform to place", nameOf(scene, entity));
             }
             continue;
         }
 
-        // The parent has to be the rig: this writes a local transform, and
-        // HierarchySystem's parentWorld * local only reaches the bone when the
-        // parent's world matrix is the frame the pose was composed in.
-        const EntityId rig = scene.has<Hierarchy>(entity)
-            ? scene.get<Hierarchy>(entity).parent
-            : EntityId{};
-        if (!rig || !scene.has<Animator>(rig)) {
-            seen.unrooted = true;
-            if (!m_unrootedLogged) {
-                LOG_WARNING("Bone socket '%s' is not a direct child of a rig - a socket hangs "
-                            "off the entity carrying the Animator, not off a mesh under it",
-                            nameOf(scene, entity));
-                m_unrootedLogged = true;
+        // parentWorld * local reaches the bone only when the parent's world matrix is the pose's frame.
+        const Hierarchy* link = scene.tryGet<Hierarchy>(entity);
+        const EntityId   rig  = link ? link->parent : EntityId{};
+
+        const Animator* animator = scene.tryGet<Animator>(rig);
+        if (!animator) {
+            if (m_unrooted.report()) {
+                LOG_WARNING(
+                    "Bone socket '%s' is not a direct child of a rig - a socket hangs "
+                    "off the entity carrying the Animator, not off a mesh under it",
+                    nameOf(scene, entity)
+                );
             }
             continue;
         }
 
-        const Animator& animator = scene.get<Animator>(rig);
-        const PoseSlice* slice   = ctx.poses->sliceOf(rig.slot());
-        if (!slice || !animator.skeleton || !resources.isAlive(animator.skeleton)) {
-            seen.noPose = true;
-            if (!m_noPoseLogged) {
-                LOG_WARNING("Bone socket '%s' hangs off rig '%s', which nothing posed this "
-                            "frame - it stays where it last was",
-                            nameOf(scene, entity), nameOf(scene, rig));
-                m_noPoseLogged = true;
+        if (!animator->skeleton || !resources.isAlive(animator->skeleton)) {
+            if (m_noSkeleton.report()) {
+                LOG_WARNING(
+                    "Bone socket '%s' hangs off rig '%s', whose Animator names no "
+                    "skeleton - it stays where it last was",
+                    nameOf(scene, entity),
+                    nameOf(scene, rig)
+                );
             }
             continue;
         }
 
-        const SkeletonAsset& skeleton = resources.get(animator.skeleton);
-        resolveBone(socket, animator.skeleton, skeleton);
+        const SkeletonAsset& skeleton = resources.get(animator->skeleton);
+        if (skeleton.bones.empty()) {
+            if (m_bonelessSkeleton.report()) {
+                LOG_WARNING(
+                    "Bone socket '%s' hangs off rig '%s', whose skeleton '%s' has no "
+                    "bones - it stays where it last was",
+                    nameOf(scene, entity),
+                    nameOf(scene, rig),
+                    skeleton.name().c_str()
+                );
+            }
+            continue;
+        }
 
-        // The slice was allocated for this rig, this frame, so an index that
-        // resolved against it is in range; the compare is what makes the read
-        // below a fact rather than an argument about ordering.
+        // No slice yet is not a fault: a rig spawned outside a tick is posed on the next one, and the
+        // socket holds its last place until then.
+        const PoseSlice* slice = ctx.poses->sliceOf(rig);
+        if (!slice) continue;
+
+        resolveBone(socket, animator->skeleton, skeleton);
+
         if (socket.boneIndex < 0 || static_cast<uint32_t>(socket.boneIndex) >= slice->count) {
-            seen.noBone = true;
-            if (!m_noBoneLogged) {
-                if (socket.bone.empty()) {
-                    LOG_WARNING("Bone socket '%s' names no bone - it stays where it is",
-                                nameOf(scene, entity));
-                } else {
-                    LOG_WARNING("Bone socket '%s' names bone '%s', which rig '%s' does not "
-                                "have - it stays where it is", nameOf(scene, entity),
-                                socket.bone.c_str(), skeleton.name().c_str());
-                }
-                m_noBoneLogged = true;
+            if (!m_noBone.report()) continue;
+            if (socket.bone.empty()) {
+                LOG_WARNING("Bone socket '%s' names no bone - it stays where it is", nameOf(scene, entity));
+            } else {
+                LOG_WARNING(
+                    "Bone socket '%s' names bone '%s', which rig '%s' does not "
+                    "have - it stays where it is",
+                    nameOf(scene, entity),
+                    socket.bone.c_str(),
+                    skeleton.name().c_str()
+                );
             }
             continue;
         }
 
         const glm::mat4& bone =
             ctx.poses->global()[slice->first + static_cast<uint32_t>(socket.boneIndex)];
-        scene.get<Transform>(entity) =
-            Transform::fromModelMatrix(bone * Transform::computeModelMatrix(socket.offset));
+        *placed = Transform::fromModelMatrix(bone * Transform::computeModelMatrix(socket.offset));
     }
 }
 

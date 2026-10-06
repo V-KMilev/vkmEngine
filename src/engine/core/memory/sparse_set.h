@@ -10,40 +10,39 @@
 namespace Vkm::Engine {
 
 /**
- * @brief Type-erased interface for SparseSet, enabling heterogeneous storage in registries.
+ * @brief Type-erased interface for SparseSet, so one registry holds every type.
  */
 class ISparseSet {
     public:
+        ISparseSet() = default;
         virtual ~ISparseSet() = default;
+
+        ISparseSet(const ISparseSet& other) = delete;
+        ISparseSet& operator=(const ISparseSet& other) = delete;
+
+        ISparseSet(ISparseSet && other) = delete;
+        ISparseSet& operator=(ISparseSet && other) = delete;
+
         /**
          * @brief Remove the element at the given key, if this set holds one.
-         *
-         * Presence test and removal in one dispatch: the only type-erased caller
-         * is the entity destroy walk, which cannot know which of the registered
-         * component sets hold the dying entity.
          *
          * @param key External sparse key.
          */
         virtual void removeIfPresent(uint32_t key) = 0;
-        virtual void compact() = 0;
+
         /**
-         * @brief Drop every element. Used by Scene::clear and shutdown
-         *        paths that want O(types) tear-down rather than
-         *        O(entities x types) one-element-at-a-time removal.
+         * @brief Release the sparse array's slack, keeping every live element.
+         *
+         * For after a bulk build (see Scene::compact).
          */
-        virtual void clear() = 0;
+        virtual void compact() = 0;
 };
 
 /**
  * @brief Dense-packed storage indexed by external uint32_t keys.
  *
- * Iteration is dense and cache-friendly; add, remove, contains and get are O(1).
- *
- * SparseSet does not manage slot allocation or generation counters - the
- * caller owns the key lifecycle (Scene pairs this with SlotAllocator for
- * entities; ResourceManager pairs it with a per-type allocator for assets).
- *
- * Removal is swap-and-pop.
+ * Dense iteration; O(1) add, remove, contains and get; swap-and-pop removal.
+ * The caller owns the key lifecycle and generations.
  *
  * @tparam T Element type to store.
  */
@@ -62,30 +61,26 @@ class SparseSet : public ISparseSet {
     public:
         /**
          * @brief Insert an element at the given key.
-         * @param key External sparse key. Must not be 0 or already present.
+         * @param key External sparse key; not 0, not already present.
          * @param value Element to insert.
-         * @return Reference to the stored element.
+         * @return The stored element.
          */
         T& add(uint32_t key, T && value)     { return addInternal(key, std::move(value)); }
         T& add(uint32_t key, const T& value) { return addInternal(key, value); }
 
         /**
          * @brief Remove the element at the given key via swap-and-pop.
-         * @param key External sparse key. Must be present (asserts).
+         * @param key External sparse key; must be present.
          */
         void remove(uint32_t key) {
             VKM_ASSERT(contains(key), "SparseSet::remove called with invalid key");
-            // Guarded as well as asserted, like Scene::destroyEntity: the assert
-            // is gone in release, and the line below would index m_data with
-            // whatever m_dataIndex held for a key never in the set.
+            // Guarded too: a build without asserts would index m_data with garbage.
             if (!contains(key)) return;
 
             uint32_t dataIdx = m_dataIndex[key];
             uint32_t lastIdx = static_cast<uint32_t>(m_data.size() - 1);
 
             if (dataIdx != lastIdx) {
-                // Move-assign covers both cases: for a trivially copyable T the
-                // compiler emits the same memcpy an explicit branch would.
                 m_data[dataIdx] = std::move(m_data[lastIdx]);
 
                 m_dataId[dataIdx]              = m_dataId[lastIdx];
@@ -100,7 +95,7 @@ class SparseSet : public ISparseSet {
         /**
          * @brief Remove the element at the given key if one is present.
          *
-         * @param key External sparse key; absent keys are a no-op.
+         * @param key External sparse key; absent is a no-op.
          */
         void removeIfPresent(uint32_t key) override {
             if (contains(key)) remove(key);
@@ -117,27 +112,29 @@ class SparseSet : public ISparseSet {
 
         /**
          * @brief Access the element at the given key.
-         * @param key External sparse key. Must be present (asserts).
-         * @return Reference to the stored element.
+         * @param key External sparse key; must be present.
+         * @return The stored element.
          */
-        T&       get(uint32_t key)       { VKM_ASSERT(contains(key), "SparseSet::get called with invalid key"); return m_data[m_dataIndex[key]]; }
-        const T& get(uint32_t key) const { VKM_ASSERT(contains(key), "SparseSet::get called with invalid key"); return m_data[m_dataIndex[key]]; }
+        T& get(uint32_t key) {
+            VKM_ASSERT(contains(key), "SparseSet::get called with invalid key");
+            return m_data[m_dataIndex[key]];
+        }
+
+        const T& get(uint32_t key) const {
+            VKM_ASSERT(contains(key), "SparseSet::get called with invalid key");
+            return m_data[m_dataIndex[key]];
+        }
 
     public:
         /**
          * @brief Iterate all live elements densely (no holes).
          *
-         * Calls fn(uint32_t key, T&) for each element in packed order.
+         * Do not add or remove while this runs: swap-and-pop skips the moved
+         * element, and an add can reallocate under @p fn. Collect keys and act
+         * afterwards.
          *
-         * The set must not be added to or removed from while this runs. Removal
-         * is swap-and-pop: it moves the last element into the hole, so removing
-         * the element the walk is standing on skips the one that was last, and
-         * an add can reallocate the dense array and leave the reference @p fn
-         * holds dangling. A caller that has to mutate collects the keys here
-         * and acts on them afterwards - which is what every mutating caller in
-         * the engine already does.
-         *
-         * @param fn Callable with signature void(uint32_t, T&).
+         * @tparam Fn Callable as void(uint32_t, T&).
+         * @param fn Called once per live element, with its key, in packed order.
          */
         template<typename Fn>
         void forEach(Fn&& fn) {
@@ -155,15 +152,17 @@ class SparseSet : public ISparseSet {
 
         /**
          * @brief Number of live elements.
+         *
+         * @return The dense array's length.
          */
         size_t size() const { return m_data.size(); }
 
         /**
-         * @brief Drop every element. The dense and sparse arrays empty;
-         *        their capacity is retained so a subsequent rebuild
-         *        doesn't re-pay allocation cost.
+         * @brief Drop every element.
+         *
+         * Capacity is kept, so a rebuild does not allocate again.
          */
-        void clear() override {
+        void clear() {
             m_data.clear();
             m_dataId.clear();
             std::fill(m_dataIndex.begin(), m_dataIndex.end(), EMPTY);
@@ -172,13 +171,9 @@ class SparseSet : public ISparseSet {
         /**
          * @brief Shrink the sparse array to fit only live keys, reclaiming wasted memory.
          *
-         * Two kinds of slack: entries past the highest live key, which a resize
-         * drops, and the geometric over-allocation any grown vector carries,
-         * which only shrink_to_fit drops. A scene load leaves mostly the second
-         * kind - it adds keys in ascending order and removes none - so the
-         * shrink is unconditional and the resize is the special case.
-         *
-         * The dense arrays are unaffected.
+         * Always shrinks, since a bulk build in ascending key order leaves mostly
+         * geometric over-allocation rather than entries past the highest key. The
+         * dense arrays are unaffected.
          */
         void compact() override {
             if (m_data.empty()) {
@@ -196,18 +191,18 @@ class SparseSet : public ISparseSet {
         /**
          * @brief Access the sparse key stored at a dense index.
          *
-         * Pairs with size() and dataAt() for index-based parallel iteration that
-         * avoids the forEach() callback.
+         * With size() and dataAt(), for index-based parallel iteration.
          *
-         * @param denseIndex Position in packed dense order (< size()).
-         * @return The external sparse key mapped to that dense slot.
+         * @param denseIndex Position in packed order (< size()).
+         * @return The key at that slot.
          */
         uint32_t keyAt(uint32_t denseIndex) const { return m_dataId[denseIndex]; }
+
         /**
          * @brief Access the element stored at a dense index.
          *
-         * @param denseIndex Position in packed dense order (< size()).
-         * @return Reference to the element in that dense slot.
+         * @param denseIndex Position in packed order (< size()).
+         * @return The element at that slot.
          */
         T&       dataAt(uint32_t denseIndex)       { return m_data[denseIndex]; }
         const T& dataAt(uint32_t denseIndex) const { return m_data[denseIndex]; }
@@ -218,7 +213,7 @@ class SparseSet : public ISparseSet {
         /**
          * @brief Grow the sparse array so it can index @p key.
          *
-         * @param key External sparse key that must become addressable.
+         * @param key Key that must become addressable.
          */
         void ensureCapacity(uint32_t key) {
             if (key >= m_dataIndex.size())
@@ -228,12 +223,10 @@ class SparseSet : public ISparseSet {
         /**
          * @brief Validate the key, emplace into the dense array, and wire up both mappings.
          *
-         * Shared implementation behind the public add() entry points.
-         *
-         * @tparam Args Constructor argument types forwarded to the element.
-         * @param key External sparse key to associate with the new element.
-         * @param args Arguments forwarded to T's constructor.
-         * @return Reference to the newly constructed element.
+         * @tparam Args Constructor argument types.
+         * @param key Key for the new element.
+         * @param args Forwarded to T's constructor.
+         * @return The new element.
          */
         template<typename... Args>
         T& addInternal(uint32_t key, Args&&... args) {
@@ -241,9 +234,7 @@ class SparseSet : public ISparseSet {
             VKM_ASSERT(key != 0, "SparseSet::add key 0 is reserved");
             ensureCapacity(key);
             VKM_ASSERT(!contains(key), "SparseSet::add key already present");
-            // Guarded as well as asserted, like remove() above: a release build
-            // would point the key at a second dense entry and strand the first.
-            // The element already there is the answer.
+            // Guarded too: without asserts the key would strand its first entry.
             if (contains(key)) return m_data[m_dataIndex[key]];
 
             uint32_t dataIdx = static_cast<uint32_t>(m_data.size());
@@ -256,9 +247,9 @@ class SparseSet : public ISparseSet {
         }
 
     private:
-        std::vector<uint32_t> m_dataIndex; ///< Sparse-to-dense mapping (EMPTY = absent)
-        std::vector<uint32_t> m_dataId;    ///< Dense-to-sparse reverse mapping
-        std::vector<T>        m_data;      ///< Dense: packed element storage
+        std::vector<uint32_t> m_dataIndex; ///< Sparse to dense; EMPTY = absent.
+        std::vector<uint32_t> m_dataId;    ///< Dense to sparse.
+        std::vector<T>        m_data;
 };
 
 } // namespace Vkm::Engine

@@ -1,25 +1,33 @@
-// Depth + G-buffer prepass: lay down opaque depth so the forward pass can
-// early-Z, and write a view-space normal for the G-buffer. Position must be bit-identical
-// to the forward vertex shader (same math + invariant) so the winning depth
-// matches under LEQUAL.
-layout (location = 0) in vec3 aPos;
-layout (location = 1) in vec3 aNormal;
-#include "../../_common/instancing.glsl"
-#include "../../_common/instancing_normal.glsl"
-#include "../../_common/camera.glsl"
-
-uniform mat4 u_view;   // world -> view, for the G-buffer normal
+// Depth + G-buffer prepass. Position must be bit-identical to the forward
+// vertex shader (same math + invariant) so depth matches under LEQUAL.
+// SKINNED (forward/prepass_skinned) poses position and normal by the bone palette first.
+layout(location = ATTR_POSITION) in vec3 aPos;
+layout(location = ATTR_NORMAL) in vec3 aNormal;
+#include "../../instancing.glsl"
+#ifdef SKINNED
+#include "../../skinning.glsl"
+#include "../../skinning_instanced.glsl"
+#endif
+#include "../../camera.glsl"
 
 out vec3 vViewNormal;
 
 invariant gl_Position;
 
 void main() {
-    vec4 worldPos = instanceModel() * vec4(aPos, 1.0);
+    const mat4 model = instanceModel();
+#ifdef SKINNED
+    const uint base = instanceSkinBase();
+    vec4 worldPos   = skinnedWorldPosition(model, base);
+    vec3 normal     = mat3(skinMatrix(base)) * aNormal;
+#else
+    vec4 worldPos   = model * vec4(aPos, 1.0);
+    vec3 normal     = aNormal;
+#endif
 
-    // World normal via the per-instance normal matrix, then into view space for the G-buffer.
-    vec3 worldN = instanceNormalMatrix() * aNormal;
-    vViewNormal = mat3(u_view) * worldN;
+    // The fragment stage normalises.
+    vec3 worldN = normalMatrix(model) * normal;
+    vViewNormal = mat3(u_camera.view) * worldN;
 
     gl_Position = u_camera.viewProjection * worldPos;
 }

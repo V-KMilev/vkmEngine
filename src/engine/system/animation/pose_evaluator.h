@@ -9,15 +9,10 @@ struct AnimationClipAsset;
 struct SkeletonAsset;
 
 /**
- * @brief The clips a rig reads this frame, and how much of each.
+ * @brief The clips a rig reads this frame, how much of each, and what a behavior adds on top.
  *
- * One, or two while a crossfade is in flight: the clip being left is sampled
- * alongside the one being entered, at its own playback head, because a blend
- * between two moving poses is what keeps a run-to-walk from freezing a foot.
- *
- * This struct is per-frame and the Animator is persisted, which is why the
- * fade fields on the component are transient: what is in flight this frame is
- * described here, not saved there.
+ * Two clips while a crossfade is in flight, each at its own playback head, so a blend between two moving
+ * poses does not freeze a foot.
  */
 struct PoseSample {
     const AnimationClipAsset* clip = nullptr;  ///< Clip playing; null holds the bind pose.
@@ -26,22 +21,24 @@ struct PoseSample {
     const AnimationClipAsset* from = nullptr;  ///< Clip being left; null when nothing is fading.
     float fromTime = 0.0f;                     ///< Its own playback head.
 
-    float weight = 1.0f;  ///< How much of `clip` is in the result: 0 is all `from`, 1 is all `clip`.
+    float weight = 1.0f;  ///< 0 is all `from`, 1 is all `clip`.
+
+    /**
+     * @brief The Animator's adjustments, applied after the blend; none when null.
+     *
+     * A view of the component's list: nothing may write that Animator while the sample is read
+     * (see SkeletalAnimationSystem::poseRigs).
+     */
+    const BoneAdjust* adjust      = nullptr;
+    uint32_t          adjustCount = 0;
 };
 
 /**
- * @brief The sweep a playback head made this frame: where it was, where it now
- *        is, and how far it actually went between the two.
+ * @brief The sweep a playback head made this frame.
  *
- * `to` is the head the Animator now carries - already wrapped, already clamped -
- * so a marker test built on it agrees exactly with the next frame's `from`,
- * which is the same float. That is what makes one crossing one event: the
- * arrival end of a sweep and the departure end of the next are the same value,
- * so neither a rounding step nor a wrap can put a marker in both or in neither.
- *
- * `travel` is signed and may exceed the clip's length, because a hitch or a
- * large time-scale can step a head over several whole loops. It is what
- * distinguishes standing still from having gone all the way round.
+ * `to` is the head the Animator now carries, already wrapped or clamped, so it is exactly the next
+ * frame's `from`. `travel` is signed and may exceed the clip's length (a hitch can step over whole
+ * loops); it tells standing still from going all the way round.
  */
 struct PlaybackStep {
     float from   = 0.0f;  ///< Head before the advance.
@@ -50,91 +47,78 @@ struct PlaybackStep {
 };
 
 /**
- * @brief Move @p animator's playback head(s) on by one frame, honouring loop and
- *        end of clip, and run down any fade in flight.
+ * @brief Move one playback head on and bring it back into its clip's range.
  *
- * Nothing moves while simulation time is stopped, so a time authored while paused
- * is not immediately overwritten. A fade in flight still runs down: a one-shot
- * that ends mid-blend would otherwise leave the character at a weight no field
- * names and nothing clears.
+ * Both ends are handled because `speed` may be negative. Wrapping is a floor-subtract, not fmod, because
+ * fmod of a negative time stays negative.
  *
- * Wrapping is a floor-subtract rather than a modulo, because a negative speed has
- * to come round to the end of the clip and fmod of a negative time stays
- * negative. A clip run to its end without looping stops rather than clamping, so
- * `playing` reports what actually happened.
+ * @param time Head to advance, in place.
+ * @param duration Clip length in seconds; 0 disables wrapping.
+ * @param delta Seconds to advance by, already scaled by the playback speed.
+ * @param looping Whether the clip wraps rather than stopping at its end.
+ * @return False when a non-looping clip has run out, the head clamped to the end it ran off.
+ */
+bool advanceHead(float& time, float duration, float delta, bool looping);
+
+/**
+ * @brief Put a one-shot head with nothing left to play in its direction back at the other end.
  *
- * The outgoing clip of a fade advances by the same delta but never stops the
- * animator, and holds its last frame if it runs out first. The fade counts down
- * in unscaled simulation seconds, so a blend length is a duration the caller can
- * predict rather than one `speed` moves.
+ * What lets a clip start backwards (a head at 0 with negative speed is already at its end), and a
+ * one-shot that ran out start over. For the playing head before it advances, never a fade's outgoing one.
  *
- * `Animator::playOnStart` is honoured here, on the first frame with simulation
- * time to spend, rather than at load: that is what makes a rig start on Play and
- * hold its pose in a scene that is only open.
+ * @param time Head to rewind, in place.
+ * @param duration Clip length in seconds; 0 leaves the head alone.
+ * @param delta The step about to be taken, already scaled by the playback speed.
+ * @param looping Whether the clip wraps; a looping head is never spent.
+ */
+void rewindSpentHead(float& time, float duration, float delta, bool looping);
+
+/**
+ * @brief Move @p animator's playback head(s) on by one frame and run down any fade in flight.
+ *
+ * Nothing moves while simulation time is stopped, so a time authored while paused survives. The
+ * outgoing clip advances by the same delta, never stops the animator, and holds its last frame if it
+ * runs out. The fade counts down in unscaled simulation seconds. `Animator::playOnStart` is honoured
+ * here, on the first frame with time to spend, so a rig starts on Play and holds in an open scene.
  *
  * @param animator Animator to advance, in place.
- * @param duration Length of the clip playing on it, in seconds; 0 disables wrapping.
+ * @param duration Length of the playing clip, seconds; 0 disables wrapping.
  * @param fromDuration Length of the clip being faded out of; 0 disables its wrapping.
- * @param simDelta Simulation seconds elapsed this frame.
- * @return The sweep the *playing* head made. A stopped animator, a paused frame
- *         and a zero speed all report no travel, which is what stops any of them
- *         from announcing a marker.
+ * @param simDelta Simulation seconds to advance by; 0 or less moves nothing.
+ * @return The sweep the *playing* head made; stopped, paused or zero speed reports no travel, so no
+ *         marker fires.
  */
 PlaybackStep advancePlayback(Animator& animator, float duration, float fromDuration, float simDelta);
 
 /**
  * @brief Whether @p step passed the instant @p marker names.
  *
- * The sweep is closed at the end it arrived at and open at the end it left, in
- * both directions: a head that lands exactly on a marker announces it, and
- * moving off again does not announce it a second time. Crossing it once more
- * means leaving and coming back.
- *
- * A step long enough to cover a whole loop announces every marker exactly once
- * rather than once per lap it skipped. The frame drew one pose, so it makes one
- * sound; replaying four laps' worth of footsteps into a single frame is the
- * burst a hitch would otherwise produce.
- *
- * Whether the clip loops is not asked, because @p step already says: a wrapped
- * sweep is one whose `to` lies behind its `from` in the direction of travel, and
- * a clamped one can never look like that.
+ * Closed at the end arrived at, open at the end left, either direction: landing on a marker announces
+ * it, moving off does not again. A step covering whole loops announces each marker once. A wrapped
+ * sweep is one whose `to` lies behind its `from` in the direction of travel, which a clamped one never
+ * does, so looping is not asked.
  *
  * @param step The sweep this frame's advance made.
- * @param marker Time the marker names, in seconds into the clip.
+ * @param marker Time the marker names, seconds into the clip.
  * @param duration Clip length in seconds; 0 makes every marker unreachable.
  * @return True when the marker should be announced this frame.
  */
 bool crossesMarker(const PlaybackStep& step, float marker, float duration);
 
 /**
- * @brief Sample @p sample's clips and compose the rig's pose, palette and
- *        bounds into @p out, in one forward sweep over the bones.
+ * @brief Sample @p sample's clips and compose the rig's pose, palette and bounds into @p out, in one
+ *        forward sweep over the bones.
  *
- * Free rather than a method on SkeletalAnimationSystem because it is a pure
- * function of the animation data, which is also what makes it checkable against
- * a hand-built skeleton at known times - a wrong multiply order looks entirely
- * plausible on screen.
+ * `parent < index` (findSkeletonFault) means a bone's parent is composed first, so no local array is
+ * kept. A crossfade blends the local TRS before composition, because blending composed matrices shortens
+ * limbs. A BoneAdjust lands on that local TRS after the blend; the parent's final matrix brings its
+ * model-space parts into the bone's frame.
  *
- * There is no intermediate array of local transforms: `parent < index` is a
- * validated format invariant, so a bone's parent is composed by the time the
- * bone is reached. A crossfade blends on that local TRS before composition,
- * because blending composed matrices pulls a limb toward the midpoint of two
- * world positions and shortens it.
- *
- * A clip whose per-bone table is not parallel to @p skeleton is bound to a
- * different rig: it is ignored and the bind pose stands, checked for both clips
- * independently so a bad outgoing clip cannot take the incoming one down.
- *
- * @param skeleton Rig being posed. Its three vectors are parallel and its bones
- *                 are ordered parent-before-child - both validated where a
- *                 skeleton is read or built, neither re-checked per frame here.
- * @param sample What to sample: one clip, or two and a weight.
+ * @param skeleton Rig being posed; must pass findSkeletonFault, which is not re-checked here.
+ * @param sample One clip, or two and a weight. Each must be this rig's and pass findClipFault, or be
+ *               null; not re-checked here.
  * @param out Slice to write, sized for the skeleton's bone count.
  */
-void composePose(
-    const SkeletonAsset& skeleton,
-    const PoseSample& sample,
-    const PoseWrite& out
-);
+void composePose(const SkeletonAsset& skeleton, const PoseSample& sample, const PoseWrite& out);
 
 } // namespace Vkm::Engine

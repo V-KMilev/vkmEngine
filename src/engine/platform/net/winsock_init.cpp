@@ -10,9 +10,7 @@ namespace Vkm::Engine {
 
 bool ensureWinsock() {
 #if defined(_WIN32)
-    // A function-local static, so the start happens once however many callers
-    // there are and whichever thread arrives first - the language guarantees
-    // that much, which is the whole reason this is not a counter.
+    // A function-local static: started once, whichever thread arrives first.
     static const bool started = []() {
         WSADATA data{};
         if (WSAStartup(MAKEWORD(2, 2), &data) == 0) return true;

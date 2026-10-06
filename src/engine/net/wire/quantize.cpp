@@ -1,5 +1,6 @@
 #include "net/wire/quantize.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace Vkm::Engine::Quantize {
@@ -7,23 +8,9 @@ namespace Vkm::Engine::Quantize {
 namespace {
 
 /**
- * @brief Bits one smallest-three component takes.
- *
- * Eleven holds a rotation to about a fifteenth of a degree at the worst
- * orientation. Nine was enough to look right on a body and was not: the error
- * is an angle, so what it costs grows with the thing being turned, and a
- * quarter of a degree across a sixty-metre floor moves its surface ten
- * centimetres. Two more bits per component is six bits a body.
- */
-constexpr uint32_t ROTATION_BITS = 11;
-
-/**
- * @brief A quaternion component's range is +/- 1/sqrt(2) once the largest is removed,
- * because if it were larger it would be the largest.
+ * @brief Range of a quaternion component other than the largest: +/- 1/sqrt(2).
  */
 constexpr float ROTATION_RANGE = 0.70710678f;
-
-constexpr uint32_t VELOCITY_BITS = 16;
 
 uint32_t toFixed(float value, float low, float step, uint32_t width) {
     const float  offset = (value - low) / step;
@@ -40,47 +27,43 @@ float fromFixed(uint32_t raw, float low, float step) {
 /**
  * @brief Steps either side of zero for a signed field @p width bits wide.
  *
- * One fewer than half the codes, so the levels are symmetric about a middle one
- * that is exactly zero. Spreading the codes evenly across the range instead
- * leaves the midpoint between two of them, and then zero - by far the most
- * common value a rotation or a velocity takes - is the one value that cannot be
- * said.
- */
-constexpr uint32_t signedLevels(uint32_t width) {
-    return (1u << (width - 1u)) - 1u;
-}
-
-/**
- * @brief Write @p value in [-@p range, @p range], with zero exact.
+ * One fewer than half the codes, so a middle code is exactly zero.
  *
- * The alternative, and what this replaced, put zero half a step from the
- * nearest code. For a rotation that is a permanent tilt of about a quarter of a
- * degree on everything a client is told about - unnoticeable on a crate and
- * ten centimetres of vertical error at the far corner of a sixty-metre floor,
- * which a character then falls through. For a velocity it is a body at rest
- * that reports drift, so a settled world never goes quiet.
+ * @param width Bits.
+ * @return Steps on each side of the zero code.
  */
-uint32_t toSigned(float value, float range, uint32_t width) {
-    const float    levels  = static_cast<float>(signedLevels(width));
-    const float    clamped = glm::clamp(value / range, -1.0f, 1.0f);
-    const int32_t  step    = static_cast<int32_t>(std::lround(clamped * levels));
-    return static_cast<uint32_t>(step + static_cast<int32_t>(signedLevels(width)));
-}
-
-/// Read back what toSigned wrote.
-float fromSigned(uint32_t raw, float range, uint32_t width) {
-    const int32_t step = static_cast<int32_t>(raw) - static_cast<int32_t>(signedLevels(width));
-    return (static_cast<float>(step) / static_cast<float>(signedLevels(width))) * range;
+constexpr int32_t signedLevels(uint32_t width) {
+    return static_cast<int32_t>((1u << (width - 1u)) - 1u);
 }
 
 } // namespace
 
+uint32_t toSigned(float value, float range, uint32_t width) {
+    const int32_t levels = signedLevels(width);
+    if (std::isnan(value)) return static_cast<uint32_t>(levels);
+    const float   clamped = glm::clamp(value / range, -1.0f, 1.0f);
+    const int32_t step    = static_cast<int32_t>(std::lround(clamped * static_cast<float>(levels)));
+    return static_cast<uint32_t>(step + levels);
+}
+
+float fromSigned(uint32_t raw, float range, uint32_t width) {
+    const int32_t levels = signedLevels(width);
+    // The top code is one toSigned never writes; a damaged packet still can.
+    const int32_t step = std::min(static_cast<int32_t>(raw) - levels, levels);
+    return (static_cast<float>(step) / static_cast<float>(levels)) * range;
+}
+
 void writePosition(BitWriter& out, float value) {
-    out.bits(toFixed(value, -WORLD_EXTENT, POSITION_STEP, positionBits()), positionBits());
+    const float bounded = std::isfinite(value)
+        ? std::min(std::max(value, -WORLD_EXTENT), WORLD_EXTENT)
+        : 0.0f;
+    out.bits(toFixed(bounded, -WORLD_EXTENT, POSITION_STEP, positionBits()), positionBits());
 }
 
 float readPosition(BitReader& in) {
-    return fromFixed(in.bits(positionBits()), -WORLD_EXTENT, POSITION_STEP);
+    // A corrupt packet can carry codes past +WORLD_EXTENT.
+    const float decoded = fromFixed(in.bits(positionBits()), -WORLD_EXTENT, POSITION_STEP);
+    return std::min(std::max(decoded, -WORLD_EXTENT), WORLD_EXTENT);
 }
 
 void writeRotation(BitWriter& out, const glm::quat& value) {
@@ -92,8 +75,7 @@ void writeRotation(BitWriter& out, const glm::quat& value) {
         if (std::fabs(parts[i]) > std::fabs(parts[largest])) largest = i;
     }
 
-    // q and -q name the same rotation, so the largest is written positive and
-    // its sign never has to travel.
+    // q and -q are the same rotation, so the largest's sign need not travel.
     const float flip = parts[largest] < 0.0f ? -1.0f : 1.0f;
 
     out.bits(largest, 2);
@@ -114,7 +96,7 @@ glm::quat readRotation(BitReader& in) {
         sum += parts[i] * parts[i];
     }
 
-    // The one that was left out, recovered from the unit length it must have.
+    // The largest, from the unit length.
     parts[largest] = std::sqrt(sum < 1.0f ? 1.0f - sum : 0.0f);
 
     return glm::normalize(glm::quat(parts[3], parts[0], parts[1], parts[2]));

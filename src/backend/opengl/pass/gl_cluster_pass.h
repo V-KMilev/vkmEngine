@@ -1,21 +1,15 @@
 #pragma once
 
-#include <memory>
+#include "gl_compute_shader.h"
 
 #include "gl_pass.h"
-
-namespace Vkm::GL {
-    class ComputeShader;
-}
 
 namespace Vkm::Engine {
 
 /**
- * @brief Forward+ light cull: dispatches the cluster-cull compute shader that
- * fills the per-cluster light lists the forward pass reads.
+ * @brief Forward+ light cull: a compute dispatch that fills the per-cluster light lists.
  *
- * Runs before the forward pass. Reads the light SSBO (bound by the backend),
- * then issues a shader-storage barrier so the forward pass sees the writes.
+ * Reads the light SSBO bound by GLBackend::render, then barriers so later reads see the writes.
  */
 class GLClusterPass : public GLPass {
     public:
@@ -28,10 +22,11 @@ class GLClusterPass : public GLPass {
         GLClusterPass(GLClusterPass && other) = delete;
         GLClusterPass& operator=(GLClusterPass && other) = delete;
 
+    public:
         void execute(GLFrameContext& ctx) override;
 
     private:
-        std::unique_ptr<Vkm::GL::ComputeShader> m_compute;
+        Vkm::GL::ComputeShader m_compute;
 };
 
 } // namespace Vkm::Engine

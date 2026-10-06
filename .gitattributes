@@ -21,3 +21,6 @@
 # a few KB, and LFS was never buying anything for them.
 assets/logo/** -filter -diff -merge -text
 assets/docs/** -filter -diff -merge -text
+
+# A batch file is read by cmd.exe, which wants CRLF line ends.
+*.cmd text eol=crlf

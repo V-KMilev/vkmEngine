@@ -1,0 +1,8 @@
+{
+  "name": "assets/bot.fbx:mesh1",
+  "source": {
+    "kind": "model",
+    "mesh": 1,
+    "path": "assets/bot.fbx"
+  }
+}

@@ -2,18 +2,18 @@
 
 #include "io/asset/asset_cook.h"
 
-#include "core/hash/fnv1a.h"
-
 #include <cmath>
 #include <cstring>
 #include <fstream>
 #include <memory>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 #include "logger.h"
 
+#include "core/fnv1a.h"
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/mesh_asset.h"
@@ -32,54 +32,30 @@ constexpr uint16_t KIND_SKELETON   = 3;
 constexpr uint16_t KIND_CLIP       = 4;
 constexpr uint16_t KIND_AUDIO      = 5;
 
-// The header is read/written field-by-field (never as a struct) so compiler
-// padding can't leak into the format: magic[4] + sentinel + kind + version +
-// recipeHash + payloadBytes.
-constexpr std::streamoff HEADER_BYTES = 4 + sizeof(uint32_t) + sizeof(uint16_t) * 2 + sizeof(uint64_t) * 2;
+// Field by field, never as a struct, so padding cannot leak into the format:
+// magic[4] + sentinel + kind + version + payloadBytes.
+constexpr std::streamoff HEADER_BYTES = 4 + sizeof(uint32_t) + sizeof(uint16_t) * 2 + sizeof(uint64_t);
 
-// Mesh body: boundsMin + boundsMax + vertexCount + indexCount + skinCount +
-// skinRadius + skeletonNameLen, then bulk vertices, indices, skin and the name.
+// Mesh body: boundsMin + boundsMax + vertexCount + indexCount + skinCount + skinRadius + skeletonNameLen,
+// then bulk vertices, indices, skin and the name.
 constexpr uint64_t MESH_FIXED_BYTES = sizeof(glm::vec3) * 2 + sizeof(uint64_t) * 3
-                                    + sizeof(float) + sizeof(uint32_t);
-// Texture body: 2*u32 params + 6 enum bytes + 2 flag bytes + pixelBytes field.
-constexpr uint64_t TEXTURE_FIXED_BYTES = sizeof(uint32_t) * 2 + 6 + 2 + sizeof(uint64_t);
-// Skeleton body: boneCount, then per bone a {parent, nameLen} record, an
-// inverse-bind matrix and a bind-pose TRS, then the concatenated name bytes.
+    + sizeof(float) + sizeof(uint32_t);
+// Texture body: 2*u32 params + 6 enum bytes + the mipmap flag + the level count + pixelBytes field.
+constexpr uint64_t TEXTURE_FIXED_BYTES = sizeof(uint32_t) * 2 + 6 + 1 + sizeof(uint32_t) + sizeof(uint64_t);
+// Skeleton body: boneCount, then per bone a {parent, nameLen} record, an inverse-bind matrix and a
+// bind-pose TRS, then the concatenated name bytes.
 constexpr uint64_t SKELETON_FIXED_BYTES    = sizeof(uint64_t);
 constexpr uint64_t SKELETON_PER_BONE_BYTES = sizeof(int32_t) + sizeof(uint32_t)
-                                           + sizeof(glm::mat4) + sizeof(Transform);
-// Clip body: boneCount + duration + the six key-array counts + skeletonNameLen +
-// markerCount + markerNameBytes, then the bulk ClipBone table, the six key
-// arrays, the skeleton name, a {time, nameLen} record per marker, and the
-// concatenated marker names.
+    + sizeof(glm::mat4) + sizeof(Transform);
+// Clip body: boneCount + duration + the six key-array counts + skeletonNameLen + markerCount +
+// markerNameBytes, then the bulk ClipBone table, the six key arrays, the skeleton name, a {time, nameLen}
+// record per marker, and the concatenated marker names.
 constexpr uint64_t CLIP_FIXED_BYTES = sizeof(uint64_t) + sizeof(float)
-                                    + sizeof(uint64_t) * 6 + sizeof(uint32_t)
-                                    + sizeof(uint64_t) * 2;
-// Per marker: its time and the length of its name.
+    + sizeof(uint64_t) * 6 + sizeof(uint32_t)
+    + sizeof(uint64_t) * 2;
 constexpr uint64_t CLIP_PER_MARKER_BYTES = sizeof(float) + sizeof(uint32_t);
 // Audio body: sampleRate + channels + sampleCount, then the interleaved PCM.
 constexpr uint64_t AUDIO_FIXED_BYTES = sizeof(uint32_t) * 2 + sizeof(uint64_t);
-
-// Bytes one texel occupies in the source pixel data. An out-of-range enum (this
-// comes off disk) falls back to the same reading the backend gives it - RGBA /
-// unsigned byte, see gl_format_conversion.h - so the size checked here is the
-// size the upload will actually read.
-uint64_t bytesPerTexel(TexturePixelFormat format, TexturePixelType type) {
-    uint64_t channels = 4;
-    switch (format) {
-        case TexturePixelFormat::R:    channels = 1; break;
-        case TexturePixelFormat::RG:   channels = 2; break;
-        case TexturePixelFormat::RGB:  channels = 3; break;
-        case TexturePixelFormat::RGBA: channels = 4; break;
-    }
-    uint64_t componentBytes = 1;
-    switch (type) {
-        case TexturePixelType::UnsignedByte: componentBytes = 1; break;
-        case TexturePixelType::HalfFloat:    componentBytes = 2; break;
-        case TexturePixelType::Float:        componentBytes = 4; break;
-    }
-    return channels * componentBytes;
-}
 
 template<typename T>
 void writeRaw(std::ostream& os, const T& v) {
@@ -93,30 +69,30 @@ bool readRaw(std::istream& is, T& v) {
     return static_cast<bool>(is.read(reinterpret_cast<char*>(&v), sizeof(T)));
 }
 
-// Bound one count by division against what is left of the payload, before it is
-// multiplied by anything, and consume the bytes it claims. The size math then
-// cannot wrap and resize() cannot be handed a bogus huge count off a corrupt or
-// truncated file.
-bool takeCount(uint64_t count, uint64_t elementBytes, uint64_t& remaining,
-               const std::string& path, const char* what, const char* field) {
+// Bound a count by division against the remaining payload before anything multiplies it, and consume
+// its bytes, so the size math cannot wrap and resize() never sees a bogus count from a corrupt file.
+bool takeCount(
+    uint64_t count,
+    uint64_t elementBytes,
+    uint64_t& remaining,
+    const std::string& path,
+    const char* what,
+    const char* field
+) {
     if (count > remaining / elementBytes) {
-        LOG_ERROR("Cooked %s '%s': implausible %s count %llu", what, path.c_str(), field,
-                  static_cast<unsigned long long>(count));
+        LOG_ERROR(
+            "Cooked %s '%s': implausible %s count %llu",
+            what,
+            path.c_str(),
+            field,
+            static_cast<unsigned long long>(count)
+        );
         return false;
     }
     remaining -= count * elementBytes;
     return true;
 }
 
-// A clip channel addresses [first, first + count) of an array of `size` keys.
-// Subtraction rather than addition so the bound cannot wrap.
-bool channelInRange(const ClipChannel& channel, size_t size) {
-    return channel.count <= size && channel.first <= size - channel.count;
-}
-
-// Bulk transfer of a trivially-copyable array. The counted arrays in the
-// skeleton and clip bodies are all of this shape, and going through one pair
-// keeps the reinterpret_cast in one place instead of a dozen.
 template<typename T>
 void writeBulk(std::ostream& os, const std::vector<T>& values) {
     static_assert(std::is_trivially_copyable_v<T>, "writeBulk needs a trivially-copyable type");
@@ -130,13 +106,11 @@ void readBulk(std::istream& is, std::vector<T>& values, uint64_t count) {
     if (count) is.read(reinterpret_cast<char*>(values.data()), count * sizeof(T));
 }
 
-void writeHeader(std::ostream& os, uint16_t assetKind, uint16_t formatVersion,
-                 uint64_t recipeHash, uint64_t payloadBytes) {
+void writeHeader(std::ostream& os, uint16_t assetKind, uint64_t payloadBytes) {
     os.write(MAGIC, 4);
     writeRaw(os, ENDIAN_SENTINEL);
     writeRaw(os, assetKind);
-    writeRaw(os, formatVersion);
-    writeRaw(os, recipeHash);
+    writeRaw(os, COOKER_VERSION);
     writeRaw(os, payloadBytes);
 }
 
@@ -146,16 +120,12 @@ void writeHeader(std::ostream& os, uint16_t assetKind, uint16_t formatVersion,
 struct CookedHeader {
     uint32_t sentinel      = 0;
     uint16_t assetKind     = 0;
-    uint16_t formatVersion = 0;
-    uint64_t recipeHash    = 0;
+    uint16_t cookerVersion = 0;
     uint64_t payloadBytes  = 0;
 };
 
-// How far the header got before it stopped making sense. The kind, the version
-// and the hash are deliberately not judged here: a reader refuses a mismatch and
-// says why, while isCookedCurrent only wants a yes or a no and must stay silent
-// doing it, so the two disagree about everything except how the bytes are laid
-// out - which is the only thing worth sharing.
+// How far the header got before it stopped making sense. Kind and version are not judged here: a reader
+// refuses a mismatch and says why, while isCookedCurrent must stay silent.
 enum class HeaderRead { Ok, BadMagic, ForeignEndian, Truncated };
 
 HeaderRead readHeaderFields(std::istream& is, CookedHeader& out) {
@@ -163,30 +133,32 @@ HeaderRead readHeaderFields(std::istream& is, CookedHeader& out) {
     if (!is.read(magic, 4) || std::memcmp(magic, MAGIC, 4) != 0) return HeaderRead::BadMagic;
     if (!readRaw(is, out.sentinel))                              return HeaderRead::Truncated;
     if (out.sentinel != ENDIAN_SENTINEL)                         return HeaderRead::ForeignEndian;
-    if (!readRaw(is, out.assetKind) || !readRaw(is, out.formatVersion) ||
-        !readRaw(is, out.recipeHash) || !readRaw(is, out.payloadBytes)) return HeaderRead::Truncated;
+    if (!readRaw(is, out.assetKind) || !readRaw(is, out.cookerVersion)
+        || !readRaw(is, out.payloadBytes)) return HeaderRead::Truncated;
     return HeaderRead::Ok;
 }
 
-// The kind tag and format version a type's cooked file must carry. False for a
-// material, which has no cooked binary at all - its recipe is its runtime form.
-bool cookedIdentity(AssetType type, uint16_t& outKind, uint16_t& outVersion) {
+// The kind tag a type's cooked file must carry, or zero for a material: its recipe is its runtime form.
+uint16_t cookedKind(AssetType type) {
     switch (type) {
-        case AssetType::Mesh:          outKind = KIND_MESH;     outVersion = MESH_FORMAT_VERSION;           return true;
-        case AssetType::Texture:       outKind = KIND_TEXTURE;  outVersion = TEXTURE_FORMAT_VERSION;        return true;
-        case AssetType::Skeleton:      outKind = KIND_SKELETON; outVersion = SKELETON_FORMAT_VERSION;       return true;
-        case AssetType::AnimationClip: outKind = KIND_CLIP;     outVersion = ANIMATION_CLIP_FORMAT_VERSION; return true;
-        case AssetType::AudioClip:     outKind = KIND_AUDIO;    outVersion = AUDIO_CLIP_FORMAT_VERSION;     return true;
+        case AssetType::Mesh:          return KIND_MESH;
+        case AssetType::Texture:       return KIND_TEXTURE;
+        case AssetType::Skeleton:      return KIND_SKELETON;
+        case AssetType::AnimationClip: return KIND_CLIP;
+        case AssetType::AudioClip:     return KIND_AUDIO;
         case AssetType::Material:
-        case AssetType::Count:         return false;
+        case AssetType::Count:         break;
     }
-    return false;
+    return 0;
 }
 
 // Reads and validates the header, leaving the get pointer at the body start.
-bool readHeader(std::istream& is, const std::filesystem::path& path,
-                uint16_t expectKind, uint16_t expectVersion,
-                uint64_t& outRecipeHash, uint64_t& outPayloadBytes) {
+bool readHeader(
+    std::istream& is,
+    const std::filesystem::path& path,
+    uint16_t expectKind,
+    uint64_t& outPayloadBytes
+) {
     const std::string p = path.string();
     CookedHeader header;
     switch (readHeaderFields(is, header)) {
@@ -202,31 +174,30 @@ bool readHeader(std::istream& is, const std::filesystem::path& path,
             return false;
     }
     if (header.assetKind != expectKind) {
-        LOG_ERROR("Cooked asset '%s': wrong asset kind %u (expected %u)", p.c_str(),
-                  header.assetKind, expectKind);
+        LOG_ERROR(
+            "Cooked asset '%s': wrong asset kind %u (expected %u)",
+            p.c_str(),
+            header.assetKind,
+            expectKind
+        );
         return false;
     }
-    if (header.formatVersion != expectVersion) {
-        LOG_ERROR("Cooked asset '%s': unsupported format version %u (expected %u)", p.c_str(),
-                  header.formatVersion, expectVersion);
+    if (header.cookerVersion != COOKER_VERSION) {
+        LOG_ERROR(
+            "Cooked asset '%s': baked by cooker version %u, not %u",
+            p.c_str(),
+            header.cookerVersion,
+            COOKER_VERSION
+        );
         return false;
     }
-    outRecipeHash   = header.recipeHash;
     outPayloadBytes = header.payloadBytes;
     return true;
 }
 
-// Whether the bytes after the header are exactly the payload the header
-// declares. Says nothing and leaves the get pointer at the end, so both the
-// reader (which reports the mismatch and then reads the body) and the staleness
-// probe (which only wants a yes or a no) can ask it.
-//
-// The file is measured against the payload by subtraction, never by adding the
-// payload to the header. payloadBytes is read off disk before anything has
-// vouched for it, and a count near the top of the range overflows a signed file
-// offset when the header is added to it - undefined behaviour on the one path
-// whose whole job is to refuse a damaged file. Both operands below are known
-// non-negative before they meet.
+// Whether the bytes after the header are exactly the declared payload. Silent; leaves the get pointer at
+// the end. Measured by subtraction: payloadBytes is unvouched for, and adding the header to a count near
+// the top of the range overflows a signed file offset.
 bool payloadFillsFile(std::istream& is, uint64_t payloadBytes, std::streamoff& outFileSize) {
     is.seekg(0, std::ios::end);
     outFileSize = is.tellg();
@@ -234,32 +205,32 @@ bool payloadFillsFile(std::istream& is, uint64_t payloadBytes, std::streamoff& o
         && payloadBytes == static_cast<uint64_t>(outFileSize - HEADER_BYTES);
 }
 
-// The bytes after the header must exactly equal the declared payload, so a
-// corrupt count can never drive an oversized allocation. Repositions the get
-// pointer to the body start.
+// The bytes after the header must equal the declared payload, so a corrupt count cannot drive an
+// oversized allocation. Repositions the get pointer to the body start.
 bool verifyFileSize(std::istream& is, const std::filesystem::path& path, uint64_t payloadBytes) {
     std::streamoff fileSize = 0;
     const bool fills = payloadFillsFile(is, payloadBytes, fileSize);
     is.seekg(HEADER_BYTES, std::ios::beg);
     if (!fills) {
-        LOG_ERROR("Cooked asset '%s': size mismatch (file %lld, header %lld + payload %llu)",
-                  path.string().c_str(), static_cast<long long>(fileSize),
-                  static_cast<long long>(HEADER_BYTES),
-                  static_cast<unsigned long long>(payloadBytes));
+        LOG_ERROR(
+            "Cooked asset '%s': size mismatch (file %lld, header %lld + payload %llu)",
+            path.string().c_str(),
+            static_cast<long long>(fileSize),
+            static_cast<long long>(HEADER_BYTES),
+            static_cast<unsigned long long>(payloadBytes)
+        );
         return false;
     }
     return true;
 }
 
-// Where a cooked write goes before it is anybody's business.
+// Where a cooked write goes until it is whole.
 std::filesystem::path tempFor(const std::filesystem::path& path) {
     return std::filesystem::path(path).concat(".tmp");
 }
 
-// Create parent dirs and open a temporary beside `path` for a cooked write. The
-// returned stream is unopened on failure - check `if (!os)` at the call site.
-// Beside rather than at: the artifact wears its own name only once whole, which
-// is what commitCookedWrite does and why nothing measures a file for a torn one.
+// Create parent dirs and open a temporary beside `path`; the stream is unopened on failure. The artifact
+// wears its own name only once whole.
 std::ofstream openCookedWrite(const std::filesystem::path& path, const char* what) {
     std::error_code ec;
     std::filesystem::create_directories(path.parent_path(), ec);
@@ -269,9 +240,8 @@ std::ofstream openCookedWrite(const std::filesystem::path& path, const char* wha
     return os;
 }
 
-// Close the temporary and move it onto the artifact's name in one step. Rename
-// within a directory is atomic, so the file either is not there or is complete -
-// there is no third state for a reader to detect.
+// Rename the temporary onto the artifact's name: atomic within a directory, so the file is absent or
+// complete.
 bool commitCookedWrite(std::ofstream& os, const std::filesystem::path& path, const char* what) {
     os.close();
 
@@ -279,26 +249,29 @@ bool commitCookedWrite(std::ofstream& os, const std::filesystem::path& path, con
     std::error_code ec;
     std::filesystem::rename(temp, path, ec);
     if (ec) {
-        LOG_ERROR("Cooked %s '%s': cannot publish (%s)", what, path.string().c_str(),
-                  ec.message().c_str());
+        LOG_ERROR("Cooked %s '%s': cannot publish (%s)", what, path.string().c_str(), ec.message().c_str());
         std::filesystem::remove(temp, ec);
         return false;
     }
     return true;
 }
 
-// Open `path` and validate its header + declared size against the expected
-// kind/version/fixed-body size. On success `is` is positioned at the body start
-// and outRecipeHash / outPayloadBytes are filled.
-bool openCookedRead(std::ifstream& is, const std::filesystem::path& path,
-                    uint16_t expectKind, uint16_t expectVersion, uint64_t fixedBytes,
-                    const char* what, uint64_t& outRecipeHash, uint64_t& outPayloadBytes) {
+// Open `path` and validate header and declared size against kind, cooker version and fixed-body size.
+// On success `is` is at the body start.
+bool openCookedRead(
+    std::ifstream& is,
+    const std::filesystem::path& path,
+    uint16_t expectKind,
+    uint64_t fixedBytes,
+    const char* what,
+    uint64_t& outPayloadBytes
+) {
     is.open(path, std::ios::binary);
     if (!is) {
         LOG_ERROR("Cooked %s '%s': cannot open", what, path.string().c_str());
         return false;
     }
-    if (!readHeader(is, path, expectKind, expectVersion, outRecipeHash, outPayloadBytes)) return false;
+    if (!readHeader(is, path, expectKind, outPayloadBytes)) return false;
     if (!verifyFileSize(is, path, outPayloadBytes)) return false;
     if (outPayloadBytes < fixedBytes) {
         LOG_ERROR("Cooked %s '%s': payload too small", what, path.string().c_str());
@@ -309,19 +282,21 @@ bool openCookedRead(std::ifstream& is, const std::filesystem::path& path,
 
 } // namespace
 
-bool writeMesh(const std::filesystem::path& path, const MeshAsset& mesh, uint64_t recipeHash) {
-    static_assert(sizeof(Vertex) == 48, "Vertex layout changed - bump MESH_FORMAT_VERSION and the cook format");
+bool writeMesh(const std::filesystem::path& path, const MeshAsset& mesh) {
+    static_assert(sizeof(Vertex) == 48, "Vertex layout changed - bump COOKER_VERSION");
     static_assert(std::is_trivially_copyable_v<Vertex>, "Vertex must be trivially copyable to bulk-write");
 
     const uint64_t vertexCount = mesh.vertices.size();
     const uint64_t indexCount  = mesh.indices.size();
     const uint64_t skinCount   = mesh.skin.size();
-    // The skin stream is parallel to the vertices or absent; there is no third
-    // state, and the vertex stage reads them by the same index.
+    // The skin stream is parallel to the vertices or absent: the vertex stage reads both by one index.
     if (skinCount != 0 && skinCount != vertexCount) {
-        LOG_ERROR("Cooked mesh '%s': %llu skin entries against %llu vertices",
-                  path.string().c_str(), static_cast<unsigned long long>(skinCount),
-                  static_cast<unsigned long long>(vertexCount));
+        LOG_ERROR(
+            "Cooked mesh '%s': %llu skin entries against %llu vertices",
+            path.string().c_str(),
+            static_cast<unsigned long long>(skinCount),
+            static_cast<unsigned long long>(vertexCount)
+        );
         return false;
     }
 
@@ -332,7 +307,7 @@ bool writeMesh(const std::filesystem::path& path, const MeshAsset& mesh, uint64_
         + vertexCount * sizeof(Vertex) + indexCount * sizeof(uint32_t)
         + skinCount * sizeof(SkinVertex) + mesh.skeleton.size();
 
-    writeHeader(os, KIND_MESH, MESH_FORMAT_VERSION, recipeHash, payloadBytes);
+    writeHeader(os, KIND_MESH, payloadBytes);
     writeRaw(os, mesh.boundsMin);
     writeRaw(os, mesh.boundsMax);
     writeRaw(os, vertexCount);
@@ -352,40 +327,36 @@ bool writeMesh(const std::filesystem::path& path, const MeshAsset& mesh, uint64_
     return commitCookedWrite(os, path, "mesh");
 }
 
-uint64_t cacheKey(uint64_t recipeAndCooker, AssetType type) {
-    uint16_t kind = 0;
-    uint16_t formatVersion = 0;
-    if (!cookedIdentity(type, kind, formatVersion)) return recipeAndCooker;
-
-    // Folded in through the shared hash, seeded with the recipe: a bump to any of
-    // the three lands the artifact under a name nothing looks for.
-    const uint16_t tag[2] = { kind, formatVersion };
-    return fnv1a64(tag, sizeof(tag), recipeAndCooker);
+uint64_t cacheKey(uint64_t recipeHash, AssetType type) {
+    const uint16_t kind = cookedKind(type);
+    if (kind == 0) return recipeHash;
+    const uint16_t tag[2] = {kind, COOKER_VERSION};
+    return fnv1a64Bytes(tag, sizeof(tag), recipeHash);
 }
 
 bool isCookedCurrent(AssetType type, const std::filesystem::path& path) {
-    uint16_t expectKind = 0;
-    uint16_t expectVersion = 0;
-    if (!cookedIdentity(type, expectKind, expectVersion)) return false;
+    const uint16_t expectKind = cookedKind(type);
+    if (expectKind == 0) return false;
 
     std::ifstream is(path, std::ios::binary);
     if (!is) return false;
 
-    // The name carried the recipe, the cooker and the layout; what is left to
-    // check is that this is one of ours and holds what the directory says. The
-    // kind is cheap and catches a composed-path mistake, which a hash cannot.
+    // The name carried recipe, cooker and layout. The kind is cheap and catches a composed-path mistake,
+    // which a hash cannot.
     CookedHeader header;
     if (readHeaderFields(is, header) != HeaderRead::Ok) return false;
-    return header.assetKind == expectKind;
+    if (header.assetKind != expectKind) return false;
+
+    // The cooker never writes a short file, but it is not the only thing that puts one on a disk.
+    std::streamoff fileSize = 0;
+    return payloadFillsFile(is, header.payloadBytes, fileSize);
 }
 
-bool readMesh(const std::filesystem::path& path, MeshAsset& out, uint64_t* outHash) {
+bool readMesh(const std::filesystem::path& path, MeshAsset& out) {
     const std::string p = path.string();
     std::ifstream is;
-    uint64_t recipeHash = 0;
     uint64_t payloadBytes = 0;
-    if (!openCookedRead(is, path, KIND_MESH, MESH_FORMAT_VERSION, MESH_FIXED_BYTES, "mesh",
-                        recipeHash, payloadBytes)) return false;
+    if (!openCookedRead(is, path, KIND_MESH, MESH_FIXED_BYTES, "mesh", payloadBytes)) return false;
 
     glm::vec3 boundsMin{0};
     glm::vec3 boundsMax{0};
@@ -394,28 +365,31 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out, uint64_t* outHa
     uint64_t skinCount   = 0;
     float    skinRadius  = 0.0f;
     uint32_t skeletonNameLen = 0;
-    if (!readRaw(is, boundsMin) || !readRaw(is, boundsMax) ||
-        !readRaw(is, vertexCount) || !readRaw(is, indexCount) ||
-        !readRaw(is, skinCount) || !readRaw(is, skinRadius) || !readRaw(is, skeletonNameLen)) {
+    if (!readRaw(is, boundsMin) || !readRaw(is, boundsMax)
+        || !readRaw(is, vertexCount) || !readRaw(is, indexCount)
+        || !readRaw(is, skinCount) || !readRaw(is, skinRadius) || !readRaw(is, skeletonNameLen)) {
         LOG_ERROR("Cooked mesh '%s': truncated body", p.c_str());
         return false;
     }
 
     uint64_t remaining = payloadBytes - MESH_FIXED_BYTES;
-    if (!takeCount(vertexCount,     sizeof(Vertex),     remaining, p, "mesh", "vertex")   ||
-        !takeCount(indexCount,      sizeof(uint32_t),   remaining, p, "mesh", "index")    ||
-        !takeCount(skinCount,       sizeof(SkinVertex), remaining, p, "mesh", "skin")     ||
-        !takeCount(skeletonNameLen, 1,                  remaining, p, "mesh", "rig name")) return false;
+    if (!takeCount(vertexCount, sizeof(Vertex), remaining, p, "mesh", "vertex")
+        || !takeCount(indexCount, sizeof(uint32_t), remaining, p, "mesh", "index")
+        || !takeCount(skinCount, sizeof(SkinVertex), remaining, p, "mesh", "skin")
+        || !takeCount(skeletonNameLen, 1, remaining, p, "mesh", "rig name")) return false;
     if (remaining != 0) {
         LOG_ERROR("Cooked mesh '%s': payload size inconsistent with counts", p.c_str());
         return false;
     }
-    // Parallel or absent, checked here as well as at write: the vertex stage
-    // reads both streams by the same index, so a short skin stream is an
-    // out-of-bounds fetch on every draw.
+    // Checked at write too: the vertex stage reads both streams by one index, so a short skin stream is
+    // an out-of-bounds fetch on every draw.
     if (skinCount != 0 && skinCount != vertexCount) {
-        LOG_ERROR("Cooked mesh '%s': %llu skin entries against %llu vertices", p.c_str(),
-                  static_cast<unsigned long long>(skinCount), static_cast<unsigned long long>(vertexCount));
+        LOG_ERROR(
+            "Cooked mesh '%s': %llu skin entries against %llu vertices",
+            p.c_str(),
+            static_cast<unsigned long long>(skinCount),
+            static_cast<unsigned long long>(vertexCount)
+        );
         return false;
     }
     if (!std::isfinite(skinRadius) || skinRadius < 0.0f) {
@@ -431,8 +405,8 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out, uint64_t* outHa
     readBulk(is, out.skin, skinCount);
     out.skeleton.resize(skeletonNameLen);
     if (skeletonNameLen) is.read(out.skeleton.data(), skeletonNameLen);
-    // One check for the whole body: the reconciliation above already proved the
-    // bytes are there, so a failure here is an IO error, and failbit is sticky.
+    // One check for the whole body: the counts above proved the bytes are there, so a failure is an IO
+    // error, and failbit is sticky.
     if (!is) {
         LOG_ERROR("Cooked mesh '%s': body read failed", p.c_str());
         out.vertices.clear();
@@ -441,13 +415,16 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out, uint64_t* outHa
         return false;
     }
 
-    // An index past the vertex count is never re-checked downstream: decimation
-    // indexes a per-vertex array with it, and GL is handed the buffer as-is.
+    // An index past the vertex count addresses a vertex the mesh does not have.
     const auto vertexTotal = static_cast<uint32_t>(out.vertices.size());
     for (const uint32_t index : out.indices) {
         if (index >= vertexTotal) {
-            LOG_ERROR("Cooked mesh '%s': index %u is past the %u vertices it declares",
-                      p.c_str(), index, vertexTotal);
+            LOG_ERROR(
+                "Cooked mesh '%s': index %u is past the %u vertices it declares",
+                p.c_str(),
+                index,
+                vertexTotal
+            );
             out.vertices.clear();
             out.indices.clear();
             out.skin.clear();
@@ -455,14 +432,16 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out, uint64_t* outHa
         }
     }
 
-    // A bone index is never read by the CPU at all - it addresses the pose
-    // palette in the vertex stage - so a corrupt one is an out-of-range read on
-    // every vertex of every frame, and nothing else would notice.
+    // A bone index addresses the vertex stage's pose palette: a corrupt one reads out of range every frame.
     for (const SkinVertex& skin : out.skin) {
         for (const uint16_t bone : skin.bones) {
             if (bone >= MAX_SKELETON_BONES) {
-                LOG_ERROR("Cooked mesh '%s': bone index %u is past the %u a rig can hold",
-                          p.c_str(), bone, MAX_SKELETON_BONES);
+                LOG_ERROR(
+                    "Cooked mesh '%s': bone index %u is past the %u a rig can hold",
+                    p.c_str(),
+                    bone,
+                    MAX_SKELETON_BONES
+                );
                 out.vertices.clear();
                 out.indices.clear();
                 out.skin.clear();
@@ -471,49 +450,82 @@ bool readMesh(const std::filesystem::path& path, MeshAsset& out, uint64_t* outHa
         }
     }
 
-    if (outHash) *outHash = recipeHash;
     return true;
 }
 
-bool writeTexture(const std::filesystem::path& path, const TextureAsset& texture, uint64_t recipeHash) {
-    // These enums are written as raw values, so the file format IS the
-    // enumerator order, and a reorder is invisible to the version check and to
-    // the recipe hash. Every enumerator is named, or a swap in the middle passes.
-    static_assert(static_cast<uint8_t>(TextureInternalFormat::R8)      == 0 &&
-                  static_cast<uint8_t>(TextureInternalFormat::RG8)     == 1 &&
-                  static_cast<uint8_t>(TextureInternalFormat::RGB8)    == 2 &&
-                  static_cast<uint8_t>(TextureInternalFormat::RGBA8)   == 3 &&
-                  static_cast<uint8_t>(TextureInternalFormat::SRGB8)   == 4 &&
-                  static_cast<uint8_t>(TextureInternalFormat::SRGBA8)  == 5 &&
-                  static_cast<uint8_t>(TextureInternalFormat::RGBA16F) == 6 &&
-                  static_cast<uint8_t>(TextureInternalFormat::RGBA32F) == 7,
-                  "TextureInternalFormat reordered - bump TEXTURE_FORMAT_VERSION");
-    static_assert(static_cast<uint8_t>(TexturePixelFormat::R)    == 0 &&
-                  static_cast<uint8_t>(TexturePixelFormat::RG)   == 1 &&
-                  static_cast<uint8_t>(TexturePixelFormat::RGB)  == 2 &&
-                  static_cast<uint8_t>(TexturePixelFormat::RGBA) == 3,
-                  "TexturePixelFormat reordered - bump TEXTURE_FORMAT_VERSION");
-    static_assert(static_cast<uint8_t>(TexturePixelType::UnsignedByte) == 0 &&
-                  static_cast<uint8_t>(TexturePixelType::Float)        == 1 &&
-                  static_cast<uint8_t>(TexturePixelType::HalfFloat)    == 2,
-                  "TexturePixelType reordered - bump TEXTURE_FORMAT_VERSION");
-    static_assert(static_cast<uint8_t>(TextureWrapMode::Repeat)         == 0 &&
-                  static_cast<uint8_t>(TextureWrapMode::MirroredRepeat) == 1 &&
-                  static_cast<uint8_t>(TextureWrapMode::ClampToEdge)    == 2 &&
-                  static_cast<uint8_t>(TextureWrapMode::ClampToBorder)  == 3,
-                  "TextureWrapMode reordered - bump TEXTURE_FORMAT_VERSION");
-    static_assert(static_cast<uint8_t>(TextureFilterOverride::None)    == 0 &&
-                  static_cast<uint8_t>(TextureFilterOverride::Nearest) == 1,
-                  "TextureFilterOverride reordered - bump TEXTURE_FORMAT_VERSION");
+bool writeTexture(const std::filesystem::path& path, const TextureAsset& texture) {
+    // Written as raw values, so the format IS the enumerator order, and a reorder is invisible to the
+    // version check and the recipe hash. Every enumerator is named, or a swap in the middle passes.
+    static_assert(
+        static_cast<uint8_t>(TextureInternalFormat::R8) == 0
+            && static_cast<uint8_t>(TextureInternalFormat::RG8) == 1
+            && static_cast<uint8_t>(TextureInternalFormat::RGB8) == 2
+            && static_cast<uint8_t>(TextureInternalFormat::RGBA8) == 3
+            && static_cast<uint8_t>(TextureInternalFormat::SRGB8) == 4
+            && static_cast<uint8_t>(TextureInternalFormat::SRGBA8) == 5
+            && static_cast<uint8_t>(TextureInternalFormat::RGBA16F) == 6
+            && static_cast<uint8_t>(TextureInternalFormat::RGBA32F) == 7
+            && static_cast<uint8_t>(TextureInternalFormat::BC4R) == 8
+            && static_cast<uint8_t>(TextureInternalFormat::BC5RG) == 9
+            && static_cast<uint8_t>(TextureInternalFormat::BC7RGBA) == 10
+            && static_cast<uint8_t>(TextureInternalFormat::BC7SRGBA) == 11,
+        "TextureInternalFormat reordered - bump COOKER_VERSION"
+    );
+    static_assert(
+        static_cast<uint8_t>(TexturePixelFormat::R) == 0
+            && static_cast<uint8_t>(TexturePixelFormat::RG) == 1
+            && static_cast<uint8_t>(TexturePixelFormat::RGB) == 2
+            && static_cast<uint8_t>(TexturePixelFormat::RGBA) == 3,
+        "TexturePixelFormat reordered - bump COOKER_VERSION"
+    );
+    static_assert(
+        static_cast<uint8_t>(TexturePixelType::UnsignedByte) == 0
+            && static_cast<uint8_t>(TexturePixelType::Float) == 1
+            && static_cast<uint8_t>(TexturePixelType::HalfFloat) == 2,
+        "TexturePixelType reordered - bump COOKER_VERSION"
+    );
+    static_assert(
+        static_cast<uint8_t>(TextureWrapMode::Repeat) == 0
+            && static_cast<uint8_t>(TextureWrapMode::MirroredRepeat) == 1
+            && static_cast<uint8_t>(TextureWrapMode::ClampToEdge) == 2
+            && static_cast<uint8_t>(TextureWrapMode::ClampToBorder) == 3,
+        "TextureWrapMode reordered - bump COOKER_VERSION"
+    );
+    static_assert(
+        static_cast<uint8_t>(TextureFilterOverride::None) == 0
+            && static_cast<uint8_t>(TextureFilterOverride::Nearest) == 1,
+        "TextureFilterOverride reordered - bump COOKER_VERSION"
+    );
+
+    const TextureParams& tp = texture.params;
+    const uint64_t pixelBytes  = texture.pixelData.size();
+
+    // The reader refuses a level count other than one or the whole chain, and pixels that are not exactly
+    // those levels; cooking either makes a file nothing can load.
+    const uint32_t chain  = mipChainLength(tp.width, tp.height);
+    const bool     levels = chain != 0 && (tp.mipLevels == 1 || tp.mipLevels == chain);
+    uint64_t levelBytes = 0;
+    for (uint32_t level = 0; levels && level < tp.mipLevels; ++level) {
+        levelBytes += textureLevelBytes(tp, level);
+    }
+    if (!levels || levelBytes != pixelBytes) {
+        LOG_ERROR(
+            "Cooked texture '%s': %llu pixel byte(s) are not %u level(s) of %ux%u",
+            path.string().c_str(),
+            static_cast<unsigned long long>(pixelBytes),
+            tp.mipLevels,
+            tp.width,
+            tp.height
+        );
+        return false;
+    }
 
     std::ofstream os = openCookedWrite(path, "texture");
     if (!os) return false;
 
-    const TextureParams& tp = texture.params;
-    const uint64_t pixelBytes  = texture.pixelData.size();
     const uint64_t payloadBytes = TEXTURE_FIXED_BYTES + pixelBytes;
 
-    writeHeader(os, KIND_TEXTURE, TEXTURE_FORMAT_VERSION, recipeHash, payloadBytes);
+    writeHeader(os, KIND_TEXTURE, payloadBytes);
     writeRaw(os, tp.width);
     writeRaw(os, tp.height);
     writeRaw(os, tp.internalFormat);
@@ -523,7 +535,7 @@ bool writeTexture(const std::filesystem::path& path, const TextureAsset& texture
     writeRaw(os, tp.wrapT);
     writeRaw(os, tp.filterOverride);
     writeRaw(os, static_cast<uint8_t>(tp.generateMipmaps));
-    writeRaw(os, static_cast<uint8_t>(texture.srgb));
+    writeRaw(os, tp.mipLevels);
     writeRaw(os, pixelBytes);
     if (pixelBytes) os.write(reinterpret_cast<const char*>(texture.pixelData.data()), pixelBytes);
 
@@ -534,22 +546,19 @@ bool writeTexture(const std::filesystem::path& path, const TextureAsset& texture
     return commitCookedWrite(os, path, "texture");
 }
 
-bool readTexture(const std::filesystem::path& path, TextureAsset& out, uint64_t* outHash) {
+bool readTexture(const std::filesystem::path& path, TextureAsset& out) {
     const std::string p = path.string();
     std::ifstream is;
-    uint64_t recipeHash = 0;
     uint64_t payloadBytes = 0;
-    if (!openCookedRead(is, path, KIND_TEXTURE, TEXTURE_FORMAT_VERSION, TEXTURE_FIXED_BYTES, "texture",
-                        recipeHash, payloadBytes)) return false;
+    if (!openCookedRead(is, path, KIND_TEXTURE, TEXTURE_FIXED_BYTES, "texture", payloadBytes)) return false;
 
     TextureParams tp;
     uint8_t generateMipmaps = 0;
-    uint8_t srgb = 0;
     uint64_t pixelBytes = 0;
-    if (!readRaw(is, tp.width) || !readRaw(is, tp.height) ||
-        !readRaw(is, tp.internalFormat) || !readRaw(is, tp.format) || !readRaw(is, tp.type) ||
-        !readRaw(is, tp.wrapS) || !readRaw(is, tp.wrapT) || !readRaw(is, tp.filterOverride) ||
-        !readRaw(is, generateMipmaps) || !readRaw(is, srgb) || !readRaw(is, pixelBytes)) {
+    if (!readRaw(is, tp.width) || !readRaw(is, tp.height)
+        || !readRaw(is, tp.internalFormat) || !readRaw(is, tp.format) || !readRaw(is, tp.type)
+        || !readRaw(is, tp.wrapS) || !readRaw(is, tp.wrapT) || !readRaw(is, tp.filterOverride)
+        || !readRaw(is, generateMipmaps) || !readRaw(is, tp.mipLevels) || !readRaw(is, pixelBytes)) {
         LOG_ERROR("Cooked texture '%s': truncated body", p.c_str());
         return false;
     }
@@ -560,47 +569,77 @@ bool readTexture(const std::filesystem::path& path, TextureAsset& out, uint64_t*
         return false;
     }
 
-    // The params reach glTexImage2D verbatim, which then reads width * height
-    // texels out of this buffer. Division rather than multiplication so the
-    // math cannot wrap.
-    const uint64_t texelBytes = bytesPerTexel(tp.format, tp.type);
-    const uint64_t texels     = static_cast<uint64_t>(tp.width) * tp.height;
-    if (pixelBytes % texelBytes != 0 || pixelBytes / texelBytes != texels) {
-        LOG_ERROR("Cooked texture '%s': %llu pixel byte(s) do not describe %ux%u texels",
-                  p.c_str(), static_cast<unsigned long long>(pixelBytes), tp.width, tp.height);
+    // One level, or every level to 1x1: a mipmap filter over a partial chain samples as black in GL.
+    const uint32_t chain = mipChainLength(tp.width, tp.height);
+    if (chain == 0 || (tp.mipLevels != 1 && tp.mipLevels != chain)) {
+        LOG_ERROR(
+            "Cooked texture '%s': %u level(s) for %ux%u, which has %u",
+            p.c_str(),
+            tp.mipLevels,
+            tp.width,
+            tp.height,
+            chain
+        );
+        return false;
+    }
+
+    // Each level reaches the upload verbatim, which reads exactly its bytes from this buffer. Bounded per
+    // level by division so the math cannot wrap; the levels must account for every byte.
+    uint64_t remaining = pixelBytes;
+    for (uint32_t level = 0; level < tp.mipLevels; ++level) {
+        if (!takeCount(
+            textureLevelUnits(tp, level),
+            textureUnitBytes(tp),
+            remaining,
+            p,
+            "texture",
+            "level-size"
+        )) return false;
+    }
+    if (remaining != 0) {
+        LOG_ERROR(
+            "Cooked texture '%s': %llu pixel byte(s) do not describe %u level(s) of %ux%u",
+            p.c_str(),
+            static_cast<unsigned long long>(pixelBytes),
+            tp.mipLevels,
+            tp.width,
+            tp.height
+        );
         return false;
     }
 
     out.params = tp;
-    out.srgb   = (srgb != 0);
     out.pixelData.resize(static_cast<size_t>(pixelBytes));
     if (pixelBytes && !is.read(reinterpret_cast<char*>(out.pixelData.data()), pixelBytes)) {
         LOG_ERROR("Cooked texture '%s': pixel read failed", p.c_str());
         return false;
     }
 
-    if (outHash) *outHash = recipeHash;
     return true;
 }
 
-bool writeSkeleton(const std::filesystem::path& path, const SkeletonAsset& skeleton, uint64_t recipeHash) {
-    static_assert(sizeof(Transform) == 40,
-                  "Transform layout changed - bump SKELETON_FORMAT_VERSION and the cook format");
-    static_assert(std::is_trivially_copyable_v<Transform>, "Transform must be trivially copyable to bulk-write");
+bool writeSkeleton(const std::filesystem::path& path, const SkeletonAsset& skeleton) {
+    static_assert(sizeof(Transform) == 40, "Transform layout changed - bump COOKER_VERSION");
+    static_assert(
+        std::is_trivially_copyable_v<Transform>,
+        "Transform must be trivially copyable to bulk-write"
+    );
 
     const uint64_t boneCount = skeleton.bones.size();
-    // The three arrays are the asset's invariant, and the bulk writes below read
-    // boneCount elements out of each; a caller that broke it would otherwise
-    // hand us an out-of-bounds read rather than a rejected cook.
-    if (skeleton.inverseBind.size() != boneCount || skeleton.bindPose.size() != boneCount) {
-        LOG_ERROR("Cooked skeleton '%s': %llu bone(s) against %zu inverse-bind and %zu bind-pose entries",
-                  path.string().c_str(), static_cast<unsigned long long>(boneCount),
-                  skeleton.inverseBind.size(), skeleton.bindPose.size());
+    // The bulk writes read boneCount elements from each array: a broken invariant would be an
+    // out-of-bounds read rather than a rejected cook.
+    const std::string fault = findSkeletonFault(skeleton);
+    if (!fault.empty()) {
+        LOG_ERROR("Cooked skeleton '%s' cannot be posed - %s", path.string().c_str(), fault.c_str());
         return false;
     }
     if (boneCount > MAX_SKELETON_BONES) {
-        LOG_ERROR("Cooked skeleton '%s': %llu bones is past the %u the format admits",
-                  path.string().c_str(), static_cast<unsigned long long>(boneCount), MAX_SKELETON_BONES);
+        LOG_ERROR(
+            "Cooked skeleton '%s': %llu bones is past the %u the format admits",
+            path.string().c_str(),
+            static_cast<unsigned long long>(boneCount),
+            MAX_SKELETON_BONES
+        );
         return false;
     }
 
@@ -611,7 +650,7 @@ bool writeSkeleton(const std::filesystem::path& path, const SkeletonAsset& skele
     for (const Bone& bone : skeleton.bones) nameBytes += bone.name.size();
     const uint64_t payloadBytes = SKELETON_FIXED_BYTES + boneCount * SKELETON_PER_BONE_BYTES + nameBytes;
 
-    writeHeader(os, KIND_SKELETON, SKELETON_FORMAT_VERSION, recipeHash, payloadBytes);
+    writeHeader(os, KIND_SKELETON, payloadBytes);
     writeRaw(os, boneCount);
     for (const Bone& bone : skeleton.bones) {
         writeRaw(os, bone.parent);
@@ -619,7 +658,9 @@ bool writeSkeleton(const std::filesystem::path& path, const SkeletonAsset& skele
     }
     writeBulk(os, skeleton.inverseBind);
     writeBulk(os, skeleton.bindPose);
-    for (const Bone& bone : skeleton.bones) os.write(bone.name.data(), static_cast<std::streamsize>(bone.name.size()));
+    for (const Bone& bone : skeleton.bones) {
+        os.write(bone.name.data(), static_cast<std::streamsize>(bone.name.size()));
+    }
 
     if (!os) {
         LOG_ERROR("Cooked skeleton '%s': write failed", path.string().c_str());
@@ -628,13 +669,18 @@ bool writeSkeleton(const std::filesystem::path& path, const SkeletonAsset& skele
     return commitCookedWrite(os, path, "skeleton");
 }
 
-bool readSkeleton(const std::filesystem::path& path, SkeletonAsset& out, uint64_t* outHash) {
+bool readSkeleton(const std::filesystem::path& path, SkeletonAsset& out) {
     const std::string p = path.string();
     std::ifstream is;
-    uint64_t recipeHash = 0;
     uint64_t payloadBytes = 0;
-    if (!openCookedRead(is, path, KIND_SKELETON, SKELETON_FORMAT_VERSION, SKELETON_FIXED_BYTES, "skeleton",
-                        recipeHash, payloadBytes)) return false;
+    if (!openCookedRead(
+        is,
+        path,
+        KIND_SKELETON,
+        SKELETON_FIXED_BYTES,
+        "skeleton",
+        payloadBytes
+    )) return false;
 
     uint64_t boneCount = 0;
     if (!readRaw(is, boneCount)) {
@@ -642,22 +688,27 @@ bool readSkeleton(const std::filesystem::path& path, SkeletonAsset& out, uint64_
         return false;
     }
 
-    // Division rather than multiplication, so the size math cannot wrap and a
-    // corrupt count cannot drive an oversized resize.
+    // Division, so the size math cannot wrap and a corrupt count cannot drive an oversized resize.
     const uint64_t afterFixed = payloadBytes - SKELETON_FIXED_BYTES;
     if (boneCount > afterFixed / SKELETON_PER_BONE_BYTES) {
-        LOG_ERROR("Cooked skeleton '%s': implausible bone count %llu", p.c_str(),
-                  static_cast<unsigned long long>(boneCount));
+        LOG_ERROR(
+            "Cooked skeleton '%s': implausible bone count %llu",
+            p.c_str(),
+            static_cast<unsigned long long>(boneCount)
+        );
         return false;
     }
     if (boneCount > MAX_SKELETON_BONES) {
-        LOG_ERROR("Cooked skeleton '%s': %llu bones is past the %u the format admits", p.c_str(),
-                  static_cast<unsigned long long>(boneCount), MAX_SKELETON_BONES);
+        LOG_ERROR(
+            "Cooked skeleton '%s': %llu bones is past the %u the format admits",
+            p.c_str(),
+            static_cast<unsigned long long>(boneCount),
+            MAX_SKELETON_BONES
+        );
         return false;
     }
 
-    // What is left once the fixed-size records are accounted for is exactly the
-    // name blob, so each name length is bounded against the remainder of it.
+    // What the fixed-size records leave is exactly the name blob, which bounds each name length.
     const uint64_t nameBudget = afterFixed - boneCount * SKELETON_PER_BONE_BYTES;
 
     out.bones.assign(static_cast<size_t>(boneCount), Bone{});
@@ -670,18 +721,13 @@ bool readSkeleton(const std::filesystem::path& path, SkeletonAsset& out, uint64_
             out.bones.clear();
             return false;
         }
-        // Stronger than a range check, and what lets every consumer compose the
-        // pose in one forward loop: a bone naming a later parent, or itself,
-        // would leave that loop reading a transform it has not written yet.
-        if (parent < -1 || parent >= static_cast<int32_t>(i)) {
-            LOG_ERROR("Cooked skeleton '%s': bone %llu names parent %d, which is not a bone before it",
-                      p.c_str(), static_cast<unsigned long long>(i), parent);
-            out.bones.clear();
-            return false;
-        }
         if (nameLen > nameBudget - nameBytes) {
-            LOG_ERROR("Cooked skeleton '%s': bone %llu declares a %u-byte name past the payload",
-                      p.c_str(), static_cast<unsigned long long>(i), nameLen);
+            LOG_ERROR(
+                "Cooked skeleton '%s': bone %llu declares a %u-byte name past the payload",
+                p.c_str(),
+                static_cast<unsigned long long>(i),
+                nameLen
+            );
             out.bones.clear();
             return false;
         }
@@ -700,9 +746,8 @@ bool readSkeleton(const std::filesystem::path& path, SkeletonAsset& out, uint64_
     for (Bone& bone : out.bones) {
         if (!bone.name.empty()) is.read(bone.name.data(), static_cast<std::streamsize>(bone.name.size()));
     }
-    // One check for the whole body: the size reconciliation above already proved
-    // the bytes are there, so a failure here is an IO error, and the stream's
-    // failbit is sticky once one read misses.
+    // One check for the whole body: the sizes above proved the bytes are there, so a failure is an IO
+    // error, and failbit is sticky.
     if (!is) {
         LOG_ERROR("Cooked skeleton '%s': body read failed", p.c_str());
         out.bones.clear();
@@ -711,45 +756,38 @@ bool readSkeleton(const std::filesystem::path& path, SkeletonAsset& out, uint64_
         return false;
     }
 
-    if (outHash) *outHash = recipeHash;
+    const std::string fault = findSkeletonFault(out);
+    if (!fault.empty()) {
+        LOG_ERROR("Cooked skeleton '%s' cannot be posed - %s", p.c_str(), fault.c_str());
+        out.bones.clear();
+        out.inverseBind.clear();
+        out.bindPose.clear();
+        return false;
+    }
     return true;
 }
 
-bool writeAnimationClip(const std::filesystem::path& path, const AnimationClipAsset& clip, uint64_t recipeHash) {
-    static_assert(sizeof(ClipBone) == 24,
-                  "ClipBone layout changed - bump ANIMATION_CLIP_FORMAT_VERSION and the cook format");
-    static_assert(std::is_trivially_copyable_v<ClipBone>, "ClipBone must be trivially copyable to bulk-write");
+bool writeAnimationClip(const std::filesystem::path& path, const AnimationClipAsset& clip) {
+    static_assert(sizeof(ClipBone) == 24, "ClipBone layout changed - bump COOKER_VERSION");
+    static_assert(
+        std::is_trivially_copyable_v<ClipBone>,
+        "ClipBone must be trivially copyable to bulk-write"
+    );
 
     const uint64_t boneCount = clip.bones.size();
     if (boneCount > MAX_SKELETON_BONES) {
-        LOG_ERROR("Cooked clip '%s': %llu bones is past the %u the format admits",
-                  path.string().c_str(), static_cast<unsigned long long>(boneCount), MAX_SKELETON_BONES);
+        LOG_ERROR(
+            "Cooked clip '%s': %llu bones is past the %u the format admits",
+            path.string().c_str(),
+            static_cast<unsigned long long>(boneCount),
+            MAX_SKELETON_BONES
+        );
         return false;
     }
-    if (clip.positionTimes.size() != clip.positions.size() ||
-        clip.rotationTimes.size() != clip.rotations.size() ||
-        clip.scaleTimes.size()    != clip.scales.size()) {
-        LOG_ERROR("Cooked clip '%s': key times and values disagree in length", path.string().c_str());
-        return false;
-    }
-    for (uint64_t i = 0; i < boneCount; ++i) {
-        const ClipBone& bone = clip.bones[static_cast<size_t>(i)];
-        if (!channelInRange(bone.position, clip.positions.size()) ||
-            !channelInRange(bone.rotation, clip.rotations.size()) ||
-            !channelInRange(bone.scale,    clip.scales.size())) {
-            LOG_ERROR("Cooked clip '%s': bone %llu names keys it does not have",
-                      path.string().c_str(), static_cast<unsigned long long>(i));
-            return false;
-        }
-    }
-    // A marker outside the timeline never arrives at the instant it names: a
-    // looping head wraps it elsewhere, a clamped one never reaches it. Refused
-    // rather than moved, because where it fires is the whole of what it says.
-    for (const ClipMarker& marker : clip.markers) {
-        if (std::isfinite(marker.time) && marker.time >= 0.0f && marker.time <= clip.duration) continue;
-        LOG_ERROR("Cooked clip '%s': marker '%s' at %f is outside the clip's %f seconds",
-                  path.string().c_str(), marker.name.c_str(),
-                  static_cast<double>(marker.time), static_cast<double>(clip.duration));
+    // Refused, not repaired: moving a marker into the timeline or clipping a channel makes another clip.
+    const std::string fault = findClipFault(clip);
+    if (!fault.empty()) {
+        LOG_ERROR("Cooked clip '%s' cannot be played - %s", path.string().c_str(), fault.c_str());
         return false;
     }
 
@@ -767,7 +805,7 @@ bool writeAnimationClip(const std::filesystem::path& path, const AnimationClipAs
         + clip.skeleton.size()
         + clip.markers.size() * CLIP_PER_MARKER_BYTES   + markerNameBytes;
 
-    writeHeader(os, KIND_CLIP, ANIMATION_CLIP_FORMAT_VERSION, recipeHash, payloadBytes);
+    writeHeader(os, KIND_CLIP, payloadBytes);
     writeRaw(os, boneCount);
     writeRaw(os, clip.duration);
     writeRaw(os, static_cast<uint64_t>(clip.positionTimes.size()));
@@ -802,13 +840,11 @@ bool writeAnimationClip(const std::filesystem::path& path, const AnimationClipAs
     return commitCookedWrite(os, path, "clip");
 }
 
-bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& out, uint64_t* outHash) {
+bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& out) {
     const std::string p = path.string();
     std::ifstream is;
-    uint64_t recipeHash = 0;
     uint64_t payloadBytes = 0;
-    if (!openCookedRead(is, path, KIND_CLIP, ANIMATION_CLIP_FORMAT_VERSION, CLIP_FIXED_BYTES, "clip",
-                        recipeHash, payloadBytes)) return false;
+    if (!openCookedRead(is, path, KIND_CLIP, CLIP_FIXED_BYTES, "clip", payloadBytes)) return false;
 
     uint64_t boneCount = 0;
     float    duration  = 0.0f;
@@ -818,50 +854,40 @@ bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& ou
     uint32_t skeletonNameLen   = 0;
     uint64_t markerCount       = 0;
     uint64_t markerNameBytes   = 0;
-    if (!readRaw(is, boneCount) || !readRaw(is, duration) ||
-        !readRaw(is, positionTimeCount) || !readRaw(is, positionCount) ||
-        !readRaw(is, rotationTimeCount) || !readRaw(is, rotationCount) ||
-        !readRaw(is, scaleTimeCount)    || !readRaw(is, scaleCount) ||
-        !readRaw(is, skeletonNameLen)   || !readRaw(is, markerCount) ||
-        !readRaw(is, markerNameBytes)) {
+    if (!readRaw(is, boneCount) || !readRaw(is, duration)
+        || !readRaw(is, positionTimeCount) || !readRaw(is, positionCount)
+        || !readRaw(is, rotationTimeCount) || !readRaw(is, rotationCount)
+        || !readRaw(is, scaleTimeCount) || !readRaw(is, scaleCount)
+        || !readRaw(is, skeletonNameLen) || !readRaw(is, markerCount)
+        || !readRaw(is, markerNameBytes)) {
         LOG_ERROR("Cooked clip '%s': truncated body", p.c_str());
         return false;
     }
 
     // Every count is bounded in the order the arrays are written.
     uint64_t remaining = payloadBytes - CLIP_FIXED_BYTES;
-    if (!takeCount(boneCount,         sizeof(ClipBone),  remaining, p, "clip", "bone")          ||
-        !takeCount(positionTimeCount, sizeof(float),     remaining, p, "clip", "position time") ||
-        !takeCount(positionCount,     sizeof(glm::vec3), remaining, p, "clip", "position")      ||
-        !takeCount(rotationTimeCount, sizeof(float),     remaining, p, "clip", "rotation time") ||
-        !takeCount(rotationCount,     sizeof(glm::quat), remaining, p, "clip", "rotation")      ||
-        !takeCount(scaleTimeCount,    sizeof(float),     remaining, p, "clip", "scale time")    ||
-        !takeCount(scaleCount,        sizeof(glm::vec3), remaining, p, "clip", "scale")         ||
-        !takeCount(skeletonNameLen,   1,                 remaining, p, "clip", "rig name")   ||
-        !takeCount(markerCount, CLIP_PER_MARKER_BYTES,   remaining, p, "clip", "marker")     ||
-        !takeCount(markerNameBytes,   1,                 remaining, p, "clip", "marker name")) return false;
+    if (!takeCount(boneCount, sizeof(ClipBone), remaining, p, "clip", "bone")
+        || !takeCount(positionTimeCount, sizeof(float), remaining, p, "clip", "position time")
+        || !takeCount(positionCount, sizeof(glm::vec3), remaining, p, "clip", "position")
+        || !takeCount(rotationTimeCount, sizeof(float), remaining, p, "clip", "rotation time")
+        || !takeCount(rotationCount, sizeof(glm::quat), remaining, p, "clip", "rotation")
+        || !takeCount(scaleTimeCount, sizeof(float), remaining, p, "clip", "scale time")
+        || !takeCount(scaleCount, sizeof(glm::vec3), remaining, p, "clip", "scale")
+        || !takeCount(skeletonNameLen, 1, remaining, p, "clip", "rig name")
+        || !takeCount(markerCount, CLIP_PER_MARKER_BYTES, remaining, p, "clip", "marker")
+        || !takeCount(markerNameBytes, 1, remaining, p, "clip", "marker name")) return false;
     if (remaining != 0) {
         LOG_ERROR("Cooked clip '%s': payload size inconsistent with counts", p.c_str());
         return false;
     }
 
     if (boneCount > MAX_SKELETON_BONES) {
-        LOG_ERROR("Cooked clip '%s': %llu bones is past the %u the format admits", p.c_str(),
-                  static_cast<unsigned long long>(boneCount), MAX_SKELETON_BONES);
-        return false;
-    }
-    // The sampler walks times and values in lockstep. Checked apart from the
-    // size reconciliation, which two compensating corruptions could satisfy.
-    if (positionTimeCount != positionCount || rotationTimeCount != rotationCount ||
-        scaleTimeCount != scaleCount) {
-        LOG_ERROR("Cooked clip '%s': key times and values disagree in length", p.c_str());
-        return false;
-    }
-    // The sampler divides by the duration to wrap a looping clip, and every
-    // consumer clamps against it; a NaN out of a damaged file would spread
-    // through the pose rather than stopping here.
-    if (!std::isfinite(duration) || duration < 0.0f) {
-        LOG_ERROR("Cooked clip '%s': implausible duration %f", p.c_str(), static_cast<double>(duration));
+        LOG_ERROR(
+            "Cooked clip '%s': %llu bones is past the %u the format admits",
+            p.c_str(),
+            static_cast<unsigned long long>(boneCount),
+            MAX_SKELETON_BONES
+        );
         return false;
     }
 
@@ -875,9 +901,8 @@ bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& ou
     out.skeleton.resize(skeletonNameLen);
     if (skeletonNameLen) is.read(out.skeleton.data(), skeletonNameLen);
 
-    // The marker records are fixed-size and already accounted for, so what is
-    // left of the payload is exactly the name blob - which is what each declared
-    // length is bounded against, one at a time, before any of it is read.
+    // The fixed-size marker records are accounted for, so what is left is exactly the name blob; each
+    // declared length is bounded against it before any is read.
     out.markers.assign(static_cast<size_t>(markerCount), ClipMarker{});
     uint64_t nameBytes = 0;
     for (uint64_t i = 0; i < markerCount; ++i) {
@@ -888,18 +913,13 @@ bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& ou
             out.markers.clear();
             return false;
         }
-        // Where a marker fires is the whole of what it says, so a time the clip
-        // cannot reach is a corrupt file rather than one to quietly move.
-        if (!std::isfinite(time) || time < 0.0f || time > duration) {
-            LOG_ERROR("Cooked clip '%s': marker %llu at %f is outside the clip's %f seconds",
-                      p.c_str(), static_cast<unsigned long long>(i),
-                      static_cast<double>(time), static_cast<double>(duration));
-            out.markers.clear();
-            return false;
-        }
         if (nameLen > markerNameBytes - nameBytes) {
-            LOG_ERROR("Cooked clip '%s': marker %llu declares a %u-byte name past the payload",
-                      p.c_str(), static_cast<unsigned long long>(i), nameLen);
+            LOG_ERROR(
+                "Cooked clip '%s': marker %llu declares a %u-byte name past the payload",
+                p.c_str(),
+                static_cast<unsigned long long>(i),
+                nameLen
+            );
             out.markers.clear();
             return false;
         }
@@ -925,40 +945,42 @@ bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& ou
         return false;
     }
 
-    // The sampler indexes these arrays directly, once per bone per frame.
-    for (size_t i = 0; i < out.bones.size(); ++i) {
-        const ClipBone& bone = out.bones[i];
-        if (!channelInRange(bone.position, out.positions.size()) ||
-            !channelInRange(bone.rotation, out.rotations.size()) ||
-            !channelInRange(bone.scale,    out.scales.size())) {
-            LOG_ERROR("Cooked clip '%s': bone %zu names keys past the %zu/%zu/%zu it declares",
-                      p.c_str(), i, out.positions.size(), out.rotations.size(), out.scales.size());
-            out.bones.clear();
-            return false;
-        }
-    }
-
+    // Checked apart from the sizes, which two compensating corruptions could satisfy: the sampler indexes
+    // these arrays directly, per bone per frame.
     out.duration = duration;
-    if (outHash) *outHash = recipeHash;
+    const std::string fault = findClipFault(out);
+    if (!fault.empty()) {
+        LOG_ERROR("Cooked clip '%s' cannot be played - %s", p.c_str(), fault.c_str());
+        out.bones.clear();
+        out.markers.clear();
+        return false;
+    }
     return true;
 }
 
-bool writeAudioClip(const std::filesystem::path& path, const AudioClipAsset& audio, uint64_t recipeHash) {
+bool writeAudioClip(const std::filesystem::path& path, const AudioClipAsset& audio) {
     const std::string p = path.string();
     if (audio.channels == 0 || audio.channels > MAX_AUDIO_CHANNELS) {
-        LOG_ERROR("Cooked sound '%s': %u channels is outside the 1..%u the format admits",
-                  p.c_str(), audio.channels, MAX_AUDIO_CHANNELS);
+        LOG_ERROR(
+            "Cooked sound '%s': %u channels is outside the 1..%u the format admits",
+            p.c_str(),
+            audio.channels,
+            MAX_AUDIO_CHANNELS
+        );
         return false;
     }
     if (audio.sampleRate == 0 || audio.sampleRate > MAX_AUDIO_SAMPLE_RATE) {
         LOG_ERROR("Cooked sound '%s': implausible sample rate %u", p.c_str(), audio.sampleRate);
         return false;
     }
-    // A partial frame is a clip whose last frame is missing a channel; the
-    // mixer reads whole frames and would run off the end of the buffer.
+    // The mixer reads whole frames, so a partial last frame runs it off the end of the buffer.
     if (audio.sampleCount() % audio.channels != 0) {
-        LOG_ERROR("Cooked sound '%s': %zu samples do not divide into %u channels",
-                  p.c_str(), audio.sampleCount(), audio.channels);
+        LOG_ERROR(
+            "Cooked sound '%s': %zu samples do not divide into %u channels",
+            p.c_str(),
+            audio.sampleCount(),
+            audio.channels
+        );
         return false;
     }
 
@@ -967,7 +989,7 @@ bool writeAudioClip(const std::filesystem::path& path, const AudioClipAsset& aud
 
     const uint64_t payloadBytes = AUDIO_FIXED_BYTES + audio.sampleCount() * sizeof(int16_t);
 
-    writeHeader(os, KIND_AUDIO, AUDIO_CLIP_FORMAT_VERSION, recipeHash, payloadBytes);
+    writeHeader(os, KIND_AUDIO, payloadBytes);
     writeRaw(os, audio.sampleRate);
     writeRaw(os, audio.channels);
     writeRaw(os, static_cast<uint64_t>(audio.sampleCount()));
@@ -980,13 +1002,11 @@ bool writeAudioClip(const std::filesystem::path& path, const AudioClipAsset& aud
     return commitCookedWrite(os, path, "sound");
 }
 
-bool readAudioClip(const std::filesystem::path& path, AudioClipAsset& out, uint64_t* outHash) {
+bool readAudioClip(const std::filesystem::path& path, AudioClipAsset& out) {
     const std::string p = path.string();
     std::ifstream is;
-    uint64_t recipeHash = 0;
     uint64_t payloadBytes = 0;
-    if (!openCookedRead(is, path, KIND_AUDIO, AUDIO_CLIP_FORMAT_VERSION, AUDIO_FIXED_BYTES, "sound",
-                        recipeHash, payloadBytes)) return false;
+    if (!openCookedRead(is, path, KIND_AUDIO, AUDIO_FIXED_BYTES, "sound", payloadBytes)) return false;
 
     uint32_t sampleRate  = 0;
     uint32_t channels    = 0;
@@ -1004,20 +1024,27 @@ bool readAudioClip(const std::filesystem::path& path, AudioClipAsset& out, uint6
     }
 
     if (channels == 0 || channels > MAX_AUDIO_CHANNELS) {
-        LOG_ERROR("Cooked sound '%s': %u channels is outside the 1..%u the format admits",
-                  p.c_str(), channels, MAX_AUDIO_CHANNELS);
+        LOG_ERROR(
+            "Cooked sound '%s': %u channels is outside the 1..%u the format admits",
+            p.c_str(),
+            channels,
+            MAX_AUDIO_CHANNELS
+        );
         return false;
     }
     if (sampleRate == 0 || sampleRate > MAX_AUDIO_SAMPLE_RATE) {
         LOG_ERROR("Cooked sound '%s': implausible sample rate %u", p.c_str(), sampleRate);
         return false;
     }
-    // Checked as well as sized, for the same reason the clip's key ranges are:
-    // a file can carry the right number of bytes and still describe a frame
-    // layout that does not fit them, and the mixer reads whole frames.
+    // Checked as well as sized: the right byte count can still describe frames that do not fit it, and
+    // the mixer reads whole frames.
     if (sampleCount % channels != 0) {
-        LOG_ERROR("Cooked sound '%s': %llu samples do not divide into %u channels", p.c_str(),
-                  static_cast<unsigned long long>(sampleCount), channels);
+        LOG_ERROR(
+            "Cooked sound '%s': %llu samples do not divide into %u channels",
+            p.c_str(),
+            static_cast<unsigned long long>(sampleCount),
+            channels
+        );
         return false;
     }
 
@@ -1030,8 +1057,7 @@ bool readAudioClip(const std::filesystem::path& path, AudioClipAsset& out, uint6
 
     out.sampleRate = sampleRate;
     out.channels   = channels;
-    out.samples    = std::make_shared<const std::vector<int16_t>>(std::move(samples));
-    if (outHash) *outHash = recipeHash;
+    out.samples    = ClipSamples(std::move(samples));
     return true;
 }
 

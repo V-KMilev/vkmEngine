@@ -22,26 +22,21 @@ void MeshAsset::computeAndSetBounds() {
     }
 }
 
-void MeshAsset::computeAndSetSkinRadius(const SkeletonAsset& skeleton) {
+void MeshAsset::computeAndSetSkinRadius(const SkeletonAsset& rig) {
     skinRadius = 0.0f;
-    // Empty is the unskinned case; any other disagreement violates the stream's
-    // own invariant, and the vertex stage reads both by the same index.
+    // Empty is unskinned; any other size mismatch breaks the stream's invariant.
     if (skin.empty() || skin.size() != vertices.size()) return;
 
-    // A bone's bind-pose origin in model space is the translation column of the
-    // inverse of its inverse bind - the point every vertex it drives is measured
-    // from.
-    std::vector<glm::vec3> origins(skeleton.inverseBind.size());
+    // A bone's bind-pose origin: the translation of its inverse bind's inverse.
+    std::vector<glm::vec3> origins(rig.inverseBind.size());
     for (size_t bone = 0; bone < origins.size(); ++bone) {
-        origins[bone] = glm::vec3(glm::inverse(skeleton.inverseBind[bone])[3]);
+        origins[bone] = glm::vec3(glm::inverse(rig.inverseBind[bone])[3]);
     }
 
     for (size_t v = 0; v < skin.size(); ++v) {
         const glm::vec3& position = vertices[v].position;
         for (int k = 0; k < 4; ++k) {
-            // Every weighted influence counts, the rig-root fallback an
-            // uninfluenced vertex is bound to included, because that binding
-            // moves it like any other.
+            // The rig-root fallback counts too: it moves the vertex like any other.
             if (skin[v].weights[k] == 0) continue;
             const uint16_t bone = skin[v].bones[k];
             if (bone >= origins.size()) continue;

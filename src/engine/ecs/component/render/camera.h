@@ -15,32 +15,34 @@ class Scene;
  */
 enum class ProjectionType {
     Perspective  = 0,
-    Orthographic = 1,   ///< Parallel projection.
+    Orthographic = 1,
     Count               ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
 };
+
 /**
  * @brief Component representing a camera, containing projection and view parameters.
- *
- * For raw projection-matrix construction without a Camera instance, use the
- * builders in core/math/projection.h.
  */
 struct Camera {
     ProjectionType projection = ProjectionType::Perspective;
-    float fovY                = glm::radians(70.0f);            ///< Vertical field of view in radians (default: ~70 degrees)
-    float orthoHeight         = 10.0f;                          ///< Orthographic half-height in world units
-    float aspect              = 0.0f;                           ///< Aspect ratio (width / height); <= 0 = derive from the viewport each frame
-    float zNear               = 0.1f;                           ///< Near clip plane distance
-    float zFar                = 1000.0f;                        ///< Far clip plane distance
-    float focusDistance       = 10.0f;                          ///< Depth of field: world distance held in sharp focus
-    float dofAmount           = 0.0f;                           ///< Depth of field strength (0 = off)
+    /// Vertical, radians
+    float fovY                = glm::radians(70.0f);
+    float orthoHeight         = 10.0f;                          ///< Half-height, world units
+    /// Width / height; <= 0 derives it from the viewport each frame
+    float aspect              = 0.0f;
+    float zNear               = 0.1f;
+    float zFar                = 1000.0f;
+    /// World distance held in sharp focus
+    float focusDistance       = 10.0f;
+    float dofAmount           = 0.0f;                           ///< 0 = off
+    /// Widest blur radius, fraction of viewport height (0..0.05)
+    float dofMaxBlur          = 0.011f;
     bool active               = true;
 
     /**
      * @brief Compute the projection matrix for this camera.
      *
-     * @param camera         The camera to build the projection for.
-     * @param viewportAspect The aspect used while camera.aspect <= 0 (auto mode:
-     *                       the camera tracks the viewport it renders into).
+     * @param camera         The camera.
+     * @param viewportAspect Used while camera.aspect <= 0.
      * @return The projection matrix.
      */
     static glm::mat4 computeProjection(const Camera& camera, float viewportAspect) {
@@ -48,31 +50,28 @@ struct Camera {
         if (camera.projection == ProjectionType::Perspective) {
             return glm::perspective(camera.fovY, aspect, camera.zNear, camera.zFar);
         } else {
-            // Centred on the origin, so the half-height and the aspect are the
-            // whole frustum: an off-axis offset is a lens shift nothing authors.
             const float halfWidth = camera.orthoHeight * aspect;
-            return glm::ortho(-halfWidth, halfWidth,
-                              -camera.orthoHeight, camera.orthoHeight,
-                              camera.zNear, camera.zFar);
+            return glm::ortho(
+                -halfWidth,
+                halfWidth,
+                -camera.orthoHeight,
+                camera.orthoHeight,
+                camera.zNear,
+                camera.zFar
+            );
         }
     }
 };
 
 /**
- * @brief The scene's active camera: the lowest-slot entity whose Camera::active is set.
+ * @brief The scene's active camera: the one already held, else the lowest-slot active one.
  *
- * The one definition of a rule three places have to agree on - the renderer
- * decides what to draw through it, the editor's fly controls decide what to
- * move, and a scene load decides what to re-bind to. A Transform is required
- * as well as a Camera, because a camera with no pose can neither be rendered
- * from nor flown. Two active cameras are broken by lowest slot (see
- * findLowestSlot); an empty result means the scene has no active camera, and
- * callers own their own fallback policy rather than inheriting one from here.
+ * A Transform is required too; ties break by lowest slot (see findLowestSlot).
+ * A held camera stays the answer while active and posed, even once a lower-slot
+ * one activates, so the view does not jump; pass {} for the unconditional rule.
  *
- * @param scene  The scene to search.
- * @param cached A previously returned entity, tested first as an O(1) fast
- *               path. Purely a hint - any value is safe, including a stale or
- *               destroyed entity, and {} goes straight to the scan.
+ * @param scene  Scene searched.
+ * @param cached A previously returned entity, tested first. Stale or destroyed is safe.
  * @return The active camera entity, or {} when there is none.
  */
 EntityId findActiveCamera(const Scene& scene, EntityId cached = {});
@@ -82,13 +81,14 @@ EntityId findActiveCamera(const Scene& scene, EntityId cached = {});
 VKM_ENUM_NAMES(::Vkm::Engine::ProjectionType, "Perspective", "Orthographic")
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::Camera)
-    VKM_F(projection),
-    VKM_F(fovY),
-    VKM_F(orthoHeight),
-    VKM_F(aspect),
-    VKM_F(zNear),
-    VKM_F(zFar),
-    VKM_F(focusDistance),
-    VKM_F(dofAmount),
+    VKM_F(projection)
+    VKM_F(fovY)
+    VKM_F(orthoHeight)
+    VKM_F(aspect)
+    VKM_F(zNear)
+    VKM_F(zFar)
+    VKM_F(focusDistance)
+    VKM_F(dofAmount)
+    VKM_F(dofMaxBlur)
     VKM_F(active)
 VKM_REFLECT_END()

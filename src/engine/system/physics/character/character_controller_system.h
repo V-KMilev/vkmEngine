@@ -5,23 +5,11 @@
 namespace Vkm::Engine {
 
 /**
- * @brief Drives every CharacterController's Rigidbody from its moveInput, and
- *        resolves what it is standing on.
+ * @brief Drives every CharacterController's Rigidbody from its moveInput, and resolves what it stands on.
  *
- * Registered at SystemStage::Simulation immediately after PhysicsSystem, so it
- * reads THIS tick's freshly written Rigidbody::supported / supportNormal /
- * blockNormal. Only the velocity it writes is a tick late, and a tick of
- * steering lag is imperceptible; fresh contacts are the half that has to be
- * exact, because landing, stepping off a ledge, refusing a slope and sliding
- * along a wall all turn on them.
- *
- * It writes velocity, never position: the solver owns the pose, so a character
- * cannot be teleported through a wall by its own controller, and everything the
- * solver already does - friction, restitution, penetration recovery, sleeping -
- * keeps working underneath it. What it does NOT leave to the solver is sliding:
- * a target aimed into a wall is deflected along it here, because otherwise
- * whether a character glides or snags is decided by Coulomb friction, and two
- * material numbers nobody chose for that purpose is not a movement design.
+ * Runs on the tick, after PhysicsSystem, so it reads THIS tick's Rigidbody::supported / supportNormal /
+ * blockNormal. Writes velocity, never position. A target aimed into a wall is deflected along it here,
+ * or Coulomb friction would decide whether a character glides or snags.
  */
 class CharacterControllerSystem : public System {
     public:
@@ -37,18 +25,15 @@ class CharacterControllerSystem : public System {
     public:
         void fixedUpdate(FrameContext& ctx) override;
 
-        bool hasFixedUpdate() const override { return true; }
-
         /**
-         * @brief Re-run during a replay: it moves the world from state and command, and
-         * running it twice over the same tick lands in the same place.
+         * @brief Re-run during a replay: it moves the world from state and command, deterministically.
+         *
+         * @return Always true.
          */
         bool isReplayed() const override { return true; }
 
     private:
-        // Edge latches, so each fault is named once per gap rather than once a
-        // tick. Both are silent misbehaviours otherwise: a controller with no
-        // capsule never grounds, and one that can rotate falls over.
+        // Edge latches: each fault is named once per gap, not once a tick.
         bool m_noCapsuleLogged = false;
         bool m_spinnableLogged = false;
 };

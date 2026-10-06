@@ -1,34 +1,26 @@
 #include "pass/gl_fog_pass.h"
 
+#include <algorithm>
+
 #include <GL/glew.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
 
 #include "gl_compute_shader.h"
+#include "gl_error_handle.h"
 
 #include "gl_frame_context.h"
-#include "data/gl_fog_volume.h"
-#include "data/gl_shadow_atlas.h"
+#include "storage/gl_fog_volume.h"
+#include "storage/gl_shadow_atlas.h"
 #include "convention/gl_bindings.h"
 #include "ecs/environment.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {
 
-namespace {
-// Froxel grid is authored per scene (Environment); clamp each axis to a sane
-// range so a bad value can't allocate a huge volume or a degenerate one.
-constexpr uint32_t FROXEL_MIN = 16u;
-constexpr uint32_t FROXEL_MAX = 512u;
-
-uint32_t clampFroxel(uint32_t v) {
-    return v < FROXEL_MIN ? FROXEL_MIN : (v > FROXEL_MAX ? FROXEL_MAX : v);
-}
-} // namespace
-
 GLFogPass::GLFogPass()
-    : m_inject(std::make_unique<Vkm::GL::ComputeShader>("shaders/fog/inject"))
-    , m_integrate(std::make_unique<Vkm::GL::ComputeShader>("shaders/fog/integrate")) {}
+    : m_inject("shaders/fog/inject")
+    , m_integrate("shaders/fog/integrate") {}
 
 GLFogPass::~GLFogPass() = default;
 
@@ -37,53 +29,47 @@ void GLFogPass::execute(GLFrameContext& ctx) {
     const Environment& env  = view.environment;
     if (!env.fog.enabled) return;
 
-    // Reallocates only when the authored resolution changes; the first
-    // fog-enabled frame allocates.
-    const glm::uvec3 dims(clampFroxel(env.fog.resolutionX),
-                          clampFroxel(env.fog.resolutionY),
-                          clampFroxel(env.fog.resolutionZ));
+    // Reallocates only when the authored resolution changes.
+    const glm::uvec3 dims = env.fog.froxelGrid();
     ctx.fog.resize(dims.x, dims.y, dims.z);
 
-    const float zNear = view.camera.zNear;
-    const float zFar  = view.camera.zFar;
-    const glm::mat4& invView = view.camera.invView;
+    // Slices reach the authored distance, not the far plane: over a kilometre most would hold air
+    // too thin to show, and the near ones the eye reads would be coarse.
+    const float depth = std::max(std::min(env.fog.maxDistance, view.camera.zFar), 2.0f * view.camera.zNear);
+    ctx.fog.setDepth(depth);
 
     const glm::ivec3 idims(dims);
-    const uint32_t gx = (dims.x + 7u) / 8u;
-    const uint32_t gy = (dims.y + 7u) / 8u;
+    namespace Groups = GLBindings::ComputeGroups;
+    const uint32_t gx = Groups::covering(dims.x, Groups::IMAGE);
+    const uint32_t gy = Groups::covering(dims.y, Groups::IMAGE);
 
-    // The light SSBO, the cluster grid and the ShadowBlock UBO are bound already; the
-    // 2D atlas is not, because the forward pass binds it and runs later. The inject
-    // shader reads the sun's cascades from it and never samples the point-light cubes.
+    // Lights, cluster grid and ShadowBlock are bound already. The inject shader reads the sun's
+    // cascades from the 2D atlas and never samples the point-light cubes.
     ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::ATLAS_2D);
 
     ctx.fog.bindScatterImage(0, GL_WRITE_ONLY);
-    m_inject->bind();
-    m_inject->setUniformMatrix4fv("u_invView",       invView);
-    m_inject->setUniformMatrix4fv("u_invProjection", view.camera.invProjection);
-    m_inject->setUniform3fv("u_cameraPos", view.camera.position);
-    m_inject->setUniform1f("u_zNear", zNear);
-    m_inject->setUniform1f("u_zFar",  zFar);
-    m_inject->setUniform1f("u_density",       env.fog.density);
-    m_inject->setUniform1f("u_height",        env.fog.height);
-    m_inject->setUniform1f("u_heightFalloff", env.fog.heightFalloff);
-    m_inject->setUniform1f("u_anisotropy",    env.fog.anisotropy);
-    m_inject->setUniform3fv("u_albedo",       env.fog.albedo);
-    m_inject->setUniform3iv("u_froxelDims",   idims);
-    m_inject->dispatch(gx, gy, dims.z);
+    m_inject.bind();
+    bindAmbient(ctx, m_inject);
+    m_inject.setUniform1f("u_density",        env.fog.density);
+    m_inject.setUniform1f("u_height",         env.fog.height);
+    m_inject.setUniform1f("u_heightFalloff",  env.fog.heightFalloff);
+    m_inject.setUniform1f("u_anisotropy",     env.fog.anisotropy);
+    m_inject.setUniform3fv("u_albedo",        env.fog.albedo);
+    m_inject.setUniform3iv("u_froxelDims",    idims);
+    m_inject.setUniform1f("u_fogDepth",       depth);
+    m_inject.dispatch(gx, gy, dims.z);
 
-    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+    VKM_GL_CHECK(glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT));
 
     ctx.fog.bindScatterImage(0, GL_READ_ONLY);
     ctx.fog.bindIntegratedImage(1, GL_WRITE_ONLY);
-    m_integrate->bind();
-    m_integrate->setUniform1f("u_zNear", zNear);
-    m_integrate->setUniform1f("u_zFar",  zFar);
-    m_integrate->setUniform3iv("u_froxelDims", idims);
-    m_integrate->dispatch(gx, gy, 1);
+    m_integrate.bind();
+    m_integrate.setUniform3iv("u_froxelDims", idims);
+    m_integrate.setUniform1f("u_fogDepth",    depth);
+    m_integrate.dispatch(gx, gy, 1);
 
-    // Order the integrated writes before the apply pass samples the volume.
-    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+    // Order the integrated writes before the passes that fog sample the volume.
+    VKM_GL_CHECK(glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT));
 
     ctx.fogReady = true;
 }
