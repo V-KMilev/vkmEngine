@@ -2,178 +2,216 @@
 
 #include <GL/glew.h>
 
-#include "debug/profiler.h"
-
-#include "gl_shader.h"
 #include "gl_context.h"
+#include "gl_shader.h"
+#include "gl_error_handle.h"
 
 #include "gl_frame_context.h"
 #include "gl_view.h"
-#include "data/gl_mesh.h"
-#include "data/gl_shadow_atlas.h"
-#include "data/gl_shadow_data.h"
-#include "data/gl_skin_palette.h"
+#include "asset/gl_material.h"
+#include "asset/gl_mesh.h"
+#include "convention/gl_bindings.h"
+#include "debug/profiler.h"
+#include "frame/gl_object_buffer.h"
+#include "frame/gl_shadow_data.h"
+#include "frame/gl_skin_palette.h"
+#include "storage/gl_shadow_atlas.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
-/**
- * @brief The skinned depth program to draw with this frame, or null.
- *
- * Null is what switches the posed half of the pass off: nothing to bind,
- * nothing to hand a matrix to, and every caster drawn by the instanced path.
- *
- * @param ctx     The frame context, for the palette this frame uploaded.
- * @param skinned The pass's skinned program for this projection.
- * @return The program, or nullptr when the frame posed nothing.
- */
-Vkm::GL::Shader* posedProgram(const GLFrameContext& ctx, Vkm::GL::Shader& skinned) {
-    return ctx.skinPalette.count() > 0 ? &skinned : nullptr;
-}
+/// TileDraws::first of a tile or face held from an earlier frame, so not drawn.
+constexpr uint32_t HELD = UINT32_MAX;
 
 } // namespace
 
 GLShadowPass::GLShadowPass()
-    : m_depth2D(std::make_unique<Vkm::GL::Shader>("shaders/shadow/shadow_2d"))
-    , m_depthCube(std::make_unique<Vkm::GL::Shader>("shaders/shadow/shadow_cube"))
-    , m_depth2DSkinned(std::make_unique<Vkm::GL::Shader>("shaders/shadow/shadow_2d_skinned"))
-    , m_depthCubeSkinned(std::make_unique<Vkm::GL::Shader>("shaders/shadow/shadow_cube_skinned")) {}
+    : m_programs{
+        {Vkm::GL::Shader("shaders/shadow/depth")},
+        {Vkm::GL::Shader("shaders/shadow/depth_skinned")},
+        {Vkm::GL::Shader("shaders/shadow/depth_masked")},
+        {Vkm::GL::Shader("shaders/shadow/depth_masked_skinned")}
+    }
+{}
 
 GLShadowPass::~GLShadowPass() = default;
 
 void GLShadowPass::execute(GLFrameContext& ctx) {
     if (ctx.shadowData.jobs2D().empty() && ctx.shadowData.jobsCube().empty()) return;
 
-    ctx.gl.setDepthTest(true);
-    ctx.gl.setDepthWrite(true);
-    ctx.gl.setDepthFunc(GL_LESS);
-    ctx.gl.setBlending(false);
-    ctx.gl.setFaceCulling(false);
+    m_tilesDrawn = 0;
+    if (!uploadCasters(ctx)) {
+        PROFILE_PLOT("Shadow/TilesDrawn", static_cast<int64_t>(m_tilesDrawn));
+        return;
+    }
 
-    // The palettes are uploaded before the pass loop, and the skinned programs
-    // read them here exactly as the camera ones do downstream. A frame that
-    // posed nothing has none, and then neither program below is ever bound.
+    ctx.gl.setDepthFunc(GL_LESS);
+
+    // Uploaded before the pass loop; a frame that posed nothing has none.
     if (ctx.skinPalette.count() > 0) ctx.skinPalette.bind();
 
-    // Reset per frame rather than carried across: other passes have bound their
-    // own programs since, and a hot reload can have replaced the GL program
-    // behind one of these objects without the object itself moving.
+    // Reset per frame: other passes bind their own programs, and a hot reload can replace the GL
+    // program behind one of these objects without the object moving.
     m_bound = nullptr;
 
     render2D(ctx);
     renderCube(ctx);
+    PROFILE_PLOT("Shadow/TilesDrawn", static_cast<int64_t>(m_tilesDrawn));
+}
+
+bool GLShadowPass::uploadCasters(GLFrameContext& ctx) {
+    PROFILE_SCOPE("ShadowCasters/Upload");
+    const GLShadowData& plan = ctx.shadowData;
+
+    // Which tiles and faces draw is asked once, here. The atlas records a tile's contents when
+    // render2D and renderCube clear it, so every tile not held is cleared below, casters or none.
+    m_list.clear();
+    m_draws.clear();
+    std::vector<uint32_t>& instances = m_list.instances();
+    const auto place = [&](const ShadowCasterBatch& batch, bool held) {
+        if (held) return TileDraws{HELD, HELD};
+        const uint32_t first = static_cast<uint32_t>(instances.size());
+        instances.insert(instances.end(), batch.order.begin(), batch.order.end());
+        ++m_tilesDrawn;
+        return addCasters(ctx, batch, first);
+    };
+
+    const std::vector<Shadow2DJob>& jobs2D = plan.jobs2D();
+    m_tiles2D.resize(jobs2D.size());
+    for (size_t j = 0; j < jobs2D.size(); ++j) {
+        const ShadowCasterBatch& batch = plan.batch2D(j);
+        m_tiles2D[j] = place(batch, ctx.shadowAtlas.tileHolds(jobs2D[j].slot, batch.signature));
+    }
+    const std::vector<ShadowCubeJob>& jobsCube = plan.jobsCube();
+    m_tilesCube.resize(jobsCube.size() * 6);
+    for (size_t j = 0; j < jobsCube.size(); ++j) {
+        for (uint32_t f = 0; f < 6; ++f) {
+            const ShadowCasterBatch& batch = plan.batchCube(j, f);
+            m_tilesCube[j * 6 + f] = place(
+                batch,
+                ctx.shadowAtlas.faceHolds(jobsCube[j].slot, f, batch.signature)
+            );
+        }
+    }
+    if (m_tilesDrawn == 0) return false;
+
+    // Object indices; every transform went up once for the frame, so nothing else uploads here.
+    m_list.upload();
+    ctx.objects.bind();
+    return true;
+}
+
+GLShadowPass::TileDraws GLShadowPass::addCasters(
+    const GLFrameContext& ctx,
+    const ShadowCasterBatch& batch,
+    uint32_t first
+) {
+    const GLView&                  glView = ctx.resources;
+    const std::vector<ObjectDraw>& draws  = ctx.view.objects->draws;
+
+    // With no palette uploaded, no skinned program binds and casters draw stored vertices.
+    const bool framePosed = ctx.skinPalette.count() > 0;
+
+    std::vector<DrawCommand>& commands = m_list.commands();
+    const uint32_t tileFirst = static_cast<uint32_t>(m_draws.size());
+    for (const ShadowRun& run : batch.runs) {
+        const ObjectDraw& draw = draws[batch.order[run.first]];
+        const GLMesh*     mesh = glView.getMesh(draw.mesh);
+        if (!mesh) continue;
+        // A posed caster without a skin stream draws its stored vertices, as the static program does.
+        const bool posed = framePosed && run.posed && mesh->isSkinned();
+
+        // Every caster of a masked run shares its material (ShadowRun::key).
+        const GLMaterial* material = glView.getMaterial(draw.material);
+        const GLMaterial* cutout   = material && material->getType() == MaterialType::AlphaMask
+            ? material
+            : nullptr;
+        const uint32_t    program  = (cutout ? 2 : 0) + (posed ? 1 : 0);
+
+        const ShadowDraw* last = m_draws.size() > tileFirst ? &m_draws.back() : nullptr;
+        if (!last || last->program != program || last->material != cutout
+            || last->mesh->layout() != mesh->layout()) {
+            m_draws.push_back({ mesh, cutout, program, static_cast<uint32_t>(commands.size()), 0 });
+        }
+        commands.push_back(mesh->command(run.count, first + run.first));
+        ++m_draws.back().count;
+    }
+    return { tileFirst, static_cast<uint32_t>(m_draws.size()) };
 }
 
 void GLShadowPass::render2D(GLFrameContext& ctx) {
     const std::vector<Shadow2DJob>& jobs = ctx.shadowData.jobs2D();
     if (jobs.empty()) return;
 
-    Vkm::GL::Shader* skinned = posedProgram(ctx, *m_depth2DSkinned);
+    // A cascade's casters nearer the sun than its near plane are flattened onto
+    // it rather than clipped (Shadow2DJob::cascade). Enabled raw: the Context
+    // does not model depth clamping, and it is off again before the cubes.
+    bool clamped = false;
+    const auto clampDepth = [&](bool clamp) {
+        if (clamp == clamped) return;
+        if (clamp) VKM_GL_CHECK(glEnable(GL_DEPTH_CLAMP));
+        else       VKM_GL_CHECK(glDisable(GL_DEPTH_CLAMP));
+        clamped = clamp;
+    };
 
     ctx.shadowAtlas.begin2D(ctx.gl);
     for (size_t j = 0; j < jobs.size(); ++j) {
-        ctx.shadowAtlas.setTileViewport(ctx.gl, jobs[j].slot);
-        // Uniform state is per program, so the tile's matrix goes to each
-        // program that will draw with it.
-        bindProgram(*m_depth2D);
-        m_depth2D->setUniformMatrix4fv("u_lightVP", jobs[j].lightVP);
-        if (skinned) {
-            bindProgram(*skinned);
-            skinned->setUniformMatrix4fv("u_lightVP", jobs[j].lightVP);
-        }
-        renderCasters(ctx, ctx.shadowData.batch2D(j), *m_depth2D, skinned);
+        if (m_tiles2D[j].first == HELD) continue;
+        clampDepth(jobs[j].cascade);
+        ctx.shadowAtlas.beginTile(ctx.gl, jobs[j].slot, ctx.shadowData.batch2D(j).signature);
+        beginTile(jobs[j].lightVP);
+        drawTile(ctx.resources, m_tiles2D[j]);
     }
+    clampDepth(false);
 }
 
 void GLShadowPass::renderCube(GLFrameContext& ctx) {
     const std::vector<ShadowCubeJob>& jobs = ctx.shadowData.jobsCube();
-    Vkm::GL::Shader* skinned = posedProgram(ctx, *m_depthCubeSkinned);
 
     for (size_t j = 0; j < jobs.size(); ++j) {
         const ShadowCubeJob& job = jobs[j];
-        bindProgram(*m_depthCube);
-        m_depthCube->setUniform3fv("u_lightPos", job.pos);
-        m_depthCube->setUniform1f("u_range", job.range);
-        if (skinned) {
-            bindProgram(*skinned);
-            skinned->setUniform3fv("u_lightPos", job.pos);
-            skinned->setUniform1f("u_range", job.range);
-        }
-
         for (uint32_t f = 0; f < 6; ++f) {
-            ctx.shadowAtlas.beginCubeFace(ctx.gl, job.slot, f);
-            bindProgram(*m_depthCube);
-            m_depthCube->setUniformMatrix4fv("u_faceVP", job.faceVP[f]);
-            if (skinned) {
-                bindProgram(*skinned);
-                skinned->setUniformMatrix4fv("u_faceVP", job.faceVP[f]);
-            }
-            renderCasters(ctx, ctx.shadowData.batchCube(j, f), *m_depthCube, skinned);
+            const TileDraws& tile = m_tilesCube[j * 6 + f];
+            if (tile.first == HELD) continue;
+            ctx.shadowAtlas.beginCubeFace(ctx.gl, job.slot, f, ctx.shadowData.batchCube(j, f).signature);
+            beginTile(job.faceVP[f]);
+            drawTile(ctx.resources, tile);
         }
     }
 }
 
-void GLShadowPass::renderCasters(GLFrameContext& ctx, const ShadowCasterBatch& batch,
-                                 Vkm::GL::Shader& program, Vkm::GL::Shader* skinned) {
-    if (batch.order.empty()) return;
+void GLShadowPass::beginTile(const glm::mat4& lightVP) {
+    m_lightVP = lightVP;
+    ++m_tile;
+}
 
-    const GLView& glView = ctx.resources;
-    const std::vector<ShadowCasterData>& casters = ctx.view.shadowCasters;
-    const std::vector<ShadowCasterSkin>& skins   = ctx.view.casterSkins;
-    const std::vector<uint32_t>&         order   = batch.order;
-
-    // Culling and mesh-sorting already ran on the thread pool (see
-    // GLShadowData::cullCasters), so this is submission only - and depth-only, so the
-    // instance data is the model matrix and nothing else.
-    {
-    PROFILE_SCOPE("ShadowCasters/Gather");
-    m_models.clear();
-    m_models.reserve(order.size());
-    for (uint32_t idx : order) m_models.push_back(casters[idx].model);
-    }
-    {
-    PROFILE_SCOPE("ShadowCasters/Upload");
-    m_instances.update(m_models.data(), static_cast<uint32_t>(m_models.size()));
-    }
-
+void GLShadowPass::drawTile(const GLView& glView, const TileDraws& tile) {
     PROFILE_SCOPE("ShadowCasters/Draw");
-    size_t i = 0;
-    while (i < order.size()) {
-        const uint32_t meshId = casters[order[i]].mesh.id();
-        const GLMesh*  mesh   = glView.getMesh(casters[order[i]].mesh);
-
-        const size_t first = i;
-        while (i < order.size() && casters[order[i]].mesh.id() == meshId) ++i;
-        if (!mesh) continue;
-
-        mesh->attachInstances(m_instances, 4);
-
-        // The common case: one instanced draw for the whole run. A frame that posed
-        // nothing takes it for every mesh, skin stream or not.
-        if (!skinned || !mesh->isSkinned()) {
-            bindProgram(program);
-            mesh->drawInstanced(static_cast<uint32_t>(i - first), static_cast<uint32_t>(first));
-            continue;
+    const GLMaterial* boundMaterial = nullptr;
+    for (uint32_t d = tile.first; d < tile.end; ++d) {
+        const ShadowDraw& draw = m_draws[d];
+        useProgram(m_programs[draw.program]);
+        if (draw.material && draw.material != boundMaterial) {
+            draw.material->bind(GLBindings::UBOBindingPoints::MATERIAL);
+            draw.material->bindTextures(glView);
+            boundMaterial = draw.material;
         }
-
-        // Caster by caster: the palette base is a uniform here, and a uniform describes
-        // one draw. An unposed caster falls back to the static program's bind pose.
-        for (size_t k = first; k < i; ++k) {
-            const ShadowCasterSkin& skin = skins[order[k]];
-            Vkm::GL::Shader& chosen = (skin.count > 0) ? *skinned : program;
-            bindProgram(chosen);
-            if (skin.count > 0) chosen.setUniform1ui("u_skinBase", skin.first);
-            mesh->drawInstanced(1, static_cast<uint32_t>(k));
-        }
+        m_list.draw(*draw.mesh, draw.first, draw.count);
     }
 }
 
-void GLShadowPass::bindProgram(Vkm::GL::Shader& program) {
-    if (m_bound == &program) return;
-    program.bind();
-    m_bound = &program;
+void GLShadowPass::useProgram(DepthProgram& program) {
+    if (m_bound != &program.shader) {
+        program.shader.bind();
+        m_bound = &program.shader;
+    }
+    // Uniform state is per program, so each gets a tile's matrix the first time it draws it.
+    if (program.tile != m_tile) {
+        program.shader.setUniformMatrix4fv("u_lightVP", m_lightVP);
+        program.tile = m_tile;
+    }
 }
 
 } // namespace Vkm::Engine

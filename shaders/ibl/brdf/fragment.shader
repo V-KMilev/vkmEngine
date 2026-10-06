@@ -1,26 +1,16 @@
 /**
  * IBL bake - split-sum BRDF/DFG integration LUT.
  *
- * x axis = N.V, y axis = roughness. Output .rg is the (scale, bias) the
- * forward shader applies to the prefiltered specular: F * dfg.x + dfg.y.
- * Rendered once into an RG16F texture.
+ * x = N.V, y = roughness; .rg is the (scale, bias) on the prefiltered specular: F * dfg.x + dfg.y.
  */
-
 in vec2 vUV;
 
 out vec2 FragColor;
 
-#include "../../_common/constants.glsl"
-#include "../../_common/sampling.glsl"
-const uint  SAMPLE_COUNT = 1024u;
+#include "../../brdf.glsl"
+#include "../../sampling.glsl"
 
-// Smith geometry with the IBL k = a^2 / 2.
-float geometrySmithIBL(float NdotV, float NdotL, float roughness) {
-    float k = (roughness * roughness) / 2.0;
-    float ggxV = NdotV / (NdotV * (1.0 - k) + k);
-    float ggxL = NdotL / (NdotL * (1.0 - k) + k);
-    return ggxV * ggxL;
-}
+const uint SAMPLE_COUNT = 1024u;
 
 void main() {
     float NdotV = max(vUV.x, 1e-4);
@@ -42,9 +32,10 @@ void main() {
         float VdotH = max(dot(V, H), 0.0);
 
         if (NdotL > 0.0) {
-            float G = geometrySmithIBL(NdotV, NdotL, roughness);
-            float gVis = (G * VdotH) / (NdotH * NdotV);
-            float Fc = pow(1.0 - VdotH, 5.0);
+            // The direct lights' visibility term, so both integrate the same lobe; pdf D*NoH / (4 VoH).
+            float Vis  = visSmithCorrelated(NdotV, NdotL, roughness * roughness);
+            float gVis = 4.0 * Vis * NdotL * VdotH / max(NdotH, 1e-4);
+            float Fc   = pow(1.0 - VdotH, 5.0);
             A += (1.0 - Fc) * gVis;
             B += Fc * gVis;
         }

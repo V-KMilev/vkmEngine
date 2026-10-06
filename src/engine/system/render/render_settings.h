@@ -1,162 +1,212 @@
 #pragma once
 
 #include <cstdint>
+
 #include "core/reflect.h"
 
 namespace Vkm::Engine {
 
 /**
- * @brief How a texel is fetched before anisotropy is considered, for every
- * texture that has not pinned its own filter.
+ * @brief How a texel is fetched for every texture without its own filter.
  *
- * Bilinear smooths within a mip level but leaves the seam between levels
- * visible; Trilinear crosses that seam and is the only mode anisotropic
- * filtering can build on. Nearest is here for a scene whose art is all point
- * sampled - a pixel-art game, or a look chosen deliberately.
- *
- * A single texture that must not be blended does not ask through this. That is
- * a claim about its own content rather than a quality trade, and it belongs to
- * the asset: see TextureParams::filterOverride, which outranks whatever is set
- * here.
+ * Bilinear leaves the seam between mip levels visible; Trilinear crosses it and
+ * is the only mode anisotropy builds on. TextureParams::filterOverride outranks
+ * this. project.json stores the name, so enumerator order is not format.
  */
 enum class TextureFiltering : uint8_t {
     Nearest = 0,
     Bilinear,
     Trilinear,
+    Count       ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
 };
-
 
 /**
  * @brief Every output the composite pass can write, once.
  *
- * Three things are this list: the enum, the names the editor's combo shows, and
- * the `MODE_*` constants the composite shader switches on. The third is a column
- * here rather than something derived from the enum elsewhere, and the backend
- * writes it into the shader prelude beside the `#version`.
- *
- * Columns: the enumerator, the label the editor shows, and the suffix the shader
- * constant carries (`MODE_<suffix>`). The last two differ where a name reads
- * better to a person than to a shader - "Light Clusters" against MODE_CLUSTERS -
- * which is exactly what a mechanical derivation could not have known.
+ * Columns: enumerator, editor label, shader constant suffix (`MODE_<suffix>`),
+ * and whether the forward pass shades it as radiance (then tonemapped) rather
+ * than the composite showing a buffer raw.
  */
-#define VKM_RENDER_MODES(X)                                       \
-    X(Default,          "Default",           DEFAULT)             \
-    X(Depth,            "Depth",             DEPTH)               \
-    X(Normals,          "Normals",           NORMALS)             \
-    X(Roughness,        "Roughness",         ROUGHNESS)           \
-    X(Metalness,        "Metalness",         METALNESS)           \
-    X(AmbientOcclusion, "Ambient Occlusion", AMBIENT_OCCLUSION)   \
-    X(Bloom,            "Bloom",             BLOOM)               \
-    X(ShadowAtlas,      "Shadow Atlas",      SHADOW_ATLAS)        \
-    X(Fog,              "Fog",               FOG)                 \
-    X(GiOnly,           "GI Only",           GI_ONLY)             \
-    X(DirectOnly,       "Direct Only",       DIRECT_ONLY)         \
-    X(Clusters,         "Light Clusters",    CLUSTERS)
+#define VKM_RENDER_MODES(X)                                              \
+    X(Default,          "Default",              DEFAULT,           true)  \
+    X(Depth,            "Depth",                DEPTH,             false) \
+    X(Normals,          "Normals",              NORMALS,           false) \
+    X(Roughness,        "Roughness (authored)", ROUGHNESS,         false) \
+    X(Metalness,        "Metalness (authored)", METALNESS,         false) \
+    X(AmbientOcclusion, "Ambient Occlusion",    AMBIENT_OCCLUSION, false) \
+    X(Bloom,            "Bloom",                BLOOM,             false) \
+    X(ShadowAtlas,      "Shadow Atlas",         SHADOW_ATLAS,      false) \
+    X(Fog,              "Fog",                  FOG,               false) \
+    X(GiOnly,           "GI Only",              GI_ONLY,           true)  \
+    X(DirectOnly,       "Direct Only",          DIRECT_ONLY,       true)  \
+    X(Clusters,         "Light Clusters",       CLUSTERS,          true)
+
+/**
+ * @brief Every display transform the composite pass can end a frame with, once.
+ *
+ * Columns: enumerator, label (shown, and stored in project.json as
+ * `render.tonemap` - renaming one breaks saved projects), shader constant
+ * suffix (`TONEMAP_<suffix>`).
+ */
+#define VKM_TONEMAPS(X)                                   \
+    X(Reinhard,       "Reinhard",            REINHARD)    \
+    X(ACES,           "ACES (filmic)",       ACES)        \
+    X(KhronosNeutral, "Khronos PBR Neutral", KHRONOS_NEUTRAL)
+
+/**
+ * @brief How linear HDR radiance is landed into the display range; a fixed curve.
+ *
+ * Reinhard (`c / (c + 1)`, default) desaturates bright colour. ACES is the
+ * Narkowicz film fit. Khronos PBR Neutral holds authored albedo as it brightens.
+ */
+enum class Tonemap : uint8_t {
+#define VKM_TONEMAP_ENUMERATOR(name, label, glsl) name,
+    VKM_TONEMAPS(VKM_TONEMAP_ENUMERATOR)
+#undef VKM_TONEMAP_ENUMERATOR
+    Count,  ///< Enum size marker (reflection); not a selectable curve.
+};
 
 /**
  * @brief What the composite pass writes to the screen.
  *
- * Default is the final tonemapped image; the rest blit an intermediate render
- * target for debugging - the indirect term alone, the direct sum alone, the
- * Forward+ per-cluster light-count heatmap. Expanded from VKM_RENDER_MODES.
+ * Default is the final tonemapped image; the rest are debug views.
  */
 enum class RenderMode : uint8_t {
-#define VKM_RENDER_MODE_ENUMERATOR(name, label, glsl) name,
+#define VKM_RENDER_MODE_ENUMERATOR(name, label, glsl, shaded) name,
     VKM_RENDER_MODES(VKM_RENDER_MODE_ENUMERATOR)
 #undef VKM_RENDER_MODE_ENUMERATOR
     Count,  ///< Enum size marker (reflection); not a selectable mode.
 };
+
 /**
  * @brief Editable render tuning: pass toggles + per-effect parameters.
  *
- * Owned by the RenderSystem (the editor's Render Settings panel mutates it) and
- * copied into the RenderView each frame, so passes read it via ctx.view.settings
- * instead of hardcoded constants. Backend-agnostic - just data.
+ * Carried on FrameContext::render; copied into RenderView::settings each frame.
  */
 struct RenderSettings {
     // Debug
-    RenderMode renderMode = RenderMode::Default;  ///< Composite output: final image or a debug buffer.
+    RenderMode renderMode = RenderMode::Default;
 
     // Pass toggles
     bool gtao       = true;
     bool bloom      = true;
     bool probes     = true;
-    bool occlusionCulling = true;  ///< Test instances against the Hi-Z pyramid before drawing them.
+    bool ssr        = true;   ///< Screen-space reflections, over the probes and the sky.
 
     // GTAO
-    float gtaoRadius    = 0.6f;   ///< World-space sample radius.
+    float gtaoRadius    = 0.6f;   ///< World-space sample radius, MIN_GTAO_RADIUS..MAX_GTAO_RADIUS.
     float gtaoIntensity = 1.0f;   ///< Occlusion strength.
     float gtaoPower     = 1.5f;   ///< Contrast curve.
-    float gtaoBias      = 0.03f;  ///< View-space self-occlusion guard.
+
+    // Screen-space reflections
+    float ssrMaxRoughness = 0.6f;   ///< Rougher surfaces reflect the probes and the sky alone.
+    float ssrMaxDistance  = 50.0f;  ///< World-space trace length.
 
     // Bloom
-    float bloomStrength  = 0.06f;   ///< Bloom blend amount (linear HDR, pre-tonemap).
-    float bloomThreshold = 1.0f;    ///< Bright-pass threshold (HDR luminance).
+    float bloomStrength  = 0.06f;   ///< Bloom scale, added pre-tonemap.
+    float bloomThreshold = 1.0f;    ///< On a pixel's brightest channel (linear HDR).
     float bloomKnee      = 0.5f;    ///< Soft-knee width around the threshold.
-    float bloomRadius    = 0.005f;  ///< Upsample tent-filter radius (UV space).
+    float bloomRadius    = 0.005f;  ///< Upsample tent radius, fraction of frame width.
 
-    // Anti-aliasing
-    uint32_t msaaSamples = 4;  ///< Scene-pass MSAA samples (1 = off, 2/4/8); post runs on the resolved buffer.
+    // Display transform
+    Tonemap tonemap = Tonemap::Reinhard;
 
     /**
-     * @brief How a texel is sampled, and with it textureAnisotropy below.
+     * @brief A fixed exposure in stops: the frame is scaled by 2^exposure before the tonemap.
      *
-     * Not MaterialAsset::anisotropy, which is the brushed-metal BRDF lobe - the
-     * same word for an unrelated thing.
+     * Authored, never adapted; 0 is as lit.
+     */
+    float exposure = 0.0f;
+
+    // Culling
+    float cullMaxDistance = 500.0f;  ///< World-space.
+    float cullMinPixels   = 3.0f;    ///< Screen-pixel size; 0 disables.
+
+    // Anti-aliasing
+    /// Scene-pass MSAA samples, one of MSAA_SAMPLE_COUNTS; post runs on the resolved buffer.
+    uint32_t msaaSamples = 4;
+
+    /**
+     * @brief The frame's default texel sampling; TextureParams::filterOverride outranks it.
      *
-     * Two fields rather than one ladder because they are orthogonal: the filter
-     * decides how a texel is sampled, the degree decides how many samples a
-     * stretched footprint gets. Anisotropy means nothing without mipmapped
-     * sampling, so it is ignored unless the mode is Trilinear. The editor
-     * presents them as one list; the model keeps them apart.
-     *
-     * Both are the frame's default rather than its decree - a texture carrying
-     * TextureParams::filterOverride keeps its own.
+     * textureAnisotropy is ignored unless this is Trilinear. Unrelated to
+     * MaterialAsset::anisotropy (the BRDF lobe).
      */
     TextureFiltering textureFiltering = TextureFiltering::Trilinear;
-    uint32_t textureAnisotropy = 16;  ///< Degree when the mode is Trilinear (1 = off); clamped to the driver's ceiling.
+    /// Degree when the mode is Trilinear (1 = off); clamped to the driver's ceiling.
+    uint32_t textureAnisotropy = 16;
 
     // Shadows
-    uint32_t shadowResolution = 4096;  ///< Per-tile shadow-atlas resolution (1024/2048/4096); costly to raise.
+    /// Per-tile shadow-atlas resolution (1024/2048/4096); costly to raise.
+    uint32_t shadowResolution = 4096;
 
     // Overlays
-    bool grid = false;  ///< World-space ground grid - an editor aid; the editor defaults it on, games leave it off.
+    bool grid = false;  ///< Editor ground grid.
+
+    /// The search divides by the radius, so it is never zero.
+    static constexpr float MIN_GTAO_RADIUS = 0.05f;
+    /// Past this the search reads the screen, not a neighbourhood.
+    static constexpr float MAX_GTAO_RADIUS = 5.0f;
+
+    static constexpr uint32_t MSAA_SAMPLE_COUNTS[] = {1, 2, 4, 8};  ///< 1 is off.
+
+    /**
+     * @brief Whether @p samples is one of MSAA_SAMPLE_COUNTS.
+     *
+     * @param samples A requested msaaSamples.
+     * @return True when it is allowed.
+     */
+    static bool isMsaaSampleCount(uint32_t samples) {
+        for (const uint32_t count : MSAA_SAMPLE_COUNTS) {
+            if (count == samples) return true;
+        }
+        return false;
+    }
 };
 
-} // namespace Vkm::Engine
-
 /**
- * @brief The render fields a project ships, one (json-key, member) row each.
+ * @brief The render fields a project ships, one (json-key, member) row each, for load and save.
  *
- * One list, walked by both directions of both readers, so `project.json` and
- * the editor can never drift about what a field is called.
+ * `renderMode` and `grid` are debug/editor aids, so they are not shipped.
  *
- * What is NOT here is the point of the split. `renderMode` selects a debug
- * buffer and `grid` draws editor chrome: neither is a look anybody ships, and
- * both stay in the editor's own settings. Everything else is the author's
- * answer to what the game looks like, and by `ProjectPaths`' own test - "would
- * you commit this?" - it is project data.
+ * @tparam Settings RenderSettings, const or not.
+ * @tparam Fn       Callable as `f(const char* key, auto& field)`.
+ * @param r Settings visited.
+ * @param f Called once per shipped field.
  */
 template <typename Settings, typename Fn>
 void visitShippedRenderFields(Settings& r, Fn&& f) {
     f("gtao",              r.gtao);
     f("bloom",             r.bloom);
     f("probes",            r.probes);
-    f("occlusionCulling",  r.occlusionCulling);
+    f("ssr",               r.ssr);
     f("gtaoRadius",        r.gtaoRadius);
     f("gtaoIntensity",     r.gtaoIntensity);
     f("gtaoPower",         r.gtaoPower);
-    f("gtaoBias",          r.gtaoBias);
+    f("ssrMaxRoughness",   r.ssrMaxRoughness);
+    f("ssrMaxDistance",    r.ssrMaxDistance);
     f("bloomStrength",     r.bloomStrength);
     f("bloomThreshold",    r.bloomThreshold);
     f("bloomKnee",         r.bloomKnee);
     f("bloomRadius",       r.bloomRadius);
+    f("tonemap",           r.tonemap);
+    f("exposure",          r.exposure);
+    f("cullMaxDistance",   r.cullMaxDistance);
+    f("cullMinPixels",     r.cullMinPixels);
     f("msaaSamples",       r.msaaSamples);
     f("textureFiltering",  r.textureFiltering);
     f("textureAnisotropy", r.textureAnisotropy);
     f("shadowResolution",  r.shadowResolution);
 }
 
-#define VKM_RENDER_MODE_LABEL(name, label, glsl) label,
+} // namespace Vkm::Engine
+
+#define VKM_TONEMAP_LABEL(name, label, glsl) label,
+VKM_ENUM_NAMES(::Vkm::Engine::Tonemap, VKM_TONEMAPS(VKM_TONEMAP_LABEL))
+#undef VKM_TONEMAP_LABEL
+
+#define VKM_RENDER_MODE_LABEL(name, label, glsl, shaded) label,
 VKM_ENUM_NAMES(::Vkm::Engine::RenderMode, VKM_RENDER_MODES(VKM_RENDER_MODE_LABEL))
 #undef VKM_RENDER_MODE_LABEL
+
+VKM_ENUM_NAMES(::Vkm::Engine::TextureFiltering, "Nearest", "Bilinear", "Trilinear")

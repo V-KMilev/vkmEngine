@@ -3,14 +3,10 @@
 /**
  * @brief OpenGL GPU profiler facade over Tracy.
  *
- * Tracy's TracyOpenGL.hpp inlines glGenQueries / glQueryCounter / GL_TIMESTAMP
- * into the caller's TU but doesn't pull in a loader itself, so this header
- * pulls GLEW first. Including from a non-OpenGL target therefore fails fast
- * (no <GL/glew.h>) instead of silently breaking via include ordering.
+ * TracyOpenGL.hpp inlines GL timer queries into the caller's TU without a loader, so this pulls
+ * GLEW first: a non-OpenGL target fails fast rather than breaking silently on include order.
+ * Also pulls in the CPU macros from profiler.h.
  *
- * Pulls in CPU macros from profiler.h so a single include covers both.
- *
- * Lifecycle:
  *   PROFILE_GPU_CONTEXT();   // once, on the GL thread, after the GL context exists
  *   PROFILE_GPU_COLLECT();   // once per frame, after GPU work has been submitted
  *   PROFILE_GPU_SCOPE("Shadow");                // string literal
@@ -27,9 +23,9 @@
 #define PROFILE_GPU_CONTEXT()               TracyGpuContext
 #define PROFILE_GPU_COLLECT()               TracyGpuCollect
 #define PROFILE_GPU_SCOPE(name_literal) \
-    TracyGpuNamedZone(VKM_PROFILE_CONCAT(___profile_gpu_zone_, __LINE__), name_literal, true)
+    TracyGpuNamedZone(VKM_PROFILE_CONCAT(vkmProfileGpuZone_, __LINE__), name_literal, true)
 #define PROFILE_GPU_SCOPE_NAMED(name_cstr) \
-    TracyGpuZoneTransient(VKM_PROFILE_CONCAT(___profile_gpu_zone_, __LINE__), name_cstr, true)
+    TracyGpuZoneTransient(VKM_PROFILE_CONCAT(vkmProfileGpuZone_, __LINE__), name_cstr, true)
 
 #else
 

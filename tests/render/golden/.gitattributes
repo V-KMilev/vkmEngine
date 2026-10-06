@@ -1,0 +1,3 @@
+# The render suite reads these straight from the checkout, and this repository
+# does not fetch LFS objects, so they are stored as plain blobs, not pointers.
+*.png !filter !diff !merge binary

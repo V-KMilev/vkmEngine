@@ -1,21 +1,18 @@
 /*
- * Depth + G-buffer prepass fragment stage. Writes a view-space normal
- * (octahedral) plus roughness + metalness into colour attachment 1 - the
- * inputs GTAO + the decal pass need - while the depth attachment is primed for the forward
- * pass's early-Z. Only opaque / unlit geometry runs through here; alpha-masked
- * geometry skips the prepass and draws (with alpha-to-coverage) in the forward
- * pass, so there is no cutout to punch here.
+ * Depth + G-buffer prepass: an octahedral view-space normal in .rg. Alpha-masked
+ * geometry skips the prepass (see GLDepthPrepass), so there is no cutout here.
+ *
+ * Roughness and metalness in .ba are the material's authored scalars: no map is
+ * sampled, so a textured material writes its fallback, not what the forward
+ * pass shades with (engine.md records why).
  */
-
 in vec3 vViewNormal;
 
-out vec4 gbuffer;  // -> COLOR_ATTACHMENT1: oct view-normal.xy, roughness, metalness
+layout(location = OUT_GBUFFER) out vec4 gbuffer;  // oct view-normal.xy, roughness, metalness
 
-// Matches MaterialBlock in shaders/forward/pbr (std140); the full layout is
-// declared so the scalar-tail offsets line up with the bound material UBO.
-#include "../../_common/material.glsl"
+#include "../../material.glsl"
 
-#include "../../_common/normal_codec.glsl"  // signNotZero, octEncode
+#include "../../normal_codec.glsl"
 
 void main() {
     vec2 oct = octEncode(normalize(vViewNormal));

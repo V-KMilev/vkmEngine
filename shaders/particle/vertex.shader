@@ -1,25 +1,20 @@
 /**
  * Billboard particle - vertex stage.
  *
- * Attribute-less: the quad corner comes from gl_VertexID (a 4-vertex triangle
- * strip) and the per-particle position/size/colour from an SSBO indexed by
- * gl_InstanceID, so there is no vertex buffer or attribute layout to maintain.
- * The quad is built on the camera's right/up axes, so it always faces the view.
+ * Attribute-less: the corner comes from gl_VertexID (a 4-vertex strip), the particle from an SSBO
+ * by gl_InstanceID. The quad is built on the camera's right/up axes, so it faces the view.
  */
-
 struct Particle {
     vec4 positionSize;  // xyz = world position, w = world-space size
     vec4 color;
     vec4 params;        // x = edge softness (0 hard .. 1 soft), yzw reserved
 };
 
-layout(std430, binding = 2) readonly buffer ParticleBlock {
+layout(std430, binding = SSBO_PARTICLES) readonly buffer ParticleBlock {
     Particle particles[];
 } u_particles;
 
-uniform mat4 u_viewProj;
-uniform vec3 u_camRight;
-uniform vec3 u_camUp;
+#include "../camera.glsl"
 
 out vec2  vCorner;
 out vec4  vColor;
@@ -34,7 +29,9 @@ void main() {
     vColor    = p.color;
     vSoftness = p.params.x;
 
-    vec3 world = p.positionSize.xyz
-               + (u_camRight * corner.x + u_camUp * corner.y) * p.positionSize.w;
-    gl_Position = u_viewProj * vec4(world, 1.0);
+    // The view matrix's rows are the camera's right and up in world space.
+    vec3 camRight = vec3(u_camera.view[0][0], u_camera.view[1][0], u_camera.view[2][0]);
+    vec3 camUp    = vec3(u_camera.view[0][1], u_camera.view[1][1], u_camera.view[2][1]);
+    vec3 world = p.positionSize.xyz + (camRight * corner.x + camUp * corner.y) * p.positionSize.w;
+    gl_Position = u_camera.viewProjection * vec4(world, 1.0);
 }

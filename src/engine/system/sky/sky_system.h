@@ -5,27 +5,14 @@
 namespace Vkm::Engine {
 
 /**
- * @brief Points the scene's key light at wherever the Environment says the sun is.
+ * @brief Points the scene's key light (findKeyLight) at the Environment's sun, or moon at night.
  *
- * The procedural sky is authored on the Environment, in elevation and azimuth,
- * because it is scene-global and has to work whether or not anything else
- * exists. A sky and the shadow-casting key light disagreeing about where the sun
- * is looks broken and is hard to diagnose, so the Environment wins: this writes
- * its direction into the first directional light it finds.
+ * With `sky.procedural` on, the key light's rotation, colour and intensity are
+ * overwritten every frame from `sky.lightColor` / `sky.lightIntensity`
+ * (through `Atmosphere::sunlight`) by day and `night.moonlight*` after dark;
+ * author those, not the Light. Shadow settings stay the light's.
  *
- * At night the same light aims at the moon instead, so night has real direction,
- * shadows and speculars rather than a painted disc over flat ambient.
- *
- * Consequences worth knowing:
- * - With `sky.procedural` on, the key light is the sky's: its rotation, colour
- *   and intensity are all overwritten every frame, from `sky.lightColor` /
- *   `sky.lightIntensity` by day and the `night.moonlight*` pair after dark.
- *   Author those, not the Light. Shadow settings stay the light's.
- * - A scene with no directional light is fine: the sky still renders from the
- *   angles, with nothing casting sunlight.
- *
- * Runs in the Simulation stage, so the rotation it writes is in place before
- * HierarchySystem resolves world transforms in the Transform stage.
+ * Runs before HierarchySystem, so world transforms see the rotation it writes.
  */
 class SkySystem : public System {
     public:

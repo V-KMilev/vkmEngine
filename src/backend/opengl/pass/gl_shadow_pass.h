@@ -1,41 +1,33 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
 #include <vector>
 
 #include <glm/glm.hpp>
 
+#include "gl_shader.h"
+
 #include "gl_pass.h"
-#include "data/gl_instance_buffer.h"
 
-#include "data/gl_shadow_data.h"
-
-namespace Vkm::GL {
-    class Shader;
-}
+#include "frame/gl_draw_list.h"
+#include "frame/gl_shadow_data.h"
 
 namespace Vkm::Engine {
+
+class GLMaterial;
+class GLView;
 
 /**
  * @brief Renders all shadow depth maps for the frame, ahead of the forward pass.
  *
- * Consumes the plan in GLShadowData (built by the backend): directional cascades
- * and spot maps go into the 2D depth atlas, point lights into cube maps. A
- * single depth-only draw of every castShadows drawable feeds each tile / face.
- * A no-op when the frame has no shadow casters.
+ * Executes GLShadowData's plan: cascades and spots into the 2D atlas, point lights into cubes.
+ * A no-op with no shadowed light; a tile or face not held is cleared and drawn, casters or none.
  *
- * Skinned casters take a second pair of programs and draw one at a time. The
- * camera batch finds an instance's bones through a storage buffer indexed by the
- * instance slot; that is not available here, because this pass takes its
- * transforms as attributes and gl_InstanceID does not include baseInstance
- * before GL 4.6 - so the palette base arrives as a uniform, and a uniform can
- * only describe one draw. It costs N draws per tile and per cube face for
- * skinned casters alone.
- *
- * A frame that posed nothing never reaches any of that: with no palette the
- * skinned programs are not bound, not given a tile matrix, and not consulted
- * per run, so the pass costs exactly what an unskinned one does.
+ * Each tile's culled objects go into one shared GLDrawList, a command per run sharing a mesh.
+ * Runs come grouped by program and layout (ShadowRun::key), so a tile is one multi-draw per
+ * both. A frame whose tiles are all held uploads nothing. A masked caster's runs draw per
+ * material through a cutting program; a transparent caster draws solid, and a surface that
+ * should cast none turns casting off on its Mesh.
  */
 class GLShadowPass : public GLPass {
     public:
@@ -53,63 +45,118 @@ class GLShadowPass : public GLPass {
 
     private:
         /**
+         * @brief Where one tile's or face's draws sit in m_draws; `first` is HELD for one not drawn.
+         */
+        struct TileDraws {
+            uint32_t first = 0;
+            uint32_t end   = 0;
+        };
+
+        /**
+         * @brief One multi-draw of a tile: runs sharing a program, a cutout and a vertex layout.
+         */
+        struct ShadowDraw {
+            /// The first run's mesh; every run's shares its vertex layout.
+            const GLMesh*     mesh     = nullptr;
+            /// The cutout every run is cut by; null for solid casters.
+            const GLMaterial* material = nullptr;
+            uint32_t          program  = 0;        ///< Index into m_programs.
+            uint32_t          first    = 0;        ///< First command in m_list.
+            uint32_t          count    = 0;        ///< Commands.
+        };
+
+        /**
+         * @brief One of the pass's depth programs, and the tile it last received a matrix for.
+         */
+        struct DepthProgram {
+            Vkm::GL::Shader shader;
+            uint64_t        tile = 0;  ///< The beginTile() whose matrix it holds.
+        };
+
+    private:
+        /**
          * @brief Fill the 2D depth atlas for directional cascades and spots.
          *
-         * Clears the atlas once, then fills one tile per job with the
-         * projected-depth shader. A no-op when the frame has no 2D casters.
+         * One tile per job not held; a cascade is drawn with its depth clamped.
+         *
+         * @param ctx For the shadow plan, its batches and the atlas.
          */
         void render2D(GLFrameContext& ctx);
 
         /**
          * @brief Fill each point light's depth cube.
          *
-         * Six faces per light, rendered with the distance-depth shader so the
-         * forward pass can sample the cube by direction.
+         * Six ordinary perspective depth maps per light, drawn by the atlas's programs; a reader
+         * rebuilds a face's depth from the major axis of its direction (shaders/shadows.glsl).
+         *
+         * @param ctx For the shadow plan, its batches and the atlas.
          */
         void renderCube(GLFrameContext& ctx);
 
         /**
-         * @brief Draw one tile's or face's pre-culled shadow casters.
+         * @brief Start drawing a tile or face against @p lightVP.
          *
-         * Submission only: the culling against the light's clip space and the
-         * mesh sort both happened on the thread pool (GLShadowData::cullCasters),
-         * so this flattens the batch's models into one upload and issues one
-         * instanced depth draw per mesh run - one draw per caster on a skinned
-         * run. The caller has already given each program that will draw this
-         * tile's matrices; which of them is bound is decided here, per run.
+         * Only recorded: a program gets it when a run of this tile first binds it, so a tile with
+         * no cutout never binds the masked program.
          *
-         * @param ctx     The frame context, for the GL view and the caster list.
-         * @param batch   The tile's / face's surviving caster indices, mesh-sorted.
-         * @param program The static depth program for this tile / face.
-         * @param skinned The skinned one, for casters the frame posed, or null
-         *                when it posed none - then every run is instanced.
+         * @param lightVP World to the light's clip space for this tile or face.
          */
-        void renderCasters(GLFrameContext& ctx, const ShadowCasterBatch& batch,
-                           Vkm::GL::Shader& program, Vkm::GL::Shader* skinned);
+        void beginTile(const glm::mat4& lightVP);
 
         /**
-         * @brief Make @p program current, unless it already is.
+         * @brief Write and upload the drawn tiles' commands, and bind the objects they index.
          *
-         * A program has to be bound to be given a uniform, and this pass hands
-         * matrices to one for every atlas tile and every cube face - eighteen
-         * of them in a lit scene, each followed by draws. Binding per tile the
-         * way that reads most naturally makes glUseProgram the largest thing
-         * the pass does when only one program is ever used, so what is current
-         * is tracked across the whole pass instead of assumed per tile.
+         * @param ctx For the plan and the caster list.
+         * @return False when every tile and face is held.
+         */
+        bool uploadCasters(GLFrameContext& ctx);
+
+        /**
+         * @brief Turn one tile's or face's pre-culled casters into commands and draws.
+         *
+         * Culling and grouping ran on the thread pool (GLShadowData::cullCasters), so this is one
+         * command per run. The program (posed or not, cut or not) is chosen here from key and
+         * material; consecutive runs agreeing on program, cutout and layout are one draw.
+         *
+         * @param ctx   For the GL view and the caster list.
+         * @param batch The surviving caster indices, grouped.
+         * @param first Where the batch's indices start in the instance list.
+         * @return Where the tile's draws sit in m_draws.
+         */
+        TileDraws addCasters(const GLFrameContext& ctx, const ShadowCasterBatch& batch, uint32_t first);
+
+        /**
+         * @brief Submit one tile's or face's draws against the matrix beginTile() recorded.
+         *
+         * @param glView For a cutout's maps.
+         * @param tile   Where its draws sit in m_draws.
+         */
+        void drawTile(const GLView& glView, const TileDraws& tile);
+
+        /**
+         * @brief Make @p program current, and give it this tile's matrix if it lacks it.
+         *
+         * A program must be bound to take a uniform, and matrices go out per tile and face, so the
+         * current program is tracked across the pass rather than rebound per tile.
          *
          * @param program The program to make current.
          */
-        void bindProgram(Vkm::GL::Shader& program);
+        void useProgram(DepthProgram& program);
 
     private:
-        std::unique_ptr<Vkm::GL::Shader> m_depth2D;            ///< Projected depth (cascades + spots).
-        std::unique_ptr<Vkm::GL::Shader> m_depthCube;          ///< Linear distance depth (point faces).
-        std::unique_ptr<Vkm::GL::Shader> m_depth2DSkinned;     ///< The same, posed.
-        std::unique_ptr<Vkm::GL::Shader> m_depthCubeSkinned;   ///< The same, posed.
+        DepthProgram m_programs[4];  ///< Indexed masked * 2 + posed.
 
-        const Vkm::GL::Shader*   m_bound = nullptr;  ///< The program that is current, reset each execute().
-        InstanceBuffer  m_instances;  ///< Per-caster model matrices (loc 4-7).
-        std::vector<glm::mat4>   m_models;     ///< Flattened models of every surviving caster this tile/face.
+        const Vkm::GL::Shader* m_bound = nullptr;  ///< The program that is current, reset each execute().
+        glm::mat4              m_lightVP{1.0f};    ///< The tile being drawn's matrix.
+        /// Counts beginTile() calls; never reset, so no program holds a stale one.
+        uint64_t               m_tile = 0;
+        uint32_t               m_tilesDrawn = 0;   ///< Tiles and faces drawn this frame; the rest were held.
+
+        /// The drawn tiles' and faces' caster lists, end to end, and a command per run.
+        GLDrawList              m_list;
+        std::vector<ShadowDraw> m_draws;      ///< Every drawn tile's draws, tile after tile.
+        std::vector<TileDraws>  m_tiles2D;    ///< Each 2D job's draws.
+        std::vector<TileDraws>  m_tilesCube;  ///< Each cube face's draws, six per job.
 };
 
 } // namespace Vkm::Engine

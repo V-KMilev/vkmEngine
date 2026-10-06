@@ -1,22 +1,17 @@
 #pragma once
 
-#include <memory>
+#include "gl_compute_shader.h"
 
 #include "gl_pass.h"
-
-namespace Vkm::GL {
-    class ComputeShader;
-}
 
 namespace Vkm::Engine {
 
 /**
  * @brief Froxel volumetric fog compute: injection + integration.
  *
- * Runs after the cluster cull (it scatters each froxel's cluster lights) and
- * before the fog-apply pass. Injects in-scattered light + extinction into the
- * scatter volume, then marches each column front-to-back into the integrated
- * volume the apply pass samples. A no-op when fog is disabled.
+ * Runs after the cluster cull (it scatters each froxel's cluster lights) and before anything is
+ * lit, since a lit pass fogs what it draws (see GLPass::bindFog). Injects, then marches each
+ * column front-to-back into the integrated volume. A no-op when fog is disabled.
  */
 class GLFogPass : public GLPass {
     public:
@@ -29,11 +24,12 @@ class GLFogPass : public GLPass {
         GLFogPass(GLFogPass && other) = delete;
         GLFogPass& operator=(GLFogPass && other) = delete;
 
+    public:
         void execute(GLFrameContext& ctx) override;
 
     private:
-        std::unique_ptr<Vkm::GL::ComputeShader> m_inject;
-        std::unique_ptr<Vkm::GL::ComputeShader> m_integrate;
+        Vkm::GL::ComputeShader m_inject;
+        Vkm::GL::ComputeShader m_integrate;
 };
 
 } // namespace Vkm::Engine

@@ -1,27 +1,34 @@
 /**
  * IBL bake - equirectangular HDR projected onto a cubemap face.
  *
- * Samples the source equirect texture by the spherical mapping of the cube
- * direction. Linear in, linear out (no tone mapping anywhere in the engine
- * except the composite pass).
+ * Samples the equirect by the cube direction's spherical mapping; linear in, linear out.
  */
-
 in vec3 vLocalPos;
 
 out vec4 FragColor;
 
-uniform sampler2D u_equirect;
+layout(binding = BAKE_SLOT_SOURCE) uniform sampler2D u_equirect;
 
-const vec2 invAtan = vec2(0.1591, 0.3183);  // 1/(2pi), 1/pi
+#include "../../constants.glsl"
+
+// Longitude and latitude, in radians, to the texture's 0..1 across each.
+const vec2 INV_ATAN = vec2(0.5 / PI, 1.0 / PI);
 
 vec2 sampleSphericalMap(vec3 v) {
     vec2 uv = vec2(atan(v.z, v.x), asin(v.y));
-    uv *= invAtan;
+    uv *= INV_ATAN;
     uv += 0.5;
     return uv;
 }
 
 void main() {
     vec2 uv = sampleSphericalMap(normalize(vLocalPos));
-    FragColor = vec4(texture(u_equirect, uv).rgb, 1.0);
+
+    // The longitude seam is taken out of the footprint: u jumps a whole turn across it, which
+    // would pick the coarsest level along that column.
+    vec2 dx = dFdx(uv);
+    vec2 dy = dFdy(uv);
+    dx.x -= round(dx.x);
+    dy.x -= round(dy.x);
+    FragColor = vec4(textureGrad(u_equirect, uv, dx, dy).rgb, 1.0);
 }

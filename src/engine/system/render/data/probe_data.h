@@ -7,19 +7,24 @@
 namespace Vkm::Engine {
 
 /**
- * @brief Flattened reflection probe for the frame.
+ * @brief Flattened reflection probe for the frame, blended over the global IBL in its box.
  *
- * Snapshotted from the scene's ReflectionProbe components so the backend never
- * searches the scene. The backend bakes a GPU cube set per probe, then blends
- * the nearest one over the global IBL inside its influence box.
+ * See GLProbeManager.
  */
 struct ProbeData {
-    glm::vec3 position;     ///< World-space probe centre (from the WorldTransform when parented, else its Transform).
-    glm::vec3 halfExtents;  ///< Influence box half-size, for parallax correction + falloff.
-    float     falloff;      ///< Fraction of the half-extent over which influence fades to the global IBL.
-    float     intensity;    ///< Linear-HDR multiplier on the probe's contribution.
-    uint32_t  resolution;   ///< Requested capture face size; the shared arrays size to the max across probes.
-    uint32_t  bakeVersion;  ///< Re-bake trigger (snapshot of the component's bakeVersion).
+    glm::vec3 position;     ///< World space.
+    glm::vec3 halfExtents;  ///< Influence box, for parallax correction + falloff.
+    float     falloff;      ///< Fraction of the half-extent fading to the global IBL.
+    float     intensity;    ///< Linear-HDR multiplier.
+    uint32_t  resolution;   ///< Requested capture face size.
+    uint32_t  bakeVersion;  ///< Re-bake trigger.
+
+    /**
+     * @brief The entity slot this probe was gathered from; keys its baked capture.
+     *
+     * Not list position: SparseSet packing moves probes when one is destroyed.
+     */
+    uint32_t  entitySlot = 0;
 };
 
 } // namespace Vkm::Engine

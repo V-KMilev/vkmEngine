@@ -1,36 +1,28 @@
 /*
- * Anti-aliased world grid. Minor lines every 1 unit, major every 10, the world
- * X / Z axes coloured, and a distance fade so the far grid doesn't moire or
- * hard-edge at the quad rim. Alpha-blended over the resolved HDR scene.
+ * Anti-aliased world grid: minor lines every unit, major every 10, coloured X / Z axes, and a fade
+ * so the far grid neither moires nor hard-edges at the quad rim. Blended over the resolved HDR scene.
  */
-
 in vec3 vWorld;
 out vec4 FragColor;
 
-layout(binding = 19) uniform sampler2D u_sceneDepth;  // geometry target depth
+layout(binding = POST_SLOT_SCENE_DEPTH) uniform sampler2D u_sceneDepth;  // geometry target depth
 
-uniform vec3  u_camPos;
+#include "../camera.glsl"
+
 uniform float u_extent;
 
-// Line coverage at a given cell spacing: 1 on a line, 0 between, AA'd via the
-// screen-space derivative so lines stay ~1px wide at any distance.
-//
-// The second term retires a level, and it starts only once a pixel spans a
-// whole cell. Retiring at the point the lines stop resolving puts a second
-// boundary inside the distance fade, which should own the grid's edge alone;
-// the wash left by holding on this long is weighted low enough to read as haze.
+// Line coverage at a cell spacing, AA'd by the screen derivative so lines stay ~1px wide. The
+// second term retires a level only once a pixel spans a whole cell, leaving the edge to the fade.
 float gridFactor(vec2 coord, float spacing) {
-    vec2  uv = coord / spacing;
-    vec2  w  = fwidth(uv);
-    vec2  g  = abs(fract(uv - 0.5) - 0.5) / w;
+    vec2  uv   = coord / spacing;
+    vec2  w    = fwidth(uv);
+    vec2  g    = abs(fract(uv - 0.5) - 0.5) / w;
     float line = 1.0 - min(min(g.x, g.y), 1.0);
     return line * (1.0 - smoothstep(1.0, 1.75, max(w.x, w.y)));
 }
 
 void main() {
-    // The grid draws into the post chain, whose targets carry no depth
-    // attachment - so the LEQUAL occlusion test runs here instead: keep the
-    // fragment only when nothing in the scene is in front of it.
+    // The post chain's targets carry no depth attachment, so the LEQUAL test runs here.
     float sceneDepth = texelFetch(u_sceneDepth, ivec2(gl_FragCoord.xy), 0).r;
     if (gl_FragCoord.z > sceneDepth) discard;
 
@@ -48,11 +40,9 @@ void main() {
     if (axisX > 0.0) { color = vec3(0.85, 0.30, 0.30); alpha = max(alpha, axisX); }
     if (axisZ > 0.0) { color = vec3(0.30, 0.45, 0.90); alpha = max(alpha, axisZ); }
 
-    // Horizontal distance only, so the fade is a disc on the ground rather than
-    // a sphere around the eye - what is directly below the camera stays at full
-    // strength however high it climbs. The fade reaches the quad's own edge, so
-    // it is the last of the grid rather than a margin before it.
-    float dist = length(c - u_camPos.xz);
+    // Horizontal distance, so the fade is a disc on the ground however high the camera climbs;
+    // it ends at the quad's edge.
+    float dist = length(c - u_camera.cameraPosition.xz);
     alpha *= 1.0 - smoothstep(u_extent * 0.7, u_extent, dist);
 
     if (alpha < 0.001) discard;
