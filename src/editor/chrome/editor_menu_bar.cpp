@@ -13,6 +13,7 @@
 #include "editor_state.h"
 #include "input/editor_keybinds.h"
 #include "editor_context.h"
+#include "session/build_controller.h"
 #include "session/scene_io_controller.h"
 #include "editor_actions.h"
 #include "input/view_framing.h"
@@ -121,6 +122,18 @@ void EditorMenuBar::drawFileMenu(EditorContext& ec, SceneIOController& sceneIO) 
         }
         if (playing) ImGui::TextDisabled("Stop the play session to save");
         ImGui::Separator();
+        // Run by vkm, in the Build window; a build that changes the module reloads it.
+        const bool canBuild = state.projectOpen && !BuildController::launcher().empty();
+        const std::string root = ProjectPaths::projectRoot().string();
+        const char* why = state.projectOpen ? "This engine has no vkm beside it" : "Open a project first";
+        if (ImGui::MenuItem("Build Scripts", nullptr, false, canBuild)) {
+            state.requestVkm = {"build", root};
+        }
+        if (!canBuild) ImGui::SetItemTooltip("%s", why);
+        if (ImGui::MenuItem("Package Game...", nullptr, false, canBuild)) {
+            state.requestVkm = {"package", root};
+        }
+        if (!canBuild) ImGui::SetItemTooltip("%s", why);
         if (ImGui::MenuItem("Reload Scripts")) {
             state.requestScriptReload = true;
         }

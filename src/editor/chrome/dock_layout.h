@@ -11,6 +11,7 @@ inline constexpr const char* MATERIAL_WINDOW  = "Material";
 inline constexpr const char* ASSETS_WINDOW    = "Assets";
 inline constexpr const char* ANIMATION_WINDOW = "Animation";
 inline constexpr const char* ERRORS_WINDOW    = "Errors";
+inline constexpr const char* BUILD_WINDOW     = "Build";
 
 // Default side sizes, in design pixels. The bottom row fits one row of
 // AssetBrowserPanel tiles at their default size.
@@ -40,5 +41,14 @@ bool hasLayout(unsigned int dockspace);
  * @param height    In screen pixels.
  */
 void buildDefaultLayout(unsigned int dockspace, float width, float height);
+
+/**
+ * @brief Dock the next window begun beside @p beside the first time it shows.
+ *
+ * For a window a saved layout predates, which it would otherwise show floating.
+ *
+ * @param beside A window whose dock node it joins.
+ */
+void dockNextBeside(const char* beside);
 
 } // namespace Vkm::Engine

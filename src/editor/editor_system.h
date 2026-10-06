@@ -7,6 +7,7 @@
 #include "system/render/render_settings.h"
 #include "debug/engine_error_log.h"
 #include "editor_state.h"
+#include "session/build_controller.h"
 #include "session/material_preview_session.h"
 #include "session/scene_io_controller.h"
 #include "chrome/editor_menu_bar.h"
@@ -295,6 +296,7 @@ class EditorSystem : public System {
         bool m_viewportHovered = false;
 
         SceneIOController m_sceneIO;
+        BuildController   m_build;
         EditorMenuBar     m_menuBar;
 
         ModelImportDialog m_modelImport;

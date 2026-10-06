@@ -19,7 +19,7 @@ aggregate, so panels do not reach into each other.
 |           | [o]                                   |           |
 |           | [l]                       [Nav axes]  |           |
 |           +---------------------------------------+           |
-|           |      Assets | Animation | Errors      |           |
+|           |  Assets | Animation | Errors | Build  |           |
 +-----------+---------------------------------------+-----------+
 |                          Status bar                           |
 +---------------------------------------------------------------+
@@ -153,7 +153,7 @@ to exactly one of them:
 |---|---|
 | *(root)* | The state and the seams every other directory reads: `EditorSystem`, `EditorState`, `EditorContext`, `EditorSettings`, and `editor_actions` - the scene mutations the panels invoke rather than write |
 | `command/` | Undo: the `Command` base, the `CommandStack`, the concrete commands, `EditScope`/`editStep`/`pushEdit`, `CommandHost::pushStep` - which records an applied step and marks the scene unsaved, the pair every finished edit owes - and the prefab-override bookkeeping a command has to keep. It reaches the editor through `CommandHost` - six methods to implement, not `EditorState` - so the machinery that decides whether an author's work survives an undo can be run, and tested, without a window |
-| `session/` | What outlives a frame but not the editor: the open scene (`SceneIOController`), the open project (`ProjectController`), the Play/Stop snapshot and the ejection that lives and dies with it (`PlaySnapshot`) and the material preview cache |
+| `session/` | What outlives a frame but not the editor: the open scene (`SceneIOController`), the open project (`ProjectController`), the Play/Stop snapshot and the ejection that lives and dies with it (`PlaySnapshot`), the vkm run in the Build window (`BuildController`) and the material preview cache |
 | `panels/` | One file per panel, each drawing one region and owning only its own widget state |
 | `overlays/` | What is drawn *over* the viewport: the transform gizmo - its maths, hit tests and drag state as well as its drawing - the tool strip and view bar, the playback bar, the axis navigation gizmo, and the wire primitives they share |
 | `chrome/` | What is drawn *around* the panels: the menu bar, the status bar, the dockspace's default layout, and the four dialogs the menus ask for - Import Model, Place Prefab, New Project and Open Project - which draw at the menu bar's scope so a closing menu does not take them with it |
@@ -173,6 +173,7 @@ to exactly one of them:
 | Project Settings    | `panels/project_settings_panel.cpp`   | Floating window over what `project.json` records: name, entry scene, tick rate, engine version, and the seats and port the game is served with, plus a read-only list of what it replicates; opened from File > Settings... (under the Project heading) |
 | Preferences         | `panels/preferences_panel.cpp`        | Floating editor/app settings window (Edit > Preferences, Ctrl+,)            |
 | Errors              | `panels/errors_panel.cpp`             | The **Errors** window: recoverable engine failures, newest first, filling the window. A function, not a class, because it remembers nothing |
+| Build               | `session/build_controller.cpp`        | The **Build** window: the vkm command running or last run, how it ended, and its output. See [Building from the editor](#building-from-the-editor) |
 | Viewport Overlay    | `overlays/viewport_overlay.cpp`       | The axis navigation gizmo, bottom-right of the viewport (click an axis to snap the editor's view) |
 | Gizmo Overlay       | `overlays/gizmo_overlay.cpp`          | The transform gizmo's drawing and drag, and the viewport's click-to-pick     |
 | Gizmo Drawing       | `overlays/gizmo_overlay_draw.cpp`     | Every `draw*Gizmos` body, plus the selection outline: lights, cameras, probes, volumes, decals, emitters, audio, colliders, joints, skeletons, bounds |
@@ -247,10 +248,10 @@ selected entity only when it draws with the one the tab shows.
 
 ### Working panels vs Preferences
 
-- **The bottom row** is three per-scene working surfaces: **Assets**,
-  **Animation** and **Errors**. Errors lists `EngineErrorLog` entries newest
+- **The bottom row** is four working surfaces: **Assets**, **Animation**,
+  **Errors** and **Build**. Errors lists `EngineErrorLog` entries newest
   first - a script hook that throws, an asset reference a scene load could not
-  resolve - with a Clear button.
+  resolve - with a Clear button; Build shows what vkm printed.
 - **Preferences** is a floating window (`Edit > Preferences`, Ctrl+,) with
   `Camera`, `Gizmo` (snap defaults), `Display` and `Keybinds` tabs. It is one
   `Preferences` struct on `EditorState`, persisted whole in `editor_user.json`
@@ -573,6 +574,17 @@ never opens a project saves only the per-user settings when it quits.
 start screen the recent projects, and each hands what it picks to
 `EditorState::requestSceneAction` - the same guard New Scene and Open Scene go
 through, because opening a project throws the current scene away too.
+
+### Building from the editor
+
+The editor makes, builds and packages a project by running vkm, never by doing it
+itself: New Project runs `vkm new`, File > Build Scripts `vkm build` and File >
+Package Game `vkm package`, each through the launcher beside the engine
+(`BuildController::launcher`, the one that picks vkm's Python). What vkm prints fills
+the **Build** window, which comes forward as a run starts and can stop it, the
+compilers under it included (`ChildProcess`). A build that changes the module is
+reloaded by the editor's watch on it, as one made from a terminal is. A project that
+opens with no module is built once, so a new one runs its code without a terminal.
 
 ### The start screen
 

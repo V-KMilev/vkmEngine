@@ -9,10 +9,10 @@ import time
 from pathlib import Path
 
 from . import shell
-from .engine import EngineBuild, development, sdk_root, shipping
+from .engine import EngineBuild, development, shipping
 from .project import project_dir, project_name
 from .shell import capture, die, program, run, say
-from .toolchain import module_compiler, pinned_tools, tools_on_path, uses_pinned_tools
+from .toolchain import build_tools, module_compiler, tools_on_path
 
 
 def cmake_build(
@@ -30,8 +30,6 @@ def cmake_build(
 
     `compiler` and `generator` apply to a first configure: CMake cannot change them.
     """
-    if uses_pinned_tools(sdk_root()):
-        tools_on_path(pinned_tools())
     cmake = program("cmake") or die("cmake is not on PATH. Install CMake 3.25 or newer.")
 
     # A configure that failed keeps failing on its cached choices; start it over.
@@ -112,12 +110,13 @@ def build_module(
         configure.append(f"-DCMAKE_BUILD_TYPE={build_type}")
     configure += list(cmake_args)
 
+    tools_on_path(build_tools(engine))
     return cmake_build(
         f"{project_name(d)}{' for shipping' if engine.shipping else ''}",
         d,
         d / "build" / ("shipping" if engine.shipping else "development"),
         configure,
-        compiler=compiler or module_compiler(engine, sdk_root()),
+        compiler=compiler or module_compiler(engine),
         generator=generator,
         jobs=jobs,
         reconfigure=bool(cmake_args)
@@ -129,12 +128,15 @@ def build_shipping_engine(root: Path, jobs: int | None) -> EngineBuild:
     engine = shipping(root)
     if not engine.exists():
         say("the shipping engine is built once, which takes a while; later packages build only what changed")
+    # A pinned development engine names no compiler, so this one takes the pinned GCC too.
+    dev = development(root)
+    tools_on_path(build_tools(dev))
     rc = cmake_build(
         "the shipping engine",
         root,
         engine.base,
         ["-DVKM_SHIPPING=ON"],
-        compiler=development(root).compiler(),
+        compiler=None if dev.pinned() else dev.compiler(),
         targets=("vkm_runtime_app", "vkm_server_app"),
         jobs=jobs
     )

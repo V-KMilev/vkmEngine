@@ -1,7 +1,8 @@
 # Installs vkmEngine for this user, with no administrator: the newest release (or
 # $env:VKM_VERSION = '1.2.3') into %LOCALAPPDATA%\Programs\vkmEngine, `vkm` on the user's
 # PATH, the editor in the Start Menu, and an entry in Apps & features that removes it all.
-# Installing again replaces the engine.
+# Its games build with GCC, or with Clang under $env:VKM_COMPILER = 'clang'. Installing
+# again replaces the engine.
 #
 #   irm https://github.com/V-KMilev/vkmEngine/releases/latest/download/install.ps1 | iex
 
@@ -20,17 +21,20 @@ if (-not [Environment]::Is64BitOperatingSystem) {
     throw 'vkmEngine ships for 64-bit Windows only'
 }
 
+$compiler = if ($env:VKM_COMPILER) { $env:VKM_COMPILER } else { 'gcc' }
+if ($compiler -notin @('gcc', 'clang')) { throw "VKM_COMPILER is gcc or clang, not '$compiler'" }
+
 $version = $env:VKM_VERSION
 if (-not $version) {
     $version = (Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest").tag_name.TrimStart('v')
 }
-$name    = "vkmEngine-$version-windows-x64"
+$name    = "vkmEngine-$version-windows-x64-$compiler"
 $work    = Join-Path ([IO.Path]::GetTempPath()) ([Guid]::NewGuid())
 $archive = Join-Path $work "$name.zip"
 New-Item -ItemType Directory -Path $work | Out-Null
 
 try {
-    Say "downloading $version"
+    Say "downloading $version, for $compiler"
     Invoke-WebRequest "https://github.com/$repo/releases/download/v$version/$name.zip" -OutFile $archive
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     [IO.Compression.ZipFile]::ExtractToDirectory($archive, $work)

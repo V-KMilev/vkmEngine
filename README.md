@@ -134,8 +134,8 @@ irm https://github.com/V-KMilev/vkmEngine/releases/latest/download/install.ps1 |
 ```
 
 No administrator and nothing else to install: the engine brings its own Python, and its first
-build fetches the compiler, CMake and Ninja it was built with. Then open **vkmEngine** from your
-app menu, or:
+build fetches the compiler, CMake and Ninja it was built with - GCC by default, or Clang with
+`VKM_COMPILER=clang` before the installer. Then open **vkmEngine** from your app menu, or:
 
 ```bash
 vkm new mygame                   # or: vkm new lab -t physics_lab, a copy of an example
@@ -215,6 +215,11 @@ assets/            The editor's fonts and logo, and the manual's images; sample 
 See [Architecture](docs/reference/architecture.md) for the full per-directory breakdown.
 
 </details>
+
+## Contributing
+
+Fixes and features are welcome: [CONTRIBUTING.md](CONTRIBUTING.md) says how to build, test and
+send one, and what the license asks of a contribution.
 
 ## License
 

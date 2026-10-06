@@ -23,6 +23,11 @@ def say(msg: str):
     print(f"vkm: {msg}", flush=True)
 
 
+def note(msg: str, end: str = "\n"):
+    """Say it on stderr, for a command whose stdout is a result a caller reads."""
+    print(msg, end=end, file=sys.stderr, flush=True)
+
+
 # Set by -v: echo every command run, and all of its output.
 VERBOSE = False
 
