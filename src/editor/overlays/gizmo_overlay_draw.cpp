@@ -33,6 +33,8 @@
 #include "ecs/component/render/irradiance_volume.h"
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/component/render/reflection_probe.h"
+#include "ecs/component/ui/ui_element.h"
+#include "core/host_chrome.h"
 #include "core/math/rotation.h"
 #include "resource/resource_manager.h"
 
@@ -398,10 +400,9 @@ void GizmoOverlay::drawProbeGizmos(EditorContext& ec) {
 
         scope.box(pos, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), e, col, EditorStyle::px(selected ? 2.0f : 1.5f));
 
-        // The capture point.
+        // At the capture point.
         ImVec2 sp;
-        if (scope.project(pos, sp))
-            dl->AddCircleFilled(sp, EditorStyle::px(selected ? 4.0f : 3.0f), col);
+        if (scope.project(pos, sp)) markEntity(dl, EditorIcon::Probe, id, sp, pos, col);
     };
     ec.frame.scene.forEach<ReflectionProbe, Transform>(drawProbe);
 
@@ -418,6 +419,9 @@ void GizmoOverlay::drawProbeGizmos(EditorContext& ec) {
             col,
             EditorStyle::px(selected ? 2.0f : 1.5f)
         );
+
+        ImVec2 sp;
+        if (scope.project(pos, sp)) markEntity(dl, EditorIcon::Volume, id, sp, pos, col);
 
         // The grid only for the selected volume.
         if (!selected) return;
@@ -467,8 +471,10 @@ void GizmoOverlay::drawEffectGizmos(EditorContext& ec) {
         // Decals project along the entity's forward.
         const glm::vec3 fwd = Math::computeForward(rot);
         ImVec2 a, b;
-        if (scope.project(pos, a) && scope.project(pos + fwd * (scale.z * 0.75f), b))
+        if (!scope.project(pos, a)) return;
+        if (scope.project(pos + fwd * (scale.z * 0.75f), b))
             dl->AddLine(a, b, col, EditorStyle::px(selected ? 2.0f : 1.5f));
+        markEntity(dl, EditorIcon::Decal, id, a, pos, col);
     });
 
     const auto drawEmitter = [&](EntityId id, const ParticleEmitter& e, const Transform& tf) {
@@ -478,21 +484,15 @@ void GizmoOverlay::drawEffectGizmos(EditorContext& ec) {
         const glm::vec3 pos = resolvedWorldPosition(ec.frame.scene, id, tf);
         ImVec2 sp;
         if (!scope.project(pos, sp)) return;
-        dl->AddCircle(
-            sp,
-            EditorStyle::px(selected ? 6.0f : 5.0f),
-            col,
-            0,
-            EditorStyle::px(selected ? 2.0f : 1.5f)
-        );
-        dl->AddCircleFilled(sp, EditorStyle::px(2.0f), col);
 
+        // Under the marker, so the glyph sits on the line's start.
         const float speed = glm::length(e.velocity);
         if (speed > 1e-4f) {
             ImVec2 tip;
             if (scope.project(pos + (e.velocity / speed) * 0.75f, tip))
                 dl->AddLine(sp, tip, col, EditorStyle::px(selected ? 2.0f : 1.5f));
         }
+        markEntity(dl, EditorIcon::Particle, id, sp, pos, col);
     };
     ec.frame.scene.forEach<ParticleEmitter, Transform>(drawEmitter);
 }
@@ -860,6 +860,27 @@ void GizmoOverlay::drawSelectionOutline(EditorContext& ec) {
         const ImU32 col = (id == ec.state.selectedEntity)
             ? EditorStyle::HIGHLIGHT_U32 : secondary;
         scope.box(center, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), he, col);
+    }
+
+    // A UI element is no object: its rect, as UISystem resolved it in viewport pixels, scaled
+    // to the panel's in case the two count pixels differently.
+    const HostChrome::ViewportRect vp = ec.frame.chrome.viewport(ec.frame.window);
+    if (vp.width == 0 || vp.height == 0) return;
+    const ImVec2 toPanel(ec.viewportSize.x / vp.width, ec.viewportSize.y / vp.height);
+    for (const EntityId id : ec.state.selection) {
+        const UIElement* element = ec.frame.scene.tryGet<UIElement>(id);
+        if (!element || element->screenRect.size.x <= 0.0f || element->screenRect.size.y <= 0.0f) continue;
+        const UIRect& rect = element->screenRect;
+        const ImVec2  min(
+            ec.viewportPos.x + rect.pos.x * toPanel.x,
+            ec.viewportPos.y + rect.pos.y * toPanel.y
+        );
+        const ImVec2  max(
+            ec.viewportPos.x + rect.max().x * toPanel.x,
+            ec.viewportPos.y + rect.max().y * toPanel.y
+        );
+        const ImU32 col = (id == ec.state.selectedEntity) ? EditorStyle::HIGHLIGHT_U32 : secondary;
+        scope.dl->AddRect(min, max, col, 0.0f, 0, EditorStyle::px(1.5f));
     }
 }
 

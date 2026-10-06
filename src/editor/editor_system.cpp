@@ -875,17 +875,18 @@ void EditorSystem::drawViewport(EditorContext& ec) {
         const bool  axesFit    = vpSize.x >= needWidth && vpSize.y >= needHeight;
         m_viewportOverlay.drawNoCameraNotice(ec);
         m_viewportOverlay.drawNavigationGizmo(ec, axesFit && m_cameraController.isActive());
-        m_gizmoOverlay.drawLightGizmos(ec);
-        m_gizmoOverlay.drawCameraGizmos(ec);
-        m_gizmoOverlay.drawProbeGizmos(ec);
-        m_gizmoOverlay.drawEffectGizmos(ec);
-        m_gizmoOverlay.drawAudioGizmos(ec);
-        if (m_state.showColliders) {
+        const GizmoVisibility& show = m_state.gizmos;
+        if (show.lights)  m_gizmoOverlay.drawLightGizmos(ec);
+        if (show.cameras) m_gizmoOverlay.drawCameraGizmos(ec);
+        if (show.probes)  m_gizmoOverlay.drawProbeGizmos(ec);
+        if (show.effects) m_gizmoOverlay.drawEffectGizmos(ec);
+        if (show.audio)   m_gizmoOverlay.drawAudioGizmos(ec);
+        if (show.colliders) {
             m_gizmoOverlay.drawColliderGizmos(ec);
             m_gizmoOverlay.drawJointGizmos(ec);
         }
-        if (m_state.showBounds)    m_gizmoOverlay.drawBoundsGizmos(ec);
-        if (m_state.showSkeletons) m_gizmoOverlay.drawSkeletonGizmos(ec);
+        if (show.bounds)    m_gizmoOverlay.drawBoundsGizmos(ec);
+        if (show.skeletons) m_gizmoOverlay.drawSkeletonGizmos(ec);
         m_gizmoOverlay.drawSelectionOutline(ec);
         m_gizmoOverlay.drawTransformGizmo(ec);
         m_viewportToolbar.draw(ec);

@@ -88,7 +88,7 @@ class GizmoOverlay {
         /**
          * @brief Draw a wireframe of every entity's physics Collider.
          *
-         * Toggled by EditorState::showColliders.
+         * Shown by GizmoVisibility::colliders.
          *
          * @param ec The frame's editor context.
          */
@@ -98,7 +98,7 @@ class GizmoOverlay {
          * @brief Draw every joint as its two anchors and the line between them.
          *
          * Point joints mark the shared anchor; distance joints draw the rope.
-         * Toggled with EditorState::showColliders.
+         * Shown with GizmoVisibility::colliders.
          *
          * @param ec The frame's editor context.
          */
@@ -108,7 +108,7 @@ class GizmoOverlay {
          * @brief Draw every posed rig as bone segments from parent to child,
          * with an axis triad per bone on the selected one.
          *
-         * Draws the pose SkeletalAnimationSystem published. Toggled by EditorState::showSkeletons.
+         * Draws the pose SkeletalAnimationSystem published. Shown by GizmoVisibility::skeletons.
          *
          * @param ec The frame's editor context.
          */
@@ -117,7 +117,7 @@ class GizmoOverlay {
         /**
          * @brief Draw the world-space AABB of every visible entity.
          *
-         * The visibility pass's set. Toggled by EditorState::showBounds.
+         * The visibility pass's set. Shown by GizmoVisibility::bounds.
          *
          * @param ec The frame's editor context.
          */
@@ -127,7 +127,8 @@ class GizmoOverlay {
          * @brief Outline every selected entity's world-space AABB as a selection cue.
          *
          * The active entity in full highlight, the rest dimmer; only what the visibility pass
-         * drew. Lights, probes and cameras highlight their own gizmos.
+         * drew, and a selected UI element's resolved rect. Lights, probes and cameras
+         * highlight their own gizmos.
          *
          * @param ec The frame's editor context.
          */
