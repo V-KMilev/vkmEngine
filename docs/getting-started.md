@@ -31,7 +31,7 @@ irm https://github.com/V-KMilev/vkmEngine/releases/latest/download/install.ps1 |
 Either installs the newest release for you alone, with no administrator: the
 engine in `~/.local/share/vkmEngine` (`%LOCALAPPDATA%\Programs\vkmEngine` on
 Windows), `vkm` on your PATH, and **vkmEngine** in your app menu, which opens the
-editor. Running it again replaces the engine with the newest; `VKM_VERSION=0.10.0`
+editor. Running it again replaces the engine with the newest; `VKM_VERSION=1.0.0`
 before it installs that one instead. One engine is installed at a time.
 `uninstall.sh` in the engine's folder removes it all on Linux, and Apps & features
 does on Windows - your projects stay where they are.
@@ -39,8 +39,8 @@ does on Windows - your projects stay where they are.
 Or unpack a release archive anywhere and run its `vkm` where it is:
 
 ```sh
-tar xf vkmEngine-0.10.0-linux-x64.tar.xz
-vkmEngine-0.10.0-linux-x64/vkm new mygame
+tar xf vkmEngine-1.0.0-linux-x64.tar.xz
+vkmEngine-1.0.0-linux-x64/vkm new mygame
 ```
 
 On Windows, Git Bash runs `vkm` as it is, and `cmd.exe` and PowerShell through
