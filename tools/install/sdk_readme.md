@@ -20,7 +20,7 @@ vkm package                     # the game a player gets, under dist/
 ```
 
 The first build downloads the compiler, CMake and Ninja this engine is built
-with (about 250 MB, once). `vkm doctor` checks everything and says what to fix.
+with (a few hundred MB, once). `vkm doctor` checks everything and says what to fix.
 
 ## What is here
 

@@ -9,7 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .engine import EngineBuild, TOOL_DIR
+from .engine import EngineBuild, TOOL_DIR, development
 from .shell import EXE, die, megabytes, note, platform_tag
 
 
@@ -17,10 +17,6 @@ from .shell import EXE, die, megabytes, note, platform_tag
 # installed beside vkm.py. CI builds the SDK with the same file, so a module and the
 # engine come from one compiler.
 TOOLCHAIN_FILE = TOOL_DIR / "toolchain.json"
-
-
-# What a build needs; the pinned Python ships inside the SDK instead.
-BUILD_TOOLS = ("gcc", "cmake", "ninja")
 
 
 def tools_cache() -> Path:
@@ -43,9 +39,29 @@ class Tool:
         self.dir = tools_cache() / f"{name}-{self.version}"
         self.bin = self.dir / pin["bin"]
         self.marker = self.dir / ".vkm-sha256"
+        # A Clang that compiles against another pinned tool's C++ library: Linux's, against GCC's.
+        self.libstdcxx = pin.get("libstdcxx")
 
     def present(self) -> bool:
         return self.marker.is_file() and self.marker.read_text().strip() == self.sha256
+
+    def ready(self):
+        """Fetch the tool if it is missing, and point a Clang at the C++ library it is pinned to.
+
+        Through a config file beside clang and clang++, which Clang reads itself: every
+        build that runs it - the engine's, a module's - gets the same library unasked.
+        """
+        if not self.present():
+            self.fetch()
+        if not self.libstdcxx:
+            return
+        library = pinned_tools((self.libstdcxx,))[0]
+        library.ready()
+        installs = sorted((library.dir / "lib" / "gcc").glob(f"*/{library.version}"))
+        if not installs:
+            die(f"{library.name} {library.version} has no lib/gcc/*/{library.version} for {self.name} to use")
+        for driver in ("clang", "clang++"):
+            (self.bin / f"{driver}.cfg").write_text(f"--gcc-install-dir={installs[0].as_posix()}\n")
 
     def fetch(self):
         """Download, verify and unpack the tool; an unpacked one is kept only once it verified."""
@@ -108,7 +124,7 @@ class Tool:
             self.marker.write_text(self.sha256 + "\n")
 
 
-def pinned_tools(names=BUILD_TOOLS) -> list[Tool]:
+def pinned_tools(names) -> list[Tool]:
     """This platform's pinned tools called `names`, in that order."""
     pins = json.loads(TOOLCHAIN_FILE.read_text()).get(platform_tag(), {}) if TOOLCHAIN_FILE.is_file() else {}
     unknown = [n for n in names if n not in pins]
@@ -118,37 +134,51 @@ def pinned_tools(names=BUILD_TOOLS) -> list[Tool]:
 
 
 def tools_on_path(tools: list[Tool]):
-    """Fetch whatever of `tools` is missing and put every bin/ first on PATH, in order."""
+    """Make every one of `tools` ready and put each bin/ first on PATH, in order."""
     for tool in tools:
-        if not tool.present():
-            tool.fetch()
+        tool.ready()
     dirs = [str(t.bin) for t in tools]
     rest = [p for p in os.environ.get("PATH", "").split(os.pathsep) if p and p not in dirs]
     os.environ["PATH"] = os.pathsep.join(dirs + rest)
 
 
+# The pinned tool behind each compiler a pinned engine can record, and its C++ driver.
+PINNED_COMPILERS = {"GNU": ("gcc", "g++"), "Clang": ("clang", "clang++")}
+
+
+def pinned_compiler(engine: EngineBuild) -> tuple[Tool, str] | None:
+    """The pinned compiler `engine` was built with, and its C++ driver; None for one not pinned."""
+    if not engine.pinned():
+        return None
+    name, driver = PINNED_COMPILERS.get(engine.compiler_id() or "", (None, None))
+    if not name:
+        die(f"the engine records a pinned compiler vkm does not know: {engine.compiler_id()}")
+    return pinned_tools((name,))[0], driver
+
+
 def build_tools(engine: EngineBuild) -> list[Tool]:
-    """What a module builds with against `engine`: the pinned CMake and Ninja, and its GCC if pinned."""
-    return pinned_tools(("cmake", "ninja") + (("gcc",) if engine.pinned() else ()))
+    """What a module builds with against `engine`: the pinned CMake and Ninja, and its compiler if pinned."""
+    compiler = pinned_compiler(engine)
+    return pinned_tools(("cmake", "ninja")) + ([compiler[0]] if compiler else [])
 
 
 def module_compiler(engine: EngineBuild) -> str | None:
     """The C++ compiler a project's module is built with when nothing names one.
 
-    The pinned GCC for an engine built with it, on any machine; else the compiler
-    that built the engine, as its package records it.
+    The pinned GCC or Clang an engine was built with, on any machine; else the
+    compiler that built it, as its package records it.
     """
-    if engine.pinned():
-        return str(pinned_tools(("gcc",))[0].bin / ("g++" + EXE))
+    compiler = pinned_compiler(engine)
+    if compiler:
+        return str(compiler[0].bin / (compiler[1] + EXE))
     return engine.compiler()
 
 
 def cmd_toolchain(args) -> int:
     """Fetch pinned tools (the build's, unless named) and say where each is."""
-    tools = pinned_tools(tuple(args.tools) or BUILD_TOOLS)
+    tools = pinned_tools(tuple(args.tools)) if args.tools else build_tools(development())
     for tool in tools:
-        if not tool.present():
-            tool.fetch()
+        tool.ready()
     for tool in tools:
         if args.path:
             print(tool.bin)

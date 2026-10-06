@@ -64,6 +64,10 @@ class EngineBuild:
         """The C++ compiler this build was made with; a module has to use the same one."""
         return self.setting("vkmEngineConfig.cmake", r'set\(VKMENGINE_BUILD_CXX_COMPILER\s+"([^"]+)"\)')
 
+    def compiler_id(self) -> str | None:
+        """CMake's name for the compiler this build was made with: GNU, Clang."""
+        return self.setting("vkmEngineConfig.cmake", r'set\(VKMENGINE_BUILD_CXX_COMPILER_ID\s+"([^"]+)"\)')
+
     def build_type(self) -> str | None:
         """The configuration this build was made as; None for a multi-config generator."""
         return self.setting("vkmEngineConfig.cmake", r'set\(VKMENGINE_BUILD_TYPE\s+"([^"]+)"\)')

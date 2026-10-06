@@ -1,9 +1,12 @@
 cmake_minimum_required(VERSION 3.25.0)
 
 # A configure that names no compiler - none given, no CC or CXX, no toolchain file -
-# builds with the GCC a release is built with (cmake/pinned_toolchain.cmake). Taken
-# before project(), the one point a compiler can still be chosen.
-option(VKM_PINNED_TOOLCHAIN "Build with the pinned GCC when no compiler is named" ON)
+# builds with a compiler releases are built with (cmake/pinned_toolchain.cmake): the
+# pinned GCC, or with -DVKM_COMPILER=clang the pinned Clang. Taken before project(),
+# the one point a compiler can still be chosen.
+option(VKM_PINNED_TOOLCHAIN "Build with a pinned compiler when no compiler is named" ON)
+set(VKM_COMPILER gcc CACHE STRING "The pinned compiler a configure naming none takes: gcc or clang")
+set_property(CACHE VKM_COMPILER PROPERTY STRINGS gcc clang)
 if(VKM_PINNED_TOOLCHAIN AND NOT DEFINED CMAKE_TOOLCHAIN_FILE AND NOT CMAKE_CXX_COMPILER
         AND NOT DEFINED ENV{CXX} AND NOT DEFINED ENV{CC})
     set(CMAKE_TOOLCHAIN_FILE ${CMAKE_CURRENT_LIST_DIR}/cmake/pinned_toolchain.cmake)
@@ -94,7 +97,7 @@ endif()
 # The compiler's runtime libraries (GCC's or LLVM's), copied beside the
 # executables and installed with them: without them a program fails with no log
 # line. On Windows they sit beside the compiler, or in a cross toolchain's target
-# bin/; on Linux GCC names them, and a system compiler's are the system's own.
+# bin/; on Linux the compiler names them, and a system compiler's are the system's own.
 set(VKM_COMPILER_RUNTIME "")
 if(MINGW)
     get_filename_component(_vkm_compiler_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
@@ -111,7 +114,8 @@ if(MINGW)
             endif()
         endforeach()
     endforeach()
-elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+else()
+    # GCC's, or the pinned Clang's, which compiles against the pinned GCC's library.
     foreach(_lib libstdc++.so.6 libgcc_s.so.1)
         execute_process(
             COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=${_lib}

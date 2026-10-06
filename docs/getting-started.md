@@ -12,7 +12,8 @@ engine rather than *with* it, read [building.md](reference/building.md) instead.
 
 Nothing else. The SDK carries the Python `vkm` runs on, and the first build
 fetches the compiler, CMake and Ninja the engine was built with - the same
-versions on every machine ([the toolchain pin](#the-toolchain-pin)).
+versions on every machine ([the toolchain pin](#the-toolchain-pin)). Every release
+comes built with GCC and with Clang; you pick which compiler builds your game.
 
 ## Install
 
@@ -28,7 +29,9 @@ On Windows, in PowerShell:
 irm https://github.com/V-KMilev/vkmEngine/releases/latest/download/install.ps1 | iex
 ```
 
-Either installs the newest release for you alone, with no administrator: the
+Either installs the newest release for you alone, built with GCC. For Clang, say so
+first - `curl -fsSL ... | VKM_COMPILER=clang sh`, or `$env:VKM_COMPILER = 'clang'`
+before the PowerShell line. Either way, with no administrator: the
 engine in `~/.local/share/vkmEngine` (`%LOCALAPPDATA%\Programs\vkmEngine` on
 Windows), `vkm` on your PATH, and **vkmEngine** in your app menu, which opens the
 editor. Running it again replaces the engine with the newest; `VKM_VERSION=1.0.0`
@@ -39,8 +42,8 @@ does on Windows - your projects stay where they are.
 Or unpack a release archive anywhere and run its `vkm` where it is:
 
 ```sh
-tar xf vkmEngine-1.0.0-linux-x64.tar.xz
-vkmEngine-1.0.0-linux-x64/vkm new mygame
+tar xf vkmEngine-1.0.0-linux-x64-gcc.tar.xz
+vkmEngine-1.0.0-linux-x64-gcc/vkm new mygame
 ```
 
 On Windows, Git Bash runs `vkm` as it is, and `cmd.exe` and PowerShell through
@@ -60,7 +63,7 @@ things: compiled `src/` into `bin/libgame.so` (`bin/game.dll` on Windows), cooke
 the assets, and handed the project to `vkm_runtime`, which loaded that module and
 ran it. The first two are no-ops when nothing changed, so `vkm run` is the one
 command to repeat while you work: what plays is always what is on disk. The very
-first build also downloads the pinned compiler, about 250 MB, once for every
+first build also downloads the pinned compiler, a few hundred MB, once for every
 project.
 
 To start from one of the examples instead, copy it:
@@ -325,13 +328,16 @@ layouts, inline functions and templates can change between engine versions, whic
 is what lets them keep improving. The price is that **your module must be built
 with the same compiler as the engine**, and rebuilt for each engine release.
 
-So the SDK brings that compiler. `bin/toolchain.json` names the GCC, CMake and
-Ninja the release was built with - GCC 15.2, CMake 3.31 and Ninja 1.13, on Linux
-and on Windows alike - with where to download each and its SHA-256. The first
-build fetches them into `~/.cache/vkm/tools` (`%LOCALAPPDATA%\vkm\tools` on
-Windows; `VKM_TOOLS_DIR` moves it), checks each against its hash, and every build
+So the SDK brings that compiler. `bin/toolchain.json` names what releases are built
+with - GCC 15.2, Clang 21.1, CMake 3.31 and Ninja 1.13, on Linux and on Windows
+alike - with where to download each and its SHA-256. A release is built twice, as a
+GCC SDK and a Clang SDK, and yours fetches the one it was built with, with CMake and
+Ninja: the first build puts them in `~/.cache/vkm/tools` (`%LOCALAPPDATA%\vkm\tools`
+on Windows; `VKM_TOOLS_DIR` moves it), checks each against its hash, and every build
 after uses them, whatever else is installed. The engine was built with exactly
-these, by the same file, so the two cannot drift.
+these, by the same file, so the two cannot drift. On Linux the pinned Clang compiles
+against the pinned GCC's C++ library, which vkm points it at, so both SDKs carry the
+same one; on Windows Clang brings its own.
 
 The engine ships that compiler's runtime libraries beside its own, and a packaged
 game carries them too, so a player needs nothing installed.

@@ -7,15 +7,16 @@
   `mingw-w64-ucrt-x86_64-python`, or python.org's)
 - OpenGL 4.3 capable GPU and drivers
 
-No compiler: a configure that names none builds with the GCC a release is built
-with, which `tools/toolchain.json` pins and `cmake/pinned_toolchain.cmake` fetches
-through `vkm toolchain`, so what you build is what ships
+No compiler: a configure that names none builds with a compiler releases are built
+with - the pinned GCC, or with `-DVKM_COMPILER=clang` the pinned Clang - which
+`tools/toolchain.json` pins and `cmake/pinned_toolchain.cmake` fetches through
+`vkm toolchain`, so what you build is what ships
 ([the toolchain pin](../getting-started.md#the-toolchain-pin)). Naming one -
-`-DCMAKE_CXX_COMPILER=clang++`, `CC`/`CXX` in the environment, a toolchain file, or
+`-DCMAKE_CXX_COMPILER=...`, `CC`/`CXX` in the environment, a toolchain file, or
 `-DVKM_PINNED_TOOLCHAIN=OFF` for whatever CMake finds - builds with that instead; the
 engine records which, and vkm builds a game's module with the same. A build tree keeps
 the compiler it was configured with, so one made before this needs a fresh configure
-to move to the pinned GCC.
+to move to a pinned one.
 
 ## Setup
 
@@ -303,12 +304,12 @@ tree is the same thing as one assembled from an install. The repo's `assets/`
 additionally holds the sample art the engine is developed against, which is
 gigabytes and belongs to no game.
 
-A downloadable archive comes from CPack, named for what it runs on as a packaged
-game is; the compiler is not in the name, because an SDK brings its own:
+A downloadable archive comes from CPack, named for what it runs on, as a packaged
+game is, and for the compiler a game builds with against it:
 
 ```bash
 cmake --build build --target package
-# -> vkmEngine-<version>-linux-x64.tar.xz, or -windows-x64.zip
+# -> vkmEngine-<version>-linux-x64-gcc.tar.xz, or -windows-x64-clang.zip, ...
 ```
 
 Building a game *with* that SDK is [getting-started.md](../getting-started.md).
@@ -350,20 +351,18 @@ Every push to `master` or a `vkm/` branch, and every pull request, runs
 `.github/workflows/ci.yml`, which is `.github/workflows/build.yml` and nothing
 else:
 
-- **SDK, Linux and Windows.** The pinned toolchain fetched by `vkm toolchain`,
-  the shipping engine, the SDK with the pinned Python, the tests, the archive -
-  and then the archive used as a person uses it: unpacked elsewhere, `vkm new`,
-  `vkm new -t physics_lab`, `vkm doctor` and `vkm package` on both. Linux builds
-  on Ubuntu 22.04, whose glibc is the oldest a release runs on.
-- **Clang, Linux and Windows.** The same tree built and tested with Clang 18 and
-  with llvm-mingw, both pinned in `build.yml`. It ships nothing; it catches what
-  one compiler lets through and the other does not.
+- **GCC and Clang, each on Linux and Windows** - four runs of one job, with the same
+  steps: the pinned compiler `-DVKM_COMPILER` names, the shipping engine, the SDK
+  with the pinned Python, the tests, the archive - and then the archive used as a
+  person uses it: unpacked elsewhere, `vkm new`, `vkm new -t physics_lab`,
+  `vkm doctor` and `vkm package`. Linux builds on Ubuntu 22.04, whose glibc is the
+  oldest a release runs on.
 
-Every compile goes through ccache, whose store each job carries from its last run,
+Every compile goes through ccache, whose store each run carries from its last one,
 so a push recompiles only what it changed.
 
 A version tag (`vX.Y.Z`) runs `.github/workflows/release.yml`: the same
-`build.yml` on the tag, then both archives and the two installers
+`build.yml` on the tag, then all four archives and the two installers
 (`tools/install/install.sh`, `install.ps1`) on that tag's GitHub release, its
 notes taken from the version's section of `CHANGELOG.md`. The installers fetch
 the newest release, so every release carries them. Its Run workflow button

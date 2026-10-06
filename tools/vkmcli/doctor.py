@@ -53,8 +53,9 @@ def cmd_doctor(args) -> int:
 
     print("toolchain")
     for tool in build_tools(dev):
+        library = f", with the pinned {tool.libstdcxx}'s C++ library" if tool.libstdcxx else ""
         if tool.present():
-            report("ok", tool.name, f"{tool.version} at {tool.dir}")
+            report("ok", tool.name, f"{tool.version}{library} at {tool.dir}")
         else:
             report("--", tool.name, f"{tool.version}, not fetched yet", "`vkm build` fetches it")
     if dev.pinned():
