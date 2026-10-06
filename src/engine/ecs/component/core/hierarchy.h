@@ -9,31 +9,30 @@ class Scene;
 /**
  * @brief Component representing parent-child relationships in an entity hierarchy.
  *
- * Uses an intrusive doubly-linked sibling list for O(1) attach/detach.
- * Only entities that participate in a hierarchy need this component -
- * root entities without parents or children have no Hierarchy component.
- *
- * Tree structure:
- *   parent.firstChild -> child1 -> child1.nextSibling -> child2 -> ... -> null
- *                                 child2.prevSibling -> child1
+ * An intrusive doubly-linked sibling list, O(1) attach/detach. An entity with no
+ * parent and no children has none. Sibling order is walk order, decided by
+ * HierarchyOperations::setParent.
  */
 struct Hierarchy {
-    EntityId parent{};        ///< Parent entity (null = root of subtree)
-    EntityId firstChild{};    ///< Head of child linked list (null = leaf)
-    EntityId nextSibling{};   ///< Next child of the same parent
-    EntityId prevSibling{};   ///< Previous child of the same parent (for O(1) removal)
+    EntityId parent{};        ///< Null at a subtree root.
+    EntityId firstChild{};    ///< Null at a leaf.
+    EntityId lastChild{};     ///< For O(1) append; null at a leaf.
+    EntityId nextSibling{};
+    EntityId prevSibling{};
 };
 
 /**
- * @brief Surgically detach an entity from the hierarchy tree, fixing all cross-entity links.
+ * @brief Detach an entity from the hierarchy tree, handing its children to its parent.
  *
- * Reparents children to the entity's parent (or makes them roots if none), then
- * unlinks the entity from its parent's child list. Leaves the entity's own Hierarchy
- * component in a disconnected (all-null) state but does NOT remove it.
+ * Children take the entity's place among its siblings, in order (or become
+ * roots), each keeping its world pose. A child left with no relatives loses its
+ * Hierarchy and WorldTransform as removeFromParent leaves any leaf.
  *
- * A Scene-internal helper for Scene::destroyEntity, which splices a doomed
- * entity out without orphaning its descendants. Scene-graph editing goes
- * through HierarchyOperations (setParent / removeFromParent) instead.
+ * Scene-internal, for Scene::destroyEntity; edit the graph through
+ * HierarchyOperations instead.
+ *
+ * @param scene  Scene the entity lives in.
+ * @param entity Entity being spliced out, still alive.
  */
 void detachFromHierarchy(Scene& scene, EntityId entity);
 

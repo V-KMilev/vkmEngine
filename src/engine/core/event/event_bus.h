@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <utility>
@@ -14,21 +15,9 @@ namespace Vkm::Engine {
 /**
  * @brief Typed pub/sub event dispatcher.
  *
- * Engine infrastructure, not a System: the Engine owns one by value, like the
- * Clock, carries it on every FrameContext, and calls flush() at the top of the
- * Simulation stage - the fixed, visible point where queued events deliver. That
- * point is reached once per fixed tick and once more per frame for whatever was
- * queued outside a tick; flush drains, so the second never repeats the first.
- *
- * Per-type listener and queue storage is created lazily on first use.
- *
- * Main-thread only: emit, enqueue, subscribe and unsubscribe all happen on the
- * frame thread, and a subsystem that wants to push events from a worker is the
- * point at which Bus<EventT> would need a mutex.
- *
- * Subscribing and unsubscribing from inside a callback are both allowed - a
- * one-shot listener retiring itself is the case that shaped Bus::remove.
- * docs/reference/system/events.md has the delivery rules and the caveats.
+ * Owned by the Engine and carried on FrameContext. Main-thread only. Subscribing
+ * and unsubscribing inside a callback are allowed; docs/reference/events.md has
+ * the delivery rules.
  */
 class EventBus {
     public:
@@ -38,12 +27,15 @@ class EventBus {
         EventBus(const EventBus& other) = delete;
         EventBus& operator=(const EventBus& other) = delete;
 
-        EventBus(EventBus && other) noexcept = delete;
-        EventBus& operator=(EventBus && other) noexcept = delete;
+        EventBus(EventBus && other) = delete;
+        EventBus& operator=(EventBus && other) = delete;
 
     public:
         /**
          * @brief Register a callback for events of type EventT.
+         *
+         * @tparam EventT Event type listened for.
+         * @param callback Called with each EventT emitted or flushed from now on.
          * @return ListenerId for a later unsubscribe().
          */
         template<typename EventT>
@@ -52,7 +44,10 @@ class EventBus {
         }
 
         /**
-         * @brief Remove a previously-registered listener.
+         * @brief Remove a registered listener.
+         *
+         * @tparam EventT Event type it was subscribed to.
+         * @param id What subscribe() returned.
          * @return true if it was found and removed.
          */
         template<typename EventT>
@@ -62,7 +57,10 @@ class EventBus {
         }
 
         /**
-         * @brief Fire @p event synchronously to every listener now, on the calling thread.
+         * @brief Fire @p event synchronously to every listener now.
+         *
+         * @tparam EventT Event type; no bus is created when nothing listens.
+         * @param event Passed to each listener.
          */
         template<typename EventT>
         void emit(const EventT& event) {
@@ -70,7 +68,10 @@ class EventBus {
         }
 
         /**
-         * @brief Queue @p event for delivery on the next flush() (no mid-frame recursion).
+         * @brief Queue @p event for delivery on the next flush().
+         *
+         * @tparam EventT Event type.
+         * @param event Event to queue; moved in.
          */
         template<typename EventT>
         void enqueue(EventT event) {
@@ -80,26 +81,47 @@ class EventBus {
         /**
          * @brief Drain every per-type queue to its listeners.
          *
-         * Called by Engine::run at the top of the Simulation stage, before any
-         * gameplay system ticks: once per fixed tick, and once more per frame
-         * for what was queued outside a tick or by the frame's last one.
-         * Delivering on the frame alone would put a reaction however many ticks
-         * later the frame rate decided.
+         * Engine::run calls it at the top of Simulation, once per tick and once
+         * per frame. A nested call from a listener is ignored.
          */
         void flush();
+
+        /**
+         * @brief Drop every bus nothing listens to any more.
+         *
+         * For just before a gameplay module is unmapped (see
+         * ScriptModule::releaseRegistrations): a Bus<EventT> for a module's event
+         * holds the module's vtable, so a flush() after reload would call into
+         * unmapped memory. A bus with a listener stays, so drop those first; an
+         * idle bus has nowhere to deliver, so nothing is lost.
+         */
+        void dropIdleBuses();
+
+        /**
+         * @brief How many event types have a bus right now.
+         *
+         * @return The number of live buses.
+         */
+        std::size_t busCount() const { return m_buses.count(); }
 
     private:
         /**
          * @brief Return the bus for EventT, creating it on first use.
+         *
+         * @tparam EventT Event type.
+         * @return The bus, created empty if none existed.
          */
         template<typename EventT>
         Bus<EventT>& bus() {
-            return static_cast<Bus<EventT>&>(m_buses.ensure<EventT>(
-                [] { return std::make_unique<Bus<EventT>>(); }));
+            IBus& base = m_buses.ensure<EventT>([] { return std::make_unique<Bus<EventT>>(); });
+            return static_cast<Bus<EventT>&>(base);
         }
 
         /**
          * @brief Return the bus for EventT, or nullptr if none exists yet.
+         *
+         * @tparam EventT Event type.
+         * @return The bus, or nullptr.
          */
         template<typename EventT>
         Bus<EventT>* findBus() {
@@ -108,6 +130,52 @@ class EventBus {
 
     private:
         TypeRegistry<IBus> m_buses;
+
+        std::vector<IBus*> m_active;  ///< flush()'s snapshot, kept to avoid allocating.
+
+        bool m_flushing = false;
+};
+
+/**
+ * @brief The sending half of an EventBus: emit and enqueue, and no subscribe.
+ *
+ * What Behavior::events() hands a behavior, which must listen through
+ * Behavior::subscribe: a listener on the bus itself would outlive the behavior
+ * and its module, and a flush after reload would call unmapped code.
+ *
+ * Copies freely; valid as long as the bus.
+ */
+class EventSender {
+    public:
+        explicit EventSender(EventBus& bus) : m_bus(&bus) {}
+        ~EventSender() = default;
+
+        EventSender(const EventSender& other) = default;
+        EventSender& operator=(const EventSender& other) = default;
+
+        EventSender(EventSender && other) = default;
+        EventSender& operator=(EventSender && other) = default;
+
+        /**
+         * @brief Fire @p event synchronously to every listener now (EventBus::emit).
+         *
+         * @tparam EventT Event type.
+         * @param event Passed to each listener.
+         */
+        template<typename EventT>
+        void emit(const EventT& event) { m_bus->emit(event); }
+
+        /**
+         * @brief Queue @p event for delivery on the next flush (EventBus::enqueue).
+         *
+         * @tparam EventT Event type.
+         * @param event Event to queue; moved in.
+         */
+        template<typename EventT>
+        void enqueue(EventT event) { m_bus->enqueue(std::move(event)); }
+
+    private:
+        EventBus* m_bus;
 };
 
 } // namespace Vkm::Engine

@@ -5,16 +5,10 @@
 namespace Vkm::Engine {
 
 /**
- * @brief Log the build banner: what this binary is, and what it is made of.
+ * @brief Log the build banner: this binary, and each vkm module's hash.
  *
- * Mirrors the editor's About dialog - the same versions above, the same
- * per-module commits below, so a log and a screenshot describe the build the
- * same way. Each vkm module is its own repository, so one hash per module says
- * what one tree commit cannot.
- *
- * Reads the APP_* and VKM* macros injected by CMake as compile definitions;
- * call once at startup. The API and renderer strings are absent here because
- * the GL context does not exist yet - the backend logs those when it opens one.
+ * Reads the APP_* and VKM* macros CMake defines; call once at startup. The GL
+ * strings are logged by the backend, as no context exists yet.
  */
 inline void printBuildInfo() {
     LOG_INFO_C("BUILD", "------- Build Information -------");

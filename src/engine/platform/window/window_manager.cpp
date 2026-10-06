@@ -8,7 +8,7 @@
 #include <GL/glew.h>
 #include "platform/window/glfw_include.h"
 
-#include "platform/window/input_handle.h"
+#include "platform/input/input_handle.h"
 #include "platform/window/frame_limiter.h"
 
 #include "logger.h"
@@ -19,12 +19,17 @@
 
 namespace Vkm::Engine {
 
-WindowManager::WindowManager() = default;
+static_assert(
+    MAX_KEY          == GLFW_KEY_LAST,
+    "MAX_KEY is out of step with this GLFW - resize the key arrays"
+);
+static_assert(
+    MAX_MOUSE_BUTTON == GLFW_MOUSE_BUTTON_LAST,
+    "MAX_MOUSE_BUTTON is out of step with this GLFW - resize the button arrays"
+);
 
 namespace {
-// GLFW parks the reason for a failure in its per-thread error state, and nothing
-// reads it unless asked - so a startup that dies here says what actually failed
-// instead of naming the call that returned null.
+// GLFW's per-thread error state, so a failed startup says what actually failed.
 const char* glfwErrorDescription() {
     const char* description = nullptr;
     glfwGetError(&description);
@@ -43,12 +48,17 @@ GLFWmonitor* getCurrentMonitor(GLFWwindow* window) {
     int bestOverlap = 0;
 
     for (int i = 0; i < monitorCount; i++) {
+        // A display unplugged since the last poll still has a handle, but its mode is null.
         const GLFWvidmode* mode = glfwGetVideoMode(monitors[i]);
+        if (!mode) continue;
+
         int monitorX, monitorY;
         glfwGetMonitorPos(monitors[i], &monitorX, &monitorY);
 
-        int overlapX = std::max(0, std::min(windowX + windowWidth, monitorX + mode->width) - std::max(windowX, monitorX));
-        int overlapY = std::max(0, std::min(windowY + windowHeight, monitorY + mode->height) - std::max(windowY, monitorY));
+        const int overlapRight  = std::min(windowX + windowWidth, monitorX + mode->width);
+        const int overlapBottom = std::min(windowY + windowHeight, monitorY + mode->height);
+        int overlapX = std::max(0, overlapRight - std::max(windowX, monitorX));
+        int overlapY = std::max(0, overlapBottom - std::max(windowY, monitorY));
         int overlap = overlapX * overlapY;
 
         if (overlap > bestOverlap) {
@@ -59,7 +69,21 @@ GLFWmonitor* getCurrentMonitor(GLFWwindow* window) {
 
     return bestMonitor ? bestMonitor : glfwGetPrimaryMonitor();
 }
+
+/**
+ * @brief The video mode of the monitor the window is on, or null if there isn't one.
+ *
+ * Found by overlap, as glfwGetWindowMonitor names one only when fullscreen. Null-safe for a
+ * headless host or one with no output, since GLFW asserts on a null handle.
+ */
+const GLFWvidmode* currentVideoMode(GLFWwindow* window) {
+    if (!window) return nullptr;
+    GLFWmonitor* monitor = getCurrentMonitor(window);
+    return monitor ? glfwGetVideoMode(monitor) : nullptr;
+}
 } // namespace
+
+WindowManager::WindowManager() = default;
 
 WindowManager::~WindowManager() {
     if (m_windowHandle) {
@@ -93,64 +117,116 @@ void WindowManager::createWindow(const std::string& title) {
     );
 
     if (!m_windowHandle) {
-        // Usually a driver that cannot serve the core context hinted above, but
-        // "no display" and "GLFW built without this platform" land here too -
-        // only GLFW's own description tells them apart.
-        LOG_ERROR("Failed to create window (requested OpenGL %d.%d core): %s",
-            OPENGL_MAJOR_VERSION, OPENGL_MINOR_VERSION, glfwErrorDescription());
+        // Usually no core context, but also no display or a missing platform; GLFW's text tells.
+        LOG_ERROR(
+            "Failed to create window (requested OpenGL %d.%d core): %s",
+            OPENGL_MAJOR_VERSION,
+            OPENGL_MINOR_VERSION,
+            glfwErrorDescription()
+        );
         throw std::runtime_error("Failed to create window");
     }
 
     // Required before glewInit and glfwSwapInterval below.
     glfwMakeContextCurrent(m_windowHandle);
 
-    // Version / device strings are logged by the OpenGL backend when it constructs.
     if (const GLenum glewError = glewInit(); glewError != GLEW_OK) {
-        LOG_ERROR("Failed to initialize GLEW: %s",
-            reinterpret_cast<const char*>(glewGetErrorString(glewError)));
+        LOG_ERROR(
+            "Failed to initialize GLEW: %s",
+            reinterpret_cast<const char*>(glewGetErrorString(glewError))
+        );
         throw std::runtime_error("Failed to initialize GLEW");
     }
 
-    // VSync off at creation (0 = uncapped). Set later via setVSync.
+    // VSync off at creation.
     glfwSwapInterval(0);
 
-    // Framebuffer pixels, not window screen coords: the two differ on a HiDPI /
-    // scaled display, and GL viewports and render targets want the former.
     glfwGetFramebufferSize(m_windowHandle, &m_width, &m_height);
 
     LOG_TRACE("Constructed Window '%s'", m_title.c_str());
 
-    // Every GLFW callback below reaches its target through this one pointer -
-    // the framebuffer-size one lands here, the input ones carry on to
-    // getInputHandle() - so it is set before any of them is registered.
+    // Set before any callback that reads it is registered.
     glfwSetWindowUserPointer(m_windowHandle, this);
 
-    // Framebuffer, not window, size: this also catches the HiDPI / DPI changes a
-    // window-size callback would miss.
+    // Framebuffer, not window, size: this also catches DPI changes.
     glfwSetFramebufferSizeCallback(m_windowHandle, [](GLFWwindow* w, int width, int height) {
         if (auto* manager = static_cast<WindowManager*>(glfwGetWindowUserPointer(w))) {
             manager->setSize(width, height);
         }
     });
 
-    // The titlebar X, into the same field requestClose() writes. Without this
-    // the loop reads a flag GLFW sets and we never see, and closing the window
-    // stops ending the program.
+    // Kept by callback, not asked per frame: on X11 each question is a server round trip.
+    glfwGetWindowSize(m_windowHandle, &m_windowWidth, nullptr);
+    glfwSetWindowSizeCallback(m_windowHandle, [](GLFWwindow* w, int width, int) {
+        if (auto* manager = static_cast<WindowManager*>(glfwGetWindowUserPointer(w))) {
+            manager->m_windowWidth = width;
+        }
+    });
+
+    // The titlebar X, into the same field requestClose() writes.
     glfwSetWindowCloseCallback(m_windowHandle, [](GLFWwindow* w) {
         if (auto* manager = static_cast<WindowManager*>(glfwGetWindowUserPointer(w))) {
             manager->requestClose();
         }
     });
 
-    m_inputHandle.setupCallbacks(m_windowHandle);
-    LOG_INFO("Created window '%s' (%dx%d, refresh %dHz)",
-        title.c_str(), m_width, m_height, getRefreshRate());
+    glfwSetKeyCallback(m_windowHandle, [](GLFWwindow* w, int key, int, int action, int) {
+        if (auto* manager = static_cast<WindowManager*>(glfwGetWindowUserPointer(w))) {
+            const bool pressed = (action == GLFW_PRESS || action == GLFW_REPEAT);
+            manager->getInputHandle().onKeyEvent(key, pressed);
+        }
+    });
+
+    // Characters with layout and modifiers applied, for text fields.
+    glfwSetCharCallback(m_windowHandle, [](GLFWwindow* w, unsigned int codepoint) {
+        if (auto* manager = static_cast<WindowManager*>(glfwGetWindowUserPointer(w))) {
+            manager->getInputHandle().onText(static_cast<char32_t>(codepoint));
+        }
+    });
+
+    // An event, not a poll, so a click pressed and released within one poll is still seen.
+    glfwSetMouseButtonCallback(m_windowHandle, [](GLFWwindow* w, int button, int action, int) {
+        if (auto* manager = static_cast<WindowManager*>(glfwGetWindowUserPointer(w))) {
+            manager->getInputHandle().setButton(button, action == GLFW_PRESS);
+        }
+    });
+
+    // Horizontal scroll is unused.
+    glfwSetScrollCallback(m_windowHandle, [](GLFWwindow* w, double, double yOffset) {
+        if (auto* manager = static_cast<WindowManager*>(glfwGetWindowUserPointer(w))) {
+            manager->getInputHandle().addScroll(yOffset);
+        }
+    });
+
+    glfwSetCursorPosCallback(m_windowHandle, [](GLFWwindow* w, double x, double y) {
+        if (auto* manager = static_cast<WindowManager*>(glfwGetWindowUserPointer(w))) {
+            manager->m_cursorX = x;
+            manager->m_cursorY = y;
+        }
+    });
+
+    // Leaving reports no position; the last one reported is still inside the window.
+    glfwSetCursorEnterCallback(m_windowHandle, [](GLFWwindow* w, int entered) {
+        auto* manager = static_cast<WindowManager*>(glfwGetWindowUserPointer(w));
+        if (manager && !entered) glfwGetCursorPos(w, &manager->m_cursorX, &manager->m_cursorY);
+    });
+
+    // Seeds the delta's origin, or the first updateInput() reports the whole distance to the
+    // pointer. updateInput overwrites the seed's own delta before anything reads it.
+    glfwGetCursorPos(m_windowHandle, &m_cursorX, &m_cursorY);
+    m_inputHandle.moveTo(m_cursorX, m_cursorY);
+
+    LOG_INFO("Created window '%s' (%dx%d, refresh %dHz)", title.c_str(), m_width, m_height, getRefreshRate());
 }
 
 void WindowManager::setIcon(const std::string& path) {
     if (!m_windowHandle) return;
     int width, height, channels;
-    // Force 4 channels (RGBA) - GLFWimage expects 32-bit RGBA, top-left origin.
+
+    // A loader may have set this thread's flip (see decodeImagesBottomUp); GLFWimage is top-left.
+    stbi_set_flip_vertically_on_load_thread(0);
+
+    // GLFWimage expects 32-bit RGBA.
     unsigned char* pixels = stbi_load(path.c_str(), &width, &height, &channels, 4);
     if (!pixels) {
         LOG_ERROR("Window icon failed to load: '%s'", path.c_str());
@@ -170,8 +246,7 @@ void WindowManager::requestClose() {
     LOG_INFO("Close requested");
     m_closeRequested = true;
 
-    // Mirrored so anything reading GLFW directly agrees, but the field is what
-    // the loop reads: a world with no window still has to be able to stop.
+    // Mirrored for GLFW readers; the loop reads the field, so a windowless world can stop.
     if (m_windowHandle) glfwSetWindowShouldClose(m_windowHandle, GLFW_TRUE);
 }
 
@@ -182,29 +257,27 @@ void WindowManager::cancelClose() {
 }
 
 void WindowManager::setTitle(const std::string& title) {
-    if (m_windowHandle) glfwSetWindowTitle(m_windowHandle, title.c_str());
+    // Kept: the shutdown trace names m_title.
+    m_title = title;
+    if (m_windowHandle) glfwSetWindowTitle(m_windowHandle, m_title.c_str());
 }
 
 void WindowManager::swapBuffers() {
     {
-        // With vsync off and no FPS cap this returns fast, but when the CPU
-        // outruns the GPU the driver blocks here until the queue drains - a fat
-        // SwapBuffers zone is the tell-tale of a GPU-bound frame.
+        // A CPU outrunning the GPU blocks here: a fat zone means a GPU-bound frame.
         PROFILE_SCOPE("SwapBuffers");
         if (m_windowHandle) glfwSwapBuffers(m_windowHandle);
     }
 
     {
-        // Deliberate cap sleep (only when setFramerate > 0); a separate zone so
-        // a throttle sleep is never mistaken for a GPU-bound swap stall.
+        // Its own zone, so a cap sleep is never mistaken for a swap stall.
         PROFILE_SCOPE("FrameLimiter");
         m_frameLimiter.endFrame();
     }
 }
 
 void WindowManager::updateMode(WindowMode windowMode) {
-    // Guarded like every sibling that touches the handle: a headless host has
-    // no window, and asking GLFW about a null one is not a monitor failure.
+    // Headless: no window is not a monitor failure.
     if (!m_windowHandle) return;
 
     GLFWmonitor* monitor = getCurrentMonitor(m_windowHandle);
@@ -219,9 +292,7 @@ void WindowManager::updateMode(WindowMode windowMode) {
         return;
     }
 
-    // Target rect/refresh per mode. Fullscreen covers the whole monitor video
-    // mode; Windowed is a centred rect at 75% of the monitor (a full-monitor
-    // windowed rect at (0,0) would look like borderless fullscreen).
+    // Windowed is a centred 75% rect: a full-monitor one would look like borderless fullscreen.
     int targetX = 0;
     int targetY = 0;
     int targetW = mode->width;
@@ -248,33 +319,23 @@ void WindowManager::updateMode(WindowMode windowMode) {
             return;
     }
 
-    glfwSetWindowMonitor(
-        m_windowHandle,
-        monitor,
-        targetX,
-        targetY,
-        targetW,
-        targetH,
-        targetRefresh
-    );
+    glfwSetWindowMonitor(m_windowHandle, monitor, targetX, targetY, targetW, targetH, targetRefresh);
 
     m_windowMode = windowMode;
 
-    LOG_INFO("Mode -> %s (%dx%d @ %dHz)",
-        toString(windowMode), targetW, targetH, targetRefresh);
+    LOG_INFO("Mode -> %s (%dx%d @ %dHz)", toString(windowMode), targetW, targetH, targetRefresh);
 }
 
 void WindowManager::updateInput() {
-    // No device, nothing to read. Without this the frame makes ten GLFW calls
-    // that each fail the same way and are each discarded.
     if (!m_windowHandle) return;
 
-    // Cleared before the poll, because the scroll callback accumulates into it.
-    m_inputHandle.getMouse().resetScrollDelta();
+    // The scroll callback accumulates.
+    m_inputHandle.resetScrollDelta();
 
     glfwPollEvents();
 
-    m_inputHandle.update(m_windowHandle);
+    // Once per frame: the handle's delta is the frame's movement.
+    m_inputHandle.moveTo(m_cursorX, m_cursorY);
 }
 
 bool WindowManager::beginFrame() {
@@ -284,19 +345,16 @@ bool WindowManager::beginFrame() {
 }
 
 void WindowManager::setVSync(bool enabled) {
-    // Independent of the software FPS cap: leave the framelimiter alone.
+    // Independent of the software FPS cap.
     if (!m_windowHandle) return;
 
     glfwMakeContextCurrent(m_windowHandle);
-    // 0 = uncapped, 1 = vsync.
     glfwSwapInterval(enabled ? 1 : 0);
     m_vsync = enabled;
     LOG_INFO("VSync %s", enabled ? "ON" : "OFF");
 }
 
 void WindowManager::setFramerate(int framerate) {
-    // Does not touch the swap interval: vsync is the independent knob, and with
-    // both active the lower effective rate wins.
     m_frameLimiter.setTargetFramerate(framerate);
     if (framerate > 0) {
         LOG_INFO("FPS cap = %d", framerate);
@@ -306,6 +364,7 @@ void WindowManager::setFramerate(int framerate) {
 }
 
 void WindowManager::setCursorMode(CursorMode mode) {
+    m_cursorMode = mode;
     if (!m_windowHandle) return;
 
     auto glfwmode = GLFW_CURSOR_NORMAL;
@@ -327,12 +386,16 @@ void WindowManager::setCursorMode(CursorMode mode) {
             return;
     }
     glfwSetInputMode(m_windowHandle, GLFW_CURSOR, glfwmode);
+
+    // Entering and leaving Disabled warps the cursor, which GLFW reports no motion for.
+    glfwGetCursorPos(m_windowHandle, &m_cursorX, &m_cursorY);
 }
 
 size_t WindowManager::getWidth() const {
     if (!m_windowHandle) return 0;
     return m_width;
 }
+
 size_t WindowManager::getHeight() const {
     if (!m_windowHandle) return 0;
     return m_height;
@@ -343,34 +406,27 @@ void WindowManager::setSize(int width, int height) {
     m_height = height;
 }
 
+int WindowManager::displayHeight() const {
+    const GLFWvidmode* mode = currentVideoMode(m_windowHandle);
+    return mode ? mode->height : 0;
+}
+
 int WindowManager::getRefreshRate() const {
-    GLFWmonitor* monitor = glfwGetWindowMonitor(m_windowHandle);
-
-    // Null when windowed - fall back to the primary monitor.
-    if (!monitor) {
-        monitor = glfwGetPrimaryMonitor();
-    }
-
-    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-
+    const GLFWvidmode* mode = currentVideoMode(m_windowHandle);
     if (!mode) {
         LOG_ERROR("Failed to get video mode for current monitor");
         return 0;
     }
-
     return mode->refreshRate;
 }
 
 float WindowManager::framebufferScale() const {
-    // Silent on a missing window: this runs per frame, and 1.0f is the honest
-    // answer for the unscaled case a caller falls back to anyway.
+    // Silent: asked every frame, and 1.0f is what a caller falls back to anyway.
     if (!m_windowHandle) return 1.0f;
 
-    int windowWidth = 0;
-    glfwGetWindowSize(m_windowHandle, &windowWidth, nullptr);
-    if (windowWidth <= 0) return 1.0f;
+    if (m_windowWidth <= 0) return 1.0f;
 
-    return static_cast<float>(m_width) / static_cast<float>(windowWidth);
+    return static_cast<float>(m_width) / static_cast<float>(m_windowWidth);
 }
 
 GLFWwindow* WindowManager::getWindowContext() const {

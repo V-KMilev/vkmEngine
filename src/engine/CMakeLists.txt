@@ -50,14 +50,15 @@ target_link_libraries(vkm_core PRIVATE
     glew
     vkm_warnings
     vkm_build_info     # io/project_paths.h resolves paths against APP_ROOT_DIR
-    stb                # platform/window/window_manager.cpp decodes the window icon
-    miniaudio          # system/audio owns the device; nothing else sees the header
+    stb                # image decode and encode
+    miniaudio          # system/audio owns the device
 )
 
 # The headers those private dependencies own are still part of this library's
 # public surface - platform/window/glfw_include.h names GLFW types - so consumers
-# need the include paths without the archives.
-target_include_directories(vkm_core PUBLIC
+# need the include paths without the archives. SYSTEM, like the module's own
+# (modules/CMakeLists.txt): they are not the engine's to warn about.
+target_include_directories(vkm_core SYSTEM PUBLIC
     $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
@@ -72,46 +73,53 @@ target_compile_definitions(vkm_core PUBLIC
     VKM_ENGINE_VERSION="${PROJECT_VERSION}"
 )
 
+# No fused multiply-add unless the source writes one. GCC contracts a * b + c
+# into one instruction by default wherever the target has it, and a fused
+# result rounds once where the written one rounds twice - so the same tick on a
+# machine built for FMA and one built without lands somewhere different, and
+# replay and the wire both rest on it landing in the same place. Public, because
+# gameplay predicted on both ends of a session compiles the same inline math
+# into its own module.
+target_compile_options(vkm_core PUBLIC
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-ffp-contract=off>
+)
+
+# Asserts on (VKM_ASSERTS, CMakeLists.txt), publicly, so a module agrees.
+if(VKM_ASSERTS)
+    target_compile_options(vkm_core PUBLIC $<IF:$<CXX_COMPILER_ID:MSVC>,/UNDEBUG,-UNDEBUG>)
+endif()
+
+# A module built against a shipping engine keeps its debug info too.
+if(VKM_SHIPPING)
+    target_compile_options(vkm_core PUBLIC $<$<CXX_COMPILER_ID:GNU,Clang>:-g>)
+endif()
+
 # Winsock, for platform/net. It is not linked by anything else the engine
 # already pulls in - GLFW has no use for it - so without this the socket calls
 # resolve to nothing at link time. Private, like the other absorbed libraries:
 # the sockets live inside libvkm_core and nothing outside names a winsock type.
+# winmm is the same case for FrameLimiter's timeBeginPeriod.
 if(WIN32)
-    target_link_libraries(vkm_core PRIVATE ws2_32)
+    target_link_libraries(vkm_core PRIVATE ws2_32 winmm)
 endif()
 
 # Tracy is linked privately for the same reason as glfw: its objects live inside
 # libvkm_core, and a consumer expanding a PROFILE_ macro resolves the symbols
-# from there. Its include path still propagates, because the facade's macros
-# expand into Tracy's header in the consumer's own translation unit.
+# from there. Its include path and its compile definitions still propagate,
+# because the facade's macros expand into Tracy's header in the consumer's own
+# translation unit, and that header compiles every zone to nothing unless
+# TRACY_ENABLE is defined where it is included. The definitions are the
+# client's whole option set (TRACY_ON_DEMAND among them) rather than the one
+# flag, so a consumer's zone has the same layout as the client that receives it.
 if(VKM_PROFILER)
-    target_compile_definitions(vkm_core PUBLIC VKM_PROFILER=1)
-    target_link_libraries     (vkm_core PRIVATE TracyClient)
-    target_include_directories(vkm_core PUBLIC
+    target_compile_definitions(vkm_core PUBLIC
+        VKM_PROFILER=1
+        $<TARGET_PROPERTY:TracyClient,INTERFACE_COMPILE_DEFINITIONS>
+    )
+    target_link_libraries(vkm_core PRIVATE TracyClient)
+    target_include_directories(vkm_core SYSTEM PUBLIC
         $<TARGET_PROPERTY:TracyClient,INTERFACE_INCLUDE_DIRECTORIES>
     )
-endif()
-
-# vkm_headers - an include-only (INTERFACE) view of vkm_core's public API, for a
-# consumer that needs the headers without the link. A gameplay module is not one
-# of them; it links vkm_core. The GLM_* definitions are not optional here: glm
-# types cross the module boundary (CollisionEvent, for one), so both sides have
-# to agree on glm's layout.
-add_library(vkm_headers INTERFACE)
-target_include_directories(vkm_headers INTERFACE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-    $<INSTALL_INTERFACE:include>
-    $<TARGET_PROPERTY:glm,INTERFACE_INCLUDE_DIRECTORIES>
-    $<TARGET_PROPERTY:glfw,INTERFACE_INCLUDE_DIRECTORIES>
-    $<TARGET_PROPERTY:vkm_log,INTERFACE_INCLUDE_DIRECTORIES>
-    $<TARGET_PROPERTY:nlohmann_json,INTERFACE_INCLUDE_DIRECTORIES>
-)
-target_compile_definitions(vkm_headers INTERFACE
-    GLM_ENABLE_EXPERIMENTAL
-    GLM_FORCE_INTRINSICS
-)
-if(VKM_PROFILER)
-    target_compile_definitions(vkm_headers INTERFACE VKM_PROFILER=1)
 endif()
 
 # vkm_render - render system, backend-neutral interface, and render view.

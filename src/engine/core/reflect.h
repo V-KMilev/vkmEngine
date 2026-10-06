@@ -8,12 +8,18 @@
 namespace Vkm::Engine::Reflect {
 
 /**
- * @brief One (name, pointer-to-member) pair, the unit of compile-time
- *        field reflection.
+ * @brief False, but only once T is known: the condition of the static_assert that ends an
+ *        `if constexpr` chain.
  *
- * Templated on the owning type T and the member type M so generic
- * iteration (forEachField) can deduce the field's static type and
- * pick the right toJson / fromJson / inspector widget.
+ * @tparam T The type the chain dispatched on.
+ */
+template<typename T>
+inline constexpr bool DEPENDENT_FALSE = false;
+
+/**
+ * @brief One (name, pointer-to-member) pair, the unit of compile-time field reflection.
+ *
+ * Templated on owner and member type so forEachField can deduce the field's type.
  */
 template<typename T, typename M>
 struct Field {
@@ -21,20 +27,15 @@ struct Field {
     M T::*           ptr;
 };
 
-// CTAD: `Field{"position", &Transform::position}` deduces T=Transform, M=glm::vec3.
+// `Field{"position", &Transform::position}` deduces T=Transform, M=glm::vec3.
 template<typename T, typename M>
 Field(const char*, M T::*) -> Field<T, M>;
 
 /**
- * @brief Primary trait. Specialise per component via VKM_REFLECT_BEGIN /
- *        VKM_F / VKM_REFLECT_END (below).
+ * @brief The reflection trait, specialised per type by VKM_REFLECT_BEGIN / VKM_F / VKM_REFLECT_END.
  *
- * Each specialisation must expose:
- *   static constexpr auto fields();   // -> std::tuple<Field<T, ...>...>
- *
- * Unspecialised use of Traits<T> is a compile error - which is the right
- * failure mode: a generic save/load helper called on a non-reflected
- * type tells you to add the reflection markup.
+ * Exposes NAME (no namespace) and fields() -> std::tuple<Field<T, ...>...>.
+ * Unspecialised use is a compile error.
  */
 template<typename T>
 struct Traits;
@@ -42,30 +43,40 @@ struct Traits;
 /**
  * @brief Visit every reflected field of @p obj.
  *
- * Calls `fn(name, fieldRef)` for each field. @p obj may be const; the
- * field reference is then const too, picking up the read-only path in
- * overloaded helpers like toJson(const T&).
+ * @tparam T  A type with a Traits specialisation; const gives const field refs.
+ * @tparam Fn Callable taking (std::string_view, field reference).
+ * @param obj Object whose fields are visited.
+ * @param fn  Called once per reflected field, in Traits order.
  */
 template<typename T, typename Fn>
 constexpr void forEachField(T& obj, Fn&& fn) {
     using Bare = std::remove_const_t<T>;
-    auto tup = Traits<Bare>::fields();
-    std::apply([&](auto&&... f) {
-        ((fn(f.name, obj.*(f.ptr))), ...);
-    }, tup);
+    constexpr auto tup = Traits<Bare>::fields();
+    const auto visit = [&](auto&&... f) { ((fn(f.name, obj.*(f.ptr))), ...); };
+    std::apply(visit, tup);
+}
+
+/**
+ * @brief The last `::` segment of a qualified type name.
+ *
+ * What VKM_REFLECT_BEGIN records as NAME: `::Game::Spinner` is "Spinner".
+ *
+ * @param qualified A type name as written, namespace and all.
+ * @return A pointer into @p qualified past the last `::`, or all of it.
+ */
+constexpr const char* shortName(const char* qualified) {
+    const char* last = qualified;
+    for (const char* p = qualified; *p; ++p) {
+        if (p[0] == ':' && p[1] == ':') last = p + 2;
+    }
+    return last;
 }
 
 /**
  * @brief Maps an enum to its value-ordered names.
  *
- * Specialise via VKM_ENUM_NAMES (below), which exposes:
- *
- *          static constexpr const char* const values[];  // index == enum value
- *          static constexpr std::size_t      count;       // == sizeof(values)
- *
- * The unspecialised primary is intentionally incomplete: naming an
- * unregistered enum is then a clear compile error rather than a silent
- * fallback.
+ * Specialised by VKM_ENUM_NAMES, exposing `values[]` (indexed by enum value)
+ * and `count`. An unregistered enum is a compile error.
  */
 template<typename Enum>
 struct EnumNames;
@@ -73,7 +84,9 @@ struct EnumNames;
 /**
  * @brief Enum value -> its serialized / display name.
  *
- * An out-of-range value falls back to the first name.
+ * @tparam Enum An enum registered with VKM_ENUM_NAMES.
+ * @param value Enumerator to name.
+ * @return Its name; the first name when out of range.
  */
 template<typename Enum>
 constexpr const char* enumName(Enum value) {
@@ -85,9 +98,9 @@ constexpr const char* enumName(Enum value) {
 /**
  * @brief Parse an enum from a name, saying whether the name was one.
  *
- * @param name  The serialized name to look up.
- * @param[out] out Set to the matching enumerator, untouched on a miss so a
- *                 caller keeps whatever default it constructed.
+ * @tparam Enum An enum registered with VKM_ENUM_NAMES.
+ * @param name  Serialized name to look up.
+ * @param[out] out Set to the match; untouched on a miss, keeping the caller's default.
  * @return False when this build has no enumerator by that name.
  */
 template<typename Enum>
@@ -103,11 +116,9 @@ bool enumFromNameChecked(std::string_view name, Enum& out) {
 }
 
 /**
- * @brief True iff T has a Traits specialisation (i.e. was VKM_REFLECT-ed).
+ * @brief True iff T has a Traits specialisation.
  *
- * Lets generic walkers branch between "descend into a nested reflected struct"
- * and "handle a leaf" without a hand-maintained type list - derived straight
- * from whether Traits<T>::fields() is well-formed.
+ * Lets a generic walker tell a nested reflected struct from a leaf.
  */
 template<typename T, typename = void>
 inline constexpr bool IS_REFLECTED = false;
@@ -116,7 +127,7 @@ template<typename T>
 inline constexpr bool IS_REFLECTED<T, std::void_t<decltype(Traits<T>::fields())>> = true;
 
 /**
- * @brief True iff Enum has a VKM_ENUM_NAMES registration (an EnumNames table).
+ * @brief True iff Enum has a VKM_ENUM_NAMES registration.
  */
 template<typename Enum, typename = void>
 inline constexpr bool HAS_ENUM_NAMES = false;
@@ -129,66 +140,54 @@ inline constexpr bool HAS_ENUM_NAMES<Enum, std::void_t<decltype(EnumNames<Enum>:
 /**
  * @brief Macro shorthand for declaring a Traits specialisation.
  *
- * Invoke at GLOBAL SCOPE, after the type's namespace has closed, naming the type
- * in full (mirrors VKM_ENUM_NAMES):
+ * Invoke at global scope, after the type's namespace has closed, naming the type
+ * in full; inside a namespace the compiler says "'Traits' is not a class template".
  *
  *   VKM_REFLECT_BEGIN(::Vkm::Engine::Transform)
- *       VKM_F(position),
- *       VKM_F(rotation),
+ *       VKM_F(position)
+ *       VKM_F(rotation)
  *       VKM_F(scale)
  *   VKM_REFLECT_END()
  *
- * The macro opens Vkm::Engine::Reflect itself, which is how it reaches a type in
- * any namespace - a game's own types live in the game's namespace. Written inside
- * a namespace it specialises that namespace's Reflect instead, and the compiler
- * says "'Traits' is not a class template". VKM_F() looks up the
- * `vkm_reflect_self` alias the macro injects, so a field needs no type name.
- *
- * A field omitted from the macro is NOT serialised - that is the mechanism for
- * internal-only data.
+ * Each VKM_F carries its own separator, so fields take no commas; an empty block
+ * is a type with no reflected fields. NAME (see shortName) is what a behavior is
+ * registered and serialized under. A field left out is not serialised.
  */
-#define VKM_REFLECT_BEGIN(Type)                                              \
-    namespace Vkm::Engine::Reflect {                                         \
-    template<> struct Traits<Type> {                                         \
-        using vkm_reflect_self = Type;                                       \
-        static constexpr auto fields() {                                     \
-            return std::make_tuple(
+#define VKM_REFLECT_BEGIN(Type)                                                        \
+    namespace Vkm::Engine::Reflect {                                                   \
+    template<> struct Traits<Type> {                                                   \
+        using vkm_reflect_self = Type;                                                 \
+        static constexpr const char* NAME = ::Vkm::Engine::Reflect::shortName(#Type); \
+        static constexpr auto fields() {                                               \
+            return std::tuple_cat(
 
 #define VKM_F(name) \
-    ::Vkm::Engine::Reflect::Field{#name, &vkm_reflect_self::name}
+    std::make_tuple(::Vkm::Engine::Reflect::Field{#name, &vkm_reflect_self::name}),
 
-#define VKM_REFLECT_END()                                                    \
-            );                                                               \
-        }                                                                    \
-    };                                                                       \
+#define VKM_REFLECT_END()                                                              \
+                std::tuple<>()                                                         \
+            );                                                                         \
+        }                                                                              \
+    };                                                                                 \
     }
 
 /**
  * @brief Register an enum's value-ordered names in one place.
  *
- * Invoke at GLOBAL SCOPE, after the enum's namespace has closed, naming the
- * type in full and the names in value order:
- *
- *   namespace Vkm::Engine {
- *   enum class LightType { Directional, Point, ... , Count };
- *   } // namespace Vkm::Engine
+ * Invoke at global scope, as VKM_REFLECT_BEGIN, with the names in value order:
  *
  *   VKM_ENUM_NAMES(::Vkm::Engine::LightType, "Directional", "Point", ...)
  *
- * It specialises EnumNames inside Vkm::Engine::Reflect, and fails the same way
- * VKM_REFLECT_BEGIN does when written inside a namespace.
- *
- * This one table is what enumName / enumFromNameChecked / drawEnumCombo read, so an
- * enum's serialized names and its editor combo cannot drift. The enum must end
- * in a trailing `Count` sentinel: the static_assert ties the list length to it,
- * so adding a value without a name fails to compile.
+ * The enum must end in `Count`, so a value added without a name fails to compile.
  */
 #define VKM_ENUM_NAMES(EnumType, ...)                                            \
     namespace Vkm::Engine::Reflect {                                             \
     template<> struct EnumNames<EnumType> {                                      \
         static constexpr const char* const values[] = { __VA_ARGS__ };           \
         static constexpr std::size_t count = sizeof(values) / sizeof(values[0]); \
-        static_assert(count == static_cast<std::size_t>(EnumType::Count),        \
-                      #EnumType " names out of sync with its Count sentinel");   \
+        static_assert(                                                           \
+            count == static_cast<std::size_t>(EnumType::Count),                  \
+            #EnumType " names out of sync with its Count sentinel"               \
+        );                                                                       \
     };                                                                           \
     }
