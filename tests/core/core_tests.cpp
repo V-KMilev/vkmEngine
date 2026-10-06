@@ -10,6 +10,7 @@
 #include "stb_image.h"
 #include "stb_image_write.h"
 
+#include "platform/process/child_process.h"
 #include "platform/threading/thread_pool.h"
 #include "platform/window/frame_limiter.h"
 #include "system/render/render_backend.h"
@@ -961,6 +962,43 @@ void testACappedLoopKeepsItsRate() {
     check("the time between frames does not lengthen each one", seconds < FRAMES * 0.006);
 }
 
+// The editor builds through a child process: what it prints must arrive, its exit code
+// be told apart from success, and stop() must end it rather than wait it out.
+void testAChildProcessIsHeardAndCanBeStopped() {
+    std::printf("A program run in the background:\n");
+
+#if defined(_WIN32)
+    const std::filesystem::path shell = "C:\\Windows\\System32\\cmd.exe";
+    const std::vector<std::string> says = {"/d", "/c", "echo one& echo two 1>&2& exit 3"};
+    const std::vector<std::string> waits = {"/d", "/c", "ping -n 30 127.0.0.1 >NUL"};
+#else
+    const std::filesystem::path shell = "/bin/sh";
+    const std::vector<std::string> says = {"-c", "echo one; echo two >&2; exit 3"};
+    const std::vector<std::string> waits = {"-c", "sleep 30"};
+#endif
+
+    ChildProcess child;
+    check("it starts", child.start(shell, says));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (child.running() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    const std::string output = child.takeOutput();
+    check("  and ends on its own", !child.running());
+    const bool both = output.find("one") != std::string::npos && output.find("two") != std::string::npos;
+    check("  its output and its errors both arrive", both);
+    check("  its exit code is kept", child.exitCode() == 3);
+    check("  and output is handed over once", child.takeOutput().empty());
+
+    check("a long one starts", child.start(shell, waits));
+    const auto before = std::chrono::steady_clock::now();
+    child.stop();
+    const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - before).count();
+    std::printf("      stopped in %.2f s\n", seconds);
+    check("  and stop() ends it, not waits for it", !child.running() && seconds < 5.0);
+    check("  and reads as stopped, not as succeeded", child.exitCode() == -1);
+}
+
 } // namespace
 
 TypeId typeIdOfCoreTestsProbe() {
@@ -1001,4 +1039,5 @@ void runCoreTests() {
     testAScreenshotIsTheFrameTheBackendDrew();
     testABackendThatFailsToInitStopsTheHost();
     testACappedLoopKeepsItsRate();
+    testAChildProcessIsHeardAndCanBeStopped();
 }

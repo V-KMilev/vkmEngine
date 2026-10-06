@@ -7,7 +7,7 @@ import shlex
 import shutil
 from pathlib import Path
 
-from .engine import development, sdk_root
+from .engine import TOOL_DIR, development, sdk_root
 from .shell import die, megabytes, say, size_of
 
 
@@ -43,9 +43,15 @@ def project_name(d: Path) -> str:
     return read_project(d).get("name") or d.name
 
 
-# What a project generates, folders and files by name, left out when one is copied.
-# The editor's New Project dialog skips the same set; docs_tests holds the two together.
-GENERATED = frozenset({"build", "bin", "dist", "cooked", "logs", "__pycache__", "editor_settings.json"})
+# What the tools write into a project, in .gitignore's syntax: a new project's .gitignore,
+# and, by name, what a copy of a project leaves out. install.cmake reads it too.
+GENERATED_FILE = TOOL_DIR / "generated.txt"
+
+
+def generated_names() -> frozenset[str]:
+    """The names in GENERATED_FILE, which a copy skips at any depth."""
+    lines = GENERATED_FILE.read_text().splitlines()
+    return frozenset(line.strip().strip("/") for line in lines if line.strip() and not line.startswith("#"))
 
 
 def templates(root: Path) -> dict[str, Path]:
@@ -76,14 +82,16 @@ def cmd_new(args) -> int:
     if not version:
         die(f"cannot read the engine version from {root}; the SDK looks incomplete")
 
+    generated = generated_names()
     shutil.copytree(
         template,
         dest,
         dirs_exist_ok=True,
-        ignore=lambda _dir, names: [n for n in names if n in GENERATED]
+        ignore=lambda _dir, names: [n for n in names if n in generated]
     )
+    shutil.copyfile(GENERATED_FILE, dest / ".gitignore")
 
-    # As the editor's New Project dialog does; keys sorted, as the engine writes them.
+    # Keys sorted, as the engine writes them.
     pj = dest / "project.json"
     data = json.loads(pj.read_text())
     data["name"] = dest.name

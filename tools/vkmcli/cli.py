@@ -13,7 +13,7 @@ from .package import cmd_package
 from .play import cmd_edit, cmd_run, cmd_serve
 from .project import cmd_clean, cmd_new
 from .shell import die
-from .toolchain import BUILD_TOOLS, cmd_toolchain, uses_pinned_tools
+from .toolchain import cmd_toolchain, module_compiler
 
 
 HELP = """\
@@ -157,11 +157,12 @@ def main() -> int:
     ), cmd_doctor)
 
     p = subcommand(sub, [common], "toolchain", "fetch the compiler and build tools the engine pins", (
-        "  vkm toolchain               fetch and verify GCC, CMake and Ninja; build does it the first time\n"
+        "  vkm toolchain               fetch what a build here uses; build does it the first time\n"
+        "  vkm toolchain clang         the pinned Clang, and the C++ library it compiles against\n"
         "  vkm toolchain --path        print each one's bin/, to put on PATH\n"
         "  vkm toolchain python --dir  the pinned Python, which an SDK carries\n"
     ), cmd_toolchain, project=False)
-    p.add_argument("tools", nargs="*", help=f"which tools (default: {', '.join(BUILD_TOOLS)})")
+    p.add_argument("tools", nargs="*", help="which tools (default: what a build here uses)")
     where = p.add_mutually_exclusive_group()
     where.add_argument("--path", action="store_true", help="print only each tool's bin/, one per line")
     where.add_argument("--dir", action="store_true", help="print only each tool's folder, one per line")
@@ -182,9 +183,7 @@ def main() -> int:
     args.cmake_args = passed
     shell.VERBOSE = args.verbose
     if args.cmd != "new":
-        root = sdk_root()
-        recorded = None if uses_pinned_tools(root) else development(root).compiler()
-        toolchain_first(getattr(args, "compiler", None) or recorded)
+        toolchain_first(getattr(args, "compiler", None) or module_compiler(development()))
         temp_dir_set()
     try:
         return args.fn(args)

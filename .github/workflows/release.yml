@@ -1,5 +1,6 @@
-# Every version tag: build.yml on the tag, then the two SDKs and the installers on that
-# tag's GitHub release. Run workflow rebuilds a tag that already exists.
+# Every version tag: build.yml on the tag, then the four SDKs - GCC and Clang, Linux and
+# Windows - and the installers on that tag's GitHub release. Run workflow rebuilds a tag
+# that already exists.
 name: Release
 
 on:
@@ -27,11 +28,11 @@ jobs:
     env:
       TAG: ${{ github.event.inputs.tag || github.ref_name }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: sdk-*
           path: release

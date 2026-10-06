@@ -68,7 +68,9 @@ class FrameLimiter {
         /// The last frame's end, which the next is paced from; empty before the first.
         std::chrono::steady_clock::time_point m_deadline;
 
-        void* m_timer = nullptr;  ///< Windows' high-resolution timer; null elsewhere, or where it is refused
+#if defined(_WIN32)
+        void* m_timer = nullptr;  ///< The high-resolution timer; null where Windows refuses one
+#endif
 };
 
 } // namespace Vkm::Engine

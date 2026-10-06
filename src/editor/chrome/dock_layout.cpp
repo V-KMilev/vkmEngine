@@ -55,9 +55,15 @@ void buildDefaultLayout(unsigned int dockspace, float width, float height) {
     ImGui::DockBuilderDockWindow(ASSETS_WINDOW,    bottom);
     ImGui::DockBuilderDockWindow(ANIMATION_WINDOW, bottom);
     ImGui::DockBuilderDockWindow(ERRORS_WINDOW,    bottom);
+    ImGui::DockBuilderDockWindow(BUILD_WINDOW,     bottom);
     openOnTab(right,  INSPECTOR_WINDOW);
     openOnTab(bottom, ASSETS_WINDOW);
     ImGui::DockBuilderFinish(dockspace);
+}
+
+void dockNextBeside(const char* beside) {
+    const ImGuiWindow* neighbour = ImGui::FindWindowByName(beside);
+    if (neighbour && neighbour->DockId) ImGui::SetNextWindowDockID(neighbour->DockId, ImGuiCond_FirstUseEver);
 }
 
 } // namespace Vkm::Engine

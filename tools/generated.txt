@@ -1,0 +1,9 @@
+# What the engine's tools write into a project: a new project's .gitignore, and what
+# a copy of a project leaves out. Not library/: its recipes are source.
+/build/
+/bin/
+/cooked/
+/logs/
+/dist/
+/editor_settings.json
+__pycache__/
