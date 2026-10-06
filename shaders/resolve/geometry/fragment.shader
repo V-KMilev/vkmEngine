@@ -7,10 +7,10 @@
 layout(binding = POST_SLOT_SCENE_DEPTH)   uniform sampler2DMS u_depth;
 layout(binding = POST_SLOT_SCENE_GBUFFER) uniform sampler2DMS u_gbuffer;
 
-layout(location = OUT_GBUFFER) out vec4 GBuffer;
+layout(location = OUT_GBUFFER) out vec2 GBuffer;
 
 void main() {
     const ivec2 texel = ivec2(gl_FragCoord.xy);
     gl_FragDepth = texelFetch(u_depth, texel, 0).r;
-    GBuffer      = texelFetch(u_gbuffer, texel, 0);
+    GBuffer      = texelFetch(u_gbuffer, texel, 0).rg;
 }

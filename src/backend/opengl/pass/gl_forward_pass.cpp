@@ -87,6 +87,8 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         if (a2c) VKM_GL_CHECK(glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE));
     }
 
+    if (view.settings.renderMode == RenderMode::Wireframe) drawWireframe(ctx, posed);
+
     if (!ctx.transparent.empty()) {
         // Back-to-front, so alpha blending composes correctly.
         const std::vector<glm::mat4>& models = view.objects->models;
@@ -154,6 +156,38 @@ void GLForwardPass::drawBatch(GLFrameContext& ctx, const GLInstanceBatcher& batc
         }
         batch.draw(draw);
     }
+}
+
+void GLForwardPass::drawWireframe(GLFrameContext& ctx, bool posed) {
+    ctx.gl.setDepthWrite(false);
+    ctx.gl.setBlending(true);
+    ctx.gl.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    // Raw, as alpha-to-coverage is: the Context does not model these, and they are closed below.
+    VKM_GL_CHECK(glPolygonMode(GL_FRONT_AND_BACK, GL_LINE));
+    VKM_GL_CHECK(glEnable(GL_POLYGON_OFFSET_LINE));
+    VKM_GL_CHECK(glPolygonOffset(-1.0f, -1.0f));
+
+    m_shader.bind();
+    m_shader.setUniform1i("u_wirePass", 1);
+    if (posed) {
+        m_skinnedShader.bind();
+        m_skinnedShader.setUniform1i("u_wirePass", 1);
+    }
+
+    drawBatch(ctx, ctx.opaqueBatch);
+    // Still the alpha-masked batch: the transparent one is built after this.
+    if (!ctx.alphaMask.empty()) drawBatch(ctx, m_batcher);
+
+    m_shader.bind();
+    m_shader.setUniform1i("u_wirePass", 0);
+    if (posed) {
+        m_skinnedShader.bind();
+        m_skinnedShader.setUniform1i("u_wirePass", 0);
+    }
+
+    VKM_GL_CHECK(glDisable(GL_POLYGON_OFFSET_LINE));
+    VKM_GL_CHECK(glPolygonMode(GL_FRONT_AND_BACK, GL_FILL));
+    ctx.gl.setBlending(false);
 }
 
 void GLForwardPass::bindFrameUniforms(Vkm::GL::Shader& shader, GLFrameContext& ctx) const {

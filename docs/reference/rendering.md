@@ -155,9 +155,12 @@ view each frame.
   them off the same `FrameContext::render` the renderer does, so the editor's
   Culling card edits the one copy there is.
 - **`renderMode`:** composite output selector - `Default` (final image) or a debug
-  view: `Depth`, `Normals`, `Roughness`, `Metalness`, `AmbientOcclusion`, `Bloom`,
-  `ShadowAtlas`, `Fog`, `GiOnly`, `DirectOnly`, `Clusters`
-  (Forward+ light-count heatmap). The `MODE_*` constants the composite shader
+  view: `Wireframe` (the opaque and alpha-masked draws again as lines, over the
+  shaded frame), `LightingOnly` (every surface a white dielectric), the material
+  views `Albedo`, `Roughness` and `Metalness` (the surface as the forward pass
+  samples it, written raw, the sky black), `Normals`, `Depth`, `AmbientOcclusion`,
+  `GiOnly`, `DirectOnly`, `Clusters` (Forward+ light-count heatmap), `Bloom`,
+  `ShadowAtlas` and `Fog`. The `MODE_*` constants the composite shader
   switches on are written out of this enum by `GLBackend::shaderConstants` into
   the prelude every stage is compiled with - there is no generated file and
   nothing to include.
@@ -239,7 +242,7 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 | # | Pass | Does |
 |---|------|------|
 | 1 | Shadow | Renders directional CSM + spot + point-cube depth maps into the atlas. A spot's tile or a point light's face is redrawn only when what it holds changed - its matrix, or a caster in it moved, was re-uploaded or is posed - and the sun's cascades, which follow the camera, every frame, with their depth clamped so a caster nearer the sun than a cascade's near plane still shadows. Culling and grouping are **not** done here - `GLShadowData::build` does both on the thread pool. The pass uploads the drawn tiles' lists of objects, and a draw command per run of casters sharing a mesh, into one `GLDrawList` - the transforms are the frame's object buffer - then draws each tile as one multi-draw per program and vertex layout - its runs are keyed static meshes first, then skinned ones drawn as stored, then posed ones (`ShadowRun::key`), so neither alternates - skinned casters included, through programs a frame that posed nothing never binds (see [animation.md](animation.md#the-gpu-path)), and alpha-masked ones, per material, through programs that cut the shadow by it ([lighting.md](lighting.md#shadow-atlas)). A tile with no casters is still cleared |
-| 2 | DepthPrepass | Clears the scene target; early-Z for opaque geometry + writes the G-buffer (oct view-normal in `.rg`, the material's **authored** roughness / metalness scalars in `.ba` - this stage has no UV and samples no map, so a textured material writes its fallback here; only the two debug views read those two channels; GTAO, the decals and the reflection trace and resolve read `.rg`). Draws `ctx.opaqueBatch`, the shared batch the forward pass reuses, one multi-draw per material - the material is bound only for those two scalars. Two programs (`prepass` / `prepass_skinned`), switched once at the skinned boundary |
+| 2 | DepthPrepass | Clears the scene target; early-Z for opaque geometry + writes the G-buffer (an oct view-normal, two channels, which GTAO, the decals, the Normals view and the reflection trace and resolve read). Draws `ctx.opaqueBatch`, the shared batch the forward pass reuses, one multi-draw per material run; it binds no material, since nothing it writes depends on one. Two programs (`prepass` / `prepass_skinned`), switched once at the skinned boundary |
 | 3 | ResolveDepth | MSAA only: one draw resolving depth and the G-buffer into `m_sceneHDR`, sample 0 of each |
 | 4 | GTAO | Full-res ground-truth AO + bent normal into `m_ao`. First folds the scene depth into a linear-depth mip chain of its own (`shaders/gtao/prefilter`); the horizon search then reads each step from the level its pixel length picks, which is what keeps a wide radius in cache. The search writes a target of the pass's own, and one compute dispatch (`shaders/gtao/denoise`) averages its visibility over a 5x5 neighbourhood on each pixel's own plane into `m_ao` - edge-aware and spatial only, with no history - and only then shapes it by intensity and power |
 | 5 | ClusterCull | Compute: culls lights into the Forward+ cluster grid SSBO |

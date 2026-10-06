@@ -25,21 +25,25 @@ enum class TextureFiltering : uint8_t {
  *
  * Columns: enumerator, editor label, shader constant suffix (`MODE_<suffix>`),
  * and whether the forward pass shades it as radiance (then tonemapped) rather
- * than the composite showing a buffer raw.
+ * than the composite showing a buffer raw. Albedo, Roughness and Metalness are
+ * raw buffers the forward pass writes: the surface as it samples it.
  */
 #define VKM_RENDER_MODES(X)                                              \
     X(Default,          "Default",              DEFAULT,           true)  \
-    X(Depth,            "Depth",                DEPTH,             false) \
+    X(Wireframe,        "Wireframe",            WIREFRAME,         true)  \
+    X(LightingOnly,     "Lighting Only",        LIGHTING_ONLY,     true)  \
+    X(Albedo,           "Albedo",               ALBEDO,            false) \
+    X(Roughness,        "Roughness",            ROUGHNESS,         false) \
+    X(Metalness,        "Metalness",            METALNESS,         false) \
     X(Normals,          "Normals",              NORMALS,           false) \
-    X(Roughness,        "Roughness (authored)", ROUGHNESS,         false) \
-    X(Metalness,        "Metalness (authored)", METALNESS,         false) \
+    X(Depth,            "Depth",                DEPTH,             false) \
     X(AmbientOcclusion, "Ambient Occlusion",    AMBIENT_OCCLUSION, false) \
-    X(Bloom,            "Bloom",                BLOOM,             false) \
-    X(ShadowAtlas,      "Shadow Atlas",         SHADOW_ATLAS,      false) \
-    X(Fog,              "Fog",                  FOG,               false) \
     X(GiOnly,           "GI Only",              GI_ONLY,           true)  \
     X(DirectOnly,       "Direct Only",          DIRECT_ONLY,       true)  \
-    X(Clusters,         "Light Clusters",       CLUSTERS,          true)
+    X(Clusters,         "Light Clusters",       CLUSTERS,          true)  \
+    X(Bloom,            "Bloom",                BLOOM,             false) \
+    X(ShadowAtlas,      "Shadow Atlas",         SHADOW_ATLAS,      false) \
+    X(Fog,              "Fog",                  FOG,               false)
 
 /**
  * @brief Every display transform the composite pass can end a frame with, once.

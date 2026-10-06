@@ -7,8 +7,7 @@ uniform float u_bloomStrength;  // 0 when bloom is unavailable
 
 // Debug-view inputs, read only when u_renderMode != MODE_DEFAULT; GLCompositePass binds them.
 layout(binding = POST_SLOT_SCENE_DEPTH)   uniform sampler2D u_sceneDepth;
-// Oct normal.xy, roughness, metalness.
-layout(binding = POST_SLOT_SCENE_GBUFFER) uniform sampler2D u_sceneGBuffer;
+layout(binding = POST_SLOT_SCENE_GBUFFER) uniform sampler2D u_sceneGBuffer;  // oct view-normal
 layout(binding = POST_SLOT_AO)            uniform sampler2D u_ao;  // GTAO factor
 // A plain sampler2D: this view shows stored depth, not a compare result. Its own binding, as a
 // comparing and a non-comparing sampler cannot share a unit.
@@ -28,10 +27,6 @@ uniform float u_exposure;    // 2^EV the frame is scaled by before the tonemap; 
 // Visualize one intermediate render target, raw (no tonemap).
 vec3 debugColor(vec2 uv) {
     if (u_renderMode == MODE_NORMALS) return octDecode(texture(u_sceneGBuffer, uv).rg) * 0.5 + 0.5;
-    // Authored scalars, not the shaded ones: the prepass that wrote them samples no map
-    // (shaders/forward/prepass/fragment.shader).
-    if (u_renderMode == MODE_ROUGHNESS) return vec3(texture(u_sceneGBuffer, uv).b);
-    if (u_renderMode == MODE_METALNESS) return vec3(texture(u_sceneGBuffer, uv).a);
     if (u_renderMode == MODE_AMBIENT_OCCLUSION) return vec3(u_hasAO != 0 ? texture(u_ao, uv).r : 1.0);
     if (u_renderMode == MODE_BLOOM) return texture(u_bloom, uv).rgb;
     if (u_renderMode == MODE_SHADOW_ATLAS) return vec3(texture(u_shadowAtlas, uv).r);
@@ -46,6 +41,9 @@ vec3 debugColor(vec2 uv) {
         float t   = log2(lin / u_camera.zNear) / log2(u_camera.zFar / u_camera.zNear);
         return vec3(clamp(1.0 - t, 0.0, 1.0));
     }
+    // The material views, which the forward pass wrote in place of the colour; the sky
+    // is no surface.
+    if (texture(u_sceneDepth, uv).r >= 1.0) return vec3(0.0);
     return texture(u_hdr, uv).rgb;
 }
 
