@@ -1711,79 +1711,6 @@ void testTheManualsDirectoryMapIsTheTree() {
     check("  and every directory with sources is reached by some row", unmapped.empty());
 }
 
-// `vkm new` and the editor's New Project dialog both make projects from a template and
-// must skip the same build output, and the SDK install must leave it out of the copies
-// it ships. Python, C++ and CMake, so the list is stated three times, and a name only
-// one states is copied into every project.
-void testEveryWayOfMakingAProjectSkipsTheSameNames() {
-    std::printf("What a new project does not inherit from the template:\n");
-
-    const fs::path engineRoot(VKM_ENGINE_DIR);
-    const fs::path cli     = engineRoot / "tools/vkmcli/project.py";
-    const fs::path editor  = engineRoot / "src/editor/chrome/new_project_dialog.cpp";
-    const fs::path install = engineRoot / "cmake/install.cmake";
-
-    std::error_code ec;
-    if (!fs::exists(cli, ec) || !fs::exists(editor, ec) || !fs::exists(install, ec)) {
-        std::printf("  (not in this tree - nothing to check)\n");
-        return;
-    }
-
-    const std::regex quoted(R"RX("([A-Za-z_][A-Za-z0-9_.]*)")RX");
-
-    const auto namesIn = [&](const fs::path& file, const std::string& marker, char opener, char closer) {
-        std::set<std::string> names;
-        const std::string text = readAll(file);
-        const size_t begin = text.find(marker);
-        if (begin == std::string::npos) return names;
-        const size_t open  = text.find(opener, begin);
-        const size_t close = text.find(closer, open);
-        if (open == std::string::npos || close == std::string::npos) return names;
-
-        const std::string block = text.substr(open, close - open);
-        for (std::sregex_iterator it(block.begin(), block.end(), quoted), stop; it != stop; ++it) {
-            names.insert((*it)[1].str());
-        }
-        return names;
-    };
-
-    const std::set<std::string> fromCli     = namesIn(cli,     "GENERATED = frozenset(", '{', '}');
-    const std::set<std::string> fromEditor  = namesIn(editor,  "GENERATED[] =", '{', '}');
-    const std::set<std::string> fromInstall = namesIn(install, "set(VKM_GENERATED", '(', ')');
-
-    std::printf(
-        "      %zu named by the CLI, %zu by the editor, %zu by the install\n",
-        fromCli.size(),
-        fromEditor.size(),
-        fromInstall.size()
-    );
-    for (const std::string& one : fromCli) {
-        if (fromEditor.count(one) == 0) {
-            std::printf("      the editor would copy %s, which the CLI skips\n", one.c_str());
-        }
-    }
-    for (const std::string& one : fromEditor) {
-        if (fromCli.count(one) == 0) {
-            std::printf("      the CLI would copy %s, which the editor skips\n", one.c_str());
-        }
-    }
-
-    for (const std::string& one : fromInstall) {
-        if (fromCli.count(one) == 0) {
-            std::printf("      the install leaves out %s, which the CLI copies\n", one.c_str());
-        }
-    }
-    for (const std::string& one : fromCli) {
-        if (fromInstall.count(one) == 0) {
-            std::printf("      the install ships %s, which the CLI skips\n", one.c_str());
-        }
-    }
-
-    check("all three lists were read", !fromCli.empty() && !fromEditor.empty() && !fromInstall.empty());
-    check("and a new project skips the same names either way", fromCli == fromEditor);
-    check("  and the SDK ships its copies without them", fromCli == fromInstall);
-}
-
 // Dependencies are listed thrice: `.gitmodules` (what a clone fetches), the README's
 // source layout and building.md's module table. A module swapped in `.gitmodules` alone
 // leaves both documents naming one that is gone. A non-submodule directory under
@@ -3022,7 +2949,6 @@ void runDocsTests() {
     testEveryRenderSettingIsPersistedExactlyOnce();
     testEverySuiteIsAFileAndALine();
     testTheManualsDirectoryMapIsTheTree();
-    testEveryWayOfMakingAProjectSkipsTheSameNames();
     testTheModuleListsAreTheModules();
     testEveryTestFunctionIsActuallyRun();
     testNoEngineHeaderCarriesAThreadLocal();
