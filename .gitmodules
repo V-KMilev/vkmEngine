@@ -25,13 +25,32 @@
 	path = modules/miniaudio
 	url = https://github.com/mackron/miniaudio.git
 
-# Editor and asset pipeline. Built only when the editor is.
+# Editor and asset pipeline. Built only when the editor is, and linked through
+# vkm_cook, never by the runtime: a shipped game imports nothing. cgltf reads
+# glTF and GLB, ufbx reads FBX and OBJ, MikkTSpace gives imported meshes the
+# tangents normal maps are baked against, meshoptimizer simplifies LOD levels
+# and orders every cooked mesh for the GPU, and basis_universal supplies its
+# scalar BC7 encoder - one file of it is compiled, so it is cloned shallow.
 [submodule "modules/imgui"]
 	path = modules/imgui
 	url = https://github.com/ocornut/imgui.git
-[submodule "modules/assimp"]
-	path = modules/assimp
-	url = https://github.com/assimp/assimp.git
+	branch = docking
+[submodule "modules/cgltf"]
+	path = modules/cgltf
+	url = https://github.com/jkuhlmann/cgltf.git
+[submodule "modules/ufbx"]
+	path = modules/ufbx
+	url = https://github.com/ufbx/ufbx.git
+[submodule "modules/mikktspace"]
+	path = modules/mikktspace
+	url = https://github.com/mmikk/MikkTSpace.git
+[submodule "modules/meshoptimizer"]
+	path = modules/meshoptimizer
+	url = https://github.com/zeux/meshoptimizer.git
+[submodule "modules/basis_universal"]
+	path = modules/basis_universal
+	url = https://github.com/BinomialLLC/basis_universal.git
+	shallow = true
 [submodule "modules/freetype"]
 	path = modules/freetype
 	url = https://github.com/freetype/freetype.git
