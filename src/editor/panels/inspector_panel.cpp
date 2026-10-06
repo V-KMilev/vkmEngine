@@ -2181,6 +2181,19 @@ void InspectorPanel::drawJointSection(EditorContext& ec, EntityId id) {
             "Fraction of the remaining gap closed per tick.\n"
             "1 pulls the anchors together at once; lower drifts back slowly.";
         changed |= propSlider("Stiffness", &joint.stiffness, 0.0f, 1.0f, "%.2f", stiffnessTooltip);
+        const char* holdTorqueTooltip =
+            "Most torque spent keeping the two at the angle\n"
+            "they had when the joint began to move them.\n"
+            "A heavier load turns the joint; 0 leaves it free.";
+        changed |= propDrag(
+            "Hold Torque",
+            &joint.holdTorque,
+            1.0f,
+            0.0f,
+            10000.0f,
+            "%.1f N m",
+            holdTorqueTooltip
+        );
         const char* collideConnectedTooltip =
             "Off by default: jointed bodies usually overlap at\n"
             "the joint, and resolving both the contact and the\n"
@@ -2251,6 +2264,11 @@ void InspectorPanel::drawRagdollSection(EditorContext& ec, EntityId id) {
             "%.0f kg",
             "Shared out by limb volume, so a forearm does not weigh a torso."
         );
+        const char* muscleTooltip =
+            "How much of its shape the body keeps once limp.\n"
+            "0 folds where it stands; 1 holds every limb out\n"
+            "against its own weight. Sets each joint's Hold Torque.";
+        propSlider("Muscle", &m_ragdollSettings.muscle, 0.0f, 1.0f, "%.2f", muscleTooltip);
 
         if (ImGui::Button("Build", ImVec2(-1.0f, 0.0f))) pending = Pending::Build;
 
