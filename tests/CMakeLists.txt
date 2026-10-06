@@ -146,7 +146,7 @@ if(Python3_Interpreter_FOUND AND _vkm_this_build STREQUAL _vkm_tool_build)
     add_test(NAME vkm_tool
         COMMAND ${CMAKE_COMMAND}
             -DPYTHON=${Python3_EXECUTABLE}
-            -DVKM=${CMAKE_SOURCE_DIR}/tools/vkm
+            -DVKM=${CMAKE_SOURCE_DIR}/tools/vkm.py
             -DWORK=${VKM_TEST_FIXTURE_DIR}/vkm_tool
             -DEXE=${CMAKE_EXECUTABLE_SUFFIX}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/vkm_tool.cmake

@@ -5,28 +5,46 @@ engine rather than *with* it, read [building.md](reference/building.md) instead.
 
 ## What you need
 
-- A C++17 compiler **matching the one the SDK was built with**. The archive name
-  says which: `vkmEngine-0.10.0-Linux-x86_64-GNU-12.3.0.tar.xz` was built with
-  GCC 12. This is not advisory - see [the toolchain pin](#the-toolchain-pin).
-- CMake 3.25 or newer.
-- Python 3.8 or newer, which runs `vkm`. On Windows it has to be a Windows
-  build - MSYS2's `mingw-w64-ucrt-x86_64-python`, or python.org's. Started by
-  MSYS's own Python, the one in `usr/bin`, `vkm` restarts itself under one of
-  those, and says what to install when there is neither.
-- A GPU and driver supporting OpenGL 4.3.
+- Linux or Windows on x86-64, and a GPU and driver supporting OpenGL 4.3.
+- On Linux, the C library's headers, which most distributions install with
+  their compiler: `sudo apt install libc6-dev` (Debian, Ubuntu), `glibc-devel`
+  (Fedora). `vkm doctor` says when they are missing.
+
+Nothing else. The SDK carries the Python `vkm` runs on, and the first build
+fetches the compiler, CMake and Ninja the engine was built with - the same
+versions on every machine ([the toolchain pin](#the-toolchain-pin)).
 
 ## Install
 
-Unpack the archive anywhere and put its `bin/` on your PATH:
+On Linux:
 
 ```sh
-tar xf vkmEngine-0.10.0-Linux-x86_64-GNU-12.3.0.tar.xz
-export PATH="$PWD/vkmEngine-0.10.0-Linux-x86_64-GNU-12.3.0/bin:$PATH"
+curl -fsSL https://github.com/V-KMilev/vkmEngine/releases/latest/download/install.sh | sh
 ```
 
-You now have `vkm`, plus the hosts it drives. On Windows, Git Bash and MSYS2
-shells run it as it is, and `cmd.exe` and PowerShell through the `vkm.cmd` beside
-it - either way, as `vkm`.
+On Windows, in PowerShell:
+
+```powershell
+irm https://github.com/V-KMilev/vkmEngine/releases/latest/download/install.ps1 | iex
+```
+
+Either installs the newest release for you alone, with no administrator: the
+engine in `~/.local/share/vkmEngine` (`%LOCALAPPDATA%\Programs\vkmEngine` on
+Windows), `vkm` on your PATH, and **vkmEngine** in your app menu, which opens the
+editor. Running it again replaces the engine with the newest; `VKM_VERSION=0.10.0`
+before it installs that one instead. One engine is installed at a time.
+`uninstall.sh` in the engine's folder removes it all on Linux, and Apps & features
+does on Windows - your projects stay where they are.
+
+Or unpack a release archive anywhere and run its `vkm` where it is:
+
+```sh
+tar xf vkmEngine-0.10.0-linux-x64.tar.xz
+vkmEngine-0.10.0-linux-x64/vkm new mygame
+```
+
+On Windows, Git Bash runs `vkm` as it is, and `cmd.exe` and PowerShell through
+the `vkm.cmd` beside it - either way, as `vkm`.
 
 ## Your first project
 
@@ -41,20 +59,29 @@ and stamped your name and this SDK's version into it. `vkm run` then did three
 things: compiled `src/` into `bin/libgame.so` (`bin/game.dll` on Windows), cooked
 the assets, and handed the project to `vkm_runtime`, which loaded that module and
 ran it. The first two are no-ops when nothing changed, so `vkm run` is the one
-command to repeat while you work: what plays is always what is on disk.
+command to repeat while you work: what plays is always what is on disk. The very
+first build also downloads the pinned compiler, about 250 MB, once for every
+project.
+
+To start from one of the examples instead, copy it:
+
+```sh
+vkm new lab -t physics_lab      # or potion_runner, stress_arena
+```
+
+The editor offers the same: its start screen lists your projects and, under
+Examples, makes a copy of any of them through New Project. A copy is yours to
+change; the example stays as shipped.
 
 That version, `engineVersion` in `project.json`, is the one place a project
-records the engine it was made for. Build it against a later *minor* release
+records the engine it was made for. Build it against another *minor* release
 and configure stops, naming both versions, instead of building your module
 against an engine it was not written for; set `engineVersion` to the new one
-when you mean to move. A later patch of the same minor builds as it is.
+when you mean to move, or let the editor's start screen do it - it flags such a
+project and offers to. A later patch of the same minor builds as it is.
 
-The build uses the compiler the engine was built with, and on Windows every
-command runs with that toolchain's `bin` first on PATH - so from any shell, Git
-Bash or an MSYS2 one of another environment, the build and the engine's
-executables find that toolchain's DLLs rather than a neighbour's. When something
-will not build or start, `vkm doctor` checks the engine, the toolchain and the
-project, and says what to fix.
+When something will not build or start, `vkm doctor` checks the engine, the
+toolchain and the project, and says what to fix.
 
 ## What a project is
 
@@ -88,7 +115,7 @@ seconds rather than recompiling an engine.
 
 | | |
 |---|---|
-| `vkm new <name>` | make a project from the template |
+| `vkm new <name>` | make a project from the template; `-t physics_lab` copies an example |
 | `vkm run` | build, cook and play it |
 | `vkm run --players N` | the same, as a local server with N players joined to it - multiplayer from one terminal |
 | `vkm edit` | build it and open it in the editor; a failed build still opens it |
@@ -97,6 +124,7 @@ seconds rather than recompiling an engine.
 | `vkm cook` | only bake assets into the form the runtime reads - no window needed, so it runs on a build machine |
 | `vkm package` | build, cook and assemble the game a player gets, under `dist/` |
 | `vkm doctor` | check the engine, the toolchain and the project, and say what to fix |
+| `vkm toolchain` | fetch the pinned compiler, CMake and Ninja now, rather than at the first build |
 | `vkm clean` | delete what the commands generated: `build/ bin/ cooked/ logs/`, and `dist/` with `--all` |
 
 Each but `vkm new` takes an optional project path and otherwise uses the current directory,
@@ -190,8 +218,9 @@ debug info kept for crash reports. Your module is compiled again against it,
 into `build/shipping/`, leaving the one in `bin/` alone. Unreal calls the two
 Development and Shipping.
 
-In the engine's tree the first `vkm package` builds it into `build-shipping/`,
-which takes a while; an SDK may carry one, and `vkm doctor` says.
+A released SDK carries it in `shipping/`. In the engine's tree the first
+`vkm package` builds it into `build-shipping/`, which takes a while; `vkm doctor`
+says which you have.
 `vkm package --development` packages on your development engine in seconds, for
 testing.
 
@@ -291,20 +320,31 @@ The engine ships prebuilt libraries and C++ headers, and your module is compiled
 against them. That is Unreal's model and it is a deliberate trade: struct
 layouts, inline functions and templates can change between engine versions, which
 is what lets them keep improving. The price is that **your module must be built
-with the same toolchain as the engine**, and rebuilt for each engine release.
+with the same compiler as the engine**, and rebuilt for each engine release.
 
-Guards enforce it, because getting this wrong does not fail at link time - it
+So the SDK brings that compiler. `bin/toolchain.json` names the GCC, CMake and
+Ninja the release was built with - GCC 15.2, CMake 3.31 and Ninja 1.13, on Linux
+and on Windows alike - with where to download each and its SHA-256. The first
+build fetches them into `~/.cache/vkm/tools` (`%LOCALAPPDATA%\vkm\tools` on
+Windows; `VKM_TOOLS_DIR` moves it), checks each against its hash, and every build
+after uses them, whatever else is installed. The engine was built with exactly
+these, by the same file, so the two cannot drift.
+
+The engine ships that compiler's runtime libraries beside its own, and a packaged
+game carries them too, so a player needs nothing installed.
+
+Guards hold the rest, because getting this wrong does not fail at link time - it
 fails at run time, as a crash inside a function that looks innocent:
 
 - `find_package(vkmEngine)` **fails to configure** if your compiler differs in
-  id or major version from the one that built the SDK.
+  id or major.minor version from the one that built the SDK.
 - `vkm_add_gameplay_module` **fails to configure** when `project.json` names
   another minor release of the engine.
 - The host **refuses to load** a module built against a different engine version,
   and says so in a sentence.
 
-If you need to override the first (you are on your own):
-`-DVKMENGINE_SKIP_TOOLCHAIN_CHECK=ON`.
+`vkm build --compiler <path>` names another compiler, which the first guard then
+judges; `-DVKMENGINE_SKIP_TOOLCHAIN_CHECK=ON` overrides it (you are on your own).
 
 ## The one convention that will catch you
 

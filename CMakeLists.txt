@@ -82,9 +82,10 @@ if(NOT DEFINED VKM_PROFILER)
     endif()
 endif()
 
-# The compiler's runtime DLLs (GCC's or LLVM's), copied beside the executables
-# and installed with them: without them a program fails with no log line. They
-# sit beside the compiler, or in a cross toolchain's target bin/.
+# The compiler's runtime libraries (GCC's or LLVM's), copied beside the
+# executables and installed with them: without them a program fails with no log
+# line. On Windows they sit beside the compiler, or in a cross toolchain's target
+# bin/; on Linux GCC names them, and a system compiler's are the system's own.
 set(VKM_COMPILER_RUNTIME "")
 if(MINGW)
     get_filename_component(_vkm_compiler_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
@@ -95,14 +96,27 @@ if(MINGW)
     foreach(_dll libstdc++-6.dll libgcc_s_seh-1.dll libwinpthread-1.dll libc++.dll libunwind.dll)
         foreach(_dir ${_vkm_runtime_dirs})
             if(EXISTS "${_dir}/${_dll}")
-                list(APPEND VKM_COMPILER_RUNTIME "${_dir}/${_dll}")
+                file(COPY "${_dir}/${_dll}" DESTINATION "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+                list(APPEND VKM_COMPILER_RUNTIME "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${_dll}")
                 break()
             endif()
         endforeach()
     endforeach()
-endif()
-if(VKM_COMPILER_RUNTIME)
-    file(COPY ${VKM_COMPILER_RUNTIME} DESTINATION "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    foreach(_lib libstdc++.so.6 libgcc_s.so.1)
+        execute_process(
+            COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=${_lib}
+            OUTPUT_VARIABLE _vkm_found
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+        )
+        file(REAL_PATH "${_vkm_found}" _vkm_found)
+        if(EXISTS "${_vkm_found}" AND NOT _vkm_found MATCHES "^/(usr|lib)")
+            file(MAKE_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+            # Under the soname the loader asks for, not the versioned file name.
+            file(COPY_FILE "${_vkm_found}" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${_lib}" ONLY_IF_DIFFERENT)
+            list(APPEND VKM_COMPILER_RUNTIME "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${_lib}")
+        endif()
+    endforeach()
 endif()
 
 # Sanitizers for a build tree of their own - `-DVKM_SANITIZE=address,undefined`.

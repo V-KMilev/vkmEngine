@@ -2,12 +2,17 @@
 
 ## Prerequisites
 
-- C++17 compiler (GCC 9+, Clang 10+, MSVC 2019+)
+- C++17 compiler (GCC 9+, Clang 10+)
 - CMake 3.25+
 - Ninja build system
 - Python 3.8+, for `tools/vkm`; on Windows a Windows build of it (MSYS2's
   `mingw-w64-ucrt-x86_64-python`, or python.org's)
 - OpenGL 4.3 capable GPU and drivers
+
+Any of these builds the engine for working on it. A release is built with the
+toolchain `tools/toolchain.json` pins - GCC 15.2, CMake 3.31, Ninja 1.13 - and
+`tools/vkm toolchain --path` fetches it and prints its `bin/` folders, to put
+first on PATH when a build must match an SDK ([the toolchain pin](../getting-started.md#the-toolchain-pin)).
 
 ## Setup
 
@@ -271,30 +276,36 @@ cmake --install build --prefix /path/to/sdk
 ```
 
 ```
-<prefix>/bin/       the hosts, the shared engine, and the vkm command
+<prefix>/vkm, vkm.cmd   the command, as a person runs it (vkm.cmd on Windows)
+<prefix>/README.md      what to do first (tools/install/sdk_readme.md)
+<prefix>/bin/       the hosts, the shared engine and its compiler's runtime, and
+                    vkm.py, vkmcli/ and toolchain.json, which the command runs
 <prefix>/include/   the engine's public headers plus the third-party headers
                     they reach into
 <prefix>/lib/cmake/vkmEngine/   what find_package(vkmEngine) loads, plus the
                     gameplay-module recipe it includes
 <prefix>/shaders/   engine shaders
 <prefix>/assets/    the editor's font and logo - engine chrome, not anyone's art
-<prefix>/templates/ what `vkm new` copies
+<prefix>/templates/ <prefix>/examples/   what `vkm new` copies, less what running
+                    them wrote (VKM_GENERATED)
+<prefix>/python/    the pinned Python vkm runs on, when VKM_PYTHON names it
+<prefix>/shipping/  the shipping engine, when VKM_SHIPPING_ENGINE names it
 <prefix>/LICENSE    the engine's license, which `vkm package` puts in every game
 ```
 
 The install's `shaders/` and `assets/` are what `vkm package` takes out of an
-SDK into a game (`ENGINE_DATA` in `tools/vkm`), beside a renamed `vkm_runtime`
+SDK into a game (`ENGINE_DATA` in `tools/vkmcli/package.py`), beside a renamed `vkm_runtime`
 and the shared libraries, so a package assembled from the engine's own build
 tree is the same thing as one assembled from an install. The repo's `assets/`
 additionally holds the sample art the engine is developed against, which is
 gigabytes and belongs to no game.
 
-A downloadable archive comes from CPack, and carries the compiler in its name
-because the engine is not ABI-stable across compilers:
+A downloadable archive comes from CPack, named for what it runs on as a packaged
+game is; the compiler is not in the name, because an SDK brings its own:
 
 ```bash
 cmake --build build --target package
-# -> vkmEngine-<version>-Linux-x86_64-GNU-12.3.0.tar.xz
+# -> vkmEngine-<version>-linux-x64.tar.xz, or -windows-x64.zip
 ```
 
 Building a game *with* that SDK is [getting-started.md](../getting-started.md).
@@ -319,7 +330,8 @@ it by hand. A module a game ships is built against it too, into the project's
 `build/shipping/` (`VKM_MODULE_DIR`), never over the development one.
 
 An SDK carries one when the development tree is told where it is, and installs
-it whole into `<prefix>/shipping`:
+it into `<prefix>/shipping` - its `bin/`, `include/` and `lib/` alone, as the
+data and the command are the SDK's:
 
 ```bash
 cmake -B build -G Ninja -DVKM_SHIPPING_ENGINE=$PWD/build-shipping
@@ -328,6 +340,28 @@ cmake --build build --target package
 
 Without it, a game packaged from the SDK ships on the development engine, and
 `vkm package` says so.
+
+### CI and releases
+
+Every push to `master` or a `vkm/` branch, and every pull request, runs
+`.github/workflows/ci.yml`, which is `.github/workflows/build.yml` and nothing
+else:
+
+- **SDK, Linux and Windows.** The pinned toolchain fetched by `vkm toolchain`,
+  the shipping engine, the SDK with the pinned Python, the tests, the archive -
+  and then the archive used as a person uses it: unpacked elsewhere, `vkm new`,
+  `vkm new -t physics_lab`, `vkm doctor` and `vkm package` on both. Linux builds
+  on Ubuntu 22.04, whose glibc is the oldest a release runs on.
+- **Clang, Linux and Windows.** The same tree built and tested with Clang 18 and
+  with llvm-mingw, both pinned in `build.yml`. It ships nothing; it catches what
+  one compiler lets through and the other does not.
+
+A version tag (`vX.Y.Z`) runs `.github/workflows/release.yml`: the same
+`build.yml` on the tag, then both archives and the two installers
+(`tools/install/install.sh`, `install.ps1`) on that tag's GitHub release, its
+notes taken from the version's section of `CHANGELOG.md`. The installers fetch
+the newest release, so every release carries them. Its Run workflow button
+rebuilds a tag that already exists, replacing assets of the same name.
 
 ### Dependency Graph
 

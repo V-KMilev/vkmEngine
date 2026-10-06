@@ -32,7 +32,8 @@ struct AssetRecord {
      * @brief The source-art files the cook read and folded into recipeHash, as project references
      *        (AssetCooker::sourceFiles).
      *
-     * Recorded so the cook that hashes them is their one owner (see import_sources in `tools/vkm`).
+     * Recorded so the cook that hashes them is their one owner (see import_sources in
+     * `tools/vkmcli/package.py`).
      */
     std::vector<std::string> sources;
 };
