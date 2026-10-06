@@ -23,40 +23,33 @@
 namespace Vkm::Engine {
 
 void AudioSystem::init(FrameContext& ctx) {
-    // Whatever the graph is now is the one the first voices will belong to;
-    // starting at 0 would read as a replacement on the first frame.
+    // Starting at 0 would read as a graph replacement on the first frame.
     m_assetEpoch = ctx.resources.epoch();
 
-    // A host with no sound card, no driver, or no permission to open one is a
-    // host the engine still runs on. open() says which it was.
+    // A host with no usable device still runs; open() says why.
     if (!m_silent) m_device.open();
 
-    // Collect here, start in update(): emit() is synchronous and arrives from
-    // whatever stage gameplay runs in, and a voice must not be created from
-    // the middle of another system's walk.
+    // Collect here, start in update(): emit() is synchronous, and a voice must not be
+    // created mid-way through another system's walk.
     m_events = &ctx.events;
     m_playListener = m_events->subscribe<PlaySoundEvent>(
-        [this](const PlaySoundEvent& request) { m_pending.push_back(request); });
+        [this](const PlaySoundEvent& request) { m_pending.push_back(request); }
+    );
 }
 
 void AudioSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("AudioSystem");
 
-    // Runs whole on a device that never opened, so a silent host behaves like
-    // one where every sound is zero-length and `playing` still clears itself.
-    // See docs/reference/system/audio.md.
+    // Runs whole on an unopened device, which behaves as if every sound were zero-length,
+    // so `playing` still clears; see docs/reference/audio.md.
 
-    // The asset graph was replaced under us - a scene load, or the editor's
-    // Stop restoring its snapshot. Every voice is playing a clip that belonged
-    // to a world which no longer exists, and no gameplay is left to stop them.
+    // The asset graph was replaced under us (see ResourceManager::epoch).
     if (ctx.resources.epoch() != m_assetEpoch) {
         m_assetEpoch = ctx.resources.epoch();
         stopEverything();
     }
 
-    // Sounds that ran out, including any the editor started to audition a clip
-    // and has no id left for. A voice this drops that a source still tracks
-    // reads as finished on the pass below, which is what it is.
+    // Sounds that ran out; a tracked one reads as finished on the pass below.
     m_device.reapFinishedVoices();
 
     updateListener(ctx);
@@ -64,19 +57,16 @@ void AudioSystem::update(FrameContext& ctx) {
     ++m_frame;
     const bool simRunning = ctx.clock.getSimDelta() > 0.0f;
 
-    // Every source, not the posed ones only: a 2D source reads no position at
-    // all, and joining on Transform would leave a UI button silent forever with
-    // `playing` stuck true. An entity with no pose is heard at the origin.
+    // Every source, not only posed ones, or a 2D source would stay silent with `playing`
+    // stuck true. No pose is heard at the origin.
     Scene& scene = ctx.scene;
     scene.forEach<AudioSource>([&](EntityId id, AudioSource& source) {
-        const glm::vec3 world = scene.has<Transform>(id)
-            ? resolvedWorldPosition(scene, id, scene.get<Transform>(id))
-            : glm::vec3(0.0f);
+        const Transform* at = scene.tryGet<Transform>(id);
+        const glm::vec3 world = at ? resolvedWorldPosition(scene, id, *at) : glm::vec3(0.0f);
         reconcileSource(ctx, id, source, world, simRunning);
     });
 
-    // Anything the walk did not visit has lost its AudioSource or its entity,
-    // and there is nobody left to ask it to stop.
+    // Unvisited voices have lost their AudioSource or entity; nobody else will stop them.
     for (auto it = m_voices.begin(); it != m_voices.end(); ) {
         if (it->second.seenOnFrame == m_frame) {
             ++it;
@@ -113,33 +103,40 @@ void AudioSystem::updateListener(FrameContext& ctx) {
     m_hasListener = static_cast<bool>(entity);
     m_device.setListenerActive(m_hasListener);
     if (!m_hasListener) {
-        // The gain belonged to the ear, so it leaves with it: the master
-        // multiplies the 2D voices too, which nothing else would restore.
         m_device.setMasterVolume(1.0f);
         return;
     }
 
     const Transform& pose     = scene.get<Transform>(entity);
     const glm::quat  rotation = resolvedWorldRotation(scene, entity, pose);
-    m_device.setListener(resolvedWorldPosition(scene, entity, pose),
-                         Math::computeForward(rotation), Math::computeUp(rotation));
+    m_listenerPosition = resolvedWorldPosition(scene, entity, pose);
+    m_device.setListener(m_listenerPosition, Math::computeForward(rotation), Math::computeUp(rotation));
     m_device.setMasterVolume(scene.get<AudioListener>(entity).volume);
 }
 
-void AudioSystem::reconcileSource(FrameContext& ctx, EntityId entity, AudioSource& source,
-                                  const glm::vec3& worldPosition, bool simRunning) {
-    // The authored "start by itself" waits for simulation time, so a scene sat
-    // open in the editor stays quiet until someone presses Play. Explicitly
-    // requested sounds do not wait, which is what lets a pause menu click.
+void AudioSystem::reconcileSource(
+    FrameContext& ctx,
+    EntityId entity,
+    AudioSource& source,
+    const glm::vec3& worldPosition,
+    bool simRunning
+) {
     if (source.playOnStart && !source.started && simRunning) {
         source.started = true;
         source.playing = true;
     }
 
     auto it = m_voices.find(entity.slot());
-    // A slot recycled by an unrelated entity: the source that owned this voice
-    // is gone, and the entity now wearing its number must not inherit it.
+    // A slot recycled by an unrelated entity must not inherit this voice.
     if (it != m_voices.end() && it->second.entity != entity) {
+        m_device.stopVoice(it->second.voice);
+        m_voices.erase(it);
+        it = m_voices.end();
+    }
+
+    // Re-pointed while playing: restart on the new clip. Ahead of the finished check, so
+    // a clip changed as the old one ran out still starts.
+    if (it != m_voices.end() && it->second.clip != source.clip) {
         m_device.stopVoice(it->second.voice);
         m_voices.erase(it);
         it = m_voices.end();
@@ -153,8 +150,7 @@ void AudioSystem::reconcileSource(FrameContext& ctx, EntityId entity, AudioSourc
         return;
     }
 
-    // A one-shot that reached its end. Writing `playing` back is how gameplay
-    // asks whether a sound has finished without holding a handle to anything.
+    // A one-shot that ended; `playing` written back is how gameplay learns it finished.
     if (it != m_voices.end() && !m_device.isVoiceActive(it->second.voice)) {
         m_device.stopVoice(it->second.voice);
         m_voices.erase(it);
@@ -177,9 +173,7 @@ void AudioSystem::reconcileSource(FrameContext& ctx, EntityId entity, AudioSourc
         return;
     }
 
-    // Asked to play with nothing to play. Clearing the request rather than
-    // retrying is what keeps a source that never got a clip from asking again
-    // sixty times a second for the life of the scene.
+    // Nothing to play: clear the request rather than retry every frame.
     if (!ctx.resources.isAlive(source.clip)) {
         source.playing = false;
         return;
@@ -194,25 +188,28 @@ void AudioSystem::reconcileSource(FrameContext& ctx, EntityId entity, AudioSourc
         source.playing = false;
         return;
     }
-    m_voices.emplace(entity.slot(), ActiveVoice{entity, voice, m_frame});
+    m_voices.emplace(entity.slot(), ActiveVoice{entity, source.clip, voice, m_frame});
 }
 
 void AudioSystem::startPendingRequests(FrameContext& ctx) {
-    // Drained into a local, the way BehaviorSystem drains its collisions: a
-    // walk over the member vector is one synchronous emit away from
-    // reallocating under itself, and a request made mid-walk waits a frame.
-    std::vector<PlaySoundEvent> requests;
-    requests.swap(m_pending);
+    // A second buffer: a synchronous emit could grow the queue under the walk; a request
+    // made mid-walk waits a frame.
+    m_starting.clear();
+    m_starting.swap(m_pending);
 
-    for (const PlaySoundEvent& request : requests) {
-        // Asked for with nothing to play. Silent rather than refused: a
-        // request has no id to report a failure through, and the alternative
-        // is a log line once per coin.
+    for (const PlaySoundEvent& request : m_starting) {
         if (!ctx.resources.isAlive(request.clip)) continue;
 
         VoiceParams params = request.params;
         // A request cannot be stopped, so it must be able to end by itself.
         params.loop = false;
+
+        // Out of the ear's range: it would hold a capped voice at zero gain for the clip's
+        // whole length. A range not past minDistance attenuates nothing, so has no far.
+        if (params.spatial && m_hasListener && params.hasFar()
+            && glm::distance(params.position, m_listenerPosition) > params.heardMaxDistance()) {
+            continue;
+        }
 
         const AudioClipAsset& clip = ctx.resources.get(request.clip);
         warnIfNoListener(params.spatial);
@@ -225,25 +222,31 @@ void AudioSystem::warnIfNoListener(bool spatial) {
     if (!spatial || m_hasListener || m_warnedNoListener) return;
 
     m_warnedNoListener = true;
-    LOG_WARNING("A positioned sound started with no active AudioListener in the scene - it "
-                "is silent until one exists (non-spatial sources are unaffected)");
+    LOG_WARNING(
+        "A positioned sound started with no active AudioListener in the scene - it "
+        "is silent until one exists (non-spatial sources are unaffected)"
+    );
 }
 
 void AudioSystem::warnIfStereoSpatial(const AudioClipAsset& asset, bool spatial) {
     if (!spatial || asset.channels <= 1) return;
     if (!m_warnedStereoClips.insert(asset.name()).second) return;
 
-    LOG_WARNING("A positioned sound is playing the %u-channel clip '%s' - the mixer routes each "
-                "channel to the output channel it was authored for and attenuates it there, so "
-                "sound in one channel is never heard from the other side however the emitter "
-                "moves; positioning wants a mono clip",
-                asset.channels, asset.name().c_str());
+    LOG_WARNING(
+        "A positioned sound is playing the %u-channel clip '%s' - the mixer routes each "
+        "channel to the output channel it was authored for and attenuates it there, so "
+        "sound in one channel is never heard from the other side however the emitter "
+        "moves; positioning wants a mono clip",
+        asset.channels,
+        asset.name().c_str()
+    );
 }
 
 void AudioSystem::stopEverything() {
     m_device.stopAllVoices();
     m_voices.clear();
     m_pending.clear();
+    m_starting.clear();
     m_warnedNoListener = false;
     m_hasListener      = false;
     m_warnedStereoClips.clear();
