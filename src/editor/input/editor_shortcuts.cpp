@@ -52,6 +52,9 @@ void process(EditorContext& ec, SceneIOController& sceneIO) {
     if (isPressed(kb.frameAll)) {
         ViewFraming::frameAll(ctx, camera);
     }
+    if (isPressed(kb.toggleOrthographic) && camera.isActive()) {
+        camera.setOrthographic(!camera.isOrthographic());
+    }
 
     // Not while the cursor is captured: flying reads the same letters as moves.
     if (ec.input.pointer != PointerOwner::Captured) {

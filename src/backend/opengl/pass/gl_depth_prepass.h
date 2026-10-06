@@ -11,8 +11,9 @@ namespace Vkm::Engine {
  * @brief Lays down opaque depth before the forward pass for early-Z.
  *
  * Primes depth for the opaque/unlit batch so GLForwardPass runs LEQUAL with depth writes off,
- * writes the G-buffer (view normal, roughness, metalness) to colour attachment 1, and owns the
- * scene target's clear, so it is unconditional. Alpha-masked geometry is not in this batch.
+ * writes the G-buffer (the view normal) to colour attachment 1, and owns the scene target's
+ * clear, so it is unconditional. Alpha-masked geometry is not in this batch. It binds no
+ * material: nothing it writes depends on one.
  *
  * Skinned runs sort after static ones, so the two programs switch once. Both must compute
  * gl_Position as the forward programs do, or the primed depth is unusable under LEQUAL.

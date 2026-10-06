@@ -174,10 +174,10 @@ to exactly one of them:
 | Preferences         | `panels/preferences_panel.cpp`        | Floating editor/app settings window (Edit > Preferences, Ctrl+,)            |
 | Errors              | `panels/errors_panel.cpp`             | The **Errors** window: recoverable engine failures, newest first, filling the window. A function, not a class, because it remembers nothing |
 | Build               | `session/build_controller.cpp`        | The **Build** window: the vkm command running or last run, how it ended, and its output. See [Building from the editor](#building-from-the-editor) |
-| Viewport Overlay    | `overlays/viewport_overlay.cpp`       | The axis navigation gizmo, bottom-right of the viewport (click an axis to snap the editor's view) |
+| Viewport Overlay    | `overlays/viewport_overlay.cpp`       | The axis navigation gizmo, bottom-right of the viewport (click an axis to snap the editor's view down it, orthographic) |
 | Gizmo Overlay       | `overlays/gizmo_overlay.cpp`          | The transform gizmo's drawing and drag, and the viewport's click-to-pick     |
 | Gizmo Drawing       | `overlays/gizmo_overlay_draw.cpp`     | Every `draw*Gizmos` body, plus the selection outline: lights, cameras, probes, volumes, decals, emitters, audio, colliders, joints, skeletons, bounds |
-| Viewport Toolbar    | `overlays/viewport_toolbar.cpp`       | The tool strip (tool, space, snap) down the viewport's left edge, and the view bar (shading, camera, Frame All, Focus) in its top-right corner |
+| Viewport Toolbar    | `overlays/viewport_toolbar.cpp`       | The tool strip (tool, space, snap) down the viewport's left edge, and the view bar (shading, camera, projection, Frame All, Focus) in its top-right corner |
 | Playback Bar        | `overlays/playback_bar.cpp`           | Top-centre Play / Pause / Step / Stop transport for the simulation; Pause and Step also hold the mixer's voices; frames and captions the viewport while a session runs |
 | Start Screen        | `panels/start_screen.cpp`             | What the editor shows when no project is open: New, Open, the projects opened before and copies of the examples this engine ships - and no workspace at all. See [The start screen](#the-start-screen) |
 
@@ -526,7 +526,7 @@ before it put in place:
 3. Read its `project.json` into a fresh `Project` - reset first, so a field the
    file leaves out does not keep the outgoing project's value - and take the
    look the game ships from its `render` block, with the editor's own view
-   defaults (`EditorSettings::applyViewDefaults`, the grid on) over it.
+   defaults (`EditorSettings::applyViewDefaults`, the grid's X and Z axes on, so the ground) over it.
 4. Tear the scene down through `SceneIOController::beginSceneReplace`: behaviors
    get `onDestroy` while the old module still holds their code, and the undo
    stack, material previews, play snapshot, saved-scene path and the whole
@@ -1001,10 +1001,12 @@ Tool keybinds, live only while the cursor is not captured: `Q` Select, `W` Move,
 Everything with no mesh of its own draws an authoring gizmo in
 `gizmo_overlay_draw.cpp`, so it can be found and placed: lights, cameras,
 reflection probes and irradiance volumes, decals, particle emitters, audio
-sources and listeners. Lights, cameras and the audio pair mark themselves with a
-glyph on a disc at one size, drawn by `drawEntityMarker` (`ui/editor_icons.h`),
-which also states the radius the picker answers within. The `View` menu adds
-**Show Colliders**, **Show Bounds** and **Show Skeletons** (posed bones from
+sources and listeners. Each marks itself with a glyph on a disc at one size,
+drawn by `drawEntityMarker` (`ui/editor_icons.h`), which also states the radius
+the picker answers within, so a click selects it. **View > Show** turns each kind
+on or off (`GizmoVisibility`, kept per project in `editor_settings.json`); a
+hidden kind draws no marker, so it cannot be picked either. It also holds
+**Colliders and Joints**, **Bounds** and **Skeletons** (posed bones from
 `FrameContext::poses`, with an axis triad per bone on the selected rig), off by
 default because they draw for every matching entity.
 
@@ -1092,9 +1094,9 @@ it, for whoever maintains that half.
 
 ### The editor's view
 
-The editor looks at a scene from a viewpoint of its own - a position and a yaw
-and pitch (`EditorViewpoint`), held by `CameraControllerSystem` - not from an
-entity, for three reasons:
+The editor looks at a scene from a viewpoint of its own - a position, a yaw and
+pitch, and a projection (`EditorViewpoint`), held by `CameraControllerSystem` -
+not from an entity, for three reasons:
 
 - **Looking around is not an edit.** The viewpoint is in no scene file, so a
   fly, a scroll dolly, Frame Selected and a view-axis snap change nothing the
@@ -1168,7 +1170,20 @@ take its command slots.
 | W / A / S / D                  | Move forward / left / back / right|
 | Q / E                          | Move up / down                    |
 | Shift (hold)                   | Speed boost                       |
-| Scroll wheel (in look mode)    | Dolly forward / back              |
+| Scroll wheel (in look mode)    | Dolly forward / back; orthographic, zoom |
+| Numpad 5                       | Perspective / orthographic (a keybind) |
+
+**Orthographic.** The view-bar button, View > Orthographic and Numpad 5 switch
+the projection, keeping the focus - the point Frame Selected, Frame All or a
+navigation axis last aimed at, carried along as the view flies - the same size:
+orthographic frames at its half-height (`EditorViewpoint::orthoHeight`) what
+perspective shows at the focus's distance. Orthographic, the wheel zooms by the
+dolly it would have made, so the two feel alike; the move keys still move, since
+they decide what the near plane cuts. A navigation axis snaps to an orthographic
+view down that axis (`viewAlongAxis`), standing back far enough to clear every
+drawn object, and turning the view returns it to perspective - unless the
+projection was switched by hand. The grid draws the plane facing an orthographic
+view down an axis ([rendering.md](rendering.md)).
 
 Its speeds and sensitivities (`CameraControllerSystem::Settings`) are the
 Preferences window's Camera tab, held in `Preferences::camera` and handed to the

@@ -18,6 +18,7 @@
 #include "ecs/component/core/world_transform.h"
 #include "system/visibility/visibility.h"
 #include "input/camera_controller_system.h"
+#include "input/view_framing.h"
 
 namespace Vkm::Engine {
 
@@ -158,7 +159,8 @@ void ViewportOverlay::drawNavigationGizmo(EditorContext& ec, bool shown) {
             target = resolvedWorldPosition(ctx.scene, state.selectedEntity, *at);
         }
         const float dist = std::max(2.0f, glm::length(ctx.visibility->camera.position - target));
-        ec.cameraController.viewFrom(target, endpoints[hoverIdx].worldDir, dist);
+        const float clear = ViewFraming::clearance(ctx, target) + 1.0f;
+        ec.cameraController.viewAlongAxis(target, endpoints[hoverIdx].worldDir, dist, clear);
     }
 
     for (int i = 0; i < 6; ++i) {
@@ -187,7 +189,7 @@ void ViewportOverlay::drawNavigationGizmo(EditorContext& ec, bool shown) {
     if (hoverIdx >= 0) {
         m_hovered = true;
         ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-        ImGui::SetTooltip("View from %s", endpoints[hoverIdx].label);
+        ImGui::SetTooltip("View from %s, orthographic until turned", endpoints[hoverIdx].label);
     }
 }
 

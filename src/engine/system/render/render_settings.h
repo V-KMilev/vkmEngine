@@ -25,21 +25,25 @@ enum class TextureFiltering : uint8_t {
  *
  * Columns: enumerator, editor label, shader constant suffix (`MODE_<suffix>`),
  * and whether the forward pass shades it as radiance (then tonemapped) rather
- * than the composite showing a buffer raw.
+ * than the composite showing a buffer raw. Albedo, Roughness and Metalness are
+ * raw buffers the forward pass writes: the surface as it samples it.
  */
 #define VKM_RENDER_MODES(X)                                              \
     X(Default,          "Default",              DEFAULT,           true)  \
-    X(Depth,            "Depth",                DEPTH,             false) \
+    X(Wireframe,        "Wireframe",            WIREFRAME,         true)  \
+    X(LightingOnly,     "Lighting Only",        LIGHTING_ONLY,     true)  \
+    X(Albedo,           "Albedo",               ALBEDO,            false) \
+    X(Roughness,        "Roughness",            ROUGHNESS,         false) \
+    X(Metalness,        "Metalness",            METALNESS,         false) \
     X(Normals,          "Normals",              NORMALS,           false) \
-    X(Roughness,        "Roughness (authored)", ROUGHNESS,         false) \
-    X(Metalness,        "Metalness (authored)", METALNESS,         false) \
+    X(Depth,            "Depth",                DEPTH,             false) \
     X(AmbientOcclusion, "Ambient Occlusion",    AMBIENT_OCCLUSION, false) \
-    X(Bloom,            "Bloom",                BLOOM,             false) \
-    X(ShadowAtlas,      "Shadow Atlas",         SHADOW_ATLAS,      false) \
-    X(Fog,              "Fog",                  FOG,               false) \
     X(GiOnly,           "GI Only",              GI_ONLY,           true)  \
     X(DirectOnly,       "Direct Only",          DIRECT_ONLY,       true)  \
-    X(Clusters,         "Light Clusters",       CLUSTERS,          true)
+    X(Clusters,         "Light Clusters",       CLUSTERS,          true)  \
+    X(Bloom,            "Bloom",                BLOOM,             false) \
+    X(ShadowAtlas,      "Shadow Atlas",         SHADOW_ATLAS,      false) \
+    X(Fog,              "Fog",                  FOG,               false)
 
 /**
  * @brief Every display transform the composite pass can end a frame with, once.
@@ -141,7 +145,10 @@ struct RenderSettings {
     uint32_t shadowResolution = 4096;
 
     // Overlays
-    bool grid = false;  ///< Editor ground grid.
+    // The editor's world grid: each axis's line, and the plane of every two axes on.
+    bool gridAxisX = false;
+    bool gridAxisY = false;
+    bool gridAxisZ = false;
 
     /// The search divides by the radius, so it is never zero.
     static constexpr float MIN_GTAO_RADIUS = 0.05f;
@@ -149,6 +156,15 @@ struct RenderSettings {
     static constexpr float MAX_GTAO_RADIUS = 5.0f;
 
     static constexpr uint32_t MSAA_SAMPLE_COUNTS[] = {1, 2, 4, 8};  ///< 1 is off.
+
+    /**
+     * @brief Whether the editor's world grid draws at all.
+     *
+     * @return True while any of its axes is on.
+     */
+    bool gridShown() const {
+        return gridAxisX || gridAxisY || gridAxisZ;
+    }
 
     /**
      * @brief Whether @p samples is one of MSAA_SAMPLE_COUNTS.

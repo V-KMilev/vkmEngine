@@ -52,6 +52,8 @@ ImWchar iconCodepoint(EditorIcon icon) {
         case EditorIcon::Audio2D:    return 0xe1a9;  // volume
         case EditorIcon::Listener:   return 0xe382;  // ear
         case EditorIcon::FrameAll:   return 0xe257;  // scan
+        case EditorIcon::Perspective:  return 0xe524;  // cuboid
+        case EditorIcon::Orthographic: return 0xe167;  // square
         case EditorIcon::UICanvas:   return 0xe291;  // frame
         case EditorIcon::UIText:     return 0xe198;  // type
         case EditorIcon::UIImage:    return 0xe0f6;  // image

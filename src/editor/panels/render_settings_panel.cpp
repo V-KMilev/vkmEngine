@@ -1,5 +1,6 @@
 #include "panels/render_settings_panel.h"
 
+#include <algorithm>
 #include <iterator>
 
 #include <imgui.h>
@@ -20,6 +21,55 @@
 #include "system/render/render_system.h"
 
 namespace Vkm::Engine {
+
+namespace {
+
+// A square button in @p color, filled while @p shown and outlined while not.
+bool gridToggle(const char* name, const ImVec4& color, const ImVec4& hover, bool* shown, const char* what) {
+    const ImVec4 off      = ImGui::GetStyleColorVec4(ImGuiCol_FrameBg);
+    const ImVec4 offHover = ImGui::GetStyleColorVec4(ImGuiCol_FrameBgHovered);
+    ImGui::PushStyleColor(ImGuiCol_Button, *shown ? color : off);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, *shown ? hover : offHover);
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, hover);
+    ImGui::PushStyleColor(ImGuiCol_Text, *shown ? ImVec4(1.0f, 1.0f, 1.0f, 1.0f) : hover);
+    const float height  = ImGui::GetFrameHeight();
+    const float padding = ImGui::GetStyle().FramePadding.x * 2.0f;
+    const float width   = std::max(height, ImGui::CalcTextSize(name).x + padding);
+    const bool  clicked = ImGui::Button(name, ImVec2(width, height));
+    ImGui::PopStyleColor(4);
+    if (ImGui::IsItemHovered()) {
+        const char* verb = *shown ? "Hide" : "Show";
+        ImGui::SetTooltip("%s the %s. Two axes on show their plane: X and Z the ground", verb, what);
+    }
+    if (clicked) *shown = !*shown;
+    return clicked;
+}
+
+// The grid's switches, one per axis in its own colour; two on show their plane.
+void gridRow(RenderSettings& s) {
+    struct Toggle {
+        const char* name;
+        bool*       shown;
+        const char* what;
+    };
+    const Toggle axes[3] = {
+        {"X", &s.gridAxisX, "X axis"},
+        {"Y", &s.gridAxisY, "Y axis"},
+        {"Z", &s.gridAxisZ, "Z axis"},
+    };
+    propRow("World Grid", nullptr, [&] {
+        bool changed = false;
+        for (int i = 0; i < 3; ++i) {
+            if (i > 0) ImGui::SameLine(0, EditorStyle::px(4.0f));
+            const ImVec4 color = EditorStyle::axisVec4(i);
+            const ImVec4 hover = EditorStyle::axisVec4(i, 25);
+            changed |= gridToggle(axes[i].name, color, hover, axes[i].shown, axes[i].what);
+        }
+        return changed;
+    });
+}
+
+} // namespace
 
 void RenderSettingsPanel::draw(EditorContext& ec) {
     EditorState& state = ec.state;
@@ -43,7 +93,7 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
             "the curve sees, -1 halves it. Authored, never adapted";
         propSlider("Exposure", &s.exposure, -8.0f, 8.0f, "%+.1f EV", exposureTooltip);
 
-        propCheckbox("World Grid", &s.grid, "World-space ground grid overlay (editor aid)");
+        gridRow(s);
 
         static const char* const MSAA_LABELS[] = { "Off", "2x MSAA", "4x MSAA", "8x MSAA" };
         propValueCombo(
