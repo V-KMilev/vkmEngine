@@ -43,6 +43,14 @@ bool hasLayout(unsigned int dockspace);
 void buildDefaultLayout(unsigned int dockspace, float width, float height);
 
 /**
+ * @brief Make the next window begun the viewport's: its node never shows a tab bar.
+ *
+ * Never, not hidden: ImGui marks a hidden tab bar with a triangle in the node's
+ * corner, over the scene.
+ */
+void setViewportWindowClass();
+
+/**
  * @brief Dock the next window begun beside @p beside the first time it shows.
  *
  * For a window a saved layout predates, which it would otherwise show floating.

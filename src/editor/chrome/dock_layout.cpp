@@ -61,6 +61,12 @@ void buildDefaultLayout(unsigned int dockspace, float width, float height) {
     ImGui::DockBuilderFinish(dockspace);
 }
 
+void setViewportWindowClass() {
+    ImGuiWindowClass viewport;
+    viewport.DockNodeFlagsOverrideSet = ImGuiDockNodeFlags_NoTabBar;
+    ImGui::SetNextWindowClass(&viewport);
+}
+
 void dockNextBeside(const char* beside) {
     const ImGuiWindow* neighbour = ImGui::FindWindowByName(beside);
     if (neighbour && neighbour->DockId) ImGui::SetNextWindowDockID(neighbour->DockId, ImGuiCond_FirstUseEver);

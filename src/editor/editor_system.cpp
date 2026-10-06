@@ -725,8 +725,10 @@ namespace {
 /**
  * @brief Begin one of the workspace's dockable panels.
  *
- * In the panel colour, so a docked panel reads as part of the frame around the
- * viewport. Padding is popped after Begin, so a popup opened inside gets the theme's.
+ * In the panel colour and square, so a docked panel reads as part of the frame around
+ * the viewport: rounded, the corners it shares with the workspace's would show whatever
+ * the backbuffer last held, a different thing in each of the two. Padding and rounding
+ * are popped after Begin, so a popup opened inside gets the theme's.
  * The caller ends the window whatever this returns. No focus on appearing:
  * a group shown again would open on whichever window began last, not the tab it was
  * left on.
@@ -737,6 +739,7 @@ namespace {
  */
 bool beginPanel(const char* name, ImVec2 padding) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, padding);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImGui::GetStyleColorVec4(ImGuiCol_ChildBg));
     const bool showing = ImGui::Begin(
         name,
@@ -744,7 +747,7 @@ bool beginPanel(const char* name, ImVec2 padding) {
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoFocusOnAppearing
     );
     ImGui::PopStyleColor();
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(2);
     return showing;
 }
 
@@ -831,11 +834,7 @@ void EditorSystem::drawPanels(EditorContext& ec) {
 void EditorSystem::drawViewport(EditorContext& ec) {
     PROFILE_SCOPE("Panel/Viewport");
 
-    // No tab while alone in its node, so the scene fills it; ImGui's corner triangle
-    // brings the tab back.
-    ImGuiWindowClass viewportClass;
-    viewportClass.DockNodeFlagsOverrideSet = ImGuiDockNodeFlags_AutoHideTabBar;
-    ImGui::SetNextWindowClass(&viewportClass);
+    setViewportWindowClass();
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     const ImGuiWindowFlags viewportFlags = ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar
