@@ -57,6 +57,10 @@ layout(binding = MATERIAL_SLOT_AO_METALLIC_ROUGHNESS) uniform sampler2D u_aoMeta
 layout(binding = IBL_SLOT_PREFILTER)  uniform samplerCube u_prefilter;   // roughness-prefiltered specular
 layout(binding = IBL_SLOT_BRDF_LUT)   uniform sampler2D   u_brdfLUT;     // split-sum BRDF/DFG LUT
 uniform int u_renderMode;  // MODE_* debug view; 0 everywhere but the main view
+uniform int u_wirePass;    // 1 on the Wireframe view's second draw, of its lines alone
+
+const vec3  WIRE_COLOR = vec3(0.0);
+const float WIRE_ALPHA = 0.55;
 
 // Opaque + sky copy for transmission refraction, transparent bucket only.
 layout(binding = POST_SLOT_SCENE_COLOR) uniform sampler2D u_sceneColor;
@@ -511,7 +515,7 @@ void main() {
     ReflectWeight = vec4(0.0);
     ReflectEnv    = vec4(0.0);
 
-    vec3 V = normalize(u_camera.cameraPosition.xyz - vWorldPos);
+    vec3 V = toViewer(vWorldPos);
 
     vec3 Ng = normalize(vNormal);
     // Interpolation skews the frame; re-orthogonalise, or normal maps and the
@@ -543,7 +547,25 @@ void main() {
         if (maskCoverage <= 0.0) discard;
     }
 
+    // Blended over what the first draw shaded; the reflection inputs write a zero alpha,
+    // which leaves them as they were.
+    if (u_wirePass != 0) {
+        FragColor = vec4(WIRE_COLOR, WIRE_ALPHA);
+        return;
+    }
+
     Surface s = sampleSurface(uv);
+
+    // The material views: the surface as sampled, before any light, shown raw.
+    if (u_renderMode == MODE_ALBEDO)    { FragColor = vec4(linearToSrgb(s.albedo), 1.0); return; }
+    if (u_renderMode == MODE_ROUGHNESS) { FragColor = vec4(vec3(s.roughness), 1.0); return; }
+    if (u_renderMode == MODE_METALNESS) { FragColor = vec4(vec3(s.metallic), 1.0); return; }
+    if (u_renderMode == MODE_LIGHTING_ONLY) {
+        // The light a white, rough-as-authored dielectric would show.
+        s.albedo   = vec3(1.0);
+        s.metallic = 0.0;
+        s.emission = vec3(0.0);
+    }
 
     // Unlit, but fogged.
     if (u_material.type == MAT_UNLIT) {

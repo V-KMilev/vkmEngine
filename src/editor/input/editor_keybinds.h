@@ -35,31 +35,32 @@ struct KeyBind {
  * PreferencesPanel starts a heading whenever the group changes.
  */
 #define VKM_EDITOR_KEYBINDS(X) \
-    X(newScene,             "File",                            "New Scene",        ImGuiKey_N,      KEY_MOD_CTRL) \
-    X(saveScene,            "File",                            "Save Scene",       ImGuiKey_S,      KEY_MOD_CTRL) \
-    X(saveSceneAs,          "File",                            "Save Scene As",    ImGuiKey_S,      KEY_MOD_CTRL | KEY_MOD_SHIFT) \
-    X(loadScene,            "File",                            "Load Scene",       ImGuiKey_O,      KEY_MOD_CTRL) \
-    X(undo,                 "Edit",                            "Undo",             ImGuiKey_Z,      KEY_MOD_CTRL) \
-    X(redo,                 "Edit",                            "Redo",             ImGuiKey_Z,      KEY_MOD_CTRL | KEY_MOD_SHIFT) \
-    X(playStop,             "Play (live during a session)",    "Play / Stop",      ImGuiKey_P,      KEY_MOD_CTRL) \
-    X(pauseResume,          "Play (live during a session)",    "Pause / Resume",   ImGuiKey_P,      KEY_MOD_CTRL | KEY_MOD_SHIFT) \
-    X(ejectView,            "Play (live during a session)",    "Eject / Return",   ImGuiKey_F8,     KEY_MOD_NONE) \
-    X(toggleHierarchy,      "Windows & Panels",                "Toggle Hierarchy", ImGuiKey_1,      KEY_MOD_CTRL) \
-    X(toggleInspector,      "Windows & Panels",                "Toggle Inspector", ImGuiKey_2,      KEY_MOD_CTRL) \
-    X(toggleAssets,         "Windows & Panels",                "Toggle Assets",    ImGuiKey_3,      KEY_MOD_CTRL) \
-    X(toggleRenderSettings, "Windows & Panels",                "Render Settings",  ImGuiKey_4,      KEY_MOD_CTRL) \
-    X(toggleEditor,         "Windows & Panels",                "Toggle Editor",    ImGuiKey_F5,     KEY_MOD_NONE) \
-    X(openPreferences,      "Windows & Panels",                "Preferences",      ImGuiKey_Comma,  KEY_MOD_CTRL) \
-    X(deleteEntity,         "Entity",                          "Delete",           ImGuiKey_Delete, KEY_MOD_NONE) \
-    X(deselect,             "Entity",                          "Deselect",         ImGuiKey_Escape, KEY_MOD_NONE) \
-    X(duplicate,            "Entity",                          "Duplicate",        ImGuiKey_D,      KEY_MOD_CTRL) \
-    X(focusSelected,        "Entity",                          "Focus Selected",   ImGuiKey_F,      KEY_MOD_NONE) \
-    X(frameAll,             "Entity",                          "Frame All",        ImGuiKey_F,      KEY_MOD_SHIFT) \
-    X(gizmoSelect,          "Gizmo (disabled during fly-cam)", "Select",           ImGuiKey_Q,      KEY_MOD_NONE) \
-    X(gizmoTranslate,       "Gizmo (disabled during fly-cam)", "Translate",        ImGuiKey_W,      KEY_MOD_NONE) \
-    X(gizmoRotate,          "Gizmo (disabled during fly-cam)", "Rotate",           ImGuiKey_E,      KEY_MOD_NONE) \
-    X(gizmoScale,           "Gizmo (disabled during fly-cam)", "Scale",            ImGuiKey_R,      KEY_MOD_NONE) \
-    X(gizmoToggleSpace,     "Gizmo (disabled during fly-cam)", "Local/World",      ImGuiKey_X,      KEY_MOD_NONE)
+    X(newScene,             "File",                            "New Scene",        ImGuiKey_N,        KEY_MOD_CTRL) \
+    X(saveScene,            "File",                            "Save Scene",       ImGuiKey_S,        KEY_MOD_CTRL) \
+    X(saveSceneAs,          "File",                            "Save Scene As",    ImGuiKey_S,        KEY_MOD_CTRL | KEY_MOD_SHIFT) \
+    X(loadScene,            "File",                            "Load Scene",       ImGuiKey_O,        KEY_MOD_CTRL) \
+    X(undo,                 "Edit",                            "Undo",             ImGuiKey_Z,        KEY_MOD_CTRL) \
+    X(redo,                 "Edit",                            "Redo",             ImGuiKey_Z,        KEY_MOD_CTRL | KEY_MOD_SHIFT) \
+    X(playStop,             "Play (live during a session)",    "Play / Stop",      ImGuiKey_P,        KEY_MOD_CTRL) \
+    X(pauseResume,          "Play (live during a session)",    "Pause / Resume",   ImGuiKey_P,        KEY_MOD_CTRL | KEY_MOD_SHIFT) \
+    X(ejectView,            "Play (live during a session)",    "Eject / Return",   ImGuiKey_F8,       KEY_MOD_NONE) \
+    X(toggleHierarchy,      "Windows & Panels",                "Toggle Hierarchy", ImGuiKey_1,        KEY_MOD_CTRL) \
+    X(toggleInspector,      "Windows & Panels",                "Toggle Inspector", ImGuiKey_2,        KEY_MOD_CTRL) \
+    X(toggleAssets,         "Windows & Panels",                "Toggle Assets",    ImGuiKey_3,        KEY_MOD_CTRL) \
+    X(toggleRenderSettings, "Windows & Panels",                "Render Settings",  ImGuiKey_4,        KEY_MOD_CTRL) \
+    X(toggleEditor,         "Windows & Panels",                "Toggle Editor",    ImGuiKey_F5,       KEY_MOD_NONE) \
+    X(openPreferences,      "Windows & Panels",                "Preferences",      ImGuiKey_Comma,    KEY_MOD_CTRL) \
+    X(deleteEntity,         "Entity",                          "Delete",           ImGuiKey_Delete,   KEY_MOD_NONE) \
+    X(deselect,             "Entity",                          "Deselect",         ImGuiKey_Escape,   KEY_MOD_NONE) \
+    X(duplicate,            "Entity",                          "Duplicate",        ImGuiKey_D,        KEY_MOD_CTRL) \
+    X(focusSelected,        "View",                            "Focus Selected",   ImGuiKey_F,        KEY_MOD_NONE) \
+    X(frameAll,             "View",                            "Frame All",        ImGuiKey_F,        KEY_MOD_SHIFT) \
+    X(toggleOrthographic,   "View",                            "Orthographic",     ImGuiKey_Keypad5,  KEY_MOD_NONE) \
+    X(gizmoSelect,          "Gizmo (disabled during fly-cam)", "Select",           ImGuiKey_Q,        KEY_MOD_NONE) \
+    X(gizmoTranslate,       "Gizmo (disabled during fly-cam)", "Translate",        ImGuiKey_W,        KEY_MOD_NONE) \
+    X(gizmoRotate,          "Gizmo (disabled during fly-cam)", "Rotate",           ImGuiKey_E,        KEY_MOD_NONE) \
+    X(gizmoScale,           "Gizmo (disabled during fly-cam)", "Scale",            ImGuiKey_R,        KEY_MOD_NONE) \
+    X(gizmoToggleSpace,     "Gizmo (disabled during fly-cam)", "Local/World",      ImGuiKey_X,        KEY_MOD_NONE)
 
 /**
  * @brief All configurable editor keybinds, with their defaults.

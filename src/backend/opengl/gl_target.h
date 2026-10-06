@@ -44,7 +44,7 @@ class GLTarget {
         enum class Attachment {
             Color,          ///< Colour 0: the lit HDR colour, or a colour-only target's image.
             Depth,          ///< The sampleable depth.
-            GBuffer,        ///< Colour 1: oct view normal, authored roughness, metalness.
+            GBuffer,        ///< Colour 1: oct view normal.
             ReflectWeight,  ///< Colour 2: the environment reflection's weight (rgb) and roughness (a).
             ReflectEnv,     ///< Colour 3: that weight times the environment radiance.
             Count,

@@ -32,7 +32,7 @@ namespace CameraActions {
  * @brief Where the editor looks at a scene from: a pose of its own, not an entity.
  *
  * Kept per scene in `editor_settings.json`. The fly camera has no roll, so yaw
- * and pitch are its whole orientation.
+ * and pitch are its whole orientation; its projection is perspective or orthographic.
  */
 struct EditorViewpoint {
     /**
@@ -44,6 +44,9 @@ struct EditorViewpoint {
     glm::vec3 position = glm::vec3(0.0f, 2.0f, 6.0f);
     float     yaw      = 0.0f;   ///< Radians about world up; see Math::fromYawPitch.
     float     pitch    = 0.0f;   ///< Radians above the horizon.
+
+    bool  orthographic = false;  ///< Parallel projection, zoomed by orthoHeight.
+    float orthoHeight  = 10.0f;  ///< Half the view's height in world units, when orthographic.
 };
 
 /**
@@ -63,7 +66,8 @@ class CameraControllerSystem : public System {
          * @brief Tunable feel parameters for movement, look, and zoom.
          */
         struct Settings {
-            float zoomSensitivity  = 0.04f;     ///< Units dollied per wheel notch while looking.
+            /// Units dollied per wheel notch while looking; orthographic zooms by the same dolly.
+            float zoomSensitivity  = 0.04f;
             float lookSensitivity  = 0.002f;    ///< Multiplier for yaw/pitch rotation.
             float moveSpeed        = 10.0f;     ///< Units per second.
             float speedBoost       = 3.0f;      ///< Move multiplier while Boost is held.
@@ -150,6 +154,20 @@ class CameraControllerSystem : public System {
         const EditorViewpoint& viewpoint() const { return m_viewpoint; }
 
         /**
+         * @brief Switch the projection, keeping what is in focus the same size.
+         *
+         * The focus is the point focusOn or viewFrom last aimed at, carried along as the view
+         * flies: perspective sees it at its distance through the field of view, orthographic
+         * frames the same height around it.
+         *
+         * @param orthographic True for a parallel projection.
+         */
+        void setOrthographic(bool orthographic);
+
+        /// See setOrthographic.
+        bool isOrthographic() const { return m_viewpoint.orthographic; }
+
+        /**
          * @brief Put the viewpoint somewhere, as a scene's saved one is restored.
          *
          * @param viewpoint Pose to take.
@@ -182,6 +200,25 @@ class CameraControllerSystem : public System {
          */
         void viewFrom(const glm::vec3& target, const glm::vec3& direction, float distance);
 
+        /**
+         * @brief viewFrom along an axis, orthographic until the view is turned.
+         *
+         * A view down an axis is for lining things up, which perspective skews. Turning it
+         * returns to perspective, unless the projection was switched by hand.
+         *
+         * @param target    World-space point to look at.
+         * @param direction From @p target toward the viewpoint, along a world axis.
+         * @param distance  The distance whose perspective view the orthographic zoom matches.
+         * @param clearance How far back the viewpoint must sit to clear the scene, which an
+         *                  orthographic near plane would otherwise cut.
+         */
+        void viewAlongAxis(
+            const glm::vec3& target,
+            const glm::vec3& direction,
+            float distance,
+            float clearance
+        );
+
     private:
         /**
          * @brief Apply this frame's look, dolly and move to the viewpoint.
@@ -199,6 +236,17 @@ class CameraControllerSystem : public System {
          */
         void place(const glm::vec3& target, const glm::vec3& dirToCamera, float distance);
 
+        /**
+         * @brief Move the focus @p dolly units nearer: the viewpoint, or the orthographic zoom.
+         *
+         * @param dolly   World units toward the focus; negative backs away.
+         * @param forward The view direction.
+         */
+        void dolly(float dolly, const glm::vec3& forward);
+
+        /// tan(fovY / 2): the view's half-height one unit in front of it.
+        float halfHeightPerUnit() const;
+
     private:
         InputMap        m_input;      ///< The fly actions, apart from the game's map.
         HostChrome      m_capture;    ///< Only its capture is read.
@@ -207,8 +255,11 @@ class CameraControllerSystem : public System {
 
         Settings m_settings;
 
-        bool m_looking = false;  ///< Look gesture held; drives the cursor mode.
-        bool m_active  = true;   ///< False while stood down; see setActive.
+        float m_focusDistance = 10.0f;  ///< From the viewpoint to its focus; see setOrthographic.
+
+        bool m_looking   = false;  ///< Look gesture held; drives the cursor mode.
+        bool m_active    = true;   ///< False while stood down; see setActive.
+        bool m_axisOrtho = false;  ///< Orthographic because of viewAlongAxis; turning ends it.
 };
 
 } // namespace Vkm::Engine

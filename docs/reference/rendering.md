@@ -108,7 +108,9 @@ carried on `FrameContext::render`: mutated by the editor's Render Settings panel
 or a game's settings screen, read by the visibility pass, and copied into the
 view each frame.
 
-- **Toggles:** `gtao`, `bloom`, `probes`, `ssr`, `grid`.
+- **Toggles:** `gtao`, `bloom`, `probes`, `ssr`, and the editor grid's axes
+  (`gridAxisX/Y/Z`): a line for each axis on and the plane of every two, X and Z
+  the ground; it draws while any is on, `gridShown()`.
 - **Per-effect params:** GTAO (radius/intensity/power), screen-space
   reflections (`ssrMaxRoughness`, `ssrMaxDistance`), bloom
   (strength/threshold/knee/radius).
@@ -153,16 +155,19 @@ view each frame.
   them off the same `FrameContext::render` the renderer does, so the editor's
   Culling card edits the one copy there is.
 - **`renderMode`:** composite output selector - `Default` (final image) or a debug
-  view: `Depth`, `Normals`, `Roughness`, `Metalness`, `AmbientOcclusion`, `Bloom`,
-  `ShadowAtlas`, `Fog`, `GiOnly`, `DirectOnly`, `Clusters`
-  (Forward+ light-count heatmap). The `MODE_*` constants the composite shader
+  view: `Wireframe` (the opaque and alpha-masked draws again as lines, over the
+  shaded frame), `LightingOnly` (every surface a white dielectric), the material
+  views `Albedo`, `Roughness` and `Metalness` (the surface as the forward pass
+  samples it, written raw, the sky black), `Normals`, `Depth`, `AmbientOcclusion`,
+  `GiOnly`, `DirectOnly`, `Clusters` (Forward+ light-count heatmap), `Bloom`,
+  `ShadowAtlas` and `Fog`. The `MODE_*` constants the composite shader
   switches on are written out of this enum by `GLBackend::shaderConstants` into
   the prelude every stage is compiled with - there is no generated file and
   nothing to include.
 
 Scene-look settings (the HDR or procedural sky, the night sky, fog, IBL
 intensity) live in `Environment` and serialize with the scene. `RenderSettings`
-is the project's: everything above except `renderMode` and `grid`, which are the
+is the project's: everything above except `renderMode` and the grid, which are the
 editor's own, ships in `project.json` (`visitShippedRenderFields`), because it
 decides what the game looks like rather than what one scene does.
 
@@ -237,7 +242,7 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 | # | Pass | Does |
 |---|------|------|
 | 1 | Shadow | Renders directional CSM + spot + point-cube depth maps into the atlas. A spot's tile or a point light's face is redrawn only when what it holds changed - its matrix, or a caster in it moved, was re-uploaded or is posed - and the sun's cascades, which follow the camera, every frame, with their depth clamped so a caster nearer the sun than a cascade's near plane still shadows. Culling and grouping are **not** done here - `GLShadowData::build` does both on the thread pool. The pass uploads the drawn tiles' lists of objects, and a draw command per run of casters sharing a mesh, into one `GLDrawList` - the transforms are the frame's object buffer - then draws each tile as one multi-draw per program and vertex layout - its runs are keyed static meshes first, then skinned ones drawn as stored, then posed ones (`ShadowRun::key`), so neither alternates - skinned casters included, through programs a frame that posed nothing never binds (see [animation.md](animation.md#the-gpu-path)), and alpha-masked ones, per material, through programs that cut the shadow by it ([lighting.md](lighting.md#shadow-atlas)). A tile with no casters is still cleared |
-| 2 | DepthPrepass | Clears the scene target; early-Z for opaque geometry + writes the G-buffer (oct view-normal in `.rg`, the material's **authored** roughness / metalness scalars in `.ba` - this stage has no UV and samples no map, so a textured material writes its fallback here; only the two debug views read those two channels; GTAO, the decals and the reflection trace and resolve read `.rg`). Draws `ctx.opaqueBatch`, the shared batch the forward pass reuses, one multi-draw per material - the material is bound only for those two scalars. Two programs (`prepass` / `prepass_skinned`), switched once at the skinned boundary |
+| 2 | DepthPrepass | Clears the scene target; early-Z for opaque geometry + writes the G-buffer (an oct view-normal, two channels, which GTAO, the decals, the Normals view and the reflection trace and resolve read). Draws `ctx.opaqueBatch`, the shared batch the forward pass reuses, one multi-draw per material run; it binds no material, since nothing it writes depends on one. Two programs (`prepass` / `prepass_skinned`), switched once at the skinned boundary |
 | 3 | ResolveDepth | MSAA only: one draw resolving depth and the G-buffer into `m_sceneHDR`, sample 0 of each |
 | 4 | GTAO | Full-res ground-truth AO + bent normal into `m_ao`. First folds the scene depth into a linear-depth mip chain of its own (`shaders/gtao/prefilter`); the horizon search then reads each step from the level its pixel length picks, which is what keeps a wide radius in cache. The search writes a target of the pass's own, and one compute dispatch (`shaders/gtao/denoise`) averages its visibility over a 5x5 neighbourhood on each pixel's own plane into `m_ao` - edge-aware and spatial only, with no history - and only then shapes it by intensity and power |
 | 5 | ClusterCull | Compute: culls lights into the Forward+ cluster grid SSBO |
@@ -250,8 +255,8 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 | 12 | Decals | Projected decal boxes blended into the post colour chain, sampling depth + G-buffer, lit as the surface they land on is lit diffusely - by the key light through its cascades, and by the irradiance volume or the sky under GTAO (`shaders/ambient.glsl`, which the fog reads too) - and fogged at its depth. After the reflections, so a glossy floor's reflection does not paint over what is stuck to it. With the reflections on, the chain is already off the geometry target and the decals blend in place; with them off, the pass first copies the frame into the chain (`GLPass::promoteColorChain`) |
 | 13 | DoF | Circle-of-confusion disk blur driven by the camera's focus distance / amount, with a radius of at most `Camera::dofMaxBlur` of the viewport's height, so it looks the same at any resolution (chain: src -> dst) |
 | 14 | Bloom | Compute, one dispatch per level (a framebuffer bind and a draw cost the CPU about three times as much). Bright-pass + mip-chain down/upsample off the chain, the first level capped and cleared of NaNs; composite adds it |
-| 15 | Grid | World-space ground grid overlay into the chain (LEQUAL test done in its shader) |
-| 16 | Composite | The bloom added at `bloomStrength` - it holds only the light past the threshold, so nothing else is dimmed - then the `exposure`, then the `tonemap` curve and the exact sRGB encode (`shaders/color.glsl`, which the UI pass shares) to the backbuffer viewport, dithered by half a step after the encode (or a debug buffer per `renderMode`) |
+| 15 | Composite | The bloom added at `bloomStrength` - it holds only the light past the threshold, so nothing else is dimmed - then the `exposure`, then the `tonemap` curve and the exact sRGB encode (`shaders/color.glsl`, which the UI pass shares) to the backbuffer viewport, dithered by half a step after the encode (or a debug buffer per `renderMode`) |
+| 16 | Grid | The editor's world grid: grids on the XZ, XY and ZY planes and the three axis lines, one fullscreen draw blended into the backbuffer viewport. After the tonemap, so the axes keep `Math::AXIS_COLORS` as the gizmos show them. Each pixel's ray finds its point on each plane and its nearest point on each axis, each tested against the scene's depth in the shader, and they blend far to near |
 | 17 | UI | Screen-space in-game UI overlay drawn flat on top (no-op when empty). See [ui.md](ui.md) |
 | 18 | Splash | The startup logo over black, covering the whole surface. A no-op once the sequence is over |
 

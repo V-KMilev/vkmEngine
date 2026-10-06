@@ -578,7 +578,7 @@ attaches things to them.
 
 ## Seeing it
 
-**View > Show Skeletons** draws every posed rig straight out of `ctx.poses`:
+**View > Show > Skeletons** draws every posed rig straight out of `ctx.poses`:
 a segment from each bone to its parent, a dot at every joint, and an axis triad
 per bone on the selected rig. Segments say where the joints are; only the axes
 say which way they face, which is what a composition or bind-inverse mistake
