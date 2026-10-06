@@ -8,30 +8,29 @@
 namespace Vkm::Engine {
 
 /**
- * @brief Writes values a bit at a time into a byte buffer.
+ * @brief Packs values to the bit into a byte buffer.
  *
- * A packet has a hard ceiling and everything in it is competing for the same
- * room, so a field costs what it needs rather than what its type happens to be:
- * a flag is one bit, a player slot is four, a quantised coordinate is
- * twenty. Byte-aligned writing would round every one of those up to eight.
+ * A field costs what it needs, not its type's size: a flag is one bit.
  *
- * Bounded by construction. Every write checks the room left and sets a sticky
- * overflow flag rather than growing, because the buffer's size is the packet's
- * size and a writer that grew would produce a datagram the socket then refuses.
- * A caller writes what it has, asks once whether it fit, and trims to the last
- * value that did.
+ * Bounded by the packet's size: a write past it sets a sticky overflow flag
+ * instead of growing, so a caller asks once whether it all fit. Bits gather in
+ * a 64-bit word; the last partial byte stays there until finish().
  */
 class BitWriter {
     public:
         /**
          * @brief Write into @p bytes, filling at most @p capacity of them.
          *
-         * @param bytes    Buffer to fill; resized to the capacity and written in place.
+         * @param bytes    Buffer to fill; emptied, then grown as bytes complete.
+         *                 Holds the whole stream only after finish().
          * @param capacity The packet's ceiling, in bytes.
          */
         BitWriter(std::vector<uint8_t>& bytes, size_t capacity)
-            : m_bytes(bytes), m_capacity(capacity) {
-            m_bytes.assign(capacity, 0u);
+            : m_bytes(bytes)
+            , m_capacity(capacity)
+        {
+            m_bytes.clear();
+            m_bytes.reserve(capacity);
         }
 
         ~BitWriter() = default;
@@ -47,17 +46,24 @@ class BitWriter {
          * @brief Write the low @p width bits of @p value.
          *
          * @param value Value to write; bits above @p width are ignored.
-         * @param width How many bits, 1 to 32.
+         * @param width 1 to 32.
          */
         void bits(uint32_t value, uint32_t width) {
             if (width == 0 || width > 32) return;
-            if (m_bit + width > m_capacity * 8u) { m_overflowed = true; return; }
-
-            for (uint32_t i = 0; i < width; ++i) {
-                const uint32_t bit = (value >> i) & 1u;
-                if (bit) m_bytes[(m_bit + i) >> 3] |= static_cast<uint8_t>(1u << ((m_bit + i) & 7u));
+            if (m_bit + width > m_capacity * 8u) {
+                m_overflowed = true;
+                return;
             }
-            m_bit += width;
+
+            const uint64_t field = static_cast<uint64_t>(value) & ((uint64_t(1) << width) - 1u);
+            m_word     |= field << m_wordBits;
+            m_wordBits += width;
+            m_bit      += width;
+            while (m_wordBits >= 8) {
+                m_bytes.push_back(static_cast<uint8_t>(m_word));
+                m_word     >>= 8;
+                m_wordBits  -= 8;
+            }
         }
 
         void boolean(bool value)  { bits(value ? 1u : 0u, 1); }
@@ -81,26 +87,25 @@ class BitWriter {
         /**
          * @brief Write @p count bits from @p bytes, starting at its first bit.
          *
-         * For splicing something already encoded into a larger packet. A
-         * component is not a whole number of bytes, so it cannot be memcpy'd
-         * into place - and padding each one to a byte boundary to allow that
-         * would cost more than the entities dropped to make the room.
+         * For splicing something already encoded, which is not a whole number
+         * of bytes.
          *
          * @param bytes Buffer holding the encoded bits, first bit first.
-         * @param count How many bits to take from it.
+         * @param count Bits to take from it.
          */
         void append(const uint8_t* bytes, size_t count) {
-            if (m_bit + count > m_capacity * 8u) { m_overflowed = true; return; }
-
-            for (size_t i = 0; i < count; ++i) {
-                if ((bytes[i >> 3] >> (i & 7u)) & 1u) {
-                    m_bytes[(m_bit + i) >> 3] |= static_cast<uint8_t>(1u << ((m_bit + i) & 7u));
-                }
+            if (m_bit + count > m_capacity * 8u) {
+                m_overflowed = true;
+                return;
             }
-            m_bit += count;
+
+            // A byte at a time, as the source was laid down.
+            size_t done = 0;
+            for (; done + 8 <= count; done += 8) bits(bytes[done >> 3], 8);
+            if (done < count) bits(bytes[done >> 3], static_cast<uint32_t>(count - done));
         }
 
-        /// Bits written so far, which is what a caller compares against a budget.
+        /// Bits written so far.
         size_t bitCount() const { return m_bit; }
 
         /// Whole bytes needed to carry what has been written.
@@ -109,28 +114,33 @@ class BitWriter {
         /**
          * @brief True when a write did not fit.
          *
-         * Sticky: one overflow makes every later question answer honestly, so a caller
-         * tests once at the end.
+         * Sticky, so a caller tests once at the end.
+         *
+         * @return Whether any write since construction was refused.
          */
         bool overflowed() const { return m_overflowed; }
 
-        /// Cut the buffer to what was actually written.
-        void finish() { m_bytes.resize(byteCount()); }
+        /// Flush the last partial byte into the buffer.
+        void finish() {
+            if (m_wordBits > 0) m_bytes.push_back(static_cast<uint8_t>(m_word));
+            m_word     = 0;
+            m_wordBits = 0;
+        }
 
     private:
         std::vector<uint8_t>& m_bytes;
-        size_t m_capacity   = 0;
-        size_t m_bit        = 0;
-        bool   m_overflowed = false;
+
+        size_t   m_capacity   = 0;
+        size_t   m_bit        = 0;
+        uint64_t m_word       = 0;  ///< Bits not yet a whole byte, lowest first.
+        uint32_t m_wordBits   = 0;
+        bool     m_overflowed = false;
 };
 
 /**
  * @brief Reads back what a BitWriter wrote, in the same order.
  *
- * Sticky failure, like the writer's overflow: one read past the end fails every
- * read after it, so a decoder tests once when it is done rather than after
- * every field. A packet that has run out is refused whole rather than applied
- * in part, which is the only safe answer when the rest of it is unknown.
+ * Failure is sticky, so a decoder tests once when it is done.
  */
 class BitReader {
     public:
@@ -147,14 +157,20 @@ class BitReader {
     public:
         uint32_t bits(uint32_t width) {
             if (width == 0 || width > 32) return 0;
-            if (m_failed || m_bit + width > m_size * 8u) { m_failed = true; return 0; }
-
-            uint32_t value = 0;
-            for (uint32_t i = 0; i < width; ++i) {
-                const size_t at = m_bit + i;
-                if ((m_bytes[at >> 3] >> (at & 7u)) & 1u) value |= (1u << i);
+            if (m_failed || m_bit + width > m_size * 8u) {
+                m_failed = true;
+                return 0;
             }
-            m_bit += width;
+
+            // The bound above keeps every byte loaded inside the buffer.
+            while (m_wordBits < width) {
+                m_word     |= static_cast<uint64_t>(m_bytes[m_next++]) << m_wordBits;
+                m_wordBits += 8;
+            }
+            const uint32_t value = static_cast<uint32_t>(m_word & ((uint64_t(1) << width) - 1u));
+            m_word     >>= width;
+            m_wordBits  -= width;
+            m_bit       += width;
             return value;
         }
 
@@ -166,10 +182,10 @@ class BitReader {
         /**
          * @brief Read back the pair u64 wrote, high half first.
          *
-         * Into named locals rather than one expression, because the order an
-         * expression's operands are evaluated in is unspecified - two reads in
-         * one would be a wire format that differs between builds of the same
-         * source.
+         * Into named locals: operand evaluation order is unspecified, so two
+         * reads in one expression could differ between builds.
+         *
+         * @return The value; zero when the reader had already failed.
          */
         uint64_t u64() {
             const uint64_t high = bits(32);
@@ -189,9 +205,13 @@ class BitReader {
 
     private:
         const uint8_t* m_bytes = nullptr;
-        size_t m_size   = 0;
-        size_t m_bit    = 0;
-        bool   m_failed = false;
+
+        size_t   m_size     = 0;
+        size_t   m_bit      = 0;
+        size_t   m_next     = 0;  ///< Next byte to load into the word.
+        uint64_t m_word     = 0;  ///< Loaded bits not yet read, lowest first.
+        uint32_t m_wordBits = 0;
+        bool     m_failed   = false;
 };
 
 } // namespace Vkm::Engine
