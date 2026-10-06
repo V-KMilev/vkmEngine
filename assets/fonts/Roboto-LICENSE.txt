@@ -8,4 +8,4 @@ License at:
     http://www.apache.org/licenses/LICENSE-2.0
 
 Bundled with vkmEngine as the default UI font, baked into an SDF atlas at load
-by src/tools/font/font_baker.cpp.
+by src/tools/loader/font_baker.cpp.

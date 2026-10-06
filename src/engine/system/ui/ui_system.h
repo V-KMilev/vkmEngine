@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string_view>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -7,22 +8,18 @@
 #include "core/system.h"
 #include "ecs/entity.h"
 #include "ecs/component/ui/ui_element.h"
+#include "ecs/component/ui/ui_shape.h"
 #include "system/ui/ui_draw_data.h"
 
 namespace Vkm::Engine {
 
 /**
- * @brief Lays out the UI hierarchy, builds the frame's 2D draw list, and routes
- *        pointer interaction.
+ * @brief Lays out the UI hierarchy, builds the frame's 2D draw list, and routes pointer interaction.
  *
- * Runs in the Transform stage, right after HierarchySystem: UI layout is a
- * screen-space transform resolve, the 2D sibling of resolving WorldTransform.
- * Visible UICanvases are walked in ascending sortOrder, parent before child,
- * resolving each UIElement's screenRect and appending its quads to a UIDrawData
- * the system owns. Interaction is deferred: buttons record hit candidates during
- * the walk, and resolveInteraction() then picks the topmost one under the
- * pointer (last in painter order) and enqueues a UIClickEvent on release. The
- * result is published on ctx.ui for the RenderSystem. Runs in both hosts.
+ * Runs in the Transform stage, after BehaviorSystem writes UI components and before
+ * RenderSystem draws the ctx.ui it publishes. Reads no WorldTransform. Canvases walk
+ * in ascending sortOrder; a clip rect descends with the walk and bounds both drawing
+ * and the pointer.
  */
 class UISystem : public System {
     public:
@@ -49,37 +46,41 @@ class UISystem : public System {
 
         /**
          * @brief A button seen during the walk, resolved once the walk is done.
-         *
-         * The button's quad is emitted in walk (painter) order; its colour is
-         * rewritten by resolveInteraction() once the topmost candidate is known.
          */
         struct ButtonHit {
-            EntityId entity;       ///< The button entity.
-            uint32_t firstVertex;  ///< Start of its 6-vertex quad in the draw list.
-            bool     inside;       ///< Pointer inside the rect and the button interactable.
+            EntityId entity;
+            uint32_t firstVertex;  ///< Start of its 6-vertex quad.
         };
 
         /**
+         * @brief A scroll view the pointer is inside, as the walk entered it.
+         */
+        struct ScrollTarget {
+            EntityId entity;
+            size_t   blockersBefore;  ///< Blockers under the pointer on entry.
+        };
+
+    private:
+        /**
          * @brief Resolve @p entity's screen rect, emit its visuals, then recurse.
          *
-         * Children lay out relative to this element's resolved rect and are
-         * emitted after it, so the draw list is in painter order (parent behind
-         * child).
+         * The return is what a UIScroll measures content by: what was drawn, not empty
+         * rects. A clipping subtree reports its own rect, since what it hides extends nothing.
          *
-         * @param ctx        The frame context (scene + component stores).
-         * @param entity     The UIElement entity to resolve.
-         * @param parentRect Parent rect in screen pixels.
+         * @param ctx        Frame context supplying the scene and the asset graph.
+         * @param entity     Element to resolve; one with no UIElement draws nothing.
+         * @param parentRect Parent rect in screen pixels, already scroll-offset.
+         * @param clip       What this element may draw inside, in screen pixels.
          * @param scale      Canvas pixel scale (reference px -> screen px).
-         * @param depth      How far down the canvas this call is. Bounded by
-         *                   HierarchyOperations::MAX_DEPTH like every other walk
-         *                   over the hierarchy - this one recurses, so a chain
-         *                   deeper than the engine supports is a stack the frame
-         *                   does not have rather than a loop it can leave.
+         * @param depth      Depth below the canvas; bounded by HierarchyOperations::MAX_DEPTH.
+         * @return The far corner of everything this subtree drew, in screen pixels, or
+         *         the lowest representable corner when it drew nothing.
          */
-        void resolveElement(
+        glm::vec2 resolveElement(
             FrameContext& ctx,
             EntityId entity,
             const UIRect& parentRect,
+            const UIRect& clip,
             float scale,
             uint32_t depth
         );
@@ -87,88 +88,184 @@ class UISystem : public System {
         /**
          * @brief Add a run of vertices to the draw list, merging it where it can.
          *
-         * A command is a change of draw state, not a widget: consecutive runs
-         * that share a kind and a font and sit next to each other in the vertex
-         * buffer are one draw call. A screen of forty solid panels was forty
-         * commands and is one.
+         * Adjacent runs under one clip merge unless they sample different atlases or
+         * images; a flat solid samples neither and a glyph no image.
          *
-         * @param first Index of the run's first vertex.
-         * @param count How many vertices it holds.
-         * @param font  Atlas the run samples; empty for a solid fill.
-         * @param kind  What state the run is drawn with.
+         * @param first First vertex of the run.
+         * @param count Vertices in it.
+         * @param font  Atlas the run samples; empty for solids.
+         * @param image Image the run samples; empty for text and flat solids.
+         * @param clip  Scissor rect; runs under different clips never merge.
          */
-        void appendCommand(uint32_t first, uint32_t count, FontHandle font, UIDrawKind kind);
+        void appendCommand(
+            uint32_t first,
+            uint32_t count,
+            FontHandle font,
+            TextureHandle image,
+            const UIRect& clip
+        );
 
         /**
          * @brief Append the two-triangle quad for @p entity's UIImage, if present.
+         *
+         * @param ctx         Frame context supplying the scene.
+         * @param entity      Entity that may carry the UIImage.
+         * @param element     Its UIElement, already resolved this frame.
+         * @param clip        What it may draw inside, in screen pixels.
+         * @param canvasScale Its canvas's reference-to-screen pixel scale.
+         * @return Whether it had one, and so drew a quad.
          */
-        void emitImage(FrameContext& ctx, EntityId entity);
+        bool emitImage(
+            FrameContext& ctx,
+            EntityId entity,
+            const UIElement& element,
+            const UIRect& clip,
+            float canvasScale
+        );
 
         /**
          * @brief Emit @p entity's UIButton quad and record it as a hit candidate.
          *
-         * Interaction is deferred: the quad is emitted here to keep painter
-         * order, but state and colour are settled by resolveInteraction() once
-         * every candidate of the frame is known.
+         * @param ctx         Frame context supplying the scene.
+         * @param entity      Entity that may carry the UIButton.
+         * @param element     Its UIElement, already resolved this frame.
+         * @param clip        What it may draw inside, in screen pixels.
+         * @param canvasScale Its canvas's reference-to-screen pixel scale.
+         * @return Whether it had one, and so drew a quad.
          */
-        void emitButton(FrameContext& ctx, EntityId entity);
+        bool emitButton(
+            FrameContext& ctx,
+            EntityId entity,
+            const UIElement& element,
+            const UIRect& clip,
+            float canvasScale
+        );
 
         /**
-         * @brief Lay out @p entity's UIText into glyph quads, if present.
+         * @brief Lay out @p entity's UIText into glyph quads, if present, as one command run.
          *
-         * One quad per visible glyph, then a single Text draw command carrying
-         * the FontAsset's handle.
-         *
-         * @param ctx         The frame context (scene + resources).
-         * @param entity      The UIText entity to lay out.
-         * @param canvasScale Canvas pixel scale (reference px -> screen px).
+         * @param ctx         Frame context supplying the scene and the font.
+         * @param entity      Entity that may carry the UIText.
+         * @param element     Its UIElement, already resolved this frame.
+         * @param clip        What it may draw inside, in screen pixels.
+         * @param canvasScale Its canvas's reference-to-screen pixel scale.
+         * @return The far corner of the block it drew, in screen pixels, or
+         *         the lowest representable corner when it drew nothing.
          */
-        void emitText(FrameContext& ctx, EntityId entity, float canvasScale);
+        glm::vec2 emitText(
+            FrameContext& ctx,
+            EntityId entity,
+            const UIElement& element,
+            const UIRect& clip,
+            float canvasScale
+        );
 
         /**
-         * @brief Settle this frame's pointer interaction across all buttons.
+         * @brief Break @p text into the lines it draws as, into m_lines.
          *
-         * Topmost wins: the last hit candidate under the pointer (painter
-         * order) is the only one that hovers, presses, and - released over the
-         * same button the press started on - fires a UIClickEvent. Every
-         * button's visual state is written back and its quad recoloured to
-         * match.
+         * When wrapping, breaks at the last space that fits, mid-word if one word does
+         * not fit. A trailing newline yields a final empty line.
+         *
+         * @param text     The UIText's string; the lines view into it.
+         * @param font     Font whose kerned advances measure it (walkGlyphs).
+         * @param scale    Baked pixels to screen pixels for that font.
+         * @param maxWidth Width to wrap at, in screen pixels.
+         * @param wrap     Whether a line breaks at @p maxWidth as well as at a newline.
+         */
+        void breakLines(std::string_view text, const FontAsset& font, float scale, float maxWidth, bool wrap);
+
+        /**
+         * @brief Settle this frame's pointer interaction across all buttons, and route the wheel.
+         *
+         * Only the topmost blocker can hover or press; a release over the button the
+         * press began on fires a UIClickEvent.
+         *
+         * @param ctx Frame context supplying the scene, the input map and the bus.
          */
         void resolveInteraction(FrameContext& ctx);
 
         /**
          * @brief Append a two-triangle quad spanning @p p0..p1 with @p uv0..uv1.
+         *
+         * @param p0     Top-left corner, in screen pixels.
+         * @param p1     Bottom-right corner, in screen pixels.
+         * @param uv0    Coordinates at @p p0.
+         * @param uv1    Coordinates at @p p1.
+         * @param color  The fill at the top edge.
+         * @param bottom The fill at the bottom edge; equal to @p color for a flat quad.
+         * @param shape  Corner radius and border width, in screen pixels; UI_TEXT_MARK's
+         *               radius for a glyph.
+         * @param border The border's colour; unused where @p shape gives no border.
+         * @param image  Whether the quad is tinted by its run's image (UIVertex::image).
          */
         void appendQuad(
             const glm::vec2& p0,
             const glm::vec2& p1,
             const glm::vec2& uv0,
             const glm::vec2& uv1,
-            const glm::vec4& color
+            const glm::vec4& color,
+            const glm::vec4& bottom,
+            const glm::vec2& shape,
+            const glm::vec4& border,
+            bool image
+        );
+
+        /**
+         * @brief Colour the quad appendQuad wrote at @p first, top edge to bottom.
+         *
+         * The one place that knows which of the six vertices lie on which edge.
+         *
+         * @param first  First of the quad's six vertices.
+         * @param top    The fill at the top edge.
+         * @param bottom The fill at the bottom edge; equal to @p top for a flat quad.
+         */
+        void recolourQuad(uint32_t first, const glm::vec4& top, const glm::vec4& bottom);
+
+        /**
+         * @brief Append a solid quad over @p rect drawn the way @p shape says.
+         *
+         * @param rect  The quad, in screen pixels.
+         * @param color The fill at its top edge.
+         * @param shape Corners, border and fade, in reference pixels.
+         * @param scale Reference-to-screen pixel scale.
+         * @param image Whether the quad is tinted by its run's image.
+         */
+        void appendShaped(
+            const UIRect& rect,
+            const glm::vec4& color,
+            const UIShape& shape,
+            float scale,
+            bool image
         );
 
     private:
-        UIDrawData m_drawData;            ///< Reused frame draw list; published through ctx.ui.
+        UIDrawData m_drawData;            ///< Published through ctx.ui.
 
-        std::vector<CanvasRef> m_canvases;    ///< This frame's visible canvases, sorted; capacity reused.
-        std::vector<ButtonHit> m_buttonHits;  ///< This frame's button candidates in painter order; capacity reused.
+        std::vector<CanvasRef> m_canvases;    ///< Visible canvases, sorted.
+        /// Button candidates, painter order.
+        std::vector<ButtonHit> m_buttonHits;
 
         /**
-         * @brief Everything under the pointer that blocks it, in painter order.
+         * @brief Scroll views whose window the pointer is inside, in painter order.
          *
-         * Buttons are in here too, which is the point: the topmost blocker
-         * decides, so a button covered by an opaque panel loses to the panel by
-         * the same rule that already decided between two overlapping buttons.
+         * Last is innermost, so it takes the wheel.
          */
+        std::vector<ScrollTarget> m_scrollTargets;
+
+        /// One UIText's lines, viewing into its string.
+        std::vector<std::string_view> m_lines;
+
+        /// Everything under the pointer that blocks it, buttons included, in painter order.
         std::vector<EntityId> m_pointerBlockers;
 
-        // Pointer interaction state.
-        EntityId  m_pressedButton{};      ///< Button a press started over (the click candidate).
-        glm::vec2 m_pointer{0.0f};        ///< Pointer in viewport-local pixels this frame.
+        EntityId  m_pressedButton{};        ///< Button a press started over.
+        glm::vec2 m_pointer{0.0f};          ///< Pointer in viewport-local pixels this frame.
+        float     m_wheel         = 0.0f;   ///< Wheel notches this frame, positive away from the viewer.
         bool      m_mouseDown     = false;  ///< Primary button held this frame.
         bool      m_mouseDownEdge = false;  ///< Pressed this frame (was up).
         bool      m_mouseUpEdge   = false;  ///< Released this frame (was down).
-
+        bool      m_cursorFree    = false;  ///< Not a look control, so its position is a place on screen.
+        bool      m_pointerIsOurs = false;  ///< Free, and the host's chrome does not own it this frame.
 };
 
 } // namespace Vkm::Engine

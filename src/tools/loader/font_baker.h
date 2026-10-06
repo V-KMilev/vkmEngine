@@ -11,9 +11,12 @@ class ResourceManager;
 /**
  * @brief Bake a TrueType font into an SDF FontAsset registered in @p resources.
  *
- * Renders each printable-ASCII glyph to a signed distance field and packs them
+ * Renders every glyph FontAsset covers to a signed distance field, packs them
  * into one atlas held INSIDE the FontAsset, which is self-contained - no
- * separate TextureAsset. The SDF is what lets one bake stay crisp at any size.
+ * separate TextureAsset - and records the face's kerning between them. The SDF
+ * is what lets one bake stay clean across a range of sizes - to roughly three
+ * times the height it was baked at. The atlas is sized from the glyphs it has
+ * to hold, with a gutter between them wide enough for FontAsset::MIP_LEVELS.
  *
  * @param resources   Manager that takes ownership of the FontAsset.
  * @param ttfPath     Absolute path to the .ttf file to read.
