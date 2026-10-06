@@ -216,6 +216,11 @@ See [Architecture](docs/reference/architecture.md) for the full per-directory br
 
 </details>
 
+## Contributing
+
+Fixes and features are welcome: [CONTRIBUTING.md](CONTRIBUTING.md) says how to build, test and
+send one, and what the license asks of a contribution.
+
 ## License
 
 vkmEngine is source-available under the [vkmEngine License](LICENSE). Make games with it and sell
