@@ -1,5 +1,14 @@
 cmake_minimum_required(VERSION 3.25.0)
 
+# A configure that names no compiler - none given, no CC or CXX, no toolchain file -
+# builds with the GCC a release is built with (cmake/pinned_toolchain.cmake). Taken
+# before project(), the one point a compiler can still be chosen.
+option(VKM_PINNED_TOOLCHAIN "Build with the pinned GCC when no compiler is named" ON)
+if(VKM_PINNED_TOOLCHAIN AND NOT DEFINED CMAKE_TOOLCHAIN_FILE AND NOT CMAKE_CXX_COMPILER
+        AND NOT DEFINED ENV{CXX} AND NOT DEFINED ENV{CC})
+    set(CMAKE_TOOLCHAIN_FILE ${CMAKE_CURRENT_LIST_DIR}/cmake/pinned_toolchain.cmake)
+endif()
+
 set(PROJECT_NAME vkmEngine)
 set(PROJECT_VERSION_MAJOR 1)
 set(PROJECT_VERSION_MINOR 0)

@@ -2,17 +2,20 @@
 
 ## Prerequisites
 
-- C++17 compiler (GCC 9+, Clang 10+)
-- CMake 3.25+
-- Ninja build system
+- CMake 3.25+ and Ninja
 - Python 3.8+, for `tools/vkm`; on Windows a Windows build of it (MSYS2's
   `mingw-w64-ucrt-x86_64-python`, or python.org's)
 - OpenGL 4.3 capable GPU and drivers
 
-Any of these builds the engine for working on it. A release is built with the
-toolchain `tools/toolchain.json` pins - GCC 15.2, CMake 3.31, Ninja 1.13 - and
-`tools/vkm toolchain --path` fetches it and prints its `bin/` folders, to put
-first on PATH when a build must match an SDK ([the toolchain pin](../getting-started.md#the-toolchain-pin)).
+No compiler: a configure that names none builds with the GCC a release is built
+with, which `tools/toolchain.json` pins and `cmake/pinned_toolchain.cmake` fetches
+through `vkm toolchain`, so what you build is what ships
+([the toolchain pin](../getting-started.md#the-toolchain-pin)). Naming one -
+`-DCMAKE_CXX_COMPILER=clang++`, `CC`/`CXX` in the environment, a toolchain file, or
+`-DVKM_PINNED_TOOLCHAIN=OFF` for whatever CMake finds - builds with that instead; the
+engine records which, and vkm builds a game's module with the same. A build tree keeps
+the compiler it was configured with, so one made before this needs a fresh configure
+to move to the pinned GCC.
 
 ## Setup
 

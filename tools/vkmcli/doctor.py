@@ -4,15 +4,14 @@ from __future__ import annotations
 
 import os
 import platform
-import re
 import shutil
 import sys
 from pathlib import Path
 
 from .engine import MODULE, development, in_engine_tree, sdk_root, shipping
 from .project import find_project, read_project
-from .shell import capture, program
-from .toolchain import pinned_tools, uses_pinned_tools
+from .shell import program
+from .toolchain import build_tools
 
 
 def cmd_doctor(args) -> int:
@@ -53,12 +52,12 @@ def cmd_doctor(args) -> int:
         report("--", "shipping", "this SDK carries none, so packages ship on the development engine")
 
     print("toolchain")
-    if uses_pinned_tools(root):
-        for tool in pinned_tools():
-            if tool.present():
-                report("ok", tool.name, f"{tool.version} at {tool.dir}")
-            else:
-                report("--", tool.name, f"{tool.version}, not fetched yet", "`vkm build` fetches it")
+    for tool in build_tools(dev):
+        if tool.present():
+            report("ok", tool.name, f"{tool.version} at {tool.dir}")
+        else:
+            report("--", tool.name, f"{tool.version}, not fetched yet", "`vkm build` fetches it")
+    if dev.pinned():
         # The pinned GCC compiles against the system's C library, as every native compiler does.
         if os.name != "nt" and not Path("/usr/include/stdio.h").is_file():
             report(
@@ -78,21 +77,6 @@ def cmd_doctor(args) -> int:
                 f"the engine was built with {compiler}, which is not here",
                 "install it, or `vkm build --compiler <an equivalent>`"
             )
-
-        cmake = program("cmake")
-        if cmake:
-            _, out = capture([cmake, "--version"])
-            m = re.search(r"(\d+)\.(\d+)\.?(\d*)", out)
-            if m and (int(m.group(1)), int(m.group(2))) >= (3, 25):
-                report("ok", "cmake", f"{m.group(0)} at {cmake}")
-            else:
-                found = m.group(0) if m else "unknown version"
-                report("!!", "cmake", f"{found} at {cmake}", "install CMake 3.25 or newer")
-        else:
-            report("!!", "cmake", "not on PATH", "install CMake 3.25 or newer")
-
-        ninja = program("ninja")
-        report("ok" if ninja else "--", "ninja", ninja or "not on PATH; CMake uses its default generator")
         objcopy = program("objcopy")
         report("ok" if objcopy else "--", "objcopy", objcopy or "not on PATH; a package keeps its debug info")
     report("ok", "python", f"{platform.python_version()} at {sys.executable}")
