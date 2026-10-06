@@ -1,27 +1,24 @@
 #pragma once
 
+#include <filesystem>
+#include <memory>
 #include <string>
 
 #include "platform/library/dynamic_library.h"
 
 namespace Vkm::Engine {
 
+class BehaviorSystem;
+class EventBus;
 class NetSession;
-
+class ResourceManager;
 class Scene;
 
 /**
  * @brief Loads the hot-reloadable gameplay module and swaps it at runtime.
  *
- * Each host owns one of these: the editor to edit a project, the runtime to
- * play it. On load() it copies the built module aside (so the original stays
- * writable for rebuilds) and calls its vkmRegisterBehaviors entry to populate
- * the BehaviorRegistry. reload() swaps in a freshly built module without
- * restarting; entities and all other components are untouched - only the
- * behavior C++ objects are rebuilt.
- *
- * Reloaded behaviors start fresh (onStart runs again next tick); a behavior with
- * heavy onStart side effects should be written to tolerate that.
+ * reload() rebuilds only the behavior objects; entities and other components are
+ * untouched. Reloaded behaviors run onStart again next tick.
  */
 class ScriptModule {
     public:
@@ -38,59 +35,47 @@ class ScriptModule {
         /**
          * @brief Load the gameplay module and register its behaviors.
          *
-         * Copies the built module aside (keeping the original writable for
-         * rebuilds), loads the copy, and calls its register entry to populate
-         * the BehaviorRegistry. A directory that will take no copy - an
-         * installed game's - loads the original in place instead, since nothing
-         * rebuilds into one of those either.
+         * Loads a copy, keeping the original writable for rebuilds. A read-only directory
+         * (an installed game) loads in place; any other copy failure refuses the load.
          *
          * @param modulePath Path to the built module (.dll/.so) to load.
+         * @param events The host's bus, so a replaced module is released fully; null
+         *        for a host with no Engine yet, which has nothing to replace.
          * @return True if the module loaded and registered successfully.
          */
-        bool load(const std::string& modulePath);
+        bool load(const std::filesystem::path& modulePath, EventBus* events);
 
         /**
          * @brief Hot-reload from the same path: serialize, swap module, recreate.
          *
-         * On failure the module is left unloaded and a subsequent reload()
-         * retries the load, which is the recovery path after a fixed build.
+         * The new build is checked before anything is torn down; a refused one leaves the
+         * running module untouched. With none loaded, this is a plain load. @p scene must
+         * hold no component set the outgoing module created (its vtable is module code);
+         * see docs/reference/scripting.md, "Nothing may hold module code across the swap".
          *
-         * @param scene Scene whose behaviors are saved across the swap.
+         * @param scene     Scene whose behaviors are saved across the swap.
+         * @param behaviors The system running them, whose session the swap ends.
+         * @param events    Bus to clear the outgoing module's event types from.
          * @return True if the module reloaded and its behaviors were restored.
          */
-        bool reload(Scene& scene);
+        bool reload(Scene& scene, BehaviorSystem& behaviors, EventBus& events);
 
         /**
-         * @brief Let the module seed @p scene, if it wants to.
-         *
-         * Optional second entry, `vkmBuildScene`. A project whose world is
-         * generated rather than authored - a procedural level, a profiling load -
-         * has no scene file for project.json to point at, and the host has no
-         * business carrying one game's content. This lets such a project say in
-         * its own code what it starts as.
-         *
-         * A module without the entry is normal and silent: most projects author
-         * a scene and name it in project.json instead.
+         * @brief Let the module seed @p scene through the optional `vkmBuildScene`, if it has one.
          *
          * @param scene Scene to seed.
+         * @param resources Asset graph the built world's assets go into.
          * @return True if the module had the entry and it ran.
          */
-        bool buildScene(Scene& scene);
+        bool buildScene(Scene& scene, ResourceManager& resources);
 
         /**
-         * @brief Let the module say what a player is, if the game takes players.
+         * @brief Let the module say what a player is, through the optional `vkmSetupNetwork`.
          *
-         * Optional third entry, `vkmSetupNetwork`. The engine has no opinion
-         * about what a joining player should be given - a capsule, a ship, a
-         * cursor - so a project that takes players says so here, by setting the
-         * session's spawn callbacks and registering any component types of its
-         * own that have to replicate.
+         * Sets spawn callbacks and registers replicated components. Harmless offline:
+         * an empty session behaves as no session.
          *
-         * A module without the entry is normal and silent: a single-player
-         * project never needs one, and one that has it still plays offline
-         * because a session with nobody in it behaves exactly as no session.
-         *
-         * @param session The session the host will host or join with.
+         * @param session Session the host will host or join with.
          * @return True if the module had the entry and it ran.
          */
         bool setupNetwork(NetSession& session);
@@ -98,46 +83,76 @@ class ScriptModule {
         /**
          * @brief Drop the loaded module and the behavior types it registered.
          *
-         * A host that moves to a project bringing no code of its own has to
-         * unload rather than keep what it had: the old module would still answer
-         * buildScene and its behavior types would stay in the registry, so the
-         * previous project's world could be generated inside the new one.
+         * Safe when nothing is loaded. Clear the scene first: behaviors outlive this only
+         * as dangling objects.
          *
-         * Safe to call when nothing is loaded. Entities are untouched - the
-         * caller is expected to have cleared the scene first, since behaviors
-         * outlive this call only as dangling objects.
+         * @param events Bus to clear the outgoing module's event types from.
          */
-        void unload();
+        void unload(EventBus& events);
 
-        bool isLoaded() const { return m_lib.isLoaded(); }
+        /**
+         * @brief Unload whatever is loaded and remember @p modulePath for a project not yet built.
+         *
+         * @param modulePath Where the project's build writes its module.
+         * @param events Bus to clear the outgoing module's event types from.
+         */
+        void expect(const std::filesystem::path& modulePath, EventBus& events);
+
+        bool isLoaded() const { return m_lib->isLoaded(); }
+
+        /**
+         * @brief The built module this loaded from, not the mapped copy: the file to watch for a build.
+         *
+         * @return The path given to load() or expect(), or empty when none was
+         *         given or unload() has since dropped a loaded module.
+         */
+        const std::filesystem::path& modulePath() const { return m_modulePath; }
 
     private:
         /**
-         * @brief Copy the built module to a fresh name, load it, and call its
-         *        register entry.
-         *
-         * The copy keeps the build free to overwrite the original. When the
-         * directory refuses one - an installed game's is read-only - the
-         * original is loaded where it stands rather than the load failing.
+         * @brief A built module opened and checked, not yet registered.
          */
-        bool loadCopyAndRegister();
+        struct OpenedModule {
+            std::unique_ptr<DynamicLibrary> lib;   ///< Null when it did not open or was refused.
+            std::filesystem::path           copy;  ///< Empty when loaded in place.
+        };
+
+    private:
+        /**
+         * @brief Copy the built module to a fresh name, open it, and check it.
+         *
+         * Touches nothing the running module owns. Refuses a library that will not open,
+         * reports another or no engine version, or lacks vkmRegisterBehaviors.
+         *
+         * @return The opened module, or one holding no library.
+         */
+        OpenedModule openBuilt();
+
+        /**
+         * @brief Make @p opened the loaded module and call its register entry.
+         *
+         * The previous library must already be unloaded: its copy is deleted here.
+         *
+         * @param opened A module openBuilt() returned with a library.
+         */
+        void adopt(OpenedModule opened);
 
         /**
          * @brief Drop everything the loaded module registered, before it is unmapped.
          *
-         * The behavior factories, the wire schema's thunks and the session's spawn
-         * callbacks are all code living inside the module. A std::function or a
-         * function pointer that outlives the dlclose is a call into memory that is
-         * no longer mapped, so every path that unloads goes through here first.
+         * Factories, wire thunks, spawn callbacks and the module's event buses are all its
+         * code, and must not outlive the dlclose.
+         *
+         * @param events The host's bus, or null when it has none yet.
          */
-        void releaseRegistrations();
+        void releaseRegistrations(EventBus* events);
 
     private:
-        DynamicLibrary m_lib;
-        NetSession*    m_net = nullptr;  ///< Session this module's entry wrote into.
-        std::string    m_modulePath;
-        std::string    m_loadedCopyPath;
-        int            m_reloadCounter = 0;
+        std::unique_ptr<DynamicLibrary> m_lib = std::make_unique<DynamicLibrary>();
+        NetSession*           m_net = nullptr;  ///< Session this module's entry wrote into.
+        std::filesystem::path m_modulePath;
+        std::filesystem::path m_loadedCopyPath;
+        int                   m_reloadCounter = 0;
 };
 
 } // namespace Vkm::Engine
