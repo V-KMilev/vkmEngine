@@ -4,7 +4,7 @@
 #include "ecs/scene.h"
 #include "ecs/component/core/hierarchy.h"
 #include "ecs/component/core/transform.h"
-#include "system/hierarchy/hierarchy_operations.h"
+#include "ecs/hierarchy_operations.h"
 
 namespace Vkm::Engine {
 
@@ -13,13 +13,11 @@ BodyPose worldPoseOf(Scene& scene, EntityId id, const Transform& local) {
     pose.position = local.position;
     pose.rotation = local.rotation;
 
-    if (!scene.has<Hierarchy>(id)) return pose;
-    const EntityId parent = scene.get<Hierarchy>(id).parent;
-    if (!parent) return pose;
+    const Hierarchy* link = scene.tryGet<Hierarchy>(id);
+    if (!link || !link->parent) return pose;
+    const EntityId parent = link->parent;
 
-    // Walked rather than read out of WorldTransform, which the Transform stage
-    // writes after this one - a frame stale, and absent on a body parented this
-    // tick. One walk: the parent's chain is a prefix of this entity's.
+    // One walk: the parent's chain is a prefix of this entity's.
     const glm::mat4 parentWorld = HierarchyOperations::computeWorldMatrix(scene, parent);
     const glm::mat4 selfWorld   = parentWorld * Transform::computeModelMatrix(local);
 

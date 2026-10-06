@@ -8,49 +8,36 @@ namespace Vkm::Engine {
 class Scene;
 
 /**
- * @brief How a ragdoll is proportioned, in the rig's own units.
+ * @brief How a ragdoll is proportioned and weighted.
  */
 struct RagdollSettings {
     /**
-     * @brief Bone radius as a fraction of its length.
-     *
-     * A limb is a capsule spanning bone to child, and its thickness has to come
-     * from somewhere: a rig carries no notion of how solid it is. A fraction of
-     * length is the one guess that scales - it makes a forearm thinner than a
-     * thigh without anyone measuring either.
+     * @brief Bone radius as a fraction of its length; a rig carries no thickness of its own.
      */
     float thickness = 0.22f;
 
     /**
-     * @brief Shortest bone that gets a body of its own, in metres.
-     *
-     * Fingers and toe tips are bones, and giving each one a body and two joints
-     * buys nothing a viewer can see while costing a constraint apiece. Below
-     * this a bone follows its parent.
+     * @brief Shortest bone that gets a body of its own, in metres; a shorter one follows its parent.
      */
     float minBoneLength = 0.06f;
 
-    float mass = 70.0f;        ///< Total mass, shared out by limb volume
-    float stiffness = 1.0f;    ///< Passed to every joint the build makes
+    float mass      = 70.0f;  ///< Total mass, shared out by limb volume
+    float stiffness = 1.0f;   ///< Passed to every joint the build makes
+
+    /**
+     * @brief How much of the body's shape it keeps once limp, 0 to 1.
+     *
+     * Each joint's Joint::holdTorque is this fraction of what holds every limb beyond it out level. 0 is
+     * a rag that folds where it stands; 1 holds its pose against its own weight, as a mannequin would.
+     */
+    float muscle = 0.4f;
 
     /**
      * @brief Collision layer the bones are put on, as a single bit.
      *
-     * The bones sit inside whatever collider the character already has, and the
-     * build takes this bit out of the owner's mask - the one relationship it
-     * can safely decide, since a rig's bones and the body they hang off are
-     * never two things that should push each other.
-     *
-     * The contacts a shared layer would generate are meaningless - a body
-     * cannot be pushed out of itself, and every tick spent resolving that is
-     * spent on nothing.
-     *
-     * Everything else still hits them, so they serve as hit boxes while the
-     * ragdoll is inactive and as a body when it is not - and the bones take
-     * this bit out of their own mask too, so they do not hit each other. Limbs
-     * are built overlapping, since each capsule spans its bone to that bone's
-     * child, and a rig that self-collides spends its first tick resolving
-     * interpenetration it was authored with.
+     * The build takes it out of the owner's mask, so the bones and the collider they sit inside never
+     * push each other, and out of the bones' own mask, since overlapping limbs would spend the first tick
+     * resolving their authored interpenetration. Everything else hits them, as hit boxes while inactive.
      */
     int boneLayer = 1 << 1;
 };
@@ -58,27 +45,23 @@ struct RagdollSettings {
 /**
  * @brief Build bodies and joints shaped like @p rig, and attach a Ragdoll.
  *
- * One capsule per bone long enough to matter, spanning it to its first child,
- * and a point joint to the parent's body at the bone's own origin. The result is
- * ordinary physics: nothing in the solver knows a rig is involved, which is what
- * lets a ragdoll stack, sleep and collide like anything else.
- *
- * Idempotent by replacement: an entity that already carries a Ragdoll has its
- * bodies destroyed and rebuilt.
+ * One capsule per bone long enough to matter, spanning it to its first child, and a point joint to the
+ * parent's body at the bone's origin. An existing Ragdoll's bodies are destroyed and rebuilt.
  *
  * @param scene Scene the bodies are created in.
- * @param rigEntity Entity the Ragdoll is added to; the bones are grouped under a
- *        node created as its child. It must not carry a scale - the solver
- *        ignores Transform scale and the hierarchy does not, so a scaled parent
- *        puts every limb where the two disagree. The bones are *placed* in the
- *        frame of the Animator at or below it, which an import puts on a child,
- *        so the frame and the parent are usually different entities.
+ * @param rigEntity Gets the Ragdoll; the bones are grouped under a new child. Must not be scaled: a
+ *        ColliderPart is unscaled and the hierarchy is not. The bones are *placed* in the frame of the
+ *        Animator at or below it, which importModelIntoScene can put on a child.
  * @param rig The skeleton to mirror.
  * @param settings Proportions.
- * @return How many bodies were created; zero when the rig has no usable bones.
+ * @return Bodies created; zero when the rig has no usable bones.
  */
-uint32_t buildRagdoll(Scene& scene, EntityId rigEntity, const SkeletonAsset& rig,
-                      const RagdollSettings& settings = {});
+uint32_t buildRagdoll(
+    Scene& scene,
+    EntityId rigEntity,
+    const SkeletonAsset& rig,
+    const RagdollSettings& settings = {}
+);
 
 /**
  * @brief Destroy a ragdoll's bodies and drop the component.

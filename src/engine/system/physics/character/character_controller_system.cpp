@@ -27,31 +27,26 @@ namespace Vkm::Engine {
 
 namespace {
 
+/**
+ * @brief Squared speed, (m/s)^2, below which moveInput asks for no movement.
+ *
+ * A centimetre a second, so a stick a hair off centre does not wake a body or start a step-up.
+ */
 constexpr float MOVE_SPEED_SQ = 1e-4f;
 
 /**
- * @brief Turn @p target so it runs along the surface the body is pressed
- *        against instead of into it.
+ * @brief Turn @p target to run along the surface the body is pressed against instead of into it.
  *
- * A surface within the slope limit is ground rather than an obstacle and the
- * caller's ground projection follows it; only something steeper deflects, and
- * that one is taken flat - a wall that turned the target upward would be a ramp
- * the slope limit exists to refuse. World up is what PhysicsSystem publishes when
- * a body touched nothing, and it is walkable at every slope limit, so no separate
- * "is there a contact" test is needed.
- *
- * Sliding along a wall is the controller's job rather than the solver's because
- * steering into one makes a normal force, friction scales with it, and whether
- * the character glides or stops dead then depends on two material numbers. A
- * target already running along the wall never pushes into it.
+ * Only a surface steeper than the slope limit deflects, taken flat: turning upward would make it a ramp
+ * the limit refuses. PhysicsSystem::writeback publishes world up for no contact, which is walkable, so
+ * no contact test is needed.
  *
  * @param target Desired velocity, world space.
- * @param blockNormal Rigidbody::blockNormal - the most horizontal contact normal.
+ * @param blockNormal Rigidbody::blockNormal.
  * @param slopeLimit cos(maxSlopeAngle): at or above it the surface is walkable.
  * @return The target with any component pushing into that surface removed.
  */
-glm::vec3 deflectAlongBlock(const glm::vec3& target, const glm::vec3& blockNormal,
-                            float slopeLimit) {
+glm::vec3 deflectAlongBlock(const glm::vec3& target, const glm::vec3& blockNormal, float slopeLimit) {
     if (glm::dot(blockNormal, Math::WORLD_UP) >= slopeLimit) return target;
 
     const glm::vec3 flat = {blockNormal.x, 0.0f, blockNormal.z};
@@ -64,8 +59,7 @@ glm::vec3 deflectAlongBlock(const glm::vec3& target, const glm::vec3& blockNorma
 }
 
 /**
- * @brief The first capsule part of a collider, which is what a character
- *        stands on.
+ * @brief The first capsule part of a collider, which is what a character stands on.
  *
  * @param collider Collider to search.
  * @param[out] radius     Its sweep radius.
@@ -73,8 +67,7 @@ glm::vec3 deflectAlongBlock(const glm::vec3& target, const glm::vec3& blockNorma
  * @param[out] center     Its offset from the entity origin, body-local.
  * @return False when the collider has no capsule, which the caller warns about.
  */
-bool capsuleOf(const Collider& collider, float& radius, float& halfHeight,
-               glm::vec3& center) {
+bool capsuleOf(const Collider& collider, float& radius, float& halfHeight, glm::vec3& center) {
     for (const ColliderPart& part : collider.parts) {
         if (part.shape != ColliderShape::Capsule) continue;
         radius = part.radius;
@@ -88,15 +81,9 @@ bool capsuleOf(const Collider& collider, float& radius, float& halfHeight,
 /**
  * @brief Whether what is blocking the character can be mounted, and by how much.
  *
- * Two sweeps, in the order that makes the cheap rejection first. One forward at
- * step height asks whether there is room up there at all; a character that would
- * climb into the underside of a shelf must not start. One down behind it asks
- * what it would land on, and refuses anything it could not have stood on had it
- * walked there.
- *
- * The probes are a shade narrower than the capsule so that the geometry already
- * touching its sides - the very obstacle being tested - does not report itself
- * as the thing in the way.
+ * Two sweeps, cheap rejection first: forward at step height for room (not under a shelf), then down
+ * beyond it for a landing it could have stood on. The probes are a shade narrower than the capsule, so
+ * the obstacle already touching its sides does not report itself as in the way.
  *
  * @param scene      Scene to query.
  * @param self       The character, excluded from its own probes.
@@ -105,7 +92,7 @@ bool capsuleOf(const Collider& collider, float& radius, float& halfHeight,
  * @param direction  Horizontal unit direction of travel.
  * @param stepHeight Tallest rise that may be mounted.
  * @param slopeLimit cos(maxSlopeAngle): at or above it the landing is walkable.
- * @param layerMask  Layers the probes may hit - the body's own collision mask.
+ * @param layerMask  Layers the probes may hit: the body's own collision mask.
  * @param[out] rise  How far up the landing is, when there is one.
  * @return True when a step exists, is clear, and is walkable.
  */
@@ -122,16 +109,13 @@ bool findStep(
 ) {
     QueryFilter filter;
     filter.ignore = self;
-    // What the body can collide with, nothing more: a ragdoll's bones ride the
-    // animated legs on a layer the body passes through, and a probe that can
-    // hit its own shin reports every staircase as blocked.
+    // Only what the body collides with: a probe hitting its own ragdoll shin blocks every staircase.
     filter.layerMask = layerMask;
 
     const float probeRadius = radius * 0.9f;
     const float reach = radius * 2.0f;
 
-    // Centre of a sphere sitting just above the step, at the height the
-    // character would have to reach to clear it.
+    // Centre of a sphere just above the step, at the height the character must reach.
     const glm::vec3 mouth = feet + Math::WORLD_UP * (stepHeight + radius);
 
     RayHit hit;
@@ -150,21 +134,12 @@ bool findStep(
     return rise > Physics::CONTACT_TOLERANCE && rise <= stepHeight;
 }
 
-// How long mounting a step takes, in seconds. A step is not a jump and must not
-// read as one, and it must not depend on how fast the character happens to be
-// walking.
+// Seconds to mount a step, independent of walking speed.
 constexpr float STEP_CLIMB_TIME = 0.12f;
 
-// And how long one may take before it is abandoned. Three times the budget: far
-// past any climb that is still making progress, short enough that a character
-// held against something it cannot mount does not hang there.
+// Seconds before a climb is abandoned: past any progressing climb, short of hanging on what cannot be
+// mounted.
 constexpr float STEP_CLIMB_LIMIT = STEP_CLIMB_TIME * 3.0f;
-
-bool hasCapsule(const Collider& collider) {
-    for (const ColliderPart& part : collider.parts)
-        if (part.shape == ColliderShape::Capsule) return true;
-    return false;
-}
 
 } // namespace
 
@@ -177,11 +152,8 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
     bool sawNoCapsule = false;
     bool sawSpinnable = false;
 
-    scene.forEach<CharacterController, Rigidbody>(
-            [&](EntityId id, CharacterController& cc, Rigidbody& rb) {
-        // A character this end does not decide is left where the authority put
-        // it, standing included - which is why grounded is set below this gate.
-        // The CharacterController codec says why it cannot be worked out here.
+    scene.forEach<CharacterController, Rigidbody>([&](EntityId id, CharacterController& cc, Rigidbody& rb) {
+        // Left where the authority put it, grounded included (see netEncode for CharacterController).
         if (!ctx.net.simulates(id)) return;
 
         // A wall is a resolved contact too, and standing on one is not standing.
@@ -189,77 +161,74 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
         cc.grounded = rb.supported && glm::dot(rb.supportNormal, Math::WORLD_UP) >= slopeLimit;
         cc.groundNormal = cc.grounded ? rb.supportNormal : Math::WORLD_UP;
 
+        float     radius     = 0.0f;
+        float     halfHeight = 0.0f;
+        glm::vec3 offset(0.0f);
         const Collider* collider = scene.tryGet<Collider>(id);
-        if (!collider || !collider->enabled || !hasCapsule(*collider)) sawNoCapsule = true;
+        const bool standsOnCapsule = collider && collider->enabled
+            && capsuleOf(*collider, radius, halfHeight, offset);
+
+        if (!standsOnCapsule) sawNoCapsule = true;
         if (!rb.freezeRotation) sawSpinnable = true;
 
-        // A body that dozed off has its velocity zeroed by the solver's
-        // writeback, so anything asking it to move has to wake it first.
+        // PhysicsSystem::writeback zeroes a sleeping body's velocity, so a request to move wakes it.
         const float asked = glm::dot(cc.moveInput, cc.moveInput);
         const bool wants = asked > MOVE_SPEED_SQ || cc.jumpRequested;
-        if (wants && rb.sleeping) {
-            rb.sleeping = false;
-            rb.sleepTimer = 0.0f;
-        }
+        if (wants && rb.sleeping) Rigidbody::wake(rb);
 
-        // Deflected before the ground projection, not after: this only turns
-        // the horizontal, so the slope-following vertical below is computed for
-        // the direction the character ends up going.
+        // Deflected before the ground projection, so the slope's vertical follows the final direction.
         const glm::vec3 flatInput = {cc.moveInput.x, 0.0f, cc.moveInput.z};
         const float inputLenSq = glm::dot(flatInput, flatInput);
         const bool blocked = glm::dot(rb.blockNormal, Math::WORLD_UP) < slopeLimit;
 
-        float radius = 0.0f;
-        float halfHeight = 0.0f;
-        glm::vec3 offset(0.0f);
-        const bool climbable = collider && scene.has<Transform>(id)
-                            && capsuleOf(*collider, radius, halfHeight, offset)
-                            && radius > 0.0f;
+        const Transform* local = scene.tryGet<Transform>(id);
+        const bool climbable = standsOnCapsule && local && radius > 0.0f;
 
-        // Resolved to world space, because stepTargetY is a world height and the
-        // probes are cast there: a character parented to a lift or a prefab root
-        // has a Transform in that parent's frame.
+        // World space, as stepTargetY and the probes are; a parented character's Transform is not.
         glm::vec3 feet(0.0f);
         if (climbable) {
-            const BodyPose pose = worldPoseOf(scene, id, scene.get<Transform>(id));
+            const BodyPose pose = worldPoseOf(scene, id, *local);
             feet = pose.position + pose.rotation * offset
-                 - Math::WORLD_UP * (halfHeight + radius);
+                - Math::WORLD_UP * (halfHeight + radius);
         }
 
-        // A climb ends by arriving, by the character no longer asking, or by its
-        // deadline - never because the step stopped blocking, since rising is
-        // what un-blocks a riser.
+        // Never ended by the step no longer blocking: rising is what un-blocks a riser.
         const bool wasStepping = cc.stepping;
         if (cc.stepping) {
             cc.stepTime += dt;
             const float reached = cc.stepTargetY - Physics::CONTACT_TOLERANCE;
             const bool arrived = climbable && feet.y >= reached;
             const bool asking = inputLenSq > MOVE_SPEED_SQ;
-            // A resting contact settles a slop short of the measured height,
-            // so "arrived" is approached and never met; the clock is what
-            // keeps that from holding the character up forever.
+            // A resting contact settles a slop short, so "arrived" may never be met; the clock ends it.
             const bool expired = cc.stepTime >= STEP_CLIMB_LIMIT;
             if (!climbable || !asking || arrived || expired) cc.stepping = false;
         }
 
-        // Starting one asks for both: on the ground, walking into something
-        // that blocks. The probes cost two sweeps and answer nothing for a
-        // character standing still or already sliding freely.
+        // Two sweeps, only for a character pushing into something.
         if (!cc.stepping && climbable && cc.grounded && blocked
-                && cc.stepHeight > 0.0f && inputLenSq > MOVE_SPEED_SQ) {
+            && cc.stepHeight > 0.0f && inputLenSq > MOVE_SPEED_SQ) {
             const glm::vec3 forward = flatInput / std::sqrt(inputLenSq);
             float rise = 0.0f;
-            if (findStep(scene, id, feet, radius, forward, cc.stepHeight,
-                         slopeLimit, rb.collidesWith, rise)) {
+            const bool mountable = findStep(
+                scene,
+                id,
+                feet,
+                radius,
+                forward,
+                cc.stepHeight,
+                slopeLimit,
+                rb.collidesWith,
+                rise
+            );
+            if (mountable) {
                 cc.stepping = true;
                 cc.stepTime = 0.0f;
                 cc.stepTargetY = feet.y + rise;
             }
         }
 
-        // The rate that closes what is left, capped so the first tick does not
-        // teleport. Driven by the remaining distance rather than the step limit,
-        // so a kerb rises by a kerb and not by a jump's worth of speed.
+        // Driven by the remaining distance, so a kerb rises by a kerb; capped so the first tick does not
+        // teleport.
         const float remaining = climbable ? cc.stepTargetY - feet.y : 0.0f;
         const float stepClimb = (cc.stepping && dt > 0.0f && remaining > 0.0f)
             ? glm::min(remaining / dt, cc.stepHeight / STEP_CLIMB_TIME)
@@ -270,22 +239,17 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
             ? cc.moveInput
             : deflectAlongBlock(cc.moveInput, rb.blockNormal, slopeLimit);
 
-        // Grounded, the target follows the ground plane, so walking up a ramp
-        // neither launches off the top nor is dragged back by gravity fighting
-        // the contact. Airborne, the vertical is gravity's alone.
+        // Grounded, the target follows the ground plane, so a ramp neither launches nor drags back.
+        // Airborne, the vertical is gravity's alone.
         if (cc.grounded) {
             target -= cc.groundNormal * glm::dot(target, cc.groundNormal);
-            // Already rising faster than the ground would carry it: it has just
-            // jumped or been thrown. Grounding lags the contacts by a tick, so
-            // without this the first ticks of a jump steer back into the floor.
+            // Grounding lags a tick, so a jump's first ticks would otherwise steer back into the floor.
             target.y = glm::max(target.y, velocity.y);
         } else {
             target.y = velocity.y;
         }
 
-        // A capped step toward the target rather than an exponential approach:
-        // acceleration then means m/s^2 at every speed, which is what an author
-        // setting the number expects, and it is frame-rate independent.
+        // Capped, not exponential, so acceleration means m/s^2 at every speed.
         const float rate = cc.acceleration * (cc.grounded ? 1.0f : glm::max(cc.airControl, 0.0f));
         const glm::vec3 delta = target - velocity;
         const float distance = glm::length(delta);
@@ -294,25 +258,20 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
         const bool clamped = distance > step && !tiny;
         velocity += clamped ? delta * (step / distance) : delta;
 
-        // Set rather than steered toward: the acceleration limit describes how
-        // fast a character changes its mind, and a climb metered through it is
-        // still building speed when the ground it needs has gone.
+        // Set, not accelerated toward: a metered climb is still building speed when its ground has gone.
         if (cc.stepping) velocity.y = stepClimb;
 
-        // A step ends by arriving, not by launching. Without this the tick that
-        // finishes one leaves the climb's last upward rate on the body, and the
-        // character carries on up as though it had jumped.
+        // Otherwise the climb's last upward rate carries the character on up as if it jumped.
         if (wasStepping && !cc.stepping) velocity.y = glm::min(velocity.y, 0.0f);
 
-        // Consumed whether or not it could be honoured: a jump held down would
-        // otherwise fire the instant the character next touched anything.
+        // Consumed even when not honoured, or a held jump fires on the next touch.
         if (cc.jumpRequested) {
             if (cc.grounded) {
                 velocity.y = cc.jumpSpeed;
-                // Reported immediately, not next tick: the contact that was
-                // holding it up survives a tick or two of separation, and a
-                // player mashing the key would spend it on a second jump.
+                // Now, not next tick: the supporting contact outlives separation, allowing a second jump.
                 cc.grounded = false;
+                // A running climb would set the vertical next tick, capping the jump at a kerb.
+                cc.stepping = false;
             }
             cc.jumpRequested = false;
         }
@@ -320,12 +279,18 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
         rb.linearVelocity = velocity;
     });
 
-    if (sawNoCapsule && !m_noCapsuleLogged)
-        LOG_WARNING("CharacterController: an entity has no enabled capsule Collider - "
-                    "it will never report grounded");
-    if (sawSpinnable && !m_spinnableLogged)
-        LOG_WARNING("CharacterController: an entity's Rigidbody has freezeRotation off - "
-                    "contacts will topple it");
+    if (sawNoCapsule && !m_noCapsuleLogged) {
+        LOG_WARNING(
+            "CharacterController: an entity has no enabled capsule Collider - "
+            "it will not climb steps"
+        );
+    }
+    if (sawSpinnable && !m_spinnableLogged) {
+        LOG_WARNING(
+            "CharacterController: an entity's Rigidbody has freezeRotation off - "
+            "contacts will topple it"
+        );
+    }
     m_noCapsuleLogged = sawNoCapsule;
     m_spinnableLogged = sawSpinnable;
 }

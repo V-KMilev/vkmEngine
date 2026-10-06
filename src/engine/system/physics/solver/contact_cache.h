@@ -6,33 +6,20 @@
 #include <glm/glm.hpp>
 
 #include "ecs/entity.h"
+#include "system/physics/physics_internal.h"
 #include "system/physics/collision/contact.h"
-#include "system/physics/solver/solver.h"
 
 namespace Vkm::Engine {
 
 /**
  * @brief What held each contacting pair when the last tick finished.
  *
- * Sequential impulses converge on their answer from wherever they are started,
- * and the answer barely changes between ticks: a box resting on a box needs the
- * same impulse this tick as last. Starting from zero instead spends the whole
- * iteration budget rediscovering it, and never quite arrives - which is what a
- * stack sinking into itself and leaning over is.
+ * The answer barely changes between ticks, so it seeds sequential impulses. Contacts match by position,
+ * since the narrowphase names no features, kept in both bodies' frames and matched in either, so a pair
+ * on a moving platform or a box sliding over the floor matches itself.
  *
- * Contacts are matched to the tick before by where they are rather than by a
- * feature index, because the narrowphase generates points rather than naming
- * the features that produced them, and a point is what every shape pair has in
- * common. Stored relative to body A, so a pair resting on a moving platform
- * matches itself as readily as one on the floor.
- *
- * A pair that stops touching stops being recorded, so the store is what is
- * touching now rather than everything that ever did.
- *
- * Not part of a rollback: a replayed tick is seeded from whatever the last
- * simulated tick left, not from what the tick being replayed had. The seed is a
- * starting guess that the passes then correct, so this costs a replay some
- * precision rather than its answer.
+ * Not rolled back: a replay is seeded from the last simulated tick. The seed is a guess the passes
+ * correct, so this costs a replay precision, not its answer.
  */
 class ContactCache {
     public:
@@ -49,39 +36,50 @@ class ContactCache {
         /**
          * @brief Give every contact the impulse its pair carried last tick.
          *
-         * @param manifolds This tick's manifolds, whose contacts are seeded in place.
+         * @param manifolds This tick's manifolds, seeded in place.
          * @param entities Body entities, indexed by the manifolds' body indices.
-         * @param bodies This tick's solver bodies, for the frame a point is stored in.
+         * @param frames Each body's pose as gathered, the frame a point is kept in.
          */
-        void seed(std::vector<ContactManifold>& manifolds,
-                  const std::vector<EntityId>& entities,
-                  const std::vector<PhysicsBody>& bodies) const;
+        void seed(
+            std::vector<ContactManifold>& manifolds,
+            const std::vector<EntityId>& entities,
+            const std::vector<BodyFrame>& frames
+        ) const;
 
         /**
          * @brief Replace the store with what the solve just settled on.
          *
-         * @param manifolds The solved manifolds, carrying their final impulses.
+         * Stores the solve's lever arms in each body's frame as gathered, before the tick moved it, as
+         * seed measures.
+         *
+         * @param manifolds The solved manifolds, with final impulses and lever arms.
          * @param entities Body entities, indexed by the manifolds' body indices.
-         * @param bodies This tick's solver bodies, for the frame a point is stored in.
+         * @param frames Each body's pose as gathered, not as the tick left it.
          */
-        void record(const std::vector<ContactManifold>& manifolds,
-                    const std::vector<EntityId>& entities,
-                    const std::vector<PhysicsBody>& bodies);
+        void record(
+            const std::vector<ContactManifold>& manifolds,
+            const std::vector<EntityId>& entities,
+            const std::vector<BodyFrame>& frames
+        );
 
         /// Forget everything, for a world that is being replaced.
         void clear();
 
     private:
-        /// One contact's share of the load, in body A's frame.
+        /// One contact's share of the load, and where it was on each body.
         struct Held {
-            uint64_t  pair     = 0;                   ///< The two entity slots, A in the high half.
-            glm::vec3 offset   = {0.0f, 0.0f, 0.0f};  ///< Contact point relative to body A.
-            glm::vec3 friction = {0.0f, 0.0f, 0.0f};  ///< Friction impulse in world space.
-            float normalImpulse = 0.0f;
+            uint64_t  pair          = 0;                   ///< The two entity slots, A in the high half.
+            /// Contact point relative to body A, in A's frame.
+            glm::vec3 offsetA       = {0.0f, 0.0f, 0.0f};
+            /// Contact point relative to body B, in B's frame.
+            glm::vec3 offsetB       = {0.0f, 0.0f, 0.0f};
+            glm::vec3 friction      = {0.0f, 0.0f, 0.0f};  ///< Friction impulse in world space.
+            float     normalImpulse = 0.0f;                ///< What the next tick's solve starts from.
+            uint32_t  sequence      = 0;                   ///< Record order, for ties within a pair.
         };
 
     private:
-        std::vector<Held> m_held;   ///< Sorted by pair, so a pair is a binary search.
+        std::vector<Held> m_held;  ///< Sorted by pair, so a pair is a binary search.
 };
 
 } // namespace Vkm::Engine

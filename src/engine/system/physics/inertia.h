@@ -3,15 +3,18 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <glm/gtx/matrix_operation.hpp>
 
 namespace Vkm::Engine {
 
 /**
  * @brief Inertia tensor of a solid box about its centre, in body-local space.
  *
- * Solid box: I_x = (1/12) m (h_y^2 + h_z^2) using full extents h = 2*halfExtents.
- * Returns mat3(0) for a non-positive mass or degenerate extent. Callers that need
- * the inverse (and may parallel-axis-shift first) invert the result themselves.
+ * I_x = (1/12) m (h_y^2 + h_z^2) with full extents h = 2*halfExtents.
+ *
+ * @param mass Total mass, kg.
+ * @param halfExtents Half the box's size on each local axis.
+ * @return The tensor; mat3(0) for a non-positive mass or a degenerate extent.
  */
 inline glm::mat3 boxInertiaLocal(float mass, const glm::vec3& halfExtents) {
     if (mass <= 0.0f) return glm::mat3(0.0f);
@@ -23,28 +26,19 @@ inline glm::mat3 boxInertiaLocal(float mass, const glm::vec3& halfExtents) {
     const float iz = k * (full.x * full.x + full.y * full.y);
     if (ix <= 0.0f || iy <= 0.0f || iz <= 0.0f) return glm::mat3(0.0f);
 
-    return glm::mat3(
-        ix, 0.0f, 0.0f,
-        0.0f, iy, 0.0f,
-        0.0f, 0.0f, iz
-    );
+    return glm::diagonal3x3(glm::vec3(ix, iy, iz));
 }
 
 /**
- * @brief Inertia tensor of a solid capsule about its centre, in body-local space,
- *        with the segment along local +Y.
+ * @brief Inertia tensor of a solid capsule about its centre, body-local, segment along local +Y.
  *
- * A cylinder of height 2*halfHeight plus two hemispherical caps, each part
- * weighted by its share of the volume. Returns mat3(0) for a non-positive mass
- * or a non-positive radius. The capsule cannot be approximated by the box of its
- * extent the way the compound path does: an upright character capsule is the one
- * shape whose axis inertia (a thin cylinder) is several times smaller than the
- * enclosing box's, which is the difference between a graze spinning it and not.
+ * A cylinder plus two hemispherical caps, weighted by volume. Not the enclosing box's: an upright
+ * capsule's axis inertia is several times smaller, the difference between a graze spinning it or not.
  *
- * @param mass Total mass of the capsule, in kg.
+ * @param mass Total mass, kg.
  * @param radius Sweep radius; also the cap radius.
  * @param halfHeight Half the segment length, caps excluded.
- * @return Body-local inertia tensor about the capsule centre.
+ * @return The tensor; mat3(0) for a non-positive mass or radius.
  */
 inline glm::mat3 capsuleInertiaLocal(float mass, float radius, float halfHeight) {
     if (mass <= 0.0f || radius <= 0.0f) return glm::mat3(0.0f);
@@ -59,26 +53,24 @@ inline glm::mat3 capsuleInertiaLocal(float mass, float radius, float halfHeight)
     const float cylinderMass = mass * (cylinderVolume / total);
     const float capsMass     = mass * (capsVolume / total);
 
-    // The caps' perpendicular term is the parallel-axis shift of two hemispheres
-    // seated on the cylinder ends: 3*h*r/8 is the hemisphere centroid offset.
+    // The 3*h*r/8 term: hemisphere centroids sit 3r/8 past each cylinder end (parallel-axis shift).
     const float axial = cylinderMass * r2 * 0.5f + capsMass * (2.0f / 5.0f) * r2;
     const float perp  = cylinderMass * (h * h / 12.0f + r2 * 0.25f)
-                      + capsMass * ((2.0f / 5.0f) * r2 + h * h * 0.25f + 3.0f * h * radius / 8.0f);
+        + capsMass * ((2.0f / 5.0f) * r2 + h * h * 0.25f + 3.0f * h * radius / 8.0f);
     if (axial <= 0.0f || perp <= 0.0f) return glm::mat3(0.0f);
 
-    return glm::mat3(
-        perp, 0.0f, 0.0f,
-        0.0f, axial, 0.0f,
-        0.0f, 0.0f, perp
-    );
+    return glm::diagonal3x3(glm::vec3(perp, axial, perp));
 }
 
 /**
- * @brief Parallel-axis shift of an inertia tensor from the centre of mass to a
- *        parallel axis offset by @p offset: I' = I + m (|d|^2 E - d d^T).
+ * @brief Shift an inertia tensor from the centre of mass by @p offset: I' = I + m (|d|^2 E - d d^T).
  *
- * Used when a collider's centre is offset from the entity origin (where the
- * solver measures contact arms) so the body rotates about the correct axis.
+ * For a collider centre offset from the entity origin, where the solver measures contact arms.
+ *
+ * @param inertia Tensor about the centre of mass.
+ * @param mass Total mass, kg.
+ * @param offset Between the centre of mass and the new origin; either sign gives the same shift.
+ * @return The tensor about the shifted origin.
  */
 inline glm::mat3 parallelAxisShift(const glm::mat3& inertia, float mass, const glm::vec3& offset) {
     const float d2 = glm::dot(offset, offset);
@@ -88,8 +80,11 @@ inline glm::mat3 parallelAxisShift(const glm::mat3& inertia, float mass, const g
 /**
  * @brief Rotate a body-local inverse inertia tensor into world space.
  *
- * I_world^-1 = R * I_local^-1 * R^T, with R the rotation matrix of the body's
- * orientation. Recomputed each tick because the orientation changes.
+ * I_world^-1 = R * I_local^-1 * R^T.
+ *
+ * @param invInertiaLocal Body-local inverse inertia tensor.
+ * @param rotation The body's world orientation.
+ * @return The world-space inverse inertia tensor.
  */
 inline glm::mat3 inverseInertiaWorld(const glm::mat3& invInertiaLocal, const glm::quat& rotation) {
     const glm::mat3 r = glm::mat3_cast(rotation);

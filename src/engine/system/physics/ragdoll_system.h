@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include "core/system.h"
+#include "debug/fault_latch.h"
 #include "ecs/entity.h"
 #include "ecs/scene_observer.h"
 
@@ -13,41 +15,25 @@ class Scene;
 /**
  * @brief Which ragdoll a body belongs to, and which bone it is.
  *
- * The way back from a hit. A ragdoll's bones are ordinary bodies with ordinary
- * colliders, so a query already picks one out - and on its own that is an
- * entity called "legR" with nothing saying whose leg it is, which is not enough
- * to do anything with. This closes the loop: the ragdoll maps bones to bodies,
- * and this maps a body back.
- *
- * A search rather than a back-reference on each body, because a scene holds a
- * handful of ragdolls of a dozen bones each and the alternative is a component
- * per limb that has to be kept true through every save, load and rebuild.
+ * Maps a hit body back to its bone. A search, so no per-limb component has to stay true through save,
+ * load and rebuild.
  *
  * @param scene Scene to search.
  * @param body The entity a query returned.
  * @param[out] outBone Index into the rig's bone array, when there is one.
  * @return The entity carrying the Ragdoll, or an invalid id.
  */
-EntityId ragdollOwnerOf(const Scene& scene, EntityId body,
-                        int32_t* outBone = nullptr);
+EntityId ragdollOwnerOf(const Scene& scene, EntityId body, int32_t* outBone = nullptr);
 
 /**
  * @brief Keeps a ragdoll's bodies in step with whichever is in charge.
  *
- * A ragdoll's bodies exist whether or not it is active, and a body that exists
- * is simulated - so without this, building one drops a skeleton on the floor
- * beside a character still standing. `active` gated the pose and nothing else,
- * so the component's own switch did half of what it said.
+ * The bodies exist, and so simulate, whether or not the ragdoll is active. Inactive, they are kinematic
+ * hitboxes (see isPosedByAnimation) placed from the animated pose every tick with its velocity, so
+ * activation hands the solver the character's real shape and motion.
  *
- * Inactive, the bodies are kinematic and placed from the animated pose every
- * frame. That is what makes the transition work: switching to active hands the
- * solver a skeleton already in the shape the character was in, rather than one
- * in its bind pose that snaps before it falls.
- *
- * Registered at SystemStage::Simulation after SkeletalAnimationSystem, whose
- * pose it reads, and before PhysicsSystem, whose bodies it writes. All three
- * run on the tick, so the bone transforms this writes are the ones the solver
- * reads in the same step rather than whatever the last frame left.
+ * Runs on the tick, after SkeletalAnimationSystem, whose pose it reads, and before PhysicsSystem, so the
+ * solver reads these bone transforms the same step.
  */
 class RagdollSystem : public System, public ISceneObserver {
     public:
@@ -62,9 +48,7 @@ class RagdollSystem : public System, public ISceneObserver {
 
     public:
         void init(FrameContext& ctx) override;
-        /// Simulation runs on the tick; nothing here answers to the frame.
         void fixedUpdate(FrameContext& ctx) override;
-        bool hasFixedUpdate() const override { return true; }
 
         /// Drops the observer registration, so nothing calls a dead system.
         void shutdown() override;
@@ -72,23 +56,38 @@ class RagdollSystem : public System, public ISceneObserver {
         /**
          * @brief Destroy a ragdoll's bones when the thing they belong to goes.
          *
-         * The bones live under a group node inside the character, and a
-         * hierarchy teardown takes them along - but a plain destroyEntity
-         * does not walk children, and a bone something moved out of the group
-         * is not covered by one that does. This observer is what guarantees
-         * the bones die with the owner however the owner dies.
-         *
-         * So the hierarchy cannot take them along, and without this a deleted
-         * character leaves its skeleton lying in the scene. Registered as an
-         * observer rather than handled in the editor's delete, because gameplay
-         * destroys things too and only one of those paths goes through a menu.
+         * A plain destroyEntity does not walk children, and a bone moved out of the group escapes one that
+         * does; an observer catches every destroy, gameplay's included.
          *
          * @param id The entity being destroyed.
          */
         void onEntityDestroyed(EntityId id) override;
 
     private:
-        Scene* m_scene = nullptr;   ///< For removing the observer registration
+        Scene*     m_scene = nullptr;  ///< For removing the observer registration
+        FaultLatch m_scaled;           ///< A ragdoll built for its rig at another scale
 };
+
+/**
+ * @brief Is @p entity a ragdoll bone the animation is placing this tick?
+ *
+ * Such a bone is a hitbox rather than a body; the rule is stated here once (markPosedByAnimation is the
+ * whole-world form). False for an active ragdoll.
+ *
+ * @param scene World holding the ragdolls.
+ * @param entity Entity asked about; a dead one is never posed.
+ * @return True when @p entity is a live bone of an inactive ragdoll.
+ */
+bool isPosedByAnimation(const Scene& scene, EntityId entity);
+
+/**
+ * @brief isPosedByAnimation for a whole world, in one walk of its ragdolls.
+ *
+ * Asking per entity walks every ragdoll each time; a caller asking of many marks them all once.
+ *
+ * @param scene  World whose inactive ragdolls are walked.
+ * @param bySlot True at the slot of every posed bone; a slot past its end is not one.
+ */
+void markPosedByAnimation(const Scene& scene, std::vector<bool>& bySlot);
 
 } // namespace Vkm::Engine

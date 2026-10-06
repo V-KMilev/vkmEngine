@@ -6,34 +6,28 @@
 #include <glm/glm.hpp>
 
 #include "core/reflect.h"
+#include "resource/asset/mesh_asset.h"
 
 namespace Vkm::Engine {
 
 /**
  * @brief The primitive a collider part is made of.
  *
- * A part carries the fields for every shape and this tag says which of them the
- * narrowphase reads - the alternative, a parallel vector per shape, makes the
- * part list two lists that must stay in step. Serialized by name.
+ * Says which of the part's fields the narrowphase reads. Serialized by name.
  */
 enum class ColliderShape : uint8_t {
     Box     = 0,   ///< Oriented box; reads center + halfExtents.
     Capsule = 1,   ///< Swept segment along local +Y; reads center + radius + halfHeight.
-    Mesh    = 2,   ///< Triangle soup; reads center + meshFirst + meshCount.
+    Mesh    = 2,   ///< Triangle soup; reads center + mesh + meshScale.
     Count          ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
 };
 
 /**
  * @brief One primitive of a collider, in the entity's local frame.
  *
- * The collider is placed by the entity Transform (position + rotation); each
- * part adds a local centre offset on top of that. Sizes are absolute - the
- * solver ignores Transform scale, so "Fit to Mesh" bakes it into both the centre
- * and the half-extents.
- *
- * A capsule's segment runs along local +Y for halfHeight either side of the
- * centre and is swept by radius, so its total height is 2*(halfHeight + radius).
- * halfHeight 0 is a sphere, which is legal and needs no separate shape.
+ * Placed by the entity Transform's position and rotation plus `center`. Sizes are absolute: the solver
+ * ignores Transform scale. A capsule's segment runs along local +Y; its total height is
+ * 2*(halfHeight + radius), and halfHeight 0 is a sphere.
  */
 struct ColliderPart {
     ColliderShape shape       = ColliderShape::Box;   ///< Which fields below are live
@@ -41,29 +35,15 @@ struct ColliderPart {
     glm::vec3     halfExtents = {0.5f, 0.5f, 0.5f};   ///< Box: half-sizes
     float         radius      = 0.5f;                 ///< Capsule: sweep radius
     float         halfHeight  = 0.5f;                 ///< Capsule: half the segment, caps excluded
-
-    /**
-     * @brief Mesh: the part's triangle corners, as a span into the Collider's
-     *        buffer.
-     *
-     * A span rather than a vector per part, for the reason the proxy list uses
-     * one: a part stays a plain value that copies without allocating. The
-     * indices are the Collider's own, so a part is only meaningful beside it.
-     */
-    uint32_t      meshFirst   = 0;
-    uint32_t      meshCount   = 0;
+    MeshHandle    mesh        = {};                   ///< Mesh: whose triangles; stored by name
+    /// Mesh: applied to every vertex, as Transform scale is not
+    glm::vec3     meshScale   = {1.0f, 1.0f, 1.0f};
 };
 
 /**
  * @brief One node of a triangle mesh's bounding hierarchy.
  *
- * A leaf names a run of triangles; an interior node names its right child and
- * has its left implicitly next, which is what a depth-first build gives for
- * free and saves a second index per node.
- *
- * Component data rather than a system type: the nodes live on the Collider
- * beside the triangles they index, and the build and query that use them stay
- * with the physics system.
+ * A leaf names a run of triangles; an interior node names its right child, its left is next.
  */
 struct MeshNode {
     glm::vec3 min = {0.0f, 0.0f, 0.0f};
@@ -75,59 +55,59 @@ struct MeshNode {
 };
 
 /**
+ * @brief What a Collider's triangles were built from, so a change to any of it rebuilds them.
+ */
+struct MeshColliderSource {
+    uint64_t  uid     = 0;                    ///< The mesh asset, by Resource::uid; zero for none.
+    uint64_t  version = 0;                    ///< Its Resource::version when built.
+    glm::vec3 scale   = {0.0f, 0.0f, 0.0f};   ///< The part's meshScale when built.
+};
+
+/**
  * @brief Collision geometry attached to an entity, evaluated in its Transform frame.
  *
- * The shape is a set of oriented primitives: one part for a simple collider,
- * many for a mesh-fitted one ("Fit to Mesh"). The narrowphase runs once per
- * pair of parts, dispatching on the two shape tags. Pose comes from the entity's
- * world transform, which for a parented body is walked at gather rather than
- * read off its own Transform.
+ * One part for a simple collider, many for a mesh-fitted one ("Fit to Mesh"). The narrowphase runs per
+ * pair of parts (see ColliderProxy). A parented body's pose is its world transform, walked at gather.
  */
 struct Collider {
-    std::vector<ColliderPart> parts = { ColliderPart{} }; ///< The collision volume: one or more parts. Default to a single unit box.
+    /// One or more parts; a single unit box by default.
+    std::vector<ColliderPart> parts = { ColliderPart{} };
 
     /**
-     * @brief Every mesh part's triangle corners, in the entity's frame.
+     * @brief The mesh part's triangle corners, three a triangle, in the part's frame, scaled by meshScale.
      *
-     * Read three points at a time, one triangle each. Corners rather than an
-     * index buffer: it costs the duplicated corners of a shared edge and saves
-     * the whole apparatus of keeping two arrays in step, and the narrowphase
-     * only ever asks a triangle for its extreme point in a direction.
+     * Derived: syncMeshCollider (system/physics/authoring/mesh_collider.h) rebuilds them whenever the
+     * mesh or scale differs from meshBuiltFrom; a scene file holds only the mesh's name. Kept here
+     * because a query is handed the scene alone.
      */
     std::vector<glm::vec3> meshPoints;
 
-    /**
-     * @brief Bounding hierarchy over the mesh parts' triangles.
-     *
-     * Derived, not authored: rebuilt whenever it is empty and a Mesh part
-     * exists, so it survives a scene load without being written to disk. A
-     * level's collision mesh is tens of thousands of triangles and every pair
-     * against it would otherwise test every one, every tick.
-     */
-    std::vector<MeshNode> meshNodes;
-    bool isTrigger = false;                               ///< Generates contacts for queries but no impulse response.
-    bool enabled   = true;                                ///< When false the collider is inert: no broadphase entry, no contacts, no debug draw.
+    std::vector<MeshNode> meshNodes;      ///< Bounding hierarchy over meshPoints, built with them.
+    MeshColliderSource    meshBuiltFrom;  ///< What the two above were built from.
+
+    bool isTrigger = false;  ///< Reports overlaps as TriggerEvents; gets no impulse response.
+    /// False: inert - no broadphase entry, no contacts, no debug draw.
+    bool enabled   = true;
 };
+
 } // namespace Vkm::Engine
 
 VKM_ENUM_NAMES(::Vkm::Engine::ColliderShape, "Box", "Capsule", "Mesh")
 
-// Every shape's fields are reflected whatever the tag says, so switching a part
-// to a capsule in the inspector and back does not quietly forget the
-// half-extents it was authored with.
+// Every shape's fields are reflected whatever the tag, so switching a part's shape and back keeps
+// what it was authored with.
 VKM_REFLECT_BEGIN(::Vkm::Engine::ColliderPart)
-    VKM_F(shape),
-    VKM_F(center),
-    VKM_F(halfExtents),
-    VKM_F(radius),
-    VKM_F(halfHeight),
-    VKM_F(meshFirst),
-    VKM_F(meshCount)
+    VKM_F(shape)
+    VKM_F(center)
+    VKM_F(halfExtents)
+    VKM_F(radius)
+    VKM_F(halfHeight)
+    VKM_F(mesh)
+    VKM_F(meshScale)
 VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::Collider)
-    VKM_F(isTrigger),
-    VKM_F(enabled),
-    VKM_F(parts),
-    VKM_F(meshPoints)
+    VKM_F(isTrigger)
+    VKM_F(enabled)
+    VKM_F(parts)
 VKM_REFLECT_END()
