@@ -91,6 +91,22 @@ struct Preferences {
 };
 
 /**
+ * @brief Which kinds of gizmo the viewport draws, by View > Show.
+ *
+ * A hidden kind draws no marker either, so a click cannot pick what is not shown.
+ */
+struct GizmoVisibility {
+    bool lights    = true;
+    bool cameras   = true;
+    bool audio     = true;   ///< Sources and listeners.
+    bool probes    = true;   ///< Reflection probes and irradiance volumes.
+    bool effects   = true;   ///< Decals and particle emitters.
+    bool colliders = false;  ///< Colliders and joints.
+    bool bounds    = false;  ///< Each drawn object's world box.
+    bool skeletons = false;  ///< Posed rigs as bone segments.
+};
+
+/**
  * @brief Shared editor state, owned by EditorSystem.
  */
 struct EditorState : CommandHost {
@@ -131,9 +147,7 @@ struct EditorState : CommandHost {
     bool revealMaterial    = false;             ///< Bring the Material window to the front
     bool showRenderSettings = false;
     bool showProjectSettings = false;
-    bool showColliders      = false;            ///< Collider wireframes in the viewport
-    bool showBounds         = false;            ///< Per-entity world AABBs in the viewport
-    bool showSkeletons      = false;            ///< Posed rigs as bone segments in the viewport
+    GizmoVisibility gizmos;                     ///< What the viewport draws over the scene
 
     // A menu closes the frame its item is clicked, taking any modal opened inside it,
     // so a menu item asks and the dialog, drawn at the root window's scope, answers.

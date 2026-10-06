@@ -201,9 +201,19 @@ void EditorMenuBar::drawViewMenu(EditorContext& ec) {
             ec.cameraController.setOrthographic(!ec.cameraController.isOrthographic());
         }
         ImGui::Separator();
-        ImGui::MenuItem("Show Colliders", nullptr, &state.showColliders);
-        ImGui::MenuItem("Show Bounds",    nullptr, &state.showBounds);
-        ImGui::MenuItem("Show Skeletons", nullptr, &state.showSkeletons);
+        if (ImGui::BeginMenu("Show")) {
+            GizmoVisibility& show = state.gizmos;
+            ImGui::MenuItem("Lights",               nullptr, &show.lights);
+            ImGui::MenuItem("Cameras",              nullptr, &show.cameras);
+            ImGui::MenuItem("Audio",                nullptr, &show.audio);
+            ImGui::MenuItem("Probes and Volumes",   nullptr, &show.probes);
+            ImGui::MenuItem("Decals and Emitters",  nullptr, &show.effects);
+            ImGui::Separator();
+            ImGui::MenuItem("Colliders and Joints", nullptr, &show.colliders);
+            ImGui::MenuItem("Bounds",               nullptr, &show.bounds);
+            ImGui::MenuItem("Skeletons",            nullptr, &show.skeletons);
+            ImGui::EndMenu();
+        }
         ImGui::EndMenu();
     }
 }

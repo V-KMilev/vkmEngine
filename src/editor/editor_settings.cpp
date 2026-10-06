@@ -77,6 +77,14 @@ void visitScalarFields(State& state, Fn&& f) {
     f("showAssets",        state.showAssets);
     f("tool",              state.tool);
     f("gizmoMode",         state.gizmoMode);
+    f("showLights",        state.gizmos.lights);
+    f("showCameras",       state.gizmos.cameras);
+    f("showAudio",         state.gizmos.audio);
+    f("showProbes",        state.gizmos.probes);
+    f("showEffects",       state.gizmos.effects);
+    f("showColliders",     state.gizmos.colliders);
+    f("showBounds",        state.gizmos.bounds);
+    f("showSkeletons",     state.gizmos.skeletons);
 }
 
 /**

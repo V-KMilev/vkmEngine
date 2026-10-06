@@ -1001,10 +1001,12 @@ Tool keybinds, live only while the cursor is not captured: `Q` Select, `W` Move,
 Everything with no mesh of its own draws an authoring gizmo in
 `gizmo_overlay_draw.cpp`, so it can be found and placed: lights, cameras,
 reflection probes and irradiance volumes, decals, particle emitters, audio
-sources and listeners. Lights, cameras and the audio pair mark themselves with a
-glyph on a disc at one size, drawn by `drawEntityMarker` (`ui/editor_icons.h`),
-which also states the radius the picker answers within. The `View` menu adds
-**Show Colliders**, **Show Bounds** and **Show Skeletons** (posed bones from
+sources and listeners. Each marks itself with a glyph on a disc at one size,
+drawn by `drawEntityMarker` (`ui/editor_icons.h`), which also states the radius
+the picker answers within, so a click selects it. **View > Show** turns each kind
+on or off (`GizmoVisibility`, kept per project in `editor_settings.json`); a
+hidden kind draws no marker, so it cannot be picked either. It also holds
+**Colliders and Joints**, **Bounds** and **Skeletons** (posed bones from
 `FrameContext::poses`, with an axis triad per bone on the selected rig), off by
 default because they draw for every matching entity.
 
