@@ -356,6 +356,9 @@ else:
   with llvm-mingw, both pinned in `build.yml`. It ships nothing; it catches what
   one compiler lets through and the other does not.
 
+Every compile goes through ccache, whose store each job carries from its last run,
+so a push recompiles only what it changed.
+
 A version tag (`vX.Y.Z`) runs `.github/workflows/release.yml`: the same
 `build.yml` on the tag, then both archives and the two installers
 (`tools/install/install.sh`, `install.ps1`) on that tag's GitHub release, its
