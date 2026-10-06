@@ -178,7 +178,7 @@ to exactly one of them:
 | Gizmo Drawing       | `overlays/gizmo_overlay_draw.cpp`     | Every `draw*Gizmos` body, plus the selection outline: lights, cameras, probes, volumes, decals, emitters, audio, colliders, joints, skeletons, bounds |
 | Viewport Toolbar    | `overlays/viewport_toolbar.cpp`       | The tool strip (tool, space, snap) down the viewport's left edge, and the view bar (shading, camera, Frame All, Focus) in its top-right corner |
 | Playback Bar        | `overlays/playback_bar.cpp`           | Top-centre Play / Pause / Step / Stop transport for the simulation; Pause and Step also hold the mixer's voices; frames and captions the viewport while a session runs |
-| Start Screen        | `panels/start_screen.cpp`             | What the editor shows when no project is open: New, Open, the projects opened before and the examples this engine ships - and no workspace at all. See [Opening a project](#opening-a-project) |
+| Start Screen        | `panels/start_screen.cpp`             | What the editor shows when no project is open: New, Open, the projects opened before and copies of the examples this engine ships - and no workspace at all. See [The start screen](#the-start-screen) |
 
 The pieces of **chrome** are not panels - they belong to `EditorSystem` and
 sit around the panel layout rather than in it:
@@ -506,8 +506,8 @@ it - see Save as Prefab below.
 
 The editor edits *a project*, and without one it says so rather than pretending
 otherwise. `EditorSystem::init` keeps the answer `ProjectController::open` gives
-it: on failure the editor draws a **project picker** - New, Open, and the recent
-list - and no workspace at all, because every path a workspace would compose
+it: on failure the editor draws the **start screen** - New, Open, the recent
+list and the examples - and no workspace at all, because every path a workspace would compose
 would resolve against the engine's own directory. The `engineRoot()` fallback in
 `ProjectPaths::projectRoot` is for the other hosts, for which "beside the
 executable" *is* the project; the editor asks that a `project.json` exist, so
@@ -573,6 +573,22 @@ never opens a project saves only the per-user settings when it quits.
 start screen the recent projects, and each hands what it picks to
 `EditorState::requestSceneAction` - the same guard New Scene and Open Scene go
 through, because opening a project throws the current scene away too.
+
+### The start screen
+
+One panel over the dimmed sky, with New Project and Open in its header and two tabs:
+
+- **Projects** - the recents, newest first, with a search. A project whose folder
+  is gone sinks to the bottom, faint, until Remove from List; one whose
+  `engineVersion` is another minor release (`compatibleEngine`, `io/project.h`)
+  wears a "Made for" badge, and opening it asks first, then writes this engine's
+  version into its `project.json` - the move a module's build otherwise refuses.
+- **Examples** - a card per project in the engine's `examples/`, with the
+  `description` its `project.json` gives. Each opens New Project on a copy
+  (`EditorState::newProjectTemplate`), never the example itself, which in an SDK
+  sits inside the install that the next update replaces.
+
+The menu bar holds File, Edit and Help alone until a project is open.
 
 ## Actions that throw the live scene away
 

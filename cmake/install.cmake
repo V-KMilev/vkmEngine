@@ -7,6 +7,18 @@ include(CMakePackageConfigHelpers)
 
 set(VKM_CMAKE_INSTALL_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/vkmEngine)
 
+# A folder option an install script reads: absolute, or the script would resolve it
+# against the build tree, and with forward slashes, as a Windows backslash is an
+# escape inside the script.
+macro(vkm_install_source_dir VAR)
+    if(${VAR})
+        if(NOT IS_ABSOLUTE "${${VAR}}")
+            message(FATAL_ERROR "${VAR} must be an absolute path, not '${${VAR}}'")
+        endif()
+        file(TO_CMAKE_PATH "${${VAR}}" ${VAR})
+    endif()
+endmacro()
+
 # A project links vkm_core alone. Its dependencies are exported with it because
 # CMake will not export a target without them, private ones included.
 set(VKM_EXPORTED_DEPS
@@ -52,6 +64,7 @@ install(TARGETS ${VKM_HOSTS}
 # The shipping engine an SDK carries for `vkm package`: a VKM_SHIPPING build tree
 # of this source, installed whole into <prefix>/shipping.
 set(VKM_SHIPPING_ENGINE "" CACHE PATH "A VKM_SHIPPING build tree whose engine the SDK carries")
+vkm_install_source_dir(VKM_SHIPPING_ENGINE)
 if(VKM_SHIPPING_ENGINE AND NOT VKM_SHIPPING)
     install(CODE "
         execute_process(
@@ -107,33 +120,84 @@ if(VKM_PROFILER)
     )
 endif()
 
-# Shaders are engine chrome: they ship with the engine and a project never edits
-# them. Everything a project owns - its scenes, its assets, its cooked library -
-# belongs to the project and is not the SDK's to install.
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/shaders DESTINATION .)
-
-# The engine's font and logo, less the logo's design sources (as LOGO_SOURCES in
-# tools/vkm leaves them out of a package).
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/fonts ${CMAKE_SOURCE_DIR}/assets/logo
-    DESTINATION assets
-    OPTIONAL
-    PATTERN "_preview" EXCLUDE
-    PATTERN "source_split" EXCLUDE
-)
-
-# What `vkm new` copies to make a project.
-install(DIRECTORY ${CMAKE_SOURCE_DIR}/templates DESTINATION .)
-
-# The engine's license, at the SDK root, where `vkm package` copies it from.
-install(FILES ${CMAKE_SOURCE_DIR}/LICENSE DESTINATION .)
-
-# The compiler's runtime DLLs (VKM_COMPILER_RUNTIME, CMakeLists.txt).
+# The compiler's runtime libraries (VKM_COMPILER_RUNTIME, CMakeLists.txt).
 install(FILES ${VKM_COMPILER_RUNTIME} DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-# The project tool, and on Windows the shim cmd.exe and PowerShell run it by.
-install(PROGRAMS ${CMAKE_SOURCE_DIR}/tools/vkm DESTINATION ${CMAKE_INSTALL_BINDIR})
-if(WIN32)
-    install(PROGRAMS ${CMAKE_SOURCE_DIR}/tools/vkm.cmd DESTINATION ${CMAKE_INSTALL_BINDIR})
+# The Python the SDK runs vkm on: a folder holding the pinned one (`vkm toolchain
+# python --dir`). Without it, vkm runs on the system's.
+set(VKM_PYTHON "" CACHE PATH "The pinned Python an SDK carries, unpacked")
+vkm_install_source_dir(VKM_PYTHON)
+
+# A shipping engine installs only into an SDK's shipping/, whose root holds the
+# data and the tool below: `vkm package` takes both from the root.
+if(NOT VKM_SHIPPING)
+    # Shaders are engine chrome: they ship with the engine and a project never
+    # edits them. Everything a project owns - its scenes, its assets, its cooked
+    # library - belongs to the project and is not the SDK's to install.
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/shaders DESTINATION .)
+
+    # The engine's font and logo, less the logo's design sources (as LOGO_SOURCES
+    # in tools/vkmcli/package.py leaves them out of a package).
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/fonts ${CMAKE_SOURCE_DIR}/assets/logo
+        DESTINATION assets
+        OPTIONAL
+        PATTERN "_preview" EXCLUDE
+        PATTERN "source_split" EXCLUDE
+    )
+
+    # What `vkm new` and the editor copy to make a project, less what running one
+    # wrote. Must match GENERATED in tools/vkmcli/project.py; docs_tests holds the three to one set.
+    set(VKM_GENERATED
+        "build"
+        "bin"
+        "dist"
+        "cooked"
+        "logs"
+        "__pycache__"
+        "editor_settings.json"
+    )
+    set(_vkm_skip "")
+    foreach(_name ${VKM_GENERATED})
+        list(APPEND _vkm_skip PATTERN "${_name}" EXCLUDE)
+    endforeach()
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/templates ${CMAKE_SOURCE_DIR}/examples DESTINATION . ${_vkm_skip})
+
+    # The engine's license, and what to do first, at the SDK root.
+    install(FILES ${CMAKE_SOURCE_DIR}/LICENSE DESTINATION .)
+    install(FILES ${CMAKE_SOURCE_DIR}/tools/install/sdk_readme.md DESTINATION . RENAME README.md)
+
+    # The command at the root, as a person runs it; the program and the tools it
+    # pins in bin/, beside the engine.
+    install(PROGRAMS ${CMAKE_SOURCE_DIR}/tools/vkm DESTINATION .)
+    if(WIN32)
+        install(PROGRAMS ${CMAKE_SOURCE_DIR}/tools/vkm.cmd DESTINATION .)
+    endif()
+    install(PROGRAMS ${CMAKE_SOURCE_DIR}/tools/vkm.py DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/tools/vkmcli
+        DESTINATION ${CMAKE_INSTALL_BINDIR}
+        FILES_MATCHING PATTERN "*.py"
+    )
+    install(FILES ${CMAKE_SOURCE_DIR}/tools/toolchain.json DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+    # Less what vkm never imports: Tk, IDLE, pip and the C headers.
+    if(VKM_PYTHON)
+        install(DIRECTORY ${VKM_PYTHON}/
+            DESTINATION python
+            USE_SOURCE_PERMISSIONS
+            PATTERN "include" EXCLUDE
+            PATTERN "share" EXCLUDE
+            PATTERN "Scripts" EXCLUDE
+            PATTERN "pkgconfig" EXCLUDE
+            PATTERN "site-packages" EXCLUDE
+            PATTERN "ensurepip" EXCLUDE
+            PATTERN "idlelib" EXCLUDE
+            PATTERN "tkinter" EXCLUDE
+            PATTERN "turtledemo" EXCLUDE
+            REGEX "/(tcl|tk|itcl|thread)[0-9.]*$" EXCLUDE
+            REGEX "/(lib)?(tcl|tk)[^/]*\\.(so|dll)$" EXCLUDE
+            REGEX "/_tkinter[^/]*$" EXCLUDE
+        )
+    endif()
 endif()
 
 install(EXPORT vkmEngineTargets

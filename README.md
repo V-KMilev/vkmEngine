@@ -121,7 +121,34 @@ with SDF text.</sub>
 
 <img src="assets/docs/editor.jpg" alt="The editor: a character selected, its components in the inspector" width="100%">
 
-## Quick start
+## Install
+
+```bash
+# Linux
+curl -fsSL https://github.com/V-KMilev/vkmEngine/releases/latest/download/install.sh | sh
+```
+
+```powershell
+# Windows, in PowerShell
+irm https://github.com/V-KMilev/vkmEngine/releases/latest/download/install.ps1 | iex
+```
+
+No administrator and nothing else to install: the engine brings its own Python, and its first
+build fetches the compiler, CMake and Ninja it was built with. Then open **vkmEngine** from your
+app menu, or:
+
+```bash
+vkm new mygame                   # or: vkm new lab -t physics_lab, a copy of an example
+cd mygame
+vkm run                          # build, cook and play
+vkm package                      # the game a player gets
+```
+
+[Getting started](docs/getting-started.md) goes on from there. Every release is also a plain
+archive on the [releases page](https://github.com/V-KMilev/vkmEngine/releases), to unpack and use
+where it is.
+
+## Building from source
 
 ```bash
 git clone --recursive https://github.com/V-KMilev/vkmEngine
@@ -134,8 +161,8 @@ cmake -B build -G Ninja && cmake --build build
 Four executables share one project directory: `vkm_editor` authors it, `vkm_runtime` plays it,
 `vkm_cook` bakes its assets, and `vkm_server` serves it to players. `examples/` holds three
 complete projects: a physics sandbox that is also the multiplayer sample, an endless runner,
-and a stress arena. [Building](docs/reference/building.md) lists the prerequisites and targets;
-[Getting started](docs/getting-started.md) makes a game from a released SDK.
+and a stress arena. [Building](docs/reference/building.md) lists the prerequisites, the targets,
+and how CI and releases build both SDKs.
 
 ## Documentation
 
@@ -181,6 +208,7 @@ modules/
                    Submodules: glTF and FBX/OBJ import, and MikkTSpace tangents
   basis_universal  Submodule: the cooker's BC7 encoder, one file of it, cloned shallow
 shaders/           GLSL source (one folder per program)
+tools/             vkm (the project tool, in vkmcli/), the toolchain it pins, and the installers
 assets/            The editor's fonts and logo, and the manual's images; sample art stays local
 ```
 

@@ -1,0 +1,59 @@
+# Every version tag: build.yml on the tag, then the two SDKs and the installers on that
+# tag's GitHub release. Run workflow rebuilds a tag that already exists.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "An existing tag to build and release, e.g. v1.0.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: ${{ github.event.inputs.tag || github.ref_name }}
+
+  publish:
+    name: Publish
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sdk-*
+          path: release
+          merge-multiple: true
+
+      # The installers fetch the newest release, so every release carries them.
+      - name: The installers
+        run: cp tools/install/install.sh tools/install/install.ps1 release/
+
+      # The release says what the changelog says about this version.
+      - name: Notes from the changelog
+        run: |
+          version="${TAG#v}"
+          awk -v v="$version" '$0 == "## " v { on = 1; next } /^## / { on = 0 } on' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "vkmEngine $version." > notes.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" release/* --clobber
+          else
+            gh release create "$TAG" release/* --title "vkmEngine ${TAG#v}" --notes-file notes.md
+          fi

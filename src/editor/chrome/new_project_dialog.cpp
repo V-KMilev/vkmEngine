@@ -44,7 +44,7 @@ bool NewProjectDialog::create(
     }
 
     // The source is a runnable project, so what running it wrote is skipped, by name.
-    // Must match `vkm new` (tools/vkm.py); docs_tests holds the two to one set.
+    // Must match `vkm new` (tools/vkmcli/project.py); docs_tests holds the two to one set.
     static const char* const GENERATED[] = {
         "build",
         "bin",

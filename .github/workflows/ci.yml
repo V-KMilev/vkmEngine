@@ -1,0 +1,17 @@
+# Every push to master or a vkm/ branch, and every pull request: build.yml, all of it.
+name: CI
+
+on:
+  push:
+    branches: [master, "vkm/**"]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch makes the running one moot.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
