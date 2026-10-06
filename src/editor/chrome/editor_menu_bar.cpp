@@ -196,6 +196,10 @@ void EditorMenuBar::drawViewMenu(EditorContext& ec) {
         if (ImGui::MenuItem("Frame All", keyLabel(state.prefs.keybinds.frameAll), false, canFrame)) {
             ViewFraming::frameAll(ctx, ec.cameraController);
         }
+        const KeyLabel orthoKey = keyLabel(state.prefs.keybinds.toggleOrthographic);
+        if (ImGui::MenuItem("Orthographic", orthoKey, ec.cameraController.isOrthographic(), canFrame)) {
+            ec.cameraController.setOrthographic(!ec.cameraController.isOrthographic());
+        }
         ImGui::Separator();
         ImGui::MenuItem("Show Colliders", nullptr, &state.showColliders);
         ImGui::MenuItem("Show Bounds",    nullptr, &state.showBounds);

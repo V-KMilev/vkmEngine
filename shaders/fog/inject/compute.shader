@@ -52,7 +52,7 @@ void main() {
 
     float density = u_density * exp(-max(worldP.y - u_height, 0.0) * u_heightFalloff);
 
-    vec3 V  = normalize(u_camera.cameraPosition.xyz - worldP);
+    vec3 V  = toViewer(worldP);
     // The cluster under the froxel's centre: on a froxel grid that is not a multiple of the
     // cluster grid, a froxel's corner can sit in the cluster beside the one it mostly covers.
     int  ci = clusterIndex(uv, depth, u_camera.zNear, u_camera.zFar);

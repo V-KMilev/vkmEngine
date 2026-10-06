@@ -1,5 +1,7 @@
 #pragma once
 
+#include <glm/glm.hpp>
+
 #include "ecs/entity.h"
 
 namespace Vkm::Engine {
@@ -35,6 +37,18 @@ void frameSelected(const FrameContext& ctx, EntityId selected, CameraControllerS
  * @param camera View moved.
  */
 void frameAll(const FrameContext& ctx, CameraControllerSystem& camera);
+
+/**
+ * @brief How far from @p target a viewpoint must stand to be outside everything drawn.
+ *
+ * Every render object counts, culled or not, since an orthographic view culls what is
+ * behind its near plane.
+ *
+ * @param ctx    Supplies the frame's render objects.
+ * @param target The point the view will look at.
+ * @return World units: the furthest bounds corner from @p target, or 0 with nothing drawn.
+ */
+float clearance(const FrameContext& ctx, const glm::vec3& target);
 
 } // namespace ViewFraming
 

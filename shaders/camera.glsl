@@ -19,3 +19,10 @@ layout(std140, binding = UBO_CAMERA) uniform CameraBlock {
 bool cameraIsPerspective() {
     return u_camera.projection[3][3] == 0.0;
 }
+
+// Unit vector from a world point toward the viewer: toward the eye in perspective, back along
+// the view axis in orthographic, whose rays are parallel.
+vec3 toViewer(vec3 worldPos) {
+    return cameraIsPerspective() ? normalize(u_camera.cameraPosition.xyz - worldPos)
+                                 : normalize(u_camera.invView[2].xyz);
+}

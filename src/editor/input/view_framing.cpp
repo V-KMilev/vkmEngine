@@ -58,4 +58,16 @@ void frameAll(const FrameContext& ctx, CameraControllerSystem& camera) {
     camera.focusOn(center, distance);
 }
 
+float clearance(const FrameContext& ctx, const glm::vec3& target) {
+    if (!ctx.visibility) return 0.0f;
+
+    float reach = 0.0f;
+    for (const Math::AABB& box : ctx.visibility->objects.bounds) {
+        // The furthest corner is the one away from the target on every axis.
+        const glm::vec3 corner = glm::max(glm::abs(box.min - target), glm::abs(box.max - target));
+        reach = std::max(reach, glm::length(corner));
+    }
+    return reach;
+}
+
 } // namespace Vkm::Engine::ViewFraming

@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include <GL/glew.h>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "gl_shader.h"
 #include "gl_context.h"
@@ -14,8 +15,29 @@
 #include "convention/gl_bindings.h"
 #include "system/render/render_view.h"
 #include "system/sky/atmosphere.h"
+#include "ecs/component/render/camera.h"
 
 namespace Vkm::Engine {
+
+namespace {
+
+/**
+ * @brief The projection the sky is drawn through.
+ *
+ * An orthographic camera's parallel rays would see one direction of sky across the whole
+ * view, so it takes a default camera's field of view at its own aspect instead.
+ *
+ * @param camera The view's camera.
+ * @return @p camera's projection when it is perspective.
+ */
+glm::mat4 skyProjection(const CameraData& camera) {
+    const glm::mat4& projection = camera.projection;
+    if (projection[3][3] == 0.0f) return projection;
+    const float aspect = projection[1][1] / projection[0][0];
+    return glm::perspective(Camera{}.fovY, aspect, camera.zNear, camera.zFar);
+}
+
+} // namespace
 
 GLSkyboxPass::GLSkyboxPass()
     : m_shader("shaders/skybox") {}
@@ -37,6 +59,7 @@ void GLSkyboxPass::execute(GLFrameContext& ctx) {
 
     m_shader.bind();
     bindFog(ctx, m_shader);
+    m_shader.setUniformMatrix4fv("u_skyProjection", skyProjection(view.camera));
     m_shader.setUniform1i("u_hasSky", sky ? 1 : 0);
     m_shader.setUniform1f("u_iblIntensity", view.environment.sky.intensity);
 
