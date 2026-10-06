@@ -7,11 +7,7 @@ struct EditorState;
 struct EditorContext;
 
 /**
- * @brief Editor/application Preferences window.
- *
- * A floating, closeable window (opened from Edit > Preferences, Ctrl+,) with a
- * tabbed layout (Camera / Gizmo / Display / Keybinds). Holds user/app
- * configuration as opposed to per-scene data.
+ * @brief The Preferences window (Edit > Preferences): per-user settings, not scene data.
  */
 class PreferencesPanel {
     public:
@@ -26,24 +22,32 @@ class PreferencesPanel {
 
     public:
         /**
-         * @brief Draws the window while state.showPreferences is true; the
-         * title-bar X clears it.
+         * @brief Draw the window while EditorState::showPreferences is set; the title-bar X clears it.
+         *
+         * @param ec Context whose Preferences are edited.
          */
         void draw(EditorContext& ec);
+
+        /**
+         * @brief Whether a keybind row is waiting for the key to bind.
+         *
+         * While armed no shortcut may act: a Delete being bound must not delete the selection.
+         *
+         * @return True from the click on a row until a key or a click ends it.
+         */
+        bool isCapturingKey() const { return m_rebindTarget != nullptr; }
 
     private:
         void drawCameraSection(EditorContext& ec);
         void drawGizmoSection(EditorState& state);
-        void drawDisplaySection(FrameContext& ctx);
+        void drawDisplaySection(EditorContext& ec);
         void drawKeybindsSection(EditorState& state);
 
     private:
-        // Display section: FPS cap value the InputInt edits before "Apply".
+        /// FPS cap edited before "Apply"; seeded from the preference when the window appears.
         int m_fpsLimitEdit = 0;
 
-        // Keybinds section: identifies which row is currently capturing a
-        // keystroke. Stable across calls; nullptr means no active rebind.
-        // Uses label pointer-identity, matching the rebind row labels below.
+        /// The capturing row, by its KEYBINDS label's address (stable across frames).
         const char* m_rebindTarget = nullptr;
 };
 

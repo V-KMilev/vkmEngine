@@ -1,5 +1,6 @@
 #include "ui/editor_icons.h"
 
+#include <algorithm>
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
@@ -12,12 +13,10 @@ namespace {
 
 ImFont* g_iconFont = nullptr;
 
-// The disc an entity marker sits on. Dark and translucent rather than opaque,
-// so it lifts the glyph off a bright sky without hiding the geometry under it.
+// Entity marker disc: translucent, to lift the glyph off a bright sky without hiding geometry.
 constexpr ImU32 MARKER_DISC_COL = IM_COL32(15, 15, 18, 180);
 
-// EditorIcon -> Lucide codepoint (lucide-static font/info.json). Every enum
-// value maps; the trailing 0 only catches an out-of-range cast.
+// EditorIcon -> Lucide codepoint (lucide-static font/info.json); the trailing 0 catches an out-of-range cast.
 ImWchar iconCodepoint(EditorIcon icon) {
     switch (icon) {
         case EditorIcon::Select:     return 0xe1c3;  // mouse-pointer-2
@@ -27,7 +26,6 @@ ImWchar iconCodepoint(EditorIcon icon) {
         case EditorIcon::SpaceLocal: return 0xe2fe;  // axis-3d
         case EditorIcon::SpaceWorld: return 0xe0e8;  // globe
         case EditorIcon::Snap:       return 0xe2b5;  // magnet
-        case EditorIcon::Duplicate:  return 0xe09e;  // copy
         case EditorIcon::Focus:      return 0xe29e;  // focus
         case EditorIcon::Trash:      return 0xe18e;  // trash-2
         case EditorIcon::Play:       return 0xe13c;  // play
@@ -57,6 +55,7 @@ ImWchar iconCodepoint(EditorIcon icon) {
         case EditorIcon::UICanvas:   return 0xe291;  // frame
         case EditorIcon::UIText:     return 0xe198;  // type
         case EditorIcon::UIImage:    return 0xe0f6;  // image
+        case EditorIcon::UIScroll:   return 0xe2ed;  // scroll
         case EditorIcon::UIButton:   return 0xe202;  // square-mouse-pointer
         case EditorIcon::LightRect:  return 0xe376;  // rectangle-horizontal
         case EditorIcon::LightDisk:  return 0xe0af;  // disc
@@ -94,49 +93,48 @@ void encodeUtf8(ImWchar cp, char out[5]) {
 
 bool loadEditorIconFont(const char* path) {
     ImGuiIO& io = ImGui::GetIO();
-    g_iconFont  = io.Fonts->AddFontFromFileTTF(path, 15.0f);
+    g_iconFont  = io.Fonts->AddFontFromFileTTF(path, EditorStyle::REFERENCE_FONT_SIZE);
     return g_iconFont != nullptr;
 }
 
 void drawEditorIcon(ImDrawList* dl, EditorIcon icon, ImVec2 c, float r, ImU32 col) {
-    // The designed set: the mapped Lucide glyph, centered in the (c, r) frame
-    // the caller asked for.
     if (g_iconFont) {
         if (const ImWchar cp = iconCodepoint(icon)) {
-            // Lucide art fills ~20/24 of its em, so the glyph is drawn at 2.3r
-            // to occupy the (c, r) frame the caller reserved for it.
+            // Lucide art fills ~20/24 of its em; 2.3r fills the caller's (c, r) frame.
             const float sz = std::round(std::max(8.0f, r * 2.3f));
             char txt[5];
             encodeUtf8(cp, txt);
 
-            // Optical centering on the glyph's actual bounds, not the em box:
-            // icon fonts hang their art off the baseline, so em-box centering
-            // sat every glyph slightly high (clipping tops in tight rows).
+            // Centre on the glyph's bounds, not the em box: icon fonts hang art off the baseline.
             ImVec2 pos;
             ImFontBaked* baked = g_iconFont->GetFontBaked(sz);
             const ImFontGlyph* g = baked ? baked->FindGlyphNoFallback(static_cast<ImWchar>(cp)) : nullptr;
             if (g) {
-                pos = ImVec2(std::floor(c.x - (g->X0 + g->X1) * 0.5f),
-                             std::floor(c.y - (g->Y0 + g->Y1) * 0.5f));
+                pos = ImVec2(
+                    std::floor(c.x - (g->X0 + g->X1) * 0.5f),
+                    std::floor(c.y - (g->Y0 + g->Y1) * 0.5f)
+                );
             } else {
                 const ImVec2 ts = g_iconFont->CalcTextSizeA(sz, FLT_MAX, 0.0f, txt);
-                pos = ImVec2(std::floor(c.x - ts.x * 0.5f),
-                             std::floor(c.y - sz * 0.5f));
+                pos = ImVec2(std::floor(c.x - ts.x * 0.5f), std::floor(c.y - sz * 0.5f));
             }
             dl->AddText(g_iconFont, sz, pos, col, txt);
             return;
         }
     }
 
-    // No icon font: one neutral primitive for every icon, so a button stays
-    // visibly clickable and its tooltip still names the action. Not per-icon art
-    // - the font ships with the engine, so this runs only if it was removed.
+    // No icon font: one neutral primitive, so a button still looks clickable.
     r = std::max(3.0f, std::round(r));
     c = ImVec2(std::floor(c.x) + 0.5f, std::floor(c.y) + 0.5f);
     const float th = std::max(1.0f, std::round(r * 0.20f));
-    dl->AddRect(ImVec2(c.x - r * 0.7f, c.y - r * 0.7f),
-                ImVec2(c.x + r * 0.7f, c.y + r * 0.7f),
-                col, r * 0.25f, 0, th);
+    dl->AddRect(
+        ImVec2(c.x - r * 0.7f, c.y - r * 0.7f),
+        ImVec2(c.x + r * 0.7f, c.y + r * 0.7f),
+        col,
+        r * 0.25f,
+        0,
+        th
+    );
 }
 
 void drawEntityMarker(ImDrawList* dl, EditorIcon icon, ImVec2 center, ImU32 col) {
@@ -154,8 +152,7 @@ bool iconButton(
 ) {
     if (!enabled) ImGui::BeginDisabled();
     if (active) {
-        // Hover still brightens an active tool - identical colors would make
-        // the active button feel dead under the cursor.
+        // Hover still brightens an active tool, or it feels dead under the cursor.
         ImGui::PushStyleColor(ImGuiCol_Button, EditorStyle::ACCENT);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, EditorStyle::ACCENT_HOV);
     }

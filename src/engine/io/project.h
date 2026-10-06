@@ -28,6 +28,7 @@ struct SplashEntry {
  */
 struct Project {
     std::string name         = "Untitled";  ///< Display name; titles the window.
+    std::string description;                ///< One line on what it is, for the editor's start screen.
     std::string version;                    ///< The game's own, which its packages are named by.
     std::string engineVersion;              ///< Engine version this was authored against.
     std::string entryScene;                 ///< Scene to boot, relative to the project root.
@@ -84,6 +85,18 @@ bool loadProject(const std::filesystem::path& projectRoot, Project& out);
  * @return True when the file was written.
  */
 [[nodiscard]] bool saveProject(const std::filesystem::path& projectRoot, const Project& project);
+
+/**
+ * @brief Whether a project made for @p engineVersion opens and builds on this engine.
+ *
+ * The same major.minor release does: a module's build refuses another
+ * (vkm_check_engine_version, cmake/gameplay_module.cmake). An unrecorded version
+ * is not refused there either.
+ *
+ * @param engineVersion A project's engineVersion.
+ * @return True when it names this engine's major.minor, or nothing.
+ */
+bool compatibleEngine(const std::string& engineVersion);
 
 /**
  * @brief Locate the project a path refers to.

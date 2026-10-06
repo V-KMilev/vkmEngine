@@ -6,10 +6,6 @@
 
 namespace Vkm::Engine {
 
-// A cool-tinted neutral ramp gives panels a sense of elevation (window <
-// child < popup, frames recessed), and a single accent (EditorStyle::ACCENT)
-// drives every interactive/selected surface, so the editor reads as one
-// designed system.
 void applyEditorTheme(float scale) {
     ImGui::StyleColorsDark();
     ImGuiStyle& style = ImGui::GetStyle();
@@ -29,10 +25,9 @@ void applyEditorTheme(float scale) {
     style.IndentSpacing     = 18.0f;
     style.ScrollbarSize     = 13.0f;
     style.ScrollbarRounding = 8.0f;
-    style.TabRounding       = 6.0f;
-    // Docked panels are child regions tiled edge-to-edge; rounded corners
-    // leave triangular gaps at the seams. Square them (floating windows
-    // keep WindowRounding). A 1px child border now reads as panel elevation.
+    // Square tabs sit flush on their panel; rounded ones read as floating buttons.
+    style.TabRounding       = 0.0f;
+    // Children tile edge-to-edge; rounded corners leave gaps at the seams.
     style.ChildRounding     = 0.0f;
     style.ChildBorderSize   = 1.0f;
     style.CellPadding       = ImVec2(7, 4);
@@ -41,87 +36,92 @@ void applyEditorTheme(float scale) {
     style.SeparatorTextPadding    = ImVec2(16.0f, 4.0f);
     style.PopupBorderSize   = 1.0f;
     style.TabBarBorderSize  = 1.0f;
-    // The accent bar over the selected tab. Selection is the louder state, so it
-    // gets the one mark hover cannot imitate - a background shade alone loses to
-    // the hover highlight beside it.
+    // Selection gets a mark hover cannot imitate; a shade alone loses to the hover highlight.
     style.TabBarOverlineSize = 2.0f;
+    // No window-menu arrow: panels are shown and hidden from the Window menu.
+    style.WindowMenuButtonPosition = ImGuiDir_None;
     style.WindowMinSize     = ImVec2(220.0f, 140.0f);
     style.DisabledAlpha     = 0.45f;
 
-    // Every metric above is a reference-font design pixel, so the chrome follows
-    // the font's content scale - 2x glyphs sit in 1x padding otherwise. Border
-    // sizes are deliberately left out of it: a hairline is one pixel at any scale.
+    // The metrics above are reference-font pixels; scale them (borders too) with the font.
     style.ScaleAllSizes(scale);
 
-    const ImVec4 A   = EditorStyle::ACCENT;
-    const ImVec4 AH  = EditorStyle::ACCENT_HOV;
-    auto aA = [](ImVec4 v, float a) { v.w = a; return v; };
-
-    // Slots the base dark theme left with legacy values (orange plots, grey
-    // dimmed tabs) - bring every one onto the palette so no default leaks in.
-    ImVec4* slots = style.Colors;
-    slots[ImGuiCol_TitleBgCollapsed]      = ImVec4(0.085f, 0.090f, 0.105f, 1.00f);
-    slots[ImGuiCol_SeparatorActive]       = A;
-    slots[ImGuiCol_TabSelectedOverline]   = A;
-    slots[ImGuiCol_TabDimmed]             = ImVec4(0.105f, 0.110f, 0.125f, 1.00f);
-    slots[ImGuiCol_TabDimmedSelected]     = ImVec4(0.165f, 0.185f, 0.235f, 1.00f);
-    slots[ImGuiCol_TabDimmedSelectedOverline] = aA(A, 0.45f);
-    slots[ImGuiCol_TextLink]              = AH;
-    slots[ImGuiCol_PlotLinesHovered]      = AH;
-    slots[ImGuiCol_PlotHistogramHovered]  = AH;
-    slots[ImGuiCol_InputTextCursor]       = A;
-    slots[ImGuiCol_TreeLines]             = ImVec4(0.32f, 0.35f, 0.44f, 0.35f);
+    const ImVec4 accent      = EditorStyle::ACCENT;
+    const ImVec4 accentHover = EditorStyle::ACCENT_HOV;
+    auto aA = [](ImVec4 v, float a) {
+        v.w = a;
+        return v;
+    };
 
     ImVec4* c = style.Colors;
+
+    // Slots the base dark theme leaves with legacy values (orange plots, grey dimmed tabs).
+    c[ImGuiCol_SeparatorActive]       = accent;
+    c[ImGuiCol_TabSelectedOverline]   = accent;
+    c[ImGuiCol_TabDimmedSelectedOverline] = aA(accent, 0.45f);
+    c[ImGuiCol_TextLink]              = accentHover;
+    c[ImGuiCol_PlotLinesHovered]      = accentHover;
+    c[ImGuiCol_PlotHistogramHovered]  = accentHover;
+    c[ImGuiCol_InputTextCursor]       = accent;
+    c[ImGuiCol_TreeLines]             = ImVec4(0.32f, 0.35f, 0.44f, 0.35f);
+
     c[ImGuiCol_Text]                  = ImVec4(0.92f, 0.93f, 0.95f, 1.00f);
     c[ImGuiCol_TextDisabled]          = ImVec4(0.46f, 0.48f, 0.55f, 1.00f);
     c[ImGuiCol_WindowBg]              = ImVec4(0.105f, 0.110f, 0.125f, 1.00f);
     c[ImGuiCol_ChildBg]               = ImVec4(0.125f, 0.130f, 0.150f, 1.00f);
     c[ImGuiCol_PopupBg]               = ImVec4(0.145f, 0.155f, 0.180f, 0.98f);
     c[ImGuiCol_Border]                = ImVec4(0.32f, 0.35f, 0.44f, 0.45f);
-    c[ImGuiCol_FrameBg]               = ImVec4(0.070f, 0.075f, 0.090f, 1.00f);
+    // A field is one step darker than the panel, not a black slab.
+    c[ImGuiCol_FrameBg]               = ImVec4(0.088f, 0.093f, 0.112f, 1.00f);
     c[ImGuiCol_FrameBgHovered]        = ImVec4(0.175f, 0.195f, 0.235f, 1.00f);
     c[ImGuiCol_FrameBgActive]         = ImVec4(0.225f, 0.250f, 0.305f, 1.00f);
-    c[ImGuiCol_TitleBg]               = ImVec4(0.085f, 0.090f, 0.105f, 1.00f);
-    c[ImGuiCol_TitleBgActive]         = ImVec4(0.130f, 0.140f, 0.170f, 1.00f);
+    // A dock's tab bar uses the title colours: one step darker than the panel, the shade
+    // of the gaps between panels, so the strip reads as frame and the panel below as page.
+    // Focus shows as the selected tab's overline.
+    c[ImGuiCol_TitleBg]               = c[ImGuiCol_WindowBg];
+    c[ImGuiCol_TitleBgActive]         = c[ImGuiCol_WindowBg];
+    c[ImGuiCol_TitleBgCollapsed]      = c[ImGuiCol_WindowBg];
     c[ImGuiCol_MenuBarBg]             = ImVec4(0.130f, 0.140f, 0.165f, 1.00f);
     c[ImGuiCol_ScrollbarBg]           = ImVec4(0.070f, 0.075f, 0.090f, 0.50f);
     c[ImGuiCol_ScrollbarGrab]         = ImVec4(0.30f, 0.33f, 0.40f, 1.00f);
     c[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(0.40f, 0.44f, 0.52f, 1.00f);
-    c[ImGuiCol_ScrollbarGrabActive]   = aA(A, 0.85f);
-    c[ImGuiCol_CheckMark]             = AH;
-    c[ImGuiCol_SliderGrab]            = A;
-    c[ImGuiCol_SliderGrabActive]      = AH;
+    c[ImGuiCol_ScrollbarGrabActive]   = aA(accent, 0.85f);
+    c[ImGuiCol_CheckMark]             = accentHover;
+    c[ImGuiCol_SliderGrab]            = accent;
+    c[ImGuiCol_SliderGrabActive]      = accentHover;
     c[ImGuiCol_Button]                = ImVec4(0.185f, 0.200f, 0.240f, 1.00f);
-    c[ImGuiCol_ButtonHovered]         = aA(A, 0.85f);
-    c[ImGuiCol_ButtonActive]          = aA(A, 1.00f);
+    c[ImGuiCol_ButtonHovered]         = aA(accent, 0.85f);
+    c[ImGuiCol_ButtonActive]          = aA(accent, 1.00f);
     c[ImGuiCol_Header]                = ImVec4(0.205f, 0.235f, 0.300f, 1.00f);
-    c[ImGuiCol_HeaderHovered]         = aA(A, 0.55f);
-    c[ImGuiCol_HeaderActive]          = aA(A, 0.75f);
+    c[ImGuiCol_HeaderHovered]         = aA(accent, 0.55f);
+    c[ImGuiCol_HeaderActive]          = aA(accent, 0.75f);
     c[ImGuiCol_Separator]             = ImVec4(0.26f, 0.29f, 0.36f, 0.55f);
-    c[ImGuiCol_SeparatorHovered]      = aA(A, 0.70f);
-    c[ImGuiCol_Tab]                   = ImVec4(0.135f, 0.145f, 0.170f, 1.00f);
-    // Hover is a neutral lift and selection is the accent, not the other way
-    // round: a hovered tab painted in the accent is the brightest thing in the
-    // bar, so the bar answers "which tab am I on" with the pointer's position.
-    c[ImGuiCol_TabHovered]            = ImVec4(0.205f, 0.225f, 0.270f, 1.00f);
-    c[ImGuiCol_TabSelected]           = ImVec4(0.265f, 0.350f, 0.490f, 1.00f);
-    c[ImGuiCol_PlotLines]             = AH;
-    c[ImGuiCol_PlotHistogram]         = aA(AH, 0.85f);
+    c[ImGuiCol_SeparatorHovered]      = aA(accent, 0.70f);
+    // A tab is not a button: an unselected one is the strip itself, so only its label
+    // shows, and the selected one is the panel's own shade, open into the page below it.
+    c[ImGuiCol_Tab]                   = c[ImGuiCol_WindowBg];
+    c[ImGuiCol_TabDimmed]             = c[ImGuiCol_Tab];
+    // Hover is a neutral lift: an accent-coloured hover would outshine the selected tab.
+    c[ImGuiCol_TabHovered]            = ImVec4(0.150f, 0.158f, 0.182f, 1.00f);
+    c[ImGuiCol_TabSelected]           = c[ImGuiCol_ChildBg];
+    c[ImGuiCol_TabDimmedSelected]     = c[ImGuiCol_TabSelected];
+    c[ImGuiCol_PlotLines]             = accentHover;
+    c[ImGuiCol_PlotHistogram]         = aA(accentHover, 0.85f);
     c[ImGuiCol_TableHeaderBg]         = ImVec4(0.150f, 0.160f, 0.190f, 1.00f);
     c[ImGuiCol_TableBorderStrong]     = ImVec4(0.26f, 0.29f, 0.36f, 1.00f);
     c[ImGuiCol_TableBorderLight]      = ImVec4(0.19f, 0.21f, 0.26f, 1.00f);
     c[ImGuiCol_TableRowBgAlt]         = ImVec4(1.00f, 1.00f, 1.00f, 0.025f);
 
-    // Fill the remaining slots so nothing falls back to StyleColorsDark's
-    // teal defaults (these are what made stray bits look "un-themed").
+    // The rest, so nothing falls back to StyleColorsDark's teal defaults.
     c[ImGuiCol_BorderShadow]          = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-    c[ImGuiCol_TextSelectedBg]        = aA(A, 0.38f);
+    c[ImGuiCol_TextSelectedBg]        = aA(accent, 0.38f);
     c[ImGuiCol_DragDropTarget]        = ImVec4(0.95f, 0.70f, 0.30f, 0.90f);
     c[ImGuiCol_ResizeGrip]            = ImVec4(0.30f, 0.33f, 0.40f, 0.40f);
-    c[ImGuiCol_ResizeGripHovered]     = aA(A, 0.65f);
-    c[ImGuiCol_ResizeGripActive]      = aA(AH, 0.90f);
-    c[ImGuiCol_NavCursor]             = A;
+    c[ImGuiCol_ResizeGripHovered]     = aA(accent, 0.65f);
+    c[ImGuiCol_ResizeGripActive]      = aA(accentHover, 0.90f);
+    c[ImGuiCol_DockingPreview]        = aA(accent, 0.45f);
+    c[ImGuiCol_DockingEmptyBg]        = c[ImGuiCol_WindowBg];
+    c[ImGuiCol_NavCursor]             = accent;
     c[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
     c[ImGuiCol_NavWindowingDimBg]     = ImVec4(0.05f, 0.05f, 0.06f, 0.55f);
     c[ImGuiCol_ModalWindowDimBg]      = ImVec4(0.04f, 0.04f, 0.06f, 0.60f);

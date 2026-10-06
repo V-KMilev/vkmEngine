@@ -43,6 +43,7 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
     try {
         in >> doc;
         out.name          = doc.value("name",          out.name);
+        out.description   = doc.value("description",   out.description);
         out.version       = doc.value("version",       out.version);
         out.engineVersion = doc.value("engineVersion", out.engineVersion);
         out.entryScene    = doc.value("entryScene",    out.entryScene);
@@ -145,7 +146,7 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
     }
     if (out.engineVersion.empty()) {
         LOG_INFO("Project '%s' (engine version unrecorded)", out.name.c_str());
-    } else if (out.engineVersion == APP_VERSION) {
+    } else if (compatibleEngine(out.engineVersion)) {
         LOG_INFO("Project '%s' (engine %s)", out.name.c_str(), out.engineVersion.c_str());
     } else {
         LOG_WARNING(
@@ -169,6 +170,7 @@ bool saveProject(const fs::path& projectRoot, const Project& project) {
     }
 
     doc["name"]          = project.name;
+    doc["description"]   = project.description;
     doc["version"]       = project.version;
     doc["engineVersion"] = project.engineVersion;
     doc["entryScene"]    = project.entryScene;
@@ -190,6 +192,16 @@ bool saveProject(const fs::path& projectRoot, const Project& project) {
     doc["render"] = std::move(render);
 
     return detail::writeJsonFile(file, doc, "project");
+}
+
+bool compatibleEngine(const std::string& engineVersion) {
+    if (engineVersion.empty()) return true;
+    // "1.0" of "1.0.3": up to the second dot, which a bare "1.0" lacks.
+    const auto release = [](const std::string& version) {
+        const size_t first = version.find('.');
+        return first == std::string::npos ? version : version.substr(0, version.find('.', first + 1));
+    };
+    return release(engineVersion) == release(APP_VERSION);
 }
 
 fs::path findProjectRoot(const fs::path& start) {

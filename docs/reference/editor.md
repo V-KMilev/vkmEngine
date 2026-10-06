@@ -1,7 +1,7 @@
 # Editor
 
 The editor is an ImGui-based shell registered as a `System` on
-`SystemStage::UI`. It owns the panel set, the workspace layout, the
+`SystemStage::Editor`. It owns the panel set, the workspace layout, the
 camera controller wiring, the undo/redo stack, and the scene I/O
 controller. Everything mutating goes through an `EditorContext`
 aggregate, so panels do not reach into each other.
@@ -11,116 +11,208 @@ aggregate, so panels do not reach into each other.
 ```
 +---------------------------------------------------------------+
 |                          Menu bar                             |
-+---------------------------------------------------------------+
-|                                                |  Inspector / |
-|                   Viewport (3D scene)          |  Material    |
-|                                                |              |
-|  [Toolbar]                       [Nav gizmo]   |              |
-|  [Playback bar (top-centre)]                   |              |
-|  [Hierarchy panel docked left]                 |              |
-|                                                |              |
-+---------------------------------------------------------------+
-|        Bottom panel (Assets / Animation / Errors tabs)        |
-+---------------------------------------------------------------+
++-----------+---------------------------------------+-----------+
+| Hierarchy |                Viewport               | Inspector |
+|           |                                       | Material  |
+|           | [T]      [Playback bar]   [View bar]  |           |
+|           | [o]                                   |           |
+|           | [o]                                   |           |
+|           | [l]                       [Nav axes]  |           |
+|           +---------------------------------------+           |
+|           |      Assets | Animation | Errors      |           |
++-----------+---------------------------------------+-----------+
 |                          Status bar                           |
 +---------------------------------------------------------------+
 ```
 
-The viewport renders into a dedicated render target. The editor states the
-rect once a frame on `HostChrome` - the editor-to-engine channel `FrameContext`
-carries as `ctx.chrome` - and `RenderSystem`, `VisibilitySystem` and `UISystem`
-each read it back from there. The result is presented as an ImGui image inside
-the docked viewport area, with overlays drawn on top.
+The scene renders straight into the window's backbuffer, inside the viewport's
+rect. The editor states that rect once a frame on `HostChrome` - the
+editor-to-engine channel `FrameContext` carries as `ctx.chrome` - and
+`RenderSystem`, `VisibilitySystem` and `UISystem` each read it back from there.
+The Viewport window has no background, so the frame shows through it, and the
+overlays are drawn on top.
 
 `HostChrome` carries the other thing an authoring host knows and the engine
 does not: whether the host's own panels, rather than the scene, own the pointer
-and the keyboard this frame. The camera controller stops flying and the game UI
-stops hit-testing while they do. A runtime writes neither, and the defaults -
-the whole window, nobody holding anything - are what a shipped game wants.
+and the keyboard this frame. `InputMap::update` reads it: while the panels hold
+the keyboard every key binding reads as up, and while they hold the pointer
+every mouse-button binding, the wheel and the pointer's movement read as
+untouched - so the fly camera stops, typing into a field does not walk the
+character, and the game UI takes no click. The pointer's position still
+travels, and `UISystem` asks the chrome directly for the one thing it answers,
+hover. A runtime writes neither, and the defaults - the whole window, nobody
+holding anything - are what a shipped game wants.
 
-## Key files
+What the viewport looks through is the third thing, and it is a frame product
+rather than a chrome statement: the editor's `CameraControllerSystem` publishes
+`ctx.hostView` at the Input stage, and `VisibilitySystem` renders through it
+instead of the scene's active camera - see [The editor's view](#the-editors-view).
 
-| File                                                  | Responsibility                                                        |
-|-------------------------------------------------------|-----------------------------------------------------------------------|
-| `src/editor/editor_system.h`                          | `EditorSystem` (System subclass; owns the panel set + workspace)      |
-| `src/editor/framework/editor_state.h`                 | `EditorState` (selection, gizmo mode, snap, command stack, ...)       |
-| `src/editor/framework/editor_context.h`               | `EditorContext` aggregate passed to every panel                       |
-| `src/editor/framework/command.h`                      | `Command` abstract base for undo/redo                                 |
-| `src/editor/framework/command_stack.h`                | `CommandStack` (bounded undo + redo with merge-on-coalesce)           |
-| `src/editor/framework/editor_commands.h`              | Concrete commands: Transform, Add/RemoveComponent, Create/DestroySubtree, Reparent |
-| `src/editor/framework/scene_io_controller.h`          | Save/Save-As/Load modal + file pickers, post-load housekeeping        |
-| `src/engine/system/camera/camera_controller_system.h`        | FPS fly-cam System used by the editor                                 |
-| `src/editor/gizmo/transform_gizmo.h`                  | Transform gizmo (one `transform_gizmo.cpp`: math, visuals, hit tests, drag state) |
+### The panels dock, and the layout is ImGui's
+
+The editor runs on Dear ImGui's docking branch. The root window holds the menu
+bar, one dockspace and the status bar under it; every panel is a window of its
+own that docks into the dockspace, tabs beside another, or floats: **Hierarchy**,
+**Viewport**, **Inspector**, **Material**, **Assets**, **Animation** and
+**Errors** (their names are in `chrome/dock_layout.h`, because a name is what the
+ini files a window's place under). Where they are and how big is ImGui's: a
+splitter drag resizes, a tab drag moves, and nothing of the editor's holds a
+panel size. Multi-viewport is off - a panel dragged out of the window floats
+inside it rather than becoming a second OS window.
+
+The **default layout** is the one above. `buildDefaultLayout`
+(`chrome/dock_layout.cpp`) cuts it with `DockBuilder` the first time - when the
+ini holds no dockspace - and again on **Window > Reset Layout**, which also shows
+every panel. Each side is given a fixed size in design pixels (`HIERARCHY_WIDTH`,
+`INSPECTOR_WIDTH`, `BOTTOM_HEIGHT`) rather than a share of the window, because the
+first frame can come before the window manager has sized the window; a window
+too small for it squeezes the side, never the viewport, and the side grows back
+when the window does.
+
+A panel does not take the focus when it appears (`NoFocusOnAppearing`): a dock
+node shows its focused window's tab, so a group shown again would otherwise open
+on whichever of its windows began last rather than on the tab it was left on.
+
+The viewport's overlays draw in a child that is exactly the scene's rect, so they
+place themselves the same way whether or not a tab bar sits above it: the **tool
+strip** down the left edge, the **view bar** top-right, the **playbar** centred
+between them and the navigation axes bottom-right. The strips are one design
+(`beginOverlayStrip`, `ui/editor_widgets.h`) with fixed sizes, so each is placed
+from the others' in the same frame; a viewport too small to hold the axes clear
+of the strips draws none.
+
+**What is shown is the editor's; where it is, ImGui's.** The panel toggles -
+Window > Hierarchy, Inspector and Assets, Ctrl+1 to Ctrl+3 - show and hide the
+groups the default layout docks together: the Hierarchy; the Inspector and the
+Material editor; Assets, Animation and Errors. They are persisted per project in
+`editor_settings.json`. The windows have no close box, so a toggle is the one way
+to hide one and the one way back.
+
+**The layout is persisted per person, in ImGui's ini.** `io.IniFilename` is
+`imgui.ini` in `ProjectPaths::userRoot()`, beside `editor_user.json`, so the
+layout follows the person from one project to the next
+([io.md](io.md#which-root-owns-a-path)). What is not a layout keeps out of it:
+the root window, the toast, the hidden-editor hint and every popup and dialog are
+`NoSavedSettings`, and `io.LogFilename` is null, so ImGui writes no log into the
+working directory either.
+
+### Who has the pointer and the keyboard
+
+The editor decides it once a frame, before the ImGui frame opens, and every
+reader of a press takes that one answer (`InputOwnership`,
+`input/input_ownership.h`, carried as `EditorContext::input`): the capture
+declared on `HostChrome`, the shortcuts, the transform gizmo, the picker and the
+navigation axes. It is decided from the hovers the last frame drew - the frame a
+click was aimed in. "On the viewport" is the Viewport window's scene rect being
+hovered with nothing of ImGui's above it. The owner is the first row that holds:
+
+| When | Owner | What answers a press |
+|---|---|---|
+| The cursor is hidden and grabbed, by the fly camera or a running game | `Captured` | Nothing of the editor's: ImGui is told it has no mouse, because an unseen cursor wanders over panels it is not pointing at. The viewport hover is held from before the grab (`nextViewportHover`) |
+| A gizmo drag is held | `GizmoHandle` | The drag, wherever it has gone |
+| The pointer is off the viewport | `Panel` | A panel, a popup, a floating window |
+| Over the tool strip, the view bar, the playbar or the navigation axes | `Overlay` | The overlay |
+| Over a gizmo handle | `GizmoHandle` | The handle |
+| Over a blocking element of the game's UI | `GameUI` | Selected, unless the game has the viewport - then the game's |
+| Anywhere else on the viewport | `Scene` | The picker |
+
+A key is the editor's own UI's before it is anybody's binding: while a field is
+typed into, a menu, popup or dialog is open, or Preferences waits for a key to
+rebind, no keybind answers it (`InputOwnership::keysHeldByUI`) and the fly camera
+hears none of it.
+
+**A play session's viewport is the game's.** While a session runs and the
+pointer is on the viewport, or the game has grabbed the cursor, the keyboard and
+the mouse buttons belong to the game: no editor shortcut acts, so Ctrl+1 picks a
+weapon rather than hiding the Hierarchy. Three things stay live - the
+editor-toggle key, the transport keys (**Play / Stop**, Ctrl+P, and **Pause /
+Resume**, Ctrl+Shift+P, in `PlaybackBar::processKeys`) and the playbar. The game
+still sees a chord's keys on the frame it is pressed, since its input is read at
+the Input stage; a pause discards the presses latched for the next tick. With the
+pointer on a panel the keyboard is the editor's, and the engine is told so. The
+editor's view stands down for the session (`CameraControllerSystem::setActive`):
+the viewport renders through the game's camera, and framing, the navigation
+axes, the gizmo and click-picking go with it (`InputOwnership::clickPicks`).
+
+**An ejected session is the editor's again.** **Eject / Return** (F8, as live as
+the transport keys, or the camera button on the playbar) renders the running
+game through the editor's viewpoint, which flies, picks and edits as in Edit
+mode, while the game hears nothing - the chrome declares the host holds both
+devices (`InputOwnership::hostHoldsPointer`), and the fly camera samples its own
+map against what the panels alone hold (`panelsHoldPointer`). A cursor the game
+grabbed is freed on the way out, freed again whenever the game grabs it while
+ejected, and given back as the game last set it on the way in. Stop ends an
+ejection with the session (`PlaySnapshot`). The caption says `PLAY MODE, EJECTED`.
+
+## Where things are
+
+Every directory under `src/editor/` names a responsibility, and a file belongs
+to exactly one of them:
+
+| Directory | Holds |
+|---|---|
+| *(root)* | The state and the seams every other directory reads: `EditorSystem`, `EditorState`, `EditorContext`, `EditorSettings`, and `editor_actions` - the scene mutations the panels invoke rather than write |
+| `command/` | Undo: the `Command` base, the `CommandStack`, the concrete commands, `EditScope`/`editStep`/`pushEdit`, `CommandHost::pushStep` - which records an applied step and marks the scene unsaved, the pair every finished edit owes - and the prefab-override bookkeeping a command has to keep. It reaches the editor through `CommandHost` - six methods to implement, not `EditorState` - so the machinery that decides whether an author's work survives an undo can be run, and tested, without a window |
+| `session/` | What outlives a frame but not the editor: the open scene (`SceneIOController`), the open project (`ProjectController`), the Play/Stop snapshot and the ejection that lives and dies with it (`PlaySnapshot`) and the material preview cache |
+| `panels/` | One file per panel, each drawing one region and owning only its own widget state |
+| `overlays/` | What is drawn *over* the viewport: the transform gizmo - its maths, hit tests and drag state as well as its drawing - the tool strip and view bar, the playback bar, the axis navigation gizmo, and the wire primitives they share |
+| `chrome/` | What is drawn *around* the panels: the menu bar, the status bar, the dockspace's default layout, and the four dialogs the menus ask for - Import Model, Place Prefab, New Project and Open Project - which draw at the menu bar's scope so a closing menu does not take them with it |
+| `input/` | The keybind table and the shortcut dispatch that reads it, who has the input each frame (`InputOwnership`), and the editor's view (`CameraControllerSystem`) with its fly bindings and the framing that moves it (`ViewFraming`) |
+| `ui/` | The widget vocabulary every panel is written in: the `prop*` rows, the dialog scaffold, the style and theme, the icons, the asset picker, the audition transport |
 
 ## Panels
 
 | Panel               | File                                  | Description                                                                 |
 |---------------------|---------------------------------------|-----------------------------------------------------------------------------|
-| Hierarchy           | `panels/hierarchy_panel.cpp`          | Entity tree; drag a node onto another to reparent (cycle-safe); context-menu Unparent |
-| Inspector           | `panels/inspector_panel.cpp`          | The right panel's first tab. Component editor; animation easing/keyframes; Camera "Set as Main"; Hierarchy Unparent; prefab-instance overrides |
-| Bottom              | `panels/bottom_panel.cpp`             | Three tabs: Assets (the Asset Browser), Animation (keyframe editor) and Errors (recoverable engine failures) |
-| Render Settings     | `panels/render_settings_panel.cpp`    | Render quality tuning: `RenderSettings` (debug view / grid / MSAA, texture filtering, GTAO, bloom, shadows, probes) plus the `VisibilitySystem` culling thresholds; opened from Window > Render Settings |
-| Material Editor     | `panels/material_editor_panel.cpp`          | The right panel's Material tab. One material under a live preview: a Base card, a grid of map tiles, and a card per secondary lobe the material actually uses |
-| Asset Browser       | `panels/asset_browser_panel.cpp`            | The bottom panel's Assets tab. One library for all six asset kinds: a kind rail, a uniform tile grid, and one verb slot per kind (import / create). Materials and meshes render thumbnails, a texture *is* its thumbnail, sounds audition from the tile |
-| Project Settings    | `panels/project_settings_panel.cpp`   | Floating window over what `project.json` records: name, entry scene, tick rate, engine version, and the seats and port the game is served with, plus a read-only list of what it replicates; opened from File > Project > Settings... |
+| Hierarchy           | `panels/hierarchy_panel.cpp`          | Entity tree of every entity, a Transform or not - a UI element and a logic-only Script entity are rows like any other; drag a node onto another to reparent (cycle-safe); context-menu Unparent |
+| Inspector           | `panels/inspector_panel.cpp`          | The **Inspector** window, docked right. Component editor (an Animation card is a compact summary; keyframes and easing are the Animation tab's); Camera "Set as Main"; Hierarchy Unparent; prefab-instance overrides |
+| Animation           | `panels/animation_panel.cpp`          | The **Animation** window. A transport, a three-lane timeline whose keyframe dots drag, and a table per track, all posing the entity as the playhead moves |
+| Render Settings     | `panels/render_settings_panel.cpp`    | Render quality tuning: `RenderSettings` (debug view / tonemap / grid / MSAA, texture filtering, GTAO, bloom, shadows, screen-space reflections, probes) the visibility pass's culling thresholds among them; opened from Window > Render Settings |
+| Material Editor     | `panels/material_editor_panel.cpp`          | The **Material** window, tabbed beside the Inspector. One material under a live preview: a Base card, a grid of map tiles, and a card per secondary lobe the material actually uses |
+| Asset Browser       | `panels/asset_browser_panel.cpp`            | The **Assets** window. One library for every asset kind: a kind rail, a uniform tile grid, and one verb slot per kind (import / create). Materials and meshes render thumbnails, a texture *is* its thumbnail, sounds audition from the tile |
+| Project Settings    | `panels/project_settings_panel.cpp`   | Floating window over what `project.json` records: name, entry scene, tick rate, engine version, and the seats and port the game is served with, plus a read-only list of what it replicates; opened from File > Settings... (under the Project heading) |
 | Preferences         | `panels/preferences_panel.cpp`        | Floating editor/app settings window (Edit > Preferences, Ctrl+,)            |
-| Viewport Overlay    | `overlays/viewport_overlay.cpp`       | The axis navigation gizmo, top-right of the viewport (click an axis to snap the camera) |
+| Errors              | `panels/errors_panel.cpp`             | The **Errors** window: recoverable engine failures, newest first, filling the window. A function, not a class, because it remembers nothing |
+| Viewport Overlay    | `overlays/viewport_overlay.cpp`       | The axis navigation gizmo, bottom-right of the viewport (click an axis to snap the editor's view) |
 | Gizmo Overlay       | `overlays/gizmo_overlay.cpp`          | The transform gizmo's drawing and drag, and the viewport's click-to-pick     |
-| Gizmo Drawing       | `overlays/gizmo_overlay_draw.cpp`     | Every `draw*Gizmos` body, plus the selection outline: lights, cameras, probes, volumes, decals, emitters, audio, colliders, skeletons, bounds |
-| Viewport Toolbar    | `overlays/viewport_toolbar.cpp`       | In-viewport icon tool box: tool/space/snap + selection actions              |
+| Gizmo Drawing       | `overlays/gizmo_overlay_draw.cpp`     | Every `draw*Gizmos` body, plus the selection outline: lights, cameras, probes, volumes, decals, emitters, audio, colliders, joints, skeletons, bounds |
+| Viewport Toolbar    | `overlays/viewport_toolbar.cpp`       | The tool strip (tool, space, snap) down the viewport's left edge, and the view bar (shading, camera, Frame All, Focus) in its top-right corner |
 | Playback Bar        | `overlays/playback_bar.cpp`           | Top-centre Play / Pause / Step / Stop transport for the simulation; Pause and Step also hold the mixer's voices; frames and captions the viewport while a session runs |
+| Start Screen        | `panels/start_screen.cpp`             | What the editor shows when no project is open: New, Open, the projects opened before and the examples this engine ships - and no workspace at all. See [Opening a project](#opening-a-project) |
 
-### A tab bar says which tab is open, not where the pointer is
+The pieces of **chrome** are not panels - they belong to `EditorSystem` and
+sit around the panel layout rather than in it:
 
-Selection is the louder state. A hovered tab gets a neutral lift; the open one
-gets the accent fill and the accent overline above it, which hover has no
-counterpart for. The theme used to have this the other way round - a hovered
-tab was painted `ACCENT` at 0.70 alpha while the open one sat in a muted slate
-- so resting the pointer on a neighbour made that neighbour the brightest thing
-in the bar, and the bar answered "which tab am I on" with the pointer's
-position. The overline is the mark that settles it: its colours
-(`TabSelectedOverline`, `TabDimmedSelectedOverline`) were already in the
-palette while `TabBarOverlineSize` was 0, so none of them were drawn. Tab bars
-opt in with `ImGuiTabBarFlags_DrawSelectedOverline`.
+| Chrome              | File                                  | Description                                                                 |
+|---------------------|---------------------------------------|-----------------------------------------------------------------------------|
+| Menu Bar            | `chrome/editor_menu_bar.cpp`          | File / Edit / View / Window / Entity / Help, inside the root window's menu-bar scope. Holds no command state: it reads and writes `EditorState` and forwards scene-file intents to the `SceneIOController`, whose Save-As and Load dialogs it also draws so they stay in that scope |
+| Status Bar          | `chrome/editor_status_bar.cpp`        | Bottom edge, stateless: the dirty dot, the selection's parent breadcrumb and position, and the build banner. Drawn last inside the root window, under the dockspace |
+| Dock Layout         | `chrome/dock_layout.cpp`              | The workspace windows' names and the default layout `DockBuilder` cuts the dockspace into, on a first launch and on Window > Reset Layout. Holds no state: the layout itself is ImGui's |
 
 ### Where world settings live
 
-Scene-global settings are cards in the **World inspector** (select
-nothing, or pick the world row in the hierarchy): `Environment` (IBL /
+Scene-global settings are cards in the **World inspector** (pick the
+**World** row at the top of the hierarchy): `Environment` (IBL /
 skybox), `Procedural Sky`, `Volumetric Fog`, and `Physics` (gravity,
 solver iterations - `Scene::physics()`, read by `PhysicsSystem` each
 fixed step). They are scene data, so they sit beside the components
 rather than in a settings window. Render Settings is the exception: it
 is quality tuning rather than world content, so it has its own window.
 
-### The right panel is two tabs, and why the Material Editor is one of them
+### The Material editor is docked beside the Inspector
 
-`Inspector | Material`, the shape the bottom panel already uses for its three.
-Both tabs edit the properties of what is selected - the entity's components,
-and the material it draws with - so they are the same job at two depths, and
-the second one had been a floating `ImGui::Begin` reachable from the Window
-menu, a keybind and three panels at once.
+Both edit the properties of what is selected - the entity's components, and the
+material it draws with - so they are the same job at two depths, and a material
+editor wants height beside the viewport rather than the short, wide bottom row.
 
-The bottom strip was the other candidate and is the wrong shape: it holds what
-you *consult* while working in the viewport - assets, animation, errors - which
-is wide, short and browsed. A material editor is one material, many parameters
-and a preview you watch while dragging, which wants height and wants to sit
-beside the viewport rather than eat it.
-
-The move deleted the floating host outright rather than leaving both live:
-`EditorState::showMaterialEditor`, the Window menu item and the Ctrl+5 keybind
-are gone. What replaced them is `EditorState::openMaterial(handle)` - the one
-way in, used by the Inspector's Mesh card, the Asset Browser's tile and its New
-verb. It sets the target, un-hides the right panel and raises a one-frame
-`revealMaterialTab` request, because every caller is drawn before the tab bar
-that answers it.
+There is one way in, `EditorState::openMaterial(handle)`, used by the Inspector's
+Mesh card, the Asset Browser's tile and its New verb. It sets the target, shows
+the Inspector's group and raises a one-frame `revealMaterial` request, which
+focuses the window wherever it is docked, because every caller is drawn before
+the window that answers it. It has no close box: it is shown and hidden with the
+Inspector (Ctrl+2).
 
 ### The Material tab shows what the material is, not what the struct holds
-
-The old panel drew eight cards in the order `MaterialAsset` declares its fields,
-every one of them always there, and a material that was a painted wall still
-offered Anisotropy, Sheen, Subsurface, Clearcoat and Volume headers to scroll
-past. The tab is cut by what a material *is* instead:
 
 - **Base and Maps are always there.** Type, albedo, metallic, roughness, AO,
   IOR and emission; then the texture slots.
@@ -129,239 +221,148 @@ past. The tab is cut by what a material *is* instead:
   asset, not off a flag nothing serializes), how to switch it on at a value that
   can be seen, and how to put every field it owns back - its texture included,
   or the card just turned off would come straight back. `+ Add Feature` offers
-  exactly the ones that are off, and each card's `x` turns its own off.
-- **A row that cannot do anything is not drawn.** Alpha Cutoff appears for
-  AlphaMask only, Emissive Strength once the emission is not black, and Normal
-  Scale and Height Scale sit inside Maps beside the map each of them scales,
-  which is also the only time either does anything.
+  exactly the ones that are off. Transmission carries its volume (thickness,
+  absorption), which means nothing without it.
+- **A row that cannot do anything is not drawn.** Cutoff appears for AlphaMask
+  only, emission Strength once the emission is not black, and Normal Scale and
+  Height Scale sit beside the map each of them scales.
 
-Two of the old cards are gone rather than moved: Surface was a bag holding IOR
-(which belongs with the base layer it reflects off), the two map scales, and
-Transmission; Volume was Transmission's other half and only ever meant anything
-with it, so the two are one Transmission feature.
-
-Maps are a tile grid in the Asset Browser's grammar - one square face, a name, a
-one-line detail, the kind's hue as a left strip, solid when the slot is filled
-and faint when it is empty. Clicking a tile binds a texture, right-clicking
-offers Replace, Clear and the four generators laid out rather than nested. The
-six core slots always have a tile; the five packed and secondary ones earn theirs
-by being bound, and until then they are behind the one `+` tile at the end of the
-grid.
+Maps are a tile grid in the Asset Browser's grammar (`tileFace`, `tileStrip`).
+The six core slots always have a tile; the packed and secondary ones earn theirs
+by being bound, and until then sit behind one `+` tile.
 
 ### Which material the tab edits
 
-The Inspector beside it follows the selection, so this tab does too: pick an
-entity carrying a material and it is what the tab shows. A material chosen by
-hand - the chooser at the top, an Asset Browser tile, New or Duplicate - is
-pinned in `EditorState::materialEditorTarget` and outranks the selection, but
-only until another entity that carries one of its own is picked. That is the
-rule that lets a material nothing uses yet be worked on without the next click
-in the viewport throwing it away, and lets the tab still behave like the panel
-it lives in.
+The tab follows the selection, as the Inspector beside it does. A material chosen
+by hand - the chooser, an Asset Browser tile, New or Duplicate - is pinned in
+`EditorState::materialEditorTarget` and outranks the selection until another
+entity carrying a material of its own is picked, so a material nothing uses yet
+can be worked on without the next viewport click throwing it away.
 
-Everything done *to* the material rather than to its parameters - Duplicate,
-Rename, New, Load PBR Folder - is behind one button on the identity row, beside
-a chip saying how many entities draw with this material (clicking it selects
-them). Materials are shared by handle, so that count is the blast radius of
-every slider under it. The row leads with the material glyph, in the hue the
-Asset Browser's Materials rail and every material tile wear, the way the
-Inspector's identity row leads with the entity's.
+Duplicate, Rename, New and Load PBR Folder sit behind one button on the identity
+row, beside a chip counting the entities that draw with this material (clicking
+it selects them) - the blast radius of every slider under it, since materials
+are shared by handle. Duplicate and Load PBR Folder hand the new material to the
+selected entity only when it draws with the one the tab shows.
 
-With nothing to edit the tab puts up the block the Inspector puts up, in its
-metrics: a centred kind glyph, what is missing, the two routes out of it, and
-the chooser and `New Material` at the width `Create Entity` has one tab over.
-Two tabs of one panel get compared by eye, and an empty state that answered in
-another register - left-aligned, a full-width accent bar, a sentence - read as
-another program. The accent bar went with it: in this tree an accent verb ends
-a list of things (`Add Component`, `Add Feature`), and an empty state's verb is
-quiet.
+### Working panels vs Preferences
 
-### Bottom panel vs Preferences
+- **The bottom row** is three per-scene working surfaces: **Assets**,
+  **Animation** and **Errors**. Errors lists `EngineErrorLog` entries newest
+  first - a script hook that throws, an asset reference a scene load could not
+  resolve - with a Clear button.
+- **Preferences** is a floating window (`Edit > Preferences`, Ctrl+,) with
+  `Camera`, `Gizmo` (snap defaults), `Display` and `Keybinds` tabs. It is one
+  `Preferences` struct on `EditorState`, persisted whole in `editor_user.json`
+  under `userRoot()` rather than with the project, held on load to what its
+  controls could have set (`Preferences::bounded`), and put into effect by
+  `EditorSystem::applyPreferences` every frame. Both settings files carry a schema
+  version, and a file of another version is refused whole, with a warning. The
+  window half - vsync, the frame cap and the window mode - stands aside during a
+  play session, where a game may set the window up its own way. Outside a session
+  an unfocused editor is held to 15 frames a second, or to the author's cap when
+  that is lower.
 
-The editor separates **per-scene working data** from **editor/app
-preferences**:
+Preferences, Render Settings and Project Settings open through
+`beginToolWindow` (`ui/editor_dialogs.h`): floating, never docked.
 
-- **Bottom panel** is a tab bar over per-scene working surfaces:
-  **Assets** (the Asset Browser below), **Animation** (the keyframe editor
-  below) and **Errors**. Assets leads because it is the surface an author
-  reaches for most often and the one that wants the width. The Errors
-  tab is where recoverable engine failures surface - a script hook that
-  throws does not kill the frame, it lands here, and so does an asset
-  reference a scene load could not resolve, named by kind and by asset,
-  which is the one failure that costs the author a field they had filled
-  in - listing `EngineErrorLog` entries newest first with a Clear button.
-- **Preferences window** is a floating, closeable window opened from
-  `Edit > Preferences` (Ctrl+,). Tabs: `Camera` (fly-cam), `Gizmo`
-  (snap defaults), `Display`, `Keybinds`. These are user/app config, not
-  scene data. The Preferences gizmo section is snap-only; the active
-  tool and Local/World space live on the viewport toolbar.
+#### UI Scale (Display tab)
 
-### Animation editor (Bottom panel, Animation tab)
+A multiplier on top of the display's own content scale, kept apart from it
+because only the content scale changes when the window moves to another monitor;
+the editor asks for it every frame, so a monitor change and a preference edit
+take one path. The theme is re-applied on a change, because ImGui's own metrics
+are absolute pixels; everything the editor draws itself follows through
+`EditorStyle::px()`. It is persisted per person in `editor_user.json`, read once
+in `EditorSystem::init` before any project opens.
 
-Operates on the selected entity. When it has **no** `Animation`, the
-whole editor is shown disabled (preview of the UI) with a single
-centered **Add Animation Component** button. New animations default to
-a 5 s `length` so the timeline is immediately usable.
+### Animation editor (`panels/animation_panel.cpp`)
 
-The button is centred on **what is on screen**, not on the ghost behind it. The
-disabled editor is taller than the panel at its shipped height, so centring on
-the ghost parked the one control the empty state exists to offer below the fold:
-the panel looked fully populated and ready, the transport's tooltips answered on
-hover, and clicking any of them did nothing. It is measured against
-`GetContentRegionAvail().y` taken before the ghost is drawn, which is the same
-thing the Inspector's own empty state does.
+Operates on the selected entity. Without an `Animation` the editor is drawn
+disabled behind one centred **Add Animation Component** button; a new animation
+defaults to a 5 s `length` so the timeline is usable at once.
 
-Controls (icon buttons, shared `editor_icons.{h,cpp}`):
+- The transport row is `clipTransport` (`ui/editor_widgets.h`), shared with the
+  Inspector's Animation and Animator cards, then **Set Key** on all three tracks.
+  Play/Pause is a *preview* writing the runtime `Animation::playing`; what a
+  shipped scene does is the card's **Play On Start**, the serialized flag.
+- **Length** (`Animation::length`, serialized): `0` means the last keyframe. The
+  timeline spans `max(last keyframe, length)`.
+- A timeline with a dot per keyframe on three lanes and a playhead; drag empty
+  timeline to scrub, a dot to retime it. `Time` is typed for exact placement.
+- Per track: add or replace a key from the live transform, clear, the easing
+  (`drawEnumCombo` over `Easing`), and a keyframe table. Re-keying at an existing
+  time replaces that keyframe.
 
-- Playback: Play/Pause, Stop (rewind), global **Set Key** (add/replace
-  a keyframe on all three tracks at the current time), Loop, Speed. Play/Pause
-  is a *preview* transport writing the runtime `Animation::playing`; what a
-  shipped scene does is the Inspector card's **Play On Start**, which is the
-  serialized flag - the same split the Audio Source card makes.
-- **Length** (`Animation::length`, serialized): explicit animation
-  duration in seconds; `0` means auto from the last keyframe. The
-  timeline spans `max(last keyframe, length)`, so you can set a length
-  and place keys anywhere along it (looping uses this duration too).
-- A scrubbable timeline: ruler, per-track keyframe dots (P/R/S),
-  playhead. Drag empty timeline to scrub; drag a keyframe dot to retime
-  it (hover highlights; cursor switches to resize).
-- `Time` is a typed `InputFloat` so you can place the playhead exactly.
-- Per track (Position/Rotation/Scale): `+` add or replace a key from
-  the live transform, trash to clear, easing dropdown, plus an editable
-  keyframe table (XYZ values for pos/scale, Euler degrees for rotation;
-  per-row Time editable; per-row delete).
-
-Scrubbing or editing while paused live-previews the pose in the
-viewport. Re-keying at an existing time **replaces** that keyframe
-instead of stacking a zero-length segment. The Inspector's Animation
-section is a compact summary (play/stop, loop, speed, time slider,
-track/key counts) that points here for full keyframe editing.
+The world does not step in Edit mode, so whatever moves the playhead - the tab or
+the Inspector card - poses the entity through `AnimationSystem::applyAnimation`,
+the function the system samples with. Moving the playhead is session state, but
+outside play the pose it writes is the authored `Transform` the scene saves, so it
+is recorded as a **Scrub Animation** step that merges over the gesture. In play
+the pose is the session's and is not recorded.
 
 ### Character cards (Inspector)
 
-Four cards cover the character components; all four are ordinary
-`editComponentCard` sections, so they undo, record prefab overrides and appear
-in Add Component like every other component.
+All four are ordinary `editComponentCard` sections, so they undo, record prefab
+overrides and appear in Add Component like every other component.
 
-- **Animator** - rig and clip pickers over `SkeletonAsset` /
-  `AnimationClipAsset`, the bone count of the rig actually resolved, and a
-  transport (play / stop / loop / speed / time scrub) that mirrors the Animation
-  card: loop, speed and **Play On Start** round-trip with the scene so they push
-  an edit, while play, stop and the scrubber do not. Which is only safe because
-  `Animator::playing` is runtime state - it used to be serialized, so the
-  preview transport quietly wrote what a shipped scene does, and a Pause pressed
-  once froze a character that never animated again. Scrubbing works while paused
-  because the pose system composes every frame. A clip cooked against a different rig is
-  called out in red on the card, where the pairing is being made, rather than
-  only in the log. The clip's markers are listed read-only beneath the scrubber
-  the way the Animation card lists its keyframe counts - a marker belongs to the
-  clip and is authored in the clip's recipe, so what the card owes an author is
-  the ability to see what the clip they just picked will announce and when.
-  Blend state is deliberately absent: a crossfade is started from code through
-  `Animator::crossFadeTo` and is never serialized.
-- **Bone Socket** - the bone picker, over the rig resolved from the entity's
-  *parent* - the only rig a socket can address, because it is placed relative to
-  that parent's world matrix. The list is the skeleton's own bone array indented
-  by depth, since a rig is a tree and finding a hand under an arm is not the same
-  job as finding it in a hundred flat names; typing in the search box flattens it
-  back to the matches. Below it, the Offset (position / rotation / scale) that is
-  the authored half - the entity's `Transform` is the socket's *output* and is
-  rewritten from the bone every frame, which the Transform card now says out
-  loud so an edit that vanishes - typed there or dragged with the gizmo - is
-  explained rather than mysterious. The card names the two authoring mistakes
-  where they are made: a parent that is not a rig (with what to do about it) and
-  a bone name the rig does not carry.
-- **Character Controller** - the four tuning fields, plus the live grounded /
-  ground angle / move-input readout, which is what answers "why is it not
-  jumping". Under them, the step height the capsule rolls over
-  (`radius * (1 - cos(maxSlopeAngle))`), because that number answers "why does it
-  stop at that kerb" and both halves of it are set on this entity. It also names
-  the two ways a controller silently does nothing: no `Rigidbody` (or one whose
-  rotation is not frozen) and no `Collider`.
-- **Collider** - a shape picker on a single-part collider, showing half-extents
-  for a box and radius / half height for a capsule, with the capsule's total
-  height spelled out because that is the number an author matches to a model.
-  A mesh-fitted compound shows its part count instead; rebuild it with Fit to
-  Mesh, which always produces boxes.
+- **Animator** - rig and clip pickers, the resolved rig's bone count, and the
+  transport. Loop, speed and **Play On Start** round-trip with the scene, so they
+  push an edit; play, stop and the scrubber do not, which is safe only because
+  `Animator::playing` is not serialized. A clip cooked against another rig is
+  called out in red. The clip's markers are listed read-only (they are authored in
+  the clip's recipe). Blend state is absent: a crossfade is started from code
+  through `Animator::crossFadeTo` and never serialized.
+- **Bone Socket** - the bone picker, over the rig of the entity's *parent* (the
+  only rig a socket can address), as the skeleton's tree indented by depth; a
+  search flattens it to the matches. The Offset is the authored half - the
+  entity's `Transform` is the socket's output, rewritten from the bone every
+  frame, which the Transform card says. The card names a parent that is not a rig
+  and a bone the rig does not carry.
+- **Character Controller** - the tuning fields, the live grounded / ground angle
+  / move-input readout, and the step the capsule rolls over
+  (`radius * (1 - cos(maxSlopeAngle))`). It names the two ways a controller does
+  nothing: no `Rigidbody` (or one whose rotation is not frozen) and no `Collider`.
+- **Collider** - a shape picker on a single-part collider, the capsule's total
+  height spelled out, and for a mesh part its mesh, scale and triangle count. A
+  mesh-fitted compound shows its part count; Fit to Mesh rebuilds it.
 
-The hierarchy names an entity carrying an `Animator` a **Rig**, ahead of Mesh -
-an entity with an `Animator` is the rig whatever else it carries, and its meshes
-are the entities under it. The hover tooltip's component digest lists `Animator`,
-`Socket` and `Character` beside the rest.
+The hierarchy names an entity carrying an `Animator` a **Rig**, ahead of Mesh.
 
 ### Audio cards (Inspector)
 
-Two cards, both ordinary `editComponentCard` sections, so they undo, record
-prefab overrides and appear in Add Component like everything else. They are the
-only cards that take the whole `EditorContext`, because auditioning a clip needs
-the editor's audio device and that is reachable from neither the scene nor the
-asset graph.
+Ordinary `editComponentCard` sections. Auditioning needs the editor's audio
+device, which the cards reach through the `EditorContext` every card takes.
 
-- **Audio Source** - the clip picker over `AudioClipAsset`, the clip's length,
-  layout, rate and memory footprint, then gain / pitch / loop / play-on-start,
-  and the distance pair when the source is spatial. Four authoring mistakes are
-  named where they are made rather than left to the log: a max distance at or
-  under the min (nothing is attenuated), a stereo clip on a spatial source (its
-  two channels already encode a position, so panning one is meaningless at
-  best), a spatial source with no `Transform` (heard at the world origin rather
-  than where it was placed), and a scene with no active `AudioListener` at all -
-  the one the engine cannot report at edit time, since its own warning waits for
-  a positioned voice to actually start. Beneath them is a transport that mirrors
-  the two animation cards' - play / pause / resume on one button, stop, and a
-  position slider - auditioning the clip **through the device, not through
-  `AudioSource::playing`**: writing that flag would be a scene edit, undoable
-  and dirtying and audible again on the next Play, when all that was asked for
-  was to hear the file. Nothing on the row dirties the scene, which is the same
-  rule the animation cards follow for play, stop and scrub. It is drawn by
-  `auditionTransport`, shared with the Asset Browser's Sounds rows, because two
-  surfaces auditioning the same kind of thing with two vocabularies is how they
-  drift apart. On a host with no audio device the whole transport is disabled
-  and its tooltip says why, rather than answering a press with silence. A fifth
-  warning sits just above it, outside the spatial four: an `AudioListener` at
-  volume 0 silences the whole mix, this source and the audition with it, and
-  nothing else on the card would explain a cursor running with no sound.
+- **Audio Source** - the clip picker and the clip's length, layout, rate and
+  footprint, then gain / pitch / loop / play-on-start and the distance pair when
+  spatial. It names a max distance at or under the min, a stereo clip on a
+  spatial source, a spatial source with no `Transform`, a scene with no active
+  `AudioListener`, and a listener at volume 0. Beneath them `auditionTransport`
+  (shared with the Asset Browser's sound tiles) auditions the clip **through the
+  device, not through `AudioSource::playing`**, whose write would be a scene edit;
+  nothing on the row dirties the scene. Its slider reads
+  `AudioDevice::voiceCursor`, which the mixer advances between frames
+  ([audio.md](audio.md#the-cursor-is-the-devices-not-the-components)). The
+  audition stops when the selection moves. The label beside it reports the
+  source's own voice through `AudioSystem::voiceOf` - **Source: playing 12.40s**,
+  or **held** under a Pause or a Step.
+- **Audio Listener** - active and master volume, plus a listener that is not the
+  ear (naming the one `findActiveListener` picked) or one without a `Transform`.
 
-  The slider reads `AudioDevice::voiceCursor` rather than a field on the
-  component, because the mixer advances that cursor between frames and a
-  mirrored copy would be stale by construction - see [the audio
-  reference](system/audio.md#the-cursor-is-the-devices-not-the-components). With
-  nothing playing there is no cursor, so the slider is disabled rather than
-  inventing a start offset. The audition belongs to the card that started it and
-  stops when the selection moves, so the slider can never run against another
-  entity's clip. Stop and the scrubber are lit off the device, and so is the
-  label beside them. `AudioSource::playing` is the scene's word and not the
-  sound's - a voice the transport is holding keeps it true while nothing is
-  audible - so the label asks `AudioSystem::voiceOf` for the source's own voice
-  and reports what the mixer says about it: **Source: playing 12.40s**, or
-  **Source: held 12.40s** under a Pause or a Step. With no voice at all it falls
-  back to the flag, which is the only thing there is to say in the frame before
-  one exists. The position lives here rather than on the slider because that
-  slider belongs to the audition; the two are different sounds and the row keeps
-  them apart.
-- **Audio Listener** - active and master volume, plus the two things nothing
-  else on screen would show: a listener that is not the ear, which names the one
-  `findActiveListener` picked instead of merely counting the candidates, and a
-  listener without a `Transform`, which has no position to hear from. Never
-  both: the rule joins on `Transform`, so a listener missing one is not
-  competing for the ear at all and would lose to a listener *later* in storage
-  order - it is told what is actually wrong instead.
-
-An entity carrying an `AudioSource` is named **Sound** in the hierarchy - **2D
-Sound** when it is not spatial, which is the same split by kind a `Light` makes
-between Dir / Point / Spot - and one carrying an `AudioListener` is a
-**Listener**; the tooltip digest lists both.
+An `AudioSource` entity is a **Sound** in the hierarchy (**2D Sound** when not
+spatial); an `AudioListener` one is a **Listener**.
 
 ### The identity header says what the other end will see
 
 "Will the other player see this thing" is a question an author asks while
 looking at the thing, so the answer sits under the entity's name rather than in
 a window of its own: the wire slot and which of its components replicate, or a
-warning that it is inside a prefab instance and so has no name on the wire at
-all. Both ends build such a subtree from the same prefab file and each allocates
-its children's slots locally, so the two disagree about what a slot is - the root
-replicates and the hierarchy carries the rest, which is right for anything posed
+warning that it is inside a prefab instance and so says nothing on the wire.
+Both ends build such a subtree from the same prefab file into the same slots -
+the root replicates and the hierarchy carries the rest, which is right for anything posed
 the same way on both ends and wrong for a ragdoll
-([system/networking.md](system/networking.md#identity-is-the-scene-slot)).
+([networking.md](networking.md#identity-is-the-scene-slot)).
 
 Drawn only for a project that replicates something, and only for an entity
 carrying some of it. Most entities are not on the wire, and a line saying so on
@@ -372,179 +373,129 @@ every selection is one an author reads past within a day.
 The Light card on the scene's key light is the case: with **World > Procedural
 Sky** on, `SkySystem` writes that light's rotation, colour and intensity from
 the Environment every frame, so a drag on Colour or Intensity there is undone
-before the next frame draws and the value the scene saves is the sky's. The
-card offered all three like any other light's, which made a working widget look
+before the next frame draws and the value the scene saves is the sky's.
+Offered like any other light's, those fields would make a working widget look
 broken and an authored colour vanish into the file.
 
-It now says so - one line naming the three fields and where they are authored -
-and disables the two it does not own, the same shape the Procedural Sky card
-already uses for the fields that depend on its own toggle. Which light the sky
+So the card says so - one line naming the three fields and where they are
+authored - and disables the two it does not own, the same shape the Procedural
+Sky card uses for the fields that depend on its own toggle. Which light the sky
 is driving comes from `findKeyLight`, the engine's own answer, so the card and
 the system cannot disagree.
 
 ### A card names what its component is waiting for
 
 A component that cannot work is the editor's worst failure to report, because
-the card goes on rendering in full - every field live, every value plausible -
-in front of a viewport where nothing happens. Where the engine holds both halves
-of the diagnosis, the card says it, in `EditorStyle::DANGER` for "this does
-nothing at all" and `EditorStyle::WARNING` for "this is not what you think it
-is". It is said on the card because that is where the mistake is being made; the
-log is where it is found afterwards, which is too late and, in the editor, not
-visible at all.
+the card goes on rendering in full in front of a viewport where nothing happens.
+Where the engine holds both halves of the diagnosis, the card says it, in
+`EditorStyle::DANGER` for "this does nothing at all" and `EditorStyle::WARNING`
+for "this is not what you think it is" - on the card, where the mistake is made.
 
 - **Collider** with no `Rigidbody` - *"No Rigidbody: nothing collides with
-  this."* `PhysicsSystem::gatherBodies` walks the `Rigidbody` storage and reads
-  a `Collider` off the entities it finds there, so a lone collider is in no
-  broadphase: it stops nothing and, `Trigger` ticked or not, fires nothing.
-- **Rigidbody** with no `Collider` - *"No Collider: it falls through
-  everything."* Scoped to a **dynamic** body, which is the one this ruins: it
-  integrates gravity with nothing to land on and leaves the world. A static or
-  kinematic body with no shape is inert rather than lost, and is not warned
-  about. Both are the sentence the Character Controller card has always printed
-  for the same two absences.
-- **Mesh** with no mesh - *"No mesh: this entity draws nothing."* The material
-  half of this card has always had its `else`; the mesh half did not, so an
-  empty mesh slot took the vert/tri/bounds readout away and put nothing in its
-  place - the card lost its reporting surface exactly when it had something to
-  report. It is the harsher of the card's two absences: `VisibilitySystem`
-  returns on an empty mesh handle, so the entity is in no draw list, has no
-  selection bounds and cannot be framed.
-- **Decal** with no material - *"No material: this projects nothing."* Harsher
-  than the Mesh card's "No material assigned" because the consequence is: a mesh
-  with no material still draws with the shader's defaults, while
-  `GLDecalPass` skips a decal whose material is null outright. It is also the
+  this."* `PhysicsSystem::gatherBodies` walks the `Rigidbody` storage, so a lone
+  collider is in no broadphase: it stops nothing and fires nothing.
+- **Collider** mesh part with no triangles - *"No triangles: this collides with
+  nothing."*
+- **Rigidbody** (dynamic) with no `Collider` - *"No Collider: it falls through
+  everything."* A static or kinematic body with no shape is inert, not lost, and
+  is not warned about.
+- **Mesh** with no mesh or no material - *"No mesh: this entity draws nothing."*
+  `VisibilitySystem` returns on an empty mesh or material handle, so the entity is
+  in no draw list and cannot be framed.
+- **Decal** with no material - *"No material: this projects nothing."* It is the
   state `Entity > Create > Decal` hands you.
 - **UI Element** with no `UICanvas` above it - *"No UI Canvas above this:
-  nothing draws"*, plus where to drag it. `UISystem` lays out only what it
-  reaches walking down from a canvas, so an element outside every canvas is
-  never visited: no rect, no draw, no hit test. This is the default outcome of
-  `Entity > Create > UI > Text` with nothing selected.
-- **UI Image / UI Text / UI Button** with no `UIElement` - *"No UI Element:
-  nothing to give it a rect"*. `resolveElement` returns before it looks for any
-  of the three, so all three cards render in full for a component that is never
-  reached. One helper, `warnNoUIElement`, says it for all three.
-- **UI Text** whose font name does not resolve - *"No font named 'x' is
-  loaded"*. The font is reached by name every frame and an unresolved one draws
-  nothing, which looks exactly like an element that is hidden or off-screen.
-  Every other asset reference on the panel reports a name the project cannot
-  answer; this one is a plain text box, so the card has to.
-- **Camera** that is active but not the one being rendered from - *"Not the eye:
-  'X' is rendered from."* The eye's half of what the Audio Listener card says
-  for the ear. Named from `CameraControllerSystem::getCameraEntity()` rather
-  than from storage order: the controller and the visibility pass each keep the
-  camera they resolved and hold it while it stays active, so "the first one
-  wins" is a rule that is often not what happened, and printing it would hand
-  the author a false reason. The hierarchy's **Set as Main Camera** stays
-  offered while any other camera also claims Active, for the same reason -
-  greying it on `cam.active` alone said "already main" about a camera that may
-  well not be the one on screen.
+  nothing draws"*: `UISystem` lays out only what it reaches from a canvas.
+- **UI Image / UI Text / UI Button / UI Scroll** with no `UIElement` - *"No UI
+  Element: nothing to give it a rect"* (`warnNoUIElement`).
+- **UI Scroll** whose content fits - *"The content fits, so there is nothing to
+  scroll"*, under the measured content and view sizes.
+- **UI Text** whose font does not resolve - *"No font named 'x' is loaded"*: the
+  font is reached by name and an unresolved one draws nothing.
+- **Camera** that is active but not the game's eye - *"Not the game's eye: it
+  renders from 'X'."* In a session that shows the game it is named from
+  `Visibility::cameraEntity`, the camera the frame went through; otherwise from
+  `findActiveCamera`. **Set as Main Camera** stays offered while any other camera
+  also claims Active.
 - **Particle Emitter** in Edit mode - *"The world is not running - press Play to
-  see them."* `ParticleSystem` returns on a zero sim delta, so the card's `Live:
-  N` readout is structurally `0` there however well the emitter is set up, and
-  an author reading "Emitting, Rate 20, Live: 0" is being told the opposite of
-  what is true.
-- **Animation** whose transport says it is playing while the world is not -
-  *"Held at 1.20s - it advances while the world runs."* Both surfaces that own
-  an animation transport print it (the card and the Bottom panel), because both
-  toggle `Animation::playing`, which only `AnimationSystem` advances and which
-  only advances on a non-zero sim delta. The button still sets the flag - it is
-  the serialized "plays when the simulation starts" - it just no longer implies
-  a playhead that is moving.
+  see them."* `ParticleSystem` returns on a zero sim delta, so `Live: N` is 0.
+- **Animation** playing while the world is not - *"Held at 1.20s - it advances
+  while the world runs."* Said by the card and the Animation panel, both of which
+  toggle `Animation::playing`.
+
+### Sliders and combos are the editor's own
+
+Every slider is `sliderFloat` / `sliderInt` and every combo begins with
+`beginCombo` (or is `comboList`), all in `ui/editor_widgets.h`; nothing calls
+ImGui's directly, so a look changed there is changed everywhere.
 
 ### Property rows clamp what is typed into them
 
 `propDrag` / `propSlider` / `propDragInt` / `propDrag3` pass
 `ImGuiSliderFlags_ClampOnInput` (`PROP_CLAMP` in `ui/editor_widgets.h`). A
-Drag/Slider clamps the *mouse* to its bounds, but Ctrl+click turns the widget
-into a text field that ImGui leaves unbounded by default, so every bound in the
-inspector was advisory on the one input path that can type an arbitrary number -
-`5000` into a Near Clip whose declared max is the Far Clip, and the camera
-renders nothing. `ClampOnInput` rather than `AlwaysClamp`, because `AlwaysClamp`
-also clamps a `lo == hi == 0` range, which is how the rows with no meaningful
-limit spell "unbounded". The Camera card holds its two clip planes
-`CLIP_PLANE_SEPARATION` apart rather than merely ordered: equal planes divide by
-zero in the projection and the cluster pass takes `log(zFar / zNear)`.
+Drag/Slider clamps the mouse to its bounds, but Ctrl+click turns it into a text
+field ImGui leaves unbounded, so without the flag every bound in the inspector
+would be advisory on the one path that can type an arbitrary number.
+`ClampOnInput` rather than `AlwaysClamp`, because `AlwaysClamp` also clamps a
+`lo == hi == 0` range, which is how a row with no limit spells "unbounded". The
+Camera card holds its clip planes `CLIP_PLANE_SEPARATION` apart: equal planes
+divide by zero in the projection.
 
-`pickAsset` offers a **(none)** row above the list. An empty slot is a state the
-editor hands you (`Create > Audio Source` and `Create > Decal` both arrive with
-one), it is what the combo previews, and it round-trips through the scene file -
-so a combo listing everything except the value it is showing could only be left
-by deleting the component and authoring it again. The same row the script
-behavior field and the bone picker have always drawn.
+`pickAsset` offers a **(none)** row above the list, because an empty slot is a
+state the editor hands you (`Create > Audio Source`, `Create > Decal`) and
+round-trips through the scene file. The script behavior field and the bone
+picker draw the same row.
 
 ## Undo / redo
 
-Every editor mutation goes through a `Command` that captures the
-"before" state and applies the "after" state. The stack is bounded
-(default 200 entries) and is cleared on scene load (entity IDs and
-component topology are not comparable across a swap).
+Every editor mutation goes through a `Command` that holds the "before" and the
+"after" state. The caller has already applied the change when it pushes the
+step, so pushing records it rather than performing it; undo and redo replay one
+side or the other. The stack is bounded (default 200 entries) and is cleared on
+scene load (entity IDs and component topology are not comparable across a swap).
 
-Available commands (in `framework/editor_commands.h`):
+The commands are in `command/editor_commands.h`, each documented there. Which
+one an edit takes:
 
-- `TransformChangeCommand`: position / rotation / scale on an entity.
-  Coalesces consecutive edits on the same entity *within one gesture*, so a
-  gizmo drag or a stream of inspector micro-edits collapses to one undo step
-  while the next drag starts a new one.
-- `ComponentEditCommand<T>`: a generic field edit on an existing component
-  (snapshots before/after), the inspector's catch-all undo step.
-- `AddComponentCommand<T>` / `RemoveComponentCommand<T>`, instantiated for
-  every type in `VKM_EDITOR_COMMAND_COMPONENTS`: `Mesh`, `Light`, `Camera`,
-  `Animation`, `Rigidbody`, `Collider`, `ReflectionProbe`, `Decal`,
-  `ParticleEmitter`, `IrradianceVolume`, `LOD`, and the five UI components
-  (`UICanvas`, `UIElement`, `UIImage`, `UIText`, `UIButton`). Add also covers
-  `Name`, which has no Remove - an entity without a name falls back to its type
-  label. Remove snapshots the prior value so undo restores it exactly, not a
-  default-constructed copy.
-- `ScriptEditCommand`: the Script card's whole vocabulary - the component
-  added or removed, a behavior attached or removed, a field typed into - as one
-  step over the component's serialized form, with "no ScriptComponent" spelled
-  as an empty document. A behavior list is move-only, so there is no value for
-  `ComponentEditCommand<T>` to copy; the JSON `EntitySnapshot` already
-  resurrects a deleted entity's scripts from copies fine. Coalesces within a
-  gesture like the rest, so a drag on a behavior's float field is one step.
-- `CreateEntityCommand`: captures the post-create slot so redo
-  recreates at the same slot.
-- `DestroySubtreeCommand`: captures the entire subtree (entity plus
-  every descendant) including parent/child wiring, so undo can
-  resurrect a non-leaf delete exactly. `PrefabInstance` and `PrefabEntity` are on
-  the snapshot's component list, so a deleted instance comes back as an instance
-  rather than as the entities it had expanded to.
-- `ReparentCommand`: (child, oldParent, newParent), inverse via
-  `HierarchyOperations::setParent` / `removeFromParent`.
-- `SetActiveCameraCommand`: backs the inspector's "Set as Main" camera action.
-- `PlacePrefabCommand`: redo rebuilds the instance from the prefab file - source,
-  overrides and all - into a root reclaimed at its original slot, because that is
-  what a placement is: a reference, a pose, and the entries against it.
-  Duplicating an instance pushes one of these too.
-- `PrefabOverrideCommand`: takes the place of `ComponentEditCommand` on an
-  entity inside a prefab instance. The value there is the prefab's, patched by
-  the instance's overrides, so both directions restore an entry set and re-read
-  the component from the file; it coalesces a drag the same way. It names its
-  target by prefab uid rather than by slot, because redoing a placement pins
-  only the root's slot and rebuilds the rest into whatever is free.
-- `MaterialEditCommand`: a PBR field edit in the Material Editor. Restores the
-  parameters and re-commits so the previews and the viewport re-read the asset;
-  the asset's identity (name, uid, source) is deliberately left as it is, since
-  the name is renamed through its own command.
-- `RenameAssetCommand<HandleType>`: undoable asset rename (routes through
-  `ResourceManager::rename` so the name index stays consistent). Instantiated
-  once per asset kind the Asset Browser lets an author rename, so that list and
-  the browser's `KINDS[]` table say the same thing.
+- **A component's value** - `ComponentEditCommand<T>` through `editStep<T>`,
+  which swaps in a `PrefabOverrideCommand` inside a prefab instance, where the
+  value is the prefab's patched by the overrides. `EditScope<T>` and `pushEdit`
+  are the two doors (`command/component_edit.h`). Every component the editor can
+  put back is a row of `VKM_EDITOR_COMPONENTS`; `X` rows also get
+  `AddComponentCommand<T>` / `RemoveComponentCommand<T>`, explicitly instantiated
+  in `editor_commands.cpp` from that one list.
+- **The Scene's own values** (`Environment`, `PhysicsSettings`) -
+  `SceneValueEditCommand<T>`, pushed by the World cards through `editWorldCard`.
+- **A Script** - `ScriptEditCommand`, over the component's serialized form,
+  because a behavior list is move-only.
+- **Entities appearing or going** - `CreateEntityCommand`, and for a whole
+  subtree `DestroySubtreeCommand` (Delete) and its mirror `CreateSubtreeCommand`
+  (Duplicate, Import Model). A subtree snapshot carries `PrefabInstance` and
+  `PrefabEntity`, so a deleted instance comes back an instance. Either way a
+  subtree goes, a selection anywhere in it goes with it. A create outside the
+  history would be worse than unundoable: freed slots are reused last-in
+  first-out, so it lands in the slot a deleted entity's undo is waiting for.
+- **One subtree for another** (building or clearing a ragdoll) -
+  `SubtreeReplaceCommand`, which holds both snapshots rather than replaying an
+  operation that reads assets and settings.
+- **A prefab placed** - `PlacePrefabCommand`, whose redo rebuilds the instance
+  from the file into the slots the last build used.
+- **Several steps as one** - `CompositeCommand`: multi-selection Delete and
+  Duplicate, a gizmo drag over several roots, Bake All Probes, a keyframe edit
+  plus the pose it writes, and `pushActiveCamera`.
+- **Assets** - `MaterialEditCommand` (parameters only; the name has its own
+  command) and `RenameAssetCommand<HandleType>`, one instantiation per kind the
+  Asset Browser can rename.
 
-Templated commands are emitted out of line via `extern template` in the
-header and instantiated once in `editor_commands.cpp` so each
-translation unit doesn't recompile the bodies. Both blocks expand from
-the single `VKM_EDITOR_COMMAND_COMPONENTS` list, so they cannot drift.
-
-`CommandStack::push` calls `Command::tryMerge` against the top of the
-undo stack first; that is where transform drag coalescing happens - but only
-while the gesture is still open. `EditorSystem` calls `CommandStack::endGesture`
-at the end of every frame in which no mouse button is held and no ImGui item is
-active, which seals the top of the stack. A gesture is a press, a motion and a
-release, and it is one undo step; identity alone cannot tell the micro-edits
-inside one drag apart from two separate drags of the same field, and without the
-seal the second drag was swallowed by the first.
+`CommandStack::push` calls `Command::tryMerge` against the top of the undo stack
+first; that is where drag coalescing happens - but only while the gesture is
+still open. `EditorSystem` calls `CommandStack::endGesture` at the end of every
+frame in which no mouse button is held and no ImGui item is active, which seals
+the top of the stack. A gesture is a press, a motion and a release, and it is one
+undo step; identity alone cannot tell the micro-edits inside one drag apart from
+two separate drags of the same field, and without the seal the second drag would
+be swallowed by the first. A `CompositeCommand` with the same label inside one
+gesture is absorbed step by step, so a per-frame composite is one step per drag.
 
 `Command::addresses(slot)` is the other half: the steps that name an entity say
 so, and `CommandStack::forget` drops exactly those. It is the narrow half of
@@ -556,73 +507,72 @@ it - see Save as Prefab below.
 The editor edits *a project*, and without one it says so rather than pretending
 otherwise. `EditorSystem::init` keeps the answer `ProjectController::open` gives
 it: on failure the editor draws a **project picker** - New, Open, and the recent
-list - and no workspace at all. There is no viewport, hierarchy or asset browser,
-because there is no world for them to be about, and every path they would compose
-resolves against the engine's own directory. That is not hypothetical: it is how
-`editor_settings.json`, `/scenes/`, `/cooked/` and `/library/` came to be ignored
-at the repository root.
+list - and no workspace at all, because every path a workspace would compose
+would resolve against the engine's own directory. The `engineRoot()` fallback in
+`ProjectPaths::projectRoot` is for the other hosts, for which "beside the
+executable" *is* the project; the editor asks that a `project.json` exist, so
+`vkm_editor` shipped beside a project still opens it with no argument.
 
-The `engineRoot()` fallback in `ProjectPaths::projectRoot` stays, and stays for
-the other hosts: for a packaged game "beside the executable" *is* the project,
-and `vkm_runtime` and `vkm_server` are right to take it. The rule tightens for
-the editor only, and it tightens to "a `project.json` must exist" rather than "an
-argument must be given" - so `vkm_editor` shipped beside a project still opens it
-with no argument.
-
-The editor edits *a project*, not the repo it was built in. `ProjectController`
-(`src/editor/framework/project_controller.h`) holds the one sequence that roots
-the editor in one, and re-roots it in place - no restart. Order matters, because
-each step composes paths or reads code the one before it put in place:
+`ProjectController::open` (`src/editor/session/project_controller.h`) holds the
+one sequence that roots the editor in a project, and re-roots it in place - no
+restart. Order matters, because each step composes paths or reads code the one
+before it put in place:
 
 1. Save the outgoing project's `editor_settings.json`, while its root is still
    current - otherwise its tuning would land in the project being opened.
 2. `ProjectPaths::setProjectRoot(root)` - every path composed after this points
    at the new project.
-3. Tear the scene down through `SceneIOController::beginSceneReplace`: behaviors
+3. Read its `project.json` into a fresh `Project` - reset first, so a field the
+   file leaves out does not keep the outgoing project's value - and take the
+   look the game ships from its `render` block, with the editor's own view
+   defaults (`EditorSettings::applyViewDefaults`, the grid on) over it.
+4. Tear the scene down through `SceneIOController::beginSceneReplace`: behaviors
    get `onDestroy` while the old module still holds their code, and the undo
    stack, material previews, play snapshot, saved-scene path and the whole
    `ResourceManager` go with it - a generated world never swaps the resources
    the way a scene load does.
-4. `AssetLibrary::get().load()`, then the new project's look from its
-   `project.json` `render` block, then its own editor settings - in that order,
-   because the second is what the game ships and the third is this editor's view
-   of it. The two sets are disjoint (`visitShippedRenderFields` against
-   `visitRenderFields`), so neither overwrites the other.
-5. Swap the gameplay module to the new project's `bin/`, or unload it when the
+5. `AssetLibrary::get().load(Truth::Recipes)`, then the project's own editor
+   settings, which put this editor's persisted view of the game - the debug
+   buffer and the grid - over the look step 3 took. The two sets are disjoint
+   (`visitShippedRenderFields` against `visitRenderFields`), so neither
+   overwrites the other.
+6. Swap the gameplay module to the new project's `bin/`, or unload it when the
    project brings none.
-6. Boot its scene through `bootProjectScene`, the same rule both binaries use,
-   and adopt the path it opened so that scene is the file this session edits -
-   without it, Save would ask for a name for a file the editor had just read.
-   A project whose entry scene will not load still opens - the default scene
-   stands in, carrying no save path - with an error toast, because the editor is
-   where you fix that. The runtime refuses the same project instead; see
-   [system/io.md](system/io.md#what-each-host-does-when-a-project-will-not-open).
 7. Build the wire schema from the new module's `vkmSetupNetwork`, the same entry
    a runtime uses. The editor never hosts and never joins; it does this so
    Project Settings and the inspector can tell an author what the game puts on
    the wire. A project with no such entry gets an empty schema and neither
-   surface says anything. Edit > Reload Scripts rebuilds it too, because
+   surface says anything. File > Reload Scripts rebuilds it too, because
    unloading a module drops what it registered.
-8. Push the project onto the recent list, so the project you are in is in its
+8. Boot its world through `bootProjectWorld` - tick rate, scene and the
+   scene's fingerprint - the same call both binaries make, and adopt the path it
+   opened so that scene is the file this session edits - without it, Save would
+   ask for a name for a file the editor had just read.
+   A project whose entry scene will not load still opens - the default scene
+   stands in, carrying no save path - with an error toast, because the editor is
+   where you fix that. The runtime refuses the same project instead; see
+   [io.md](io.md#what-each-host-does-when-a-project-will-not-open).
+9. Push the project onto the recent list, so the project you are in is in its
    own Recent Projects menu.
 
 A path that names a file rather than a directory still works - `findProjectRoot`
 walks up to the owning `project.json`, so dropping in a scene opens its project.
 
 **Command-line `vkm_editor <project>` runs the same sequence**, from
-`EditorSystem::init` - which the engine calls once, before the first frame.
-`ProjectController::OpenKind` is the only difference: `Startup` skips steps 1 and
-3, there being no outgoing project whose settings must be written and no scene to
-tear down, and writing a default layout over the settings file about to be read
-is exactly what a second copy of this sequence used to do. `app/editor/main.cpp`
-therefore boots the host, registers the recipe factories and runs - it opens
-nothing itself. See [system/io.md](system/io.md#projects-and-the-three-roots).
+`EditorSystem::init`. Steps 1 and 4 run only while a project is open
+(`EditorState::projectOpen`), not merely after startup: the start screen's first
+open would otherwise write `editor_settings.json` into the engine root.
+`ProjectController::OpenKind` says only whether a path that is not a project is
+reported: silently at startup, with a toast when somebody asked. A session that
+never opens a project saves only the per-user settings when it quits.
+`app/editor/main.cpp` therefore opens nothing itself. See
+[io.md](io.md#projects-and-the-three-roots).
 
-**Choosing** a project is separate from opening one.
-`EditorActions::OpenProjectDialog` draws the recents list and the path field, and
-hands what it picks to `EditorState::requestSceneAction` - the same guard New
-Scene and Open Scene go through, because opening a project throws the current
-scene away too.
+**Choosing** a project is separate from opening one. `OpenProjectDialog`
+(`chrome/open_project_dialog.h`) draws a path field, File > Open Recent and the
+start screen the recent projects, and each hands what it picks to
+`EditorState::requestSceneAction` - the same guard New Scene and Open Scene go
+through, because opening a project throws the current scene away too.
 
 ## Actions that throw the live scene away
 
@@ -636,8 +586,7 @@ state.requestSceneAction(EditorState::SceneAction::Open, path);
 A caller says what it wants and nothing else. It does not ask whether the scene
 is dirty, does not park the target in a field of its own, and does not perform
 the action - which is what stops the next destructive action added from being
-the one that forgets to ask, and what the six hand-written copies of that
-question used to cost.
+the one that forgets to ask.
 
 `EditorSystem` answers it, in `resolveSceneAction`, once per frame **before the
 ImGui frame opens**. The request carries a stage:
@@ -652,110 +601,105 @@ ImGui frame opens**. The request carries a stage:
   withdraws the request instead.
 - **Run** - approved. `performSceneAction` does it.
 
-Performing before the ImGui frame is the point: all four rebuild the scene, and
-doing that with a window still on the ImGui stack is what the deferral exists to
-avoid. Nothing in the editor opens a project or replaces a scene from inside its
-own draw.
+Performing before the ImGui frame is the point: all four rebuild the scene, which
+must not happen with a window still on the ImGui stack. Nothing in the editor
+opens a project or replaces a scene from inside its own draw.
 
 **File > Exit** goes through the same entry point rather than raising the
-window's close flag: the frame loop reads that flag before the next frame begins,
-so the editor would be gone before the close-intercept in the same stage could
-ask. The titlebar close is intercepted at the top of the UI stage, withdrawn, and
+window's close flag, which the frame loop reads before the guard could ask. The
+titlebar close is intercepted at the top of the Editor stage, withdrawn, and
 re-raised by `performSceneAction` once the scene is safe.
 
 ## Scene I/O
 
-`SceneIOController` owns the New / Open / Save / Save-As flow:
-
-- Drives the file-picker modals.
-- Hands off to `SceneSerializer::save` / `load` (engine-side; see
-  [IO and serialization](system/io.md)).
-- After a successful load it clears the command stack and rebinds the
-  camera if the loaded scene defined one.
-- Ends any play session the outgoing scene was in - the snapshot, its asset
-  list and the clock's pause/scale all go back to Edit mode. A snapshot that
-  outlived the scene it was taken from leaves the transport reading as playing,
-  and Stop then restores that dead world **over the scene just opened**, under
-  the opened file's name. New Scene and Open Project both clear it through the
-  same `endPlaySession`.
-- Maintains a recent-scenes list cached when the Open dialog is opened
-  (so re-opening doesn't re-scan disk every frame).
+`SceneIOController` owns the New / Open / Save / Save-As flow. It drives the
+file-picker modals and hands off to `SceneSerializer::save` / `load`
+([IO and serialization](io.md)). After a successful load it clears the command
+stack and restores the editor's viewpoint for that scene
+([The editor's view](#the-editors-view)). It ends any play session the outgoing
+scene was in, through the `endPlaySession` New Scene and Open Project share: a
+snapshot that outlived its scene would let Stop restore that dead world over the
+scene just opened, under its name. Every scene it opens or saves goes onto the
+recent-scenes list, which `editor_settings.json` persists per project, relative
+to its root.
 
 ### A play session owns the scene
 
-The four values a session turns on - the scene document, the session's whole
-asset list, the dirty flag and the undo revision - are `PlaySnapshot`
-(`framework/play_snapshot.h`), not four fields on the controller. They are only
-meaningful together and only between one capture and one restore, which is a
-state, and asking whether a session is running used to mean testing whether one
-of them happened to be a non-empty string.
-
-The controller still decides *when*: when to cook, what to do about a partial
+The values a session turns on - the scene document, the session's whole asset
+list, where each prefab instance's entities stood and the dirty flag - are one
+object, `PlaySnapshot` (`session/play_snapshot.h`), meaningful only together and
+only between one capture and one restore. The controller decides *when*: when to
 cook, what to tell the author, and what a restore does to the selection and the
-undo stack. A snapshot has no opinion about the session it belongs to. Because it
-has none, it also depends on nothing from the editor - a scene, a resource
-manager and two serializers - which is why the play/stop round trip is now
-covered by `vkm_engine_tests play`, and was not coverable before.
+undo stack. A snapshot depends on nothing from the editor, which is why the
+play/stop round trip is covered without a window, by `vkm_engine_tests play`.
 
-Play snapshots the authored scene and hands the world to the simulation, so
-what the ECS holds during a session is the simulation's copy of one. Every
-panel stays live inside a session, which is useful - and used to be silent.
+Play hands the world to the simulation, so what the ECS holds during a session
+is the simulation's copy. Every panel stays live, so the editor is explicit about
+what an edit made there comes to:
 
-- **Save is refused while a session is live.** File > Save Scene and Save Scene
-  As are greyed under a "Stop the play session to save" line, and Ctrl+S answers
-  with a toast. Writing the played scene over the authored file stores a scene
-  nobody wrote, and then clears a dirty flag that Stop restores to its pre-Play
-  value - so the editor would go on reporting the file as current while the
-  authored scene was gone, with an ordinary INFO line as the only word said.
-- **The viewport says which mode it is in.** A live session frames the viewport
-  in the warning colour and captions it PLAY MODE - edits are discarded on Stop.
-  Before, the only thing separating the two modes on screen was a 20px transport
-  glyph changing shape.
-- **Stop says what it discarded.** A session that moved the undo history, or
-  dirtied a scene that was clean when Play began, has authored work in it; Stop
-  warns rather than withdrawing the undo step and the dirty marker it raised for
-  that work without a word.
+- **Save is refused while a session is live** - greyed in the menu, and a toast
+  on Ctrl+S. Writing the played scene over the authored file would store a scene
+  nobody wrote and clear a dirty flag Stop puts back.
+- **The viewport says which mode it is in**: a live session frames it in the
+  warning colour, captioned PLAY MODE - edits are discarded on Stop.
+- **Stop says what it discarded**: a session that took an undo step of its own,
+  or dirtied a scene that was clean at Play, has authored work in it, and Stop
+  warns.
 
-`SceneIOController::stopPlaySession` is the whole of Stop in one place, because
-the transport's button is not its only caller: answering **Save** to the
-unsaved-changes prompt ends the session first, the scene that save is for being
-the authored one Stop puts back.
-
-`SceneIOController::isPlaying()` is the state itself, and everything that must
-not run against the simulation's copy of the scene asks it by name - the menu bar
-greying the two saves, the camera-dirty rule, the transport, and the controller's
-own refusal to write. It is not asked of the clock, which is paused in Edit mode
-as well.
+`SceneIOController::stopPlaySession` is the whole of Stop, because the transport
+is not its only caller: answering **Save** to the unsaved-changes prompt ends the
+session first. `SceneIOController::isPlaying()` is the state itself, and
+everything that must not run against the simulation's copy asks it by name - not
+the clock, which is paused in Edit mode as well.
 
 ### What an open does to the session's imports
 
-An open is the editor's clean break: it drops the undo stack, the
-selection, the material previews and the camera binding. The asset graph is
-replaced by the swap too, so an asset the *outgoing* scene never named - a
-sound imported and not yet assigned to a source - has no name in the new
-document to be recreated from, and goes with the session that imported it.
+An open is the editor's clean break: it drops the undo stack, the selection,
+the material previews and any preview through one of its cameras. The asset
+graph is replaced by the swap too, so an asset the *outgoing* scene never
+named - a sound imported and not yet assigned to a source - has no name in the
+new document to be recreated from, and goes with the session that imported it.
 
 **New Scene and Open Project answer this the same way**, through
 `beginSceneReplace`: it swaps a fresh `ResourceManager` in (keeping the font
 slot, which is engine-owned and never written to a scene) and counts the strays
 into the same toast. They throw a whole world away, so the reasoning above
 applies to them at least as strongly - and left in place, the outgoing graph
-collided with the seed scene the next New Scene builds: `buildDefaultScene` adds
-its cube and default material unconditionally, `ensureUniqueName` gave them a
-`" (2)"` suffix, and names being the serializable identity, that suffix became
-the new scene's frozen identity in the file and in the cooked manifest. A scene
-authored after two New Scenes in one session named `material:default (3)` and
-had no `(1)` or `(2)` anywhere in it.
+would leak into the seed scene the next New Scene builds: `buildDefaultScene`
+takes its cube and default material through `addGeneratedMesh` and
+`generateDefaultMaterial`, which reuse whatever the graph already holds as
+`mesh:generator:cube` and `material:default` - so the new scene's cube would
+wear the outgoing session's default material, edits and all.
 
 That is deliberately the opposite of what **Stop** does. Stop promises to put
 one session back exactly as Play found it - the undo history included. The
 snapshot is written from these entities at these slot indices and read back
 through `createEntityAt`, so every step on the stack still names what it named
 before Play, and edit / Play to check / Stop / undo the bad edit is a loop that
-works. `captureSnapshot` records `CommandStack::revision()`; if the session
-moved the history - a panel is live in play mode, so an edit made during one
-addresses the world about to be discarded - that half of the open's reasoning
-does apply, and the stack is dropped with a toast saying so.
+works. The one slot the scene document does not carry is where a prefab
+instance's own entities stood, because it stores an instance as a reference;
+`PlaySnapshot` records that beside it (`Prefab::instanceSlotsOf`) and the
+restore builds each instance back into those slots. Without it the instance
+would take whatever was free - the slot of an entity deleted before Play - and
+undoing that delete would fail while redoing it destroyed the instance's entity.
+A panel is live in play mode, so an edit made during one addresses the world
+about to be discarded. `captureSnapshot` therefore parks the authored history
+(`CommandStack::park`) and the session takes its steps on an empty one: Ctrl+Z
+inside a session undoes the session's own edits and stops there, never reaching
+an authored step against the simulation's copy. Stop discards the session's
+history, says so with a toast if it held anything, and puts the parked one back
+(`unpark`). The parked history is dropped instead, with its own toast, when an
+instance could not go back into its slots (`PlaySnapshot::restoredInPlace`): a
+prefab changed on disk during the session builds other entities. The
+selection comes back the same way, by slot and whole; an open, whose entities
+are other ones, matches only the active entity, by name.
+
+Beneath both, the steps that destroy by slot - redoing a delete, undoing a
+create or a placement, swapping a rebuilt subtree - first check the slot still
+holds the entity they were made against (`EntitySnapshot::describes`: its Name
+and prefab uid), and a step that reclaims a slot checks it is free. Either
+mismatch skips the step with an error toast rather than acting on another
+entity.
 
 **The asset graph is kept, not rebuilt.** An undo step holds the asset it is to
 put back, as a handle, and a handle is a slot index into one `ResourceManager`.
@@ -763,14 +707,12 @@ An open swaps in a graph built from the file it opened, which is why an open
 drops the stack; a Stop that did the same would leave the surviving steps
 addressing a manager that no longer exists, and since a rebuilt graph restarts
 at the same indices and generations those steps would resolve - to whatever
-landed in the slot instead. Measured: create a Sphere and a Cone, point the
-Sphere entity at the cone mesh, Play, Stop, Ctrl+Z, and the undo put
-`mesh:generator:cube` on it. So `restoreSnapshot` reads the snapshot into the
+landed in the slot instead. So `restoreSnapshot` reads the snapshot into the
 graph it was captured from (`AssetPolicy::Merge`), and puts each asset's
 *contents* back in place first - `loadAssets` with `LoadMode::Reload`, over the
 `saveAllAssets` document `captureSnapshot` recorded beside the scene - so a
 material edited during the session reverts like everything else while its handle
-goes on naming it (see [IO and serialization](system/io.md)).
+goes on naming it (see [IO and serialization](io.md)).
 
 An open makes no such promise - it
 is leaving that world for another one - and carrying the strays forward would
@@ -788,581 +730,280 @@ graph does not already hold - two scenes sharing a sound are not a loss.
 ### A texture is its own thumbnail
 
 Materials and meshes get a rendered preview (below). A texture does not: the
-tile draws the GPU mirror the renderer already samples, at tile size, and the
-GPU minifies it. Nothing is rendered, nothing is copied, and a 4K map costs a
-tile no more than a 64px one.
-
-What it does cost is *residency*. `GLView::sync` reaches a texture only through
-a material something draws, so a texture no drawable, caster or decal binds has
-no mirror at all - which is right for a frame and wrong for a library that shows
-every texture the project holds. `EditorRenderHooks` therefore has two calls,
-and the difference between them is the whole point:
+tile draws the GPU mirror the renderer already samples, and the GPU minifies it.
+What it costs is *residency*: `GLView::sync` reaches a texture only through a
+material something draws, so a texture nothing binds has no mirror.
+`EditorRenderHooks` therefore has two calls:
 
 - `textureId(handle)` - reports the mirror, or 0. Never uploads.
 - `ensureTexture(handle, resources)` - uploads if there is no mirror, then
-  reports. Idempotent and version-gated, but the first call per texture pays a
-  full upload.
+  reports; the first call per texture pays a full upload.
 
-The grid asks the first, and only spends `TEXTURE_UPLOADS_PER_FRAME` (3) calls
-to the second per frame, so opening a rail of 4K maps fills in over the next few
-frames instead of stalling one. That is the same bargain `MaterialPreviewSession`
-strikes for thumbnail bakes.
+The grid asks the first, and spends `TEXTURE_UPLOADS_PER_FRAME` calls to the
+second per frame, so a rail of 4K maps fills in over a few frames instead of
+stalling one.
 
 **Known: an sRGB texture's thumbnail draws darker than the file.** ImGui samples
-a `GL_SRGB8_ALPHA8` mirror - which linearises - and writes the result straight to
-a framebuffer that is not sRGB-encoded, so the transfer function is applied once
-and never undone. Linear maps (normal, roughness, AO) are unaffected and read
-exactly as authored. The Material Editor's slot thumbnails take the identical
-path and have always done the same thing; correcting it needs a per-image ImGui
-draw callback, since the material and mesh thumbnails come out of the composite
-pass already display-encoded and must *not* be converted.
+a `GL_SRGB8_ALPHA8` mirror - which linearises - and writes the result to a
+framebuffer that is not sRGB-encoded. Linear maps read exactly as authored. The
+Material Editor's slot thumbnails take the same path; correcting it needs a
+per-image ImGui draw callback, since the material and mesh thumbnails come out
+of the composite pass already display-encoded.
 
 ### Live PBR previews
 
-Both the Material Editor and the Asset Browser show live PBR previews.
-These are rendered by the backend's dedicated preview path
-(`RenderBackend::renderPreview`, backed by `GLPreview`) - **not** the full
-frame pipeline. It is a minimal forward + composite render of the material on
-a preview mesh into a small offscreen target, kept separate from the main pass
-list. Results are cached per asset (keyed by handle + version) with a
-small per-frame bake budget, so the Asset Browser grid amortizes thumbnail
-generation across frames while the Material Editor's live view re-renders each
-frame. Each kind gets its own key space (`previewKey`), and none of them is 0 -
-that one is reserved for the Material Editor's live pane.
+The Material Editor and the Asset Browser render previews through the backend's
+preview path (`EditorRenderHooks::renderPreview`, backed by `GLPreview`), a
+minimal forward + composite render into a small offscreen target, kept apart
+from the frame's pass list. Results are cached per asset (handle + version) with
+a per-frame bake budget (`MaterialPreviewSession`). The Material Editor's live
+view skips the budget but not the version gate: it re-renders when anything it
+shows changes. Each kind has its own key space (`previewKey`), and key 0 is the
+Material Editor's live pane.
 
-Right-clicking a tile assigns it to the selected entity - a material or mesh to
+A tile's context menu assigns it to the selected entity - a material or mesh to
 its `Mesh`, a sound to its `AudioSource`, a skeleton or a clip to its `Animator`
-- and that assignment is the same edit the Inspector's asset dropdown makes, so
-it takes the same road: an `EditScope<T>`, which is what gives it an undo step
-and what turns it into a prefab override when the entity is an instance.
-Writing the component directly here instead left the instance's override list
-empty while the viewport showed the new asset, and the next save wrote the
-prefab's own back over it with nothing said.
-
-### The Assets tab has no window of its own
-
-The browser is drawn by `BottomPanel` as its first tab and opens nothing. It
-was a floating `Window > Asset Browser` (Ctrl+6) until it was docked, and the
-window went in the same change rather than surviving beside the tab: two ways
-into one panel is the half-finished refactor `implementation.md` s7.3 names,
-and it costs an author a second answer to "where is my library" and every
-future fix a second place to land. The menu item, the `showAssetBrowser` flag
-and the keybind went with it.
-
-The bottom panel's default height grew with the tab, to what one whole row of
-default-size tiles needs. A grid clipped mid-tile reads as a broken tile
-rather than as a panel that wants dragging - which is not true of a timeline
-clipped mid-track, and is why a height that suited the Animation tab does not
-suit this one.
+- through an `EditScope<T>`, the Inspector's road, so it has an undo step and
+becomes a prefab override on an instance.
 
 ### The browser is a table of kinds, not a template over two of them
 
-The panel used to be a template parameterised on the asset type, with
-`static_assert`s admitting `MaterialAsset` and `MeshAsset` and nothing else -
-because a thumbnail needs a type to render. Everything that arrived afterwards
-had to work around that: audio got a tab of its own with its own import button
-and its own row shape, and the skeletons and animation clips that landed in 1.6
-got no surface at all. The toolbar showed the cost. `Import Model...` and
-`New Material` were drawn at panel scope while `Import Sound...` sat inside the
-Sounds tab, so on that tab the panel's most prominent row - the two buttons
-top-left where the eye lands, plus a thumbnail-size slider - was entirely dead.
+The browser is drawn into the Assets window `EditorSystem` begins. The panel is a
+`KINDS[]` table of `AssetKind` descriptors, each made by a builder that names its
+fields (a field left out is null), and the body that draws the rail, the tiles
+and the menus names an asset type only for what one kind alone does: a material
+tile opens the Material tab, and a sound tile carries the audition transport. A
+descriptor carries a label, a glyph, an `Accent::` colour, its primary verb, and
+function pointers: enumerate, describe, preview, assign, rename, delete, and the
+walk that proves a delete is safe. The only place a C++ asset type appears is
+`KindOps<Asset>`.
 
-It is now a `KINDS[]` table of `AssetKind` descriptors, and the body that draws
-the rail, the tiles and the menus names no asset type at all. A descriptor
-carries a label, a glyph, an `Accent::` colour, its primary verb, and a handful
-of function pointers: enumerate, describe, preview, assign, rename, delete,
-and the walk that proves a delete is safe. The only place a C++ asset type
-appears is `KindOps<Asset>`, a three-method template the table's entries
-instantiate.
+**All six of `AssetType`'s kinds are in the table.** A slot is null where the
+kind has nothing to put there: `thumb` for sounds, skeletons and clips (the tile
+draws the kind's glyph); `assign` for textures, which go into one of a material's
+slots no entity can name; `rename` for **skeletons only** - a skinned mesh and a
+clip carry the rig's name as a string, so renaming a rig would silently unbind
+every one of them. `used` is never null: every kind can say whether a delete is
+safe.
 
-**All six of `AssetType`'s kinds are in the table** - materials, textures,
-meshes, skeletons, clips and sounds - and the three that joined last are what
-settled which of the table's slots were real. Three nullable slots earned their
-keep and two did not:
+**`FontAsset` is not a kind.** `AssetType` leaves it out
+(`ASSET_TYPE<FontAsset>` is `Count`) because the library does not hold it: it is
+baked once at startup, referenced by name, and has no importer or entity slot.
 
-- `thumb` null - sounds, skeletons and clips have no picture, so the tile draws
-  the kind's glyph on the same square.
-- `assign` / `assignLabel` null - a texture has no entity target, because it
-  goes into one of a material's eleven slots and no entity can say which. The
-  context menu omits the item rather than offering a greyed one.
-- `rename` null - **skeletons only**. A skinned `MeshAsset` and an
-  `AnimationClipAsset` each carry the rig's name as a *string*, and
-  `SkeletalAnimationSystem` refuses a clip whose `skeleton` no longer matches
-  the rig it is handed. Renaming a rig therefore unbinds every mesh and clip
-  bound to it, silently; putting them back means editing assets the author did
-  not select. The menu item is greyed with `noRename` as the reason.
-- `used` was nullable and is not any more: all six kinds can be walked, so the
-  null branch and the `noDelete` string that explained it were dead and went.
-- `undoLabel` went with them - every assignment passed its own literal to
-  `pushEdit`, so the field was written six times and read never.
-
-**`FontAsset` is deliberately not a kind.** It is a `Resource`, but `AssetType`
-leaves it out (`ASSET_TYPE<FontAsset>` is `Count`) because the library does not
-hold it, and every slot in the table agrees: a font is baked once at startup,
-referenced by name rather than by handle, has no importer, has no entity slot
-to be assigned to, and renaming one would orphan every `UIText` naming it. It
-would join as a row that only counts - and only after `AssetKind` stopped being
-keyed by `AssetType`, since the rail row, the rename target and the preview key
-space are all keyed on that tag. That is a wider table bought for a row that
-does nothing.
-
-`AssetLibrary::namesOf(type)` is the second tier of the same seam - names per
-kind with no concrete type needed - but the browser stays on `ResourceManager`,
-because thumbnails and assignment need handles and the library only has names.
-The two disagree on purpose: the library is what a *saved* name resolves
-against, the manager is what is *loaded*.
+The browser stays on `ResourceManager` rather than `AssetLibrary::namesOf`,
+because thumbnails and assignment need handles: the library is what a *saved*
+name resolves against, the manager is what is *loaded*.
 
 ### Each kind is a colour, and the strip says use
 
-A rail row wears its own kind's hue, thinned with alpha until white text sits on
-it, rather than the editor's one blue for whichever row is selected. Six rows
-highlighted in the same blue read as one list whose entries happened to have
-different words in them, and the accent strip beside them is three pixels wide
-and cannot carry the difference alone.
-
-| Rail row  | `EditorStyle::Accent::` | Why |
-|-----------|-------------------------|-----|
-| Materials | `MatBase`   | warm orange; the Material tab's own base group |
-| Textures  | `MatTexture`| teal; what a texture wears on the Material tab's map tiles too |
-| Meshes    | `Mesh`      | green; the Mesh card's hue |
-| Skeletons | `Transform` | deep blue (`AXIS_Z`) |
-| Clips     | `Anim`      | purple; the Animator card's hue, and a clip is half that card |
-| Sounds    | `Audio`     | magenta; the Audio Source card's hue |
-
-Every hue is already in the registry - nothing was added for the browser, and
-no panel-local colour exists. `Accent::MatTexture` used to be defined as
-`AXIS_Y`, which is exactly `Accent::Mesh`, so Textures had to borrow the teal
-that the dissolved Surface card was holding; the Material tab's redesign took
-the duplicate green out and gave `MatTexture` that teal, so the name now means
-the hue it always should have. None of the six may be `WARNING`, `SUCCESS` or
-`DANGER`, which stay status colours so that no asset kind can read as an error.
-Skeletons and Clips both belong to the Animator card and cannot share its one
-hue, so the rig takes the registry's deep blue.
-
-The rail order is neither `AssetType` order nor alphabetical: it pairs the kinds
-that are about each other. A material is made of textures; a rig poses a mesh; a
-clip drives a rig; a sound belongs to none of them and goes last. That also puts
-maximum hue distance between neighbours.
-
-The tile keeps the same strip, and how solid it is says whether **anything in
-the project** uses the asset. On a grid showing one kind at a time the strip was
-identical on every tile - sixty bars repeating what the rail had already said -
-while the one thing a library is actually asked about its rows was legible only
-as a greyed-out Delete. It is the same `used` walk behind both, so the strip
-claims exactly what the delete guard claims and no more. The hover tooltip
-spells it out: *"Nothing in this project uses it"*.
+A rail row wears its own kind's hue, and the rail pairs the kinds that are about
+each other; the hues are `EditorStyle::Accent` entries named in `KINDS[]`, never
+a status colour. The tile keeps the same strip, and how solid it is says whether
+**anything in the project** uses the asset - the same `used` walk the delete
+guard asks, so the strip claims exactly what the guard does.
 
 #### What "in use" walks, per kind
 
-The walk takes the scene **and** the `ResourceManager`, because the scene is not
-the whole project. Half of these references are not on any entity, and a walk
-that missed them would offer a Delete that breaks something far from where it
-was pressed.
+What entities reference is not walked here at all. It is
+`AssetSerializer::collectAssetRefs` (`io/asset/asset_serializer.h`), the walk a
+scene save builds its `assets` block from: the handles of every component that
+names an asset (the `R` rows of `VKM_SCENE_COMPONENTS`), the `AssetRef` fields a
+behavior authors, and names a load left unresolved. So a component or a behavior
+field that names an asset is in use exactly when a save would name it - a clip
+only a behavior plays is not offered for deletion. The browser resolves the
+names back through `findByName` and marks each kind's slots.
 
-| Kind      | Referenced by |
-|-----------|---------------|
-| Materials | `Mesh::material`, `Decal::material` |
+The scene is not the whole project, though. Half of what holds a reference is
+an asset, not an entity, and a walk that missed those would offer a Delete that
+breaks something far from where it was pressed. So three kinds walk the
+`ResourceManager` too:
+
+| Kind      | Also referenced by |
+|-----------|--------------------|
 | Textures  | all eleven `TextureHandle` slots on **every** `MaterialAsset`, drawn or not |
-| Meshes    | `Mesh::mesh`, every `LODLevel::mesh` |
-| Skeletons | `Animator::skeleton`, plus `MeshAsset::skeleton` and `AnimationClipAsset::skeleton` resolved back from their **name** strings |
-| Clips     | `Animator::clip` and `Animator::fadeFrom` (a fading clip is still being sampled) |
-| Sounds    | `AudioSource::clip` |
+| Skeletons | `MeshAsset::skeleton` and `AnimationClipAsset::skeleton`, resolved back from their **name** strings |
+| Clips     | `Animator::fadeFrom` - session state no save names, but a fading clip is still being sampled |
 
-`MaterialAsset`'s eleven texture members are now enumerated in a fourth place
-(`MATERIAL_TEXTURE_SLOTS` in the panel, beside the serializer's `TexField`
-table, `GLMaterial`'s binding table and the Material tab's `MAPS`). Each of the
-other three pairs the member with something of its own - a JSON key, a binding
-point and flag, a tile label, colour space and hint - so there is nothing to
-borrow; the day a fifth appears is the day the bare list belongs on
-`MaterialAsset`.
+The texture slots expand from `VKM_MATERIAL_MAPS` (`MATERIAL_TEXTURE_SLOTS` in
+the panel), the one list the serializer's field table and the backend's binding
+table expand from too, so a map added there is a reference here without an
+edit.
 
 ### One tile, whatever the kind
 
-A tile is a square face, a name and a one-line detail. The face is one square
-whatever fills it: `FramePadding` is zeroed under it, because an `ImageButton`
-frames its picture with that padding and a `Button` sized by hand does not, so
-on the theme's `(8, 4)` a thumbnail tile stood eight pixels shorter than a
-glyph tile - no two kinds' name lines could share a baseline, and inside one
-kind the tiles waiting on a bake sat off it too. The same zero puts the
-picture's left edge on the name's left edge instead of eight pixels right of
-it. The face is a rendered thumbnail where the kind has one and the kind's
-glyph, in the kind's accent, where it does not. That is not a new idea - it is the rule `editor_icons.h`
-already states for viewport markers: the marker says something is there and the
-glyph inside says what, so a sound does not need a picture invented for it to
-sit beside a mesh. A kind that *has* thumbnails but has not had its bake turn
-yet draws the same glyph faintly, so "there is no picture for this" and "the
-picture is coming" do not look alike.
+A tile is a square face, a name and a one-line detail, drawn by `tileFace` and
+`tileStrip` (`ui/editor_widgets.h`), which the Material tab's map grid shares.
+The face is a thumbnail where the kind has one and the kind's glyph where it does
+not - the rule `editor_icons.h` states for viewport markers - and a kind waiting
+on its bake draws the glyph faintly, so "no picture" and "picture coming" differ.
 
-The name is clipped to one line with the full name in the tooltip, and the cut
-lands in the **middle**. These lines share their starts and differ at their ends
-- a clip named by its project-relative path, the sixtieth material out of one
-file - so a tail cut left the two sounds in a test project both reading
-`assets/audio/to...`, and `BrainStem:mat10` indistinguishable from
-`BrainStem:mat11`. One line is the older half of the rule: the name used to be
-`snprintf`'d to 20 characters inside a `PushTextWrapPos`, so a long name was
-truncated *and* wrapped, and the second line pushed every tile after it off the
-baseline.
+The name is clipped to one line in the **middle** (`elidedLine`), because these
+names share their starts and differ at their ends, with the full name in the
+tooltip. The detail has a short form for the tile and a verbose one for hover;
+the short form carries the one fact that separates assets of that kind:
 
-The detail line is where the missing picture goes, and it comes in two forms:
-a short one for the tile, which has about fourteen characters to live in, and a
-verbose one for the hover tooltip. That is how the Sounds table's Format and
-Size survive losing their columns - `0.50s . mono` on the tile,
-`0.50s . mono 44100 Hz . 0.0 MB` on hover. A mesh says `926 tris . skinned`,
-and `skinned` is doing real work there: the preview draws bind-pose vertices
-with no rig behind them, so a skinned mesh's thumbnail can look like nothing
-recognisable, and the tile says why rather than leaving it to be guessed at.
-(The framing itself is not the problem - `GLPreview` already centres on the
-mesh bounds and measures `PreviewRequest::distance` in bounding radii, so every
-mesh is framed alike.)
-
-A material's short line is its roughness, or its render path when that is not
-Opaque: the thumbnail already shows colour and gloss, so the line says the
-thing the picture cannot, and a transparent material looks like an opaque one
-on a preview sphere while behaving nothing like it.
-
-The three kinds added last follow the same rule - the short form carries the one
-fact that separates assets of that kind, the verbose one carries the rest:
+A mesh says `926 tris . skinned` - a skinned mesh's bind-pose thumbnail can look
+like nothing, and the tile says why - and a material its roughness, or its
+render path when that is not Opaque, which a preview sphere cannot show.
 
 | Kind      | Tile | Hover |
 |-----------|------|-------|
-| Textures  | `2048x2048` (or `decoding...` while an async import is in flight) | `2048x2048 . 4 ch . sRGB . 16.0 MB` |
-| Skeletons | `24 bones` (or `no bones`) | `24 bones . root 'Armature'` - the root bone is what an author recognises a rig by, and two rigs out of one file differ there before they differ in count |
-| Clips     | `2.00s . 57 ch`, or **`2.00s . no rig`** | `2.00s . 57 channels . rig 'X'`, `. N markers` when it has any |
+| Textures  | `2048x2048` (or `decoding...`) | channels, usage, levels and size, or what the cooked cache says |
+| Skeletons | `24 bones` | and the root bone's name |
+| Clips     | `2.00s . 57 ch`, or **`2.00s . no rig`** | channels, the rig, the markers |
+| Sounds    | `0.50s . mono` | rate and size |
 
 **`no rig` is the diagnostic the Clips rail exists for.** A clip names its
 skeleton by string, and `SkeletalAnimationSystem` throws out a clip whose name
-does not answer - so a clip bound to a rig the project no longer holds animates
-nothing while looking exactly like one that works. The tile reports the rig it
-*resolved*, not the name it carries, and the tooltip names the rig that is
-missing: `rig 'CesiumMan:skeleton' is not in this project`. It is text and not
-`WARNING` for the reason the Mesh card's `Skinned: rig 'x' not loaded` is text:
-`WARNING` / `SUCCESS` / `DANGER` are status colours, and a mis-bound clip is a
-fact about the asset, not a failure of the frame.
-
-A multi-channel sound's hover carries the equivalent for its kind: *"Each
-channel sticks to one ear - positioning wants mono."* The mixer routes each of a
-voice's channels to the output channel it was authored for and attenuates it
-there, so a wide clip put on a spatial source loses half its field wherever the
-emitter goes, and a stereo file whose channels happen to be identical behaves
-exactly like the mono equivalent - which is what makes the mistake quiet. It is
-said here because the browser is where a clip is *picked*; the Inspector's Audio
-Source card says it again where one is *put on a source*, and `AudioSystem` logs
-it once per clip for the request path that has no card.
+does not answer - so it animates nothing while looking like one that works. The
+tile reports the rig it *resolved*, and the tooltip names the one that is missing.
+A multi-channel sound's hover says that positioning wants mono, because the mixer
+routes each channel to the output channel it was authored for.
 
 ### What a tile answers to
 
-Hovering a tile draws a two-pixel border in the kind's own hue, over a thumbnail
-and a glyph alike. The theme's button accent cannot be that signal: both
-`ImageButton` and `Button` paint it *behind* what fills them, so it is a flat
-blue slab under a glyph and invisible under a thumbnail - one gesture with two
-answers. The face's hovered and active colours are pushed back to the idle one
-and the border carries it instead.
-
+Hovering a tile draws a border in the kind's hue, over a thumbnail and a glyph
+alike, rather than the theme's button colour, which paints behind what fills it.
 The pointer, not a selection, is what an operation acts on: **F2** renames the
-tile under the cursor, exactly as the Hierarchy renames the row under its own.
-Delete is deliberately **not** bound beside it - `deleteEntity` already owns that
-key, and `EditorShortcuts::process` reads it before any panel draws, so a second
-meaning would destroy an entity and open this dialog in one keystroke.
+tile under the cursor, as the Hierarchy renames the row under its own. Delete is
+**not** bound beside it - `deleteEntity` owns that key, and
+`EditorShortcuts::process` reads it before any panel draws. The context menu
+names its target before it offers anything.
 
-The context menu names its target before it offers anything. It covers the tiles
-either side of the one it belongs to, and a grid of one kind is a row of
-near-identical squares, so `Delete` without a name is a guess.
+**Rename** goes through `renameDialog` (`ui/editor_dialogs.h`), shared with the
+Material tab. `ResourceManager::rename` keeps names unique per type by suffixing
+a taken one, and the editor toasts it; the undo command records the name
+**assigned**, so redo repeats what happened.
 
-**Rename** opens the shared dialog with the field focused and the old name
-selected, so the gesture is F2, type, Enter with no reach back for the mouse.
-`ResourceManager::rename` keeps names unique per type by suffixing a taken one,
-which used to happen in silence - an author typed `Rock`, got `Rock (2)`, and
-nothing said so. It is now a toast, and the undo command records the name that
-was **assigned** rather than the one that was asked for, so redo repeats what
-happened rather than what was requested. The Material tab raises the same
-dialog: `renameDialog` in `ui/editor_dialogs.h` is the one implementation, and
-each caller passes only the title of what it is renaming.
-
-**Delete asks first**, and it asks rather than offering an undo because an asset
-cannot come back: re-adding one takes a new slot, so every handle that named the
-old one - including the ones already on the undo stack - would still be dead.
-`RenameAssetCommand` guards `isAlive` for exactly that case. The dialog names the
-asset and states the consequence: *"Undo cannot bring it back."* Deleting the
-clip that is auditioning stops the voice first - `AudioSystem` holds the samples
-by `shared_ptr`, so the sound would otherwise play on with no tile left anywhere
-to stop it.
+**Delete asks first**, rather than offering an undo, because an asset cannot
+come back: re-adding one takes a new slot, so every handle that named the old
+one - those on the undo stack included - stays dead. `RenameAssetCommand` guards
+`isAlive` for that case. Deleting the clip that is auditioning stops the voice
+first, since `AudioSystem` holds its samples by `shared_ptr`.
 
 ### One verb slot
 
-The first control in the toolbar is always the chosen kind's primary action, at
-the same place whatever kind that is. The label is the verb alone - `Import...`
-for five kinds, `New` for materials - because the rail two inches to its left
-already says which kind is showing and `Import Sound...` spent half a button
-saying it twice. What the noun carried, the formats behind an import, moved to
-the button's tooltip and reads fuller there than it ever did on the face:
-*"Import a model - glTF, GLB, OBJ, FBX, DAE, STL, PLY or 3DS"*.
+The first control in the toolbar is always the chosen kind's primary action -
+`New` for materials, `Import...` for the rest - a value in the descriptor table,
+not a branch in the toolbar; the formats are in its tooltip. Search narrows the
+rail's counts and the grid together, and Escape empties the box rather than
+ImGui's default of reverting it.
 
-Five of the six say `Import` and the sixth says `New`, and that difference is
-the kinds', not the panel's: everything else arrives from a file, a material is
-authored, and there is no material file to import. It is a value in the
-descriptor table like every other per-kind fact, not a branch in the toolbar,
-and `New` is what the Material Editor has always called the same action. Search
-and the tile size sit to the button's right, always. Nothing in the toolbar is
-ever inert.
+Materials create; meshes, skeletons and clips raise
+`EditorState::requestModelImport`, because all three come out of one model
+import; textures and sounds each run an `AssetPicker` the panel owns, so their
+popup ids stay unique.
 
-Search narrows the rail's counts and the grid together, so a kind with nothing
-matching reads `0` rather than offering an empty grid to walk into. Escape
-empties the box: ImGui's default is to revert a field to what it held when it
-took focus, which on a search field puts back the needle the author is trying to
-drop.
-
-Three verbs stand behind the six buttons. Materials create; meshes, skeletons
-and clips all raise `EditorState::requestModelImport`, because all three come
-out of one model import and the tooltip narrows the formats to the ones that
-carry a rig or an animation; textures and sounds each run a panel-owned
-`AssetPicker` of their own, so their popup ids stay unique and one import in
-flight cannot be handed the other's file.
-
-**A texture is imported as colour (sRGB).** A file picked by hand off a picker
-is art; the data maps that want linear arrive with the model that uses them, or
-through the Material Editor slot, which knows which of the eleven it is filling
-and passes the colour space for it. The import refuses a file the project
-already holds and says so in a toast, because `loadTexture` decodes and adds
-without looking and `ResourceManager` keeps names unique - so a repeat import
-would otherwise leave two assets for one file. The Material tab's map tiles
-guard it too, and differently on purpose: binding a file already imported reuses
-that asset rather than refusing, since what the author asked for there is a
-filled slot. The one case it does load a second copy is a file wanted in the
-other colour space, which is two textures on the GPU and not a duplicate.
+**A texture is imported as colour (`TextureUsage::Color`).** Data and normal
+maps arrive with their model, or through the Material Editor slot, which knows
+the usage. The import refuses a file the project already holds: `loadTexture`
+names the asset by its path, and `ResourceManager::add` under a taken name
+replaces that asset in place, under every material using it. A Material tab map
+tile binding a file already imported reuses that asset instead, since a filled
+slot is what was asked for; a file wanted as another usage is a second texture.
 
 ### Auditioning, from the tile
 
-Hearing a clip is what previewing one means, so the transport sits on the
-sound tile's face the way a play control sits on a video thumbnail - the tile
-keeps every other kind's height and gains no row of its own. It is the
-Inspector card's transport, drawn by the same `auditionTransport`: Play on
-every tile, and on the tile that is sounding a Pause that holds it and a Stop
-that cuts it short. The face is submitted with `SetNextItemAllowOverlap()`,
-without which the face button would hold the mouse over the whole square and
-the transport drawn on top of it would never register a click.
+The transport sits on the sound tile's face, the Inspector card's
+`auditionTransport`: Play on every tile, and on the tile that is sounding a Pause
+and a Stop, with the detail line become the position slider. The face is
+submitted with `SetNextItemAllowOverlap()`, or the face button would take every
+click on the square.
 
-While a tile owns the voice its detail line becomes the position slider, for
-the reason the old table put the slider in the Length column: a position
-measured against a length belongs where the length was stated. Every other tile
-keeps its detail as text.
+One voice serves the panel, so a Play replaces whatever was sounding, and the
+panel remembers which clip the voice came from as a full handle, so a recycled
+slot cannot hand another clip a running transport. An audition does not stop
+when the pointer leaves the panel. Pause, Stop and the slider are lit off the
+device, not off a remembered id, which outlives the voice it named.
 
-One voice serves the whole panel, so a Play replaces whatever was sounding
-rather than layering over it, and the panel remembers **which clip** that voice
-came from - that is what lets one tile own the transport instead of the panel
-owning a Pause and a Stop for all of them. The remembered clip is a full handle
-rather than an id, so a slot recycled by a remove and an add cannot hand a
-different clip a running transport; a graph swapped underneath it cannot
-either, since `AudioSystem` stops every voice when the asset epoch moves.
-
-An audition does not follow the user out of the panel: leave it and a
-ninety-second ambience plays on, because this panel is the only thing holding
-the voice's id - come back and the tile is still sounding, with its Stop lit.
-Pause, Stop and the slider are lit off the device rather than off a remembered
-id, here and on the Inspector's copy of them: an id outlives the voice it
-named, so a clip that ran to its end would otherwise leave a Stop offering to
-cut something that already stopped.
-
-The toolbar carries the two ways a clip goes unheard with nothing here wrong -
-a host with no audio device, and an `AudioListener` at volume 0, which silences
-the mix an audition plays through as surely as an absent device does - and only
-while the Sounds rail row is the one showing, since that is the only kind they
-are about.
-
-The Sounds `Import` decodes a wav / mp3 / flac into the project, which is the
-only way a clip enters one. Picking a file the project already holds is
-answered with a toast saying so and nothing else: `loadAudioClip` keys on the
-project-relative name and hands back the clip it already has, so there is no
-new tile to look for, and the scene is not dirtied for an import that did not
-happen.
+While the Sounds row is showing, the toolbar names the two ways a clip goes
+unheard with nothing here wrong: no audio device, and an `AudioListener` at
+volume 0. Importing a file the project already holds is answered with a toast
+and nothing else.
 
 ### What Create > Primitive puts in the asset graph
 
 A generated mesh carries a deterministic name - `mesh:generator:cube`,
-`mesh:generator:sphere:32:16` - built from the same parameters as its source
-descriptor, and `stampGenerated` says why: *"identical generator calls land on
-one asset: the name is the serializable identity, and two meshes generated the
-same way are the same mesh rather than two copies a scene would save twice."*
-The menu broke that promise, because it added what the generator handed it
-without asking whether the graph already held that name. `ensureUniqueName`
-then did what it is for, and three cubes in one scene were
-`mesh:generator:cube`, `mesh:generator:cube (2)` and `mesh:generator:cube (3)` -
-three identical 24-vertex meshes, three recipes in `library/`, three
-indistinguishable rows in every mesh picker, and the suffix frozen into the
-scene file as the identity of two of them. The default material went the same
-way, so `Edit Material` on one cube reached a copy the others did not use.
-
-`addGeneratedMesh` and `generateDefaultMaterial` both reuse what the graph holds
-under the name they would have taken - the rule the built-in 1x1 textures beside
-them already followed. Nothing edits a generated mesh, and a material meant to
-be its own is made by **Duplicate** or **New**, which copies the
-default rather than renaming it: renaming it would take `material:default` out
-from under everything that resolves that name, including a cold-start load.
+`mesh:generator:sphere:32:16` - read back out of its source descriptor
+(`generatorName`), and `addGeneratedMesh` and `generateDefaultMaterial` reuse
+what the graph holds under that name, so three cubes share one
+`mesh:generator:cube` and one `material:default` rather than three copies a scene
+would save. A material meant to be its own is made by **Duplicate** or **New**,
+which copy the default rather than renaming it: renaming it would take
+`material:default` out from under everything that resolves that name.
 
 ### When the scene has no camera
 
-The editor has no camera of its own: `CameraControllerSystem` retargets each
-frame onto whichever entity holds an active `Camera`, so unticking Active on the
-last one - or deleting it - empties the viewport and freezes navigation, and
-`VisibilitySystem`'s "No active camera found for visibility" goes to a log file
-the editor cannot show. `ViewportOverlay::drawNoCameraNotice` puts it on screen
-instead, centred in the viewport it is explaining: **"No active camera - nothing
-to render from"**, with the two routes back under it.
-
-`Entity > Create > Camera` is one of those routes, so it activates the camera it
-creates **when the scene has no active one**. Inactive is right when another
-camera already owns the view - it stops a new camera hijacking it - and wrong in
-the one case where creating one is the recovery, where an inactive result looks
-like the menu item did nothing.
-
-## CameraControllerSystem
-
-FPS-style fly camera; a `System` on `SystemStage::Input`. Updates the
-active camera's transform from input each frame.
-
-**It starts disabled and the editor is what enables it.** The shared bootstrap
-registers the controller for both hosts, so the switch decides whether a
-shipped game gets fly controls, and right-button-down puts the window in
-`CursorMode::Disabled` - hidden, grabbed and re-centred every frame. Measured
-on `vkm_runtime` before this was settled: holding the right button warped the
-pointer to the centre of the window and snapped it back whenever it moved, and
-the game had no way to decline, because `BehaviorContext` carries the scene,
-the resources, the window and the events, and no systems. Off by default rather
-than turned off by the runtime, so a host that says nothing gets a controller
-that does nothing instead of one that takes the cursor.
-
-### Controls
-
-| Input                          | Action                            |
-|--------------------------------|-----------------------------------|
-| Right mouse button (hold)      | Enable look mode (cursor hidden)  |
-| Mouse movement (in look mode)  | Rotate camera (yaw/pitch)         |
-| W / A / S / D                  | Move forward / left / back / right|
-| Q / E                          | Move down / up                    |
-| Shift (hold)                   | Speed boost                       |
-| Scroll wheel                   | Zoom (adjust FoV)                 |
-
-### Configuration
-
-```cpp
-class CameraControllerSystem : public System {
-    struct Settings {
-        float zoomSensitivity   = 0.02f;
-        float lookSensitivity   = 0.002f;
-        float moveSpeed         = 10.0f;
-        float speedBoost        = 3.0f;
-        float scrollMultiplier  = 2.0f;
-        float minPitch          = -90.0f;
-        float maxPitch          = 90.0f;
-    };
-    // ...
-};
-```
-
-Keybindings are configurable through the keybinds system; see the
-Preferences window's Keybinds tab.
-
-The controller is registered by `vkm_editor`'s own `main()`, not by the shared
-bootstrap: right-drag hides and grabs the pointer, and a shipped game that never
-asked for that should not be able to reach a switch that turns it on.
-
-### Flying the camera is an edit
-
-There is no separate editor camera: the controller flies the scene's active
-`Camera` entity, which is what makes "you move what you see" true and what lets
-a viewport click pick through the same view the renderer draws. That entity's
-`Transform` is also a value the scene file stores - so a look around, a scroll
-dolly, Frame Selected and a view-cube snap all change authored data.
-
-They mark the scene unsaved, through `CameraControllerSystem::takeCameraMoved`:
-the controller reports that it moved the camera and `EditorSystem` marks the
-scene dirty, outside a play session (inside one the world is the simulation's
-copy and Stop puts the camera back with it). Before that, navigation left the
-title clean while the pose in the world and the pose on disk drifted apart, and
-the next save made for an unrelated reason wrote the parked viewport over the
-framing somebody had chosen, silently.
-
-Navigation deliberately pushes **no** undo step. A drag is not a discrete edit,
-and a bounded history filled with how you got to a viewpoint would push the
-edits worth undoing off the end of it. The dirty marker is the honest half: it
-says the file no longer matches the scene, which is the fact a save needs.
+The editor's view is its own, so a scene with no camera opens, renders and edits
+like any other. A session in one has nothing to render from, and
+`VisibilitySystem`'s warning goes to a log the editor cannot show, so
+`ViewportOverlay::drawNoCameraNotice` puts **"No active camera - the game has
+nothing to render from"** in the viewport, with the routes back - and F8, which
+ejects to the editor's view. `Entity > Create > Camera` activates the camera it
+creates **when the scene has no active one**; otherwise it creates it inactive,
+so a new camera does not take the game's view.
 
 ## Transform gizmo
 
-Viewport-space manipulation handles for translate, rotate, and scale.
-Axis-constrained operations are supported. A fourth mode, **Select**,
-draws no handles (pick-only) so clicks always select rather than drag.
+Viewport-space handles for translate, rotate and scale, axis-constrained; a
+fourth mode, **Select**, draws no handles so a click always selects.
+`transform_gizmo.cpp` holds the whole gizmo: `manipulate()`, its maths, the
+visuals, the pick tests and the drag state machine. A drag pushes one step when
+it ends: the dragged entity's `editStep<Transform>`, or one `CompositeCommand`
+when the selection has several roots.
 
-`transform_gizmo.cpp` holds the whole gizmo: the `manipulate()` entry point and
-its shared math (world<->screen projection, ray construction, screen scale), the
-visuals, the ray casts and pick tests, and the drag state machine. A drag emits
-a single `TransformChangeCommand`, so undo steps back over the whole gesture
-rather than each frame of it.
+Handles project through the near-plane test the viewport wires use
+(`overlays/wire_draw.h`): a point behind that plane has no screen position, so
+its handle is dropped from the draw and the hit test. A click-to-pick and every
+drag cast the ray `viewportRay` builds - the pointer unprojected at the near and
+the far plane, starting at the near one, not at the camera, whose position an
+orthographic camera's parallel rays never pass through. The gizmo hovers and
+starts a drag only where the frame's input ownership lets it
+([Who has the pointer and the keyboard](#who-has-the-pointer-and-the-keyboard)).
 
-Handles project through the same near-plane test the viewport wires use
-(`overlays/wire_draw.h`). A point behind that plane has no screen position at
-all, so the handle it belongs to is dropped from the draw and from the hit test
-rather than standing in at a fixed coordinate a click could still land on.
+**Snapping** (the tool strip's toggle, or Ctrl held) moves a drag in whole steps
+*from where it began*, along the handle held (`overlays/gizmo_snap.h`): only what
+the handle moves is snapped, and a value off the step keeps its offset - rounding
+the values would drag the other axes onto the grid and round an import at scale
+0.01 to zero. A scale stops at one step rather than reach zero.
 
-Default tool keybinds (active only when the camera is **not** in fly mode):
-`Q` Select, `W` Move, `E` Rotate, `R` Scale, `X` toggles Local / World.
-All are rebindable from the Preferences > Keybinds tab.
+Tool keybinds, live only while the cursor is not captured: `Q` Select, `W` Move,
+`E` Rotate, `R` Scale, `X` Local / World, rebindable in Preferences > Keybinds.
 
-Everything with no mesh of its own draws a gizmo in `gizmo_overlay_draw.cpp`,
-so it can be found and placed at all: lights (directional rays, cone
-projections, area-light edges), cameras (frustum lines), reflection probes and
-irradiance volumes (influence boxes, and the selected volume's probe grid),
-decals (projection box) and particle emitters (marker plus velocity), and audio
-sources and listeners (a billboard icon each - the source's keeps the speaker's
-arcs only while it is spatial; plus the selected source's `Min` / `Max Distance`
-spheres, and the listener's facing arrow). These are authoring shapes rather
-than debug overlays, so none of them is behind a `View` toggle.
-
-Four of those - lights, cameras, audio sources and listeners - mark themselves
-with a glyph on a dim disc, all at one size, because a marker says *something
-is here* and the glyph inside it says what. One call draws it
-(`drawEntityMarker`, in `ui/editor_icons.h`) and the picker answers clicks
-within the radius that same header states, so a marker cannot be resized into
-a click target that no longer matches it.
-
-The `View` menu adds three overlays that are off by default because they draw
-for every matching entity rather than the selection: **Show Colliders** (the
-boxes the solver collides against), **Show Bounds** (the world AABB of every
-visible entity) and **Show Skeletons** (each posed rig's bones, straight out of
-`FrameContext::poses` - segments joint to joint, plus an axis triad per bone on
-the selected rig, which is what makes a bone's *orientation* visible and not
-just its position).
+Everything with no mesh of its own draws an authoring gizmo in
+`gizmo_overlay_draw.cpp`, so it can be found and placed: lights, cameras,
+reflection probes and irradiance volumes, decals, particle emitters, audio
+sources and listeners. Lights, cameras and the audio pair mark themselves with a
+glyph on a disc at one size, drawn by `drawEntityMarker` (`ui/editor_icons.h`),
+which also states the radius the picker answers within. The `View` menu adds
+**Show Colliders**, **Show Bounds** and **Show Skeletons** (posed bones from
+`FrameContext::poses`, with an axis triad per bone on the selected rig), off by
+default because they draw for every matching entity.
 
 ## Entity selection and shortcuts
 
-- Click in the viewport to pick entities (ray-AABB against the visible
-  set's cached world AABBs). Everything else is picked by its **billboard
-  marker**: a light, a camera, an audio source and a listener have no mesh to
-  be hit through, and the gizmo that moves one only appears once it is
-  selected, so a marker that cannot be clicked is an entity that cannot be
-  placed - and the click that missed deselects, which is the worst answer
-  available. The rule is `drawEntityMarker` itself: what draws a marker is what
-  answers a click on one, tested in screen space against the same radius the
-  marker is drawn at, so it holds at any distance and under an orthographic
-  camera - where a world-sized proximity box, which agrees with a screen marker
-  at exactly one distance, would not. A light keeps such a box as well, scaled
-  by its reach, because a light's wireframe *is* a volume the user points at;
-  the marker covers the case where that wireframe has shrunk to nothing. A
-  sound has no volume to point at, which is also what keeps a 60-unit `Max
-  Distance` from swallowing every click near it. The flown editor camera is
-  excluded, the same way it draws no gizmo - it is the viewer.
-- Probes, irradiance volumes and decals draw a wire box rather than a marker,
-  and are selected from the hierarchy only: those boxes run to tens of units,
-  so answering a click anywhere inside one would swallow everything standing in
-  it. A particle emitter has no box either way - a ring and a dot at its
-  origin, plus its velocity line - and is also selected from the hierarchy,
-  because it is the marker that carries the click and an emitter draws none.
-- The hierarchy panel highlights the selection.
-- The inspector shows components of the selected entity. Entities inside a
-  prefab instance are selected and edited like any other; an edit to one becomes
-  a per-instance override, the card marks the fields the instance owns, and each
-  offers "Revert to prefab" (`framework/prefab_overrides.h`).
-- Focus, duplicate, delete, undo, redo, save, save-as, open, preferences
-  have dedicated keybinds; the full list lives in `input/editor_keybinds.h`.
+- A viewport click casts against the visible set's world boxes, and each box it
+  enters against its mesh's triangles (`overlays/mesh_pick.h`), so a level mesh
+  does not swallow a click aimed inside its box; a posed mesh answers by its
+  posed box. An entity with no mesh is picked by its **marker**:
+  `GizmoOverlay::markEntity` is the one door every marker is drawn through, and
+  the picker tests exactly the markers drawn that frame, in screen space at the
+  radius they were drawn - so what draws a marker answers a click on one, at any
+  distance and under an orthographic camera. A light also records a box scaled by
+  its reach. A scene camera the viewport renders through draws no marker and is
+  not picked.
+- Probes, irradiance volumes, decals and particle emitters are selected from the
+  hierarchy only: their boxes run to tens of units and would swallow every click
+  inside them.
+- The selection is an ordered list - the active entity is the last one clicked -
+  with `EditorState::selectedAt` beside it, the same set indexed by slot, so
+  `isSelected` is one comparison for the outline and the gizmo colours over
+  thousands of entities. Only `EditorState`'s selection helpers write either.
+- The inspector shows the active entity. Inside a prefab instance an edit becomes
+  a per-instance override, and each overridden field offers "Revert to prefab"
+  (`command/prefab_overrides.h`).
+- Every shortcut is a keybind in `input/editor_keybinds.h`, dispatched by
+  `EditorShortcuts::process`.
 
 ## What an instance will not let you do
 
@@ -1372,7 +1013,8 @@ not an override is not written at all. The editor either makes the gesture mean
 what it looks like, or refuses it where it happens:
 
 - **Duplicate** instances the prefab again, carrying the overrides over, instead
-  of copying the root's components into a childless entity.
+  of copying the subtree - which would write out as the block of loose entities
+  the reference exists to replace.
 - **Undo of a delete** restores the marker and the uids with the rest of the
   subtree, so the instance comes back whole with its overrides intact.
 - **Re-parenting into or out of an instance** is refused with a toast in
@@ -1381,6 +1023,10 @@ what it looks like, or refuses it where it happens:
 - **Add Component** on an instance entity works and warns, because saving the
   instance back over its file is how a component is added to a prefab. The
   inspector carries the rule above the button and toasts it on the add.
+- **A Joint's Connected picker** is disabled inside an instance, with a line
+  saying why. An override is read back in the prefab's namespace and a pick names
+  an entity in the scene's, so no override can carry it; a pick would change the
+  joint on screen and be gone on the next load.
 - **Revert to prefab** on a field whose component the prefab no longer defines is
   refused and the entry kept - there is no value left to give the field back.
 - **Save as Prefab** on an entity inside an instance is refused: that subtree is
@@ -1408,3 +1054,95 @@ as a reference from then on. Two consequences to know before reaching for it:
   scene load clears the whole stack for a reason that does not hold here: it
   replaces every entity, and this replaces none.) A refused save leaves the
   history alone.
+
+---
+
+## How it works inside
+
+Everything above is what an author sees. What follows is how the editor does
+it, for whoever maintains that half.
+
+### The editor's view
+
+The editor looks at a scene from a viewpoint of its own - a position and a yaw
+and pitch (`EditorViewpoint`), held by `CameraControllerSystem` - not from an
+entity, for three reasons:
+
+- **Looking around is not an edit.** The viewpoint is in no scene file, so a
+  fly, a scroll dolly, Frame Selected and a view-axis snap change nothing the
+  scene stores, mark nothing unsaved and push no undo step.
+- **A scene needs no camera to be edited.** The view renders whether or not the
+  scene has one; only a play session needs the scene's (see
+  [When the scene has no camera](#when-the-scene-has-no-camera)).
+- **The game's camera is the game's.** Nothing of the editor's writes it, so a
+  session never has two writers for one Transform.
+
+It reaches the frame through the engine's one authoring seam for it,
+`FrameContext::hostView` ([visibility.md](visibility.md#where-the-view-comes-from)):
+the controller publishes a `HostView` at the Input stage and `VisibilitySystem`
+renders through it in place of the scene's active camera. The picker, the
+transform gizmo, the wire overlays and the navigation axes all project through
+`ctx.visibility`'s matrices, so they follow whatever the frame rendered through
+without asking the controller.
+
+**What the viewport shows**, from the camera box on the view bar at the top-right
+of the viewport:
+
+| Mode | The frame renders through | Flies |
+|---|---|---|
+| Edit, **Editor** (the default) | the editor's viewpoint | yes |
+| Edit, a scene camera picked from the box | that camera, active or not: a read-only preview, labelled `(main)` on the one the game starts on | no |
+| Play | the game's camera - nothing is published | no; the box reads **Game** |
+| Play, ejected (F8) | the editor's viewpoint, or a previewed camera | yes |
+
+A preview ends when its camera stops being a camera with a pose, when the scene
+is replaced, and when Frame Selected, Frame All or a navigation axis moves the
+viewpoint - each of which shows the viewpoint they moved. A previewed camera,
+like the one the game renders through, draws no frustum or marker and takes no
+gizmo (`Visibility::cameraEntity` names it), because a drag measured in a view
+would move that view. **Set as Main Camera** in the inspector and the hierarchy
+is a separate thing: it decides the game's eye, which the editor's view is not.
+
+**Where it starts.** `editor_settings.json` keeps the viewpoint per scene, by
+its path relative to the project, so the entries move with it, under
+`sceneViews` (`EditorState::sceneViews`); the open scene's is written into it as
+the scene is left - a New Scene, an open, a project switch, the editor closing -
+and read back when that scene is opened again. A scene with no entry is framed
+from its active camera, so the first look at a scene is the one its author set
+up for the game, or from `(0, 2, 6)` facing the origin when it has none. A Stop
+leaves the viewpoint where it was. An entry for a scene no longer on disk is
+dropped on load, as the recent scenes are.
+
+#### The fly controls
+
+`CameraControllerSystem` is a `System` on `SystemStage::Input`, before every
+reader of a view: a viewport that resolved matrices from last frame's pose would
+lag the pointer by a frame on every drag.
+
+**The editor registers it and no other host does.** `vkm_editor`'s own `main()`
+adds it after `setupEngineApp` returns, which makes fly controls an authoring
+tool rather than a switch a shipped game could reach: holding the right button
+puts the window in `CursorMode::Disabled`, and a game could not decline it,
+because `BehaviorContext` carries services and no systems.
+
+**Its actions are in a map of its own.** The fly bindings (`CameraActions`)
+live in an `InputMap` the controller owns, sampled each frame against what the
+editor's panels hold (`setCapture`), never in the game's. That is what lets an
+ejected session fly while the game, told the host holds both devices, hears
+nothing - one map cannot answer "held" to the fly camera and "up" to the game
+for the same key - and it is why a game's map holds no `Camera/` actions to
+take its command slots.
+
+| Input                          | Action                            |
+|--------------------------------|-----------------------------------|
+| Right mouse button (hold)      | Enable look mode (cursor hidden)  |
+| Mouse movement (in look mode)  | Rotate the view (yaw/pitch)       |
+| W / A / S / D                  | Move forward / left / back / right|
+| Q / E                          | Move up / down                    |
+| Shift (hold)                   | Speed boost                       |
+| Scroll wheel (in look mode)    | Dolly forward / back              |
+
+Its speeds and sensitivities (`CameraControllerSystem::Settings`) are the
+Preferences window's Camera tab, held in `Preferences::camera` and handed to the
+controller every frame, so they persist with the person rather than the project. Its bindings are input actions, not
+editor keybinds.

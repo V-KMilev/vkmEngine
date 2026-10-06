@@ -1,49 +1,60 @@
 #include "panels/render_settings_panel.h"
 
-#include "framework/editor_commands.h"
+#include <iterator>
 
-#include "framework/editor_common.h"
+#include <imgui.h>
+
+#include "command/component_edit.h"
+#include "command/editor_commands.h"
+
+#include "core/system.h"
+#include "editor_state.h"
 #include "ui/editor_style.h"
 #include "ui/editor_dialogs.h"
 #include "ui/editor_widgets.h"
-#include "framework/editor_context.h"
+#include "editor_context.h"
+#include "editor_settings.h"
 
 #include "ecs/scene.h"
 #include "ecs/component/render/reflection_probe.h"
 #include "system/render/render_system.h"
-#include "system/visibility/visibility_system.h"
 
 namespace Vkm::Engine {
 
 void RenderSettingsPanel::draw(EditorContext& ec) {
     EditorState& state = ec.state;
 
-    const ImGuiViewport* vp = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(EditorStyle::px(360.0f), EditorStyle::px(480.0f)),
-                             ImGuiCond_FirstUseEver);
+    const ImVec2 size(EditorStyle::px(360.0f), EditorStyle::px(480.0f));
+    if (!beginToolWindow("Render Settings", state.showRenderSettings, size)) return;
 
-    if (!ImGui::Begin("Render Settings", &state.showRenderSettings, ImGuiWindowFlags_NoCollapse)) {
-        ImGui::End();
-        return;
-    }
+    RenderSettings& s = ec.frame.render;
 
-    RenderSettings& s = ec.renderSystem.getSettings();
-
-    if (beginComponentCard("Output", EditorStyle::Accent::Quality, true)) {
+    if (beginComponentCard("Output", EditorStyle::Accent::QUALITY, true)) {
         propEnumCombo("Debug View", s.renderMode);
+
+        // Unlike the debug view, this is stored in project.json and the game renders with it.
+        const char* tonemapTooltip =
+            "How linear HDR is landed into the display range. Reinhard "
+            "desaturates bright colour; ACES rolls it off warm; Khronos "
+            "PBR Neutral holds an object's authored albedo as it brightens";
+        propEnumCombo("Tonemap", s.tonemap, tonemapTooltip);
+        const char* exposureTooltip =
+            "A fixed exposure in stops, applied before the tonemap: +1 doubles the light "
+            "the curve sees, -1 halves it. Authored, never adapted";
+        propSlider("Exposure", &s.exposure, -8.0f, 8.0f, "%+.1f EV", exposureTooltip);
+
         propCheckbox("World Grid", &s.grid, "World-space ground grid overlay (editor aid)");
 
-        // The post chain runs on the resolved single-sample buffer, so only
-        // geometry-edge cost scales with the sample count.
         static const char* const MSAA_LABELS[] = { "Off", "2x MSAA", "4x MSAA", "8x MSAA" };
-        static const uint32_t    MSAA_VALUES[] = { 1u, 2u, 4u, 8u };
-        propValueCombo("Anti-Aliasing", MSAA_LABELS, MSAA_VALUES, 4, &s.msaaSamples,
-                       "Scene-pass MSAA; the post chain runs on the resolved buffer");
+        propValueCombo(
+            "Anti-Aliasing",
+            MSAA_LABELS,
+            RenderSettings::MSAA_SAMPLE_COUNTS,
+            &s.msaaSamples,
+            "Scene-pass MSAA; the post chain runs on the resolved buffer"
+        );
 
-        // One list, two fields. Nearest and Bilinear are modes; the rest are
-        // Trilinear with a degree on top, which is why anisotropy is meaningless
-        // below them and the combo writes both rather than one.
+        // One list, two fields: past Bilinear each row is Trilinear plus an anisotropy degree.
         struct FilterEntry {
             const char*      label;
             TextureFiltering mode;
@@ -58,108 +69,182 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
             {"Anisotropic 8x",    TextureFiltering::Trilinear, 8u},
             {"Anisotropic 16x",   TextureFiltering::Trilinear, 16u},
         };
-        constexpr int FILTER_COUNT = 7;
+        constexpr int FILTER_COUNT = static_cast<int>(std::size(FILTERS));
         constexpr int FIRST_ANISO  = 3;
 
-        // Only what the driver reports. The backend clamps anyway, so a level
-        // past the ceiling still renders - at a degree the menu is not showing,
-        // which is the one outcome a settings menu must not produce.
+        // Offer only what the driver reports; the backend clamps a stored level past it.
         const uint32_t ceiling = ec.renderSystem.maxAnisotropy();
         int count = FIRST_ANISO;
         while (count < FILTER_COUNT && FILTERS[count].degree <= ceiling) ++count;
 
-        // The highest offered degree the stored one reaches, not an exact match:
-        // a settings file written where 16x exists keeps asking for it here, and
-        // the last row that fits names what the driver actually gives.
+        // The highest offered degree the stored one reaches, not an exact match: a file asking
+        // for 16x here shows what the driver actually gives.
         int current = FIRST_ANISO - 1;
         for (int i = 0; i < count; ++i) {
             if (FILTERS[i].mode != s.textureFiltering) continue;
-            if (s.textureFiltering != TextureFiltering::Trilinear) { current = i; break; }
+            if (s.textureFiltering != TextureFiltering::Trilinear) {
+                current = i;
+                break;
+            }
             if (FILTERS[i].degree <= s.textureAnisotropy) current = i;
         }
 
         const char* labels[FILTER_COUNT];
         for (int i = 0; i < count; ++i) labels[i] = FILTERS[i].label;
 
-        if (propIndexCombo("Filtering", labels, count, &current,
-                           "How a texel is fetched, for every texture that has not "
-                           "pinned its own filter. Anisotropy samples along a stretched "
-                           "footprint, so ground and road surfaces keep their detail "
-                           "into the distance")) {
+        const char* filteringTooltip =
+            "How a texel is fetched, for every texture that has not "
+            "pinned its own filter. Anisotropy samples along a stretched "
+            "footprint, so ground and road surfaces keep their detail "
+            "into the distance";
+        if (propIndexCombo("Filtering", labels, count, &current, filteringTooltip)) {
             s.textureFiltering  = FILTERS[current].mode;
             s.textureAnisotropy = FILTERS[current].degree;
         }
     }
     endComponentCard();
 
-    if (beginComponentCard("Ambient Occlusion", EditorStyle::Accent::Effect, true)) {
+    if (beginComponentCard("Ambient Occlusion", EditorStyle::Accent::EFFECT, true)) {
         ImGui::PushID("gtao");
         propCheckbox("Enabled", &s.gtao, "Ground-truth ambient occlusion, applied to the indirect term");
         ImGui::BeginDisabled(!s.gtao);
-        propDrag("Radius", &s.gtaoRadius, 0.01f, 0.05f, 5.0f, "%.2f", "World-space sample radius");
+        propDrag(
+            "Radius",
+            &s.gtaoRadius,
+            0.01f,
+            RenderSettings::MIN_GTAO_RADIUS,
+            RenderSettings::MAX_GTAO_RADIUS,
+            "%.2f",
+            "World-space sample radius"
+        );
         propSlider("Intensity", &s.gtaoIntensity, 0.0f, 3.0f, "%.2f", "Occlusion strength");
         propSlider("Power", &s.gtaoPower, 0.5f, 4.0f, "%.2f", "Contrast curve on the occlusion factor");
-        propSlider("Bias", &s.gtaoBias, 0.0f, 0.2f, "%.3f", "View-space self-occlusion guard");
         ImGui::EndDisabled();
         ImGui::PopID();
     }
     endComponentCard();
 
-    if (beginComponentCard("Bloom", EditorStyle::Accent::Effect, true)) {
+    if (beginComponentCard("Bloom", EditorStyle::Accent::EFFECT, true)) {
         ImGui::PushID("bloom");
         propCheckbox("Enabled", &s.bloom, "Mip-chain bloom, blended in composite");
         ImGui::BeginDisabled(!s.bloom);
-        propSlider("Strength", &s.bloomStrength, 0.0f, 0.5f, "%.3f", "Blend amount (linear HDR, pre-tonemap)");
-        propSlider("Threshold", &s.bloomThreshold, 0.0f, 4.0f, "%.2f", "Bright-pass threshold (HDR luminance)");
+        propSlider(
+            "Strength",
+            &s.bloomStrength,
+            0.0f,
+            0.5f,
+            "%.3f",
+            "Blend amount (linear HDR, pre-tonemap)"
+        );
+        const char* thresholdTooltip =
+            "Bright-pass threshold on a pixel's brightest channel (linear HDR), so a saturated "
+            "colour blooms as readily as white";
+        propSlider("Threshold", &s.bloomThreshold, 0.0f, 4.0f, "%.2f", thresholdTooltip);
         propSlider("Knee", &s.bloomKnee, 0.0f, 1.0f, "%.2f", "Soft-knee width around the threshold");
-        propSlider("Radius", &s.bloomRadius, 0.001f, 0.02f, "%.4f", "Upsample tent-filter radius (UV space)");
+        propSlider(
+            "Radius",
+            &s.bloomRadius,
+            0.001f,
+            0.02f,
+            "%.4f",
+            "Upsample tent-filter radius, as a fraction of the frame's width"
+        );
         ImGui::EndDisabled();
         ImGui::PopID();
     }
     endComponentCard();
 
-    if (beginComponentCard("Shadows", EditorStyle::Accent::Effect, true)) {
+    if (beginComponentCard("Shadows", EditorStyle::Accent::EFFECT, true)) {
         static const char* const SHADOW_RES_LABELS[] = { "Low (1024)", "Medium (2048)", "High (4096)" };
         static const uint32_t    SHADOW_RES_VALUES[] = { 1024u, 2048u, 4096u };
-        propValueCombo("Atlas Resolution", SHADOW_RES_LABELS, SHADOW_RES_VALUES, 3, &s.shadowResolution,
-                       "Per-tile shadow map size - usually the frame's main GPU cost lever");
+        propValueCombo(
+            "Atlas Resolution",
+            SHADOW_RES_LABELS,
+            SHADOW_RES_VALUES,
+            &s.shadowResolution,
+            "Per-tile shadow map size - usually the frame's main GPU cost lever"
+        );
     }
     endComponentCard();
 
-    if (beginComponentCard("Reflection Probes", EditorStyle::Accent::Effect, true)) {
+    if (beginComponentCard("Screen-Space Reflections", EditorStyle::Accent::EFFECT, true)) {
+        ImGui::PushID("ssr");
+        propCheckbox(
+            "Enabled",
+            &s.ssr,
+            "Glossy surfaces reflect what the screen showed, over the probes and the sky"
+        );
+        ImGui::BeginDisabled(!s.ssr);
+        propSlider(
+            "Max Roughness",
+            &s.ssrMaxRoughness,
+            0.05f,
+            1.0f,
+            "%.2f",
+            "Rougher surfaces reflect the probes and the sky alone; each traced surface costs a ray"
+        );
+        propDrag(
+            "Max Distance",
+            &s.ssrMaxDistance,
+            0.5f,
+            1.0f,
+            500.0f,
+            "%.1f",
+            "World-space length a reflection ray is traced before it gives up"
+        );
+        ImGui::EndDisabled();
+        ImGui::PopID();
+    }
+    endComponentCard();
+
+    if (beginComponentCard("Reflection Probes", EditorStyle::Accent::EFFECT, true)) {
         propCheckbox("Enabled", &s.probes, "Local IBL + parallax reflections, blended over the global IBL");
         if (ImGui::Button("Bake All Probes", ImVec2(-1, 0))) {
-            // bakeVersion is a reflected field, so bumping it edits the scene on
-            // disk as much as any inspector row does - one step for the gesture,
-            // not one per probe, because the author pressed one button.
+            // bakeVersion is reflected: bump it through editStep, which records a prefab instance's override.
             auto batch = std::make_unique<CompositeCommand>("Bake all probes");
-            ec.frame.scene.forEach<ReflectionProbe>(
-                [&](EntityId probeId, ReflectionProbe& probe) {
-                    ReflectionProbe after = probe;
-                    ++after.bakeVersion;
-                    batch->add(std::make_unique<ComponentEditCommand<ReflectionProbe>>(
-                        probeId, probe, after, "Bake probe"));
-                    probe = after;
-                });
-            if (!batch->empty()) ec.state.commands.push(std::move(batch));
+            ec.frame.scene.forEach<ReflectionProbe>([&](EntityId probeId, ReflectionProbe& probe) {
+                const ReflectionProbe before = probe;
+                ++probe.bakeVersion;
+                auto step = editStep<ReflectionProbe>(
+                    ec.frame.scene,
+                    ec.frame.resources,
+                    probeId,
+                    before,
+                    probe,
+                    "Bake probe"
+                );
+                batch->add(std::move(step));
+            });
+            if (!batch->empty()) ec.state.pushStep(std::move(batch));
         }
     }
     endComponentCard();
 
-    if (beginComponentCard("Culling", EditorStyle::Accent::Quality, true)) {
-        // VisibilitySystem thresholds, applied before anything reaches the
-        // render pipeline - the cheapest FPS lever in a dense scene.
-        VisibilitySystem::Settings& vis = ec.visibilitySystem.getSettings();
+    if (beginComponentCard("Culling", EditorStyle::Accent::QUALITY, true)) {
+        // Stored on RenderSettings; applied before anything reaches the render pipeline.
         ImGui::PushID("cull");
-        propDrag("Max Distance", &vis.maxDistance, 5.0f, 1.0f, 10000.0f, "%.0f",
-                 "Entities beyond this camera distance are culled");
-        propSlider("Min Screen Size", &vis.minPixels, 0.0f, 32.0f, "%.1f px",
-                   "Entities smaller than this on screen are culled; 0 disables");
-        propCheckbox("Occlusion", &s.occlusionCulling,
-                     "Test instances against the frame's depth pyramid and skip the hidden ones");
+        propDrag(
+            "Max Distance",
+            &s.cullMaxDistance,
+            5.0f,
+            1.0f,
+            10000.0f,
+            "%.0f",
+            "Entities beyond this camera distance are culled"
+        );
+        propSlider(
+            "Min Screen Size",
+            &s.cullMinPixels,
+            0.0f,
+            32.0f,
+            "%.1f px",
+            "Entities smaller than this on screen are culled; 0 disables"
+        );
         ImGui::PopID();
         if (ImGui::Button("Reset Culling", ImVec2(-1, 0))) {
-            ec.visibilitySystem.setSettings({});
+            const RenderSettings defaults;
+            s.cullMaxDistance  = defaults.cullMaxDistance;
+            s.cullMinPixels    = defaults.cullMinPixels;
         }
     }
     endComponentCard();
@@ -170,10 +255,13 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
         ImGui::SetTooltip("Reset every render setting; culling has its own reset above");
     if (beginDialog("Reset Render Settings", m_confirmReset)) {
         ImGui::TextUnformatted("Reset all render settings to their defaults?");
-        ImGui::TextDisabled("Culling keeps its current values.");
+        const char* resetNote =
+            "The cull distance and screen-size threshold go back too;\n"
+            "they are part of these settings.";
+        ImGui::TextDisabled("%s", resetNote);
         if (dialogButtons(m_confirmReset, "Reset") == DialogResult::Confirm) {
             s = RenderSettings{};
-            s.grid = true;  // the editor's default, not the engine's
+            EditorSettings::applyViewDefaults(s);
         }
         endDialog();
     }

@@ -13,7 +13,7 @@ target_link_libraries(vkm_editor PUBLIC
     vkm_gl
 )
 target_link_libraries(vkm_editor PRIVATE
-    vkm_render         # editor_system uses backend()/renderPreview(); headers only forward-declare it
+    vkm_render         # RenderSystem::backend(), the way to the editor hooks; headers only forward-declare it
     vkm_warnings
     vkm_build_info
 )

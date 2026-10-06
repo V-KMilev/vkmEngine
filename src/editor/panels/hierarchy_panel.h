@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <unordered_set>
 #include <vector>
 
 #include "ecs/entity.h"
@@ -16,9 +17,7 @@ class SceneIOController;
 /**
  * @brief Editor panel displaying the entity hierarchy tree.
  *
- * Shows all root entities in a scrollable tree with search filtering,
- * entity selection, and context menus (create, duplicate, delete).
- * Owns its filter text and cached entity lists (rebuilt only when dirty).
+ * A search lists its matches flat. A row's context menu holds the per-entity operations.
  */
 class HierarchyPanel {
     public:
@@ -35,22 +34,69 @@ class HierarchyPanel {
         void draw(EditorContext& ec, SceneIOController& sceneIO);
 
     private:
-        void drawEntityNode(Scene& scene, ResourceManager& resources,
-                            EditorState& state, SceneIOController& sceneIO,
-                            EntityId entity);
-        void drawEntityContextMenu(Scene& scene, ResourceManager& resources,
-                                   EditorState& state, SceneIOController& sceneIO,
-                                   EntityId entity);
+        struct Row {
+            EntityId entity;
+            int      depth;
+        };
+
+    private:
+        /**
+         * @brief Draw one row of the tree: this entity, and nothing under it.
+         *
+         * Uses ImGuiTreeNodeFlags_NoTreePushOnOpen with a manual indent: one line per row, no TreePop.
+         *
+         * @param scene     Scene being edited.
+         * @param resources Resolves asset handles for the rename step.
+         * @param state     Selection, history and the dirty flag.
+         * @param sceneIO   For the context menu.
+         * @param entity    The row's entity.
+         * @param depth     Ancestor count, for the indent.
+         */
+        void drawEntityNode(
+            Scene& scene,
+            ResourceManager& resources,
+            EditorState& state,
+            SceneIOController& sceneIO,
+            EntityId entity,
+            int depth
+        );
+
+        /**
+         * @brief Refill @ref m_visible with the rows the tree would show.
+         *
+         * Pre-order from the roots, descending only into nodes in @ref m_open. Not used
+         * during a search.
+         *
+         * @param scene Scene to walk.
+         */
+        void buildVisibleRows(const Scene& scene);
+
+        void drawEntityContextMenu(
+            Scene& scene,
+            ResourceManager& resources,
+            EditorState& state,
+            SceneIOController& sceneIO,
+            EntityId entity
+        );
 
     private:
         char m_filter[64] = {};
-        /// Scratch, rebuilt each frame; members only so the capacity survives.
+        /// Per-frame scratch, kept for its capacity.
         std::vector<EntityId> m_roots;
         std::vector<EntityId> m_filtered;
+        std::vector<Row>      m_visible;
+        std::vector<Row>      m_stack;
+        std::vector<EntityId> m_children;
 
-        // Inline-rename state. m_renameTarget == 0 (default-constructed
-        // EntityId) means "no rename in progress". The buffer survives a
-        // single rename session; cleared on commit/cancel.
+        /**
+         * @brief Entity slots whose children are shown, by @ref buildVisibleRows.
+         *
+         * Held here, not by ImGui: ImGuiListClipper needs the list flattened before drawing,
+         * which needs the open state before ImGui knows it.
+         */
+        std::unordered_set<uint32_t> m_open;
+
+        // Inline rename; a default EntityId means none in progress.
         EntityId m_renameTarget{};
         char     m_renameBuf[64] = {};
         bool     m_renameFocusNeeded = false;

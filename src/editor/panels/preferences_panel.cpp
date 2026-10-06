@@ -3,31 +3,36 @@
 #include <algorithm>
 #include <cstring>
 
-#include "framework/editor_common.h"
+#include <imgui.h>
+
+#include "core/system.h"
+#include "editor_context.h"
+#include "editor_state.h"
+#include "input/editor_keybinds.h"
+#include "ui/editor_dialogs.h"
+#include "ui/editor_widgets.h"
 #include "ui/editor_style.h"
 
 #include "platform/threading/thread_pool.h"
 #include "platform/window/window_manager.h"
-#include "system/camera/camera_controller_system.h"
+#include "input/camera_controller_system.h"
 
 namespace Vkm::Engine {
 
 void PreferencesPanel::draw(EditorContext& ec) {
-    FrameContext& ctx   = ec.frame;
-    EditorState&  state = ec.state;
+    EditorState& state = ec.state;
 
-    const ImGuiViewport* vp = ImGui::GetMainViewport();
-    ImGui::SetNextWindowPos(vp->GetCenter(), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
-    ImGui::SetNextWindowSize(ImVec2(EditorStyle::px(620.0f), EditorStyle::px(480.0f)),
-                             ImGuiCond_FirstUseEver);
-
-    if (!ImGui::Begin("Preferences", &state.showPreferences, ImGuiWindowFlags_NoCollapse)) {
-        ImGui::End();
+    // A capture lives only while its row is on screen: every shortcut stands down for it.
+    bool keybindsShown = false;
+    const ImVec2 size(EditorStyle::px(620.0f), EditorStyle::px(480.0f));
+    if (!beginToolWindow("Preferences", state.showPreferences, size)) {
+        m_rebindTarget = nullptr;
         return;
     }
 
-    // Tab bar instead of master-detail: four sections aren't enough to
-    // justify a sidebar.
+    // Only on appearing: the field is an edit buffer, and re-reading it would undo typing.
+    if (ImGui::IsWindowAppearing()) m_fpsLimitEdit = state.prefs.fpsCap;
+
     if (ImGui::BeginTabBar("##PrefTabs", ImGuiTabBarFlags_DrawSelectedOverline)) {
         if (ImGui::BeginTabItem("Camera")) {
             ImGui::Spacing();
@@ -41,84 +46,104 @@ void PreferencesPanel::draw(EditorContext& ec) {
         }
         if (ImGui::BeginTabItem("Display")) {
             ImGui::Spacing();
-            drawDisplaySection(ctx);
+            drawDisplaySection(ec);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Keybinds")) {
             ImGui::Spacing();
             drawKeybindsSection(state);
+            keybindsShown = true;
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
     }
+    if (!keybindsShown) m_rebindTarget = nullptr;
 
     ImGui::End();
 }
 
 void PreferencesPanel::drawCameraSection(EditorContext& ec) {
-    auto& s = ec.cameraController.getSettings();
+    auto& s = ec.state.prefs.camera;
     propDrag("Move Speed", &s.moveSpeed, 0.5f, 0.1f, 200.0f);
     propDrag("Speed Boost", &s.speedBoost, 0.1f, 1.0f, 20.0f, "%.1fx");
     propDrag("Look Sens.", &s.lookSensitivity, 0.0001f, 0.0001f, 0.01f, "%.4f");
-    propDrag("Zoom Sens.", &s.zoomSensitivity, 0.001f, 0.001f, 0.5f, "%.3f");
-    propDrag("Scroll Mult.", &s.scrollMultiplier, 0.1f, 0.1f, 10.0f, "%.1f");
-    propDrag("Min Pitch", &s.minPitch, 0.5f, -90.0f, 0.0f, "%.0f deg");
-    propDrag("Max Pitch", &s.maxPitch, 0.5f, 0.0f, 90.0f, "%.0f deg");
+    propDrag("Zoom Sens.", &s.zoomSensitivity, 0.001f, 0.001f, 1.0f, "%.3f");
+    const float pitchLimit = CameraControllerSystem::Settings::PITCH_LIMIT;
+    propDrag("Min Pitch", &s.minPitch, 0.5f, -pitchLimit, 0.0f, "%.0f deg");
+    propDrag("Max Pitch", &s.maxPitch, 0.5f, 0.0f, pitchLimit, "%.0f deg");
     ImGui::Spacing();
     if (ImGui::Button("Reset to Defaults")) s = CameraControllerSystem::Settings{};
 }
 
 void PreferencesPanel::drawGizmoSection(EditorState& state) {
     ImGui::SeparatorText("Snapping");
-    ImGui::Checkbox("Snap Enabled", &state.snapEnabled);
-    ImGui::SameLine(0, 16);
-    ImGui::TextDisabled("(Hold Ctrl to temporarily snap)");
+    propCheckbox("Snap Enabled", &state.prefs.snapEnabled, "Hold Ctrl to snap while it is off");
 
     ImGui::Spacing();
-    propDrag("Translate", &state.snapTranslate, 0.1f, 0.01f, 100.0f, "%.2f units");
-    propDrag("Rotate", &state.snapRotate, 1.0f, 1.0f, 180.0f, "%.0f deg");
-    propDrag("Scale", &state.snapScale, 0.01f, 0.01f, 10.0f, "%.2f");
+    propDrag("Translate", &state.prefs.snapTranslate, 0.1f, 0.01f, 100.0f, "%.2f units");
+    propDrag("Rotate", &state.prefs.snapRotate, 1.0f, 1.0f, 180.0f, "%.0f deg");
+    propDrag("Scale", &state.prefs.snapScale, 0.01f, 0.01f, 10.0f, "%.2f");
 
     ImGui::Spacing();
-    ImGui::TextDisabled("The active tool and Local/World space are on the viewport toolbar.");
+    ImGui::TextDisabled("The active tool and Local/World space are on the viewport's tool strip.");
 }
 
-void PreferencesPanel::drawDisplaySection(FrameContext& ctx) {
+void PreferencesPanel::drawDisplaySection(EditorContext& ec) {
+    FrameContext& ctx = ec.frame;
     auto& window = ctx.window;
     ImGui::Text("Resolution: %zux%zu", window.getWidth(), window.getHeight());
     ImGui::Text("Worker threads: %zu", ThreadPool::get().threadCount());
 
     ImGui::Spacing();
+    ImGui::SeparatorText("Interface");
+    // Multiplies the display's content scale: a large monitor at 100% still wants bigger text.
+    // See docs/reference/editor.md.
+    const char* uiScaleTooltip =
+        "How much bigger the editor is than the display asks for. Follows you rather than the project.";
+    propDrag(
+        "UI Scale",
+        &ec.state.prefs.uiScale,
+        0.05f,
+        Preferences::MIN_UI_SCALE,
+        Preferences::MAX_UI_SCALE,
+        "%.2fx",
+        uiScaleTooltip
+    );
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Reset##uiscale")) ec.state.prefs.uiScale = 1.0f;
+
+    // Applied by EditorSystem outside a play session, where a game may set the window up itself.
+    Preferences& prefs = ec.state.prefs;
+    ImGui::Spacing();
     ImGui::SeparatorText("Window Mode");
-    // Radios, not buttons: they reflect which mode is actually applied.
-    if (ImGui::RadioButton("Windowed", window.mode() == WindowMode::Windowed))
-        window.updateMode(WindowMode::Windowed);
+    if (ImGui::RadioButton("Windowed", prefs.windowMode == WindowMode::Windowed))
+        prefs.windowMode = WindowMode::Windowed;
     ImGui::SameLine(0, EditorStyle::px(16.0f));
-    if (ImGui::RadioButton("Fullscreen", window.mode() == WindowMode::Fullscreen))
-        window.updateMode(WindowMode::Fullscreen);
+    if (ImGui::RadioButton("Fullscreen", prefs.windowMode == WindowMode::Fullscreen))
+        prefs.windowMode = WindowMode::Fullscreen;
 
     ImGui::Spacing();
     ImGui::SeparatorText("VSync");
-    bool vsync = window.vsync();
-    if (ImGui::Checkbox("Sync to display refresh", &vsync)) window.setVSync(vsync);
+    propCheckbox("Sync", &prefs.vsync, "Sync to the display's refresh");
 
     ImGui::Spacing();
     ImGui::SeparatorText("Frame Cap");
-    drawPropertyLabel("FPS Limit");
-    ImGui::SetNextItemWidth(EditorStyle::px(80.0f));
-    ImGui::InputInt("##FPSLim", &m_fpsLimitEdit, 30);
+    propRow("FPS Limit", "Frames per second the window is held to; 0 is unlimited", [&] {
+        ImGui::SetNextItemWidth(EditorStyle::px(80.0f));
+        return ImGui::InputInt("##v", &m_fpsLimitEdit, 30);
+    });
     m_fpsLimitEdit = std::max(0, m_fpsLimitEdit);
     ImGui::SameLine();
-    if (ImGui::Button("Apply##fps")) window.setFramerate(m_fpsLimitEdit);
+    if (ImGui::Button("Apply##fps")) prefs.fpsCap = m_fpsLimitEdit;
     ImGui::SameLine();
-    ImGui::TextDisabled(m_fpsLimitEdit == 0 ? "(unlimited)" : "");
+    ImGui::TextDisabled("%s", m_fpsLimitEdit == 0 ? "(unlimited)" : "");
 }
 
 void PreferencesPanel::drawKeybindsSection(EditorState& state) {
     auto isConflict = [&](const KeyBind& b) {
         if (b.key == ImGuiKey_None) return false;
         int n = 0;
-        for (const KeybindEntry& e : KEYBINDS) if (state.keybinds.*e.field == b) ++n;
+        for (const KeybindEntry& e : KEYBINDS) if (state.prefs.keybinds.*e.field == b) ++n;
         return n > 1;
     };
 
@@ -128,8 +153,13 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
         getKeyBindLabel(bind, keyLabel, sizeof(keyLabel));
 
         char btnId[80];
-        snprintf(btnId, sizeof(btnId), "%s##%s",
-                 (m_rebindTarget == label) ? "Press key..." : keyLabel, label);
+        snprintf(
+            btnId,
+            sizeof(btnId),
+            "%s##%s",
+            (m_rebindTarget == label) ? "Press key..." : keyLabel,
+            label
+        );
 
         if (ImGui::Button(btnId, ImVec2(EditorStyle::px(120.0f), 0))) {
             m_rebindTarget = label;
@@ -145,23 +175,28 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
         }
 
         if (m_rebindTarget == label) {
-            // Keyboard only. The named range runs on through the gamepad and
-            // then the mouse buttons and wheel, so scanning all of it binds a
-            // shortcut to the click that was aiming at the next widget.
+            // A click cancels: Escape is bindable, and the Button that opened the row fires on release.
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)
+                || ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                m_rebindTarget = nullptr;
+                return;
+            }
+
+            // Keyboard only: past it come the gamepad and mouse, which would bind the next click.
             for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_GamepadStart; ++k) {
                 auto candidate = static_cast<ImGuiKey>(k);
-                if (candidate == ImGuiKey_LeftCtrl  || candidate == ImGuiKey_RightCtrl  ||
-                    candidate == ImGuiKey_LeftShift || candidate == ImGuiKey_RightShift ||
-                    candidate == ImGuiKey_LeftAlt   || candidate == ImGuiKey_RightAlt)
-                    continue;
+                const bool modifier = candidate == ImGuiKey_LeftCtrl || candidate == ImGuiKey_RightCtrl
+                    || candidate == ImGuiKey_LeftShift || candidate == ImGuiKey_RightShift
+                    || candidate == ImGuiKey_LeftAlt || candidate == ImGuiKey_RightAlt;
+                if (modifier) continue;
 
                 if (ImGui::IsKeyPressed(candidate)) {
                     const ImGuiIO& io = ImGui::GetIO();
                     bind.key  = candidate;
                     bind.mods = 0;
-                    if (io.KeyCtrl)  bind.mods |= KeyMod_Ctrl;
-                    if (io.KeyShift) bind.mods |= KeyMod_Shift;
-                    if (io.KeyAlt)   bind.mods |= KeyMod_Alt;
+                    if (io.KeyCtrl)  bind.mods |= KEY_MOD_CTRL;
+                    if (io.KeyShift) bind.mods |= KEY_MOD_SHIFT;
+                    if (io.KeyAlt)   bind.mods |= KEY_MOD_ALT;
                     m_rebindTarget = nullptr;
                     break;
                 }
@@ -176,12 +211,12 @@ void PreferencesPanel::drawKeybindsSection(EditorState& state) {
             sectionLabel(e.group);
             group = e.group;
         }
-        drawKeybindRow(e.label, state.keybinds.*e.field);
+        drawKeybindRow(e.label, state.prefs.keybinds.*e.field);
     }
 
     ImGui::Spacing();
     if (ImGui::Button("Reset Keybinds")) {
-        state.keybinds = EditorKeybinds{};
+        state.prefs.keybinds = EditorKeybinds{};
         m_rebindTarget = nullptr;
     }
 }
