@@ -1,10 +1,11 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
 
 #include <glm/glm.hpp>
 
-#include "data/gl_instance_batcher.h"
+#include "frame/gl_instance_batcher.h"
 
 namespace Vkm::GL {
     class Context;
@@ -13,8 +14,8 @@ namespace Vkm::GL {
 namespace Vkm::Engine {
 
 class ScreenTriangle;
+class GLMesh;
 struct RenderView;
-struct DrawableData;
 class GLView;
 class GLTarget;
 class GLShadowAtlas;
@@ -24,88 +25,74 @@ class GLBloom;
 class GLClusterGrid;
 class GLFogVolume;
 class GLIrradianceVolume;
-class GLHiZ;
 class GLSkinPalette;
+class GLObjectBuffer;
 
 /**
  * @brief Everything a GLPass needs for one frame.
  *
- * The backend builds one of these per frame and hands it to each pass. New
- * targets (a shadow atlas, post buffers) get added here as fields, so the
- * GLPass::execute signature never has to change again.
+ * Built by the backend each frame. What a pass reads or leaves for a later one is a field here,
+ * so GLPass::execute takes nothing else.
  */
 struct GLFrameContext {
     const RenderView&  view;             ///< This frame's scene snapshot.
     const GLView&      resources;        ///< GPU mirror of the assets the frame uses.
     Vkm::GL::Context&  gl;               ///< GL state manager (viewport / depth / clear).
-    ScreenTriangle& screenTri;  ///< Shared attribute-less fullscreen triangle (every post pass draws it).
-    GLTarget&          sceneHDR;         ///< Single-sample resolved scene: sampled by the screen-space + post passes.
-    GLTarget&          sceneRender;      ///< Where the geometry passes draw (the multisample target, or sceneHDR when MSAA is off).
-    GLShadowAtlas&     shadowAtlas;      ///< Depth atlas: written by shadow pass, sampled by forward.
+    ScreenTriangle&    screenTri;        ///< Attribute-less fullscreen triangle.
+    const GLMesh&      unitCube;         ///< The [-0.5, 0.5] unit cube.
+    GLTarget&          sceneHDR;         ///< Single-sample resolved scene.
+    /// Where geometry draws: the multisample target, or sceneHDR when MSAA is off.
+    GLTarget&          sceneRender;
+    GLShadowAtlas&     shadowAtlas;      ///< The shadow depth atlas.
     const GLShadowData& shadowData;      ///< This frame's shadow plan (matrices + slots).
-    const GLIBL&       ibl;              ///< Baked IBL product set: sampled by forward (ambient) + skybox.
-    GLBloom&           bloom;            ///< Bloom mip chain: written by the bloom pass, blended in composite.
-    GLTarget&          ao;               ///< GTAO factor: written by the GTAO pass, sampled by forward (ambient).
-    GLClusterGrid&     clusters;         ///< Forward+ per-cluster light lists: written by the cluster pass, read by forward.
-    GLFogVolume&       fog;              ///< Froxel fog volumes: written by the fog compute, applied by the fog-apply pass.
-    GLIrradianceVolume& irradiance;      ///< Baked SH irradiance volume, sampled by the forward ambient term.
-    GLHiZ&             hiz;              ///< Hierarchical depth pyramid: built after the prepass, tested by the occlusion cull.
-    GLSkinPalette&     skinPalette;      ///< Every skinned item's bone palette: uploaded once per frame, bound by every pass that draws one.
+    const GLIBL&       ibl;              ///< Baked IBL product set (see GLPass::bindAmbient).
+    GLBloom&           bloom;            ///< Bloom mip chain.
+    GLTarget&          ao;               ///< GTAO factor + octahedral bent normal.
+    GLClusterGrid&     clusters;         ///< Forward+ per-cluster light lists.
+    GLFogVolume&       fog;              ///< Froxel fog volumes, read through GLPass::bindFog.
+    GLIrradianceVolume& irradiance;      ///< Baked SH irradiance volume (see GLPass::bindAmbient).
+    GLSkinPalette&     skinPalette;      ///< Every skinned item's bone palette, uploaded once per frame.
+    const GLObjectBuffer& objects;       ///< Every object's model (and first bone), uploaded once per frame.
 
     /**
-     * @brief The frame's drawables split by draw bucket, once per frame by the
-     * backend (one material resolve each, not one per consuming pass).
+     * @brief The camera's objects by draw bucket, as indices into RenderView::objects.
      *
-     * AlphaMask skips the prepass and draws in the forward pass with depth
-     * writes on + alpha-to-coverage (so its edges anti-alias under MSAA).
-     * Transparent is forward-only, sorted back-to-front there. The opaque
-     * bucket is not here: both of its readers want it batched, so it arrives as
-     * `opaqueBatch` below and the flat list stays with the backend that owns it.
+     * Split once per frame, one material resolve each. The opaque bucket arrives batched as
+     * `opaqueBatch` below.
      */
-    const std::vector<const DrawableData*>& alphaMask;
-    const std::vector<const DrawableData*>& transparent;
+    const std::vector<uint32_t>& alphaMask;
+    const std::vector<uint32_t>& transparent;
 
     /**
      * @brief The opaque bucket already batched into instanced runs.
      *
-     * A frame product like the buckets themselves, for the same reason: the
-     * depth prepass and the forward pass draw the identical opaque list, so
-     * batching it per-pass sorted ~5000 drawables and re-uploaded both instance
-     * buffers twice a frame for byte-identical results.
-     *
-     * Handed out as a draw-only view: rebuilding it would invalidate the runs
-     * the other pass is about to draw, so the view offers no way to. A pass
-     * needing its own batching (alpha-mask, transparent) keeps a private
-     * batcher.
+     * More than one pass draws the identical opaque list, so it is batched once. Const: a rebuild
+     * would invalidate runs another pass is about to draw. A pass batching its own keeps a batcher.
      */
-    GLInstanceBatchView opaqueBatch;
+    const GLInstanceBatcher& opaqueBatch;
 
     // The fields below are filled by the backend before the pass loop runs.
 
     /**
      * @brief The post-processing colour chain.
      *
-     * colorSrc holds the scene as of the last completed pass (it starts at
-     * sceneHDR); colorDst is the free colour-only scratch the next pass writes.
-     * A post pass samples colorSrc, draws into colorDst, then calls flipColor().
-     * After the first flip the chain ping-pongs between the two scratches and
-     * never writes sceneHDR again - so no pass ever samples a texture attached
-     * to its own draw framebuffer, and nothing is ever blitted back.
+     * colorSrc holds the scene as of the last pass (starting at sceneHDR); colorDst is the free
+     * scratch. A post pass samples colorSrc, draws into colorDst, then calls flipColor(). After
+     * the first flip it ping-pongs between the scratches, so no pass samples its own target.
      */
     GLTarget* colorSrc = nullptr;
     GLTarget* colorDst = nullptr;
 
     /**
      * @brief The two colour-only scratch targets flipColor() alternates between.
-     * Also usable as transient copy space by a pass that has not entered the
-     * chain yet (the forward pass's refraction grab uses colorDst that way).
+     *
+     * Also transient copy space for a pass not yet in the chain.
      */
     GLTarget* scratchA = nullptr;
     GLTarget* scratchB = nullptr;
 
     /**
-     * @brief Publish colorDst as the current scene and aim colorDst at the
-     * scratch not now holding it.
+     * @brief Publish colorDst as the current scene and aim colorDst at the other scratch.
      */
     void flipColor() {
         colorSrc = colorDst;
@@ -113,31 +100,40 @@ struct GLFrameContext {
     }
 
     /**
-     * @brief Reflection probes the backend bound this frame: boxes/layers in the
-     * ProbeBlock UBO, cubes in the two probe arrays. The forward pass passes
-     * this count to the shader's per-fragment blend loop (0 = none).
+     * @brief How many reflection probes the backend bound this frame.
+     *
+     * Boxes and layers are in the ProbeBlock UBO, cubes in the probe arrays.
      */
     int probeCount = 0;
 
     /**
-     * @brief Direction TO the sun (the scene's primary directional light, or a
-     * default when there is none). Used by the procedural sky bake and the
-     * skybox sun disc.
+     * @brief Direction TO the sun, from the Environment's sun angles.
+     *
+     * Set whether or not the frame has a directional light.
      */
     glm::vec3 sunDir{0.0f, 1.0f, 0.0f};
 
     // The fields below are pass products: set by an earlier pass, read by later ones.
 
     /**
-     * @brief Set by the GTAO pass when it fills the AO target. The forward pass then
-     * binds + samples it; otherwise the indirect term uses no screen-space AO.
+     * @brief Set by the GTAO pass when it fills the AO target.
+     *
+     * Unset, the AO target must not be sampled.
      */
     bool aoReady = false;
 
     /**
-     * @brief Set by the fog compute when it fills + integrates the froxel volume.
-     * The fog-apply pass composites only when set, so it can never sample a
-     * stale volume if the two passes' conditions ever drift apart.
+     * @brief Set by the bloom pass when it fills the bloom chain.
+     *
+     * Read instead of re-deriving the bloom pass's own conditions.
+     */
+    bool bloomReady = false;
+
+    /**
+     * @brief Set by the fog compute when it fills and integrates the froxel volume.
+     *
+     * GLPass::bindFog binds the volume only when set, so no pass samples a stale one if its
+     * conditions and the fog compute's drift apart.
      */
     bool fogReady = false;
 };

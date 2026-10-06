@@ -5,15 +5,19 @@
 namespace Vkm::Engine {
 
 /**
- * @brief Utility class for limiting frame rate in a render loop.
+ * @brief Limits a render loop's frame rate by sleeping, then spin-waiting.
  *
- * Uses a combination of sleeping and spin-waiting to achieve a target framerate.
- * If the target framerate is set to 0, the limiter is effectively disabled (unlimited mode).
+ * A target of 0 disables it.
  */
 class FrameLimiter {
     public:
-        FrameLimiter() = default;
-        ~FrameLimiter() = default;
+        /**
+         * @brief Ask Windows for a 1 ms scheduler tick for as long as the limiter lives.
+         *
+         * Otherwise a sleep wakes on the default 15.6 ms tick. A no-op on Linux.
+         */
+        FrameLimiter();
+        ~FrameLimiter();
 
         FrameLimiter(const FrameLimiter& other) = delete;
         FrameLimiter& operator=(const FrameLimiter& other) = delete;
@@ -23,31 +27,48 @@ class FrameLimiter {
 
     public:
         /**
-         * @brief Marks the start of a frame for limiting.
-         *
-         * Should be called at the beginning of each frame before any work is done.
+         * @brief Marks the start of a frame, before any work is done.
          */
         void beginFrame();
 
         /**
          * @brief Marks the end of a frame and waits as necessary to match the target framerate.
-         *
-         * Should be called after a frame is rendered to enforce the frame rate limit.
          */
         void endFrame();
 
         /**
          * @brief Set the desired target framerate (frames per second).
          *
-         * If framerate is less than or equal to 0, disables the limiter (unlimited mode).
-         *
-         * @param framerate Desired framerate in FPS.
+         * @param framerate Desired framerate in FPS; 0 or less disables the limiter.
          */
         void setTargetFramerate(int framerate) { m_targetFramerate = framerate > 0 ? framerate : 0; }
 
+        /**
+         * @brief The cap in effect, in frames per second.
+         *
+         * @return The target framerate, or 0 when the limiter is disabled.
+         */
+        int targetFramerate() const { return m_targetFramerate; }
+
+    private:
+        /**
+         * @brief Sleep for @p span, as closely as the platform allows.
+         *
+         * On Windows this waits on a high-resolution timer: a plain sleep wakes on the scheduler
+         * tick, which stays at 15.6 ms on machines that ignore a request for a finer one.
+         *
+         * @param span How long to sleep.
+         */
+        void sleepFor(std::chrono::steady_clock::duration span);
+
     private:
         int m_targetFramerate = 0;
-        std::chrono::steady_clock::time_point m_frameStart;  ///< Monotonic - immune to wall-clock jumps.
+        std::chrono::steady_clock::time_point m_frameStart;
+
+        /// The last frame's end, which the next is paced from; empty before the first.
+        std::chrono::steady_clock::time_point m_deadline;
+
+        void* m_timer = nullptr;  ///< Windows' high-resolution timer; null elsewhere, or where it is refused
 };
 
 } // namespace Vkm::Engine

@@ -1,36 +1,25 @@
 #pragma once
 
-#include <memory>
+#include <cstdint>
 #include <utility>
 #include <vector>
 
+#include "gl_shader.h"
+
 #include "gl_pass.h"
-#include "data/gl_instance_batcher.h"
-
-namespace Vkm::GL {
-    class Shader;
-}
-
-namespace Vkm::Engine {
-    struct DrawableData;
-}
+#include "frame/gl_instance_batcher.h"
 
 namespace Vkm::Engine {
 
 /**
- * @brief The lit forward draw - the one geometry pass the backend runs.
+ * @brief The lit forward draw of the scene's geometry.
  *
- * Draws the three buckets the backend partitioned, in order: Opaque / Unlit
- * against the depth the prepass primed (LEQUAL, writes off, for early-Z), then
- * AlphaMask, which primes its own, then Transparent back-to-front. The prepass
- * is unconditional and owns the clear, so this pass never clears. Back faces
- * are culled (all materials are single-sided). The camera and light UBOs are
- * uploaded by the backend before this pass runs.
+ * Three buckets in order: Opaque/Unlit against GLDepthPrepass's depth (LEQUAL, writes off),
+ * AlphaMask priming its own, then Transparent back-to-front. Never clears; back faces are culled
+ * (materials are single-sided). Each surface fogs at its own depth (see GLPass::bindFog).
  *
- * Two programs, differing only in their vertex stage: skinned runs lead each
- * batch, so a bucket switches once. They share every per-frame uniform, which is
- * why one place sets both - uniform state is per program in GL, and a uniform
- * added to only one of them would go silently missing on characters.
+ * Skinned runs sort after static ones, so a bucket switches program once. One place sets both
+ * programs' uniforms: one set on only one would silently go missing on characters.
  */
 class GLForwardPass : public GLPass {
     public:
@@ -47,41 +36,58 @@ class GLForwardPass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
+        /// Which of the three buckets a set of frame uniforms is for.
+        enum class Bucket {
+            Opaque,       ///< Opaque and unlit, against the primed depth.
+            AlphaMask,    ///< Alpha-masked, priming its own depth.
+            Transparent,  ///< Blended back-to-front over the refraction grab.
+        };
+
         /**
-         * @brief Draw a list of instanced runs.
+         * @brief Submit a batch's draws.
          *
-         * Switches program at the skinned boundary and rebinds the material UBO
-         * + textures only when the material changes between consecutive runs;
-         * each run is one instanced draw. The material bindings are context
-         * state rather than program state, so they survive the program switch.
+         * Switches program at the skinned boundary and rebinds material state only when the
+         * material changes; each draw is one multi-draw. Material bindings are context state, so
+         * they survive the program switch.
+         *
+         * @param ctx   For the GPU mirror and the context.
+         * @param batch The draws to submit.
          */
-        void drawRuns(GLFrameContext& ctx, const GLInstanceBatchView& batch);
+        void drawBatch(GLFrameContext& ctx, const GLInstanceBatcher& batch);
 
         /**
          * @brief Bind @p shader and give it this frame's uniforms.
          *
-         * Called once per program per frame. The textures and UBOs the pass
-         * binds are context state and are set once in execute(); everything
-         * here is program state and has to be set on each of them.
+         * Once per program per frame, as uniform state is per program. The textures bindAmbient
+         * and bindFog bind are context state, bound again for the second program.
          *
-         * @param shader        Program to bind and fill.
-         * @param ctx           The frame, for the settings and pass products.
-         * @param hasSceneColor Whether the refraction grab is live - true only
-         *                      for the transparent bucket, which draws after
-         *                      the opaque scene has been copied.
+         * @param shader Program to bind and fill.
+         * @param ctx    For the settings and pass products.
          */
-        void bindFrameUniforms(Vkm::GL::Shader& shader, GLFrameContext& ctx,
-                               bool hasSceneColor) const;
+        void bindFrameUniforms(Vkm::GL::Shader& shader, GLFrameContext& ctx) const;
+
+        /**
+         * @brief Bind @p shader and tell it which bucket draws next.
+         *
+         * Only the opaque bucket is in the prepass GTAO reads, so only it is told it has AO;
+         * elsewhere the texel is the surface behind, or the sky. The refraction grab is live only
+         * for Transparent, drawn after the copy; alpha-to-coverage only for AlphaMask on a
+         * multisample target, else the shader cuts at half coverage.
+         *
+         * @param shader Program to bind and fill.
+         * @param ctx    For the pass products and the target.
+         * @param bucket The bucket about to draw with it.
+         */
+        void bindBucketUniforms(Vkm::GL::Shader& shader, GLFrameContext& ctx, Bucket bucket) const;
 
     private:
-        std::unique_ptr<Vkm::GL::Shader> m_shader;         ///< Static geometry.
-        std::unique_ptr<Vkm::GL::Shader> m_skinnedShader;  ///< Same shading, with the vertices posed by the frame's palette.
-        GLInstanceBatcher              m_batcher;
+        Vkm::GL::Shader   m_shader;         ///< Static geometry.
+        Vkm::GL::Shader   m_skinnedShader;  ///< Skinned, posed by the frame's palette.
+        GLInstanceBatcher m_batcher;
 
-        // Sorted back-to-front, cleared + refilled each frame with the capacity
-        // kept. The opaque bucket comes from the frame context.
-        std::vector<std::pair<float, const DrawableData*>>  m_transparent;
-        std::vector<const DrawableData*>                    m_transparentSorted;
+        // Back-to-front, refilled each frame with capacity kept. The opaque bucket is the context's.
+        std::vector<std::pair<float, uint32_t>> m_transparent;
+        std::vector<uint32_t>                   m_transparentSorted;
 };
 
 } // namespace Vkm::Engine

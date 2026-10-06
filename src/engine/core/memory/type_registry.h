@@ -12,20 +12,10 @@ namespace Vkm::Engine {
 /**
  * @brief One slot per type, indexed by typeId<T>() and filled on first use.
  *
- * Three things in the engine are this container: the Scene's component
- * storages, the ResourceManager's asset slots, and the EventBus's per-event
- * buses. All three index a vector of owning pointers by the process-wide type
- * id, and all three need the vector grown before it is indexed - which is a step
- * that costs nothing to write and everything to forget, so it is written here
- * and nowhere else.
+ * Type ids are shared across registries, so slots for other registries' types
+ * sit empty.
  *
- * The id space is shared with every other registry, so a vector here is as long
- * as the highest id *any* of them has handed out. That is a few hundred null
- * pointers at worst, and it is what buys a lookup that is an array index rather
- * than a hash.
- *
- * @tparam Base What every slot holds - a polymorphic base, or a plain struct
- *              the owner keeps one of per type.
+ * @tparam Base What every slot holds: a polymorphic base or a per-type struct.
  */
 template <typename Base>
 class TypeRegistry {
@@ -36,9 +26,7 @@ class TypeRegistry {
         TypeRegistry(const TypeRegistry& other) = delete;
         TypeRegistry& operator=(const TypeRegistry& other) = delete;
 
-        // Exchanged through swap(), never moved: the three owners hold one by
-        // value and are themselves non-movable, so a move here would only be a
-        // way to leave one of them empty.
+        // Exchanged through swap(), never moved.
         TypeRegistry(TypeRegistry && other) = delete;
         TypeRegistry& operator=(TypeRegistry && other) = delete;
 
@@ -46,10 +34,10 @@ class TypeRegistry {
         /**
          * @brief The slot for T, created by @p make the first time it is asked for.
          *
-         * @tparam T    The type the slot belongs to.
+         * @tparam T    Type the slot belongs to.
          * @tparam Make Callable returning a std::unique_ptr<Base>.
          * @param make  Builds the slot; called at most once per type.
-         * @return The slot, which outlives every call until clear() or swap().
+         * @return The slot, stable until clear() or swap().
          */
         template <typename T, typename Make>
         Base& ensure(Make&& make) {
@@ -61,7 +49,7 @@ class TypeRegistry {
         /**
          * @brief The slot for T without creating one.
          *
-         * @tparam T The type the slot belongs to.
+         * @tparam T Type the slot belongs to.
          * @return The slot, or null when nothing has asked for T's yet.
          */
         template <typename T>
@@ -80,12 +68,10 @@ class TypeRegistry {
         /**
          * @brief The owning pointer for T's slot, grown into existence but left empty.
          *
-         * What a caller that wants to move a slot rather than read one needs -
-         * the ResourceManager exchanges whole asset slots between two managers
-         * on a scene load.
+         * For a caller moving a slot rather than reading it.
          *
-         * @tparam T The type the slot belongs to.
-         * @return The slot's owning pointer; null unless something filled it.
+         * @tparam T Type the slot belongs to.
+         * @return The owning pointer; null unless something filled it.
          */
         template <typename T>
         std::unique_ptr<Base>& slot() {
@@ -98,17 +84,32 @@ class TypeRegistry {
         void clear() { m_slots.clear(); }
 
         /**
+         * @brief Empty every slot @p pred accepts, keeping the rest where they are.
+         *
+         * Never erased: the index is the type id, so closing a gap would hand
+         * later types the wrong slot.
+         *
+         * @tparam Pred Callable taking const Base& and returning bool.
+         * @param pred True for a slot to drop.
+         */
+        template <typename Pred>
+        void removeIf(Pred&& pred) {
+            for (auto& held : m_slots) {
+                if (held && pred(static_cast<const Base&>(*held))) held.reset();
+            }
+        }
+
+        /**
          * @brief Exchange every slot with another registry.
          *
-         * @param other The registry to trade with.
+         * @param other Registry to trade with.
          */
         void swap(TypeRegistry& other) noexcept { m_slots.swap(other.m_slots); }
 
         /**
          * @brief How many types actually have a slot.
          *
-         * Not the vector's length: that is the highest id any registry has seen,
-         * most of which are null here.
+         * Not the vector's length, which includes other registries' empty slots.
          *
          * @return The number of filled slots.
          */
@@ -123,7 +124,8 @@ class TypeRegistry {
         /**
          * @brief Invoke fn(Base&) for every filled slot, in type-id order.
          *
-         * @param fn Callable taking Base&.
+         * @tparam Fn Callable taking Base&.
+         * @param fn Called once per filled slot.
          */
         template <typename Fn>
         void forEach(Fn&& fn) {

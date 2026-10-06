@@ -5,44 +5,27 @@
 #include <vector>
 
 #include "ecs/entity.h"
+#include "net/transport/connection.h"
 #include "net/wire/schema.h"
 
 namespace Vkm::Engine {
 
+class NetSilenceMap;
 class Scene;
 
 /**
  * @brief What one connection is known to hold, so the next snapshot says less.
  *
- * A snapshot carries a component only when its encoded bits differ from what
- * this connection has *confirmed receiving*. The delta is on presence, never on
- * values, which is what makes it safe: a value delta chains, so one lost packet
- * poisons everything after it, while an absolute entry held back for three
- * snapshots is correct the moment it lands. It is also why joining and playing
- * are one code path - a connection that has confirmed nothing differs from the
- * world in every component, so its first snapshot is the whole world by the
- * rule rather than by a special case.
+ * A component is sent, whole, when its encoded bits differ from what this
+ * connection has *confirmed receiving*: the delta is on presence, never on
+ * values, so every entry decodes from the packet alone and a joiner's first
+ * snapshot is the whole world by the same rule.
  *
- * Confirmed, not sent: folding a snapshot in when it is written describes a
- * client that received it, and a client that did not is never told again. So
- * what a snapshot said is held aside until its acknowledgement comes back, and
- * dropped unfolded when it does not. Per connection, never shared, because two
- * clients lose different packets.
- *
- * Comparison is on encoded bits, not floats: two positions a micrometre apart
- * encode identically and a settled world goes quiet.
+ * Confirmed, not sent, or a lost packet would never be resent: what a snapshot
+ * said is held until acknowledged. Per connection, since clients lose
+ * different packets. Comparing encoded bits lets a settled world go quiet.
  */
 class NetBaseline {
-    public:
-        NetBaseline() = default;
-        ~NetBaseline() = default;
-
-        NetBaseline(const NetBaseline& other) = delete;
-        NetBaseline& operator=(const NetBaseline& other) = delete;
-
-        NetBaseline(NetBaseline && other) = delete;
-        NetBaseline& operator=(NetBaseline && other) = delete;
-
     public:
         /// One component of one entity, as this connection last confirmed it.
         struct Confirmed {
@@ -62,18 +45,29 @@ class NetBaseline {
 
             uint16_t              sequence = 0;
             std::vector<Change>   changes;
-            std::vector<uint32_t> forgotten;  ///< Slots reported as gone.
+            std::vector<EntityId> forgotten;  ///< Occupants reported as gone.
         };
+
+    public:
+        NetBaseline() = default;
+        ~NetBaseline() = default;
+
+        NetBaseline(const NetBaseline& other) = delete;
+        NetBaseline& operator=(const NetBaseline& other) = delete;
+
+        NetBaseline(NetBaseline && other) = delete;
+        NetBaseline& operator=(NetBaseline && other) = delete;
 
     public:
         /**
          * @brief What is confirmed for @p entity's component @p type, or null.
          *
-         * The entity and not just its slot: a slot outlives its occupants, and a
-         * record still naming the last one would let presence-delta decide the
-         * receiver already holds a value for an entity it has never seen. The
-         * lost report frees a record eventually, but only once it is confirmed,
-         * and a slot can be reused before that.
+         * By entity, not slot: a slot can be reused before the old occupant's
+         * record is freed, and the new one would be taken as already held.
+         *
+         * @param entity The occupant asked about.
+         * @param type   The component's index in the schema.
+         * @return The confirmed record, or null when none is held for that occupant.
          */
         const Confirmed* find(EntityId entity, uint32_t type) const;
 
@@ -83,32 +77,44 @@ class NetBaseline {
         /**
          * @brief Fold the snapshot @p sequence said into what is confirmed.
          *
-         * Out of order is normal, so a change is folded only when it is newer
-         * than what the slot already holds. Without that guard, an
-         * acknowledgement for an older snapshot arriving after a newer one
-         * would write stale bytes over fresh, and the server would then believe
-         * a client holds a position it has already replaced.
+         * A change is folded only when newer than what the slot holds, so a
+         * late acknowledgement cannot write stale bytes over fresh.
+         *
+         * @param sequence The acknowledged snapshot; one not held is ignored.
          */
         void confirm(uint16_t sequence);
 
         /**
          * @brief Give up on everything older than @p sequence by more than the window
-         * an acknowledgement can still arrive in.
+         *        an acknowledgement can still arrive in.
          *
-         * What they said is simply never confirmed, so the next snapshot says it again.
+         * What they said is never confirmed, so the next snapshot says it again.
+         *
+         * @param sequence The snapshot about to be written.
          */
         void expire(uint16_t sequence);
 
         /**
-         * @brief Slots this connection was told about that are no longer alive.
+         * @brief Entities this connection was told about that are no longer alive.
          *
-         * Reported until the report is confirmed, which is what makes
-         * destruction reliable without a channel of its own.
+         * Reported until confirmed, which makes destruction reliable. By
+         * entity, not slot: a slot reused between snapshots is alive both times.
          *
          * @param scene The world, to ask what is still in it.
-         * @param out   Filled with the slots, ascending.
+         * @param out   Filled with the entities, ascending by slot.
          */
-        void gatherLost(const Scene& scene, std::vector<uint32_t>& out) const;
+        void gatherLost(const Scene& scene, std::vector<EntityId>& out) const;
+
+        /**
+         * @brief Forget every entity and every unconfirmed snapshot.
+         *
+         * For a world replaced under a live session: a replacement reuses slot
+         * *and* generation, defeating @ref find's guard.
+         */
+        void clear() {
+            m_entities.clear();
+            m_pending.clear();
+        }
 
         size_t knownEntities() const { return m_entities.size(); }
         size_t pendingSnapshots() const { return m_pending.size(); }
@@ -127,81 +133,86 @@ class NetBaseline {
 /**
  * @brief How much of the world one snapshot may describe.
  *
- * A ceiling rather than a target. Letting a busy frame produce whatever it
- * produces is what turns a collapsing tower into a datagram the socket refuses
- * whole - so the client sees nothing at exactly the moment there is most to
- * see. What does not fit is not dropped, it is deferred, and it goes first next
- * time because its priority has been rising while it waited.
+ * A ceiling, or a busy frame makes a datagram the socket refuses whole. What
+ * does not fit is deferred, its priority rising until it goes.
  */
 struct NetBudget {
-    /// Bytes one snapshot body may occupy.
-    uint32_t bytes = 1100;
+    /**
+     * @brief Bytes one snapshot body may occupy.
+     *
+     * A session passes what its own header leaves.
+     */
+    uint32_t bytes = static_cast<uint32_t>(NetConnection::MAX_PAYLOAD);
 
     /**
      * @brief The connection's own entity, which is never the one deferred.
      *
-     * Written before anything is prioritised and kept whatever the budget: it is
-     * the anchor reconciliation compares against, and a snapshot without it
-     * corrects nothing.
+     * Written first whatever the budget: reconciliation compares against it.
      */
     EntityId owner;
 };
 
-/// What a snapshot said, for the log line and the editor's panel.
+/**
+ * @brief What one snapshot said, for the session's status line.
+ *
+ * A rising deferred count is a budget too small for the world; a rising lost
+ * count is churn.
+ */
 struct NetSnapshotStats {
-    uint32_t entitiesConsidered = 0;
-    uint32_t entitiesWritten    = 0;
-    uint32_t componentsWritten  = 0;
-    uint32_t entitiesDeferred   = 0;
-    uint32_t entitiesLost       = 0;
-    uint32_t bytesWritten       = 0;
+    uint32_t entitiesConsidered = 0;  ///< Entities in the world walked.
+    uint32_t entitiesWritten    = 0;  ///< Of those, the ones that differed from the baseline.
+    uint32_t componentsWritten  = 0;  ///< Component records inside them.
+    uint32_t entitiesDeferred   = 0;  ///< Left out for want of budget; first in line next snapshot.
+    uint32_t entitiesLost       = 0;  ///< Announced as gone: the receiver holds them, the scene does not.
+    uint32_t bytesWritten       = 0;  ///< The body's size, headers excluded.
 };
 
 /**
  * @brief Write the part of @p scene that @p baseline does not already hold.
  *
- * What does not fit the budget is deferred rather than dropped, and goes first
- * next time. The caller owes the result to the wire and the baseline to an
- * acknowledgement: what this claimed is held pending until the receiver
- * confirms it, because a claim folded in at send time describes a client that
- * may never have got it.
+ * What does not fit is deferred. What this claimed is held pending in
+ * @p baseline until acknowledged; nothing is held when @p out overflows, so an
+ * unsent packet leaves no claim for its sequence. An entity @p silence keeps
+ * off the wire is still described by its NetSpawn, and nothing else.
  *
  * @param scene    The authoritative world.
  * @param schema   What replicates, agreed with the receiver.
+ * @param silence  What stays off the wire, classified once for the round.
  * @param sequence The snapshot's own sequence, so its claim can be confirmed.
- * @param budget   The ceiling, and which entity is the receiver's own.
+ * @param budget   The body's ceiling, and the receiver's own entity.
  * @param baseline Gains a pending record of what this snapshot said.
- * @param out      Filled with the snapshot body.
- * @return What was written, for the log line and the editor's panel.
+ * @param out      The packet, appended to.
+ * @return What was written, for the session's status line.
  */
-NetSnapshotStats writeSnapshot(const Scene& scene,
-                               const NetSchema& schema,
-                               uint16_t sequence,
-                               const NetBudget& budget,
-                               NetBaseline& baseline,
-                               std::vector<uint8_t>& out);
+NetSnapshotStats writeSnapshot(
+    const Scene& scene,
+    const NetSchema& schema,
+    const NetSilenceMap& silence,
+    uint16_t sequence,
+    const NetBudget& budget,
+    NetBaseline& baseline,
+    BitWriter& out
+);
 
 /**
  * @brief Apply a snapshot body to @p scene.
  *
- * Entities are addressed by scene slot, which both ends already agree on
- * because the scene file records it and both loaded the same file. There is no
- * mapping table and no handshake for identity.
+ * Entities are addressed by scene slot, which both ends agree on from the same
+ * scene file; there is no mapping table.
  *
- * Reads from wherever @p in stands, rather than from the start of a buffer, so
- * a caller never computes where the body begins - which is a byte offset that
- * has to be recomputed every time the header changes and is silently wrong when
- * it is not.
- *
+ * @param scene   The world the body is applied to.
+ * @param schema  What replicates, agreed with the sender.
+ * @param in      The packet, at the start of the body.
  * @param touched Filled, when given, with the slots this snapshot said
- *                anything about - so a caller that keeps its own record of what
- *                the authority last said knows which records to update without
- *                walking the world.
+ *                anything about.
  * @return False when the body is malformed. What was applied before the fault
- *         stays applied, which is safe: the receiver confirms nothing it
- *         refused, so the next snapshot describes all of it again.
+ *         stays: nothing refused is confirmed, so the next snapshot says it again.
  */
-bool readSnapshot(Scene& scene, const NetSchema& schema, BitReader& in,
-                  std::vector<uint32_t>* touched = nullptr);
+bool readSnapshot(
+    Scene& scene,
+    const NetSchema& schema,
+    BitReader& in,
+    std::vector<uint32_t>* touched = nullptr
+);
 
 } // namespace Vkm::Engine

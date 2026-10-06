@@ -13,36 +13,29 @@ namespace Vkm::Engine {
 class ResourceManager;
 
 /**
- * @brief Load cooked assets by their library name (the runtime load path).
+ * @brief Load a cooked mesh or texture by its library name, decoded off the main thread.
  *
- * Every loader here resolves the cooked file through AssetLibrary and reads it
- * with no recipe factory, no Assimp and no stb. All are idempotent: a name
- * already resident returns its existing handle, and a name the manifest never
- * listed returns an invalid one.
+ * The runtime's load path: no importer or image decoder. Returns a loading stub at once and reads on the
+ * ThreadPool; AsyncLoaderSystem finalises on the main thread.
+ *
+ * @param name      The asset's library name.
+ * @param resources The graph the asset is added to.
+ * @return The asset (the one resident under @p name, if any), or an invalid handle when the manifest has
+ *         no row for @p name or no cooked file this build can read.
  */
+MeshHandle    loadCookedMesh   (const std::string& name, ResourceManager& resources);
+TextureHandle loadCookedTexture(const std::string& name, ResourceManager& resources);
 
 /**
- * @brief Request a cooked mesh / texture, decoded off the main thread.
+ * @brief Load a cooked skeleton, animation clip or sound by its library name, synchronously.
  *
- * Returns immediately with a loading stub and reads the binary on the
- * ThreadPool; finalisation happens on the main thread via AsyncLoaderSystem,
- * exactly like the editor's stb/Assimp loaders.
- */
-MeshHandle    requestCookedMeshAsync   (const std::string& name, ResourceManager& resources);
-TextureHandle requestCookedTextureAsync(const std::string& name, ResourceManager& resources);
-
-/**
- * @brief Load a cooked skeleton / animation clip / sound, synchronously.
+ * A rig or clip is too small to earn an AsyncLoadQueue lane. A sound needs no decode (the cooked file is
+ * the mixer's PCM), and a worker hop would open a window in which a scene's sounds exist but are silent.
  *
- * A rig is a few tens of kilobytes and a clip little more, which is well under
- * what earns a completion type, an AsyncLoadQueue lane and a drain in
- * AsyncLoaderSystem - the machinery meshes and textures pay for because their
- * decode is measured in milliseconds. The handle comes back fully loaded.
- *
- * A sound is here for a different reason: it is bigger, but there is nothing to
- * decode. The cooked file is already the PCM the mixer wants, so the read is a
- * copy and a worker hop would buy a copy's worth of latency at the price of a
- * completion lane and a window in which a scene's sounds exist but are silent.
+ * @param name      The asset's library name.
+ * @param resources The graph the asset is added to.
+ * @return The asset (the one resident under @p name, if any), or an invalid handle when the manifest has
+ *         no row for @p name, no cooked file this build can read, or the file does not read.
  */
 SkeletonHandle      loadCookedSkeleton     (const std::string& name, ResourceManager& resources);
 AnimationClipHandle loadCookedAnimationClip(const std::string& name, ResourceManager& resources);

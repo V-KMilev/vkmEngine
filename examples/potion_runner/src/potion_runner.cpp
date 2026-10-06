@@ -12,6 +12,7 @@
 
 #include "logger.h"
 
+#include "core/clock.h"
 #include "core/math/axes.h"
 #include "core/math/easing.h"
 #include "core/math/random.h"
@@ -19,7 +20,6 @@
 #include "ecs/component/animation/animation.h"
 #include "ecs/component/animation/animator.h"
 #include "ecs/component/animation/bone_socket.h"
-#include "ecs/component/core/name.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/component/physics/collider.h"
 #include "ecs/component/physics/rigidbody.h"
@@ -30,9 +30,12 @@
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
+#include "ecs/component/ui/ui_scroll.h"
 #include "ecs/component/ui/ui_text.h"
+#include "ecs/hierarchy_operations.h"
+#include "platform/input/input_command.h"
 #include "platform/input/input_map.h"
-#include "platform/window/input_handle.h"
+#include "platform/input/input_handle.h"
 #include "platform/window/glfw_include.h"
 #include "proc_audio.h"
 #include "resource/generate/mesh_generators.h"
@@ -40,29 +43,25 @@
 #include "runner_rig.h"
 #include "system/animation/animation_events.h"
 #include "system/audio/audio_events.h"
-#include "system/hierarchy/hierarchy_operations.h"
 #include "system/physics/physics_events.h"
 #include "system/ui/ui_events.h"
 
-namespace Vkm::Engine {
+namespace Potion {
 
 namespace {
 
-// Track layout. The world scrolls toward the camera along -Z while the player
-// stays at z = 0; obstacles/coins/scenery are pooled and recycled by wrapping
-// WRAP units back to the far end the moment they pass behind the camera.
+// The world scrolls along -Z past a player at z = 0; pooled props wrap WRAP units
+// back to the far end once they pass behind the camera.
 constexpr int   OBSTACLE_COUNT = 9;
 constexpr int   COIN_COUNT     = 44;
-constexpr int   TIE_COUNT      = 56;   // sleepers under the rails; denser = more sense of speed
+constexpr int   TIE_COUNT      = 56;   // denser reads as faster
 constexpr int   PILLAR_COUNT   = 16;   // per side; the arches share this lattice
 
-// Overhead arch height = the pillar height that holds it, forming a portal the
-// player runs through. Sized for the tall trains: a jump taken ON a roof puts
-// the head at TRAIN_TOP + jump apex + body (~5.6), so the lattice sits above
-// that - and above the camera (y ~= 4.9) - with clearance to spare.
+// Arch and pillar height. A jump from a roof puts the head near 5.6 and the camera
+// sits near 4.9, so the lattice clears both.
 constexpr float ARCH_Y          = 6.6f;
 
-constexpr float SPAWN_Z         = 140.0f;  // far end where recycled props reappear
+constexpr float SPAWN_Z         = 140.0f;
 constexpr float DESPAWN_Z       = -20.0f;  // just behind the camera
 constexpr float WRAP            = SPAWN_Z - DESPAWN_Z;
 constexpr float OBS_SPACING     = WRAP / OBSTACLE_COUNT;   // ~17.8, wider than the longest train
@@ -74,36 +73,30 @@ constexpr float COIN_AHEAD      = 18.0f;
 constexpr float GROUND_LEN      = 175.0f;
 constexpr float GROUND_CENTER_Z = (SPAWN_Z + DESPAWN_Z) * 0.5f;
 
-// Player box half extents and the y of its feet/centre while grounded.
 constexpr float PLAYER_HALF_X = 0.42f;
 constexpr float PLAYER_HALF_Z = 0.42f;
 constexpr float PLAYER_HALF_Y = 0.7f;
-// Body half-height while fully crouched: the rig squashes to this so the head
-// drops from 2*PLAYER_HALF_Y (1.4) to 2*CROUCH_HALF_Y (0.9), low enough to clear
-// an overhead gantry whose underside sits just above it.
+// Fully crouched, the head drops from 1.4 to 0.9, under an overhead gantry.
 constexpr float CROUCH_HALF_Y = 0.45f;
 
-// Train roof height: properly Subway-Surfers tall, ~1.8x the runner, so cars
-// read as vehicles rather than crates - and deliberately above the jump apex,
-// so from the ground you board via the nose ramps, never by jumping.
+// Above the jump apex: from the ground you board by the nose ramps only.
 constexpr float TRAIN_TOP = 2.5f;
 
-// Ground run of a train's boarding ramp (the slope rises TRAIN_TOP over this
-// distance - ~31 degrees, a runnable grade). Steady, non-convoy-follower
-// trains carry one at the leading face; running into it walks you up.
+// Ground run of a boarding ramp: TRAIN_TOP over this is ~31 degrees, a runnable grade.
 constexpr float RAMP_RUN = 4.2f;
 
-// The runner's actions. The alternate keys for each are bindings, not an ||
-// chain at the read site, which is also what lets them be rebound.
-constexpr const char* ACTION_LEFT    = "Runner/Left";
-constexpr const char* ACTION_RIGHT   = "Runner/Right";
-constexpr const char* ACTION_JUMP    = "Runner/Jump";
-constexpr const char* ACTION_CROUCH  = "Runner/Crouch";
-constexpr const char* ACTION_RESTART = "Runner/Restart";
+// The how-to-play box, in the canvas's reference pixels.
+constexpr float HELP_TOP    = 296.0f;   // from the start panel's top edge
+constexpr float HELP_HEIGHT = 66.0f;    // shorter than the paragraph, so it scrolls
+constexpr float HELP_BAR_X  = 303.0f;
+constexpr float HELP_BAR_W  = 5.0f;
 
-/**
- * @brief Bind the runner's actions, each to every key that should trigger it.
- */
+constexpr const char* ACTION_LEFT    = "Move/Left";
+constexpr const char* ACTION_RIGHT   = "Move/Right";
+constexpr const char* ACTION_JUMP    = "Jump";
+constexpr const char* ACTION_CROUCH  = "Crouch";
+constexpr const char* ACTION_RESTART = "Restart";
+
 void installRunnerBindings(InputMap& map) {
     const auto key = [](int code) { return InputBinding{InputSource::Key, code, 1.0f}; };
     map.define(ACTION_LEFT,    { key(GLFW_KEY_A),     key(GLFW_KEY_LEFT) });
@@ -113,47 +106,46 @@ void installRunnerBindings(InputMap& map) {
     map.define(ACTION_RESTART, { key(GLFW_KEY_R),     key(GLFW_KEY_ENTER) });
 }
 
-// Every run reseeds the PCG32 with this, so the track deals the same layout
-// each time - a death is always retryable against the identical sequence.
+// Every run reseeds with this, so a death is retryable against the same track.
 constexpr uint64_t RUN_SEED = 0x9E3779B9u;
 
-// How long a grounding contact keeps the runner "grounded". Contacts arrive
-// once per fixed tick via the event flush, so this bridges that latency - and
-// its tail doubles as coyote time at ledges.
-constexpr float GROUNDED_GRACE = 0.12f;
+// Grounded grace after support ends: a jump just past a roof's end was meant for the roof.
+constexpr float COYOTE_TIME = 0.1f;
 
-// What the run sounds like. The distances are the chase camera's, not the
-// runner's: the ear rides the camera, which sits 8.5 m behind and a few above,
-// so full volume has to reach past that or the player would hear their own
-// footsteps attenuated.
+// Closing rates, per second.
+constexpr float LANE_EASE   = 14.0f;
+constexpr float CROUCH_EASE = 16.0f;
+
+// The ear rides the camera, 8.5 m behind, so full volume must reach past that.
 constexpr float FOOTSTEP_VOLUME = 0.55f;
 constexpr float COIN_VOLUME     = 0.42f;
 constexpr float HEARING_NEAR    = 12.0f;
 constexpr float HEARING_FAR     = 60.0f;
 
-// Per-playback spread. Two footfalls at identical gain and pitch read as one
-// sample looping rather than as a runner, and at this game's cadence they land
-// close enough together for that to be obvious. Narrow on purpose: wide enough
-// to break the repeat, not so wide that a step sounds like a different boot.
+// Per-playback spread: enough to break the repeat, not enough to change the boot.
 constexpr float SPREAD_VOLUME_MIN = 0.86f;
 constexpr float SPREAD_PITCH_MIN  = 0.93f;
 constexpr float SPREAD_PITCH_MAX  = 1.08f;
 
 /**
- * @brief A coin's idle motion: a constant-rate full revolution about Y (four
- *        120-degree keys, so each slerp takes the short way round) plus a soft
- *        scale pulse. Replaces the old hand-advanced spin in scrollWorld.
+ * @brief A coin's idle motion: a full revolution about Y plus a soft scale pulse.
+ *
+ * Keys 120 degrees apart, so each slerp takes the short way round.
+ *
+ * @param phase Start offset in seconds, so a row does not spin in lockstep.
+ * @return A playing, looping Animation.
  */
 Animation makeCoinSpin(float phase) {
     constexpr float PERIOD = 1.4f;
     Animation anim;
-    anim.rotationTrack.setEasing(&Easing::linear);
+    anim.rotationTrack.setEasing(Easing::Linear);
     for (int k = 0; k <= 3; ++k) {
         anim.rotationTrack.addKeyframe(
             PERIOD * static_cast<float>(k) / 3.0f,
-            glm::angleAxis(glm::two_pi<float>() * static_cast<float>(k) / 3.0f, Math::WORLD_AXIS_Y));
+            glm::angleAxis(glm::two_pi<float>() * static_cast<float>(k) / 3.0f, Math::WORLD_AXIS_Y)
+        );
     }
-    anim.scaleTrack.setEasing(Easing::byName("easeInOutSine"));
+    anim.scaleTrack.setEasing(Easing::EaseInOutSine);
     anim.scaleTrack.addKeyframe(0.0f,           {0.70f, 0.70f, 0.12f});
     anim.scaleTrack.addKeyframe(PERIOD * 0.5f,  {0.80f, 0.80f, 0.16f});
     anim.scaleTrack.addKeyframe(PERIOD,         {0.70f, 0.70f, 0.12f});
@@ -163,30 +155,51 @@ Animation makeCoinSpin(float phase) {
     return anim;
 }
 
+/**
+ * @brief Where an exponential ease from @p from toward @p to stands after @p seconds.
+ *
+ * Closed form, so a frame drawn between ticks sits on the next tick's path.
+ *
+ * @param from Value at the last tick.
+ * @param to Value it closes on.
+ * @param rate Closing rate, per second.
+ * @param seconds Time past the last tick.
+ * @return The eased value.
+ */
+float easeToward(float from, float to, float rate, float seconds) {
+    return to + (from - to) * std::exp(-rate * seconds);
+}
+
+/**
+ * @brief The runner's body half-height at a crouch amount.
+ *
+ * @param crouch 0 standing, 1 fully crouched.
+ * @return Half-height, from PLAYER_HALF_Y down to CROUCH_HALF_Y.
+ */
+float bodyHalfHeight(float crouch) {
+    return PLAYER_HALF_Y - crouch * (PLAYER_HALF_Y - CROUCH_HALF_Y);
+}
+
 } // namespace
 
 void PotionRunner::onStart() {
-    // Cache the engine handles from the (session-stable) context; every step
-    // below reaches the scene / resources / window through these.
-    m_scene     = context().scene;
-    m_resources = context().resources;
-    m_window    = context().window;
+    installRunnerBindings(input());
 
-    installRunnerBindings(*context().input);
-
-    if (m_built) return;
-    buildWorld();
-    buildUI();
-    // Mouse clicks on the START / RESTART buttons drive the same state changes
-    // as the keyboard.
-    subscribe<UIClickEvent>([this](const UIClickEvent& e) {
+    // The world builds once; listeners register every time, since a session end
+    // drops the subscriptions but keeps the world.
+    if (!m_built) {
+        buildWorld();   // sets m_built
+        buildUI();
+    }
+    subscribe([this](const UIClickEvent& e) {
         if (e.eventId == "potion:start") m_started = true;
-        else if (e.eventId == "potion:restart" && !m_alive) resetGame();
+        else if (e.eventId == "potion:restart" && !m_alive) m_restartAsked = true;
     });
-    // One handler is the whole interaction ruleset: a mostly-up contact normal
-    // means standing on something, and anything else against an obstacle hull is
-    // the crash. `normal` points a -> b, so flip it when the player is `a`.
-    subscribe<CollisionEvent>([this](const CollisionEvent& e) {
+    // The crash rule: a contact with an obstacle hull whose normal is not mostly
+    // up. `normal` points a -> b. Every non-ended tick of a contact counts; an
+    // ended one has no normal to judge.
+    subscribe([this](const CollisionEvent& e) {
+        if (e.phase == ContactPhase::Ended) return;
         const EntityId player = m_player;
         const bool playerIsA = (e.a == player);
         if (!playerIsA && e.b != player) return;
@@ -197,40 +210,29 @@ void PotionRunner::onStart() {
         const EntityId other = playerIsA ? e.b : e.a;
         for (const auto& o : m_obstacles) {
             if (other != o.entity) continue;
-            // A non-top contact is a crash unless the feet are near the roof line
-            // - that grace covers the ramp-to-roof seam and short hops. Gantries
-            // are exempt: feet near a bar's top can mean a head inside it.
+            // Feet near the roof line are graced (ramp-to-roof seam, short hops),
+            // except on gantries, where it can mean a head inside the bar.
             const bool grace = o.bottom <= 0.0f && m_height >= o.top - 0.6f;
-            if (up < 0.7f && !grace) { die(); return; }
-            break;
-        }
-        // Not while ascending: the jump's launch tick still overlaps the floor,
-        // and re-arming there counts the runner as grounded through the first
-        // airborne moments - a ride pill mid-jump, and a double-jump window.
-        if (up > 0.5f && m_scene->get<Rigidbody>(m_player).linearVelocity.y < 1.0f) {
-            m_grounded      = true;
-            m_groundedTimer = GROUNDED_GRACE;
+            if (up < 0.7f && !grace) die();
+            return;
         }
     });
-    // The clip says WHEN a leg is vertical; this says whether that means a
-    // sound. Not in mid-air, and not for the ragdoll.
-    subscribe<AnimationEvent>([this](const AnimationEvent& e) {
+    // Not in mid-air, and not for the ragdoll.
+    subscribe([this](const AnimationEvent& e) {
         if (e.entity != m_player || e.marker != RUNNER_MARKER_FOOTSTEP) return;
         if (!m_alive || !m_grounded) return;
-        playAt(m_footstep, m_scene->get<Transform>(m_player).position, FOOTSTEP_VOLUME);
+        playAt(m_footstep, scene().get<Transform>(m_player).position, FOOTSTEP_VOLUME);
     });
-    // Coin pickup rides the physics trigger pipeline: the coin's trigger
-    // volume overlaps the dynamic player and the narrowphase reports it.
-    subscribe<TriggerEvent>([this](const TriggerEvent& e) {
+    subscribe([this](const TriggerEvent& e) {
+        if (e.phase != ContactPhase::Began) return;
         if (!m_alive || e.other != m_player) return;
         for (auto& c : m_coins) {
             if (e.trigger != c.entity) continue;
             if (!c.active) return;
             c.active = false;
-            m_scene->get<Mesh>(c.entity).visible = false;
+            scene().get<Mesh>(c.entity).visible = false;
             ++m_coinCount;
-            playAt(m_coinChime, m_scene->get<Transform>(c.entity).position, COIN_VOLUME);
-            // Roof coins pay double - the payoff the ROOF RIDE pill advertises.
+            playAt(m_coinChime, scene().get<Transform>(c.entity).position, COIN_VOLUME);
             if (c.y > 1.5f) m_bonusScore += coinValue;
             if (m_coinCount % 10 == 0) LOG_INFO("Coins: %d", m_coinCount);
             return;
@@ -238,294 +240,376 @@ void PotionRunner::onStart() {
     });
 }
 
-void PotionRunner::onUpdate(float dt) {
+void PotionRunner::onFixedUpdate(float dt) {
     if (!m_built) return;
+
+    // Undo a frame's drawn-ahead pose; simulation reads the last tick's.
+    if (m_drawnAhead) {
+        scene().get<Transform>(m_player) = m_tickBody;
+        m_drawnAhead = false;
+    }
 
     readInput();
 
-    // Hold on the start screen until the player gives any run input (a lane move,
-    // a jump, or a click on the START button).
     if (!m_started) {
-        if (m_edgeJump || m_edgeLeft || m_edgeRight) m_started = true;
-        updateCamera(dt);
-        refreshUI();
-        return;
-    }
-
-    if (m_alive) {
+        m_started = m_edgeJump || m_edgeLeft || m_edgeRight;
+    } else if (m_alive) {
         m_speed = std::min(maxSpeed, m_speed + acceleration * dt);
         m_distance += m_speed * dt;
 
-        // Crashes and coin pickups arrive as physics events (see onStart);
-        // there is no polling pass anymore.
-        updatePlayer(dt);
+        // The track moves first, so the runner meets each ramp where physics will
+        // find it. Crashes and coins arrive as physics events (see onStart).
         scrollWorld(dt);
+        updatePlayer(dt);
 
         if (m_milestoneTimer > 0.0f) m_milestoneTimer -= dt;
         if (m_distance >= m_nextDistanceLog) {
             LOG_INFO("Distance %d  (coins %d)", static_cast<int>(m_distance), m_coinCount);
-            // Flash the milestone centre-screen for a couple of seconds.
-            if (m_scene->isAlive(m_uiMilestone)) {
-                m_scene->get<UIText>(m_uiMilestone).text =
-                    std::to_string(static_cast<int>(m_nextDistanceLog)) + " m";
+            if (UIText* flash = scene().tryGet<UIText>(m_uiMilestone)) {
+                flash->text = std::to_string(static_cast<int>(m_nextDistanceLog)) + " m";
             }
             m_milestoneTimer   = 2.2f;
             m_nextDistanceLog += 500.0f;
         }
-    } else if (m_edgeRestart) {
+    } else if (m_edgeRestart || m_restartAsked) {
         resetGame();
+    }
+
+    // Physics runs next and collides with the tick pose, not the last drawn one.
+    placeWorld(0.0f);
+}
+
+void PotionRunner::onUpdate(float dt) {
+    if (!m_built) return;
+
+    // Carry the last tick forward to this frame; a frozen run draws as the tick left it.
+    if (m_started && m_alive && !clock().isPaused()) {
+        const float ahead = clock().getFixedAlpha() * clock().getFixedStep();
+        drawRunner(ahead);
+        placeWorld(ahead);
     }
 
     updateCamera(dt);
     refreshUI();
 }
 
-MaterialHandle PotionRunner::makeMaterial(
-    const glm::vec3& albedo, float metallic, float roughness,
-    const glm::vec3& emission, float emissiveStrength, bool unlit, const char* name) {
-    MaterialAsset material;
-    material.type      = unlit ? MaterialType::Unlit : MaterialType::Opaque;
-    material.albedo    = glm::vec4(albedo, 1.0f);
-    material.metallic  = metallic;
-    material.roughness = roughness;
-    material.emission  = emission;
-    material.emissiveStrength = emissiveStrength;
-    // No texture handles are set: GLMaterial keys each map's "is bound" flag off
-    // a valid handle, so the shader falls back to these scalars cleanly.
-    return m_resources->add(std::move(material), name);
+MaterialHandle PotionRunner::makeMaterial(MaterialAsset material, const char* name) {
+    // No texture handles: GLMaterial then falls back to the scalars.
+    return resources().add(std::move(material), name);
 }
 
 void PotionRunner::playAt(AudioClipHandle clip, const glm::vec3& position, float volume) {
-    VoiceParams params;
-    // The per-thread generator, not m_rng: m_rng is the run's deterministic
-    // stream and it deals the track, so drawing here would make the layout
-    // depend on how often the runner's feet hit the ground.
-    params.volume      = volume * Math::Random::range(SPREAD_VOLUME_MIN, 1.0f);
-    params.pitch       = Math::Random::range(SPREAD_PITCH_MIN, SPREAD_PITCH_MAX);
-    params.position    = position;
-    params.minDistance = HEARING_NEAR;
-    params.maxDistance = HEARING_FAR;
-    context().events->emit(PlaySoundEvent{clip, params});
+    // Not m_rng: it deals the track, which must not depend on how often feet land.
+    const float spread = Math::Random::range(SPREAD_VOLUME_MIN, 1.0f);
+    PlaySoundEvent sound = PlaySoundEvent::at(clip, position, volume * spread);
+    sound.params.pitch       = Math::Random::range(SPREAD_PITCH_MIN, SPREAD_PITCH_MAX);
+    sound.params.minDistance = HEARING_NEAR;
+    sound.params.maxDistance = HEARING_FAR;
+    events().emit(sound);
 }
 
 EntityId PotionRunner::spawnBox(MeshHandle mesh, MaterialHandle material, const char* name) {
-    // spawn() is just m_scene->createEntity(); call it directly so the editor's
-    // hot-reload module needn't import that (otherwise GC'd) host-exe symbol.
-    EntityId entity = m_scene->createEntity();
-    m_scene->add(entity, makeName(name));
-    m_scene->add(entity, Mesh{mesh, material});
-    m_scene->add(entity, Transform{});
+    const EntityId entity = spawn(name);
+    scene().add(entity, Mesh{mesh, material});
+    scene().add(entity, Transform{});
     return entity;
 }
 
-void PotionRunner::buildWorld() {
-    // Set here as well as in game_module.cpp's vkmBuildScene, so the persisted
-    // scene and the game cannot drift apart.
-    m_scene->environment().sky.intensity  = 0.08f;
-    m_scene->environment().sky.showSkybox = false;   // underground: no sky, just the tunnel
-    // Switching the authored directional light off frees the whole 2D atlas for
-    // the headlights: with no CSM layers reserved, spots get all six slots.
-    m_scene->forEach<Light>([](EntityId, Light& light) {
+void PotionRunner::buildMaterials() {
+    MaterialAsset ground;
+    ground.albedo    = {0.030f, 0.032f, 0.037f, 1.0f};
+    ground.roughness = 0.96f;
+    m_matGround = makeMaterial(std::move(ground), "potion:ground");
+
+    MaterialAsset ballast;    // coarse gravel bed
+    ballast.albedo    = {0.050f, 0.050f, 0.056f, 1.0f};
+    ballast.roughness = 0.96f;
+    m_matBallast = makeMaterial(std::move(ballast), "potion:ballast");
+
+    MaterialAsset rail;       // brushed steel
+    rail.albedo    = {0.52f,  0.54f,  0.58f, 1.0f};
+    rail.metallic  = 1.0f;
+    rail.roughness = 0.55f;
+    m_matRail = makeMaterial(std::move(rail), "potion:rail");
+
+    MaterialAsset tie;        // creosote sleeper
+    tie.albedo    = {0.085f, 0.062f, 0.042f, 1.0f};
+    tie.roughness = 0.95f;
+    m_matTie = makeMaterial(std::move(tie), "potion:tie");
+
+    MaterialAsset wall;       // concrete
+    wall.albedo    = {0.055f, 0.058f, 0.070f, 1.0f};
+    wall.roughness = 0.95f;
+    m_matWall = makeMaterial(std::move(wall), "potion:wall");
+
+    MaterialAsset pillar;     // concrete column
+    pillar.albedo    = {0.070f, 0.073f, 0.085f, 1.0f};
+    pillar.roughness = 0.93f;
+    m_matPillar = makeMaterial(std::move(pillar), "potion:pillar");
+
+    MaterialAsset player;
+    player.albedo    = {0.05f,  0.45f,  0.62f, 1.0f};
+    player.metallic  = 0.5f;
+    player.roughness = 0.42f;
+    player.emission  = {0.00f, 0.18f, 0.28f};
+    player.emissiveStrength = 1.0f;
+    m_matPlayer = makeMaterial(std::move(player), "potion:player");
+
+    MaterialAsset playerGlow;
+    playerGlow.type      = MaterialType::Unlit;
+    playerGlow.albedo    = {0.40f,  0.95f,  1.00f, 1.0f};
+    playerGlow.roughness = 0.40f;
+    playerGlow.emission  = {0.20f, 0.85f, 1.00f};
+    playerGlow.emissiveStrength = 1.8f;
+    m_matPlayerGlow = makeMaterial(std::move(playerGlow), "potion:player_glow");
+
+    MaterialAsset train;
+    train.albedo    = {0.10f,  0.12f,  0.18f, 1.0f};
+    train.metallic  = 1.00f;
+    train.roughness = 0.70f;
+    train.emission  = {0.00f, 0.14f, 0.30f};
+    train.emissiveStrength = 0.5f;
+    m_matTrain = makeMaterial(std::move(train), "potion:train");
+
+    MaterialAsset trainB;
+    trainB.albedo    = {0.06f,  0.16f,  0.15f, 1.0f};
+    trainB.metallic  = 1.00f;
+    trainB.roughness = 0.70f;
+    trainB.emission  = {0.00f, 0.18f, 0.14f};
+    trainB.emissiveStrength = 0.4f;
+    m_matTrainB = makeMaterial(std::move(trainB), "potion:train_b");
+
+    MaterialAsset trainC;
+    trainC.albedo    = {0.11f,  0.11f,  0.13f, 1.0f};
+    trainC.metallic  = 1.00f;
+    trainC.roughness = 0.72f;
+    trainC.emission  = {0.10f, 0.10f, 0.16f};
+    trainC.emissiveStrength = 0.35f;
+    m_matTrainC = makeMaterial(std::move(trainC), "potion:train_c");
+
+    MaterialAsset window;
+    window.type      = MaterialType::Unlit;
+    window.albedo    = {0.70f,  0.90f,  1.00f, 1.0f};
+    window.roughness = 0.30f;
+    window.emission  = {0.55f, 0.85f, 1.00f};
+    window.emissiveStrength = 1.8f;
+    m_matWindow = makeMaterial(std::move(window), "potion:window");
+    MaterialAsset headlamp;
+    headlamp.type      = MaterialType::Unlit;
+    headlamp.albedo    = {1.00f,  0.95f,  0.80f, 1.0f};
+    headlamp.roughness = 0.40f;
+    headlamp.emission  = {1.00f, 0.92f, 0.72f};
+    headlamp.emissiveStrength = 1.8f;
+    m_matHeadlamp = makeMaterial(std::move(headlamp), "potion:headlamp");
+
+    // Emission only keeps them off pure black at distance.
+    MaterialAsset barrier;
+    barrier.albedo    = {0.42f,  0.05f,  0.04f, 1.0f};
+    barrier.roughness = 0.75f;
+    barrier.emission  = {0.85f, 0.05f, 0.03f};
+    barrier.emissiveStrength = 0.25f;
+    m_matBarrier = makeMaterial(std::move(barrier), "potion:barrier");
+
+    MaterialAsset stripe;
+    stripe.albedo    = {0.82f,  0.84f,  0.87f, 1.0f};
+    stripe.roughness = 0.60f;
+    stripe.emission  = {0.60f, 0.63f, 0.70f};
+    stripe.emissiveStrength = 0.30f;
+    m_matStripe = makeMaterial(std::move(stripe), "potion:stripe");
+
+    MaterialAsset signalRed;
+    signalRed.type      = MaterialType::Unlit;
+    signalRed.albedo    = {1.00f, 0.12f, 0.08f, 1.0f};
+    signalRed.roughness = 0.5f;
+    signalRed.emission  = {1.00f, 0.08f, 0.05f};
+    signalRed.emissiveStrength = 1.1f;
+    m_matSignalRed = makeMaterial(std::move(signalRed), "potion:signal_red");
+
+    MaterialAsset signalGreen;
+    signalGreen.type      = MaterialType::Unlit;
+    signalGreen.albedo    = {0.20f, 1.00f, 0.40f, 1.0f};
+    signalGreen.roughness = 0.5f;
+    signalGreen.emission  = {0.10f, 0.90f, 0.30f};
+    signalGreen.emissiveStrength = 1.1f;
+    m_matSignalGreen = makeMaterial(std::move(signalGreen), "potion:signal_green");
+
+    MaterialAsset coin;
+    coin.albedo    = {1.00f,  0.78f,  0.28f, 1.0f};
+    coin.metallic  = 1.0f;
+    coin.roughness = 0.08f;
+    coin.emission  = {1.00f, 0.6f, 0.0f};
+    coin.emissiveStrength = 2.0f;
+    m_matCoin = makeMaterial(std::move(coin), "potion:coin");
+
+    // Neon fixtures: bright enough to read as sources, dim beside the Lights they carry.
+    MaterialAsset arch;
+    arch.type      = MaterialType::Unlit;
+    arch.albedo    = {0.85f,  0.92f,  1.00f, 1.0f};
+    arch.roughness = 0.40f;
+    arch.emission  = {0.45f, 0.70f, 1.00f};
+    arch.emissiveStrength = 1.3f;
+    m_matArch = makeMaterial(std::move(arch), "potion:arch");
+
+    MaterialAsset trim;
+    trim.type      = MaterialType::Unlit;
+    trim.albedo    = {0.90f,  0.35f,  1.00f, 1.0f};
+    trim.roughness = 0.40f;
+    trim.emission  = {0.80f, 0.18f, 1.00f};
+    trim.emissiveStrength = 1.3f;
+    m_matTrim = makeMaterial(std::move(trim), "potion:trim");
+}
+
+void PotionRunner::buildEnvironment() {
+    scene().environment().sky.intensity  = SKY_INTENSITY;
+    scene().environment().sky.showSkybox = false;   // underground: no sky, just the tunnel
+    // No directional light means no cascades, so the headlights get the whole 2D atlas.
+    scene().forEach<Light>([](EntityId, Light& light) {
         if (light.type == LightType::Directional) light.enabled = false;
     });
-    // The ragdoll should fall with the same weight as the jump arc, not the
-    // default earth gravity - the crash reads floaty otherwise.
-    m_scene->physics().gravity = {0.0f, -gravity, 0.0f};
+    scene().physics().gravity = {0.0f, -gravity, 0.0f};
 
-    m_cubeMesh   = m_resources->add(generateCube(), "potion:cube");
+    m_cubeMesh = resources().add(generateCube(), "potion:cube");
 
-    // Trackbed and structure, at the night-plausible albedos this function's
-    // block explains. Roughness near 1 keeps grazing-angle Fresnel from
-    // sheening the long walls glossy; the polished rail is the one exception.
-    m_matGround  = makeMaterial({0.030f, 0.032f, 0.037f}, 0.0f,  0.96f, {0,0,0}, 1.0f, false, "potion:ground");
-    m_matBallast = makeMaterial({0.050f, 0.050f, 0.056f}, 0.0f,  0.96f, {0,0,0}, 1.0f, false, "potion:ballast"); // coarse gravel bed
-    m_matRail    = makeMaterial({0.52f,  0.54f,  0.58f},  1.0f,  0.55f, {0,0,0}, 1.0f, false, "potion:rail");   // brushed steel
-    m_matTie     = makeMaterial({0.085f, 0.062f, 0.042f}, 0.0f,  0.95f, {0,0,0}, 1.0f, false, "potion:tie");     // creosote sleeper
-    m_matWall    = makeMaterial({0.055f, 0.058f, 0.070f}, 0.0f,  0.95f, {0,0,0}, 1.0f, false, "potion:wall");    // concrete
-    m_matPillar  = makeMaterial({0.070f, 0.073f, 0.085f}, 0.0f,  0.93f, {0,0,0}, 1.0f, false, "potion:pillar");  // concrete column
+    // The scene's own camera (see module.cpp).
+    m_camera = findActiveCamera(scene());
+}
 
-    // Emissive strengths sit just over the bloom threshold so accents halo
-    // rather than flood - the real Lights beside them do the illuminating.
-    m_matPlayer     = makeMaterial({0.05f,  0.45f,  0.62f},  0.5f,  0.42f, {0.00f, 0.18f, 0.28f}, 1.0f, false, "potion:player");
-    m_matPlayerGlow = makeMaterial({0.40f,  0.95f,  1.00f},  0.0f,  0.40f, {0.20f, 0.85f, 1.00f}, 1.8f, true,  "potion:player_glow");
-    m_matTrain      = makeMaterial({0.10f,  0.12f,  0.18f},  1.00f, 0.70f, {0.00f, 0.14f, 0.30f}, 0.5f, false, "potion:train");
-    m_matTrainB     = makeMaterial({0.06f,  0.16f,  0.15f},  1.00f, 0.70f, {0.00f, 0.18f, 0.14f}, 0.4f, false, "potion:train_b");
-    m_matTrainC     = makeMaterial({0.11f,  0.11f,  0.13f},  1.00f, 0.72f, {0.10f, 0.10f, 0.16f}, 0.35f, false, "potion:train_c");
-    m_matWindow     = makeMaterial({0.70f,  0.90f,  1.00f},  0.0f,  0.30f, {0.55f, 0.85f, 1.00f}, 1.8f, true,  "potion:window");
-    // The nose light bar glows the same warm tone the headlight spot casts, so
-    // the beam visibly comes FROM somewhere.
-    m_matHeadlamp   = makeMaterial({1.00f,  0.95f,  0.80f},  0.0f,  0.40f, {1.00f, 0.92f, 0.72f}, 1.8f, true,  "potion:headlamp");
-
-    // One hazard family, one style: matte painted red with white reflective
-    // bands, lit by their warning lamps rather than glowing like them. The
-    // trace of emission only keeps them off pure black at distance.
-    m_matBarrier = makeMaterial({0.42f,  0.05f,  0.04f},  0.0f,  0.75f, {0.85f, 0.05f, 0.03f}, 0.25f, false, "potion:barrier");
-    m_matStripe  = makeMaterial({0.82f,  0.84f,  0.87f},  0.0f,  0.60f, {0.60f, 0.63f, 0.70f}, 0.30f, false, "potion:stripe");
-
-    // Trackside signal heads - tiny unlit lamps, red down the left wall, green
-    // down the right, purely scenery.
-    m_matSignalRed   = makeMaterial({1.00f, 0.12f, 0.08f}, 0.0f, 0.5f, {1.00f, 0.08f, 0.05f}, 1.1f, true, "potion:signal_red");
-    m_matSignalGreen = makeMaterial({0.20f, 1.00f, 0.40f}, 0.0f, 0.5f, {0.10f, 0.90f, 0.30f}, 1.1f, true, "potion:signal_green");
-
-    // Collectible: the one thing that gets to break the "no self-glow" rule -
-    // mirror gold with a strong warm glow, so pickups sparkle and bloom like
-    // arcade treasure against the dark track.
-    m_matCoin    = makeMaterial({1.00f,  0.78f,  0.28f},  1.0f,  0.08f, {1.00f, 0.6f, 0.0f}, 2.0f, false, "potion:coin");
-
-    // The neon fixtures: bright enough to read as sources, dim enough that the
-    // real Lights they carry remain the visible contribution.
-    m_matArch    = makeMaterial({0.85f,  0.92f,  1.00f},  0.0f,  0.40f, {0.45f, 0.70f, 1.00f}, 1.3f, true,  "potion:arch");
-    m_matTrim    = makeMaterial({0.90f,  0.35f,  1.00f},  0.0f,  0.40f, {0.80f, 0.18f, 1.00f}, 1.3f, true,  "potion:trim");
-
-    // Drive whichever camera the scene already provides (see game_module.cpp).
-    m_camera = EntityId{};
-    m_scene->forEach<Camera>([&](EntityId id, Camera&) {
-        if (!m_camera) m_camera = id;
-    });
-
+// Uniform along Z, so none of it scrolls.
+void PotionRunner::buildTunnel() {
+    // m_wallX is a member: the scrolling pools and the camera place against it.
     const float trackWidth = laneWidth * 3.0f + 4.0f;
     m_wallX = laneWidth * 1.5f + 0.5f;
 
-    // Static scenery: a long ground slab and two side walls framing the track.
     {
         EntityId ground = spawnBox(m_cubeMesh, m_matGround, "Ground");
-        Transform& t = m_scene->get<Transform>(ground);
+        Transform& t = scene().get<Transform>(ground);
         t.position = {0.0f, -0.2f, GROUND_CENTER_Z};   // top face sits at y = 0
         t.scale    = {trackWidth, 0.4f, GROUND_LEN};
-        m_scene->get<Mesh>(ground).castShadows = false;
+        scene().get<Mesh>(ground).castShadows = false;
 
-        // A static physics floor so the crash ragdoll has something to land on.
-        // The solver ignores Transform scale, so the collider carries the real
-        // world half-extents.
+        // Static floor for the ragdoll. The solver ignores Transform scale, so the
+        // collider carries world half-extents.
         Rigidbody rb;
-        rb.isStatic = true;
-        m_scene->add(ground, std::move(rb));
+        rb.motion = RigidbodyMotion::Static;
+        scene().add(ground, std::move(rb));
         Collider col;
-        col.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, {trackWidth * 0.5f, 0.2f, GROUND_LEN * 0.5f}}};
-        m_scene->add(ground, std::move(col));
+        col.parts = {
+            ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, {trackWidth * 0.5f, 0.2f, GROUND_LEN * 0.5f}}
+        };
+        scene().add(ground, std::move(col));
     }
     for (int side = -1; side <= 1; side += 2) {
         EntityId wall = spawnBox(m_cubeMesh, m_matWall, "Wall");
-        Transform& t = m_scene->get<Transform>(wall);
+        Transform& t = scene().get<Transform>(wall);
         t.position = {static_cast<float>(side) * (m_wallX + 0.3f), 3.2f, GROUND_CENTER_Z};
         t.scale    = {0.4f, 7.7f, GROUND_LEN};   // below grade up to the raised ceiling, no gap
-        m_scene->get<Mesh>(wall).castShadows = false;
+        scene().get<Mesh>(wall).castShadows = false;
 
-        // Two service pipes running the tunnel's length high on each wall - the
-        // horizontal detail lines every real cut-and-cover tunnel carries.
         for (float pipeY : {2.05f, 4.35f}) {
             EntityId pipe = spawnBox(m_cubeMesh, m_matPillar, "Wall Pipe");
-            Transform& pt = m_scene->get<Transform>(pipe);
+            Transform& pt = scene().get<Transform>(pipe);
             pt.position = {static_cast<float>(side) * (m_wallX + 0.04f), pipeY, GROUND_CENTER_Z};
             pt.scale    = {0.13f, 0.13f, GROUND_LEN};
-            m_scene->get<Mesh>(pipe).castShadows = false;
+            scene().get<Mesh>(pipe).castShadows = false;
         }
     }
 
-    // A concrete ceiling sealing the tunnel, so the tube reads as underground
-    // rather than an open-topped trench. Static scenery stays out of the shadow
-    // pass - only the moving pieces are worth a caster's cost.
+    // Only obstacles and the runner cast shadows.
     {
         EntityId ceiling = spawnBox(m_cubeMesh, m_matWall, "Ceiling");
-        Transform& t = m_scene->get<Transform>(ceiling);
+        Transform& t = scene().get<Transform>(ceiling);
         t.position = {0.0f, ARCH_Y + 0.42f, GROUND_CENTER_Z};
         t.scale    = {2.0f * m_wallX + 1.4f, 0.3f, GROUND_LEN};
-        m_scene->get<Mesh>(ceiling).castShadows = false;
+        scene().get<Mesh>(ceiling).castShadows = false;
     }
 
-    // A raised gravel ballast bed under each lane's track - the shoulder of
-    // grey stone a real permanent way sits on. Static like the rails; the
-    // sleepers and rails ride on top of it.
     for (int lane = 0; lane < 3; ++lane) {
         EntityId bed = spawnBox(m_cubeMesh, m_matBallast, "Ballast Bed");
-        Transform& t = m_scene->get<Transform>(bed);
+        Transform& t = scene().get<Transform>(bed);
         t.position = {laneX(lane), 0.015f, GROUND_CENTER_Z};   // top face just proud of the ground
         t.scale    = {laneWidth * 0.88f, 0.07f, GROUND_LEN};
-        m_scene->get<Mesh>(bed).castShadows = false;
+        scene().get<Mesh>(bed).castShadows = false;
     }
 
-    // A polished-steel pair per lane, the full length of the track. Uniform
-    // along Z, so unlike the sleepers below they need no scrolling and are
-    // spawned once as static boxes.
-    constexpr float RAIL_GAUGE_HALF = 0.50f;   // half the spacing within a lane's rail pair
+    constexpr float RAIL_GAUGE_HALF = 0.50f;
     constexpr float RAIL_W = 0.12f, RAIL_H = 0.14f;
     for (int lane = 0; lane < 3; ++lane) {
         for (int s = -1; s <= 1; s += 2) {
             EntityId rail = spawnBox(m_cubeMesh, m_matRail, "Rail");
-            Transform& t = m_scene->get<Transform>(rail);
-            t.position = {laneX(lane) + static_cast<float>(s) * RAIL_GAUGE_HALF,
-                          0.04f + RAIL_H * 0.5f, GROUND_CENTER_Z};
+            Transform& t = scene().get<Transform>(rail);
+            t.position = {
+                laneX(lane) + static_cast<float>(s) * RAIL_GAUGE_HALF,
+                0.04f + RAIL_H * 0.5f,
+                GROUND_CENTER_Z
+            };
             t.scale    = {RAIL_W, RAIL_H, GROUND_LEN};
-            m_scene->get<Mesh>(rail).castShadows = false;
+            scene().get<Mesh>(rail).castShadows = false;
         }
     }
 
-    // A glowing neon trim line down the inner face of each wall - the headline
-    // 'cool' accent: a bright streak receding to the horizon. Set just inside the
-    // pillars so the columns pass in front of it.
+    // Just inside the pillars, so the columns pass in front of it.
     for (int side = -1; side <= 1; side += 2) {
         EntityId trim = spawnBox(m_cubeMesh, m_matTrim, "Wall Trim");
-        Transform& t = m_scene->get<Transform>(trim);
+        Transform& t = scene().get<Transform>(trim);
         t.position = {static_cast<float>(side) * (m_wallX - 0.25f), 3.1f, GROUND_CENTER_Z};
         t.scale    = {0.10f, 0.18f, GROUND_LEN};
-        m_scene->get<Mesh>(trim).castShadows = false;
+        scene().get<Mesh>(trim).castShadows = false;
     }
+}
 
-    // The root is an invisible entity the gameplay drives, its scale kept at 1
-    // so the parented parts keep their own. Its origin is the body centre -
-    // updatePlayer puts it at PLAYER_HALF_Y + height - so part offsets are from there.
-    m_player = m_scene->createEntity();
-    m_scene->add(m_player, makeName("Player"));
-    m_scene->add(m_player, Transform{});
-    // Dynamic for its whole life; freezeRotation keeps it upright while the
-    // behavior owns bank and lateral position, and death just unfreezes rotation
-    // to hand the same body over as the ragdoll.
+void PotionRunner::buildPlayer() {
+    // An invisible root at scale 1, so parts keep their own scale. Its origin is
+    // the body centre, PLAYER_HALF_Y above the feet.
+    m_player = spawn("Player");
+    scene().add(m_player, Transform{});
+    // Always dynamic: freezeRotation keeps it upright, and death unfreezes it into the ragdoll.
     {
         Rigidbody rb;
         rb.mass           = 1.0f;
-        rb.restitution    = 0.0f;    // land dead, no bounce
+        rb.restitution    = 0.0f;
         rb.friction       = 0.2f;
         rb.freezeRotation = true;
         rb.canSleep       = false;   // a dozing character eats jump inputs and ignores ramps
-        m_scene->add(m_player, std::move(rb));
+        scene().add(m_player, std::move(rb));
+        const glm::vec3 halfExtents{PLAYER_HALF_X, PLAYER_HALF_Y, PLAYER_HALF_Z};
         Collider col;
-        col.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, {PLAYER_HALF_X, PLAYER_HALF_Y, PLAYER_HALF_Z}}};
-        m_scene->add(m_player, std::move(col));
+        col.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, halfExtents}};
+        scene().add(m_player, std::move(col));
     }
     m_playerParts.clear();
-    auto addPart = [&](const char* name, MaterialHandle mat,
-                       const glm::vec3& scale, const glm::vec3& offset, EntityId parent) {
+    auto addPart = [&](
+        const char* name,
+        MaterialHandle mat,
+        const glm::vec3& scale,
+        const glm::vec3& offset,
+        EntityId parent
+    ) {
         EntityId e = spawnBox(m_cubeMesh, mat, name);
-        Transform& t = m_scene->get<Transform>(e);
+        Transform& t = scene().get<Transform>(e);
         t.position = offset;
         t.scale    = scale;
-        HierarchyOperations::setParent(*m_scene, e, parent);
+        HierarchyOperations::setParent(scene(), e, parent);
         m_playerParts.emplace_back(e, mat);
     };
     addPart("Torso",   m_matPlayer,     {0.74f, 0.78f, 0.52f}, { 0.00f,  0.08f,  0.00f}, m_player);
     addPart("Head",    m_matPlayer,     {0.46f, 0.42f, 0.46f}, { 0.00f,  0.66f,  0.00f}, m_player);
     addPart("Visor",   m_matPlayerGlow, {0.50f, 0.12f, 0.50f}, { 0.00f,  0.74f,  0.00f}, m_player);
-    addPart("Pack",    m_matPlayerGlow, {0.46f, 0.62f, 0.18f}, { 0.00f,  0.10f, -0.36f}, m_player);  // on the back, toward the camera
-    // A rig, because a clip can carry footstep markers and four keyframed pivots
-    // cannot. One Animator, one looping stride, its speed scaled with the run -
-    // so swing and footsteps quicken together off the same clock.
+    // On the back, toward the camera.
+    addPart("Pack",    m_matPlayerGlow, {0.46f, 0.62f, 0.18f}, { 0.00f,  0.10f, -0.36f}, m_player);
     {
         Animator stride;
-        stride.skeleton = m_resources->add(makeRunnerSkeleton(), RUNNER_RIG_NAME);
-        stride.clip     = m_resources->add(makeRunnerStride(),   RUNNER_CLIP_NAME);
-        m_scene->add(m_player, std::move(stride));
+        stride.skeleton = resources().add(makeRunnerSkeleton(), RUNNER_RIG_NAME);
+        stride.clip     = resources().add(makeRunnerStride(),   RUNNER_CLIP_NAME);
+        scene().add(m_player, std::move(stride));
     }
-    // A BoneSocket places its entity at the joint with the bone's swing on it,
-    // so the limb box under it turns about the shoulder or hip rather than its
-    // own centre. It must be a direct child of the Animator's entity.
+    // The socket sits at the joint, so the limb turns about it, not its own centre.
+    // It must be a direct child of the Animator's entity.
     auto addLimb = [&](const char* bone, const glm::vec3& scale) {
-        EntityId socket = m_scene->createEntity();
-        m_scene->add(socket, makeName(bone));
-        m_scene->add(socket, Transform{});
-        HierarchyOperations::setParent(*m_scene, socket, m_player);
+        EntityId socket = spawn(bone, m_player);
+        scene().add(socket, Transform{});
         BoneSocket attach;
         attach.bone = bone;
-        m_scene->add(socket, std::move(attach));
+        scene().add(socket, std::move(attach));
         addPart(bone, m_matPlayer, scale, {0.0f, -scale.y * 0.5f + 0.04f, 0.0f}, socket);
     };
     addLimb(RUNNER_BONE_ARM_L, {0.15f, 0.56f, 0.28f});
@@ -533,82 +617,65 @@ void PotionRunner::buildWorld() {
     addLimb(RUNNER_BONE_LEG_L, {0.20f, 0.46f, 0.30f});
     addLimb(RUNNER_BONE_LEG_R, {0.20f, 0.46f, 0.30f});
 
-    // The two sounds this game makes, played as requests rather than hung on an
-    // entity - playAt's block says why neither can own a speaker.
-    m_footstep  = m_resources->add(makeFootstepSound(), "potion:footstep");
-    m_coinChime = m_resources->add(makeCoinChime(), "potion:coin");
+    m_footstep  = resources().add(makeFootstepSound(), "potion:footstep");
+    m_coinChime = resources().add(makeCoinChime(), "potion:coin");
+}
 
-    // Scrolling decoration pools (no gameplay, just a sense of speed). Pillars
-    // stay shorter than the camera height so they never cross the view.
-    auto makeScenery = [&](std::vector<Scenery>& pool, int count, MaterialHandle mat,
-                           const glm::vec3& scale, const char* name) {
+// Recycled, so the track is endless at a fixed entity count.
+void PotionRunner::buildScenery() {
+    auto makeScenery = [&](
+        std::vector<Scenery>& pool,
+        int count,
+        MaterialHandle mat,
+        const glm::vec3& scale,
+        const char* name
+    ) {
         pool.resize(count);
         for (auto& s : pool) {
             s.entity = spawnBox(m_cubeMesh, mat, name);
-            m_scene->get<Transform>(s.entity).scale = scale;
-            m_scene->get<Mesh>(s.entity).castShadows = false;
+            scene().get<Transform>(s.entity).scale = scale;
+            scene().get<Mesh>(s.entity).castShadows = false;
         }
     };
-    // Left pillar, right pillar and a ceiling rib capping them on a shared z
-    // lattice - a portal frame the player runs through. The pillars rise to
-    // ARCH_Y so they visibly hold the rib, which spans them rather than overhangs.
     const float archSpan = 2.0f * m_wallX + 0.4f;
-    // Dark wooden cross-ties, one short tie per lane rather than one log across
-    // all three, so each lane reads as its own track. They scroll, so the steel
-    // rails sitting on them read as rushing past.
     for (auto& lanePool : m_ties)
         makeScenery(lanePool, TIE_COUNT, m_matTie, {laneWidth * 0.62f, 0.10f, 0.30f}, "Tie");
     makeScenery(m_pillarsL, PILLAR_COUNT, m_matPillar, {0.40f, ARCH_Y, 0.40f},           "Pillar");
     makeScenery(m_pillarsR, PILLAR_COUNT, m_matPillar, {0.40f, ARCH_Y, 0.40f},           "Pillar");
-    // Signal heads mounted on each pillar's inner face (same z lattice, so they
-    // stay glued to their pillar as both pools scroll): red aspects down the
-    // left wall, green down the right - the classic trackside blinkenlights.
+    // On each pillar's inner face; same z lattice, so they stay on their pillar.
     makeScenery(m_signalsL, PILLAR_COUNT, m_matSignalRed,   {0.12f, 0.26f, 0.12f}, "Signal");
     makeScenery(m_signalsR, PILLAR_COUNT, m_matSignalGreen, {0.12f, 0.26f, 0.12f}, "Signal");
-    // Every scenery pool scrolls at one speed and wraps by one WRAP, so relative
-    // z offsets hold forever: spacing 40 - a multiple of the 10-unit pillar
-    // lattice - with a half-bay phase parks each platform between pillars.
+    // All pools scroll and wrap alike, so a spacing of 40 (a multiple of the 10-unit
+    // pillar lattice) with a half-bay phase keeps each platform between pillars.
     makeScenery(m_platformsL, 4, m_matPillar, {0.90f, 1.00f, 7.0f}, "Platform");
     makeScenery(m_platformsR, 4, m_matPillar, {0.90f, 1.00f, 7.0f}, "Platform");
     makeScenery(m_platEdgesL, 4, m_matStripe, {0.90f, 0.05f, 7.0f}, "Platform Edge");
     makeScenery(m_platEdgesR, 4, m_matStripe, {0.90f, 0.05f, 7.0f}, "Platform Edge");
-    // Overhead "roof": a concrete rib (structure) with a glowing light strip
-    // recessed under it, so the ceiling reads as lit station girders instead of
-    // flat neon slabs. The light shares the ribs' z lattice and scrolls with them.
     makeScenery(m_arches, PILLAR_COUNT, m_matPillar, {archSpan, 0.55f, 0.75f}, "Arch Beam");
-    // A POINT light, not a Rect: this renderer stacks inverse-square attenuation
-    // on the LTC form factor, so a Rect at the 5-unit ceiling throw decays ~1/d^4
-    // and never reaches the track. The strip mesh still looks like the emitter.
+    // A point light, not a Rect: only a point light takes a cube shadow.
     makeScenery(m_archLights, PILLAR_COUNT, m_matArch, {archSpan * 0.88f, 0.16f, 0.45f}, "Arch Light");
     for (auto& strip : m_archLights) {
         Light wash;
         wash.type       = LightType::Point;
         wash.color      = {0.45f, 0.70f, 1.00f};   // matches the strip's emissive
-        wash.intensity  = 60.0f;   // scaled for the raised ceiling's longer throw
-        // Radius vs the 10-unit arch spacing sets the pooling: it must stay
-        // UNDER the spacing or adjacent pools merge into one flat, even wash -
-        // the valleys between pools are what keep the tunnel reading dark.
+        wash.intensity  = 60.0f;
+        // Under the 10-unit arch spacing, or the pools merge into one flat wash.
         wash.radius     = 8.0f;
-        // Off at spawn: the cube atlas has two slots, and scrollWorld flips
-        // castShadows on for just the fixtures nearest the player, so the caster
-        // count never exceeds them.
+        // placeWorld enables it for the fixtures nearest the player, within
+        // Config::MAX_SHADOW_CASTERS_CUBE.
         wash.castShadows = false;
-        m_scene->add(strip.entity, std::move(wash));
+        scene().add(strip.entity, std::move(wash));
     }
 
-    // Per-recycle scale and material are set in randomizeObstacle. The accent
-    // box - a train windscreen or a hazard bar - is a sibling and not a child,
-    // so the obstacle's per-recycle scale never distorts it.
+    // The accent is a sibling, not a child, so the obstacle's per-recycle scale
+    // never distorts it.
     m_obstacles.resize(OBSTACLE_COUNT);
     for (auto& o : m_obstacles) {
         o.entity = spawnBox(m_cubeMesh, m_matTrain,  "Obstacle");
         o.accent = spawnBox(m_cubeMesh, m_matWindow, "Obstacle Accent");
-        o.auxA   = spawnBox(m_cubeMesh, m_matPillar, "Obstacle Detail");   // gantry leg / barrier stripe
+        o.auxA   = spawnBox(m_cubeMesh, m_matPillar, "Obstacle Detail");
         o.auxB   = spawnBox(m_cubeMesh, m_matPillar, "Obstacle Detail");
-        m_scene->get<Mesh>(o.accent).castShadows = false;
-        // The only light an obstacle carries: a warm spot yawed 180 deg so it
-        // shines down -Z at the oncoming player, out of the cab that visibly
-        // emits it. Enabled per recycle, trains only - six spot slots hold them all.
+        scene().get<Mesh>(o.accent).castShadows = false;
         Light beam;
         beam.type           = LightType::Spot;
         beam.color          = {1.00f, 0.92f, 0.72f};
@@ -618,62 +685,52 @@ void PotionRunner::buildWorld() {
         beam.outerConeAngle = 0.55f;
         beam.enabled        = false;
         beam.castShadows    = true;
-        beam.shadowBias     = 0.0f;
-        o.lamp = m_scene->createEntity();
-        m_scene->add(o.lamp, makeName("Train Headlight"));
-        m_scene->add(o.lamp, std::move(beam));
-        // Shining down the track, which the train runs along. That is what
-        // forward now means, where it used to be the half turn this
-        // line carried - the beam did not move, the axis under it did.
-        m_scene->add(o.lamp, Transform{{0.0f, 1.05f, SPAWN_Z},
-                                       glm::quat(1.0f, 0.0f, 0.0f, 0.0f),
-                                       glm::vec3(1.0f)});
-        // Kinematic: the dynamic player lands on its roof by solver contact, and
-        // any non-top contact is the crash signal. Extents follow each recycle.
+        o.lamp = spawn("Train Headlight");
+        scene().add(o.lamp, std::move(beam));
+        // Unrotated: forward is -Z, toward the oncoming player.
+        scene().add(
+            o.lamp,
+            Transform{{0.0f, 1.05f, SPAWN_Z}, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), glm::vec3(1.0f)}
+        );
+        // Kinematic: the player lands on its roof by solver contact. Extents
+        // follow each recycle.
         {
             Rigidbody rb;
-            rb.isKinematic = true;
-            m_scene->add(o.entity, std::move(rb));
+            rb.motion = RigidbodyMotion::Kinematic;
+            scene().add(o.entity, std::move(rb));
             Collider col;
             col.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 1.0f}}};
-            m_scene->add(o.entity, std::move(col));
+            scene().add(o.entity, std::move(col));
         }
-        // Hidden until a recycle makes this a steady train, and pale like every
-        // "go here" cue - white invites, red kills. Its collider is thicker than
-        // the visual slab, so a fast fall cannot tunnel through it.
+        // Hidden until a recycle makes a steady train. The collider is thicker than
+        // the slab so a fast fall cannot tunnel through.
         o.ramp = spawnBox(m_cubeMesh, m_matStripe, "Boarding Ramp");
-        m_scene->get<Mesh>(o.ramp).visible = false;
+        scene().get<Mesh>(o.ramp).visible = false;
         {
             Rigidbody rb;
-            rb.isKinematic = true;
-            m_scene->add(o.ramp, std::move(rb));
+            rb.motion = RigidbodyMotion::Kinematic;
+            scene().add(o.ramp, std::move(rb));
             Collider col;
             col.parts = {ColliderPart{ColliderShape::Box, {0.0f, -0.30f, 0.0f}, {1.0f, 0.35f, 1.0f}}};
-            m_scene->add(o.ramp, std::move(col));
+            scene().add(o.ramp, std::move(col));
         }
-        // Train dressing, shown only while the recycle is a train: underframe
-        // skirt, red tail-light band, steel nose plow, and the warm headlamp
-        // bar the beam visibly shines from.
         o.skirt   = spawnBox(m_cubeMesh, m_matGround,    "Train Skirt");
         o.tail    = spawnBox(m_cubeMesh, m_matSignalRed, "Train Tail Light");
         o.plow    = spawnBox(m_cubeMesh, m_matPillar,    "Train Plow");
         o.lampBar = spawnBox(m_cubeMesh, m_matHeadlamp,  "Train Lamp Bar");
-        m_scene->get<Mesh>(o.skirt).visible   = false;
-        m_scene->get<Mesh>(o.tail).visible    = false;
-        m_scene->get<Mesh>(o.plow).visible    = false;
-        m_scene->get<Mesh>(o.lampBar).visible = false;
-        // Stripes, bands and lamps are detail; the hull already throws the
-        // silhouette, so keep them out of the shadow pass.
-        m_scene->get<Mesh>(o.tail).castShadows    = false;
-        m_scene->get<Mesh>(o.lampBar).castShadows = false;
-        // Plow and lamp bar never change shape (train width and height are
-        // constants), so scale - and the plow's shovel tilt - are set once
-        // here; recycles only flip visibility, frames only move them.
+        scene().get<Mesh>(o.skirt).visible   = false;
+        scene().get<Mesh>(o.tail).visible    = false;
+        scene().get<Mesh>(o.plow).visible    = false;
+        scene().get<Mesh>(o.lampBar).visible = false;
+        // Detail: the hull already throws the silhouette.
+        scene().get<Mesh>(o.tail).castShadows    = false;
+        scene().get<Mesh>(o.lampBar).castShadows = false;
+        // Plow and lamp bar never change shape, so scale and tilt are set once.
         {
-            Transform& plowT = m_scene->get<Transform>(o.plow);
+            Transform& plowT = scene().get<Transform>(o.plow);
             plowT.scale    = {obstacleHalfX() * 1.7f, 0.50f, 0.12f};
             plowT.rotation = glm::angleAxis(-0.7f, Math::WORLD_AXIS_X);
-            m_scene->get<Transform>(o.lampBar).scale =
+            scene().get<Transform>(o.lampBar).scale =
                 {obstacleHalfX() * 2.0f * 0.55f, 0.16f, 0.08f};
         }
     }
@@ -681,58 +738,61 @@ void PotionRunner::buildWorld() {
     for (int i = 0; i < COIN_COUNT; ++i) {
         Coin& c = m_coins[i];
         c.entity = spawnBox(m_cubeMesh, m_matCoin, "Coin");
-        m_scene->get<Transform>(c.entity).scale = {0.7f, 0.7f, 0.12f};
-        m_scene->get<Mesh>(c.entity).castShadows = false;
-        // The AnimationSystem owns each coin's rotation + scale from here on
-        // (scrollWorld only writes positions); staggered start times keep the
-        // row from spinning in lockstep.
-        m_scene->add(c.entity, makeCoinSpin(static_cast<float>(i) * 0.11f));
-        // Pickup is a physics trigger: a generous volume (the old hand-check's
-        // window) that overlaps the dynamic player and raises a TriggerEvent -
-        // queried by the narrowphase, never resolved, so it can't push anyone.
+        scene().get<Transform>(c.entity).scale = {0.7f, 0.7f, 0.12f};
+        scene().get<Mesh>(c.entity).castShadows = false;
+        // Animation owns rotation and scale; placeWorld writes only position.
+        scene().add(c.entity, makeCoinSpin(static_cast<float>(i) * 0.11f));
+        // A trigger large enough that a fast player cannot pass it between ticks.
         {
             Rigidbody rb;
-            rb.isKinematic = true;
-            m_scene->add(c.entity, std::move(rb));
+            rb.motion = RigidbodyMotion::Kinematic;
+            scene().add(c.entity, std::move(rb));
             Collider col;
             col.isTrigger = true;
             col.parts = {ColliderPart{ColliderShape::Box, {0.0f, 0.0f, 0.0f}, {1.0f, 1.2f, 0.5f}}};
-            m_scene->add(c.entity, std::move(col));
+            scene().add(c.entity, std::move(col));
         }
     }
+}
+
+void PotionRunner::buildWorld() {
+    buildEnvironment();
+    buildMaterials();
+    buildTunnel();
+    buildPlayer();
+    buildScenery();
 
     m_built = true;
     resetGame();
 
-    LOG_INFO("Potion Runner ready - A/D switch lane, Space/W jump, S/Down slide, "
-             "run up the white ramps to ride the trains, R restart.");
+    LOG_INFO(
+        "Potion Runner ready - A/D switch lane, Space/W jump, S/Down slide, "
+        "run up the white ramps to ride the trains, R restart."
+    );
 }
 
 void PotionRunner::randomizeObstacle(Obstacle& o) {
     o.lane = randLane();
     float r = frand();
-    // Obstacles recycle in z order, so consecutive recycles are consecutive down
-    // the track: while a convoy is owed, force this one into the convoy lane. The
-    // car gaps are one clean roof-to-roof jump, and roof coins pay double.
+    // Recycles are consecutive down the track, so a convoy owed takes this one.
     const bool convoyCar = m_convoyLeft > 0;
     if (convoyCar) {
         --m_convoyLeft;
         o.lane = m_convoyLane;
-        r = 0.5f;                                  // land in the train branch below
+        r = 0.5f;                                  // the train branch
     }
     const float halfX = obstacleHalfX();
-    o.bottom     = 0.0f;        // default: box sits on the ground (overhead overrides below)
-    o.auxVisible = false;       // default: no extra detail boxes (hurdle only)
-    o.hasRamp    = false;       // only steady trains grow a boarding ramp below
-    o.isTrain    = false;       // flips in the train branch; gates dressing + headlight
+    o.bottom     = 0.0f;
+    o.auxVisible = false;
+    o.hasRamp    = false;
+    o.isTrain    = false;
 
-    // Two recycles can share a z window: a faster train closes on the one ahead.
-    // Reaching a far lane through a blocked middle is the impossible path, so a
-    // barrier that would block the middle beside a train demotes to a gantry.
-    const auto middleStaysFree = [](int a, int b) {
+    // A faster train can share a z window with the one ahead. A middle blocker
+    // beside an outer one walls the player in that outer lane off from the free one.
+    const auto noLaneIsCutOff = [](int a, int b) {
         return a == b || (a + b == 2 && a != 1);   // same lane, or the {0, 2} pair
     };
-    if (r >= 0.78f && m_prevRel > 0.0f && !middleStaysFree(o.lane, m_prevLane)) {
+    if (r >= 0.78f && m_prevRel > 0.0f && !noLaneIsCutOff(o.lane, m_prevLane)) {
         r = 0.30f;   // gantry instead
     }
     MaterialHandle mat;
@@ -744,20 +804,18 @@ void PotionRunner::randomizeObstacle(Obstacle& o) {
     if (r < 0.22f) {                 // hurdle - hop over it
         o.top = 0.7f; o.length = 1.2f; o.rideable = true; o.relFactor = 0.0f;
         mat = m_matBarrier;
-        // A white band along the leading top edge (the line you clear).
+        // A white band along the leading top edge.
         accentMat      = m_matStripe;
         o.accentScale  = {halfX * 2.0f * 1.04f, 0.14f, 0.14f};
         o.accentOffset = {0.0f, o.top * 0.5f - 0.06f, -o.length * 0.5f - 0.04f};
     } else if (r < 0.40f) {          // overhead gantry - crouch/slide under it
         o.top = 2.8f; o.bottom = 1.05f; o.length = 1.4f; o.rideable = false; o.relFactor = 0.0f;
-        mat = m_matBarrier;             // same barricade red as every hazard body
-        // A white band on the underside leading edge - the "duck here" line.
+        mat = m_matBarrier;
+        // A white band on the underside leading edge.
         accentMat      = m_matStripe;
         o.accentScale  = {halfX * 2.0f * 1.05f, 0.26f, 0.14f};
         o.accentOffset = {0.0f, o.bottom + 0.10f - (o.bottom + o.top) * 0.5f, -o.length * 0.5f - 0.05f};
-        // Two concrete legs down to the ground so the bar reads as a portal, not
-        // a floating slab. A leg spans 0..bottom (centre at -top/2 from the box
-        // centre), set just inside each end of the bar.
+        // Legs span 0..bottom, just inside each end of the bar.
         o.auxVisible = true;
         auxAMat      = m_matPillar;
         auxBMat      = m_matPillar;
@@ -767,55 +825,44 @@ void PotionRunner::randomizeObstacle(Obstacle& o) {
         o.auxBOffset = { (halfX - 0.10f), -o.top * 0.5f, 0.0f};
     } else if (r < 0.78f) {          // train - ride the roof or dodge the lane
         o.top = TRAIN_TOP; o.length = 10.0f + frand() * 5.0f; o.rideable = true;
-        // Most ride along with the track (look parked as you rush past); some
-        // bear down on you faster. None ever move slower than the track, which
-        // would read as drifting backwards.
+        // Most move with the track, some faster; none slower, which reads as drifting backwards.
         o.relFactor = (frand() < 0.4f) ? 0.20f + frand() * 0.30f : 0.0f;
         if (convoyCar) {
-            // Convoy cars run long and steady so the roof line stays hoppable.
+            // Long and steady, so the roof line stays hoppable.
             o.length    = 12.0f + frand() * 3.0f;
             o.relFactor = 0.0f;
         } else if (frand() < 0.35f) {
-            // This train opens a convoy: the next 2-3 recycles chain behind it.
+            // Opens a convoy of the next 2-3 recycles.
             m_convoyLeft = 2 + (frand() < 0.4f ? 1 : 0);
             m_convoyLane = o.lane;
         }
-        // Solvability guard 2: a fast train closes on the previous recycle; if
-        // that pairing would block two lanes without keeping the middle free,
-        // it runs steady instead and the gap never closes.
-        if (o.relFactor > 0.0f && m_prevBlocking && !middleStaysFree(o.lane, m_prevLane)) {
+        // The same guard: a fast train that would cut a lane off runs steady instead.
+        if (o.relFactor > 0.0f && m_prevBlocking && !noLaneIsCutOff(o.lane, m_prevLane)) {
             o.relFactor = 0.0f;
         }
-        // Run into a steady train's nose ramp and it walks you onto the roof, no
-        // jump. Convoy followers skip it - theirs would poke into the car ahead -
-        // and the fast bearing-down trains stay ramp-less threats.
+        // Steady trains only; a convoy follower's ramp would poke into the car ahead.
         o.hasRamp = (o.relFactor == 0.0f) && !convoyCar;
         if (o.hasRamp) {
             const float slopeLen = std::sqrt(o.top * o.top + RAMP_RUN * RAMP_RUN);
-            Transform& rt = m_scene->get<Transform>(o.ramp);
+            Transform& rt = scene().get<Transform>(o.ramp);
             rt.scale    = {halfX * 2.0f * 0.9f, 0.14f, slopeLen};
-            // Pitch the slab nose-down about X so its +Z end sits up at the
-            // roof and its -Z end (toward the oncoming player) meets the rails.
+            // Pitched so the +Z end meets the roof and the -Z end the rails.
             rt.rotation = glm::angleAxis(-std::atan2(o.top, RAMP_RUN), Math::WORLD_AXIS_X);
         }
         o.isTrain = true;
-        // Three hull colours, cycled deterministically; a convoy reuses its
-        // leader's so the whole chain reads as one long train.
+        // A convoy reuses its leader's colour, so the chain reads as one train.
         const int style = convoyCar ? m_convoyStyle : m_rng.nextInt(0, 2);
         m_convoyStyle = style;
         const MaterialHandle hulls[3] = {m_matTrain, m_matTrainB, m_matTrainC};
         mat = hulls[style];
-        // Dressing scales (positions follow in scrollWorld): the underframe
-        // skirt and the red tail-light band track this car's length.
-        m_scene->get<Transform>(o.skirt).scale  = {halfX * 2.0f * 1.04f, 0.42f, o.length * 1.01f};
-        m_scene->get<Transform>(o.tail).scale   = {halfX * 2.0f * 0.80f, 0.30f, 0.10f};
-        // A lit windscreen band across the leading face - reads as a train cab.
+        // Dressing scales; placeWorld positions them.
+        scene().get<Transform>(o.skirt).scale  = {halfX * 2.0f * 1.04f, 0.42f, o.length * 1.01f};
+        scene().get<Transform>(o.tail).scale   = {halfX * 2.0f * 0.80f, 0.30f, 0.10f};
+        // A lit windscreen across the leading face.
         accentMat      = m_matWindow;
         o.accentScale  = {halfX * 2.0f * 0.82f, 0.46f, 0.10f};
         o.accentOffset = {0.0f, o.top * 0.18f, -o.length * 0.5f - 0.06f};
-        // A narrow roof walk line - the "run here" cue, not a deck - and one
-        // window band wider than the hull, so a single box surfaces as lit
-        // passenger windows along both flanks.
+        // A roof walk line, and one window band wider than the hull so it shows on both flanks.
         o.auxVisible = true;
         auxAMat      = m_matStripe;
         auxAScale    = {halfX * 2.0f * 0.34f, 0.06f, o.length * 0.86f};
@@ -826,9 +873,6 @@ void PotionRunner::randomizeObstacle(Obstacle& o) {
     } else {                         // barrier - too tall to clear, must switch lane
         o.top = 3.0f; o.length = 1.4f; o.rideable = false; o.relFactor = 0.0f;
         mat = m_matBarrier;
-        // A proper barricade board: three white reflective bands (this accent +
-        // the two aux) across the matte red face, plus the pulsing red beacon
-        // lamp - red/white stripes say "line closed" like nothing else does.
         accentMat      = m_matStripe;
         o.accentScale  = {halfX * 2.0f * 1.06f, 0.30f, 0.14f};
         o.accentOffset = {0.0f, 0.0f, -o.length * 0.5f - 0.05f};
@@ -840,52 +884,44 @@ void PotionRunner::randomizeObstacle(Obstacle& o) {
         o.auxAOffset = {0.0f,  0.95f, -o.length * 0.5f - 0.05f};
         o.auxBOffset = {0.0f, -0.95f, -o.length * 0.5f - 0.05f};
     }
-    Transform& t = m_scene->get<Transform>(o.entity);
-    t.scale    = {halfX * 2.0f, o.top - o.bottom, o.length};   // box centre (Y) applied in scrollWorld
+    Transform& t = scene().get<Transform>(o.entity);
+    t.scale    = {halfX * 2.0f, o.top - o.bottom, o.length};   // placeWorld sets the centre
     t.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-    m_scene->get<Mesh>(o.entity).material = mat;
+    scene().get<Mesh>(o.entity).material = mat;
 
-    // Colliders carry real half-extents (the solver ignores Transform scale);
-    // refit the hull to this incarnation, and the ramp when it exists.
-    m_scene->get<Collider>(o.entity).parts[0].halfExtents =
+    // Colliders carry real half-extents: the solver ignores Transform scale.
+    scene().get<Collider>(o.entity).parts[0].halfExtents =
         {halfX, (o.top - o.bottom) * 0.5f, o.length * 0.5f};
-    // A rampless incarnation simply disables its ramp collider - no broadphase
-    // entry, no contacts, and the collider overlay skips it too.
-    m_scene->get<Collider>(o.ramp).enabled = o.hasRamp;
+    scene().get<Collider>(o.ramp).enabled = o.hasRamp;
     if (o.hasRamp) {
-        // Extended toe-ward past the visual slab and kept thick, so the tilted
-        // toe end-face sits below grade: the first contact is always the walkable
-        // top face, never the end face that would shove the player down.
+        // Extended past the slab's toe and thick, so the toe's end face sits below
+        // grade and the first contact is always the walkable top face.
         const float slopeLen = std::sqrt(o.top * o.top + RAMP_RUN * RAMP_RUN);
-        ColliderPart& rampBox = m_scene->get<Collider>(o.ramp).parts[0];
+        ColliderPart& rampBox = scene().get<Collider>(o.ramp).parts[0];
         rampBox.halfExtents  = {halfX * 0.9f, 0.35f, slopeLen * 0.5f + 0.35f};
         rampBox.center       = {0.0f, -0.30f, -0.35f};
     }
 
-    // Only trains carry a light: a headlight has a visible source to shine from,
-    // and one floating in front of a barricade does not. The other types
-    // telegraph with their white bands and the pools they pass through.
-    m_scene->get<Light>(o.lamp).enabled = o.isTrain;
+    scene().get<Light>(o.lamp).enabled = o.isTrain;
 
-    m_scene->get<Transform>(o.accent).scale = o.accentScale;
-    m_scene->get<Mesh>(o.accent).material   = accentMat;
+    scene().get<Transform>(o.accent).scale = o.accentScale;
+    scene().get<Mesh>(o.accent).material   = accentMat;
 
-    m_scene->get<Mesh>(o.ramp).visible    = o.hasRamp;
-    m_scene->get<Mesh>(o.skirt).visible   = o.isTrain;
-    m_scene->get<Mesh>(o.tail).visible    = o.isTrain;
-    m_scene->get<Mesh>(o.plow).visible    = o.isTrain;
-    m_scene->get<Mesh>(o.lampBar).visible = o.isTrain;
-    m_scene->get<Mesh>(o.auxA).visible = o.auxVisible;
-    m_scene->get<Mesh>(o.auxB).visible = o.auxVisible;
+    scene().get<Mesh>(o.ramp).visible    = o.hasRamp;
+    scene().get<Mesh>(o.skirt).visible   = o.isTrain;
+    scene().get<Mesh>(o.tail).visible    = o.isTrain;
+    scene().get<Mesh>(o.plow).visible    = o.isTrain;
+    scene().get<Mesh>(o.lampBar).visible = o.isTrain;
+    scene().get<Mesh>(o.auxA).visible = o.auxVisible;
+    scene().get<Mesh>(o.auxB).visible = o.auxVisible;
     if (o.auxVisible) {
-        m_scene->get<Transform>(o.auxA).scale = auxAScale;
-        m_scene->get<Transform>(o.auxB).scale = auxBScale;
-        m_scene->get<Mesh>(o.auxA).material   = auxAMat;
-        m_scene->get<Mesh>(o.auxB).material   = auxBMat;
+        scene().get<Transform>(o.auxA).scale = auxAScale;
+        scene().get<Transform>(o.auxB).scale = auxBScale;
+        scene().get<Mesh>(o.auxA).material   = auxAMat;
+        scene().get<Mesh>(o.auxB).material   = auxBMat;
     }
 
-    // Remember this recycle for the next one's solvability guards: it is the
-    // obstacle just ahead in z of whatever spawns next.
+    // For the next recycle's solvability guards.
     m_prevLane     = o.lane;
     m_prevRel      = o.isTrain ? o.relFactor : 0.0f;
     m_prevBlocking = o.isTrain || (!o.rideable && o.bottom <= 0.0f);   // hull or barrier
@@ -893,11 +929,13 @@ void PotionRunner::randomizeObstacle(Obstacle& o) {
 
 void PotionRunner::resetGame() {
     m_alive    = true;
+    m_restartAsked = false;
     m_lane     = 1;
     m_playerX  = 0.0f;
     m_height   = 0.0f;
     m_grounded = true;
-    m_groundedTimer = 0.2f;
+    m_coyoteTimer = COYOTE_TIME;
+    m_climbRamp   = -1;
     m_crouch     = 0.0f;
     m_crouchHeld = false;
     m_speed    = startSpeed;
@@ -909,39 +947,38 @@ void PotionRunner::resetGame() {
     m_prevLane     = 1;
     m_prevRel      = 0.0f;
     m_prevBlocking = false;
+    m_camFollow = {0.0f, CAMERA_REST_Y};
     m_camX     = 0.0f;
-    m_camY     = 4.0f;
+    m_camY     = CAMERA_REST_Y;
+    m_sceneryScroll  = 0.0f;
     m_milestoneTimer = 0.0f;
     m_nextDistanceLog = 500.0f;
     m_rng.seed(RUN_SEED);
 
-    // Take the runner back from ragdoll mode: same body, same collider - just
-    // re-freeze rotation, kill the crash momentum, restore the upright collider
-    // box, and stand the rig back at the start pose.
+    // Back from ragdoll: same body, re-frozen, still, and upright.
     {
-        Rigidbody& rb = m_scene->get<Rigidbody>(m_player);
+        Rigidbody& rb = scene().get<Rigidbody>(m_player);
         rb.freezeRotation  = true;
         rb.linearVelocity  = {0.0f, 0.0f, 0.0f};
         rb.angularVelocity = {0.0f, 0.0f, 0.0f};
         rb.restitution     = 0.0f;
         rb.friction        = 0.2f;
-        ColliderPart& box = m_scene->get<Collider>(m_player).parts[0];
+        ColliderPart& box = scene().get<Collider>(m_player).parts[0];
         box.halfExtents.y = PLAYER_HALF_Y;
         box.center.y      = 0.0f;
     }
-    for (auto& [part, mat] : m_playerParts) {        // undo the death-flash recolour
-        m_scene->get<Mesh>(part).material = mat;
-        m_scene->get<Mesh>(part).visible  = true;
+    for (auto& [part, mat] : m_playerParts) {        // undo the death recolour
+        scene().get<Mesh>(part).material = mat;
+        scene().get<Mesh>(part).visible  = true;
     }
-    // Back on its feet, and running again from the top of the cycle.
-    Animator& stride = m_scene->get<Animator>(m_player);
+    Animator& stride = scene().get<Animator>(m_player);
     stride.playing = true;
     stride.time    = 0.0f;
 
-    Transform& pt = m_scene->get<Transform>(m_player);
+    Transform& pt = scene().get<Transform>(m_player);
     pt.position = {0.0f, PLAYER_HALF_Y, 0.0f};
-    pt.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);   // undo the ragdoll tumble
-    pt.scale    = {1.0f, 1.0f, 1.0f};                   // undo any crouch squash
+    pt.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    pt.scale    = {1.0f, 1.0f, 1.0f};
 
     for (int i = 0; i < OBSTACLE_COUNT; ++i) {
         m_obstacles[i].z = INITIAL_AHEAD + static_cast<float>(i) * OBS_SPACING;
@@ -953,7 +990,7 @@ void PotionRunner::resetGame() {
         m_coins[i].lane   = lane;
         m_coins[i].z      = COIN_AHEAD + static_cast<float>(i) * COIN_SPACING;
         m_coins[i].active = true;
-        m_scene->get<Mesh>(m_coins[i].entity).visible = true;
+        scene().get<Mesh>(m_coins[i].entity).visible = true;
     }
     for (auto& lanePool : m_ties)
         for (int i = 0; i < TIE_COUNT; ++i)
@@ -967,9 +1004,7 @@ void PotionRunner::resetGame() {
         m_arches[i].z     = z;
         m_archLights[i].z = z;
     }
-    // Platforms phase in half a bay after each pillar (see the lattice note in
-    // buildWorld); their spacing divides WRAP, so the phase survives wrapping
-    // and they never intersect a pillar.
+    // Half a bay off the pillars; the spacing divides WRAP, so the phase survives wrapping.
     for (int i = 0; i < static_cast<int>(m_platformsL.size()); ++i) {
         m_platformsL[i].z = DESPAWN_Z + 5.0f  + static_cast<float>(i) * 40.0f;
         m_platformsR[i].z = DESPAWN_Z + 25.0f + static_cast<float>(i) * 40.0f;
@@ -977,154 +1012,133 @@ void PotionRunner::resetGame() {
         m_platEdgesR[i].z = m_platformsR[i].z;
     }
 
-    scrollWorld(0.0f);   // write every prop's transform into place
+    scrollWorld(0.0f);   // lift the coins onto whatever roof is under them
+    placeWorld(0.0f);
 
     LOG_INFO("Go! Ride the trains, slide under the gantries, grab the coins - dodge the red barriers.");
 }
 
 void PotionRunner::readInput() {
-    const InputMap& input = *context().input;
+    // The tick's command, not the device: a tap between ticks still lands, and a
+    // slow frame's press does not repeat on each of its ticks.
+    const InputCommand& tick = command();
+    const InputMap&     map  = input();
 
-    // Each action carries all of its keys, so the alternatives (A or Left,
-    // Space or W or Up) live in the binding table rather than in an || chain
-    // here, and the edges come from the map instead of four cached flags.
-    m_edgeLeft    = input.pressed(ACTION_LEFT);
-    m_edgeRight   = input.pressed(ACTION_RIGHT);
-    m_edgeJump    = input.pressed(ACTION_JUMP);
-    m_edgeRestart = input.pressed(ACTION_RESTART);
+    m_edgeLeft    = map.pressed(tick, ACTION_LEFT);
+    m_edgeRight   = map.pressed(tick, ACTION_RIGHT);
+    m_edgeJump    = map.pressed(tick, ACTION_JUMP);
+    m_edgeRestart = map.pressed(tick, ACTION_RESTART);
 
-    // Crouch / slide is a hold, not an edge: stay low under an overhead gantry
-    // for as long as it is held.
-    m_crouchHeld = input.held(ACTION_CROUCH);
+    m_crouchHeld = map.held(tick, ACTION_CROUCH);
 }
 
 void PotionRunner::updatePlayer(float dt) {
     if (m_edgeLeft)  m_lane = std::max(0, m_lane - 1);
     if (m_edgeRight) m_lane = std::min(2, m_lane + 1);
 
-    Transform& t  = m_scene->get<Transform>(m_player);
-    Rigidbody& rb = m_scene->get<Rigidbody>(m_player);
+    Transform& t  = scene().get<Transform>(m_player);
+    Rigidbody& rb = scene().get<Rigidbody>(m_player);
 
-    // The solver owns Y (gravity, landings, roof support, ramp climbing); the
-    // behavior owns everything else. Feet height derives from the body centre.
+    // The solver owns Y; the behavior owns everything else.
     m_height = t.position.y - PLAYER_HALF_Y;
 
-    // Grounded is contact-driven (see the CollisionEvent handler): the grace
-    // timer bridges event-flush latency and grants a touch of coyote time.
-    m_groundedTimer = std::max(0.0f, m_groundedTimer - dt);
-    m_grounded = m_groundedTimer > 0.0f;
+    // Not while rising: a jump's launch tick still touches the floor, which would
+    // open a double-jump window.
+    const bool standing = rb.supported && rb.supportNormal.y > 0.5f && rb.linearVelocity.y < 1.0f;
+    m_coyoteTimer = standing ? COYOTE_TIME : std::max(0.0f, m_coyoteTimer - dt);
+    m_grounded    = m_coyoteTimer > 0.0f;
 
-    // Special-cased rather than left to the solver: a kinematic ramp teleports
-    // forward each frame and so advertises zero velocity, which position
-    // correction cannot out-climb. The solver still owns the handoff at the nose.
-    for (const auto& o : m_obstacles) {
+    // Not left to the solver: a kinematic ramp moved by pose carries no velocity,
+    // which position correction cannot out-climb. The solver owns the nose handoff.
+    m_climbRamp = -1;
+    for (size_t i = 0; i < m_obstacles.size(); ++i) {
+        const Obstacle& o = m_obstacles[i];
         if (!o.hasRamp) continue;
         if (std::fabs(laneX(o.lane) - m_playerX) > obstacleHalfX() + PLAYER_HALF_X) continue;
         const float nose = o.z - o.length * 0.5f;
         const float toe  = nose - RAMP_RUN;
         if (toe > 0.0f || nose < 0.0f) continue;
-        const float rampH = o.top * (0.0f - toe) / RAMP_RUN;
+        const float rampH = rampHeight(o, 0.0f);
         if (m_height > rampH + 0.4f)  continue;   // airborne above the slope: physics flies
         if (m_height < rampH - 1.2f)  continue;   // sidestepped into the tall side: no scoop
         t.position.y = rampH + PLAYER_HALF_Y;
         m_height     = rampH;
         rb.linearVelocity.y = std::max(rb.linearVelocity.y, 0.0f);   // gravity must not fight the climb
-        m_grounded      = true;                   // the slope IS ground (jump off it freely)
-        m_groundedTimer = GROUNDED_GRACE;
+        m_grounded    = true;
+        m_coyoteTimer = COYOTE_TIME;
+        m_climbRamp   = static_cast<int>(i);
         break;
     }
 
     if (m_edgeJump && m_grounded) {
         rb.linearVelocity.y = jumpSpeed;
-        m_grounded      = false;
-        m_groundedTimer = 0.0f;
+        m_grounded    = false;
+        m_coyoteTimer = 0.0f;
+        m_climbRamp   = -1;
     }
 
-    // The behavior pins the lateral axes every frame: lane position is eased
-    // directly, and any x/z velocity from an angled contact - a ramp normal
-    // pushes up AND back - is cancelled, so the runner holds z = 0 and its lane.
-    const float k = 1.0f - std::exp(-dt * 14.0f);
-    m_playerX += (laneX(m_lane) - m_playerX) * k;
+    // Lateral axes are pinned: x/z velocity from an angled contact (a ramp pushes
+    // up and back) is cancelled, so the runner holds z = 0 and its lane.
+    m_playerX = easeToward(m_playerX, laneX(m_lane), LANE_EASE, dt);
     rb.linearVelocity.x = 0.0f;
     rb.linearVelocity.z = 0.0f;
 
-    // Crouch only on the ground (a jump cancels it). The eased amount squashes
-    // the rig AND refits the collider: the box top drops while the bottom stays
-    // pinned at the feet, so sliding under a gantry is a real physics clearance.
-    const float crouchTarget = (m_crouchHeld && m_grounded) ? 1.0f : 0.0f;
-    m_crouch += (crouchTarget - m_crouch) * (1.0f - std::exp(-dt * 16.0f));
-    const float halfY   = PLAYER_HALF_Y - m_crouch * (PLAYER_HALF_Y - CROUCH_HALF_Y);
-    const float squashY = halfY / PLAYER_HALF_Y;
-    ColliderPart& box = m_scene->get<Collider>(m_player).parts[0];
+    // Crouch refits the collider too, bottom pinned at the feet, so a gantry
+    // clearance is real physics.
+    m_crouch = easeToward(m_crouch, crouchTarget(), CROUCH_EASE, dt);
+    const float halfY = bodyHalfHeight(m_crouch);
+    ColliderPart& box = scene().get<Collider>(m_player).parts[0];
     box.halfExtents.y = halfY;
-    box.center.y      = halfY - PLAYER_HALF_Y;   // keep the box bottom at the feet
+    box.center.y      = halfY - PLAYER_HALF_Y;
 
-    // Cadence follows the run and nearly freezes mid-air. One field, because one
-    // clip drives all four limbs - and the footstep markers ride that same
-    // timeline, so they follow without being told.
+    // Cadence follows the run and nearly freezes mid-air.
     const float cadence = m_grounded ? (0.85f + 1.15f * (m_speed / maxSpeed)) : 0.30f;
-    m_scene->get<Animator>(m_player).speed = cadence;
+    scene().get<Animator>(m_player).speed = cadence;
 
-    // Bank into the lane change for a bit of life. Rotation is script-owned -
-    // freezeRotation means the solver passes it through untouched.
-    const float bank = std::clamp((m_playerX - laneX(m_lane)) * 0.18f, -0.35f, 0.35f);
-
-    t.position.x = m_playerX;
-    t.position.z = 0.0f;
-    t.rotation   = glm::angleAxis(bank, Math::WORLD_AXIS_Z);
-    t.scale      = {1.0f, squashY, 1.0f};
+    poseRunner(0.0f);
 }
 
-void PotionRunner::scrollScenery(std::vector<Scenery>& pool, float x, float y, float dt) {
-    const float step = m_speed * dt;
-    for (auto& s : pool) {
-        s.z -= step;
-        if (s.z < DESPAWN_Z) s.z += WRAP;
-        m_scene->get<Transform>(s.entity).position = {x, y, s.z};
-    }
+void PotionRunner::poseRunner(float ahead) {
+    const float x      = easeToward(m_playerX, laneX(m_lane), LANE_EASE, ahead);
+    const float crouch = easeToward(m_crouch, crouchTarget(), CROUCH_EASE, ahead);
+
+    // Bank into the lane change; freezeRotation leaves rotation to the script.
+    const float bank = std::clamp((x - laneX(m_lane)) * 0.18f, -0.35f, 0.35f);
+
+    Transform& t = scene().get<Transform>(m_player);
+    t.position.x = x;
+    t.position.z = 0.0f;
+    t.rotation   = glm::angleAxis(bank, Math::WORLD_AXIS_Z);
+    t.scale      = {1.0f, bodyHalfHeight(crouch) / PLAYER_HALF_Y, 1.0f};
+}
+
+void PotionRunner::drawRunner(float ahead) {
+    Transform& body = scene().get<Transform>(m_player);
+    // Every frame until the next tick draws from the tick's pose.
+    if (!m_drawnAhead) m_tickBody = body;
+    m_drawnAhead = true;
+
+    poseRunner(ahead);
+
+    // On a ramp the rise comes from the slope, which velocity does not carry.
+    const Obstacle* ramp = m_climbRamp >= 0 ? &m_obstacles[m_climbRamp] : nullptr;
+    const float     rise = ramp
+        ? rampHeight(*ramp, ahead) - rampHeight(*ramp, 0.0f)
+        : scene().get<Rigidbody>(m_player).linearVelocity.y * ahead;
+    body.position.y = m_tickBody.position.y + rise;
+}
+
+float PotionRunner::rampHeight(const Obstacle& o, float ahead) const {
+    const float nose = obstacleZ(o, ahead) - o.length * 0.5f;
+    return o.top * std::clamp(1.0f - nose / RAMP_RUN, 0.0f, 1.0f);
 }
 
 void PotionRunner::scrollWorld(float dt) {
     for (auto& o : m_obstacles) {
-        o.z -= m_speed * (1.0f + o.relFactor) * dt;   // some trains bear down faster
+        o.z = obstacleZ(o, dt);
         if (o.z < DESPAWN_Z) {
             o.z += WRAP;
             randomizeObstacle(o);
-        }
-        const float x       = laneX(o.lane);
-        const float centerY = (o.bottom + o.top) * 0.5f;   // box floats with a gap when bottom > 0
-        m_scene->get<Transform>(o.entity).position = {x, centerY, o.z};
-        // The accent (windscreen / hazard bar) rides alongside the box, offset
-        // from its centre.
-        m_scene->get<Transform>(o.accent).position =
-            {x + o.accentOffset.x, centerY + o.accentOffset.y, o.z + o.accentOffset.z};
-        // The headlight rides at the nose, just under the windscreen
-        // (harmlessly stale while disabled, so no per-type branch here).
-        m_scene->get<Transform>(o.lamp).position =
-            {x, o.top * 0.58f, o.z - o.length * 0.5f - 0.12f};
-        // The boarding ramp spans nose -> toe ahead of the hull. Rampless
-        // incarnations keep it here too - mesh invisible, collider disabled -
-        // so there is nothing to park anywhere.
-        m_scene->get<Transform>(o.ramp).position =
-            {x, o.top * 0.5f - 0.05f, o.z - o.length * 0.5f - RAMP_RUN * 0.5f};
-        // Dressing rides with the hull: skirt under it, tail lights on the rear
-        // face, plow at the rails, and the lamp bar at the exact height the
-        // headlight emits from, so glow and beam read as one fixture.
-        if (o.isTrain) {
-            const float nose = o.z - o.length * 0.5f;
-            m_scene->get<Transform>(o.skirt).position   = {x, 0.21f, o.z};
-            m_scene->get<Transform>(o.tail).position    =
-                {x, 1.60f, o.z + o.length * 0.5f + 0.06f};
-            m_scene->get<Transform>(o.plow).position    = {x, 0.30f, nose - 0.08f};
-            m_scene->get<Transform>(o.lampBar).position =
-                {x, o.top * 0.58f, nose - 0.05f};
-        }
-        // The extra detail boxes (gantry legs / barrier stripes), when this type uses them.
-        if (o.auxVisible) {
-            m_scene->get<Transform>(o.auxA).position =
-                {x + o.auxAOffset.x, centerY + o.auxAOffset.y, o.z + o.auxAOffset.z};
-            m_scene->get<Transform>(o.auxB).position =
-                {x + o.auxBOffset.x, centerY + o.auxBOffset.y, o.z + o.auxBOffset.z};
         }
     }
 
@@ -1133,84 +1147,129 @@ void PotionRunner::scrollWorld(float dt) {
         if (c.z < DESPAWN_Z) {
             c.z += WRAP;
             c.active = true;
-            m_scene->get<Mesh>(c.entity).visible = true;
+            scene().get<Mesh>(c.entity).visible = true;
         }
 
-        // Sit on a train roof when one passes under this coin's lane, so the
-        // coin is only reachable while riding.
-        float y = 1.0f;
+        // On a train roof when one is under it, reachable only while riding.
+        c.y = 1.0f;
         for (const auto& o : m_obstacles) {
             if (!o.rideable || o.top < 1.0f) continue;
             if (o.lane != c.lane) continue;
             if (std::fabs(o.z - c.z) > o.length * 0.5f) continue;
-            y = o.top + 0.6f;
+            c.y = o.top + 0.6f;
             break;
         }
-        c.y = y;
+    }
 
-        // Position only - the coin's Animation owns rotation and scale.
-        m_scene->get<Transform>(c.entity).position = {laneX(c.lane), y, c.z};
+    m_sceneryScroll = std::fmod(m_sceneryScroll + m_speed * dt, WRAP);
+}
+
+void PotionRunner::placeScenery(const std::vector<Scenery>& pool, float x, float y, float ahead) {
+    const float scroll = m_sceneryScroll + m_speed * ahead;
+    for (const auto& s : pool) {
+        float z = s.z - scroll;
+        if (z < DESPAWN_Z) z += WRAP;
+        scene().get<Transform>(s.entity).position = {x, y, z};
+    }
+}
+
+void PotionRunner::placeWorld(float ahead) {
+    for (const auto& o : m_obstacles) {
+        const float x       = laneX(o.lane);
+        const float z       = obstacleZ(o, ahead);
+        const float centerY = (o.bottom + o.top) * 0.5f;
+        scene().get<Transform>(o.entity).position = {x, centerY, z};
+        scene().get<Transform>(o.accent).position =
+            {x + o.accentOffset.x, centerY + o.accentOffset.y, z + o.accentOffset.z};
+        // At the nose; harmlessly stale while disabled.
+        scene().get<Transform>(o.lamp).position =
+            {x, o.top * 0.58f, z - o.length * 0.5f - 0.12f};
+        // Placed even when rampless (hidden, collider disabled), so nothing needs parking.
+        scene().get<Transform>(o.ramp).position =
+            {x, o.top * 0.5f - 0.05f, z - o.length * 0.5f - RAMP_RUN * 0.5f};
+        // The lamp bar sits at the headlight's height, so glow and beam read as one fixture.
+        if (o.isTrain) {
+            const float nose = z - o.length * 0.5f;
+            scene().get<Transform>(o.skirt).position   = {x, 0.21f, z};
+            scene().get<Transform>(o.tail).position    =
+                {x, 1.60f, z + o.length * 0.5f + 0.06f};
+            scene().get<Transform>(o.plow).position    = {x, 0.30f, nose - 0.08f};
+            scene().get<Transform>(o.lampBar).position =
+                {x, o.top * 0.58f, nose - 0.05f};
+        }
+        if (o.auxVisible) {
+            scene().get<Transform>(o.auxA).position =
+                {x + o.auxAOffset.x, centerY + o.auxAOffset.y, z + o.auxAOffset.z};
+            scene().get<Transform>(o.auxB).position =
+                {x + o.auxBOffset.x, centerY + o.auxBOffset.y, z + o.auxBOffset.z};
+        }
+    }
+
+    // Position only; the Animation owns rotation and scale.
+    for (const auto& c : m_coins) {
+        scene().get<Transform>(c.entity).position = {laneX(c.lane), c.y, c.z - m_speed * ahead};
     }
 
     for (int lane = 0; lane < 3; ++lane)
-        scrollScenery(m_ties[lane], laneX(lane), 0.05f, dt);   // a sleeper run per lane, under its rails
-    scrollScenery(m_pillarsL,   -m_wallX, ARCH_Y * 0.5f,  dt);   // span ground -> rib
-    scrollScenery(m_pillarsR,    m_wallX, ARCH_Y * 0.5f,  dt);
-    scrollScenery(m_signalsL, -(m_wallX - 0.28f), 1.42f,  dt);   // aspect heads on the pillar faces
-    scrollScenery(m_signalsR,  (m_wallX - 0.28f), 1.42f,  dt);
-    scrollScenery(m_arches,      0.0f,    ARCH_Y,         dt);   // concrete rib
-    scrollScenery(m_archLights,  0.0f,    ARCH_Y - 0.33f, dt);   // glowing light recessed beneath it
-    scrollScenery(m_platformsL, -(m_wallX - 0.48f), 0.50f, dt);  // station slabs against the walls
-    scrollScenery(m_platformsR,  (m_wallX - 0.48f), 0.50f, dt);
-    scrollScenery(m_platEdgesL, -(m_wallX - 0.48f), 1.03f, dt);  // painted safety line on top
-    scrollScenery(m_platEdgesR,  (m_wallX - 0.48f), 1.03f, dt);
+        placeScenery(m_ties[lane], laneX(lane), 0.05f, ahead);
+    placeScenery(m_pillarsL,   -m_wallX, ARCH_Y * 0.5f,  ahead);
+    placeScenery(m_pillarsR,    m_wallX, ARCH_Y * 0.5f,  ahead);
+    placeScenery(m_signalsL, -(m_wallX - 0.28f), 1.42f,  ahead);
+    placeScenery(m_signalsR,  (m_wallX - 0.28f), 1.42f,  ahead);
+    placeScenery(m_arches,      0.0f,    ARCH_Y,         ahead);
+    placeScenery(m_archLights,  0.0f,    ARCH_Y - 0.33f, ahead);
+    placeScenery(m_platformsL, -(m_wallX - 0.48f), 0.50f, ahead);
+    placeScenery(m_platformsR,  (m_wallX - 0.48f), 0.50f, ahead);
+    placeScenery(m_platEdgesL, -(m_wallX - 0.48f), 1.03f, ahead);
+    placeScenery(m_platEdgesR,  (m_wallX - 0.48f), 1.03f, ahead);
 
-    // The two cube-shadow slots go to the fixtures nearest the action, one
-    // behind the player and one ahead: the atlas assigns first-come in light
-    // order, so holding the caster count at ~2 is what pins them here.
+    // Cube shadows only for the fixtures nearest the player: the atlas assigns in
+    // entity-slot order (GLShadowData::build), so the caster count must stay at budget.
     for (size_t i = 0; i < m_archLights.size(); ++i) {
-        Light& wash = m_scene->get<Light>(m_archLights[i].entity);
-        wash.castShadows = (m_archLights[i].z > -6.0f && m_archLights[i].z < 14.0f);
-        // Every fourth fixture is a tired one, breathing on a two-sine flicker
-        // that keeps a repeated corridor feeling alive.
+        const float z = scene().get<Transform>(m_archLights[i].entity).position.z;
+        Light& wash = scene().get<Light>(m_archLights[i].entity);
+        wash.castShadows = (z > -6.0f && z < 14.0f);
+        // Every fourth fixture flickers.
         if (i % 4 == 0) {
-            wash.intensity = 45.0f * (0.78f + 0.22f * std::sin(m_camTime * 9.0f + m_archLights[i].z)
-                                                    * std::sin(m_camTime * 23.0f));
+            const float slow = std::sin(m_camTime * 9.0f + z);
+            const float fast = std::sin(m_camTime * 23.0f);
+            wash.intensity = 45.0f * (0.78f + 0.22f * slow * fast);
         }
     }
 }
 
 void PotionRunner::updateCamera(float dt) {
-    if (!m_scene->isAlive(m_camera) || !m_scene->has<Transform>(m_camera)) return;
+    Transform* view = scene().tryGet<Transform>(m_camera);
+    if (!view) return;
 
     m_camTime += dt;
     const float k = 1.0f - std::exp(-dt * 8.0f);
-    // On the start screen the camera drifts in a slow figure-eight over the
-    // idle runner; once the run starts it eases back into the chase framing
-    // through the same smoothing, no cut.
-    const float targetX = m_started ? m_playerX * 0.5f
-                                    : std::sin(m_camTime * 0.35f) * 1.4f;
-    const float targetY = m_started ? 4.0f + m_height * 0.35f
-                                    : 4.0f + std::sin(m_camTime * 0.23f) * 0.35f;
+    // A crash holds the eye where it was, watching the ragdoll.
+    if (m_started && m_alive) {
+        const glm::vec3& body = scene().get<Transform>(m_player).position;
+        m_camFollow = {body.x * 0.5f, CAMERA_REST_Y + (body.y - PLAYER_HALF_Y) * 0.35f};
+    }
+    // The start screen drifts in a figure-eight; the run eases into the chase, no cut.
+    const float targetX = m_started
+        ? m_camFollow.x
+        : std::sin(m_camTime * 0.35f) * 1.4f;
+    const float targetY = m_started
+        ? m_camFollow.y
+        : CAMERA_REST_Y + std::sin(m_camTime * 0.23f) * 0.35f;
     m_camX += (targetX - m_camX) * k;
     m_camY += (targetY - m_camY) * k;
 
-    // Speed reads through the lens too: ease the Camera's vertical FOV from a
-    // calm 68 deg at start speed out to 81 deg at max, so top speed feels fast
-    // even though the player never moves.
-    if (m_scene->has<Camera>(m_camera)) {
+    if (Camera* cam = scene().tryGet<Camera>(m_camera)) {
         const float norm = maxSpeed > startSpeed
             ? std::clamp((m_speed - startSpeed) / (maxSpeed - startSpeed), 0.0f, 1.0f)
             : 0.0f;
-        Camera& cam = m_scene->get<Camera>(m_camera);
-        cam.fovY += (glm::radians(68.0f + 13.0f * norm) - cam.fovY) * k;
+        cam->fovY += (glm::radians(68.0f + 13.0f * norm) - cam->fovY) * k;
     }
 
-    Transform& t = m_scene->get<Transform>(m_camera);
-    t.position = {m_camX, m_camY, -8.5f};
-    // Looking down the +Z track. The half turn is forward moving to -Z in
-    // the convention; the track still runs the way it always did.
-    t.rotation = glm::angleAxis(0.34f, Math::WORLD_AXIS_X)
+    Transform& t = *view;
+    t.position = {m_camX, m_camY, CAMERA_BACK_Z};
+    // Turned to look down +Z, since forward is -Z.
+    t.rotation = glm::angleAxis(CAMERA_PITCH, Math::WORLD_AXIS_X)
                * glm::angleAxis(glm::pi<float>(), Math::WORLD_AXIS_Y);
 }
 
@@ -1218,254 +1277,510 @@ void PotionRunner::die() {
     if (!m_alive) return;
     m_alive = false;
     m_speed = 0.0f;
-    for (auto& [part, mat] : m_playerParts)                 // flash the whole runner red
-        m_scene->get<Mesh>(part).material = m_matBarrier;
+    for (auto& [part, mat] : m_playerParts)
+        scene().get<Mesh>(part).material = m_matBarrier;
 
-    // Stop the stride: the crash is the solver's to pose from here, and an
-    // Animator still running would keep swinging the limbs on a tumbling body -
-    // and keep announcing footsteps for a runner who has stopped running.
-    m_scene->get<Animator>(m_player).playing = false;
+    // A running Animator would swing limbs and announce footsteps on the tumbling body.
+    scene().get<Animator>(m_player).playing = false;
 
-    // The same dynamic body with the leash off: rotation unfrozen so it tumbles,
-    // the full collider box restored in case death came mid-slide, then a bounce
-    // and a launch. The behavior stops steering, so the solver owns the pose.
-    Rigidbody& rb = m_scene->get<Rigidbody>(m_player);
+    // Unfrozen to tumble, the full box restored in case of a mid-slide death, then launched.
+    Rigidbody& rb = scene().get<Rigidbody>(m_player);
     rb.freezeRotation = false;
     rb.restitution    = 0.45f;
     rb.friction       = 0.5f;
     rb.linearVelocity  = {(frand() * 2.0f - 1.0f) * 3.5f, 8.0f + frand() * 3.0f, -3.0f - frand() * 2.5f};
-    rb.angularVelocity = {(frand() * 2.0f - 1.0f) * 8.0f,
-                          (frand() * 2.0f - 1.0f) * 8.0f,
-                          (frand() * 2.0f - 1.0f) * 8.0f};
-    ColliderPart& box = m_scene->get<Collider>(m_player).parts[0];
+    rb.angularVelocity = {
+        (frand() * 2.0f - 1.0f) * 8.0f,
+        (frand() * 2.0f - 1.0f) * 8.0f,
+        (frand() * 2.0f - 1.0f) * 8.0f
+    };
+    ColliderPart& box = scene().get<Collider>(m_player).parts[0];
     box.halfExtents.y = PLAYER_HALF_Y;
     box.center.y      = 0.0f;
 
     const int score = static_cast<int>(m_distance) + m_coinCount * coinValue + m_bonusScore;
     m_newBest = score > m_best;
     if (m_newBest) m_best = score;
-    LOG_INFO("Crash! Score %d  (distance %d, coins %d%s). Press R or Enter to run again.",
-             score, static_cast<int>(m_distance), m_coinCount,
-             m_newBest ? ", new best" : "");
+
+    // Written once: nothing on the game-over screen changes until the next run.
+    if (UIText* text = scene().tryGet<UIText>(m_uiFinalScore))
+        text->text = "SCORE  " + std::to_string(score);
+    if (UIText* text = scene().tryGet<UIText>(m_uiFinalDist))
+        text->text = "DIST  " + std::to_string(static_cast<int>(m_distance)) + " m";
+    if (UIText* text = scene().tryGet<UIText>(m_uiFinalCoins))
+        text->text = "COINS  " + std::to_string(m_coinCount);
+    if (UIText* held = scene().tryGet<UIText>(m_uiFinalBest)) {
+        UIText& best = *held;
+        best.text  = (m_newBest ? "NEW BEST  " : "BEST  ") + std::to_string(m_best);
+        best.color = m_newBest
+            ? glm::vec4(1.0f, 0.84f, 0.30f, 1.0f)
+            : glm::vec4(0.62f, 0.68f, 0.78f, 1.0f);
+    }
+
+    LOG_INFO(
+        "Crash! Score %d  (distance %d, coins %d%s). Press R or Enter to run again.",
+        score,
+        static_cast<int>(m_distance),
+        m_coinCount,
+        m_newBest ? ", new best" : ""
+    );
 }
 
 void PotionRunner::buildUI() {
-    // Create a UIElement entity parented under `parent`.
-    auto makeElement = [&](const char* name, glm::vec2 anchor, glm::vec2 pivot,
-                           glm::vec2 pos, glm::vec2 size, EntityId parent) {
-        EntityId e = m_scene->createEntity();
-        m_scene->add(e, makeName(name));
-        UIElement el;
-        el.anchor = anchor; el.pivot = pivot; el.position = pos; el.size = size;
-        m_scene->add(e, std::move(el));
-        HierarchyOperations::setParent(*m_scene, e, parent);
+    auto makeElement = [&](const char* name, glm::vec2 at, glm::vec2 pos, glm::vec2 size, EntityId parent) {
+        const EntityId e = spawn(name, parent);
+        scene().add(e, UIElement::at(at, pos, size));
         return e;
     };
-    auto makeText = [&](const char* name, std::string text, float px, glm::vec4 color,
-                        UIText::Align align, glm::vec2 anchor, glm::vec2 pivot,
-                        glm::vec2 pos, glm::vec2 size, EntityId parent) {
-        EntityId e = makeElement(name, anchor, pivot, pos, size, parent);
+    auto makeText = [&](
+        const char* name,
+        std::string text,
+        float px,
+        glm::vec4 color,
+        UIText::Align align,
+        glm::vec2 at,
+        glm::vec2 pos,
+        glm::vec2 size,
+        EntityId parent
+    ) {
+        EntityId e = makeElement(name, at, pos, size, parent);
         UIText t;
         t.text = std::move(text); t.pixelSize = px; t.color = color; t.align = align;
-        m_scene->add(e, std::move(t));
+        scene().add(e, std::move(t));
         return e;
     };
 
-    const glm::vec2 TL{0.0f, 0.0f};   // top-left anchor / pivot
-    const glm::vec2 C {0.5f, 0.5f};   // centre anchor / pivot
-    const glm::vec2 TC{0.5f, 0.0f};   // top-centre anchor / pivot
+    // Anchors: the point of the parent an element pins to, and of itself.
+    const glm::vec2 TL{0.0f, 0.0f};
+    const glm::vec2 C {0.5f, 0.5f};
+    const glm::vec2 TC{0.5f, 0.0f};
     const glm::vec4 WHITE{1.0f, 1.0f, 1.0f, 1.0f};
     const glm::vec4 GREY {0.62f, 0.68f, 0.78f, 1.0f};
     const glm::vec4 GOLD {1.0f, 0.84f, 0.30f, 1.0f};
-    const glm::vec4 CYAN {0.35f, 0.90f, 1.00f, 1.0f};   // matches the ceiling/neon accents
-    const glm::vec4 MAG  {0.95f, 0.32f, 1.00f, 1.0f};   // matches the wall trim
+    const glm::vec4 CYAN {0.35f, 0.90f, 1.00f, 1.0f};
+    const glm::vec4 MAG  {0.95f, 0.32f, 1.00f, 1.0f};
     const glm::vec4 REDH {1.00f, 0.36f, 0.30f, 1.0f};
     const glm::vec4 INK  {0.02f, 0.03f, 0.06f, 0.84f};  // HUD backing
     const glm::vec4 INK2 {0.04f, 0.05f, 0.10f, 0.95f};  // modal panels
 
-    // A flat colour quad on its own element.
-    auto makeImage = [&](const char* name, glm::vec4 color, glm::vec2 anchor, glm::vec2 pivot,
-                         glm::vec2 pos, glm::vec2 size, EntityId parent) {
-        EntityId e = makeElement(name, anchor, pivot, pos, size, parent);
-        m_scene->add(e, UIImage{color});
+    auto makeImage = [&](
+        const char* name,
+        glm::vec4 color,
+        glm::vec2 at,
+        glm::vec2 pos,
+        glm::vec2 size,
+        EntityId parent
+    ) {
+        EntityId e = makeElement(name, at, pos, size, parent);
+        scene().add(e, UIImage{color, {}, {}});
         return e;
     };
-    // A bright bar with a faint, larger copy behind it -> a cheap neon glow. The
-    // glow is the earlier sibling, so it draws behind the core (UISystem emits in
-    // child order, parents/earlier-siblings first).
-    auto makeGlowBar = [&](glm::vec4 color, glm::vec2 anchor, glm::vec2 pivot,
-                           glm::vec2 pos, glm::vec2 size, EntityId parent) {
-        makeImage("Glow", glm::vec4(color.r, color.g, color.b, 0.22f), anchor, pivot,
-                  pos - glm::vec2(6.0f, 4.0f), size + glm::vec2(12.0f, 8.0f), parent);
-        makeImage("Bar", color, anchor, pivot, pos, size, parent);
+    // A faint larger copy behind a bar makes a neon glow; the earlier sibling draws
+    // behind (see UISystem::resolveElement).
+    auto makeGlowBar = [&](glm::vec4 color, glm::vec2 at, glm::vec2 pos, glm::vec2 size, EntityId parent) {
+        makeImage(
+            "Glow",
+            glm::vec4(color.r, color.g, color.b, 0.22f),
+            at,
+            pos - glm::vec2(6.0f, 4.0f),
+            size + glm::vec2(12.0f, 8.0f),
+            parent
+        );
+        makeImage("Bar", color, at, pos, size, parent);
     };
-    // A neon button: a glow halo, the button itself, and a centred label.
-    auto makeNeonButton = [&](const char* name, const char* label, const char* event,
-                              glm::vec4 base, glm::vec4 hot, glm::vec2 pos, glm::vec2 size,
-                              EntityId parent) {
-        makeImage("Btn Glow", glm::vec4(hot.r, hot.g, hot.b, 0.30f), TC, TC,
-                  pos - glm::vec2(0.0f, 7.0f), size + glm::vec2(16.0f, 14.0f), parent);
-        EntityId b = makeElement(name, TC, TC, pos, size, parent);
+    auto makeNeonButton = [&](
+        const char* name,
+        const char* label,
+        const char* event,
+        glm::vec4 base,
+        glm::vec4 hot,
+        glm::vec2 pos,
+        glm::vec2 size,
+        EntityId parent
+    ) {
+        makeImage(
+            "Btn Glow",
+            glm::vec4(hot.r, hot.g, hot.b, 0.30f),
+            TC,
+            pos - glm::vec2(0.0f, 7.0f),
+            size + glm::vec2(16.0f, 14.0f),
+            parent
+        );
+        EntityId b = makeElement(name, TC, pos, size, parent);
         UIButton btn;
         btn.eventId      = event;
         btn.normalColor  = base;
         btn.hoverColor   = hot;
         btn.pressedColor = glm::vec4(base.r * 0.65f, base.g * 0.65f, base.b * 0.65f, 0.96f);
-        m_scene->add(b, std::move(btn));
-        // The label centres itself through anchor/pivot + Middle valign - no
-        // hand-tuned pixel offsets.
-        EntityId lbl = makeText("Btn Label", label, size.y * 0.45f, WHITE, UIText::Align::Center,
-                                C, C, {0.0f, 0.0f}, {size.x, size.y}, b);
-        m_scene->get<UIText>(lbl).valign = UIText::VAlign::Middle;
+        scene().add(b, std::move(btn));
+        // The label shares the button's rect: UISystem::resolveElement draws text after the button.
+        UIText caption;
+        caption.text      = label;
+        caption.pixelSize = size.y * 0.45f;
+        caption.color     = WHITE;
+        caption.align     = UIText::Align::Center;
+        caption.valign    = UIText::VAlign::Middle;
+        scene().add(b, std::move(caption));
         return b;
     };
 
-    // HUD: score / distance / coins, top-left, always visible.
-    EntityId hud = m_scene->createEntity();
-    m_scene->add(hud, makeName("Potion HUD"));
-    m_scene->add(hud, UICanvas{});
+    EntityId hud = spawn("Potion HUD");
+    scene().add(hud, UICanvas{});
 
-    EntityId hudPanel = makeImage("HUD Panel", INK, TL, TL, {20.0f, 18.0f}, {326.0f, 158.0f}, hud);
-    makeImage("HUD Edge Glow", glm::vec4(CYAN.r, CYAN.g, CYAN.b, 0.25f), TL, TL, {0.0f, 0.0f}, {10.0f, 158.0f}, hudPanel);
-    makeImage("HUD Edge",      CYAN,                                      TL, TL, {0.0f, 0.0f}, {4.0f, 158.0f},  hudPanel);
-    makeImage("HUD Top",       glm::vec4(CYAN.r, CYAN.g, CYAN.b, 0.55f),  TL, TL, {0.0f, 0.0f}, {326.0f, 3.0f},  hudPanel);
+    EntityId hudPanel = makeImage("HUD Panel", INK, TL, {20.0f, 18.0f}, {326.0f, 158.0f}, hud);
+    const glm::vec4 edgeGlow = glm::vec4(CYAN.r, CYAN.g, CYAN.b, 0.25f);
+    const glm::vec4 topColor = glm::vec4(CYAN.r, CYAN.g, CYAN.b, 0.55f);
+    makeImage("HUD Edge Glow", edgeGlow, TL, {0.0f, 0.0f}, {10.0f, 158.0f}, hudPanel);
+    makeImage("HUD Edge",      CYAN,     TL, {0.0f, 0.0f}, {4.0f, 158.0f},  hudPanel);
+    makeImage("HUD Top",       topColor, TL, {0.0f, 0.0f}, {326.0f, 3.0f},  hudPanel);
 
-    m_uiScore = makeText("HUD Score", "SCORE  0", 30.0f, WHITE, UIText::Align::Left,
-                         TL, TL, {22.0f, 10.0f}, {296.0f, 38.0f}, hudPanel);
-    m_uiDist  = makeText("HUD Dist", "DIST  0 m", 22.0f, CYAN, UIText::Align::Left,
-                         TL, TL, {22.0f, 54.0f}, {296.0f, 30.0f}, hudPanel);
-    makeImage("HUD Coin Pip", GOLD, TL, TL, {23.0f, 93.0f}, {15.0f, 15.0f}, hudPanel);   // little coin
-    m_uiCoins = makeText("HUD Coins", "0", 24.0f, GOLD, UIText::Align::Left,
-                         TL, TL, {48.0f, 88.0f}, {270.0f, 30.0f}, hudPanel);
-    m_uiSpeed = makeText("HUD Speed", "SPEED  0", 20.0f, GREY, UIText::Align::Left,
-                         TL, TL, {22.0f, 124.0f}, {296.0f, 26.0f}, hudPanel);
+    m_uiScore = makeText(
+        "HUD Score",
+        "SCORE  0",
+        30.0f,
+        WHITE,
+        UIText::Align::Left,
+        TL,
+        {22.0f, 10.0f},
+        {296.0f, 38.0f},
+        hudPanel
+    );
+    m_uiDist  = makeText(
+        "HUD Dist",
+        "DIST  0 m",
+        22.0f,
+        CYAN,
+        UIText::Align::Left,
+        TL,
+        {22.0f, 54.0f},
+        {296.0f, 30.0f},
+        hudPanel
+    );
+    makeImage("HUD Coin Pip", GOLD, TL, {23.0f, 93.0f}, {15.0f, 15.0f}, hudPanel);
+    m_uiCoins = makeText(
+        "HUD Coins",
+        "0",
+        24.0f,
+        GOLD,
+        UIText::Align::Left,
+        TL,
+        {48.0f, 88.0f},
+        {270.0f, 30.0f},
+        hudPanel
+    );
+    m_uiSpeed = makeText(
+        "HUD Speed",
+        "SPEED  0",
+        20.0f,
+        GREY,
+        UIText::Align::Left,
+        TL,
+        {22.0f, 124.0f},
+        {296.0f, 26.0f},
+        hudPanel
+    );
 
-    // A "ROOF RIDE" pill, top-centre, that exists permanently but only shows
-    // while the runner is up on a roof - per-element visibility (which hides
-    // the pill's whole subtree, label included), not canvas churn.
-    EntityId ride = makeImage("Ride Tag", glm::vec4(GOLD.r, GOLD.g, GOLD.b, 0.18f),
-                              TC, TC, {0.0f, 16.0f}, {200.0f, 38.0f}, hud);
-    m_scene->get<UIElement>(ride).visible = false;
+    // Shown only on a roof; UIElement visibility hides the whole subtree, label included.
+    EntityId ride = makeImage(
+        "Ride Tag",
+        glm::vec4(GOLD.r, GOLD.g, GOLD.b, 0.18f),
+        TC,
+        {0.0f, 16.0f},
+        {200.0f, 38.0f},
+        hud
+    );
+    scene().get<UIElement>(ride).visible = false;
     m_uiRideTag = ride;
-    EntityId rideText = makeText("Ride Tag Text", "ROOF RIDE  2x", 20.0f, GOLD, UIText::Align::Center,
-                                 C, C, {0.0f, 0.0f}, {200.0f, 38.0f}, ride);
-    m_scene->get<UIText>(rideText).valign = UIText::VAlign::Middle;
+    EntityId rideText = makeText(
+        "Ride Tag Text",
+        "ROOF RIDE  2x",
+        20.0f,
+        GOLD,
+        UIText::Align::Center,
+        C,
+        {0.0f, 0.0f},
+        {200.0f, 38.0f},
+        ride
+    );
+    scene().get<UIText>(rideText).valign = UIText::VAlign::Middle;
 
-    // Distance milestone flash: a big centre-screen readout that onUpdate arms
-    // every 500 m and refreshUI shows while its timer runs.
-    m_uiMilestone = makeText("Milestone", "500 m", 46.0f, CYAN, UIText::Align::Center,
-                             TC, TC, {0.0f, 78.0f}, {420.0f, 56.0f}, hud);
-    m_scene->get<UIElement>(m_uiMilestone).visible = false;
+    // Armed every 500 m by onFixedUpdate, shown while its timer runs.
+    m_uiMilestone = makeText(
+        "Milestone",
+        "500 m",
+        46.0f,
+        CYAN,
+        UIText::Align::Center,
+        TC,
+        {0.0f, 78.0f},
+        {420.0f, 56.0f},
+        hud
+    );
+    scene().get<UIElement>(m_uiMilestone).visible = false;
 
-    // Start screen.
-    EntityId start = m_scene->createEntity();
-    m_scene->add(start, makeName("Potion Start"));
+    EntityId start = spawn("Potion Start");
     UICanvas startCanvas;
     startCanvas.sortOrder = 5;
-    m_scene->add(start, std::move(startCanvas));
+    scene().add(start, std::move(startCanvas));
     m_startCanvas = start;
 
-    EntityId startPanel = makeImage("Start Panel", INK2, C, C, {0.0f, 0.0f}, {680.0f, 380.0f}, start);
-    makeGlowBar(CYAN, TC, TC, {0.0f,   0.0f}, {680.0f, 4.0f}, startPanel);   // top edge
-    makeGlowBar(MAG,  TC, TC, {0.0f, 376.0f}, {680.0f, 4.0f}, startPanel);   // bottom edge
-    makeText("Start Title", "POTION RUNNER", 60.0f, CYAN, UIText::Align::Center,
-             TC, TC, {0.0f, 44.0f}, {660.0f, 70.0f}, startPanel);
-    makeGlowBar(MAG, TC, TC, {0.0f, 120.0f}, {300.0f, 4.0f}, startPanel);    // title underline
-    makeText("Start Subtitle", "ENDLESS RUNNER", 22.0f, GREY, UIText::Align::Center,
-             TC, TC, {0.0f, 134.0f}, {660.0f, 28.0f}, startPanel);
-    makeNeonButton("Start Button", "START", "potion:start",
-                   glm::vec4(0.06f, 0.44f, 0.42f, 0.96f), glm::vec4(0.14f, 0.78f, 0.72f, 0.98f),
-                   {0.0f, 196.0f}, {260.0f, 64.0f}, startPanel);
-    makeText("Start Hint", "A / D  move      SPACE  jump      S  slide      R  restart", 17.0f,
-             GREY, UIText::Align::Center, TC, TC, {0.0f, 296.0f}, {660.0f, 24.0f}, startPanel);
-    makeText("Start Tip", "run up the white ramps to ride the trains  -  roof coins pay double", 15.0f,
-             GOLD, UIText::Align::Center, TC, TC, {0.0f, 326.0f}, {660.0f, 22.0f}, startPanel);
+    EntityId startPanel = makeImage("Start Panel", INK2, C, {0.0f, 0.0f}, {680.0f, 400.0f}, start);
+    makeGlowBar(CYAN, TC, {0.0f,   0.0f}, {680.0f, 4.0f}, startPanel);
+    makeGlowBar(MAG,  TC, {0.0f, 396.0f}, {680.0f, 4.0f}, startPanel);
+    makeText(
+        "Start Title",
+        "POTION RUNNER",
+        60.0f,
+        CYAN,
+        UIText::Align::Center,
+        TC,
+        {0.0f, 44.0f},
+        {660.0f, 70.0f},
+        startPanel
+    );
+    makeGlowBar(MAG, TC, {0.0f, 120.0f}, {300.0f, 4.0f}, startPanel);
+    makeText(
+        "Start Subtitle",
+        "ENDLESS RUNNER",
+        22.0f,
+        GREY,
+        UIText::Align::Center,
+        TC,
+        {0.0f, 134.0f},
+        {660.0f, 28.0f},
+        startPanel
+    );
+    makeNeonButton(
+        "Start Button",
+        "START",
+        "potion:start",
+        glm::vec4(0.06f, 0.44f, 0.42f, 0.96f),
+        glm::vec4(0.14f, 0.78f, 0.72f, 0.98f),
+        {0.0f, 196.0f},
+        {260.0f, 64.0f},
+        startPanel
+    );
 
-    // Game over screen.
-    EntityId over = m_scene->createEntity();
-    m_scene->add(over, makeName("Potion Game Over"));
+    // The box is shorter than its paragraph, so the UIScroll has something to scroll.
+    makeText(
+        "Help Title",
+        "HOW TO PLAY",
+        16.0f,
+        CYAN,
+        UIText::Align::Center,
+        TC,
+        {0.0f, 274.0f},
+        {660.0f, 20.0f},
+        startPanel
+    );
+    EntityId help = makeImage(
+        "Help Box",
+        glm::vec4(0.0f, 0.0f, 0.0f, 0.35f),
+        TC,
+        {0.0f, HELP_TOP},
+        {620.0f, HELP_HEIGHT},
+        startPanel
+    );
+    scene().add(help, UIScroll{});
+    m_helpBox = help;
+    const char* briefingText =
+        "A or D moves a lane. SPACE jumps. S slides under a gantry.\n"
+        "R restarts once you have crashed.\n"
+        "\n"
+        "Run into the pale ramp on a train's nose and it walks you onto the "
+        "roof - the jump is deliberately too short to board one from the "
+        "ground, so the ramp is the way up.\n"
+        "\n"
+        "Coins picked up on a roof pay double, and every few trains start a "
+        "convoy in one lane with hoppable gaps, so the fastest line is along "
+        "the roofs rather than the trackbed.\n"
+        "\n"
+        "Scroll this box with the wheel.";
+    EntityId briefing = makeText(
+        "Help Text",
+        briefingText,
+        15.0f,
+        GREY,
+        UIText::Align::Left,
+        TL,
+        {10.0f, 4.0f},
+        {600.0f, 320.0f},
+        help
+    );
+    scene().get<UIText>(briefing).wrap = true;
+
+    // Siblings, not children: a scroll view's child scrolls with the content. See ui.md.
+    makeImage(
+        "Help Track",
+        glm::vec4(1.0f, 1.0f, 1.0f, 0.07f),
+        TC,
+        {HELP_BAR_X, HELP_TOP},
+        {HELP_BAR_W, HELP_HEIGHT},
+        startPanel
+    );
+    m_helpThumb = makeImage(
+        "Help Thumb",
+        glm::vec4(CYAN.r, CYAN.g, CYAN.b, 0.55f),
+        TC,
+        {HELP_BAR_X, HELP_TOP},
+        {HELP_BAR_W, HELP_HEIGHT},
+        startPanel
+    );
+
+    makeText(
+        "Start Tip",
+        "roof coins pay double",
+        15.0f,
+        GOLD,
+        UIText::Align::Center,
+        TC,
+        {0.0f, 366.0f},
+        {660.0f, 22.0f},
+        startPanel
+    );
+
+    EntityId over = spawn("Potion Game Over");
     UICanvas overCanvas;
     overCanvas.sortOrder = 10;
     overCanvas.visible   = false;
-    m_scene->add(over, std::move(overCanvas));
+    scene().add(over, std::move(overCanvas));
     m_gameOverCanvas = over;
 
-    EntityId panel = makeImage("Game Over Panel", INK2, C, C, {0.0f, 0.0f}, {600.0f, 400.0f}, over);
-    makeGlowBar(REDH, TC, TC, {0.0f,   0.0f}, {600.0f, 4.0f}, panel);
-    makeGlowBar(MAG,  TC, TC, {0.0f, 396.0f}, {600.0f, 4.0f}, panel);
-    makeText("Game Over Title", "GAME OVER", 60.0f, REDH, UIText::Align::Center,
-             TC, TC, {0.0f, 40.0f}, {560.0f, 70.0f}, panel);
-    makeGlowBar(REDH, TC, TC, {0.0f, 116.0f}, {300.0f, 4.0f}, panel);
-    m_uiFinalScore = makeText("Game Over Score", "SCORE  0", 34.0f, WHITE, UIText::Align::Center,
-             TC, TC, {0.0f, 138.0f}, {560.0f, 40.0f}, panel);
-    m_uiFinalDist  = makeText("Game Over Dist", "DIST  0 m", 24.0f, CYAN, UIText::Align::Center,
-             TC, TC, {0.0f, 186.0f}, {560.0f, 32.0f}, panel);
-    m_uiFinalCoins = makeText("Game Over Coins", "COINS  0", 24.0f, GOLD, UIText::Align::Center,
-             TC, TC, {0.0f, 222.0f}, {560.0f, 32.0f}, panel);
-    m_uiFinalBest  = makeText("Game Over Best", "BEST  0", 24.0f, GREY, UIText::Align::Center,
-             TC, TC, {0.0f, 254.0f}, {560.0f, 30.0f}, panel);
-    makeNeonButton("Restart Button", "RESTART", "potion:restart",
-                   glm::vec4(0.08f, 0.40f, 0.62f, 0.96f), glm::vec4(0.16f, 0.60f, 0.86f, 0.98f),
-                   {0.0f, 292.0f}, {240.0f, 56.0f}, panel);
-    makeText("Restart Hint", "or press  R / Enter", 17.0f, GREY, UIText::Align::Center,
-             TC, TC, {0.0f, 360.0f}, {560.0f, 24.0f}, panel);
+    EntityId panel = makeImage("Game Over Panel", INK2, C, {0.0f, 0.0f}, {600.0f, 400.0f}, over);
+    makeGlowBar(REDH, TC, {0.0f,   0.0f}, {600.0f, 4.0f}, panel);
+    makeGlowBar(MAG,  TC, {0.0f, 396.0f}, {600.0f, 4.0f}, panel);
+    makeText(
+        "Game Over Title",
+        "GAME OVER",
+        60.0f,
+        REDH,
+        UIText::Align::Center,
+        TC,
+        {0.0f, 40.0f},
+        {560.0f, 70.0f},
+        panel
+    );
+    makeGlowBar(REDH, TC, {0.0f, 116.0f}, {300.0f, 4.0f}, panel);
+    m_uiFinalScore = makeText(
+        "Game Over Score",
+        "SCORE  0",
+        34.0f,
+        WHITE,
+        UIText::Align::Center,
+        TC,
+        {0.0f, 138.0f},
+        {560.0f, 40.0f},
+        panel
+    );
+    m_uiFinalDist  = makeText(
+        "Game Over Dist",
+        "DIST  0 m",
+        24.0f,
+        CYAN,
+        UIText::Align::Center,
+        TC,
+        {0.0f, 186.0f},
+        {560.0f, 32.0f},
+        panel
+    );
+    m_uiFinalCoins = makeText(
+        "Game Over Coins",
+        "COINS  0",
+        24.0f,
+        GOLD,
+        UIText::Align::Center,
+        TC,
+        {0.0f, 222.0f},
+        {560.0f, 32.0f},
+        panel
+    );
+    m_uiFinalBest  = makeText(
+        "Game Over Best",
+        "BEST  0",
+        24.0f,
+        GREY,
+        UIText::Align::Center,
+        TC,
+        {0.0f, 254.0f},
+        {560.0f, 30.0f},
+        panel
+    );
+    makeNeonButton(
+        "Restart Button",
+        "RESTART",
+        "potion:restart",
+        glm::vec4(0.08f, 0.40f, 0.62f, 0.96f),
+        glm::vec4(0.16f, 0.60f, 0.86f, 0.98f),
+        {0.0f, 292.0f},
+        {240.0f, 56.0f},
+        panel
+    );
+    makeText(
+        "Restart Hint",
+        "or press  R / Enter",
+        17.0f,
+        GREY,
+        UIText::Align::Center,
+        TC,
+        {0.0f, 360.0f},
+        {560.0f, 24.0f},
+        panel
+    );
 }
 
 void PotionRunner::refreshUI() {
     const int score = static_cast<int>(m_distance) + m_coinCount * coinValue + m_bonusScore;
 
-    // Only rewrite a readout when its value actually changes.
-    if (score != m_shownScore && m_scene->isAlive(m_uiScore)) {
-        m_scene->get<UIText>(m_uiScore).text = "SCORE  " + std::to_string(score);
+    if (UIText* text = score != m_shownScore ? scene().tryGet<UIText>(m_uiScore) : nullptr) {
+        text->text = "SCORE  " + std::to_string(score);
         m_shownScore = score;
     }
-    if (static_cast<int>(m_distance) != m_shownDist && m_scene->isAlive(m_uiDist)) {
-        m_scene->get<UIText>(m_uiDist).text = "DIST  " + std::to_string(static_cast<int>(m_distance)) + " m";
-        m_shownDist = static_cast<int>(m_distance);
+    const int metres = static_cast<int>(m_distance);
+    if (UIText* text = metres != m_shownDist ? scene().tryGet<UIText>(m_uiDist) : nullptr) {
+        text->text  = "DIST  " + std::to_string(metres) + " m";
+        m_shownDist = metres;
     }
-    if (m_coinCount != m_shownCoins && m_scene->isAlive(m_uiCoins)) {
-        m_scene->get<UIText>(m_uiCoins).text = std::to_string(m_coinCount);   // gold pip labels it
+    if (UIText* text = m_coinCount != m_shownCoins ? scene().tryGet<UIText>(m_uiCoins) : nullptr) {
+        text->text   = std::to_string(m_coinCount);
         m_shownCoins = m_coinCount;
     }
     const int speed = static_cast<int>(m_speed);
-    if (speed != m_shownSpeed && m_scene->isAlive(m_uiSpeed)) {
-        m_scene->get<UIText>(m_uiSpeed).text = "SPEED  " + std::to_string(speed);
+    if (UIText* text = speed != m_shownSpeed ? scene().tryGet<UIText>(m_uiSpeed) : nullptr) {
+        text->text   = "SPEED  " + std::to_string(speed);
         m_shownSpeed = speed;
     }
 
-    // The roof-ride pill: per-element visibility, flipped straight off the
-    // gameplay state. The height gate asks for real ROOF height - standing on
-    // a hurdle (0.7) is not a 2x ride, and neither is the top of a jump.
-    if (m_uiRideTag && m_scene->isAlive(m_uiRideTag)) {
-        m_scene->get<UIElement>(m_uiRideTag).visible =
-            m_started && m_alive && m_grounded && m_height > 1.5f;
+    // Roof height only: a hurdle (0.7) or a jump apex is not a ride.
+    if (UIElement* pill = scene().tryGet<UIElement>(m_uiRideTag)) {
+        pill->visible = m_started && m_alive && m_grounded && m_height > 1.5f;
     }
-    if (m_scene->isAlive(m_uiMilestone)) {
-        m_scene->get<UIElement>(m_uiMilestone).visible = m_alive && m_milestoneTimer > 0.0f;
+    if (UIElement* flash = scene().tryGet<UIElement>(m_uiMilestone)) {
+        flash->visible = m_alive && m_milestoneTimer > 0.0f;
     }
 
-    // Toggle the start screen (until the run begins) and the game-over overlay
-    // (while dead, once started).
-    if (m_startCanvas && m_scene->isAlive(m_startCanvas)) {
-        m_scene->get<UICanvas>(m_startCanvas).visible = !m_started;
-    }
-    if (m_gameOverCanvas && m_scene->isAlive(m_gameOverCanvas)) {
-        m_scene->get<UICanvas>(m_gameOverCanvas).visible = m_started && !m_alive;
-    }
-    if (!m_alive) {
-        if (m_scene->isAlive(m_uiFinalScore))
-            m_scene->get<UIText>(m_uiFinalScore).text = "SCORE  " + std::to_string(score);
-        if (m_scene->isAlive(m_uiFinalDist))
-            m_scene->get<UIText>(m_uiFinalDist).text = "DIST  " + std::to_string(static_cast<int>(m_distance)) + " m";
-        if (m_scene->isAlive(m_uiFinalCoins))
-            m_scene->get<UIText>(m_uiFinalCoins).text = "COINS  " + std::to_string(m_coinCount);
-        if (m_scene->isAlive(m_uiFinalBest)) {
-            UIText& best = m_scene->get<UIText>(m_uiFinalBest);
-            best.text  = (m_newBest ? "NEW BEST  " : "BEST  ") + std::to_string(m_best);
-            best.color = m_newBest ? glm::vec4(1.0f, 0.84f, 0.30f, 1.0f)     // gold moment
-                                   : glm::vec4(0.62f, 0.68f, 0.78f, 1.0f);   // quiet grey
+    // The thumb's share of the track is the view's share of the content.
+    // viewSize is zero before the first walk.
+    const UIScroll* box   = scene().tryGet<UIScroll>(m_helpBox);
+    UIElement*      thumbEl = box ? scene().tryGet<UIElement>(m_helpThumb) : nullptr;
+    if (thumbEl) {
+        const UIScroll& scroll = *box;
+        UIElement&      thumb  = *thumbEl;
+        const float     view   = scroll.viewSize.y;
+        const float     travel = scroll.range().y;
+
+        thumb.visible = view > 0.0f && travel > 0.0f;
+        if (thumb.visible) {
+            thumb.size.y     = view * (view / scroll.contentSize.y);
+            thumb.position.y = HELP_TOP + (scroll.offset.y / travel) * (view - thumb.size.y);
         }
+    }
+
+    if (UICanvas* start = scene().tryGet<UICanvas>(m_startCanvas)) {
+        start->visible = !m_started;
+    }
+    if (UICanvas* over = scene().tryGet<UICanvas>(m_gameOverCanvas)) {
+        over->visible = m_started && !m_alive;
     }
 }
 
-} // namespace Vkm::Engine
+} // namespace Potion

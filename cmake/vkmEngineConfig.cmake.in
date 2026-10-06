@@ -1,35 +1,22 @@
-# vkmEngineConfig.cmake - what find_package(vkmEngine) loads.
-#
-# Gives a project the engine's imported targets, the shaders and templates that
-# ship beside them, and a hard error when the compiler that built the SDK is not
-# the compiler about to build against it.
-
-@PACKAGE_INIT@
+# What find_package(vkmEngine) loads: the engine's targets, vkm_add_gameplay_module(),
+# and a hard error for a compiler whose modules the engine cannot load.
 
 include(CMakeFindDependencyMacro)
 
-# The engine's vendored libraries ship inside this package, but a few imported
-# targets come from CMake's own find modules and exist only once someone has
-# asked for them. Without these the targets file fails to load with "target not
-# found", which reads like a broken SDK rather than a missing find_package.
+# Targets CMake's own find modules make, which the targets file names.
 find_dependency(Threads)
 
-# The engine ships prebuilt libraries and C++ headers, and a project's gameplay
-# module is compiled against them, so a module has to be built with the
-# toolchain that built the engine it links. A mismatch is a hard error rather
-# than a warning because it does not fail at link time: it fails at run time, as
-# a corrupt object or a crash inside a function that looks innocent, with the
-# cause invisible by then.
-#
-# The full compiler path is kept, not just the name: `vkm build` passes it back
-# to CMake so a project is configured with the toolchain that built the engine
-# rather than whichever one CMake finds first - on a machine carrying both GCC
-# and Clang, which is every MSYS2 install, that is otherwise a coin flip.
+# A module must be built with a toolchain compatible with the engine's: a mismatch
+# links, then crashes at run time. The full path is what `vkm build` configures a
+# project with in the engine's own tree; an SDK builds with its pinned tools.
 set(VKMENGINE_BUILD_CXX_COMPILER         "@CMAKE_CXX_COMPILER@")
 set(VKMENGINE_BUILD_CXX_COMPILER_ID      "@CMAKE_CXX_COMPILER_ID@")
 set(VKMENGINE_BUILD_CXX_COMPILER_VERSION "@CMAKE_CXX_COMPILER_VERSION@")
-set(VKMENGINE_BUILD_CXX_STANDARD         "@CMAKE_CXX_STANDARD@")
-set(VKMENGINE_BUILD_TYPE                 "@CMAKE_BUILD_TYPE@")
+
+# Read by vkm (tools/vkmcli/engine.py).
+set(VKMENGINE_BUILD_TYPE "@CMAKE_BUILD_TYPE@")
+set(VKMENGINE_PROFILER   "@VKM_PROFILER@")
+set(VKMENGINE_ASSERTS    "@VKM_ASSERTS@")
 
 if(NOT VKMENGINE_SKIP_TOOLCHAIN_CHECK)
     if(NOT CMAKE_CXX_COMPILER_ID STREQUAL VKMENGINE_BUILD_CXX_COMPILER_ID)
@@ -38,56 +25,31 @@ if(NOT VKMENGINE_SKIP_TOOLCHAIN_CHECK)
             "building with ${CMAKE_CXX_COMPILER_ID}.\n"
             "The engine ships prebuilt libraries and is not ABI-stable across "
             "compilers: a module built this way fails at run time, not at link "
-            "time. Use ${VKMENGINE_BUILD_CXX_COMPILER_ID}, or rebuild the engine "
-            "with your compiler.\n"
-            "The engine was built with: ${VKMENGINE_BUILD_CXX_COMPILER}\n"
-            "  vkm build --compiler \"${VKMENGINE_BUILD_CXX_COMPILER}\"\n"
+            "time. Use ${VKMENGINE_BUILD_CXX_COMPILER_ID} - `vkm build` does - "
+            "or rebuild the engine with your compiler.\n"
             "To override anyway (you are on your own): "
-            "-DVKMENGINE_SKIP_TOOLCHAIN_CHECK=ON")
+            "-DVKMENGINE_SKIP_TOOLCHAIN_CHECK=ON"
+        )
     endif()
 
-    # Major version only: a patch release of the same compiler does not change
-    # the C++ ABI, and demanding an exact match would make the SDK unusable.
-    string(REGEX REPLACE "\\..*" "" _vkm_want_major "${VKMENGINE_BUILD_CXX_COMPILER_VERSION}")
-    string(REGEX REPLACE "\\..*" "" _vkm_have_major "${CMAKE_CXX_COMPILER_VERSION}")
-    if(NOT _vkm_want_major STREQUAL _vkm_have_major)
+    # The same major.minor: the engine ships its compiler's runtime libraries, and a
+    # newer compiler's module can need symbols they lack.
+    string(REGEX MATCH "^[0-9]+\\.[0-9]+" _vkm_want "${VKMENGINE_BUILD_CXX_COMPILER_VERSION}")
+    string(REGEX MATCH "^[0-9]+\\.[0-9]+" _vkm_have "${CMAKE_CXX_COMPILER_VERSION}")
+    if(NOT _vkm_have VERSION_EQUAL _vkm_want)
         message(FATAL_ERROR
             "vkmEngine was built with ${VKMENGINE_BUILD_CXX_COMPILER_ID} "
             "${VKMENGINE_BUILD_CXX_COMPILER_VERSION} but you are building with "
             "${CMAKE_CXX_COMPILER_VERSION}.\n"
-            "Major compiler versions change the C++ ABI. Use a "
-            "${_vkm_want_major}.x toolchain, or rebuild the engine.\n"
-            "To override anyway: -DVKMENGINE_SKIP_TOOLCHAIN_CHECK=ON")
+            "A module needs the same ${_vkm_want}.x release; `vkm build` uses it.\n"
+            "To override anyway: -DVKMENGINE_SKIP_TOOLCHAIN_CHECK=ON"
+        )
     endif()
-    unset(_vkm_want_major)
-    unset(_vkm_have_major)
+    unset(_vkm_want)
+    unset(_vkm_have)
 endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/vkmEngineTargets.cmake")
 
-# A host resolves shaders relative to the engine root at run time; these let a
-# project's build copy or reference them without hardcoding a layout.
-#
-# Filled in at configure time rather than composed from PACKAGE_PREFIX_DIR here,
-# because this file is generated twice: once for the installed SDK, where every
-# path hangs off the prefix the package was unpacked into, and once for the
-# engine's own build tree, where the binaries are under build/ and the headers,
-# shaders and templates never left the source tree. Composed here it would
-# describe the first layout only, and the build-tree package would name an
-# include/ directory no build produces.
-set_and_check(VKMENGINE_ROOT_DIR      "@VKM_PKG_ROOT_DIR@")
-set_and_check(VKMENGINE_BIN_DIR       "@VKM_PKG_BIN_DIR@")
-set_and_check(VKMENGINE_INCLUDE_DIR   "@VKM_PKG_INCLUDE_DIR@")
-set_and_check(VKMENGINE_SHADER_DIR    "@VKM_PKG_SHADER_DIR@")
-set_and_check(VKMENGINE_TEMPLATE_DIR  "@VKM_PKG_TEMPLATE_DIR@")
-
-set(VKMENGINE_RUNTIME "${VKMENGINE_BIN_DIR}/vkm_runtime@CMAKE_EXECUTABLE_SUFFIX@")
-set(VKMENGINE_EDITOR  "${VKMENGINE_BIN_DIR}/vkm_editor@CMAKE_EXECUTABLE_SUFFIX@")
-set(VKMENGINE_COOKER  "${VKMENGINE_BIN_DIR}/vkm_cook@CMAKE_EXECUTABLE_SUFFIX@")
-
-# Beside this file rather than inside it, because the engine's own examples are
-# built by the same function from the same file - so `vkm build` on an example
-# and `vkm build` on a project a user made run one recipe, not two that drifted.
+# A file of its own, which the engine's tree includes too.
 include("${CMAKE_CURRENT_LIST_DIR}/gameplay_module.cmake")
-
-check_required_components(vkmEngine)

@@ -1,0 +1,119 @@
+# vkmEngine License 1.0
+
+Required Notice: Copyright (c) 2025-2026 Vilimir-K. Milev (https://vkmengine.com)
+
+## Acceptance
+
+In order to get any license under these terms, you must agree to them as both
+strict obligations and conditions to all your licenses.
+
+## Definitions
+
+The **licensor** is Vilimir-K. Milev, the copyright holder named in the
+Required Notice above.
+
+The **engine** is the software these terms come with: vkmEngine's source code,
+tools, data files and documentation, and anything built from them.
+
+The **official repository** is https://github.com/V-KMilev/vkmEngine.
+
+A **product** is a game or other application that you make with the engine,
+whose value to its users comes substantially from your own content and
+functionality rather than from the engine itself.
+
+**Engine code** is the engine's source code, and the engine or any changed
+version of it in any form, other than as part of a product.
+
+A **contribution** is a change or addition to the engine that you submit to the
+licensor for inclusion in the official repository.
+
+**You** are the individual or entity agreeing to these terms, and **your
+company** is any legal entity, sole proprietorship or other kind of
+organization that you work for, plus all organizations that have control over,
+are under the control of, or are under common control with that organization.
+**Control** means ownership of substantially all the assets of an entity, or
+the power to direct its management and policies by vote, contract or
+otherwise.
+
+## Copyright License
+
+The licensor grants you a worldwide, royalty-free, non-exclusive copyright
+license to use, copy and change the engine, for any purpose, commercial or not,
+subject to the limitations and conditions below.
+
+## Products
+
+You may make, sell, give away and otherwise distribute products, for any
+purpose and on any terms you choose, with no fee or royalty to the licensor. A
+product may include the engine, changed or not, only in compiled form - its
+libraries and executables - together with the data files the product needs to
+run, and only as part of that product.
+
+Your own code, content and art in a product are yours. These terms do not
+reach them.
+
+## Limitations
+
+Except as allowed under Sharing Changes below, you may not distribute, publish,
+sell, sublicense or otherwise make engine code available to anyone.
+
+You may not offer the engine, or any changed version of it, on its own or as
+the main part of anything you offer, as an engine, framework, software
+development kit, editor, toolkit or service for making software, or as any
+other product that competes with the engine.
+
+## Sharing Changes
+
+You may share changed engine code only:
+
+1. as a contribution, submitted to the official repository; or
+
+2. in a fork of the official repository hosted on GitHub, kept within the
+   official repository's fork network, that keeps these terms.
+
+Anyone who gets engine code from such a fork gets it only under these terms.
+
+## Contributions
+
+By submitting a contribution, you grant the licensor a perpetual, worldwide,
+royalty-free, irrevocable license to use, copy, change, distribute and
+sublicense it, on any terms, including these. You confirm that you have the
+right to grant that license.
+
+## Notices
+
+You must ensure that anyone who gets a copy of any part of the engine from you,
+including as part of a product, also gets a copy of these terms or the URL for
+them, https://github.com/V-KMilev/vkmEngine/blob/master/LICENSE, and the
+Required Notice line above.
+
+## Patent License
+
+The licensor grants you a patent license for the engine that covers patent
+claims the licensor can license, or becomes able to license, that you would
+infringe by using the engine as these terms allow.
+
+## Patent Defense
+
+If you make any written claim that the engine infringes or contributes to
+infringement of any patent, your patent license for the engine granted under
+these terms ends immediately. If your company makes such a claim, your patent
+license ends immediately for work on behalf of your company.
+
+## Violations
+
+The first time you are notified in writing that you have violated any of these
+terms, or done anything with the engine not covered by your licenses, your
+licenses can nonetheless continue if you come into full compliance with these
+terms, and take practical steps to correct past violations, within 32 days of
+receiving notice. Otherwise, all your licenses end immediately.
+
+Products you distributed in compliance with these terms before your licenses
+ended may stay with the people who already have them.
+
+## No Liability
+
+***As far as the law allows, the engine comes as is, without any warranty or
+condition, and the licensor will not be liable to you for any damages arising
+out of these terms or the use or nature of the engine, under any kind of legal
+claim.***

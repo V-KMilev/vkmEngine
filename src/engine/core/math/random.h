@@ -1,29 +1,27 @@
 #pragma once
 
 #include <cstdint>
-#include <cmath>
-#include <atomic>
-#include <chrono>
-
-#include <glm/glm.hpp>
-#include <glm/gtc/constants.hpp>
 
 namespace Vkm::Engine::Math {
 
 /**
- * @brief PCG32 pseudo-random generator - small, fast, and statistically strong.
+ * @brief PCG32 pseudo-random generator (O'Neill, 2014).
  *
- * The same PRNG family PBRT uses: 16 bytes of state, no global tables, and a
- * 64-bit period selectable per stream so independent sequences never correlate.
- * Deterministic and seedable, so a render reproduces exactly and each thread /
- * pixel / sample can own its own stream.
- *
- * Reference: M.E. O'Neill, "PCG: A Family of Simple Fast Space-Efficient
- * Statistically Good Algorithms for Random Number Generation" (2014).
+ * Deterministic and seedable, so each owner can have its own reproducible stream.
  */
 class Rng {
     public:
         Rng() = default;
+
+        /**
+         * @brief Seed with an explicit state and (optionally) stream selector.
+         * @param seed   Initial state; any value.
+         * @param stream Sequence selector; same seed, different stream is uncorrelated.
+         */
+        explicit Rng(uint64_t seed, uint64_t stream = DEFAULT_STREAM) {
+            this->seed(seed, stream);
+        }
+
         ~Rng() = default;
 
         Rng(const Rng& other) = default;
@@ -32,20 +30,10 @@ class Rng {
         Rng(Rng && other) noexcept = default;
         Rng& operator=(Rng && other) noexcept = default;
 
-        /**
-         * @brief Seed with an explicit state and (optionally) stream selector.
-         * @param seed   Initial state; any 64-bit value.
-         * @param stream Sequence selector - two RNGs with the same seed but
-         *               different streams produce uncorrelated sequences.
-         */
-        explicit Rng(uint64_t seed, uint64_t stream = DEFAULT_STREAM) {
-            this->seed(seed, stream);
-        }
-
     public:
         /**
          * @brief Re-seed in place, discarding the current sequence position.
-         * @param seed   Initial state; any 64-bit value.
+         * @param seed   Initial state; any value.
          * @param stream Sequence selector; see the constructor.
          */
         void seed(uint64_t seed, uint64_t stream = DEFAULT_STREAM) {
@@ -59,8 +47,9 @@ class Rng {
         /**
          * @brief Advance the state and return the next raw 32-bit value.
          *
-         * The primitive every other draw is built on: one 64-bit LCG step
-         * followed by PCG's xorshift-then-rotate output permutation.
+         * One LCG step, then PCG's xorshift-then-rotate output permutation.
+         *
+         * @return A uniform value over the full 32-bit range.
          */
         uint32_t nextU32() {
             const uint64_t old = m_state;
@@ -72,15 +61,23 @@ class Rng {
 
         float nextFloat()                     { return (nextU32() >> 8) * (1.0f / 16777216.0f); }
         float nextFloat(float min, float max) { return min + (max - min) * nextFloat(); }
-        int nextInt(int min, int max)         { return min + static_cast<int>(boundedU32(static_cast<uint32_t>(max - min) + 1u)); }
+        int nextInt(int min, int max) {
+            return min + static_cast<int>(boundedU32(static_cast<uint32_t>(max - min) + 1u));
+        }
         bool nextBool()                       { return (nextU32() >> 31u) != 0u; }
+
+    private:
+        /// Canonical PCG stream.
+        static constexpr uint64_t DEFAULT_STREAM = 0xda3e39cb94b95bdbULL;
 
     private:
         /**
          * @brief Uniform 32-bit value in [0, range), unbiased.
          *
-         * Lemire, "Fast Random Integer Generation in an Interval" (2019): a
-         * multiply-and-shift that only rejects in the small leftover interval.
+         * Lemire (2019): multiply-and-shift, rejecting only in the leftover interval.
+         *
+         * @param range One past the largest value wanted; non-zero.
+         * @return A value in [0, range).
          */
         uint32_t boundedU32(uint32_t range) {
             uint32_t x = nextU32();
@@ -98,59 +95,58 @@ class Rng {
         }
 
     private:
-        static constexpr uint64_t DEFAULT_STREAM = 0xda3e39cb94b95bdbULL;  ///< Canonical PCG stream, used as the default selector.
-
-    private:
-        uint64_t m_state = 0x853c49e6748fea9bULL;  ///< LCG state; advanced on every draw.
-        uint64_t m_inc   = DEFAULT_STREAM;          ///< Stream increment (kept odd); fixes which sequence this draws.
+        uint64_t m_state = 0x853c49e6748fea9bULL;  ///< LCG state.
+        uint64_t m_inc   = DEFAULT_STREAM;         ///< Stream increment, kept odd.
 };
 
 /**
- * @brief Ray-tracing random toolkit: scalar shortcuts plus the standard
- *        direction/point samplers, layered over the Rng primitive.
+ * @brief The casual draws: a float, a range, a coin, off a per-thread generator.
  *
- * Every sampler takes an explicit Rng& (the deterministic path - seed it per
- * thread / pixel for reproducible renders). Each also has a no-argument
- * overload that draws from a per-thread default generator (rng()), for casual
- * game-side use where reproducibility doesn't matter.
+ * For draws that need not reproduce. Anything that must owns and seeds its own
+ * Rng: a shared per-thread stream cannot be replayed and interleaves callers.
  */
 namespace Random {
 
 /**
  * @brief Per-thread default generator.
  *
- * Lazily seeded once per thread from a clock sample mixed with a global
- * counter, so threads get distinct, uncorrelated streams. Non-reproducible by
- * design; construct your own Rng(seed) when you need determinism.
+ * Seeded lazily per thread from a clock sample and a global counter, so streams
+ * are distinct. Not inline: no engine header carries a thread_local
+ * (docs/guides/implementation.md, Threads).
+ *
+ * @return This thread's generator.
  */
-inline Rng& rng() {
-    thread_local Rng t_generator = [] {
-        static std::atomic<uint64_t> s_counter{0};
-        const uint64_t n = s_counter.fetch_add(1, std::memory_order_relaxed);
-        const uint64_t t = static_cast<uint64_t>(
-            std::chrono::high_resolution_clock::now().time_since_epoch().count());
-        return Rng(t ^ (n * 0x9E3779B97F4A7C15ULL), n + 1u);
-    }();
-    return t_generator;
-}
+Rng& rng();
 
 /**
  * @brief Uniform float in [0, 1), from the per-thread generator.
+ *
+ * @return The draw.
  */
 inline float value() { return rng().nextFloat(); }
 
 /**
  * @brief Uniform float in [min, max), from the per-thread generator.
+ *
+ * @param min Lowest value drawn.
+ * @param max Upper bound, never drawn.
+ * @return The draw.
  */
 inline float range(float min, float max) { return rng().nextFloat(min, max); }
 
 /**
- * @brief Uniform integer in [min, max] (inclusive), from the per-thread generator.
+ * @brief Uniform integer in [min, max], from the per-thread generator.
+ *
+ * @param min Lowest value drawn.
+ * @param max Highest value drawn; not below @p min.
+ * @return The draw.
  */
 inline int range(int min, int max) { return rng().nextInt(min, max); }
 
 /**
  * @brief Fair coin flip, from the per-thread generator.
+ *
+ * @return The draw.
  */
 inline bool boolean() { return rng().nextBool(); }
 

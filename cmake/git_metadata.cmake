@@ -31,11 +31,11 @@ if(GIT_FOUND)
     endif()
 endif()
 
-# Per-module metadata for the About dialog and the build banner. Each vkm module
-# is its own repository, so "which commit is this build made of" needs one hash
-# per module rather than one for the tree. Versions are read out of each
-# module's CMakeLists because vkm_build_info is defined before add_subdirectory(),
-# where the <name>_VERSION variables do not exist yet.
+# Per-module metadata, compiled in through vkm_build_info. Each vkm module is
+# its own repository, so "which commit is this build made of" needs one hash per
+# module rather than one for the tree. Versions are read out of each module's
+# CMakeLists because this file runs before add_subdirectory(modules), so the
+# modules' own version variables do not exist yet.
 function(vkm_module_metadata MODULE_PATH OUT_PREFIX)
     set(_hash "00000000")
     set(_version "unknown")

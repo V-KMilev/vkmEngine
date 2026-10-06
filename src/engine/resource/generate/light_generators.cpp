@@ -6,8 +6,7 @@ Light generateLight(LightType type) {
     Light light;
     light.type = type;
 
-    // Cone angles belong to a spot alone; clear them elsewhere so the inspector
-    // doesn't show stale spot defaults on a light that ignores them.
+    // Only a spot uses cone angles; clear them so others carry no stale defaults.
     if (type != LightType::Spot) {
         light.innerConeAngle = 0.0f;
         light.outerConeAngle = 0.0f;

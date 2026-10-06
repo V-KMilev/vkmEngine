@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cstdint>
+#include <vector>
+
 #include <glm/glm.hpp>
 
 #include "ecs/component/render/light.h"
@@ -9,34 +12,66 @@ namespace Vkm::Engine {
 /**
  * @brief One light affecting the frame, resolved to world space.
  *
- * Covers every LightType: position/direction for punctual lights, radius for
- * finite falloff, cone angles for spots, and the half-extent axes for area
- * lights (Rect/Disk). The axes fold the light's rotation and size into two
- * world-space vectors so the backend never re-derives them.
+ * Covers every LightType; area lights carry rotation and size folded into two
+ * world-space half-extent axes.
  */
 struct LightData {
     LightType type;
+
+    /**
+     * @brief The entity slot this light was gathered from.
+     *
+     * A stable tie-break (as findLowestSlot) for scarce shadow atlas slots:
+     * list order is SparseSet packing, which moves when an unrelated light is
+     * destroyed.
+     */
+    uint32_t  entitySlot = 0;
     glm::vec3 color;
     float     intensity;
     glm::vec3 position;
 
-    glm::vec3 direction;    ///< Travel direction; filled for all types (from rotation), consumed by directional/spot
+    glm::vec3 direction;    ///< Travel direction; used by directional/spot
 
     float radius;           ///< Attenuation radius (point/spot/area)
 
     float innerConeAngle;   ///< Spot: full-brightness cone (radians)
     float outerConeAngle;   ///< Spot: falloff edge (radians)
 
-    // Area-light fields, set only for Rect/Disk; defaulted so punctual lights
-    // (which leave them unset in build) read as zero, matching the backend's
-    // "axisU/axisV are zero for punctual lights" contract.
-    glm::vec3 axisU{0.0f};  ///< Rect/Disk: half-right world axis (rotation * +X * halfWidth | areaRadius)
-    glm::vec3 axisV{0.0f};  ///< Rect/Disk: half-up    world axis (rotation * +Y * halfHeight | areaRadius)
+    // Area-light fields, zero for punctual lights.
+    glm::vec3 axisU{0.0f};  ///< Rect/Disk: half-right world axis
+    glm::vec3 axisV{0.0f};  ///< Rect/Disk: half-up world axis
     bool      twoSided;     ///< Rect/Disk: emit from both faces
 
     bool  castShadows;
-    float shadowBias;       ///< Depth comparison bias (slope-scaled for 2D, constant for cube)
-    float shadowDistance;   ///< Directional only: max world distance the cascades cover.
+    float shadowBias;       ///< See Light::shadowBias
+    float shadowNormalBias; ///< 2D only: normal offset before the compare, in shadow texels
+    float shadowDistance;   ///< Directional only: world distance the cascades cover.
+
+    /**
+     * @brief Light::sourceRadius: radians for a directional light, metres otherwise.
+     *
+     * Sizes a directional or spot light's penumbra, and a directional light's
+     * highlight. Zero is a point.
+     */
+    float sourceRadius = 0.0f;
 };
+
+/**
+ * @brief The lowest-slot directional light in a frame's light list.
+ *
+ * findKeyLight's rule, for a backend that holds the view and not the scene.
+ * Lowest slot rather than first, since list order moves with SparseSet packing.
+ *
+ * @param lights The frame's lights.
+ * @return The key light, or null when the frame has no directional light.
+ */
+inline const LightData* lowestSlotDirectional(const std::vector<LightData>& lights) {
+    const LightData* key = nullptr;
+    for (const LightData& light : lights) {
+        if (light.type != LightType::Directional) continue;
+        if (!key || light.entitySlot < key->entitySlot) key = &light;
+    }
+    return key;
+}
 
 } // namespace Vkm::Engine

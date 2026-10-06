@@ -6,8 +6,6 @@
 #include <utility>
 #include <vector>
 
-#include "l_assert.h"
-
 namespace Vkm::Engine {
 
 /**
@@ -15,21 +13,49 @@ namespace Vkm::Engine {
  */
 using ListenerId = uint32_t;
 
-struct IBus {
-    virtual ~IBus() = default;
+/**
+ * @brief The type-erased base EventBus holds each per-type Bus as.
+ */
+class IBus {
+    public:
+        IBus() = default;
+        virtual ~IBus() = default;
 
-    /**
-     * @brief Drain this bus's queued events to its listeners.
-     */
-    virtual void flush() = 0;
+        IBus(const IBus& other) = delete;
+        IBus& operator=(const IBus& other) = delete;
+
+        IBus(IBus && other) = delete;
+        IBus& operator=(IBus && other) = delete;
+
+    public:
+        /**
+         * @brief Set this bus's queued events aside, ready to be delivered.
+         *
+         * Split from @ref deliver so every bus is drained before any listener
+         * runs; otherwise a listener's enqueue would go out this flush or the
+         * next depending on bus order.
+         */
+        virtual void takeQueue() = 0;
+
+        /**
+         * @brief Deliver what @ref takeQueue set aside, to this bus's listeners.
+         */
+        virtual void deliver() = 0;
+
+        /**
+         * @brief Whether anything is still listening on this bus.
+         *
+         * See EventBus::dropIdleBuses().
+         *
+         * @return True while at least one live listener remains.
+         */
+        virtual bool hasListeners() const = 0;
 };
 
 /**
  * @brief Listener list plus deferred-event queue for a single event type.
  *
- * Implementation detail of EventBus: created lazily per event type and
- * driven only through it. The flush-depth guard enforces EventBus's "no
- * (un)subscribe from inside a listener callback during emit/flush" contract.
+ * Driven only through EventBus.
  */
 template<typename EventT>
 class Bus : public IBus {
@@ -47,11 +73,12 @@ class Bus : public IBus {
         /**
          * @brief Append a listener and return its new id.
          *
-         * Subscribing from inside a listener is legitimate - a spawned object
-         * registering itself - but the entry only joins the live list once the
-         * outermost dispatch has unwound. Appending to a list a dispatch is
-         * walking can reallocate it, which moves-then-destroys the
-         * std::function whose operator() is on the stack at that moment.
+         * Mid-dispatch, the entry joins once the outermost dispatch unwinds:
+         * appending could reallocate the list and destroy the std::function
+         * whose operator() is on the stack.
+         *
+         * @param cb Called with each event of this type delivered from now on.
+         * @return The id remove() takes.
          */
         ListenerId subscribe(std::function<void(const EventT&)> cb) {
             const ListenerId id = m_nextId++;
@@ -64,22 +91,20 @@ class Bus : public IBus {
         /**
          * @brief Erase the listener with @p id.
          *
-         * Callable from inside a listener, on itself included: mid-dispatch the
-         * entry is emptied rather than erased, because emit and flush walk by
-         * index and an erase under them would move every later listener down one
-         * and skip whichever took the freed slot. The empty slot is skipped by
-         * the walk and reaped by admitPending once the outermost dispatch
-         * unwinds. One that subscribed during this same dispatch is waiting in
-         * m_pending instead, and comes straight back out of it - nothing walks
-         * that list until the dispatch has unwound, so it can be erased outright.
+         * Callable from a listener, on itself too. Mid-dispatch the entry is
+         * only marked dead, reaped by admitPending: erasing would shift the
+         * index walk and skip a listener, and clearing the std::function would
+         * free the captures of the callback still running. An entry still in
+         * m_pending is erased outright, since nothing walks it.
          *
-         * @return true if it was found and erased.
+         * @param id What subscribe() returned.
+         * @return true if it was found - erased, or marked dead mid-dispatch.
          */
         bool remove(ListenerId id) {
             for (auto it = m_listeners.begin(); it != m_listeners.end(); ++it) {
                 if (it->id != id) continue;
 
-                if (m_flushDepth != 0) it->cb = nullptr;
+                if (m_flushDepth != 0) it->alive = false;
                 else                   m_listeners.erase(it);
                 return true;
             }
@@ -94,74 +119,110 @@ class Bus : public IBus {
 
         /**
          * @brief Dispatch @p event to every current listener synchronously.
+         *
+         * @param event Passed to each listener.
          */
         void emit(const EventT& event) {
-            ++m_flushDepth;
+            DispatchScope scope(*this);
             const size_t n = m_listeners.size();
             for (size_t i = 0; i < n; ++i) {
-                if (m_listeners[i].cb) m_listeners[i].cb(event);
+                if (m_listeners[i].alive) m_listeners[i].cb(event);
             }
-            --m_flushDepth;
-            admitPending();
         }
 
         /**
          * @brief Buffer @p event for delivery on the next flush().
+         *
+         * @param event Event to queue; moved in.
          */
         void enqueue(EventT event) {
             m_queue.push_back(std::move(event));
         }
 
         /**
-         * @brief Deliver all queued events to listeners, then clear the queue.
+         * @brief Swap the queue aside so what a listener enqueues cannot join it.
          *
-         * The queue is swapped aside before the walk, so an event a listener
-         * enqueues lands in fresh storage and fires next frame instead of
-         * extending the batch being delivered. It swaps with a retained member
-         * rather than a local because a local would take the queue's buffer and
-         * free it at scope exit, so every flush on a hot bus paid an allocation
-         * to rebuild what it had just thrown away. Two buffers ping-pong, and a
-         * steady frame allocates nothing.
+         * Swaps with a retained member, so a steady frame allocates nothing.
          */
-        void flush() override {
-            if (m_queue.empty()) return;
-
+        void takeQueue() override {
             m_dispatch.clear();
             m_dispatch.swap(m_queue);
+        }
 
-            ++m_flushDepth;
+        /**
+         * @brief Deliver the batch takeQueue set aside to every current listener.
+         *
+         * An event a listener enqueues now fires on the next flush, whatever its type.
+         */
+        void deliver() override {
+            if (m_dispatch.empty()) return;
+
+            DispatchScope scope(*this);
             const size_t n = m_listeners.size();
             for (auto& e : m_dispatch) {
                 for (size_t i = 0; i < n; ++i) {
-                    if (m_listeners[i].cb) m_listeners[i].cb(e);
+                    if (m_listeners[i].alive) m_listeners[i].cb(e);
                 }
             }
-            --m_flushDepth;
-            admitPending();
+        }
+
+        /**
+         * @brief Whether any live listener remains, mid-dispatch removals aside.
+         *
+         * @return True while at least one live entry remains.
+         */
+        bool hasListeners() const override {
+            for (const Entry& e : m_listeners) {
+                if (e.alive) return true;
+            }
+            return !m_pending.empty();
         }
 
     private:
         struct Entry {
             ListenerId id;
             std::function<void(const EventT&)> cb;
+            bool alive = true;  ///< Cleared by a mid-dispatch remove().
+        };
+
+        /**
+         * @brief One level of dispatch, closed however the walk leaves.
+         *
+         * Closed even if a listener throws, or every later subscribe would wait in
+         * m_pending forever.
+         */
+        class DispatchScope {
+            public:
+                explicit DispatchScope(Bus& bus) : m_bus(bus) { ++m_bus.m_flushDepth; }
+                ~DispatchScope() {
+                    --m_bus.m_flushDepth;
+                    m_bus.admitPending();
+                }
+
+                DispatchScope(const DispatchScope& other) = delete;
+                DispatchScope& operator=(const DispatchScope& other) = delete;
+
+                DispatchScope(DispatchScope && other) = delete;
+                DispatchScope& operator=(DispatchScope && other) = delete;
+
+            private:
+                Bus& m_bus;
         };
 
         /**
          * @brief Settle the listener list once the outermost dispatch has unwound.
          *
-         * Admits what subscribed mid-dispatch and reaps what unsubscribed. Both
-         * wait for the same moment and for the same reason: a walk further up
-         * the stack holds an index into m_listeners, and neither growing nor
-         * shrinking it under that walk is safe.
+         * Admits mid-dispatch subscribers and reaps the dead; both wait because a
+         * walk up the stack holds an index into m_listeners.
          */
         void admitPending() {
             if (m_flushDepth != 0) return;
 
-            // Reaped here rather than at remove() for the reason above.
+            const auto dead = [](const Entry& e) { return !e.alive; };
             m_listeners.erase(
-                std::remove_if(m_listeners.begin(), m_listeners.end(),
-                               [](const Entry& e) { return !e.cb; }),
-                m_listeners.end());
+                std::remove_if(m_listeners.begin(), m_listeners.end(), dead),
+                m_listeners.end()
+            );
 
             if (m_pending.empty()) return;
             for (Entry& entry : m_pending) m_listeners.push_back(std::move(entry));
@@ -169,11 +230,11 @@ class Bus : public IBus {
         }
 
     private:
-        std::vector<Entry>  m_listeners;   ///< Active listeners, walked by index during dispatch.
-        std::vector<Entry>  m_pending;     ///< Subscribed mid-dispatch; admitted when it unwinds.
-        std::vector<EventT> m_queue;       ///< Events awaiting the next flush().
-        std::vector<EventT> m_dispatch;    ///< The batch being delivered; swaps with m_queue to keep both buffers.
-        ListenerId m_nextId     = 1;       ///< Next listener id to hand out.
+        std::vector<Entry>  m_listeners;   ///< Walked by index during dispatch.
+        std::vector<Entry>  m_pending;     ///< Subscribed mid-dispatch.
+        std::vector<EventT> m_queue;       ///< Awaiting the next flush().
+        std::vector<EventT> m_dispatch;    ///< The batch being delivered.
+        ListenerId m_nextId     = 1;
         int        m_flushDepth = 0;       ///< >0 while inside emit/flush.
 };
 

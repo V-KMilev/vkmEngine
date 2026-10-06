@@ -16,9 +16,7 @@ namespace Vkm::Engine {
 /**
  * @brief One joint of a rig: its authoring name and the index of its parent.
  *
- * The name is the joint's only durable identity - a clip binds to bone indices
- * by matching it at cook time, and it is what an attachment or a physics body
- * names later. `parent` indexes the same array this bone lives in.
+ * The name is the joint's only durable identity (see SkeletonAsset::indexOf).
  */
 struct Bone {
     std::string name;
@@ -28,19 +26,9 @@ struct Bone {
 /**
  * @brief A rig: a flat, parent-before-child bone array plus its bind pose.
  *
- * Bones are indices rather than entities. A hundred entities per character
- * would be walked by the hierarchy, listed in the panel and written to the
- * scene file, for data that is rebuilt every frame and has no authoring
- * meaning; an index also maps straight onto a body when physics comes to
- * address one.
- *
- * `parent < index` is a validated format invariant, not a convention: the
- * importer emits bones depth-first and the cooked reader re-checks the
- * ordering. That is what makes composing a pose one forward loop with no
- * recursion and no visited set, and what makes a cycle unrepresentable instead
- * of something every walk has to defend against.
- *
- * The three vectors are parallel and always the same length.
+ * Bones are indices, not entities. `parent < index` is validated by
+ * findSkeletonFault, so a pose composes in one forward loop and a cycle is
+ * unrepresentable. The three vectors are parallel.
  */
 struct SkeletonAsset : public Resource {
     std::vector<Bone>      bones;
@@ -50,23 +38,31 @@ struct SkeletonAsset : public Resource {
      * @brief Each bone's local TRS at bind, used wherever a clip has no channel
      *        for it.
      *
-     * Stored rather than derived from `inverseBind`, because recovering it
-     * means inverting and re-localising, which is lossy the moment a bone
-     * carries scale.
+     * Stored: deriving it from `inverseBind` is lossy once a bone carries scale.
      */
     std::vector<Transform> bindPose;
 
     /**
      * @brief The index of the bone called @p name, or -1 when the rig has none.
      *
-     * Linear by design: a rig is a hundred bones, and this is called when a
-     * clip is bound or an attachment resolved, never per frame.
+     * Linear; resolve once and keep the index rather than calling it per frame.
      *
      * @param name Bone name to look for.
-     * @return Index into `bones`, or -1 if no bone carries that name.
+     * @return Index into `bones`, or -1.
      */
     int32_t indexOf(std::string_view name) const;
 };
+
+/**
+ * @brief Why @p skeleton cannot be posed, or an empty string when it can.
+ *
+ * What composing a pose relies on unchecked: parallel arrays, and every bone's
+ * parent a bone before it.
+ *
+ * @param skeleton Rig to judge.
+ * @return The first fault found, worded to follow "cannot be posed - ".
+ */
+std::string findSkeletonFault(const SkeletonAsset& skeleton);
 
 using SkeletonHandle = Handle<SkeletonAsset>;
 

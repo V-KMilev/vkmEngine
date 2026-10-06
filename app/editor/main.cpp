@@ -5,9 +5,8 @@
 #include "logger.h"
 
 #include "core/engine.h"
-#include "platform/input/default_bindings.h"
-#include "system/camera/camera_controller_system.h"
-#include "asset_registration.h"
+#include "input/camera_controller_system.h"
+#include "cook/recipe_registration.h"
 #include "project_boot.h"
 #include "editor_system.h"
 #include "system/script/script_module.h"
@@ -18,45 +17,46 @@
 
 int main(int argc, char** argv) {
     try {
-        // Project root, working directory and log file, in the one order that
-        // works (see tools/project_boot.h).
+        // First: everything below logs to its file and resolves paths against its project.
         if (!Vkm::Engine::bootHost(argc, argv, "log.log", "VKM-ENGINE")) return EXIT_FAILURE;
+        if (!Vkm::Engine::refuseExtraArgs(argc, argv, "vkm_editor")) return EXIT_FAILURE;
 
-        // The editor wires the recipe factories: they (re)cook assets from their
-        // source and fall through to the cooked path for what is already baked.
-        // Must precede scene I/O.
+        // Before any scene I/O; see registerRecipeAssetFactories.
         Vkm::Engine::registerRecipeAssetFactories();
 
-        // Declared before the Engine so it outlives it: behaviors are destroyed
-        // during Engine teardown and their code must still be loaded then. It is
-        // filled when the editor opens a project, not here - one open sequence.
+        // Declared before the Engine so it outlives it: behaviors are destroyed during
+        // Engine teardown and need their code loaded. Filled by ProjectController::open.
         Vkm::Engine::ScriptModule scriptModule;
 
         Vkm::Engine::Engine engine;
 
-        // EditorSystem composes the real title - project, scene and modified
-        // marker - from its first frame onward.
-        auto sys = setupEngineApp(engine, AppConfig{"vkmEngine", true, false});
+        // The default title is a placeholder: syncWindowTitle in editor_system.cpp writes the real one.
+        Vkm::App::AppConfig config;
+        config.startPaused = true;
+        auto sys = Vkm::App::setupEngineApp(engine, config);
 
-        // The backend is the host's choice, not the bootstrap's. Here and now
-        // rather than inside setupEngineApp, so a host that draws nothing can
-        // include the same bootstrap and link no backend at all.
         Vkm::GL::enableGLDebugLogging(false);
-        sys.render.setBackend(std::make_unique<Vkm::Engine::GLBackend>());
+        sys.render.setBackend(std::make_unique<Vkm::Engine::GLBackend>(), engine.getWindow());
 
-        // The fly controls are an authoring tool, so the authoring host registers
-        // them: right-drag hides and grabs the pointer, which a shipped game that
-        // never asked for it must not be able to get.
+        // Registered by the authoring host only: right-drag grabs the pointer, which a
+        // shipped game must not get unasked.
         auto& cameraController = engine.addSystem<Vkm::Engine::CameraControllerSystem>(
-            Vkm::Engine::SystemStage::Input);
-        Vkm::Engine::installEditorBindings(engine.getInput());
+            Vkm::Engine::SystemStage::Input
+        );
 
-        engine.addSystem<Vkm::Engine::EditorSystem>(Vkm::Engine::SystemStage::UI,
+        engine.addSystem<Vkm::Engine::EditorSystem>(
+            Vkm::Engine::SystemStage::Editor,
             engine.getWindow().getWindowContext(),
-            cameraController, sys.visibility, sys.render, sys.audio, scriptModule);
+            cameraController,
+            sys.render,
+            engine.getRenderSettings(),
+            sys.audio,
+            sys.behaviors,
+            scriptModule
+        );
 
-        // The project opens from EditorSystem::init, on the same sequence File >
-        // Open Project runs; see docs/reference/editor.md, "Opening a project".
+        // The project opens from EditorSystem::init; see docs/reference/editor.md,
+        // "Opening a project".
         engine.run();
 
     } catch (const std::exception& e) {

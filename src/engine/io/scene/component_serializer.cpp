@@ -2,6 +2,7 @@
 
 #include "io/scene/component_serializer.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstring>
 #include <limits>
@@ -40,9 +41,8 @@ using ::Vkm::Engine::detail::jsonToVec3;
 using ::Vkm::Engine::detail::jsonToVec4;
 using ::Vkm::Engine::detail::jsonToQuat;
 
-// toJson / fromJson overload set. The reflection-driven save/load templates
-// (saveReflected / loadReflected) iterate a type's fields and forward each
-// to these helpers; adding a new field type means adding a new pair here.
+// The leaves saveReflected / loadReflected forward each field to; a new field
+// type adds a pair here.
 inline nlohmann::json toJson(bool        v) { return v; }
 inline nlohmann::json toJson(int         v) { return v; }
 inline nlohmann::json toJson(uint32_t    v) { return v; }
@@ -63,7 +63,7 @@ inline void fromJson(const nlohmann::json& j, glm::vec3& v) { v = jsonToVec3(j, 
 inline void fromJson(const nlohmann::json& j, glm::vec4& v) { v = jsonToVec4(j, v); }
 inline void fromJson(const nlohmann::json& j, glm::quat& q) { q = jsonToQuat(j, q); }
 
-// Fixed-size character buffers (e.g. Name::value is char[64]).
+// Fixed-size character buffers (Name::value).
 template<std::size_t N>
 inline nlohmann::json toJson(const char (&v)[N]) { return std::string(v); }
 template<std::size_t N>
@@ -73,98 +73,74 @@ inline void fromJson(const nlohmann::json& j, char (&v)[N]) {
     v[N - 1] = '\0';
 }
 
-// Enums: any scoped enum registered via VKM_ENUM_NAMES (Camera's ProjectionType,
-// Light's LightType, ...). The SFINAE keeps these out of overload resolution for
-// non-enum types, so the primitive overloads above still win for those.
+// Scoped enums registered via VKM_ENUM_NAMES. The SFINAE leaves non-enum types
+// to the overloads above.
 template<typename E, typename = std::enable_if_t<std::is_enum_v<E>>>
 inline nlohmann::json toJson(E v) { return Reflect::enumName(v); }
 template<typename E, typename = std::enable_if_t<std::is_enum_v<E>>>
 inline void fromJson(const nlohmann::json& j, E& v) {
     const std::string name = j.get<std::string>();
-    // A name this build has no enumerator for leaves the field at the default the
-    // component was constructed with, and says so - rather than a valid-looking
-    // enumerator zero.
+    // An unknown name keeps the constructed default and warns, rather than
+    // becoming a valid-looking enumerator zero.
     if (!Reflect::enumFromNameChecked(name, v)) {
-        LOG_WARNING("No enumerator called '%s' in this build; leaving the field at its default",
-                    name.c_str());
+        LOG_WARNING(
+            "No enumerator called '%s' in this build; leaving the field at its default",
+            name.c_str()
+        );
     }
 }
 
-// Reflection driver. Phase-1 unqualified lookup at this definition site picks
-// up every overload declared above - no ADL needed, they and the templates all
-// live in this anon namespace - so a new field type only needs a matching pair.
-
-template<typename T>
-nlohmann::json saveReflected(const T& obj);
-template<typename T>
-void loadReflected(const nlohmann::json& j, T& obj);
-
-// Nested reflected structs: a settings block that groups its own fields writes
-// as a nested object rather than flattening its names into the parent. A struct
-// that has been through VKM_REFLECT is not a leaf, so recurse instead of looking
-// for a toJson that cannot exist. Declared after the driver so the recursion
-// resolves.
-// SFINAE goes in the return type, not a defaulted template parameter: a default
-// argument is not part of the signature, so the enum pair above and this one
-// would be redefinitions of each other.
-template<typename T>
-inline std::enable_if_t<Reflect::IS_REFLECTED<T>, nlohmann::json> toJson(const T& v) {
-    return saveReflected(v);
-}
-template<typename T>
-inline std::enable_if_t<Reflect::IS_REFLECTED<T>> fromJson(const nlohmann::json& j, T& v) {
-    loadReflected(j, v);
-}
-
-// A Handle is not a leaf the plain toJson set can carry: writing one needs the
-// ResourceManager to turn it into the name that is its serialized identity, and
-// reading one needs the same manager to turn the name back. That context is the
-// only reason a component holding an asset had to be written out by hand, so it
-// is threaded through the driver rather than worked around beside it.
+// A Handle is not a toJson leaf: it needs the ResourceManager to become its name
+// and back.
 template<typename T>  struct IsHandle                     : std::false_type {};
 template<typename A>  struct IsHandle<Handle<A>>          : std::true_type  {};
 
-// A vector is a JSON array of whatever its element is, decided by the same
-// dispatch - so a vector of reflected structs, of handles, or of leaves all work
-// without three rules. This is what let Collider's parts and LOD's levels stop
-// being written out by hand.
+// A vector is a JSON array of its elements, each through the same dispatch.
 template<typename T>     struct IsVector                     : std::false_type {};
 template<typename E, typename A> struct IsVector<std::vector<E, A>> : std::true_type {};
 
-// Defined further down, beside the unresolved-reference list it appends to.
+// Defined beside the unresolved-reference list it appends to.
 template<typename Asset>
-Handle<Asset> resolveAssetRef(const ResourceManager& r, const std::string& name,
-                              const char* what, const char* field);
+Handle<Asset> resolveAssetRef(
+    const ResourceManager& r,
+    const std::string& name,
+    const char* what,
+    const char* field
+);
 
 /**
  * @brief Stand-in context for a component that names no assets.
  *
- * Most components do not, and asking every one of them to be handed a
- * ResourceManager it will not use would put the parameter in twenty signatures
- * to serve four. A handle reached with this in hand is a static_assert rather
- * than a runtime surprise: the component needs the other overload.
+ * Reaching a handle with this is a static_assert: the component needs the other
+ * overload.
  */
 struct NoResources {};
 
 template<typename T, typename Ctx>
 nlohmann::json saveReflected(const T& obj, const Ctx& ctx);
 template<typename T, typename Ctx>
-void loadReflected(const nlohmann::json& j, T& obj, const Ctx& ctx);
+void loadReflected(const nlohmann::json& j, T& obj, const Ctx& ctx, bool inArray = false);
 
 /**
  * @brief One value to JSON, whatever kind of value it is.
  *
- * The recursion point: a handle becomes its name, a reflected struct becomes an
- * object, a vector becomes an array of this same question asked again, and
- * anything else is a leaf the toJson set already knows. Vectors of reflected
- * structs work because of the third case calling the second.
+ * A handle becomes its name, a vector an array of recursive calls, a reflected
+ * struct an object, and anything else a toJson leaf.
+ *
+ * @tparam V   The value's type.
+ * @tparam Ctx ResourceManager, or NoResources for a component that names no assets.
+ * @param val  The value to write.
+ * @param ctx  Resolves a handle to its name.
+ * @return The value as JSON.
  */
 template<typename V, typename Ctx>
 nlohmann::json valueToJson(const V& val, const Ctx& ctx) {
     if constexpr (IsHandle<V>::value) {
-        static_assert(!std::is_same_v<Ctx, NoResources>,
-                      "a component holding a Handle<T> serializes through the "
-                      "ResourceManager overload - the name is the identity");
+        static_assert(
+            !std::is_same_v<Ctx, NoResources>,
+            "a component holding a Handle<T> serializes through the "
+                "ResourceManager overload - the name is the identity"
+        );
         return val ? ctx.get(val).name() : std::string{};
     } else if constexpr (IsVector<V>::value) {
         nlohmann::json arr = nlohmann::json::array();
@@ -180,29 +156,44 @@ nlohmann::json valueToJson(const V& val, const Ctx& ctx) {
 /**
  * @brief The same question in the other direction.
  *
- * @param field The name this value is stored under, used as the label an
- *              unresolved asset reference is reported with.
+ * @tparam V    The value's type.
+ * @tparam Ctx  ResourceManager, or NoResources for a component that names no assets.
+ * @param j     The JSON to read.
+ * @param val   The value to fill.
+ * @param ctx   Resolves a name back to a handle.
+ * @param field Key the value is stored under, labelling an unresolved asset
+ *              reference; null inside an array, where a kept name has nowhere to go.
  */
 template<typename V, typename Ctx>
 void valueFromJson(const nlohmann::json& j, V& val, const Ctx& ctx, const char* field) {
     if constexpr (IsHandle<V>::value) {
-        static_assert(!std::is_same_v<Ctx, NoResources>,
-                      "a component holding a Handle<T> serializes through the "
-                      "ResourceManager overload - the name is the identity");
+        static_assert(
+            !std::is_same_v<Ctx, NoResources>,
+            "a component holding a Handle<T> serializes through the "
+                "ResourceManager overload - the name is the identity"
+        );
         using Asset = typename V::resource_t;
-        val = resolveAssetRef<Asset>(ctx, j.is_string() ? j.get<std::string>() : std::string{},
-                                     Reflect::enumName(ASSET_TYPE<Asset>), field);
+        val = resolveAssetRef<Asset>(
+            ctx,
+            j.is_string() ? j.get<std::string>() : std::string{},
+            Reflect::enumName(ASSET_TYPE<Asset>),
+            field
+        );
     } else if constexpr (IsVector<V>::value) {
         val.clear();
         if (!j.is_array()) return;
         val.reserve(j.size());
         for (const nlohmann::json& element : j) {
             typename V::value_type item{};
-            valueFromJson(element, item, ctx, field);
+            // An array element has no key to restore a kept name into. See
+            // resolveAssetRef.
+            valueFromJson(element, item, ctx, nullptr);
             val.push_back(std::move(item));
         }
     } else if constexpr (Reflect::IS_REFLECTED<V>) {
-        loadReflected(j, val, ctx);
+        // A struct inside an array stays inside it: its keys address the element.
+        const bool inArray = field == nullptr;
+        loadReflected(j, val, ctx, inArray);
     } else {
         fromJson(j, val);
     }
@@ -218,11 +209,11 @@ nlohmann::json saveReflected(const T& obj, const Ctx& ctx) {
 }
 
 template<typename T, typename Ctx>
-void loadReflected(const nlohmann::json& j, T& obj, const Ctx& ctx) {
+void loadReflected(const nlohmann::json& j, T& obj, const Ctx& ctx, bool inArray) {
     ::Vkm::Engine::Reflect::forEachField(obj, [&](std::string_view name, auto& val) {
         const std::string key(name);
         auto it = j.find(key);
-        if (it != j.end()) valueFromJson(*it, val, ctx, key.c_str());
+        if (it != j.end()) valueFromJson(*it, val, ctx, inArray ? nullptr : key.c_str());
     });
 }
 
@@ -234,12 +225,9 @@ void loadReflected(const nlohmann::json& j, T& obj) { loadReflected(j, obj, NoRe
 
 } // namespace
 
-// Component save / load. The driver carries leaves, enums, nested reflected
-// structs, vectors and Handle<T>, so most components are one-line passthroughs.
-// Hand-written where it cannot reach: Ragdoll names entities, Animation's tracks
-// sit behind private accessors, ScriptComponent holds polymorphic behaviors.
-// A component that persists less than it holds says so by reflecting fewer
-// fields, not by a function that skips them.
+// The driver carries leaves, enums, nested reflected structs, vectors and
+// Handle<T>; a component is hand-written only where it cannot reach. One that
+// persists less than it holds reflects fewer fields.
 
 nlohmann::json save(const Environment& env) {
     return saveReflected(env);
@@ -247,6 +235,24 @@ nlohmann::json save(const Environment& env) {
 
 void load(const nlohmann::json& j, Environment& env) {
     loadReflected(j, env);
+
+    // A phase asymmetry of one divides zero by zero in the sky bake and the fog,
+    // so both are clamped to what they can draw, with a warning.
+    const float mieG = std::clamp(env.sky.mieG, 0.0f, SkySettings::MAX_MIE_G);
+    if (mieG != env.sky.mieG) {
+        LOG_WARNING("Sky mieG %g is outside 0..%g; using %g", env.sky.mieG, SkySettings::MAX_MIE_G, mieG);
+        env.sky.mieG = mieG;
+    }
+    const float g = std::clamp(env.fog.anisotropy, -FogSettings::MAX_ANISOTROPY, FogSettings::MAX_ANISOTROPY);
+    if (g != env.fog.anisotropy) {
+        LOG_WARNING(
+            "Fog anisotropy %g is outside +-%g; using %g",
+            env.fog.anisotropy,
+            FogSettings::MAX_ANISOTROPY,
+            g
+        );
+        env.fog.anisotropy = g;
+    }
 }
 
 nlohmann::json save(const PhysicsSettings& p)          { return saveReflected(p); }
@@ -271,8 +277,8 @@ nlohmann::json save(const CharacterController& cc)          { return saveReflect
 void load(const nlohmann::json& j, CharacterController& cc) { loadReflected(j, cc); }
 
 nlohmann::json save(const Joint& joint, const EntityNamer& name) {
-    // Everything but the entity reference, `type` included: the driver carries
-    // enums, and it is the one place that says what an unknown name means.
+    // The driver carries all but the entity reference, `type` included: it is
+    // the one place that says what an unknown enum name means.
     nlohmann::json out = saveReflected(joint);
     out["connected"] = name(joint.connected);
     return out;
@@ -283,18 +289,15 @@ void load(const nlohmann::json& j, Joint& out, const EntityResolver& resolve) {
 }
 
 nlohmann::json save(const Ragdoll& r, const EntityNamer& name) {
-    nlohmann::json out = saveReflected(r);   // active
+    nlohmann::json out = saveReflected(r);
 
-    // The bones travel with it: they map a body back to the bone it poses, and
-    // the bodies are entities the scene saves anyway - so dropping the mapping
-    // saves a ragdoll that has forgotten them beside a loose skeleton.
     nlohmann::json bones = nlohmann::json::array();
     for (const RagdollBone& bone : r.bones) {
         nlohmann::json entry;
         entry["bone"] = bone.bone;
         entry["body"] = name(bone.body);
         nlohmann::json offset = nlohmann::json::array();
-        const float* m = glm::value_ptr(bone.boneFromBody);
+        const float* m = glm::value_ptr(bone.bodyFromBone);
         for (int i = 0; i < 16; ++i) offset.push_back(m[i]);
         entry["offset"] = std::move(offset);
         bones.push_back(std::move(entry));
@@ -320,60 +323,42 @@ void load(const nlohmann::json& j, Ragdoll& r, const EntityResolver& resolve) {
         bone.body = resolve(entry.value("body", 0u));
         const auto offset = entry.find("offset");
         if (offset != entry.end() && offset->is_array() && offset->size() == 16) {
-            float* m = glm::value_ptr(bone.boneFromBody);
+            float* m = glm::value_ptr(bone.bodyFromBone);
             for (int i = 0; i < 16; ++i) m[i] = (*offset)[i].get<float>();
         }
         r.bones.push_back(bone);
     }
 }
 
-nlohmann::json save(const Collider& c) { return saveReflected(c); }
-
-void load(const nlohmann::json& j, Collider& c) {
-    loadReflected(j, c);
-    // The tree is derived from the triangles, so it is never written to disk
-    // where it could disagree. Rebuilt here rather than by the first caller that
-    // needs it: a query is not a tick, and in the editor nothing ticks at all.
-    rebuildMeshBvh(c);
-}
-
 namespace {
 
-// Names the loaders could not resolve since the scene loader last drained them.
-// A free list rather than a parameter because the loaders are one overload per
-// component, with nowhere to return a second value from.
+// Names the loaders could not resolve since takeUnresolvedRefs last drained them.
 std::vector<UnresolvedRef> g_unresolved;
 
-// Resolve a saved asset name to a live handle. A name the asset graph cannot
-// answer leaves the component's slot empty: the file referenced something the
-// load did not bring in, and what the author sees is a field that used to hold
-// their work and now holds nothing. That goes through reportError rather than
-// the log, so the editor says it out loud (a toast, and the entry stays in
-// Bottom > Errors) instead of recording it where only a log reader would find
-// it. The runtime installs no sink and still gets the logged line.
-//
-// The name is also kept, under the field it was read from, so the caller can
-// hand it to the entity and a later save can write it back. Saying it once is
-// not enough on its own: the slot is empty either way, and a save that knew
-// only that would put an empty string where the author's reference was.
-//
-// A null field says the save has nowhere to put this one back - LOD's levels
-// are a ramp rather than a name, and that ramp's holes are its own decision -
-// so nothing is kept. Keeping it anyway would put the name in the document's
-// assets block and nowhere else, declaring an asset the scene has stopped
-// naming and asking every later load to go and find it.
+// Resolve a saved asset name to a handle. An unresolved name leaves the slot
+// empty and goes through reportError, so a host's error sink shows it. It is kept
+// under its field for a later save to write back, unless the field is null (a
+// name read out of an array).
 template<typename Asset>
-Handle<Asset> resolveAssetRef(const ResourceManager& r, const std::string& name,
-                              const char* what, const char* field) {
+Handle<Asset> resolveAssetRef(
+    const ResourceManager& r,
+    const std::string& name,
+    const char* what,
+    const char* field
+) {
     if (name.empty()) return {};
     Handle<Asset> h = r.findByName<Asset>(name);
     if (!h) {
-        reportError("Scene", std::string(what) + " '" + name + "'",
-            "reference left unresolved - the asset is not loaded, so the slot is empty");
+        reportError(
+            "Scene",
+            std::string(what) + " '" + name + "'",
+            "reference left unresolved - the asset is not loaded, so the slot is empty"
+        );
         if (field) g_unresolved.push_back({field, name, ASSET_TYPE<Asset>});
     }
     return h;
 }
+
 } // namespace
 
 std::vector<UnresolvedRef> takeUnresolvedRefs() {
@@ -383,6 +368,21 @@ std::vector<UnresolvedRef> takeUnresolvedRefs() {
 }
 
 UnresolvedScope::~UnresolvedScope() { takeUnresolvedRefs(); }
+
+nlohmann::json save(const Collider& c, const ResourceManager& resources) {
+    return saveReflected(c, resources);
+}
+void load(const nlohmann::json& j, Collider& c, const ResourceManager& resources) {
+    loadReflected(j, c, resources);
+    // Built here rather than by the first tick: a query is not a tick, and in
+    // the editor nothing ticks.
+    syncMeshCollider(c, resources);
+}
+void emitAssetRefs(const Collider& c, AssetRefs& refs) {
+    for (const ColliderPart& part : c.parts) {
+        if (part.mesh) refs.meshes.push_back(part.mesh);
+    }
+}
 
 nlohmann::json save(const Mesh& m, const ResourceManager& resources) {
     return saveReflected(m, resources);
@@ -402,8 +402,7 @@ void load(const nlohmann::json& j, Animator& a, const ResourceManager& resources
     loadReflected(j, a, resources);
 }
 void emitAssetRefs(const Animator& a, AssetRefs& refs) {
-    // fadeFrom is runtime state that no save writes, so it names nothing a
-    // file has to carry.
+    // fadeFrom is runtime state no save writes.
     if (a.skeleton) refs.skeletons.push_back(a.skeleton);
     if (a.clip)     refs.clips.push_back(a.clip);
 }
@@ -461,14 +460,24 @@ void load(const nlohmann::json& j, UICanvas& c) { loadReflected(j, c); }
 nlohmann::json save(const UIElement& e)          { return saveReflected(e); }
 void load(const nlohmann::json& j, UIElement& e) { loadReflected(j, e); }
 
-nlohmann::json save(const UIImage& i)          { return saveReflected(i); }
-void load(const nlohmann::json& j, UIImage& i) { loadReflected(j, i); }
+nlohmann::json save(const UIImage& i, const ResourceManager& resources) {
+    return saveReflected(i, resources);
+}
+void load(const nlohmann::json& j, UIImage& i, const ResourceManager& resources) {
+    loadReflected(j, i, resources);
+}
+void emitAssetRefs(const UIImage& i, AssetRefs& refs) {
+    if (i.texture) refs.textures.push_back(i.texture);
+}
 
 nlohmann::json save(const UIText& t)          { return saveReflected(t); }
 void load(const nlohmann::json& j, UIText& t) { loadReflected(j, t); }
 
 nlohmann::json save(const UIButton& b)          { return saveReflected(b); }
 void load(const nlohmann::json& j, UIButton& b) { loadReflected(j, b); }
+
+nlohmann::json save(const UIScroll& s)          { return saveReflected(s); }
+void load(const nlohmann::json& j, UIScroll& s) { loadReflected(j, s); }
 
 nlohmann::json save(const Hierarchy& h) {
     return nlohmann::json{{"parent", h.parent.slot()}};
@@ -488,7 +497,7 @@ nlohmann::json saveTrack(const AnimationTrack<T>& track, ValueWriter writeValue)
         keyframes.push_back({{"t", times[i]}, {"v", writeValue(values[i])}});
     }
     return {
-        {"easing",    Easing::nameOf(track.getEasing())},
+        {"easing",    toJson(track.getEasing())},
         {"keyframes", std::move(keyframes)},
     };
 }
@@ -497,13 +506,14 @@ template<typename T, typename ValueReader>
 void loadTrack(const nlohmann::json& j, AnimationTrack<T>& track, ValueReader readValue) {
     track.clear();
     if (j.contains("easing")) {
-        track.setEasing(Easing::byName(j["easing"].get<std::string>().c_str()));
+        Easing easing = Easing::Linear;
+        fromJson(j["easing"], easing);
+        track.setEasing(easing);
     }
     if (j.contains("keyframes") && j["keyframes"].is_array()) {
         for (const auto& kf : j["keyframes"]) {
-            // at(), not operator[]: const operator[] on a missing key only
-            // asserts, which is nothing in release, and then reads the map's end
-            // node. The throw is caught by the scene loader's guard.
+            // at(), not operator[]: const operator[] on a missing key only asserts,
+            // then reads the map's end node in release. The scene loader catches the throw.
             track.addKeyframe(kf.value("t", 0.0f), readValue(kf.at("v")));
         }
     }
@@ -524,9 +534,11 @@ nlohmann::json save(const Animation& a) {
 }
 
 void load(const nlohmann::json& j, Animation& a) {
-    if (j.contains("position")) loadTrack(j["position"], a.positionTrack, [](const nlohmann::json& v) { return jsonToVec3(v); });
-    if (j.contains("rotation")) loadTrack(j["rotation"], a.rotationTrack, [](const nlohmann::json& v) { return jsonToQuat(v); });
-    if (j.contains("scale"))    loadTrack(j["scale"],    a.scaleTrack,    [](const nlohmann::json& v) { return jsonToVec3(v); });
+    const auto readVec3 = [](const nlohmann::json& v) { return jsonToVec3(v); };
+    const auto readQuat = [](const nlohmann::json& v) { return jsonToQuat(v); };
+    if (j.contains("position")) loadTrack(j["position"], a.positionTrack, readVec3);
+    if (j.contains("rotation")) loadTrack(j["rotation"], a.rotationTrack, readQuat);
+    if (j.contains("scale"))    loadTrack(j["scale"],    a.scaleTrack,    readVec3);
     a.length      = j.value("length",      a.length);
     a.speed       = j.value("speed",       a.speed);
     a.playOnStart = j.value("playOnStart", a.playOnStart);
@@ -536,31 +548,40 @@ void load(const nlohmann::json& j, Animation& a) {
 namespace {
 
 /**
- * @brief Writes each visited reflected field into a JSON object (read-only on the
- * behavior - see the const_cast note in save()).
+ * @brief Writes each visited reflected field into a JSON object.
  *
- * A nested reflected struct becomes a JSON sub-object: beginStruct pushes it and
- * endStruct pops, so `cur()` is always the object the current fields write into.
+ * Read-only on the behavior (see the const_cast note in save()). A nested struct
+ * becomes a sub-object, pushed by beginStruct and popped by endStruct.
  */
 class BehaviorJsonWriter : public BehaviorFieldVisitor {
     public:
         explicit BehaviorJsonWriter(nlohmann::json& out) { m_scopes.push_back(&out); }
+        ~BehaviorJsonWriter() override = default;
 
+        BehaviorJsonWriter(const BehaviorJsonWriter& other) = delete;
+        BehaviorJsonWriter& operator=(const BehaviorJsonWriter& other) = delete;
+
+        BehaviorJsonWriter(BehaviorJsonWriter && other) = delete;
+        BehaviorJsonWriter& operator=(BehaviorJsonWriter && other) = delete;
+
+    public:
         void field(const char* name, float& v) override { cur()[name] = v; }
         void field(const char* name, int& v)   override { cur()[name] = v; }
         void field(const char* name, bool& v)  override { cur()[name] = v; }
+        void field(const char* name, glm::vec2& v) override { cur()[name] = vec2ToJson(v); }
         void field(const char* name, glm::vec3& v) override { cur()[name] = vec3ToJson(v); }
+        void field(const char* name, glm::vec4& v) override { cur()[name] = vec4ToJson(v); }
+        void field(const char* name, glm::quat& v) override { cur()[name] = quatToJson(v); }
         void field(const char* name, std::string& v) override { cur()[name] = v; }
 
         void enumField(const char* name, int& index, const char* const* names, std::size_t count) override {
-            // By name, not the raw index: reordering enum values without renaming
-            // then leaves existing scenes valid (matches Reflect::enumName).
+            // By name, not index, so reordering enum values keeps scenes valid
+            // (matches Reflect::enumName).
             if (index >= 0 && static_cast<std::size_t>(index) < count) cur()[name] = names[index];
         }
 
-        // An asset reference is a name, and a name is a string. Which section of
-        // the assets block that name has to appear in is the asset serializer's
-        // job (it walks the same fields); the component only records it.
+        // Written as its name; which assets-block section it belongs in is
+        // AssetSerializer::collectAssetRefs's to say.
         void assetField(const char* name, std::string& assetName, AssetType type) override {
             field(name, assetName);
         }
@@ -572,36 +593,69 @@ class BehaviorJsonWriter : public BehaviorFieldVisitor {
         void endStruct() override { m_scopes.pop_back(); }
 
     private:
-        // std::map-backed json: a reference to a nested value stays valid as
-        // siblings are inserted, so holding these pointers across the walk is safe.
+        // json objects are std::map-backed, so these pointers survive sibling inserts.
         nlohmann::json& cur() { return *m_scopes.back(); }
+
+    private:
         std::vector<nlohmann::json*> m_scopes;
 };
 
 /**
- * @brief Reads each visited reflected field from a JSON object, keeping the field's
- * current value when the key is missing or malformed.
+ * @brief Reads each visited reflected field from a JSON object.
  *
- * A nested struct descends into its sub-object; a missing/mistyped sub-object is
- * skipped (beginStruct returns false), leaving that struct's fields at their
- * constructed defaults - the same keep-current-value rule the leaves follow.
+ * A missing or malformed key keeps the field's current value; so does a missing
+ * or mistyped sub-object (beginStruct returns false).
  */
 class BehaviorJsonReader : public BehaviorFieldVisitor {
     public:
         explicit BehaviorJsonReader(const nlohmann::json& in) { m_scopes.push_back(&in); }
+        ~BehaviorJsonReader() override = default;
 
-        void field(const char* name, float& v) override { if (cur().contains(name)) v = cur()[name].get<float>(); }
-        void field(const char* name, int& v)   override { if (cur().contains(name)) v = cur()[name].get<int>(); }
-        void field(const char* name, bool& v)  override { if (cur().contains(name)) v = cur()[name].get<bool>(); }
+        BehaviorJsonReader(const BehaviorJsonReader& other) = delete;
+        BehaviorJsonReader& operator=(const BehaviorJsonReader& other) = delete;
+
+        BehaviorJsonReader(BehaviorJsonReader && other) = delete;
+        BehaviorJsonReader& operator=(BehaviorJsonReader && other) = delete;
+
+    public:
+        // A wrong-typed value keeps the field's current value with a warning: a
+        // throw here would cost the whole load rather than one value.
+        void field(const char* name, float& v) override {
+            if (const nlohmann::json* node = present(name)) {
+                if (node->is_number()) v = node->get<float>();
+                else keepCurrent(name, "a number", *node);
+            }
+        }
+        void field(const char* name, int& v) override {
+            if (const nlohmann::json* node = present(name)) {
+                if (node->is_number()) v = node->get<int>();
+                else keepCurrent(name, "a number", *node);
+            }
+        }
+        void field(const char* name, bool& v) override {
+            if (const nlohmann::json* node = present(name)) {
+                if (node->is_boolean()) v = node->get<bool>();
+                else keepCurrent(name, "true or false", *node);
+            }
+        }
         void field(const char* name, glm::vec3& v) override {
-            // The current value goes in as the fallback: a malformed node keeps it.
-            if (cur().contains(name)) v = jsonToVec3(cur()[name], v);
+            // A malformed node keeps the current value; jsonToVec3 says so.
+            if (const nlohmann::json* node = present(name)) v = jsonToVec3(*node, v);
+        }
+        void field(const char* name, glm::vec2& v) override {
+            if (const nlohmann::json* node = present(name)) v = jsonToVec2(*node, v);
+        }
+        void field(const char* name, glm::vec4& v) override {
+            if (const nlohmann::json* node = present(name)) v = jsonToVec4(*node, v);
+        }
+        void field(const char* name, glm::quat& v) override {
+            if (const nlohmann::json* node = present(name)) v = jsonToQuat(*node, v);
         }
         void field(const char* name, std::string& v) override {
-            // Type-checked, keeping the current value rather than throwing: free
-            // text is what a hand-edited scene is likeliest to have got wrong, and
-            // a throw here costs the whole load rather than one value.
-            if (cur().contains(name) && cur()[name].is_string()) v = cur()[name].get<std::string>();
+            if (const nlohmann::json* node = present(name)) {
+                if (node->is_string()) v = node->get<std::string>();
+                else keepCurrent(name, "a string", *node);
+            }
         }
 
         void assetField(const char* name, std::string& assetName, AssetType type) override {
@@ -609,12 +663,21 @@ class BehaviorJsonReader : public BehaviorFieldVisitor {
         }
 
         void enumField(const char* name, int& index, const char* const* names, std::size_t count) override {
-            if (!cur().contains(name) || !cur()[name].is_string()) return;   // keep current
-            const std::string picked = cur()[name].get<std::string>();
-            for (std::size_t i = 0; i < count; ++i) {
-                if (picked == names[i]) { index = static_cast<int>(i); return; }
+            const nlohmann::json* node = present(name);
+            if (!node) return;
+            if (!node->is_string()) {
+                keepCurrent(name, "a value's name", *node);
+                return;
             }
-            // Unknown name (a removed/renamed value): keep the current value.
+            const std::string picked = node->get<std::string>();
+            for (std::size_t i = 0; i < count; ++i) {
+                if (picked == names[i]) {
+                    index = static_cast<int>(i);
+                    return;
+                }
+            }
+            // A removed or renamed value.
+            keepCurrent(name, "a value this build has", *node);
         }
 
         bool beginStruct(const char* name) override {
@@ -626,6 +689,24 @@ class BehaviorJsonReader : public BehaviorFieldVisitor {
 
     private:
         const nlohmann::json& cur() { return *m_scopes.back(); }
+
+        // The node @p name holds in the current scope; null when absent, which
+        // keeps the field's value silently.
+        const nlohmann::json* present(const char* name) {
+            const auto it = cur().find(name);
+            return it == cur().end() ? nullptr : &*it;
+        }
+
+        static void keepCurrent(const char* name, const char* wanted, const nlohmann::json& got) {
+            LOG_WARNING(
+                "Behavior field '%s' wants %s and holds '%s'; keeping its current value",
+                name,
+                wanted,
+                got.dump().c_str()
+            );
+        }
+
+    private:
         std::vector<const nlohmann::json*> m_scopes;
 };
 
@@ -634,9 +715,8 @@ class BehaviorJsonReader : public BehaviorFieldVisitor {
 nlohmann::json save(const ScriptComponent& sc) {
     nlohmann::json behaviors = nlohmann::json::array();
 
-    // A held one goes back where it was read from: this list's order is the order
-    // the behaviors run in. Written back exactly as read, because the module that
-    // knows what these properties mean is the one that is missing.
+    // A held one goes back where it was read from, since order is run order, and
+    // exactly as read: the module that understands its properties is missing.
     const auto emitHeldAt = [&](size_t position) {
         for (const UnknownBehavior& kept : sc.unknown) {
             if (kept.index != position) continue;
@@ -651,8 +731,7 @@ nlohmann::json save(const ScriptComponent& sc) {
         emitHeldAt(behaviors.size());
         nlohmann::json props = nlohmann::json::object();
         BehaviorJsonWriter writer(props);
-        // visitFields is non-const (shared with the editor/loader, which mutate);
-        // the writer only reads field values, so this const_cast is safe.
+        // The writer only reads, so casting away const for visitFields is safe.
         const_cast<Behavior&>(*behavior).visitFields(writer);
         behaviors.push_back({{"type", behavior->typeName()}, {"properties", std::move(props)}});
     }
@@ -675,17 +754,15 @@ void load(const nlohmann::json& j, ScriptComponent& sc) {
         const std::string type = entry.value("type", std::string{});
         if (type.empty()) continue;
 
-        const nlohmann::json* props =
-            entry.contains("properties") && entry["properties"].is_object()
-                ? &entry["properties"] : nullptr;
+        const bool hasProperties = entry.contains("properties") && entry["properties"].is_object();
+        const nlohmann::json* props = hasProperties ? &entry["properties"] : nullptr;
 
         auto behavior = BehaviorRegistry::get().create(type);
         if (!behavior) {
-            // Kept, not dropped: no type of this name is registered, which
-            // says the module is absent, not that the scene stopped wanting
-            // the behavior. See UnknownBehavior.
-            sc.unknown.push_back({type, props ? props->dump() : std::string{"{}"},
-                                  sc.behaviors.size() + sc.unknown.size()});
+            // Kept: an unregistered type means the module is absent, not that
+            // the scene stopped wanting the behavior. See UnknownBehavior.
+            std::string properties = props ? props->dump() : std::string{"{}"};
+            sc.unknown.push_back({type, std::move(properties), sc.behaviors.size() + sc.unknown.size()});
             continue;
         }
         if (props) {

@@ -1,45 +1,88 @@
-# vkm_add_gameplay_module(<name> SOURCES <files> [PROJECT_DIR <d>])
+# vkm_add_gameplay_module(<name> [SOURCES <files>])
 #
-# The one recipe for the one shared library a project loads. Every project's
-# module is built the same way, so the SDK provides it rather than asking each
-# project to restate it - and the engine's own examples call it too, so the
-# recipe a user gets is the recipe we test.
+# The recipe for the one library a project loads, shared by user projects and the
+# engine's examples, so it names only vkmEngine:: targets.
 #
-# Included twice: by the top-level CMakeLists for the examples in this tree, and
-# by vkmEngineConfig.cmake for a project that found the engine. It names only
-# vkmEngine:: targets, which exist in both.
+# The project is the calling directory; without SOURCES the module is every .cpp
+# under its src/, which is also its include root. It is always named
+# `game`, the name a host loads, and lands in bin/ or VKM_MODULE_DIR.
+
+# vkm_gameplay_module_options(<target>)
 #
-# The file is always called `game`. Every host resolves the module by that name
-# (project_boot.cpp, through DynamicLibrary::platformName), so a project that
-# named its output something else built a library nothing would ever load - the
-# parameter that allowed it was a second answer to a question with one.
-
-function(vkm_add_gameplay_module TARGET)
-    cmake_parse_arguments(VKM "" "PROJECT_DIR" "SOURCES" ${ARGN})
-
-    if(NOT VKM_SOURCES)
-        message(FATAL_ERROR "vkm_add_gameplay_module(${TARGET}): SOURCES is required")
-    endif()
-    if(NOT VKM_PROJECT_DIR)
-        set(VKM_PROJECT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-    endif()
-
-    add_library(${TARGET} SHARED ${VKM_SOURCES})
-
-    # Links the engine, never a host executable: the editor and the runtime load
-    # the same file.
+# What a library needs to be loaded and unloaded by a host.
+function(vkm_gameplay_module_options TARGET)
+    # The engine, never a host: every host loads this one file.
     target_link_libraries(${TARGET} PRIVATE vkmEngine::vkm_core)
 
-    # Into the project's own bin/, which is the one place a host looks.
-    # All three destinations, because Windows splits a shared library into
-    # game.dll and the import library libgame.dll.a. Leaving the archive to a
-    # global default puts every project's import library in one directory under
-    # the same name, and two projects configured in one tree collide there.
+    # GCC marks inline and template statics STB_GNU_UNIQUE, and glibc never
+    # unmaps a library that has one, so a reload would bind to the old copy.
+    target_compile_options(${TARGET} PRIVATE $<$<CXX_COMPILER_ID:GNU>:-fno-gnu-unique>)
+
+    # No rpath: the host has loaded the engine, and the loader matches it by name.
+    set_target_properties(${TARGET} PROPERTIES SKIP_BUILD_RPATH ON)
+endfunction()
+
+# vkm_check_engine_version(<project dir>)
+#
+# Refuses an engine of another minor release than project.json's engineVersion,
+# the one record of it: the engine is not ABI-stable across them.
+function(vkm_check_engine_version PROJECT_DIR)
+    set(_file ${PROJECT_DIR}/project.json)
+    if(NOT EXISTS ${_file})
+        return()
+    endif()
+    # An edit to it configures again.
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_file})
+
+    file(READ ${_file} _json)
+    string(JSON _wanted ERROR_VARIABLE _unreadable GET "${_json}" engineVersion)
+    if(_unreadable OR NOT _wanted)
+        return()
+    endif()
+
+    string(REGEX MATCH "^[0-9]+\\.[0-9]+" _wanted_minor "${_wanted}")
+    string(REGEX MATCH "^[0-9]+\\.[0-9]+" _have_minor "${vkmEngine_VERSION}")
+    if(NOT _wanted_minor STREQUAL _have_minor)
+        message(FATAL_ERROR
+            "${_file} was made for vkmEngine ${_wanted}, and this is ${vkmEngine_VERSION}.\n"
+            "The engine is not ABI-stable across minor releases, so a module is built against "
+            "the engine it was made for. To move the project to this one, set engineVersion "
+            "in project.json to ${vkmEngine_VERSION}."
+        )
+    endif()
+endfunction()
+
+function(vkm_add_gameplay_module TARGET)
+    cmake_parse_arguments(VKM "" "" "SOURCES" ${ARGN})
+    set(VKM_PROJECT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+    if(NOT VKM_SOURCES)
+        file(GLOB_RECURSE VKM_SOURCES CONFIGURE_DEPENDS ${VKM_PROJECT_DIR}/src/*.cpp)
+    endif()
+    if(NOT VKM_SOURCES)
+        message(FATAL_ERROR "vkm_add_gameplay_module(${TARGET}): no .cpp under ${VKM_PROJECT_DIR}/src")
+    endif()
+
+    vkm_check_engine_version(${VKM_PROJECT_DIR})
+
+    add_library(${TARGET} SHARED ${VKM_SOURCES})
+    vkm_gameplay_module_options(${TARGET})
+
+    target_include_directories(${TARGET} PRIVATE ${VKM_PROJECT_DIR}/src)
+
+    # bin/ is where a host looks; `vkm package` names its own for a shipping module.
+    set(_dir ${VKM_PROJECT_DIR}/bin)
+    if(VKM_MODULE_DIR)
+        set(_dir ${VKM_MODULE_DIR})
+    endif()
+
+    # The archive too, or Windows import libraries of two projects collide. No debug
+    # postfix: the host loads the module by a name no configuration may change.
     set_target_properties(${TARGET} PROPERTIES
         OUTPUT_NAME              game
-        RUNTIME_OUTPUT_DIRECTORY ${VKM_PROJECT_DIR}/bin
-        LIBRARY_OUTPUT_DIRECTORY ${VKM_PROJECT_DIR}/bin
-        ARCHIVE_OUTPUT_DIRECTORY ${VKM_PROJECT_DIR}/bin
+        DEBUG_POSTFIX            ""
+        RUNTIME_OUTPUT_DIRECTORY ${_dir}
+        LIBRARY_OUTPUT_DIRECTORY ${_dir}
+        ARCHIVE_OUTPUT_DIRECTORY ${_dir}
     )
     if(WIN32)
         set_target_properties(${TARGET} PROPERTIES PREFIX "")

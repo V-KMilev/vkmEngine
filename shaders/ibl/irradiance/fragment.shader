@@ -1,17 +1,16 @@
 /**
  * IBL bake - cosine-weighted diffuse irradiance convolution.
  *
- * Integrates the environment cubemap over the hemisphere about the cube
- * direction. Output is the irradiance the split-sum diffuse term samples.
+ * Output is irradiance over pi - what a white Lambertian surface facing that way reflects - so a
+ * reader multiplies it by the albedo alone.
  */
-
 in vec3 vLocalPos;
 
 out vec4 FragColor;
 
-uniform samplerCube u_envCube;
+layout(binding = BAKE_SLOT_SOURCE) uniform samplerCube u_envCube;
 
-#include "../../_common/constants.glsl"
+#include "../../constants.glsl"
 
 void main() {
     vec3 N = normalize(vLocalPos);
@@ -20,18 +19,14 @@ void main() {
     vec3 right = normalize(cross(up, N));
     up = normalize(cross(N, right));
 
-    vec3  irradiance = vec3(0.0);
+    vec3  irradiance  = vec3(0.0);
     float sampleDelta = 0.025;
-    float nrSamples = 0.0;
+    float nrSamples   = 0.0;
 
     for (float phi = 0.0; phi < 2.0 * PI; phi += sampleDelta) {
         for (float theta = 0.0; theta < 0.5 * PI; theta += sampleDelta) {
-            vec3 tangentSample = vec3(sin(theta) * cos(phi),
-                                      sin(theta) * sin(phi),
-                                      cos(theta));
-            vec3 sampleVec = tangentSample.x * right
-                           + tangentSample.y * up
-                           + tangentSample.z * N;
+            vec3 tangentSample = vec3(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta));
+            vec3 sampleVec = tangentSample.x * right + tangentSample.y * up + tangentSample.z * N;
             irradiance += texture(u_envCube, sampleVec).rgb * cos(theta) * sin(theta);
             nrSamples += 1.0;
         }

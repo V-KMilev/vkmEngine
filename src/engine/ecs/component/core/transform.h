@@ -10,20 +10,20 @@
 namespace Vkm::Engine {
 
 /**
- * @brief Component representing spatial transformation (position, rotation, scale) in 3D space.
+ * @brief Local position, rotation and scale of an entity.
  *
- * For pure quat/axis math, use the helpers in core/math/ (rotation.h, axes.h).
+ * For pure quat/axis math, use core/math/ (rotation.h, axes.h).
  */
 struct Transform {
     glm::vec3 position = {0.0f, 0.0f, 0.0f};        ///< Local position
-    glm::quat rotation = {1.0f, 0.0f, 0.0f, 0.0f};  ///< Local rotation as quaternion (identity = no rotation)
+    glm::quat rotation = {1.0f, 0.0f, 0.0f, 0.0f};  ///< Local rotation
     glm::vec3 scale    = {1.0f, 1.0f, 1.0f};        ///< Local scale
 
     /**
      * @brief Compute the model matrix from transform data.
      *
-     * Uses fused TRS construction: builds translation, rotation, scale
-     * directly without intermediate matrix multiplications.
+     * @param transform Local TRS to compose, without intermediate matrix products.
+     * @return translation * rotation * scale.
      */
     static glm::mat4 computeModelMatrix(const Transform& transform) {
         const glm::mat4 rot = glm::mat4_cast(transform.rotation);
@@ -38,58 +38,36 @@ struct Transform {
     }
 
     /**
-     * @brief Recover the TRS that computeModelMatrix() would have built @p model
-     *        from.
+     * @brief Recover the TRS that computeModelMatrix() would have built @p model from.
      *
-     * The inverse of the function above, and the way a system that derives a
-     * transform from a matrix - a bone socket reading a posed bone - hands the
-     * result back to a component the hierarchy can resolve.
-     *
-     * Exact for any matrix that is a chain of translations, rotations and
-     * uniform scales, which is what a rig composes. Shear cannot be represented
-     * by a TRS at all and is dropped: it only appears when a non-uniformly
-     * scaled joint carries a rotated child, the same case whose lighting the
-     * skinned vertex stage already approximates.
-     *
-     * An axis scaled to nothing is answered rather than refused: the scale comes
-     * back as zero and the rotation from the axes that survived.
+     * Exact for chains of translations, rotations and uniform scales. Shear (a
+     * non-uniformly scaled joint with a rotated child) is dropped. A zero-scaled
+     * axis returns zero scale, rotation from the surviving axes.
      *
      * @param model Model matrix to decompose.
-     * @return The position, rotation and scale it was composed from.
+     * @return Its position, rotation and scale.
      */
     static Transform fromModelMatrix(const glm::mat4& model) {
-        glm::mat3 basis(model);
+        const glm::mat3 basis(model);
 
         Transform out;
         out.position = glm::vec3(model[3]);
         out.scale    = {glm::length(basis[0]), glm::length(basis[1]), glm::length(basis[2])};
 
-        // A mirrored basis has no rotation that reproduces it, so the flip is
-        // carried on one scale axis, where computeModelMatrix would have taken
-        // it from. Otherwise quat_cast reads a reflection as a rotation.
+        // No rotation reproduces a mirror, so the flip goes on the scale axis
+        // Math::worldRotationOf takes it off.
         if (glm::determinant(basis) < 0.0f) out.scale.x = -out.scale.x;
 
-        for (int axis = 0; axis < 3; ++axis)
-            basis[axis] = (out.scale[axis] != 0.0f) ? basis[axis] / out.scale[axis]
-                                                    : glm::vec3(0.0f);
-
-        // Dividing by a zero scale is a NaN quaternion that spreads into every
-        // matrix built from the result. The two axes that survived imply the
-        // lost one; with two of them gone the identity's column stands in.
-        for (int axis = 0; axis < 3; ++axis) {
-            if (glm::dot(basis[axis], basis[axis]) > 0.0f) continue;
-
-            const glm::vec3 implied = glm::cross(basis[(axis + 1) % 3], basis[(axis + 2) % 3]);
-            basis[axis] = glm::dot(implied, implied) > 0.0f ? implied : glm::mat3(1.0f)[axis];
-        }
-
-        out.rotation = glm::normalize(glm::quat_cast(basis));
+        out.rotation = Math::worldRotationOf(model);
 
         return out;
     }
 
     /**
      * @brief Compute the view matrix from a transform.
+     *
+     * @param transform Camera pose; looks along its forward (-Z).
+     * @return World-to-view matrix.
      */
     static glm::mat4 computeView(const Transform& transform) {
         return glm::lookAt(
@@ -99,10 +77,11 @@ struct Transform {
         );
     }
 };
+
 } // namespace Vkm::Engine
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::Transform)
-    VKM_F(position),
-    VKM_F(rotation),
+    VKM_F(position)
+    VKM_F(rotation)
     VKM_F(scale)
 VKM_REFLECT_END()

@@ -1,7 +1,9 @@
 #include "resource/generate/texture_generators.h"
 
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <string>
 
 #include <glm/common.hpp>
 #include <nlohmann/json.hpp>
@@ -12,121 +14,102 @@
 namespace Vkm::Engine {
 
 namespace {
+
 /**
- * @brief Reuse built-in textures via findByName.
+ * @brief Quantise a 0-1 colour channel to the 8-bit value a texel holds.
  *
- * Built-in textures are stable, immutable, and naturally shared across
- * materials, so one asset per name serves every caller.
+ * Shared by the texel and the dedup name, which must not quantise differently.
+ * Rounds to nearest.
  *
- * @param rm Resource manager to look up the name in / add the texture to.
- * @param name Stable lookup name (also the findByName dedup key).
- * @param source JSON source descriptor stamped onto a newly created asset.
- * @param texture Texture asset to register if no existing one matches the name.
- * @return Handle to the existing texture if found, otherwise the newly added one.
+ * @param channel Colour channel; clamped to 0-1 before quantisation.
+ * @return The channel as an 8-bit value.
  */
-TextureHandle getOrCreateNamed(ResourceManager& rm, const char* name,
-                               const nlohmann::json& source,
-                               TextureAsset texture)
-{
-    if (auto existing = rm.findByName<TextureAsset>(name)) return existing;
-    texture.sourceJson() = source;
-    return rm.add(std::move(texture), name);
+uint8_t quantizeChannel(float channel) {
+    return static_cast<uint8_t>(std::lround(glm::clamp(channel, 0.0f, 1.0f) * 255.0f));
 }
 
 /**
- * @brief Build a 1x1 RGBA8 texture filled with a single clamped color.
+ * @brief Build a 1x1 texture filled with a single clamped color, stored as
+ *        @p usage stores a texel.
  *
- * @param color RGBA color (clamped to 0-1 per channel) used to fill the texel.
- * @param srgb Selects the sRGB internal format (and tags the asset accordingly).
- * @return The 1x1 solid-color texture asset.
+ * @param color RGBA color, clamped to 0-1 per channel.
+ * @param usage Colour (sRGB RGBA), data (linear RGBA) or a normal (red and
+ *              green as x and y).
+ * @return The 1x1 texture.
  */
-TextureAsset makeSolidColorAsset(glm::vec4 color, bool srgb) {
+TextureAsset makeSolidColorAsset(glm::vec4 color, TextureUsage usage) {
+    const int channels = usage == TextureUsage::Normal ? 2 : 4;
     TextureAsset texture;
     texture.params.width = 1;
     texture.params.height = 1;
-    texture.params.internalFormat = srgb ? TextureInternalFormat::SRGBA8 : TextureInternalFormat::RGBA8;
-    texture.params.format = TexturePixelFormat::RGBA;
+    texture.params.internalFormat = inferInternalFormat(channels, usage);
+    texture.params.format = inferFormat(channels);
     texture.params.type = TexturePixelType::UnsignedByte;
     texture.params.generateMipmaps = false;
-    texture.srgb = srgb;
-    texture.filePath = "procedural:solid_color";
 
-    texture.pixelData.resize(4);
-    texture.pixelData[0] = static_cast<uint8_t>(glm::clamp(color.r, 0.0f, 1.0f) * 255.0f);
-    texture.pixelData[1] = static_cast<uint8_t>(glm::clamp(color.g, 0.0f, 1.0f) * 255.0f);
-    texture.pixelData[2] = static_cast<uint8_t>(glm::clamp(color.b, 0.0f, 1.0f) * 255.0f);
-    texture.pixelData[3] = static_cast<uint8_t>(glm::clamp(color.a, 0.0f, 1.0f) * 255.0f);
-    return texture;
-}
-
-/**
- * @brief Build a 1x1 RGB8 flat normal map.
- *
- * 128,128,255 = straight up in tangent space, i.e. no normal perturbation.
- *
- * @return The 1x1 flat normal-map texture asset.
- */
-TextureAsset makeDefaultNormalAsset() {
-    TextureAsset texture;
-    texture.params.width = 1;
-    texture.params.height = 1;
-    texture.params.internalFormat = TextureInternalFormat::RGB8;
-    texture.params.format = TexturePixelFormat::RGB;
-    texture.params.type = TexturePixelType::UnsignedByte;
-    texture.params.generateMipmaps = false;
-    texture.srgb = false;
-    texture.filePath = "procedural:default_normal";
-
-    texture.pixelData.resize(3);
-    texture.pixelData[0] = 128;
-    texture.pixelData[1] = 128;
-    texture.pixelData[2] = 255;
+    const uint8_t texel[4] = {
+        quantizeChannel(color.r),
+        quantizeChannel(color.g),
+        quantizeChannel(color.b),
+        quantizeChannel(color.a)
+    };
+    texture.pixelData.assign(texel, texel + channels);
     return texture;
 }
 
 } // namespace
 
 TextureHandle generateWhiteTexture(ResourceManager& rm) {
-    return getOrCreateNamed(rm, "builtin:white",
-        {{"kind", AssetSourceKind::BUILTIN}, {"type", "white"}},
-        makeSolidColorAsset(glm::vec4(1.0f, 1.0f, 1.0f, 1.0f), false));
+    return createSolidColorTexture(glm::vec4(1.0f, 1.0f, 1.0f, 1.0f), rm);
 }
 
 TextureHandle generateBlackTexture(ResourceManager& rm) {
-    return getOrCreateNamed(rm, "builtin:black",
-        {{"kind", AssetSourceKind::BUILTIN}, {"type", "black"}},
-        makeSolidColorAsset(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), false));
+    return createSolidColorTexture(glm::vec4(0.0f, 0.0f, 0.0f, 1.0f), rm);
 }
 
 TextureHandle generateNormalTexture(ResourceManager& rm) {
-    return getOrCreateNamed(rm, "builtin:normal",
-        {{"kind", AssetSourceKind::BUILTIN}, {"type", "normal"}},
-        makeDefaultNormalAsset());
+    return createSolidColorTexture(glm::vec4(0.5f, 0.5f, 1.0f, 1.0f), rm, TextureUsage::Normal);
 }
 
 TextureHandle generateGrayTexture(ResourceManager& rm) {
-    return getOrCreateNamed(rm, "builtin:gray",
-        {{"kind", AssetSourceKind::BUILTIN}, {"type", "gray"}},
-        makeSolidColorAsset(glm::vec4(0.5f, 0.5f, 0.5f, 1.0f), false));
+    return createSolidColorTexture(glm::vec4(0.5f, 0.5f, 0.5f, 1.0f), rm);
 }
 
-TextureHandle createSolidColorTexture(glm::vec4 color, ResourceManager& rm, bool srgb) {
-    auto u8 = [](float c) { return static_cast<int>(glm::clamp(c, 0.0f, 1.0f) * 255.0f + 0.5f); };
-    // Deterministic id/name keyed on the quantised color + colorspace, so two
-    // requests for the same solid dedup to one asset across the session/runs.
+TextureHandle createSolidColorTexture(glm::vec4 color, ResourceManager& rm, TextureUsage usage) {
+    // Keyed on the quantised colour and usage, by the quantiser that writes the
+    // texel, so equal solids dedup and the name matches the pixel.
     char key[64];
-    std::snprintf(key, sizeof(key), "texture:solid:%02X%02X%02X%02X:%d",
-                  u8(color.r), u8(color.g), u8(color.b), u8(color.a), srgb ? 1 : 0);
+    std::snprintf(
+        key,
+        sizeof(key),
+        "texture:solid:%02X%02X%02X%02X:%s",
+        quantizeChannel(color.r),
+        quantizeChannel(color.g),
+        quantizeChannel(color.b),
+        quantizeChannel(color.a),
+        Reflect::enumName(usage)
+    );
 
     if (auto existing = rm.findByName<TextureAsset>(key)) return existing;
 
-    TextureAsset tex = makeSolidColorAsset(color, srgb);
+    TextureAsset tex = makeSolidColorAsset(color, usage);
     nlohmann::json src;
     src["kind"]  = AssetSourceKind::SOLID;
     src["color"] = {color.r, color.g, color.b, color.a};
-    src["srgb"]  = srgb;
+    src[AssetSourceKey::USAGE] = Reflect::enumName(usage);
     tex.sourceJson() = std::move(src);
     return rm.add(std::move(tex), key);
+}
+
+TextureHandle createGeneratedTexture(const nlohmann::json& source, ResourceManager& rm) {
+    if (source.value("kind", std::string{}) != AssetSourceKind::SOLID) return {};
+
+    glm::vec4 color(1.0f);
+    if (source.contains("color") && source["color"].is_array() && source["color"].size() >= 4) {
+        const auto& c = source["color"];
+        color = glm::vec4(c[0].get<float>(), c[1].get<float>(), c[2].get<float>(), c[3].get<float>());
+    }
+    return createSolidColorTexture(color, rm, textureUsageFromRecipe(source));
 }
 
 } // namespace Vkm::Engine

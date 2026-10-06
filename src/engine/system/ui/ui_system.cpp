@@ -1,26 +1,47 @@
 #include "system/ui/ui_system.h"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
 
 #include "ecs/scene.h"
 #include "ecs/component/ui/ui_button.h"
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
+#include "ecs/component/ui/ui_scroll.h"
 #include "ecs/component/ui/ui_text.h"
+#include "ecs/hierarchy_operations.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/font_asset.h"
 #include "core/host_chrome.h"
 #include "core/event/event_bus.h"
+#include "system/ui/text_layout.h"
 #include "system/ui/ui_events.h"
-#include "system/hierarchy/hierarchy_operations.h"
 #include "platform/window/window_manager.h"
-#include "platform/input/default_bindings.h"
 #include "platform/input/input_map.h"
-#include "platform/window/input_handle.h"
 #include "debug/profiler.h"
 
 namespace Vkm::Engine {
+
+namespace {
+
+// Float equality is right: a clip is copied down the walk, not recomputed, so runs
+// under one panel hold bit-identical rects.
+bool sameClip(const UIRect& a, const UIRect& b) {
+    return a.pos == b.pos && a.size == b.size;
+}
+
+// What a subtree that drew nothing reports: below every corner, so it moves no max.
+glm::vec2 nothingDrawn() {
+    return glm::vec2(std::numeric_limits<float>::lowest());
+}
+
+const glm::vec4& fadeEnd(const glm::vec4& color, const UIShape& shape) {
+    return shape.gradient ? shape.bottomColor : color;
+}
+
+} // namespace
 
 void UISystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("UISystem");
@@ -28,45 +49,53 @@ void UISystem::update(FrameContext& ctx) {
     m_drawData.clear();
     m_buttonHits.clear();
     m_pointerBlockers.clear();
+    m_scrollTargets.clear();
     ctx.ui = &m_drawData;
+    ctx.input.setPointerOverUI(false);
 
-    // Element rects resolve in viewport-local framebuffer pixels; GLFW hands
-    // back the cursor in window screen coords, which is the same thing only on
-    // an unscaled display - hence the scale.
-    const MouseInputHandle& mouse = ctx.window.getInputHandle().getMouse();
+    // Rects are in framebuffer pixels, the cursor in window pixels; they differ on a
+    // scaled display.
     const float pointerScale = ctx.window.framebufferScale();
     const HostChrome::ViewportRect vp = ctx.chrome.viewport(ctx.window);
-    m_pointer = {
-        static_cast<float>(mouse.getX()) * pointerScale - static_cast<float>(vp.x),
-        static_cast<float>(mouse.getY()) * pointerScale - static_cast<float>(vp.y)
-    };
+    m_pointer = ctx.input.pointer() * pointerScale
+        - glm::vec2(static_cast<float>(vp.x), static_cast<float>(vp.y));
 
-    // Through the action map, so these edges are the ones every other reader of
-    // that button sees. The button reads as up while the host's chrome owns the
-    // pointer, so a drag begun over a panel cannot end as a game click.
-    const bool pointerIsOurs = !ctx.chrome.capturesPointer();
-    m_mouseDown     = pointerIsOurs && ctx.input.held(InputActions::UI_CLICK);
-    m_mouseDownEdge = pointerIsOurs && ctx.input.pressed(InputActions::UI_CLICK);
-    m_mouseUpEdge   = pointerIsOurs && ctx.input.released(InputActions::UI_CLICK);
+    // A disabled cursor is a look control whose virtual position points at nothing,
+    // so a HUD it crosses must not take the click.
+    m_cursorFree = ctx.window.cursorMode() != CursorMode::Disabled;
+
+    // Resolved whoever owns the pointer, so a host can still ask pointerTarget. The
+    // map already hides buttons and wheel under the chrome, so only hover asks it.
+    m_pointerIsOurs = m_cursorFree && !ctx.chrome.capturesPointer();
+    m_mouseDown     = ctx.input.held(InputActions::UI_CLICK);
+    m_mouseDownEdge = ctx.input.pressed(InputActions::UI_CLICK);
+    m_mouseUpEdge   = ctx.input.released(InputActions::UI_CLICK);
+
+    // The chrome taking the pointer disarms the press: kept armed, a press let go over
+    // a panel could become a click on a later release.
+    if (!m_pointerIsOurs) m_pressedButton = {};
+
+    // Every notch: gameplay's wheel() reads zero over a blocker, so they come here.
+    m_wheel = ctx.input.uiWheel();
 
     const float vpW = static_cast<float>(vp.width);
     const float vpH = static_cast<float>(vp.height);
     if (vpW <= 0.0f || vpH <= 0.0f) return;
 
-    // Canvases draw - and therefore hit-test - in ascending sortOrder. SparseSet
-    // iteration order is arbitrary (and changes on removal), so collect and sort
-    // each frame; the entity index breaks ties to keep equal orders stable.
+    // SparseSet order is arbitrary; the entity index breaks ties for stability.
     m_canvases.clear();
     ctx.scene.forEach<UICanvas>([&](EntityId entity, const UICanvas& canvas) {
         if (canvas.visible) m_canvases.push_back(CanvasRef{canvas.sortOrder, entity});
     });
-    std::sort(m_canvases.begin(), m_canvases.end(),
+    std::sort(
+        m_canvases.begin(),
+        m_canvases.end(),
         [](const CanvasRef& a, const CanvasRef& b) {
             if (a.sortOrder != b.sortOrder) return a.sortOrder < b.sortOrder;
             return a.entity.slot() < b.entity.slot();
-        });
+        }
+    );
 
-    // Each canvas spans the whole viewport.
     const UIRect viewport{glm::vec2(0.0f), glm::vec2(vpW, vpH)};
     for (const CanvasRef& ref : m_canvases) {
         const UICanvas& canvas = ctx.scene.get<UICanvas>(ref.entity);
@@ -76,123 +105,162 @@ void UISystem::update(FrameContext& ctx) {
             ? vpH / canvas.referenceHeight
             : 1.0f;
 
+        // The viewport is both the top-level parent rect and the starting clip.
         HierarchyOperations::forEachChild(ctx.scene, ref.entity, [&](EntityId child) {
-            resolveElement(ctx, child, viewport, scale, 0);
+            resolveElement(ctx, child, viewport, viewport, scale, 0);
         });
     }
 
     resolveInteraction(ctx);
 }
 
-void UISystem::resolveElement(
+glm::vec2 UISystem::resolveElement(
     FrameContext& ctx,
     EntityId entity,
     const UIRect& parentRect,
+    const UIRect& clip,
     float scale,
     uint32_t depth
 ) {
     if (depth >= HierarchyOperations::MAX_DEPTH) {
-        HierarchyOperations::detail::warnHierarchyCycle("UI layout");
-        return;
+        HierarchyOperations::warnWalkBound("UI layout", HierarchyOperations::MAX_DEPTH);
+        return nothingDrawn();
     }
-    if (!ctx.scene.has<UIElement>(entity)) return;
+    UIElement* held = ctx.scene.tryGet<UIElement>(entity);
+    if (!held) return nothingDrawn();
 
-    UIElement& element = ctx.scene.get<UIElement>(entity);
-    if (!element.visible) return;
+    UIElement& element = *held;
+    if (!element.visible) return nothingDrawn();
 
-    const glm::vec2 sizePx   = element.size * scale;
+    const glm::vec2 sizePx   = glm::max(
+        element.size * scale + element.relativeSize * parentRect.size,
+        glm::vec2(0.0f)
+    );
     const glm::vec2 anchorPx = parentRect.pos + element.anchor * parentRect.size;
     element.screenRect = UIRect{anchorPx + element.position * scale - element.pivot * sizePx, sizePx};
 
-    emitImage(ctx, entity);
-    emitButton(ctx, entity);
-    emitText(ctx, entity, scale);
+    // Clipped away is out of reach: a row scrolled out of sight takes no click.
+    const bool pointerHere = m_cursorFree && clip.intersected(element.screenRect).contains(m_pointer);
 
-    // Only what draws can block: a bare UIElement is a layout box with nothing
-    // in it, and stopping a click on empty space would surprise everyone. Text
-    // does not block either - a label over a button is a caption on it.
-    const bool draws = ctx.scene.has<UIImage>(entity) || ctx.scene.has<UIButton>(entity);
-    if (draws && element.blocksPointer && !ctx.chrome.capturesPointer()
-        && element.screenRect.contains(m_pointer)) {
-        m_pointerBlockers.push_back(entity);
+    const bool drewImage    = emitImage(ctx, entity, element, clip, scale);
+    const bool drewButton   = emitButton(ctx, entity, element, clip, scale);
+    const glm::vec2 textMax = emitText(ctx, entity, element, clip, scale);
+
+    // Only what draws can block; text over a button is a caption on it.
+    const bool draws = drewImage || drewButton;
+    if (draws && element.blocksPointer && pointerHere) m_pointerBlockers.push_back(entity);
+
+    UIScroll*    scroll    = ctx.scene.tryGet<UIScroll>(entity);
+    const bool   clips     = scroll != nullptr || element.clipChildren;
+    const UIRect childClip = clips ? clip.intersected(element.screenRect) : clip;
+    UIRect       childRect = element.screenRect;
+
+    if (scroll) {
+        // Laid out at the offset clamped to last frame's content; the stored offset is
+        // clamped below, or one set the frame a row was added would stop short for good.
+        scroll->viewSize = element.screenRect.size / scale;
+        childRect.pos   -= glm::clamp(scroll->offset, glm::vec2(0.0f), scroll->range()) * scale;
+
+        // A scroll view always clips, so its window is the rect pointerHere tested.
+        if (pointerHere) m_scrollTargets.push_back(ScrollTarget{entity, m_pointerBlockers.size()});
     }
 
+    glm::vec2 contentMax = nothingDrawn();
     HierarchyOperations::forEachChild(ctx.scene, entity, [&](EntityId child) {
-        resolveElement(ctx, child, element.screenRect, scale, depth + 1);
+        contentMax = glm::max(contentMax, resolveElement(ctx, child, childRect, childClip, scale, depth + 1));
     });
+
+    if (scroll) {
+        scroll->contentSize = glm::max(contentMax - childRect.pos, glm::vec2(0.0f)) / scale;
+        scroll->offset      = glm::clamp(scroll->offset, glm::vec2(0.0f), scroll->range());
+    }
+
+    if (clips) return element.screenRect.max();
+
+    const glm::vec2 drawn = draws ? element.screenRect.max() : nothingDrawn();
+    return glm::max(glm::max(drawn, textMax), contentMax);
 }
 
-void UISystem::appendCommand(uint32_t first, uint32_t count, FontHandle font, UIDrawKind kind) {
+void UISystem::appendCommand(
+    uint32_t first,
+    uint32_t count,
+    FontHandle font,
+    TextureHandle image,
+    const UIRect& clip
+) {
     if (!m_drawData.commands.empty()) {
         UIDrawCmd& last = m_drawData.commands.back();
-        if (last.kind == kind && last.font == font
-                && last.firstVertex + last.vertexCount == first) {
+        const bool sameAtlas = !font || !last.font || last.font == font;
+        const bool sameImage = !image || !last.image || last.image == image;
+        if (sameAtlas && sameImage && sameClip(last.clip, clip)
+            && last.firstVertex + last.vertexCount == first) {
             last.vertexCount += count;
+            if (font)  last.font  = font;
+            if (image) last.image = image;
             return;
         }
     }
-    m_drawData.commands.push_back(UIDrawCmd{first, count, font, kind});
+    m_drawData.commands.push_back(UIDrawCmd{first, count, clip, font, image});
 }
 
-void UISystem::emitImage(FrameContext& ctx, EntityId entity) {
-    if (!ctx.scene.has<UIImage>(entity)) return;
+bool UISystem::emitImage(
+    FrameContext& ctx,
+    EntityId entity,
+    const UIElement& element,
+    const UIRect& clip,
+    float canvasScale
+) {
+    const UIImage* image = ctx.scene.tryGet<UIImage>(entity);
+    if (!image) return false;
 
-    const UIElement& element = ctx.scene.get<UIElement>(entity);
-    const UIImage&   image   = ctx.scene.get<UIImage>(entity);
-
-    const uint32_t first = static_cast<uint32_t>(m_drawData.vertices.size());
-    appendQuad(element.screenRect.pos, element.screenRect.max(),
-               glm::vec2(0.0f), glm::vec2(1.0f), image.color);
-
-    appendCommand(first, 6, {}, UIDrawKind::Solid);
+    const uint32_t first    = static_cast<uint32_t>(m_drawData.vertices.size());
+    const bool     textured = static_cast<bool>(image->texture);
+    appendShaped(element.screenRect, image->color, image->shape, canvasScale, textured);
+    appendCommand(first, 6, {}, image->texture, clip);
+    return true;
 }
 
-void UISystem::emitButton(FrameContext& ctx, EntityId entity) {
-    if (!ctx.scene.has<UIButton>(entity)) return;
+bool UISystem::emitButton(
+    FrameContext& ctx,
+    EntityId entity,
+    const UIElement& element,
+    const UIRect& clip,
+    float canvasScale
+) {
+    UIButton* button = ctx.scene.tryGet<UIButton>(entity);
+    if (!button) return false;
 
-    const UIButton&  button  = ctx.scene.get<UIButton>(entity);
-    const UIElement& element = ctx.scene.get<UIElement>(entity);
+    // In the element's authored space, free of canvas scale and viewport offset.
+    button->pointer      = (m_pointer - element.screenRect.pos) / canvasScale;
+    button->resolvedSize = element.screenRect.size / canvasScale;
 
-    // Emit now to keep painter order; resolveInteraction() recolours the quad
-    // once every candidate of the frame is known.
     const uint32_t first = static_cast<uint32_t>(m_drawData.vertices.size());
-    appendQuad(element.screenRect.pos, element.screenRect.max(),
-               glm::vec2(0.0f), glm::vec2(1.0f), button.colorForState());
-    appendCommand(first, 6, {}, UIDrawKind::Solid);
+    appendShaped(element.screenRect, button->colorForState(), button->shape, canvasScale, false);
+    appendCommand(first, 6, {}, {}, clip);
 
-    m_buttonHits.push_back(ButtonHit{
-        entity, first,
-        button.interactable && !ctx.chrome.capturesPointer()
-                            && element.screenRect.contains(m_pointer)});
+    m_buttonHits.push_back(ButtonHit{entity, first});
+    return true;
 }
 
 void UISystem::resolveInteraction(FrameContext& ctx) {
-    // The draw list is painter-ordered, so the last blocker under the pointer is
-    // the one on top, and only it hovers, presses and clicks. Blockers rather than
-    // buttons, so an opaque panel over a button wins - a pause menu.
-    const EntityId topmost =
-        m_pointerBlockers.empty() ? EntityId{} : m_pointerBlockers.back();
+    const EntityId topmost = m_pointerBlockers.empty() ? EntityId{} : m_pointerBlockers.back();
 
-    // Published for gameplay, which has to be able to ask before acting on a
-    // click of its own.
-    m_drawData.pointerOverUI = !m_pointerBlockers.empty();
+    m_drawData.pointerTarget = topmost;
+    ctx.input.setPointerOverUI(static_cast<bool>(topmost));
 
-    // A press starts a click candidate, cleared when the press missed, and a
-    // release over that same button fires the click. When the topmost blocker is
-    // not a button, nothing is armed and the release matches no hit.
     if (m_mouseDownEdge) {
-        // Guarded rather than relying on has(): Scene::has asserts the entity is
-        // alive, and with nothing under the pointer `topmost` is a default id.
-        const bool onAButton =
-            !m_pointerBlockers.empty() && ctx.scene.has<UIButton>(topmost);
+        // has() answers false for the null `topmost`, so no separate check.
+        const bool onAButton = ctx.scene.has<UIButton>(topmost);
         m_pressedButton = onAButton ? topmost : EntityId{};
     }
 
     for (const ButtonHit& hit : m_buttonHits) {
         UIButton& button = ctx.scene.get<UIButton>(hit.entity);
 
-        const bool isTopmost = hit.inside && hit.entity == topmost;
-        const bool held      = isTopmost && m_mouseDown && m_pressedButton == hit.entity;
+        // The topmost blocker is under the pointer by construction.
+        const bool isTopmost = button.interactable && m_pointerIsOurs && hit.entity == topmost;
+        button.held          = button.interactable && m_mouseDown && m_pressedButton == hit.entity;
+        const bool held      = isTopmost && button.held;
 
         if (m_mouseUpEdge && isTopmost && m_pressedButton == hit.entity) {
             ctx.events.enqueue(UIClickEvent{hit.entity, button.eventId});
@@ -204,69 +272,206 @@ void UISystem::resolveInteraction(FrameContext& ctx) {
         else                      button.state = UIButton::State::Normal;
 
         const glm::vec4& color = button.colorForState();
-        for (uint32_t i = 0; i < 6; ++i) {
-            m_drawData.vertices[hit.firstVertex + i].color = color;
-        }
+        recolourQuad(hit.firstVertex, color, fadeEnd(color, button.shape));
     }
 
-    // A release ends any press, whether or not it landed on the pressed button.
     if (m_mouseUpEdge) m_pressedButton = {};
+
+    // The innermost window entered after the topmost blocker lies in or over it, so
+    // takes the wheel. Failing one, the wheel goes to the nearest scroll view holding
+    // the blocker, so a panel over a list takes the wheel as well as the click.
+    if (m_wheel != 0.0f) {
+        EntityId target;
+        for (auto it = m_scrollTargets.rbegin(); it != m_scrollTargets.rend(); ++it) {
+            if (it->blockersBefore < m_pointerBlockers.size()) continue;
+            target = it->entity;
+            break;
+        }
+        if (!target && topmost) {
+            target = HierarchyOperations::findInSelfOrAncestors<UIScroll>(ctx.scene, topmost);
+        }
+
+        if (UIScroll* scroll = ctx.scene.tryGet<UIScroll>(target)) {
+            const glm::vec2 room = scroll->range();
+            // One wheel drives whichever axis overflows, vertical first.
+            const int axis = room.y > 0.0f ? 1 : 0;
+            scroll->offset[axis] = glm::clamp(
+                scroll->offset[axis] - m_wheel * scroll->wheelStep,
+                0.0f,
+                room[axis]
+            );
+        }
+    }
 }
 
-void UISystem::emitText(FrameContext& ctx, EntityId entity, float canvasScale) {
-    if (!ctx.scene.has<UIText>(entity)) return;
+void UISystem::breakLines(
+    std::string_view text,
+    const FontAsset& font,
+    float scale,
+    float maxWidth,
+    bool wrap
+) {
+    m_lines.clear();
 
-    const UIText& text = ctx.scene.get<UIText>(entity);
-    if (text.text.empty() || text.font.empty()) return;
+    size_t lineStart = 0;
+    while (lineStart <= text.size()) {
+        size_t hardEnd = text.find('\n', lineStart);
+        if (hardEnd == std::string_view::npos) hardEnd = text.size();
 
-    // Resolve the font by name: names are the serializable asset identity, so
-    // the component stays plain data (and the lookup is O(1)).
+        if (!wrap) {
+            m_lines.push_back(text.substr(lineStart, hardEnd - lineStart));
+        } else {
+            size_t cursor = lineStart;
+            while (cursor < hardEnd) {
+                const std::string_view rest = text.substr(cursor, hardEnd - cursor);
+                size_t overflow  = std::string_view::npos;
+                size_t lastSpace = std::string_view::npos;
+                // A space never overflows a line: it hangs past the edge and the break eats it.
+                walkGlyphs(font, rest, scale, [&](size_t at, const FontGlyph& glyph, float pen) {
+                    if (rest[at] == ' ') {
+                        lastSpace = at;
+                        return true;
+                    }
+                    if (at > 0 && pen + glyph.advance * scale > maxWidth) {
+                        overflow = at;
+                        return false;
+                    }
+                    return true;
+                });
+                if (overflow == std::string_view::npos) {
+                    m_lines.push_back(rest);
+                    cursor = hardEnd;
+                    break;
+                }
+                const size_t breakAt = (lastSpace != std::string_view::npos) ? lastSpace : overflow;
+                m_lines.push_back(rest.substr(0, breakAt));
+                // Skip the space that ended the line; a mid-word break has none.
+                cursor += (lastSpace != std::string_view::npos) ? breakAt + 1 : breakAt;
+            }
+            if (cursor == lineStart && lineStart == hardEnd) m_lines.emplace_back();
+        }
+
+        if (hardEnd == text.size()) break;
+        lineStart = hardEnd + 1;
+        if (lineStart == text.size()) {
+            m_lines.emplace_back();
+            break;
+        }
+    }
+}
+
+glm::vec2 UISystem::emitText(
+    FrameContext& ctx,
+    EntityId entity,
+    const UIElement& element,
+    const UIRect& clip,
+    float canvasScale
+) {
+    const glm::vec2 nothing = nothingDrawn();
+
+    const UIText* held = ctx.scene.tryGet<UIText>(entity);
+    if (!held) return nothing;
+
+    const UIText& text = *held;
+    if (text.text.empty() || text.font.empty()) return nothing;
+
+    // By name, the serializable identity, so the component stays plain data.
     const FontHandle fontHandle = ctx.resources.findByName<FontAsset>(text.font);
-    if (!fontHandle) return;
+    if (!fontHandle) return nothing;
     const FontAsset& font = ctx.resources.get(fontHandle);
-    if (font.pixelHeight <= 0.0f) return;
+    if (font.pixelHeight <= 0.0f) return nothing;
 
-    const UIElement& element = ctx.scene.get<UIElement>(entity);
-
-    // Map baked-pixel metrics to screen pixels: author size (reference px) times
-    // the canvas scale, relative to the height the atlas was baked at.
     const float renderScale = text.pixelSize * canvasScale / font.pixelHeight;
 
-    // Pre-measure the line so Center / Right alignment can offset the pen.
-    float lineWidth = 0.0f;
-    for (unsigned char c : text.text) {
-        if (const FontGlyph* g = font.glyph(c)) lineWidth += g->advance * renderScale;
-    }
-    float penX = element.screenRect.pos.x;
-    if (text.align == UIText::Align::Center)     penX += (element.screenRect.size.x - lineWidth) * 0.5f;
-    else if (text.align == UIText::Align::Right)  penX += element.screenRect.size.x - lineWidth;
+    breakLines(text.text, font, renderScale, element.screenRect.size.x, text.wrap);
+    if (m_lines.empty()) return nothing;
 
-    // Vertical alignment offsets the baseline by the unused rect height; the
-    // text block spans ascent above the baseline to descent (negative) below.
-    float baselineY = element.screenRect.pos.y + font.ascent * renderScale;
-    const float blockHeight = (font.ascent - font.descent) * renderScale;
+    // The block spans ascent above the first baseline to descent (negative) below the
+    // last; vertical alignment offsets it by the unused height.
+    const float lineHeight  = font.lineHeight > 0.0f ? font.lineHeight : font.ascent - font.descent;
+    const float lineStep    = lineHeight * renderScale;
+    const float blockHeight = (font.ascent - font.descent) * renderScale
+        + static_cast<float>(m_lines.size() - 1) * lineStep;
+
+    float firstBaseline = element.screenRect.pos.y + font.ascent * renderScale;
     if (text.valign == UIText::VAlign::Middle) {
-        baselineY += (element.screenRect.size.y - blockHeight) * 0.5f;
+        firstBaseline += (element.screenRect.size.y - blockHeight) * 0.5f;
     } else if (text.valign == UIText::VAlign::Bottom) {
-        baselineY += element.screenRect.size.y - blockHeight;
+        firstBaseline += element.screenRect.size.y - blockHeight;
     }
 
-    const uint32_t first   = static_cast<uint32_t>(m_drawData.vertices.size());
-    uint32_t       emitted = 0;
-    for (unsigned char c : text.text) {
-        const FontGlyph* g = font.glyph(c);
-        if (!g) continue;
-        if (g->size.x > 0.0f && g->size.y > 0.0f) {
-            const glm::vec2 p0{penX + g->offset.x * renderScale, baselineY + g->offset.y * renderScale};
-            appendQuad(p0, p0 + g->size * renderScale, g->uvMin, g->uvMax, text.color);
+    // Each line's baseline and start snap to whole pixels for sharp small labels; glyph
+    // advances stay fractional.
+    const uint32_t first    = static_cast<uint32_t>(m_drawData.vertices.size());
+    uint32_t       emitted  = 0;
+    glm::vec2      drawnTo  = nothing;
+    float          baseline = firstBaseline;
+    for (size_t index = 0; index < m_lines.size(); ++index) {
+        const std::string_view line = m_lines[index];
+        baseline = std::round(firstBaseline + static_cast<float>(index) * lineStep);
+
+        const float lineWidth = walkGlyphs(
+            font,
+            line,
+            renderScale,
+            [](size_t, const FontGlyph&, float) { return true; }
+        );
+        float lineX = element.screenRect.pos.x;
+        if (text.align == UIText::Align::Center)     lineX += (element.screenRect.size.x - lineWidth) * 0.5f;
+        else if (text.align == UIText::Align::Right)  lineX += element.screenRect.size.x - lineWidth;
+        lineX = std::round(lineX);
+
+        walkGlyphs(font, line, renderScale, [&](size_t, const FontGlyph& glyph, float pen) {
+            if (glyph.size.x <= 0.0f || glyph.size.y <= 0.0f) return true;
+            const glm::vec2 p0{
+                lineX + pen + glyph.offset.x * renderScale,
+                baseline + glyph.offset.y * renderScale
+            };
+            const glm::vec2 p1 = p0 + glyph.size * renderScale;
+            appendQuad(
+                p0,
+                p1,
+                glyph.uvMin,
+                glyph.uvMax,
+                text.color,
+                text.color,
+                glm::vec2(UI_TEXT_MARK, 0.0f),
+                glm::vec4(0.0f),
+                false
+            );
+            drawnTo = glm::max(drawnTo, p1);
             emitted += 6;
-        }
-        penX += g->advance * renderScale;
+            return true;
+        });
     }
 
-    if (emitted > 0) {
-        appendCommand(first, emitted, fontHandle, UIDrawKind::Text);
-    }
+    if (emitted == 0) return nothing;
+
+    appendCommand(first, emitted, fontHandle, {}, clip);
+    // Measured to the last line's descent, not the lowest ink.
+    drawnTo.y = glm::max(drawnTo.y, baseline - font.descent * renderScale);
+    return drawnTo;
+}
+
+void UISystem::appendShaped(
+    const UIRect& rect,
+    const glm::vec4& color,
+    const UIShape& shape,
+    float scale,
+    bool image
+) {
+    // Floored at zero: a negative radius is what marks a glyph.
+    appendQuad(
+        rect.pos,
+        rect.max(),
+        glm::vec2(0.0f),
+        glm::vec2(1.0f),
+        color,
+        fadeEnd(color, shape),
+        glm::vec2(glm::max(shape.cornerRadius, 0.0f), shape.borderWidth) * scale,
+        shape.borderColor,
+        image
+    );
 }
 
 void UISystem::appendQuad(
@@ -274,19 +479,36 @@ void UISystem::appendQuad(
     const glm::vec2& p1,
     const glm::vec2& uv0,
     const glm::vec2& uv1,
-    const glm::vec4& color
+    const glm::vec4& color,
+    const glm::vec4& bottom,
+    const glm::vec2& shape,
+    const glm::vec4& border,
+    bool image
 ) {
+    const uint32_t  first   = static_cast<uint32_t>(m_drawData.vertices.size());
+    const glm::vec4 geometry(p1 - p0, shape);
+    const float     sampled = image ? 1.0f : 0.0f;
     const auto push = [&](float x, float y, float u, float v) {
-        m_drawData.vertices.push_back(UIVertex{{x, y}, {u, v}, color});
+        m_drawData.vertices.push_back(UIVertex{{x, y}, {u, v}, glm::vec4(0.0f), geometry, border, sampled});
     };
 
-    // Two triangles covering the rect, top-left origin.
+    // Two triangles covering the rect, top-left origin, in the corner order
+    // recolourQuad reads: TL TR BR, TL BR BL.
     push(p0.x, p0.y, uv0.x, uv0.y);
     push(p1.x, p0.y, uv1.x, uv0.y);
     push(p1.x, p1.y, uv1.x, uv1.y);
+
     push(p0.x, p0.y, uv0.x, uv0.y);
     push(p1.x, p1.y, uv1.x, uv1.y);
     push(p0.x, p1.y, uv0.x, uv1.y);
+
+    recolourQuad(first, color, bottom);
+}
+
+void UISystem::recolourQuad(uint32_t first, const glm::vec4& top, const glm::vec4& bottom) {
+    UIVertex* quad = &m_drawData.vertices[first];
+    quad[0].color = quad[1].color = quad[3].color = top;
+    quad[2].color = quad[4].color = quad[5].color = bottom;
 }
 
 } // namespace Vkm::Engine

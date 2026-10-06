@@ -1,19 +1,44 @@
 #include "system/physics/ragdoll_system.h"
 
+#include <cmath>
+#include <string>
+
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include "core/clock.h"
 #include "core/math/rotation.h"
+#include "debug/engine_error_log.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/component/animation/animator.h"
+#include "ecs/component/core/name.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/component/physics/ragdoll.h"
 #include "ecs/component/physics/rigidbody.h"
+#include "ecs/hierarchy_operations.h"
 #include "system/animation/pose_buffer.h"
-#include "system/hierarchy/hierarchy_operations.h"
 
 namespace Vkm::Engine {
+
+namespace {
+
+// How far the rig's scale ratio to its build scale may stray from one: a unit change is a factor of a
+// hundred, matrix-chain noise far below this.
+constexpr float STALE_SCALE_TOLERANCE = 0.01f;
+
+// The world-space spin that turns `from` into `to` over dt, the short way round.
+glm::vec3 spinBetween(const glm::quat& from, const glm::quat& to, float dt) {
+    glm::quat delta = to * glm::conjugate(from);
+    if (delta.w < 0.0f) delta = -delta;
+    const glm::vec3 axis(delta.x, delta.y, delta.z);
+    const float sine = glm::length(axis);
+    if (sine <= glm::epsilon<float>()) return axis * (2.0f / dt);
+    return axis * (2.0f * std::atan2(sine, delta.w) / (sine * dt));
+}
+
+} // namespace
 
 EntityId ragdollOwnerOf(const Scene& scene, EntityId body, int32_t* outBone) {
     if (!body) return {};
@@ -44,20 +69,20 @@ void RagdollSystem::shutdown() {
 }
 
 void RagdollSystem::onEntityDestroyed(EntityId id) {
-    if (!m_scene || !m_scene->has<Ragdoll>(id)) return;
+    if (!m_scene) return;
 
-    // Fired before the entity is torn down, so the component is still readable.
-    // Destroying the bones re-enters destroyEntity for each, which is safe:
-    // they carry no Ragdoll of their own, so nothing recurses past one level.
-    const Ragdoll& ragdoll = m_scene->get<Ragdoll>(id);
+    // Fired before teardown, so the component is readable. Re-entering destroyEntity per bone is safe:
+    // bones carry no Ragdoll, so nothing recurses past one level.
+    const Ragdoll* held = m_scene->tryGet<Ragdoll>(id);
+    if (!held) return;
+
+    const Ragdoll& ragdoll = *held;
     for (const RagdollBone& bone : ragdoll.bones) {
         if (!bone.body || !m_scene->isAlive(bone.body)) continue;
         m_scene->destroyEntity(bone.body);
     }
 
-    // The node they hung under goes too: a hierarchy teardown would have taken
-    // it, but a plain destroyEntity leaves an empty rig node outliving its
-    // character.
+    // The group node goes too: a plain destroyEntity would leave it outliving its character.
     if (ragdoll.root && m_scene->isAlive(ragdoll.root)) {
         HierarchyOperations::destroyHierarchy(*m_scene, ragdoll.root);
     }
@@ -68,7 +93,10 @@ void RagdollSystem::fixedUpdate(FrameContext& ctx) {
 
     Scene& scene = ctx.scene;
     auto* storage = scene.storage<Ragdoll>();
-    if (!storage) return;
+    if (!storage) {
+        m_scaled.endPass();
+        return;
+    }
 
     const uint32_t count = static_cast<uint32_t>(storage->size());
     for (uint32_t i = 0; i < count; ++i) {
@@ -77,73 +105,125 @@ void RagdollSystem::fixedUpdate(FrameContext& ctx) {
         if (ragdoll.bones.empty()) continue;
 
         if (ragdoll.active) {
-            // Handed over: the bodies are ordinary dynamics from here, and the
-            // pose follows them rather than the other way round.
-            for (const RagdollBone& bone : ragdoll.bones) {
-                if (!bone.body || !scene.isAlive(bone.body)
-                    || !scene.has<Rigidbody>(bone.body)) continue;
-                Rigidbody& body = scene.get<Rigidbody>(bone.body);
-                body.isKinematic = false;
-                // Woken as well as unfrozen: a ragdoll at rest is asleep where
-                // it landed, and kinematic bones skip the sleep test rather than
-                // clearing it - handed back asleep, the second death never falls.
-                body.sleeping = false;
-                body.sleepTimer = 0.0f;
+            // Handed over: the bodies are ordinary dynamics, and the pose follows them.
+            for (RagdollBone& bone : ragdoll.bones) {
+                bone.posed = false;
+                // Once, at hand-over: a held bone keeps its sleep state, and one handed over asleep
+                // would never fall. Waking every tick would keep a still ragdoll from sleeping.
+                if (!ragdoll.held) continue;
+                if (Rigidbody* body = scene.tryGet<Rigidbody>(bone.body)) Rigidbody::wake(*body);
             }
+            ragdoll.held = false;
             continue;
         }
 
-        // Inactive: the bodies follow the animation instead of gravity. Placed
-        // rather than merely frozen, so the frame `active` is switched on the
-        // solver inherits the pose the character was actually in.
-        const EntityId rigNode =
-            HierarchyOperations::findInSelfOrDescendants<Animator>(scene, self);
+        const EntityId rigNode = HierarchyOperations::findInSelfOrDescendants<Animator>(scene, self);
 
         const PoseSlice* slice = nullptr;
-        if (ctx.poses && rigNode) slice = ctx.poses->sliceOf(rigNode.slot());
+        if (ctx.poses && rigNode) slice = ctx.poses->sliceOf(rigNode);
 
         const glm::mat4 rigWorld = rigNode
             ? HierarchyOperations::computeWorldMatrix(scene, rigNode)
             : glm::mat4(1.0f);
 
-        // The pose arrives in world space, and the bones are children, so it
-        // comes back through the frame they hang under - the rig node rather than
-        // the character itself.
+        // Bones are children of the group node, so world poses come back through its frame.
         const EntityId under = ragdoll.root ? ragdoll.root : self;
-        const glm::mat4 toParent =
-            glm::inverse(HierarchyOperations::computeWorldMatrix(scene, under));
+        const glm::mat4 toParent = glm::inverse(HierarchyOperations::computeWorldMatrix(scene, under));
 
-        for (const RagdollBone& bone : ragdoll.bones) {
-            // Alive before has: has() asserts on a stale handle, and a ragdoll
-            // resurrected by an editor undo names bones that died with the
-            // original.
-            if (!bone.body || !scene.isAlive(bone.body)
-                || !scene.has<Rigidbody>(bone.body)) continue;
+        // Bone offsets carry the build scale, so a rescaled rig misplaces every body. Asked of the rig,
+        // not a posed bone, which a clip may scale on purpose.
+        const float scaleNow = glm::length(glm::vec3(rigWorld[0])) / ragdoll.rigScale;
+        if (std::abs(scaleNow - 1.0f) > STALE_SCALE_TOLERANCE && m_scaled.report()) {
+            const Name* name = scene.tryGet<Name>(self);
+            const std::string message = "its bones were built for its rig at another scale (now x"
+                + std::to_string(scaleNow) + "); rebuild the ragdoll";
+            reportError("Physics", name ? name->value : "a ragdoll", message);
+        }
 
-            Rigidbody& body = scene.get<Rigidbody>(bone.body);
-            body.isKinematic = true;
+        ragdoll.held = true;
+        const float dt = ctx.clock.getFixedStep();
+        for (RagdollBone& bone : ragdoll.bones) {
+            const bool wasPosed = bone.posed;
+            bone.posed = false;
+
+            // tryGet is total: covers a bone whose body the world no longer holds.
+            Rigidbody* held = scene.tryGet<Rigidbody>(bone.body);
+            if (!held) continue;
+
+            Rigidbody& body = *held;
             body.linearVelocity = glm::vec3(0.0f);
             body.angularVelocity = glm::vec3(0.0f);
 
             if (!slice || bone.bone < 0) continue;
             const uint32_t index = static_cast<uint32_t>(bone.bone);
             if (index >= slice->count) continue;
-            if (!scene.has<Transform>(bone.body)) continue;
 
-            // The bone's place in the world, then back through the offset the
-            // build recorded - the body covers the limb and the bone sits at
-            // its head, so the two are never the same transform.
-            const glm::mat4 boneWorld =
-                rigWorld * ctx.poses->global()[slice->first + index];
-            const glm::mat4 bodyWorld =
-                boneWorld * glm::inverse(bone.boneFromBody);
+            Transform* transform = scene.tryGet<Transform>(bone.body);
+            if (!transform) continue;
+
+            // Back through the recorded offset: the body covers the limb, the bone sits at its head.
+            const glm::mat4 boneWorld = rigWorld * ctx.poses->global()[slice->first + index];
+            const glm::mat4 bodyWorld = boneWorld * glm::inverse(bone.bodyFromBone);
+
             const glm::mat4 bodyLocal = toParent * bodyWorld;
 
-            Transform& transform = scene.get<Transform>(bone.body);
-            transform.position = glm::vec3(bodyLocal[3]);
-            transform.rotation = Math::worldRotationOf(bodyLocal);
+            transform->position = glm::vec3(bodyLocal[3]);
+            transform->rotation = Math::worldRotationOf(bodyLocal);
+
+            // The pose's speed is what activation hands the solver: felled mid-stride, it falls forward.
+            const glm::vec3 position = glm::vec3(bodyWorld[3]);
+            const glm::quat rotation = Math::worldRotationOf(bodyWorld);
+            if (wasPosed && dt > 0.0f) {
+                body.linearVelocity  = (position - bone.lastPosition) / dt;
+                body.angularVelocity = spinBetween(bone.lastRotation, rotation, dt);
+            }
+            bone.lastPosition = position;
+            bone.lastRotation = rotation;
+            bone.posed        = true;
         }
     }
+    m_scaled.endPass();
+}
+
+namespace {
+
+/**
+ * @brief Call @p fn with every body an inactive ragdoll poses.
+ *
+ * The one statement of the rule, so the per-entity and per-world questions agree.
+ *
+ * @tparam Fn Callable taking the bone's body EntityId.
+ * @param scene World whose ragdolls are walked.
+ * @param fn Called once per bone; the body may be dead, and @p fn decides.
+ */
+template<typename Fn>
+void forEachPosedBody(const Scene& scene, Fn&& fn) {
+    const auto* ragdolls = scene.storage<Ragdoll>();
+    if (!ragdolls) return;
+
+    for (size_t i = 0; i < ragdolls->size(); ++i) {
+        const Ragdoll& ragdoll = ragdolls->dataAt(static_cast<uint32_t>(i));
+        if (ragdoll.active) continue;
+        for (const RagdollBone& bone : ragdoll.bones) fn(bone.body);
+    }
+}
+
+} // namespace
+
+bool isPosedByAnimation(const Scene& scene, EntityId entity) {
+    bool posed = false;
+    forEachPosedBody(scene, [&](EntityId body) { posed = posed || body == entity; });
+    return posed && scene.isAlive(entity);
+}
+
+void markPosedByAnimation(const Scene& scene, std::vector<bool>& bySlot) {
+    bySlot.clear();
+    forEachPosedBody(scene, [&](EntityId body) {
+        // By id: a dead bone must not mark the slot's new occupant.
+        if (!scene.isAlive(body)) return;
+        if (bySlot.size() <= body.slot()) bySlot.resize(body.slot() + 1, false);
+        bySlot[body.slot()] = true;
+    });
 }
 
 } // namespace Vkm::Engine

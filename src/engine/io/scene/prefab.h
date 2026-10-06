@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -16,35 +18,33 @@ class ResourceManager;
 /**
  * @brief Entity subtrees saved once and instanced many times.
  *
- * A prefab is a scene fragment: the same per-entity component shape a scene
- * uses, for one entity and its descendants, in its own file. Instancing one
- * builds those entities fresh, so editing the prefab changes every instance the
- * next time a scene is loaded. A scene stores an instance as a reference plus
- * the root's Transform and whatever fields an override names; everything else
- * belongs to the prefab.
+ * A prefab is a scene fragment, one entity and its descendants, in its own file.
+ * Instances are built fresh on each scene load, so editing the prefab changes them
+ * all. A scene stores an instance as a reference, the root's Transform and its
+ * overrides.
  *
- * Referenced by path rather than through the AssetLibrary, because nothing cooks
- * them - they are authored JSON, read as-is, like scenes - and each file carries
- * the same assets block a scene does, which is what lets one be instantiated
- * into a scene that never held its meshes.
- *
- * Hand-editable, so every entry point here reports a document it cannot use and
- * returns rather than throwing: the callers are an editor showing a toast beside
- * its file picker, and a scene load with other entities still to build.
- *
- * The override format, and what happens when a prefab changes underneath one:
- * docs/reference/system/io.md, "Per-instance overrides".
+ * Referenced by path, not through the AssetLibrary: nothing cooks them. Each file
+ * carries a scene's assets block, so it can be instantiated into a scene that
+ * never held its meshes. Every entry point reports an unusable document and
+ * returns rather than throwing. Overrides: docs/reference/io.md, "Per-instance
+ * overrides".
  */
 namespace Prefab {
 
     /**
-     * @brief Is @p id inside (but not the root of) a prefab instance?
+     * @brief The root of the prefab instance @p id belongs to: itself, or its
+     *        nearest ancestor carrying PrefabInstance.
      *
-     * Walks up rather than marking every descendant, so the prefab's own
-     * entities carry no bookkeeping that could fall out of sync with their
-     * root. The scene serializer asks this to decide which entities it may
-     * describe, and @ref save to refuse a subtree that is not its own to give
-     * away.
+     * Walks up, so descendants carry no bookkeeping that could fall out of sync.
+     *
+     * @param scene Scene holding the entity.
+     * @param id    Entity to resolve.
+     * @return The instance root, or a null id when @p id is not part of one.
+     */
+    EntityId instanceRootOf(const Scene& scene, EntityId id);
+
+    /**
+     * @brief Is @p id inside (but not the root of) a prefab instance?
      *
      * @param scene Scene holding the entity.
      * @param id    Entity to test.
@@ -55,17 +55,9 @@ namespace Prefab {
     /**
      * @brief Write @p root and its descendants to @p path as a prefab.
      *
-     * The root's own Transform is saved with it as the prefab's authored pose;
-     * an instance replaces it. Parent links are stored as indices within the
-     * file, so the subtree survives independently of the entity ids it had.
-     *
-     * @p path is resolved for the write and stored on the root verbatim, so a
-     * project-relative one is what a scene carrying the instance goes on to
-     * write - the form that still names the same file on another machine.
-     *
-     * The subtree becomes an instance of what it wrote, and its overrides are
-     * dropped: the file now holds those values, so keeping them would pin the
-     * instance to them and stop every later edit of the prefab from reaching it.
+     * The root's Transform is saved as the authored pose; an instance replaces it.
+     * @p path is stored on the root verbatim, so a project-relative one stays
+     * portable. The subtree becomes an instance of the file, its overrides dropped.
      *
      * @param scene     Scene holding the subtree.
      * @param root      Entity whose subtree becomes the prefab.
@@ -74,16 +66,14 @@ namespace Prefab {
      * @return True on success; false if the entity is dead, the subtree touches
      *         another instance, or the write fails.
      */
-    bool save(Scene& scene, EntityId root, const std::string& path,
-              const ResourceManager& resources);
+    bool save(Scene& scene, EntityId root, const std::string& path, const ResourceManager& resources);
 
     /**
      * @brief Does the prefab at @p path define @p component on the entity
      *        @p uid names?
      *
-     * The prefab's own component block is the schema an override is checked
-     * against, so this answers whether one addressing that pair could ever be
-     * applied. Reads the file per call, like @ref reloadComponent.
+     * Answers whether an override addressing that pair could ever apply. Reads
+     * the file per call.
      *
      * @param path      Prefab file to read.
      * @param uid       Entity identity inside the prefab.
@@ -91,6 +81,40 @@ namespace Prefab {
      * @return True when the prefab holds that entity and that component on it.
      */
     bool definesComponent(const std::string& path, uint32_t uid, const std::string& component);
+
+    /**
+     * @brief Where one instance's built entities stand: prefab uid to slot.
+     *
+     * A scene file does not keep it: a load builds an instance into whatever slots
+     * are free, and a history addressing entities by slot then addresses others.
+     * A rebuild handed this puts each entity back.
+     */
+    using BuiltSlots = std::map<uint32_t, uint32_t>;
+
+    /**
+     * @brief Every instance's BuiltSlots, keyed by the slot its root holds.
+     *
+     * Comparable, so a caller that rebuilt a world can ask whether it came back
+     * exactly.
+     */
+    using InstanceSlots = std::map<uint32_t, BuiltSlots>;
+
+    /**
+     * @brief Where the instance rooted at @p root put each of its entities.
+     *
+     * @param scene Scene holding the instance.
+     * @param root  Instance root; itself not listed, since its slot is its own.
+     * @return Each entity below @p root carrying a PrefabEntity, by uid.
+     */
+    BuiltSlots builtSlotsOf(const Scene& scene, EntityId root);
+
+    /**
+     * @brief builtSlotsOf for every instance in @p scene.
+     *
+     * @param scene Scene to read.
+     * @return One entry per PrefabInstance, by the slot of its root.
+     */
+    InstanceSlots instanceSlotsOf(const Scene& scene);
 
     /**
      * @brief Instantiate @p path into @p scene, placing the root at @p at.
@@ -102,15 +126,18 @@ namespace Prefab {
      *                  Transform is replaced by it.
      * @return The instance root, or a default (invalid) EntityId on failure.
      */
-    EntityId instantiate(Scene& scene, ResourceManager& resources,
-                         const std::string& path, const Transform& at);
+    EntityId instantiate(
+        Scene& scene,
+        ResourceManager& resources,
+        const std::string& path,
+        const Transform& at
+    );
 
     /**
      * @brief Instantiate at the prefab's own authored pose.
      *
-     * The root is created here and marked as a @ref PrefabInstance of @p path,
-     * so the scene stores it as a reference to the file rather than as the
-     * entities it expanded to.
+     * The root is marked as a @ref PrefabInstance of @p path, so the scene stores
+     * a reference to the file rather than the expanded entities.
      *
      * @param scene     Scene to build into.
      * @param resources Resolves asset names to handles.
@@ -122,41 +149,40 @@ namespace Prefab {
     /**
      * @brief Build a prefab into an entity that already exists.
      *
-     * The scene loader restores entities at their saved slot, so it creates the
-     * instance root itself: letting the prefab allocate one would take a slot
-     * another entity is waiting for. @p root receives the prefab root's
-     * components and children, and keeps its own Transform - the instance's pose
-     * belongs to whoever placed it.
+     * For a caller restoring entities at their saved slots: a root the prefab
+     * allocated would take a slot another entity is waiting for. @p root receives
+     * the prefab root's components and children, and keeps its own Transform.
      *
-     * The caller marks @p root as a @ref PrefabInstance, unlike the @ref
-     * instantiate overloads which create the root and mark it: the overrides read
-     * off the file belong on the component before the subtree is built from it.
-     * Without the marker the result is a loose copy the next save writes inline.
+     * The caller marks @p root as a @ref PrefabInstance, so the overrides sit on
+     * it before the build; unmarked, the next save writes the result inline.
      *
      * @param scene     Scene to build into.
      * @param resources Resolves asset names to handles.
      * @param path      Prefab file to read.
      * @param root      Existing entity to become the instance root.
      * @param overrides Per-instance field deltas, addressed by PrefabEntity uid.
-     * @param drift     Optional: receives one message per override the prefab no
-     *                  longer has a home for. The override itself is kept.
+     * @param drift     Optional: one message per override the prefab no longer
+     *                  has a home for; the override is kept.
+     * @param slots     Optional: an earlier build's slots; an entity whose slot is
+     *                  still free is built back into it.
      * @return True if the prefab was read and built.
      */
-    bool instantiateInto(Scene& scene, ResourceManager& resources,
-                         const std::string& path, EntityId root,
-                         const std::vector<PrefabOverride>& overrides = {},
-                         std::set<std::string>* drift = nullptr);
+    bool instantiateInto(
+        Scene& scene,
+        ResourceManager& resources,
+        const std::string& path,
+        EntityId root,
+        const std::vector<PrefabOverride>& overrides = {},
+        std::set<std::string>* drift = nullptr,
+        const BuiltSlots* slots = nullptr
+    );
 
     /**
      * @brief Re-read one component of one instance entity from the prefab.
      *
-     * A component on an instance is the prefab's value patched by the
-     * instance's overrides, so dropping an override is not an undo of the edit
-     * that made it - it is a re-read of that definition, which is what this
-     * does. Only @p component is touched; the rest of the entity is left alone.
-     *
-     * Reads the file per call, which suits the interactive edits it serves and
-     * not a per-frame path.
+     * An instance's component is the prefab's value patched by its overrides, so
+     * dropping an override is a re-read, not an undo. Only @p component is
+     * touched. Reads the file per call, so not for a per-frame path.
      *
      * @param scene     Scene holding the entity.
      * @param resources Resolves asset names to handles.
@@ -166,12 +192,17 @@ namespace Prefab {
      * @param component Component key, as SceneSerializer writes it.
      * @param overrides Every override on the instance; only this uid's apply.
      * @return True when the prefab defines the component and it was loaded;
-     *         false for the root's Transform, which is the instance's own pose
-     *         and would be replaced by the prefab's authored one.
+     *         false for the root's Transform, which is the instance's own pose.
      */
-    bool reloadComponent(Scene& scene, ResourceManager& resources, const std::string& path,
-                         EntityId entity, uint32_t uid, const std::string& component,
-                         const std::vector<PrefabOverride>& overrides);
+    bool reloadComponent(
+        Scene& scene,
+        ResourceManager& resources,
+        const std::string& path,
+        EntityId entity,
+        uint32_t uid,
+        const std::string& component,
+        const std::vector<PrefabOverride>& overrides
+    );
 
 } // namespace Prefab
 

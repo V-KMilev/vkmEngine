@@ -2,62 +2,35 @@
 
 #include <vector>
 
-#include <glm/glm.hpp>
-
-#include "core/math/bounds.h"
-
 #include "ecs/entity.h"
-#include "resource/asset/mesh_asset.h"
-
-
+#include "system/render/data/camera_data.h"
+#include "system/render/data/render_objects.h"
 
 namespace Vkm::Engine {
 
 /**
- * @brief A single visible entity, its world model matrix, and world-space AABB.
- *
- * Combining the fields in one struct improves cache locality when iterating
- * visibility results (vs parallel vectors that cross cache lines). The AABB
- * is the result of Math::transform on the mesh's local bounds with this
- * entity's model matrix; picking consumes it directly instead of
- * re-transforming.
- */
-struct VisibleEntity {
-    EntityId id;
-    glm::mat4 model;
-    Math::AABB world;
-
-    /**
-     * @brief Geometry to draw, already resolved.
-     *
-     * The Mesh component's handle normally, or the level an LOD component
-     * selected for this frame's distance. Carried here because the cull is
-     * where the distance is known; the consumer would otherwise have to
-     * recompute it to make the same choice.
-     */
-    MeshHandle mesh;
-};
-
-/**
- * @brief Result of a visibility pass: camera data, visible entities, and the scene-wide shadow-caster set.
- *
- * Populated by VisibilitySystem each frame and consumed downstream by
- * RenderSystem and the editor's picking/overlays.
- *
- * Camera data is computed once during culling and forwarded to avoid redundant lookups.
+ * @brief VisibilitySystem's per-frame product: camera data, every scene mesh, and
+ *        which of them the camera sees.
  */
 struct Visibility {
-    std::vector<VisibleEntity> entries;
-    std::vector<VisibleEntity> shadowCasters;
+    RenderObjects objects;  ///< Every drawable mesh, and which the camera sees.
 
-    glm::mat4 view           = glm::mat4(1.0f);
-    glm::mat4 projection     = glm::mat4(1.0f);
-    glm::vec3 cameraPosition = glm::vec3(0.0f);
+    /**
+     * @brief Per object, its entity, parallel to the columns of `objects`.
+     *
+     * Kept beside the objects because drawing never needs it; tools do.
+     */
+    std::vector<EntityId> entities;
 
-    float focusDistance      = 10.0f;   ///< Active camera's depth-of-field focus distance.
-    float dofAmount          = 0.0f;    ///< Active camera's depth-of-field strength (0 = off).
+    CameraData camera;  ///< The resolved view, depth of field included; meaningful while hasCamera.
+    bool       hasCamera = false;
 
-    bool hasCamera           = false;
+    /**
+     * @brief The scene camera the frame was rendered through.
+     *
+     * Empty for a host's free view (HostView) or no camera.
+     */
+    EntityId cameraEntity{};
 };
 
 } // namespace Vkm::Engine

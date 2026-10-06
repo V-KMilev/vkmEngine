@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "net/wire/bit_stream.h"
@@ -9,92 +11,86 @@
 namespace Vkm::Engine {
 
 /**
- * @brief How many past commands ride in every command packet.
+ * @brief How many ticks a command goes on being resent for.
  *
- * A command packet carries the oldest unacknowledged commands, not just the
- * one for this tick, and this is not a bandwidth compromise - it is the only
- * thing that makes an edge survive the network.
- *
- * An axis recovers on its own: a lost packet costs one tick of movement and
- * the next packet says where the stick is now. An edge does not. `pressed` is
- * true for exactly one command, so a single lost datagram loses that jump
- * permanently - the player pressed the key, the character did not jump, and
- * nothing anywhere reports an error. Carrying twelve means a command is sent
- * again in every packet until it is confirmed or the list outruns it, so an
- * edge survives every packet lost inside the 94 ms those twelve ticks cover at
- * 128 Hz - six consecutive packets at the default send rate, which produces two
- * new commands per packet.
- *
- * Stated as a window rather than as a packet count because that is the part
- * that does not move: raising the send rate buys more packets inside the same
- * window, not more protection.
- *
- * Retransmission would be the other answer and it is the wrong one: by the time
- * a retransmit arrived the tick it belonged to would be long past.
+ * An axis recovers from a lost packet; an edge (`pressed`) is true for one
+ * command only and would be lost for good. So a command rides every packet
+ * until the server has it or this many newer exist. A retransmit would arrive
+ * after its tick had passed.
  */
 constexpr uint32_t NET_COMMAND_REDUNDANCY = 12;
 
 /**
+ * @brief The most commands one packet carries.
+ *
+ * More than the redundancy window, since one frame can run more ticks and
+ * every one must go out. Sixteen of the widest commands still fit a datagram.
+ */
+constexpr uint32_t NET_MAX_PACKET_COMMANDS = 16;
+
+/**
  * @brief Commands a client holds while waiting to hear they were run.
  *
- * Larger than what one packet carries, and for a different reason. A packet
- * carries the newest few because that is what protects an edge; this bounds how
- * long the unconfirmed list may grow while nothing comes back. On a hundred
- * millisecond link at 128 Hz there are about thirteen commands in flight at any
- * moment - already more than one packet holds - so a bound set to a packet's
- * worth would be discarding commands as a matter of routine rather than as a
- * backstop.
- *
- * It is only a backstop. What normally empties this list is the server saying
- * which commands it ran; this is what stops the list growing without limit when
- * it never does.
- *
- * It also bounds how bad a link reconciliation can still correct. A replay
- * re-runs the ticks after the one the server confirmed, so it needs every
- * command since - and once the round trip exceeds this many ticks the oldest is
- * gone and the prediction is kept uncorrected instead. Sixty-four is half a
- * second at 128 Hz, well past what a game is playable on, but it is the number
- * to raise if that is ever wrong.
+ * A backstop: the server's acknowledgements normally empty the list. Also
+ * bounds what a replay can correct: past this many ticks of round trip the
+ * oldest needed command is gone and the prediction goes uncorrected.
  */
 constexpr uint32_t NET_COMMAND_MEMORY = 64;
 
 /**
  * @brief Bits an axis is carried in.
  *
- * A hundredth of full deflection, which is finer than a stick reports and far finer
- * than a key, which is at an end anyway.
+ * 1/127 of full deflection either side of an exact centre (Quantize::toSigned),
+ * finer than a stick reports.
  */
 constexpr uint32_t NET_AXIS_BITS = 8;
 
 /**
- * @brief Write @p commands, oldest first, for @p actionCount defined actions.
+ * @brief Where the next command packet starts in @p unconfirmed.
  *
- * Both ends agree on the action count the same way they agree on the schema:
- * it comes from the project, and a disagreement is refused at join rather than
- * decoded into a player pressing something else.
+ * Every command of the newest NET_COMMAND_REDUNDANCY the server has not
+ * heard, and before those any command no packet has carried yet, however old:
+ * one is never skipped for age, or the server never runs it.
  *
- * At most NET_COMMAND_REDUNDANCY of them go, and they are the OLDEST that fit.
- * A frame runs as many ticks as the time since the last one calls for - up to a
- * quarter of a second of them, thirty-two at 128 Hz - and one packet goes out
- * per frame. Taking the newest would leave the oldest behind, and every later
- * frame has newer ones still, so those would never be sent at all: the server
- * would never run ticks the client had already predicted, and the two would
- * disagree from there with nothing to close it. In steady state the choice
- * decides nothing, because everything unacknowledged fits.
+ * The window moves with the newest command, not with replies: anchored on a
+ * reply, a long round trip would starve the server of input. @p heard only
+ * stops resending what has arrived.
+ *
+ * @param unconfirmed Every command the server has not yet run, oldest first.
+ * @param heard       Newest sequence the server has said it received; zero
+ *                    for none, which no command carries.
+ * @param sent        Newest sequence a packet has carried; zero for none.
+ * @return Index of the first command to write.
+ */
+size_t firstCommandToSend(const std::vector<InputCommand>& unconfirmed, uint32_t heard, uint32_t sent);
+
+/**
+ * @brief Write @p commands from @p first, oldest first, for @p actionCount
+ *        defined actions.
+ *
+ * The action count comes from the project; a disagreement is refused at join.
+ * Only an unbroken run goes (each one sequence and one tick after the last),
+ * so only the first's numbers are written. It stops at the first gap or
+ * NET_MAX_PACKET_COMMANDS; the rest goes in the next packet.
  *
  * @param out         Stream to write into.
- * @param commands    Oldest first; at most NET_COMMAND_REDUNDANCY are written.
- * @param actionCount How many action slots are in use.
+ * @param commands    Oldest first.
+ * @param first       Index of the first to write.
+ * @param actionCount Action slots in use.
+ * @return How many were written.
  */
-void writeCommands(BitWriter& out,
-                   const std::vector<InputCommand>& commands,
-                   uint32_t actionCount);
+size_t writeCommands(
+    BitWriter& out,
+    const std::vector<InputCommand>& commands,
+    size_t first,
+    uint32_t actionCount
+);
 
 /**
  * @brief Read back what writeCommands wrote.
  *
  * @param in          Stream to read from.
- * @param actionCount How many action slots are in use.
+ * @param actionCount Action slots in use.
  * @param out         Filled with the commands, oldest first.
  * @return False when the packet is malformed.
  */
@@ -103,28 +99,44 @@ bool readCommands(BitReader& in, uint32_t actionCount, std::vector<InputCommand>
 /**
  * @brief The commands one player has sent that the server has not yet run.
  *
- * One command is run per tick, in the order the player made them, and never
- * more than once. That ordering is the whole contract: the client predicted
- * tick N by running command N, so the server must run command N as one whole
- * tick too, or the two ends compute different answers from the same input.
+ * One command per tick, in the player's order, each exactly once: the client
+ * predicted tick N with command N, so the server must run it as one whole tick.
+ * Queued, not addressed by tick: the two ends' tick clocks are unrelated. A
+ * duplicate is run once, or an edge fires twice.
  *
- * They are not addressed by tick number. The two ends count ticks on separate
- * clocks, each started when its own process did, so the client's tick 400 means
- * nothing against the server's. Run in order from a queue, the matching falls
- * out with no clock to synchronise; the client's number is still handed back in
- * a snapshot, so a client knows which predicted moment has been judged.
- *
- * The same command arrives many times, because every packet repeats the last
- * twelve, and is run once: an edge consumed twice is a double jump.
- *
- * When the queue is empty the tick still runs - the server cannot wait for a
- * packet. The previous command's axes repeat, because a held key is still held,
- * and its edges are cleared, because a press already fired.
- *
- * When the queue grows past what a link's jitter needs it drains slightly faster
- * than it fills: a backlog is latency every later command waits behind.
+ * Empty, the tick still runs on the last command's axes with its edges
+ * cleared. Past MAX_DEPTH the oldest are skipped in one tick, since a backlog
+ * is latency. NetPacing keeps the queue just above empty, from lowWater.
  */
 class NetCommandBuffer {
+    public:
+        /**
+         * @brief Commands the queue may hold before the oldest are skipped, all at once.
+         *
+         * A queue is input delay. Skipped edges are folded in; the same number
+         * bounds how far repeats may stand in, so the two cannot drift apart.
+         * NetPacing sets the standing depth; this is for a burst after a
+         * stall, set above the pacing cushion by its jitter again so a
+         * jittering link is never trimmed.
+         */
+        static constexpr size_t MAX_DEPTH = 10;
+
+        /**
+         * @brief Most commands held at once, however fast they arrive.
+         *
+         * Nothing else bounds what arrives between two take()s, and accept() is
+         * linear in it. Many packets' worth.
+         */
+        static constexpr size_t MAX_QUEUED = 256;
+
+        /**
+         * @brief Ticks a repeat may stand in for before it stops moving the body.
+         *
+         * Twice the redundancy window: that long with nothing means every copy
+         * of every recent command was lost, a link gone rather than jittering.
+         */
+        static constexpr uint32_t REPEAT_TICKS = NET_COMMAND_REDUNDANCY * 2;
+
     public:
         NetCommandBuffer() = default;
         ~NetCommandBuffer() = default;
@@ -135,55 +147,6 @@ class NetCommandBuffer {
         NetCommandBuffer(NetCommandBuffer && other) = delete;
         NetCommandBuffer& operator=(NetCommandBuffer && other) = delete;
 
-        /**
-         * @brief Commands worth holding before running them.
-         *
-         * A cushion against jitter: with none, one late packet is a tick run on
-         * repeated input, and a jump lost. Each one held is a tick of input
-         * delay, so this is small deliberately - two at 128 Hz is 16 ms.
-         */
-        static constexpr size_t TARGET_DEPTH = 2;
-
-        /**
-         * @brief How deep the queue may get before it is drained faster than it fills.
-         *
-         * Three times the cushion: a band wide enough that ordinary jitter never
-         * touches it, and narrow enough that a client which ran fast for a
-         * moment does not keep that moment as input delay for the rest of the
-         * match. The same number bounds how far a run of repeats may stand in
-         * for commands that have not come, so the two cannot drift apart.
-         */
-        static constexpr size_t MAX_DEPTH = TARGET_DEPTH * 3;
-
-        /**
-         * @brief Most commands held at once, however fast they arrive.
-         *
-         * The backlog is drained by take(), which runs once a tick; nothing
-         * bounds what arrives between two ticks. A peer that sends faster than
-         * it is consumed would otherwise grow this without end, and both
-         * searches in accept() are linear in it. Generous against any real
-         * sender - twelve are repeated in every packet, and this is many
-         * packets' worth.
-         */
-        static constexpr size_t MAX_QUEUED = 256;
-
-        /**
-         * @brief Ticks a repeat may stand in for before it stops moving the body.
-         *
-         * A held key really is still held across a gap of a few ticks, which is
-         * why a starved tick repeats the last axes at all. Across a long one it
-         * is a guess, and the guess is that the player is still pushing forward -
-         * so a two-second outage runs their character off whatever it was
-         * walking towards, and they come back somewhere they never chose.
-         *
-         * Sized by the redundancy window: every command is sent
-         * NET_COMMAND_REDUNDANCY times, so nothing arriving for longer than that
-         * window means every copy of every recent command was lost. That is a
-         * link that has gone, not one that is jittering, and the honest answer
-         * to what the player is holding is that nobody knows.
-         */
-        static constexpr uint32_t REPEAT_TICKS = NET_COMMAND_REDUNDANCY * 2;
-
     public:
         /// Take one command, ignoring a sequence already seen.
         void accept(const InputCommand& command);
@@ -191,56 +154,82 @@ class NetCommandBuffer {
         /**
          * @brief The command to run on the tick about to happen.
          *
-         * @param tick The server's own tick, stamped on what comes back so a
-         *             caller reads a command belonging to the tick it is
-         *             running.
-         * @return The oldest command not yet run, or the last one run with its
-         *         edges cleared when none is waiting. A zeroed command before
-         *         any arrive, which reads as nothing held.
+         * A repeat claims the client tick it stood in for, so a snapshot's
+         * confirmation matches its pose; the real command for that tick is
+         * discarded when it turns up.
          *
-         * A repeat claims the client tick it stood in for, so what a snapshot
-         * confirms always describes the pose the snapshot carries. The command
-         * bearing that tick is discarded when it does turn up, or the same
-         * moment would be lived twice.
+         * @param tick The server's own tick, stamped on what comes back.
+         * @return The oldest command not yet run, or the last one run with its
+         *         edges cleared when none is waiting; zeroed before any arrive.
          */
         InputCommand take(uint32_t tick);
 
         /**
          * @brief The newest command tick actually run, in the client's numbering.
          *
-         * Not the server's own tick, which is a different clock: each end
-         * started counting when its process did, and the only thing they share
-         * is that a command carries the tick the client built it for. A
-         * snapshot carries this so the client knows which of its own predicted
-         * moments to hold the snapshot against - against the server's tick it
-         * would be comparing two unrelated numbers, and would find no match at
-         * all or, worse, the wrong one.
+         * Not the server's clock. A snapshot carries it so the client knows
+         * which prediction to hold the snapshot against.
+         *
+         * @return The client tick; zero before any command has run.
          */
         uint32_t newestRunTick() const { return m_ranCommandTick; }
 
         /**
          * @brief The newest sequence this buffer has accepted.
          *
-         * What arrived, which is not what a snapshot reports: that is
-         * newestRunTick(), naming the tick the server actually ran. A command
-         * can be held here for ticks before it is run, so the two differ by the
-         * depth of the queue.
+         * What arrived, ahead of newestRunTick() by the queue's depth. A
+         * snapshot carries it so the client stops resending (see
+         * firstCommandToSend).
+         *
+         * @return The sequence; zero until one arrives.
          */
         uint32_t newestSequence() const { return m_newestSequence; }
 
         /**
          * @brief How many commands are waiting.
          *
-         * The server's own measure of whether a client is sending fast enough: empty
-         * and ticks run on repeated input, deep and the player is behind for no reason.
+         * @return The queue's depth now.
          */
         size_t pending() const { return m_commands.size(); }
+
+        /**
+         * @brief The fewest commands waiting at any take() since restartLowWater().
+         *
+         * Counted before the take, so zero is a tick that ran on a repeat. The
+         * lowest point, because the depth now depends on whether a packet just
+         * landed.
+         *
+         * @return The low water; with no take since the restart, the depth now.
+         */
+        size_t lowWater() const {
+            return m_lowWater == std::numeric_limits<size_t>::max() ? m_commands.size() : m_lowWater;
+        }
+
+        /// Start measuring lowWater() again, once it has been said.
+        void restartLowWater() { m_lowWater = std::numeric_limits<size_t>::max(); }
+
+        /**
+         * @brief Ticks that ran on a repeat because nothing was waiting, since clear().
+         *
+         * Counted from the first command that ran.
+         *
+         * @return The count.
+         */
+        uint32_t repeatedTicks() const { return m_repeatedTicks; }
+
+        /**
+         * @brief Commands passed over unrun, since clear(): skipped down to
+         *        MAX_DEPTH, or pushed out of a queue at MAX_QUEUED.
+         *
+         * @return The count.
+         */
+        uint32_t skippedCommands() const { return m_skippedCommands; }
 
         void clear();
 
     private:
-        std::vector<InputCommand> m_commands;   ///< Ascending by sequence; oldest first.
-        InputCommand              m_last;       ///< Repeated when nothing is waiting.
+        std::vector<InputCommand> m_commands;              ///< Ascending by sequence; oldest first.
+        InputCommand              m_last;                  ///< Repeated when nothing is waiting.
         uint32_t                  m_newestSequence   = 0;  ///< Newest ever accepted.
         uint32_t                  m_newestTick       = 0;  ///< Its tick; how far a repeat may run ahead.
         uint32_t                  m_consumedSequence = 0;  ///< Newest already run.
@@ -248,6 +237,11 @@ class NetCommandBuffer {
         uint32_t                  m_carriedPressed   = 0;  ///< Edges from moments skipped or stood in for.
         uint32_t                  m_carriedReleased  = 0;  ///< The same, for releases.
         uint32_t                  m_starved          = 0;  ///< Consecutive ticks run on a repeat.
+        uint32_t                  m_repeatedTicks    = 0;  ///< Ticks run on a repeat, since clear().
+        uint32_t                  m_skippedCommands  = 0;  ///< Commands never run, since clear().
+
+        /// Fewest waiting at a take since the last restart; the largest size_t for none yet.
+        size_t                    m_lowWater = std::numeric_limits<size_t>::max();
 
         bool                      m_ranReal = false;  ///< Whether m_ranCommandTick means anything yet.
         bool                      m_started = false;

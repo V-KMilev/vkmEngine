@@ -1,24 +1,25 @@
 #include "pass/gl_composite_pass.h"
 
+#include <cmath>
+
 #include <GL/glew.h>
 
 #include "gl_shader.h"
 #include "gl_context.h"
-#include "data/gl_screen_triangle.h"
+#include "gl_screen_triangle.h"
 #include "gl_frame_buffer.h"
 
 #include "gl_frame_context.h"
 #include "gl_target.h"
-#include "data/gl_bloom.h"
-#include "data/gl_fog_volume.h"
-#include "data/gl_shadow_atlas.h"
+#include "storage/gl_bloom.h"
+#include "storage/gl_shadow_atlas.h"
 #include "convention/gl_bindings.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {
 
 GLCompositePass::GLCompositePass()
-    : m_shader(std::make_unique<Vkm::GL::Shader>("shaders/composite")) {}
+    : m_shader("shaders/composite") {}
 
 GLCompositePass::~GLCompositePass() = default;
 
@@ -26,35 +27,27 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
     const RenderView& view = ctx.view;
 
     bindBackbufferViewport(ctx);
-    beginFullscreen(ctx.gl);
+    ctx.gl.setDepthTest(false);
 
-    m_shader->bind();
-    ctx.colorSrc->bindColor(GLBindings::CompositeTextureSlots::SCENE);
+    m_shader.bind();
+    ctx.colorSrc->bindTexture(GLTarget::Attachment::Color, GLBindings::CompositeTextureSlots::SCENE);
     ctx.bloom.bind(GLBindings::CompositeTextureSlots::BLOOM);
-    const float bloomStrength = (ctx.bloom.isReady() && view.settings.bloom)
-        ? view.settings.bloomStrength : 0.0f;
-    m_shader->setUniform1f("u_bloomStrength", bloomStrength);
+    m_shader.setUniform1f("u_bloomStrength", ctx.bloomReady ? view.settings.bloomStrength : 0.0f);
+    m_shader.setUniform1i("u_tonemap", static_cast<int>(view.settings.tonemap));
+    m_shader.setUniform1f("u_exposure", std::exp2(view.settings.exposure));
 
-    // The debug views sample the intermediate buffers; the projection goes with
-    // them for depth linearization.
+    // The debug views sample the intermediate buffers.
     const int mode = static_cast<int>(view.settings.renderMode);
-    m_shader->setUniform1i("u_renderMode", mode);
+    m_shader.setUniform1i("u_renderMode", mode);
     if (mode != static_cast<int>(RenderMode::Default)) {
-        ctx.sceneHDR.bindDepth(GLBindings::PostTextureSlots::SCENE_DEPTH);
-        ctx.sceneHDR.bindGBuffer(GLBindings::PostTextureSlots::SCENE_GBUFFER);
-        // Only the GTAO pass writes the AO target, and only it sets aoReady, so
-        // with GTAO off there is nothing bound and nothing to read. The AO debug
-        // view shows the unoccluded value rather than whatever was there.
-        if (ctx.aoReady) ctx.ao.bindColor(GLBindings::PostTextureSlots::SSAO);
-        m_shader->setUniform1i("u_hasAO", ctx.aoReady ? 1 : 0);
-        if (ctx.fogReady)
-            ctx.fog.bindIntegratedSlot(GLBindings::PostTextureSlots::FOG_VOLUME);
-        m_shader->setUniformMatrix4fv("u_projection", view.camera.projection);
+        ctx.sceneHDR.bindTexture(GLTarget::Attachment::Depth, GLBindings::PostTextureSlots::SCENE_DEPTH);
+        ctx.sceneHDR.bindTexture(GLTarget::Attachment::GBuffer, GLBindings::PostTextureSlots::SCENE_GBUFFER);
+        bindAO(ctx, m_shader);
+        bindFog(ctx, m_shader);
     }
 
-    // Unconditional: this shader declares the slot as a plain sampler2D, and the driver
-    // validates that against the bound state whether or not the debug branch reads it.
-    // A unit of its own, because the shadow readers' unit carries a comparing sampler.
+    // Unconditional: the driver validates this plain sampler2D whether or not the debug branch
+    // reads it. Its own unit, since the shadow readers' unit carries a comparing sampler.
     ctx.shadowAtlas.bind2DRaw(GLBindings::ShadowTextureSlots::ATLAS_2D_RAW);
 
     ctx.screenTri.draw();

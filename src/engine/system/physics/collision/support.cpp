@@ -4,7 +4,6 @@
 
 #include <glm/gtc/constants.hpp>
 
-
 namespace Vkm::Engine {
 
 SupportShape supportOf(const BoxShape& box) {
@@ -38,8 +37,7 @@ SupportShape supportOfPoints(const glm::vec3* points, uint32_t count) {
 glm::vec3 support(const SupportShape& shape, const glm::vec3& direction) {
     switch (shape.kind) {
         case SupportShape::Kind::Box: {
-            // Each axis independently: the extreme corner is the one whose every
-            // component agrees in sign with the direction.
+            // The extreme corner agrees in sign with the direction on every axis.
             glm::vec3 point = shape.center;
             for (int i = 0; i < 3; ++i) {
                 const float side = glm::dot(shape.axes[i], direction);
@@ -50,9 +48,7 @@ glm::vec3 support(const SupportShape& shape, const glm::vec3& direction) {
         }
 
         case SupportShape::Kind::Capsule: {
-            // The further end of the segment, pushed out by the radius. Exact
-            // rather than approximated, because a capsule is a swept sphere and
-            // that sweep is what the radius term is.
+            // The further end, pushed out by the radius: exact, as a capsule is a swept sphere.
             const bool towardB = glm::dot(direction, shape.b - shape.a) >= 0.0f;
             const glm::vec3 end = towardB ? shape.b : shape.a;
             const float lengthSq = glm::dot(direction, direction);
@@ -67,7 +63,10 @@ glm::vec3 support(const SupportShape& shape, const glm::vec3& direction) {
             float bestDot = glm::dot(shape.points[0], direction);
             for (uint32_t i = 1; i < shape.count; ++i) {
                 const float d = glm::dot(shape.points[i], direction);
-                if (d > bestDot) { bestDot = d; best = i; }
+                if (d > bestDot) {
+                    bestDot = d;
+                    best = i;
+                }
             }
 
             return shape.points[best];

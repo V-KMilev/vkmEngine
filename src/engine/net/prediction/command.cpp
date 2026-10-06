@@ -1,7 +1,6 @@
 #include "net/prediction/command.h"
 
 #include <algorithm>
-#include <cmath>
 
 #include "net/wire/quantize.h"
 
@@ -9,120 +8,98 @@ namespace Vkm::Engine {
 
 namespace {
 
-/**
- * @brief Bits for how far a command's sequence and tick are from the one before it.
- *
- * One, almost always; the width covers a client whose frame ran long enough to skip a
- * few ticks without falling back to a full field.
- */
-constexpr uint32_t STEP_BITS = 6;
-constexpr uint32_t MAX_STEP  = (1u << STEP_BITS) - 1u;
-
-/**
- * @brief Commands in one packet.
- *
- * Five bits holds thirty-one, which is more than the redundancy asks for.
- */
+/// Bits of a packet's command count.
 constexpr uint32_t COUNT_BITS = 5;
-static_assert(NET_COMMAND_REDUNDANCY < (1u << COUNT_BITS),
-              "the count field has to be able to say how many commands are in the packet");
-
-/**
- * @brief Below this an axis is written as absent rather than as a value.
- *
- * A quarter of one quantisation step: an axis is NET_AXIS_BITS over its full
- * deflection, so anything under 2/255 encodes as zero anyway and the presence
- * bit says the same for one bit instead of nine. Well under that step rather
- * than at it, so a stick resting slightly off centre still reads as resting
- * while one barely pushed still travels.
- */
-constexpr float AXIS_AT_REST = 0.002f;
-
-uint32_t axisToBits(float value) {
-    const float clamped = std::max(-1.0f, std::min(1.0f, value));
-    const float scaled  = (clamped + 1.0f) * 0.5f * static_cast<float>((1u << NET_AXIS_BITS) - 1u);
-    return static_cast<uint32_t>(std::lround(scaled));
-}
-
-float axisFromBits(uint32_t raw) {
-    return (static_cast<float>(raw) / static_cast<float>((1u << NET_AXIS_BITS) - 1u)) * 2.0f - 1.0f;
-}
+static_assert(
+    NET_MAX_PACKET_COMMANDS < (1u << COUNT_BITS),
+    "the count field has to be able to say how many commands are in the packet"
+);
+static_assert(
+    NET_COMMAND_REDUNDANCY <= NET_MAX_PACKET_COMMANDS,
+    "a packet has to hold the whole window a command is resent across"
+);
 
 } // namespace
 
-void writeCommands(BitWriter& out,
-                   const std::vector<InputCommand>& commands,
-                   uint32_t actionCount) {
-    if (actionCount > MAX_INPUT_ACTIONS) return;
+size_t firstCommandToSend(const std::vector<InputCommand>& unconfirmed, uint32_t heard, uint32_t sent) {
+    const size_t size = unconfirmed.size();
 
-    // The oldest that fit: after a stutter those are the ones the server wants
-    // next, and the newest would strand them forever.
-    const size_t count = std::min<size_t>(commands.size(), NET_COMMAND_REDUNDANCY);
+    size_t unheard = 0;
+    while (unheard < size && unconfirmed[unheard].sequence <= heard) ++unheard;
+    size_t unsent = unheard;
+    while (unsent < size && unconfirmed[unsent].sequence <= sent) ++unsent;
+
+    const size_t window = size > NET_COMMAND_REDUNDANCY ? size - NET_COMMAND_REDUNDANCY : 0;
+    return std::max(unheard, std::min(unsent, window));
+}
+
+size_t writeCommands(
+    BitWriter& out,
+    const std::vector<InputCommand>& commands,
+    size_t first,
+    uint32_t actionCount
+) {
+    if (actionCount > MAX_INPUT_ACTIONS) return 0;
+
+    // The reader numbers each command one on from the last, so a gap would
+    // give every command after it the wrong tick.
+    size_t count = first < commands.size() ? 1 : 0;
+    while (count < NET_MAX_PACKET_COMMANDS && first + count < commands.size()) {
+        const InputCommand& previous = commands[first + count - 1];
+        const InputCommand& next     = commands[first + count];
+        if (next.sequence != previous.sequence + 1 || next.tick != previous.tick + 1) break;
+        ++count;
+    }
 
     out.bits(static_cast<uint32_t>(count), COUNT_BITS);
-    if (count == 0) return;
+    if (count == 0) return 0;
 
-    out.u32(commands[0].sequence);
-    out.u32(commands[0].tick);
+    out.u32(commands[first].sequence);
+    out.u32(commands[first].tick);
 
-    for (size_t i = 0; i < count; ++i) {
+    for (size_t i = first; i < first + count; ++i) {
         const InputCommand& command = commands[i];
 
-        if (i > 0) {
-            // Deltas from the command before, one in every ordinary frame. A
-            // gap past the field is clamped rather than widening every command
-            // to carry it; the server repeats the last input across a gap.
-            const uint32_t sequenceStep = command.sequence - commands[i - 1].sequence;
-            const uint32_t tickStep     = command.tick - commands[i - 1].tick;
-            out.bits(std::min(sequenceStep, MAX_STEP), STEP_BITS);
-            out.bits(std::min(tickStep, MAX_STEP), STEP_BITS);
-        }
-
-        // An axis at rest is the common case - a player holds two of six
-        // actions - so each carries a presence bit rather than eight bits of
-        // zero.
+        // An axis at rest is the common case, so each carries a presence bit
+        // rather than the code for zero.
         for (uint32_t action = 0; action < actionCount; ++action) {
-            const float value = command.axis[action];
-            const bool  moved = std::abs(value) > AXIS_AT_REST;
+            const uint32_t code  = Quantize::toSigned(command.axis[action], 1.0f, NET_AXIS_BITS);
+            const bool     moved = Quantize::fromSigned(code, 1.0f, NET_AXIS_BITS) != 0.0f;
             out.boolean(moved);
-            if (moved) out.bits(axisToBits(value), NET_AXIS_BITS);
+            if (moved) out.bits(code, NET_AXIS_BITS);
         }
 
         out.bits(command.pressed, actionCount);
         out.bits(command.released, actionCount);
         Quantize::writeRotation(out, command.view);
     }
+    return count;
 }
 
 bool readCommands(BitReader& in, uint32_t actionCount, std::vector<InputCommand>& out) {
     out.clear();
 
-    // Bounded before it indexes anything: the count arrives from the network
-    // and a command holds a fixed number of slots. Refused here rather than by
-    // the caller, because this is the side that does the writing.
+    // The count arrives from the network; bound it before it indexes anything.
     if (actionCount > MAX_INPUT_ACTIONS) return false;
 
     const uint32_t count = in.bits(COUNT_BITS);
     if (in.failed()) return false;
     if (count == 0) return true;
-    if (count > NET_COMMAND_REDUNDANCY) return false;
+    if (count > NET_MAX_PACKET_COMMANDS) return false;
 
-    uint32_t sequence = in.u32();
-    uint32_t tick     = in.u32();
+    const uint32_t sequence = in.u32();
+    const uint32_t tick     = in.u32();
     if (in.failed()) return false;
 
     for (uint32_t i = 0; i < count; ++i) {
-        if (i > 0) {
-            sequence += in.bits(STEP_BITS);
-            tick     += in.bits(STEP_BITS);
-        }
-
         InputCommand command;
-        command.sequence = sequence;
-        command.tick     = tick;
+        command.sequence = sequence + i;
+        command.tick     = tick + i;
 
         for (uint32_t action = 0; action < actionCount; ++action) {
-            command.axis[action] = in.boolean() ? axisFromBits(in.bits(NET_AXIS_BITS)) : 0.0f;
+            command.axis[action] = in.boolean()
+                ? Quantize::fromSigned(in.bits(NET_AXIS_BITS), 1.0f, NET_AXIS_BITS)
+                : 0.0f;
         }
         command.pressed  = in.bits(actionCount);
         command.released = in.bits(actionCount);
@@ -135,14 +112,10 @@ bool readCommands(BitReader& in, uint32_t actionCount, std::vector<InputCommand>
 }
 
 void NetCommandBuffer::accept(const InputCommand& command) {
-    // Every packet repeats the last twelve commands, so most of what arrives
-    // here has already been seen. Running one twice is a double jump from a
-    // single keypress.
     if (m_started && command.sequence <= m_consumedSequence) return;
 
-    // A moment already lived, run or stood in for. Its edges carry forward
-    // rather than being dropped: a press is true for one command only, and the
-    // repeat that covered it had none to give.
+    // A moment already lived, run or stood in for. Its edges carry forward:
+    // the repeat that covered it had none.
     if (m_ranReal && command.tick <= m_ranCommandTick) {
         m_carriedPressed  |= command.pressed;
         m_carriedReleased |= command.released;
@@ -151,65 +124,59 @@ void NetCommandBuffer::accept(const InputCommand& command) {
         return;
     }
 
-    // Full - see MAX_QUEUED. The oldest goes, its moment being the one that
-    // has most certainly passed.
+    // Full: the oldest goes, its moment most certainly passed.
     if (m_commands.size() >= MAX_QUEUED) {
+        ++m_skippedCommands;
         m_consumedSequence = m_commands.front().sequence;
         m_carriedPressed  |= m_commands.front().pressed;
         m_carriedReleased |= m_commands.front().released;
         m_commands.erase(m_commands.begin());
     }
 
-    const auto found = std::find_if(m_commands.begin(), m_commands.end(),
-                                    [&command](const InputCommand& held) {
-                                        return held.sequence == command.sequence;
-                                    });
+    const auto found = std::find_if(
+        m_commands.begin(),
+        m_commands.end(),
+        [&command](const InputCommand& held) { return held.sequence == command.sequence; }
+    );
     if (found != m_commands.end()) return;
 
-    // Held in the order the player made them, which is the order they must run
-    // in: the client predicted each tick from one of these, in this order.
-    const auto at = std::lower_bound(m_commands.begin(), m_commands.end(), command.sequence,
-                                     [](const InputCommand& held, uint32_t sequence) {
-                                         return held.sequence < sequence;
-                                     });
+    const auto at = std::lower_bound(
+        m_commands.begin(),
+        m_commands.end(),
+        command.sequence,
+        [](const InputCommand& held, uint32_t sequence) { return held.sequence < sequence; }
+    );
     m_commands.insert(at, command);
     m_newestSequence = std::max(m_newestSequence, command.sequence);
     m_newestTick     = std::max(m_newestTick, command.tick);
 }
 
 InputCommand NetCommandBuffer::take(uint32_t tick) {
-    m_started = true;
+    m_started  = true;
+    m_lowWater = std::min(m_lowWater, m_commands.size());
 
     if (m_commands.empty()) {
-        // Nothing waiting, and the tick has to run anyway. Axes repeat because
-        // a held key is still held; edges do not, because a press that already
-        // fired would fire again on every tick of the gap.
         InputCommand repeated = m_last;
         repeated.tick     = tick;
         repeated.pressed  = 0;
         repeated.released = 0;
 
-        // Past the redundancy window nothing is being guessed any more: every
-        // copy of every recent command has been lost, so the body stops rather
-        // than being walked somewhere the player did not choose.
         ++m_starved;
+        if (m_ranReal) ++m_repeatedTicks;
         if (m_starved > REPEAT_TICKS) {
             for (float& axis : repeated.axis) axis = 0.0f;
         }
 
-        // The repeat claims the client tick it stood in for, so that what a
-        // snapshot confirms describes the pose it carries. Only as far dry as
-        // the buffer is allowed to run deep - see networking.md.
+        // Only as far dry as the buffer may run deep.
         if (m_ranReal && m_ranCommandTick < m_newestTick + MAX_DEPTH) {
             ++m_ranCommandTick;
         }
         return repeated;
     }
 
-    // A backlog is latency, so it is drained faster than it fills. Skipping an
-    // axis is free - the one that runs says where the stick is now - but an
-    // edge is true for one command only, so skipped edges are folded into it.
+    // Skipping an axis is free; skipped edges are folded into the one that runs.
     while (m_commands.size() > MAX_DEPTH) {
+        ++m_skippedCommands;
         m_carriedPressed  |= m_commands.front().pressed;
         m_carriedReleased |= m_commands.front().released;
         m_consumedSequence = m_commands.front().sequence;
@@ -229,8 +196,6 @@ InputCommand NetCommandBuffer::take(uint32_t tick) {
     m_ranCommandTick   = std::max(m_ranCommandTick, next.tick);
     m_ranReal          = true;
 
-    // Stamped with the tick it is actually running on, so a system reading it
-    // sees the tick it is in rather than the one the sender was in.
     next.tick = tick;
     return next;
 }
@@ -246,7 +211,10 @@ void NetCommandBuffer::clear() {
     m_carriedReleased  = 0;
     m_ranReal          = false;
     m_starved          = 0;
+    m_repeatedTicks    = 0;
+    m_skippedCommands  = 0;
     m_started          = false;
+    restartLowWater();
 }
 
 } // namespace Vkm::Engine

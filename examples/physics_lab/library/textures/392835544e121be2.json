@@ -1,8 +1,0 @@
-{
-  "name": "builtin:normal",
-  "source": {
-    "kind": "builtin",
-    "type": "normal"
-  },
-  "type": "texture"
-}

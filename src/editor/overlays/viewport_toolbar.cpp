@@ -1,10 +1,19 @@
 #include "overlays/viewport_toolbar.h"
 
+#include <imgui.h>
+
 #include "ecs/scene.h"
-#include "framework/editor_common.h"
-#include "framework/editor_context.h"
-#include "system/render/render_system.h"
-#include "framework/editor_actions.h"
+#include "core/system.h"
+#include "ecs/component/core/transform.h"
+#include "ecs/component/render/camera.h"
+#include "editor_state.h"
+#include "input/editor_keybinds.h"
+#include "ui/editor_icons.h"
+#include "ui/editor_style.h"
+#include "editor_context.h"
+#include "system/render/render_settings.h"
+#include "input/view_framing.h"
+#include "input/camera_controller_system.h"
 #include "ui/editor_widgets.h"
 
 namespace Vkm::Engine {
@@ -14,6 +23,7 @@ using EditorStyle::overlayGap;
 using EditorStyle::overlayGroupGap;
 using EditorStyle::overlayInset;
 using EditorStyle::overlayPad;
+using EditorStyle::overlayStripHeight;
 
 namespace {
 
@@ -22,106 +32,152 @@ void tipFor(char* buf, size_t n, const char* name, const KeyBind& bind) {
     getKeyBindLabel(bind, key, sizeof(key));
     snprintf(buf, n, "%s  (%s)", name, key);
 }
+
+// The editor's own view or a scene camera as a read-only preview; greyed while a session shows the game's.
+void drawViewCombo(EditorContext& ec) {
+    CameraControllerSystem& camera = ec.cameraController;
+    const Scene& scene = ec.frame.scene;
+    const EntityId main = findActiveCamera(scene);
+
+    char current[64] = "Editor";
+    if (!camera.isActive()) snprintf(current, sizeof(current), "Game");
+    else if (const EntityId through = camera.lookingThrough())
+        getEntityDisplayName(scene, through, current, sizeof(current));
+
+    ImGui::BeginDisabled(!camera.isActive());
+    ImGui::SetNextItemWidth(EditorStyle::overlayComboWidth());
+    if (beginCombo("##viewcamera", current)) {
+        if (ImGui::Selectable("Editor", !camera.lookingThrough())) camera.lookThrough({});
+        scene.forEach<Camera, Transform>([&](EntityId id, const Camera&, const Transform&) {
+            char name[64];
+            getEntityDisplayName(scene, id, name, sizeof(name));
+            char label[80];
+            snprintf(label, sizeof(label), id == main ? "%s  (main)" : "%s", name);
+            ImGui::PushID(static_cast<int>(id.slot()));
+            if (ImGui::Selectable(label, camera.lookingThrough() == id)) camera.lookThrough(id);
+            ImGui::PopID();
+        });
+        ImGui::EndCombo();
+    }
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled) && !ImGui::IsItemActive()) {
+        ImGui::SetTooltip(
+            camera.isActive()
+                ? "Look through the editor's view, or preview a scene camera"
+                : "The game's camera - eject to look around"
+        );
+    }
+}
+
+// Combos are a frame tall and buttons a button tall; a combo sits on the buttons' centre line.
+void centreOnButtonRow() {
+    ImGui::SetCursorPosY(overlayPad() + (overlayButton() - ImGui::GetFrameHeight()) * 0.5f);
+}
+
+constexpr int TOOL_BUTTONS = 6;  // select, move, rotate, scale; space, snap
+
 } // namespace
 
-void ViewportToolbar::drawViewMode(EditorContext& ec) {
-    RenderSettings& settings = ec.renderSystem.getSettings();
+float ViewportToolbar::toolStripWidth() {
+    return overlayButton() + EditorStyle::overlayStripChrome();
+}
 
-    ImGui::SetCursorPos(ImVec2(overlayInset(), overlayInset()));
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::OVERLAY_BG);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(overlayPad(), overlayPad()));
+float ViewportToolbar::viewBarWidth() {
+    return EditorStyle::overlayComboWidth() * 2.0f + overlayButton() * 2.0f
+        + overlayGap() * 2.0f + overlayGroupGap() + EditorStyle::overlayStripChrome();
+}
 
-    const float h = ImGui::GetFrameHeight() + overlayPad() * 2.0f;
-    if (ImGui::BeginChild("##ViewportViewMode", ImVec2(EditorStyle::px(160.0f), h),
-            ImGuiChildFlags_Borders)) {
-        ImGui::SetNextItemWidth(-1.0f);
-        drawEnumCombo("##viewmode", settings.renderMode);
+float ViewportToolbar::viewBarBottom() {
+    return overlayInset() + overlayStripHeight();
+}
+
+void ViewportToolbar::drawViewBar(EditorContext& ec) {
+    FrameContext&           ctx    = ec.frame;
+    EditorState&            state  = ec.state;
+    CameraControllerSystem& camera = ec.cameraController;
+    const auto&             kb     = state.prefs.keybinds;
+
+    ImGui::SetCursorPos(ImVec2(ImGui::GetWindowSize().x - overlayInset() - viewBarWidth(), overlayInset()));
+    if (beginOverlayStrip("##ViewportViewBar", ImVec2(viewBarWidth(), overlayStripHeight()))) {
+        using Modes = Reflect::EnumNames<RenderMode>;
+        int mode = static_cast<int>(ctx.render.renderMode);
+        centreOnButtonRow();
+        ImGui::SetNextItemWidth(EditorStyle::overlayComboWidth());
+        if (comboList("##viewmode", &mode, Modes::values, static_cast<int>(Modes::count)))
+            ctx.render.renderMode = static_cast<RenderMode>(mode);
         if (ImGui::IsItemHovered() && !ImGui::IsItemActive())
             ImGui::SetTooltip("Shading / debug view");
-    }
-    m_viewModeHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
-    ImGui::EndChild();
 
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor();
+        ImGui::SameLine();
+        centreOnButtonRow();
+        drawViewCombo(ec);
+
+        // The two that fly the view go with it when it stands down for a session.
+        const bool haveSel = state.selectedEntity && ctx.scene.isAlive(state.selectedEntity);
+        char frameTip[80], focTip[80];
+        tipFor(frameTip, sizeof(frameTip), "Frame All", kb.frameAll);
+        tipFor(focTip, sizeof(focTip), "Focus camera on selection", kb.focusSelected);
+        ImGui::SameLine(0, overlayGroupGap());
+        ImGui::SetCursorPosY(overlayPad());
+        if (iconButton("frameAll", EditorIcon::FrameAll, false, camera.isActive(), frameTip, overlayButton()))
+            ViewFraming::frameAll(ctx, camera);
+        ImGui::SameLine();
+        const bool canFocus = haveSel && camera.isActive();
+        if (iconButton("foc", EditorIcon::Focus, false, canFocus, focTip, overlayButton()))
+            ViewFraming::frameSelected(ctx, state.selectedEntity, camera);
+
+        m_viewBarHovered = ImGui::IsWindowHovered(
+            ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem
+        );
+    } else {
+        m_viewBarHovered = false;
+    }
+    endOverlayStrip();
 }
 
 void ViewportToolbar::draw(EditorContext& ec) {
-    FrameContext&     ctx    = ec.frame;
-    EditorState&      state  = ec.state;
-    CameraControllerSystem& camera = ec.cameraController;
+    EditorState& state = ec.state;
+    const auto&  kb    = state.prefs.keybinds;
 
-    const auto& kb = state.keybinds;
-
-    auto tool = [&](const char* id, EditorIcon icon, EditorTool which,
-                    const char* name, const KeyBind& bind) {
+    auto tool = [&](
+        const char* id,
+        EditorIcon icon,
+        EditorTool which,
+        const char* name,
+        const KeyBind& bind
+    ) {
         char tip[80];
         tipFor(tip, sizeof(tip), name, bind);
         if (iconButton(id, icon, state.tool == which, true, tip, overlayButton())) state.tool = which;
-        ImGui::SameLine();
     };
 
-    const float toolbarH = overlayButton() + overlayPad() * 2.0f + 2.0f;
-    ImVec2 ws = ImGui::GetWindowSize();
-    float padY = ImGui::GetStyle().WindowPadding.y;
-    ImGui::SetCursorPos(ImVec2(overlayInset(), ws.y - padY - toolbarH - overlayInset()));
+    const float height = overlayButton() * TOOL_BUTTONS + overlayGap() * (TOOL_BUTTONS - 2)
+        + overlayGroupGap() + EditorStyle::overlayStripChrome();
+    ImGui::SetCursorPos(ImVec2(overlayInset(), overlayInset()));
+    if (beginOverlayStrip("##ViewportTools", ImVec2(toolStripWidth(), height))) {
+        tool("sel", EditorIcon::Select, EditorTool::Select,    "Select", kb.gizmoSelect);
+        tool("mov", EditorIcon::Move,   EditorTool::Translate, "Move",   kb.gizmoTranslate);
+        tool("rot", EditorIcon::Rotate, EditorTool::Rotate,    "Rotate", kb.gizmoRotate);
+        tool("scl", EditorIcon::Scale,  EditorTool::Scale,     "Scale",  kb.gizmoScale);
 
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, EditorStyle::OVERLAY_BG);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(overlayPad(), overlayPad()));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(overlayGap(), 0.0f));
-
-    if (ImGui::BeginChild("##ViewportToolbar", ImVec2(0, toolbarH),
-            ImGuiChildFlags_AutoResizeX | ImGuiChildFlags_Borders)) {
-
-        tool("sel", EditorIcon::Select,    EditorTool::Select,    "Select", kb.gizmoSelect);
-        tool("mov", EditorIcon::Move,      EditorTool::Translate, "Move",   kb.gizmoTranslate);
-        tool("rot", EditorIcon::Rotate,    EditorTool::Rotate,    "Rotate", kb.gizmoRotate);
-        tool("scl", EditorIcon::Scale,     EditorTool::Scale,     "Scale",  kb.gizmoScale);
-
-        ImGui::SameLine(0, overlayGroupGap());
-        bool world = state.gizmoMode == GizmoMode::World;
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - overlayGap() + overlayGroupGap());
+        const bool world = state.gizmoMode == GizmoMode::World;
         char spcTip[80];
-        tipFor(spcTip, sizeof(spcTip), world ? "Space: World" : "Space: Local",
-               kb.gizmoToggleSpace);
-        if (iconButton("spc", world ? EditorIcon::SpaceWorld : EditorIcon::SpaceLocal,
-                       false, true, spcTip, overlayButton()))
+        tipFor(spcTip, sizeof(spcTip), world ? "Space: World" : "Space: Local", kb.gizmoToggleSpace);
+        const EditorIcon spcIcon = world ? EditorIcon::SpaceWorld : EditorIcon::SpaceLocal;
+        if (iconButton("spc", spcIcon, false, true, spcTip, overlayButton()))
             state.gizmoMode = world ? GizmoMode::Local : GizmoMode::World;
-        ImGui::SameLine();
-        if (iconButton("snp", EditorIcon::Snap, state.snapEnabled, true,
-                       "Grid snap (hold Ctrl for temporary)", overlayButton()))
-            state.snapEnabled = !state.snapEnabled;
-
-        bool haveSel = state.selectedEntity && ctx.scene.isAlive(state.selectedEntity);
-        char dupTip[80], focTip[80], delTip[80], frameTip[80];
-        tipFor(dupTip, sizeof(dupTip), "Duplicate", kb.duplicate);
-        tipFor(focTip, sizeof(focTip), "Focus camera on selection", kb.focusSelected);
-        tipFor(delTip, sizeof(delTip), "Delete", kb.deleteEntity);
-        tipFor(frameTip, sizeof(frameTip), "Frame All", kb.frameAll);
-
-        ImGui::SameLine(0, overlayGroupGap());
-        if (iconButton("dup", EditorIcon::Duplicate, false, haveSel, dupTip, overlayButton()))
-            EditorActions::duplicateSelection(ctx.scene, ctx.resources, state);
-        ImGui::SameLine();
-        if (iconButton("foc", EditorIcon::Focus, false, haveSel, focTip, overlayButton()))
-            EditorActions::focusOnSelected(ctx, state, camera);
-        ImGui::SameLine();
-        if (iconButton("del", EditorIcon::Trash, false, haveSel, delTip, overlayButton()))
-            EditorActions::deleteSelection(ctx.scene, state);
-
-        ImGui::SameLine(0, overlayGroupGap());
-        if (iconButton("frameAll", EditorIcon::FrameAll, false, true,
-                       frameTip, overlayButton()))
-            EditorActions::frameAll(ctx, camera);
+        const char* snapTip = "Grid snap (hold Ctrl for temporary)";
+        if (iconButton("snp", EditorIcon::Snap, state.prefs.snapEnabled, true, snapTip, overlayButton()))
+            state.prefs.snapEnabled = !state.prefs.snapEnabled;
 
         m_hovered = ImGui::IsWindowHovered(
-            ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+            ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem
+        );
     } else {
         m_hovered = false;
     }
-    ImGui::EndChild();
-
-    ImGui::PopStyleVar(2);
-    ImGui::PopStyleColor();
+    endOverlayStrip();
 }
 
 } // namespace Vkm::Engine

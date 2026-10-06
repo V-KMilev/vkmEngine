@@ -2,8 +2,7 @@
 # backend.
 #
 # It still needs the GL and X11 shared libraries present, because vkm_core links
-# glfw and GLEW and window_manager.cpp calls into them. A binary free even of
-# those is a refactor of a class every host uses, and is deliberately not done.
+# glfw and GLEW and window_manager.cpp calls into them.
 add_executable(vkm_server_app main.cpp)
 
 set_target_properties(vkm_server_app PROPERTIES OUTPUT_NAME vkm_server)

@@ -11,15 +11,30 @@ namespace Vkm::Engine {
 
 /**
  * @brief Texture asset combining Resource tracking with engine-level texture parameters.
- *
- * The backend converts TextureParams to API-specific formats on upload.
  */
 struct TextureAsset : public Resource {
     TextureParams params;
-    std::vector<uint8_t> pixelData = {};           ///< Decoded pixels, tightly packed.
-    bool srgb                      = false;        ///< Selects the SRGB internal formats on upload.
-    bool loading                   = false;        ///< True while an async decode is in flight; flipped false when the AsyncLoader finalises the upload.
-    std::string filePath           = "";           ///< Optional file path if loaded from disk.
+    /// Every level params.mipLevels names, level 0 first, tightly packed: texels, or 4x4 blocks for a BC
+    /// format.
+    std::vector<uint8_t> pixelData = {};
+    /// True while an async decode is in flight; AsyncLoaderSystem clears it.
+    bool loading                   = false;
+
+    /**
+     * @brief Whether the texture stores colour in sRGB.
+     *
+     * Read off the internal format, which a decode in flight already carries.
+     *
+     * @return True for SRGB8, SRGBA8 and BC7SRGBA.
+     */
+    bool isSrgb() const { return isSrgbFormat(params.internalFormat); }
+
+    /**
+     * @brief What the texels mean, read off the internal format as isSrgb is.
+     *
+     * @return The usage the texture was imported with.
+     */
+    TextureUsage usage() const { return textureUsageOf(params.internalFormat); }
 };
 
 using TextureHandle = Handle<TextureAsset>;

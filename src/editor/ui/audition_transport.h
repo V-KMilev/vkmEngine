@@ -9,55 +9,39 @@ struct AudioClipAsset;
 /**
  * @brief Draw one clip audition's transport: Play / Pause / Resume, then Stop.
  *
- * The Inspector's Audio Source card and the Asset Browser's Sounds rows both ask
- * to hear a clip, so they ask with one widget rather than two vocabularies that
- * drift apart. One button carries all three states - the glyph is what pressing
- * it will do next - and Stop is lit off the device rather than off a remembered
- * id, because a one-shot ends on its own and nothing here is told.
+ * The glyph is what pressing does next. Stop is lit off the device, since a one-shot
+ * ends untold. Flat, not spatial: there may be no listener. Never touches the scene,
+ * where setting `playing` would be an undoable edit.
  *
- * The audition is flat rather than positioned: a spatial voice is measured
- * against the scene's listener, and a project being filled with imported sounds
- * has none. Asking to hear a file is not asking to hear it from anywhere.
- *
- * It never touches the scene. Setting a source's `playing` flag would be an
- * edit - undoable, dirtying, audible again on the next Play - when all that was
- * asked for was to hear the file.
- *
- * @param idStr Unique id fragment; both buttons derive their ids from it.
- * @param device Device the audition plays on. A closed one disables the whole
- *        transport and says why, rather than answering a press with silence.
- * @param voice The caller's audition voice: replaced by Play, cleared by Stop.
- *        Play releases whatever it held first, including another row's, so a
- *        second audition replaces the first rather than layering over it.
- * @param mine Whether @p voice is the audition of the card or row being drawn.
- *        False offers Play alone, so a row cannot cut short a sound it is not
- *        showing.
+ * @param idStr Unique id fragment for both buttons.
+ * @param device Plays the audition; a closed one disables the transport and says why.
+ * @param voice Replaced by Play (releasing any previous audition, even another row's),
+ *        cleared by Stop.
+ * @param mine Whether @p voice belongs to this card or row; false offers Play alone.
  * @param clip Clip Play auditions; null leaves Play with nothing to start.
  * @param size Button side length in pixels.
- * @return True on the frame Play started a new audition, so the caller can
- *         record which card or row the voice now belongs to.
+ * @return True on the frame Play started a new audition, so the caller can record its owner.
  */
-bool auditionTransport(const char* idStr, AudioDevice& device, VoiceId& voice,
-                       bool mine, const AudioClipAsset* clip, float size);
+bool auditionTransport(
+    const char* idStr,
+    AudioDevice& device,
+    VoiceId& voice,
+    bool mine,
+    const AudioClipAsset* clip,
+    float size
+);
 
 /**
  * @brief Draw an audition's position slider, measured against its clip.
  *
- * Reads the cursor off the device rather than off a field on the component,
- * because the mixer advances it between our frames; AudioDevice::voiceCursor
- * carries the reasoning. With no voice there is no cursor, so the slider is
- * disabled rather than inventing a start offset that would live in a panel and
- * be forgotten the moment the selection moved.
+ * The cursor is read off the device, which the mixer advances; see AudioDevice::voiceCursor.
  *
  * @param idStr Unique id fragment; the slider's label is hidden.
  * @param device Device holding the cursor.
- * @param voice The audition to scrub; pass 0 when the caller's voice is not
- *        this card's or row's, which disables the slider like a finished one.
- * @param duration Clip length in seconds; zero or less draws nothing, since a
- *        slider with no length has nothing to say.
+ * @param voice The audition to scrub; 0 (not this card's or row's) disables the slider.
+ * @param duration Clip length in seconds; zero or less draws nothing.
  * @param width Slider width in pixels; -1 fills the remaining row.
  */
-void auditionScrubber(const char* idStr, AudioDevice& device, VoiceId voice,
-                      float duration, float width);
+void auditionScrubber(const char* idStr, AudioDevice& device, VoiceId voice, float duration, float width);
 
 } // namespace Vkm::Engine

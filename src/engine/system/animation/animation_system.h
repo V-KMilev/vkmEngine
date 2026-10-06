@@ -8,17 +8,10 @@ struct Animation;
 struct Transform;
 
 /**
- * @brief Advances every Animation component and writes its result into the
- *        entity's Transform.
+ * @brief Advances every Animation component and writes its result into the entity's local Transform.
  *
- * Registered at SystemStage::Simulation. Skipped entirely when no simulation
- * time elapsed this frame (paused), so an authored Transform is not clobbered
- * by re-sampling the track at an unchanged time. HierarchySystem runs later the
- * same frame and rebuilds every WorldTransform, so an animated entity inside a
- * hierarchy needs nothing recorded here.
- *
- * The one pass (advance time + write Transform) runs in parallel over all
- * animation slots, skipping non-playing ones.
+ * Runs on the fixed step, so a paused frame does not re-sample and clobber an authored Transform.
+ * Runs in SystemStage::Simulation, ahead of HierarchySystem, which resolves what it writes that frame.
  */
 class AnimationSystem : public System {
     public:
@@ -32,11 +25,17 @@ class AnimationSystem : public System {
         AnimationSystem& operator=(AnimationSystem && other) = delete;
 
     public:
-        /// Simulation runs on the tick; nothing here answers to the frame.
         void fixedUpdate(FrameContext& ctx) override;
-        bool hasFixedUpdate() const override { return true; }
 
-    private:
+        /**
+         * @brief Pose @p transform as @p animation stands at its playhead.
+         *
+         * An empty track leaves its channel as authored. Callable while the world is not stepping, to
+         * show a scrubbed playhead.
+         *
+         * @param animation The clip and its playhead.
+         * @param transform Pose written.
+         */
         static void applyAnimation(const Animation& animation, Transform& transform);
 };
 

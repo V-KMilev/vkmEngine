@@ -8,14 +8,12 @@ namespace Vkm::Engine {
 
 /**
  * @brief Modifier flags (bitmask) for keybind combos.
- *
- * OR the values together to require several modifiers at once for one keybind.
  */
 enum KeyMod : uint8_t {
-    KeyMod_None  = 0,
-    KeyMod_Ctrl  = 1 << 0,
-    KeyMod_Shift = 1 << 1,
-    KeyMod_Alt   = 1 << 2,
+    KEY_MOD_NONE  = 0,
+    KEY_MOD_CTRL  = 1 << 0,
+    KEY_MOD_SHIFT = 1 << 1,
+    KEY_MOD_ALT   = 1 << 2,
 };
 
 /**
@@ -23,136 +21,114 @@ enum KeyMod : uint8_t {
  */
 struct KeyBind {
     ImGuiKey key  = ImGuiKey_None;
-    uint8_t  mods = KeyMod_None;
+    uint8_t  mods = KEY_MOD_NONE;
 
     bool operator==(const KeyBind& o) const { return key == o.key && mods == o.mods; }
     bool operator!=(const KeyBind& o) const { return !(*this == o); }
 };
 
 /**
- * @brief All configurable editor keybinds with industry-standard defaults.
+ * @brief Every configurable keybind, once, as (field, group, label, key, mods).
  *
- * Persisted via EditorSettings so user rebindings survive across sessions.
+ * The persisted key is the field's name, so a rename discards saved rebindings.
+ * In Preferences display order; rows sharing a group stay contiguous, as
+ * PreferencesPanel starts a heading whenever the group changes.
+ */
+#define VKM_EDITOR_KEYBINDS(X) \
+    X(newScene,             "File",                            "New Scene",        ImGuiKey_N,      KEY_MOD_CTRL) \
+    X(saveScene,            "File",                            "Save Scene",       ImGuiKey_S,      KEY_MOD_CTRL) \
+    X(saveSceneAs,          "File",                            "Save Scene As",    ImGuiKey_S,      KEY_MOD_CTRL | KEY_MOD_SHIFT) \
+    X(loadScene,            "File",                            "Load Scene",       ImGuiKey_O,      KEY_MOD_CTRL) \
+    X(undo,                 "Edit",                            "Undo",             ImGuiKey_Z,      KEY_MOD_CTRL) \
+    X(redo,                 "Edit",                            "Redo",             ImGuiKey_Z,      KEY_MOD_CTRL | KEY_MOD_SHIFT) \
+    X(playStop,             "Play (live during a session)",    "Play / Stop",      ImGuiKey_P,      KEY_MOD_CTRL) \
+    X(pauseResume,          "Play (live during a session)",    "Pause / Resume",   ImGuiKey_P,      KEY_MOD_CTRL | KEY_MOD_SHIFT) \
+    X(ejectView,            "Play (live during a session)",    "Eject / Return",   ImGuiKey_F8,     KEY_MOD_NONE) \
+    X(toggleHierarchy,      "Windows & Panels",                "Toggle Hierarchy", ImGuiKey_1,      KEY_MOD_CTRL) \
+    X(toggleInspector,      "Windows & Panels",                "Toggle Inspector", ImGuiKey_2,      KEY_MOD_CTRL) \
+    X(toggleAssets,         "Windows & Panels",                "Toggle Assets",    ImGuiKey_3,      KEY_MOD_CTRL) \
+    X(toggleRenderSettings, "Windows & Panels",                "Render Settings",  ImGuiKey_4,      KEY_MOD_CTRL) \
+    X(toggleEditor,         "Windows & Panels",                "Toggle Editor",    ImGuiKey_F5,     KEY_MOD_NONE) \
+    X(openPreferences,      "Windows & Panels",                "Preferences",      ImGuiKey_Comma,  KEY_MOD_CTRL) \
+    X(deleteEntity,         "Entity",                          "Delete",           ImGuiKey_Delete, KEY_MOD_NONE) \
+    X(deselect,             "Entity",                          "Deselect",         ImGuiKey_Escape, KEY_MOD_NONE) \
+    X(duplicate,            "Entity",                          "Duplicate",        ImGuiKey_D,      KEY_MOD_CTRL) \
+    X(focusSelected,        "Entity",                          "Focus Selected",   ImGuiKey_F,      KEY_MOD_NONE) \
+    X(frameAll,             "Entity",                          "Frame All",        ImGuiKey_F,      KEY_MOD_SHIFT) \
+    X(gizmoSelect,          "Gizmo (disabled during fly-cam)", "Select",           ImGuiKey_Q,      KEY_MOD_NONE) \
+    X(gizmoTranslate,       "Gizmo (disabled during fly-cam)", "Translate",        ImGuiKey_W,      KEY_MOD_NONE) \
+    X(gizmoRotate,          "Gizmo (disabled during fly-cam)", "Rotate",           ImGuiKey_E,      KEY_MOD_NONE) \
+    X(gizmoScale,           "Gizmo (disabled during fly-cam)", "Scale",            ImGuiKey_R,      KEY_MOD_NONE) \
+    X(gizmoToggleSpace,     "Gizmo (disabled during fly-cam)", "Local/World",      ImGuiKey_X,      KEY_MOD_NONE)
+
+/**
+ * @brief All configurable editor keybinds, with their defaults.
+ *
+ * Expanded from VKM_EDITOR_KEYBINDS.
  */
 struct EditorKeybinds {
-    KeyBind newScene         = { ImGuiKey_N,      KeyMod_Ctrl };
-    KeyBind saveScene        = { ImGuiKey_S,      KeyMod_Ctrl };
-    KeyBind saveSceneAs      = { ImGuiKey_S,      KeyMod_Ctrl | KeyMod_Shift };
-    KeyBind loadScene        = { ImGuiKey_O,      KeyMod_Ctrl };
-
-    KeyBind undo             = { ImGuiKey_Z,      KeyMod_Ctrl };
-    KeyBind redo             = { ImGuiKey_Z,      KeyMod_Ctrl | KeyMod_Shift };
-
-    KeyBind toggleHierarchy  = { ImGuiKey_1,      KeyMod_Ctrl };
-    KeyBind toggleInspector  = { ImGuiKey_2,      KeyMod_Ctrl };
-    KeyBind toggleBottom     = { ImGuiKey_3,      KeyMod_Ctrl };
-    KeyBind toggleEditor     = { ImGuiKey_F5,     KeyMod_None };
-    KeyBind toggleRenderSettings = { ImGuiKey_4,  KeyMod_Ctrl };
-    KeyBind openPreferences  = { ImGuiKey_Comma,  KeyMod_Ctrl };
-
-    KeyBind deleteEntity     = { ImGuiKey_Delete, KeyMod_None };
-    KeyBind deselect         = { ImGuiKey_Escape, KeyMod_None };
-    KeyBind duplicate        = { ImGuiKey_D,      KeyMod_Ctrl };
-    KeyBind focusSelected    = { ImGuiKey_F,      KeyMod_None };
-    KeyBind frameAll         = { ImGuiKey_F,      KeyMod_Shift };
-
-    // Gizmo modes (only active when camera NOT in fly mode)
-    KeyBind gizmoSelect      = { ImGuiKey_Q, KeyMod_None };
-    KeyBind gizmoTranslate   = { ImGuiKey_W, KeyMod_None };
-    KeyBind gizmoRotate      = { ImGuiKey_E, KeyMod_None };
-    KeyBind gizmoScale       = { ImGuiKey_R, KeyMod_None };
-    KeyBind gizmoToggleSpace = { ImGuiKey_X, KeyMod_None };
+#define VKM_KEYBIND_FIELD(field, group, label, key, mods) KeyBind field = { key, mods };
+    VKM_EDITOR_KEYBINDS(VKM_KEYBIND_FIELD)
+#undef VKM_KEYBIND_FIELD
 };
 
 /**
  * @brief One keybind's identity: where Preferences shows it, and how it persists.
- *
- * The Preferences panel and EditorSettings both walk KEYBINDS, so the row list,
- * the conflict scan and the settings round-trip cannot drift apart. `label` and
- * `jsonName` are separate columns deliberately: the label is user-facing prose,
- * while a changed jsonName silently discards every saved rebinding.
  */
 struct KeybindEntry {
-    const char* group;                ///< Preferences section heading the row sits under.
+    const char* group;                ///< Preferences section heading.
     const char* label;                ///< Row label in Preferences.
-    const char* jsonName;             ///< Key this bind is persisted under.
-    KeyBind EditorKeybinds::* field;  ///< Member of EditorKeybinds the row edits.
+    const char* jsonName;             ///< Persisted key; the field's name.
+    KeyBind EditorKeybinds::* field;  ///< Member the row edits.
 };
 
 /**
  * @brief Every configurable keybind, in Preferences display order.
  *
- * Rows sharing a group are contiguous, so the panel can emit a section heading
- * whenever the group column changes.
+ * Expanded from VKM_EDITOR_KEYBINDS.
  */
 inline constexpr KeybindEntry KEYBINDS[] = {
-    { "File", "New Scene",     "newScene",    &EditorKeybinds::newScene    },
-    { "File", "Save Scene",    "saveScene",   &EditorKeybinds::saveScene   },
-    { "File", "Save Scene As", "saveSceneAs", &EditorKeybinds::saveSceneAs },
-    { "File", "Load Scene",    "loadScene",   &EditorKeybinds::loadScene   },
-
-    { "Edit", "Undo", "undo", &EditorKeybinds::undo },
-    { "Edit", "Redo", "redo", &EditorKeybinds::redo },
-
-    { "Windows & Panels", "Toggle Hierarchy", "toggleHierarchy",      &EditorKeybinds::toggleHierarchy      },
-    { "Windows & Panels", "Toggle Inspector", "toggleInspector",      &EditorKeybinds::toggleInspector      },
-    { "Windows & Panels", "Toggle Bottom",    "toggleBottom",         &EditorKeybinds::toggleBottom         },
-    { "Windows & Panels", "Render Settings",  "toggleRenderSettings", &EditorKeybinds::toggleRenderSettings },
-    { "Windows & Panels", "Toggle Editor",    "toggleEditor",         &EditorKeybinds::toggleEditor         },
-    { "Windows & Panels", "Preferences",      "openPreferences",      &EditorKeybinds::openPreferences      },
-
-    { "Entity", "Delete",         "deleteEntity",  &EditorKeybinds::deleteEntity  },
-    { "Entity", "Deselect",       "deselect",      &EditorKeybinds::deselect      },
-    { "Entity", "Duplicate",      "duplicate",     &EditorKeybinds::duplicate     },
-    { "Entity", "Focus Selected", "focusSelected", &EditorKeybinds::focusSelected },
-    { "Entity", "Frame All",      "frameAll",      &EditorKeybinds::frameAll      },
-
-    { "Gizmo (disabled during fly-cam)", "Select",      "gizmoSelect",      &EditorKeybinds::gizmoSelect      },
-    { "Gizmo (disabled during fly-cam)", "Translate",   "gizmoTranslate",   &EditorKeybinds::gizmoTranslate   },
-    { "Gizmo (disabled during fly-cam)", "Rotate",      "gizmoRotate",      &EditorKeybinds::gizmoRotate      },
-    { "Gizmo (disabled during fly-cam)", "Scale",       "gizmoScale",       &EditorKeybinds::gizmoScale       },
-    { "Gizmo (disabled during fly-cam)", "Local/World", "gizmoToggleSpace", &EditorKeybinds::gizmoToggleSpace },
+#define VKM_KEYBIND_ROW(field, group, label, key, mods) { group, label, #field, &EditorKeybinds::field },
+    VKM_EDITOR_KEYBINDS(VKM_KEYBIND_ROW)
+#undef VKM_KEYBIND_ROW
 };
 
 /**
  * @brief Check whether a keybind was just pressed this frame.
  *
- * Requires an exact modifier match: a Ctrl-only bind does not fire while Shift
- * is also held, so overlapping combos (e.g. Undo vs Redo) stay distinct.
+ * Modifiers must match exactly, so Ctrl+Z does not fire under Ctrl+Shift+Z.
  *
- * @param bind Keybind to test; an unbound (ImGuiKey_None) bind never matches.
- * @return true on the frame the key transitions to pressed with matching modifiers.
+ * @param bind Unbound (ImGuiKey_None) never matches.
+ * @param repeat Fire again at the key-repeat rate while held; false for a toggle.
+ * @return true on the press frame with matching modifiers.
  */
-inline bool isPressed(const KeyBind& bind) {
+inline bool isPressed(const KeyBind& bind, bool repeat = true) {
     if (bind.key == ImGuiKey_None) return false;
-    if (!ImGui::IsKeyPressed(bind.key)) return false;
+    if (!ImGui::IsKeyPressed(bind.key, repeat)) return false;
 
     const ImGuiIO& io = ImGui::GetIO();
-    if (((bind.mods & KeyMod_Ctrl)  != 0) != io.KeyCtrl)  return false;
-    if (((bind.mods & KeyMod_Shift) != 0) != io.KeyShift) return false;
-    if (((bind.mods & KeyMod_Alt)   != 0) != io.KeyAlt)   return false;
+    if (((bind.mods & KEY_MOD_CTRL)  != 0) != io.KeyCtrl)  return false;
+    if (((bind.mods & KEY_MOD_SHIFT) != 0) != io.KeyShift) return false;
+    if (((bind.mods & KEY_MOD_ALT)   != 0) != io.KeyAlt)   return false;
 
     return true;
 }
 
 /**
- * @brief Format a human-readable label for a keybind (e.g. "Ctrl+D", "F5", "W").
+ * @brief Format a label for a keybind (e.g. "Ctrl+D", "F5", "W").
  *
- * @param bind Keybind whose modifiers and key are rendered into text.
- * @param buf Caller-provided buffer the label is written into.
- * @param bufSize Capacity of @p buf in bytes; the label is truncated to fit.
- * @return @p buf, for convenient inline use in menu/tooltip strings.
+ * @param bind Rendered into text.
+ * @param buf Receives the label.
+ * @param bufSize Capacity of @p buf; the label is truncated to fit.
+ * @return @p buf.
  */
 const char* getKeyBindLabel(const KeyBind& bind, char* buf, size_t bufSize);
 
 /**
- * @brief Value-returning keybind label, for inline use as a MenuItem shortcut:
- * `ImGui::MenuItem("Save Scene", keyLabel(kb.saveScene))`.
+ * @brief Value-returning keybind label, for inline use as a MenuItem shortcut.
  *
- * Wraps a small fixed buffer that implicitly decays to const char*, so call
- * sites don't juggle a scratch char[] + size. The temporary lives to the end of
- * the full expression - long enough for ImGui, which renders the shortcut
- * during the call rather than storing the pointer.
+ * The temporary lives to the end of the full expression, which is enough:
+ * ImGui renders the shortcut during the call rather than storing the pointer.
  */
 struct KeyLabel {
     char buf[48];

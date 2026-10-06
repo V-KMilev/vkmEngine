@@ -16,123 +16,97 @@ struct TextureAsset;
 /**
  * @brief Cooked binary asset format (derived cache).
  *
- * A cooked file is produced by the editor cooker from an asset's recipe and
- * consumed by both binaries. It is host-endian; an endian sentinel rejects a
- * file written on a differently-endianed machine rather than loading garbage.
- * The recipe stays the source of truth; cooked files are regenerable and keyed
- * to their recipe via a hash carried in the header.
- *
- * Readers are defensive: every count/size is validated against the actual file
- * length before any allocation, so a corrupt or truncated file is rejected
- * instead of driving an oversized resize. Materials are not cooked here (they
- * are tiny scalar+ref JSON that loads directly); meshes, textures, skeletons
- * and animation clips are.
+ * Host-endian; an endian sentinel rejects a file written on a differently-endianed machine. Cooked
+ * files are regenerable and keyed to their recipe by name (see cacheKey). Readers validate every
+ * count against the file length before allocating. Materials load straight from JSON and are not
+ * cooked; meshes, textures, skeletons, animation clips and sounds are.
  */
 namespace AssetCook {
 
 /**
- * @brief Bump when the on-disk byte layout of the respective body changes.
+ * @brief Bump when anything the cooker writes changes: a kind's byte layout, an importer flag, a mip
+ *        policy, a vertex welding rule.
  *
- * The version is written into each file's header and rejected on read if it
- * does not match, so a layout change forces a clean re-cook rather than
- * silently misreading an old file.
+ * Part of every cache key, so a bump re-bakes everything. Also written into each header, where a reader
+ * refuses a mismatch - the case of a file copied under a name not baked for it. Only
+ * testTheCookersOutputIsPinnedToItsVersion notices a forgotten bump that changes no layout.
  */
-constexpr uint16_t MESH_FORMAT_VERSION           = 2;
-constexpr uint16_t TEXTURE_FORMAT_VERSION        = 2;
-constexpr uint16_t SKELETON_FORMAT_VERSION       = 1;
-constexpr uint16_t ANIMATION_CLIP_FORMAT_VERSION = 2;
-constexpr uint16_t AUDIO_CLIP_FORMAT_VERSION     = 1;
+constexpr uint16_t COOKER_VERSION = 12;
 
 /**
  * @brief The complete cache key for one cooked artifact.
  *
- * Everything that decides whether a baked file is the right file: the recipe it
- * was baked from, the cooker that baked it, and the layout that build reads. It
- * goes in the artifact's *name*, so a change to any of the three does not make
- * the old file stale - it makes it a file nobody looks for.
+ * Covers what it was baked from, its kind and the cooker. It goes in the artifact's name, so a change
+ * to any of them makes the old file one nobody looks for rather than a stale one.
  *
- * The format versions above are part of it, which is why nothing reads one back
- * and compares it: a reader that found the file has already matched it. They are
- * still bumped when a layout changes, and a bump orphans exactly what it should.
- *
- * @param recipeAndCooker Hash of the recipe document mixed with the cooker version.
- * @param type            Which asset kind, whose format version joins the mix.
+ * @param recipeHash Recorded hash of the recipe, its source art and dependencies
+ *                   (AssetRecord::recipeHash).
+ * @param type       Asset kind, mixed in with COOKER_VERSION.
  * @return The key the artifact is filed under.
  */
-uint64_t cacheKey(uint64_t recipeAndCooker, AssetType type);
+uint64_t cacheKey(uint64_t recipeHash, AssetType type);
 
 /**
  * @brief Bone count past which a rig is refused as corrupt rather than read.
  *
- * A rejection threshold, not a capability: a full character rig with face and
- * fingers lands near three hundred bones, so nothing real approaches this,
- * while a count read out of a damaged file usually does not land under it by
- * accident. Raising it later accepts strictly more files and breaks nothing;
- * lowering it would refuse files already on disk, so it starts tight.
+ * A rejection threshold, not a capability: a full character rig lands near three hundred bones.
  */
 constexpr uint32_t MAX_SKELETON_BONES = 1024;
 
 /**
  * @brief Channel count past which a sound is refused as corrupt rather than read.
  *
- * Game audio is mono (so it can be positioned) or stereo (so it cannot); 7.1
- * source material is the outer edge of what anyone authors. Like the bone
- * ceiling this is a rejection threshold rather than a capability, and raising
- * it later accepts strictly more files.
+ * A rejection threshold, not a capability: 7.1 is the outer edge of authored source material.
  */
 constexpr uint32_t MAX_AUDIO_CHANNELS = 8;
 
 /**
  * @brief Sample rate past which a clip is refused as corrupt rather than read.
  *
- * Twice the highest rate consumer hardware offers, so nothing real approaches
- * it while a rate read out of a damaged file usually clears it. A clip's rate
- * divides its frame count to give a duration, so a wild one is not merely odd -
- * it makes the length wrong everywhere the length is read.
+ * Twice the highest consumer hardware rate. The rate gives the clip's duration, so a wild one makes the
+ * length wrong everywhere it is read.
  */
 constexpr uint32_t MAX_AUDIO_SAMPLE_RATE = 384000;
 
-// Writers (editor cooker). Create parent directories as needed. `recipeHash` is
-// stored in the header for staleness checks. Return false on any IO error.
-bool writeMesh         (const std::filesystem::path& path, const MeshAsset&          mesh,     uint64_t recipeHash);
-bool writeTexture      (const std::filesystem::path& path, const TextureAsset&       texture,  uint64_t recipeHash);
-bool writeSkeleton     (const std::filesystem::path& path, const SkeletonAsset&      skeleton, uint64_t recipeHash);
-bool writeAnimationClip(const std::filesystem::path& path, const AnimationClipAsset& clip,     uint64_t recipeHash);
-bool writeAudioClip    (const std::filesystem::path& path, const AudioClipAsset&     audio,    uint64_t recipeHash);
+/**
+ * @brief Write one cooked file of each kind.
+ *
+ * Creates the parent directories and writes beside the target, renaming onto it once the write is whole.
+ *
+ * @param path Where the file goes, already named for its key.
+ * @return False on any IO error.
+ */
+[[nodiscard]] bool writeMesh         (const std::filesystem::path& path, const MeshAsset&          mesh);
+[[nodiscard]] bool writeTexture      (const std::filesystem::path& path, const TextureAsset&       texture);
+[[nodiscard]] bool writeSkeleton     (const std::filesystem::path& path, const SkeletonAsset&      skeleton);
+[[nodiscard]] bool writeAnimationClip(const std::filesystem::path& path, const AnimationClipAsset& clip);
+[[nodiscard]] bool writeAudioClip    (const std::filesystem::path& path, const AudioClipAsset&     audio);
 
 /**
- * @brief Whether the cooked file at @p path can still serve @p type at @p recipeHash.
+ * @brief Whether the cooked file at @p path can still serve @p type.
  *
- * Reads the header and measures the file - no body, no allocation, no worker -
- * and answers the one question both ends of the cache ask before they act: the
- * loader, deciding whether to read a cooked asset or fall back to the recipe it
- * was baked from, and the cooker, deciding whether an asset still needs baking.
- * Sharing the answer is what keeps the two from disagreeing about whether a
- * file is usable and leaving a project that neither repairs nor loads.
- *
- * A file that is absent, not a cooked asset, or of another kind is not current.
- * The recipe and the format version are not asked about: they are in the name,
- * and a file found under it has answered already. Nor is an interrupted write -
- * the cooker renames a finished temporary onto the artifact, so a half-written
- * file never wears the name. A material is never current: it has no binary.
- *
- * Says nothing to the log. A stale cache is a normal, recoverable state, and
- * what it means is the caller's to report.
+ * Reads the header and measures the file, nothing more. Not current: absent, not a cooked asset, another
+ * kind, or a length other than the header's. Recipe and cooker version are in the name, so not checked.
+ * A material is never current: it has no binary. Logs nothing; a stale cache is the caller's to report.
  *
  * @param type Asset type the file is expected to hold.
- * @param path Cooked file to probe - already named for the key it must match.
+ * @param path Cooked file to probe, already named for its key.
  * @return True when this build can read that file.
  */
-bool isCookedCurrent(AssetType type, const std::filesystem::path& path);
+[[nodiscard]] bool isCookedCurrent(AssetType type, const std::filesystem::path& path);
 
-// Readers (both binaries). Fill `out` on success and, if `outHash` is non-null,
-// report the stored recipe hash. Return false (logging the reason) on any
-// magic / endian / version / size / integrity mismatch.
-bool readMesh         (const std::filesystem::path& path, MeshAsset&          out, uint64_t* outHash = nullptr);
-bool readTexture      (const std::filesystem::path& path, TextureAsset&       out, uint64_t* outHash = nullptr);
-bool readSkeleton     (const std::filesystem::path& path, SkeletonAsset&      out, uint64_t* outHash = nullptr);
-bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& out, uint64_t* outHash = nullptr);
-bool readAudioClip    (const std::filesystem::path& path, AudioClipAsset&     out, uint64_t* outHash = nullptr);
+/**
+ * @brief Read one cooked file of each kind.
+ *
+ * @param path The cooked file.
+ * @param out  Filled on success.
+ * @return False, logging the reason, on any magic, endian, kind, version, size or integrity mismatch.
+ */
+[[nodiscard]] bool readMesh         (const std::filesystem::path& path, MeshAsset&          out);
+[[nodiscard]] bool readTexture      (const std::filesystem::path& path, TextureAsset&       out);
+[[nodiscard]] bool readSkeleton     (const std::filesystem::path& path, SkeletonAsset&      out);
+[[nodiscard]] bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& out);
+[[nodiscard]] bool readAudioClip    (const std::filesystem::path& path, AudioClipAsset&     out);
 
 } // namespace AssetCook
 

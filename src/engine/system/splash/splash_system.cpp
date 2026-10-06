@@ -16,11 +16,8 @@ namespace Vkm::Engine {
 
 namespace {
 
-// The most one frame may advance the sequence, in seconds. The first frames of
-// the process carry every shader compile, every upload and the scene load, and
-// counting one whole would spend the fade before the logo is drawn once; a long
-// load makes the logo stay up rather than skip. Anything slower than 20fps is a
-// hitch, so an ordinary frame is never clamped.
+// The most one frame may advance the sequence: the first frames carry shader
+// compiles and loads, and would otherwise spend the fade before a logo is drawn.
 constexpr float MAX_STEP_SECONDS = 1.0f / 20.0f;
 
 } // namespace
@@ -37,32 +34,34 @@ void SplashSystem::add(const std::string& path, float hold) {
 void SplashSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("SplashSystem");
 
-    // Published on every path, empty included: a frame that publishes nothing
-    // is one the editor reads as "the splash is over" and paints its chrome
-    // into.
+    // Cleared on every path, so a frame past the sequence reads as no splash.
     ctx.splash = &m_frame;
-    m_frame = SplashFrame{};
+    m_frame.key.clear();   // keeps the capacity
+    m_frame.opacity = 0.0f;
 
+    if (m_current >= m_entries.size()) return;
+
+    m_elapsed += std::min(ctx.clock.getDeltaTime(), MAX_STEP_SECONDS);
+
+    // Walked, not one entry per frame: a frame that finished an entry without taking
+    // the next would read as no splash and flash the world.
+    while (m_current < m_entries.size()) {
+        const float span = m_fade + m_entries[m_current].hold + m_fade;
+        if (m_elapsed < span) break;
+        // The remainder carries, so a sequence lasts the sum of its entries; a
+        // zero-length entry still advances, so the walk ends.
+        m_elapsed -= span;
+        ++m_current;
+    }
     if (m_current >= m_entries.size()) return;
 
     const Entry& entry = m_entries[m_current];
     const float  total = m_fade + entry.hold + m_fade;
 
-    // The frame clock, deliberately. The simulation is paused behind this in
-    // the editor, and a splash that waited for the tick would never fade.
-    m_elapsed += std::min(ctx.clock.getDeltaTime(), MAX_STEP_SECONDS);
-    if (m_elapsed >= total) {
-        ++m_current;
-        m_elapsed = 0.0f;
-        return;
-    }
-
     const float rising  = m_fade > 0.0f ? glm::clamp(m_elapsed / m_fade, 0.0f, 1.0f) : 1.0f;
     const float falling = m_fade > 0.0f ? glm::clamp((total - m_elapsed) / m_fade, 0.0f, 1.0f) : 1.0f;
 
-    // Eased, not linear. The backbuffer is not sRGB-encoded on write, so a
-    // linear ramp is linear on the glass, and a white mark over black then
-    // reads as an appearance rather than as a fade.
+    // Eased: the backbuffer is not sRGB-encoded, so a linear ramp reads as an appearance, not a fade.
     m_frame.key     = entry.path;
     m_frame.opacity = glm::smoothstep(0.0f, 1.0f, std::min(rising, falling));
 }

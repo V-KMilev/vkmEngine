@@ -2,18 +2,15 @@
 
 namespace Vkm::Engine {
     class NetSession;
+    class ResourceManager;
     class Scene;
 }
 
 /**
  * @brief Marks a function as one of the entries a host resolves in a gameplay module.
  *
- * A gameplay module is a shared library, and an entry has to leave it under its
- * own name: C linkage so the name is not mangled, and on Windows an explicit
- * export because MSVC exports nothing from a DLL by default. Both halves were
- * written out at every entry - four per module - and a project that wrote only
- * the first built a library whose symbols the host could not find, on one
- * platform, at run time.
+ * C linkage, so the name is not mangled; an explicit export on Windows, where MSVC
+ * exports nothing from a DLL by default.
  */
 #if defined(_WIN32)
     #define VKM_MODULE_ENTRY extern "C" __declspec(dllexport)
@@ -22,40 +19,32 @@ namespace Vkm::Engine {
 #endif
 
 /**
- * @brief The engine version this module was built against. Required.
+ * @brief The engine version this module was built against; required.
  *
- * Reported to the host at load, which refuses a module built against a
- * different engine rather than letting a layout mismatch surface later as a
- * crash somewhere unrelated. Define it as `{ return VKM_ENGINE_VERSION; }`;
- * that macro comes from the engine this module linked, so rebuilding against a
- * new SDK is all it ever needs.
+ * The host refuses a mismatch rather than crash later on a layout difference. Define
+ * it as `{ return VKM_ENGINE_VERSION; }`.
+ *
+ * @return The version string the module was compiled with.
  */
 VKM_MODULE_ENTRY const char* vkmModuleEngineVersion();
 
 /**
- * @brief Register this project's behavior types. Required.
- *
- * Populates the host's BehaviorRegistry, which is how a scene file naming a
- * behavior finds the type to build.
+ * @brief Register this project's behavior types in the host's BehaviorRegistry; required.
  */
 VKM_MODULE_ENTRY void vkmRegisterBehaviors();
 
 /**
- * @brief Build the project's starting world in code. Optional.
+ * @brief Build the project's starting world in code; optional.
  *
- * For a project whose world is generated rather than authored, so
- * `project.json`'s `entryScene` has nothing to point at. A host that does not
- * find this symbol simply loads the entry scene.
+ * Asked only when `project.json` has no `entryScene`; see bootProjectWorld.
  *
- * @param scene The scene to populate; empty when this is called.
+ * @param scene Scene to populate; empty when this is called.
+ * @param resources Asset graph the built world's meshes and materials go into.
  */
-VKM_MODULE_ENTRY void vkmBuildScene(Vkm::Engine::Scene& scene);
+VKM_MODULE_ENTRY void vkmBuildScene(Vkm::Engine::Scene& scene, Vkm::Engine::ResourceManager& resources);
 
 /**
- * @brief Tell the session how players join and what they get. Optional.
- *
- * A game played over a wire needs it; one that is never served does not, and a
- * host that does not find this symbol runs offline.
+ * @brief Tell the session how players join and what they get; optional, for a networked game.
  *
  * @param session The session, before it hosts or connects.
  */

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <glm/glm.hpp>
 
 #include "core/reflect.h"
@@ -7,147 +9,117 @@
 namespace Vkm::Engine {
 
 /**
- * @brief Dynamics state for a physics body: linear + angular motion, material
- *        response, and mass properties.
+ * @brief How the solver moves a body.
  *
- * PhysicsSystem integrates this each fixed tick and writes the resulting pose
- * back to the entity's Transform. A static or kinematic body has infinite mass:
- * forces never move it, but it still acts as an immovable wall during collision.
+ * Serialized by name, so reordering keeps scenes valid.
+ */
+enum class RigidbodyMotion : uint8_t {
+    Dynamic   = 0,  ///< Forces and contacts move it, by its mass
+    Kinematic = 1,  ///< Its Transform moves it; infinite mass to whatever it touches
+    Static    = 2,  ///< Never moves; infinite mass
+    Count           ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
+};
+
+/**
+ * @brief Dynamics state for a physics body: motion, material response and mass.
  *
- * The derived mass properties (inverse mass, body-local inverse inertia tensor)
- * are not stored here - PhysicsSystem re-derives them from mass + Collider into
- * its own per-tick BodyFrame, so editing either takes effect without a separate
- * "apply" step.
- *
- * A hierarchy root's local Transform is already its world pose, so the solver reads
- * it directly. A parented body's is resolved by walking its chain of Transforms -
- * a ragdoll's bones are children of their character - and writeback converts the
- * solved pose back into the parent's frame.
+ * PhysicsSystem integrates it each fixed tick and writes the pose back to the Transform. Derived mass
+ * properties are re-derived each tick from mass and Collider into a BodyFrame, so edits need no "apply".
+ * A parented body's pose is resolved by walking its Transform chain, and writeback converts the solved
+ * pose back into the parent's frame.
  */
 struct Rigidbody {
     glm::vec3 linearVelocity  = {0.0f, 0.0f, 0.0f};  ///< World-space velocity (m/s)
     glm::vec3 angularVelocity = {0.0f, 0.0f, 0.0f};  ///< World-space spin (rad/s, axis * speed)
 
-    float mass = 1.0f;                               ///< Authoring mass in kg; <= 0 is treated as static
+    /**
+     * @brief How the solver moves it.
+     *
+     * Kinematic ignores forces and impulses; its velocities are not integrated but still reach a contact -
+     * a platform pushes what stands on it - so a body that stops being driven should zero them. A bone an
+     * inactive Ragdoll poses moves as Kinematic whatever this says (isPosedByAnimation).
+     */
+    RigidbodyMotion motion = RigidbodyMotion::Dynamic;
 
-    float linearDamping  = 0.01f;                    ///< Per-second velocity bleed (drag)
-    float angularDamping = 0.05f;                    ///< Per-second spin bleed
+    /// Kilograms, read only when Dynamic. Must be positive: PhysicsSystem reports one that is not and holds
+    /// it still.
+    float mass = 1.0f;
 
-    float restitution = 0.2f;                        ///< Bounciness [0,1]
-    float friction    = 0.5f;                        ///< Coulomb coefficient [0,1+]
+    float linearDamping  = 0.01f;  ///< Per-second velocity bleed (drag)
+    float angularDamping = 0.05f;  ///< Per-second spin bleed
 
-    float gravityScale = 1.0f;                        ///< Multiplier on world gravity (0 = floats)
+    float restitution = 0.2f;  ///< Bounciness [0,1]
+    float friction    = 0.5f;  ///< Coulomb coefficient [0,1+]
+
+    float gravityScale = 1.0f;  ///< Multiplier on world gravity (0 = floats)
 
     /**
-     * @brief Which group this body belongs to, as a single bit.
+     * @brief Which group this body belongs to, as a single bit; paired with `collidesWith`.
      *
-     * Paired with `collidesWith` below, and the two together are the only way
-     * to say that two things share a world without touching - a bullet that
-     * passes through its shooter, two characters that walk through each other,
-     * a trigger volume only the player trips.
-     *
-     * A bit rather than a number, so a mask can name several groups at once.
-     * Anything at 0 collides with nothing, which is a way to switch a body's
-     * collision off without disabling the collider that draws it.
+     * 0 collides with nothing, which switches collision off without disabling the collider that draws it.
      */
     int layer = 1;
 
     /**
      * @brief Which layers this body collides with, as a mask of their bits.
      *
-     * Read both ways round: a pair collides only if each body's layer is in the
-     * other's mask. One-sided masks would make "does A hit B" depend on which
-     * was asked, which is not a question collision can answer differently.
-     *
-     * Defaults to everything, so a body nobody has thought about behaves the
-     * way it always did.
+     * A pair collides only if each body's layer is in the other's mask.
      */
     int collidesWith = ~0;
 
-    bool isKinematic = false;                         ///< Script-driven: ignores forces, immune to impulses, still moves
-    bool isStatic    = false;                         ///< Never moves; infinite mass
-    bool freezeRotation = false;                      ///< Dynamic translation only: contacts never torque the body (character controllers)
-    bool canSleep    = true;                          ///< Opt out of sleeping (false) for script-driven bodies that must stay responsive
-    bool sleeping    = false;                         ///< Below energy threshold; skipped until disturbed
+    bool freezeRotation = false;  ///< Contacts never torque the body (character controllers)
+    bool canSleep       = true;   ///< False keeps a script-driven body responsive
+    bool sleeping       = false;  ///< Rested long enough; skipped until disturbed
 
-    float sleepTimer = 0.0f;                          ///< Runtime-only: seconds spent resting; not persisted
+    float sleepTimer = 0.0f;  ///< Runtime-only: seconds spent resting
 
     /**
-     * @brief Whether a resolved contact held this body up on the last tick, and
-     *        the most upward normal among those contacts.
+     * @brief Whether a resolved contact reached this body last tick, and the most upward normal among them.
      *
-     * Written by PhysicsSystem::writeback, never read by it. Generic outputs,
-     * not a character feature: "am I standing on something, and how steep is
-     * it" is what a controller, a footstep sound and a landing animation all
-     * ask, and putting the answer here is what keeps PhysicsSystem from knowing
-     * that any of them exist. A trigger holds nothing up, so it never counts.
-     *
-     * Most upward means the largest +Y component, matching the engine's world
-     * up - the same axis a capsule collider stands along. supportNormal is the
-     * surface's normal as it acts on THIS body, so the two bodies of one
-     * contact see opposite normals.
+     * Written by PhysicsSystem::writeback, never read by it; triggers never count. Most upward is the
+     * largest +Y component. The normal is as the surface acts on THIS body, so a contact's two bodies see
+     * opposite normals.
      */
     glm::vec3 supportNormal = {0.0f, 1.0f, 0.0f};
     bool      supported     = false;
 
     /**
-     * @brief The most horizontal normal among the same contacts: what stands in
-     *        this body's way rather than what holds it up.
+     * @brief The most horizontal normal among the same contacts: what blocks this body.
      *
-     * The other half of the pair above, written by the same writeback on the
-     * same terms. supportNormal reduces the tick's contacts by "most upward";
-     * this reduces them by "largest horizontal component", and the two answer
-     * different questions - a character on flat ground pressed against a wall
-     * is held by the floor and blocked by the wall in the same tick, and one
-     * normal cannot say both.
-     *
-     * Generic for the same reason: "what am I pressed against, and which way
-     * does it push" is what a controller sliding along a wall, a scrape effect
-     * and a ledge grab all ask, and none of them are things PhysicsSystem has
-     * heard of. Valid only while supported, like supportNormal.
-     *
-     * A body touching nothing but level floor leaves it at world up, whose
-     * horizontal component is zero. That needs no separate flag: a normal with
-     * no horizontal direction cannot deflect anything, so the reader that
-     * projects against it is already the reader that ignores it.
+     * Valid only while supported. A body touching only level floor leaves it at world up.
      */
     glm::vec3 blockNormal = {0.0f, 1.0f, 0.0f};
 
     /**
-     * @brief Whether the solver treats this body as having infinite mass.
+     * @brief Wake a sleeping body so the next tick moves it.
      *
-     * Three things mean the same thing here - static, kinematic, and a mass a
-     * project authored as zero or negative - and three places ask the question:
-     * the inverse mass the solver runs on, the static-against-static skip in the
-     * broadphase, and the query filter's static/dynamic split. Asked three ways
-     * they disagree by a term, and the body that falls through the gap is a
-     * zero-mass dynamic one forming pairs nothing can move.
+     * Clears the timer too: a cleared flag with a long rest on the timer falls asleep again that tick.
      *
-     * @param rb The body to test.
-     * @return Whether nothing the solver does can move it.
+     * @param rb Body to wake.
      */
-    static bool isImmovable(const Rigidbody& rb) {
-        return rb.isStatic || rb.isKinematic || rb.mass <= 0.0f;
+    static void wake(Rigidbody& rb) {
+        rb.sleeping   = false;
+        rb.sleepTimer = 0.0f;
     }
 };
 
-// sleeping / sleepTimer / supported / supportNormal / blockNormal are
-// runtime-only, and intentionally absent.
 } // namespace Vkm::Engine
 
+VKM_ENUM_NAMES(::Vkm::Engine::RigidbodyMotion, "Dynamic", "Kinematic", "Static")
+
+// sleeping / sleepTimer / supported / supportNormal / blockNormal are runtime-only.
 VKM_REFLECT_BEGIN(::Vkm::Engine::Rigidbody)
-    VKM_F(linearVelocity),
-    VKM_F(angularVelocity),
-    VKM_F(mass),
-    VKM_F(linearDamping),
-    VKM_F(angularDamping),
-    VKM_F(restitution),
-    VKM_F(friction),
-    VKM_F(gravityScale),
-    VKM_F(layer),
-    VKM_F(collidesWith),
-    VKM_F(isKinematic),
-    VKM_F(isStatic),
-    VKM_F(freezeRotation),
+    VKM_F(linearVelocity)
+    VKM_F(angularVelocity)
+    VKM_F(motion)
+    VKM_F(mass)
+    VKM_F(linearDamping)
+    VKM_F(angularDamping)
+    VKM_F(restitution)
+    VKM_F(friction)
+    VKM_F(gravityScale)
+    VKM_F(layer)
+    VKM_F(collidesWith)
+    VKM_F(freezeRotation)
     VKM_F(canSleep)
 VKM_REFLECT_END()

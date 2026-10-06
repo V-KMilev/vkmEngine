@@ -7,23 +7,26 @@ namespace Vkm::Engine {
 /**
  * @brief Observer notified by a Scene when an entity is destroyed.
  *
- * Registered via Scene::addObserver() (and removeObserver()). onEntityDestroyed
- * fires at the start of Scene::destroyEntity - while the entity and its
- * components are still intact - on every destroy path, so a system can react to
- * deletions (BehaviorSystem fires script onDestroy this way) without Scene
- * depending on that system.
- *
- * The interface lives in the ecs layer; implementers live outside it (e.g.
- * BehaviorSystem in system/script).
+ * Registered via Scene::addObserver(). Lets a system react to deletions without
+ * Scene depending on it. Scene::clear() and Scene::swap() do not notify.
  */
-struct ISceneObserver {
-    virtual ~ISceneObserver() = default;
+class ISceneObserver {
+    public:
+        ISceneObserver() = default;
+        virtual ~ISceneObserver() = default;
 
-    /**
-     * @brief Called just before @p id's components are removed.
-     * @param id The entity being destroyed; still alive, components intact.
-     */
-    virtual void onEntityDestroyed(EntityId id) = 0;
+        ISceneObserver(const ISceneObserver& other) = delete;
+        ISceneObserver& operator=(const ISceneObserver& other) = delete;
+
+        ISceneObserver(ISceneObserver && other) = delete;
+        ISceneObserver& operator=(ISceneObserver && other) = delete;
+
+    public:
+        /**
+         * @brief Called just before @p id's components are removed.
+         * @param id Entity being destroyed; still alive, components intact.
+         */
+        virtual void onEntityDestroyed(EntityId id) = 0;
 };
 
 } // namespace Vkm::Engine

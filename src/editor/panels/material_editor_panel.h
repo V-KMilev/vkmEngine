@@ -8,36 +8,33 @@
 #include "resource/asset/material_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/texture_asset.h"
-#include "framework/asset_picker.h"
+#include "system/render/editor_render_hooks.h"
+#include "ui/asset_picker.h"
 
 namespace Vkm::Engine {
-
-class EditorRenderHooks;
 
 struct EditorContext;
 class ResourceManager;
 
 /**
+ * @brief The sphere material previews are drawn on, generated on first request.
+ *
+ * Hidden, and looked up by name first, so its callers share one mesh.
+ *
+ * @param resources Where the mesh is registered, privately.
+ * @return Its handle.
+ */
+MeshHandle materialPreviewSphere(ResourceManager& resources);
+
+/**
  * @brief The Material tab: one material's parameters under a live 3D preview.
  *
- * It has no window of its own: EditorSystem draws it as the right panel's second
- * tab, beside the Inspector, because the two answer the same question about the
- * same selection at two depths - and a material wants the height a panel next to
- * the viewport has.
+ * Draws into the Material window EditorSystem begins. The target follows the selection,
+ * but one chosen by hand holds until another entity with a material is picked, so an
+ * unused material can be worked on. Secondary lobes appear once the material uses them.
  *
- * Which material it edits follows the selection, except that one chosen by hand
- * - the chooser at the top, the Asset Browser, a New or Duplicate - outranks it
- * until a different entity carrying a material is picked, so a material nothing
- * uses yet can still be worked on.
- *
- * The parameters are cut by what a material is rather than by the shader's field
- * list: a Base card and a grid of map tiles are always there, and the five
- * secondary lobes appear as cards only once the material uses them.
- *
- * Edits are live and every one is an undo step - materials are shared by handle,
- * so a change shows everywhere the material is drawn. The preview goes through
- * MaterialPreviewSession and the backend's offscreen hooks; the editor never
- * touches GL itself.
+ * Every edit is live and undoable, and shows wherever the shared material is drawn. The
+ * preview goes through MaterialPreviewSession and the backend's offscreen hooks.
  */
 class MaterialEditorPanel {
     public:
@@ -54,7 +51,7 @@ class MaterialEditorPanel {
         /**
          * @brief Draw the whole panel into the caller's current region.
          *
-         * @param ec Per-frame editor context.
+         * @param ec The frame's editor context.
          */
         void draw(EditorContext& ec);
 
@@ -62,9 +59,11 @@ class MaterialEditorPanel {
         /**
          * @brief Settle which material this frame edits, and drop a dead pin.
          *
-         * @param ec Per-frame editor context; its selection and pinned target
-         *        are both read, and the pin is cleared when the selection moves
-         *        to another entity carrying a material.
+         * The pin records the selection it was made against: a hidden docked tab does not see
+         * the selection change.
+         *
+         * @param ec Supplies the selection and pin; the pin clears when another entity with a
+         *        material is selected.
          * @return The material to edit, or a null handle when there is none.
          */
         MaterialHandle resolveTarget(EditorContext& ec);
@@ -72,48 +71,44 @@ class MaterialEditorPanel {
         /**
          * @brief Draw the panel with no material to edit: the two ways to get one.
          *
-         * @param ec Per-frame editor context.
+         * @param ec The frame's editor context.
          */
         void drawEmptyState(EditorContext& ec);
 
         /**
-         * @brief Draw the chooser row: which material, who uses it, what can be
-         * done to it.
+         * @brief Draw the chooser row: which material, who uses it, what can be done to it.
          *
-         * @param ec Per-frame editor context.
+         * @param ec The frame's editor context.
          * @param target The material being edited.
          */
         void drawIdentityRow(EditorContext& ec, MaterialHandle target);
 
         /**
-         * @brief Draw the material chooser combo, filling the given width.
+         * @brief Draw the material chooser combo.
          *
-         * @param ec Per-frame editor context; a pick writes its target.
-         * @param target The material being edited, previewed in the combo.
+         * @param ec A pick writes its target.
+         * @param target Shown in the combo.
          * @param width Width the combo fills.
          */
         void drawChooser(EditorContext& ec, MaterialHandle target, float width);
 
         /**
-         * @brief Draw the live preview, its shape and background controls and the
-         * light dial.
+         * @brief Draw the live preview, its shape and background controls and the light dial.
          *
-         * @param ec Per-frame editor context.
+         * @param ec The frame's editor context.
          * @param target The material being previewed.
-         * @param entityMesh Mesh of the selected entity, for the "as selected"
-         *        shape; a null handle disables that shape.
+         * @param entityMesh The selection's mesh for the "as selected" shape; null disables it.
          */
         void drawPreview(EditorContext& ec, MaterialHandle target, MeshHandle entityMesh);
 
         /**
          * @brief Resolve the preview shape to a real MeshAsset handle.
          *
-         * Looks the shape up by name every call (O(1)) and lazily re-registers
-         * it if absent, so it survives the ResourceManager swap a scene load
-         * performs (which drops every hidden asset).
+         * Looked up by name every call and re-registered if absent, surviving a
+         * ResourceManager::swap.
          *
-         * @param resources Resource manager the shapes are registered in.
-         * @param entityMesh Mesh to use for the "as selected" shape.
+         * @param resources Where the shapes are registered.
+         * @param entityMesh Mesh for the "as selected" shape.
          * @return The shape to render the material on.
          */
         MeshHandle previewMesh(ResourceManager& resources, const MeshHandle& entityMesh);
@@ -121,121 +116,131 @@ class MaterialEditorPanel {
         /**
          * @brief Draw every parameter card for one material.
          *
-         * @param resources Resource manager used to resolve and edit texture slots.
+         * @param resources Resolves and edits texture slots.
          * @param backend Resolves a slot's GPU texture for its tile; may be null.
-         * @param target Handle of the material being edited (stable across slot
-         *        reallocations).
-         * @param mat The material asset whose fields the controls write to.
+         * @param target The edited material, stable across slot reallocations.
+         * @param mat The asset the controls write to.
          * @return Whether any field changed this frame.
          */
-        bool drawParameters(ResourceManager& resources, EditorRenderHooks* backend,
-                            MaterialHandle target, MaterialAsset& mat);
+        bool drawParameters(
+            ResourceManager& resources,
+            EditorRenderHooks* backend,
+            MaterialHandle target,
+            MaterialAsset& mat
+        );
 
         /**
-         * @brief Draw the map grid: the core slots, whatever else is bound, and
-         * the tile that adds one.
+         * @brief Draw the map grid: the core slots, whatever else is bound, and the tile that adds one.
          *
-         * @param resources Resource manager used to resolve and edit texture slots.
+         * @param resources Resolves and edits texture slots.
          * @param backend Resolves a slot's GPU texture for its tile; may be null.
-         * @param target Handle of the material being edited.
-         * @param mat The material asset whose slots the tiles write to.
+         * @param target The edited material.
+         * @param mat The asset the tiles write to.
          * @return Whether any slot changed this frame.
          */
-        bool drawMaps(ResourceManager& resources, EditorRenderHooks* backend,
-                      MaterialHandle target, MaterialAsset& mat);
+        bool drawMaps(
+            ResourceManager& resources,
+            EditorRenderHooks* backend,
+            MaterialHandle target,
+            MaterialAsset& mat
+        );
 
         /**
          * @brief One map tile: the bound texture's thumbnail, its name, its file.
          *
-         * Takes the owning material's handle and a pointer-to-member rather than
-         * a slot reference so a deferred picker can re-resolve the slot safely -
-         * the sparse-set backing can reallocate while the picker is open.
+         * Handle plus pointer-to-member, not a slot reference: storage can reallocate while
+         * the deferred picker is open.
          *
-         * @param resources Resource manager used to resolve and edit the slot.
-         * @param backend Resolves the slot's GPU texture; may be null (no thumbnail).
-         * @param owner Handle of the material the slot belongs to.
-         * @param mat The material asset being edited.
-         * @param label What the slot is called.
-         * @param member The slot itself.
-         * @param srgb Whether a texture bound here is colour data.
-         * @param hint What the slot does, shown on hover.
+         * @param resources Resolves and edits the slot.
+         * @param backend Resolves the slot's GPU texture; null means no thumbnail.
+         * @param owner The slot's material.
+         * @param mat The asset being edited.
+         * @param label The slot's name.
+         * @param member The slot.
+         * @param usage Decides how a bound texture is decoded.
+         * @param hint Shown on hover.
          * @param face Tile edge length in pixels.
          * @return Whether the slot changed this frame.
          */
-        bool mapTile(ResourceManager& resources, EditorRenderHooks* backend,
-                     MaterialHandle owner, MaterialAsset& mat, const char* label,
-                     TextureHandle MaterialAsset::* member, bool srgb,
-                     const char* hint, float face);
+        bool mapTile(
+            ResourceManager& resources,
+            EditorRenderHooks* backend,
+            MaterialHandle owner,
+            MaterialAsset& mat,
+            const char* label,
+            TextureHandle MaterialAsset::* member,
+            TextureUsage usage,
+            const char* hint,
+            float face
+        );
 
         /**
          * @brief Arm the texture picker for one slot.
          *
-         * @param owner Handle of the material the slot belongs to.
+         * @param owner The slot's material.
          * @param member The slot to fill once a file is chosen.
-         * @param srgb Whether the texture is colour data.
+         * @param usage Decides how the texture is decoded.
          */
-        void openTexturePicker(MaterialHandle owner, TextureHandle MaterialAsset::* member,
-                               bool srgb);
+        void openTexturePicker(
+            MaterialHandle owner,
+            TextureHandle MaterialAsset::* member,
+            TextureUsage usage
+        );
 
         /**
          * @brief Bind whatever the texture picker returned, as an undo step.
          *
-         * @param ec Per-frame editor context.
+         * @param ec The frame's editor context.
          */
         void serviceTexturePicker(EditorContext& ec);
 
         /**
          * @brief Configure the folder picker and raise it.
-         *
-         * Beside openTexturePicker for the same reason: what the menu item does
-         * is open a picker, so the menu item opens the picker rather than
-         * raising a flag for the frame's second half to notice.
          */
         void openPbrFolder();
 
         /**
          * @brief Run the "Load PBR Folder" picker and adopt the material it builds.
          *
-         * @param ec Per-frame editor context; its target follows the new material.
+         * The selection takes it only when it draws with @p target, as with Duplicate.
+         *
+         * @param ec Its target follows the new material.
+         * @param target The material the tab showed when the picker finished.
          */
-        void servicePbrFolder(EditorContext& ec);
+        void servicePbrFolder(EditorContext& ec, MaterialHandle target);
 
     private:
-        // Orbit / zoom state for the preview camera.
-        float m_yaw      = 35.0f;
-        float m_pitch    = 20.0f;
-        float m_distance = 3.0f;
-        int   m_shape      = 0;    ///< Index into the preview shape table
-        int   m_background = 0;    ///< PreviewBackground: 0 dark, 1 grey, 2 sky
-        float m_lightYaw   = 0.0f; ///< Studio rig rotation around Y (degrees)
+        // Preview camera orbit and zoom.
+        float             m_yaw        = 35.0f;
+        float             m_pitch      = 20.0f;
+        float             m_distance   = 3.0f;
+        int               m_shape      = 0;     ///< Into the preview shape table
+        PreviewBackground m_background = PreviewBackground::Dark;  ///< Preview backdrop.
+        float             m_lightYaw   = 0.0f;  ///< Studio rig yaw, degrees
 
-        // The selection the pinned target was last reconciled against. A pin
-        // outranks the selection, but only until the author picks a different
-        // entity that carries a material of its own.
-        EntityId m_lastSelection{};
-
-        // One picker per modal so each cache survives independent open/close.
+        // One per modal, so each cache survives the other's open/close.
         AssetPicker m_pbrFolderPicker;
         AssetPicker m_texturePicker;
 
         /**
-         * @brief The material + slot the active texture picker is editing,
-         * identified by handle + pointer-to-member (not a raw pointer) so it
-         * survives a sparse-set reallocation. m_pendingSlot null == no picker.
+         * @brief The material and slot the active texture picker is editing.
+         *
+         * Handle plus pointer-to-member, surviving reallocation. A null m_pendingSlot means
+         * none is armed.
          */
         MaterialHandle                  m_pendingMaterial{};
         TextureHandle MaterialAsset::*  m_pendingSlot = nullptr;
-        bool                            m_pendingTextureSrgb = false;
+        TextureUsage                    m_pendingTextureUsage = TextureUsage::Data;
 
         /// Colour edited in a tile's "solid colour" generator.
         glm::vec4 m_genColor{1.0f, 1.0f, 1.0f, 1.0f};
 
-        // Rename modal state, armed from the actions menu.
+        // Rename modal, armed from the actions menu.
         bool        m_renameOpen = false;
         char        m_renameBuf[128] = {};
         std::string m_renameOldName;
 
-        char m_chooserFilter[48] = {};  ///< Search needle inside the chooser combo
+        char m_chooserFilter[48] = {};  ///< Chooser combo search
 };
 
 } // namespace Vkm::Engine

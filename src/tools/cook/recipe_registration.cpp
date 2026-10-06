@@ -1,6 +1,6 @@
 #define VKM_LOG_CATEGORY "ASSETS"
 
-#include "asset_registration.h"
+#include "cook/recipe_registration.h"
 
 #include <string>
 #include <vector>
@@ -10,158 +10,115 @@
 #include "logger.h"
 
 #include "io/asset/asset_factory.h"
-#include "io/asset/asset_serializer.h"
 #include "resource/resource_manager.h"
 #include "system/async/async_loader_system.h"
-#include "resource/generate/material_generators.h"
 #include "resource/generate/mesh_generators.h"
 #include "resource/generate/texture_generators.h"
-#include "loader/audio_loaders.h"
-#include "loader/material_loaders.h"
-#include "loader/texture_loaders.h"
-#include "loader/model_loaders.h"
+#include "import/audio_loaders.h"
+#include "import/texture_loaders.h"
+#include "import/model_loaders.h"
+#include "cook/lod_generator.h"
+#include "cook/mesh_processing.h"
 #include "resource/asset_source_kind.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
+// A recipe of a kind no import of its asset type reads.
+template<typename Asset>
+Handle<Asset> refuseKind(const char* what, const nlohmann::json& source) {
+    LOG_ERROR("No %s import for recipe kind '%s'", what, source.value("kind", std::string{}).c_str());
+    return {};
+}
+
 MeshHandle createRecipeMesh(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value("kind", std::string{});
 
     // Synchronous: generators are cheap, no benefit to async.
-    if (kind == AssetSourceKind::GENERATOR) {
-        const std::string type = source.value("type", std::string{});
-        const auto& p = source.contains("params") ? source["params"] : nlohmann::json::object();
+    if (kind == AssetSourceKind::GENERATOR) return createGeneratedMesh(source, resources);
 
-        MeshAsset mesh;
-        if      (type == "cube")     mesh = generateCube();
-        else if (type == "sphere")   mesh = generateSphere(p.value("xSegments", 32u),
-                                                           p.value("ySegments", 16u));
-        else if (type == "cone")     mesh = generateCone(p.value("radius",   0.5f),
-                                                         p.value("height",   1.0f),
-                                                         p.value("segments", 16u));
-        else if (type == "pyramid")  mesh = generatePyramid(p.value("baseSize", 1.0f),
-                                                            p.value("height",   1.0f));
-        else if (type == "plane")    mesh = generatePlane(p.value("width",          1.0f),
-                                                          p.value("height",         1.0f),
-                                                          p.value("widthSegments",  1u),
-                                                          p.value("heightSegments", 1u));
-        else if (type == "triangle") mesh = generateTriangle(p.value("size", 1.0f));
-        else return {};
-
-        if (mesh.vertices.empty()) return {};
-        return resources.add(std::move(mesh));
-    }
-
-    // Async: Assimp parsing is the slow path - return a stub immediately,
-    // worker decodes off-thread, AsyncLoaderSystem patches the live asset
-    // with vertices + bounds 1+ frames out.
+    // Async: parsing a model file is the slow path.
     if (kind == AssetSourceKind::MODEL) {
-        return requestModelMeshAsync(source.value("path", std::string{}),
-                                     source.value("mesh", -1),
-                                     resources);
+        return requestModelMeshAsync(
+            source.value(AssetSourceKey::PATH, std::string{}),
+            source.value(AssetSourceKey::MESH, -1),
+            resources
+        );
     }
 
-    // The base is emitted earlier in the meshes block, so a handle for it exists
-    // by the time this runs. Re-decimating on load keeps the levels themselves out
-    // of the scene file, the way a generated mesh stays a recipe.
+    // The base must come earlier in the meshes block, or the level is dropped.
     if (kind == AssetSourceKind::DECIMATE) {
-        const std::string baseName = source.value("base", std::string{});
-        const uint32_t grid        = source.value("grid", 8u);
-        const MeshHandle baseH = baseName.empty() ? MeshHandle{}
-                                                  : resources.findByName<MeshAsset>(baseName);
+        const std::string baseName = source.value(AssetSourceKey::BASE, std::string{});
+        const float ratio          = decimateRatioFromRecipe(source);
+        const MeshHandle baseH = baseName.empty() ? MeshHandle{} : resources.findByName<MeshAsset>(baseName);
         if (!baseH) {
             LOG_ERROR("decimate: base mesh '%s' not loaded (LOD level dropped)", baseName.c_str());
             return {};
         }
-        // Resident is not landed: a base out of a model or the cooked cache
-        // decodes on the ThreadPool, and this runs inside the scene load, before
-        // any frame would finalise it. Decimating a stub yields nothing.
+        // Resident is not landed: the base decodes on the ThreadPool and no frame has finalised it
+        // inside a scene load. Decimating a stub yields nothing.
         if (!awaitAsyncLoads(resources)) {
-            LOG_ERROR("decimate: base mesh '%s' never finished loading (LOD level dropped)",
-                baseName.c_str());
+            LOG_ERROR(
+                "decimate: base mesh '%s' never finished loading (LOD level dropped)",
+                baseName.c_str()
+            );
             return {};
         }
-        MeshAsset dec = decimateMesh(resources.get(baseH), grid);
+        MeshAsset dec = decimateMesh(resources.get(baseH), ratio);
         if (dec.vertices.empty()) return {};
-        // Keep the source so a subsequent save re-emits the recipe cleanly.
-        dec.sourceJson() = {
-            {"kind", AssetSourceKind::DECIMATE},
-            {"base", baseName},
-            {"grid", grid},
-        };
+        // So a later save re-emits the recipe.
+        dec.sourceJson() = decimateRecipe(baseName, ratio);
         return resources.add(std::move(dec));
     }
 
-    return createCookedMesh(source, resources);
+    return refuseKind<MeshAsset>("mesh", source);
 }
 
 TextureHandle createRecipeTexture(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value("kind", std::string{});
 
     if (kind == AssetSourceKind::FILE) {
-        const std::string path  = source.value("path", std::string{});
+        const std::string path = source.value(AssetSourceKey::PATH, std::string{});
         if (path.empty()) return {};
-        const bool sRGB         = source.value("sRGB", false);
-        const bool genMipmaps   = source.value("generateMipmaps", true);
-        // Async: a stub handle comes back immediately, ThreadPool decodes the
-        // pixels off the main thread, AsyncLoaderSystem finalises the asset 1-3
-        // frames later. Material binding shows a 1x1 gray fallback in the gap.
-        return requestTextureAsync(path, resources, sRGB, genMipmaps,
-                                   textureFilterFromRecipe(source),
-                                   textureWrapFromRecipe(source));
+        const bool genMipmaps = textureMipmapsFromRecipe(source);
+        return requestTextureAsync(
+            path,
+            resources,
+            textureUsageFromRecipe(source),
+            genMipmaps,
+            textureFilterFromRecipe(source),
+            textureWrapFromRecipe(source)
+        );
     }
 
-    if (kind == AssetSourceKind::BUILTIN) {
-        const std::string type = source.value("type", std::string{});
-        if (type == "white")  return generateWhiteTexture(resources);
-        if (type == "black")  return generateBlackTexture(resources);
-        if (type == "normal") return generateNormalTexture(resources);
-        if (type == "gray")   return generateGrayTexture(resources);
-        return {};
-    }
-
-    // A user-authored solid-color texture (the Material Editor's "Generate
-    // texture"), re-created from the stored RGBA + colorspace.
     if (kind == AssetSourceKind::SOLID) {
-        glm::vec4 color(1.0f);
-        if (source.contains("color") && source["color"].is_array() && source["color"].size() >= 4) {
-            const auto& c = source["color"];
-            color = glm::vec4(c[0].get<float>(), c[1].get<float>(),
-                              c[2].get<float>(), c[3].get<float>());
-        }
-        const bool srgb = source.value("srgb", false);
-        return createSolidColorTexture(color, resources, srgb);
+        return createGeneratedTexture(source, resources);
     }
 
-    // The pixels live in the .glb/.fbx, not in the scene JSON, so cold-start
-    // load reopens the model file and pulls the same texture out of it.
+    // The pixels live in the .glb/.fbx, so a load reopens the model file.
     if (kind == AssetSourceKind::MODEL_IMAGE) {
-        const std::string path = source.value("path", std::string{});
-        const std::string ref  = source.value("ref",  std::string{});
-        const bool        srgb = source.value("sRGB", false);
+        const std::string path = source.value(AssetSourceKey::PATH, std::string{});
+        const std::string ref  = source.value(AssetSourceKey::REF, std::string{});
         if (path.empty() || ref.empty()) return {};
-        return loadModelEmbeddedTexture(path, ref, srgb, resources);
+        return loadModelEmbeddedTexture(path, ref, textureUsageFromRecipe(source), resources);
     }
 
-    return createCookedTexture(source, resources);
+    return refuseKind<TextureAsset>("texture", source);
 }
 
 SkeletonHandle createRecipeSkeleton(const nlohmann::json& source, ResourceManager& resources) {
     if (source.value("kind", std::string{}) == AssetSourceKind::MODEL) {
-        return loadModelSkeleton(source.value("path", std::string{}), resources);
+        return loadModelSkeleton(source.value(AssetSourceKey::PATH, std::string{}), resources);
     }
-    return createCookedSkeleton(source, resources);
+    return refuseKind<SkeletonAsset>("skeleton", source);
 }
 
-// Authored clip markers, as the recipe carries them: an array of {name, time}.
-// Nothing in glTF or FBX names an animation event, so this is where one enters
-// the engine - alongside the import parameters it sits next to, and hashed into
-// the recipe like them, so adding a footstep re-cooks the clip that carries it.
+// Authored clip markers, an array of {name, time}; glTF and FBX name no animation events. Hashed
+// into the recipe, so adding a footstep re-cooks the clip.
 std::vector<ClipMarker> recipeMarkers(const nlohmann::json& source) {
     std::vector<ClipMarker> markers;
-    const auto it = source.find("markers");
+    const auto it = source.find(AssetSourceKey::MARKERS);
     if (it == source.end() || !it->is_array()) return markers;
 
     markers.reserve(it->size());
@@ -174,56 +131,33 @@ std::vector<ClipMarker> recipeMarkers(const nlohmann::json& source) {
 
 AnimationClipHandle createRecipeAnimationClip(const nlohmann::json& source, ResourceManager& resources) {
     if (source.value("kind", std::string{}) == AssetSourceKind::MODEL) {
-        return loadModelAnimationClip(source.value("path", std::string{}),
-                                      source.value("clip", -1),
-                                      recipeMarkers(source), resources,
-                                      source.value("rig", std::string{}));
+        return loadModelAnimationClip(
+            source.value(AssetSourceKey::PATH, std::string{}),
+            source.value(AssetSourceKey::CLIP, -1),
+            recipeMarkers(source),
+            resources,
+            source.value(AssetSourceKey::RIG, std::string{})
+        );
     }
-    return createCookedAnimationClip(source, resources);
+    return refuseKind<AnimationClipAsset>("clip", source);
 }
 
 AudioClipHandle createRecipeAudioClip(const nlohmann::json& source, ResourceManager& resources) {
     if (source.value("kind", std::string{}) == AssetSourceKind::FILE) {
-        return loadAudioClip(source.value("path", std::string{}), resources);
+        return loadAudioClip(source.value(AssetSourceKey::PATH, std::string{}), resources);
     }
-    return createCookedAudioClip(source, resources);
-}
-
-MaterialHandle createRecipeMaterial(const nlohmann::json& source, ResourceManager& resources) {
-    const std::string kind = source.value("kind", std::string{});
-
-    // Rediscovers the folder's textures from disk.
-    if (kind == AssetSourceKind::FOLDER) {
-        const std::string path = source.value("path", std::string{});
-        if (path.empty()) return {};
-        return loadMaterialFromFolder(path, resources);
-    }
-
-    if (kind == AssetSourceKind::DEFAULT) {
-        // Built rather than looked up: loadAssetSection renames what a factory
-        // hands back, and handing over the shared "material:default" would rename
-        // it out from under every component still resolving it.
-        return buildDefaultMaterial(resources);
-    }
-
-    if (kind == AssetSourceKind::MODEL) {
-        return loadModelMaterial(source.value("path", std::string{}),
-                                 source.value("material", -1), resources);
-    }
-
-    return createCookedMaterial(source, resources);
+    return refuseKind<AudioClipAsset>("sound", source);
 }
 
 } // namespace
 
 void registerRecipeAssetFactories() {
-    LOG_INFO("Registering recipe asset factories (meshes: generator/model/decimate, "
-             "textures: file/builtin/solid/model-image, materials: folder/default/model, "
-             "skeletons + clips: model, sounds: file)");
-    assetFactory().createMesh     = &createRecipeMesh;
-    assetFactory().createTexture  = &createRecipeTexture;
-    assetFactory().createMaterial = &createRecipeMaterial;
-
+    LOG_INFO(
+        "Registering recipe asset factories (meshes: generator/model/decimate, "
+        "textures: file/solid/model-image, skeletons + clips: model, sounds: file)"
+    );
+    assetFactory().createMesh          = &createRecipeMesh;
+    assetFactory().createTexture       = &createRecipeTexture;
     assetFactory().createSkeleton      = &createRecipeSkeleton;
     assetFactory().createAnimationClip = &createRecipeAnimationClip;
     assetFactory().createAudioClip     = &createRecipeAudioClip;

@@ -11,20 +11,18 @@
 #include "resource/asset/font_asset.h"
 #include "system/render/render_settings.h"
 
-#include "data/gl_mesh.h"
-#include "data/gl_material.h"
-#include "data/gl_asset_texture.h"
+#include "asset/gl_mesh.h"
+#include "asset/gl_material.h"
+#include "asset/gl_asset_texture.h"
 
 namespace Vkm::GL {
     class Texture2D;
 }
 
 namespace Vkm::Engine {
-    struct RenderView;
-    class ResourceManager;
-}
 
-namespace Vkm::Engine {
+struct RenderView;
+class ResourceManager;
 
 /**
  * @brief Versioned, handle-indexed table of one GL resource kind.
@@ -36,23 +34,19 @@ struct GLResourceTable {
     struct Slot {
         std::unique_ptr<GLT> gl;
         uint64_t             version    = 0;
-        uint32_t             generation = 0;  ///< handle generation; mismatch == slot recycled
+        uint64_t             checked    = 0;  ///< The GLView sync stamp it was last checked under.
+        uint32_t             generation = 0;  ///< Handle generation; mismatch == slot recycled.
     };
-    std::vector<Slot> slots;  ///< indexed by handle.id()
+    std::vector<Slot> slots;  ///< Indexed by handle.id().
 };
 
 /**
  * @brief GPU-side mirror of the assets a frame references.
  *
- * One table per asset kind, indexed by handle.id() and version-gated: an asset
- * is uploaded the first time a frame references it and re-uploaded only when its
- * version changes. This is the only place the backend reads ResourceManager;
- * the render path resolves a drawable's handles to these GPU objects.
- *
- * The version gate is only meaningful within a single asset graph. A scene load
- * or editor play-stop restore swaps the whole graph, and the incoming one
- * restarts its handles and versions from scratch, so the gate cannot see the
- * difference. The backend detects that swap centrally and calls invalidate().
+ * One table per asset kind, indexed by handle.id(): an asset uploads when a frame first
+ * references it and again only when its version changes. The gate holds within one asset graph;
+ * a new graph restarts handles and versions, so invalidate() runs on the swap (see
+ * GLBackend::onWorldReplaced).
  */
 class GLView {
     public:
@@ -69,59 +63,54 @@ class GLView {
         /**
          * @brief Upload / refresh every asset `view` references.
          *
-         * Every array on RenderView that carries a handle is walked here, and
-         * that is the whole of the rule: drawables (mesh, material and the
-         * material's textures), shadow casters (mesh), decals (material and its
-         * textures) and the UI's draw commands (font atlas). Nothing else on
-         * RenderView holds one.
+         * Every RenderView list naming a handle is walked: the camera's objects (mesh, material,
+         * its textures), scene-wide objects (mesh; material and textures for shadow casters,
+         * since a cutout casts through its albedo), decals, and the UI's commands (font atlas,
+         * image). A non-casting scene-wide object's material is left out; an offline capture
+         * that shades one calls ensureMaterial (see GLSceneCapture).
          *
-         * The list matters because three of those four are gathered scene-wide
-         * rather than from the visible set, so their assets need not appear
-         * among the drawables at all - and every pass answers a missing GPU
-         * object by silently skipping the draw. So the walk names every
-         * RenderView member rather than only the four it uses: a member added
-         * there fails to compile here until it has been classified.
+         * A missing GPU object skips a draw silently, so the walk names every RenderView member:
+         * one added there fails to compile here until it has been classified.
+         *
+         * @param view      Its drawables, decals and overlay name the assets.
+         * @param resources Resolves the handles to the assets to upload.
          */
         void sync(const RenderView& view, const ResourceManager& resources);
 
         /**
+         * @brief Upload @p handle's material and every texture it binds.
+         *
+         * The textures are found off the GLMaterial just synced, so no second pass is needed.
+         *
+         * @param handle    Material to upload; an empty handle does nothing.
+         * @param resources Resolves the handle and its textures.
+         */
+        void ensureMaterial(const MaterialHandle& handle, const ResourceManager& resources);
+
+        /**
          * @brief Drop every cached GPU object.
          *
-         * Called when the asset graph is replaced: the incoming graph reuses the
-         * same handle indices, generations and versions, so nothing in these
-         * tables can be matched against it. The next sync() repopulates.
+         * For a replaced asset graph, which reuses handle indices, generations and versions. The
+         * next sync() repopulates.
          */
         void invalidate();
 
         /**
-         * @brief Offer the frame's texture filtering mode and anisotropy degree
-         * to every synced texture.
+         * @brief Offer the frame's filtering mode and anisotropy to every synced texture.
          *
-         * Filtering is sampler state, not asset content, so it rides none of the
-         * version gates above: a texture uploaded twenty frames ago keeps what it
-         * was built with. Pushing the current setting over the table each frame
-         * covers both cases - the setting moved, or a texture arrived after it
-         * last did - without either having to be detected, and costs a compare
-         * per texture with no GL call for one already filtered that way.
+         * Sampler state, so no version gate covers it: a moved setting is pushed over the table
+         * here, and a texture built later takes the remembered one in ensure(). Each texture
+         * resolves it against its TextureParams::filterOverride; font atlases keep the font's own.
          *
-         * Offered rather than imposed: each texture resolves it against its own
-         * TextureParams::filterOverride, and one that states a filter keeps it.
-         * Font atlases are left out - no mip chain, no minification to correct.
-         *
-         * @param mode          Base filter to offer; the two coarser modes,
-         *                      Nearest and Bilinear, pin the degree to 1.
-         * @param maxAnisotropy Requested degree; clamped per texture to what the
-         *                      driver reports.
+         * @param mode          Base filter; Nearest and Bilinear pin the degree to 1.
+         * @param maxAnisotropy Requested degree; clamped per texture to what the driver reports.
          */
         void setTextureFiltering(TextureFiltering mode, float maxAnisotropy);
 
         /**
-         * @brief Upload @p handle's texture outside of a sync(), for a caller
-         *        that wants to look at it rather than draw with it.
+         * @brief Upload @p handle's texture outside a sync(), for a caller that shows rather than draws it.
          *
-         * sync() reaches a texture only through the material that binds it,
-         * which is right for a frame and wrong for a tool showing the whole
-         * library. Version-gated like every other upload here.
+         * sync() reaches a texture only through a material, wrong for a tool showing the library.
          *
          * @param handle Texture to upload; an empty handle does nothing.
          * @param resources Resolves the handle to its pixels.
@@ -129,9 +118,14 @@ class GLView {
         void ensureTexture(const TextureHandle& handle, const ResourceManager& resources);
 
         /**
-         * @brief Resolve a handle to its synced GPU object; null if the handle is empty
-         * or its asset has not been sync()'d into the table yet. The returned
-         * pointer is owned by this table - do not store it across a sync().
+         * @brief Resolve a handle to its synced GPU object.
+         *
+         * Null for an empty, unsynced or stale handle (a recycled slot answers only its new
+         * asset's), and for a texture or font atlas until its pixels arrive. Do not store the
+         * pointer across a sync().
+         *
+         * @param handle The asset asked for.
+         * @return Its GPU object, or null.
          */
         const GLMesh*     getMesh(const MeshHandle& handle) const;
         const GLMaterial* getMaterial(const MaterialHandle& handle) const;
@@ -139,64 +133,109 @@ class GLView {
         const Vkm::GL::Texture2D* getFontAtlas(const FontHandle& handle) const;
 
         /**
-         * @brief The magenta/black checkerboard bound wherever a real texture
-         *        should be but isn't.
+         * @brief Whether the mirror of @p handle holds the pixels of its asset at @p version.
          *
-         * A material that references a texture which is still streaming, failed
-         * to decode, or no longer resolves would otherwise sample whatever the
-         * previous draw left in that slot - so a broken asset shows up as some
-         * other object's texture, which reads as a shading bug rather than a
-         * missing file. Binding something deliberately, obviously wrong makes
-         * the failure self-reporting.
+         * Behind RenderBackend::holdsPixels: a slot of this generation, synced at this version,
+         * whose pixels arrived.
          *
-         * Built on first use, so a frame that never misses never allocates it.
+         * @param handle  The texture asked about.
+         * @param version Its asset's version now.
+         * @return True when that upload has happened.
+         */
+        bool holdsPixels(const TextureHandle& handle, uint64_t version) const;
+
+        /**
+         * @brief Which upload @p handle's pixels came from (GLTexture::uploadId).
+         *
+         * @param handle The texture asked about.
+         * @return The upload, or 0 while getTexture() would answer null.
+         */
+        uint64_t textureUploadId(const TextureHandle& handle) const;
+
+        /**
+         * @brief The magenta/black checkerboard bound wherever a real texture should be but isn't.
+         *
+         * Built on first use.
          *
          * @return The placeholder texture; never null once the GL context exists.
          */
         const Vkm::GL::Texture2D& missingTexture() const;
 
+        /**
+         * @brief The pool every mesh of this mirror lives in.
+         *
+         * Meshes the backend builds for itself live in it too.
+         *
+         * @return The pool; it lives as long as this mirror.
+         */
+        GLMeshPool& meshPool() { return m_meshPool; }
+
     private:
         /**
          * @brief Upload or refresh a single asset into its table, version-gated.
          *
-         * The version alone cannot decide it. A freed slot can be recycled by a
-         * different asset that also starts at version 1, so an in-place update()
-         * is valid only when the handle's generation still matches the one the
-         * slot was built from; anything else is rebuilt from scratch.
+         * A recycled slot's new asset also starts at version 1, so an in-place update() needs the
+         * handle's generation to match the slot's; otherwise it rebuilds. An asset checked under
+         * the current sync stamp is skipped, as a scene draws few assets many times.
+         *
+         * @tparam GLT    The table's GPU type.
+         * @tparam AssetT The asset kind @p handle names.
+         * @param table     The table of that kind.
+         * @param handle    The asset to check; an empty handle does nothing.
+         * @param resources Resolves the handle to the asset.
+         * @return True when checked now; false for an empty handle or one this stamp checked.
          */
         template <typename GLT, typename AssetT>
-        void ensure(GLResourceTable<GLT>& table, const Handle<AssetT>& handle, const ResourceManager& resources);
+        bool ensure(
+            GLResourceTable<GLT>& table,
+            const Handle<AssetT>& handle,
+            const ResourceManager& resources
+        );
+
+        /**
+         * @brief The GPU object @p handle names in @p table, if it names one.
+         *
+         * @tparam GLT    The table's GPU type.
+         * @tparam AssetT The asset kind @p handle names.
+         * @param table  The table to look in.
+         * @param handle The asset asked for.
+         * @return The slot's object when it was built for this handle's
+         *         generation; null for an empty, unsynced or stale handle.
+         */
+        template <typename GLT, typename AssetT>
+        const GLT* find(const GLResourceTable<GLT>& table, const Handle<AssetT>& handle) const;
 
         /**
          * @brief Warn once if @p handle's asset settled with no pixels.
          *
-         * The placeholder makes a missing texture visible; this names the file,
-         * which is the part the screen cannot tell you. Assets still streaming
-         * are skipped - those are not failures, and they resolve on their own.
+         * The placeholder shows the miss; this names the file. Still-streaming assets are skipped.
+         * Asked of the mirror, not the asset: pixels a host released after upload still draw.
+         *
+         * @param handle    The texture just synced.
+         * @param resources For its name, its path and whether it is still loading.
          */
         void reportIfMissing(const TextureHandle& handle, const ResourceManager& resources);
 
-        /**
-         * @brief Upload @p handle's material and every texture it binds.
-         *
-         * The textures are discovered off the GLMaterial this call just synced,
-         * so the material is always present before its maps are needed and no
-         * second pass is required.
-         */
-        void ensureMaterial(const MaterialHandle& handle, const ResourceManager& resources);
-
     private:
+        /// Every mesh's vertices and indices; outlives the table below.
+        GLMeshPool                  m_meshPool;
         GLResourceTable<GLMesh>     m_meshes;
         GLResourceTable<GLMaterial> m_materials;
         GLResourceTable<GLTexture>  m_textures;
-        GLResourceTable<GLTexture>  m_fontAtlases;  ///< SDF atlases keyed by FontHandle (fonts carry pixels, not TextureAssets).
+        /// SDF atlases by FontHandle; fonts carry pixels, not TextureAssets.
+        GLResourceTable<GLTexture>  m_fontAtlases;
 
-        // Not part of the tables: it belongs to no asset and must survive the
-        // epoch flush, since a graph swap is exactly when things are missing.
+        // Outside the tables: it belongs to no asset, and must survive a graph swap, when things go missing.
         mutable std::unique_ptr<Vkm::GL::Texture2D> m_missingTexture;
 
-        std::unordered_set<uint32_t> m_reportedMissing;  ///< Texture ids already warned about, so the log stays one line per asset.
+        /// Texture ids already warned about, so the log stays one line per asset.
+        std::unordered_set<uint32_t> m_reportedMissing;
 
+        /// The filtering and anisotropy every texture was last given.
+        TextureFiltering m_filtering  = RenderSettings{}.textureFiltering;
+        float            m_anisotropy = static_cast<float>(RenderSettings{}.textureAnisotropy);
+
+        uint64_t m_syncStamp = 1;  ///< Bumped by every sync(); a slot checked under it is skipped.
 };
 
 } // namespace Vkm::Engine

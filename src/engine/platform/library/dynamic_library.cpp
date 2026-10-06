@@ -16,32 +16,18 @@ DynamicLibrary::~DynamicLibrary() {
     unload();
 }
 
-DynamicLibrary::DynamicLibrary(DynamicLibrary && other) noexcept
-    : m_handle(other.m_handle) {
-    other.m_handle = nullptr;
-}
-
-DynamicLibrary& DynamicLibrary::operator=(DynamicLibrary && other) noexcept {
-    if (this != &other) {
-        unload();
-        m_handle = other.m_handle;
-        other.m_handle = nullptr;
-    }
-    return *this;
-}
-
-bool DynamicLibrary::load(const std::string& path) {
+bool DynamicLibrary::load(const std::filesystem::path& path) {
     unload();
 #if defined(_WIN32)
-    m_handle = ::LoadLibraryA(path.c_str());
+    // c_str() is already the wide native form; nothing is converted.
+    m_handle = ::LoadLibraryW(path.c_str());
     if (!m_handle) {
-        LOG_ERROR("LoadLibrary failed for '%s' (error %lu)", path.c_str(), ::GetLastError());
+        LOG_ERROR("LoadLibrary failed for '%s' (error %lu)", path.string().c_str(), ::GetLastError());
         return false;
     }
 #else
-    // RTLD_NOW so a missing engine symbol fails at load rather than on first
-    // call, RTLD_LOCAL so reloads stay isolated: a gameplay module links
-    // libvkm_core and finds the engine through its own DT_NEEDED anyway.
+    // RTLD_NOW: a missing engine symbol fails at load. RTLD_LOCAL: reloads stay isolated; a
+    // gameplay module finds libvkm_core through its own DT_NEEDED.
     m_handle = ::dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
     if (!m_handle) {
         const char* err = ::dlerror();
@@ -57,6 +43,9 @@ void DynamicLibrary::unload() {
 #if defined(_WIN32)
     ::FreeLibrary(static_cast<HMODULE>(m_handle));
 #else
+    // Unmaps only a library with no STB_GNU_UNIQUE symbol, as built by
+    // vkm_gameplay_module_options, and never under Tracy (docs/reference/scripting.md).
+    // Nothing may keep a pointer into the old copy - see ScriptModule::releaseRegistrations.
     ::dlclose(m_handle);
 #endif
     m_handle = nullptr;

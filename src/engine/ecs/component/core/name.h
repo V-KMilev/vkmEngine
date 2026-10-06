@@ -9,18 +9,20 @@ namespace Vkm::Engine {
 /**
  * @brief Component for giving entities a human-readable name.
  *
- * Fixed-size char array to keep SparseSet storage cache-friendly: no heap
- * allocation, safe to memcpy, trivially copyable. A plain aggregate like every
- * other component - build one from a C-string with makeName().
+ * A fixed-size array, so it is trivially copyable with no heap allocation. Build
+ * one from a C-string with makeName().
  */
 struct Name {
     char value[64] = {};
 };
+
 /**
- * @brief Build a Name from a C-string, truncating safely into the fixed buffer.
+ * @brief Build a Name from a C-string, truncating into the fixed buffer.
  *
- * Copies at most sizeof(Name::value) - 1 bytes and always null-terminates; a
- * null @p str yields an empty Name.
+ * Always null-terminates.
+ *
+ * @param str C-string to copy; null yields an empty Name.
+ * @return The Name holding it.
  */
 inline Name makeName(const char* str) {
     Name name;

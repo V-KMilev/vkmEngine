@@ -1,6 +1,7 @@
 #include "core/clock.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "core/engine_config.h"
 
@@ -12,20 +13,23 @@ void Clock::beginFrame() {
     m_started   = true;
     m_last      = now;
 
-    // Only measured time reaches the accumulator, so the cap below can only
-    // ever discard wall time. Steps that were asked for are drained as a count
-    // by consumeFixedStep and cannot be lost to it.
-    const float measured = m_paused ? 0.0f : m_deltaTime * m_timeScale;
+    const float measured = std::min(
+        m_paused ? 0.0f : m_deltaTime * m_timeScale * m_pacing,
+        Config::MAX_FRAME_ACCUMULATOR
+    );
     m_accumulator = std::min(m_accumulator + measured, Config::MAX_FRAME_ACCUMULATOR);
 
-    // What a frame-rate reader is owed: the time the world is about to advance
-    // by, which is the measured span plus whatever was commanded.
     m_simDelta = measured + static_cast<float>(m_pendingSteps) * m_fixedStep;
+
+    // A lag, not a window: the weight comes from the delta, so it holds at any frame rate.
+    constexpr float SMOOTHING_SECONDS = 0.5f;
+    const float weight = m_smoothedDelta > 0.0f
+        ? 1.0f - std::exp(-m_deltaTime / SMOOTHING_SECONDS)
+        : 1.0f;
+    m_smoothedDelta += (m_deltaTime - m_smoothedDelta) * weight;
 }
 
 bool Clock::consumeFixedStep() {
-    // Commanded steps first and exactly: they are a count, never a span, so no
-    // rate can round one away.
     if (m_pendingSteps > 0)                --m_pendingSteps;
     else if (m_accumulator >= m_fixedStep) m_accumulator -= m_fixedStep;
     else return false;

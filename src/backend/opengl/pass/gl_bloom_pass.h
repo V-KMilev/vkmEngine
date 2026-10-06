@@ -1,23 +1,18 @@
 #pragma once
 
-#include <memory>
+#include "gl_compute_shader.h"
 
 #include "gl_pass.h"
-
-namespace Vkm::GL {
-    class Shader;
-}
 
 namespace Vkm::Engine {
 
 /**
- * @brief Energy-conserving bloom over the HDR scene (COD/Jimenez).
+ * @brief Thresholded bloom over the HDR scene (COD/Jimenez).
  *
- * Progressively downsamples the HDR scene into the bloom mip chain (Karis-
- * averaged, soft-knee first tap to tame fireflies), then additively upsamples
- * with a 3x3 tent. Mip 0 is left holding the final bloom, which the composite
- * pass blends in before tonemap. Runs after the HDR scene is fully resolved
- * (forward, decals, fog, DoF) and before the grid + composite.
+ * Downsamples the complete HDR scene into the mip chain (Karis-averaged, soft-knee first tap),
+ * then additively upsamples with a 3x3 tent; mip 0 ends holding the light past the threshold
+ * (see GLFrameContext::bloomReady). Each level is a compute dispatch: on this backend's driver
+ * a framebuffer bind and a draw cost the CPU several times a dispatch.
  */
 class GLBloomPass : public GLPass {
     public:
@@ -34,8 +29,8 @@ class GLBloomPass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        std::unique_ptr<Vkm::GL::Shader> m_down;
-        std::unique_ptr<Vkm::GL::Shader> m_up;
+        Vkm::GL::ComputeShader m_down;
+        Vkm::GL::ComputeShader m_up;
 };
 
 } // namespace Vkm::Engine

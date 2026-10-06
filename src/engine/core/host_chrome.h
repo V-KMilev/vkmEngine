@@ -3,42 +3,19 @@
 #include <cstdint>
 
 namespace Vkm::Engine {
-    class WindowManager;
-}
 
-namespace Vkm::Engine {
+class WindowManager;
 
 /**
  * @brief What an authoring host tells the engine about the frame it draws over.
  *
- * The editor is a frame around the engine's output, not a window beside it: it
- * lays panels out and leaves the scene a rect in the middle, and it takes the
- * pointer whenever the cursor is over one of those panels. Four systems need
- * those two answers - render and visibility size themselves to the rect, the
- * game UI hit-tests inside it, the camera controller stops flying while a panel
- * has the pointer - and none of them has any business knowing an editor exists.
+ * The host frames the engine's output: panels around a scene rect, taking the
+ * pointer over them. Readers take it off the frame context; unset, it is the
+ * whole window with nothing captured.
  *
- * So the host states it once, here, and every reader takes it off the frame
- * context. A runtime states nothing at all: the defaults are the whole window
- * and nobody holding the pointer, which is what a shipped game wants.
- *
- * Written in the UI stage and read in the stages before it, so a reader sees
- * the rect the host laid out on the previous frame. That is the trade the
- * editor has always made - the alternative is laying the panels out twice - and
- * it shows only on a resize.
+ * Written in the Editor stage, so earlier stages see the previous frame's rect.
  */
 class HostChrome {
-    public:
-        HostChrome()  = default;
-        ~HostChrome() = default;
-
-        // A plain value: it owns nothing, and the engine holds exactly one.
-        HostChrome(const HostChrome& other) = default;
-        HostChrome& operator=(const HostChrome& other) = default;
-
-        HostChrome(HostChrome && other) = default;
-        HostChrome& operator=(HostChrome && other) = default;
-
     public:
         /**
          * @brief A rect in framebuffer pixels: the unit glViewport takes.
@@ -50,15 +27,25 @@ class HostChrome {
             uint32_t height = 0;
         };
 
+    public:
+        HostChrome()  = default;
+        ~HostChrome() = default;
+
+        HostChrome(const HostChrome& other) = default;
+        HostChrome& operator=(const HostChrome& other) = default;
+
+        HostChrome(HostChrome && other) = default;
+        HostChrome& operator=(HostChrome && other) = default;
+
+    public:
         /**
          * @brief Declare the rect inside the window the 3D scene renders into.
          *
-         * @param x     Left edge in framebuffer pixels. A host working in window
-         *              screen coordinates (an ImGui rect) multiplies by
-         *              WindowManager::framebufferScale first.
+         * @param x     Left edge in framebuffer pixels; scale screen coordinates
+         *              by WindowManager::framebufferScale first.
          * @param y     Top edge, same units.
-         * @param width Width in framebuffer pixels; zero means the whole window.
-         * @param height Height in framebuffer pixels; zero means the whole window.
+         * @param width Zero means the whole window.
+         * @param height Zero means the whole window.
          */
         void setViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
             m_viewport = ViewportRect{x, y, width, height};
@@ -67,37 +54,39 @@ class HostChrome {
         /**
          * @brief The declared rect, resolved against the window it sits in.
          *
-         * A zero extent means "no host has said otherwise", so the window fills
-         * in - which is why this needs the window rather than answering from its
-         * own state. Keeping the fallback here rather than in each reader is the
-         * point: three systems ask, and a game host answers none of them.
-         *
-         * @param window The window the scene is drawn into.
-         * @return The viewport rect in framebuffer pixels, never zero-sized
-         *         unless the window itself is.
+         * @param window Window the scene is drawn into; fills a zero extent.
+         * @return Rect in framebuffer pixels, zero-sized only if the window is.
          */
         ViewportRect viewport(const WindowManager& window) const;
 
         /**
          * @brief Declare that the host's own UI, not the scene, has the devices.
          *
-         * Two answers rather than one because the two are genuinely independent:
-         * a text field being typed into takes the keyboard while the pointer is
-         * still over the viewport, and a panel under the cursor takes the
-         * pointer while nothing is focused.
+         * Separate, since a focused text field takes the keyboard while the
+         * pointer is over the viewport, and a panel takes the pointer unfocused.
          *
-         * @param pointer  Whether host UI is under the cursor or dragging.
-         * @param keyboard Whether host UI is taking text input.
+         * @param pointer  Host UI is under the cursor or dragging, or the host
+         *                 has taken the view from the game (an ejected session).
+         * @param keyboard A field is typed into, a popup or rebind waits for a
+         *                 key, or the host has taken the view from the game.
          */
         void setCapture(bool pointer, bool keyboard) {
             m_capturePointer  = pointer;
             m_captureKeyboard = keyboard;
         }
 
-        /// @return Whether the host's UI owns the pointer this frame.
+        /**
+         * @brief Whether the host's UI owns the pointer this frame.
+         *
+         * @return The last setCapture() pointer flag.
+         */
         bool capturesPointer() const { return m_capturePointer; }
 
-        /// @return Whether the host's UI owns the keyboard this frame.
+        /**
+         * @brief Whether the host's UI owns the keyboard this frame.
+         *
+         * @return The last setCapture() keyboard flag.
+         */
         bool capturesKeyboard() const { return m_captureKeyboard; }
 
     private:

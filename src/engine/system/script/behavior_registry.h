@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "core/reflect.h"
 #include "system/script/behavior.h"
 
 namespace Vkm::Engine {
@@ -13,15 +14,23 @@ namespace Vkm::Engine {
 /**
  * @brief Name -> factory registry for Behavior subclasses.
  *
- * The C++ analogue of Unreal's class registration. Game code registers each
- * behavior type at startup (registerBehavior<T>()); serialization recreates
- * instances by name (create("PotionRunner")). A single process-wide registry
- * reached through get() (it must be reachable from game-DLL code).
+ * A gameplay module registers its types from vkmRegisterBehaviors. One per process,
+ * since game-DLL code must reach it.
  */
 class BehaviorRegistry {
     public:
         using Factory = std::function<std::unique_ptr<Behavior>()>;
 
+    public:
+        ~BehaviorRegistry() = default;
+
+        BehaviorRegistry(const BehaviorRegistry& other) = delete;
+        BehaviorRegistry& operator=(const BehaviorRegistry& other) = delete;
+
+        BehaviorRegistry(BehaviorRegistry && other) = delete;
+        BehaviorRegistry& operator=(BehaviorRegistry && other) = delete;
+
+    public:
         static BehaviorRegistry& get();
 
         /**
@@ -29,32 +38,49 @@ class BehaviorRegistry {
          *
          * A duplicate name logs a warning and overwrites the existing factory.
          *
-         * @param name    Key the behavior type is registered and created under.
-         * @param factory Callable that constructs a fresh instance of the type.
+         * @param name    Key the type is registered and created under.
+         * @param factory Constructs a fresh instance.
          */
         void registerBehavior(std::string name, Factory factory);
 
         /**
-         * @brief Register T under its T::TYPE_NAME, the single source of truth it also
-         * returns from Behavior::typeName().
+         * @brief Register T under the name its reflect block records.
+         *
+         * The same string typeName() returns, so the save and load keys cannot differ.
+         *
+         * @tparam T Behavior subclass with a VKM_REFLECT block, default-constructible.
          */
         template<typename T>
         void registerBehavior() {
-            registerBehavior(T::TYPE_NAME, [] {
-                return std::make_unique<T>();
-            });
+            registerBehavior(Reflect::Traits<T>::NAME, [] { return std::make_unique<T>(); });
         }
 
         /**
-         * @brief Create a fresh instance by name, or nullptr (and a logged error) if
-         * the name is unknown.
+         * @brief Register every type in @p Ts, in order, as registerBehavior<T>() does.
+         *
+         * @code
+         * BehaviorRegistry::get().registerBehaviors<Spinner, Health, Door>();
+         * @endcode
+         *
+         * @tparam Ts Behavior subclasses with VKM_REFLECT blocks.
+         */
+        template<typename... Ts>
+        void registerBehaviors() {
+            (registerBehavior<Ts>(), ...);
+        }
+
+        /**
+         * @brief Create a fresh instance by name.
+         *
+         * @param name Registered type name.
+         * @return The new instance, or nullptr, logged, when the name is unknown.
          */
         std::unique_ptr<Behavior> create(const std::string& name) const;
 
         /**
          * @brief Report whether @p name has a registered factory.
          *
-         * @param name Behavior type name to look up.
+         * @param name Behavior type name.
          * @return True if a factory is registered under @p name.
          */
         bool contains(const std::string& name) const;
@@ -62,26 +88,14 @@ class BehaviorRegistry {
         /**
          * @brief List every registered behavior name, sorted.
          *
-         * Used to populate the editor's add-behavior menu.
-         *
-         * @return Alphabetically sorted copy of all registered type names.
+         * @return Sorted copy of the names.
          */
         std::vector<std::string> names() const;
 
         /**
-         * @brief Drop every registered factory.
-         *
-         * Used before unloading the game module on hot-reload, since the
-         * factories close over module code.
+         * @brief Drop every registered factory; call before unloading the module whose code they hold.
          */
         void clear();
-
-    public:
-        BehaviorRegistry(const BehaviorRegistry& other) = delete;
-        BehaviorRegistry& operator=(const BehaviorRegistry& other) = delete;
-
-        BehaviorRegistry(BehaviorRegistry && other) = delete;
-        BehaviorRegistry& operator=(BehaviorRegistry && other) = delete;
 
     private:
         BehaviorRegistry() = default;

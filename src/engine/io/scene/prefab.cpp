@@ -20,11 +20,11 @@
 #include "ecs/component/physics/ragdoll.h"
 #include "ecs/component/prefab/prefab_entity.h"
 #include "ecs/component/prefab/prefab_instance.h"
+#include "ecs/hierarchy_operations.h"
 #include "io/asset/asset_serializer.h"
 #include "io/project_paths.h"
 #include "io/json_file.h"
 #include "io/scene/scene_serializer.h"
-#include "system/hierarchy/hierarchy_operations.h"
 
 namespace Vkm::Engine::Prefab {
 
@@ -32,33 +32,18 @@ namespace {
 
 using nlohmann::json;
 
-// Bumped when the layout below changes. A prefab written by a newer build is
-// refused rather than half-read, the same contract scenes use.
+// Bumped when the layout below changes. A newer prefab is refused rather than
+// half-read, as scenes are.
 constexpr int PREFAB_FORMAT_VERSION = 3;
-
-/**
- * @brief Where a prefab reference points on disk.
- *
- * A prefab path in a scene names project content, and the working directory is
- * the engine root, so a bare open or write would land beside the engine. An
- * absolute path passes through for a caller that already resolved one.
- */
-std::filesystem::path resolvePath(const std::string& path) {
-    return std::filesystem::path(path).is_absolute()
-        ? std::filesystem::path(path)
-        : (ProjectPaths::projectRoot() / path).lexically_normal();
-}
 
 /**
  * @brief The unsigned number @p from stores at @p key, or @p fallback.
  *
- * A prefab is authored JSON, so every key may be missing or hold a value of any
- * type, and json::value throws when it cannot convert. A key of the wrong type
- * reads here as an absent one, like a key the reader does not find at all.
+ * A key of the wrong type reads as absent, where json::value would throw.
  *
- * @param from Object to read; a value that is not an object holds no keys.
+ * @param from Object to read; a non-object holds no keys.
  * @param key Key to look for.
- * @param fallback Result when the key is absent or is not an unsigned number.
+ * @param fallback Result when the key is absent or not an unsigned number.
  * @return The stored number, or @p fallback.
  */
 uint32_t numberOr(const json& from, const char* key, uint32_t fallback) {
@@ -69,8 +54,12 @@ uint32_t numberOr(const json& from, const char* key, uint32_t fallback) {
 /**
  * @brief The identity of the entity stored at @p index.
  *
- * Index 0 is the root by contract, so a file that disagrees is repaired rather
- * than trusted.
+ * Index 0 is the root by contract; a file that disagrees is repaired.
+ *
+ * @param entities The prefab document's entities array.
+ * @param index    Position of the entry in it.
+ * @return The entry's uid; PrefabEntity::ROOT at index 0, the index itself when
+ *         the entry carries no usable uid.
  */
 uint32_t uidAt(const json& entities, size_t index) {
     if (index == 0) return PrefabEntity::ROOT;
@@ -80,23 +69,25 @@ uint32_t uidAt(const json& entities, size_t index) {
 /**
  * @brief Read @p path and check it is a prefab this build can build from.
  *
- * The one place a prefab document is read, so it is the one place its shape and
- * its identities are established: past here an entry is an object, its component
- * block (if it has one) is an object too, and no two entries answer to the same
- * uid. A file that disagrees is refused whole rather than half-built, because it
- * was hand-edited into something that describes nothing.
+ * Past here, each entry and its component block are objects, uids are unique,
+ * and a child's parent is an earlier entry; a file that disagrees is refused whole.
  *
  * @param path Prefab reference, project-relative or absolute.
  * @param doc Receives the document on success.
- * @return True when the file parsed, its version is readable and it holds entities.
+ * @return True when the file parsed and is a prefab this build can build from.
  */
 bool readPrefab(const std::string& path, json& doc) {
-    if (!detail::readJsonFile(resolvePath(path).string(), doc, "Prefab")) return false;
+    const std::filesystem::path resolved = ProjectPaths::resolveProjectPath(path);
+    if (!detail::readJsonFile(resolved.string(), doc, "Prefab")) return false;
 
     const uint32_t version = numberOr(doc, "version", 0);
     if (version == 0 || version > PREFAB_FORMAT_VERSION) {
-        LOG_ERROR("Prefab '%s' version %u is unreadable by this build (%d)",
-                  path.c_str(), version, PREFAB_FORMAT_VERSION);
+        LOG_ERROR(
+            "Prefab '%s' version %u is unreadable by this build (%d)",
+            path.c_str(),
+            version,
+            PREFAB_FORMAT_VERSION
+        );
         return false;
     }
     if (!doc.contains("entities") || !doc["entities"].is_array() || doc["entities"].empty()) {
@@ -112,19 +103,35 @@ bool readPrefab(const std::string& path, json& doc) {
     std::set<uint32_t> seen;
     for (size_t i = 0; i < entities.size(); ++i) {
         const auto components = entities[i].find("components");
-        if (!entities[i].is_object() ||
-            (components != entities[i].end() && !components->is_object())) {
+        if (!entities[i].is_object() || (components != entities[i].end() && !components->is_object())) {
             LOG_ERROR("Prefab '%s' entry %zu does not describe an entity", path.c_str(), i);
             return false;
         }
-        // The uid is the address half of every override, so two entries wearing
-        // one number leave an override addressing both and neither: applying it
-        // patches every match, while re-reading it stops at the first.
+        // An override addresses a uid: with a duplicate, applying it patches both
+        // while re-reading stops at the first.
         const uint32_t uid = uidAt(entities, i);
         if (!seen.insert(uid).second) {
-            LOG_ERROR("Prefab '%s' gives uid %u to two entities; an override addresses one",
-                      path.c_str(), uid);
+            LOG_ERROR(
+                "Prefab '%s' gives uid %u to two entities; an override addresses one",
+                path.c_str(),
+                uid
+            );
             return false;
+        }
+
+        // The build parents each entry to created[parent] unchecked, so a parent
+        // must be an earlier entry.
+        if (i > 0) {
+            const auto parent = entities[i].find("parent");
+            if (parent == entities[i].end() || !parent->is_number_unsigned()
+                || parent->get<uint64_t>() >= i) {
+                LOG_ERROR(
+                    "Prefab '%s' entry %zu does not name an earlier entry as its parent",
+                    path.c_str(),
+                    i
+                );
+                return false;
+            }
         }
     }
     return true;
@@ -133,21 +140,12 @@ bool readPrefab(const std::string& path, json& doc) {
 /**
  * @brief Bring the assets @p doc names into @p resources before it is read.
  *
- * A prefab describes entities that reference meshes, materials and textures by
- * name, and a name resolves to nothing unless something already loaded it. Which
- * made a prefab instantiable only where a scene happened to have loaded the same
- * assets first: dropped into a scene that never held its mesh, it built entities
- * that draw nothing. So the file lists what it references, the way a scene does,
- * and every path that reads components out of it comes through here.
- *
- * A prefab with no assets block is left alone. A block that cannot be loaded is
- * reported and does not stop the build - an instance with a missing mesh is a
- * better answer than an instance with no entities.
+ * A name resolves to nothing unless its asset is loaded. A block that cannot be
+ * loaded is reported and does not stop the build.
  *
  * @param doc Prefab document, already accepted by readPrefab.
  * @param path Prefab reference, for the message.
- * @param resources Receives the assets; the live manager in the editor, the
- *                  staging one during a scene load.
+ * @param resources Receives the assets.
  */
 void ensureAssets(const json& doc, const std::string& path, ResourceManager& resources) {
     const auto assets = doc.find("assets");
@@ -161,42 +159,25 @@ void ensureAssets(const json& doc, const std::string& path, ResourceManager& res
 }
 
 /**
- * @brief Collect @p root and every descendant, parents before children.
+ * @brief One drift line: the prefab, the override's address, and why it was not applied.
  *
- * Ordering matters on load: a child's parent must already exist when the link
- * is wired, and a breadth-first walk guarantees it without a second pass.
- */
-std::vector<EntityId> collectSubtree(const Scene& scene, EntityId root) {
-    std::vector<EntityId> out{root};
-    for (size_t i = 0; i < out.size(); ++i) {
-        HierarchyOperations::forEachChild(scene, out[i], [&](EntityId child) {
-            if (scene.isAlive(child)) out.push_back(child);
-        });
-    }
-    return out;
-}
-
-/**
- * @brief One drift line, in the shape prefab.h describes.
+ * @param what   Prefab path.
+ * @param o      The override that was not applied.
+ * @param reason Why not.
+ * @return The message.
  */
 std::string driftMessage(const std::string& what, const PrefabOverride& o, const char* reason) {
-    return "Override in '" + what + "' on entity " + std::to_string(o.uid) +
-           " (" + o.component + "." + o.field + "): " + reason;
+    return "Override in '" + what + "' on entity " + std::to_string(o.uid)
+        + " (" + o.component + "." + o.field + "): " + reason;
 }
 
 /**
  * @brief Does @p value still fit the shape the prefab holds in @p was?
  *
- * The prefab's own value is the schema, so the comparison walks both together
- * rather than stopping at the top-level type. An array of the right kind holding
- * the wrong elements passes a one-level check and then throws inside the
- * component loader, which is the failure this exists to prevent.
- *
- * Numbers are interchangeable (an int-valued float writes as an int), an object
- * must carry exactly the same keys, and an array must hold elements of the same
- * shape. Only a numeric array is length-checked - that is a fixed-width vector
- * (vec3, quat) whose length is part of its type, where an array of objects is a
- * list its loader reads at whatever length it finds.
+ * Walks both, since an array holding the wrong elements passes a one-level check
+ * and then throws in the component loader. Numbers are interchangeable (an
+ * int-valued float writes as an int); objects need exactly the same keys. Only a
+ * numeric array (vec3, quat) is length-checked; an array of objects is a list.
  *
  * @param was The prefab's value for the field.
  * @param value The override's value.
@@ -228,14 +209,9 @@ bool sameShape(const json& was, const json& value) {
 /**
  * @brief Write @p overrides for @p uid into a copy of that entity's components.
  *
- * The merge is JSON-on-JSON and happens *before* loadComponents, which matters:
- * the loaders construct a fresh component and assign, and several are not
- * safe to run twice (Mesh's load clobbers its handles from an absent key,
- * ScriptComponent's clears its behaviors, LOD's appends without clearing). Patch
- * the document and let each loader run exactly once, as it already does.
- *
- * An override that no longer fits the prefab is kept in memory and reported
- * rather than applied - see the drift rules in prefab.h.
+ * Merged as JSON before loadComponents: a loader replaces what it reads (a vector
+ * field, ScriptComponent's behavior list), so a patch read over a loaded component
+ * would discard it. An override that no longer fits is reported, not applied.
  *
  * @param base The entity's components object from the prefab document.
  * @param uid The entity being built.
@@ -244,9 +220,13 @@ bool sameShape(const json& was, const json& value) {
  * @param drift Receives one message per override that could not be applied.
  * @return The components object to load, patched where the override fitted.
  */
-json applyOverrides(const json& base, uint32_t uid,
-                    const std::vector<PrefabOverride>& overrides,
-                    const std::string& what, std::set<std::string>* drift) {
+json applyOverrides(
+    const json& base,
+    uint32_t uid,
+    const std::vector<PrefabOverride>& overrides,
+    const std::string& what,
+    std::set<std::string>* drift
+) {
     json out = base;
 
     for (const PrefabOverride& o : overrides) {
@@ -256,22 +236,26 @@ json applyOverrides(const json& base, uint32_t uid,
             if (drift) drift->insert(driftMessage(what, o, reason));
         };
 
-        // The root's Transform is the instance's pose, written by the scene and
-        // reapplied after the components load, so an override on it could never
-        // take effect. Say so rather than appear to work.
+        // The root's Transform is the instance's pose, reapplied after load, so an
+        // override on it could never take effect.
         if (uid == PrefabEntity::ROOT && o.component == "Transform") {
             report("the root Transform is the instance's own pose");
             continue;
         }
-        // The other direction: a Script override would work, and must not. The
-        // component serializes as one field holding the whole behavior list, so
-        // the only address the format can spell replaces every behavior on it.
+        // A Script override would work, and must not: the component is one field
+        // holding the whole behavior list, so it would replace every behavior.
         if (o.component == "Script") {
             report("behavior fields are the prefab's, not per-instance");
             continue;
         }
-        if (!out.contains(o.component))            { report("no such component"); continue; }
-        if (!out[o.component].contains(o.field))   { report("no such field");     continue; }
+        if (!out.contains(o.component)) {
+            report("no such component");
+            continue;
+        }
+        if (!out[o.component].contains(o.field)) {
+            report("no such field");
+            continue;
+        }
 
         json value;
         try {
@@ -281,9 +265,8 @@ json applyOverrides(const json& base, uint32_t uid,
             continue;
         }
 
-        // Type-check against what the prefab holds. Without this a drifted field
-        // throws inside the component loader, and that aborts the whole scene
-        // load - one stale override would take down every scene using it.
+        // Without this a drifted field throws in the loader and the whole
+        // instance is abandoned.
         if (!sameShape(out[o.component][o.field], value)) {
             report("type does not match the prefab's");
             continue;
@@ -297,58 +280,70 @@ json applyOverrides(const json& base, uint32_t uid,
 
 } // namespace
 
-bool isInsideInstance(const Scene& scene, EntityId id) {
-    if (!scene.has<Hierarchy>(id)) return false;
-
-    // Bounded by the live entity count rather than by a depth: a chain longer
-    // than that has already revisited an entity, so a hand-edited file that made
-    // a cycle still terminates and no real subtree is cut short.
-    EntityId cursor = scene.get<Hierarchy>(id).parent;
-    for (size_t step = 0; step <= scene.entityCount() && scene.isAlive(cursor); ++step) {
-        if (scene.has<PrefabInstance>(cursor)) return true;
-        if (!scene.has<Hierarchy>(cursor)) break;
-        cursor = scene.get<Hierarchy>(cursor).parent;
-    }
-    return false;
+EntityId instanceRootOf(const Scene& scene, EntityId id) {
+    return HierarchyOperations::findInSelfOrAncestors<PrefabInstance>(scene, id);
 }
 
-bool save(Scene& scene, EntityId root, const std::string& path,
-          const ResourceManager& resources) {
+bool isInsideInstance(const Scene& scene, EntityId id) {
+    // From the parent, so the instance root itself answers false.
+    const Hierarchy* node = scene.tryGet<Hierarchy>(id);
+    return node && instanceRootOf(scene, node->parent);
+}
+
+BuiltSlots builtSlotsOf(const Scene& scene, EntityId root) {
+    BuiltSlots slots;
+    for (const EntityId id : HierarchyOperations::collectSubtree(scene, root)) {
+        if (id == root) continue;
+        if (const PrefabEntity* stamped = scene.tryGet<PrefabEntity>(id)) {
+            slots[stamped->uid] = id.slot();
+        }
+    }
+    return slots;
+}
+
+InstanceSlots instanceSlotsOf(const Scene& scene) {
+    InstanceSlots instances;
+    scene.forEach<PrefabInstance>([&](EntityId root, const PrefabInstance&) {
+        instances[root.slot()] = builtSlotsOf(scene, root);
+    });
+    return instances;
+}
+
+bool save(Scene& scene, EntityId root, const std::string& path, const ResourceManager& resources) {
     if (!scene.isAlive(root)) {
         LOG_ERROR("Prefab::save: entity is not alive");
         return false;
     }
 
-    const std::vector<EntityId> subtree = collectSubtree(scene, root);
+    const std::vector<EntityId> subtree = HierarchyOperations::collectSubtree(scene, root);
 
-    // Refuse a subtree that already contains an instance below the root. Saving
-    // it would flatten that instance into this file, silently severing it from
-    // the prefab it came from - the opposite of what nesting looks like it does.
+    // An instance below the root would be flattened into this file, severed from
+    // its prefab.
     for (size_t i = 1; i < subtree.size(); ++i) {
         if (scene.has<PrefabInstance>(subtree[i])) {
-            LOG_ERROR("Prefab::save: '%s' contains a prefab instance; nested prefabs "
-                      "are not supported", path.c_str());
+            LOG_ERROR(
+                "Prefab::save: '%s' contains a prefab instance; nested prefabs are not supported",
+                path.c_str()
+            );
             return false;
         }
     }
 
-    // And the same refusal from the other direction: a root inside somebody else's
-    // instance is not this file's to define, and writing it would stamp an
-    // instance marker inside an instance.
+    // A root inside another instance is not this file's to define.
     if (isInsideInstance(scene, root)) {
-        LOG_ERROR("Prefab::save: '%s' is part of a prefab instance; nested prefabs "
-                  "are not supported", path.c_str());
+        LOG_ERROR(
+            "Prefab::save: '%s' is part of a prefab instance; nested prefabs are not supported",
+            path.c_str()
+        );
         return false;
     }
 
-    // Entity ids are meaningless outside the scene that issued them, so parents
-    // are stored as indices into this file's own array.
+    // Entity ids mean nothing outside their scene, so parents are file indices.
     std::unordered_map<uint32_t, size_t> indexOf;
     for (size_t i = 0; i < subtree.size(); ++i) indexOf[subtree[i].slot()] = i;
 
-    // A prefab names an entity by its place in the file, one-shifted so zero
-    // stays "none". A reference outside the subtree has no place, so it is
-    // dropped rather than written as a number meaning something else elsewhere.
+    // An entity is named by its file index plus one, so zero stays "none"; a
+    // reference outside the subtree is dropped.
     auto byLocalIndex = [&](EntityId e) -> uint32_t {
         const auto it = indexOf.find(e.slot());
         return it != indexOf.end() ? static_cast<uint32_t>(it->second) + 1 : 0u;
@@ -359,36 +354,34 @@ bool save(Scene& scene, EntityId root, const std::string& path,
     doc["version"]  = PREFAB_FORMAT_VERSION;
     doc["entities"] = json::array();
 
-    // The high-water mark is seeded from the file being overwritten as well as
-    // from the live subtree: the entity that held the highest number may be the
-    // one that was just deleted, and only the file still remembers it.
+    // Seeded from the file being overwritten too: the entity with the highest uid
+    // may have just been deleted, and only the file remembers it.
     uint32_t nextUid = 0;
     {
         json existing;
         std::error_code ec;
-        const std::filesystem::path resolved = resolvePath(path);
-        if (std::filesystem::exists(resolved, ec) &&
-            detail::readJsonFile(resolved, existing, "Prefab")) {
+        const std::filesystem::path resolved = ProjectPaths::resolveProjectPath(path);
+        if (std::filesystem::exists(resolved, ec) && detail::readJsonFile(resolved, existing, "Prefab")) {
             nextUid = numberOr(existing, "nextUid", 0);
         }
     }
     for (EntityId id : subtree) {
-        if (scene.has<PrefabEntity>(id)) {
-            nextUid = std::max(nextUid, scene.get<PrefabEntity>(id).uid + 1);
+        if (const PrefabEntity* stamped = scene.tryGet<PrefabEntity>(id)) {
+            nextUid = std::max(nextUid, stamped->uid + 1);
         }
     }
 
-    // Decided here and stamped onto the scene only once the file is on disk, so
-    // a save that could not be written leaves the subtree as it found it: a
-    // subtree numbered against no file would hand one number out twice.
+    // Stamped onto the scene only once the file is written: a subtree numbered
+    // against no file would hand one number out twice.
     nextUid = std::max(nextUid, uint32_t{1});
     std::set<uint32_t> taken{PrefabEntity::ROOT};
     std::vector<uint32_t> uids(subtree.size(), PrefabEntity::ROOT);
     for (size_t i = 1; i < subtree.size(); ++i) {
-        const bool keep = scene.has<PrefabEntity>(subtree[i])
-            && scene.get<PrefabEntity>(subtree[i]).uid != PrefabEntity::ROOT
-            && taken.insert(scene.get<PrefabEntity>(subtree[i]).uid).second;
-        uids[i] = keep ? scene.get<PrefabEntity>(subtree[i]).uid : nextUid++;
+        const PrefabEntity* stamped = scene.tryGet<PrefabEntity>(subtree[i]);
+        const bool keep = stamped
+            && stamped->uid != PrefabEntity::ROOT
+            && taken.insert(stamped->uid).second;
+        uids[i] = keep ? stamped->uid : nextUid++;
     }
 
     for (size_t i = 0; i < subtree.size(); ++i) {
@@ -396,17 +389,16 @@ bool save(Scene& scene, EntityId root, const std::string& path,
 
         json components = json::object();
         SceneSerializer::saveComponents(scene, id, components, resources, name);
-        // The parent link is rewritten as a local index below, so drop the one
-        // saveComponents wrote in scene-entity terms.
+        // The parent is rewritten as a file index below.
         components.erase("Hierarchy");
 
         json entity;
         entity["uid"]        = uids[i];
         entity["components"] = std::move(components);
 
-        if (i > 0 && scene.has<Hierarchy>(id)) {
-            const EntityId parent = scene.get<Hierarchy>(id).parent;
-            auto it = indexOf.find(parent.slot());
+        const Hierarchy* node = i > 0 ? scene.tryGet<Hierarchy>(id) : nullptr;
+        if (node) {
+            auto it = indexOf.find(node->parent.slot());
             if (it != indexOf.end()) entity["parent"] = it->second;
         }
 
@@ -416,35 +408,30 @@ bool save(Scene& scene, EntityId root, const std::string& path,
     doc["nextUid"] = nextUid;
     doc["assets"]  = AssetSerializer::saveAssetsForEntities(scene, subtree, resources);
 
-    detail::writeNonFiniteAsZero(doc, "Prefab");
-    if (!detail::writeJsonFile(resolvePath(path), doc, "Prefab")) return false;
+    if (!detail::writeJsonFile(ProjectPaths::resolveProjectPath(path), doc, "Prefab")) return false;
 
     for (size_t i = 0; i < subtree.size(); ++i) {
-        if (!scene.has<PrefabEntity>(subtree[i])) scene.add(subtree[i], PrefabEntity{});
-        scene.get<PrefabEntity>(subtree[i]).uid = uids[i];
+        PrefabEntity* stamped = scene.tryGet<PrefabEntity>(subtree[i]);
+        if (!stamped) stamped = &scene.add(subtree[i], PrefabEntity{});
+        stamped->uid = uids[i];
     }
 
-    // The subtree that was just written becomes an instance of what it wrote.
-    if (!scene.has<PrefabInstance>(root)) scene.add(root, PrefabInstance{});
-    PrefabInstance& instance = scene.get<PrefabInstance>(root);
+    PrefabInstance* held = scene.tryGet<PrefabInstance>(root);
+    if (!held) held = &scene.add(root, PrefabInstance{});
+    PrefabInstance& instance = *held;
     instance.source = path;
 
-    // The file just written holds what the overrides said, so keeping them would
-    // pin this instance to those values forever: every later edit of the prefab
-    // would reach every instance except the one it was authored from.
     instance.overrides.clear();
 
     LOG_INFO("Saved prefab '%s' (%zu entities)", path.c_str(), subtree.size());
     return true;
 }
 
-EntityId instantiate(Scene& scene, ResourceManager& resources, const std::string& path,
-                     const Transform& at) {
+EntityId instantiate(Scene& scene, ResourceManager& resources, const std::string& path, const Transform& at) {
     const EntityId root = instantiate(scene, resources, path);
     if (!scene.isAlive(root)) return {};
 
-    // The root always carries a Transform: the loader adds one when the prefab
-    // did not save it.
+    // The loader adds a Transform when the prefab did not save one.
     scene.get<Transform>(root) = at;
     return root;
 }
@@ -452,8 +439,7 @@ EntityId instantiate(Scene& scene, ResourceManager& resources, const std::string
 EntityId instantiate(Scene& scene, ResourceManager& resources, const std::string& path) {
     EntityId root = scene.createEntity();
     if (!instantiateInto(scene, resources, path, root)) {
-        // The subtree, not the root: a build that stopped partway has already
-        // parented whatever it managed to create under it.
+        // The subtree: a partial build has already parented entities under it.
         HierarchyOperations::destroyHierarchy(scene, root);
         return {};
     }
@@ -463,9 +449,15 @@ EntityId instantiate(Scene& scene, ResourceManager& resources, const std::string
     return root;
 }
 
-bool instantiateInto(Scene& scene, ResourceManager& resources, const std::string& path,
-                     EntityId root, const std::vector<PrefabOverride>& overrides,
-                     std::set<std::string>* drift) {
+bool instantiateInto(
+    Scene& scene,
+    ResourceManager& resources,
+    const std::string& path,
+    EntityId root,
+    const std::vector<PrefabOverride>& overrides,
+    std::set<std::string>* drift,
+    const BuiltSlots* slots
+) {
     json doc;
     if (!readPrefab(path, doc)) return false;
     ensureAssets(doc, path, resources);
@@ -476,18 +468,27 @@ bool instantiateInto(Scene& scene, ResourceManager& resources, const std::string
     created.reserve(entities.size());
     std::set<uint32_t> built;
 
-    // A failure leaves nothing of this call behind: every entity the file names
-    // exists by the time anything can fail, so the list is the whole of what to
-    // undo. The root is index 0 and belongs to the caller.
+    // Destroys every entity this call created; the root (index 0) is the caller's.
     const auto abandon = [&]() {
         for (size_t i = created.size(); i-- > 1;) scene.destroyEntity(created[i]);
     };
 
-    // Every entity first, so a reference resolves where it is read. The file
-    // names them by position, and position is only an entity once they all
-    // exist.
+    // An earlier build's slot for this uid while it is free, so what addressed
+    // that entity by slot still finds it.
+    const auto createFor = [&](uint32_t uid) {
+        if (slots) {
+            const auto it = slots->find(uid);
+            if (it != slots->end() && !scene.isAliveAtIndex(it->second)) {
+                return scene.createEntityAt(it->second);
+            }
+        }
+        return scene.createEntity();
+    };
+
+    // Every entity first: the file names them by position, so a reference
+    // resolves only once they all exist.
     for (size_t i = 0; i < entities.size(); ++i) {
-        created.push_back(i == 0 ? root : scene.createEntity());
+        created.push_back(i == 0 ? root : createFor(uidAt(entities, i)));
     }
     auto byLocalIndex = [&](uint32_t local) -> EntityId {
         return local <= created.size() ? created[local - 1] : EntityId{};
@@ -500,50 +501,44 @@ bool instantiateInto(Scene& scene, ResourceManager& resources, const std::string
 
         // The identity an override addresses.
         const uint32_t uid = uidAt(entities, i);
-        if (!scene.has<PrefabEntity>(entity)) scene.add(entity, PrefabEntity{});
-        scene.get<PrefabEntity>(entity).uid = uid;
+        PrefabEntity* stamped = scene.tryGet<PrefabEntity>(entity);
+        if (!stamped) stamped = &scene.add(entity, PrefabEntity{});
+        stamped->uid = uid;
         built.insert(uid);
 
         if (entry.contains("components")) {
-            // The root keeps the pose it was placed at; every other component,
-            // and every child, comes from the prefab.
-            const bool keepTransform = (i == 0) && scene.has<Transform>(entity);
-            const Transform placed = keepTransform ? scene.get<Transform>(entity) : Transform{};
+            // The root keeps the pose it was placed at.
+            const Transform* at = i == 0 ? scene.tryGet<Transform>(entity) : nullptr;
+            const bool      keepTransform = at != nullptr;
+            const Transform placed        = at ? *at : Transform{};
 
             const json patched = overrides.empty()
                 ? entry["components"]
                 : applyOverrides(entry["components"], uid, overrides, path, drift);
 
-            // The loaders throw on a malformed block, and this is the boundary
-            // that has to stop it: above are a scene load that would abort
-            // whole, and an editor that would go down on a hand-edited file.
+            // A malformed block throws; it costs this instance, not the caller.
             try {
                 SceneSerializer::loadComponents(patched, scene, entity, resources, resolve);
             } catch (const std::exception& e) {
-                LOG_ERROR("Prefab '%s' entity %u could not be built: %s",
-                          path.c_str(), uid, e.what());
+                LOG_ERROR("Prefab '%s' entity %u could not be built: %s", path.c_str(), uid, e.what());
                 abandon();
                 return false;
             }
 
+            // Re-fetched: adding a Transform in loadComponents may have moved
+            // the storage the pointer above pointed into.
             if (keepTransform) scene.get<Transform>(entity) = placed;
         }
         if (!scene.has<Transform>(entity)) scene.add(entity, Transform{});
 
-        if (i > 0 && entry.contains("parent")) {
-            // Strictly earlier in the walk - the file's own rule, parents
-            // before children. Every entity exists before the walk starts, so
-            // the list's length would admit one naming itself or a later one.
-            const size_t parentIndex = numberOr(entry, "parent", entities.size());
-            if (parentIndex < i) {
-                HierarchyOperations::setParent(scene, entity, created[parentIndex]);
-            }
+        if (i > 0) {
+            // Total: readPrefab refused any entry not naming an earlier parent.
+            const size_t parentIndex = numberOr(entry, "parent", 0);
+            HierarchyOperations::setParent(scene, entity, created[parentIndex]);
         }
     }
 
-    // The one drift case applyOverrides cannot see: it is only handed the
-    // entities the file has, so an override naming one it does not would pass
-    // through every entity unmentioned.
+    // An override naming an entity the file lacks: applyOverrides never sees it.
     if (drift) {
         for (const PrefabOverride& o : overrides) {
             if (built.count(o.uid) == 0) {
@@ -555,14 +550,19 @@ bool instantiateInto(Scene& scene, ResourceManager& resources, const std::string
     return true;
 }
 
-bool reloadComponent(Scene& scene, ResourceManager& resources, const std::string& path,
-                     EntityId entity, uint32_t uid, const std::string& component,
-                     const std::vector<PrefabOverride>& overrides) {
+bool reloadComponent(
+    Scene& scene,
+    ResourceManager& resources,
+    const std::string& path,
+    EntityId entity,
+    uint32_t uid,
+    const std::string& component,
+    const std::vector<PrefabOverride>& overrides
+) {
     if (!scene.isAlive(entity)) return false;
 
-    // The root's Transform is the instance's own pose, and the prefab's authored
-    // one is not a value to give it back - re-reading it here would teleport the
-    // instance the moment one of its overrides was dropped.
+    // The root's Transform is the instance's pose; re-reading the prefab's would
+    // teleport the instance when an override is dropped.
     if (uid == PrefabEntity::ROOT && component == "Transform") return false;
 
     json doc;
@@ -577,20 +577,17 @@ bool reloadComponent(Scene& scene, ResourceManager& resources, const std::string
         const json patched = applyOverrides(entities[i]["components"], uid, overrides, path, nullptr);
         if (!patched.contains(component)) return false;
 
-        // The instance this entity belongs to, so a cross-entity reference in
-        // the re-read component resolves to the instance's own entity rather
-        // than to whatever scene entity holds that file position.
-        const EntityId instanceRoot =
-            HierarchyOperations::findInSelfOrAncestors<PrefabInstance>(scene, entity);
+        // A cross-entity reference resolves within this entity's instance, not to
+        // whatever scene entity holds that file position.
+        const EntityId instanceRoot = instanceRootOf(scene, entity);
         const std::vector<EntityId> subtree =
-            instanceRoot ? collectSubtree(scene, instanceRoot) : std::vector<EntityId>{};
+            instanceRoot ? HierarchyOperations::collectSubtree(scene, instanceRoot) : std::vector<EntityId>{};
         auto byFileUid = [&](uint32_t local) -> EntityId {
             if (local > entities.size()) return {};
             const uint32_t wanted = uidAt(entities, local - 1);
             for (EntityId id : subtree) {
-                if (scene.has<PrefabEntity>(id) && scene.get<PrefabEntity>(id).uid == wanted) {
-                    return id;
-                }
+                const PrefabEntity* held = scene.tryGet<PrefabEntity>(id);
+                if (held && held->uid == wanted) return id;
             }
             return {};
         };
@@ -602,8 +599,13 @@ bool reloadComponent(Scene& scene, ResourceManager& resources, const std::string
         try {
             SceneSerializer::loadComponents(one, scene, entity, resources, resolve);
         } catch (const std::exception& e) {
-            LOG_ERROR("Prefab '%s' entity %u: %s could not be re-read: %s",
-                      path.c_str(), uid, component.c_str(), e.what());
+            LOG_ERROR(
+                "Prefab '%s' entity %u: %s could not be re-read: %s",
+                path.c_str(),
+                uid,
+                component.c_str(),
+                e.what()
+            );
             return false;
         }
 
