@@ -239,6 +239,7 @@ Engine code, single include root `src/engine/`:
 | `platform/net/`            | `UdpSocket`, `winsock_init` (the sockets `net/` speaks over)             |
 | `platform/threading/`      | `ThreadPool` + `parallelFor` (shared-deque pool, see [threading.md](threading.md)) |
 | `platform/library/`        | `DynamicLibrary` (cross-platform `.dll`/`.so` loader for gameplay hot-reload) |
+| `platform/process/`        | `ChildProcess` (a program run in the background, its output collected; how the editor runs vkm) |
 | `debug/`                   | `build_info`, `engine_error_log`, `fault_latch`, `profiler` (Tracy facade), `screenshot` |
 
 OpenGL backend, `src/backend/opengl/` (every file `gl_`-prefixed; includes are

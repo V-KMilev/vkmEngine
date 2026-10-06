@@ -10,7 +10,7 @@
 // docs_tests.cpp checks that tests/ holds a file per row and that
 // docs/reference/building.md names the same set.
 #define VKM_TEST_SUITES(X)                                                                 \
-    X("core",        runCoreTests,           "the axes, the clock, input, parallelFor")    \
+    X("core",        runCoreTests,           "the axes, the clock, input, parallelFor, processes") \
     X("ecs",         runEcsTests,            "slot allocator and event bus")               \
     X("hierarchy",   runHierarchyTests,      "the entity graph everything else stands on") \
     X("query",       runPhysicsQueryTests,   "rays and sweeps: what they hit, where, and what they pass") \

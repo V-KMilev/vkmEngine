@@ -489,6 +489,7 @@ void EditorSystem::serviceFrame(FrameContext& ctx) {
     pollShaderReload(ctx);
     pollScriptRebuild(ctx);
     serviceScriptReload(ctx);
+    m_build.update(m_state, m_scriptModule.modulePath());
 
     // Before any UI reads the selection.
     m_state.pruneSelection(ctx.scene);
@@ -690,6 +691,14 @@ void EditorSystem::update(FrameContext& ctx) {
     // Only beside the dockspace they dock into; without one this frame they would float.
     if (workspace) drawPanels(ec);
 
+    // With no workspace - New Project from the start screen - a run shows in a window of its own.
+    if (!workspace && !m_build.idle()) {
+        const ImVec2 size(EditorStyle::px(720.0f), EditorStyle::px(320.0f));
+        ImGui::SetNextWindowSize(size, ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Build##start")) m_build.draw(m_state);
+        ImGui::End();
+    }
+
     // Floating windows, drawn after the root so they stack on top.
     if (m_state.showPreferences) {
         PROFILE_SCOPE("Panel/Preferences");
@@ -794,6 +803,10 @@ void EditorSystem::drawPanels(EditorContext& ec) {
         ImGui::End();
     }
 
+    // A run brings the bottom row and its Build tab forward.
+    const bool revealBuild = m_build.takeReveal();
+    if (revealBuild) m_state.showAssets = true;
+
     if (m_state.showAssets) {
         if (beginPanel(ASSETS_WINDOW, panelPad)) {
             PROFILE_SCOPE("Panel/AssetBrowser");
@@ -806,6 +819,11 @@ void EditorSystem::drawPanels(EditorContext& ec) {
         }
         ImGui::End();
         if (beginPanel(ERRORS_WINDOW, panelPad)) drawErrorsPanel(ec.errorLog);
+        ImGui::End();
+
+        dockNextBeside(ERRORS_WINDOW);
+        if (revealBuild) ImGui::SetNextWindowFocus();
+        if (beginPanel(BUILD_WINDOW, panelPad)) m_build.draw(m_state);
         ImGui::End();
     }
 }

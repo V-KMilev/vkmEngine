@@ -71,7 +71,10 @@ vkm new lab -t physics_lab      # or potion_runner, stress_arena
 
 The editor offers the same: its start screen lists your projects and, under
 Examples, makes a copy of any of them through New Project. A copy is yours to
-change; the example stays as shipped.
+change; the example stays as shipped. The editor runs vkm for all of it - New
+Project is `vkm new`, File > Build Scripts and Package Game are `vkm build` and
+`vkm package` - and shows what it prints in its Build tab; a project opened with
+no module yet is built as it opens, so a new one runs its code without a terminal.
 
 That version, `engineVersion` in `project.json`, is the one place a project
 records the engine it was made for. Build it against another *minor* release
