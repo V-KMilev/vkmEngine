@@ -83,8 +83,8 @@ float ViewportToolbar::toolStripWidth() {
 }
 
 float ViewportToolbar::viewBarWidth() {
-    return EditorStyle::overlayComboWidth() * 2.0f + overlayButton() * 2.0f
-        + overlayGap() * 2.0f + overlayGroupGap() + EditorStyle::overlayStripChrome();
+    return EditorStyle::overlayComboWidth() * 2.0f + overlayButton() * 3.0f
+        + overlayGap() * 3.0f + overlayGroupGap() + EditorStyle::overlayStripChrome();
 }
 
 float ViewportToolbar::viewBarBottom() {
@@ -112,13 +112,20 @@ void ViewportToolbar::drawViewBar(EditorContext& ec) {
         centreOnButtonRow();
         drawViewCombo(ec);
 
-        // The two that fly the view go with it when it stands down for a session.
+        // The ones that fly the view go with it when it stands down for a session.
         const bool haveSel = state.selectedEntity && ctx.scene.isAlive(state.selectedEntity);
-        char frameTip[80], focTip[80];
+        const bool ortho   = camera.isOrthographic();
+        char projTip[80], frameTip[80], focTip[80];
+        const char* projName = ortho ? "Orthographic (to perspective)" : "Perspective (to orthographic)";
+        tipFor(projTip, sizeof(projTip), projName, kb.toggleOrthographic);
         tipFor(frameTip, sizeof(frameTip), "Frame All", kb.frameAll);
         tipFor(focTip, sizeof(focTip), "Focus camera on selection", kb.focusSelected);
         ImGui::SameLine(0, overlayGroupGap());
         ImGui::SetCursorPosY(overlayPad());
+        const EditorIcon projIcon = ortho ? EditorIcon::Orthographic : EditorIcon::Perspective;
+        if (iconButton("proj", projIcon, false, camera.isActive(), projTip, overlayButton()))
+            camera.setOrthographic(!ortho);
+        ImGui::SameLine();
         if (iconButton("frameAll", EditorIcon::FrameAll, false, camera.isActive(), frameTip, overlayButton()))
             ViewFraming::frameAll(ctx, camera);
         ImGui::SameLine();

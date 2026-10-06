@@ -24,7 +24,7 @@ using nlohmann::json;
 
 // Bumped when a change makes an older file mean something else; a file of
 // another version is refused whole (readVersioned).
-constexpr int FILE_VERSION      = 4;  ///< editor_settings.json, the project's.
+constexpr int FILE_VERSION      = 5;  ///< editor_settings.json, the project's.
 constexpr int USER_FILE_VERSION = 1;  ///< editor_user.json, the person's.
 
 /**
@@ -170,13 +170,15 @@ void writeField(json& j, const char* key, const M& member) {
  * @brief Write the editor's viewpoint on one scene.
  *
  * @param view Viewpoint to write.
- * @return The position and the two angles, in radians.
+ * @return The position, the two angles in radians, and the projection.
  */
 json viewpointToJson(const EditorViewpoint& view) {
     return json{
         {"position", {view.position.x, view.position.y, view.position.z}},
         {"yaw", view.yaw},
-        {"pitch", view.pitch}
+        {"pitch", view.pitch},
+        {"orthographic", view.orthographic},
+        {"orthoHeight", view.orthoHeight}
     };
 }
 
@@ -186,15 +188,21 @@ json viewpointToJson(const EditorViewpoint& view) {
  * @param j The object written by viewpointToJson.
  * @param view Filled from it; false leaves it untouched.
  * @return false when the entry is not one this writer made: a missing or
- *         wrong-length position, or an angle that is not a number.
+ *         wrong-length position, or an angle, flag or height of the wrong type.
  */
 bool viewpointFromJson(const json& j, EditorViewpoint& view) {
     if (!j.is_object()) return false;
-    const auto position = j.find("position");
-    const auto yaw      = j.find("yaw");
-    const auto pitch    = j.find("pitch");
+    const auto position     = j.find("position");
+    const auto yaw          = j.find("yaw");
+    const auto pitch        = j.find("pitch");
+    const auto orthographic = j.find("orthographic");
+    const auto orthoHeight  = j.find("orthoHeight");
     if (position == j.end() || !position->is_array() || position->size() != 3) return false;
     if (yaw == j.end() || !yaw->is_number() || pitch == j.end() || !pitch->is_number()) return false;
+    if (orthographic == j.end() || !orthographic->is_boolean()) return false;
+    if (orthoHeight == j.end() || !orthoHeight->is_number() || !(orthoHeight->get<float>() > 0.0f)) {
+        return false;
+    }
     for (const json& axis : *position) {
         if (!axis.is_number()) return false;
     }
@@ -203,8 +211,10 @@ bool viewpointFromJson(const json& j, EditorViewpoint& view) {
         (*position)[1].get<float>(),
         (*position)[2].get<float>()
     );
-    view.yaw   = yaw->get<float>();
-    view.pitch = pitch->get<float>();
+    view.yaw          = yaw->get<float>();
+    view.pitch        = pitch->get<float>();
+    view.orthographic = orthographic->get<bool>();
+    view.orthoHeight  = orthoHeight->get<float>();
     return true;
 }
 

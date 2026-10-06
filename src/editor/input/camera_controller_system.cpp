@@ -55,6 +55,10 @@ void installCameraBindings(InputMap& map) {
     );
 }
 
+/// The smallest orthographic half-height, and the nearest the focus comes, in world units.
+constexpr float MIN_ORTHO_HEIGHT   = 0.01f;
+constexpr float MIN_FOCUS_DISTANCE = 0.1f;
+
 } // namespace
 
 CameraControllerSystem::Settings CameraControllerSystem::Settings::bounded(Settings settings) {
@@ -90,8 +94,11 @@ void CameraControllerSystem::update(FrameContext& ctx) {
         m_looking = false;
     }
 
-    m_view.position = m_viewpoint.position;
-    m_view.rotation = Math::fromYawPitch(m_viewpoint.yaw, m_viewpoint.pitch);
+    m_view.position           = m_viewpoint.position;
+    m_view.rotation           = Math::fromYawPitch(m_viewpoint.yaw, m_viewpoint.pitch);
+    m_view.camera.projection  = m_viewpoint.orthographic ? ProjectionType::Orthographic
+                                                         : ProjectionType::Perspective;
+    m_view.camera.orthoHeight = m_viewpoint.orthoHeight;
     ctx.hostView = &m_view;
 }
 
@@ -107,6 +114,10 @@ void CameraControllerSystem::fly(FrameContext& ctx) {
         return;
     }
 
+    // A view snapped down an axis stays orthographic only until it is turned.
+    const glm::vec2 turn = m_input.pointerDelta();
+    if (m_axisOrtho && (turn.x != 0.0f || turn.y != 0.0f)) setOrthographic(false);
+
     m_viewpoint.yaw   -= m_input.pointerDelta().x * m_settings.lookSensitivity;
     m_viewpoint.pitch -= m_input.pointerDelta().y * m_settings.lookSensitivity;
     m_viewpoint.pitch = std::clamp(
@@ -119,10 +130,10 @@ void CameraControllerSystem::fly(FrameContext& ctx) {
     const glm::vec3 forward  = Math::computeForward(rotation);
     const glm::vec3 right    = Math::computeRight(rotation);
 
-    glm::vec3& position = m_viewpoint.position;
+    // Orthographic, the wheel zooms; the move keys still move, which is what clears a clip.
     const float scrollDelta = m_input.uiWheel();
     if (std::abs(scrollDelta) > glm::epsilon<float>()) {
-        position += forward * scrollDelta * m_settings.zoomSensitivity;
+        dolly(scrollDelta * m_settings.zoomSensitivity, forward);
     }
 
     float speed = m_settings.moveSpeed * ctx.clock.getDeltaTime();
@@ -130,6 +141,7 @@ void CameraControllerSystem::fly(FrameContext& ctx) {
         speed *= m_settings.speedBoost;
     }
 
+    glm::vec3& position = m_viewpoint.position;
     position += forward            * (m_input.axis(CameraActions::MOVE_FORWARD) * speed);
     position += right              * (m_input.axis(CameraActions::MOVE_RIGHT)   * speed);
     position += Math::WORLD_AXIS_Y * (m_input.axis(CameraActions::MOVE_UP)      * speed);
@@ -153,7 +165,43 @@ void CameraControllerSystem::startFrom(const Scene& scene) {
 void CameraControllerSystem::place(const glm::vec3& target, const glm::vec3& dirToCamera, float distance) {
     m_view.through       = {};
     m_viewpoint.position = target + dirToCamera * distance;
+    m_focusDistance      = std::max(distance, MIN_FOCUS_DISTANCE);
     Math::toYawPitch(-dirToCamera, m_viewpoint.yaw, m_viewpoint.pitch);
+}
+
+void CameraControllerSystem::dolly(float dolly, const glm::vec3& forward) {
+    if (m_viewpoint.orthographic) {
+        // The height a perspective view would frame at the focus after the same dolly.
+        m_viewpoint.orthoHeight = std::max(
+            m_viewpoint.orthoHeight - dolly * halfHeightPerUnit(),
+            MIN_ORTHO_HEIGHT
+        );
+        return;
+    }
+    m_viewpoint.position += forward * dolly;
+    m_focusDistance = std::max(m_focusDistance - dolly, MIN_FOCUS_DISTANCE);
+}
+
+float CameraControllerSystem::halfHeightPerUnit() const {
+    return std::tan(m_view.camera.fovY * 0.5f);
+}
+
+void CameraControllerSystem::setOrthographic(bool orthographic) {
+    m_axisOrtho = false;
+    if (orthographic == m_viewpoint.orthographic) return;
+
+    if (orthographic) {
+        m_viewpoint.orthoHeight = std::max(m_focusDistance * halfHeightPerUnit(), MIN_ORTHO_HEIGHT);
+    } else {
+        // Back to where perspective frames the focus at the height orthographic showed.
+        const glm::quat rotation = Math::fromYawPitch(m_viewpoint.yaw, m_viewpoint.pitch);
+        const glm::vec3 forward  = Math::computeForward(rotation);
+        const glm::vec3 focus    = m_viewpoint.position + forward * m_focusDistance;
+        const float     distance = m_viewpoint.orthoHeight / halfHeightPerUnit();
+        m_focusDistance          = std::max(distance, MIN_FOCUS_DISTANCE);
+        m_viewpoint.position     = focus - forward * m_focusDistance;
+    }
+    m_viewpoint.orthographic = orthographic;
 }
 
 void CameraControllerSystem::focusOn(const glm::vec3& target, float distance) {
@@ -167,6 +215,9 @@ void CameraControllerSystem::focusOn(const glm::vec3& target, float distance) {
         : dir / len;
 
     place(target, dir, distance);
+    if (m_viewpoint.orthographic) {
+        m_viewpoint.orthoHeight = std::max(distance * halfHeightPerUnit(), MIN_ORTHO_HEIGHT);
+    }
     LOG_VERBOSE("FocusOn target=(%.2f,%.2f,%.2f) distance=%.2f", target.x, target.y, target.z, distance);
 }
 
@@ -188,6 +239,29 @@ void CameraControllerSystem::viewFrom(const glm::vec3& target, const glm::vec3& 
         dir.z,
         distance
     );
+}
+
+void CameraControllerSystem::viewAlongAxis(
+    const glm::vec3& target,
+    const glm::vec3& direction,
+    float distance,
+    float clearance
+) {
+    if (!m_active) return;
+
+    // Perspective at `distance` sets the zoom; an orthographic view already has its own.
+    const bool wasOrthographic = m_viewpoint.orthographic;
+    viewFrom(target, direction, distance);
+    if (!wasOrthographic) {
+        setOrthographic(true);
+        m_axisOrtho = true;
+    }
+
+    // Orthographic, standing further back changes nothing but what the near plane cuts;
+    // within half the far plane, so what it looks at stays in range.
+    const float standOff = std::min(std::max(distance, clearance), m_view.camera.zFar * 0.5f);
+    m_viewpoint.position = target + glm::normalize(direction) * standOff;
+    m_focusDistance      = standOff;
 }
 
 } // namespace Vkm::Engine

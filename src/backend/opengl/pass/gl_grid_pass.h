@@ -12,7 +12,8 @@ namespace Vkm::Engine {
  * One fullscreen draw after Composite, so it blends in display space and the axes keep
  * Math::AXIS_COLORS as the gizmos show them. Each pixel finds its ray's point on each plane
  * and its nearest point on each axis, and tests them against the geometry target's depth.
- * Drawn while RenderSettings::gridShown: a line for each axis on, and the plane of each two.
+ * Drawn while RenderSettings::gridShown: a line for each axis on, and the plane of each
+ * two; an orthographic view down an axis draws the plane facing it instead.
  */
 class GLGridPass : public GLPass {
     public:

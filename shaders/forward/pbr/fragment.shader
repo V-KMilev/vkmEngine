@@ -511,7 +511,7 @@ void main() {
     ReflectWeight = vec4(0.0);
     ReflectEnv    = vec4(0.0);
 
-    vec3 V = normalize(u_camera.cameraPosition.xyz - vWorldPos);
+    vec3 V = toViewer(vWorldPos);
 
     vec3 Ng = normalize(vNormal);
     // Interpolation skews the frame; re-orthogonalise, or normal maps and the
