@@ -9,6 +9,7 @@
 #include "resource/resource_manager.h"
 #include "platform/window/window_manager.h"
 #include "core/system.h"
+#include "system/render/render_settings.h"
 #include "core/clock.h"
 #include "core/event/event_bus.h"
 #include "core/host_chrome.h"
@@ -20,14 +21,8 @@ namespace Vkm::Engine {
 /**
  * @brief Engine context: owns core state and runs the main loop.
  *
- * Owns the Scene, ResourceManager, WindowManager, Clock, the EventBus
- * (gameplay pub/sub - infrastructure like the Clock; the loop flushes its
- * queue at the top of the Simulation stage), and the per-stage system
- * pipeline. Profiling goes through the debug/profiler.h Tracy facade; GPU
- * collect is the backend's job, at the tail of each RenderBackend::render().
- *
- * Non-copyable, non-movable, but stack-constructible: tests and
- * headless tooling can spin up their own Engine.
+ * Owns the services handed to systems on FrameContext, and the per-stage system
+ * pipeline. Stack-constructible, so tests and headless tooling can make their own.
  */
 class Engine {
     public:
@@ -41,6 +36,37 @@ class Engine {
         Engine& operator=(Engine && other) = delete;
 
     public:
+        /**
+         * @brief Log "FPS: N (M ms)" to the console once a second.
+         *
+         * @param enabled False to stop.
+         */
+        void setFPSLog(bool enabled = true) { m_fpsLog = enabled; }
+
+        /**
+         * @brief Run the main loop, blocking until the window closes or the process is interrupted.
+         */
+        void run();
+
+        /**
+         * @brief Create and register a system at the given execution stage.
+         *
+         * Stages run in SystemStage order; within one, in registration order.
+         *
+         * @tparam T System subclass to create.
+         * @tparam Args Constructor argument types.
+         * @param stage Frame stage it runs in.
+         * @param args Forwarded to T's constructor.
+         * @return The new system, owned by Engine.
+         */
+        template<typename T, typename... Args>
+        T& addSystem(SystemStage stage, Args&&... args) {
+            auto system = std::make_unique<T>(std::forward<Args>(args)...);
+            T& ref = *system;
+            m_systemsByStage[static_cast<size_t>(stage)].push_back(std::move(system));
+            return ref;
+        }
+
         Scene& getScene()             { return m_scene; }
         const Scene& getScene() const { return m_scene; }
 
@@ -56,9 +82,7 @@ class Engine {
         /**
          * @brief The action map gameplay reads input through.
          *
-         * Exposed so the bootstrap can install a project's bindings and a
-         * controls screen can edit them; systems and behaviors reach it through
-         * the frame context instead.
+         * For the host; systems and behaviors use the frame context.
          */
         InputMap& getInput()             { return m_input; }
         const InputMap& getInput() const { return m_input; }
@@ -69,72 +93,51 @@ class Engine {
         /**
          * @brief What an authoring host says about the frame it draws over.
          *
-         * Exposed for the host that writes it; systems read it off the frame
-         * context. A runtime never touches it.
+         * For the host that writes it; systems read it off the frame context.
          */
         HostChrome& getChrome()             { return m_chrome; }
         const HostChrome& getChrome() const { return m_chrome; }
 
         /**
+         * @brief The quality settings this session draws at.
+         *
+         * The project.json render block, after a player's changes; writable
+         * while the game runs.
+         */
+        RenderSettings& getRenderSettings()             { return m_render; }
+        const RenderSettings& getRenderSettings() const { return m_render; }
+
+        /**
          * @brief The session this end is playing in, offline until told otherwise.
          *
-         * How an application starts a game: the runtime reads its arguments and
-         * calls host() or connect() on this, and the editor leaves it alone so
-         * Play runs a single-player world. Gameplay reaches it through
-         * FrameContext rather than here.
+         * A host starts a game through NetSession::host or NetSession::connect;
+         * gameplay reaches it through FrameContext.
          */
         NetSession& getNet()             { return m_net; }
         const NetSession& getNet() const { return m_net; }
 
-        /**
-         * @brief Log "FPS: N (M ms)" to the console once a second.
-         *
-         * Opt-in and runtime-facing: the editor shows FPS in its status bar, so
-         * it leaves this off to keep the console quiet.
-         */
-        void setFPSLog(bool enabled = true) { m_fpsLog = enabled; }
-
-        /**
-         * @brief Run the main loop (blocks until the window is closed).
-         */
-        void run();
-
-        /**
-         * @brief Create and register a system at the given execution stage.
-         *
-         * Engine takes ownership. Stages run in SystemStage declaration order;
-         * within a stage, systems run in registration order.
-         *
-         * @tparam T System subclass to create.
-         * @tparam Args Constructor argument types.
-         * @param stage Which frame stage this system belongs to.
-         * @param args Forwarded to T's constructor.
-         * @return Reference to the newly created system.
-         */
-        template<typename T, typename... Args>
-        T& addSystem(SystemStage stage, Args&&... args) {
-            auto system = std::make_unique<T>(std::forward<Args>(args)...);
-            T& ref = *system;
-            m_systemsByStage[static_cast<size_t>(stage)].push_back(std::move(system));
-            return ref;
-        }
-
     private:
+        using SystemList = std::vector<std::unique_ptr<System>>;
+
         void initSystems(FrameContext& ctx);
         void shutdownSystems();
 
     private:
+        /// Declared before the scene so it outlives it: a behavior the scene
+        /// destroys unsubscribes from it, even on a throw out of run().
+        EventBus m_events;
+
         Scene m_scene;
         ResourceManager m_resources;
 
-        Clock         m_clock;
-        EventBus      m_events;
-        InputMap      m_input;
-        WindowManager m_window;
-        NetSession    m_net;
-        HostChrome    m_chrome;
+        Clock          m_clock;
+        InputMap       m_input;
+        WindowManager  m_window;
+        NetSession     m_net;
+        HostChrome     m_chrome;
+        RenderSettings m_render;
 
-        std::array<std::vector<std::unique_ptr<System>>, static_cast<size_t>(SystemStage::Count)> m_systemsByStage;
+        std::array<SystemList, static_cast<size_t>(SystemStage::Count)> m_systemsByStage;
 
         bool m_initialized = false;
         bool m_fpsLog      = false;

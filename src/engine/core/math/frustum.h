@@ -3,27 +3,27 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_access.hpp>
 
+#include "core/math/bounds.h"
+
 namespace Vkm::Engine::Math {
 
 /**
  * @brief View frustum for culling: six planes from a view-projection matrix.
  *
- * Planes are normalized and store pre-computed abs(normal) so the AABB test is
- * a handful of branchless dot products instead of per-corner selects.
+ * Stores abs(normal) so the AABB test is branchless dot products.
  * Order: left, right, bottom, top, near, far.
  */
 struct Frustum {
-    glm::vec3 normals[6];     ///< Plane normals (a,b,c), normalized.
-    glm::vec3 absNormals[6];  ///< abs(normal) per plane, pre-computed once.
-    float     d[6];           ///< Plane distance d (the constant in ax+by+cz+d=0).
+    glm::vec3 normals[6];     ///< Normalized.
+    glm::vec3 absNormals[6];
+    float     d[6];           ///< The constant in ax+by+cz+d=0.
 };
 
 /**
  * @brief Extract six normalized frustum planes from a view-projection matrix.
  *
- * @param viewProjection Combined projection * view (the matrix that maps world
- *        space to clip space).
- * @return Frustum with planes in order: left, right, bottom, top, near, far.
+ * @param viewProjection Projection * view, world to clip space.
+ * @return Planes in order: left, right, bottom, top, near, far.
  */
 inline Frustum extractFrustum(const glm::mat4& viewProjection) {
     Frustum frustum;
@@ -31,11 +31,7 @@ inline Frustum extractFrustum(const glm::mat4& viewProjection) {
     const glm::vec4 row1 = glm::row(viewProjection, 1);
     const glm::vec4 row2 = glm::row(viewProjection, 2);
     const glm::vec4 row3 = glm::row(viewProjection, 3);
-    glm::vec4 planes[6] = {
-        row3 + row0, row3 - row0,
-        row3 + row1, row3 - row1,
-        row3 + row2, row3 - row2
-    };
+    glm::vec4 planes[6] = {row3 + row0, row3 - row0, row3 + row1, row3 - row1, row3 + row2, row3 - row2};
     for (int i = 0; i < 6; ++i) {
         const glm::vec3 n = glm::vec3(planes[i]);
         const float length = glm::length(n);
@@ -55,19 +51,13 @@ inline Frustum extractFrustum(const glm::mat4& viewProjection) {
 /**
  * @brief True if the world-space AABB is inside or intersects the frustum.
  *
- * Center + half-extent half-space test: for each plane, the box is outside when
- * the signed center distance plus the projected AABB radius is negative.
- *
- * @param boundsMin World-space AABB minimum.
- * @param boundsMax World-space AABB maximum.
+ * @param f Frustum to test against.
+ * @param bounds Box in world space.
+ * @return False only when the box lies wholly outside one plane.
  */
-inline bool frustumIntersectsAABB(
-    const Frustum& f,
-    const glm::vec3& boundsMin,
-    const glm::vec3& boundsMax
-) {
-    const glm::vec3 center     = (boundsMin + boundsMax) * 0.5f;
-    const glm::vec3 halfExtent = (boundsMax - boundsMin) * 0.5f;
+inline bool frustumIntersectsAABB(const Frustum& f, const AABB& bounds) {
+    const glm::vec3 center     = bounds.center();
+    const glm::vec3 halfExtent = bounds.halfExtent();
     for (int i = 0; i < 6; ++i) {
         const float dist   = glm::dot(f.normals[i], center) + f.d[i];
         const float radius = glm::dot(f.absNormals[i], halfExtent);

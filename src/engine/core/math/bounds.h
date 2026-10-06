@@ -4,22 +4,12 @@
 
 namespace Vkm::Engine::Math {
 
-// Minimum squared extent for a valid AABB. glm::epsilon (~1.19e-7) is too small
-// for world-space coordinates in range [-1000, 1000]. 1e-4 squared = 1e-8.
+// Minimum squared extent for a valid AABB (1e-4 squared). glm::epsilon is too
+// small for world coordinates in [-1000, 1000].
 inline constexpr float BOUNDS_EPSILON_SQ = 1e-8f;
 
 /**
- * @brief An axis-aligned box, which is the most-passed shape in the engine.
- *
- * It travelled as a loose pair of `glm::vec3`s for a long time, which worked
- * because everyone spelled the pairing the same way - and the pairing was the
- * whole rule. A function taking four of them took four parameters that could be
- * given in the wrong order and still compile, and one that produced a box
- * returned it through two out-parameters because it had nothing to return.
- *
- * Naming it costs nothing at run time - two vec3s, same layout as the pair - and
- * turns "min then max, and do not mix two boxes up" from a convention into a
- * type.
+ * @brief An axis-aligned box.
  */
 struct AABB {
     glm::vec3 min{0.0f};
@@ -28,31 +18,24 @@ struct AABB {
     /**
      * @brief True when the box has non-degenerate extent.
      *
-     * Squared, to avoid a sqrt on a test that runs per drawable per frame.
+     * @return Whether the squared diagonal exceeds BOUNDS_EPSILON_SQ.
      */
     bool valid() const noexcept {
         const glm::vec3 extent = max - min;
         return glm::dot(extent, extent) > BOUNDS_EPSILON_SQ;
     }
 
-    /// The midpoint; where a marker, a label or a pivot goes.
     glm::vec3 center() const noexcept { return (min + max) * 0.5f; }
 
-    /// Half the diagonal, which is what a screen-size test scales.
     glm::vec3 halfExtent() const noexcept { return (max - min) * 0.5f; }
 };
 
-
-
 /**
- * @brief Transform an AABB from model space to world space using Arvo's method.
- *
- * Uses algebraic AABB transformation instead of transforming 8 corners.
- * ~7x faster: 18 scalar muls vs 128 for corner-based approach.
+ * @brief Transform an AABB from model to world space by Arvo's method, not 8 corners.
  *
  * @param matrix Model-to-world matrix.
- * @param local  The box in model space.
- * @return The box in world space.
+ * @param local  Box in model space.
+ * @return Box in world space.
  */
 inline AABB transform(const glm::mat4& matrix, const AABB& local) {
     AABB world;
@@ -70,15 +53,40 @@ inline AABB transform(const glm::mat4& matrix, const AABB& local) {
 }
 
 /**
+ * @brief A half-line in world space.
+ */
+struct Ray {
+    glm::vec3 origin{0.0f};
+    glm::vec3 direction{0.0f, 0.0f, -1.0f};   ///< Unit length.
+};
+
+/**
+ * @brief The world-space ray under a point of the image, for either projection.
+ *
+ * The origin is the near-plane point under the pixel, not the eye, which also
+ * holds for orthographic rays that never pass through the camera.
+ *
+ * @param invViewProj Inverse of projection * view.
+ * @param ndc Normalized device coordinates: -1..1 across, +y up.
+ * @return The ray from the near plane toward the far one.
+ */
+inline Ray rayThroughNdc(const glm::mat4& invViewProj, const glm::vec2& ndc) {
+    glm::vec4 nearPoint = invViewProj * glm::vec4(ndc, -1.0f, 1.0f);
+    glm::vec4 farPoint  = invViewProj * glm::vec4(ndc,  1.0f, 1.0f);
+    nearPoint /= nearPoint.w;
+    farPoint  /= farPoint.w;
+    return Ray{glm::vec3(nearPoint), glm::normalize(glm::vec3(farPoint - nearPoint))};
+}
+
+/**
  * @brief Ray-AABB intersection test using the slab method.
  *
  * @param origin    Ray origin in world space.
  * @param invDir    Component-wise inverse of ray direction (1/dir).
- * @param box       The box in world space.
- * @param[out] tHit Distance along the ray to the first intersection ahead of the
- *                  origin - the entry point, or the exit point when the origin is
- *                  already inside the box.
- * @return True if the ray intersects the AABB (with tMax >= 0).
+ * @param box       Box in world space.
+ * @param[out] tHit Distance to the first intersection ahead of the origin - the
+ *                  exit point when the origin is inside.
+ * @return True if the ray hits the box ahead of the origin.
  */
 inline bool rayIntersectsAABB(
     const glm::vec3& origin,
@@ -95,9 +103,8 @@ inline bool rayIntersectsAABB(
     float tMin = glm::max(glm::max(tMinV.x, tMinV.y), tMinV.z);
     float tMax = glm::min(glm::min(tMaxV.x, tMaxV.y), tMaxV.z);
 
-    // An origin inside the box puts tMin behind the ray, so the nearest hit in
-    // front is the exit at tMax. A negative tMin would let any box enclosing
-    // the camera undercut every genuine hit in a `t < nearest` ranking.
+    // Inside the box tMin is behind, so the hit is the exit; a negative tMin would
+    // let a box enclosing the camera undercut every genuine hit in a ranking.
     tHit = tMin > 0.0f ? tMin : tMax;
     return tMax >= tMin && tMax >= 0.0f;
 }

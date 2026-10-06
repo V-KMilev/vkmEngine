@@ -2,51 +2,47 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 
 #include "platform/window/frame_limiter.h"
-#include "platform/window/input_handle.h"
+#include "platform/input/input_handle.h"
 
 struct GLFWwindow;
 struct GLFWmonitor;
 
 namespace Vkm::Engine {
 
-// Window-creation defaults; the GL version is here because WindowManager is what
-// creates the context.
-inline constexpr int OPENGL_MAJOR_VERSION  = 4;     ///< Requested GL context major version.
-inline constexpr int OPENGL_MINOR_VERSION  = 3;     ///< Requested GL context minor version.
-inline constexpr int OPENGL_GLSL_VERSION   = OPENGL_MAJOR_VERSION * 100 + OPENGL_MINOR_VERSION * 10;  ///< GLSL "#version" the shader loader injects (derived: 4.3 -> 430).
-inline constexpr int DEFAULT_WINDOW_WIDTH  = 1920;  ///< Initial window width in pixels.
-inline constexpr int DEFAULT_WINDOW_HEIGHT = 1080;  ///< Initial window height in pixels.
+// Window-creation defaults; the GL version is here because WindowManager creates the context.
+inline constexpr int OPENGL_MAJOR_VERSION  = 4;
+inline constexpr int OPENGL_MINOR_VERSION  = 3;
+/// GLSL "#version" the shader loader injects.
+inline constexpr int OPENGL_GLSL_VERSION   = OPENGL_MAJOR_VERSION * 100 + OPENGL_MINOR_VERSION * 10;
+inline constexpr int DEFAULT_WINDOW_WIDTH  = 1920;
+inline constexpr int DEFAULT_WINDOW_HEIGHT = 1080;
 
 /**
  * @brief Enumerates supported window modes for the application window.
  */
 enum class WindowMode {
-    Fullscreen = 1,    ///< Window occupies the entire screen.
-    Windowed   = 2     ///< Window is in windowed mode.
+    Fullscreen = 1,
+    Windowed   = 2
 };
 
 /**
- * @brief Enumerates supported cursor modes for the application window.
- *
- * - Normal:   Standard visible cursor, can move outside the window.
- * - Hidden:   Cursor is invisible but movement is unrestricted.
- * - Disabled: Cursor is hidden and movement is confined to the window (useful for FPS cameras).
- * - Captured: Cursor is captured and not visible, often for raw input scenarios.
+ * @brief Cursor visibility and confinement for the application window.
  */
 enum class CursorMode {
-    Normal   = 0,    ///< Cursor visible, standard mode.
-    Hidden   = 1,    ///< Cursor hidden.
-    Disabled = 2,    ///< Cursor disabled and locked to window.
-    Captured = 3     ///< Cursor captured for raw input.
+    Normal   = 0,    ///< Visible, free to leave the window.
+    Hidden   = 1,    ///< Invisible, unrestricted.
+    Disabled = 2,    ///< Hidden and confined, as an FPS camera wants.
+    Captured = 3     ///< Visible but confined.
 };
 
 /**
  * @brief Convert a WindowMode enum value to its string representation.
  *
- * @param type The WindowMode to convert.
- * @return const char* String representation of the WindowMode.
+ * @param type The mode to name.
+ * @return Its name, or "UNKNOWN".
  */
 constexpr const char* toString(WindowMode type) {
     switch (type) {
@@ -57,19 +53,10 @@ constexpr const char* toString(WindowMode type) {
 }
 
 /**
- * @brief Owns the application's window, input, and frame limiting.
+ * @brief Owns the application's window, GL context, input, and frame limiting.
  *
- * Encapsulates window creation, rendering-context management, input handling,
- * and frame-rate limiting. Constructed and owned by the Engine - not a
- * singleton; the engine holds the single instance.
- *
- * **A closed window accepts every request and performs none**, and reporters
- * answer zero. The same shape the audio system uses for a machine with no
- * sound card, and for the same reason: a host with no display is a world that
- * still ticks, so asking it to set a cursor mode is not an error to log at
- * frame rate - it is a no-op. Nothing here may leave the loop unable to end
- * because there is no device, which is why closing is a field of this class
- * rather than a question asked of GLFW.
+ * **A closed window accepts every request and performs none**, and reporters answer zero
+ * (framebufferScale answers one): a windowless world still ticks and must still be able to end.
  */
 class WindowManager {
     public:
@@ -85,6 +72,7 @@ class WindowManager {
     public:
         /**
          * @brief Creates the main application window with the specified title.
+         *
          * @param title The window title.
          */
         void createWindow(const std::string& title);
@@ -92,28 +80,15 @@ class WindowManager {
         /**
          * @brief Sets the window/taskbar icon from an image file (PNG, etc.).
          *
-         * Decoded with stb_image to RGBA and handed to GLFW. A silent no-op
-         * if the window is not yet created or the file fails to load. Call after
-         * createWindow().
+         * A no-op before createWindow(); a file that fails to load is logged and skipped.
          *
          * @param path Absolute path to the icon image.
          */
         void setIcon(const std::string& path);
 
         /**
-         * @brief Whether a window exists at all.
-         *
-         * The question a caller asks before reading a device, rather than
-         * before issuing a command: commands on a closed window are no-ops by
-         * policy, but a reader that cannot tell "zero" from "no display" would
-         * take the first for the second.
-         *
-         * @return True when this manager owns an open window.
-         */
-        bool isOpen() const { return m_windowHandle != nullptr; }
-
-        /**
          * @brief Checks if the window close event has been triggered.
+         *
          * @return true if the window should close, false otherwise.
          */
         bool shouldClose() const;
@@ -124,16 +99,14 @@ class WindowManager {
         void requestClose();
 
         /**
-         * @brief Cancel a pending close. Used by the save-on-quit modal when the
-         * user picks Cancel (or Save - the close is deferred until the
-         * scene is clean). Keeps GLFW out of the editor.
+         * @brief Cancel a pending close, e.g. behind an unsaved-changes guard.
          */
         void cancelClose();
 
         /**
-         * @brief Update the window title. Used by the editor to reflect the
-         * current scene's filename and dirty state without reaching for
-         * raw GLFW.
+         * @brief Update the window title.
+         *
+         * @param title The new title; kept even with no window.
          */
         void setTitle(const std::string& title);
 
@@ -142,18 +115,30 @@ class WindowManager {
          */
         void swapBuffers();
 
-    public:
+        /**
+         * @brief Write the next frame the game draws to @p pngPath, once.
+         *
+         * A request RenderSystem takes after its next frame: the game's view at viewport size,
+         * without a host's panels. A second request replaces the first; a host drawing nothing
+         * writes nothing.
+         *
+         * @param pngPath Where the PNG goes; the directory must exist.
+         */
+        void saveScreenshot(std::string pngPath) { m_screenshotPath = std::move(pngPath); }
+
+        /**
+         * @brief Hand over the pending screenshot request, leaving none.
+         *
+         * @return The path saveScreenshot named, or empty when none is pending.
+         */
+        std::string takeScreenshotRequest() { return std::exchange(m_screenshotPath, std::string()); }
+
         /**
          * @brief Changes the current window mode (fullscreen or windowed).
+         *
          * @param windowMode The desired window mode.
          */
         void updateMode(WindowMode windowMode);
-
-        /**
-         * @brief The window mode last applied by updateMode (Windowed at
-         * creation). Lets UI reflect the current state instead of guessing.
-         */
-        WindowMode mode() const { return m_windowMode; }
 
         /**
          * @brief Updates all input states (keyboard, mouse, etc.).
@@ -161,38 +146,78 @@ class WindowManager {
         void updateInput();
 
         /**
-         * @brief Prepares rendering for the next frame.
-         * @return true while the window should stay open, false once a close
-         * has been requested (drives the main loop's exit).
+         * @brief Start the frame limiter's clock for the next frame.
+         *
+         * @return False once a close has been requested.
          */
         bool beginFrame();
 
         /**
          * @brief Enables or disables vertical synchronization (VSync).
+         *
          * @param enabled True to enable VSync, false to disable.
          */
         void setVSync(bool enabled);
 
         /**
-         * @brief Whether vsync was last enabled via setVSync (off at creation).
-         */
-        bool vsync() const { return m_vsync; }
-
-        /**
          * @brief Sets the maximum framerate for the render loop.
-         * @param framerate The desired frames per second limit.
+         *
+         * @param framerate Frames per second limit.
          */
         void setFramerate(int framerate);
 
         /**
          * @brief Sets the cursor mode.
+         *
+         * Kept even with no window, so cursorMode() answers what it was told.
+         *
          * @param mode The desired cursor mode.
          */
         void setCursorMode(CursorMode mode);
 
         /**
+         * @brief Whether a window exists at all.
+         *
+         * Ask before reading a device: a reader cannot otherwise tell "zero" from "no display".
+         *
+         * @return True when this manager owns an open window.
+         */
+        bool isOpen() const { return m_windowHandle != nullptr; }
+
+        /**
+         * @brief The window mode last applied by updateMode.
+         *
+         * @return The last applied mode; Windowed at creation.
+         */
+        WindowMode mode() const { return m_windowMode; }
+
+        /**
+         * @brief Whether vsync was last enabled via setVSync.
+         *
+         * @return The last applied vsync state; off at creation.
+         */
+        bool vsync() const { return m_vsync; }
+
+        /**
+         * @brief The frame cap currently in effect.
+         *
+         * Independent of vsync; with both active the lower rate wins.
+         *
+         * @return Frames per second, or 0 when the rate is uncapped.
+         */
+        int framerate() const { return m_frameLimiter.targetFramerate(); }
+
+        /**
+         * @brief The cursor mode last set.
+         *
+         * @return CursorMode::Normal until something sets another.
+         */
+        CursorMode cursorMode() const { return m_cursorMode; }
+
+        /**
          * @brief Get the current input handle for querying input state.
-         * @return Reference to the InputHandle.
+         *
+         * @return The device state.
          */
         InputHandle& getInputHandle() { return m_inputHandle; }
         const InputHandle& getInputHandle() const { return m_inputHandle; }
@@ -200,18 +225,14 @@ class WindowManager {
         /**
          * @brief Get the framebuffer width in pixels.
          *
-         * This is the drawable size GL viewports and render targets are sized in,
-         * which differs from the window size in screen coords on a HiDPI / scaled
-         * display. Kept current by the framebuffer-size callback.
+         * The drawable size, which differs from the window's screen coords on a HiDPI display.
          *
          * @return The framebuffer width in pixels.
          */
         size_t getWidth() const;
+
         /**
-         * @brief Get the framebuffer height in pixels.
-         *
-         * The drawable-height counterpart of getWidth(); see it for the
-         * window-size-versus-framebuffer distinction.
+         * @brief Get the framebuffer height in pixels; see getWidth().
          *
          * @return The framebuffer height in pixels.
          */
@@ -220,11 +241,8 @@ class WindowManager {
         /**
          * @brief Framebuffer pixels per window screen coordinate.
          *
-         * The two agree on an unscaled display and diverge under fractional /
-         * HiDPI scaling, where GLFW reports window geometry and cursor positions
-         * in screen coords but the drawable in pixels. Anything crossing from
-         * one to the other - an ImGui rect handed to HostChrome::setViewport, a
-         * cursor position hit-tested against it - multiplies by this.
+         * Diverges from 1 under HiDPI scaling, where GLFW reports window geometry and cursor in
+         * screen coords; anything crossing to the drawable multiplies by this.
          *
          * @return The scale, or 1.0f when there is no window yet.
          */
@@ -232,20 +250,25 @@ class WindowManager {
 
         /**
          * @brief Get the underlying GLFW window pointer.
-         * @return Pointer to the GLFWwindow, or nullptr if not initialized.
+         *
+         * @return The window, or nullptr if not initialized.
          */
         GLFWwindow* getWindowContext() const;
 
+        /**
+         * @brief Height in pixels of the monitor this window is on.
+         *
+         * The monitor, not the window, so the answer survives a maximise or fullscreen switch.
+         *
+         * @return Monitor height in pixels, or 0 when there is no window.
+         */
+        int displayHeight() const;
 
     private:
         /**
-         * @brief Set the cached drawable dimensions. Called from the GLFW
-         * framebuffer-size callback, which is the only caller: nothing
-         * outside this class decides how big the drawable is.
+         * @brief Set the cached drawable dimensions, from the framebuffer-size callback.
          *
-         * Thread safety: GLFW callbacks fire during glfwPollEvents() on the main
-         * thread for single-window apps, so setSize/getWidth/getHeight are all
-         * accessed from the same thread. No synchronization needed.
+         * Unsynchronised: GLFW callbacks fire in glfwPollEvents() on the main thread.
          *
          * @param width New framebuffer width in pixels.
          * @param height New framebuffer height in pixels.
@@ -253,7 +276,9 @@ class WindowManager {
         void setSize(int width, int height);
 
         /**
-         * @brief Returns the monitor's refresh rate (Hz) for this window.
+         * @brief The refresh rate of the monitor this window is on.
+         *
+         * @return Refresh rate in Hz, or 0 (logged) when there is no video mode.
          */
         int getRefreshRate() const;
 
@@ -264,18 +289,20 @@ class WindowManager {
         /// Ours rather than GLFW's, so a windowless world can still be told to end.
         bool m_closeRequested = false;
 
-        int m_width  = 0;    ///< Framebuffer (drawable) width in pixels.
-        int m_height = 0;    ///< Framebuffer (drawable) height in pixels.
+        int m_width  = 0;    ///< Framebuffer pixels.
+        int m_height = 0;
+
+        int    m_windowWidth = 0;    ///< Screen coordinates, kept by callback.
+        double m_cursorX     = 0.0;  ///< Screen coordinates, kept by callback.
+        double m_cursorY     = 0.0;
+        CursorMode m_cursorMode = CursorMode::Normal;
 
         InputHandle  m_inputHandle;
         FrameLimiter m_frameLimiter;
 
-        WindowMode m_windowMode = WindowMode::Windowed;  ///< Last applied mode.
-        bool       m_vsync      = false;                 ///< Last applied vsync state.
-
-        // Scene viewport rect inside the window (set by the editor, read
-        // by the engine when populating FrameContext). 0 in width/height
-        // means "follow the window".
+        WindowMode m_windowMode = WindowMode::Windowed;
+        bool       m_vsync      = false;
+        std::string m_screenshotPath;  ///< Pending until RenderSystem takes it.
 };
 
 } // namespace Vkm::Engine

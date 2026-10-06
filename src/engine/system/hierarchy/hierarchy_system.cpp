@@ -1,13 +1,16 @@
-#define VKM_LOG_CATEGORY "HIERARCHY"
-
 #include "system/hierarchy/hierarchy_system.h"
 
-#include "logger.h"
+#include <glm/glm.hpp>
+
+#include "l_assert.h"
 
 #include "debug/profiler.h"
-#include "platform/threading/thread_pool.h"
-
+#include "ecs/scene.h"
+#include "ecs/component/core/hierarchy.h"
+#include "ecs/component/core/transform.h"
 #include "ecs/component/core/world_transform.h"
+#include "ecs/hierarchy_operations.h"
+#include "platform/threading/thread_pool.h"
 
 namespace Vkm::Engine {
 
@@ -18,83 +21,50 @@ void HierarchySystem::update(FrameContext& ctx) {
 
 void HierarchySystem::resolve(Scene& scene) {
     PROFILE_SCOPE("Hierarchy/ResolveWorld");
-    auto* hierarchyStorage = scene.storage<Hierarchy>();
-    auto* worldStorage = scene.storage<WorldTransform>();
-    if (!hierarchyStorage || !worldStorage) return;
+    SparseSet<Hierarchy>*       hierarchies = scene.storage<Hierarchy>();
+    SparseSet<WorldTransform>*  worlds      = scene.storage<WorldTransform>();
+    const SparseSet<Transform>* transforms  = scene.storage<Transform>();
+    if (!hierarchies || !worlds) return;
 
-    // Within a single depth, entities are mutually independent (no parent-child
-    // links between siblings or cousins) and nothing below mutates the component
-    // graph, so a parallelFor over a bucket is safe.
-    for (auto& b : m_buckets) b.clear();
+    // No WorldTransform, no descent: the parallel pass reads a parent's slot unchecked.
+    const auto admit = [&](EntityId id, std::vector<EntityId>& into) {
+        VKM_ASSERT(worlds->contains(id.slot()), "HierarchySystem::resolve: Hierarchy without WorldTransform");
+        if (worlds->contains(id.slot())) into.push_back(id);
+    };
 
-    const uint32_t count = static_cast<uint32_t>(hierarchyStorage->size());
+    const uint32_t count = static_cast<uint32_t>(hierarchies->size());
+    m_level.clear();
     for (uint32_t i = 0; i < count; ++i) {
-        const uint32_t entityIdx = hierarchyStorage->keyAt(i);
-        const EntityId id = scene.entityAt(entityIdx);
-
-        if (!scene.has<Transform>(id)) continue;
-
-        const auto& h = hierarchyStorage->dataAt(i);
-
-        VKM_ASSERT(scene.has<WorldTransform>(id),
-            "HierarchySystem::resolve: Hierarchy without WorldTransform");
-
-        // Guarded along the whole chain, not just here: the depth loop below
-        // reads the parent's matrix as well as its own, and in a build where
-        // the assert is compiled out a missing slot is an out-of-range index.
-        bool resolvable = worldStorage->contains(entityIdx);
-
-        uint32_t depth = 0;
-        EntityId current = h.parent;
-        while (current && depth < HierarchyOperations::MAX_DEPTH) {
-            if (!worldStorage->contains(current.slot())) {
-                resolvable = false;
-                break;
-            }
-            if (!hierarchyStorage->contains(current.slot())) break;
-            current = hierarchyStorage->get(current.slot()).parent;
-            ++depth;
-        }
-        if (!resolvable) continue;
-
-        if (depth >= HierarchyOperations::MAX_DEPTH) {
-            static bool s_warned = false;
-            if (!s_warned) {
-                LOG_WARNING("HierarchySystem::resolve: hierarchy depth exceeds %u; entity %u skipped (and any descendants)",
-                    HierarchyOperations::MAX_DEPTH, id.slot());
-                s_warned = true;
-            }
-            continue;
-        }
-        m_buckets[depth].push_back(id);
+        if (!hierarchies->dataAt(i).parent) admit(scene.entityAt(hierarchies->keyAt(i)), m_level);
     }
 
-    // Depths in order: a child then reads a parent matrix that is already
-    // final, one multiply instead of re-walking the chain per entity.
-    for (uint32_t d = 0; d < HierarchyOperations::MAX_DEPTH; ++d) {
-        const auto& bucket = m_buckets[d];
-        if (bucket.empty()) continue;
+    for (uint32_t depth = 0; !m_level.empty(); ++depth) {
+        if (depth >= HierarchyOperations::MAX_DEPTH) {
+            HierarchyOperations::warnWalkBound("world-transform resolve", HierarchyOperations::MAX_DEPTH);
+            return;
+        }
 
-        if (d == 0) {
-            parallelFor(bucket.size(), [&](size_t i) {
-                const EntityId id = bucket[i];
-                scene.get<WorldTransform>(id).model =
-                    Transform::computeModelMatrix(scene.get<Transform>(id));
-            });
-        } else {
-            parallelFor(bucket.size(), [&](size_t i) {
-                const EntityId id = bucket[i];
-                const Hierarchy& h = scene.get<Hierarchy>(id);
-                // Read by raw index without an isAlive guard, unlike
-                // computeWorldMatrix: the bucketing pass validated this entity's
-                // whole ancestor chain this same frame.
-                const glm::mat4 parentWorld =
-                    scene.get<WorldTransform>(h.parent).model;
-                const glm::mat4 local =
-                    Transform::computeModelMatrix(scene.get<Transform>(id));
-                scene.get<WorldTransform>(id).model = parentWorld * local;
+        // Without a Transform the matrix is kept, and children compose onto it.
+        parallelFor(m_level.size(), [&](size_t i) {
+            const uint32_t slot = m_level[i].slot();
+            if (!transforms || !transforms->contains(slot)) return;
+
+            const glm::mat4 local  = Transform::computeModelMatrix(transforms->get(slot));
+            const EntityId  parent = hierarchies->get(slot).parent;
+            worlds->get(slot).model = parent ? worlds->get(parent.slot()).model * local : local;
+        });
+
+        // Admitted only from the parent it names, so crossed sibling lists add nothing
+        // twice; forEachChild bounds a looping list.
+        m_next.clear();
+        for (const EntityId node : m_level) {
+            HierarchyOperations::forEachChild(scene, node, [&](EntityId child) {
+                if (hierarchies->contains(child.slot()) && hierarchies->get(child.slot()).parent == node) {
+                    admit(child, m_next);
+                }
             });
         }
+        m_level.swap(m_next);
     }
 }
 

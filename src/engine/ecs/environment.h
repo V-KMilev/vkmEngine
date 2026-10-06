@@ -14,59 +14,58 @@ namespace Vkm::Engine {
  */
 struct SkySettings {
     std::string hdrPath;                ///< Equirect HDR baked into IBL + skybox; empty = none.
-    float       intensity  = 1.0f;      ///< Indirect-lighting + skybox brightness multiplier.
-    /// Draw the skybox background; the IBL still lights the scene when off.
-    bool        showSkybox = true;
+    float       intensity  = 1.0f;      ///< Indirect-lighting + skybox brightness.
+    bool        showSkybox = true;      ///< The IBL still lights the scene when off.
 
-    // Procedural sky: a Rayleigh + Mie atmosphere baked into the IBL cubemap in
-    // place of loading hdrPath. On by default so a scene is lit before it owns
-    // any assets.
+    // A Rayleigh + Mie atmosphere baked into the IBL in place of hdrPath; on by
+    // default so a scene is lit before it owns any assets.
     bool  procedural       = true;
     float sunIntensity     = 22.0f;  ///< Atmosphere sun radiance scale.
-    float rayleigh         = 1.0f;   ///< Rayleigh (blue-sky) scattering scale.
-    float mie              = 1.0f;   ///< Mie (haze / sun glow) scattering scale.
-    float mieG             = 0.76f;  ///< Mie phase asymmetry (0..0.99; higher = tighter sun glow).
-    /// Analytic sun-disc radius in the skybox (radians; ~0.0047 is life-size).
-    float sunAngularRadius = 0.02f;
-    float sunDiscIntensity = 15.0f;  ///< Analytic sun-disc radiance (added over the atmospheric glow).
+    float rayleigh         = 1.0f;   ///< Blue-sky scattering scale.
+    float mie              = 1.0f;   ///< Haze / sun glow scattering scale.
+    float mieG             = 0.76f;  ///< Phase asymmetry, 0..MAX_MIE_G; higher = tighter glow.
+    float sunAngularRadius = 0.02f;  ///< Radians; ~0.0047 is life-size.
+    float sunDiscIntensity = 15.0f;  ///< Added over the atmospheric glow.
 
-    // SkySystem aims the key light FROM these, so the sun the skybox draws and
-    // the light that casts its shadows cannot disagree.
+    // SkySystem aims the key light from these, so the drawn sun and the shadows agree.
     float sunElevation = 50.0f;  ///< Degrees above the horizon. Negative is night.
     float sunAzimuth   = 30.0f;  ///< Degrees around the horizon, from +Z toward +X.
 
-    // The key light's daylight end. SkySystem hands that light between these and
-    // the moonlight below, so the Light's own colour and intensity are unused
-    // while the procedural sky is on.
-    glm::vec3 lightColor     = {1.0f, 0.96f, 0.90f};  ///< Key light colour at midday.
-    float     lightIntensity = 3.0f;                  ///< Key light intensity at midday.
+    // The key light's daylight end; SkySystem blends it with the moonlight, so
+    // the Light's own colour and intensity are unused under the procedural sky.
+    glm::vec3 lightColor     = {1.0f, 0.96f, 0.90f};  ///< With the sun overhead.
+    float     lightIntensity = 3.0f;                  ///< At midday.
+
+    /// At 1 the phase function divides zero by zero.
+    static constexpr float MAX_MIE_G = 0.99f;
 };
 
 /**
  * @brief What the sky is once the sun is down.
  *
- * Single scattering with the sun below the horizon is very nearly black -
- * physically right and useless to light by - so night's own light is authored.
- * It fades in across a twilight band around the horizon (_common/sky.glsl)
- * rather than switching at exactly zero.
+ * Single scattering at night is nearly black, so night's light is authored. It
+ * fades in across TWILIGHT_DEGREES around the horizon.
  */
 struct NightSkySettings {
-    /// Skyglow the scene is lit by; the floor that keeps night dark, not black.
+    /// Skyglow the scene is lit by, so night is dark, not black.
     glm::vec3 radiance = {0.004f, 0.006f, 0.014f};
-    /// Degrees off the point exactly opposite the sun, so the two are not a mirror.
-    float     moonTilt          = 15.0f;
-    float     moonAngularRadius = 0.03f;            ///< Moon disc radius in the skybox (radians).
-    float     moonIntensity     = 1.2f;             ///< Moon disc radiance; its halo follows.
-    /// Star brightness; 0 disables the field. The default clears the bloom threshold.
-    float     starIntensity     = 3.0f;
-    float     starDensity       = 140.0f;           ///< Grid density; higher packs more, smaller stars.
+    float     moonTilt          = 15.0f;            ///< Degrees off directly opposite the sun.
+    float     moonAngularRadius = 0.03f;            ///< Radians.
+    float     moonIntensity     = 1.2f;             ///< Disc radiance; its halo follows.
+    float     starIntensity     = 3.0f;             ///< 0 disables; the default clears the bloom threshold.
+    float     starDensity       = 140.0f;           ///< Higher packs more, smaller stars.
 
-    // Moonlight: the key light again, aimed at the moon once the sun is down.
-    // Real light rather than a painted glow, so night has direction, shadows and
-    // speculars. Dim and blue because moonlight is sunlight scattered twice.
-    glm::vec3 moonlightColor     = {0.55f, 0.65f, 1.0f};  ///< Key light colour at night.
-    /// Key light intensity at night. Moonlight is a tiny fraction of daylight.
+    // The key light aimed at the moon once the sun is down, so night has
+    // direction, shadows and speculars.
+    glm::vec3 moonlightColor     = {0.55f, 0.65f, 1.0f};
     float     moonlightIntensity = 0.12f;
+
+    /**
+     * @brief Degrees either side of the horizon across which day hands over to night.
+     *
+     * Read by SkySystem and shaders/sky.glsl (as a sine, via the prelude).
+     */
+    static constexpr float TWILIGHT_DEGREES = 8.0f;
 };
 
 /**
@@ -78,20 +77,44 @@ struct FogSettings {
     float     density       = 0.03f;               ///< Base extinction at height.
     float     height        = 5.0f;                ///< World Y where the medium is densest.
     float     heightFalloff = 0.15f;               ///< Density e-folding per world unit above height.
-    float     anisotropy    = 0.7f;                ///< Henyey-Greenstein g (forward scatter).
+    float     anisotropy    = 0.7f;                ///< Henyey-Greenstein g, within MAX_ANISOTROPY.
     glm::vec3 albedo        = {0.8f, 0.85f, 1.0f}; ///< Scattering tint.
-    /// Froxel grid width (screen tiles). Higher = sharper shafts, more compute.
-    uint32_t  resolutionX   = 160;
-    uint32_t  resolutionY   = 90;                  ///< Froxel grid height (screen tiles).
-    uint32_t  resolutionZ   = 64;                  ///< Froxel grid depth  (exponential slices).
+    uint32_t  resolutionX   = 160;                 ///< Screen tiles; higher = sharper shafts.
+    uint32_t  resolutionY   = 90;                  ///< Screen tiles.
+    uint32_t  resolutionZ   = 64;                  ///< Exponential slices.
+    /**
+     * @brief How far from the eye the slices reach, in metres.
+     *
+     * Or the far plane if nearer; a point beyond takes the fog accumulated to here.
+     */
+    float     maxDistance   = 200.0f;
+
+    /// At +-1 the phase function divides zero by zero.
+    static constexpr float MAX_ANISOTROPY = 0.95f;
+
+    static constexpr uint32_t MIN_FROXELS = 16;   ///< Per axis.
+    static constexpr uint32_t MAX_FROXELS = 512;  ///< Per axis.
+    /**
+     * @brief The most froxels the whole grid holds; a grid over it is scaled down evenly.
+     *
+     * Holds the two RGBA16F volumes to 64 MB, against a gigabyte each at 512^3.
+     */
+    static constexpr uint32_t MAX_FROXEL_COUNT = 1u << 22;
+
+    /**
+     * @brief The grid the volume is allocated at: the authored one, bounded.
+     *
+     * Each axis clamped, then all scaled evenly to fit MAX_FROXEL_COUNT.
+     *
+     * @return Froxels across, up and deep.
+     */
+    glm::uvec3 froxelGrid() const;
 };
 
 /**
  * @brief Where a celestial body sits, in the authored angle form.
  *
- * The sun is authored as this pair and the moon is derived as one, so anything
- * that needs a body's placement - a direction vector, a light's rotation - can
- * take the angles rather than re-deriving them from the raw fields.
+ * The sun is authored as this pair and the moon derived as one.
  */
 struct SkyAngles {
     float elevation = 0.0f;  ///< Degrees above the horizon. Negative is below it.
@@ -101,10 +124,8 @@ struct SkyAngles {
 /**
  * @brief The scene's lighting environment: sky, night sky and fog.
  *
- * Scene-global state, NOT an entity/component - one per Scene, always present
- * (owned by Scene::environment()), and it round-trips with the scene. The
- * backend re-bakes the IBL whenever the sky changes; the skybox samples that
- * baked product, so the visible background follows automatically.
+ * Scene-global, not a component: one per Scene (Scene::environment()), saved
+ * with it. The backend re-bakes the IBL whenever the sky changes.
  */
 struct Environment {
     SkySettings      sky;
@@ -114,7 +135,7 @@ struct Environment {
     /**
      * @brief Where the sun sits, straight off the authored fields.
      *
-     * @return The sun's elevation/azimuth in degrees.
+     * @return Elevation/azimuth in degrees.
      */
     SkyAngles sunAngles() const {
         return {sky.sunElevation, sky.sunAzimuth};
@@ -123,13 +144,9 @@ struct Environment {
     /**
      * @brief Where the moon sits: opposite the sun, tilted off that axis.
      *
-     * Derived rather than authored: a moon is only interesting relative to the
-     * sun, and tying them means dropping the sun below the horizon raises the
-     * moon by itself. moonTilt keeps the two from being an exact mirror. This is
-     * the one place that derivation lives, so the drawn moon and the light aimed
-     * at it cannot drift apart.
+     * Derived, so lowering the sun raises the moon by itself.
      *
-     * @return The moon's elevation/azimuth in degrees.
+     * @return Elevation/azimuth in degrees.
      */
     SkyAngles moonAngles() const {
         return {-sky.sunElevation + night.moonTilt, sky.sunAzimuth + 180.0f};
@@ -138,10 +155,7 @@ struct Environment {
     /**
      * @brief Direction TO the sun from the authored angles.
      *
-     * The one place elevation/azimuth become a vector, so the sky bake, the
-     * skybox and the light that follows them cannot each roll their own and
-     * drift. Azimuth 0 is +Z by definition of the angles, which is not the
-     * engine's forward and does not have to be.
+     * Azimuth 0 is +Z by definition of the angles, not the engine's forward.
      *
      * @return Unit direction pointing at the sun.
      */
@@ -152,8 +166,6 @@ struct Environment {
 
     /**
      * @brief Direction TO the moon.
-     *
-     * The vector form of moonAngles(), which is where the placement is decided.
      *
      * @return Unit direction pointing at the moon.
      */
@@ -175,47 +187,48 @@ struct Environment {
 } // namespace Vkm::Engine
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::SkySettings)
-    VKM_F(hdrPath),
-    VKM_F(intensity),
-    VKM_F(showSkybox),
-    VKM_F(procedural),
-    VKM_F(sunIntensity),
-    VKM_F(rayleigh),
-    VKM_F(mie),
-    VKM_F(mieG),
-    VKM_F(sunAngularRadius),
-    VKM_F(sunDiscIntensity),
-    VKM_F(sunElevation),
-    VKM_F(sunAzimuth),
-    VKM_F(lightColor),
+    VKM_F(hdrPath)
+    VKM_F(intensity)
+    VKM_F(showSkybox)
+    VKM_F(procedural)
+    VKM_F(sunIntensity)
+    VKM_F(rayleigh)
+    VKM_F(mie)
+    VKM_F(mieG)
+    VKM_F(sunAngularRadius)
+    VKM_F(sunDiscIntensity)
+    VKM_F(sunElevation)
+    VKM_F(sunAzimuth)
+    VKM_F(lightColor)
     VKM_F(lightIntensity)
 VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::NightSkySettings)
-    VKM_F(radiance),
-    VKM_F(moonTilt),
-    VKM_F(moonAngularRadius),
-    VKM_F(moonIntensity),
-    VKM_F(starIntensity),
-    VKM_F(starDensity),
-    VKM_F(moonlightColor),
+    VKM_F(radiance)
+    VKM_F(moonTilt)
+    VKM_F(moonAngularRadius)
+    VKM_F(moonIntensity)
+    VKM_F(starIntensity)
+    VKM_F(starDensity)
+    VKM_F(moonlightColor)
     VKM_F(moonlightIntensity)
 VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::FogSettings)
-    VKM_F(enabled),
-    VKM_F(density),
-    VKM_F(height),
-    VKM_F(heightFalloff),
-    VKM_F(anisotropy),
-    VKM_F(albedo),
-    VKM_F(resolutionX),
-    VKM_F(resolutionY),
+    VKM_F(enabled)
+    VKM_F(density)
+    VKM_F(height)
+    VKM_F(heightFalloff)
+    VKM_F(anisotropy)
+    VKM_F(albedo)
+    VKM_F(resolutionX)
+    VKM_F(resolutionY)
     VKM_F(resolutionZ)
+    VKM_F(maxDistance)
 VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::Environment)
-    VKM_F(sky),
-    VKM_F(night),
+    VKM_F(sky)
+    VKM_F(night)
     VKM_F(fog)
 VKM_REFLECT_END()

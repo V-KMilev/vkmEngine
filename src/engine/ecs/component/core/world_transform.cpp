@@ -7,18 +7,28 @@
 namespace Vkm::Engine {
 
 glm::mat4 resolvedWorldMatrix(const Scene& scene, EntityId entity, const Transform& local) {
-    if (scene.has<WorldTransform>(entity)) return scene.get<WorldTransform>(entity).model;
-    return Transform::computeModelMatrix(local);
+    const WorldTransform* world = scene.tryGet<WorldTransform>(entity);
+    return world ? world->model : Transform::computeModelMatrix(local);
 }
 
 glm::vec3 resolvedWorldPosition(const Scene& scene, EntityId entity, const Transform& local) {
-    if (scene.has<WorldTransform>(entity)) return glm::vec3(scene.get<WorldTransform>(entity).model[3]);
-    return local.position;
+    const WorldTransform* world = scene.tryGet<WorldTransform>(entity);
+    return world ? glm::vec3(world->model[3]) : local.position;
 }
 
 glm::quat resolvedWorldRotation(const Scene& scene, EntityId entity, const Transform& local) {
-    if (scene.has<WorldTransform>(entity)) return Math::worldRotationOf(scene.get<WorldTransform>(entity).model);
-    return local.rotation;
+    const WorldTransform* world = scene.tryGet<WorldTransform>(entity);
+    return world ? Math::worldRotationOf(world->model) : local.rotation;
+}
+
+glm::vec3 resolvedWorldScale(const Scene& scene, EntityId entity, const Transform& local) {
+    const WorldTransform* world = scene.tryGet<WorldTransform>(entity);
+    if (!world) return local.scale;
+    return glm::vec3(
+        glm::length(glm::vec3(world->model[0])),
+        glm::length(glm::vec3(world->model[1])),
+        glm::length(glm::vec3(world->model[2]))
+    );
 }
 
 } // namespace Vkm::Engine

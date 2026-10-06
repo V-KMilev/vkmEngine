@@ -1,27 +1,19 @@
 #pragma once
 
-#include <array>
 #include <vector>
 
 #include "core/system.h"
-#include "system/hierarchy/hierarchy_operations.h"
+#include "ecs/entity.h"
 
 namespace Vkm::Engine {
 
 /**
  * @brief Resolves hierarchical transforms into the WorldTransform component.
  *
- * Runs in the Transform stage (before VisibilitySystem). Every hierarchical
- * entity's world matrix lands in its WorldTransform, pre-seeded by
- * HierarchyOperations::setParent so this loop never has to mutate the component
- * graph - which is what lets it parallelise over depth buckets. Downstream
- * systems read WorldTransform when present and fall back to Transform for root
- * entities.
- *
- * Resolving unconditionally is what makes the result trustworthy: a per-entity
- * dirty flag can only be correct if every writer of a Transform anywhere in the
- * engine or in a game remembers to set it, and a forgotten one shows up as a
- * silently stale world matrix rather than an error.
+ * Runs after Simulation and before VisibilitySystem. WorldTransform is pre-seeded by
+ * HierarchyOperations::setParent, so this never mutates the component graph; an entity
+ * without one is read from its Transform (see resolvedWorldMatrix). Every matrix is
+ * resolved every frame; no dirty flag (docs/guides/engine.md, section 4).
  */
 class HierarchySystem : public System {
     public:
@@ -38,23 +30,20 @@ class HierarchySystem : public System {
         void update(FrameContext& ctx) override;
 
     private:
-        using DepthBuckets = std::array<std::vector<EntityId>, HierarchyOperations::MAX_DEPTH>;
-
         /**
          * @brief Resolve world transforms for every hierarchical entity.
          *
-         * Entities are bucketed by absolute depth in a serial pass and then each
-         * bucket runs through parallelFor; depths are processed in order so a
-         * child reads its parent's already-finalised WorldTransform (one matrix
-         * multiply, parentWorld * local) rather than re-walking the ancestor chain,
-         * and reads of an ancestor's matrix never race a write.
+         * A level at a time from the roots, each through parallelFor, so a child reads its
+         * parent's finalised matrix without a race. Each entity is visited from its own
+         * parent, so a cycle, which no root reaches, is never visited.
          *
-         * @param scene The scene to resolve.
+         * @param scene Scene whose WorldTransforms are written.
          */
         void resolve(Scene& scene);
 
     private:
-        DepthBuckets m_buckets;  ///< Per-depth scratch for the resolve pass; kept for its capacity.
+        std::vector<EntityId> m_level;  ///< Kept for its capacity.
+        std::vector<EntityId> m_next;   ///< The level below, gathered while resolving.
 };
 
 } // namespace Vkm::Engine
