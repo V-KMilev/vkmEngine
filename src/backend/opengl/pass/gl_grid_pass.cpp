@@ -5,40 +5,26 @@
 
 #include "gl_shader.h"
 #include "gl_context.h"
+#include "gl_screen_triangle.h"
 
 #include "gl_frame_context.h"
 #include "gl_target.h"
 #include "convention/gl_bindings.h"
-#include "asset/gl_mesh.h"
-#include "resource/generate/mesh_generators.h"
+#include "core/math/axes.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {
 
-namespace {
-
-// Base reach in world units. execute() grows it with the log of the camera's height and
-// passes it as u_extent, which both stages read: one sizes the quad, the other fades inside it.
-constexpr float GRID_BASE_EXTENT = 100.0f;
-
-} // namespace
-
-GLGridPass::GLGridPass(GLMeshPool& pool)
-    : m_shader("shaders/grid")
-    , m_quad(std::make_unique<GLMesh>(pool, generatePlane(2.0f, 2.0f))) {}
+GLGridPass::GLGridPass()
+    : m_shader("shaders/grid") {}
 
 GLGridPass::~GLGridPass() = default;
 
 void GLGridPass::execute(GLFrameContext& ctx) {
-    if (!ctx.view.settings.grid) return;
+    const RenderSettings& s = ctx.view.settings;
+    if (!s.gridShown()) return;
 
-    const RenderView& view = ctx.view;
-
-    const float height = glm::max(1.0f, glm::abs(view.camera.position.y));
-    const float extent = GRID_BASE_EXTENT * glm::max(1.0f, glm::log(height));
-
-    promoteColorChain(ctx);
-    ctx.colorSrc->bind(ctx.gl);
+    bindBackbufferViewport(ctx);
     ctx.gl.setDepthTest(false);
     ctx.gl.setDepthWrite(false);
     ctx.gl.setBlending(true);
@@ -46,9 +32,22 @@ void GLGridPass::execute(GLFrameContext& ctx) {
 
     m_shader.bind();
     ctx.sceneHDR.bindTexture(GLTarget::Attachment::Depth, GLBindings::PostTextureSlots::SCENE_DEPTH);
-    m_shader.setUniform1f("u_extent", extent);
 
-    m_quad->draw();
+    static const char* const COLOR_NAMES[3] = {"u_axisColor[0]", "u_axisColor[1]", "u_axisColor[2]"};
+    for (int axis = 0; axis < 3; ++axis) {
+        const Math::AxisColor c = Math::AXIS_COLORS[axis];
+        m_shader.setUniform3f(COLOR_NAMES[axis], c.r / 255.0f, c.g / 255.0f, c.b / 255.0f);
+    }
+    m_shader.setUniform3iv("u_axisShown", glm::ivec3(s.gridAxisX, s.gridAxisY, s.gridAxisZ));
+    // By normal - ZY, XZ, XY: a plane is drawn while both its axes are on.
+    const glm::ivec3 planes(
+        s.gridAxisY && s.gridAxisZ,
+        s.gridAxisX && s.gridAxisZ,
+        s.gridAxisX && s.gridAxisY
+    );
+    m_shader.setUniform3iv("u_planeShown", planes);
+
+    ctx.screenTri.draw();
 }
 
 } // namespace Vkm::Engine

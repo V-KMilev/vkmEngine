@@ -141,7 +141,10 @@ struct RenderSettings {
     uint32_t shadowResolution = 4096;
 
     // Overlays
-    bool grid = false;  ///< Editor ground grid.
+    // The editor's world grid: each axis's line, and the plane of every two axes on.
+    bool gridAxisX = false;
+    bool gridAxisY = false;
+    bool gridAxisZ = false;
 
     /// The search divides by the radius, so it is never zero.
     static constexpr float MIN_GTAO_RADIUS = 0.05f;
@@ -149,6 +152,15 @@ struct RenderSettings {
     static constexpr float MAX_GTAO_RADIUS = 5.0f;
 
     static constexpr uint32_t MSAA_SAMPLE_COUNTS[] = {1, 2, 4, 8};  ///< 1 is off.
+
+    /**
+     * @brief Whether the editor's world grid draws at all.
+     *
+     * @return True while any of its axes is on.
+     */
+    bool gridShown() const {
+        return gridAxisX || gridAxisY || gridAxisZ;
+    }
 
     /**
      * @brief Whether @p samples is one of MSAA_SAMPLE_COUNTS.

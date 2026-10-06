@@ -201,8 +201,8 @@ bool GLBackend::init(WindowManager& window) {
     m_passes.push_back({"Decals",         std::make_unique<GLDecalPass>()});
     m_passes.push_back({"DoF",            std::make_unique<GLDoFPass>()});
     m_passes.push_back({"Bloom",          std::make_unique<GLBloomPass>()});
-    m_passes.push_back({"Grid",           std::make_unique<GLGridPass>(m_view.meshPool())});
     m_passes.push_back({"Composite",      std::make_unique<GLCompositePass>()});
+    m_passes.push_back({"Grid",           std::make_unique<GLGridPass>()});
     m_passes.push_back({"UI",             std::make_unique<GLUIPass>()});
     m_passes.push_back({"Splash",         std::make_unique<GLSplashPass>()});
 

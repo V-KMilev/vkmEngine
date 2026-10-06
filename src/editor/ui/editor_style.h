@@ -2,6 +2,8 @@
 
 #include <imgui.h>
 
+#include "core/math/axes.h"
+
 /**
  * @brief Shared editor visual constants.
  *
@@ -9,22 +11,47 @@
  */
 namespace Vkm::Engine::EditorStyle {
 
+/**
+ * @brief Math::AXIS_COLORS[@p axis], packed for a draw list.
+ *
+ * @param axis  0, 1 or 2 for X, Y or Z.
+ * @param alpha The packed alpha.
+ * @return The packed colour.
+ */
+constexpr ImU32 axisU32(int axis, int alpha = 255) {
+    const Math::AxisColor c = Math::AXIS_COLORS[axis];
+    return IM_COL32(c.r, c.g, c.b, alpha);
+}
+
+/**
+ * @brief Math::AXIS_COLORS[@p axis] as a widget colour, raised by @p lift on every channel.
+ *
+ * @param axis 0, 1 or 2 for X, Y or Z.
+ * @param lift Added to each 8-bit channel; a hover state lifts it.
+ * @return The widget colour.
+ */
+constexpr ImVec4 axisVec4(int axis, int lift = 0) {
+    const Math::AxisColor c = Math::AXIS_COLORS[axis];
+    auto channel = [lift](uint8_t v) { return (v + lift > 255 ? 255 : v + lift) / 255.0f; };
+    return ImVec4(channel(c.r), channel(c.g), channel(c.b), 1.0f);
+}
+
 // Axis colors - ImDrawList packed form.
-inline constexpr ImU32 AXIS_X_U32      = IM_COL32(220,  60,  60, 255);
-inline constexpr ImU32 AXIS_Y_U32      = IM_COL32( 80, 190,  60, 255);
-inline constexpr ImU32 AXIS_Z_U32      = IM_COL32( 60, 100, 220, 255);
+inline constexpr ImU32 AXIS_X_U32      = axisU32(0);
+inline constexpr ImU32 AXIS_Y_U32      = axisU32(1);
+inline constexpr ImU32 AXIS_Z_U32      = axisU32(2);
 inline constexpr ImU32 HIGHLIGHT_U32   = IM_COL32(255, 210,  50, 255);
-inline constexpr ImU32 AXIS_X_FILL_U32 = IM_COL32(220,  60,  60,  50);
-inline constexpr ImU32 AXIS_Y_FILL_U32 = IM_COL32( 80, 190,  60,  50);
-inline constexpr ImU32 AXIS_Z_FILL_U32 = IM_COL32( 60, 100, 220,  50);
+inline constexpr ImU32 AXIS_X_FILL_U32 = axisU32(0, 50);
+inline constexpr ImU32 AXIS_Y_FILL_U32 = axisU32(1, 50);
+inline constexpr ImU32 AXIS_Z_FILL_U32 = axisU32(2, 50);
 
 // Axis colors - ImGui widget (ImVec4) form, with hover variants.
-inline const ImVec4 AXIS_X      = ImVec4(0.86f, 0.24f, 0.24f, 1.00f);
-inline const ImVec4 AXIS_Y      = ImVec4(0.31f, 0.75f, 0.24f, 1.00f);
-inline const ImVec4 AXIS_Z      = ImVec4(0.24f, 0.39f, 0.86f, 1.00f);
-inline const ImVec4 AXIS_X_HOV  = ImVec4(0.94f, 0.34f, 0.34f, 1.00f);
-inline const ImVec4 AXIS_Y_HOV  = ImVec4(0.41f, 0.85f, 0.34f, 1.00f);
-inline const ImVec4 AXIS_Z_HOV  = ImVec4(0.34f, 0.49f, 0.94f, 1.00f);
+inline constexpr ImVec4 AXIS_X     = axisVec4(0);
+inline constexpr ImVec4 AXIS_Y     = axisVec4(1);
+inline constexpr ImVec4 AXIS_Z     = axisVec4(2);
+inline constexpr ImVec4 AXIS_X_HOV = axisVec4(0, 25);
+inline constexpr ImVec4 AXIS_Y_HOV = axisVec4(1, 25);
+inline constexpr ImVec4 AXIS_Z_HOV = axisVec4(2, 25);
 
 // Accent for active/selected affordances.
 inline const ImVec4 ACCENT      = ImVec4(0.29f, 0.62f, 1.00f, 1.00f);
