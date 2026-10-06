@@ -110,7 +110,7 @@ void visitPreferenceFields(Prefs& p, Fn&& f) {
 /**
  * @brief The render fields that are this editor's view state, not the game's.
  *
- * `renderMode` (a debug buffer) and `grid` (editor chrome) are no shipped look;
+ * `renderMode` (a debug buffer) and the grid (editor chrome) are no shipped look;
  * the rest lives in `project.json` - see `visitShippedRenderFields` in
  * system/render/render_settings.h. Same single-list contract as visitScalarFields.
  *
@@ -122,7 +122,9 @@ void visitPreferenceFields(Prefs& p, Fn&& f) {
 template <typename Settings, typename Fn>
 void visitRenderFields(Settings& r, Fn&& f) {
     f("renderMode", r.renderMode);
-    f("grid",       r.grid);
+    f("gridAxisX",  r.gridAxisX);
+    f("gridAxisY",  r.gridAxisY);
+    f("gridAxisZ",  r.gridAxisZ);
 }
 
 /**
@@ -341,7 +343,8 @@ bool load(EditorState& state, RenderSettings& render) {
 }
 
 void applyViewDefaults(RenderSettings& render) {
-    render.grid = true;
+    render.gridAxisX = true;  // X and Z: the ground
+    render.gridAxisZ = true;
 }
 
 bool save(const EditorState& state, const RenderSettings& render) {

@@ -108,7 +108,9 @@ carried on `FrameContext::render`: mutated by the editor's Render Settings panel
 or a game's settings screen, read by the visibility pass, and copied into the
 view each frame.
 
-- **Toggles:** `gtao`, `bloom`, `probes`, `ssr`, `grid`.
+- **Toggles:** `gtao`, `bloom`, `probes`, `ssr`, and the editor grid's axes
+  (`gridAxisX/Y/Z`): a line for each axis on and the plane of every two, X and Z
+  the ground; it draws while any is on, `gridShown()`.
 - **Per-effect params:** GTAO (radius/intensity/power), screen-space
   reflections (`ssrMaxRoughness`, `ssrMaxDistance`), bloom
   (strength/threshold/knee/radius).
@@ -162,7 +164,7 @@ view each frame.
 
 Scene-look settings (the HDR or procedural sky, the night sky, fog, IBL
 intensity) live in `Environment` and serialize with the scene. `RenderSettings`
-is the project's: everything above except `renderMode` and `grid`, which are the
+is the project's: everything above except `renderMode` and the grid, which are the
 editor's own, ships in `project.json` (`visitShippedRenderFields`), because it
 decides what the game looks like rather than what one scene does.
 
@@ -250,8 +252,8 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 | 12 | Decals | Projected decal boxes blended into the post colour chain, sampling depth + G-buffer, lit as the surface they land on is lit diffusely - by the key light through its cascades, and by the irradiance volume or the sky under GTAO (`shaders/ambient.glsl`, which the fog reads too) - and fogged at its depth. After the reflections, so a glossy floor's reflection does not paint over what is stuck to it. With the reflections on, the chain is already off the geometry target and the decals blend in place; with them off, the pass first copies the frame into the chain (`GLPass::promoteColorChain`) |
 | 13 | DoF | Circle-of-confusion disk blur driven by the camera's focus distance / amount, with a radius of at most `Camera::dofMaxBlur` of the viewport's height, so it looks the same at any resolution (chain: src -> dst) |
 | 14 | Bloom | Compute, one dispatch per level (a framebuffer bind and a draw cost the CPU about three times as much). Bright-pass + mip-chain down/upsample off the chain, the first level capped and cleared of NaNs; composite adds it |
-| 15 | Grid | World-space ground grid overlay into the chain (LEQUAL test done in its shader) |
-| 16 | Composite | The bloom added at `bloomStrength` - it holds only the light past the threshold, so nothing else is dimmed - then the `exposure`, then the `tonemap` curve and the exact sRGB encode (`shaders/color.glsl`, which the UI pass shares) to the backbuffer viewport, dithered by half a step after the encode (or a debug buffer per `renderMode`) |
+| 15 | Composite | The bloom added at `bloomStrength` - it holds only the light past the threshold, so nothing else is dimmed - then the `exposure`, then the `tonemap` curve and the exact sRGB encode (`shaders/color.glsl`, which the UI pass shares) to the backbuffer viewport, dithered by half a step after the encode (or a debug buffer per `renderMode`) |
+| 16 | Grid | The editor's world grid: grids on the XZ, XY and ZY planes and the three axis lines, one fullscreen draw blended into the backbuffer viewport. After the tonemap, so the axes keep `Math::AXIS_COLORS` as the gizmos show them. Each pixel's ray finds its point on each plane and its nearest point on each axis, each tested against the scene's depth in the shader, and they blend far to near |
 | 17 | UI | Screen-space in-game UI overlay drawn flat on top (no-op when empty). See [ui.md](ui.md) |
 | 18 | Splash | The startup logo over black, covering the whole surface. A no-op once the sequence is over |
 

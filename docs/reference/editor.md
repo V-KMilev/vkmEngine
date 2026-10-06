@@ -526,7 +526,7 @@ before it put in place:
 3. Read its `project.json` into a fresh `Project` - reset first, so a field the
    file leaves out does not keep the outgoing project's value - and take the
    look the game ships from its `render` block, with the editor's own view
-   defaults (`EditorSettings::applyViewDefaults`, the grid on) over it.
+   defaults (`EditorSettings::applyViewDefaults`, the grid's X and Z axes on, so the ground) over it.
 4. Tear the scene down through `SceneIOController::beginSceneReplace`: behaviors
    get `onDestroy` while the old module still holds their code, and the undo
    stack, material previews, play snapshot, saved-scene path and the whole

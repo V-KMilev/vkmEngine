@@ -1,30 +1,22 @@
 #pragma once
 
-#include <memory>
-
 #include "gl_shader.h"
 
 #include "gl_pass.h"
 
 namespace Vkm::Engine {
 
-class GLMesh;
-class GLMeshPool;
-
 /**
- * @brief Draws a world-space ground grid on the XZ plane.
+ * @brief Draws the editor's world grid: grids on the XZ, XY and ZY planes, and the axis lines.
  *
- * Alpha-blends a camera-centred quad over the finished HDR scene. The colour chain has no depth,
- * so the fragment shader tests the geometry target's depth. Gated on RenderSettings::grid.
+ * One fullscreen draw after Composite, so it blends in display space and the axes keep
+ * Math::AXIS_COLORS as the gizmos show them. Each pixel finds its ray's point on each plane
+ * and its nearest point on each axis, and tests them against the geometry target's depth.
+ * Drawn while RenderSettings::gridShown: a line for each axis on, and the plane of each two.
  */
 class GLGridPass : public GLPass {
     public:
-        /**
-         * @brief Compile the grid program and build its quad in @p pool.
-         *
-         * @param pool Holds the quad; outlives the pass.
-         */
-        explicit GLGridPass(GLMeshPool& pool);
+        GLGridPass();
         ~GLGridPass() override;
 
         GLGridPass(const GLGridPass& other) = delete;
@@ -37,8 +29,7 @@ class GLGridPass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        Vkm::GL::Shader         m_shader;
-        std::unique_ptr<GLMesh> m_quad;
+        Vkm::GL::Shader m_shader;
 };
 
 } // namespace Vkm::Engine
