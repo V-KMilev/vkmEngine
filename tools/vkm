@@ -968,6 +968,12 @@ def cmd_package(args) -> int:
                     ignore=lambda _dir, names: [n for n in names if n in LOGO_SOURCES]
                 )
 
+    # The game ships the engine's libraries, so it ships the engine's license.
+    if not (root / "LICENSE").is_file():
+        die(f"no LICENSE in {root}; its terms go with every copy of the engine's libraries")
+    with step("the engine's license", out / "LICENSE-vkmEngine.txt"):
+        shutil.copy2(root / "LICENSE", out / "LICENSE-vkmEngine.txt")
+
     # At the package root, which ProjectPaths::projectRoot falls back to.
     shutil.copy2(d / "project.json", out / "project.json")
     for part in PROJECT_DATA:

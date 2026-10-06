@@ -279,6 +279,7 @@ cmake --install build --prefix /path/to/sdk
 <prefix>/shaders/   engine shaders
 <prefix>/assets/    the editor's font and logo - engine chrome, not anyone's art
 <prefix>/templates/ what `vkm new` copies
+<prefix>/LICENSE    the engine's license, which `vkm package` puts in every game
 ```
 
 The install's `shaders/` and `assets/` are what `vkm package` takes out of an
