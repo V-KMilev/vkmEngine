@@ -10,49 +10,64 @@
 namespace Vkm::Engine {
 
 /**
+ * @brief A clip's interleaved PCM, shared with every voice playing it.
+ *
+ * Refcounted so a voice on the audio thread outlives a scene load freeing the
+ * asset (see AudioDevice). The filling constructor lives in vkm_core: the
+ * control block carries the code that frees it, and a gameplay module's code
+ * may be unmapped by a hot reload before the last reference drops.
+ *
+ * Immutable: nothing may edit a clip's samples out from under a voice.
+ */
+class ClipSamples {
+    public:
+        ClipSamples() = default;
+
+        /**
+         * @brief Take @p samples as a clip's buffer, shared from vkm_core.
+         *
+         * @param samples Interleaved PCM, moved in.
+         */
+        explicit ClipSamples(std::vector<int16_t> samples);
+
+        ~ClipSamples() = default;
+
+        ClipSamples(const ClipSamples& other) = default;
+        ClipSamples& operator=(const ClipSamples& other) = default;
+
+        ClipSamples(ClipSamples && other) = default;
+        ClipSamples& operator=(ClipSamples && other) = default;
+
+    public:
+        explicit operator bool() const noexcept { return m_samples != nullptr; }
+
+        const std::vector<int16_t>& operator*() const { return *m_samples; }
+        const std::vector<int16_t>* operator->() const { return m_samples.get(); }
+
+    private:
+        std::shared_ptr<const std::vector<int16_t>> m_samples;
+};
+
+/**
  * @brief A sound: fully decoded interleaved PCM, plus the rate and layout it was written at.
  *
- * Clips are decoded once, at load, and held as samples rather than as encoded
- * bytes with a decoder attached - one answer for a footstep and a music bed
- * alike. A streamed clip would be the only asset in the engine keeping a file
- * open past its load, and a `Resource` is a value a scene load builds in a
- * staging manager and swaps in whole; a live decoder is not that.
- *
- * The cost is visible rather than hidden: the cooked file IS these samples, so a
- * clip occupies as much memory as disk. Streaming can arrive later as a second
- * data source behind the same handle, touching neither the component nor the
- * scene format.
- *
- * Samples are 16-bit signed because that is what the source material already is,
- * and because the mixer converts to float once per buffer regardless.
+ * Decoded once at load, not streamed: a `Resource` is a value built in staging
+ * and swapped in whole, which a live decoder is not. The cooked file IS these
+ * samples, so a clip takes as much memory as disk.
  */
 struct AudioClipAsset : public Resource {
-    uint32_t sampleRate = 0;  ///< Frames per second, as authored; the mixer resamples if it differs.
+    uint32_t sampleRate = 0;  ///< Frames per second, as authored; AudioDevice resamples if it differs.
     uint32_t channels   = 0;  ///< 1 = mono, 2 = stereo, up to MAX_AUDIO_CHANNELS; only a mono clip positions.
 
-    /**
-     * @brief Interleaved PCM, shared rather than owned outright.
-     *
-     * The one place in the engine where an asset's payload is refcounted, and
-     * the reason is the mixer: a playing voice reads these samples from the
-     * audio thread, while a scene load frees the asset that owns them from the
-     * main thread without asking anyone first. Sharing ownership with the voice
-     * is what turns that from a use-after-free into a sound that keeps playing
-     * for the one frame it takes AudioSystem to notice the graph moved.
-     *
-     * Immutable by type, because two things now read it: nothing may edit a
-     * clip's samples out from under a voice, and const is how that is said.
-     */
-    std::shared_ptr<const std::vector<int16_t>> samples;
+    ClipSamples samples;  ///< Interleaved PCM, shared with the voices playing it.
 
-    /// Total samples across all channels; 0 for a clip that carries none.
+    /// Total samples across all channels.
     size_t sampleCount() const { return samples ? samples->size() : 0; }
 
     /**
      * @brief Length in sample frames (one frame is one sample per channel).
      *
-     * Derived rather than stored: the sample count and the channel count
-     * already say it, and a third field could disagree with them.
+     * @return The frame count; 0 for a clip with no channels.
      */
     uint64_t frameCount() const { return channels == 0 ? 0 : sampleCount() / channels; }
 

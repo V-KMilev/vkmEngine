@@ -6,8 +6,10 @@
 namespace Vkm::Engine {
 
 EntityId findActiveListener(const Scene& scene) {
-    return findLowestSlot<AudioListener, Transform>(scene,
-        [](const AudioListener& listener, const Transform&) { return listener.active; });
+    return findLowestSlot<AudioListener, Transform>(
+        scene,
+        [](const AudioListener& listener, const Transform&) { return listener.active; }
+    );
 }
 
 } // namespace Vkm::Engine

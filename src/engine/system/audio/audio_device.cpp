@@ -4,57 +4,52 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <memory>
 #include <unordered_map>
 #include <utility>
-#include <vector>
 
 #include "logger.h"
+#include "miniaudio.h"
 
 #include "resource/asset/audio_clip_asset.h"
-
-#include "miniaudio.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
-// The backends for the platforms this engine runs on, in miniaudio's own
-// priority order. Stated rather than defaulted for one reason: ma_engine's
-// default list ends in the null backend, which succeeds on a machine with no
-// audio hardware and mixes into nowhere.
-//
-// Only Windows and Linux, because that is what the engine supports (see
-// engine.md). Naming CoreAudio, sndio, AAudio and OpenSL as well described a
-// portability nobody has: the platform layer, the window and the backend do not
-// build there, so an audio backend that would have worked is not a port.
+// The supported platforms' backends (engine.md), in miniaudio's priority order. Stated
+// because ma_engine's default list ends in the null backend, which succeeds with no hardware.
 constexpr std::array<ma_backend, 7> PLAYBACK_BACKENDS = {
-    ma_backend_wasapi, ma_backend_dsound, ma_backend_winmm,
-    ma_backend_pulseaudio, ma_backend_alsa, ma_backend_jack, ma_backend_oss,
+    ma_backend_wasapi,
+    ma_backend_dsound,
+    ma_backend_winmm,
+    ma_backend_pulseaudio,
+    ma_backend_alsa,
+    ma_backend_jack,
+    ma_backend_oss,
 };
 
-// How long a stopped voice takes to reach silence. The measurement behind the
-// number is in docs/reference/system/audio.md.
+// How long a stopped voice takes to reach silence; measured in docs/reference/audio.md.
 constexpr uint32_t STOP_FADE_MS = 5;
+
+/// Wait between attempts to reopen a lost device: opening blocks, and a host with no
+/// output would otherwise pay it every frame.
+constexpr std::chrono::seconds REOPEN_INTERVAL{2};
 
 /**
  * @brief Forward a miniaudio log line into vkmLog.
  *
- * Carries what miniaudio cannot say for itself: why a device declined, or that
- * one has just disconnected.
+ * Called from the mixer thread too, so it trims into a stack buffer.
  *
- * Called from the mixer thread as well as ours - a disconnect is reported from
- * the mixer - so it trims into a stack buffer rather than a string, there being
- * no reason to reach the allocator from that thread on the way to a log line.
- * vkmLog serialises the rest, as it already does for the lines the asset loaders
- * write from ThreadPool workers.
+ * @param userData Unused; the callback is registered with none.
+ * @param level miniaudio's level for the line; only warnings and errors pass.
+ * @param message The line, newline-terminated as miniaudio writes it.
  */
 void forwardBackendLog(void* userData, ma_uint32 level, const char* message) {
-    // Warnings and errors only: below that miniaudio dumps ninety lines of device
-    // capabilities on every launch, and the one line worth having - backend, rate
-    // and layout - open() writes for itself.
+    // Below warnings, miniaudio dumps ninety lines of device capabilities per launch.
     if (message == nullptr || (level != MA_LOG_LEVEL_WARNING && level != MA_LOG_LEVEL_ERROR)) return;
 
     char text[512];
@@ -63,16 +58,27 @@ void forwardBackendLog(void* userData, ma_uint32 level, const char* message) {
         text[length] = message[length];
         ++length;
     }
-    // miniaudio ends its messages with a newline, which would break the line
-    // vkmLog is building around it.
+    // Strip miniaudio's trailing newline, which would break vkmLog's line.
     while (length > 0 && (text[length - 1] == '\n' || text[length - 1] == '\r')) --length;
     if (length == 0) return;
     text[length] = '\0';
 
-    // Both at WARNING: a backend "error" is usually one backend declining while
-    // miniaudio walks its list, which is routine. The engine's own error is the
-    // sentence open() writes once every one of them has declined.
+    // Both at WARNING: a backend "error" is usually one backend routinely declining;
+    // open() reports once every one has.
     LOG_WARNING("miniaudio: %s", text);
+}
+
+/**
+ * @brief The device's data callback: pull the next block of the mix.
+ *
+ * @param device     The device asking; its user data is the engine.
+ * @param out        Where the device wants the frames.
+ * @param in         Unused; a playback device has no input.
+ * @param frameCount How many frames it wants.
+ */
+void pullMix(ma_device* device, void* out, const void* in, ma_uint32 frameCount) {
+    (void)in;
+    ma_engine_read_pcm_frames(static_cast<ma_engine*>(device->pUserData), out, frameCount, nullptr);
 }
 
 } // namespace
@@ -80,21 +86,13 @@ void forwardBackendLog(void* userData, ma_uint32 level, const char* message) {
 /**
  * @brief The backend half of AudioDevice: the mixer, its context, and its voices.
  *
- * A voice is a ma_sound reading a ma_audio_buffer_ref that points into the
- * clip's own samples, so the two live and die together and neither may move
- * once the sound is initialised - which is why each is heap-allocated rather
- * than sitting in a vector that could reallocate under the mixer.
+ * A voice's ma_sound reads a ma_audio_buffer_ref into the clip's samples; neither may
+ * move once initialised, so each voice is heap-allocated.
  */
 struct AudioDevice::Backend {
     struct Voice {
         /**
          * @brief Who is holding a voice at its cursor, if anyone.
-         *
-         * One field rather than a held flag beside an owner flag, because a
-         * pair can disagree and the disagreement is expensive: a voice no
-         * longer held but still remembered as the bulk pause's comes back on
-         * the next resumeAllVoices, and find() hides it, so nothing above is
-         * left able to stop it again.
          */
         enum class Hold {
             None,
@@ -105,13 +103,11 @@ struct AudioDevice::Backend {
         ma_sound            sound;
         ma_audio_buffer_ref buffer;
         // Keeps the PCM the buffer points at alive for as long as this voice is.
-        std::shared_ptr<const std::vector<int16_t>> samples;
-        // Ramping to silence, waiting for the reap. Hidden from find(), so an
-        // id whose voice is fading behaves exactly as one whose voice is gone.
+        ClipSamples samples;
+        // Ramping to silence, awaiting the reap; hidden from find(), so it reads as gone.
         bool retiring = false;
-        // Held at its cursor, and by whom. Kept here because the mixer cannot
-        // say it: a held sound is a stopped node, which is also what a voice
-        // that ran out looks like, and only one of the two should be reaped.
+        // Held at its cursor, and by whom. The mixer cannot say: a held sound and one
+        // that ran out are both stopped nodes, and only the latter is reaped.
         Hold hold = Hold::None;
     };
 
@@ -119,15 +115,22 @@ struct AudioDevice::Backend {
     bool      hasLog = false;
     ma_engine engine;
 
-    // Only a device-backed mixer has one, and it outlives the engine that
-    // borrows it: ma_engine_uninit does not free a context it did not create.
+    // Device-backed mixers only; outlives the engine, which does not free a context it
+    // did not create.
     std::unique_ptr<ma_context> context;
+
+    // Owned here, not by the engine, so a lost one is rebuilt under a mixer that keeps
+    // its voices; on the heap, because the engine holds a pointer to it.
+    std::unique_ptr<ma_device> device;
+
+    // When a lost device may next be reopened, and whether the last try failed, so a
+    // host with no output says so once.
+    std::chrono::steady_clock::time_point reopenAt{};
+    bool reopenFailed = false;
 
     std::unordered_map<VoiceId, std::unique_ptr<Voice>> voices;
 
-    // Monotonic and never reused, so a voice id that outlives its voice cannot
-    // come to name a later one. At one increment per sound started, nothing
-    // reaches the wrap.
+    // Never reused, so a stale id cannot name a later voice; nothing reaches the wrap.
     VoiceId nextVoice = 1;
 
     Voice* find(VoiceId id) const {
@@ -137,22 +140,17 @@ struct AudioDevice::Backend {
     }
 
     void release(Voice& voice) const {
-        // Uninit stops the sound and detaches its node from the graph; the
-        // buffer it was reading goes second, because until the node is out
-        // nothing guarantees the mixer has finished with it.
+        // The buffer goes second: until the node is detached, the mixer may still read it.
         ma_sound_uninit(&voice.sound);
         ma_audio_buffer_ref_uninit(&voice.buffer);
     }
 
     static void apply(Voice& voice, const VoiceParams& params) {
-        // NaN needs no branch of its own: std::max keeps its first argument
-        // when a comparison against a NaN comes back false, so it lands on the
-        // same floor the infinity check puts +inf on.
         const float gain = std::isfinite(params.volume) ? std::max(0.0f, params.volume) : 0.0f;
         ma_sound_set_volume(&voice.sound, gain);
-        // Zero would hold one sample forever instead of advancing the cursor.
-        // A max rather than a clamp, because std::clamp would hand a NaN
-        // straight on where this floors it.
+
+        // Floored: miniaudio ignores pitch <= 0, and a NaN passes that check and is stored.
+        // A max, not std::clamp, which would hand the NaN on.
         ma_sound_set_pitch(&voice.sound, std::max(0.01f, params.pitch));
         ma_sound_set_looping(&voice.sound, params.loop ? MA_TRUE : MA_FALSE);
 
@@ -160,18 +158,20 @@ struct AudioDevice::Backend {
         if (!params.spatial) return;
 
         ma_sound_set_position(&voice.sound, params.position.x, params.position.y, params.position.z);
-        ma_sound_set_min_distance(&voice.sound, std::max(0.0f, params.minDistance));
-        ma_sound_set_max_distance(&voice.sound, params.maxDistance);
+
+        // Clamped, because a non-finite distance survives the attenuation curve's own
+        // divide-by-zero guard (`min >= max` is false for a NaN).
+        ma_sound_set_min_distance(&voice.sound, params.heardMinDistance());
+        ma_sound_set_max_distance(&voice.sound, params.heardMaxDistance());
     }
 
     /**
      * @brief Ramp @p voice to silence and hold its cursor there.
      *
-     * Ramped rather than cut for the reason STOP_FADE_MS exists: a pause is a
-     * cut at whatever sample the cursor is on, and measured across the phases
-     * of a tone it steps by the signal's full amplitude both going in and
-     * coming out. The sound therefore keeps playing through its own fade, so
-     * the hold lands a few milliseconds after it is asked for.
+     * Ramped like a stop (STOP_FADE_MS), so the hold lands a few milliseconds late.
+     *
+     * @param voice Voice to hold.
+     * @param hold Who is holding it, which decides who may let it go.
      */
     static void pauseSound(Voice& voice, Voice::Hold hold) {
         voice.hold = hold;
@@ -181,11 +181,10 @@ struct AudioDevice::Backend {
     /**
      * @brief Undo pauseSound and let @p voice play on from where it was held.
      *
-     * The ramped pause leaves two things behind that would keep the sound
-     * silent however loud it is asked to be: a stop time now in the past,
-     * which the node reads as stopped whatever its state says, and a fader
-     * sitting at zero. Both are cleared here, and the ramp back in is the
-     * same length as the ramp out for the same reason.
+     * Clears both things the ramped pause leaves silencing it: a past stop time and a
+     * fader at zero.
+     *
+     * @param voice Voice to let go.
      */
     static void resumeSound(Voice& voice) {
         ma_sound_set_stop_time_in_pcm_frames(&voice.sound, ~static_cast<ma_uint64>(0));
@@ -195,14 +194,10 @@ struct AudioDevice::Backend {
     }
 
     /**
-     * @brief Bring the log bridge up, before anything that might have news.
+     * @brief Bring the log bridge up first, to catch the context walking its backend list.
      *
-     * First, because the interesting messages are the ones the context writes
-     * while it walks the backend list - which is exactly the run that ends in
-     * "this host has no audio" and the one worth being able to read.
-     *
-     * @return The log to hand to the context and engine configs, or nullptr if
-     *         it could not be created, which costs the messages and nothing else.
+     * @return The log for the context and engine configs, or nullptr if it could not
+     *         be created, which costs only the messages.
      */
     ma_log* initLog() {
         if (ma_log_init(nullptr, &log) != MA_SUCCESS) return nullptr;
@@ -213,13 +208,70 @@ struct AudioDevice::Backend {
 
     /**
      * @brief Bring up the mixer, given a config already told whether it drives a device.
+     *
+     * @param config Engine config; its listener count is set here.
+     * @return Whether ma_engine_init succeeded.
      */
     bool initEngine(ma_engine_config& config) {
-        // One ear. miniaudio offers four; a second has no meaning while the
-        // engine picks exactly one AudioListener, and an unused one is still a
-        // spatializer pass per voice per buffer.
+        // One ear (see findActiveListener); an unused one still costs a spatializer pass.
         config.listenerCount = 1;
         return ma_engine_init(&config, &engine) == MA_SUCCESS;
+    }
+
+    /**
+     * @brief Open the context's default playback device, pulling from the engine.
+     *
+     * WASAPI's automatic rerouting is off: it restarts the device from miniaudio's
+     * thread and would race our rebuild; reopenLostDevice replaces a lost one instead.
+     *
+     * @param channels   Channels to open with; 0 for the device's own.
+     * @param sampleRate Rate to open with; 0 for the device's own.
+     * @return Whether the device opened. It is not started.
+     */
+    bool initDevice(ma_uint32 channels, ma_uint32 sampleRate) {
+        ma_device_config config = ma_device_config_init(ma_device_type_playback);
+        config.playback.format            = ma_format_f32;
+        config.playback.channels          = channels;
+        config.sampleRate                 = sampleRate;
+        config.dataCallback               = pullMix;
+        config.pUserData                  = &engine;
+        config.noPreSilencedOutputBuffer  = MA_TRUE;
+        config.noClip                     = MA_TRUE;
+        config.wasapi.noAutoStreamRouting = MA_TRUE;
+        if (!device) device = std::make_unique<ma_device>();
+        return ma_device_init(context.get(), &config, device.get()) == MA_SUCCESS;
+    }
+
+    /**
+     * @brief Bring up the mixer on the context's default playback device.
+     *
+     * @return Whether the mixer came up; the engine starts the device.
+     */
+    bool initDeviceEngine() {
+        if (!initDevice(0, 0)) return false;
+
+        ma_engine_config config = ma_engine_config_init();
+        config.pDevice = device.get();
+        config.pLog    = hasLog ? &log : nullptr;
+        if (initEngine(config)) return true;
+
+        ma_device_uninit(device.get());
+        return false;
+    }
+
+    /**
+     * @brief Whether the device stopped without being asked to, or a reopen has not yet found one.
+     *
+     * Only close() stops a device and it takes the backend, so a stopped device on an
+     * open backend was lost (unplugged, driver reset). Read on our thread, where it
+     * can be acted on.
+     *
+     * @return True when a device-backed mixer has no running device.
+     */
+    bool deviceLost() const {
+        if (!device) return false;
+        const ma_device_state state = ma_device_get_state(device.get());
+        return state == ma_device_state_stopped || state == ma_device_state_uninitialized;
     }
 
     void uninitLog() {
@@ -233,7 +285,7 @@ AudioDevice::AudioDevice()  = default;
 AudioDevice::~AudioDevice() { close(); }
 
 bool AudioDevice::open() {
-    if (m_open) return true;
+    if (m_backend) return true;
 
     auto backend = std::make_unique<Backend>();
     backend->context = std::make_unique<ma_context>();
@@ -241,18 +293,19 @@ bool AudioDevice::open() {
     ma_context_config contextConfig = ma_context_config_init();
     contextConfig.pLog = backend->initLog();
 
-    if (ma_context_init(PLAYBACK_BACKENDS.data(), static_cast<ma_uint32>(PLAYBACK_BACKENDS.size()),
-                        &contextConfig, backend->context.get()) != MA_SUCCESS) {
+    const ma_result contextResult = ma_context_init(
+        PLAYBACK_BACKENDS.data(),
+        static_cast<ma_uint32>(PLAYBACK_BACKENDS.size()),
+        &contextConfig,
+        backend->context.get()
+    );
+    if (contextResult != MA_SUCCESS) {
         backend->uninitLog();
         LOG_WARNING("No audio backend available on this host - the engine runs silently");
         return false;
     }
 
-    ma_engine_config config = ma_engine_config_init();
-    config.pContext = backend->context.get();
-    config.pLog     = contextConfig.pLog;
-
-    if (!backend->initEngine(config)) {
+    if (!backend->initDeviceEngine()) {
         ma_context_uninit(backend->context.get());
         backend->uninitLog();
         LOG_WARNING("No audio device could be opened - the engine runs silently");
@@ -260,17 +313,18 @@ bool AudioDevice::open() {
     }
 
     m_backend = std::move(backend);
-    m_open    = true;
 
-    LOG_INFO("Audio device open (%s, %u Hz, %u channel(s))",
-             ma_get_backend_name(m_backend->context->backend),
-             ma_engine_get_sample_rate(&m_backend->engine),
-             ma_engine_get_channels(&m_backend->engine));
+    LOG_INFO(
+        "Audio device open (%s, %u Hz, %u channel(s))",
+        ma_get_backend_name(m_backend->context->backend),
+        ma_engine_get_sample_rate(&m_backend->engine),
+        ma_engine_get_channels(&m_backend->engine)
+    );
     return true;
 }
 
 bool AudioDevice::openOffline(uint32_t sampleRate, uint32_t channels) {
-    if (m_open) return true;
+    if (m_backend) return true;
 
     auto backend = std::make_unique<Backend>();
 
@@ -287,7 +341,6 @@ bool AudioDevice::openOffline(uint32_t sampleRate, uint32_t channels) {
     }
 
     m_backend = std::move(backend);
-    m_open    = true;
 
     LOG_INFO("Audio mixer open with no device (%u Hz, %u channel(s))", sampleRate, channels);
     return true;
@@ -297,18 +350,19 @@ void AudioDevice::close() {
     if (!m_backend) return;
 
     stopAllVoices();
+    // The engine stops a borrowed device before taking its graph down; the device goes after.
     ma_engine_uninit(&m_backend->engine);
+    if (m_backend->device) ma_device_uninit(m_backend->device.get());
     if (m_backend->context) ma_context_uninit(m_backend->context.get());
-    // Last: the two above log as they wind down.
+    // Last: the three above log as they wind down.
     m_backend->uninitLog();
 
     m_backend.reset();
-    m_open = false;
     LOG_INFO("Audio device closed");
 }
 
 uint64_t AudioDevice::render(float* frames, uint64_t frameCount) {
-    if (!m_open || frames == nullptr) return 0;
+    if (!m_backend || frames == nullptr) return 0;
 
     ma_uint64 read = 0;
     if (ma_engine_read_pcm_frames(&m_backend->engine, frames, frameCount, &read) != MA_SUCCESS) {
@@ -318,45 +372,51 @@ uint64_t AudioDevice::render(float* frames, uint64_t frameCount) {
 }
 
 VoiceId AudioDevice::play(const AudioClipAsset& clip, const VoiceParams& params) {
-    if (!m_open || clip.sampleCount() == 0 || clip.channels == 0) return 0;
+    if (!m_backend || clip.sampleCount() == 0 || clip.channels == 0) return 0;
 
-    // Refused rather than stolen: the oldest voice is as likely to be a deliberate
-    // loop as a one-shot, and cutting a game's music for an overflowing footstep is
-    // the worse failure. AudioSystem reaps finished voices each frame.
+    // Refused, not stolen: the oldest voice may be a deliberate loop.
     if (m_backend->voices.size() >= MAX_ACTIVE_VOICES) {
         if (!m_voiceBudgetSpent) {
             m_voiceBudgetSpent = true;
-            LOG_WARNING("Audio voice budget of %zu reached; further sounds are "
-                        "dropped until voices free up. A game firing one "
-                        "PlaySoundEvent a frame is the usual cause.",
-                        MAX_ACTIVE_VOICES);
+            LOG_WARNING(
+                "Audio voice budget of %zu reached; further sounds are dropped until voices free up. "
+                "A game firing one PlaySoundEvent a frame is the usual cause.",
+                MAX_ACTIVE_VOICES
+            );
         }
         return 0;
     }
-    // Said once per saturation rather than once per run, so a game that drifts
-    // into it a second time says so a second time.
+    // Once per saturation, not per run.
     m_voiceBudgetSpent = false;
 
     auto voice = std::make_unique<Backend::Voice>();
     voice->samples = clip.samples;
-    if (ma_audio_buffer_ref_init(ma_format_s16, clip.channels, voice->samples->data(),
-                                 clip.frameCount(), &voice->buffer) != MA_SUCCESS) {
-        return 0;
-    }
-    // Assigned rather than passed in: ma_audio_buffer_ref_init takes no rate yet
-    // (miniaudio's own TODO), and a buffer reporting zero is mixed as though it
-    // were already at the device's rate - a 22 kHz clip played an octave high.
+    const ma_result bufferResult = ma_audio_buffer_ref_init(
+        ma_format_s16,
+        clip.channels,
+        voice->samples->data(),
+        clip.frameCount(),
+        &voice->buffer
+    );
+    if (bufferResult != MA_SUCCESS) return 0;
+    // ma_audio_buffer_ref_init takes no rate, and a zero rate mixes as the device's:
+    // a 22 kHz clip would play an octave high.
     voice->buffer.sampleRate = clip.sampleRate;
 
-    if (ma_sound_init_from_data_source(&m_backend->engine, &voice->buffer, 0, nullptr,
-                                       &voice->sound) != MA_SUCCESS) {
+    const ma_result soundResult = ma_sound_init_from_data_source(
+        &m_backend->engine,
+        &voice->buffer,
+        0,
+        nullptr,
+        &voice->sound
+    );
+    if (soundResult != MA_SUCCESS) {
         ma_audio_buffer_ref_uninit(&voice->buffer);
         return 0;
     }
 
-    // Linear attenuation, always: the only model under which minDistance and
-    // maxDistance mean what they say. Doppler is off because nothing here
-    // tracks velocity.
+    // Linear: the only model where minDistance and maxDistance mean what they say.
+    // No Doppler: nothing tracks velocity.
     ma_sound_set_attenuation_model(&voice->sound, ma_attenuation_model_linear);
     ma_sound_set_rolloff(&voice->sound, 1.0f);
     ma_sound_set_doppler_factor(&voice->sound, 0.0f);
@@ -373,47 +433,43 @@ VoiceId AudioDevice::play(const AudioClipAsset& clip, const VoiceParams& params)
 }
 
 void AudioDevice::updateVoice(VoiceId voice, const VoiceParams& params) {
-    if (!m_open) return;
+    if (!m_backend) return;
     if (Backend::Voice* v = m_backend->find(voice)) Backend::apply(*v, params);
 }
 
 bool AudioDevice::isVoiceActive(VoiceId voice) const {
-    if (!m_open) return false;
+    if (!m_backend) return false;
     const Backend::Voice* v = m_backend->find(voice);
-    // Deliberately not ma_sound_is_playing: a held voice is a stopped node
-    // and it has not finished, so what is asked here is whether the clip has
-    // run out. isVoicePaused is the other half.
+    // Not ma_sound_is_playing: a held voice is a stopped node but has not finished.
     return v != nullptr && ma_sound_at_end(&v->sound) == MA_FALSE;
 }
 
 void AudioDevice::pauseVoice(VoiceId voice) {
-    if (!m_open) return;
+    if (!m_backend) return;
     Backend::Voice* v = m_backend->find(voice);
     if (v == nullptr) return;
 
-    // Whoever asks for the hold owns it, so a voice the transport holds becomes
-    // this caller's. What must not be repeated is the ramp, which would restart
-    // a fade already halfway down.
+    // The hold may change hands, but the ramp is not repeated: that would restart the fade.
     const bool alreadyHeld = v->hold != Backend::Voice::Hold::None;
     v->hold = Backend::Voice::Hold::Own;
     if (!alreadyHeld) Backend::pauseSound(*v, Backend::Voice::Hold::Own);
 }
 
 void AudioDevice::resumeVoice(VoiceId voice) {
-    if (!m_open) return;
+    if (!m_backend) return;
     Backend::Voice* v = m_backend->find(voice);
     if (v == nullptr || v->hold == Backend::Voice::Hold::None) return;
     Backend::resumeSound(*v);
 }
 
 bool AudioDevice::isVoicePaused(VoiceId voice) const {
-    if (!m_open) return false;
+    if (!m_backend) return false;
     const Backend::Voice* v = m_backend->find(voice);
     return v != nullptr && v->hold != Backend::Voice::Hold::None;
 }
 
 float AudioDevice::voiceCursor(VoiceId voice) const {
-    if (!m_open) return 0.0f;
+    if (!m_backend) return 0.0f;
     const Backend::Voice* v = m_backend->find(voice);
     if (v == nullptr) return 0.0f;
 
@@ -423,14 +479,12 @@ float AudioDevice::voiceCursor(VoiceId voice) const {
 }
 
 void AudioDevice::seekVoice(VoiceId voice, float seconds) {
-    if (!m_open) return;
+    if (!m_backend) return;
     Backend::Voice* v = m_backend->find(voice);
     if (v == nullptr) return;
 
     const double at = std::isfinite(seconds) ? std::max(0.0, static_cast<double>(seconds)) : 0.0;
     const ma_uint64 frame = static_cast<ma_uint64>(at * static_cast<double>(v->buffer.sampleRate));
-    // Clamped here because miniaudio refuses an out-of-range seek at the data
-    // source and still moves the sound's own clock to the position it refused.
     ma_sound_seek_to_pcm_frame(&v->sound, std::min(frame, v->buffer.sizeInFrames));
 }
 
@@ -441,32 +495,31 @@ void AudioDevice::stopVoice(VoiceId voice) {
     if (it == m_backend->voices.end()) return;
 
     Backend::Voice& stopping = *it->second;
-    // Already on its way out. Asking again would re-schedule the ramp from
-    // wherever it had got to, restarting a fade that is halfway done.
+    // Already on its way out; asking again would restart the fade.
     if (stopping.retiring) return;
 
-    // A stopped voice is held by nobody: the hold is exactly why a voice reads
-    // as not playing, so leaving it set would keep this one out of every reap.
+    // Clear the hold, or this voice would be kept out of every reap.
     stopping.hold = Backend::Voice::Hold::None;
 
-    // Not released here: the mixer needs the sound for as long as the ramp
-    // lasts, and reapFinishedVoices takes it once the stop has passed.
+    // Not released here: the mixer needs the sound until the ramp ends; the reap takes it.
     stopping.retiring = true;
     ma_sound_stop_with_fade_in_milliseconds(&stopping.sound, STOP_FADE_MS);
 }
 
 void AudioDevice::reapFinishedVoices() {
     if (!m_backend) return;
+    if (m_backend->deviceLost()) {
+        reopenLostDevice();
+        return;
+    }
 
     for (auto it = m_backend->voices.begin(); it != m_backend->voices.end(); ) {
-        // Two ways to be finished: the clip ran out, or a ramped stop reached
-        // the end of its fade. A held voice looks like the second and is not
-        // it - holding stops the node too, so who holds it is the difference.
+        // Finished: the clip ran out, or a ramped stop ended. A held voice also has a
+        // stopped node; the hold tells them apart.
         const Backend::Voice& voice = *it->second;
         const ma_sound& sound = voice.sound;
         const bool finished = ma_sound_at_end(&sound) == MA_TRUE
-                           || (ma_sound_is_playing(&sound) == MA_FALSE
-                               && voice.hold == Backend::Voice::Hold::None);
+            || (ma_sound_is_playing(&sound) == MA_FALSE && voice.hold == Backend::Voice::Hold::None);
         if (!finished) {
             ++it;
             continue;
@@ -476,10 +529,38 @@ void AudioDevice::reapFinishedVoices() {
     }
 }
 
+void AudioDevice::reopenLostDevice() {
+    Backend& backend = *m_backend;
+    const auto now = std::chrono::steady_clock::now();
+    if (now < backend.reopenAt) return;
+    backend.reopenAt = now + REOPEN_INTERVAL;
+
+    if (!backend.reopenFailed) {
+        LOG_WARNING("The audio device stopped by itself (unplugged?) - opening the default device again");
+    }
+
+    // Only the device is replaced; miniaudio converts the standing mix to the new output.
+    ma_device_uninit(backend.device.get());
+    const ma_uint32 channels   = ma_engine_get_channels(&backend.engine);
+    const ma_uint32 sampleRate = ma_engine_get_sample_rate(&backend.engine);
+    const bool opened = backend.initDevice(channels, sampleRate);
+    if (!opened || ma_device_start(backend.device.get()) != MA_SUCCESS) {
+        if (opened) ma_device_uninit(backend.device.get());
+        if (!backend.reopenFailed) {
+            LOG_WARNING(
+                "No audio device to open - what was playing waits, and one is tried every %llds",
+                static_cast<long long>(REOPEN_INTERVAL.count())
+            );
+        }
+        backend.reopenFailed = true;
+        return;
+    }
+    backend.reopenFailed = false;
+    LOG_INFO("Audio device open again; what was playing carries on");
+}
+
 void AudioDevice::stopAllVoices() {
     if (!m_backend) return;
-    // Cut, not ramped, unlike stopVoice: close() uninitialises the mixer on the
-    // next line, so a ramp scheduled here would never be mixed at all.
     for (auto& entry : m_backend->voices) m_backend->release(*entry.second);
     m_backend->voices.clear();
 }
@@ -488,9 +569,7 @@ void AudioDevice::pauseAllVoices() {
     if (!m_backend) return;
     for (auto& entry : m_backend->voices) {
         Backend::Voice& voice = *entry.second;
-        // A voice on its way out is not held back to be resumed later, and one
-        // already held keeps the hold it has rather than changing hands - which
-        // is what lets an audition held on purpose survive a Resume.
+        // Skip voices on their way out; one already held keeps its hold.
         if (voice.retiring || voice.hold != Backend::Voice::Hold::None) continue;
         Backend::pauseSound(voice, Backend::Voice::Hold::Bulk);
     }
@@ -509,22 +588,20 @@ size_t AudioDevice::voiceCount() const {
 }
 
 void AudioDevice::setListener(const glm::vec3& position, const glm::vec3& forward, const glm::vec3& up) {
-    if (!m_open) return;
-    ma_engine_listener_set_position (&m_backend->engine, 0, position.x, position.y, position.z);
-    ma_engine_listener_set_direction(&m_backend->engine, 0, forward.x,  forward.y,  forward.z);
-    ma_engine_listener_set_world_up (&m_backend->engine, 0, up.x,       up.y,       up.z);
+    if (!m_backend) return;
+    ma_engine_listener_set_position(&m_backend->engine, 0, position.x, position.y, position.z);
+    ma_engine_listener_set_direction(&m_backend->engine, 0, forward.x, forward.y, forward.z);
+    ma_engine_listener_set_world_up(&m_backend->engine, 0, up.x, up.y, up.z);
 }
 
 void AudioDevice::setListenerActive(bool active) {
-    if (!m_open) return;
+    if (!m_backend) return;
     ma_engine_listener_set_enabled(&m_backend->engine, 0, active ? MA_TRUE : MA_FALSE);
 }
 
 void AudioDevice::setMasterVolume(float volume) {
-    // Kept rather than only pushed, so masterVolume() answers what the mixer
-    // was given instead of making every caller sanitise the number again.
     m_masterVolume = std::isfinite(volume) ? std::max(0.0f, volume) : 0.0f;
-    if (!m_open) return;
+    if (!m_backend) return;
     ma_engine_set_volume(&m_backend->engine, m_masterVolume);
 }
 
