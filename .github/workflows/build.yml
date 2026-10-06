@@ -15,6 +15,14 @@ on:
 env:
   # The pinned tools, fetched once and cached per pin file.
   VKM_TOOLS_DIR: ${{ github.workspace }}/../vkm-tools
+  # Every compile goes through ccache, whose store a job carries from its last run.
+  CCACHE_DIR: ${{ github.workspace }}/../ccache
+  CCACHE_MAXSIZE: 1500M
+  CCACHE_COMPILERCHECK: content
+  CMAKE_C_COMPILER_LAUNCHER: ccache
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
+  CCACHE_WINDOWS_URL: https://github.com/ccache/ccache/releases/download/v4.14.1/ccache-4.14.1-windows-x86_64.zip
+  CCACHE_WINDOWS_SHA256: 6219f3865ca59aec41ee4b678df171d5d35855ecb2b6dbbbd20690b3a68af7b4
 
 jobs:
   sdk:
@@ -42,21 +50,36 @@ jobs:
         if: runner.os == 'Windows'
         run: git config --global core.autocrlf false
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
           submodules: recursive
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ env.VKM_TOOLS_DIR }}
           key: vkm-tools-${{ matrix.platform }}-${{ hashFiles('tools/toolchain.json') }}
+
+      - uses: actions/cache@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ github.job }}-${{ matrix.platform }}-${{ github.sha }}
+          restore-keys: ccache-${{ github.job }}-${{ matrix.platform }}-
+
+      # Linux's comes with the system packages below.
+      - name: Install ccache
+        if: runner.os == 'Windows'
+        run: |
+          curl -sSfL -o ccache.zip "$CCACHE_WINDOWS_URL"
+          echo "$CCACHE_WINDOWS_SHA256  ccache.zip" | sha256sum -c -
+          unzip -q ccache.zip -d "$RUNNER_TEMP"
+          cygpath -w "$(ls -d "$RUNNER_TEMP"/ccache-*)" >> "$GITHUB_PATH"
 
       - name: Install the window system's headers
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get install -y --no-install-recommends ccache \
             libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev \
             libwayland-dev libxkbcommon-dev wayland-protocols \
             libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev
@@ -79,6 +102,9 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+      - name: What the compiler cache saved
+        run: ccache --show-stats
 
       - name: Package
         run: cmake --build build --target package
@@ -107,7 +133,7 @@ jobs:
         run: |
           for /d %%d in ("%RUNNER_TEMP%\use-the-sdk\vkmEngine-*") do call "%%d\vkm.cmd" --version
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sdk-${{ matrix.platform }}
           path: build/vkmEngine-*.${{ matrix.archive }}
@@ -137,21 +163,36 @@ jobs:
         if: runner.os == 'Windows'
         run: git config --global core.autocrlf false
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
           submodules: recursive
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ${{ env.VKM_TOOLS_DIR }}
           key: vkm-tools-${{ matrix.platform }}-${{ hashFiles('tools/toolchain.json') }}
+
+      - uses: actions/cache@v6
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-${{ github.job }}-${{ matrix.platform }}-${{ github.sha }}
+          restore-keys: ccache-${{ github.job }}-${{ matrix.platform }}-
+
+      # Linux's comes with the system packages below.
+      - name: Install ccache
+        if: runner.os == 'Windows'
+        run: |
+          curl -sSfL -o ccache.zip "$CCACHE_WINDOWS_URL"
+          echo "$CCACHE_WINDOWS_SHA256  ccache.zip" | sha256sum -c -
+          unzip -q ccache.zip -d "$RUNNER_TEMP"
+          cygpath -w "$(ls -d "$RUNNER_TEMP"/ccache-*)" >> "$GITHUB_PATH"
 
       - name: Install Clang and the window system's headers
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang-18 \
+          sudo apt-get install -y --no-install-recommends clang-18 ccache \
             libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev \
             libwayland-dev libxkbcommon-dev wayland-protocols \
             libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev
@@ -178,3 +219,6 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+      - name: What the compiler cache saved
+        run: ccache --show-stats
