@@ -3,6 +3,8 @@
 
 build*/
 cache/
+# Python's bytecode cache, written beside tools/ scripts that import one another.
+__pycache__/
 
 logs/
 screenshots/
@@ -11,8 +13,8 @@ screenshots/
 # the engine was developed against, which is gigabytes and belongs to nobody but
 # this machine, and the handful of small files the engine and its documents
 # actually ship. So the directory is excluded and the shipped subdirectories are
-# named, rather than excluded wholesale and force-added one file at a time -
-# which is what it was, and which meant `git add` silently refused a new logo.
+# named: excluded wholesale, every shipped file would need a force-add, and
+# `git add` refuses a new one silently.
 #
 # Git cannot re-include a path whose parent directory is excluded, so this has to
 # be `assets/*` plus exceptions rather than `assets/` plus exceptions.
@@ -31,7 +33,7 @@ assets/logo/source_split/
 # Per-user editor state. It belongs in ProjectPaths::userRoot(), but that root
 # falls back to the engine root when the platform names no user directory or
 # names one that is not writable - and a dev checkout is where that lands.
-editor_recents.json
+editor_user.json
 imgui.ini
 
 editor_settings.json
@@ -40,12 +42,12 @@ editor_settings.json
 /scenes/
 /cooked/
 /library/
-# A project's derived caches, written by the cooker on save and on cook.
-# A project's own source art. The blanket `assets/` pattern used to catch these
-# by matching at any depth; now that it is anchored to the engine's own, they are
-# named. physics_lab is the exception below - its world is authored rather than
+# A project's own source art, which the root-anchored `assets/*` above does not
+# reach. physics_lab is the exception below - its world is authored rather than
 # built at play time, so its art is source.
 examples/*/assets/
+
+# A project's derived caches, written by the cooker on save and on cook.
 examples/*/cooked/
 examples/*/library/
 # A project's built gameplay module, and the copies ScriptModule loads from.
@@ -58,6 +60,11 @@ docs/roadmap.md
 # Throwaway verification harnesses; never part of the engine.
 scratchpad/
 
+# The owner's scratch space inside a tracked directory, which is exactly the
+# shape that gets swept in by an `add` naming the directory rather than the
+# file.
+docs/notes/
+
 # The physics lab is the one example whose world is authored rather than built
 # at play time, so unlike the others it cannot make its own contents. Its source
 # art and its asset recipes are both source: the scene stores names, and the
@@ -66,8 +73,3 @@ scratchpad/
 # beside them stay ignored - those are a cache the cooker rebuilds.
 !examples/physics_lab/assets/
 !examples/physics_lab/library/
-
-# The `assets/` pattern above is unanchored, so it also hides the empty asset
-# directory the project template ships - and `vkm new` then produces a project
-# missing a directory its own README tells the user is there.
-!templates/default/assets/
