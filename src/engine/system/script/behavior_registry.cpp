@@ -24,15 +24,11 @@ std::unique_ptr<Behavior> BehaviorRegistry::create(const std::string& name) cons
     auto it = m_factories.find(name);
     if (it != m_factories.end()) return it->second();
 
-    // An empty registry is a host that never loaded a gameplay module - the
-    // cooker, which bakes art and constructs no behaviors. Calling that
-    // "unregistered" blames the scene for what the host never meant to do.
+    // An empty registry means no module was loaded; "unregistered" would blame the scene.
     if (m_factories.empty()) {
-        LOG_INFO("No gameplay module loaded, so behavior '%s' is left unbuilt",
-                 name.c_str());
+        LOG_INFO("No gameplay module loaded, so behavior '%s' is left unbuilt", name.c_str());
     } else {
-        LOG_ERROR("No behavior registered for '%s' (typo? unregistered behavior?)",
-                  name.c_str());
+        LOG_ERROR("No behavior registered for '%s' (typo? unregistered behavior?)", name.c_str());
     }
     return nullptr;
 }

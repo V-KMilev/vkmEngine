@@ -4,22 +4,20 @@
 
 #include <algorithm>
 #include <filesystem>
-
-#include <exception>
+#include <type_traits>
 #include <utility>
 
 #include "logger.h"
 
 #include "core/clock.h"
-#include "debug/engine_error_log.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
+#include "ecs/hierarchy_operations.h"
 #include "net/net_session.h"
 #include "platform/window/window_manager.h"
 #include "core/event/event_bus.h"
 #include "io/project_paths.h"
 #include "io/scene/scene_serializer.h"
-#include "system/hierarchy/hierarchy_operations.h"
 #include "system/script/behavior.h"
 #include "system/script/script_component.h"
 
@@ -27,39 +25,16 @@ namespace Vkm::Engine {
 
 namespace {
 
-// Build the "TypeName / hook" label used in behavior error reports. Called only
-// on throw, so it never allocates on the per-hook hot path.
-std::string hookLabel(const Behavior& behavior, const char* hookName) {
-    return std::string(behavior.typeName()) + " / " + hookName;
-}
-
-// Run a hook body under the catch net, reporting any throw. Returns true if it
-// threw, leaving the caller to decide the consequence (guard disables the
-// behavior; teardown just logs and moves on).
-template<typename Fn>
-bool runGuarded(Behavior& behavior, const char* hookName, Fn&& fn) {
-    try {
-        fn();
-        return false;
-    } catch (const std::exception& e) {
-        reportError("Behavior", hookLabel(behavior, hookName), e.what());
-    } catch (...) {
-        // A non-std throw would otherwise escape into the system loop and crash
-        // the engine (ThreadPool already guards with catch(...)); contain it here.
-        reportError("Behavior", hookLabel(behavior, hookName), "non-std exception");
-    }
-    return true;
-}
+// What tickBehaviors does with a behavior that has not started yet.
+constexpr bool START_IF_NEEDED = true;
+constexpr bool NEVER_START     = false;
 
 /**
  * @brief Invoke @p fn on each of @p entity's behaviors, re-resolving as it goes.
  *
- * A hook is handed the whole Scene, so between one behavior and the next it may
- * destroy its own entity, remove any ScriptComponent - which move-assigns over
- * this slot and frees the very vector being walked - or add one, which can grow
- * the storage and move it. So the entity is re-checked and the component
- * re-fetched every step, and the walk ends early rather than running past a
- * list that shrank under it.
+ * A hook may destroy the entity or add or remove a ScriptComponent, moving or freeing
+ * the vector being walked, so each step re-checks the entity and re-fetches the
+ * component, ending early if the list shrank.
  *
  * @param scene Scene holding the entity.
  * @param entity Entity whose behaviors to visit; a dead one visits none.
@@ -67,23 +42,66 @@ bool runGuarded(Behavior& behavior, const char* hookName, Fn&& fn) {
  */
 template<typename Fn>
 void forEachBehaviorOf(Scene& scene, EntityId entity, Fn&& fn) {
-    if (!scene.isAlive(entity) || !scene.has<ScriptComponent>(entity)) return;
+    const ScriptComponent* first = scene.tryGet<ScriptComponent>(entity);
+    if (!first) return;
 
-    const size_t behaviorCount = scene.get<ScriptComponent>(entity).behaviors.size();
+    const size_t behaviorCount = first->behaviors.size();
     for (size_t i = 0; i < behaviorCount; ++i) {
-        if (!scene.isAlive(entity) || !scene.has<ScriptComponent>(entity)) break;
-        ScriptComponent& sc = scene.get<ScriptComponent>(entity);
-        if (i >= sc.behaviors.size()) break;
+        ScriptComponent* sc = scene.tryGet<ScriptComponent>(entity);
+        if (!sc || i >= sc->behaviors.size()) break;
 
-        if (Behavior* behavior = sc.behaviors[i].get()) fn(*behavior);
+        if (Behavior* behavior = sc->behaviors[i].get()) fn(*behavior);
     }
+}
+
+/// The hook a contact phase is delivered to, and its name for an error report.
+template<typename Arg>
+struct ContactHook {
+    const char* name;
+    void (Behavior::*call)(Arg);
+};
+
+ContactHook<const Collision&> collisionHook(ContactPhase phase) {
+    switch (phase) {
+        case ContactPhase::Began:  return {"onCollisionEnter", &Behavior::onCollisionEnter};
+        case ContactPhase::Stayed: return {"onCollisionStay",  &Behavior::onCollisionStay};
+        case ContactPhase::Ended:  break;
+    }
+    return {"onCollisionExit", &Behavior::onCollisionExit};
+}
+
+ContactHook<EntityId> triggerHook(ContactPhase phase) {
+    switch (phase) {
+        case ContactPhase::Began:  return {"onTriggerEnter", &Behavior::onTriggerEnter};
+        case ContactPhase::Stayed: return {"onTriggerStay",  &Behavior::onTriggerStay};
+        case ContactPhase::Ended:  break;
+    }
+    return {"onTriggerExit", &Behavior::onTriggerExit};
+}
+
+/**
+ * @brief @p event as the entity on one side of it sees it.
+ *
+ * The normal points a to b, so a hears it negated. An ended contact touches nowhere.
+ *
+ * @param event The contact, named the event's way round.
+ * @param forA  Whether the receiver is the event's a rather than its b.
+ * @return The receiver's Collision.
+ */
+Collision collisionFor(const CollisionEvent& event, bool forA) {
+    Collision hit;
+    hit.other = forA ? event.b : event.a;
+    if (event.phase == ContactPhase::Ended) return hit;
+    hit.point  = event.point;
+    hit.normal = forA ? -event.normal : event.normal;
+    return hit;
 }
 
 } // namespace
 
 template<typename Fn>
 void BehaviorSystem::guard(Behavior& behavior, const char* hookName, Fn&& fn) {
-    if (runGuarded(behavior, hookName, std::forward<Fn>(fn))) {
+    if (behavior.runGuarded(hookName, std::forward<Fn>(fn))) {
         behavior.m_disabled = true;
     }
 }
@@ -97,18 +115,19 @@ void BehaviorSystem::ensureStarted(Behavior& behavior, EntityId entity) {
     });
 }
 
-void BehaviorSystem::tickBehaviors(FrameContext& ctx, float dt, const char* hookName,
-                                   void (Behavior::*hook)(float), bool startIfNeeded) {
+void BehaviorSystem::tickBehaviors(
+    FrameContext& ctx,
+    float dt,
+    const char* hookName,
+    void (Behavior::*hook)(float),
+    bool startIfNeeded
+) {
     Scene& scene = ctx.scene;
     auto* storage = scene.storage<ScriptComponent>();
     if (!storage) return;
 
-    // Snapshot who to tick before running anything. A hook is free to spawn an
-    // entity and script it, which grows this very storage; iterating it live
-    // would hand the loop a reference into a buffer that has since moved.
-
-    // A replay re-runs only the entities whose answer was disputed; gated
-    // rather than always filtered, because simulates() says yes off a client.
+    // A replay re-runs only what this end simulates; a live tick runs every behavior,
+    // since an unsimulated one still draws and plays sounds.
     const bool replaying = ctx.net.replaying();
 
     m_tickList.clear();
@@ -119,11 +138,13 @@ void BehaviorSystem::tickBehaviors(FrameContext& ctx, float dt, const char* hook
         m_tickList.push_back(entity);
     });
 
-    // By slot, so the order is a function of the world rather than of every add
-    // and destroy a swap-and-pop SparseSet walk carries. Hooks write each
-    // other's components and queue events, so the order is part of the answer.
-    std::sort(m_tickList.begin(), m_tickList.end(),
-              [](EntityId a, EntityId b) { return a.slot() < b.slot(); });
+    // By slot, so the order depends on the world, not the SparseSet's add/destroy
+    // history; hooks touch each other's state, so order is part of the answer.
+    std::sort(
+        m_tickList.begin(),
+        m_tickList.end(),
+        [](EntityId a, EntityId b) { return a.slot() < b.slot(); }
+    );
 
     for (const EntityId id : m_tickList) {
         forEachBehaviorOf(scene, id, [&](Behavior& behavior) {
@@ -139,29 +160,34 @@ void BehaviorSystem::tickBehaviors(FrameContext& ctx, float dt, const char* hook
     }
 }
 
-void BehaviorSystem::dispatchEntityHook(Scene& scene, EntityId target, EntityId other,
-                                        const char* hookName, void (Behavior::*hook)(EntityId)) {
+template<typename Arg>
+void BehaviorSystem::dispatchEntityHook(
+    Scene& scene,
+    EntityId target,
+    const std::remove_reference_t<Arg>& arg,
+    const char* hookName,
+    void (Behavior::*hook)(Arg)
+) {
     forEachBehaviorOf(scene, target, [&](Behavior& behavior) {
         if (!behavior.m_started || behavior.m_disabled) return;
-        guard(behavior, hookName, [&] { (behavior.*hook)(other); });
+        guard(behavior, hookName, [&] { (behavior.*hook)(arg); });
     });
 }
 
 void BehaviorSystem::fireDestroy(Behavior& behavior) {
     // onDestroy mirrors onStart: never started, never destroyed.
     if (behavior.m_started) {
-        runGuarded(behavior, "onDestroy", [&] { behavior.onDestroy(); });
+        behavior.runGuarded("onDestroy", [&] { behavior.onDestroy(); });
     }
     behavior.clearSubscriptions();
 }
 
 void BehaviorSystem::drainPendingDestroy(Scene& scene) {
     if (m_pendingDestroy.empty()) return;
-    // Swap out so destroys requested from within onDestroy land in fresh storage
-    // and drain next pass instead of invalidating this iteration.
-    std::vector<EntityId> pending;
-    pending.swap(m_pendingDestroy);
-    for (EntityId entity : pending) {
+    // Swapped out so a destroy requested from onDestroy drains next pass, not mid-walk.
+    m_destroying.clear();
+    m_destroying.swap(m_pendingDestroy);
+    for (EntityId entity : m_destroying) {
         if (scene.isAlive(entity)) HierarchyOperations::destroyHierarchy(scene, entity);
     }
 }
@@ -169,60 +195,57 @@ void BehaviorSystem::drainPendingDestroy(Scene& scene) {
 void BehaviorSystem::drainPendingSceneLoad(FrameContext& ctx) {
     if (m_pendingSceneLoad.empty()) return;
 
-    // Taken before the endSession below, which clears the queue: this load is
-    // the one being served, and one an outgoing onDestroy asks for belongs to
-    // the session that is ending.
+    // Taken before endSession clears the queue; a load an outgoing onDestroy asks for
+    // belongs to the ending session.
     std::string path;
     path.swap(m_pendingSceneLoad);
 
-    // onDestroy while they are still alive and their module still holds the
-    // code: the load below destroys them as part of the swap.
+    // onDestroy while they and their module are still alive; the load destroys them.
     endSession(ctx.scene);
 
     const std::filesystem::path scenePath = ProjectPaths::projectRoot() / path;
     if (SceneSerializer::load(ctx.scene, ctx.resources, scenePath.string())) {
         LOG_INFO("Loaded scene '%s' on request", path.c_str());
-        // Nothing the load brought in starts on a frozen frame, and the
-        // behavior that could resume the clock went with the old scene.
-        // Warned because there is no other symptom.
+        // Nothing starts on a frozen frame, and the behavior that could resume the clock
+        // went with the old scene.
         if (ctx.clock.isPaused() || ctx.clock.getTimeScale() <= 0.0f) {
-            LOG_WARNING("Scene '%s' was loaded while simulation time is frozen - nothing in it "
-                        "starts until the clock runs again", path.c_str());
+            LOG_WARNING(
+                "Scene '%s' was loaded while simulation time is frozen - nothing in it "
+                "starts until the clock runs again",
+                path.c_str()
+            );
         }
     } else {
-        // Transactional, so a failure leaves the current scene standing. Its
-        // behaviors took onDestroy above and start again on the next tick.
-        LOG_ERROR("Requested scene '%s' failed to load; staying in the current one",
-                  scenePath.string().c_str());
+        // Transactional: the current scene stands; its behaviors restart next tick.
+        LOG_ERROR(
+            "Requested scene '%s' failed to load; staying in the current one",
+            scenePath.string().c_str()
+        );
     }
 }
 
 void BehaviorSystem::init(FrameContext& ctx) {
-    // Completes the bundle pendingDestroy was wired into at construction.
-    // Every behavior binds one pointer to it, so every field here has to be
-    // session-stable - which the FrameContext service block is.
+    // Every field must be session-stable, as the FrameContext service block is.
     m_context.scene     = &ctx.scene;
     m_context.resources = &ctx.resources;
-    // Only when there is one. A host with no display still ticks, and a
-    // behavior asking for a window is asking whether it can read a device -
-    // handed one that answers zero, it reads that silently instead.
+    // Null on a host with no display, so a behavior knows it cannot read a device
+    // instead of silently reading zeros.
     m_context.window    = ctx.window.isOpen() ? &ctx.window : nullptr;
     m_context.events    = &ctx.events;
     m_context.input     = &ctx.input;
     m_context.net       = &ctx.net;
     m_context.clock     = &ctx.clock;
+    m_context.render    = &ctx.render;
 
-    // onDestroy for any entity-deletion path: register as a Scene observer, so
-    // Scene fires onEntityDestroyed from destroyEntity (raw or via
-    // destroyHierarchy) while staying script-agnostic.
     ctx.scene.addObserver(this);
 
-    // Physics overlaps -> behavior hooks. Collect here; dispatch in update()
-    // once behaviors are started and with valid context.
+    // Collect here; dispatch in update() once behaviors are started.
     m_collisionListener = m_context.events->subscribe<CollisionEvent>(
-        [this](const CollisionEvent& e) { m_collisions.push_back(e); });
+        [this](const CollisionEvent& e) { m_collisions.push_back(e); }
+    );
     m_triggerListener = m_context.events->subscribe<TriggerEvent>(
-        [this](const TriggerEvent& e) { m_triggers.push_back(e); });
+        [this](const TriggerEvent& e) { m_triggers.push_back(e); }
+    );
 }
 
 void BehaviorSystem::onEntityDestroyed(EntityId entity) {
@@ -235,36 +258,33 @@ void BehaviorSystem::update(FrameContext& ctx) {
     Scene& scene = ctx.scene;
 
     if (ctx.clock.getSimDelta() > 0.0f) {
-        tickBehaviors(ctx, ctx.clock.getSimDelta(), "onUpdate", &Behavior::onUpdate,
-                      /*startIfNeeded*/ true);
+        tickBehaviors(ctx, ctx.clock.getSimDelta(), "onUpdate", &Behavior::onUpdate, START_IF_NEEDED);
 
-        // Dispatch collisions/triggers gathered since last frame. Swap to locals so
-        // a handler that emits a synchronous event can't mutate the list mid-walk.
-        std::vector<CollisionEvent> collisions;
-        collisions.swap(m_collisions);
-        for (const CollisionEvent& e : collisions) {
-            dispatchEntityHook(scene, e.a, e.b, "onCollision", &Behavior::onCollision);
-            dispatchEntityHook(scene, e.b, e.a, "onCollision", &Behavior::onCollision);
+        m_dispatchCollisions.clear();
+        m_dispatchCollisions.swap(m_collisions);
+        for (const CollisionEvent& e : m_dispatchCollisions) {
+            // A destroyed entity's Ended reaches only the survivor.
+            const auto hook = collisionHook(e.phase);
+            dispatchEntityHook(scene, e.a, collisionFor(e, true), hook.name, hook.call);
+            dispatchEntityHook(scene, e.b, collisionFor(e, false), hook.name, hook.call);
         }
-        std::vector<TriggerEvent> triggers;
-        triggers.swap(m_triggers);
-        for (const TriggerEvent& e : triggers) {
-            dispatchEntityHook(scene, e.trigger, e.other, "onTrigger", &Behavior::onTrigger);
+        m_dispatchTriggers.clear();
+        m_dispatchTriggers.swap(m_triggers);
+        for (const TriggerEvent& e : m_dispatchTriggers) {
+            const auto hook = triggerHook(e.phase);
+            dispatchEntityHook(scene, e.trigger, e.other, hook.name, hook.call);
         }
     } else {
-        // Physics did not run either, so anything still queued describes a world
-        // state older than the pause. Drop it rather than deliver it stale.
+        // Physics did not run either, so anything queued is stale; drop it.
         m_collisions.clear();
         m_triggers.clear();
     }
 
-    // Real time, pause included, and after onUpdate by rule. Nothing starts
-    // here, and the guard keeps the hook's promise of a non-zero dt - only the
-    // engine's first frame measures one. See docs/reference/system/scripting.md.
+    // After onUpdate by rule; nothing starts here. The guard keeps the non-zero dt
+    // promise only the first frame breaks. See docs/reference/scripting.md.
     const float realDelta = ctx.clock.getDeltaTime();
     if (realDelta > 0.0f) {
-        tickBehaviors(ctx, realDelta, "onRealtimeUpdate", &Behavior::onRealtimeUpdate,
-                      /*startIfNeeded*/ false);
+        tickBehaviors(ctx, realDelta, "onRealtimeUpdate", &Behavior::onRealtimeUpdate, NEVER_START);
     }
 
     drainPendingDestroy(scene);
@@ -274,18 +294,13 @@ void BehaviorSystem::update(FrameContext& ctx) {
 void BehaviorSystem::fixedUpdate(FrameContext& ctx) {
     PROFILE_SCOPE("BehaviorSystem::fixed");
 
-    // No pause gate: the accumulator driving this is fed from the sim delta,
-    // so pause and time-scale already reach it.
-    tickBehaviors(ctx, ctx.clock.getFixedStep(), "onFixedUpdate", &Behavior::onFixedUpdate,
-                  /*startIfNeeded*/ true);
+    // No pause gate: the accumulator is fed from the sim delta.
+    tickBehaviors(ctx, ctx.clock.getFixedStep(), "onFixedUpdate", &Behavior::onFixedUpdate, START_IF_NEEDED);
 
     drainPendingDestroy(ctx.scene);
 }
 
 void BehaviorSystem::shutdown() {
-    // Both capture `this` and the bus outlives this system, so a surviving
-    // subscription is a call into a destroyed object the next time physics
-    // reports an overlap. AudioSystem::shutdown drops its listener the same way.
     if (m_context.events) {
         m_context.events->unsubscribe<CollisionEvent>(m_collisionListener);
         m_context.events->unsubscribe<TriggerEvent>(m_triggerListener);
@@ -299,38 +314,25 @@ void BehaviorSystem::shutdown() {
 }
 
 void BehaviorSystem::endSession(Scene& scene) {
-    auto* storage = scene.storage<ScriptComponent>();
-    if (!storage) return;
-
-    // The queues are reached through a behavior's own context, because the
-    // editor's stop path calls this with no BehaviorSystem in hand. Null only
-    // when nothing ever started, which is when nothing can have queued.
-    BehaviorContext* session = nullptr;
-
-    // Collected before anything runs, like tickBehaviors and for the same
-    // reason: onDestroy is handed the whole Scene, and one that destroys
-    // another entity would be mutating the storage this walk is standing in.
+    // Collected first, as in tickBehaviors: an onDestroy may mutate the storage.
     std::vector<EntityId> scripted;
-    scripted.reserve(storage->size());
-    storage->forEach([&](uint32_t entityIdx, ScriptComponent&) {
-        scripted.push_back(scene.entityAt(entityIdx));
-    });
+    if (auto* storage = scene.storage<ScriptComponent>()) {
+        scripted.reserve(storage->size());
+        storage->forEach([&](uint32_t entityIdx, ScriptComponent&) {
+            scripted.push_back(scene.entityAt(entityIdx));
+        });
+    }
 
     for (const EntityId id : scripted) {
         forEachBehaviorOf(scene, id, [&](Behavior& behavior) {
-            if (behavior.m_ctx) session = behavior.m_ctx;
             fireDestroy(behavior);
             behavior.m_started  = false;
             behavior.m_disabled = false;
         });
     }
-    if (!session) return;
-
-    // What an onDestroy just asked for named the world going away and dies
-    // with it: left queued it would drain on an Edit-mode frame, over the
-    // authored scene. See docs/reference/system/scripting.md.
-    session->pendingDestroy->clear();
-    session->pendingSceneLoad->clear();
+    // Last, so a request an onDestroy made goes with the rest.
+    m_pendingDestroy.clear();
+    m_pendingSceneLoad.clear();
 }
 
 void BehaviorSystem::destroyEntityBehaviors(Scene& scene, EntityId entity) {

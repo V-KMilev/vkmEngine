@@ -16,26 +16,23 @@ namespace Vkm::Engine {
 namespace detail {
 
 /**
- * @brief Dependent-false helper for a static_assert in an unreachable
- *        `if constexpr` branch (an always-false that mentions V).
- */
-template<typename>
-inline constexpr bool DEPENDENT_FALSE = false;
-
-/**
  * @brief Route one reflected field to a BehaviorFieldVisitor by its type.
  *
- * The single dispatch point behind ReflectedBehavior::visitFields, split out so
- * it can recurse into nested structs. The leaf check precedes the struct check,
- * so an explicit field() overload for a reflected type wins (edit it atomically
- * rather than descending into it); an AssetRef sits between the two because it
- * is a string leaf that also carries the kind of asset it names.
+ * Leaf before struct, so a field() overload for a reflected type wins (edited
+ * atomically); AssetRef sits between, a string leaf that also carries its asset kind.
+ *
+ * @tparam V Field type; one no branch accepts is a compile error.
+ * @param visitor Visitor the field is handed to.
+ * @param name Field name, null-terminated.
+ * @param value The field itself, read and written in place.
  */
 template<typename V>
 void visitField(BehaviorFieldVisitor& visitor, const char* name, V& value) {
     if constexpr (std::is_enum_v<V>) {
-        static_assert(Reflect::HAS_ENUM_NAMES<V>,
-            "ReflectedBehavior: enum field needs a VKM_ENUM_NAMES registration.");
+        static_assert(
+            Reflect::HAS_ENUM_NAMES<V>,
+            "ReflectedBehavior: enum field needs a VKM_ENUM_NAMES registration."
+        );
         using Names = Reflect::EnumNames<V>;
         int index = static_cast<int>(value);
         visitor.enumField(name, index, Names::values, Names::count);
@@ -43,10 +40,12 @@ void visitField(BehaviorFieldVisitor& visitor, const char* name, V& value) {
     } else if constexpr (VISITOR_SUPPORTS_FIELD<V>) {
         visitor.field(name, value);
     } else if constexpr (IS_ASSET_REF<V>) {
-        static_assert(ASSET_TYPE<typename V::asset_t> != AssetType::Count,
+        static_assert(
+            ASSET_TYPE<typename V::asset_t> != AssetType::Count,
             "ReflectedBehavior: AssetRef names an asset kind the library does not "
             "hold. Only kinds with an ASSET_TYPE (resource/asset_type.h) can be "
-            "authored, because the assets block has no section for the others.");
+            "authored, because the assets block has no section for the others."
+        );
         visitor.assetField(name, value.name, ASSET_TYPE<typename V::asset_t>);
     } else if constexpr (Reflect::IS_REFLECTED<V>) {
         if (visitor.beginStruct(name)) {
@@ -56,51 +55,69 @@ void visitField(BehaviorFieldVisitor& visitor, const char* name, V& value) {
             visitor.endStruct();
         }
     } else {
-        static_assert(DEPENDENT_FALSE<V>,
-            "ReflectedBehavior: field type is not a supported leaf, a "
-            "VKM_ENUM_NAMES enum, an AssetRef<Asset>, or a VKM_REFLECT-ed "
-            "struct. Add a field() overload in behavior_field_visitor.h, "
-            "register the type, or drop the field from VKM_REFLECT.");
+        static_assert(
+            Reflect::DEPENDENT_FALSE<V>,
+            "ReflectedBehavior: a reflected field must be float, int, bool, std::string, "
+            "glm::vec2, glm::vec3, glm::vec4, glm::quat, an enum registered with "
+            "VKM_ENUM_NAMES, an AssetRef<Asset>, or a struct with its own reflect block. "
+            "Keep anything else as runtime state: leave it out of VKM_REFLECT."
+        );
     }
 }
 
 } // namespace detail
 
 /**
- * @brief CRTP base that derives a behavior's boilerplate from its reflected
- *        fields - the UPROPERTY-equivalent reuse.
+ * @brief CRTP base that derives typeName(), visitFields() and clone() from the reflect block.
  *
- * Declare the tunable fields once with VKM_REFLECT_BEGIN(::Game::Derived) / VKM_F /
- * VKM_REFLECT_END and `typeName()`, `visitFields()` (editor + serialization),
- * and `clone()` are all generated. Override the lifecycle hooks
- * (onStart/onUpdate/onDestroy) on the subclass as usual.
- *
- * Requirements on Derived:
- *   - `static constexpr const char* TYPE_NAME` (its BehaviorRegistry key), and
- *   - a `Reflect::Traits<Derived>` specialisation (the VKM_REFLECT markup).
+ * The block (VKM_REFLECT_BEGIN(::Game::Derived) / VKM_F / VKM_REFLECT_END) is required,
+ * even if empty. The name is the unqualified class name, which scenes store, so
+ * renaming the class renames the behavior.
  */
 template<typename Derived>
 class ReflectedBehavior : public Behavior {
     public:
-        const char* typeName() const override { return Derived::TYPE_NAME; }
+        const char* typeName() const override { return reflectedName(); }
 
         void visitFields(BehaviorFieldVisitor& visitor) override {
-            Reflect::forEachField(static_cast<Derived&>(*this),
+            Reflect::forEachField(
+                static_cast<Derived&>(*this),
                 [&](std::string_view name, auto& value) {
-                    // Field names come from string literals (VKM_F's #name), so
-                    // data() is null-terminated for the const char* signatures.
+                    // VKM_F's #name is a literal, so data() is null-terminated.
                     detail::visitField(visitor, name.data(), value);
-                });
+                }
+            );
         }
 
         std::unique_ptr<Behavior> clone() const override {
             auto copy = std::make_unique<Derived>();
             const Derived& self = static_cast<const Derived&>(*this);
-            // Authored fields only; BehaviorSystem rebinds the rest.
-            std::apply([&](auto&&... f) {
-                (((*copy).*(f.ptr) = self.*(f.ptr)), ...);
-            }, Reflect::Traits<Derived>::fields());
+            std::apply(
+                [&](auto&&... f) {
+                    (((*copy).*(f.ptr) = self.*(f.ptr)), ...);
+                },
+                Reflect::Traits<Derived>::fields()
+            );
             return copy;
+        }
+
+    private:
+        /**
+         * @brief Derived's name from its reflect block, or the error that says how to write one.
+         *
+         * A function, since Derived is incomplete while this base is instantiated.
+         *
+         * @return Reflect::Traits<Derived>::NAME.
+         */
+        static constexpr const char* reflectedName() {
+            static_assert(
+                Reflect::IS_REFLECTED<Derived>,
+                "This behavior has no reflect block. Below the class, at global scope, write "
+                "VKM_REFLECT_BEGIN(::YourNamespace::YourBehavior), one VKM_F(field) per authored "
+                "field, then VKM_REFLECT_END() - with no fields between them if it has none."
+            );
+            if constexpr (Reflect::IS_REFLECTED<Derived>) return Reflect::Traits<Derived>::NAME;
+            else return "";
         }
 };
 
