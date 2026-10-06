@@ -1,8 +1,7 @@
-# Builds and tests the engine the way it ships, on Linux and Windows: the SDK with the
-# GCC tools/toolchain.json pins, as any configure naming no compiler does, then the
-# archive itself, used as a person uses it. And a Clang build of the same tree, which
-# ships nothing and catches what GCC lets through. Called by ci.yml on every push and
-# by release.yml on every version tag.
+# Builds, tests and packages the engine as it ships, then uses the archive as a person
+# would - with the pinned GCC and the pinned Clang, on Linux and on Windows, every run
+# the same steps. All four archives are a release (release.yml), so a person picks the
+# compiler. Called by ci.yml on every push and by release.yml on every version tag.
 name: Build
 
 on:
@@ -16,7 +15,7 @@ on:
 env:
   # The pinned tools, fetched once and cached per pin file.
   VKM_TOOLS_DIR: ${{ github.workspace }}/../vkm-tools
-  # Every compile goes through ccache, whose store a job carries from its last run.
+  # Every compile goes through ccache, whose store a run carries from its last one.
   CCACHE_DIR: ${{ github.workspace }}/../ccache
   CCACHE_MAXSIZE: 1500M
   CCACHE_COMPILERCHECK: content
@@ -26,22 +25,18 @@ env:
   CCACHE_WINDOWS_SHA256: 6219f3865ca59aec41ee4b678df171d5d35855ecb2b6dbbbd20690b3a68af7b4
 
 jobs:
-  sdk:
-    name: SDK (${{ matrix.platform }})
+  build:
+    name: ${{ matrix.label }} (${{ matrix.platform }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
+        # 22.04 for its older glibc: what the SDK is built against is the oldest it runs on.
         include:
-          # 22.04 for its older glibc: what the SDK is built against is the oldest it runs on.
-          - platform: linux-x64
-            runner: ubuntu-22.04
-            python: python3
-            archive: tar.xz
-          - platform: windows-x64
-            runner: windows-2022
-            python: python
-            archive: zip
+          - { compiler: gcc,   label: GCC,   platform: linux-x64,   runner: ubuntu-22.04, python: python3, archive: tar.xz }
+          - { compiler: clang, label: Clang, platform: linux-x64,   runner: ubuntu-22.04, python: python3, archive: tar.xz }
+          - { compiler: gcc,   label: GCC,   platform: windows-x64, runner: windows-2022, python: python,  archive: zip }
+          - { compiler: clang, label: Clang, platform: windows-x64, runner: windows-2022, python: python,  archive: zip }
     defaults:
       run:
         shell: bash
@@ -64,40 +59,37 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ github.job }}-${{ matrix.platform }}-${{ github.sha }}
-          restore-keys: ccache-${{ github.job }}-${{ matrix.platform }}-
+          key: ccache-${{ matrix.compiler }}-${{ matrix.platform }}-${{ github.sha }}
+          restore-keys: ccache-${{ matrix.compiler }}-${{ matrix.platform }}-
 
-      # Linux's comes with the system packages below.
-      - name: Install ccache
-        if: runner.os == 'Windows'
+      - name: Install ccache and the window system's headers
         run: |
-          curl -sSfL -o ccache.zip "$CCACHE_WINDOWS_URL"
-          echo "$CCACHE_WINDOWS_SHA256  ccache.zip" | sha256sum -c -
-          unzip -q ccache.zip -d "$RUNNER_TEMP"
-          cygpath -w "$(ls -d "$RUNNER_TEMP"/ccache-*)" >> "$GITHUB_PATH"
+          if [ "$RUNNER_OS" = Windows ]; then
+            curl -sSfL -o ccache.zip "$CCACHE_WINDOWS_URL"
+            echo "$CCACHE_WINDOWS_SHA256  ccache.zip" | sha256sum -c -
+            unzip -q ccache.zip -d "$RUNNER_TEMP"
+            cygpath -w "$(ls -d "$RUNNER_TEMP"/ccache-*)" >> "$GITHUB_PATH"
+          else
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends ccache \
+              libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev \
+              libwayland-dev libxkbcommon-dev wayland-protocols \
+              libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev
+          fi
 
-      - name: Install the window system's headers
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ccache \
-            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev \
-            libwayland-dev libxkbcommon-dev wayland-protocols \
-            libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev
-
-      # CMake, Ninja and Python, as every SDK user gets them; a configure that names no
-      # compiler fetches the pinned GCC itself (cmake/pinned_toolchain.cmake).
+      # CMake, Ninja and Python, as every SDK user gets them; the configures below fetch
+      # the pinned compiler VKM_COMPILER names (cmake/pinned_toolchain.cmake).
       - name: Fetch the pinned tools
         run: ${{ matrix.python }} tools/vkm.py toolchain cmake ninja python --path >> "$GITHUB_PATH"
 
       - name: Build the shipping engine
         run: |
-          cmake -B build-shipping -G Ninja -DVKM_SHIPPING=ON
+          cmake -B build-shipping -G Ninja -DVKM_SHIPPING=ON -DVKM_COMPILER=${{ matrix.compiler }}
           cmake --build build-shipping --target vkm_runtime_app vkm_server_app
 
       - name: Build the SDK
         run: |
-          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DVKM_COMPILER=${{ matrix.compiler }} \
             -DVKM_SHIPPING_ENGINE:PATH="$GITHUB_WORKSPACE/build-shipping" \
             -DVKM_PYTHON:PATH="$(${{ matrix.python }} tools/vkm.py toolchain python --dir)"
           cmake --build build
@@ -116,7 +108,7 @@ jobs:
         run: |
           work="$RUNNER_TEMP/use-the-sdk"
           mkdir -p "$work"
-          # The pinned Python, on PATH since the toolchain step, reads either archive.
+          # The pinned Python, on PATH since the tools step, reads either archive.
           ${{ matrix.python }} -c "import shutil, sys; shutil.unpack_archive(sys.argv[1], sys.argv[2])" \
             build/vkmEngine-*.${{ matrix.archive }} "$work"
           sdk="$(ls -d "$work"/vkmEngine-*)"
@@ -137,90 +129,6 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: sdk-${{ matrix.platform }}
+          name: sdk-${{ matrix.compiler }}-${{ matrix.platform }}
           path: build/vkmEngine-*.${{ matrix.archive }}
           if-no-files-found: error
-
-  clang:
-    name: Clang (${{ matrix.platform }})
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux-x64
-            runner: ubuntu-24.04
-            python: python3
-          - platform: windows-x64
-            runner: windows-2022
-            python: python
-    defaults:
-      run:
-        shell: bash
-    env:
-      LLVM_MINGW_URL: https://github.com/mstorsjo/llvm-mingw/releases/download/20260922/llvm-mingw-20260922-ucrt-x86_64.zip
-      LLVM_MINGW_SHA256: e3ad77d117a4bea19a7a3b333341824d79a5a371004a10e25b8504e7b3047666
-    steps:
-      - name: Keep line endings
-        if: runner.os == 'Windows'
-        run: git config --global core.autocrlf false
-
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref }}
-          submodules: recursive
-
-      - uses: actions/cache@v6
-        with:
-          path: ${{ env.VKM_TOOLS_DIR }}
-          key: vkm-tools-${{ matrix.platform }}-${{ hashFiles('tools/toolchain.json') }}
-
-      - uses: actions/cache@v6
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ github.job }}-${{ matrix.platform }}-${{ github.sha }}
-          restore-keys: ccache-${{ github.job }}-${{ matrix.platform }}-
-
-      # Linux's comes with the system packages below.
-      - name: Install ccache
-        if: runner.os == 'Windows'
-        run: |
-          curl -sSfL -o ccache.zip "$CCACHE_WINDOWS_URL"
-          echo "$CCACHE_WINDOWS_SHA256  ccache.zip" | sha256sum -c -
-          unzip -q ccache.zip -d "$RUNNER_TEMP"
-          cygpath -w "$(ls -d "$RUNNER_TEMP"/ccache-*)" >> "$GITHUB_PATH"
-
-      - name: Install Clang and the window system's headers
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang-18 ccache \
-            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev \
-            libwayland-dev libxkbcommon-dev wayland-protocols \
-            libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev
-          echo "CC=clang-18" >> "$GITHUB_ENV"
-          echo "CXX=clang++-18" >> "$GITHUB_ENV"
-
-      - name: Install llvm-mingw
-        if: runner.os == 'Windows'
-        run: |
-          curl -sSfL -o llvm-mingw.zip "$LLVM_MINGW_URL"
-          echo "$LLVM_MINGW_SHA256  llvm-mingw.zip" | sha256sum -c -
-          unzip -q llvm-mingw.zip -d "$RUNNER_TEMP"
-          cygpath -w "$(ls -d "$RUNNER_TEMP"/llvm-mingw-*)/bin" >> "$GITHUB_PATH"
-          echo "CC=clang" >> "$GITHUB_ENV"
-          echo "CXX=clang++" >> "$GITHUB_ENV"
-
-      - name: Fetch the pinned CMake and Ninja
-        run: ${{ matrix.python }} tools/vkm.py toolchain cmake ninja --path >> "$GITHUB_PATH"
-
-      - name: Build
-        run: |
-          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-          cmake --build build
-
-      - name: Test
-        run: ctest --test-dir build --output-on-failure
-
-      - name: What the compiler cache saved
-        run: ccache --show-stats

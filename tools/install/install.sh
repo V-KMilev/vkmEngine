@@ -1,7 +1,8 @@
 #!/bin/sh
 # Installs vkmEngine for this user, with no root: the newest release (or VKM_VERSION=1.2.3)
 # into ~/.local/share/vkmEngine, `vkm` into ~/.local/bin, and the editor into the app menu.
-# Installing again replaces the engine; ~/.local/share/vkmEngine/uninstall.sh removes it.
+# Its games build with GCC, or with Clang under VKM_COMPILER=clang. Installing again
+# replaces the engine; ~/.local/share/vkmEngine/uninstall.sh removes it.
 #
 #   curl -fsSL https://github.com/V-KMilev/vkmEngine/releases/latest/download/install.sh | sh
 set -eu
@@ -19,6 +20,11 @@ case "$(uname -s)-$(uname -m)" in
     Linux-x86_64) platform=linux-x64 ;;
     *) die "there is no build for $(uname -s) $(uname -m); vkmEngine ships for Linux and Windows on x86-64" ;;
 esac
+compiler="${VKM_COMPILER:-gcc}"
+case "$compiler" in
+    gcc|clang) ;;
+    *) die "VKM_COMPILER is gcc or clang, not '$compiler'" ;;
+esac
 command -v curl > /dev/null || die "curl is needed to download the engine"
 command -v tar > /dev/null || die "tar is needed to unpack the engine"
 
@@ -28,12 +34,13 @@ if [ -z "$version" ]; then
     latest=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest")
     version="${latest##*/v}"
 fi
-archive="vkmEngine-$version-$platform.tar.xz"
+name="vkmEngine-$version-$platform-$compiler"
+archive="$name.tar.xz"
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-say "downloading $version"
+say "downloading $version, for $compiler"
 curl -fL --progress-bar -o "$work/$archive" "https://github.com/$repo/releases/download/v$version/$archive" \
     || die "no $archive in release v$version"
 tar -xJf "$work/$archive" -C "$work"
@@ -42,7 +49,7 @@ tar -xJf "$work/$archive" -C "$work"
 mkdir -p "$data"
 rm -rf "$dest.old"
 [ -d "$dest" ] && mv "$dest" "$dest.old"
-mv "$work/vkmEngine-$version-$platform" "$dest"
+mv "$work/$name" "$dest"
 rm -rf "$dest.old"
 
 mkdir -p "$bindir"
