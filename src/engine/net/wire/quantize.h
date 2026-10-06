@@ -12,35 +12,22 @@ namespace Vkm::Engine::Quantize {
 /**
  * @brief How finely a replicated position is carried, in metres.
  *
- * A millimetre. Below what a player can see at any camera distance a game puts
- * them at, and coarse enough that a world a kilometre across fits a position in
- * three twenty-bit fields rather than three floats - which is the difference
- * between twenty bodies in a packet and eleven.
+ * Below what a player can see, and coarse enough for twenty-bit coordinates.
  */
 constexpr float POSITION_STEP = 0.001f;
 
 /**
  * @brief The fastest a replicated body is described as moving.
  *
- * Past this the value is clamped and the body is drawn slightly slow for a tick, which
- * is invisible and costs a bit rather than a branch.
+ * Past this the value is clamped and the body is drawn slightly slow for a tick.
  */
 constexpr float MAX_SPEED = 200.0f;
 
 /**
  * @brief How far from the origin a replicated coordinate may be.
  *
- * Half a kilometre each way, which covers every world the engine has been
- * pointed at and costs twenty bits a coordinate at millimetre resolution. A
- * body past it is described at the boundary rather than dropped, because a body
- * that has left the world is already a bug in the game and refusing the packet
- * it rode in would punish every other body in it.
- *
- * A constant rather than a parameter, deliberately: the field's *width* is
- * derived from it, so a writer and a reader that disagreed about the extent
- * would disagree about how many bits to move and every field after it in the
- * packet would decode as something else. There is no version of this that two
- * ends may answer differently.
+ * A body past it is described at the boundary; see writePosition. A constant,
+ * not a parameter: the field's *width* derives from it, and both ends must agree.
  */
 constexpr float WORLD_EXTENT = 512.0f;
 
@@ -53,30 +40,64 @@ constexpr uint32_t positionBits() {
     uint32_t bits  = 1;
     float    range = 2.0f;
     const float need = (WORLD_EXTENT * 2.0f) / POSITION_STEP;
-    while (range < need && bits < 32u) { range *= 2.0f; ++bits; }
+    while (range < need && bits < 32u) {
+        range *= 2.0f;
+        ++bits;
+    }
     return bits;
 }
 
 /**
+ * @brief Bits one smallest-three rotation component takes.
+ *
+ * About a fifteenth of a degree at worst; an angle error grows with the size
+ * of the thing turned.
+ */
+constexpr uint32_t ROTATION_BITS = 11;
+
+/// Bits one velocity component takes, across +/-MAX_SPEED.
+constexpr uint32_t VELOCITY_BITS = 16;
+
+/**
+ * @brief The code for @p value in [-@p range, @p range], @p width bits wide,
+ *        with zero exact.
+ *
+ * Zero must be exact: off by half a step, a rotation tilts, a body at rest
+ * drifts and a stick creeps. Past the range a value is clamped; NaN is zero.
+ *
+ * @param value The value to quantise.
+ * @param range Magnitude spanned either side of zero.
+ * @param width Bits.
+ * @return The code, ready for BitWriter::bits with @p width.
+ */
+uint32_t toSigned(float value, float range, uint32_t width);
+
+/// Read back what toSigned wrote, bounded to the same range.
+float fromSigned(uint32_t raw, float range, uint32_t width);
+
+/**
  * @brief Write @p value, a coordinate within WORLD_EXTENT of the origin.
  *
- * Clamped rather than refused. A body that has left the playable world is
- * already a bug in the game, and describing it wrongly at the boundary is a
- * better answer than refusing the whole packet it happened to be in.
+ * Clamped to +/-WORLD_EXTENT, not refused: a body out of the world is a game
+ * bug, not a reason to lose the packet. Explicit, since @ref positionBits
+ * overshoots the world. A non-finite coordinate is written as the origin.
+ *
+ * @param out   The packet.
+ * @param value One coordinate, in metres.
  */
 void writePosition(BitWriter& out, float value);
 
-/// Read back what writePosition wrote.
+/// Read back what writePosition wrote, bounded to the same range.
 float readPosition(BitReader& in);
 
 /**
  * @brief Write a rotation as its three smallest components.
  *
- * A unit quaternion has three degrees of freedom, so the largest component is
- * recoverable from the other three and its index - which trades a 32-bit field
- * for two bits and keeps the precision where it is noticed. The sign is folded
- * away by writing the quaternion with its largest component positive, since q
- * and -q are the same rotation.
+ * The largest is recovered from the other three and a two-bit index; it is
+ * made positive, since q and -q are the same rotation.
+ *
+ * @param out   The packet.
+ * @param value The rotation; normalised before it is written.
  */
 void writeRotation(BitWriter& out, const glm::quat& value);
 
