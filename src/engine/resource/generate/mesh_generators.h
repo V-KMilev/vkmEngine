@@ -1,5 +1,7 @@
 #pragma once
 
+#include <nlohmann/json_fwd.hpp>
+
 #include "resource/asset/mesh_asset.h"
 #include "resource/resource_handle.h"
 
@@ -11,17 +13,10 @@ class ResourceManager;
  * @brief Put a generated mesh into @p resources, reusing the one already there
  *        under its name.
  *
- * The name is read out of the generator descriptor the generator stamped -
- * "mesh:generator:cube", "mesh:generator:sphere:32:16" - precisely so that two
- * identical generator calls are one asset rather than two copies a scene would
- * save twice. Adding one unconditionally breaks that promise the moment the
- * name is taken: ensureUniqueName suffixes it, and the name being the
- * serializable identity, "mesh:generator:cube (3)" is what the scene file and
- * the cooked library then call a mesh identical to two others beside it.
- *
- * Nothing edits a generated mesh, so sharing one is the whole of what the name
- * promises. A caller wanting a variant asks the generator for different
- * parameters, which is a different name.
+ * The name comes from the stamped descriptor ("mesh:generator:sphere:32:16"),
+ * so identical calls share one asset. A plain add() would replace it: a fresh
+ * uid dropping in-flight decodes and a needless re-upload. Nothing edits a
+ * generated mesh; a variant is different parameters, so a different name.
  *
  * @param resources Asset graph to look the name up in and add to.
  * @param mesh A mesh straight from one of the generators below, descriptor and all.
@@ -30,19 +25,31 @@ class ResourceManager;
 MeshHandle addGeneratedMesh(ResourceManager& resources, MeshAsset mesh);
 
 /**
+ * @brief Rebuild a mesh from the recipe one of the generators below stamped.
+ *
+ * A parameter the recipe lacks reads as the generator's default. Added unnamed:
+ * the library's name need not be the one addGeneratedMesh would spell.
+ *
+ * @param source A `generator` source descriptor.
+ * @param resources Asset graph to add the mesh to.
+ * @return The mesh, or an invalid handle for a type no generator here has.
+ */
+MeshHandle createGeneratedMesh(const nlohmann::json& source, ResourceManager& resources);
+
+/**
  * @brief Generate a triangle mesh.
- * @param size Uniform scale of the unit triangle (default: 1.0).
- * @return MeshAsset containing triangle geometry.
+ * @param size Uniform scale of the unit triangle.
+ * @return The triangle.
  */
 MeshAsset generateTriangle(float size = 1.0f);
 
 /**
  * @brief Generate a plane mesh (quad), tessellated into a segment grid.
- * @param width Full width of the plane along x (default: 1.0).
- * @param height Full depth of the plane along z (default: 1.0).
- * @param widthSegments Number of quads along width (default: 1).
- * @param heightSegments Number of quads along depth (default: 1).
- * @return MeshAsset containing plane geometry.
+ * @param width Full width along x.
+ * @param height Full depth along z.
+ * @param widthSegments Quads along width.
+ * @param heightSegments Quads along depth.
+ * @return The plane.
  */
 MeshAsset generatePlane(
     float width = 1.0f,
@@ -53,73 +60,55 @@ MeshAsset generatePlane(
 
 /**
  * @brief Generate a unit cube mesh (1 unit per side, spanning -0.5 to +0.5 on all axes).
- * @return MeshAsset containing cube geometry.
+ * @return The cube.
  */
 MeshAsset generateCube();
 
 /**
  * @brief Generate a unit sphere mesh (radius 0.5), built as a cube-sphere.
  *
- * Six subdivided cube faces projected onto the sphere, so there are no poles
- * (no vertex collapse, no degenerate tangents, no texture pinching). The two
- * segment counts only control tessellation density: the per-face grid
- * resolution is derived as max(2, max(xSegments, ySegments) / 2), so they do
- * not map to distinct horizontal/vertical axes.
- * @param xSegments Tessellation hint, X axis (default: 32).
- * @param ySegments Tessellation hint, Y axis (default: 16).
- * @return MeshAsset containing sphere geometry.
+ * No poles, so no pinching or degenerate tangents. Per-face grid resolution is
+ * max(2, max(xSegments, ySegments) / 2); the counts are not separate axes.
+ *
+ * @param xSegments Tessellation hint.
+ * @param ySegments Tessellation hint.
+ * @return The sphere.
  */
 MeshAsset generateSphere(uint32_t xSegments = 32, uint32_t ySegments = 16);
 
 /**
  * @brief Generate a pyramid mesh (square base on y=0, apex at +height).
- * @param baseSize Edge length of the square base (default: 1.0).
- * @param height Apex height above the base (default: 1.0).
- * @return MeshAsset containing pyramid geometry.
+ * @param baseSize Edge length of the square base.
+ * @param height Apex height above the base.
+ * @return The pyramid.
  */
 MeshAsset generatePyramid(float baseSize = 1.0f, float height = 1.0f);
 
 /**
- * @brief Generate a cone mesh.
- * @param radius Radius of the cone base (default: 0.5).
- * @param height Height of the cone (default: 1.0).
- * @param segments Number of segments for the base circle (default: 16).
- * @return MeshAsset containing cone geometry.
+ * @brief Generate a cone standing on the Y axis, centred on the origin.
+ *
+ * The slope normal comes from the slope, not its gradient, so a zero-height cone
+ * (a recipe can say anything) is an upward disc rather than NaN.
+ *
+ * @param radius   Base radius.
+ * @param height   Total height; base and apex sit at +/- height/2.
+ * @param segments Around the base circle; clamped up to 3.
+ * @return The cone.
  */
 MeshAsset generateCone(float radius = 0.5f, float height = 1.0f, uint32_t segments = 16);
 
 /**
  * @brief Generate a capped cylinder standing on the Y axis, centred on the origin.
  *
- * The caps carry their own ring of vertices rather than sharing the wall's, so
- * the rim stays a hard edge instead of averaging into a bevel that is not there.
- * The wall duplicates its first column at u = 1 for the same reason in the other
- * direction: a seam that wrapped would interpolate the whole texture backwards
- * across one quad.
+ * The caps have their own vertex ring so the rim stays a hard edge. The wall
+ * duplicates its first column at u = 1, or the seam would interpolate the whole
+ * texture backwards across one quad.
  *
- * @param radius   Radius of the wall and both caps (default: 0.5).
- * @param height   Total height, so the ends sit at +/- height/2 (default: 1.0).
- * @param segments Segments around the circumference; clamped up to 3 (default: 20).
- * @return MeshAsset containing cylinder geometry.
+ * @param radius   Radius of the wall and both caps.
+ * @param height   Total height; the ends sit at +/- height/2.
+ * @param segments Around the circumference; clamped up to 3.
+ * @return The cylinder.
  */
 MeshAsset generateCylinder(float radius = 0.5f, float height = 1.0f, uint32_t segments = 20);
-
-/**
- * @brief Decimate a mesh by vertex clustering.
- *
- * Snaps vertices to a uniform grid over the mesh AABB, averages each occupied
- * cell to one vertex, and drops triangles whose corners collapsed into the same
- * cell. A cheap, general LOD source for arbitrary geometry (where you can't just
- * re-tessellate at a lower resolution). Coarser than edge-collapse / QEM
- * simplification - it can shift the silhouette - but that's invisible at the
- * screen sizes where the coarse LOD levels are selected. Lower @p gridResolution
- * = fewer cells = coarser result. Returns the source unchanged if decimation
- * would collapse the whole mesh or the inputs are degenerate.
- *
- * @param src Source mesh.
- * @param gridResolution Cells per axis across the AABB (e.g. 16 = mild, 6 = aggressive).
- * @return The decimated MeshAsset (bounds recomputed).
- */
-MeshAsset decimateMesh(const MeshAsset& src, uint32_t gridResolution);
 
 } // namespace Vkm::Engine

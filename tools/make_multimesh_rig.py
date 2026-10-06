@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Emit assets/models/multimesh_rig.gltf - three skinned meshes, one skin.
+"""Emit a glTF of three skinned meshes over one skin, to the path given.
 
-Every rigged model the engine has is one mesh, so nothing exercises the case the
-importer turns on: importModelIntoScene spawns a sub-entity per aiMesh, so a
-real character arrives as body + clothes + hair sharing ONE rig. This writes the
-smallest file that is that case.
+The case the importer turns on: importModelIntoScene spawns a child entity per
+node, so a real character arrives as body + clothes + hair sharing ONE rig.
+This writes the smallest file that is that case.
 
   Character                     (the rig frame: parent of the root joint)
     Root -- Spine -+- Head      four joints, one branch at Spine
@@ -25,7 +24,7 @@ import struct
 import sys
 
 # Joints as (name, parent, local translation), in the order the skin lists
-# them - which is the order the engine's bone indices end up in.
+# them.
 JOINTS = [
     ("Root",  None,    (0.0,  0.0,  0.0)),
     ("Spine", "Root",  (0.0,  1.0,  0.0)),
@@ -36,12 +35,21 @@ JOINTS = [
 # Meshes: name, box extents, and the influences each of the 8 corners carries,
 # chosen by which half of the box the corner sits in (low y / high y).
 MESHES = [
-    ("body",  (-0.40, 0.40, 0.00, 2.00, -0.25, 0.25),
-     {"low": [(0, 1.0)], "high": [(1, 0.6), (2, 0.4)]}),
-    ("tunic", (-0.45, 0.45, 0.20, 1.20, -0.30, 0.30),
-     {"low": [(0, 0.5), (1, 0.5)], "high": [(1, 0.7), (3, 0.3)]}),
-    ("hair",  (-0.30, 0.30, 2.00, 2.50, -0.30, 0.30),
-     {"low": [(2, 1.0)], "high": [(2, 1.0)]}),
+    (
+        "body",
+        (-0.40, 0.40, 0.00, 2.00, -0.25, 0.25),
+        {"low": [(0, 1.0)], "high": [(1, 0.6), (2, 0.4)]},
+    ),
+    (
+        "tunic",
+        (-0.45, 0.45, 0.20, 1.20, -0.30, 0.30),
+        {"low": [(0, 0.5), (1, 0.5)], "high": [(1, 0.7), (3, 0.3)]},
+    ),
+    (
+        "hair",
+        (-0.30, 0.30, 2.00, 2.50, -0.30, 0.30),
+        {"low": [(2, 1.0)], "high": [(2, 1.0)]},
+    ),
 ]
 
 # One clip, two keys a second apart, rotating three joints well away from bind.
@@ -62,8 +70,16 @@ FLOAT, UBYTE, USHORT = 5126, 5121, 5123
 
 def corners(box):
     x0, x1, y0, y1, z0, z1 = box
-    return [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0),
-            (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)]
+    return [
+        (x0, y0, z0),
+        (x1, y0, z0),
+        (x1, y1, z0),
+        (x0, y1, z0),
+        (x0, y0, z1),
+        (x1, y0, z1),
+        (x1, y1, z1),
+        (x0, y1, z1),
+    ]
 
 
 def normal_of(point, box):
@@ -127,10 +143,12 @@ def inverse_bind(index):
         joint = next(j for j in JOINTS if j[0] == name)
         offset = [offset[i] + joint[2][i] for i in range(3)]
         name = joint[1]
-    return (1.0, 0.0, 0.0, 0.0,
-            0.0, 1.0, 0.0, 0.0,
-            0.0, 0.0, 1.0, 0.0,
-            -offset[0], -offset[1], -offset[2], 1.0)
+    return (
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        -offset[0], -offset[1], -offset[2], 1.0,
+    )
 
 
 def build():
@@ -196,14 +214,17 @@ def build():
             "version": "2.0",
             "generator": "vkmEngine tools/make_multimesh_rig.py",
             "extras": {
-                "purpose": "Test fixture, not art: three skinned meshes sharing "
-                           "one skin, one skeleton and one clip.",
-                "proves": "importModelIntoScene spawns a sub-entity per mesh, so "
-                          "a rigged character is body + clothes + hair under ONE "
-                          "Animator. Small enough that the bind matrices can be "
-                          "read by eye; BrainStem.glb is the same shape at scale.",
-                "regenerate": "python3 tools/make_multimesh_rig.py "
-                              "assets/models/multimesh_rig.gltf",
+                "purpose": (
+                    "Test fixture, not art: three skinned meshes sharing "
+                    "one skin, one skeleton and one clip."
+                ),
+                "proves": (
+                    "importModelIntoScene spawns a child entity per node, so "
+                    "a rigged character is body + clothes + hair under ONE "
+                    "Animator. Small enough that the bind matrices can be "
+                    "read by eye; BrainStem.glb is the same shape at scale."
+                ),
+                "regenerate": "python3 tools/make_multimesh_rig.py <out.gltf>",
             },
         },
         "scene": 0,
@@ -211,10 +232,16 @@ def build():
         "nodes": nodes,
         "meshes": meshes,
         "skins": [skin],
-        "materials": [{"name": "fixture",
-                       "pbrMetallicRoughness": {"baseColorFactor": [0.8, 0.8, 0.8, 1.0],
-                                                "metallicFactor": 0.0,
-                                                "roughnessFactor": 0.8}}],
+        "materials": [
+            {
+                "name": "fixture",
+                "pbrMetallicRoughness": {
+                    "baseColorFactor": [0.8, 0.8, 0.8, 1.0],
+                    "metallicFactor": 0.0,
+                    "roughnessFactor": 0.8,
+                },
+            },
+        ],
         "animations": [{"name": "bend", "channels": channels, "samplers": samplers}],
         "accessors": buf.accessors,
         "bufferViews": buf.views,

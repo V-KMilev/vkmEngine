@@ -5,7 +5,7 @@
 
 #include <nlohmann/json.hpp>
 
-#include "ecs/entity_ref.h"
+#include "ecs/entity_mapping.h"
 #include "ecs/environment.h"
 #include "resource/asset_type.h"
 #include "ecs/component/animation/animation.h"
@@ -33,6 +33,7 @@
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
+#include "ecs/component/ui/ui_scroll.h"
 #include "ecs/component/ui/ui_text.h"
 #include "system/script/script_component.h"
 
@@ -45,65 +46,50 @@ class ResourceManager;
 /**
  * @brief Every component the scene format round-trips, one row each.
  *
- * The letter says what a component refers to outside itself:
+ * P refers to nothing outside itself. R names assets, so save and load also take
+ * the ResourceManager and an emitAssetRefs overload sits beside them. E names
+ * other entities, so save takes an EntityNamer and load an EntityResolver.
  *
- * P - nothing outside itself; save and load take only the component.
- * R - assets by name, so both take the ResourceManager as well (resolution
- *     happens against the staging RM on load) and an emitAssetRefs overload
- *     sits beside them.
- * E - other entities, so save takes an EntityNamer and load an EntityResolver.
- *     Joint names the body at the far end of it; Ragdoll names its group node
- *     and the body posing each bone.
- *
- * The key is written out rather than derived from the type name, because it is
- * the format: ScriptComponent is stored as "Script".
- *
- * Saving, loading, the known-key set and the assets block that says what a scene
- * file needs all expand from this one list, so none of the four can drift - and
- * a component saved but never loaded is round-trip data loss the unknown-key
- * warning cannot catch, because the key is known.
- *
- * Hierarchy is not a row: SceneSerializer writes it explicitly and reads it in
- * pass 2, because the parent it names may not exist when the entity is read.
+ * The key is the format, not the type name: ScriptComponent is stored as "Script".
+ * Hierarchy is not a row: SceneSerializer reads it in pass 2, because the parent
+ * it names may not exist when the entity is read.
  */
-#define VKM_SCENE_COMPONENTS(P, R, E)           \
-    P(Name,             "Name")                 \
-    P(Transform,        "Transform")            \
-    P(Camera,           "Camera")               \
-    P(Light,            "Light")                \
-    P(Rigidbody,        "Rigidbody")            \
-    P(Collider,         "Collider")             \
+#define VKM_SCENE_COMPONENTS(P, R, E)             \
+    P(Name,                "Name")                \
+    P(Transform,           "Transform")           \
+    P(Camera,              "Camera")              \
+    P(Light,               "Light")               \
+    P(Rigidbody,           "Rigidbody")           \
+    R(Collider,            "Collider")            \
     P(CharacterController, "CharacterController") \
-    E(Joint,            "Joint")                \
-    E(Ragdoll,          "Ragdoll")              \
-    R(Mesh,             "Mesh")                 \
-    R(LOD,              "LOD")                  \
-    R(Decal,            "Decal")                \
-    P(ParticleEmitter,  "ParticleEmitter")      \
-    R(AudioSource,      "AudioSource")          \
-    P(AudioListener,    "AudioListener")        \
-    P(IrradianceVolume, "IrradianceVolume")     \
-    P(ReflectionProbe,  "ReflectionProbe")      \
-    P(Animation,        "Animation")            \
-    R(Animator,         "Animator")             \
-    P(BoneSocket,       "BoneSocket")           \
-    P(ScriptComponent,  "Script")               \
-    P(UICanvas,         "UICanvas")             \
-    P(UIElement,        "UIElement")            \
-    P(UIImage,          "UIImage")              \
-    P(UIText,           "UIText")               \
-    P(UIButton,         "UIButton")
+    E(Joint,               "Joint")               \
+    E(Ragdoll,             "Ragdoll")             \
+    R(Mesh,                "Mesh")                \
+    R(LOD,                 "LOD")                 \
+    R(Decal,               "Decal")               \
+    P(ParticleEmitter,     "ParticleEmitter")     \
+    R(AudioSource,         "AudioSource")         \
+    P(AudioListener,       "AudioListener")       \
+    P(IrradianceVolume,    "IrradianceVolume")    \
+    P(ReflectionProbe,     "ReflectionProbe")     \
+    P(Animation,           "Animation")           \
+    R(Animator,            "Animator")            \
+    P(BoneSocket,          "BoneSocket")          \
+    P(ScriptComponent,     "Script")              \
+    P(UICanvas,            "UICanvas")            \
+    P(UIElement,           "UIElement")           \
+    R(UIImage,             "UIImage")             \
+    P(UIText,              "UIText")              \
+    P(UIButton,            "UIButton")            \
+    P(UIScroll,            "UIScroll")
 
 /**
  * @brief Per-component (de)serialization to JSON.
  *
- * Each component type has a `save` and `load` overload, and one that references
- * assets has an `emitAssetRefs` overload beside them. Add a new component by
- * adding that set here and a row to VKM_SCENE_COMPONENTS above. Asset handles
- * (Mesh, Decal) are resolved by stable name through
- * ResourceManager::findByName; entity references (Hierarchy::parent) are stored
- * as the saved scene-table index, which resolves directly because
- * SceneSerializer recreates each entity at its saved slot.
+ * A new component adds its save/load (and emitAssetRefs, if it references assets)
+ * here and a row to VKM_SCENE_COMPONENTS. Asset handles are stored by name
+ * (ResourceManager::findByName); Hierarchy::parent as the saved slot, which
+ * resolves directly because SceneSerializer recreates each entity at its saved slot.
  */
 namespace ComponentSerializer {
 
@@ -114,11 +100,9 @@ namespace ComponentSerializer {
     void load(const nlohmann::json&, Name&);
 
     /**
-     * @brief The scene-global Environment (lighting + fog + physics settings).
+     * @brief The scene-global Environment (sky, night sky and fog).
      *
-     * Fully reflected: the field list lives once in environment.h and both
-     * directions walk it, so adding an Environment field never touches the
-     * serializers again. Missing keys keep the current values.
+     * Missing keys keep the current values.
      */
     nlohmann::json save(const Environment&);
     void load(const nlohmann::json&, Environment&);
@@ -133,33 +117,33 @@ namespace ComponentSerializer {
     void load(const nlohmann::json&, Light&);
 
     /**
-     * @brief Rigidbody: dynamics + material fields. The runtime sleep state
-     * (sleeping / sleepTimer) is not persisted.
+     * @brief Rigidbody: dynamics and material fields.
+     *
+     * The runtime sleep state (sleeping / sleepTimer) is not persisted.
      */
     nlohmann::json save(const Rigidbody&);
     void load(const nlohmann::json&, Rigidbody&);
 
     /**
      * @brief Collider: each part's shape tag plus the fields of every shape.
+     *
+     * A mesh part's triangles are built from its mesh on load (syncMeshCollider),
+     * never written.
      */
-    nlohmann::json save(const Collider&);
-    void load(const nlohmann::json&, Collider&);
+    nlohmann::json save(const Collider&, const ResourceManager&);
+    void load(const nlohmann::json&, Collider&, const ResourceManager&);
 
     /**
      * @brief CharacterController: the tuning only.
      *
-     * moveInput, jumpRequested, grounded and groundNormal are per-tick traffic
-     * between gameplay, the system and the solver - a scene row holding a half
-     * consumed jump request would replay it on load.
+     * The per-tick state is not saved: a half consumed jump request would replay
+     * on load.
      */
     nlohmann::json save(const CharacterController&);
     void load(const nlohmann::json&, CharacterController&);
 
     /**
-     * @brief Joint: the type and the connected entity beside the reflected rest.
-     *
-     * `connected` is a cross-entity reference, so it travels as the carrier's
-     * name for that entity and comes back through that carrier's resolver.
+     * @brief Joint: the reflected fields, and `connected` as the carrier's name for it.
      */
     nlohmann::json save(const Joint&, const EntityNamer&);
     void load(const nlohmann::json&, Joint&, const EntityResolver&);
@@ -167,11 +151,8 @@ namespace ComponentSerializer {
     /**
      * @brief Ragdoll: the switch, the group node, and the bone mapping.
      *
-     * The bones are entities the scene saves anyway; what travels here is the
-     * mapping back - which body poses which bone, and the offset between them.
-     * Dropping it would not save a ragdoll without its bodies, it would save
-     * one that has forgotten them, beside a loose skeleton that falls. The
-     * entity references travel as the carrier's names for them.
+     * The bones are entities the scene saves anyway; this carries which body poses
+     * which bone and the offset between them, naming entities as the carrier does.
      */
     nlohmann::json save(const Ragdoll&, const EntityNamer&);
     void load(const nlohmann::json&, Ragdoll&, const EntityResolver&);
@@ -180,12 +161,9 @@ namespace ComponentSerializer {
     void load(const nlohmann::json&, Mesh&, const ResourceManager&);
 
     /**
-     * @brief Animator: the rig, the clip and where playback stands.
+     * @brief Animator: the rig, the clip and how it is authored to play.
      *
-     * Blend state is deliberately absent and stays absent. A crossfade is a
-     * second clip and a countdown, and a scene row holding that shape would
-     * outlive the blend system that wrote it in a project with no migration
-     * path; the six fields here are what any future blend system still needs.
+     * The playback head and blend state are session state, not saved.
      */
     nlohmann::json save(const Animator&, const ResourceManager&);
     void load(const nlohmann::json&, Animator&, const ResourceManager&);
@@ -193,11 +171,8 @@ namespace ComponentSerializer {
     /**
      * @brief BoneSocket: the bone an attachment rides and its offset on it.
      *
-     * The resolved bone index is deliberately absent. It is a property of the
-     * rig currently loaded rather than of the authored socket - re-export the
-     * character with a joint inserted and a stored index addresses its
-     * neighbour, silently - so the name is what round-trips and the index is
-     * recovered from it at runtime.
+     * The bone name round-trips and the index is recovered at runtime: a stored
+     * index silently addresses a neighbour once a re-export inserts a joint.
      */
     nlohmann::json save(const BoneSocket&);
     void load(const nlohmann::json&, BoneSocket&);
@@ -214,10 +189,8 @@ namespace ComponentSerializer {
     /**
      * @brief AudioSource: the clip it names and how it should be heard.
      *
-     * `playing` and `started` are deliberately absent. They describe a play
-     * session rather than the authored scene, and a scene row holding a half
-     * finished sound would resume a noise whose beginning nobody heard.
-     * `playOnStart` is the authored half of the same thing.
+     * `playing` and `started` are session state, not saved: a half finished sound
+     * would resume on load. `playOnStart` is the authored half.
      */
     nlohmann::json save(const AudioSource&, const ResourceManager&);
     void load(const nlohmann::json&, AudioSource&, const ResourceManager&);
@@ -237,8 +210,8 @@ namespace ComponentSerializer {
     nlohmann::json save(const UIElement&);
     void load(const nlohmann::json&, UIElement&);
 
-    nlohmann::json save(const UIImage&);
-    void load(const nlohmann::json&, UIImage&);
+    nlohmann::json save(const UIImage&, const ResourceManager&);
+    void load(const nlohmann::json&, UIImage&, const ResourceManager&);
 
     nlohmann::json save(const UIText&);
     void load(const nlohmann::json&, UIText&);
@@ -246,36 +219,39 @@ namespace ComponentSerializer {
     nlohmann::json save(const UIButton&);
     void load(const nlohmann::json&, UIButton&);
 
+    nlohmann::json save(const UIScroll&);
+    void load(const nlohmann::json&, UIScroll&);
+
     /**
-     * @brief Hierarchy: only `parent` is serialized; sibling pointers are rebuilt
-     * on load by re-running HierarchyOperations::setParent. The returned
-     * JSON stores the parent's *old-file* entity index.
+     * @brief Hierarchy: only `parent` is serialized, as the parent's slot.
+     *
+     * Sibling links are rebuilt on load by HierarchyOperations::setParent.
      */
     nlohmann::json save(const Hierarchy&);
     /**
-     * @brief Read a saved Hierarchy's parent reference as an old-file entity index.
+     * @brief Read a saved Hierarchy's parent reference as a saved slot.
      *
-     * The value is the parent's index in the file being loaded, to be remapped
-     * to a live entity by the caller; a root entity yields uint32_t max.
+     * The caller links it once every entity exists at its saved slot. A root is
+     * saved as slot 0, which no entity occupies; a block without the key yields
+     * uint32_t max. Both read as a root.
      *
-     * @param json The serialized Hierarchy object produced by save(const Hierarchy&).
-     * @return The parent's old-file index, or uint32_t max for a root entity.
+     * @param json Hierarchy object written by save(const Hierarchy&).
+     * @return The parent's saved slot; 0 or uint32_t max for a root.
      */
-    uint32_t loadParentIndex(const nlohmann::json&);
+    uint32_t loadParentIndex(const nlohmann::json& json);
 
     /**
-     * @brief Animation: serializes all three tracks (position/rotation/scale),
-     * playback state, and the per-track easing function by stable name.
+     * @brief Animation: the three tracks, each with its easing by name, and playback state.
      */
     nlohmann::json save(const Animation&);
     void load(const nlohmann::json&, Animation&);
 
     /**
-     * @brief ScriptComponent: each behavior is stored by its registered type name
-     * (BehaviorRegistry key) and recreated through the registry on load. Each
-     * behavior's tunable fields are persisted via Behavior::visitFields (a
-     * `properties` object per behavior); load drops any behavior whose type
-     * is not registered, and keeps a field's default when its key is absent.
+     * @brief ScriptComponent: each behavior by BehaviorRegistry type name, with
+     *        its Behavior::visitFields `properties`.
+     *
+     * An unregistered type is kept as an UnknownBehavior so the next save writes
+     * it back; a field whose key is absent keeps its default.
      */
     nlohmann::json save(const ScriptComponent&);
     void load(const nlohmann::json&, ScriptComponent&);
@@ -283,19 +259,15 @@ namespace ComponentSerializer {
     /**
      * @brief Every asset a set of components references, one list per kind.
      *
-     * What the scene's `assets` block is built from: the block has to name each
-     * of these for the next load to recreate them, and a reference it does not
-     * name resolves to nothing.
-     *
-     * One list per kind rather than one type-erased list, because the reader
-     * resolves each handle through the ResourceManager and that takes the
-     * asset's type back. Empty handles are never recorded - a slot the author
-     * left empty names nothing.
+     * The scene's `assets` block is built from it; a reference the block does not
+     * name resolves to nothing on the next load. One list per kind because the
+     * ResourceManager resolves a handle by its type. Empty handles are not recorded.
      */
     struct AssetRefs {
         std::vector<MeshHandle>          meshes;
         std::vector<MaterialHandle>      materials;
         std::vector<SkeletonHandle>      skeletons;
+        std::vector<TextureHandle>       textures;
         std::vector<AnimationClipHandle> clips;
         std::vector<AudioClipHandle>     sounds;
     };
@@ -303,30 +275,21 @@ namespace ComponentSerializer {
     /**
      * @brief Record every asset the component references into @p refs.
      *
-     * One overload per component whose save writes a handle out as a name -
-     * exactly the R rows of VKM_SCENE_COMPONENTS, which is what expands the
-     * walk that calls these. That is why the set is nowhere written out by
-     * hand: a component missing from such a walk still saves its handle as a
-     * name, while the block listing what the scene needs never mentions it, so
-     * the next load resolves the reference to nothing and neither end warns -
-     * the component's own key was written correctly.
-     *
-     * A new R row with no overload here is a compile error at the expansion,
-     * naming the component that needs one.
+     * One overload per R row of VKM_SCENE_COMPONENTS; a missing one is a compile
+     * error at the expansion.
      */
+    void emitAssetRefs(const Collider&,    AssetRefs&);
     void emitAssetRefs(const Mesh&,        AssetRefs&);
     void emitAssetRefs(const LOD&,         AssetRefs&);
     void emitAssetRefs(const Decal&,       AssetRefs&);
     void emitAssetRefs(const AudioSource&, AssetRefs&);
     void emitAssetRefs(const Animator&,    AssetRefs&);
+    void emitAssetRefs(const UIImage&,     AssetRefs&);
 
     /**
-     * @brief An asset name a load has just failed to resolve, and the field it
-     * was read from.
+     * @brief An asset name a load failed to resolve, and the field it was read from.
      *
-     * The field is the scene format's key rather than the human word the error
-     * message uses, because the caller's job with one of these is to put the
-     * name back where it came from.
+     * The field is the scene format's key, so the caller can put the name back.
      */
     struct UnresolvedRef {
         std::string field;
@@ -337,20 +300,11 @@ namespace ComponentSerializer {
     /**
      * @brief Take the references the loads since the last call could not resolve.
      *
-     * A component's loader resolves names against the asset graph and leaves
-     * the slot empty when one does not answer; the name is then the only record
-     * of what belonged there, and a save that knows nothing about it writes an
-     * empty string over it. Collected here rather than returned, because the
-     * loaders are one overload per component with no room for a second output,
-     * and drained by the scene loader, which knows which entity and which
-     * component the names belong to.
-     *
-     * Call it inside an UnresolvedScope, which is what bounds the list to the
-     * component it was filled for.
-     *
-     * Holds only the ones a save can put back: a reference read out of an array
-     * rather than a named field has nowhere to return to, and is reported and
-     * forgotten rather than kept.
+     * An unresolved slot is left empty and the name is its only record; a save
+     * without it writes an empty string over it. Collected here because a loader
+     * has no room for a second output; drained by a caller that knows the entity
+     * and component (see SceneSerializer::loadComponents). Call it inside an
+     * UnresolvedScope. A reference read out of an array is not kept.
      *
      * @return The unresolved references, oldest first; empty when all resolved.
      */
@@ -359,17 +313,9 @@ namespace ComponentSerializer {
     /**
      * @brief Bounds one component load's share of the unresolved list.
      *
-     * The list is a free list rather than a member, because the loaders are one
-     * overload per component with nowhere to return a second value from - so it
-     * outlives the component, the entity and the file it was filled for. The
-     * destructor drops whatever the load did not take, and that is what makes a
-     * loader that throws part-way safe: names left standing are drained by the
-     * next component read instead, in the next scene opened, which records them
-     * as its own and hands them to the next save's assets block.
-     *
-     * Construct one for the span of a single component load, before the loader
-     * runs, and nothing else is needed - a load that finishes takes its own
-     * references and leaves an empty list behind.
+     * Construct one around a single component load. The list is file-scope, so
+     * the destructor drops whatever the load did not take: a loader that throws
+     * part-way leaves no names for the next component read to claim.
      */
     class UnresolvedScope {
         public:

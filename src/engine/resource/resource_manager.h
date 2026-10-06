@@ -1,6 +1,5 @@
 #pragma once
 
-#include <atomic>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -15,21 +14,38 @@
 #include "core/memory/sparse_set.h"
 #include "core/memory/types.h"
 #include "core/memory/type_registry.h"
+#include "resource/asset_ref.h"
+#include "resource/asset_type.h"
 #include "resource/resource.h"
 #include "resource/resource_handle.h"
 
 namespace Vkm::Engine {
 
+struct FontAsset;
+
+/**
+ * @brief True for the asset types ResourceManager makes a slot for at construction.
+ *
+ * The library's kinds (VKM_ASSET_KINDS) plus FontAsset, which is baked rather than cooked.
+ *
+ * @tparam T A Resource subclass.
+ */
+template<typename T>
+inline constexpr bool IS_ENGINE_ASSET = ASSET_TYPE<T> != AssetType::Count || std::is_same_v<T, FontAsset>;
+
 /**
  * @brief Open type-erased resource registry with typed handles and generational lifetimes.
  *
- * Any type inheriting from Resource can be stored without modifying this class.
- * Mirrors Scene's design: per type we keep a SlotAllocator (handle lifetime)
- * and a SparseSet<T> (storage), plus a name index for O(1) lookup.
+ * Per type, as in Scene: a SlotAllocator, a SparseSet<T> and a name index.
+ *
+ * Only the engine's asset types (IS_ENGINE_ASSET) are stored, each slot made in vkm_core at
+ * construction. A SparseSet<T> carries the vtable of the binary that made it, so a slot a gameplay
+ * module made would outlive the module past dlclose; any other type is a compile error. See
+ * scripting.md, "Nothing may hold module code across the swap".
  */
 class ResourceManager {
     public:
-        ResourceManager() = default;
+        ResourceManager();
         ~ResourceManager() = default;
 
         ResourceManager(const ResourceManager& other) = delete;
@@ -40,37 +56,39 @@ class ResourceManager {
 
     public:
         /**
-         * @brief Add a new resource to the manager, stamping its identity.
+         * @brief Put @p resource in the graph under its name, stamping its identity.
          *
-         * The name the asset arrives with is made non-empty and unique within
-         * its type - "asset" when it had none, a " (N)" suffix when it was
-         * taken - because findByName resolves a name back to a handle, and two
-         * assets sharing a name would share a serialized identity. The overload
-         * below is how a caller supplies one; Resource keeps the field private,
-         * so these two are the only door to it.
+         * The name is the identity (what a scene file stores), so naming one that exists
+         * **replaces its contents in place** and returns the existing handle; this keeps adding
+         * repeatable across a script reload, where `onStart` runs again. An unnamed asset gets a
+         * free name ("asset", "asset (2)", ...) instead. Either way it gets a fresh uid, so an
+         * async completion minted against a previous occupant can tell.
          *
-         * The stored asset also gets a fresh process-unique uid and its version
-         * restarted at 1. Both say "a new asset sits here" - the uid to an async
-         * completion that may have been minted against the previous occupant of
-         * this slot, the version to a backend cache holding GPU state for it.
-         *
-         * @param resource The resource instance to add (will be moved).
-         * @return The handle for the newly added resource.
+         * @tparam ResourceType The asset type, deriving from Resource.
+         * @param resource The asset to add (moved from).
+         * @return The handle naming the asset - the existing one on a replace.
          */
         template<typename ResourceType>
         auto add(ResourceType && resource) {
             using T = std::remove_cv_t<std::remove_reference_t<ResourceType>>;
-            static_assert(std::is_base_of_v<Resource, T>, "ResourceManager stores only types deriving from Resource.");
+            static_assert(
+                std::is_base_of_v<Resource, T>,
+                "ResourceManager stores only types deriving from Resource."
+            );
             auto& slot = getSlot<T>();
 
-            ensureUniqueName(slot, resource.m_name);
+            if (resource.m_name.empty()) ensureUniqueName(slot, resource.m_name);
+
+            if (const auto taken = slot.nameIndex.find(resource.m_name); taken != slot.nameIndex.end()) {
+                return replaceAt<T>(slot, taken->second, std::forward<ResourceType>(resource));
+            }
 
             StorageIndex key = slot.allocator.allocate();
-            std::string indexName = resource.m_name;  // unique + non-empty now
+            std::string indexName = resource.m_name;  // non-empty now
             // Stamped on the stored asset, not the argument: insertion may copy,
             // and a copy is a duplicate that carries no identity of its own.
             Resource& stored = storageOf<T>(slot).add(key.index, std::forward<ResourceType>(resource));
-            stored.m_uid     = ++s_nextUid;
+            stored.m_uid     = mintUid();
             stored.m_version = 1;
             slot.nameIndex.emplace(std::move(indexName), key.index);
 
@@ -78,11 +96,12 @@ class ResourceManager {
         }
 
         /**
-         * @brief Convenience overload: stamp a name onto the asset before insertion.
+         * @brief add() under @p name.
          *
-         * @param resource The resource instance to add (will be moved).
-         * @param name Stable name to assign before the asset is inserted.
-         * @return Handle for the newly inserted asset.
+         * @tparam ResourceType The asset type, deriving from Resource.
+         * @param resource The asset to add (moved from).
+         * @param name Name to stamp before insertion.
+         * @return Handle for the asset now standing under @p name.
          */
         template<typename ResourceType>
         auto add(ResourceType && resource, std::string name) {
@@ -91,17 +110,12 @@ class ResourceManager {
         }
 
         /**
-         * @brief Insert a private asset hidden from user-facing surfaces.
+         * @brief add() under @p name, setting Resource::isHidden: kept from the user and scene saves.
          *
-         * Pickers, the Asset Browser and the scene saver filter on
-         * Resource::isHidden so these never surface to the user or get
-         * serialized into a scene save. Today's only caller is the editor
-         * (preview primitives, neutral thumbnail materials); the flag is
-         * named for the visibility intent, not the consumer.
-         *
-         * @param resource The resource instance to add (will be moved).
-         * @param name Stable name to stamp onto the asset.
-         * @return Handle for the newly inserted private asset.
+         * @tparam ResourceType The asset type, deriving from Resource.
+         * @param resource The asset to add (moved from).
+         * @param name Name to stamp before insertion.
+         * @return Handle for the private asset.
          */
         template<typename ResourceType>
         auto addPrivate(ResourceType && resource, std::string name) {
@@ -111,21 +125,14 @@ class ResourceManager {
         }
 
         /**
-         * @brief Remove a resource by handle: drops its name mapping, its storage
-         *        and its handle slot.
+         * @brief Remove a resource: its name mapping, storage and handle slot.
          *
-         * The backend mirror is not dropped here and there is no signal that it
-         * should be: GLView reclaims a slot when a new asset recycles the index,
-         * or all of them at once when the epoch moves. Deleting assets without
-         * adding replacements holds their GPU memory until one of those happens.
-         *
-         * Everything after the generation check addresses the resource by slot
-         * index alone, which a stale handle still names correctly, so a handle
-         * whose slot has been recycled would drop the current occupant's name
-         * mapping and storage. Removing an already-removed handle is a no-op.
+         * GPU memory is not freed: GLView reclaims a slot when its index is recycled, or all at
+         * once when the epoch moves. A stale handle asserts in debug and is a no-op in release:
+         * past the generation check everything addresses the slot index alone.
          *
          * @tparam HandleType Handle type identifying the resource type.
-         * @param handle Handle naming the resource to remove; must still be live.
+         * @param handle The resource to remove; must still be live.
          */
         template<typename HandleType>
         void remove(const HandleType& handle) {
@@ -141,13 +148,13 @@ class ResourceManager {
         }
 
         /**
-         * @brief Liveness check: true when @p handle still names a valid
-         *        resource of its type.
+         * @brief Whether @p handle still names a live resource of its type.
          *
-         * Use this before get/edit on handles that might have been freed
-         * since you captured them - chiefly async completions whose
-         * source code path is separated from the resource lifetime by a
-         * worker hop.
+         * For get/edit on handles that may have been freed since, chiefly in async completions.
+         *
+         * @tparam HandleType Handle type identifying the resource type.
+         * @param handle Any value.
+         * @return Whether @p handle names a live resource.
          */
         template<typename HandleType>
         bool isAlive(const HandleType& handle) const {
@@ -157,14 +164,11 @@ class ResourceManager {
         }
 
         /**
-         * @brief Get const access to a resource by handle.
-         *
-         * Asserts the handle still names a live resource; use isAlive() first
-         * for handles that may have been freed.
+         * @brief The resource @p handle names; asserts it is live (see isAlive(), tryGet()).
          *
          * @tparam HandleType Handle type identifying the resource type.
-         * @param handle Handle naming the resource to fetch.
-         * @return Const reference to the stored resource.
+         * @param handle The resource to fetch.
+         * @return The stored resource.
          */
         template<typename HandleType>
         const auto& get(const HandleType& handle) const {
@@ -175,12 +179,49 @@ class ResourceManager {
         }
 
         /**
-         * @brief Get mutable access to a resource for editing by handle.
+         * @brief The asset @p handle names, or null when it names none.
          *
-         * Reaches the asset's own fields only: the identity the manager indexes
-         * by is private to Resource, so nothing here can put the name index out
-         * of step. rename(handle, newName) is how a name changes; commit(handle)
-         * is how the backend is told the contents did.
+         * The tolerant get(), as Scene::tryGet: for a handle out of a component or cached state,
+         * which may be null or stale.
+         *
+         * @tparam HandleType Handle type identifying the resource type.
+         * @param handle Any value; null or stale answers nullptr.
+         * @return The asset, or nullptr.
+         */
+        template<typename HandleType>
+        const auto* tryGet(const HandleType& handle) const {
+            using T = typename HandleType::resource_t;
+            const TypedSlot* slot = trySlot<T>();
+            if (!slot || !slot->allocator.has(handle.key)) return static_cast<const T*>(nullptr);
+            return &storageOfConst<T>(*slot).get(handle.key.index);
+        }
+
+        /**
+         * @brief The asset @p handle names for editing, or null when it names none.
+         *
+         * The tolerant edit(): commit() afterwards if the backend needs to see the change.
+         *
+         * @tparam HandleType Handle type identifying the resource type.
+         * @param handle Any value.
+         * @return The asset, or nullptr.
+         */
+        template<typename HandleType>
+        auto* tryEdit(const HandleType& handle) {
+            using T = typename HandleType::resource_t;
+            TypedSlot* slot = m_slots.find<T>();
+            if (!slot || !slot->allocator.has(handle.key)) return static_cast<T*>(nullptr);
+            return &storageOf<T>(*slot).get(handle.key.index);
+        }
+
+        /**
+         * @brief Mutable access to the resource @p handle names.
+         *
+         * Identity stays private to Resource: rename() changes a name, commit() tells the backend
+         * the contents changed.
+         *
+         * @tparam HandleType Handle type identifying the resource type.
+         * @param handle The resource; must still be live.
+         * @return The stored resource.
          */
         template<typename HandleType>
         auto& edit(const HandleType& handle) {
@@ -191,19 +232,14 @@ class ResourceManager {
         }
 
         /**
-         * @brief Rename a resource and keep findByName consistent.
+         * @brief Rename a resource, keeping findByName consistent.
          *
-         * The only way to change a name after add(): Resource keeps its name
-         * private so the asset and the per-type index cannot drift apart.
+         * @p newName may come straight from a text field: empty falls back to the generic base and
+         * a taken one gets a " (N)" suffix. Unlike add(), a taken name never replaces its holder -
+         * renaming A onto B's name is a slip, not a request to destroy B.
          *
-         * Holds the same non-empty + unique-per-type guarantee add() gives, so
-         * @p newName may come straight from a text field: an empty string falls
-         * back to the generic base and a taken one picks up a " (N)" suffix.
-         * Two assets sharing a name would share a serialized identity, and the
-         * one that lost the index would be unreachable for the session.
-         *
-         * @param handle Handle naming the asset to rename.
-         * @param newName Desired name; adjusted in place to keep it unique.
+         * @param handle The asset to rename.
+         * @param newName Desired name; made unique.
          */
         template<typename HandleType>
         void rename(const HandleType& handle, std::string newName) {
@@ -211,9 +247,7 @@ class ResourceManager {
             auto& slot = getSlot<T>();
             VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::rename invalid handle");
             auto& res = storageOf<T>(slot).get(handle.key.index);
-            // Drop the old mapping before the uniqueness check, so renaming an
-            // asset to the name it already holds is a no-op rather than a
-            // collision with itself.
+            // Before the uniqueness check, so renaming to the current name is not a self-collision.
             dropNameIndex(slot, res.m_name, handle.key.index);
             ensureUniqueName(slot, newName);
             res.m_name = std::move(newName);
@@ -221,31 +255,25 @@ class ResourceManager {
         }
 
         /**
-         * @brief Exchange the contents of the asset at @p handle with @p value,
-         * leaving each holding the identity it arrived with, and commit.
+         * @brief Exchange the contents of the asset at @p handle with @p value, each keeping its
+         * identity, and commit.
          *
-         * For rebuilding an asset without reissuing it: the handle still names
-         * the asset, findByName still finds it, and everything already holding
-         * either keeps meaning what it meant. The editor's Stop is the caller -
-         * it puts every asset back as Play found it while the undo history it
-         * keeps across the session still holds handles into this graph.
-         *
-         * Identity is the slot's, not the value's. A freshly built asset
-         * carries a name of its own (the one add() gave it), a uid, a hidden
-         * flag and a version that restarts at 1; letting those ride in would
-         * rename the asset to whatever it was built as, break the name index
-         * with it, and hand the backend's cache a version it has already seen.
-         * They are traded back, so @p value keeps its own and can be removed
-         * afterwards like any other asset.
+         * Rebuilds an asset without reissuing it: handles and findByName keep naming it. The
+         * value's name, uid, hidden flag and version are traded back rather than riding in, which
+         * would break the name index and replay a version the backend has seen; @p value can be
+         * removed afterwards like any other asset.
          *
          * @tparam HandleType Handle type identifying the resource type.
-         * @param handle Handle naming the asset to rebuild; must still be live.
-         * @param value Asset holding the new contents; receives the old ones.
+         * @param handle The asset to rebuild; must still be live.
+         * @param value The new contents; receives the old ones.
          */
         template<typename HandleType>
         void swapValue(const HandleType& handle, typename HandleType::resource_t& value) {
             using T = typename HandleType::resource_t;
-            static_assert(std::is_base_of_v<Resource, T>, "Resource type must inherit from Resource to use swapValue().");
+            static_assert(
+                std::is_base_of_v<Resource, T>,
+                "Resource type must inherit from Resource to use swapValue()."
+            );
             auto& slot = getSlot<T>();
             VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::swapValue invalid handle");
             T& target = storageOf<T>(slot).get(handle.key.index);
@@ -261,31 +289,29 @@ class ResourceManager {
         }
 
         /**
-         * @brief Commit changes to a resource by bumping its per-asset version.
+         * @brief Bump the asset's version, which GLView::sync keys its GPU re-upload on.
          *
-         * The per-asset `version` is what the backend keys GPU re-uploads on:
-         * GLView's syncTable rebuilds an entry only when this changes. commit()
-         * touches only the one asset's version, so a per-frame slider drag
-         * re-uploads just that material instead of the whole GPU cache.
+         * @tparam HandleType Handle type identifying the resource type.
+         * @param handle The changed resource; must still be live.
          */
         template<typename HandleType>
         void commit(const HandleType& handle) {
             using T = typename HandleType::resource_t;
-            static_assert(std::is_base_of_v<Resource, T>, "Resource type must inherit from Resource to use commit().");
+            static_assert(
+                std::is_base_of_v<Resource, T>,
+                "Resource type must inherit from Resource to use commit()."
+            );
             auto& slot = getSlot<T>();
             VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::commit invalid handle");
             ++storageOf<T>(slot).get(handle.key.index).m_version;
         }
 
         /**
-         * @brief Find a resource by the name it was added or renamed under.
+         * @brief Find a resource by the name it was added or renamed under, in O(1).
          *
-         * Returns a default (invalid) handle if the type is unregistered or no
-         * asset matches.
-         *
-         * O(1) lookup via a per-type name->index map maintained on
-         * add/remove/rename - the only three ways a name comes or goes, since
-         * Resource keeps its own private.
+         * @tparam T The resource type.
+         * @param name The name to look up.
+         * @return The handle, or an invalid one when the type is unregistered or nothing matches.
          */
         template<typename T>
         Handle<T> findByName(const std::string& name) const {
@@ -298,10 +324,29 @@ class ResourceManager {
         }
 
         /**
-         * @brief Visit every live resource of type T as (Handle<T>, const T&).
+         * @brief Resolve an authored reference to the asset it names.
          *
-         * Linear scan - for editor asset pickers / tooling, not hot paths.
+         * @code
+         * m_clip = resources().find(chime);   // AssetRef<AudioClipAsset> chime;
+         * @endcode
+         *
+         * @tparam T The referenced asset type.
+         * @param ref The reference; an empty name answers an invalid handle.
+         * @return The handle, or an invalid one when nothing has that name.
+         */
+        template<typename T>
+        Handle<T> find(const AssetRef<T>& ref) const {
+            return ref.name.empty() ? Handle<T>{} : findByName<T>(ref.name);
+        }
+
+        /**
+         * @brief Visit every live resource of type T; a linear scan for tooling, not hot paths.
+         *
          * A no-op when the type is unregistered.
+         *
+         * @tparam T  The resource type.
+         * @tparam Fn Callable taking (Handle<T>, const T&).
+         * @param fn Called per resource in storage order; must not add or remove a T.
          */
         template<typename T, typename Fn>
         void forEachOfType(Fn&& fn) const {
@@ -313,87 +358,67 @@ class ResourceManager {
         }
 
         /**
-         * @brief Drop every resource of every registered type.
+         * @brief How many resources of type T the graph holds.
          *
-         * The cold-start counterpart to swap(): where swap() hands the graph to
-         * another manager, this ends it outright. Bumps the epoch for the same
-         * reason swap() does - whatever graph is built next restarts at the same
-         * indices, generations and versions, so a backend cache has no other way
-         * to tell it from the one that just went away.
-         *
-         * Does not check refcounts - the caller clears the scene first so no
-         * entity is still pointing at a freed handle.
-         */
-        void clear() {
-            LOG_INFO_C("RESOURCE", "Clear (dropping %zu asset type(s))", m_slots.count());
-            m_slots.clear();
-            ++m_epoch;
-        }
-
-        /**
-         * @brief Swap the entire asset graph with another ResourceManager.
-         *
-         * Used by SceneSerializer::load for transactional asset+scene swap:
-         * a staging ResourceManager is filled while the live one continues
-         * to back the running editor; on full load success this swap +
-         * Scene::swap commits both in one phase. On failure the staging
-         * is dropped and the live state is untouched, so a malformed
-         * scene file no longer orphans newly-loaded assets in the live
-         * graph.
-         *
-         * NOTE: outstanding handles from before the swap are stale - their
-         * (index, generation) keys point at slots in the OTHER manager.
-         * Editor panels that cache handles to hidden assets must
-         * re-acquire on next use; the standard pattern is findByName-then-
-         * addPrivate, which works because findByName is O(1) now.
-         */
-        void swap(ResourceManager& other) noexcept {
-            m_slots.swap(other.m_slots);
-            ++m_epoch;
-            ++other.m_epoch;
-            LOG_INFO_C("RESOURCE", "Swap committed");
-        }
-
-        /**
-         * @brief Swap the per-type slot for @p T with @p other.
-         *
-         * Used by SceneSerializer to keep engine-owned asset types (fonts)
-         * out of the scene-level swap: a full RM swap would strand cached
-         * handles in render passes because the scene-staged RM never had
-         * those types populated. Slot exchange is symmetric and works even
-         * when either side has no slot for @p T yet.
+         * @return The count; 0 when the type is unregistered.
          */
         template<typename T>
-        void swapSlot(ResourceManager& other) noexcept {
-            m_slots.slot<T>().swap(other.m_slots.slot<T>());
-            ++m_epoch;
-            ++other.m_epoch;
+        size_t countOfType() const {
+            const TypedSlot* slot = trySlot<T>();
+            return slot ? storageOfConst<T>(*slot).size() : 0;
         }
+
+        /**
+         * @brief Drop every resource but the fonts, by swap() with an empty manager.
+         *
+         * Nothing tracks handle holders: clear the scene first.
+         */
+        void clear();
+
+        /**
+         * @brief Swap the asset graph with another ResourceManager, fonts excepted.
+         *
+         * Commits a staging manager together with Scene::swap; on failure the staging one is
+         * dropped and the live state is untouched. Fonts stay: baked at startup, never in
+         * a scene file, and a UIText's font name must keep resolving. Handles from before the swap
+         * point into the OTHER manager; a cached hidden asset is re-acquired by findByName, then
+         * addPrivate.
+         *
+         * @param other The manager to trade graphs with.
+         */
+        void swap(ResourceManager& other) noexcept;
 
         /**
          * @brief Identity of the current asset graph, bumped by every swap.
          *
-         * A replacement graph (scene load, editor play-stop restore) is freshly
-         * built: its handles restart at the same indices and generations and its
-         * assets at version 1, so a cache keyed on those cannot tell it from the
-         * graph it replaced and keeps serving stale GPU data. A backend cache must
-         * drop everything when this moves, then repopulate.
+         * A new graph reuses indices, generations and version 1, so a backend cache must drop
+         * everything when this moves.
+         *
+         * @return The current graph's epoch; never 0.
          */
         uint64_t epoch() const { return m_epoch; }
 
     private:
-        /**
-         * @brief Per-type bundle: lifetime (allocator), storage, name index.
-         */
         struct TypedSlot {
             SlotAllocator                   allocator;
             std::unique_ptr<ISparseSet>     storage;
-            /// name -> storage index; backs O(1) findByName.
+            /// name -> storage index.
             std::unordered_map<std::string, uint32_t> nameIndex;
         };
 
+    private:
+        /**
+         * @brief Make every engine asset type's slot, from vkm_core - see the class note.
+         */
+        void makeEngineSlots();
+
         template<typename T>
         TypedSlot& getSlot() {
+            static_assert(
+                IS_ENGINE_ASSET<T>,
+                "ResourceManager stores the engine's asset types only: a slot for a type a "
+                "gameplay module declares would carry the module's code past its unload."
+            );
             return m_slots.ensure<T>([] {
                 auto slot = std::make_unique<TypedSlot>();
                 slot->storage = std::make_unique<SparseSet<T>>();
@@ -402,10 +427,10 @@ class ResourceManager {
         }
 
         /**
-         * @brief Look up the const slot for @p T, or nullptr if the type was never registered.
+         * @brief The slot for @p T, or nullptr if the type was never registered.
          *
-         * The graceful lookup primitive behind isAlive / findByName /
-         * forEachOfType (which return empty for an unknown type).
+         * @tparam T The resource type.
+         * @return The slot, or nullptr.
          */
         template<typename T>
         const TypedSlot* trySlot() const {
@@ -430,10 +455,11 @@ class ResourceManager {
         }
 
         /**
-         * @brief Erase the name->index mapping for @p name when it still points at @p index.
+         * @brief Erase the mapping for @p name when it still points at @p index.
          *
-         * Shared by remove() and rename() so the index stays consistent in one
-         * place.
+         * @param slot  The type's slot.
+         * @param name  The name to drop.
+         * @param index Dense index the name must still point at.
          */
         static void dropNameIndex(TypedSlot& slot, const std::string& name, uint32_t index) {
             auto it = slot.nameIndex.find(name);
@@ -443,10 +469,47 @@ class ResourceManager {
         }
 
         /**
-         * @brief Make @p name non-empty and unique among the names already registered in @p slot.
+         * @brief Overwrite the asset at @p index with @p resource, keeping the slot's identity.
          *
-         * Empty -> "asset"; a taken name gets the lowest free " (N)" suffix.
-         * Called by add() so every asset has a usable key.
+         * Index, generation and name stay. The version moves on rather than restarting, as the
+         * backend cache has seen a 1; the uid is fresh, so async completions for the previous
+         * occupant can tell. Visibility travels with the contents, so addPrivate() can re-declare.
+         *
+         * @tparam T The resource type.
+         * @tparam ResourceType The incoming value's type, T or a reference to one.
+         * @param slot That type's slot.
+         * @param index Dense index of the asset being replaced.
+         * @param resource The new contents (moved from).
+         * @return The handle that already named the asset.
+         */
+        template <typename T, typename ResourceType>
+        Handle<T> replaceAt(TypedSlot& slot, uint32_t index, ResourceType && resource) {
+            T& target = storageOf<T>(slot).get(index);
+
+            // First: re-declaring an asset with its own contents hands in target itself, and
+            // constructing from it would move the name away.
+            const uint64_t version = target.m_version;
+            std::string    name    = std::move(target.m_name);
+
+            // Constructed: Resource has no copy assignment.
+            T incoming(std::forward<ResourceType>(resource));
+            using std::swap;
+            swap(target, incoming);
+
+            target.m_name    = std::move(name);
+            target.m_uid     = mintUid();
+            target.m_version = version + 1;
+            return Handle<T>{slot.allocator.handleAt(index)};
+        }
+
+        /**
+         * @brief Make @p name non-empty and unique in @p slot.
+         *
+         * Empty becomes "asset"; a taken name gets the lowest free " (N)" suffix. Not for a named
+         * add(), which replaces.
+         *
+         * @param slot The type's slot.
+         * @param name Adjusted in place until it is free.
          */
         static void ensureUniqueName(const TypedSlot& slot, std::string& name) {
             if (name.empty()) name = "asset";
@@ -461,17 +524,21 @@ class ResourceManager {
             }
         }
 
+        /**
+         * @brief The next asset uid, unique across the process.
+         *
+         * Process-wide, as a scene load fills a second manager. Defined in vkm_core, not an inline
+         * static: on Windows a module DLL instantiating add() would keep its own counter.
+         *
+         * @return A uid no asset in this process has held.
+         */
+        static uint64_t mintUid();
+
     private:
         TypeRegistry<TypedSlot> m_slots;
 
-        // Starts at 1 so a cache can hold 0 as "never synced" and repopulate on
-        // its first pass without a special case.
+        /// Starts at 1, so a cache can hold 0 as "never synced".
         uint64_t m_epoch = 1;
-
-        // Process-wide on purpose: a scene load fills a second ResourceManager,
-        // whose assets must stay distinguishable from the live ones they are
-        // about to replace.
-        inline static std::atomic<uint64_t> s_nextUid{0};
 };
 
 } // namespace Vkm::Engine

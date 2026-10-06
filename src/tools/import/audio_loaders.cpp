@@ -1,24 +1,20 @@
 #define VKM_LOG_CATEGORY "LOADER"
 
-#include "loader/audio_loaders.h"
+#include "import/audio_loaders.h"
 
 #include <algorithm>
 #include <cstdint>
-#include <memory>
 #include <utility>
 #include <vector>
 
 #include <nlohmann/json.hpp>
+#include "miniaudio.h"
 
 #include "logger.h"
 
 #include "io/project_paths.h"
-#include "resource/resource_manager.h"
-
-// miniaudio's implementation is provided once by the miniaudio module (linked
-// into vkm_core); here we need only the decoder declarations.
-#include "miniaudio.h"
 #include "resource/asset_source_kind.h"
+#include "resource/resource_manager.h"
 
 namespace Vkm::Engine {
 
@@ -42,13 +38,8 @@ constexpr ma_uint64 MAX_RESERVE_FRAMES = 10 * 60 * 48000;
  * MA_NOT_IMPLEMENTED for the question entirely. The length is still asked for
  * first, as a reserve hint, so the common case allocates once.
  *
- * The hint is capped because it comes out of the file's own header and a
- * corrupt one can claim any length at all: a FLAC's STREAMINFO carries 36 bits
- * of frame count behind no audio frames whatsoever, and reserving what it asks
- * for turns a 44-byte file into an uncaught bad_alloc that takes the editor
- * with it. The cooked reader answers the same lie by refusing a count no bytes
- * back; an importer cannot know that yet, so it declines to trust the count at
- * all and lets the loop below grow the buffer for a clip that really is long.
+ * The hint is capped at MAX_RESERVE_FRAMES because it comes out of the file's
+ * own header, which a corrupt file can make claim any length.
  */
 bool decodeAll(ma_decoder& decoder, uint32_t channels, std::vector<int16_t>& samples) {
     ma_uint64 declaredFrames = 0;
@@ -61,8 +52,11 @@ bool decodeAll(ma_decoder& decoder, uint32_t channels, std::vector<int16_t>& sam
         ma_uint64 framesRead = 0;
         const ma_result result =
             ma_decoder_read_pcm_frames(&decoder, chunk.data(), DECODE_CHUNK_FRAMES, &framesRead);
-        samples.insert(samples.end(), chunk.begin(),
-                       chunk.begin() + static_cast<size_t>(framesRead * channels));
+        samples.insert(
+            samples.end(),
+            chunk.begin(),
+            chunk.begin() + static_cast<size_t>(framesRead * channels)
+        );
 
         if (result == MA_AT_END) return true;
         if (result != MA_SUCCESS) return false;
@@ -88,8 +82,7 @@ AudioClipHandle loadAudioClip(const std::string& filePath, ResourceManager& reso
 
     ma_decoder decoder;
     if (ma_decoder_init_file(resolved.c_str(), &config, &decoder) != MA_SUCCESS) {
-        LOG_ERROR("Failed to load sound from '%s' (not a wav/mp3/flac, or unreadable)",
-                  resolved.c_str());
+        LOG_ERROR("Failed to load sound from '%s' (not a wav/mp3/flac, or unreadable)", resolved.c_str());
         return {};
     }
 
@@ -105,13 +98,17 @@ AudioClipHandle loadAudioClip(const std::string& filePath, ResourceManager& reso
         LOG_ERROR("Sound '%s' decoded to nothing", ref.c_str());
         return {};
     }
-    clip.samples = std::make_shared<const std::vector<int16_t>>(std::move(samples));
+    clip.samples = ClipSamples(std::move(samples));
 
-    LOG_VERBOSE("Loaded sound '%s' (%.2fs, %u channel(s), %u Hz)", ref.c_str(),
-                static_cast<double>(clip.duration()), clip.channels, clip.sampleRate);
+    LOG_VERBOSE(
+        "Loaded sound '%s' (%.2fs, %u channel(s), %u Hz)",
+        ref.c_str(),
+        static_cast<double>(clip.duration()),
+        clip.channels,
+        clip.sampleRate
+    );
 
-    clip.sourceJson() = {{"kind", AssetSourceKind::FILE}, {"path", ref}};
-    // The reference is the clip's name: the identity a scene resolves it by.
+    clip.sourceJson() = {{"kind", AssetSourceKind::FILE}, {AssetSourceKey::PATH, ref}};
     return resources.add(std::move(clip), ref);
 }
 

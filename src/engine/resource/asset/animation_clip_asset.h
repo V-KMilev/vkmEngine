@@ -30,14 +30,10 @@ struct ClipBone {
 };
 
 /**
- * @brief A named instant in a clip: what the animation announces as its
- *        playback head reaches this time.
+ * @brief A named instant a clip announces as its playback head reaches it.
  *
- * The name is the marker's whole identity, for the reason a BoneSocket names
- * its bone rather than indexing it: gameplay matches on it, it survives a
- * re-export that renumbers everything around it, and it is legible in a log.
- * Nothing addresses a marker by position, so a clip may carry two of the same
- * name - a footstep is a footstep at either end of the stride.
+ * The name is the whole identity (as BoneSocket's bone name is); nothing
+ * addresses a marker by position, so two may share a name.
  */
 struct ClipMarker {
     std::string name;
@@ -47,16 +43,9 @@ struct ClipMarker {
 /**
  * @brief A baked animation: every bone's keys, in six flat arrays.
  *
- * `AnimationTrack<T>` is deliberately not reused here. Three tracks over a
- * hundred bones is three hundred heap vector pairs and three hundred easing
- * function pointers for one clip, where six flat arrays are six allocations,
- * bulk-writable to the cooked file and cache-linear over a bone sweep. Easing
- * is dropped with it: keys come out of a DCC tool already baked at its own
- * sample rate, and there is no author to pick a curve per bone. The keyframe
- * `Animation` component keeps `AnimationTrack<T>` and is untouched.
- *
- * A clip is bound to its rig at cook time - `bones` is parallel to the named
- * skeleton's bone array, so nothing resolves names at runtime.
+ * Not `AnimationTrack<T>`: six flat arrays are bulk-writable and cache-linear,
+ * and baked keys need no easing. `bones` is parallel to the named skeleton's
+ * bone array, bound at cook time.
  */
 struct AnimationClipAsset : public Resource {
     std::string skeleton;         ///< Name of the rig whose bone order `bones` addresses.
@@ -64,8 +53,7 @@ struct AnimationClipAsset : public Resource {
     /**
      * @brief Length in seconds.
      *
-     * Stored rather than derived from the last key, so a clip that ends on a
-     * held pose keeps the still tail its author gave it.
+     * Stored, not derived from the last key, so a held tail is kept.
      */
     float duration = 0.0f;
 
@@ -74,11 +62,7 @@ struct AnimationClipAsset : public Resource {
     /**
      * @brief Instants the clip announces as the head passes them, in time order.
      *
-     * Authored on the clip rather than on the Animator playing it, because a
-     * footstep belongs to the walk and not to the character: every rig that
-     * plays that walk gets the same footsteps without authoring them again, and
-     * retiming the walk moves them with it. A clip nobody has marked carries an
-     * empty vector, which costs it nothing.
+     * On the clip, not the Animator: every rig playing the walk gets its footsteps.
      */
     std::vector<ClipMarker> markers;
 
@@ -89,6 +73,17 @@ struct AnimationClipAsset : public Resource {
     std::vector<float>     scaleTimes;
     std::vector<glm::vec3> scales;
 };
+
+/**
+ * @brief Why @p clip cannot be played, or an empty string when it can.
+ *
+ * What the sampler relies on unchecked: a finite duration, paired key times and
+ * values, channels in range, markers on the timeline. Rig fit is not asked.
+ *
+ * @param clip Clip to judge.
+ * @return The first fault found, worded to follow "cannot be played - ".
+ */
+std::string findClipFault(const AnimationClipAsset& clip);
 
 using AnimationClipHandle = Handle<AnimationClipAsset>;
 

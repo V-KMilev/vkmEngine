@@ -4,11 +4,9 @@
 
 #include <cstddef>
 
-#include "logger.h"
-
-// Declarations only: the STB_IMAGE_IMPLEMENTATION symbols come from the stb
-// module, linked transitively via vkm_core.
 #include "stb_image.h"
+
+#include "logger.h"
 
 #include "io/project_paths.h"
 
@@ -18,10 +16,7 @@ DecodedImage decodeImageRGBA(const std::string& filePath) {
     DecodedImage image;
     const std::string resolved = ProjectPaths::resolveProjectPath(filePath).string();
 
-    // Bottom-up, which is GL's row order and what every loader here asks for. The
-    // flag is process-wide and read inside the decode, so setting it the other way
-    // flips whatever a worker is decoding at that moment.
-    stbi_set_flip_vertically_on_load(true);
+    decodeImagesBottomUp();
 
     int width    = 0;
     int height   = 0;
@@ -29,8 +24,7 @@ DecodedImage decodeImageRGBA(const std::string& filePath) {
     stbi_uc* data = stbi_load(resolved.c_str(), &width, &height, &channels, 4);
 
     if (!data) {
-        LOG_ERROR("Failed to decode image '%s': %s",
-            resolved.c_str(), stbi_failure_reason());
+        LOG_ERROR("Failed to decode image '%s': %s", resolved.c_str(), stbi_failure_reason());
         return image;
     }
 
@@ -42,6 +36,10 @@ DecodedImage decodeImageRGBA(const std::string& filePath) {
 
     stbi_image_free(data);
     return image;
+}
+
+void decodeImagesBottomUp() {
+    stbi_set_flip_vertically_on_load_thread(1);
 }
 
 } // namespace Vkm::Engine

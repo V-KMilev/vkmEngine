@@ -2,7 +2,6 @@
 
 #include "io/scene/scene_serializer.h"
 
-#include <algorithm>
 #include <array>
 #include <charconv>
 #include <limits>
@@ -17,17 +16,17 @@
 
 #include "logger.h"
 
+#include "core/memory/slot_allocator.h"
 #include "debug/engine_error_log.h"
 #include "debug/profiler.h"
 #include "ecs/scene.h"
 #include "ecs/entity.h"
 #include "ecs/component/core/missing_assets.h"
+#include "ecs/hierarchy_operations.h"
 #include "io/asset/asset_serializer.h"
 #include "io/scene/component_serializer.h"
 #include "io/json_file.h"
 #include "resource/resource_manager.h"
-#include "resource/asset/font_asset.h"
-#include "system/hierarchy/hierarchy_operations.h"
 #include "io/scene/prefab.h"
 #include "ecs/component/prefab/prefab_instance.h"
 
@@ -35,28 +34,16 @@ namespace Vkm::Engine::SceneSerializer {
 
 namespace {
 
-// A scene names an entity by its slot: load recreates each entity at the slot
-// it was saved at.
+// Load recreates each entity at its saved slot.
 uint32_t sceneSlotName(EntityId e) { return e.slot(); }
 
 using nlohmann::json;
 namespace CS = ComponentSerializer;
 
-// Assets are name-only references resolved through the cooked asset library.
+// Bumped when the document layout changes. A file written by a newer build is refused.
 constexpr int FILE_FORMAT_VERSION = 2;
 
-// The largest slot a scene file may name. The file still sizes the entity slot
-// table - createEntityAt grows two vectors to reach whatever id it names, and
-// every SparseSet that entity touches grows its sparse array to the same key -
-// so this bounds that cost rather than taking the choice away: the worst a file
-// can ask for is four million slots instead of the four billion the id field can
-// spell. It also keeps every accepted id clear of SparseSet's EMPTY sentinel.
-// Raising it is safe while the ceiling stays an allocation a machine can meet.
-// Roughly 300x the benchmark scene.
-constexpr uint32_t MAX_ENTITY_SLOT = 1u << 22;
-
-// Every JSON key written by saveComponents, for unknown-key detection on load.
-// Order is incidental here (membership test only).
+// Every key saveComponents writes, for unknown-key detection on load.
 #define VKM_SCENE_KEY(Type, Key) Key,
 constexpr std::array COMPONENT_KEYS = {
     VKM_SCENE_COMPONENTS(VKM_SCENE_KEY, VKM_SCENE_KEY, VKM_SCENE_KEY) "Hierarchy"
@@ -66,10 +53,8 @@ constexpr std::array COMPONENT_KEYS = {
 /**
  * @brief Move whatever the component just loaded could not resolve onto @p e.
  *
- * The loader knows the name it failed on; only here is it known whose it was
- * and which component it was read from, which is the address a save needs to
- * put it back. Called for every component, not only the ones that reference
- * assets, so the list is empty by the time the next one is read.
+ * Only here are entity and component known, the address a save needs. Called
+ * for every component, so the list is empty before the next one is read.
  *
  * @param s Scene holding the entity.
  * @param e Entity the component was read into.
@@ -79,24 +64,22 @@ void recordUnresolved(Scene& s, EntityId e, const char* key) {
     std::vector<CS::UnresolvedRef> missed = CS::takeUnresolvedRefs();
     if (missed.empty()) return;
 
-    if (!s.has<MissingAssets>(e)) s.add(e, MissingAssets{});
-    MissingAssets& record = s.get<MissingAssets>(e);
+    MissingAssets* record = s.tryGet<MissingAssets>(e);
+    if (!record) record = &s.add(e, MissingAssets{});
     for (CS::UnresolvedRef& ref : missed) {
-        record.refs.push_back({key, std::move(ref.field), std::move(ref.name), ref.type});
+        record->refs.push_back({key, std::move(ref.field), std::move(ref.name), ref.type});
     }
 }
 
 /**
  * @brief Read one component from @p src, when @p key is present, into @p e.
  *
- * Overwrites the component the entity already carries rather than adding a
- * second one: a prefab instance root is loaded twice - once from the scene
- * block that placed it, once from the prefab file - and SparseSet::add on a key
- * it already holds appends a second dense entry that outlives the entity.
+ * Assigns over an existing component: a prefab instance root is read twice
+ * (scene, then prefab file), and SparseSet::add would silently keep the first.
  *
  * @tparam T Component type to read.
  * @tparam Args Extra arguments this component's loader takes (a ResourceManager
- *              for the ones that reference assets by name).
+ *              for an R row, an EntityResolver for an E row).
  * @param src The entity's component block.
  * @param key JSON key the component is stored under.
  * @param s Scene receiving the component.
@@ -108,39 +91,33 @@ void loadInto(const json& src, const char* key, Scene& s, EntityId e, Args&&... 
     const auto it = src.find(key);
     if (it == src.end()) return;
 
-    // Bounds what this loader resolves to this component. A loader that throws
-    // part-way is abandoned and the component is not added, so its names must
-    // not be left for the next component read to record as its own.
+    // A loader that throws adds nothing, so its unresolved names must not leak
+    // to the next component read.
     CS::UnresolvedScope unresolved;
 
     T component;
     try {
         CS::load(*it, component, std::forward<Args>(args)...);
     } catch (const std::exception& error) {
-        // nlohmann names the type mismatch and nothing about where in the file
-        // it happened. The key is in hand here and the entity id one level up,
-        // so both are attached on the way out.
+        // nlohmann says nothing of where; the key is added here, the entity one level up.
         throw std::runtime_error(std::string("component '") + key + "': " + error.what());
     }
-    if (s.has<T>(e)) s.get<T>(e) = std::move(component);
-    else             s.add(e, std::move(component));
+    if (T* existing = s.tryGet<T>(e)) *existing = std::move(component);
+    else                               s.add(e, std::move(component));
 
     recordUnresolved(s, e, key);
 }
 
 } // namespace
 
-#define VKM_SCENE_SAVE(Type, Key)   if (s.has<Type>(id)) c[Key] = CS::save(s.get<Type>(id));
-#define VKM_SCENE_SAVE_R(Type, Key) if (s.has<Type>(id)) c[Key] = CS::save(s.get<Type>(id), r);
-#define VKM_SCENE_SAVE_E(Type, Key) if (s.has<Type>(id)) c[Key] = CS::save(s.get<Type>(id), name);
+#define VKM_SCENE_SAVE(Type, Key)   if (const Type* v = s.tryGet<Type>(id)) c[Key] = CS::save(*v);
+#define VKM_SCENE_SAVE_R(Type, Key) if (const Type* v = s.tryGet<Type>(id)) c[Key] = CS::save(*v, r);
+#define VKM_SCENE_SAVE_E(Type, Key) if (const Type* v = s.tryGet<Type>(id)) c[Key] = CS::save(*v, name);
+
+namespace {
 
 /**
  * @brief Write every component @p id carries into @p c, and nothing else.
- *
- * The entity exactly as the scene holds it now, which is what makes this the
- * one answer to "what is in that field". saveComponents puts the unresolved
- * names back on top of it; pruneResolvedRefs asks whether they are still
- * wanted.
  *
  * @param s Scene holding the entity.
  * @param id Entity to write.
@@ -148,13 +125,17 @@ void loadInto(const json& src, const char* key, Scene& s, EntityId e, Args&&... 
  * @param r Asset graph, for the components that name assets.
  * @param name Names the entities the components refer to.
  */
-void writeComponents(const Scene& s, EntityId id, json& c, const ResourceManager& r,
-                     const EntityNamer& name) {
+void writeComponents(
+    const Scene& s,
+    EntityId id,
+    json& c,
+    const ResourceManager& r,
+    const EntityNamer& name
+) {
     VKM_SCENE_COMPONENTS(VKM_SCENE_SAVE, VKM_SCENE_SAVE_R, VKM_SCENE_SAVE_E)
 
-    // Written here, but read by the caller's second pass rather than by a
-    // loader: the parent it names may not exist yet when this entity is read.
-    if (s.has<Hierarchy>(id)) c["Hierarchy"] = CS::save(s.get<Hierarchy>(id));
+    // Read by the caller's second pass: the parent may not exist yet on load.
+    if (const Hierarchy* h = s.tryGet<Hierarchy>(id)) c["Hierarchy"] = CS::save(*h);
 }
 
 #undef VKM_SCENE_SAVE
@@ -164,8 +145,7 @@ void writeComponents(const Scene& s, EntityId id, json& c, const ResourceManager
 /**
  * @brief Whether @p ref's field came out of writeComponents as an empty string.
  *
- * Which is the one state a kept name can go back into: a slot the author has
- * since filled keeps what they chose.
+ * Only then does a kept name go back; a slot filled since keeps its value.
  *
  * @param c An entity's components, as writeComponents wrote them.
  * @param ref A reference the load could not resolve.
@@ -179,16 +159,15 @@ bool fieldLeftEmpty(const json& c, const MissingAssetRef& ref) {
     return field->is_string() && field->get<std::string>().empty();
 }
 
+} // namespace
 
-void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager& r,
-                    const EntityNamer& name) {
+void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager& r, const EntityNamer& name) {
     writeComponents(s, id, c, r, name);
 
-    // What the last load could not resolve goes back exactly as it came: the
-    // write above put "" over the name, and an empty slot cannot be told from
-    // one nobody ever filled (docs/reference/system/io.md).
-    if (!s.has<MissingAssets>(id)) return;
-    for (const MissingAssetRef& ref : s.get<MissingAssets>(id).refs) {
+    // Unresolved names go back over the "" written above (docs/reference/io.md).
+    const MissingAssets* missing = s.tryGet<MissingAssets>(id);
+    if (!missing) return;
+    for (const MissingAssetRef& ref : missing->refs) {
         if (fieldLeftEmpty(c, ref)) c[ref.component][ref.field] = ref.name;
     }
 }
@@ -203,11 +182,15 @@ void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager&
 #define VKM_SCENE_LOAD_R(Type, Key) loadInto<Type>(src, Key, s, e, r);
 #define VKM_SCENE_LOAD_E(Type, Key) loadInto<Type>(src, Key, s, e, resolve);
 
-void loadComponents(const json& src, Scene& s, EntityId e, const ResourceManager& r,
-                    const EntityResolver& resolve) {
+void loadComponents(
+    const json& src,
+    Scene& s,
+    EntityId e,
+    const ResourceManager& r,
+    const EntityResolver& resolve
+) {
     VKM_SCENE_COMPONENTS(VKM_SCENE_LOAD, VKM_SCENE_LOAD_R, VKM_SCENE_LOAD_E)
 }
-
 
 #undef VKM_SCENE_LOAD
 #undef VKM_SCENE_LOAD_R
@@ -223,9 +206,55 @@ bool isKnownComponentKey(const std::string& k) {
 }
 
 /**
- * @brief Build the full scene document (version + assets + entities +
- *        environment). Shared by save() (writes a file) and saveToString()
- *        (keeps it in memory for the play-mode snapshot).
+ * @brief Every live entity, each root followed by its subtree in walk order.
+ *
+ * The loader re-attaches children in file order and setParent appends, so this
+ * order is what reloads siblings in order. Breadth first per root with a
+ * visited mark; entities no root reaches (a ring) follow in slot order.
+ *
+ * @param scene Scene to order.
+ * @return Every live entity, once.
+ */
+std::vector<EntityId> entitiesInWalkOrder(const Scene& scene) {
+    std::vector<EntityId> order;
+    order.reserve(scene.entityCount());
+
+    std::vector<bool> written;
+    auto markWritten = [&](EntityId id) {
+        if (id.slot() >= written.size()) written.resize(id.slot() + 1, false);
+        if (written[id.slot()]) return false;
+        written[id.slot()] = true;
+        return true;
+    };
+
+    scene.forEachEntity([&](EntityId id) {
+        const Hierarchy* node = scene.tryGet<Hierarchy>(id);
+        if (node && scene.isAlive(node->parent)) return;
+        if (!markWritten(id)) return;
+
+        const size_t first = order.size();
+        order.push_back(id);
+        for (size_t i = first; i < order.size(); ++i) {
+            HierarchyOperations::forEachChild(scene, order[i], [&](EntityId child) {
+                if (scene.isAlive(child) && markWritten(child)) order.push_back(child);
+            });
+        }
+    });
+
+    if (order.size() < scene.entityCount()) {
+        scene.forEachEntity([&](EntityId id) {
+            if (markWritten(id)) order.push_back(id);
+        });
+    }
+    return order;
+}
+
+/**
+ * @brief Build the full scene document: version, assets, entities, environment.
+ *
+ * @param scene     Scene to describe.
+ * @param resources Resolves each handle the scene holds to the name written.
+ * @return The document.
  */
 json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
     json doc;
@@ -233,41 +262,34 @@ json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
     doc["assets"]   = AssetSerializer::saveAssetsForScene(scene, resources);
     doc["entities"] = json::array();
 
-    scene.forEachEntity([&](EntityId id) {
-        // Entities inside a prefab instance are not the scene's to describe -
-        // the prefab file defines them, and the loader rebuilds them from it.
-        if (Prefab::isInsideInstance(scene, id)) return;
+    for (const EntityId id : entitiesInWalkOrder(scene)) {
+        // The prefab file defines an instance's entities; the loader rebuilds them.
+        if (Prefab::isInsideInstance(scene, id)) continue;
 
         json entity;
         entity["id"] = id.slot();
         json components = json::object();
 
-        // WorldTransform is derived from Transform + Hierarchy each frame -
-        // not in the component list, not persisted.
         saveComponents(scene, id, components, resources);
 
-        // A prefab root stores its source instead of its contents. Transform
-        // and Hierarchy stay: where the instance sits, and what it hangs off,
-        // belong to the scene rather than to the prefab.
-        if (scene.has<PrefabInstance>(id)) {
+        // A prefab root stores its source; Transform and Hierarchy stay as scene data.
+        if (const PrefabInstance* instance = scene.tryGet<PrefabInstance>(id)) {
             json transform = std::move(components["Transform"]);
             json hierarchy = std::move(components["Hierarchy"]);
             components = json::object();
             if (!transform.is_null()) components["Transform"] = std::move(transform);
             if (!hierarchy.is_null()) components["Hierarchy"] = std::move(hierarchy);
-            const PrefabInstance& instance = scene.get<PrefabInstance>(id);
-            entity["prefab"] = instance.source;
+            entity["prefab"] = instance->source;
 
-            // uid -> component -> field. The nesting is the address, and object
-            // keys make a duplicate (uid, component, field) unrepresentable.
-            if (!instance.overrides.empty()) {
+            // uid -> component -> field: object keys make a duplicate unrepresentable.
+            if (!instance->overrides.empty()) {
                 json overrides = json::object();
-                for (const PrefabOverride& o : instance.overrides) {
+                for (const PrefabOverride& o : instance->overrides) {
                     json value;
                     try {
                         value = json::parse(o.value);
                     } catch (const std::exception&) {
-                        continue;  // read-side already rejected these; belt and braces
+                        continue;  // not JSON, so not a value the file can hold
                     }
                     overrides[std::to_string(o.uid)][o.component][o.field] = std::move(value);
                 }
@@ -277,17 +299,11 @@ json buildSceneJson(const Scene& scene, const ResourceManager& resources) {
 
         entity["components"] = std::move(components);
         doc["entities"].push_back(std::move(entity));
-    });
+    }
 
     // Scene-global settings: top-level objects, not per-entity components.
-    // Fully reflected - the field list lives once, in environment.h.
     doc["environment"] = ComponentSerializer::save(scene.environment());
     doc["physics"]     = ComponentSerializer::save(scene.physics());
-
-    // Here rather than in save(), so the play-mode snapshot is held to the same
-    // rule as the file: a scene that cannot be written is one that cannot be
-    // restored when the user presses Stop.
-    detail::writeNonFiniteAsZero(doc, "Scene");
     return doc;
 }
 
@@ -298,30 +314,20 @@ enum class AssetPolicy {
     /**
      * @brief Build a replacement graph and swap it in.
      *
-     * What a file the editor opens needs: the outgoing scene's assets go with
-     * it rather than accumulating a scene's worth per open. Every handle issued
-     * before the swap is stale afterwards.
+     * The outgoing scene's assets go with it; every earlier handle goes stale.
      */
     Replace,
     /**
      * @brief Resolve against the live graph, adding only names it does not hold.
      *
-     * What restoring the play snapshot needs. That document was serialized out
-     * of this very graph moments earlier, so it names nothing the graph is
-     * missing and nothing is created - and because no swap happens, every
-     * handle issued before it still means what it meant. The editor's undo
-     * history is the reason that matters: its steps hold the assets they are
-     * to put back, and a swap turns those into keys into a manager that no
-     * longer exists.
+     * For a saveToString document from this graph; no swap, so handles stay valid.
      */
     Merge
 };
 
 /**
- * @brief Validate + deserialize a scene document into @p scene + @p resources,
- *        committing the scene atomically via swap. Shared by load() (from a
- *        file) and loadFromString() (from the play-mode snapshot); @p source
- *        labels the origin in log messages.
+ * @brief Validate and deserialize a scene document into @p scene + @p
+ *        resources, committing the scene atomically via swap.
  *
  * @param doc Scene document to read.
  * @param scene Scene to replace on success.
@@ -329,13 +335,20 @@ enum class AssetPolicy {
  *        AssetPolicy::Replace.
  * @param source Origin, for log messages.
  * @param policy What to do with the asset graph; see AssetPolicy.
- * @return true on success; false (and a logged error) leaves both untouched.
+ * @param instanceSlots Where each instance's own entities stood, or null to
+ *        build them into whatever is free.
+ * @return true on success; false (logged) leaves the scene untouched, and the
+ *         asset graph too under AssetPolicy::Replace.
  */
-bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, const char* source,
-                   AssetPolicy policy) {
-    // value() throws when the key holds a string or an array, which is what a
-    // hand-edited file does. Reading the malformed case as the missing one
-    // refuses it with a message instead of unwinding out of the load.
+bool readSceneJson(
+    const json& doc,
+    Scene& scene,
+    ResourceManager& resources,
+    const char* source,
+    AssetPolicy policy,
+    const Prefab::InstanceSlots* instanceSlots
+) {
+    // Not value(), which throws on a string or array; a malformed version reads as missing.
     const int version = doc.contains("version") && doc["version"].is_number_integer()
         ? doc["version"].get<int>()
         : 0;
@@ -344,8 +357,12 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
         return false;
     }
     if (version > FILE_FORMAT_VERSION) {
-        LOG_ERROR("'%s' version %d is newer than this build (%d); refusing to load",
-            source, version, FILE_FORMAT_VERSION);
+        LOG_ERROR(
+            "'%s' version %d is newer than this build (%d); refusing to load",
+            source,
+            version,
+            FILE_FORMAT_VERSION
+        );
         return false;
     }
     if (!doc.contains("entities") || !doc["entities"].is_array()) {
@@ -353,17 +370,13 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
         return false;
     }
 
-    // Transactional: the factories write into the staging ResourceManager and
-    // the entities into the staging Scene, so a failure mid-load leaves the live
-    // pair untouched. Merge has no staging graph to fail into - see AssetPolicy.
+    // Staged, so a failure leaves the live pair untouched; Merge writes the live graph.
     Scene staging;
     ResourceManager stagingResources;
     ResourceManager& assetGraph = (policy == AssetPolicy::Merge) ? resources : stagingResources;
 
     if (doc.contains("assets")) {
-        // Inside a guard: a malformed assets block (bad JSON, missing library
-        // entry) must log and leave the live scene + assets untouched, not throw
-        // out of load().
+        // loadAssets guards each asset; this catches what falls outside any asset.
         try {
             AssetSerializer::loadAssets(doc["assets"], assetGraph);
         } catch (const std::exception& e) {
@@ -372,53 +385,48 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
         }
     }
 
-    // Pass 1: create each entity at its saved slot index and populate
-    // non-relational components. Hierarchy::parent is captured for pass 2
-    // because the parent might not have been created yet on first sight.
+    // Pass 1 creates entities and reads components; parents are linked in pass 2.
     std::vector<std::pair<uint32_t, uint32_t>> parentLinks;  // (child idx, parent idx)
     std::vector<EntityId> prefabRoots;  // instance roots to expand
     size_t entityCount = 0;
-    size_t unusableIds = 0;   // tallied, not logged per entry, like unknownKeys below
+    size_t unusableIds = 0;   // tallied, not logged per entry
     size_t duplicateIds = 0;
-    std::set<std::string> unknownKeys;  // dedup warnings - one per drift, not per entity
-    const json noComponents = json::object();   // stand-in for an entity that has none
+    std::set<std::string> unknownKeys;  // one warning per key, not per entity
+    const json noComponents = json::object();
 
-    // Where the read is standing, for the catch below - the entity id is zero
-    // outside the entity loop. Plain scalars rather than a formatted string,
-    // because this is updated once per entity on every load.
+    // Where the read is, for the catch below; entity 0 means outside the entity loop.
     uint32_t    entityBeingRead = 0;
     const char* blockBeingRead  = "entities";
 
     try {
-        // Every entity is created before any component is read, so a reference
-        // resolves where it is read. The id checks belong to this pass: afterwards
-        // every id is alive, and each would test as a duplicate of itself.
+        // Every entity exists before any component is read, so references resolve.
+        // Ids are checked here: afterwards each would test as a duplicate of itself.
         std::vector<EntityId> byEntry;
         byEntry.reserve(doc["entities"].size());
         for (const auto& entry : doc["entities"]) {
             const uint32_t id = entry.value("id", 0u);
-            if (id == 0 || id > MAX_ENTITY_SLOT) {
-                ++unusableIds;
-                byEntry.emplace_back();
-                continue;
-            }
-            // A repeated id allocates an already-live slot and adds every
-            // component twice: SparseSet appends rather than overwrites, and a
-            // later remove then swap-and-pops against a stale index.
+            // createEntityAt refuses a live slot; counted apart so the warning says which.
             if (staging.isAliveAtIndex(id)) {
                 ++duplicateIds;
                 byEntry.emplace_back();
                 continue;
             }
-            byEntry.push_back(staging.createEntityAt(id));
+            const EntityId entity = staging.createEntityAt(id);
+            byEntry.push_back(entity);
+            if (!entity) {
+                ++unusableIds;
+                continue;
+            }
             ++entityCount;
         }
 
-        // A saved reference is a slot, and every slot that will exist now does.
         auto bySavedSlot = [&](uint32_t slot) -> EntityId {
             if (!staging.isAliveAtIndex(slot)) {
-                LOG_WARNING("'%s' names entity slot %u, which it does not hold; "
-                            "that reference is left empty", source, slot);
+                LOG_WARNING(
+                    "'%s' names entity slot %u, which it does not hold; that reference is left empty",
+                    source,
+                    slot
+                );
                 return {};
             }
             return staging.entityAt(slot);
@@ -432,15 +440,11 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             const uint32_t id = entity.slot();
             entityBeingRead = id;
 
-            // Referenced, not value()'d: nlohmann returns by value, so asking
-            // that way deep-copied every entity's whole component block on the
-            // way past it.
+            // find(), not value(): value() deep-copies the component block.
             const auto it = entry.find("components");
             const json& components = (it != entry.end()) ? *it : noComponents;
 
-            // Components that reference assets (Mesh) look them up in the
-            // graph loadAssets just wrote into, so resolution sees it.
-            // Hierarchy is skipped: its parent index is captured below.
+            // Hierarchy is not loaded here; its parent index is captured below.
             loadComponents(components, staging, entity, assetGraph, resolve);
             if (components.contains("Hierarchy")) {
                 const uint32_t parentIdx = CS::loadParentIndex(components["Hierarchy"]);
@@ -453,30 +457,28 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
                 PrefabInstance instance;
                 instance.source = entry.value("prefab", std::string{});
 
-                // Flatten uid -> component -> field back into the stored list. A
-                // value that will not parse drops: it cannot be held in memory as
-                // text to write back, and only a hand-edit produces one.
+                // Flatten uid -> component -> field; a non-object level is skipped.
                 if (entry.contains("overrides") && entry["overrides"].is_object()) {
                     for (const auto& [uidKey, comps] : entry["overrides"].items()) {
                         if (!comps.is_object()) continue;
 
-                        // The key is the address, so one that is not a uid
-                        // addresses nothing. Parsed whole: strtoul reads "head" as
-                        // 0, the root, and the override would land there.
+                        // Parsed whole: strtoul reads "head" as 0, the root.
                         uint32_t uid = 0;
                         const char* last = uidKey.data() + uidKey.size();
                         const auto [stop, ec] = std::from_chars(uidKey.data(), last, uid);
                         if (ec != std::errc{} || stop != last) {
-                            LOG_WARNING("Override key '%s' in '%s' is not an entity uid; dropped",
-                                uidKey.c_str(), source);
+                            LOG_WARNING(
+                                "Override key '%s' in '%s' is not an entity uid; dropped",
+                                uidKey.c_str(),
+                                source
+                            );
                             continue;
                         }
 
                         for (const auto& [comp, fields] : comps.items()) {
                             if (!fields.is_object()) continue;
                             for (const auto& [field, value] : fields.items()) {
-                                instance.overrides.push_back(
-                                    PrefabOverride{uid, comp, field, value.dump()});
+                                instance.overrides.push_back(PrefabOverride{uid, comp, field, value.dump()});
                             }
                         }
                     }
@@ -494,33 +496,47 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
         }
 
         if (unusableIds > 0) {
-            LOG_WARNING("%zu entity record(s) in '%s' skipped: id 0 is the reserved slot and "
-                "an id above %u is not one this build will size the slot table to",
-                unusableIds, source, MAX_ENTITY_SLOT);
+            LOG_WARNING(
+                "%zu entity record(s) in '%s' skipped: id 0 is the reserved slot and "
+                    "an id above %u is not one this build will size the slot table to",
+                unusableIds,
+                source,
+                SlotAllocator::MAX_CLAIMED_INDEX
+            );
         }
         if (duplicateIds > 0) {
-            LOG_WARNING("%zu entity record(s) in '%s' skipped: the id was already taken by an "
-                "earlier record", duplicateIds, source);
+            LOG_WARNING(
+                "%zu entity record(s) in '%s' skipped: the id was already taken by an earlier record",
+                duplicateIds,
+                source
+            );
         }
 
-        // Pass 2b: expand prefab instances. After the entity pass so the roots
-        // hold their saved slots, and the prefab's own entities take whatever
-        // is free rather than competing for them.
+        // After the entity pass, so the prefab's entities do not compete for saved slots.
         std::set<std::string> prefabDrift;
         for (const EntityId root : prefabRoots) {
-            // Held across the expansion, which is safe because nothing it does
-            // adds a PrefabInstance: the prefab's own entities carry
-            // PrefabEntity, and nesting is refused at save time.
+            // Safe to hold: expansion adds no PrefabInstance (nesting is refused at save).
             const PrefabInstance& instance = staging.get<PrefabInstance>(root);
-            if (!Prefab::instantiateInto(staging, assetGraph, instance.source, root,
-                                         instance.overrides, &prefabDrift)) {
-                // The same seam an unresolved asset name goes through, and it
-                // costs more: the whole authored subtree vanishes from the
-                // viewport, leaving a childless entity behind.
-                reportError("Scene", "prefab '" + instance.source + "'",
-                    "could not be opened, so the instance is empty - the reference and "
-                    "its overrides are kept, so restoring the file and loading again "
-                    "brings the subtree back");
+            const Prefab::BuiltSlots* slots = nullptr;
+            if (instanceSlots) {
+                const auto it = instanceSlots->find(root.slot());
+                if (it != instanceSlots->end()) slots = &it->second;
+            }
+            if (!Prefab::instantiateInto(
+                staging,
+                assetGraph,
+                instance.source,
+                root,
+                instance.overrides,
+                &prefabDrift,
+                slots
+            )) {
+                reportError(
+                    "Scene",
+                    "prefab '" + instance.source + "'",
+                    "could not be opened, so the instance is empty - the reference and its "
+                        "overrides are kept, so restoring the file and loading again brings the subtree back"
+                );
             }
         }
         for (const std::string& message : prefabDrift) {
@@ -529,13 +545,15 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
 
         entityBeingRead = 0;
 
-        // Pass 2: wire up Hierarchy::parent now that every entity exists at its
-        // saved slot. setParent rebuilds the sibling links on both sides and
-        // seeds the WorldTransform the first HierarchySystem tick fills in.
+        // Pass 2: wire up Hierarchy::parent.
         for (const auto& [childIdx, parentIdx] : parentLinks) {
             if (!staging.isAliveAtIndex(parentIdx)) {
-                LOG_WARNING("Parent slot %u not found in '%s'; entity %u left as root",
-                    parentIdx, source, childIdx);
+                LOG_WARNING(
+                    "Parent slot %u not found in '%s'; entity %u left as root",
+                    parentIdx,
+                    source,
+                    childIdx
+                );
                 continue;
             }
             const EntityId childId  = staging.entityAt(childIdx);
@@ -543,9 +561,7 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
             HierarchyOperations::setParent(staging, childId, parentId);
         }
 
-        // Missing scene-global fields keep the staging scene's defaults; a
-        // mistyped one throws, and is caught here like any other malformed
-        // block rather than unwinding out of load().
+        // Missing fields keep defaults; a mistyped one throws into the catch below.
         blockBeingRead = "environment";
         if (auto it = doc.find("environment"); it != doc.end() && it->is_object()) {
             ComponentSerializer::load(*it, staging.environment());
@@ -556,34 +572,38 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
         }
     } catch (const std::exception& e) {
         if (entityBeingRead != 0) {
-            LOG_ERROR("Aborted while reading entity %u of '%s': %s (live scene unchanged)",
-                entityBeingRead, source, e.what());
+            LOG_ERROR(
+                "Aborted while reading entity %u of '%s': %s (live scene unchanged)",
+                entityBeingRead,
+                source,
+                e.what()
+            );
         } else {
-            LOG_ERROR("Aborted while reading the %s block of '%s': %s (live scene unchanged)",
-                blockBeingRead, source, e.what());
+            LOG_ERROR(
+                "Aborted while reading the %s block of '%s': %s (live scene unchanged)",
+                blockBeingRead,
+                source,
+                e.what()
+            );
         }
         return false;
     }
 
     for (const std::string& k : unknownKeys) {
-        LOG_WARNING("Unknown component key '%s' in '%s' (schema drift; dropped)",
-            k.c_str(), source);
+        LOG_WARNING("Unknown component key '%s' in '%s' (schema drift; dropped)", k.c_str(), source);
     }
 
-    // Both stagings swap in one step; compact() reclaims the sparse capacity the
-    // staging build grew. A Merge wrote into the live graph as it went, so it
-    // has no second half to commit and nothing above it is stale.
+    // compact() reclaims the sparse capacity staging grew. Merge has no graph to swap.
     scene.swap(staging);
-    if (policy == AssetPolicy::Replace) {
-        resources.swap(stagingResources);
-        // Fonts are baked at startup and never enter a scene file, so the
-        // staging graph has no font slot to put in place of the live one.
-        resources.swapSlot<FontAsset>(stagingResources);
-    }
+    if (policy == AssetPolicy::Replace) resources.swap(stagingResources);
     scene.compact();
 
-    LOG_INFO("Loaded scene from '%s' (%zu entities, %zu hierarchy links)",
-        source, entityCount, parentLinks.size());
+    LOG_INFO(
+        "Loaded scene from '%s' (%zu entities, %zu hierarchy links)",
+        source,
+        entityCount,
+        parentLinks.size()
+    );
     return true;
 }
 
@@ -591,7 +611,8 @@ bool readSceneJson(const json& doc, Scene& scene, ResourceManager& resources, co
 
 bool save(const Scene& scene, const ResourceManager& resources, const std::string& path) {
     PROFILE_SCOPE("SceneSerializer::save");
-    const json doc = buildSceneJson(scene, resources);
+    // Not const: writeJsonFile zeroes non-finite numbers.
+    json doc = buildSceneJson(scene, resources);
 
     if (!detail::writeJsonFile(path, doc, "Scene")) return false;
 
@@ -599,8 +620,14 @@ bool save(const Scene& scene, const ResourceManager& resources, const std::strin
     const size_t numTex = assets.contains("textures")  ? assets["textures"].size()  : 0;
     const size_t numMat = assets.contains("materials") ? assets["materials"].size() : 0;
     const size_t numMsh = assets.contains("meshes")    ? assets["meshes"].size()    : 0;
-    LOG_INFO("Saved scene to '%s' (%zu entities, %zu texture(s) + %zu material(s) + %zu mesh(es) referenced)",
-        path.c_str(), doc["entities"].size(), numTex, numMat, numMsh);
+    LOG_INFO(
+        "Saved scene to '%s' (%zu entities, %zu texture(s) + %zu material(s) + %zu mesh(es) referenced)",
+        path.c_str(),
+        doc["entities"].size(),
+        numTex,
+        numMat,
+        numMsh
+    );
     return true;
 }
 
@@ -609,32 +636,44 @@ bool load(Scene& scene, ResourceManager& resources, const std::string& path) {
     json doc;
     if (!detail::readJsonFile(path, doc, "Scene")) return false;
 
-    return readSceneJson(doc, scene, resources, path.c_str(), AssetPolicy::Replace);
+    return readSceneJson(doc, scene, resources, path.c_str(), AssetPolicy::Replace, nullptr);
 }
 
-void pruneResolvedRefs(Scene& scene, const ResourceManager& resources, EntityId id) {
-    if (!scene.isAlive(id) || !scene.has<MissingAssets>(id)) return;
+std::vector<MissingAssetRef> unresolvedRefs(
+    const Scene& scene,
+    const ResourceManager& resources,
+    EntityId id
+) {
+    const MissingAssets* missing = scene.tryGet<MissingAssets>(id);
+    if (!missing) return {};
 
-    // Only asset names are read back out of this, so how entities are named
-    // does not matter here.
+    // Only asset names are read back, so entity naming does not matter.
     auto bySlot = sceneSlotName;
     const EntityNamer name(bySlot);
     json components = json::object();
     writeComponents(scene, id, components, resources, name);
 
-    std::vector<MissingAssetRef>& refs = scene.get<MissingAssets>(id).refs;
-    refs.erase(std::remove_if(refs.begin(), refs.end(),
-                   [&](const MissingAssetRef& ref) { return !fieldLeftEmpty(components, ref); }),
-               refs.end());
-    if (refs.empty()) scene.remove<MissingAssets>(id);
+    std::vector<MissingAssetRef> still;
+    for (const MissingAssetRef& ref : missing->refs) {
+        if (fieldLeftEmpty(components, ref)) still.push_back(ref);
+    }
+    return still;
 }
 
 std::string saveToString(const Scene& scene, const ResourceManager& resources) {
     PROFILE_SCOPE("SceneSerializer::saveToString");
-    return buildSceneJson(scene, resources).dump();
+    // As writeJsonFile does: a non-finite number would come back as a null the load refuses.
+    json doc = buildSceneJson(scene, resources);
+    detail::writeNonFiniteAsZero(doc, "Scene");
+    return doc.dump();
 }
 
-bool loadFromString(const std::string& text, Scene& scene, ResourceManager& resources) {
+bool loadFromString(
+    const std::string& text,
+    Scene& scene,
+    ResourceManager& resources,
+    const Prefab::InstanceSlots* instanceSlots
+) {
     PROFILE_SCOPE("SceneSerializer::loadFromString");
     json doc;
     try {
@@ -644,7 +683,7 @@ bool loadFromString(const std::string& text, Scene& scene, ResourceManager& reso
         return false;
     }
 
-    return readSceneJson(doc, scene, resources, "<memory snapshot>", AssetPolicy::Merge);
+    return readSceneJson(doc, scene, resources, "<memory snapshot>", AssetPolicy::Merge, instanceSlots);
 }
 
 } // namespace Vkm::Engine::SceneSerializer

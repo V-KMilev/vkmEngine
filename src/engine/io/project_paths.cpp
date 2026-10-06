@@ -30,8 +30,7 @@ std::filesystem::path executableDir() {
 }
 
 std::filesystem::path resolveRoot() {
-    // The marker for a packaged layout is the shaders/ folder, which always
-    // ships; rooting there is what makes the game relocatable.
+    // shaders/ always ships, so it marks a packaged (relocatable) layout.
     const std::filesystem::path exeDir = executableDir();
     if (!exeDir.empty()) {
         std::error_code ec;
@@ -48,13 +47,10 @@ std::filesystem::path& projectOverride() {
     return s_path;
 }
 
-// Folder the engine keeps its per-user files under, inside whichever directory
-// the platform names for them.
 constexpr const char* USER_DIR_NAME = "vkmEngine";
 
-// An environment variable as a path, or empty when it is unset or blank. Wide on
-// Windows because a user directory contains a user name, and the narrow
-// environment mangles any that is not ANSI.
+// An environment variable as a path, or empty when unset or blank. Wide on
+// Windows: the narrow environment mangles a non-ANSI user name.
 #if defined(_WIN32)
 std::filesystem::path envPath(const wchar_t* name) {
     const wchar_t* value = ::_wgetenv(name);
@@ -79,8 +75,7 @@ std::filesystem::path userConfigBase() {
 #endif
 }
 
-// The platform's directory for per-user state - logs, caches of work in
-// progress - which is a different place from configuration on both platforms.
+// The platform's directory for per-user state, distinct from configuration.
 std::filesystem::path userStateBase() {
 #if defined(_WIN32)
     return envPath(L"LOCALAPPDATA");
@@ -106,20 +101,14 @@ void setProjectRoot(const std::filesystem::path& path) {
 }
 
 std::filesystem::path projectRoot() {
-    // Without an explicit project the engine root doubles as one: a development
-    // checkout is its own project, and a shipped game keeps its data beside the
-    // executable.
     if (!projectOverride().empty()) return projectOverride();
     return engineRoot();
 }
 
 std::filesystem::path userRoot() {
-    // Resolved once, and created with it: the caller that asks for this root is
-    // about to write in it, and a root that does not exist is a save that fails
-    // at shutdown where nobody is looking.
+    // Created on resolve: a missing root is a save that fails silently at shutdown.
     static const std::filesystem::path s_resolved = [] {
         const std::filesystem::path base = userConfigBase();
-        // No home directory at all - a service account, a stripped container.
         if (base.empty()) return engineRoot();
 
         const std::filesystem::path dir = base / USER_DIR_NAME;
@@ -150,9 +139,8 @@ std::string toProjectRelative(const std::string& path) {
     if (given.is_relative()) return given.generic_string();
 
     const std::filesystem::path relative = given.lexically_relative(projectRoot());
-    // Empty means the two share no root at all (different Windows drives); a
-    // leading ".." component means the file sits outside the project. The match
-    // is on whole components, so a directory named "..cache" is still inside.
+    // Empty: no shared root (different drives). A leading ".." component: outside.
+    // Matched on whole components, so "..cache" is still inside.
     const std::string generic = relative.generic_string();
     if (generic.empty() || generic == ".." || generic.rfind("../", 0) == 0) {
         return given.generic_string();

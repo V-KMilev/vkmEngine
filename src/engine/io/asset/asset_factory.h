@@ -1,11 +1,12 @@
 #pragma once
 
+#include <type_traits>
+
 #include <nlohmann/json_fwd.hpp>
 
-#include "resource/asset_type.h"
+#include "core/reflect.h"
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/audio_clip_asset.h"
-#include "resource/asset/material_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
 #include "resource/asset/texture_asset.h"
@@ -15,20 +16,50 @@ namespace Vkm::Engine {
 class ResourceManager;
 
 /**
- * @brief The io<->tools dispatch seam.
+ * @brief Builds an asset from its recipe by re-running the import.
  *
- * tools wires these at startup; the runtime wires the cooked dispatch, the
- * editor wires the cooked+recipe dispatch. Each scene-load asset is recreated
- * by calling the matching function pointer, which switches internally on the
- * source `kind`.
+ * @tparam Asset The kind it builds.
  */
-#define VKM_ASSET_FACTORY_FIELD(tag, type, name, dir) \
-    Handle<type> (*create##tag)(const nlohmann::json&, ResourceManager&) = nullptr;
-struct AssetFactory {
-    VKM_ASSET_KINDS(VKM_ASSET_FACTORY_FIELD)
-};
-#undef VKM_ASSET_FACTORY_FIELD
+template<typename Asset>
+using RecipeImport = Handle<Asset> (*)(const nlohmann::json&, ResourceManager&);
 
+/**
+ * @brief The io<->tools recipe-import seam: one import per kind that cooks to a binary.
+ *
+ * io loads cooked files itself but cannot link the importers, so a host that imports installs these
+ * (registerRecipeAssetFactories). A material has no slot: its recipe is its runtime form, which io
+ * reads itself.
+ */
+struct AssetFactory {
+    RecipeImport<MeshAsset>          createMesh          = nullptr;
+    RecipeImport<TextureAsset>       createTexture       = nullptr;
+    RecipeImport<SkeletonAsset>      createSkeleton      = nullptr;
+    RecipeImport<AnimationClipAsset> createAnimationClip = nullptr;
+    RecipeImport<AudioClipAsset>     createAudioClip     = nullptr;
+};
+
+/**
+ * @brief The process-wide factory table, empty until a host wires it.
+ *
+ * @return The one table every recipe import dispatches through.
+ */
 AssetFactory& assetFactory();
+
+/**
+ * @brief The slot of assetFactory() that imports @p Asset.
+ *
+ * @tparam Asset A kind with a slot; any other is a compile error.
+ * @return The slot's import, null when no host installed one.
+ */
+template<typename Asset>
+RecipeImport<Asset> recipeImport() {
+    const AssetFactory& factory = assetFactory();
+    if constexpr (std::is_same_v<Asset, MeshAsset>)               return factory.createMesh;
+    else if constexpr (std::is_same_v<Asset, TextureAsset>)       return factory.createTexture;
+    else if constexpr (std::is_same_v<Asset, SkeletonAsset>)      return factory.createSkeleton;
+    else if constexpr (std::is_same_v<Asset, AnimationClipAsset>) return factory.createAnimationClip;
+    else if constexpr (std::is_same_v<Asset, AudioClipAsset>)     return factory.createAudioClip;
+    else static_assert(Reflect::DEPENDENT_FALSE<Asset>, "recipeImport: this kind has no import slot");
+}
 
 } // namespace Vkm::Engine
