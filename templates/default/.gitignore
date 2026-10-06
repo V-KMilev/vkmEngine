@@ -1,7 +1,0 @@
-# What the engine's tools generate. Not library/: its recipes are source.
-/build/
-/bin/
-/cooked/
-/logs/
-/dist/
-/editor_settings.json

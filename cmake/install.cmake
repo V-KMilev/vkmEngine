@@ -145,20 +145,15 @@ if(NOT VKM_SHIPPING)
         PATTERN "source_split" EXCLUDE
     )
 
-    # What `vkm new` and the editor copy to make a project, less what running one
-    # wrote. Must match GENERATED in tools/vkmcli/project.py; docs_tests holds the three to one set.
-    set(VKM_GENERATED
-        "build"
-        "bin"
-        "dist"
-        "cooked"
-        "logs"
-        "__pycache__"
-        "editor_settings.json"
-    )
+    # What `vkm new` copies to make a project, less what running one wrote: the names in
+    # tools/generated.txt, which vkm reads too.
+    set(_vkm_generated_file ${CMAKE_SOURCE_DIR}/tools/generated.txt)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_vkm_generated_file})
+    file(STRINGS ${_vkm_generated_file} _vkm_generated REGEX "^[^#]")
     set(_vkm_skip "")
-    foreach(_name ${VKM_GENERATED})
-        list(APPEND _vkm_skip PATTERN "${_name}" EXCLUDE)
+    foreach(_vkm_pattern ${_vkm_generated})
+        string(REGEX REPLACE "^/|/$" "" _vkm_name "${_vkm_pattern}")
+        list(APPEND _vkm_skip PATTERN "${_vkm_name}" EXCLUDE)
     endforeach()
     install(DIRECTORY ${CMAKE_SOURCE_DIR}/templates ${CMAKE_SOURCE_DIR}/examples DESTINATION . ${_vkm_skip})
 
@@ -177,7 +172,11 @@ if(NOT VKM_SHIPPING)
         DESTINATION ${CMAKE_INSTALL_BINDIR}
         FILES_MATCHING PATTERN "*.py"
     )
-    install(FILES ${CMAKE_SOURCE_DIR}/tools/toolchain.json DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(FILES
+        ${CMAKE_SOURCE_DIR}/tools/toolchain.json
+        ${_vkm_generated_file}
+        DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
 
     # Less what vkm never imports: Tk, IDLE, pip and the C headers.
     if(VKM_PYTHON)
