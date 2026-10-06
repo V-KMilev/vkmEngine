@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 #include <glm/gtc/epsilon.hpp>
 
@@ -16,6 +17,7 @@
 #include "ecs/component/animation/animator.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/component/render/mesh.h"
+#include "ecs/hierarchy_operations.h"
 #include "platform/threading/thread_pool.h"
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/mesh_asset.h"
@@ -23,24 +25,18 @@
 #include "resource/resource_manager.h"
 #include "system/animation/animation_events.h"
 #include "system/animation/pose_evaluator.h"
-#include "ecs/component/core/world_transform.h"
 #include "ecs/component/physics/ragdoll.h"
 #include "system/animation/ragdoll_pose.h"
-#include "system/hierarchy/hierarchy_operations.h"
 
 namespace Vkm::Engine {
 
 namespace {
 
-// Below this much bone work the pool's dispatch cost (mutex, a notify_all wake
-// of every worker, a done-CV round trip) outweighs the sweep itself. Counted in
-// bones rather than in rigs because one rig is a hundred bones' work, so the
-// animator count alone says nothing about how long the loop takes.
+// Below this many bones the pool's dispatch costs more than the sweep. Bones, not rigs: one rig is ~100.
 constexpr size_t MIN_PARALLEL_BONES = 2048;
 
-// How far a skinned mesh's own transform may sit from identity before it is
-// reported. Loose enough that authoring noise is not a warning, tight enough
-// that a real offset - which doubles the transform - always is.
+// How far a skinned mesh's own transform may sit from identity before it is reported: above authoring
+// noise, below a real offset.
 constexpr float IDENTITY_EPSILON = 1e-4f;
 
 bool isIdentity(const Transform& transform) {
@@ -54,40 +50,40 @@ bool isIdentity(const Transform& transform) {
 void SkeletalAnimationSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("SkeletalAnimationSystem");
 
-    // Published every frame, filled on the tick: a frame that ran none draws
-    // the last pose rather than a null the render path reads as "no rig here".
+    // Published every frame, so a frame with no tick draws the last pose; null reads as "no rig here".
     ctx.poses = &m_poses;
 
-    // Advancing a clip is the tick's work; composing the pose it names is
-    // presentation, and no tick runs while paused. So the pose is rebuilt a
-    // zero-length step from where the last tick left it, and announces nothing.
-    if (!ctx.clock.isPaused()) return;
-    run(ctx, 0.0f, /*announceMarkers*/ false);
+    // A replaced world reuses the old one's slots, so the old map would pose new entities from wrong slices.
+    if (!ctx.clock.isPaused() && ctx.scene.epoch() == m_epoch) return;
+    const bool announceMarkers = false;
+    run(ctx, 0.0f, announceMarkers);
 }
 
 void SkeletalAnimationSystem::fixedUpdate(FrameContext& ctx) {
     PROFILE_SCOPE("SkeletalAnimationSystem::fixed");
-    run(ctx, ctx.clock.getFixedStep(), /*announceMarkers*/ true);
+    const bool announceMarkers = true;
+    run(ctx, ctx.clock.getFixedStep(), announceMarkers);
 }
 
 void SkeletalAnimationSystem::run(FrameContext& ctx, float step, bool announceMarkers) {
     m_poses.clear();
     m_work.clear();
+    m_ragdollBodies.clear();
+    m_epoch = ctx.scene.epoch();
     ctx.poses = &m_poses;
 
-    FaultsSeen seen;
-    poseRigs(ctx, seen, step);
+    poseRigs(ctx, step);
     if (announceMarkers) publishMarkers(ctx);
 
-    // Each latch holds only while its fault is still there, so fixing one is
-    // reported again if it comes back - which is why poseRigs reports into seen
-    // and every exit it takes lands on these three lines.
-    m_clipMismatchLogged = seen.clipMismatch;
-    m_rigMismatchLogged  = seen.rigMismatch;
-    m_meshOffsetLogged   = seen.meshOffset;
+    // Here rather than in poseRigs, so every exit it takes closes the pass.
+    m_badSkeleton.endPass();
+    m_badClip.endPass();
+    m_clipMismatch.endPass();
+    m_rigMismatch.endPass();
+    m_meshOffset.endPass();
 }
 
-void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen, float step) {
+void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, float step) {
     Scene& scene = ctx.scene;
 
     auto* animators = scene.storage<Animator>();
@@ -96,65 +92,63 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen, floa
     const ResourceManager& resources = ctx.resources;
     const auto animatorCount = static_cast<uint32_t>(animators->size());
 
-    // Allocate. Serial, because each slice's range is a running total, and
-    // because every handle has to be resolved before the parallel phase, which
-    // never touches the ResourceManager.
+    // Serial, because each slice's range is a running total.
     size_t totalBones = 0;
     for (uint32_t i = 0; i < animatorCount; ++i) {
         const Animator& animator = animators->dataAt(i);
         if (!animator.skeleton || !resources.isAlive(animator.skeleton)) continue;
 
         const SkeletonAsset& skeleton = resources.get(animator.skeleton);
-        if (skeleton.bones.empty()) continue;
+        if (skeleton.bones.empty() || !isPoseable(skeleton)) continue;
 
         RigWork work;
         work.animatorIndex = i;
         work.entityIndex   = animators->keyAt(i);
         work.skeleton      = &skeleton;
 
-        work.clip     = resolveClip(resources, animator.clip,     skeleton, seen);
-        work.fadeClip = resolveClip(resources, animator.fadeFrom, skeleton, seen);
+        work.clip     = resolveClip(resources, animator.clip,     skeleton);
+        work.fadeClip = resolveClip(resources, animator.fadeFrom, skeleton);
         work.slice    = m_poses.addSlice(static_cast<uint32_t>(skeleton.bones.size()));
 
-        // An active ragdoll takes the rig over, and what it needs is read here
-        // with everything else: the parallel pass never touches the scene, and
-        // no component is added or removed between this loop and that one.
+        // Read here, because the parallel pass never touches the scene; nothing is added or removed between.
         const EntityId rigEntity = scene.entityAt(work.entityIndex);
 
-        // Looked for upward: an import puts the Animator on a node under the
-        // entity the physics is authored on, so the Ragdoll added where
-        // everything else was added is a parent or two away.
+        // Upward: importModelIntoScene can put the Animator a node or two below the Ragdoll's entity.
         const EntityId ragdollEntity =
             HierarchyOperations::findInSelfOrAncestors<Ragdoll>(scene, rigEntity);
         if (ragdollEntity) {
             const Ragdoll& ragdoll = scene.get<Ragdoll>(ragdollEntity);
             if (ragdoll.active && !ragdoll.bones.empty()) {
-                work.ragdoll = &ragdoll;
-                work.ragdollBodies = gatherRagdollBodies(scene, ragdoll);
+                work.ragdoll   = &ragdoll;
+                work.firstBody = static_cast<uint32_t>(m_ragdollBodies.size());
+                gatherRagdollBodies(scene, ragdoll, m_ragdollBodies);
             }
         }
-        // Walked, not read off WorldTransform: the bodies this is divided out of
-        // are walked the same way above, and the Transform stage writes
-        // WorldTransform a frame behind - mixing the two is a frame of drift.
+        // Walked like the bodies, not read off WorldTransform, which is a frame behind: mixing them drifts.
         if (work.ragdoll) {
             work.rigWorld = HierarchyOperations::computeWorldMatrix(scene, rigEntity);
         }
 
         totalBones += skeleton.bones.size();
-        m_work.push_back(work);
+        m_work.push_back(std::move(work));
     }
     if (m_work.empty()) return;
 
-    // Map. A rig poses itself and everything under it, because import spawns a
-    // mesh entity per aiMesh and a character is body plus clothes plus hair -
-    // all of them driven by the one Animator above them.
+    // By slot, not storage order (add/remove history): the markers feed the simulation, so their order
+    // must be a function of the world.
+    std::sort(
+        m_work.begin(),
+        m_work.end(),
+        [](const RigWork& a, const RigWork& b) { return a.entityIndex < b.entityIndex; }
+    );
+
+    // A character is several mesh entities under one Animator (see importModelIntoScene).
     for (const RigWork& work : m_work) {
         const EntityId rig = scene.entityAt(work.entityIndex);
-        m_poses.mapEntity(work.entityIndex, work.slice);
-        // The rig itself can carry a skinned mesh (a one-mesh file whose rig is
-        // rooted at the scene node), so it is checked like any other.
-        checkSkinnedMesh(scene, resources, rig, *work.skeleton, true, seen);
-        stampDescendants(scene, resources, rig, work, seen);
+        m_poses.mapEntity(rig, work.slice);
+        // The rig itself can carry a skinned mesh (a one-mesh file).
+        checkSkinnedMesh(scene, resources, rig, *work.skeleton, true);
+        stampDescendants(scene, resources, rig, work, 0);
     }
 
     const float simDelta = step;
@@ -163,22 +157,20 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen, floa
         : std::max<size_t>(1, m_work.size() / (ThreadPool::get().threadCount() + 1));
 
     {
-        // Safe across threads because each iteration writes one Animator and one
-        // disjoint slice of the pose arrays, and no slice is allocated past this
-        // point - the same argument AnimationSystem's parallel pass makes.
+        // Each iteration writes one Animator and one disjoint slice; no slice is allocated past here.
         PROFILE_SCOPE("SkeletalAnimation/Evaluate");
         parallelFor(m_work.size(), grain, [&](size_t i) {
             RigWork& work      = m_work[i];
             Animator& animator = animators->dataAt(work.animatorIndex);
 
-            // A ragdoll takes the rig over, and that includes the clock: a body
-            // driven by the solver is not playing an animation, so its head does
-            // not move and its markers - enqueued from work.step - do not fire.
+            // A ragdoll takes the clock too: the head does not move and markers (from work.step) do not fire.
             if (!work.ragdoll) {
-                work.step = advancePlayback(animator,
-                                            work.clip     ? work.clip->duration     : 0.0f,
-                                            work.fadeClip ? work.fadeClip->duration : 0.0f,
-                                            simDelta);
+                work.step = advancePlayback(
+                    animator,
+                    work.clip     ? work.clip->duration     : 0.0f,
+                    work.fadeClip ? work.fadeClip->duration : 0.0f,
+                    simDelta
+                );
             }
 
             PoseSample sample;
@@ -186,19 +178,22 @@ void SkeletalAnimationSystem::poseRigs(FrameContext& ctx, FaultsSeen& seen, floa
             sample.time     = animator.time;
             sample.from     = work.fadeClip;
             sample.fromTime = animator.fadeTime;
-            // advancePlayback clears the fade the moment it runs out, so a
-            // duration of zero here means there is nothing left to blend.
+            // advancePlayback clears a spent fade, so zero means nothing left to blend.
             sample.weight   = (animator.fadeDuration > 0.0f)
                 ? 1.0f - animator.fadeRemaining / animator.fadeDuration
                 : 1.0f;
+            sample.adjust      = animator.adjust.data();
+            sample.adjustCount = static_cast<uint32_t>(animator.adjust.size());
 
-            // The bodies are already where the limbs are, and blending them
-            // with a clip would drag every limb toward the midpoint of two
-            // unrelated poses.
+            // Ragdoll bodies are not blended with a clip: that drags limbs between two unrelated poses.
             if (work.ragdoll) {
-                composeRagdollPose(*work.ragdoll, work.ragdollBodies,
-                                   *work.skeleton, work.rigWorld,
-                                   m_poses.writeTo(work.slice));
+                composeRagdollPose(
+                    *work.ragdoll,
+                    m_ragdollBodies.data() + work.firstBody,
+                    *work.skeleton,
+                    work.rigWorld,
+                    m_poses.writeTo(work.slice)
+                );
             } else {
                 composePose(*work.skeleton, sample, m_poses.writeTo(work.slice));
             }
@@ -213,80 +208,116 @@ void SkeletalAnimationSystem::publishMarkers(FrameContext& ctx) {
         const EntityId rig = ctx.scene.entityAt(work.entityIndex);
         for (const ClipMarker& marker : work.clip->markers) {
             if (!crossesMarker(work.step, marker.time, work.clip->duration)) continue;
-            // Enqueued rather than emitted: the bus delivers at the top of the
-            // next Simulation stage, the one point where nothing is mid-walk over
-            // storage a listener may edit, and Transform still runs after it.
+            // Enqueued, so no listener runs mid-walk over storage it may edit (see EventBus::enqueue).
             ctx.events.enqueue(AnimationEvent{rig, marker.name});
         }
     }
 }
 
+bool SkeletalAnimationSystem::isPoseable(const SkeletonAsset& skeleton) {
+    const std::string fault = findSkeletonFault(skeleton);
+    if (fault.empty()) return true;
+
+    if (m_badSkeleton.report()) {
+        LOG_WARNING(
+            "Skeleton '%s' cannot be posed - %s; its rig is left unposed",
+            skeleton.name().c_str(),
+            fault.c_str()
+        );
+    }
+    return false;
+}
+
 const AnimationClipAsset* SkeletalAnimationSystem::resolveClip(
-    const ResourceManager& resources, const AnimationClipHandle& handle,
-    const SkeletonAsset& skeleton, FaultsSeen& seen) {
+    const ResourceManager& resources,
+    const AnimationClipHandle& handle,
+    const SkeletonAsset& skeleton
+) {
     if (!handle || !resources.isAlive(handle)) return nullptr;
 
-    // A clip's per-bone table is bound to one rig's order at cook time, so it
-    // fits only a rig of that name and that length. Posing the wrong joints out
-    // of matching indices is worse than holding the bind pose and saying so.
+    // A clip's per-bone table is bound at cook time to one rig's name and length.
     const AnimationClipAsset& clip = resources.get(handle);
-    if (clip.skeleton == skeleton.name() && clip.bones.size() == skeleton.bones.size()) return &clip;
+    if (clip.skeleton != skeleton.name() || clip.bones.size() != skeleton.bones.size()) {
+        if (m_clipMismatch.report()) {
+            LOG_WARNING(
+                "Clip '%s' (rig '%s', %zu bones) does not fit rig '%s' (%zu bones) - "
+                "holding the bind pose",
+                clip.name().c_str(),
+                clip.skeleton.c_str(),
+                clip.bones.size(),
+                skeleton.name().c_str(),
+                skeleton.bones.size()
+            );
+        }
+        return nullptr;
+    }
 
-    seen.clipMismatch = true;
-    if (!m_clipMismatchLogged) {
-        LOG_WARNING("Clip '%s' (rig '%s', %zu bones) does not fit rig '%s' (%zu bones) - "
-                    "holding the bind pose",
-                    clip.name().c_str(), clip.skeleton.c_str(), clip.bones.size(),
-                    skeleton.name().c_str(), skeleton.bones.size());
-        m_clipMismatchLogged = true;
+    const std::string fault = findClipFault(clip);
+    if (fault.empty()) return &clip;
+
+    if (m_badClip.report()) {
+        LOG_WARNING(
+            "Clip '%s' cannot be played - %s; holding the bind pose",
+            clip.name().c_str(),
+            fault.c_str()
+        );
     }
     return nullptr;
 }
 
-void SkeletalAnimationSystem::stampDescendants(Scene& scene, const ResourceManager& resources,
-                                               EntityId entity, const RigWork& work,
-                                               FaultsSeen& seen) {
+void SkeletalAnimationSystem::stampDescendants(
+    Scene& scene,
+    const ResourceManager& resources,
+    EntityId entity,
+    const RigWork& work,
+    uint32_t depth
+) {
+    if (depth >= HierarchyOperations::MAX_DEPTH) {
+        HierarchyOperations::warnWalkBound("skeleton stamp", HierarchyOperations::MAX_DEPTH);
+        return;
+    }
+
     HierarchyOperations::forEachChild(scene, entity, [&](EntityId child) {
-        // A nested rig owns its own subtree: it allocated a slice of its own,
-        // and stamping through it would hand its meshes the wrong pose.
+        // A nested rig owns its subtree and its own slice.
         if (scene.has<Animator>(child)) return;
-        m_poses.mapEntity(child.slot(), work.slice);
-        checkSkinnedMesh(scene, resources, child, *work.skeleton, false, seen);
-        stampDescendants(scene, resources, child, work, seen);
+        m_poses.mapEntity(child, work.slice);
+        checkSkinnedMesh(scene, resources, child, *work.skeleton, false);
+        stampDescendants(scene, resources, child, work, depth + 1);
     });
 }
 
-void SkeletalAnimationSystem::checkSkinnedMesh(const Scene& scene, const ResourceManager& resources,
-                                               EntityId entity, const SkeletonAsset& skeleton,
-                                               bool onRig, FaultsSeen& seen) {
-    if (!scene.has<Mesh>(entity)) return;
+void SkeletalAnimationSystem::checkSkinnedMesh(
+    const Scene& scene,
+    const ResourceManager& resources,
+    EntityId entity,
+    const SkeletonAsset& skeleton,
+    bool onRig
+) {
+    const Mesh* mesh = scene.tryGet<Mesh>(entity);
+    if (!mesh || !mesh->mesh || !resources.isAlive(mesh->mesh)) return;
 
-    const Mesh& mesh = scene.get<Mesh>(entity);
-    if (!mesh.mesh || !resources.isAlive(mesh.mesh)) return;
-
-    const MeshAsset& asset = resources.get(mesh.mesh);
+    const MeshAsset& asset = resources.get(mesh->mesh);
     if (asset.skin.empty()) return;
 
-    if (asset.skeleton != skeleton.name()) {
-        seen.rigMismatch = true;
-        if (!m_rigMismatchLogged) {
-            LOG_WARNING("Mesh '%s' is skinned to rig '%s' but sits under '%s' - "
-                        "its bone indices address the wrong joints",
-                        asset.name().c_str(), asset.skeleton.c_str(), skeleton.name().c_str());
-            m_rigMismatchLogged = true;
-        }
+    if (asset.skeleton != skeleton.name() && m_rigMismatch.report()) {
+        LOG_WARNING(
+            "Mesh '%s' is skinned to rig '%s' but sits under '%s' - "
+            "its bone indices address the wrong joints",
+            asset.name().c_str(),
+            asset.skeleton.c_str(),
+            skeleton.name().c_str()
+        );
     }
 
-    // Import parents a skinned mesh to its rig at identity, which is what makes
-    // the palette's rig-space vertices land right; hand-authoring can undo it.
-    if (!onRig && scene.has<Transform>(entity) && !isIdentity(scene.get<Transform>(entity))) {
-        seen.meshOffset = true;
-        if (!m_meshOffsetLogged) {
-            LOG_WARNING("Skinned mesh '%s' does not sit at its rig's origin - "
-                        "skinned vertices are already in rig space, so its own "
-                        "transform is applied twice", asset.name().c_str());
-            m_meshOffsetLogged = true;
-        }
+    // Rig-space palette vertices land right only at identity, as importModelIntoScene places them.
+    const Transform* local = onRig ? nullptr : scene.tryGet<Transform>(entity);
+    if (local && !isIdentity(*local) && m_meshOffset.report()) {
+        LOG_WARNING(
+            "Skinned mesh '%s' does not sit at its rig's origin - "
+            "skinned vertices are already in rig space, so its own "
+            "transform is applied twice",
+            asset.name().c_str()
+        );
     }
 }
 
