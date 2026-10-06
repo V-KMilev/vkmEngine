@@ -9,8 +9,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from .engine import EngineBuild, TOOL_DIR, in_engine_tree
-from .shell import EXE, die, megabytes, platform_tag, say
+from .engine import EngineBuild, TOOL_DIR
+from .shell import EXE, die, megabytes, note, platform_tag
 
 
 # The tools an SDK builds and runs with, pinned per platform: tools/toolchain.json,
@@ -58,7 +58,7 @@ class Tool:
         cache.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=cache) as tmp:
             archive = Path(tmp) / self.url.rsplit("/", 1)[-1]
-            say(f"fetching {self.name} {self.version}, once for every project")
+            note(f"vkm: fetching {self.name} {self.version}, once for every project")
             digest = hashlib.sha256()
             try:
                 with urllib.request.urlopen(self.url) as src, open(archive, "wb") as dst:
@@ -69,11 +69,11 @@ class Tool:
                         dst.write(chunk)
                         digest.update(chunk)
                         done += len(chunk)
-                        if total and sys.stdout.isatty() and done * 10 // total != shown:
+                        if total and sys.stderr.isatty() and done * 10 // total != shown:
                             shown = done * 10 // total
-                            print(f"\r  {megabytes(done)} of {megabytes(total)}", end="", flush=True)
-                if total and sys.stdout.isatty():
-                    print()
+                            note(f"\r  {megabytes(done)} of {megabytes(total)}", end="")
+                if total and sys.stderr.isatty():
+                    note("")
             except OSError as e:
                 die(f"could not download {self.url}: {e}")
             if digest.hexdigest() != self.sha256:
@@ -127,18 +127,18 @@ def tools_on_path(tools: list[Tool]):
     os.environ["PATH"] = os.pathsep.join(dirs + rest)
 
 
-def uses_pinned_tools(root: Path) -> bool:
-    """An SDK builds with the tools it pins; the engine's own tree builds with whatever built it."""
-    return not in_engine_tree(root)
+def build_tools(engine: EngineBuild) -> list[Tool]:
+    """What a module builds with against `engine`: the pinned CMake and Ninja, and its GCC if pinned."""
+    return pinned_tools(("cmake", "ninja") + (("gcc",) if engine.pinned() else ()))
 
 
-def module_compiler(engine: EngineBuild, root: Path) -> str | None:
+def module_compiler(engine: EngineBuild) -> str | None:
     """The C++ compiler a project's module is built with when nothing names one.
 
-    In the engine's tree, the one that built it; in an SDK, the pinned GCC, which
-    built the SDK and whose runtime libraries it ships.
+    The pinned GCC for an engine built with it, on any machine; else the compiler
+    that built the engine, as its package records it.
     """
-    if uses_pinned_tools(root):
+    if engine.pinned():
         return str(pinned_tools(("gcc",))[0].bin / ("g++" + EXE))
     return engine.compiler()
 

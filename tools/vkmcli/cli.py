@@ -13,7 +13,7 @@ from .package import cmd_package
 from .play import cmd_edit, cmd_run, cmd_serve
 from .project import cmd_clean, cmd_new
 from .shell import die
-from .toolchain import BUILD_TOOLS, cmd_toolchain, uses_pinned_tools
+from .toolchain import BUILD_TOOLS, cmd_toolchain, module_compiler
 
 
 HELP = """\
@@ -182,9 +182,7 @@ def main() -> int:
     args.cmake_args = passed
     shell.VERBOSE = args.verbose
     if args.cmd != "new":
-        root = sdk_root()
-        recorded = None if uses_pinned_tools(root) else development(root).compiler()
-        toolchain_first(getattr(args, "compiler", None) or recorded)
+        toolchain_first(getattr(args, "compiler", None) or module_compiler(development()))
         temp_dir_set()
     try:
         return args.fn(args)

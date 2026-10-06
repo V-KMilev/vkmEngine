@@ -1,7 +1,8 @@
 # Builds and tests the engine the way it ships, on Linux and Windows: the SDK with the
-# GCC tools/toolchain.json pins, then the archive itself, used as a person uses it. And a
-# Clang build of the same tree, which ships nothing and catches what GCC lets through.
-# Called by ci.yml on every push and by release.yml on every version tag.
+# GCC tools/toolchain.json pins, as any configure naming no compiler does, then the
+# archive itself, used as a person uses it. And a Clang build of the same tree, which
+# ships nothing and catches what GCC lets through. Called by ci.yml on every push and
+# by release.yml on every version tag.
 name: Build
 
 on:
@@ -84,18 +85,19 @@ jobs:
             libwayland-dev libxkbcommon-dev wayland-protocols \
             libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev
 
-      # GCC, CMake, Ninja and Python, as every SDK user gets them.
-      - name: Fetch the pinned toolchain
-        run: ${{ matrix.python }} tools/vkm.py toolchain gcc cmake ninja python --path >> "$GITHUB_PATH"
+      # CMake, Ninja and Python, as every SDK user gets them; a configure that names no
+      # compiler fetches the pinned GCC itself (cmake/pinned_toolchain.cmake).
+      - name: Fetch the pinned tools
+        run: ${{ matrix.python }} tools/vkm.py toolchain cmake ninja python --path >> "$GITHUB_PATH"
 
       - name: Build the shipping engine
         run: |
-          cmake -B build-shipping -G Ninja -DVKM_SHIPPING=ON -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++
+          cmake -B build-shipping -G Ninja -DVKM_SHIPPING=ON
           cmake --build build-shipping --target vkm_runtime_app vkm_server_app
 
       - name: Build the SDK
         run: |
-          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++ \
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DVKM_SHIPPING_ENGINE:PATH="$GITHUB_WORKSPACE/build-shipping" \
             -DVKM_PYTHON:PATH="$(${{ matrix.python }} tools/vkm.py toolchain python --dir)"
           cmake --build build

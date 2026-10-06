@@ -7,13 +7,14 @@ include(CMakeFindDependencyMacro)
 find_dependency(Threads)
 
 # A module must be built with a toolchain compatible with the engine's: a mismatch
-# links, then crashes at run time. The full path is what `vkm build` configures a
-# project with in the engine's own tree; an SDK builds with its pinned tools.
+# links, then crashes at run time. `vkm build` gives a project the pinned GCC when
+# VKMENGINE_PINNED_TOOLCHAIN says the engine was built with it, else this path.
 set(VKMENGINE_BUILD_CXX_COMPILER         "@CMAKE_CXX_COMPILER@")
 set(VKMENGINE_BUILD_CXX_COMPILER_ID      "@CMAKE_CXX_COMPILER_ID@")
 set(VKMENGINE_BUILD_CXX_COMPILER_VERSION "@CMAKE_CXX_COMPILER_VERSION@")
 
 # Read by vkm (tools/vkmcli/engine.py).
+set(VKMENGINE_PINNED_TOOLCHAIN "@VKM_PINNED_TOOLCHAIN_USED@")
 set(VKMENGINE_BUILD_TYPE "@CMAKE_BUILD_TYPE@")
 set(VKMENGINE_PROFILER   "@VKM_PROFILER@")
 set(VKMENGINE_ASSERTS    "@VKM_ASSERTS@")
