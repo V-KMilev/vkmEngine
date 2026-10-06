@@ -124,6 +124,9 @@ install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/fonts ${CMAKE_SOURCE_DIR}/assets/lo
 # What `vkm new` copies to make a project.
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/templates DESTINATION .)
 
+# The engine's license, at the SDK root, where `vkm package` copies it from.
+install(FILES ${CMAKE_SOURCE_DIR}/LICENSE DESTINATION .)
+
 # The compiler's runtime DLLs (VKM_COMPILER_RUNTIME, CMakeLists.txt).
 install(FILES ${VKM_COMPILER_RUNTIME} DESTINATION ${CMAKE_INSTALL_BINDIR})
 

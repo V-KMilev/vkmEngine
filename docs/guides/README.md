@@ -7,22 +7,22 @@ in this order the first time; afterwards go to the one whose question you have.
 |------------------------------------------------|--------------------------------------|
 | What is this engine, and what has been decided? | [engine.md](engine.md)              |
 | Where does my change go, and what shape?       | [design.md](design.md)               |
-| Is this implementation good enough?            | [implementation.md](implementation.md) |
+| Is the code good enough - hot paths, threads, failure? | [implementation.md](implementation.md) |
 | Does it look like the rest of the engine?      | [code-style.md](code-style.md)       |
-| Is what is already here still the right shape? | [review.md](review.md)               |
+| Is what is here the right shape? Is this change ready? | [review.md](review.md)       |
 | What does a full judgment actually look like?  | [worked-example.md](worked-example.md) |
 | How do I build it, run it, and check it works?  | [../reference/building.md](../reference/building.md) |
 
-[getting-started.md](getting-started.md) is not part of this set. It is for
-someone building a game *with* the engine from a released SDK, not on it.
+These are for working *on* the engine. Someone building a game *with* it wants
+[../getting-started.md](../getting-started.md) and the pages
+[../README.md](../README.md) routes them to.
 
 ---
 
 ## How hard is a rule?
 
-The single most useful thing to know about any line in these guides is whether
-you are allowed to depart from it. Three levels, and every guide opens with its
-own **Absolutes** box listing the rules in it that admit no judgment:
+Before any rule, know whether you may depart from it. Three levels, and every guide of rules opens
+with an **Absolutes** box listing the ones in it that admit no judgment:
 
 | Level        | Meaning                                                         |
 |--------------|------------------------------------------------------------------|

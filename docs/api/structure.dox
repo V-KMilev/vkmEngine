@@ -2,7 +2,7 @@
 @file structure.dox
 @brief Directory documentation, so the generated site has a shape.
 
-Doxygen's default output for this engine would be one flat list of ~550
+Doxygen's default output for this engine would be one flat list of hundreds of
 declarations in `Vkm::Engine`, which is accurate and useless. These `@dir` blocks
 give the site the structure the source tree already has, without putting an
 `@ingroup` line on every declaration - a tax the source would pay forever to
@@ -51,15 +51,17 @@ serve the site.
 /** @dir src/engine/io
     @brief Reading and writing: scenes, prefabs, the project file, cooked assets.
 
-    Four formats with four different version gates, and none of them grows a
-    back-compatibility read path - see guides/engine.md section 5.1. */
+    Each format has a version gate of its own, and what it refuses differs by
+    format; none of them grows a back-compatibility read path - see
+    guides/engine.md section 5.1. */
 
 /** @dir src/engine/system
     @brief The per-frame systems, one directory each.
 
     Each is registered at exactly one stage and talks to the others only through
     FrameContext. The stage order is Input, Simulation, Transform, Visibility,
-    Render, UI, and it is declared in one place: app/engine_app.h. */
+    Render, Editor, declared once as SystemStage in core/system.h; app/engine_app.h
+    places each system at its stage. */
 
 /** @dir src/engine/system/render
     @brief The engine's whole view of rendering: RenderBackend, RenderView, EditorRenderHooks.
@@ -78,11 +80,57 @@ serve the site.
 
     This is the surface a game is actually written against. */
 
+/** @dir src/engine/system/hierarchy
+    @brief Parent-child links, and the world transform resolved from them each frame.
+
+    An unconditional pass over a flat array rather than dirty flags: a second
+    source of truth about whether a matrix is current is what produces
+    invisible-object bugs nobody can reproduce. */
+
 /** @dir src/engine/system/ui
     @brief In-game UI: an ECS-authored tree resolved into one draw list per frame.
 
     Not the editor's UI, which is ImGui and lives in src/editor. Nothing here
     reaches ImGui at all. */
+
+/** @dir src/engine/core/memory
+    @brief The containers everything else is built on: SparseSet, SlotAllocator, TypeRegistry.
+
+    None of them knows what it holds. The Scene pairs the first two to make
+    entities and the third to make component storage; the ResourceManager and the
+    EventBus pair them differently to make assets and event buses. */
+
+/** @dir src/engine/core/event
+    @brief The typed event bus, and the per-type bus it is made of.
+
+    Infrastructure rather than a system: the Engine owns one by value like the
+    Clock, and the loop flushes it at the top of the Simulation stage. */
+
+/** @dir src/engine/debug
+    @brief Diagnostics: the Tracy profiler facade, the recoverable-error sink, a fault latch and the screenshot writer.
+
+    Engine code includes the profiler facade rather than Tracy. The profiler compiles to
+    nothing when it is off; reportError always logs, and also records into the
+    editor's error log when a host has installed one. */
+
+/** @dir src/engine/system/animation
+    @brief Clips, skeletal posing, bone sockets and the pose buffer a frame publishes.
+
+    A clip is simulation, so its time advances on the tick; the pose it names is
+    published on FrameContext for the Visibility and Render stages to read. */
+
+/** @dir src/engine/system/audio
+    @brief The mixer seam: voices, spatialization and the one place miniaudio is reached.
+
+    No device is a normal state - the engine runs silently rather than refusing
+    to run. Main-thread only; see the reference page before lending it one. */
+
+/** @dir src/engine/system/visibility
+    @brief What the camera can see: frustum, distance and screen-size culling.
+
+    A flat parallel sweep rather than a spatial structure, which at this entity
+    count has no build cost, no staleness and no second answer about where
+    things are. */
 
 /** @dir src/engine/net
     @brief Networking: transport, wire format, replication and client prediction.
@@ -92,16 +140,3 @@ serve the site.
 
 /** @dir src/engine/platform
     @brief The seam onto the operating system: window, input, threads, shared libraries, sockets. */
-
-/** @dir src/backend/opengl
-    @brief The OpenGL 4.3 backend. Not public API.
-
-    Engine code never includes a gl_* header; this exists behind RenderBackend
-    and is reached only through it. Documented here because it is part of the
-    tree, not because a project should name anything in it. */
-
-/** @dir src/editor
-    @brief The editor. Not public API, and not linked into a shipped game. */
-
-/** @dir src/tools
-    @brief Asset importers and the cooker. Editor- and cook-time only. */

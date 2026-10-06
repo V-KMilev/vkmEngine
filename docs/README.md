@@ -1,116 +1,54 @@
-# docs - agent operating manual
+# vkmEngine documentation
 
-This folder is the operating manual for anyone (human or AI agent) working in
-vkmEngine. It exists so you start from the project's actual rules, mental model,
-and structure instead of guessing from whatever file you happen to open first.
+Two audiences, and they want different things. Find yourself here first.
 
-It has two halves:
+## Making a game with the engine
 
-- **`guides/`** - how we work: the rules and judgment that apply to every change.
-  Start at [getting-started.md](guides/getting-started.md) if you are building a
-  game *with* the engine rather than working *on* it.
-- **`reference/`** - how the engine works: a deep-dive per subsystem.
+Start at **[getting-started.md](getting-started.md)** - install, first project,
+writing a behavior, and shipping. Then whichever of these you need:
 
-> **The code is the source of truth.** These docs are kept current, but code
-> changes faster than prose. If a doc disagrees with the code, trust the code and
-> fix the doc (or flag the drift). Every reference doc was last verified against
-> source - keep that contract.
+| I want to | Read |
+|---|---|
+| put things in a world and move them | [ecs.md](reference/ecs.md) |
+| write gameplay code | [scripting.md](reference/scripting.md) |
+| read a key, a button, or the mouse | [input.md](reference/input.md) |
+| build a HUD or a menu | [ui.md](reference/ui.md) |
+| make things fall, collide, or walk | [physics.md](reference/physics.md) |
+| play a sound | [audio.md](reference/audio.md) |
+| play an animation | [animation.md](reference/animation.md) |
+| let two people play together | [networking.md](reference/networking.md) |
+| load a model or a texture | [io.md](reference/io.md) |
+| author a scene by hand | [editor.md](reference/editor.md) |
 
----
+Each of those pages but io.md opens with what you write and ends with a **How
+it works inside** section. You can stop at that heading; it is there for whoever
+maintains the engine, not for whoever uses it.
 
-## Read this before touching code
+## Working on the engine itself
 
-Do these in order. The first four are short and apply to *every* task; the fifth
-is whichever subsystem you're about to change.
+`guides/` is the law and `reference/` is the map. The first time:
 
-1. **Orient** - [reference/architecture.md](reference/architecture.md). What the
-   engine is, how a project reaches it, the core model, system order, and the
-   rendering and resource summaries - then the same ground in detail.
-2. **What you are building** - [guides/engine.md](guides/engine.md). What the
-   engine is for, the order it trades in when two good things conflict, and the
-   questions already settled so nobody re-proposes them.
-3. **How to fit the change** - [guides/design.md](guides/design.md). The engine
-   has a grain; this is how to find it, where code belongs, which seams you must
-   not cross, and what "finished" means.
-4. **The quality bar** - [guides/implementation.md](guides/implementation.md).
-   Simplest thing that solves today's problem; generic enough to not bite later
-   but no more; clean and readable.
-5. **The mechanics** - [guides/code-style.md](guides/code-style.md). Naming,
-   layout, comments, formatting, class anatomy, includes - so your diff reads like
-   it was always there.
-6. **Judging what is already there** - [guides/review.md](guides/review.md). The
-   other three assume you are adding something; this one asks whether the shape
-   the engine already has is the right one, and how to tell when fixes have
-   started standing in for a design.
-7. **The subsystem you're touching** - the matching doc under
-   [reference/](reference/) (architecture, ecs, resources, threading, editor, or
-   `reference/system/` for rendering, lighting, visibility, hierarchy, animation,
-   events, io, scripting, physics, ui, audio).
+1. [reference/architecture.md](reference/architecture.md) - what the engine is,
+   how a project reaches it, the core model, stage order, then the detail.
+2. The guides, in the order [guides/README.md](guides/README.md) gives - they
+   are what makes a change look like it was always there. Read engine.md's
+   settled table before proposing anything structural.
+3. The subsystem page for whatever you are touching, under `reference/`.
 
-If you only have time for one thing before a small change: skim the relevant
-reference doc and [guides/design.md](guides/design.md).
+Then [building.md](reference/building.md) for targets and flags, and
+[threading.md](reference/threading.md), [resources.md](reference/resources.md),
+[rendering.md](reference/rendering.md),
+[lighting.md](reference/lighting.md),
+[visibility.md](reference/visibility.md),
+[hierarchy.md](reference/hierarchy.md) and
+[events.md](reference/events.md) for the parts a game never calls
+directly.
 
----
+## The rule these pages are kept by
 
-## The working loop
-
-For any non-trivial task:
-
-1. **Understand first.** Read the subsystem doc and the actual source. Know the
-   data flow - who writes a component, who reads it, which stage - before changing
-   it. Don't write until you can state what you're about to do in one sentence.
-2. **Find the grain.** Locate the closest existing sibling (the system, pass,
-   component, or helper most like what you're adding) and mirror its shape. A new
-   `System` looks like the other systems; a new component is a plain data struct.
-3. **Pick the smallest change that fits.** A method on an existing class beats a
-   new file; an enum value beats a parallel type. Ask the three questions in the
-   [design guide](guides/design.md#2-three-questions-before-you-touch-a-file).
-4. **Respect the seams.** Engine never reaches into the backend; systems talk
-   through `FrameContext` and components, not to each other; assets are owned by
-   `ResourceManager` and referenced by handle. See
-   [engine.md](guides/engine.md#absolutes).
-5. **Write it to match its neighbors** ([code-style.md](guides/code-style.md)),
-   then run the pre-commit checks in
-   [implementation.md](guides/implementation.md#8-before-you-commit).
-6. **Found a code inconsistency or a stale doc along the way?** Note it and
-   surface it - don't silently route around it.
-
-A change is finished when a reader can't tell which lines are new from the style
-alone, only from the feature they add.
-
----
-
-## Map
-
-```
-docs/
-  README.md            <- you are here: the pre-flight order + working loop
-  guides/
-    engine.md           what the engine is, values, and has already decided (read 2nd)
-    design.md           where a change belongs, and what finished means (read 3rd)
-    implementation.md   what makes an implementation good (read 3rd)
-    code-style.md       naming / layout / comments / formatting (read 4th)
-    review.md           how to tell a drifting design from a working one
-    worked-example.md   one complete judgment, end to end
-  reference/
-    architecture.md     orientation and then detail: what the engine is, ownership,
-                        stages, FrameContext, directory tree, patterns (read 1st)
-    ecs.md              Scene, entities, components, queries, hierarchy
-    resources.md        ResourceManager, assets, handles, versioning, by-name identity
-    threading.md        the shared-deque ThreadPool + parallelFor
-    building.md         CMake targets, modules, flags
-    editor.md           panels, gizmos, undo/redo, material preview
-    system/
-      rendering.md      the fixed forward pass list + RenderView contract
-      lighting.md       five light types, LTC area lights, shadows, IBL, Forward+
-      visibility.md     frustum / distance / screen-size culling
-      hierarchy.md      world-transform resolve, HierarchyOperations
-      animation.md      keyframe tracks, skeletal rigs, poses, GPU skinning
-      events.md         typed pub/sub
-      io.md             scene / prefab / asset / component serialization, cooked library
-      scripting.md      Behavior lifecycle, ScriptComponent, DLL hot-reload
-      physics.md        fixed-step rigid bodies, box + capsule colliders, solver, character controller
-      ui.md             screen-space in-game UI (canvas/element/image/text/button)
-      audio.md          clips, sources, the listener, and the device seam
-      networking.md     authoritative server, client prediction, snapshots and commands
-```
+**The code is the source of truth.** If a page disagrees with the source, the
+source is right and the page is a defect - fix it or say so. The checks in
+`tests/docs/docs_tests.cpp` fail the test suite on the ways that have actually
+rotted: a dead link or anchor, a named source file that no longer exists, a
+hand-copied list that stopped matching the code it describes, and a page no index
+links to.

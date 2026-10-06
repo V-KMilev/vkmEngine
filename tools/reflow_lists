@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""Rewrite a file's parenthesised lists to the forms code-style.md 5.3 allows.
+
+A broken list that fits in 110 columns is joined onto one line, and a one-line
+list that does not fit is broken whole: the opener ends its line, one item per
+line one indent past the statement, the closer starts a line at the statement's
+indent. Only whitespace between tokens changes, and a file whose non-whitespace
+text would change is left as it was. Parenthesised lists only; a braced list, a
+list holding a comment or an item that spans lines, a preprocessor line, a
+table's rows and a control statement's condition are left for a person; the
+docs suite names what remains.
+
+usage: tools/reflow_lists <file>...
+"""
+import re
+import sys
+from pathlib import Path
+
+LIMIT = 110
+
+# A raw string's opener, which code-style.md 5.3 keeps as one literal.
+RAW_OPENER = re.compile(r'(^|[^\w])(u8|u|U|L)?R"[^ ()\\\t"]{0,16}\(')
+CONTROL = re.compile(r"\b(if|while|for|switch|return|catch)\s*\($")
+
+
+def mask(text):
+    """Comments and literals blanked (newlines kept), so brackets inside them are invisible.
+
+    Returns the masked text and, per character, "c" for a comment, "s" for a
+    literal, None for code.
+    """
+    out = list(text)
+    kind = [None] * len(text)
+    n = len(text)
+    i = 0
+    while i < n:
+        if text.startswith("//", i):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            for k in range(i, j):
+                out[k] = " "
+                kind[k] = "c"
+            i = j
+            continue
+        if text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+            for k in range(i, j):
+                kind[k] = "c"
+                if out[k] != "\n":
+                    out[k] = " "
+            i = j
+            continue
+        c = text[i]
+        if c == '"' and i > 0 and text[i - 1] == "R":
+            m = re.match(r'R"([^(]*)\(', text[i - 1:])
+            if m:
+                end = text.find(")" + m.group(1) + '"', i)
+                j = n if end < 0 else end + len(m.group(1)) + 2
+                for k in range(i, j):
+                    kind[k] = "s"
+                    if out[k] != "\n":
+                        out[k] = "x"
+                i = j
+                continue
+        if c in "\"'":
+            # A quote inside a number separates digits (1'000); after a word
+            # (U'A') it opens a literal.
+            if c == "'" and i + 1 < n and text[i + 1].isalnum():
+                t = i
+                while t > 0 and (text[t - 1].isalnum() or text[t - 1] == "_"):
+                    t -= 1
+                if t < i and text[t].isdigit():
+                    i += 1
+                    continue
+            j = i + 1
+            while j < n and text[j] != c and text[j] != "\n":
+                if text[j] == "\\":
+                    j += 1
+                j += 1
+            for k in range(i, min(j + 1, n)):
+                out[k] = "x"
+                kind[k] = "s"
+            i = j + 1
+            continue
+        i += 1
+    return "".join(out), kind
+
+
+def line_bounds(text, pos):
+    """The start and end of the line holding `pos`, end exclusive of its newline."""
+    start = text.rfind("\n", 0, pos) + 1
+    end = text.find("\n", pos)
+    return start, len(text) if end < 0 else end
+
+
+def item_lines(text, ok, ck):
+    """The lines strictly between the opener's line and the closer's, as (start, end)."""
+    start = text.find("\n", ok) + 1
+    while start and start < ck:
+        end = text.find("\n", start)
+        if end < 0 or end >= ck:
+            break
+        yield start, end
+        start = end + 1
+
+
+def split_items(masked, a, b):
+    """Top-level comma positions inside (a, b)."""
+    depth = 0
+    cuts = []
+    for k in range(a, b):
+        ch = masked[k]
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            cuts.append(k)
+    return cuts
+
+
+def merge_templates(items):
+    """Rejoin pieces a comma inside template arguments split (`std::map<int, float>`)."""
+    out = []
+    for it in items:
+        if out:
+            prev = out[-1]
+            opens = len(re.findall(r"\w<", prev)) - len(re.findall(r"(?<!-)>", prev))
+            if opens > 0 and ">" in it:
+                out[-1] = prev + ", " + it
+                continue
+        out.append(it)
+    return out
+
+
+def paren_groups(text, masked):
+    """Every parenthesised list worth a look, in the order to try them.
+
+    Broken lists innermost first, a group whose span holds no other; then
+    one-line lists past the limit outermost first, so what is left too long is
+    an item line the next pass breaks in turn.
+    """
+    stack = []
+    broken = []
+    long_lines = []
+    for k, ch in enumerate(masked):
+        if ch in "([{":
+            stack.append((ch, k))
+        elif ch in ")]}" and stack:
+            opener, ok = stack.pop()
+            if opener != "(":
+                continue
+            if "\n" in masked[ok:k]:
+                broken.append((ok, k))
+            else:
+                ls, le = line_bounds(text, ok)
+                if le - ls > LIMIT:
+                    long_lines.append((ok, k))
+    return sorted(broken, key=lambda g: g[1] - g[0]) + sorted(long_lines, key=lambda g: g[0] - g[1])
+
+
+def rewrite(text, masked, kind, ok, ck):
+    """The text with the list at (ok, ck) laid out right, or None to leave it."""
+    ls, le = line_bounds(text, ok)
+    opener_line = text[ls:le]
+    if opener_line.lstrip().startswith("#") or RAW_OPENER.search(opener_line):
+        return None
+    if CONTROL.search(masked[ls:ok + 1].rstrip()):
+        return None
+    if any(kind[k] == "c" for k in range(ok + 1, ck)):
+        return None
+
+    cs, ce = line_bounds(text, ck)
+    # Already broken whole: rewritten only to join it, when it fits.
+    whole = not masked[ok + 1:le].strip() and not masked[cs:ck].strip()
+
+    # An item may not span lines.
+    cuts = split_items(masked, ok + 1, ck)
+    bounds = [ok + 1] + [c + 1 for c in cuts] + [ck]
+    items = []
+    for i in range(len(bounds) - 1):
+        piece = text[bounds[i]:bounds[i + 1] - (1 if i < len(bounds) - 2 else 0)]
+        if "\n" in piece.strip():
+            return None
+        items.append(piece.strip())
+
+    # A table - a line holding several items, a matrix's rows - keeps its rows.
+    if whole and any(
+        len(split_items(masked, ls2, le2)) > (1 if masked[ls2:le2].rstrip().endswith(",") else 0)
+        for ls2, le2 in item_lines(text, ok, ck)
+    ):
+        return None
+
+    items = merge_templates([it for it in items if it != ""] if items != [""] else [])
+    indent = re.match(r"[ \t]*", opener_line).group(0)
+    prefix = text[ls:ok + 1]
+    suffix = text[ck:ce]
+    one = prefix + ", ".join(items) + suffix
+    if len(one) <= LIMIT:
+        new = one
+    elif whole:
+        return None
+    else:
+        body = ",\n".join(indent + "    " + it for it in items)
+        new = prefix + "\n" + body + "\n" + indent + suffix.lstrip()
+    return None if text[ls:ce] == new else text[:ls] + new + text[ce:]
+
+
+def reflow(text):
+    """`text` with every list it can lay out laid out, one rewrite per pass."""
+    for _ in range(50):
+        masked, kind = mask(text)
+        for ok, ck in paren_groups(text, masked):
+            rewritten = rewrite(text, masked, kind, ok, ck)
+            if rewritten is not None:
+                text = rewritten
+                break
+        else:
+            return text
+    return text
+
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help"):
+        print(__doc__.strip())
+        return 0
+    total = 0
+    for name in sys.argv[1:]:
+        path = Path(name)
+        src = path.read_text()
+        out = reflow(src)
+        if "".join(src.split()) != "".join(out.split()):
+            print("NON-WHITESPACE CHANGE, not written:", name)
+            continue
+        if out != src:
+            path.write_text(out)
+            total += 1
+    print("files rewritten:", total)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
