@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <vector>
 
 #include <glm/gtc/quaternion.hpp>
@@ -16,21 +15,6 @@ namespace Vkm::Engine {
 namespace {
 
 /**
- * @brief @p clip if its per-bone table is parallel to @p skeleton's, else null.
- *
- * A clip cooked against another rig would pose the wrong joints out of matching
- * indices, or index past its own end. Asked of each clip separately, so a bad
- * outgoing clip cannot take the incoming one down with it.
- *
- * @param clip Clip to check, or null.
- * @param skeleton Rig being posed.
- * @return The clip, or nullptr when it does not belong to this rig.
- */
-const AnimationClipAsset* boundTo(const AnimationClipAsset* clip, const SkeletonAsset& skeleton) {
-    return (clip && clip->bones.size() == skeleton.bones.size()) ? clip : nullptr;
-}
-
-/**
  * @brief The two keys bracketing a time, and how far between them it falls.
  */
 struct KeyPair {
@@ -39,9 +23,7 @@ struct KeyPair {
     float    t = 0.0f;
 };
 
-// Both ends clamp rather than extrapolate: a clip sampled before its first key
-// or after its last holds that key, which is what makes a channel that covers
-// only part of the timeline behave like a held pose instead of drifting.
+// Both ends clamp rather than extrapolate, so a channel covering part of the timeline holds, not drifts.
 KeyPair locateKeys(const std::vector<float>& times, const ClipChannel& channel, float time) {
     const auto begin = times.begin() + channel.first;
     const auto end   = begin + channel.count;
@@ -59,8 +41,7 @@ KeyPair locateKeys(const std::vector<float>& times, const ClipChannel& channel, 
     return {a, b, span > 0.0f ? (time - times[a]) / span : 0.0f};
 }
 
-// Only the channels the clip actually holds are written, so a bone the clip has
-// nothing to say about keeps the bind value it arrived with.
+// Only channels the clip holds are written; the rest keep their bind value.
 void sampleBone(const AnimationClipAsset& clip, uint32_t bone, float time, Transform& local) {
     const ClipBone& channels = clip.bones[bone];
 
@@ -79,19 +60,40 @@ void sampleBone(const AnimationClipAsset& clip, uint32_t bone, float time, Trans
 }
 
 /**
- * @brief Move one playback head on and bring it back into the clip's range.
+ * @brief Apply @p adjust to @p local, the bone's transform in its parent's frame.
  *
- * Wrapping is a floor-subtract rather than a modulo because a negative speed has
- * to come round to the end of the clip, and fmod of a negative time stays
- * negative.
+ * The model-space adjustment is brought through the parent's composed matrix: the rotation conjugated
+ * by the parent's rotation, the offset through the inverse of its upper 3x3 so a scaled parent does not
+ * scale the metre. Exact under uniform scale; non-uniform scale turns about a slightly sheared axis.
  *
- * @param time Head to advance, in place.
- * @param duration Clip length in seconds; 0 disables wrapping entirely.
- * @param delta Seconds to advance by, already scaled by the playback speed.
- * @param looping Whether the clip wraps rather than stopping at its end.
- * @return False when a non-looping clip has run out - which only the animator's
- *         own head acts on.
+ * @param local The bone's local TRS, adjusted in place.
+ * @param adjust What to add, or what to set.
+ * @param parentGlobal The parent's composed model matrix, or null for a root.
  */
+void adjustBone(Transform& local, const BoneAdjust& adjust, const glm::mat4* parentGlobal) {
+    local.scale *= adjust.scale;
+    if (!parentGlobal) {
+        local.rotation  = adjust.absolute ? adjust.rotation : adjust.rotation * local.rotation;
+        local.position += adjust.offset;
+        return;
+    }
+
+    const glm::mat3 parentAxes(*parentGlobal);
+    const glm::mat3 parentBasis(
+        glm::normalize(parentAxes[0]),
+        glm::normalize(parentAxes[1]),
+        glm::normalize(parentAxes[2])
+    );
+    const glm::quat parentRotation = glm::normalize(glm::quat_cast(parentBasis));
+
+    local.rotation = adjust.absolute
+        ? glm::inverse(parentRotation) * adjust.rotation
+        : glm::inverse(parentRotation) * adjust.rotation * parentRotation * local.rotation;
+    local.position += glm::inverse(parentAxes) * adjust.offset;
+}
+
+} // namespace
+
 bool advanceHead(float& time, float duration, float delta, bool looping) {
     time += delta;
     if (duration <= 0.0f) return true;
@@ -108,42 +110,40 @@ bool advanceHead(float& time, float duration, float delta, bool looping) {
     return true;
 }
 
-} // namespace
+void rewindSpentHead(float& time, float duration, float delta, bool looping) {
+    if (looping || duration <= 0.0f) return;
+    if (delta < 0.0f && time <= 0.0f) {
+        time = duration;
+    } else if (delta > 0.0f && time >= duration) {
+        time = 0.0f;
+    }
+}
 
 PlaybackStep advancePlayback(Animator& animator, float duration, float fromDuration, float simDelta) {
-    PlaybackStep step{animator.time, animator.time, 0.0f};
-    if (simDelta <= 0.0f) return step;
+    if (simDelta <= 0.0f) return PlaybackStep{animator.time, animator.time, 0.0f};
 
-    // The authored flag becomes the runtime one, once, and here rather than at
-    // load: that is what makes a rig start on Play and hold its pose in a scene
-    // that is only open. AnimationSystem gives Animation the same seam.
     if (animator.playOnStart && !animator.started) {
         animator.started = true;
         animator.playing = true;
     }
 
+    // Rewound before the sweep is measured, so it starts where playing starts.
     const float delta = simDelta * animator.speed;
+    if (animator.playing) rewindSpentHead(animator.time, duration, delta, animator.looping);
+
+    PlaybackStep step{animator.time, animator.time, 0.0f};
     if (animator.playing) {
         if (!advanceHead(animator.time, duration, delta, animator.looping)) animator.playing = false;
         step.to = animator.time;
-        // A wrapped head is not where subtracting would put it, so the distance
-        // covered is what was asked for whenever the clip loops, and what the
-        // clamp allowed when it does not.
+        // Subtracting misreads a wrapped head: a loop covers what was asked, a clamp what it allowed.
         step.travel = animator.looping ? delta : animator.time - step.from;
     }
 
-    // Not gated on `playing`: a one-shot that runs out mid-blend stops its own
-    // head, and a fade stopping with it would strand the character at a weight
-    // no field names. The blend is about reaching the clip, not advancing it.
+    // Not gated on `playing`: a one-shot ending mid-blend would strand the fade at a weight no field names.
     if (animator.fadeRemaining <= 0.0f) return step;
 
-    // The outgoing clip keeps playing while it fades, so the blend is between
-    // two moving poses; one that runs out holds its last frame for the rest of
-    // it. What `playing` names is the clip that was faded to.
     advanceHead(animator.fadeTime, fromDuration, delta, animator.fadeLooping);
 
-    // Unscaled by speed: a blend length is a duration the caller asked for, not
-    // one the playback rate moves under them.
     animator.fadeRemaining -= simDelta;
     if (animator.fadeRemaining > 0.0f) return step;
 
@@ -157,19 +157,11 @@ PlaybackStep advancePlayback(Animator& animator, float duration, float fromDurat
 bool crossesMarker(const PlaybackStep& step, float marker, float duration) {
     if (step.travel == 0.0f || duration <= 0.0f) return false;
 
-    // A step that covered a whole loop passed everything the clip carries. Said
-    // before the interval tests, which describe less than one lap and would
-    // otherwise have to be repeated per lap for no event anyone would hear.
     if (std::abs(step.travel) >= duration) return true;
 
-    // A head that moved by less than a float can resolve is standing still; the
-    // wrap branches below would otherwise read that as having gone all the way
-    // round to the same place.
+    // Otherwise the wrap branches read a sub-resolution move as a full lap.
     if (step.from == step.to) return false;
 
-    // Closed at the arrival end, open at the departure end. `to` is the value
-    // the next frame arrives with as its `from`, so a marker landed on exactly
-    // is announced now and cannot be announced again without leaving first.
     if (step.travel > 0.0f) {
         return (step.from < step.to)
             ? (marker > step.from && marker <= step.to)   // straight through
@@ -180,63 +172,38 @@ bool crossesMarker(const PlaybackStep& step, float marker, float duration) {
         : (marker >= step.to || marker < step.from);      // wrapped past the start
 }
 
-void composePose(
-    const SkeletonAsset& skeleton,
-    const PoseSample& sample,
-    const PoseWrite& out
-) {
+void composePose(const SkeletonAsset& skeleton, const PoseSample& sample, const PoseWrite& out) {
     const auto count = static_cast<uint32_t>(skeleton.bones.size());
-    const AnimationClipAsset* bound = boundTo(sample.clip, skeleton);
-    const AnimationClipAsset* from  = boundTo(sample.from, skeleton);
 
-    // A weight of 1 is the whole of the incoming clip, which is every frame that
-    // is not mid-fade - so the second sample and the three interpolations below
-    // cost nothing at all until a crossfade is actually running.
     const float weight  = std::clamp(sample.weight, 0.0f, 1.0f);
-    const bool blending = from && weight < 1.0f;
-
-    glm::vec3 originMin(std::numeric_limits<float>::max());
-    glm::vec3 originMax(std::numeric_limits<float>::lowest());
-    float maxScale = 1.0f;
+    const bool blending = sample.from && weight < 1.0f;
 
     for (uint32_t i = 0; i < count; ++i) {
         Transform local = skeleton.bindPose[i];
-        if (bound) sampleBone(*bound, i, sample.time, local);
+        if (sample.clip) sampleBone(*sample.clip, i, sample.time, local);
 
         if (blending) {
             Transform leaving = skeleton.bindPose[i];
-            sampleBone(*from, i, sample.fromTime, leaving);
-            // In LOCAL space, before composition. Blending the composed matrices
-            // instead pulls a joint toward the midpoint of two world positions,
-            // which shortens the limb it hangs off.
+            sampleBone(*sample.from, i, sample.fromTime, leaving);
             local.position = glm::mix(leaving.position, local.position, weight);
             local.rotation = glm::slerp(leaving.rotation, local.rotation, weight);
             local.scale    = glm::mix(leaving.scale, local.scale, weight);
         }
 
-        const glm::mat4 bone = Transform::computeModelMatrix(local);
         const int32_t parent = skeleton.bones[i].parent;
+
+        // Linear: the list is a handful of bones, in any order.
+        for (uint32_t a = 0; a < sample.adjustCount; ++a) {
+            if (sample.adjust[a].bone != static_cast<int32_t>(i)) continue;
+            adjustBone(local, sample.adjust[a], parent < 0 ? nullptr : &out.global[parent]);
+        }
+
+        const glm::mat4 bone = Transform::computeModelMatrix(local);
         out.global[i]  = (parent < 0) ? bone : out.global[parent] * bone;
         out.palette[i] = out.global[i] * skeleton.inverseBind[i];
-
-        const glm::vec3 origin(out.global[i][3]);
-        originMin = glm::min(originMin, origin);
-        originMax = glm::max(originMax, origin);
-
-        // Accumulated, not local: a bone under a scaled parent carries that
-        // scale too, and the total is what stretches the skin. Floored at 1
-        // because an under-sized bound deletes geometry that was visible.
-        maxScale = std::max({maxScale,
-            glm::length(glm::vec3(out.global[i][0])),
-            glm::length(glm::vec3(out.global[i][1])),
-            glm::length(glm::vec3(out.global[i][2]))});
     }
 
-    if (count == 0) originMin = originMax = glm::vec3(0.0f);
-
-    out.slice->originMin    = originMin;
-    out.slice->originMax    = originMax;
-    out.slice->maxBoneScale = maxScale;
+    finishSlice(out);
 }
 
 } // namespace Vkm::Engine

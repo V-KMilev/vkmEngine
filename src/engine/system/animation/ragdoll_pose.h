@@ -15,10 +15,8 @@ struct Ragdoll;
 /**
  * @brief One bone body's world pose, read out of the scene ahead of composing.
  *
- * The split exists for the thread the composing runs on. The pose pass runs
- * inside a parallel loop whose safety argument is that workers never touch the
- * scene; reading the bodies is scene work, so it happens in the single-threaded
- * gather and travels to the worker as plain values.
+ * Gathered on one thread by gatherRagdollBodies, because composeRagdollPose runs on workers that must
+ * not touch the scene.
  */
 struct RagdollBodyPose {
     glm::mat4 world = glm::mat4(1.0f);  ///< The body's world matrix
@@ -28,43 +26,31 @@ struct RagdollBodyPose {
 /**
  * @brief Read every bone body's world pose for one ragdoll.
  *
- * Walks the hierarchy itself rather than reading WorldTransform: bones are
- * children of the character, and the pass that resolves world transforms runs
- * after the pose is composed. A bone whose body is dead or missing is marked
- * unsimulated and follows its parent through the bind pose.
+ * Walks the hierarchy itself: HierarchySystem resolves WorldTransform after the pose is composed. A
+ * bone whose body is dead or missing is marked unsimulated.
  *
  * @param scene Scene holding the bodies.
- * @param ragdoll The mapping from bones to bodies.
- * @return One entry per ragdoll bone, in the same order.
+ * @param ragdoll Mapping from bones to bodies.
+ * @param out Appended one entry per ragdoll bone, in order.
  */
-std::vector<RagdollBodyPose> gatherRagdollBodies(const Scene& scene,
-                                                 const Ragdoll& ragdoll);
+void gatherRagdollBodies(const Scene& scene, const Ragdoll& ragdoll, std::vector<RagdollBodyPose>& out);
 
 /**
  * @brief Compose a rig's pose from the bodies simulating it.
  *
- * The other half of a ragdoll. The bodies are ordinary physics and the solver
- * knows nothing about rigs, so this is where the two meet: each simulated
- * bone's model transform is its body's world transform brought back into the
- * rig's frame and through the offset recorded when the ragdoll was built.
+ * A simulated bone's model transform is its body's world transform brought into the rig's frame and
+ * through the offset recorded at build. A bone with no body follows its parent through its bind pose,
+ * so fingers and toes can be skipped. Bones are walked parent before child.
  *
- * A bone with no body of its own follows its parent through its bind pose,
- * which is what lets fingers and toes be skipped without the hand coming off.
- * Bones are walked parent before child, so a parent's model transform is always
- * final by the time a child needs it - the same invariant composePose relies on.
- *
- * Touches no scene: the bodies arrive through @p bodies, gathered beforehand,
- * which is what lets this run inside the animation system's parallel pass.
- *
- * @param ragdoll The mapping from bones to bodies.
- * @param bodies The bodies' world poses, from gatherRagdollBodies.
- * @param skeleton Rig being posed.
+ * @param ragdoll Mapping from bones to bodies.
+ * @param bodies One world pose per ragdoll bone, in order, as gatherRagdollBodies appended them.
+ * @param skeleton Rig being posed; must pass findSkeletonFault, which is not re-checked here.
  * @param rigWorld The rig entity's world matrix; the pose is relative to it.
  * @param out Slice to write, sized for the skeleton's bone count.
  */
 void composeRagdollPose(
     const Ragdoll& ragdoll,
-    const std::vector<RagdollBodyPose>& bodies,
+    const RagdollBodyPose* bodies,
     const SkeletonAsset& skeleton,
     const glm::mat4& rigWorld,
     const PoseWrite& out
