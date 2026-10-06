@@ -1,10 +1,9 @@
 {
-  "name": "jump:clip0",
+  "name": "assets/jump.fbx:clip0",
   "source": {
     "clip": 0,
     "kind": "model",
     "path": "assets/jump.fbx",
-    "rig": "bot:skeleton"
-  },
-  "type": "animationClip"
+    "rig": "assets/bot.fbx:skeleton"
+  }
 }

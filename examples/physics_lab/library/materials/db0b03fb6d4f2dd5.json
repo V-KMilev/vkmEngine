@@ -1,10 +1,10 @@
 {
-  "name": "bot:mat1",
+  "name": "assets/bot.fbx:mat0",
   "source": {
     "albedo": [
-      0.2666666805744171,
-      0.09962310642004013,
-      0.08081179112195969,
+      0.6696000099182129,
+      0.24184642732143402,
+      0.21092401444911957,
       1.0
     ],
     "alphaCutoff": 0.5,
@@ -34,7 +34,7 @@
     "kind": "inline",
     "metallic": 0.0,
     "normalScale": 1.0,
-    "roughness": 0.858578622341156,
+    "roughness": 0.8082915544509888,
     "sheenColor": [
       0.0,
       0.0,
@@ -50,6 +50,5 @@
     "thicknessFactor": 0.0,
     "transmission": 0.0,
     "type": "Opaque"
-  },
-  "type": "material"
+  }
 }

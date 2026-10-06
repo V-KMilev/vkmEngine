@@ -48,16 +48,15 @@
       1.0
     ],
     "textures": {
-      "albedo": "builtin:white",
-      "ao": "builtin:white",
-      "emission": "builtin:black",
-      "metallic": "builtin:black",
-      "normal": "builtin:normal",
-      "roughness": "builtin:gray"
+      "albedo": "texture:solid:FFFFFFFF:Data",
+      "ao": "texture:solid:FFFFFFFF:Data",
+      "emission": "texture:solid:000000FF:Data",
+      "metallic": "texture:solid:000000FF:Data",
+      "normal": "texture:solid:8080FFFF:Normal",
+      "roughness": "texture:solid:808080FF:Data"
     },
     "thicknessFactor": 0.0,
     "transmission": 0.0,
     "type": "Opaque"
-  },
-  "type": "material"
+  }
 }

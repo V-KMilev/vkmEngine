@@ -50,6 +50,5 @@
     "thicknessFactor": 0.0,
     "transmission": 0.0,
     "type": "Opaque"
-  },
-  "type": "material"
+  }
 }

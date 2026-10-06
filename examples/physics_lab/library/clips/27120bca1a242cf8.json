@@ -1,10 +1,9 @@
 {
-  "name": "walking:clip0",
+  "name": "assets/walking.fbx:clip0",
   "source": {
     "clip": 0,
     "kind": "model",
     "path": "assets/walking.fbx",
-    "rig": "bot:skeleton"
-  },
-  "type": "animationClip"
+    "rig": "assets/bot.fbx:skeleton"
+  }
 }

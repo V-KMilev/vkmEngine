@@ -1,9 +1,8 @@
 {
-  "name": "bot:clip0",
+  "name": "assets/bot.fbx:clip0",
   "source": {
     "clip": 0,
     "kind": "model",
     "path": "assets/bot.fbx"
-  },
-  "type": "animationClip"
+  }
 }
