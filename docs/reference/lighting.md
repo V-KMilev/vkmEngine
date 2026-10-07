@@ -76,13 +76,34 @@ The PBR fragment shader (`shaders/forward/pbr/`) implements:
   the disc's tangent with no renormalisation, so a mirror reflects a disc as
   bright as the irradiance it brings rather than a pinpoint. What the pass
   writes is held under the RGBA16F maximum, so no channel reaches infinity
-  for bloom to spread.
+  for bloom to spread. A point or spot light is a sphere of its `sourceRadius`
+  (Karis 2013): its highlight is shaded toward the sphere's point nearest the
+  reflection ray, the lobe renormalised by `(a / a')^2` with `a' = a + r / 2d`,
+  so a bulb's glint on a polished floor is as wide as the bulb's reflection
+  rather than a sub-pixel firefly no temporal filter averages, and one radius
+  sizes the highlight and the penumbra alike. A radius of zero is the point.
 - **Optional lobes**, gated at runtime by each material's feature flags
   (one shared PBR program, no compiled `#ifdef` variants): transmission,
   volume (absorption), clearcoat, anisotropy, subsurface, sheen,
-  parallax/height, alpha test.
+  parallax/height, alpha test. Transmission blends only what the surface does
+  not reflect toward the scene behind it, itself dimmed by the reflected share
+  (Filament's split), so glass keeps its reflections and highlights. Subsurface is Unreal's two-sided foliage, a wrapped
+  back-light through a broad lobe about the light's direction, so a leaf glows
+  looking toward the sun and not with it behind.
+- **Double-sided materials** (`MaterialAsset::doubleSided`, glTF's
+  `doubleSided`): their runs draw with culling off in the depth prepass and the
+  forward pass, and a back face is lit as its own - the shader turns the whole
+  tangent frame on `gl_FrontFacing`, so the normal map mirrors with it, and the
+  prepass writes the turned normal.
 - **IBL**: prefiltered specular cube + irradiance cube + split-sum
-  BRDF LUT. The split-sum term is followed by a **multiple-scattering** lobe (Fdez-Aguera), built from the two
+  BRDF LUT. The LUT integrates Schlick's Fresnel over the lobe (A over
+  `1 - Fc`, B over `Fc`), so the reflected energy is `f0 * A + B`; a
+  view-angle Fresnel in place of `f0`, as the multiple-scattering paper's
+  listing has it, would count the Fresnel twice. The diffuse takes what is left,
+  `1 - (FssEss + Fms Ems)` (its section 4). A rough lobe is read along its
+  dominant direction, which bends from R toward N as roughness grows (Lagarde,
+  *Moving Frostbite to PBR* 4.9.3), so a rough floor at grazing does not
+  reflect the bright horizon R points at. The split-sum term is followed by a **multiple-scattering** lobe (Fdez-Aguera), built from the two
   DFG channels already sampled: single scattering only accounts for light that
   leaves the microsurface after one bounce, and at high roughness most of it
   leaves after several, which is why a rough metal without it renders visibly
@@ -111,11 +132,12 @@ The PBR fragment shader (`shaders/forward/pbr/`) implements:
 - **Screen-space reflections** over both, on surfaces smoother than
   `ssrMaxRoughness`, in the Reflections pass after the frame is lit. The
   forward pass writes, beside the colour, how much of the environment's
-  reflection each pixel shows (the split-sum weight times specular occlusion)
-  with its roughness, and the reflection as it added it - weight times the
-  environment's radiance, stored as that product so the pass subtracts what
-  was added whatever the weight rounded to. Under MSAA the resolve averages
-  both with the weights it averages the colour with (Karis's `1 / (1 + luma)`),
+  reflection each pixel shows (the split-sum weight - not occluded, since a ray
+  that hits has found the occluder) with its roughness, and the reflection as it
+  added it - weight times specular occlusion times the environment's radiance,
+  stored as that product so the pass subtracts what was added whatever the
+  weight rounded to. Under MSAA the resolve averages
+  both with the weights it averages the colour with (Karis's, in [rendering.md](rendering.md)),
   so the reflection it subtracts is the one the resolved colour holds; a plain
   average there leaves a dark fringe along every bright silhouette. The pass traces each such pixel's ray through this
   frame's depth, and where it meets a surface facing it, adds weight x traced
@@ -174,9 +196,11 @@ Rect and Disk are evaluated using two industry-standard tricks:
      negligible for the budget.
 2. **Specular via Karis representative-point.** For each shaded pixel,
    pick the point on the emitter closest to the perfect reflection
-   direction, then evaluate a standard GGX lobe **broadened** by the
-   solid angle of the emitter and renormalised by `(alpha / alpha')^2`,
-   so a wide emitter spreads its highlight rather than brightening it.
+   direction, then evaluate the surface's own GGX lobe toward it,
+   renormalised by `(alpha / alpha')^2` - `alpha'` the lobe broadened by the
+   emitter's size - so a wide emitter spreads its highlight rather than
+   brightening it. That factor stands in for the broadened lobe's own
+   normalisation, so the lobe itself is evaluated at `alpha`.
 
 `intensity` is the emitter's point-equivalent intensity: its radiance is
 `intensity / area`, so far away an area light lights like a point light of
@@ -467,7 +491,11 @@ The view frustum is diced into `CLUSTER_X` x `CLUSTER_Y` screen tiles by
 culls the scene's lights into each cluster's list, capped at
 `MAX_LIGHTS_PER_CLUSTER`; the forward pass then shades a pixel against its own
 cluster's handful rather than the whole `MAX_LIGHTS` upload. That is why the
-light cap can be generous.
+light cap can be generous. A point light is tested as its sphere against the
+cluster's box; a spot as its cone too, against the box's bounding sphere
+(Wronski's cone test), so it takes a slot only where it shines. A
+cluster whose list is full drops the lights past it, which shows as a cut; the
+Light Clusters view draws such a cluster magenta.
 
 **The 32 x 18 split** puts a tile at roughly 60px on a 1080p-class viewport.
 Coarser tiles make each pixel iterate lights that only clip a far corner of its

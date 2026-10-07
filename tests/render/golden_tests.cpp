@@ -21,6 +21,7 @@
 
 #include <GL/glew.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include "stb_image.h"
@@ -48,6 +49,7 @@
 #include "resource/resource_manager.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/texture_asset.h"
+#include "resource/texture_format.h"
 #include "resource/generate/mesh_generators.h"
 #include "system/render/render_settings.h"
 #include "system/particle/live_particles.h"

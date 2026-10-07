@@ -50,10 +50,11 @@ class GLForwardPass : public GLPass {
          * material changes; each draw is one multi-draw. Material bindings are context state, so
          * they survive the program switch.
          *
-         * @param ctx   For the GPU mirror and the context.
-         * @param batch The draws to submit.
+         * @param ctx     For the GPU mirror and the context.
+         * @param batch   The draws to submit.
+         * @param blended Whether the draws blend, so a double-sided one draws its far side first.
          */
-        void drawBatch(GLFrameContext& ctx, const GLInstanceBatcher& batch);
+        void drawBatch(GLFrameContext& ctx, const GLInstanceBatcher& batch, bool blended = false);
 
         /**
          * @brief The Wireframe view's lines: the opaque and alpha-masked draws again, as lines.

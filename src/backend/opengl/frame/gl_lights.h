@@ -42,9 +42,10 @@ struct LightSlots {
  *               z = tan of LightData::sourceRadius (directional; 0 otherwise),
  *               w = shadowSlot (-1 = no shadow)
  *  - axisU:     xyz = half-right world axis (Rect/Disk), w = twoSided (0/1)
- *  - axisV:     xyz = half-up    world axis (Rect/Disk), w = unused
+ *  - axisV:     xyz = half-up    world axis (Rect/Disk),
+ *               w = sourceRadius (Point/Spot; 0 otherwise)
  *
- * For punctual lights (Directional / Point / Spot) axisU/axisV are zero; the
+ * For punctual lights (Directional / Point / Spot) the axes' xyz are zero; the
  * shader's area-light branch is gated on type.
  */
 struct GpuLight {

@@ -13,7 +13,7 @@ struct Light {
     // directional's disc radius, w = shadowSlot (-1 = none)
     vec4 spot;
     vec4 axisU;      // xyz = half-right world axis (Rect/Disk), w = twoSided
-    vec4 axisV;      // xyz = half-up    world axis (Rect/Disk), w = unused
+    vec4 axisV;      // xyz = half-up    world axis (Rect/Disk), w = a point or spot's radius (m)
 };
 
 #include "depth.glsl"
