@@ -1,6 +1,6 @@
 {
   "description": "Characters, ragdolls and joints on an obstacle course - and the multiplayer sample.",
-  "engineVersion": "1.0.2",
+  "engineVersion": "1.0.3",
   "entryScene": "scenes/obstacle_course.json",
   "maxPlayers": 4,
   "name": "Physics Lab",
