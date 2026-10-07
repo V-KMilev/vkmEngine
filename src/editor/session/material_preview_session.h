@@ -14,7 +14,7 @@ class ResourceManager;
  * @brief Editor-owned material preview cache over the backend's preview hooks.
  *
  * The backend's EditorRenderHooks::renderPreview does the actual offscreen
- * studio render; this class decides WHEN to render: it version-gates each key so an
+ * render; this class decides WHEN to render: it version-gates each key so an
  * unchanged asset never re-renders, and it budgets thumbnail bakes per frame
  * so a large grid of thumbnails spreads its renders over several frames
  * instead of stalling one. Live previews bypass the budget.
@@ -37,8 +37,8 @@ class MaterialPreviewSession {
          *
          * The caller fills @p req with what to draw (key, mesh, material,
          * orbit, background, light rotation); the session owns the output
-         * size. It re-renders only when @p version differs from the cached
-         * stamp.
+         * size. It re-renders only when @p version or the scene's look
+         * (EditorRenderHooks::previewLook) differs from the cached stamp.
          *
          * @param resources Resolves the request's mesh and material.
          * @param req       What to draw; its size is the session's to set.

@@ -80,8 +80,9 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         bool init(WindowManager& window) override;
         void render(const RenderView& view, const ResourceManager& resources) override;
 
-        // Editor previews: offscreen studio renders, cached per key (GLPreview).
+        // Editor previews: offscreen renders, cached per key (GLPreview).
         GpuTextureId renderPreview(const PreviewRequest& request, const ResourceManager& resources) override;
+        uint64_t     previewLook() const override;
         GpuTextureId previewTexture(uint64_t key) const override;
         void releasePreview(uint64_t key) override;
         void releaseAllPreviews() override;
@@ -311,7 +312,8 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         GLIrradianceBaker  m_irradianceBaker;
 
         GLProbeManager m_probes;   ///< Reflection-probe arrays, baker, bake state, UBO.
-        GLPreview      m_preview;  ///< Editor material/mesh preview renders.
+        GLPreview      m_preview;       ///< Editor material/mesh preview renders.
+        PreviewScene   m_previewScene;  ///< The last frame's light and grade, which a preview takes.
 
         // Per-frame draw buckets of object indices, refilled each frame with capacity kept.
         std::vector<uint32_t> m_opaque;

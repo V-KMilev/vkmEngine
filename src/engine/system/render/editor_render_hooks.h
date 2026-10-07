@@ -25,7 +25,7 @@ enum class PreviewBackground : uint8_t {
 };
 
 /**
- * @brief One editor preview: a mesh with a material under a studio rig, from an orbit camera.
+ * @brief One editor preview: a mesh with a material under the scene's light, from an orbit camera.
  *
  * Rendering the same key again overwrites that key's cached target.
  */
@@ -38,7 +38,7 @@ struct PreviewRequest {
     float             pitchDeg = 20.0f;
     float             distance = 3.0f;   ///< In mesh bounding radii.
     PreviewBackground background = PreviewBackground::Dark;
-    float             lightYawDeg = 0.0f;  ///< Studio rig rotation around Y.
+    float             lightYawDeg = 0.0f;  ///< The light's rotation around Y, degrees.
 };
 
 /**
@@ -80,6 +80,15 @@ class EditorRenderHooks {
             const PreviewRequest& request,
             const ResourceManager& resources
         ) = 0;
+
+        /**
+         * @brief A digest of what a preview borrows from the scene: its light and grade.
+         *
+         * A preview drawn under another digest is stale, though its asset is not.
+         *
+         * @return The digest; it changes when the light, sky strength, tonemap or exposure does.
+         */
+        virtual uint64_t previewLook() const = 0;
 
         /**
          * @brief The texture last rendered for @p key, without rendering one.
