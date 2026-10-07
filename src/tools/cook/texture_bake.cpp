@@ -273,9 +273,105 @@ std::vector<uint8_t> toStored(
     return out;
 }
 
+/**
+ * @brief A normal map's directions averaged, not renormalised, level by level.
+ *
+ * An average of unit vectors is short by how much they disagree, which is the normal detail a
+ * filtered level loses: a level's length is what its texel's footprint spread.
+ */
+struct NormalPyramid {
+    struct Level {
+        int                    width  = 0;
+        int                    height = 0;
+        std::vector<glm::vec3> mean;
+    };
+    std::vector<Level> levels;
+};
+
+// From a normal map's decoded RG8 texels, z rebuilt, each level a 2x2 box of the one above.
+NormalPyramid buildNormalPyramid(const TextureAsset& normal) {
+    NormalPyramid pyramid;
+    const TextureParams& params = normal.params;
+    if (params.type != TexturePixelType::UnsignedByte || channelCount(params.format) != 2
+        || normal.pixelData.size() != static_cast<size_t>(params.width) * params.height * 2) {
+        return pyramid;
+    }
+    NormalPyramid::Level top;
+    top.width  = static_cast<int>(params.width);
+    top.height = static_cast<int>(params.height);
+    top.mean.resize(static_cast<size_t>(top.width) * top.height);
+    for (size_t i = 0; i < top.mean.size(); ++i) {
+        const float x = normal.pixelData[i * 2 + 0] / 255.0f * 2.0f - 1.0f;
+        const float y = normal.pixelData[i * 2 + 1] / 255.0f * 2.0f - 1.0f;
+        top.mean[i] = glm::vec3(x, y, std::sqrt(std::max(0.0f, 1.0f - x * x - y * y)));
+    }
+    pyramid.levels.push_back(std::move(top));
+    while (pyramid.levels.back().width > 1 || pyramid.levels.back().height > 1) {
+        const NormalPyramid::Level& above = pyramid.levels.back();
+        NormalPyramid::Level below;
+        below.width  = std::max(above.width / 2, 1);
+        below.height = std::max(above.height / 2, 1);
+        below.mean.resize(static_cast<size_t>(below.width) * below.height);
+        for (int y = 0; y < below.height; ++y) {
+            for (int x = 0; x < below.width; ++x) {
+                glm::vec3 sum(0.0f);
+                for (int dy = 0; dy < 2; ++dy) {
+                    for (int dx = 0; dx < 2; ++dx) {
+                        const int sx = std::min(x * 2 + dx, above.width - 1);
+                        const int sy = std::min(y * 2 + dy, above.height - 1);
+                        sum += above.mean[static_cast<size_t>(sy) * above.width + sx];
+                    }
+                }
+                below.mean[static_cast<size_t>(y) * below.width + x] = sum * 0.25f;
+            }
+        }
+        pyramid.levels.push_back(std::move(below));
+    }
+    return pyramid;
+}
+
+/**
+ * @brief Raise a metallic-roughness level's roughness (G) by the normal detail under each texel.
+ *
+ * Toksvig's idea in the von Mises-Fisher form (Neubelt and Pettineo, The Order: 1886): a mean
+ * normal of length l spreads as kappa = (3l - l^3) / (1 - l^2), and a GGX lobe widened by it has
+ * alpha^2 + 2 / kappa. Read from the normal level whose texel matches this one's footprint, so a
+ * distant glossy surface whose bumps the mips average away is as rough as they made it, rather
+ * than a mirror that sparkles where they line up.
+ */
+void foldNormalVariance(
+    std::vector<float>& level,
+    int width,
+    int height,
+    uint32_t channels,
+    const NormalPyramid& pyramid
+) {
+    if (pyramid.levels.empty() || channels < 2) return;
+    const NormalPyramid::Level& top = pyramid.levels.front();
+    // The normal level spanning one of this level's texels.
+    const float span = std::max(static_cast<float>(top.width) / static_cast<float>(width), 1.0f);
+    const int   last = static_cast<int>(pyramid.levels.size()) - 1;
+    const int   pick = std::min(static_cast<int>(std::lround(std::log2(span))), last);
+    if (pick <= 0) return;
+    const NormalPyramid::Level& source = pyramid.levels[static_cast<size_t>(pick)];
+    for (int y = 0; y < height; ++y) {
+        const int sy = std::min(y * source.height / std::max(height, 1), source.height - 1);
+        for (int x = 0; x < width; ++x) {
+            const int   sx     = std::min(x * source.width / std::max(width, 1), source.width - 1);
+            const glm::vec3 mean = source.mean[static_cast<size_t>(sy) * source.width + sx];
+            // 2 / kappa, written so that normals that all agree add nothing.
+            const float l        = glm::clamp(glm::length(mean), glm::epsilon<float>(), 1.0f);
+            const float variance = 2.0f * (1.0f - l * l) / (l * (3.0f - l * l));
+            float&      rough    = level[(static_cast<size_t>(y) * width + x) * channels + 1];
+            const float alpha    = rough * rough;
+            rough = std::min(std::sqrt(std::sqrt(alpha * alpha + variance)), 1.0f);
+        }
+    }
+}
+
 } // namespace
 
-bool bakeTexture(const TextureAsset& source, TextureAsset& out) {
+bool bakeTexture(const TextureAsset& source, TextureAsset& out, const TextureAsset* roughnessNormal) {
     const TextureParams& params = source.params;
 
     // Already in its cooked form, or not something this knows how to filter.
@@ -310,9 +406,23 @@ bool bakeTexture(const TextureAsset& source, TextureAsset& out) {
     // Each level keeps level 0's share of texels above the alpha cutoff.
     const bool      coverage  = filtering == Filtering::Colour && channels == 4;
 
+    // A metallic-roughness map paired with a normal map: its stored levels take the normal
+    // detail their texels average away. The levels filtered from keep the plain roughness, so the
+    // variance is not counted again at every level below.
+    const NormalPyramid pyramid = roughnessNormal && filtering == Filtering::Data && channels >= 2
+        ? buildNormalPyramid(*roughnessNormal)
+        : NormalPyramid{};
+
     // Level 0 is the decoded source; each level below is filtered from the one above.
     std::vector<std::vector<uint8_t>> chain(levels);
     chain[0] = source.pixelData;
+    if (!pyramid.levels.empty()) {
+        std::vector<float> top = toLinear(source.pixelData, channels, filtering);
+        const int topWidth  = static_cast<int>(params.width);
+        const int topHeight = static_cast<int>(params.height);
+        foldNormalVariance(top, topWidth, topHeight, channels, pyramid);
+        chain[0] = toStored(top, channels, filtering, 1.0f);
+    }
 
     std::vector<float> above = levels > 1
         ? toLinear(source.pixelData, channels, filtering)
@@ -344,7 +454,13 @@ bool bakeTexture(const TextureAsset& source, TextureAsset& out) {
         }
         if (filtering == Filtering::Normal) renormalise(below);
         const float alphaScale = coverage ? coverageScale(below, targetCoverage) : 1.0f;
-        chain[level] = toStored(below, channels, filtering, alphaScale);
+        if (pyramid.levels.empty()) {
+            chain[level] = toStored(below, channels, filtering, alphaScale);
+        } else {
+            std::vector<float> folded = below;
+            foldNormalVariance(folded, width, height, channels, pyramid);
+            chain[level] = toStored(folded, channels, filtering, alphaScale);
+        }
         above = std::move(below);
     }
 

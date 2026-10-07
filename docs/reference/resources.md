@@ -275,6 +275,22 @@ is what the GPU samples, built once by the cooker (`AssetCooker::bakeTexture`,
   and knows none of them. A level whose share already matches, which is every
   level of an opaque texture, is left alone. A blended texture gets the same
   treatment, which reads as its edges staying a little firmer at range.
+- **Normal detail as roughness.** A metallic-roughness map whose recipe names
+  its material's normal map (`roughnessNormal`, set by the model import when a
+  glTF material has both, and carried through a re-import) takes, at each level,
+  the roughness the normal detail its texels average away would have spread a
+  highlight to: a box pyramid of the normal map, not renormalised, gives each
+  footprint's mean normal, whose shortness is the spread (Toksvig, in the von
+  Mises-Fisher form of Neubelt and Pettineo's *The Order: 1886*: `kappa =
+  (3l - l^3) / (1 - l^2)`, `alpha^2 += 2 / kappa`). Without it a glossy bumpy
+  floor at range is a mirror that sparkles where its renormalised mips line up -
+  the aliasing no temporal filter is here to average. Only G (roughness) moves;
+  the level filtered from keeps the plain value, so the spread is not counted
+  again at every level below; the top level, whose texels each see one normal,
+  is left alone. The normal map is decoded from its source file through
+  `AssetFactory::decodeTexture`, never taken from the graph, which may hold it
+  cooked, and its file is in the roughness map's key, so a re-exported normal
+  map re-bakes both. A map shared under two normal maps keeps the first pairing.
 - **Blocks.** Each level is then compressed into the block format
   that matches what was stored, so no shader changes: `R8` becomes `BC4R`
   (RGTC1), `RG8` `BC5RG` (RGTC2), `RGB8` and `RGBA8` `BC7RGBA` and the two sRGB
@@ -326,7 +342,7 @@ textures shrink from 1450 MB (level 0 alone) to 670 MB with every chain.
 Full PBR material. The scalar properties cover:
 
 - Albedo (`vec4`), emission (`vec3`), metallic, roughness, IOR, transmission
-- Alpha cutoff, AO, clearcoat, clearcoat roughness, anisotropy
+- Alpha cutoff, double-sided (both faces drawn, a back face lit as its own; glTF's `doubleSided`), AO, clearcoat, clearcoat roughness, anisotropy
 - Subsurface, sheen, parallax/height
 
 It carries texture handles for albedo, normal, metallic, roughness, a

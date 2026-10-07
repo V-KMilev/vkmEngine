@@ -52,6 +52,9 @@ namespace AssetSourceKey {
     inline constexpr const char* RATIO            = "ratio";
     /// Whether a texture builds a mip chain.
     inline constexpr const char* GENERATE_MIPMAPS = "generateMipmaps";
+    /// On a metallic-roughness map: its material's normal map, by name, whose detail the cook
+    /// folds into the roughness its mips keep (AssetCooker::bakeTexture).
+    inline constexpr const char* ROUGHNESS_NORMAL = "roughnessNormal";
 } // namespace AssetSourceKey
 
 /**

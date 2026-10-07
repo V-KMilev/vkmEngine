@@ -482,6 +482,18 @@ MaterialHandle buildMaterial(
     for (const SourceMap& map : source.maps) {
         out.*map.slot = textureFor(model.images[map.image], map.usage, path, res, cache);
     }
+    // A metallic-roughness map names its normal map, so the cook folds the bumps its mips lose
+    // into roughness. Only a normal map in its own file pairs, as the cook decodes it by name.
+    // The first material to pair a map decides: shared under different normal maps, it keeps
+    // that first pairing.
+    if (out.metallicRoughnessTexture && out.normalTexture) {
+        const TextureAsset& normal = res.get(out.normalTexture);
+        nlohmann::json& recipe     = res.edit(out.metallicRoughnessTexture).sourceJson();
+        if (normal.sourceJson().value("kind", std::string{}) == AssetSourceKind::FILE
+            && !recipe.contains(AssetSourceKey::ROUGHNESS_NORMAL)) {
+            recipe[AssetSourceKey::ROUGHNESS_NORMAL] = normal.name();
+        }
+    }
     return res.add(std::move(out), nm);
 }
 
