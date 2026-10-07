@@ -2,6 +2,8 @@
 
 #include "cook/recipe_registration.h"
 
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -10,6 +12,7 @@
 #include "logger.h"
 
 #include "io/asset/asset_factory.h"
+#include "io/project_paths.h"
 #include "resource/resource_manager.h"
 #include "system/async/async_loader_system.h"
 #include "resource/generate/mesh_generators.h"
@@ -75,6 +78,13 @@ MeshHandle createRecipeMesh(const nlohmann::json& source, ResourceManager& resou
     return refuseKind<MeshAsset>("mesh", source);
 }
 
+// A project-relative texture file, decoded whole on this thread.
+bool decodeTextureFile(const std::string& ref, TextureUsage usage, TextureAsset& out) {
+    std::ifstream file(ProjectPaths::resolveProjectPath(ref), std::ios::binary);
+    const std::vector<unsigned char> bytes{std::istreambuf_iterator<char>(file), {}};
+    return !bytes.empty() && decodeTextureFromMemory(bytes.data(), bytes.size(), usage, out);
+}
+
 TextureHandle createRecipeTexture(const nlohmann::json& source, ResourceManager& resources) {
     const std::string kind = source.value("kind", std::string{});
 
@@ -82,7 +92,7 @@ TextureHandle createRecipeTexture(const nlohmann::json& source, ResourceManager&
         const std::string path = source.value(AssetSourceKey::PATH, std::string{});
         if (path.empty()) return {};
         const bool genMipmaps = textureMipmapsFromRecipe(source);
-        return requestTextureAsync(
+        const TextureHandle handle = requestTextureAsync(
             path,
             resources,
             textureUsageFromRecipe(source),
@@ -90,6 +100,13 @@ TextureHandle createRecipeTexture(const nlohmann::json& source, ResourceManager&
             textureFilterFromRecipe(source),
             textureWrapFromRecipe(source)
         );
+        // The request writes the recipe from what it decodes by; a pairing the import made rides
+        // across, or a re-import would drop it and the cook would think nothing changed.
+        if (handle && source.contains(AssetSourceKey::ROUGHNESS_NORMAL)) {
+            resources.edit(handle).sourceJson()[AssetSourceKey::ROUGHNESS_NORMAL] =
+                source[AssetSourceKey::ROUGHNESS_NORMAL];
+        }
+        return handle;
     }
 
     if (kind == AssetSourceKind::SOLID) {
@@ -161,6 +178,7 @@ void registerRecipeAssetFactories() {
     assetFactory().createSkeleton      = &createRecipeSkeleton;
     assetFactory().createAnimationClip = &createRecipeAnimationClip;
     assetFactory().createAudioClip     = &createRecipeAudioClip;
+    assetFactory().decodeTexture       = &decodeTextureFile;
 }
 
 } // namespace Vkm::Engine

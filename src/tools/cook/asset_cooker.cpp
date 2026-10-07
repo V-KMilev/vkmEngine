@@ -70,6 +70,10 @@ struct RecipeKey {
 RecipeKey keySources(const nlohmann::json& recipe) {
     RecipeKey key;
     key.sources = sourceFiles(recipe.value(AssetSourceKey::PATH, std::string{}));
+    // A roughness map's bake reads its paired normal map's file too.
+    for (std::string& file : sourceFiles(recipe.value(AssetSourceKey::ROUGHNESS_NORMAL, std::string{}))) {
+        key.sources.push_back(std::move(file));
+    }
     key.hash    = fnv1a64(recipe.dump());
     for (const std::string& file : key.sources) key.hash = foldSourceContent(file, key.hash);
     return key;
@@ -213,10 +217,28 @@ bool writeCooked(const std::filesystem::path& path, const MeshAsset& mesh) {
     return true;
 }
 
+// A roughness map's paired normal map, decoded from its source file rather than taken from the
+// graph, which may hold it cooked; false for none, no host decode, or one that will not decode
+// (the roughness then bakes as it is).
+bool pairedNormal(const TextureAsset& source, TextureAsset& normal) {
+    const std::string ref = source.sourceJson().value(AssetSourceKey::ROUGHNESS_NORMAL, std::string{});
+    const TextureDecode decode = assetFactory().decodeTexture;
+    if (ref.empty() || !decode) return false;
+    if (!decode(ref, TextureUsage::Normal, normal)) {
+        LOG_WARNING("Texture '%s': its normal map '%s' did not decode", source.name().c_str(), ref.c_str());
+        return false;
+    }
+    return true;
+}
+
 // The asset keeps its decoded pixels; the file gets the mip chain and blocks.
 bool writeCooked(const std::filesystem::path& path, const TextureAsset& source) {
+    TextureAsset normal;
+    const bool   paired = pairedNormal(source, normal);
     TextureAsset baked;
-    if (!bakeTexture(source, baked) || !AssetCook::writeTexture(path, baked)) return false;
+    if (!bakeTexture(source, baked, paired ? &normal : nullptr) || !AssetCook::writeTexture(path, baked)) {
+        return false;
+    }
     LOG_INFO(
         "Cooked texture '%s' (%ux%u, %u level(s)%s)",
         source.name().c_str(),
