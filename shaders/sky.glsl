@@ -20,6 +20,25 @@ float skyNightFactor(vec3 sunDir) {
     return 1.0 - smoothstep(-SKY_TWILIGHT, SKY_TWILIGHT, sunDir.y);
 }
 
+// How visible the stars are, from FIRST to ALL (nautical twilight), as the sky behind them darkens.
+float skyStarFactor(vec3 sunDir) {
+    const float FIRST = sin(radians(-4.0));
+    const float ALL   = sin(radians(-12.0));
+    return 1.0 - smoothstep(ALL, FIRST, sunDir.y);
+}
+
+/**
+ * What night adds to the sky along @p dir, by @p night (skyNightFactor): the skyglow floor
+ * @p nightRadiance, and a halo of radiance @p moonHalo around the moon at @p moonDir. One
+ * definition, so the sky that lights the scene is the sky drawn.
+ */
+vec3 skyNightGlow(vec3 dir, vec3 moonDir, vec3 nightRadiance, float moonHalo, float night) {
+    // cos^64 halves the halo ~8 degrees out, a few disc radii; cos^2 is still at half 45 degrees
+    // away and lights a quarter of the sky.
+    float halo = pow(max(dot(dir, moonDir), 0.0), 64.0);
+    return night * (nightRadiance + moonHalo * halo * vec3(0.8, 0.85, 1.0));
+}
+
 // hash33 (Dave Hoskins): three decorrelated values in [0,1) from a cell index.
 vec3 skyHash33(vec3 c) {
     vec3 p = fract(c * vec3(0.1031, 0.1030, 0.0973));
@@ -55,7 +74,8 @@ float skyStarField(vec3 dir, float density) {
     float gate = fract(h.x * 137.0 + h.y * 71.0 + h.z * 29.0);
     if (gate > FILL) return 0.0;
 
-    float d = length(p - (cell + h));
+    // Kept off the cell's edge, as only its own cell is read.
+    float d = length(p - (cell + 0.25 + 0.5 * h));
     float brightness = 0.2 + 0.8 * fract(gate * 97.0);
     return exp(-d * d * SHARP) * brightness;
 }

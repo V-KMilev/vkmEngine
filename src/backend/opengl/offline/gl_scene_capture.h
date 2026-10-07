@@ -151,10 +151,17 @@ class GLSceneCapture {
          * At the far plane, depth writes and culling off, no sun disc (it would blow out a
          * capture). Leaves depth as the geometry after it wants: LESS, writes on.
          *
-         * @param gl  Live context whose depth and cull state the backdrop sets.
-         * @param ibl The baked environment, found ready by the caller.
+         * @param gl         Live context whose depth and cull state the backdrop sets.
+         * @param ibl        The baked environment, found ready by the caller.
+         * @param projection The bound camera's projection, which the sky draws by.
+         * @param intensity  What the environment's radiance is scaled by.
          */
-        void drawSky(Vkm::GL::Context& gl, const GLIBL& ibl);
+        void drawSky(
+            Vkm::GL::Context& gl,
+            const GLIBL& ibl,
+            const glm::mat4& projection,
+            float intensity = 1.0f
+        );
 
         /**
          * @brief The offline rig, for a consumer that draws its own scene rather than a cube.

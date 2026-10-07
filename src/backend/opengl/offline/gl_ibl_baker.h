@@ -1,11 +1,12 @@
 #pragma once
 
 #include <string>
-
-#include <glm/glm.hpp>
+#include <vector>
 
 #include "gl_shader.h"
 #include "gl_screen_triangle.h"
+#include "storage/gl_atmosphere.h"
+#include "storage/gl_ibl.h"
 #include "system/sky/atmosphere.h"
 
 namespace Vkm::GL {
@@ -15,59 +16,26 @@ namespace Vkm::GL {
 namespace Vkm::Engine {
 
 class GLCubeConvolver;
-class GLIBL;
 
 /**
- * @brief Everything the procedural-atmosphere bake (see bakeProcedural) depends on.
- */
-struct SkyParams {
-    glm::vec3 sunDir{0.0f, 1.0f, 0.0f};  ///< Direction TO the sun, normalized.
-    float     sunIntensity = 22.0f;      ///< Top-of-atmosphere sun radiance scale.
-    /// The air the sky scatters through, already under the sky's scales.
-    Atmosphere::Coefficients air{};
-    float     mieG         = 0.76f;      ///< Mie phase asymmetry.
-
-    // Night: the atmosphere is nearly black with the sun down, so a night scene's light is
-    // authored, a skyglow floor plus a broad moon lobe.
-    glm::vec3 nightRadiance{0.0f};
-    glm::vec3 moonDir{0.0f, 1.0f, 0.0f};  ///< Direction TO the moon, normalized.
-    float     moonHalo = 0.0f;  ///< Radiance of the glow around the moon, not the disc itself.
-
-    /// Cosine of the widest angle (about 0.57 degrees) two directions can be apart and bake the same.
-    static constexpr float SAME_DIRECTION = 0.99995f;
-
-    /**
-     * @brief Whether two skies bake the same.
-     *
-     * Every term exact but the sun and moon directions, compared by angle against SAME_DIRECTION:
-     * they move continuously, and an exact compare would bake every frame the sun animates.
-     *
-     * @param other The sky to compare against.
-     * @return Whether a bake of @p other would produce this one.
-     */
-    bool operator==(const SkyParams& other) const {
-        return sunIntensity  == other.sunIntensity
-            && air.rayleighScattering == other.air.rayleighScattering
-            && air.mieScattering      == other.air.mieScattering
-            && air.mieExtinction      == other.air.mieExtinction
-            && mieG          == other.mieG
-            && nightRadiance == other.nightRadiance
-            && moonHalo      == other.moonHalo
-            && glm::dot(sunDir, other.sunDir) >= SAME_DIRECTION
-            && glm::dot(moonDir, other.moonDir) >= SAME_DIRECTION;
-    }
-};
-
-/**
- * @brief Baker for the IBL product set (split-sum).
+ * @brief Baker for the IBL product set (split-sum), and for the atmosphere's two air tables.
  *
  * Borrows the backend's convolver for the convolution loops and the unit cube. Lives as long as
  * the backend: the procedural sky re-bakes whenever the sun moves, and a transient baker would
- * recompile its programs each time. bake() renders the HDR into the env cube, then convolves
- * irradiance and GGX-prefiltered specular; integrateBrdf() fills the LUT once at start.
+ * recompile its programs each time. Every bake fills GLIBL's back set and swaps it in once
+ * complete. bake() and bakeProcedural() do it at once: the source into the env cube, then
+ * irradiance and GGX-prefiltered specular. beginProcedural() and advance() do it a step a frame
+ * (Unreal's time-sliced sky capture) - the env cube, a share of an irradiance face, a band of a
+ * prefilter level - so a sun moving across the sky costs no frame the whole bake.
+ * integrateBrdf() fills the BRDF LUT once at start.
  */
 class GLIBLBaker {
     public:
+        /// Each irradiance face is convolved in this many shares of its azimuths.
+        static constexpr int IRRADIANCE_SLICES = 4;
+        /// The most texels of a prefilter level's face one step draws; a larger face takes bands.
+        static constexpr int BAND_TEXELS = 128 * 256;
+
         /**
          * @brief Compile the bake programs, borrowing @p convolver for the convolution loops.
          *
@@ -84,9 +52,33 @@ class GLIBLBaker {
 
     public:
         /**
-         * @brief Bake @p ibl from the HDR at @p path.
+         * @brief How many bands a prefilter level's face is drawn in.
          *
-         * A file that fails to load leaves the GLIBL not ready, whatever it held.
+         * @param mip The level.
+         * @return One, or as many as keep a band within BAND_TEXELS.
+         */
+        static constexpr int prefilterBands(int mip) {
+            const int size = GLIBL::PREFILTER_SIZE >> mip;
+            return size * size > BAND_TEXELS ? size * size / BAND_TEXELS : 1;
+        }
+
+        /**
+         * @brief The steps, and so the frames, of a bake spread over frames.
+         *
+         * @return The env cube, its mips with the mirror level, every irradiance slice and every
+         *         prefilter band past the mirror level.
+         */
+        static constexpr int slicedSteps() {
+            int prefilter = 0;
+            for (int mip = 1; mip < GLIBL::PREFILTER_MIPS; ++mip) prefilter += prefilterBands(mip);
+            return 1 + 1 + 6 * IRRADIANCE_SLICES + 6 * prefilter;
+        }
+
+        /**
+         * @brief Bake @p ibl from the HDR at @p path, at once.
+         *
+         * A file that fails to load leaves the GLIBL not ready, whatever it held. Ends any bake
+         * spread over frames.
          *
          * @param gl   Live GL context the bake draws through.
          * @param ibl  The product set baked into.
@@ -95,15 +87,59 @@ class GLIBLBaker {
         void bake(Vkm::GL::Context& gl, GLIBL& ibl, const std::string& path);
 
         /**
-         * @brief Bake @p ibl from a procedural Rayleigh + Mie atmosphere.
+         * @brief Bake the atmosphere's transmittance table, then its multiple-scattering table from it.
          *
-         * The analytic sky takes the equirect step's place; the convolution is the same.
+         * @param gl         Live GL context the tables draw through.
+         * @param atmosphere Holds the tables.
+         * @param air        The air they integrate.
+         */
+        void bakeAir(Vkm::GL::Context& gl, GLAtmosphere& atmosphere, const Atmosphere::Coefficients& air);
+
+        /**
+         * @brief Bake @p ibl from the procedural Rayleigh, Mie and ozone atmosphere, at once.
          *
-         * @param gl  Live GL context the bake draws through.
-         * @param ibl The product set baked into.
+         * Paints the env cube from the atmosphere's air tables, which bakeAir has made for
+         * @p sky's air, in the equirect step's place; the convolution is the same. Ends any bake
+         * spread over frames.
+         *
+         * @param gl         Live GL context the bake draws through.
+         * @param ibl        The product set baked into.
+         * @param atmosphere Holds the air tables the sky is painted from.
+         * @param sky        The atmosphere, and the sun and moon it is lit by.
+         */
+        void bakeProcedural(
+            Vkm::GL::Context& gl,
+            GLIBL& ibl,
+            const GLAtmosphere& atmosphere,
+            const SkyParams& sky
+        );
+
+        /**
+         * @brief Start baking @p sky a step a frame; advance() takes each step.
+         *
          * @param sky The atmosphere, and the sun and moon it is lit by.
          */
-        void bakeProcedural(Vkm::GL::Context& gl, GLIBL& ibl, const SkyParams& sky);
+        void beginProcedural(const SkyParams& sky);
+
+        /**
+         * @brief Take the next step of the bake beginProcedural started, swapping it in after the last.
+         *
+         * @param gl         Live GL context the step draws through.
+         * @param ibl        The product set baked into.
+         * @param atmosphere Holds the air tables the sky is painted from, made for the bake's air.
+         * @return Whether that was the last step, and @p ibl now shows the bake.
+         */
+        bool advance(Vkm::GL::Context& gl, GLIBL& ibl, const GLAtmosphere& atmosphere);
+
+        /**
+         * @brief Whether a bake spread over frames has steps left.
+         */
+        bool baking() const { return m_next < m_steps.size(); }
+
+        /**
+         * @brief The sky the bake spread over frames is making, or last made.
+         */
+        const SkyParams& target() const { return m_target; }
 
         /**
          * @brief Integrate the split-sum BRDF/DFG LUT into @p ibl.
@@ -116,10 +152,45 @@ class GLIBLBaker {
         void integrateBrdf(Vkm::GL::Context& gl, GLIBL& ibl);
 
     private:
+        /// One frame's share of a bake spread over frames.
+        struct Step {
+            enum class Kind {
+                Capture,     ///< The env cube's six faces from the sky.
+                Mips,        ///< The env mips, and the prefilter's mirror level from them.
+                Irradiance,  ///< A share of an irradiance face's azimuths.
+                Prefilter    ///< A band of rows of a prefilter level's face.
+            };
+
+            Kind kind  = Kind::Capture;
+            int  face  = 0;
+            int  mip   = 0;
+            int  part  = 0;  ///< The slice or band.
+            int  parts = 1;  ///< Slices or bands in the face.
+        };
+
+    private:
+        /**
+         * @brief Bind the sky program with @p sky's uniforms and the air tables it reads.
+         *
+         * @param atmosphere Holds the air tables.
+         * @param sky        The sky painted.
+         */
+        void bindSky(const GLAtmosphere& atmosphere, const SkyParams& sky);
+
+        /**
+         * @brief Draw env-cube @p face with the bound, parameterised @p source program.
+         *
+         * @param gl     Live GL context the face draws through.
+         * @param ibl    The product set whose back env cube is filled.
+         * @param source The bound program that paints the environment.
+         * @param face   Cube face index (0..5).
+         */
+        void captureFace(Vkm::GL::Context& gl, GLIBL& ibl, Vkm::GL::Shader& source, int face);
+
         /**
          * @brief Run the whole bake from a bound, parameterised environment @p source program.
          *
-         * Allocates the targets, captures and convolves the cube, and marks @p ibl ready. Bakes
+         * Allocates the back set, captures and convolves the cube, and swaps it in. Bakes
          * differ only in the program that paints the environment.
          *
          * @param gl     Live GL context the bake draws through.
@@ -129,29 +200,27 @@ class GLIBLBaker {
         void bakeFrom(Vkm::GL::Context& gl, GLIBL& ibl, Vkm::GL::Shader& source);
 
         /**
-         * @brief Draw the six env-cube faces with the bound @p shader, then build its mip chain.
+         * @brief Take one step of a bake spread over frames.
          *
-         * @param gl     Live GL context the faces draw through.
-         * @param ibl    The product set whose env cube is filled.
-         * @param shader The bound program that paints each face.
+         * @param gl   Live GL context the step draws through.
+         * @param ibl  The product set baked into.
+         * @param step The step.
          */
-        void captureEnvFaces(Vkm::GL::Context& gl, GLIBL& ibl, Vkm::GL::Shader& shader);
-
-        /**
-         * @brief Convolve the env cube into diffuse irradiance + GGX prefilter.
-         *
-         * @param gl  Live GL context the convolutions draw through.
-         * @param ibl The product set whose env cube is convolved.
-         */
-        void convolve(Vkm::GL::Context& gl, GLIBL& ibl);
+        void runStep(Vkm::GL::Context& gl, GLIBL& ibl, const Step& step);
 
     private:
         Vkm::GL::Shader m_equirect;
         Vkm::GL::Shader m_sky;
+        Vkm::GL::Shader m_transmittance;
+        Vkm::GL::Shader m_multiScattering;
         Vkm::GL::Shader m_brdf;
 
         GLCubeConvolver& m_convolver;  ///< Irradiance + prefilter convolution, and the unit cube.
-        ScreenTriangle   m_brdfTri;    ///< For the BRDF LUT.
+        ScreenTriangle   m_lutTri;     ///< For the LUTs.
+
+        std::vector<Step> m_steps;     ///< A bake spread over frames, in order.
+        size_t            m_next = 0;  ///< The next of m_steps; past the end when none is under way.
+        SkyParams         m_target;    ///< What the bake spread over frames makes.
 };
 
 } // namespace Vkm::Engine

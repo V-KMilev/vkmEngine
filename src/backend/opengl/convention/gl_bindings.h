@@ -37,6 +37,9 @@ namespace Vkm::Engine {
     X(CompositeTextureSlots,  BLOOM,                 1,  COMPOSITE_SLOT_BLOOM,                Bloom mip 0 (u_bloom))                                               \
     X(BloomTextureSlots,      SOURCE,                0,  BLOOM_SLOT_SOURCE,                   Downsample/upsample source (u_src))                                  \
     X(BakeTextureSlots,       SOURCE,                0,  BAKE_SLOT_SOURCE,                    The equirect (u_equirect) or the env cube (u_envCube))               \
+    X(BakeTextureSlots,       TRANSMITTANCE,         1,  BAKE_SLOT_TRANSMITTANCE,             The atmosphere transmittance table (u_transmittance))                \
+    X(BakeTextureSlots,       MULTISCATTERING,       2,  BAKE_SLOT_MULTISCATTERING,           The atmosphere multiple-scattering table (u_multiScattering))        \
+    X(SkyTextureSlots,        VIEW,                  0,  SKY_SLOT_VIEW,                       The sky-view table the skybox draws the sky from (u_skyViewLut))     \
     X(OverlayTextureSlots,    UI_ATLAS,              0,  UI_SLOT_ATLAS,                       The UI font atlas or the empty one a run without text reads (u_tex)) \
     X(OverlayTextureSlots,    UI_IMAGE,              1,  UI_SLOT_IMAGE,                       The picture a UIImage run shows (u_image))                           \
     X(OverlayTextureSlots,    SPLASH_LOGO,           0,  SPLASH_SLOT_LOGO,                    The splash logo (u_logo))                                            \
@@ -57,6 +60,7 @@ namespace Vkm::Engine {
     X(IrradianceVolumeSlots,  SH1,                   27, IRRADIANCE_SLOT_SH1,                 Baked SH-L1 coefficient 1 (sampler3D))                               \
     X(IrradianceVolumeSlots,  SH2,                   28, IRRADIANCE_SLOT_SH2,                 Baked SH-L1 coefficient 2 (sampler3D))                               \
     X(IrradianceVolumeSlots,  SH3,                   29, IRRADIANCE_SLOT_SH3,                 Baked SH-L1 coefficient 3 (sampler3D))                               \
+    X(PostTextureSlots,       AERIAL_PERSPECTIVE,    30, POST_SLOT_AERIAL_PERSPECTIVE,        The sky air in front of the view (sampler3D) read through fog.glsl)  \
     X(PostTextureSlots,       AO_DEPTH,              31, POST_SLOT_AO_DEPTH,                  GTAO linear-depth mip chain)                                         \
     X(TextureSlots,           ALBEDO,                0,  MATERIAL_SLOT_ALBEDO,                Material map; the slot is also its bit in MaterialUBO.textureFlags)  \
     X(TextureSlots,           NORMAL,                1,  MATERIAL_SLOT_NORMAL,                Material map)                                                        \
@@ -158,8 +162,12 @@ namespace GLBindings {
         "The raw shadow atlas would overlap the irradiance volume"
     );
     static_assert(
-        IrradianceVolumeSlots::SH3 < PostTextureSlots::AO_DEPTH,
-        "The irradiance volume would overlap the GTAO depth chain"
+        IrradianceVolumeSlots::SH3 < PostTextureSlots::AERIAL_PERSPECTIVE,
+        "The irradiance volume would overlap the aerial-perspective volume"
+    );
+    static_assert(
+        PostTextureSlots::AERIAL_PERSPECTIVE < PostTextureSlots::AO_DEPTH,
+        "The aerial-perspective volume would overlap the GTAO depth chain"
     );
     static_assert(
         PostTextureSlots::AO_DEPTH <= MAX_TEXTURE_UNIT,

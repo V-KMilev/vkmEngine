@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 
 #include "core/reflect.h"
+#include "ecs/component/render/light.h"
 
 namespace Vkm::Engine {
 
@@ -17,24 +18,29 @@ struct SkySettings {
     float       intensity  = 1.0f;      ///< Indirect-lighting + skybox brightness.
     bool        showSkybox = true;      ///< The IBL still lights the scene when off.
 
-    // A Rayleigh + Mie atmosphere baked into the IBL in place of hdrPath; on by
-    // default so a scene is lit before it owns any assets.
-    bool  procedural       = true;
-    float sunIntensity     = 22.0f;  ///< Atmosphere sun radiance scale.
-    float rayleigh         = 1.0f;   ///< Blue-sky scattering scale.
-    float mie              = 1.0f;   ///< Haze / sun glow scattering scale.
-    float mieG             = 0.76f;  ///< Phase asymmetry, 0..MAX_MIE_G; higher = tighter glow.
-    float sunAngularRadius = 0.02f;  ///< Radians; ~0.0047 is life-size.
-    float sunDiscIntensity = 15.0f;  ///< Added over the atmospheric glow.
+    // A Rayleigh, Mie and ozone atmosphere baked into the IBL in place of hdrPath,
+    // lit by the sun authored further down; on by default so a scene is lit before it owns
+    // any assets.
+    bool  procedural        = true;
+    float rayleigh          = 1.0f;   ///< Blue-sky scattering scale.
+    float mie               = 5.0f;   ///< Haze / sun glow scattering scale; 1 is pristine air.
+    float mieG              = 0.76f;  ///< Phase asymmetry, 0..MAX_MIE_G; higher = tighter glow.
+    /// The drawn disc's radiance per unit of lightIntensity, added over the glow; its size is the
+    /// key light's sourceRadius.
+    float sunDiscIntensity  = 5.0f;
+    /// How much of the sky's air lies in front of the scene, as a scale on distance (Unreal's
+    /// aerial perspective distance scale): 1 is the planet's, 0 none.
+    float aerialPerspective = 1.0f;
 
     // SkySystem aims the key light from these, so the drawn sun and the shadows agree.
     float sunElevation = 50.0f;  ///< Degrees above the horizon. Negative is night.
     float sunAzimuth   = 30.0f;  ///< Degrees around the horizon, from +Z toward +X.
 
-    // The key light's daylight end; SkySystem blends it with the moonlight, so
-    // the Light's own colour and intensity are unused under the procedural sky.
+    // The sun: the key light's daylight end, which SkySystem blends with the moonlight,
+    // and what lights the sky (Atmosphere::solarIlluminance). The Light's own colour and
+    // intensity are unused under the procedural sky.
     glm::vec3 lightColor     = {1.0f, 0.96f, 0.90f};  ///< With the sun overhead.
-    float     lightIntensity = 3.0f;                  ///< At midday.
+    float     lightIntensity = 3.0f;                  ///< Illuminance with the sun overhead.
 
     /// At 1 the phase function divides zero by zero.
     static constexpr float MAX_MIE_G = 0.99f;
@@ -43,8 +49,8 @@ struct SkySettings {
 /**
  * @brief What the sky is once the sun is down.
  *
- * Single scattering at night is nearly black, so night's light is authored. It
- * fades in across TWILIGHT_DEGREES around the horizon.
+ * The atmosphere is nearly black with the sun down, so night's light is authored.
+ * It fades in across TWILIGHT_DEGREES around the horizon.
  */
 struct NightSkySettings {
     /// Skyglow the scene is lit by, so night is dark, not black.
@@ -191,12 +197,11 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::SkySettings)
     VKM_F(intensity)
     VKM_F(showSkybox)
     VKM_F(procedural)
-    VKM_F(sunIntensity)
     VKM_F(rayleigh)
     VKM_F(mie)
     VKM_F(mieG)
-    VKM_F(sunAngularRadius)
     VKM_F(sunDiscIntensity)
+    VKM_F(aerialPerspective)
     VKM_F(sunElevation)
     VKM_F(sunAzimuth)
     VKM_F(lightColor)

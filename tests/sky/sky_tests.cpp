@@ -136,6 +136,54 @@ void testTheSunlightCrossesTheAtmosphere() {
     );
 }
 
+// Ozone absorbs and does not scatter: in air that scatters nothing it alone dims a low
+// sun - green most, red next, blue hardly - and a sun overhead still arrives as authored.
+void testOzoneTakesTheGreenFromALowSun() {
+    std::printf("What the ozone does to the sunlight:\n");
+
+    SkySettings sky;
+    sky.rayleigh     = 0.0f;
+    sky.mie          = 0.0f;
+    sky.sunElevation = 90.0f;
+    const glm::vec3 zenith = Atmosphere::sunTransmittance(sky);
+    check(
+        "a sun overhead is untouched by it",
+        nearly(zenith.r, 1.0f) && nearly(zenith.g, 1.0f) && nearly(zenith.b, 1.0f)
+    );
+
+    sky.sunElevation = 3.0f;
+    const glm::vec3 low = Atmosphere::sunTransmittance(sky);
+    std::printf("      at 3 degrees: %.3f %.3f %.3f\n", low.r, low.g, low.b);
+    check("a low sun loses its green most", low.g < low.r && low.r < low.b);
+    check("  and a few tenths of it", low.g < 0.9f && low.g > 0.5f);
+    check("  while its blue goes nearly untouched", low.b > 0.95f);
+}
+
+// The sky is lit by the scene's sun, above the air: as bright as the light says, and
+// brighter than it by what the air takes on the way down, blue most.
+void testTheSkyIsLitByTheScenesSun() {
+    std::printf("The sun the sky is lit by:\n");
+
+    SkySettings sky;
+    sky.lightColor     = {1.0f, 1.0f, 1.0f};
+    sky.lightIntensity = 2.0f;
+    const glm::vec3 sun = Atmosphere::solarIlluminance(sky);
+    std::printf("      above the air: %.3f %.3f %.3f\n", sun.r, sun.g, sun.b);
+    check("it is brighter above the air than below", glm::all(glm::greaterThan(sun, glm::vec3(2.0f))));
+    check("  by most in the blue the air scatters most", sun.b > sun.g && sun.g > sun.r);
+
+    sky.lightIntensity = 4.0f;
+    const glm::vec3 twice = Atmosphere::solarIlluminance(sky);
+    check(
+        "a sun twice as bright lights the sky twice as brightly",
+        nearly(twice.r, 2.0f * sun.r) && nearly(twice.g, 2.0f * sun.g) && nearly(twice.b, 2.0f * sun.b)
+    );
+
+    sky.lightColor = {1.0f, 0.5f, 0.25f};
+    const glm::vec3 tinted = Atmosphere::solarIlluminance(sky);
+    check("  and in its colour", nearly(tinted.g, 0.5f * twice.g) && nearly(tinted.b, 0.25f * twice.b));
+}
+
 // A disabled light is not the key (see findKeyLight); aiming it would turn a light
 // nobody sees while the shadows came from another.
 void testTheSkyAimsTheLightThatIsLit() {
@@ -200,6 +248,8 @@ void testTheFogGridIsBoundedWhole() {
 void runSkyTests() {
     testTheSkyAimsTheKeyLight();
     testTheSunlightCrossesTheAtmosphere();
+    testOzoneTakesTheGreenFromALowSun();
+    testTheSkyIsLitByTheScenesSun();
     testTheSkyAimsTheLightThatIsLit();
     testTheFogGridIsBoundedWhole();
 }
