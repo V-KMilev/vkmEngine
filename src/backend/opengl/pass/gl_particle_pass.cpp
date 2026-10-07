@@ -28,17 +28,19 @@ GLParticlePass::~GLParticlePass() = default;
 void GLParticlePass::sortAlpha(const RenderView& view) {
     PROFILE_SCOPE("Particles/Sort");
     const std::vector<ParticleData>& particles = view.particlesAlpha;
-    const glm::vec3 eye = view.camera.position;
+    const glm::vec3 eye     = view.camera.position;
+    const glm::vec3 forward = glm::vec3(view.camera.invView[2]) * -1.0f;
 
+    // By view depth, not distance: the quads lie in planes facing the view, and by distance a
+    // pair near the screen's edge sorts the wrong way round under a wide field of view.
     m_order.resize(particles.size());
     for (uint32_t i = 0; i < particles.size(); ++i) {
-        const glm::vec3 offset = glm::vec3(particles[i].positionSize) - eye;
-        m_order[i] = { glm::dot(offset, offset), i };
+        m_order[i] = { glm::dot(glm::vec3(particles[i].positionSize) - eye, forward), i };
     }
     std::sort(
         m_order.begin(),
         m_order.end(),
-        [](const ParticleOrder& a, const ParticleOrder& b) { return a.distanceSq > b.distanceSq; }
+        [](const ParticleOrder& a, const ParticleOrder& b) { return a.depth > b.depth; }
     );
 
     m_sorted.resize(particles.size());
@@ -64,6 +66,13 @@ void GLParticlePass::drawBatch(const std::vector<ParticleData>& batch, const Scr
 void GLParticlePass::execute(GLFrameContext& ctx) {
     const RenderView& view = ctx.view;
     if (view.particlesAdditive.empty() && view.particlesAlpha.empty()) return;
+
+    // The depth the particles fade against, a copy: the target's own is attached as they draw.
+    const auto width  = static_cast<uint32_t>(view.viewportWidth);
+    const auto height = static_cast<uint32_t>(view.viewportHeight);
+    m_depthCopy.resize(width, height, 1, false);
+    m_depthCopy.blitDepthFrom(ctx.sceneRender);
+    m_depthCopy.bindTexture(GLTarget::Attachment::Depth, GLBindings::PostTextureSlots::SCENE_DEPTH);
 
     // Depth-tested, never depth-writing. Into the reflection inputs too: a particle hides the
     // reflection behind it as it hides the surface (shaders/particle/fragment.shader).

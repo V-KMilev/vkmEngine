@@ -158,6 +158,16 @@ class GLTarget {
         void blitColorFrom(const GLTarget& src);
 
         /**
+         * @brief Copy @p src's depth into this target, both viewport-sized.
+         *
+         * For a pass that samples the depth of the target it draws into, which it may not while
+         * that depth is attached: one sample of each multisample pixel.
+         *
+         * @param src The target copied from.
+         */
+        void blitDepthFrom(const GLTarget& src);
+
+        /**
          * @brief Sample count in effect (1 = single-sample).
          *
          * @return The clamped sample count.

@@ -26694,7 +26694,7 @@
       "enabled": false,
       "height": 5.0,
       "heightFalloff": 0.15000000596046448,
-      "maxDistance": 200.0,
+      "maxDistance": 100.0,
       "resolutionX": 160,
       "resolutionY": 90,
       "resolutionZ": 64

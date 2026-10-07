@@ -91,9 +91,10 @@ struct FogSettings {
     /**
      * @brief How far from the eye the slices reach, in metres.
      *
-     * Or the far plane if nearer; a point beyond takes the fog accumulated to here.
+     * Or the far plane if nearer; a point beyond takes the fog accumulated to here. The sun's
+     * default shadowDistance, so no sunlight scatters past its shadows unshadowed.
      */
-    float     maxDistance   = 200.0f;
+    float     maxDistance   = Light{}.shadowDistance;
 
     /// At +-1 the phase function divides zero by zero.
     static constexpr float MAX_ANISOTROPY = 0.95f;

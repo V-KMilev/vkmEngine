@@ -397,8 +397,106 @@ float sampleCSMSoft(vec3 worldPos, vec3 N, float ndotl) {
     return mix(1.0, lit, reach);
 }
 
-// Point light: a hardware compare (2x2 filtered) against the cube face, with
-// the reference rebuilt as the projected depth of the major axis, after rayBias.
+// The distance along a cube face's axis, which is what that face's depth stores.
+float majorAxis(vec3 v) {
+    vec3 a = abs(v);
+    return max(a.x, max(a.y, a.z));
+}
+
+// One texel of a cube face, in metres, at major-axis distance @p axis: a 90-degree face is
+// 2 * axis wide.
+float cubeTexel(float axis) {
+    return 2.0 * axis / float(textureSize(u_shadowCube, 0).x);
+}
+
+// The depth a cube stores for the receiver's own plane along @p dir (from the light), slid
+// @p slide metres toward the light. Each tap of a filter compares its own point of that
+// plane, so a wide filter neither finds the receiver among its blockers nor shades it.
+// Where the light grazes the plane the hit is held near the tap's own distance.
+float cubeReference(vec3 dir, vec3 onPlane, vec3 N, float slide, float nearPlane, float farPlane) {
+    float dn = dot(dir, N);
+    float t  = abs(dn) > 1e-4 ? clamp(dot(onPlane, N) / dn, 0.5, 2.0) : 1.0;
+    vec3  q  = dir * t;
+    float r  = length(q);
+    float axis = majorAxis(q) * max(r - slide, nearPlane) / max(r, 1e-6);
+    return perspectiveDepth(nearPlane, farPlane, axis);
+}
+
+// The radial distance of what a cube stores along @p dir: the face's depth back to its axis
+// distance, then along the ray.
+float cubeBlockerDistance(float depth, vec3 dir, float nearPlane, float farPlane) {
+    float axis = nearPlane * farPlane / (farPlane - depth * (farPlane - nearPlane));
+    return axis * length(dir) / majorAxis(dir);
+}
+
+// PCF over a disk of @p radius metres across the light's ray, each tap compared against the
+// receiver's plane where it falls.
+float filterCube(
+    vec3 rel,
+    vec3 N,
+    vec3 T,
+    vec3 B,
+    float layer,
+    float radius,
+    float texel,
+    float slide,
+    float nearPlane,
+    float farPlane
+) {
+    float spacedTaps = PI * (radius / texel) * (radius / texel) / (SOFT_TAP_SPACING * SOFT_TAP_SPACING);
+    int   taps       = clamp(int(ceil(spacedTaps)), SOFT_MIN_TAPS, SOFT_MAX_TAPS);
+    float lit        = 0.0;
+    for (int i = 0; i < taps; ++i) {
+        vec2  o   = vogelTap(i, taps) * radius;
+        vec3  dir = rel + T * o.x + B * o.y;
+        float ref = cubeReference(dir, rel, N, slide, nearPlane, farPlane);
+        lit += texture(u_shadowCube, vec4(dir, layer), ref);
+    }
+    return lit / float(taps);
+}
+
+// Blocker search across the ray (Fernando 2005): the mean distance from the light of what
+// lies nearer it than the receiver's plane, within @p radius metres, or -1 for none.
+float searchCubeBlockers(
+    vec3 rel,
+    vec3 N,
+    vec3 T,
+    vec3 B,
+    float layer,
+    float radius,
+    float slide,
+    float nearPlane,
+    float farPlane
+) {
+    float sum   = 0.0;
+    float count = 0.0;
+    // The centre first, as searchBlockers does.
+    for (int i = -1; i < SOFT_SEARCH_TAPS; ++i) {
+        vec2  o     = (i < 0 ? vec2(0.0) : vogelTap(i, SOFT_SEARCH_TAPS)) * radius;
+        vec3  dir   = rel + T * o.x + B * o.y;
+        float depth = textureLod(u_shadowCubeRaw, vec4(dir, layer), 0.0).r;
+        if (depth < cubeReference(dir, rel, N, slide, nearPlane, farPlane)) {
+            sum   += cubeBlockerDistance(depth, dir, nearPlane, farPlane);
+            count += 1.0;
+        }
+    }
+    return count > 0.0 ? sum / count : -1.0;
+}
+
+// A point light's shadow at a volume sample: one compare, no offset and no filter, since a
+// sample has no surface and its froxel is the filter.
+float sampleCubeHard(int slot, vec3 worldPos) {
+    ShadowCube sc = u_shadow.scube[slot];
+    vec3 rel = worldPos - sc.posRange.xyz;
+    if (length(rel) > sc.posRange.w) return 1.0;
+    float slide = biasSlide(sc.params.x, cubeTexel(majorAxis(rel)), 1.0);
+    float ref   = cubeReference(rel, rel, vec3(0.0), slide, sc.params.y, sc.posRange.w);
+    return texture(u_shadowCube, vec4(rel, float(slot)), ref);
+}
+
+// Point light, biased as a tile is (biasSlide) in the cube's texels at the receiver. A source
+// radius above zero makes it percentage-closer soft, as a spot is; zero is a hard edge,
+// filtered a texel wide.
 //
 // The cube array takes the slot as a layer, so the index need not be uniform. It has one
 // level, filtered linearly both ways, so the derivative a compare implies chooses nothing.

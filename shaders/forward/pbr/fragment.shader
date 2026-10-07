@@ -898,7 +898,9 @@ void main() {
     // where it covers; the reflection's own source elsewhere.
     vec3 irradiance = sourceIrradiance;
     if (u_hasIrradianceVolume == 1) {
-        float ivw = irradianceVolumeWeight(vWorldPos);
+        // Weighted where it is read, so a box fitted to a room's inside covers its walls.
+        vec3  lookup = irradianceVolumeLookup(vWorldPos, Ng);
+        float ivw    = irradianceVolumeWeight(lookup);
         if (ivw > 0.0) {
             vec3 volume = sampleIrradianceVolume(lookup, bentN) / PI * u_ivIntensity * u_iblIntensity;
             irradiance = mix(irradiance, volume, ivw);

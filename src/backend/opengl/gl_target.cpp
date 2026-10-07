@@ -304,4 +304,21 @@ void GLTarget::blitColorFrom(const GLTarget& src) {
     );
 }
 
+void GLTarget::blitDepthFrom(const GLTarget& src) {
+    m_fbo.bind(GL_DRAW_FRAMEBUFFER);
+    src.m_fbo.bind(GL_READ_FRAMEBUFFER);
+    Vkm::GL::FrameBuffer::blit(
+        0,
+        0,
+        static_cast<int32_t>(m_width),
+        static_cast<int32_t>(m_height),
+        0,
+        0,
+        static_cast<int32_t>(m_width),
+        static_cast<int32_t>(m_height),
+        GL_DEPTH_BUFFER_BIT,
+        GL_NEAREST
+    );
+}
+
 } // namespace Vkm::Engine

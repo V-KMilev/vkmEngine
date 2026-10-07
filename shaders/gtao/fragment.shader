@@ -40,6 +40,13 @@ float arc(float h, float n) {
     return 0.25 * (-cos(2.0 * h - n) + cos(n) + 2.0 * h * sin(n));
 }
 
+// An occluder's weight by its distance: whole to 0.385 of the radius, then linearly to none at
+// it (XeGTAO's falloff), so mid-range occluders count fully.
+float gtaoFalloff(float len) {
+    const float FALLOFF_START = 0.385;
+    return clamp((u_radius - len) / (u_radius * (1.0 - FALLOFF_START)), 0.0, 1.0);
+}
+
 void main() {
     // projection[0][0] takes a view x to the screen, [1][1] a world radius.
     float proj00      = u_camera.projection[0][0];
@@ -83,9 +90,12 @@ void main() {
         float sgn      = sign(dot(ortho, projN));
         float n        = sgn * acos(clamp(dot(projN, V) / projNLen, -1.0, 1.0));
 
-        // Horizon search: keep the highest cos (smallest angle to V) per side.
-        float cHorizon1 = -1.0;  // -dir side
-        float cHorizon2 = -1.0;  // +dir side
+        // Horizon search: keep the highest cos (smallest angle to V) per side, from the
+        // hemisphere's edge, which a faded occluder falls back to (XeGTAO's low horizon).
+        float low1      = cos(n - 0.5 * PI);
+        float low2      = cos(n + 0.5 * PI);
+        float cHorizon1 = low1;  // -dir side
+        float cHorizon2 = low2;  // +dir side
         for (int t = 1; t <= STEPS; ++t) {
             float st  = (float(t) - 0.5 * noise) / float(STEPS);
             vec2  off = dir * radiusAxisUV * st;
@@ -100,8 +110,8 @@ void main() {
                 vec3  sh   = viewPosFromLinearDepth(uvP, zP, proj00, proj11, perspective) - P;
                 float len  = length(sh);
                 float c    = dot(sh, V) / max(len, 1e-4) - HORIZON_BIAS;
-                float fall = clamp(1.0 - len / u_radius, 0.0, 1.0);   // distant occluders fade out
-                cHorizon2  = max(cHorizon2, mix(-1.0, c, fall));
+                float fall = gtaoFalloff(len);
+                cHorizon2  = max(cHorizon2, mix(low2, c, fall));
             }
             vec2 uvN = vUV - off;
             if (all(greaterThanEqual(uvN, vec2(0.0))) && all(lessThanEqual(uvN, vec2(1.0)))) {
@@ -109,8 +119,8 @@ void main() {
                 vec3  sh   = viewPosFromLinearDepth(uvN, zN, proj00, proj11, perspective) - P;
                 float len  = length(sh);
                 float c    = dot(sh, V) / max(len, 1e-4) - HORIZON_BIAS;
-                float fall = clamp(1.0 - len / u_radius, 0.0, 1.0);
-                cHorizon1  = max(cHorizon1, mix(-1.0, c, fall));
+                float fall = gtaoFalloff(len);
+                cHorizon1  = max(cHorizon1, mix(low1, c, fall));
             }
         }
 
