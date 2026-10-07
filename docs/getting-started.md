@@ -34,7 +34,7 @@ first - `curl -fsSL ... | VKM_COMPILER=clang sh`, or `$env:VKM_COMPILER = 'clang
 before the PowerShell line. Either way, with no administrator: the
 engine in `~/.local/share/vkmEngine` (`%LOCALAPPDATA%\Programs\vkmEngine` on
 Windows), `vkm` on your PATH, and **vkmEngine** in your app menu, which opens the
-editor. Running it again replaces the engine with the newest; `VKM_VERSION=1.0.2`
+editor. Running it again replaces the engine with the newest; `VKM_VERSION=1.0.3`
 before it installs that one instead. One engine is installed at a time.
 `uninstall.sh` in the engine's folder removes it all on Linux, and Apps & features
 does on Windows - your projects stay where they are.
@@ -42,8 +42,8 @@ does on Windows - your projects stay where they are.
 Or unpack a release archive anywhere and run its `vkm` where it is:
 
 ```sh
-tar xf vkmEngine-1.0.2-linux-x64-gcc.tar.xz
-vkmEngine-1.0.2-linux-x64-gcc/vkm new mygame
+tar xf vkmEngine-1.0.3-linux-x64-gcc.tar.xz
+vkmEngine-1.0.3-linux-x64-gcc/vkm new mygame
 ```
 
 On Windows, Git Bash runs `vkm` as it is, and `cmd.exe` and PowerShell through

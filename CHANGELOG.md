@@ -2,6 +2,43 @@
 
 Notable changes to vkmEngine, newest first. Each release is tagged `vX.Y.Z`.
 
+## 1.0.3
+
+Rendering, measured against current practice and brought up to it.
+
+- **A sky after Hillaire, as Unreal draws it.** Multiple scattering and ozone, a sky drawn
+  live every frame, and aerial perspective: distant geometry fades into the same air
+  (Sky > Aerial Perspective scales it). One sun lights the scene and the sky, so Sun
+  Intensity is gone and Sun Light Intensity sets both; the sun disc is the light's own size
+  and brightness, and stars come out at twilight. A moving sun no longer hitches a frame.
+- **Daylight defaults.** A light haze, a ground of albedo 0.3 below the horizon and one
+  stop more exposure give the sky and sun daylight's balance. A project that sets its own
+  exposure keeps it.
+- **ACES is the default tonemap** (Hill's fit), with AgX beside it. Bloom glows only past a
+  sunlit white, and bloom and the MSAA resolve follow the exposure.
+- **Shadows.** Every light's bias is in shadow texels, so one pair holds at any range;
+  point lights get soft shadows from their Source Radius; the atlas sizes each tile to
+  what it covers (256 MB at 4096, down from ~400) and gives shadows to the lamps in view.
+  A scene's stored biases now read as texels - re-check any you set.
+- **Indirect light that stays out of closed rooms.** The irradiance volume bakes in
+  bounces from an empty grid, so a sealed room holds no sky light and light through a
+  door bounces around it; reflection probes are lit by it. A dragged volume bakes once
+  it holds still.
+- **Lights and materials as their references have them.** Reflections no longer count
+  Fresnel twice (dielectrics were up to twice too bright at grazing angles), area
+  highlights are no longer dimmed twice, and point and spot lights are spheres of their
+  Source Radius. Glass keeps its reflections, leaves glow from behind, clear coats sit
+  smooth over bumpy bases, and mirrored instances draw right side out.
+- **Double-sided materials**, imported from glTF and set with the material editor's
+  Faces dropdown.
+- **Fog, particles, decals, AO.** Every shadowed light scatters through fog by its shadow;
+  particles fade softly where they meet the scene; decals take the floor's indirect light;
+  ambient occlusion follows XeGTAO.
+- **Glossy bumpy surfaces stop sparkling at range**: the cook folds a normal map's lost
+  detail into its roughness map. Re-import a model to pair its maps.
+- **Material previews light like the scene** - its sun, sky, tonemap and exposure - and
+  refresh when that light changes.
+
 ## 1.0.2
 
 - **A new world grid.** Thin lines that stay readable from any height. Its three switches
