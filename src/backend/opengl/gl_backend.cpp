@@ -44,6 +44,7 @@
 #include "pass/gl_splash_pass.h"
 #include "pass/gl_ui_pass.h"
 #include "storage/gl_probe_array.h"
+#include "core/fnv1a.h"
 #include "ecs/environment.h"
 #include "ecs/component/render/light.h"
 #include "platform/window/window_manager.h"
@@ -51,6 +52,7 @@
 #include "resource/asset/material_asset.h"
 #include "resource/generate/mesh_generators.h"
 #include "system/render/render_view.h"
+#include "system/render/data/light_data.h"
 #include "system/sky/atmosphere.h"
 
 namespace Vkm::Engine {
@@ -262,6 +264,13 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // Before anything reads a cache: what was built from a replaced world or asset graph cannot
     // be trusted, and nothing downstream can tell.
     onWorldReplaced(view, resources);
+
+    // A material preview lights and grades as this frame does.
+    const LightData* key = lowestSlotDirectional(view.lights);
+    m_previewScene.sun          = key ? std::optional<LightData>(*key) : std::nullopt;
+    m_previewScene.skyIntensity = view.environment.sky.intensity;
+    m_previewScene.tonemap      = view.settings.tonemap;
+    m_previewScene.exposure     = view.settings.exposure;
 
     {
         PROFILE_SCOPE("Render/SyncAssets");
@@ -560,9 +569,23 @@ void GLBackend::partitionDrawables(const RenderView& view) {
     }
 }
 
+uint64_t GLBackend::previewLook() const {
+    const PreviewScene& look = m_previewScene;
+    uint64_t digest = fnv1a64Bytes(&look.skyIntensity, sizeof(look.skyIntensity));
+    digest = fnv1a64Bytes(&look.tonemap, sizeof(look.tonemap), digest);
+    digest = fnv1a64Bytes(&look.exposure, sizeof(look.exposure), digest);
+    if (look.sun) {
+        digest = fnv1a64Bytes(&look.sun->direction, sizeof(look.sun->direction), digest);
+        digest = fnv1a64Bytes(&look.sun->color, sizeof(look.sun->color), digest);
+        digest = fnv1a64Bytes(&look.sun->intensity, sizeof(look.sun->intensity), digest);
+        digest = fnv1a64Bytes(&look.sun->sourceRadius, sizeof(look.sun->sourceRadius), digest);
+    }
+    return digest;
+}
+
 GpuTextureId GLBackend::renderPreview(const PreviewRequest& request, const ResourceManager& resources) {
     // The preview binds its own camera and lights; the next frame binds the frame's again.
-    return m_preview.render(m_context, m_view, m_ibl, m_shadowAtlas, request, resources);
+    return m_preview.render(m_context, m_view, m_ibl, m_previewScene, m_shadowAtlas, request, resources);
 }
 
 GpuTextureId GLBackend::previewTexture(uint64_t key) const {
