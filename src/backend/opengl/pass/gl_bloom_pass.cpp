@@ -1,5 +1,7 @@
 #include "pass/gl_bloom_pass.h"
 
+#include <cmath>
+
 #include <GL/glew.h>
 
 #include "gl_compute_shader.h"
@@ -45,8 +47,11 @@ void GLBloomPass::execute(GLFrameContext& ctx) {
     // Down: the first tap soft-knee prefilters and Karis-averages the scene; the rest are plain
     // 13-tap, each reading the level above it.
     m_down.bind();
-    m_down.setUniform1f("u_threshold", settings.bloomThreshold);
-    m_down.setUniform1f("u_knee",      settings.bloomKnee);
+    // In the scene's units: the exposure scales the frame after, so a pixel that looks bright is
+    // one past threshold / 2^exposure.
+    const float unexposed = std::exp2(-settings.exposure);
+    m_down.setUniform1f("u_threshold", settings.bloomThreshold * unexposed);
+    m_down.setUniform1f("u_knee",      settings.bloomKnee * unexposed);
     for (int mip = 0; mip < mips; ++mip) {
         if (mip == 0) ctx.colorSrc->bindTexture(GLTarget::Attachment::Color, SOURCE);
         else          bloom.bindLevel(mip - 1, SOURCE);

@@ -52,16 +52,20 @@ enum class TextureFiltering : uint8_t {
  * `render.tonemap` - renaming one breaks saved projects), shader constant
  * suffix (`TONEMAP_<suffix>`).
  */
-#define VKM_TONEMAPS(X)                                   \
-    X(Reinhard,       "Reinhard",            REINHARD)    \
-    X(ACES,           "ACES (filmic)",       ACES)        \
-    X(KhronosNeutral, "Khronos PBR Neutral", KHRONOS_NEUTRAL)
+#define VKM_TONEMAPS(X)                                       \
+    X(Reinhard,       "Reinhard",            REINHARD)        \
+    X(ACES,           "ACES (filmic)",       ACES)            \
+    X(KhronosNeutral, "Khronos PBR Neutral", KHRONOS_NEUTRAL) \
+    X(AgX,            "AgX",                 AGX)
 
 /**
  * @brief How linear HDR radiance is landed into the display range; a fixed curve.
  *
- * Reinhard (`c / (c + 1)`, default) desaturates bright colour. ACES is the
- * Narkowicz film fit. Khronos PBR Neutral holds authored albedo as it brightens.
+ * ACES (the default) is Hill's fit of the RRT and ODT: contrast, and highlights that
+ * reach white. Reinhard (`c / (c + 1)`) never reaches white and flattens the mid-tones.
+ * Khronos PBR Neutral holds authored albedo as it brightens. AgX (Sobotka) runs to
+ * white through a wider gamut, so a bright saturated light whitens instead of turning
+ * another colour, at the price of a flatter base look.
  */
 enum class Tonemap : uint8_t {
 #define VKM_TONEMAP_ENUMERATOR(name, label, glsl) name,
@@ -108,17 +112,20 @@ struct RenderSettings {
 
     // Bloom
     float bloomStrength  = 0.06f;   ///< Bloom scale, added pre-tonemap.
-    float bloomThreshold = 1.0f;    ///< On a pixel's brightest channel (linear HDR).
+    /// On a pixel's brightest channel, after the exposure: past a sunlit white's, so what glows is
+    /// a highlight, an emitter or the sun.
+    float bloomThreshold = 2.0f;
     float bloomKnee      = 0.5f;    ///< Soft-knee width around the threshold.
     float bloomRadius    = 0.005f;  ///< Upsample tent radius, fraction of frame width.
 
     // Display transform
-    Tonemap tonemap = Tonemap::Reinhard;
+    Tonemap tonemap = Tonemap::ACES;
 
     /**
      * @brief A fixed exposure in stops: the frame is scaled by 2^exposure before the tonemap.
      *
-     * Authored, never adapted; 0 is as lit.
+     * Authored, never adapted; 0 is as lit. One stop up by default, for the daylight balance
+     * the procedural sky gives (docs/guides/engine.md section 4).
      */
     float exposure = 0.0f;
 
