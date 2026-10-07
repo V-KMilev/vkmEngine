@@ -44,7 +44,7 @@ struct LightData {
 
     bool  castShadows;
     float shadowBias;       ///< See Light::shadowBias
-    float shadowNormalBias; ///< 2D only: normal offset before the compare, in shadow texels
+    float shadowNormalBias; ///< See Light::shadowNormalBias
     float shadowDistance;   ///< Directional only: world distance the cascades cover.
 
     /**

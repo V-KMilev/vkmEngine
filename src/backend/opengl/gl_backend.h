@@ -278,6 +278,7 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
 
         GLShadowAtlas m_shadowAtlas;
         GLShadowData  m_shadowData;
+        bool          m_layoutRefusedLogged = false;  ///< Whether the atlas refusing the plan is reported.
 
         /// Every object's model matrix, once a frame.
         GLObjectBuffer m_objects;

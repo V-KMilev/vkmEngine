@@ -42,10 +42,10 @@ struct Light {
 
     // Shadows
     bool      castShadows    = true;
-    float     shadowBias     = 0.005f;    // sun: depth; spot, point: the range fraction slid toward the light, x2 grazing, x0.4 head-on
-    float     shadowNormalBias = 1.5f;    // 2D: normal offset before the compare, in shadow texels, x3 grazing
+    float     shadowBias     = 0.5f;      // compare slid toward the light, in shadow texels, more grazing
+    float     shadowNormalBias = 1.0f;    // point moved off the surface, in shadow texels, none head-on
     float     shadowDistance = 100.0f;    // directional only: cascade coverage distance (world units)
-    float     sourceRadius   = glm::radians(0.5f); // directional: disc radius (radians); spot: emitter radius (m) - the penumbra
+    float     sourceRadius   = glm::radians(0.5f); // directional: disc radius (radians); spot, point: emitter radius (m) - the penumbra
 
     bool      enabled        = true;
 };
@@ -194,17 +194,30 @@ and cube faces, and nothing for Rect or Disk.
 
 The shadow system has two depth stores sized by `engine_config.h`:
 
-- **2D atlas** (`Config::MAX_SHADOW_CASTERS_2D = 6` tiles) holds
-  directional and spot shadow maps. It is one depth `Texture2D` cut into
-  a `SHADOW_ATLAS_COLS` x `SHADOW_ATLAS_ROWS` grid of square tiles, not a
-  texture array: a caster's slot indexes one tile and is sampled through
-  a per-tile UV offset/scale. The first shadow-casting directional light
-  takes `Config::NUM_CASCADES = 4` consecutive tiles for a CSM (cascaded
-  shadow maps) split; spot lights take the tiles left over - 2 with a sun,
-  all 6 without one.
-- **Cube maps** (`Config::MAX_SHADOW_CASTERS_CUBE = 2`) hold the six
-  faces per point-light shadow, as individual depth `TextureCube`s rather
-  than one cube array.
+- **2D atlas** (`Config::MAX_SHADOW_CASTERS_2D` tiles) holds
+  directional and spot shadow maps. It is one depth `Texture2D`, not a
+  texture array, `SHADOW_ATLAS_BLOCKS` x `SHADOW_ATLAS_BLOCKS` square
+  blocks each the largest tile (`shadowResolution`) across; a caster's slot
+  indexes one square tile and is sampled through a per-tile UV
+  offset/scale. The first shadow-casting directional light takes
+  `Config::NUM_CASCADES` consecutive slots for a CSM (cascaded shadow
+  maps) split; spot lights take the slots left over. Tiles differ in size,
+  each a power of two (`GLShadowData::build`): the sun's first
+  `FULL_CASCADES` cascades take the largest tile and the rest take half,
+  whose texels already span more of the world; a spot whose reach misses the
+  view takes no slot at all, and one that is seen takes
+  `SPOT_TEXELS_PER_PIXEL` texels per screen pixel its cone's bounding sphere
+  covers (Unreal's `r.Shadow.TexelsPerPixelSpotlight`), from
+  `SHADOW_ATLAS_MIN_TILE_RES` to the largest, halving only once it needs
+  well under its tile so it does not flip between two sizes. When the
+  tiles would not fit, the largest spot halves until they do.
+  `GLShadowAtlas::layout` packs them largest first into the smallest free
+  square, quartering squares as it goes, which never fails while their area
+  fits; the same sizes land in the same places, so a held tile stays held.
+- **A cube-map array** (`Config::MAX_SHADOW_CASTERS_CUBE` layers) holds
+  the six faces of each point-light shadow, a layer per light, so every point
+  light reads through one unit and its slot is a coordinate rather than a
+  sampler index.
 
 Shadow rendering goes through `GLShadowPass`, which:
 
@@ -257,21 +270,24 @@ Shadow rendering goes through `GLShadowPass`, which:
   atlas (`u_shadowAtlas`) - mapping each caster's UV into its tile rect
   and taking a 3x3 kernel of hardware depth compares, each of them
   bilinear over a 2x2 texel neighbourhood, so one tap returns a fraction
-  rather than 0 or 1 - plus a small array of `samplerCubeShadow` maps
-  (`u_shadowCube[MAX_SHADOW_CASTERS_CUBE]`), one per point-light slot. A cube
+  rather than 0 or 1 - plus the point lights' cube array, through a
+  `samplerCubeArrayShadow` (`u_shadowCube`, the light's slot as its layer). A cube
   face is an ordinary perspective depth map, drawn by the same programs as
   the atlas tiles, and a lookup rebuilds the face's projected depth from the
-  major axis of the direction and takes one hardware compare over 2x2 texels
+  major axis of the direction and takes a hardware compare over 2x2 texels
   of the face - a fraction, like a 2D tap.
 
-  A spot's tile and a point light's cube are both perspective maps, whose
-  depth unit grows with the square of the distance from the light, so both
-  read `shadowBias` one way (`rayBias` in `shaders/shadows.glsl`): the point
-  slides toward the light along its own ray by that fraction of the range,
-  twice it at grazing light and two fifths of it head-on, and the compare is
-  against the depth stored there. A spot's normal offset is in texels of the
-  map at the receiver's own distance rather than at the range. The sun's
-  cascades are orthographic, and their bias is a depth, grown with the slope.
+  **Bias.** Every light reads `shadowBias` and `shadowNormalBias` one way, in
+  texels of its own map at the receiver (`biasSin` and `biasSlide` in
+  `shaders/shadows.glsl`, after Castano's summary for The Witness): the point
+  moves off its surface along the normal by the normal bias times the sine of
+  the light's angle to it - nothing head-on, all of it where the light grazes -
+  and the compare slides toward the light by the depth bias times 1 + the
+  tangent, capped. A texel is the map's world size at the receiver: a
+  cascade's own, a spot's grown with the distance from the light, a cube face's
+  `2 * axis / SHADOW_CUBE_RES`. So one pair of values holds for every light
+  type, range, cascade and distance, and the defaults rarely need touching
+  (why these, [engine.md](../guides/engine.md#4-what-has-already-been-decided)).
 
   **Soft shadows.** The sun and spot lights cast percentage-closer soft
   shadows (Fernando 2005), sized by the light's own `sourceRadius` - the one
@@ -293,26 +309,27 @@ Shadow rendering goes through `GLShadowPass`, which:
   depth at the point (`receiverSlope`), so a surface the light grazes
   neither finds itself in the blocker search, which would pull every
   penumbra toward zero, nor shadows itself under a wide filter. A spot's taps
-  compare against the point's own depth: the plane is derived for an
-  orthographic tile.
+  do the same through its perspective tile (`receiverSlopePerspective`), and
+  so do the hard path's nine. Each search reads its centre too, so a caster
+  a texel thin is not lost between taps.
 
-  How wide a penumbra can be is derived, not set. A disk wider than
-  `SOFT_REACH` (5.5) texels - the most 64 taps cover at that spacing - would
-  spread its taps into dots, so the sun's
-  path (`sampleCSMSoft`) runs its search and its filter each in the finest
-  cascade that holds the point and fits the disk in that many texels: a
-  penumbra too wide for the point's own cascade is drawn from a coarser one,
-  whose texels are two to three times larger and which loses only detail
-  narrower than the penumbra blurring it. The search reaches one cascade
-  radius above the point, and the penumbra is capped at the radius it
-  searched: past that rim the point reads lit, so a wider filter would tear
-  a jagged edge into the penumbra. Whatever cascade is read, the depth bias
-  is the point's own in metres - a depth unit is a cascade's whole span, so the
-  coarse one's would lift the point clear of anything a few metres above
-  it - and a search the coarse tile saw nothing in falls back to the
-  point's own tile, so a caster too thin for the coarse map still shadows;
-  that fallback keeps its full width, faint enough to hide the hard compare
-  that admits it.
+  How wide a penumbra can be is derived, not set. A disk wider than `SOFT_REACH`
+  (5.5) texels - the most 64 taps cover at that spacing - would spread its taps
+  into dots, so the sun's path (`sampleCSMSoft`) runs its search and its filter
+  each in the finest cascade that holds the point and fits the disk in that many
+  texels: a penumbra too wide for the point's own cascade is drawn from a
+  coarser one, whose texels are about the fourth root of `shadowDistance` times
+  larger (three at the default; twice that for the last, half-size cascade), and
+  which loses only detail narrower than the penumbra blurring it. The search
+  reaches one cascade radius above the point, and the penumbra is capped at the
+  radius it searched: past that rim the point reads lit, so a wider filter would
+  tear a jagged edge into the penumbra. Whatever cascade is read, the slide is
+  the point's own in metres - a depth unit is a cascade's whole span, so the
+  coarse one's would lift the point clear of anything a few metres above it -
+  while the normal offset is the read tile's, which its texels need against
+  acne; and a search the coarse tile saw nothing in falls back to the point's
+  own tile, so a caster too thin for the coarse map still shadows; that fallback
+  keeps its full width, faint enough to hide the hard compare that admits it.
   A spot has one map and nothing coarser, so its search and filter stop at
   `SOFT_SPOT_REACH` (7) texels, its taps a little further apart. A point light's cube keeps its single filtered tap: a blocker search
   would need each cube bound a second time without comparison, and every tap
@@ -335,7 +352,9 @@ Shadow rendering goes through `GLShadowPass`, which:
   why both samplers carry the atlas's own linear filtering and clamp.
 
 `shadowDistance` controls how far the directional cascades cover in world
-units. It is ignored for spot, point, and area lights, which use `radius`
+units, and the sun's shadow fades out over the last fifth of it
+(`SHADOW_FADE`), so its reach ends in a ramp rather than a line across the
+ground. It is ignored for spot, point, and area lights, which use `radius`
 as their cutoff.
 
 A cascade hands over to the next across the last tenth of its depth

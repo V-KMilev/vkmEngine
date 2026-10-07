@@ -4,8 +4,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <utility>
 
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "logger.h"
@@ -21,6 +23,7 @@
 #include "gl_buffer_upload.h"
 #include "ecs/component/render/light.h"
 #include "system/render/render_view.h"
+#include "system/render/data/light_data.h"
 #include "debug/profiler.h"
 #include "platform/threading/thread_pool.h"
 #include "core/fnv1a.h"
@@ -53,6 +56,28 @@ static_assert(STATIC_GROUP < SKINNED_GROUP && SKINNED_GROUP < POSED_GROUP && POS
 // camera's near plane (docs/reference/lighting.md).
 constexpr float CASCADE_NEAR = 1.0f;
 
+// The sun's nearest cascades take the largest tile; those past them take half, as each of their
+// texels already spans more of the world. Four at full size would fill the atlas.
+constexpr uint32_t FULL_CASCADES = 3;
+static_assert(FULL_CASCADES < Config::NUM_CASCADES, "Every cascade at full size leaves the spots no room");
+
+// Shadow texels per screen pixel of a spot's cone (Unreal's r.Shadow.TexelsPerPixelSpotlight).
+constexpr float SPOT_TEXELS_PER_PIXEL = 1.27324f;
+
+// A spot's tile halves only once its cone needs under this share of it: past half, by a margin.
+constexpr float SPOT_SHRINK_BELOW = 0.4f;
+
+// A light's range: its radius, or DEFAULT_LIGHT_RANGE when it carries none.
+float lightRange(const LightData& light) {
+    return light.radius > 0.0f ? light.radius : DEFAULT_LIGHT_RANGE;
+}
+
+uint32_t ceilPowerOfTwo(float v) {
+    uint32_t p = 1;
+    while (static_cast<float>(p) < v && p < (1u << 30)) p *= 2;
+    return p;
+}
+
 } // namespace
 
 glm::vec3 stableUp(const glm::vec3& dir) {
@@ -70,8 +95,14 @@ void GLShadowData::build(const RenderView& view, const GLView& glView, uint32_t 
     for (int& s : m_lightSlot) s = -1;
     m_lightCount = std::min<uint32_t>(static_cast<uint32_t>(view.lights.size()), Config::MAX_LIGHTS);
 
-    // Floored at one: the cascade and spot fits below divide by it.
-    m_shadowRes = std::max(tileRes, 1u);
+    // Floored as the atlas floors it, so the last cascade's half tile is a tile.
+    m_tileRes = std::max(tileRes, SHADOW_ATLAS_MIN_BLOCK_RES);
+    m_tileSizes.clear();
+    m_tileOwners.clear();
+
+    m_eye          = view.camera.position;
+    m_orthographic = view.camera.projection[3][3] != 0.0f;
+    m_focalPixels  = view.camera.projection[1][1] * 0.5f * static_cast<float>(view.viewportHeight);
 
     // Camera frustum corners in world space, from the inverse view-projection.
     const glm::mat4& invVP = view.camera.invViewProj;
@@ -104,8 +135,19 @@ void GLShadowData::build(const RenderView& view, const GLView& glView, uint32_t 
     // cascades need Config::NUM_CASCADES consecutive tiles.
     m_refused = 0;
     m_shadowOrder.clear();
+    // A spot or point whose reach misses the view lights nothing seen: no slot, so one that is
+    // seen can have it.
+    const Math::Frustum seen = Math::extractFrustum(view.camera.viewProjection);
     for (uint32_t i = 0; i < m_lightCount; ++i) {
-        if (view.lights[i].castShadows) m_shadowOrder.push_back(i);
+        const LightData& light = view.lights[i];
+        if (!light.castShadows) continue;
+        if (light.type == LightType::Spot || light.type == LightType::Point) {
+            const glm::vec3 extent(lightRange(light));
+            if (!Math::frustumIntersectsAABB(seen, {light.position - extent, light.position + extent})) {
+                continue;
+            }
+        }
+        m_shadowOrder.push_back(i);
     }
     const auto sunFirst = [&](uint32_t i) {
         return view.lights[i].type == LightType::Directional ? 0 : 1;
@@ -124,6 +166,7 @@ void GLShadowData::build(const RenderView& view, const GLView& glView, uint32_t 
             default: break;
         }
     }
+    fitTilesToAtlas();
 
     // Otherwise a refused light just stops casting, which reads as a content bug, not a budget.
     // Latched, so an over-budget scene says so once.
@@ -453,7 +496,8 @@ void GLShadowData::fitDirectional(
 
         // Drives the normal-offset bias so it scales with cascade density, and is the quantum the
         // centre snaps to below.
-        const float worldTexel = (2.0f * radius) / static_cast<float>(m_shadowRes);
+        const uint32_t tile       = c < FULL_CASCADES ? m_tileRes : m_tileRes / 2;
+        const float    worldTexel = (2.0f * radius) / static_cast<float>(tile);
 
         // The sphere fit holds the size still as the camera turns; an unsnapped centre still
         // slides, crawling every edge and voiding a texel-measured bias. The basis is the light
@@ -471,9 +515,10 @@ void GLShadowData::fitDirectional(
         const glm::mat4 lightVP = lProj * lView;
 
         const uint32_t slot = base + c;
+        m_tileSizes.push_back(tile);
+        m_tileOwners.push_back(light.entitySlot);
         Shadow2DGPU& e = m_data.s2d[slot];
         e.lightVP = lightVP;
-        e.atlas   = glm::vec4(GLShadowAtlas::tileUVOffset(slot), GLShadowAtlas::tileUVScale());
         // z is the ortho depth range, so a depth difference read off the tile
         // becomes metres between a blocker and what it shades.
         e.params  = glm::vec4(light.shadowBias, worldTexel, 2.0f * radius + zExtend, tanSource);
@@ -500,10 +545,7 @@ void GLShadowData::fitSpot(const LightData& light, uint32_t lightIndex, uint32_t
 
     // Neither may be degenerate: a range at or below near gives far <= near, and a zero cone
     // divides by tan(0), writing infinities that NaN whatever samples the matrix.
-    const float range = std::max(
-        light.radius > 0.0f ? light.radius : DEFAULT_LIGHT_RANGE,
-        Config::SHADOW_NEAR * 2.0f
-    );
+    const float range = std::max(lightRange(light), Config::SHADOW_NEAR * 2.0f);
     const float fov = glm::clamp(
         2.0f * light.outerConeAngle * 1.1f,
         glm::radians(1.0f),
@@ -514,22 +556,97 @@ void GLShadowData::fitSpot(const LightData& light, uint32_t lightIndex, uint32_t
     const glm::mat4 lProj   = glm::perspective(fov, 1.0f, Config::SHADOW_NEAR, range);
     const glm::mat4 lightVP = lProj * lView;
 
-    // World texel size at the range, for the normal-offset bias; the shader
-    // takes it to the receiver's own distance.
     const float tanHalfFov = std::tan(fov * 0.5f);
-    const float worldTexel = (2.0f * range * tanHalfFov) / static_cast<float>(m_shadowRes);
+    m_tileSizes.push_back(spotTileSize(light, range));
+    m_tileOwners.push_back(light.entitySlot);
 
     Shadow2DGPU& e = m_data.s2d[slot];
     e.lightVP = lightVP;
-    e.atlas   = glm::vec4(GLShadowAtlas::tileUVOffset(slot), GLShadowAtlas::tileUVScale());
     // The source over the map's width one metre out: what the soft path
     // scales by the blocker's and receiver's distances to size a penumbra.
+    // Its texel (y) is measured once its tile is settled, in fitTilesToAtlas.
     const float sourceUV = light.sourceRadius / (2.0f * tanHalfFov);
-    e.params  = glm::vec4(light.shadowBias, worldTexel, range, sourceUV);
+    e.params  = glm::vec4(light.shadowBias, 0.0f, range, sourceUV);
     e.shape   = glm::vec4(light.shadowNormalBias, Config::SHADOW_NEAR, tanHalfFov, 0.0f);
     m_jobs2D.push_back({ lightVP, slot, false });
 
     m_lightSlot[lightIndex] = static_cast<int>(slot);
+}
+
+uint32_t GLShadowData::spotTileSize(const LightData& light, float range) const {
+    // The cone's bounding sphere: about its middle when narrow, about its cap's centre when wide.
+    const glm::vec3 dir  = glm::normalize(light.direction);
+    const float     cosA = std::cos(light.outerConeAngle);
+    const float     sinA = std::sin(light.outerConeAngle);
+    float           radius;
+    glm::vec3       centre;
+    if (cosA > glm::one_over_root_two<float>()) {
+        radius = range / (2.0f * cosA);
+        centre = light.position + dir * radius;
+    } else {
+        radius = range * sinA;
+        centre = light.position + dir * (range * cosA);
+    }
+
+    // The pixels its diameter covers; all of the largest tile for an eye inside it.
+    const float distance = glm::length(centre - m_eye);
+    float       pixels   = std::numeric_limits<float>::max();
+    if (m_orthographic) {
+        pixels = 2.0f * radius * m_focalPixels;
+    } else if (distance > radius) {
+        pixels = 2.0f * radius / std::sqrt(distance * distance - radius * radius) * m_focalPixels;
+    }
+    const float    texels = pixels * SPOT_TEXELS_PER_PIXEL;
+    const float    wanted = std::min(texels, static_cast<float>(m_tileRes));
+    const uint32_t size   = std::clamp(ceilPowerOfTwo(wanted), SHADOW_ATLAS_MIN_TILE_RES, m_tileRes);
+
+    const auto held = std::find_if(m_spotTiles.begin(), m_spotTiles.end(), [&](const SpotTile& tile) {
+        return tile.entitySlot == light.entitySlot;
+    });
+    if (held != m_spotTiles.end() && size < held->size && held->size <= m_tileRes
+        && texels > SPOT_SHRINK_BELOW * static_cast<float>(held->size)) {
+        return held->size;
+    }
+    return size;
+}
+
+void GLShadowData::fitTilesToAtlas() {
+    uint64_t area = 0;
+    for (const uint32_t size : m_tileSizes) area += static_cast<uint64_t>(size) * size;
+
+    // The largest spot halves first, the later of two equal ones; a cascade keeps its size.
+    const uint64_t capacity = GLShadowAtlas::capacity(m_tileRes);
+    while (area > capacity) {
+        uint32_t largest = 0;
+        bool     found   = false;
+        for (const Shadow2DJob& job : m_jobs2D) {
+            const uint32_t size = m_tileSizes[job.slot];
+            if (job.cascade || size <= SHADOW_ATLAS_MIN_TILE_RES) continue;
+            if (!found || size >= m_tileSizes[largest]) {
+                largest = job.slot;
+                found   = true;
+            }
+        }
+        if (!found) break;
+        const uint64_t was = m_tileSizes[largest];
+        m_tileSizes[largest] /= 2;
+        area -= was * was - static_cast<uint64_t>(m_tileSizes[largest]) * m_tileSizes[largest];
+    }
+
+    m_spotTilesNext.clear();
+    for (const Shadow2DJob& job : m_jobs2D) {
+        if (job.cascade) continue;
+        // World texel size at the range, for the normal-offset bias; the shader takes it to the
+        // receiver's own distance.
+        Shadow2DGPU& e = m_data.s2d[job.slot];
+        e.params.y = 2.0f * e.params.z * e.shape.z / static_cast<float>(m_tileSizes[job.slot]);
+        m_spotTilesNext.push_back({m_tileOwners[job.slot], m_tileSizes[job.slot]});
+    }
+    std::swap(m_spotTiles, m_spotTilesNext);
+}
+
+void GLShadowData::placeTiles(const GLShadowAtlas& atlas) {
+    for (const Shadow2DJob& job : m_jobs2D) m_data.s2d[job.slot].atlas = atlas.tileUV(job.slot);
 }
 
 // Point: six perspective faces into the next free cube slot.
@@ -542,10 +659,7 @@ void GLShadowData::fitPoint(const LightData& light, uint32_t lightIndex, uint32_
 
     // Held off the near plane for the same reason fitSpot holds its own: a cube
     // face whose far plane is its near plane has no projection.
-    const float range = std::max(
-        light.radius > 0.0f ? light.radius : DEFAULT_LIGHT_RANGE,
-        Config::SHADOW_NEAR * 2.0f
-    );
+    const float range = std::max(lightRange(light), Config::SHADOW_NEAR * 2.0f);
     const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, Config::SHADOW_NEAR, range);
 
     ShadowCubeJob job;
@@ -559,7 +673,7 @@ void GLShadowData::fitPoint(const LightData& light, uint32_t lightIndex, uint32_
 
     ShadowCubeGPU& e = m_data.scube[slot];
     e.posRange = glm::vec4(light.position, range);
-    e.params   = glm::vec4(light.shadowBias, Config::SHADOW_NEAR, 0.0f, 0.0f);
+    e.params   = glm::vec4(light.shadowBias, Config::SHADOW_NEAR, light.shadowNormalBias, light.sourceRadius);
 
     m_lightSlot[lightIndex] = static_cast<int>(slot);
 }

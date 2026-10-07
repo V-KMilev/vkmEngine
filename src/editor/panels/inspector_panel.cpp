@@ -1269,12 +1269,26 @@ void InspectorPanel::drawLightSection(EditorContext& ec, EntityId id) {
         }
         changed |= propCheckbox("Shadows", &light.castShadows);
         if (light.castShadows) {
-            changed |= propDrag("Shadow Bias", &light.shadowBias, 0.0005f, 0.0f, 0.1f, "%.4f");
-            if (light.type == LightType::Directional || light.type == LightType::Spot) {
+            const bool shadowed = light.type == LightType::Directional
+                || light.type == LightType::Spot || light.type == LightType::Point;
+            if (shadowed) {
+                const char* biasTooltip =
+                    "How far the shadow compare slides toward the light, in shadow texels - "
+                    "more where the light grazes. Raise it against acne; too much detaches "
+                    "a shadow from its caster";
+                changed |= propDrag(
+                    "Shadow Bias",
+                    &light.shadowBias,
+                    0.05f,
+                    0.0f,
+                    4.0f,
+                    "%.2f texels",
+                    biasTooltip
+                );
                 const char* normalBiasTooltip =
-                    "How far a point is pushed along its surface normal before the shadow "
-                    "compare, in shadow texels - three times it at grazing light. Raise it "
-                    "against acne; too much detaches the shadow from its caster";
+                    "How far a point moves off its surface before the shadow compare, in "
+                    "shadow texels - none head-on, all of it where the light grazes. Raise "
+                    "it against acne on curved surfaces; too much loses thin shadows";
                 changed |= propDrag(
                     "Normal Bias",
                     &light.shadowNormalBias,

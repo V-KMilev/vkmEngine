@@ -26,7 +26,8 @@ namespace Vkm::Engine {
     X(SSBOBindingPoints,      INSTANCE_SKIN_BASE,    6,  SSBO_INSTANCE_SKIN_BASE,             Per object: its first bone in SKIN_PALETTE)                          \
     X(SSBOBindingPoints,      INSTANCE_MODELS,       10, SSBO_INSTANCE_MODELS,                Per object: its model matrix)                                        \
     X(ShadowTextureSlots,     ATLAS_2D,              11, SHADOW_SLOT_ATLAS_2D,                Tiled 2D depth atlas (sampler2DShadow))                              \
-    X(ShadowTextureSlots,     CUBE_BASE,             12, SHADOW_SLOT_CUBE_BASE,               First point-light depth cube (samplerCubeShadow[]))                  \
+    X(ShadowTextureSlots,     CUBE,                  12, SHADOW_SLOT_CUBE,                    Point-light depth cubes: a layer each (samplerCubeArrayShadow))      \
+    X(ShadowTextureSlots,     CUBE_RAW,              13, SHADOW_SLOT_CUBE_RAW,                The cubes uncompared (samplerCubeArray) for the blocker search)      \
     X(ShadowTextureSlots,     ATLAS_2D_RAW,          25, SHADOW_SLOT_ATLAS_2D_RAW,            The atlas uncompared (sampler2D): a unit holds one comparison mode) \
     X(IBLTextureSlots,        IRRADIANCE,            14, IBL_SLOT_IRRADIANCE,                 Diffuse irradiance cubemap (samplerCube))                            \
     X(IBLTextureSlots,        PREFILTER,             15, IBL_SLOT_PREFILTER,                  Roughness-prefiltered specular cubemap (samplerCube))                \
@@ -128,11 +129,12 @@ namespace GLBindings {
         "Material maps would overlap the shadow atlas slot"
     );
     static_assert(
-        ShadowTextureSlots::CUBE_BASE > ShadowTextureSlots::ATLAS_2D,
+        ShadowTextureSlots::CUBE > ShadowTextureSlots::ATLAS_2D,
         "The point-light cubes would overlap the 2D shadow atlas"
     );
     static_assert(
-        ShadowTextureSlots::CUBE_BASE + Config::MAX_SHADOW_CASTERS_CUBE <= IBLTextureSlots::IRRADIANCE,
+        ShadowTextureSlots::CUBE < ShadowTextureSlots::CUBE_RAW
+            && ShadowTextureSlots::CUBE_RAW < IBLTextureSlots::IRRADIANCE,
         "The point-light cubes would overlap the IBL texture slots"
     );
     static_assert(

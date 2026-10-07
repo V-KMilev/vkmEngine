@@ -47,9 +47,9 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     // The soft path searches the tile for blockers, which is a depth read rather
     // than a compare: the same atlas, on a second unit under a plain sampler.
     ctx.shadowAtlas.bind2DRaw(GLBindings::ShadowTextureSlots::ATLAS_2D_RAW);
-    for (uint32_t s = 0; s < Config::MAX_SHADOW_CASTERS_CUBE; ++s) {
-        ctx.shadowAtlas.bindCube(s, GLBindings::ShadowTextureSlots::CUBE_BASE + s);
-    }
+    // The point lights' cubes likewise: compared, and raw for their blocker search.
+    ctx.shadowAtlas.bindCubes(GLBindings::ShadowTextureSlots::CUBE);
+    ctx.shadowAtlas.bindCubesRaw(GLBindings::ShadowTextureSlots::CUBE_RAW);
 
     // The irradiance cube and the volume beside these are bindAmbient's. The
     // LUT is integrated at start, so it is there with or without a sky.
