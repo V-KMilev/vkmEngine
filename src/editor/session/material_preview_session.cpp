@@ -1,5 +1,6 @@
 #include "session/material_preview_session.h"
 
+#include "core/fnv1a.h"
 #include "system/render/editor_render_hooks.h"
 #include "system/render/render_system.h"
 
@@ -13,6 +14,9 @@ uint32_t MaterialPreviewSession::texture(
 ) {
     EditorRenderHooks* backend = editorRenderHooks(m_renderSystem.backend());
     if (!backend || !req.material || !req.mesh) return 0;
+
+    // The scene's light is part of the picture, as the asset is.
+    version = fnv1a64Bytes(&version, sizeof(version), backend->previewLook());
 
     const GpuTextureId cached = backend->previewTexture(req.key);
     const auto it = m_versions.find(req.key);

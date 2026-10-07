@@ -2,7 +2,8 @@
  * Projected decal - screen-space projection.
  *
  * Each covered pixel's world position, rebuilt from depth, is discarded outside the decal's unit
- * box, whose XY is the UV. It fades where the G-buffer normal turns from the projector, and is lit
+ * box, whose XY is the UV. It fades where the G-buffer normal turns from the projector and over the
+ * last fifth of each half of the box's depth, so one crossing a corner ends softly, and is lit
  * diffusely as the surface under it: the sun through its cascades, the environment through GTAO.
  */
 
@@ -47,7 +48,8 @@ void main() {
     vec3 worldN = normalize(mat3(u_camera.invView) * viewN);
 
     float facing = dot(worldN, -u_projDir);
-    float fade   = smoothstep(0.0, max(u_angleFade, 1e-3), facing);
+    float ends   = 1.0 - smoothstep(0.4, 0.5, abs(local.z));
+    float fade   = smoothstep(0.0, max(u_angleFade, 1e-3), facing) * ends;
     if (fade <= 0.0) discard;
 
     // Shadowed by the geometric normal the G-buffer holds, as the forward pass shadows the surface.
@@ -61,7 +63,9 @@ void main() {
     vec4 decal = u_material.albedo;
     if (hasTex(MATERIAL_SLOT_ALBEDO)) decal *= texture(u_decalAlbedo, local.xy + 0.5);
     float ao      = (u_hasAO == 1) ? texture(u_ao, uv).r : 1.0;
-    vec3  ambient = environmentIrradiance(worldPos, worldN) * multiBounceOcclusion(ao, decal.rgb);
+    // Read where irradianceVolumeLookup puts the surface; the G-buffer normal is the geometric one.
+    vec3  lookup  = irradianceVolumeLookup(worldPos, worldN);
+    vec3  ambient = environmentIrradiance(lookup, worldN) * multiBounceOcclusion(ao, decal.rgb);
     vec3  lit     = decal.rgb * (u_sunColor * sun / PI + ambient);
 
     // Carries the fog the forward pass gave the surface beneath, at the same depth.

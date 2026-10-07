@@ -36,6 +36,7 @@
 #include "pass/gl_particle_pass.h"
 #include "pass/gl_gtao_pass.h"
 #include "pass/gl_forward_pass.h"
+#include "pass/gl_atmosphere_pass.h"
 #include "pass/gl_skybox_pass.h"
 #include "pass/gl_bloom_pass.h"
 #include "pass/gl_grid_pass.h"
@@ -43,6 +44,7 @@
 #include "pass/gl_splash_pass.h"
 #include "pass/gl_ui_pass.h"
 #include "storage/gl_probe_array.h"
+#include "core/fnv1a.h"
 #include "ecs/environment.h"
 #include "ecs/component/render/light.h"
 #include "platform/window/window_manager.h"
@@ -50,9 +52,18 @@
 #include "resource/asset/material_asset.h"
 #include "resource/generate/mesh_generators.h"
 #include "system/render/render_view.h"
+#include "system/render/data/light_data.h"
 #include "system/sky/atmosphere.h"
 
 namespace Vkm::Engine {
+
+namespace {
+
+// Frames a changed irradiance volume holds still before it bakes: a bake is hundreds of
+// milliseconds, and a dragged box changes every frame.
+constexpr uint32_t VOLUME_SETTLE_FRAMES = 8;
+
+} // namespace
 
 std::string GLBackend::shaderConstants() {
     std::ostringstream out;
@@ -70,7 +81,13 @@ std::string GLBackend::shaderConstants() {
         // A LOD index, so one less than the mip count each cube carries.
         << "const float MAX_REFLECTION_LOD      = " << (GLIBL::PREFILTER_MIPS - 1)   << ".0;\n"
         << "const float MAX_PROBE_LOD           = " << (GLProbeArray::PREFILTER_MIPS - 1) << ".0;\n"
-        << "const float UI_TEXT_MARK            = " << std::to_string(UI_TEXT_MARK) << ";\n";
+        << "const float UI_TEXT_MARK            = " << std::to_string(UI_TEXT_MARK) << ";\n"
+        << "const vec2  TRANSMITTANCE_LUT_SIZE  = vec2("
+        << GLAtmosphere::TRANSMITTANCE_WIDTH << ".0, " << GLAtmosphere::TRANSMITTANCE_HEIGHT << ".0);\n"
+        << "const vec2  MULTISCATTERING_LUT_SIZE = vec2("
+        << GLAtmosphere::MULTISCATTERING_SIZE << ".0, " << GLAtmosphere::MULTISCATTERING_SIZE << ".0);\n"
+        << "const vec2  SKY_VIEW_LUT_SIZE       = vec2("
+        << GLAtmosphere::SKY_VIEW_WIDTH << ".0, " << GLAtmosphere::SKY_VIEW_HEIGHT << ".0);\n";
 
     // The composite pass switches on these; see VKM_RENDER_MODES. The mask has
     // a bit set for each mode the forward pass shades as radiance.
@@ -111,15 +128,22 @@ std::string GLBackend::shaderConstants() {
     out << "const float SKY_TWILIGHT = "
         << number(std::sin(glm::radians(NightSkySettings::TWILIGHT_DEGREES))) << ";\n";
 
-    // The atmosphere's geometry the sky bake integrates through; its coefficients
-    // depend on the sky's scales and arrive as uniforms (Atmosphere::coefficients).
+    // The atmosphere's fixed terms, which no authored scale changes; its scattering depends on
+    // the sky's scales and arrives as uniforms (Atmosphere::coefficients).
     {
         namespace A = Atmosphere;
-        out << "const float ATMOSPHERE_PLANET_RADIUS  = " << number(A::PLANET_RADIUS) << ";\n"
-            << "const float ATMOSPHERE_TOP_RADIUS     = " << number(A::TOP_RADIUS) << ";\n"
-            << "const float ATMOSPHERE_EYE_ALTITUDE   = " << number(A::EYE_ALTITUDE) << ";\n"
-            << "const float ATMOSPHERE_RAYLEIGH_HEIGHT = " << number(A::RAYLEIGH_SCALE_HEIGHT) << ";\n"
-            << "const float ATMOSPHERE_MIE_HEIGHT     = " << number(A::MIE_SCALE_HEIGHT) << ";\n";
+        const glm::vec3 ozone = A::OZONE_ABSORPTION;
+        out << "const float ATMOSPHERE_PLANET_RADIUS     = " << number(A::PLANET_RADIUS) << ";\n"
+            << "const float ATMOSPHERE_TOP_RADIUS        = " << number(A::TOP_RADIUS) << ";\n"
+            << "const float ATMOSPHERE_EYE_ALTITUDE      = " << number(A::EYE_ALTITUDE) << ";\n"
+            << "const float ATMOSPHERE_RAYLEIGH_HEIGHT   = " << number(A::RAYLEIGH_SCALE_HEIGHT) << ";\n"
+            << "const float ATMOSPHERE_MIE_HEIGHT        = " << number(A::MIE_SCALE_HEIGHT) << ";\n"
+            << "const float ATMOSPHERE_OZONE_ALTITUDE    = " << number(A::OZONE_ALTITUDE) << ";\n"
+            << "const float ATMOSPHERE_OZONE_HALF_WIDTH  = " << number(A::OZONE_HALF_WIDTH) << ";\n"
+            << "const vec3  ATMOSPHERE_OZONE_ABSORPTION  = vec3("
+            << number(ozone.r) << ", " << number(ozone.g) << ", " << number(ozone.b) << ");\n"
+            << "const float ATMOSPHERE_GROUND_ALBEDO     = " << number(A::GROUND_ALBEDO) << ";\n"
+            << "const int   ATMOSPHERE_TRANSMITTANCE_STEPS = " << A::TRANSMITTANCE_STEPS << ";\n";
     }
 
     // The light and material types the shaders switch on, from the enums.
@@ -193,6 +217,7 @@ bool GLBackend::init(WindowManager& window) {
     m_passes.push_back({"GTAO",           std::make_unique<GLGTAOPass>()});
     m_passes.push_back({"ClusterCull",    std::make_unique<GLClusterPass>()});
     m_passes.push_back({"FogCompute",     std::make_unique<GLFogPass>()});
+    m_passes.push_back({"Atmosphere",     std::make_unique<GLAtmospherePass>()});
     m_passes.push_back({"Skybox",         std::make_unique<GLSkyboxPass>()});
     m_passes.push_back({"Forward",        std::make_unique<GLForwardPass>()});
     m_passes.push_back({"Particles",      std::make_unique<GLParticlePass>()});
@@ -240,6 +265,13 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // be trusted, and nothing downstream can tell.
     onWorldReplaced(view, resources);
 
+    // A material preview lights and grades as this frame does.
+    const LightData* key = lowestSlotDirectional(view.lights);
+    m_previewScene.sun          = key ? std::optional<LightData>(*key) : std::nullopt;
+    m_previewScene.skyIntensity = view.environment.sky.intensity;
+    m_previewScene.tonemap      = view.settings.tonemap;
+    m_previewScene.exposure     = view.settings.exposure;
+
     {
         PROFILE_SCOPE("Render/SyncAssets");
         m_view.sync(view, resources);
@@ -269,11 +301,12 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // SkySystem), so sky and shadows agree.
     const glm::vec3 sunDir = view.environment.sunDirection();
 
-    // The skybox samples the baked product, so re-baking when the sun or a sky
-    // parameter moves carries the background with it.
+    // The atmosphere's air tables first: what follows reads them.
+    std::optional<SkyParams> sky;
     if (view.environment.sky.procedural) {
-        const SkyParams sky = skyParams(view.environment, sunDir);
-        if (m_bakedSky.changed(sky)) bakeProceduralSky(sky);
+        sky = skyParams(view.environment, sunDir);
+        if (m_bakedAir.changed(sky->air)) m_iblBaker.bakeAir(m_context, m_atmosphere, sky->air);
+        followProceduralSky(*sky);
     } else if (view.environment.sky.hdrPath.empty()) {
         // No image-based lighting wanted, not a failed load: the last sky goes, without an error.
         if (m_ibl.isReady()) clearEnvironment();
@@ -291,6 +324,13 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     {
         PROFILE_SCOPE("Shadow/Plan");
         m_shadowData.build(view, m_view, m_shadowAtlas.tileResolution());
+        // Latched, so a plan the atlas refuses says so once.
+        const bool laidOut = m_shadowAtlas.layout(m_shadowData.tileSizes());
+        if (!laidOut && !m_layoutRefusedLogged) {
+            LOG_ERROR("Shadow tiles did not fit the atlas; shadows keep last frame's places");
+        }
+        m_layoutRefusedLogged = !laidOut;
+        m_shadowData.placeTiles(m_shadowAtlas);
     }
 
     // Per-frame UBOs: uploaded and bound once here, visible to every pass.
@@ -339,6 +379,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         m_shadowAtlas,
         m_shadowData,
         m_ibl,
+        m_atmosphere,
         m_bloom,
         m_ao,
         m_clusterGrid,
@@ -352,6 +393,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     };
 
     ctx.sunDir = sunDir;
+    ctx.sky    = sky ? &*sky : nullptr;
 
     // Post colour chain: the scene starts on the geometry target; the first
     // post pass moves it into a scratch and the chain ping-pongs from there.
@@ -417,14 +459,26 @@ void GLBackend::bakeCaptures(const RenderView& view, const ResourceManager& reso
             iv.resolutionZ,
             iv.bakeVersion
         };
-        if (m_bakedIrradiance.changed(want)) {
+        // A box being dragged changes every frame: until it holds still, the last bake stands. A
+        // new bake version is a request to bake now.
+        const bool asked = want.bakeVersion != m_irradianceRequest.bakeVersion;
+        if (want == m_irradianceRequest) {
+            ++m_irradianceStill;
+        } else {
+            m_irradianceRequest = want;
+            m_irradianceStill   = 0;
+        }
+        const bool settled = asked || m_irradianceStill >= VOLUME_SETTLE_FRAMES || !m_bakedIrradiance.baked();
+        if (settled && m_bakedIrradiance.changed(want)) {
             m_irradiance.resize(iv.resolutionX, iv.resolutionY, iv.resolutionZ);
             m_irradianceBaker.bake(m_context, m_irradiance, iv, view, m_view, resources, m_ibl);
         }
     }
 
-    // Re-bake probes that are new, moved, resized or version-bumped.
-    m_probes.update(m_context, view, m_view, resources, m_ibl);
+    // Re-bake probes that are new, moved, resized, version-bumped or lit by an older volume, after
+    // the volume, which lights what they capture of it.
+    const bool lit = view.hasIrradianceVolume && m_irradiance.isReady();
+    m_probes.update(m_context, view, m_view, resources, m_ibl, lit ? &m_irradiance : nullptr);
 }
 
 void GLBackend::bakeEnvironment(const std::string& path) {
@@ -434,34 +488,47 @@ void GLBackend::bakeEnvironment(const std::string& path) {
     // A load failure leaves m_ibl not-ready.
     m_iblBaker.bake(m_context, m_ibl, path);
     m_bakedEnvPath = path;
-    m_bakedSky.invalidate();  // an HDR is baked now, not the procedural sky
+    m_shownSky.reset();
 }
 
 void GLBackend::clearEnvironment() {
     m_ibl.markUnready();
     m_bakedEnvPath.clear();
-    m_bakedSky.invalidate();
+    m_shownSky.reset();
 }
 
 SkyParams GLBackend::skyParams(const Environment& env, const glm::vec3& sunDir) {
     SkyParams sky;
-    sky.sunDir        = sunDir;
-    sky.sunIntensity  = env.sky.sunIntensity;
-    sky.air           = Atmosphere::coefficients(env.sky);
-    sky.mieG          = env.sky.mieG;
-    sky.nightRadiance = env.night.radiance;
-    sky.moonDir       = env.moonDirection();
+    sky.sunDir         = sunDir;
+    sky.sunIlluminance = Atmosphere::solarIlluminance(env.sky);
+    sky.air            = Atmosphere::coefficients(env.sky);
+    sky.mieG           = env.sky.mieG;
+    sky.nightRadiance  = env.night.radiance;
+    sky.moonDir        = env.moonDirection();
     // A fraction of the disc: the halo tracks the moon's brightness, so one dial drives both.
-    sky.moonHalo      = env.night.moonIntensity * 0.15f;
+    sky.moonHalo       = env.night.moonIntensity * 0.15f;
     return sky;
 }
 
-void GLBackend::bakeProceduralSky(const SkyParams& sky) {
-    PROFILE_SCOPE("Render/IBLBake");
-    PROFILE_GPU_SCOPE("Render/IBLBake");
+void GLBackend::followProceduralSky(const SkyParams& sky) {
+    const bool shown  = m_ibl.isReady() && m_shownSky;
+    const bool jumped = !m_askedSky || !sky.driftsFrom(*m_askedSky);
+    m_askedSky = sky;
+    if (shown && !jumped && !m_iblBaker.baking() && sky == *m_shownSky) return;
 
-    m_iblBaker.bakeProcedural(m_context, m_ibl, sky);
-    m_bakedEnvPath.clear();  // force an HDR re-bake if the user switches back
+    if (!shown || jumped) {
+        PROFILE_SCOPE("Render/IBLBake");
+        PROFILE_GPU_SCOPE("Render/IBLBake");
+        m_iblBaker.bakeProcedural(m_context, m_ibl, m_atmosphere, sky);
+        m_shownSky = sky;
+        m_bakedEnvPath.clear();  // force an HDR re-bake if the user switches back
+        return;
+    }
+
+    PROFILE_SCOPE("Render/IBLStep");
+    PROFILE_GPU_SCOPE("Render/IBLStep");
+    if (!m_iblBaker.baking()) m_iblBaker.beginProcedural(sky);
+    if (m_iblBaker.advance(m_context, m_ibl, m_atmosphere)) m_shownSky = m_iblBaker.target();
 }
 
 void GLBackend::onWorldReplaced(const RenderView& view, const ResourceManager& resources) {
@@ -502,9 +569,23 @@ void GLBackend::partitionDrawables(const RenderView& view) {
     }
 }
 
+uint64_t GLBackend::previewLook() const {
+    const PreviewScene& look = m_previewScene;
+    uint64_t digest = fnv1a64Bytes(&look.skyIntensity, sizeof(look.skyIntensity));
+    digest = fnv1a64Bytes(&look.tonemap, sizeof(look.tonemap), digest);
+    digest = fnv1a64Bytes(&look.exposure, sizeof(look.exposure), digest);
+    if (look.sun) {
+        digest = fnv1a64Bytes(&look.sun->direction, sizeof(look.sun->direction), digest);
+        digest = fnv1a64Bytes(&look.sun->color, sizeof(look.sun->color), digest);
+        digest = fnv1a64Bytes(&look.sun->intensity, sizeof(look.sun->intensity), digest);
+        digest = fnv1a64Bytes(&look.sun->sourceRadius, sizeof(look.sun->sourceRadius), digest);
+    }
+    return digest;
+}
+
 GpuTextureId GLBackend::renderPreview(const PreviewRequest& request, const ResourceManager& resources) {
     // The preview binds its own camera and lights; the next frame binds the frame's again.
-    return m_preview.render(m_context, m_view, m_ibl, m_shadowAtlas, request, resources);
+    return m_preview.render(m_context, m_view, m_ibl, m_previewScene, m_shadowAtlas, request, resources);
 }
 
 GpuTextureId GLBackend::previewTexture(uint64_t key) const {

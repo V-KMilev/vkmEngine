@@ -47,9 +47,9 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     // The soft path searches the tile for blockers, which is a depth read rather
     // than a compare: the same atlas, on a second unit under a plain sampler.
     ctx.shadowAtlas.bind2DRaw(GLBindings::ShadowTextureSlots::ATLAS_2D_RAW);
-    for (uint32_t s = 0; s < Config::MAX_SHADOW_CASTERS_CUBE; ++s) {
-        ctx.shadowAtlas.bindCube(s, GLBindings::ShadowTextureSlots::CUBE_BASE + s);
-    }
+    // The point lights' cubes likewise: compared, and raw for their blocker search.
+    ctx.shadowAtlas.bindCubes(GLBindings::ShadowTextureSlots::CUBE);
+    ctx.shadowAtlas.bindCubesRaw(GLBindings::ShadowTextureSlots::CUBE_RAW);
 
     // The irradiance cube and the volume beside these are bindAmbient's. The
     // LUT is integrated at start, so it is there with or without a sky.
@@ -127,13 +127,13 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         setReflectRoughnessWritable(false);
 
         m_batcher.buildSequential(m_transparentSorted, *view.objects, glView, ctx.skinPalette.count());
-        drawBatch(ctx, m_batcher);
+        drawBatch(ctx, m_batcher, true);
 
         setReflectRoughnessWritable(true);
     }
 }
 
-void GLForwardPass::drawBatch(GLFrameContext& ctx, const GLInstanceBatcher& batch) {
+void GLForwardPass::drawBatch(GLFrameContext& ctx, const GLInstanceBatcher& batch, bool blended) {
     const GLView& glView = ctx.resources;
 
     const GLMaterial*      boundMaterial = nullptr;
@@ -153,9 +153,17 @@ void GLForwardPass::drawBatch(GLFrameContext& ctx, const GLInstanceBatcher& batc
             material->bind(GLBindings::UBOBindingPoints::MATERIAL);
             material->bindTextures(glView);
             boundMaterial = material;
+            ctx.gl.setFaceCulling(blended || !material->doubleSided());
         }
-        batch.draw(draw);
+        // Blending does not depth-sort a mesh's own faces: the far side first, then the near.
+        if (blended && material && material->doubleSided()) {
+            ctx.gl.setCullFace(GL_FRONT);
+            batch.draw(ctx.gl, draw);
+            ctx.gl.setCullFace(GL_BACK);
+        }
+        batch.draw(ctx.gl, draw);
     }
+    ctx.gl.setFaceCulling(true);
 }
 
 void GLForwardPass::drawWireframe(GLFrameContext& ctx, bool posed) {

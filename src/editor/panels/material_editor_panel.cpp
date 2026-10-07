@@ -906,6 +906,18 @@ bool MaterialEditorPanel::drawParameters(
             }
             changed = true;
         }
+        static const char* const FACES[] = {"Front only", "Both sides"};
+        int faces = mat.doubleSided ? 1 : 0;
+        if (propIndexCombo(
+                "Faces",
+                FACES,
+                static_cast<int>(std::size(FACES)),
+                &faces,
+                "Both sides: a back face draws, lit as its own - cloth, leaves, single-plane cards"
+            )) {
+            mat.doubleSided = faces == 1;
+            changed = true;
+        }
         if (mat.type == MaterialType::AlphaMask) {
             changed |= propSlider(
                 "Cutoff",
@@ -917,6 +929,7 @@ bool MaterialEditorPanel::drawParameters(
             );
         }
 
+        ImGui::Spacing();
         changed |= propColor4(
             "Albedo",
             glm::value_ptr(mat.albedo),

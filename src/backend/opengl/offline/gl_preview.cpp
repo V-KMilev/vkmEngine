@@ -106,6 +106,7 @@ uint32_t GLPreview::render(
     Vkm::GL::Context& gl,
     GLView& glView,
     const GLIBL& ibl,
+    const PreviewScene& scene,
     const GLShadowAtlas& shadows,
     const PreviewRequest& req,
     const ResourceManager& resources
@@ -127,10 +128,16 @@ uint32_t GLPreview::render(
     view.surfaceWidth   = SCENE_SIZE;
     view.surfaceHeight  = SCENE_SIZE;
     view.objects        = &m_object;
-    view.lights         = studioLights();
+    // The scene's sun, or the studio rig where the scene has none: a preview cannot place lamps.
+    if (scene.sun) {
+        view.lights = {*scene.sun};
+        view.lights.front().castShadows = false;
+    } else {
+        view.lights = studioLights();
+    }
     if (req.lightYawDeg != 0.0f) {
-        // Rotate the rig around Y so the user can swing the key light across
-        // the material without moving the camera.
+        // Rotate the light around Y so the user can swing it across the material without
+        // moving the camera.
         const float     a = glm::radians(req.lightYawDeg);
         const glm::mat3 rot(glm::rotate(glm::mat4(1.0f), a, glm::vec3(0.0f, 1.0f, 0.0f)));
         for (LightData& l : view.lights) l.direction = glm::normalize(rot * l.direction);
@@ -193,12 +200,14 @@ uint32_t GLPreview::render(
 
     // Sky backdrop, drawn first so a transparent material blends over it.
     // Before the bake finishes this falls back to the clear.
-    if (req.background == PreviewBackground::Sky && hasIBL) m_capture.drawSky(gl, ibl);
+    if (req.background == PreviewBackground::Sky && hasIBL) {
+        m_capture.drawSky(gl, ibl, projection, scene.skyIntensity);
+    }
 
     gl.setFaceCulling(true);
     gl.setCullFace(GL_BACK);
-    // The offline uniform set, at full indirect strength.
     bindOfflinePbrUniforms(m_capture.pbrProgram(), ibl);
+    m_capture.pbrProgram().setUniform1f("u_iblIntensity", scene.skyIntensity);
 
     // Transparent materials blend over the backdrop. One mesh, so no sorting or
     // partitioning is needed.
@@ -219,13 +228,11 @@ uint32_t GLPreview::render(
     const std::vector<InstanceDraw>& draws = m_batcher.buildGrouped(m_object.visible, m_object, glView, 0);
     material->bind(GLBindings::UBOBindingPoints::MATERIAL);
     material->bindTextures(glView);
-    for (const InstanceDraw& draw : draws) m_batcher.draw(draw);
+    for (const InstanceDraw& draw : draws) m_batcher.draw(gl, draw);
 
     if (transparent) gl.setBlending(false);
 
-    // Tonemapped with the scene's composite shader, but pinned to Khronos
-    // Neutral whatever the scene uses: it holds an authored albedo as it
-    // brightens instead of washing it white, which is what a thumbnail is read for.
+    // Tonemapped and exposed as the scene is, by its composite shader.
     Entry& entry = ensureEntry(req.key, req.size);
     entry.fbo.bind();
     entry.fbo.setDrawBuffer(GL_COLOR_ATTACHMENT0);
@@ -240,8 +247,9 @@ uint32_t GLPreview::render(
     m_scratch.bindTexture(GLTarget::Attachment::Color, GLBindings::CompositeTextureSlots::SCENE);
     m_composite->setUniform1f("u_bloomStrength", 0.0f);
     m_composite->setUniform1i("u_renderMode", static_cast<int>(RenderMode::Default));
-    m_composite->setUniform1i("u_tonemap", static_cast<int>(Tonemap::KhronosNeutral));
-    m_composite->setUniform1f("u_exposure", 1.0f);
+    m_composite->setUniform1i("u_tonemap", static_cast<int>(scene.tonemap));
+    // The studio rig is set for no exposure; the scene's sun for the scene's.
+    m_composite->setUniform1f("u_exposure", std::exp2(scene.sun ? scene.exposure : 0.0f));
     m_composite->setUniform1i("u_hasFog", 0);  // a preview's studio has no air in it
     m_tri->draw();
 

@@ -18513,9 +18513,9 @@
           "intensity": 3.0,
           "outerConeAngle": 0.7850000262260437,
           "radius": 10.0,
-          "shadowBias": 0.0,
+          "shadowBias": 0.5,
           "shadowDistance": 50.0,
-          "shadowNormalBias": 1.5,
+          "shadowNormalBias": 1.0,
           "sourceRadius": 0.008726646192371845,
           "twoSided": false,
           "type": "Directional"
@@ -26694,7 +26694,7 @@
       "enabled": false,
       "height": 5.0,
       "heightFalloff": 0.15000000596046448,
-      "maxDistance": 200.0,
+      "maxDistance": 100.0,
       "resolutionX": 160,
       "resolutionY": 90,
       "resolutionZ": 64
@@ -26718,6 +26718,7 @@
       "starIntensity": 3.0
     },
     "sky": {
+      "aerialPerspective": 1.0,
       "hdrPath": "",
       "intensity": 1.0,
       "lightColor": [
@@ -26726,16 +26727,14 @@
         0.8999999761581421
       ],
       "lightIntensity": 3.0,
-      "mie": 1.0,
+      "mie": 5.0,
       "mieG": 0.7599999904632568,
       "procedural": true,
       "rayleigh": 1.0,
       "showSkybox": true,
-      "sunAngularRadius": 0.019999999552965164,
       "sunAzimuth": 30.0,
-      "sunDiscIntensity": 15.0,
-      "sunElevation": 50.0,
-      "sunIntensity": 22.0
+      "sunDiscIntensity": 5.0,
+      "sunElevation": 50.0
     }
   },
   "physics": {

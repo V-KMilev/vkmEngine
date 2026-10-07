@@ -68,6 +68,8 @@ struct MaterialAsset : public Resource {
     MaterialType type = MaterialType::Opaque;
     /// AlphaMask: discard below this albedo alpha (glTF default 0.5)
     float alphaCutoff = 0.5f;
+    /// Both faces drawn, a back face lit as its own (glTF doubleSided): cloth, leaves, cards
+    bool doubleSided = false;
 
     /// Base color (RGB) + opacity (A; Transparent type blends on it)
     glm::vec4 albedo   = {1,1,1,1};
@@ -75,7 +77,8 @@ struct MaterialAsset : public Resource {
     /// Surface roughness (0: smooth, 1: rough); GGX alpha = roughness^2
     float roughness    = 0.5f;
     float ior          = 1.5f;                   ///< Index of refraction; dielectric F0 = ((ior-1)/(ior+1))^2
-    /// Ambient occlusion factor on indirect light (0: occluded, 1: open)
+    /// Ambient occlusion (0: occluded, 1: open): indirect light, and direct light at grazing angles
+    /// (micro-shadowing)
     float ao           = 1.0f;
     /// Normal map intensity (0: flat, 1: as authored, >1: exaggerated)
     float normalScale  = 1.0f;
@@ -124,6 +127,7 @@ VKM_ENUM_NAMES(::Vkm::Engine::MaterialType, "Opaque", "Transparent", "Unlit", "A
 VKM_REFLECT_BEGIN(::Vkm::Engine::MaterialAsset)
     VKM_F(type)
     VKM_F(alphaCutoff)
+    VKM_F(doubleSided)
     VKM_F(albedo)
     VKM_F(metallic)
     VKM_F(roughness)

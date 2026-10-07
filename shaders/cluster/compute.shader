@@ -36,6 +36,17 @@ float sqDistPointAABB(vec3 p, vec3 mn, vec3 mx) {
     return dot(d, d);
 }
 
+// Whether a spot's cone - apex @p apex, axis @p axis, half-angle cos/sin, length @p range -
+// misses the sphere @p centre, @p radius (Wronski, "Cull that cone"): beside the cone, past its
+// end, or behind its apex.
+bool coneMissesSphere(vec3 apex, vec3 axis, float cosA, float sinA, float range, vec3 centre, float radius) {
+    vec3  v       = centre - apex;
+    float along   = dot(v, axis);
+    float across  = sqrt(max(dot(v, v) - along * along, 0.0));
+    float closest = cosA * across - along * sinA;
+    return closest > radius || along > radius + range || along < -radius;
+}
+
 void main() {
     uint ci = gl_GlobalInvocationID.x;
     if (ci >= uint(NUM_CLUSTERS)) return;
@@ -63,16 +74,26 @@ void main() {
     vec3 mn = min(min(p0, p1), min(p2, p3));
     vec3 mx = max(max(p0, p1), max(p2, p3));
 
+    vec3  centre = 0.5 * (mn + mx);
+    float bound  = 0.5 * length(mx - mn);
+
     uint count = 0u;
     for (int i = 0; i < u_lights.lightCount && i < MAX_LIGHTS; ++i) {
         Light L = u_lights.lights[i];
+        int   type = int(L.position.w);
         bool inside;
-        if (int(L.position.w) == LIGHT_DIRECTIONAL) {
+        if (type == LIGHT_DIRECTIONAL) {
             inside = true;  // no position/range: affects the whole frustum
         } else {
             vec3  posV   = (u_camera.view * vec4(L.position.xyz, 1.0)).xyz;
             float radius = L.direction.w;
             inside = sqDistPointAABB(posV, mn, mx) <= radius * radius;
+            if (inside && type == LIGHT_SPOT) {
+                // spot.xy is the cone's scale and offset, -cos(outer) * scale.
+                float cosA = clamp(-L.spot.y / max(L.spot.x, 1e-6), -1.0, 1.0);
+                vec3  axis = normalize(mat3(u_camera.view) * L.direction.xyz);
+                inside = !coneMissesSphere(posV, axis, cosA, sqrt(1.0 - cosA * cosA), radius, centre, bound);
+            }
         }
         if (inside && count < uint(MAX_LIGHTS_PER_CLUSTER)) {
             u_clusters.clusters[ci].indices[count] = uint(i);

@@ -212,7 +212,7 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
             SHADOW_RES_LABELS,
             SHADOW_RES_VALUES,
             &s.shadowResolution,
-            "Per-tile shadow map size - usually the frame's main GPU cost lever"
+            "The largest shadow tile, the sun's near cascades' - usually the frame's main GPU cost lever"
         );
     }
     endComponentCard();

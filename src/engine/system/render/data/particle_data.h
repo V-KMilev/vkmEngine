@@ -11,7 +11,7 @@ namespace Vkm::Engine {
  * Size and colour are already evaluated from age.
  */
 struct ParticleData {
-    glm::vec4 positionSize;  ///< xyz = world position, w = world-space size.
+    glm::vec4 positionSize;  ///< xyz = world position, w = half the billboard's width (the authored size).
     glm::vec4 color;         ///< Linear RGBA.
     glm::vec4 params;        ///< x = edge softness (0 hard .. 1 soft); yzw reserved.
 };

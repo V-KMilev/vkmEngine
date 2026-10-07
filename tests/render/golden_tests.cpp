@@ -21,6 +21,7 @@
 
 #include <GL/glew.h>
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include "stb_image.h"
@@ -29,6 +30,7 @@
 #include "egl_context.h"
 
 #include "gl_backend.h"
+#include "offline/gl_ibl_baker.h"
 #include "core/clock.h"
 #include "core/event/event_bus.h"
 #include "core/host_chrome.h"
@@ -38,6 +40,7 @@
 #include "ecs/component/core/transform.h"
 #include "ecs/component/render/camera.h"
 #include "ecs/component/render/decal.h"
+#include "ecs/component/render/irradiance_volume.h"
 #include "ecs/component/render/light.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/component/render/particle_emitter.h"
@@ -48,6 +51,7 @@
 #include "resource/resource_manager.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/texture_asset.h"
+#include "resource/texture_format.h"
 #include "resource/generate/mesh_generators.h"
 #include "system/render/render_settings.h"
 #include "system/particle/live_particles.h"
@@ -80,6 +84,7 @@ struct Scenery {
     Scene           scene;
     ResourceManager resources;
     LiveParticles   particles;  ///< Placed by the scene, as ParticleSystem would simulate them.
+    RenderSettings  settings;   ///< What the frame is rendered with.
     MeshHandle      cube;
     MeshHandle      sphere;
 };
@@ -506,6 +511,273 @@ void buildSpot(Scenery& s) {
     camera(s, {2.2f, 2.4f, 3.0f}, {-0.2f, 0.2f, -0.2f});
 }
 
+// A bulb-sized point light in an arcade, at night: round pillars lit to their terminators
+// with no acne, their shadows soft as the bulb makes them and hard at contact, and a cloth
+// hung 2 cm off the wall still shadowing it, which a bias too large for its gap would lose.
+void buildPoint(Scenery& s) {
+    base(s);
+    s.scene.environment().sky.procedural = false;
+    const MaterialHandle stone = material(s, "golden:stone", {0.7f, 0.66f, 0.6f}, 0.8f, 0.0f);
+    const MaterialHandle cloth = material(s, "golden:cloth", {0.7f, 0.2f, 0.15f}, 0.9f, 0.0f);
+    const MeshHandle pillar = s.resources.add(generateCylinder(0.5f, 1.0f, 48), "golden:pillar");
+    place(s, s.cube, stone, {0.0f, -0.5f, 0.0f}, {30.0f, 1.0f, 30.0f});
+    place(s, s.cube, stone, {0.0f, 3.0f, -3.0f}, {14.0f, 6.0f, 0.5f});
+    place(s, s.cube, cloth, {-0.4f, 2.0f, -2.73f}, {1.2f, 2.4f, 0.02f});
+    for (float x : {-2.4f, 1.6f}) place(s, pillar, stone, {x, 1.8f, -0.8f}, {0.6f, 3.6f, 0.6f});
+
+    const EntityId bulb = s.scene.createEntity();
+    Transform pose;
+    pose.position = {1.4f, 2.0f, 0.9f};
+    s.scene.add(bulb, std::move(pose));
+    Light light;
+    light.type         = LightType::Point;
+    light.intensity    = 40.0f;
+    light.radius       = 15.0f;
+    light.color        = {1.0f, 0.78f, 0.55f};
+    light.sourceRadius = 0.12f;
+    s.scene.add(bulb, std::move(light));
+    camera(s, {-0.6f, 1.9f, 3.6f}, {-0.2f, 1.4f, -2.0f});
+}
+
+// A sphere and a box beside their mirror images (a negative x scale), under the sun: mirroring
+// reverses the winding, and the mirrored pair must still draw right side out.
+void buildMirror(Scenery& s) {
+    base(s);
+    s.scene.environment().sky.sunElevation = 35.0f;
+    s.scene.environment().sky.sunAzimuth   = 40.0f;
+    const MaterialHandle stone = material(s, "golden:stone", {0.7f, 0.66f, 0.6f}, 0.5f, 0.0f);
+    const MaterialHandle red   = material(s, "golden:red", {0.8f, 0.2f, 0.15f}, 0.4f, 0.0f);
+    place(s, s.cube, stone, {0.0f, -0.5f, 0.0f}, {40.0f, 1.0f, 40.0f});
+    for (float side : {-1.0f, 1.0f}) {
+        place(s, s.sphere, red, {1.2f * side, 0.8f, 0.0f}, {1.6f * side, 1.6f, 1.6f});
+        place(s, s.cube, stone, {1.2f * side, 2.2f, 0.0f}, {1.0f * side, 0.6f, 0.6f});
+    }
+    sunAndCamera(s, {0.0f, 2.0f, 5.0f}, {0.0f, 1.2f, 0.0f});
+}
+
+// Cards and glass seen from behind, under the sun. A one-sided card shows nothing from its
+// back; a double-sided one is lit as its own surface; a double-sided glass sphere shows its
+// near side over its far one, and the block behind through both.
+void buildTwoSided(Scenery& s) {
+    base(s);
+    const MeshHandle card = s.resources.add(generatePlane(1.0f, 1.0f), "golden:card");
+    place(
+        s,
+        s.cube,
+        material(s, "golden:stone", {0.7f, 0.66f, 0.6f}, 0.6f, 0.0f),
+        {0.0f, -0.5f, 0.0f},
+        {30.0f, 1.0f, 30.0f}
+    );
+    place(
+        s,
+        s.cube,
+        material(s, "golden:red", {0.8f, 0.2f, 0.15f}, 0.4f, 0.0f),
+        {2.0f, 1.0f, -2.5f},
+        {1.6f, 2.0f, 0.4f}
+    );
+
+    // Upright, their fronts facing away from the eye.
+    for (const bool twoSided : {false, true}) {
+        MaterialAsset cloth;
+        cloth.albedo      = glm::vec4(0.2f, 0.45f, 0.8f, 1.0f);
+        cloth.roughness   = 0.8f;
+        cloth.doubleSided = twoSided;
+        const EntityId id = s.scene.createEntity();
+        Transform t;
+        t.position = {twoSided ? -0.6f : -2.6f, 1.1f, 0.0f};
+        t.rotation = glm::angleAxis(-glm::half_pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+        t.scale    = glm::vec3(1.6f);
+        s.scene.add(id, std::move(t));
+        Mesh m;
+        m.mesh     = card;
+        m.material = s.resources.add(std::move(cloth), twoSided ? "golden:cloth2" : "golden:cloth1");
+        s.scene.add(id, std::move(m));
+    }
+
+    MaterialAsset glass;
+    glass.albedo       = glm::vec4(0.9f, 0.95f, 1.0f, 1.0f);
+    glass.roughness    = 0.05f;
+    glass.transmission = 1.0f;
+    glass.doubleSided  = true;
+    place(
+        s,
+        s.sphere,
+        s.resources.add(std::move(glass), "golden:glass"),
+        {2.0f, 1.0f, 0.0f},
+        glm::vec3(1.6f)
+    );
+
+    sunAndCamera(s, {0.0f, 1.6f, 5.0f}, {0.0f, 1.0f, -0.5f});
+}
+
+// Clear-coated spheres over a strongly bumped base, beside one with no coat, toward the
+// sun's mirror: the coat's highlight is one sharp spot over the bumps, not broken by them.
+void buildCoat(Scenery& s) {
+    base(s);
+    place(
+        s,
+        s.cube,
+        material(s, "golden:floor", {0.3f, 0.3f, 0.3f}, 0.7f, 0.0f),
+        {0.0f, -0.5f, 0.0f},
+        {30.0f, 1.0f, 30.0f}
+    );
+
+    // Stripes tilted 30 degrees either way along u, four texels each.
+    constexpr uint32_t SIZE = 64;
+    TextureAsset bumps;
+    bumps.params.width          = SIZE;
+    bumps.params.height         = SIZE;
+    bumps.params.internalFormat = TextureInternalFormat::RG8;
+    bumps.params.format         = inferFormat(2);
+    bumps.params.wrapS          = TextureWrapMode::Repeat;
+    bumps.params.wrapT          = TextureWrapMode::Repeat;
+    bumps.pixelData.resize(SIZE * SIZE * 2);
+    for (uint32_t y = 0; y < SIZE; ++y) {
+        for (uint32_t x = 0; x < SIZE; ++x) {
+            bumps.pixelData[(y * SIZE + x) * 2 + 0] = ((x / 4) % 2 == 0) ? 192 : 64;
+            bumps.pixelData[(y * SIZE + x) * 2 + 1] = 128;
+        }
+    }
+    const TextureHandle normal = s.resources.add(std::move(bumps), "golden:bumps");
+
+    const glm::vec3 sun    = s.scene.environment().sunDirection();
+    const glm::vec3 eye    = {0.0f, 2.0f, 0.0f};
+    const glm::vec3 toward = glm::normalize(glm::vec3(sun.x, 0.0f, sun.z));
+    const glm::vec3 across = glm::cross(toward, glm::vec3(0.0f, 1.0f, 0.0f));
+    for (const bool coated : {false, true}) {
+        MaterialAsset paint;
+        paint.albedo             = glm::vec4(0.05f, 0.12f, 0.4f, 1.0f);
+        paint.roughness          = 0.45f;
+        paint.normalTexture      = normal;
+        paint.clearcoat          = coated ? 1.0f : 0.0f;
+        paint.clearcoatRoughness = 0.02f;
+        const glm::vec3 at = eye + toward * 3.2f + across * (coated ? 1.05f : -1.05f);
+        place(
+            s,
+            s.sphere,
+            s.resources.add(std::move(paint), coated ? "golden:coated" : "golden:bare"),
+            {at.x, 0.9f, at.z},
+            glm::vec3(1.8f)
+        );
+    }
+    sunAndCamera(s, eye, eye + toward * 3.2f + glm::vec3(0.0f, -1.1f, 0.0f));
+}
+
+// The sun four degrees up, looked toward across a floor: the horizon's glow, the sky's
+// gradient above it and the long shadows, which the air's multiple scattering and ozone
+// colour most at a low sun.
+void buildSunset(Scenery& s) {
+    base(s);
+    s.scene.environment().sky.sunElevation = 4.0f;
+    place(
+        s,
+        s.cube,
+        material(s, "golden:sand", {0.5f, 0.45f, 0.38f}, 0.9f, 0.0f),
+        {0.0f, -0.5f, 0.0f},
+        {40.0f, 1.0f, 40.0f}
+    );
+    const MaterialHandle stone = material(s, "golden:stone", {0.6f, 0.6f, 0.62f}, 0.7f, 0.0f);
+    const MaterialHandle steel = material(s, "golden:steel", {0.9f, 0.9f, 0.9f}, 0.2f, 1.0f);
+    place(s, s.cube, stone, {-2.5f, 1.0f, 0.0f}, {1.0f, 2.0f, 1.0f});
+    place(s, s.sphere, steel, {1.5f, 0.8f, 1.0f}, glm::vec3(1.6f));
+
+    const glm::vec3 sun    = s.scene.environment().sunDirection();
+    const glm::vec3 toward = glm::normalize(glm::vec3(sun.x, 0.0f, sun.z));
+    const glm::vec3 eye    = glm::vec3(0.0f, 1.5f, 0.0f) - toward * 7.0f;
+    sunAndCamera(s, eye, eye + toward * 10.0f + glm::vec3(0.0f, 1.2f, 0.0f));
+}
+
+// A closed room under the sky and sun, an irradiance volume filling it, with a doorway in its
+// +Z wall and a window in its +X wall, or neither. Inside 8 x 4 x 8 metres, walls 0.4 thick,
+// standing on the open ground.
+void buildRoomShell(Scenery& s, bool openings) {
+    base(s);
+    s.scene.environment().sky.sunElevation = 35.0f;
+    s.scene.environment().sky.sunAzimuth   = 45.0f;
+    const MaterialHandle ground  = material(s, "golden:ground", {0.45f, 0.42f, 0.38f}, 0.9f, 0.0f);
+    const MaterialHandle plaster = material(s, "golden:plaster", {0.7f, 0.68f, 0.64f}, 0.9f, 0.0f);
+    place(s, s.cube, ground, {0.0f, -0.5f, 0.0f}, {40.0f, 1.0f, 40.0f});
+    place(s, s.cube, plaster, {0.0f, 4.2f, 0.0f}, {8.8f, 0.4f, 8.8f});
+    place(s, s.cube, plaster, {-4.2f, 2.0f, 0.0f}, {0.4f, 4.0f, 8.8f});
+    place(s, s.cube, plaster, {0.0f, 2.0f, -4.2f}, {8.0f, 4.0f, 0.4f});
+    if (openings) {
+        // A doorway 1.6 wide and 2.6 high, and a window 2.4 wide and 1.4 high over a 1 m sill.
+        place(s, s.cube, plaster, {-2.4f, 2.0f, 4.2f}, {3.2f, 4.0f, 0.4f});
+        place(s, s.cube, plaster, {2.4f, 2.0f, 4.2f}, {3.2f, 4.0f, 0.4f});
+        place(s, s.cube, plaster, {0.0f, 3.3f, 4.2f}, {1.6f, 1.4f, 0.4f});
+        place(s, s.cube, plaster, {4.2f, 2.0f, -2.8f}, {0.4f, 4.0f, 3.2f});
+        place(s, s.cube, plaster, {4.2f, 2.0f, 2.8f}, {0.4f, 4.0f, 3.2f});
+        place(s, s.cube, plaster, {4.2f, 0.5f, 0.0f}, {0.4f, 1.0f, 2.4f});
+        place(s, s.cube, plaster, {4.2f, 3.2f, 0.0f}, {0.4f, 1.6f, 2.4f});
+    } else {
+        place(s, s.cube, plaster, {0.0f, 2.0f, 4.2f}, {8.0f, 4.0f, 0.4f});
+        place(s, s.cube, plaster, {4.2f, 2.0f, 0.0f}, {0.4f, 4.0f, 8.8f});
+    }
+
+    // To the middle of the walls, and fading in over less than that, so no inner face, corners
+    // included, reads the sky through the fade.
+    const EntityId volume = s.scene.createEntity();
+    Transform box;
+    box.position = {0.0f, 2.0f, 0.0f};
+    s.scene.add(volume, std::move(box));
+    IrradianceVolume grid;
+    grid.halfExtents   = {4.2f, 2.2f, 4.2f};
+    grid.resolutionX   = 8;
+    grid.resolutionY   = 4;
+    grid.resolutionZ   = 8;
+    grid.blendDistance = 0.1f;
+    s.scene.add(volume, std::move(grid));
+}
+
+// A chrome ball in the room with its openings, in a reflection probe filling the room.
+void buildRoomBall(Scenery& s) {
+    buildRoomShell(s, true);
+    place(
+        s,
+        s.sphere,
+        material(s, "golden:chrome", {0.95f, 0.95f, 0.95f}, 0.15f, 1.0f),
+        {0.4f, 0.75f, 0.2f},
+        glm::vec3(1.5f)
+    );
+
+    const EntityId probe = s.scene.createEntity();
+    Transform at;
+    at.position = {0.0f, 2.0f, 0.0f};
+    s.scene.add(probe, std::move(at));
+    ReflectionProbe capture;
+    capture.halfExtents = {4.0f, 2.0f, 4.0f};
+    capture.resolution  = 64;
+    s.scene.add(probe, std::move(capture));
+}
+
+// The ball's room seen from beside the doorway toward the far corner: the walls, and the walls
+// in the ball, are lit by the sunlit floor and what the openings let in, the far corners darkest,
+// not by the sky through the walls.
+void buildRoom(Scenery& s) {
+    buildRoomBall(s);
+    sunAndCamera(s, {3.0f, 1.7f, 3.0f}, {-2.5f, 1.2f, -3.0f});
+}
+
+// Blocks 200 m, 1 km and 3 km off under the default sky, the ground running out to the horizon:
+// the air between fades each further into the sky behind it.
+void buildAerial(Scenery& s) {
+    base(s);
+    place(
+        s,
+        s.cube,
+        material(s, "golden:meadow", {0.25f, 0.3f, 0.18f}, 0.9f, 0.0f),
+        {0.0f, -0.5f, -9000.0f},
+        {20000.0f, 1.0f, 20000.0f}
+    );
+    const MaterialHandle slate = material(s, "golden:slate", {0.08f, 0.08f, 0.09f}, 0.8f, 0.0f);
+    place(s, s.cube, slate, {25.0f, 20.0f, -200.0f}, {40.0f, 40.0f, 40.0f});
+    place(s, s.cube, slate, {-250.0f, 75.0f, -1000.0f}, {150.0f, 150.0f, 150.0f});
+    place(s, s.cube, slate, {1500.0f, 200.0f, -3000.0f}, {400.0f, 400.0f, 400.0f});
+    sunAndCamera(s, {0.0f, 2.0f, 0.0f}, {0.0f, 12.0f, -100.0f});
+    s.scene.forEach<Camera>([](EntityId, Camera& lens) { lens.zFar = 5000.0f; });
+    s.settings.cullMaxDistance = 0.0f;
+}
+
 // The frame, rendered and read back as RenderSystem does for a screenshot: top row
 // first, as a PNG stores. @p ui is the overlay UISystem would have published, if any,
 // and @p splash the logo SplashSystem would have.
@@ -574,10 +846,11 @@ void restoreContextDefaults() {
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
-// The share of pixels where two frames differ by more than a driver update would.
-float differingShare(const std::vector<unsigned char>& frame, const unsigned char* other) {
+// The share of pixels where two frames differ by more than a driver update would, over their
+// top @p rows.
+float differingShare(const std::vector<unsigned char>& frame, const unsigned char* other, int rows = HEIGHT) {
     size_t differing = 0;
-    for (size_t px = 0; px < static_cast<size_t>(WIDTH) * HEIGHT; ++px) {
+    for (size_t px = 0; px < static_cast<size_t>(WIDTH) * rows; ++px) {
         for (int c = 0; c < 3; ++c) {
             if (std::abs(int(frame[px * 3 + c]) - int(other[px * 3 + c])) > CHANNEL_TOLERANCE) {
                 ++differing;
@@ -585,7 +858,7 @@ float differingShare(const std::vector<unsigned char>& frame, const unsigned cha
             }
         }
     }
-    return static_cast<float>(differing) / static_cast<float>(WIDTH * HEIGHT);
+    return static_cast<float>(differing) / static_cast<float>(WIDTH * rows);
 }
 
 void compare(const char* name, void (*build)(Scenery&), const std::string& renderer, int& failures) {
@@ -602,7 +875,7 @@ void compare(const char* name, void (*build)(Scenery&), const std::string& rende
 
     Scenery scenery;
     build(scenery);
-    const std::vector<unsigned char> frame = render(scenery, backend);
+    const std::vector<unsigned char> frame = render(scenery, backend, nullptr, scenery.settings);
 
     const std::filesystem::path png = GOLDEN_DIR / (std::string(name) + ".png");
     const std::filesystem::path gpu = GOLDEN_DIR / (std::string(name) + ".gpu");
@@ -748,6 +1021,69 @@ void testABackendDropsWhatTheSceneNoLongerAsksFor(int& failures) {
         },
         failures
     );
+
+    // A probe's capture is lit by the irradiance volume, so a volume baked again - here under a
+    // lower sun - is captured again with it, though the probe itself did not change.
+    sameAsAFreshBackend(
+        "a probe is captured again with a volume baked again",
+        [](Scenery& s) {
+            buildRoomBall(s);
+            sunAndCamera(s, {1.6f, 1.3f, 1.5f}, {0.4f, 0.75f, 0.2f});
+        },
+        [](Scenery&) {},
+        [](Scenery& s) {
+            s.scene.environment().sky.sunElevation = 15.0f;
+            s.scene.forEach<IrradianceVolume>([](EntityId, IrradianceVolume& volume) {
+                ++volume.bakeVersion;
+            });
+        },
+        failures
+    );
+}
+
+// A sun that drifts a few degrees is followed a step a frame, and once the bake is complete the
+// frame is the one a fresh backend draws, which bakes that sky at once. The sky drawn is current
+// from the first frame: it comes from the sky-view table, not the bake. Low, where the sky
+// changes fastest with the sun.
+void testADriftingSunIsFollowedOverFrames(int& failures) {
+    std::printf("A backend whose sun drifts:\n");
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend followed;
+    if (!followed.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery drifting;
+    buildSunset(drifting);
+    drifting.scene.environment().sky.sunElevation = 8.0f;
+    render(drifting, followed);
+    drifting.scene.environment().sky.sunElevation = 4.0f;
+    const std::vector<unsigned char> early = render(drifting, followed);
+    std::vector<unsigned char> seen = early;
+    for (int frames = FRAMES; frames <= GLIBLBaker::slicedSteps(); frames += FRAMES) {
+        seen = render(drifting, followed);
+    }
+
+    restoreContextDefaults();
+    GLBackend fresh;
+    if (!fresh.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery set;
+    buildSunset(set);
+    const std::vector<unsigned char> want = render(set, fresh);
+
+    // The top rows are sky.
+    const float sky = differingShare(early, want.data(), HEIGHT / 4);
+    std::printf("      %.2f%% of the sky's pixels differ mid-bake\n", sky * 100.0f);
+    expect("the sky is the new sun's while the bake runs", sky <= PIXEL_TOLERANCE, failures);
+
+    const float share = differingShare(seen, want.data());
+    std::printf("      %.2f%% of pixels differ\n", share * 100.0f);
+    expect("the frame after its bake is a fresh backend's", share <= PIXEL_TOLERANCE, failures);
 }
 
 // A frame with no camera gathers no probes; the scene has not lost them. A noon capture
@@ -861,6 +1197,40 @@ void testAnOpenFloorIsNotOccluded(int& failures) {
     const float mean = static_cast<float>(sum) / static_cast<float>(count);
     std::printf("      mean %.1f, darkest %d\n", mean, least);
     expect("an open floor is not darkened", mean >= 240.0f, failures);
+}
+
+// The mean of every channel of a frame, 0..255.
+float meanValue(const std::vector<unsigned char>& frame) {
+    long sum = 0;
+    for (const unsigned char value : frame) sum += value;
+    return static_cast<float>(sum) / static_cast<float>(frame.size());
+}
+
+// A room with no opening, under a bright sky and sun, stores no light in its volume: its walls
+// are lit only by what reaches them, and nothing does. Lit by the sky as the frame lights
+// open ground, the walls would light every probe inside through solid plaster.
+void testASealedRoomHoldsNoSkyLight(int& failures) {
+    std::printf("An irradiance volume inside a room, its indirect light alone:\n");
+
+    RenderSettings settings;
+    settings.renderMode = RenderMode::GiOnly;
+    float means[2] = {};
+    for (const bool openings : {false, true}) {
+        restoreContextDefaults();
+        WindowManager window;
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        buildRoomShell(s, openings);
+        sunAndCamera(s, {3.0f, 1.7f, 3.0f}, {-2.5f, 1.2f, -3.0f});
+        means[openings ? 1 : 0] = meanValue(render(s, backend, nullptr, settings));
+    }
+    std::printf("      mean %.2f sealed, %.2f with a doorway and a window\n", means[0], means[1]);
+    expect("a sealed room is dark inside", means[0] < 1.0f, failures);
+    expect("  and one with openings keeps the light they let in", means[1] > 8.0f, failures);
 }
 
 // The overlay drawn by the real pass over a real frame, asserted per pixel, not against
@@ -981,12 +1351,21 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     compare("nosky",       buildNoSky,       gl.renderer(), failures);
     compare("spot",        buildSpot,        gl.renderer(), failures);
     compare("penumbra",    buildPenumbra,    gl.renderer(), failures);
+    compare("point",       buildPoint,       gl.renderer(), failures);
+    compare("mirror",      buildMirror,      gl.renderer(), failures);
+    compare("twosided",    buildTwoSided,    gl.renderer(), failures);
+    compare("coat",        buildCoat,        gl.renderer(), failures);
+    compare("sunset",      buildSunset,      gl.renderer(), failures);
+    compare("room",        buildRoom,        gl.renderer(), failures);
+    compare("aerial",      buildAerial,      gl.renderer(), failures);
 
     testTheUIOverlayLandsOnItsPixels(failures);
     testABackendDropsWhatTheSceneNoLongerAsksFor(failures);
     testAFrameWithNoCameraKeepsTheProbesBaked(failures);
+    testADriftingSunIsFollowedOverFrames(failures);
     testASplashFadesLinearlyOnTheGlass(failures);
     testAnOpenFloorIsNotOccluded(failures);
+    testASealedRoomHoldsNoSkyLight(failures);
 }
 
 } // namespace

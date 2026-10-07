@@ -7,6 +7,7 @@
 
 #include "convention/gl_bindings.h"
 #include "offline/gl_probe_baker.h"
+#include "storage/gl_irradiance_volume.h"
 #include "storage/gl_probe_array.h"
 #include "system/render/render_view.h"
 
@@ -60,8 +61,8 @@ void GLProbeManager::assignLayers(const RenderView& view) {
 int GLProbeManager::bind(const RenderView& view) {
     if (!m_array) return 0;
 
-    // Baked probes in scene order, each at its entity's layer. MAX_PROBES layers, the same bound
-    // as the shader's blend loop.
+    // Baked probes, each at its entity's layer, smallest box first (the shader's blend order),
+    // whatever their scene order. MAX_PROBES layers, the same bound as the shader's blend loop.
     assignLayers(view);
     m_active.clear();
     for (size_t i = 0; i < view.probes.size(); ++i) {
@@ -69,6 +70,14 @@ int GLProbeManager::bind(const RenderView& view) {
         if (layer < 0 || !m_state[static_cast<size_t>(layer)].baked) continue;
         m_active.push_back(static_cast<uint32_t>(i));
     }
+    const auto volume = [&](uint32_t i) {
+        const glm::vec3 h = view.probes[i].halfExtents;
+        return h.x * h.y * h.z;
+    };
+    std::sort(m_active.begin(), m_active.end(), [&](uint32_t a, uint32_t b) {
+        if (volume(a) != volume(b)) return volume(a) < volume(b);
+        return view.probes[a].entitySlot < view.probes[b].entitySlot;
+    });
 
     // params.z carries the cube-array layer. The upload is skipped when the block matches last
     // frame's, so a still scene costs no GPU write.
@@ -97,7 +106,8 @@ void GLProbeManager::update(
     const RenderView& view,
     GLView& glView,
     const ResourceManager& resources,
-    const GLIBL& ibl
+    const GLIBL& ibl,
+    const GLIrradianceVolume* volume
 ) {
     if (!m_baker || !m_array) return;
 
@@ -121,6 +131,7 @@ void GLProbeManager::update(
 
     // Throttled so several probes changing at once don't hitch the frame.
     constexpr int MAX_REBAKES_PER_FRAME = 1;
+    const uint32_t lighting = volume ? volume->bakeId() : 0;
     int rebakes = 0;
     for (size_t i = 0; i < n && rebakes < MAX_REBAKES_PER_FRAME; ++i) {
         const int layer = m_layerOf[i];
@@ -130,12 +141,14 @@ void GLProbeManager::update(
         const bool moved   = glm::distance(st.position, pd.position) > 1e-3f;
         const bool resized = st.box != pd.halfExtents;
         const bool forced  = st.version != pd.bakeVersion;
-        if (st.baked && !moved && !resized && !forced) continue;
-        m_baker->bake(gl, *m_array, layer, pd, view, glView, resources, ibl);
-        st.baked    = true;
-        st.position = pd.position;
-        st.box      = pd.halfExtents;
-        st.version  = pd.bakeVersion;
+        const bool relit   = st.volumeBake != lighting;
+        if (st.baked && !moved && !resized && !forced && !relit) continue;
+        m_baker->bake(gl, *m_array, layer, pd, view, glView, resources, ibl, volume);
+        st.baked      = true;
+        st.position   = pd.position;
+        st.box        = pd.halfExtents;
+        st.version    = pd.bakeVersion;
+        st.volumeBake = lighting;
         ++rebakes;
     }
 }

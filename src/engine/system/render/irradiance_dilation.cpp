@@ -2,13 +2,6 @@
 
 namespace Vkm::Engine {
 
-namespace {
-
-// Verdicts are written as 1 or 0; a half survives rounding in the transfer.
-constexpr float TRUSTED = 0.5f;
-
-} // namespace
-
 uint32_t dilateProbeGrid(ProbeGridSH& sh, uint32_t x, uint32_t y, uint32_t z) {
     const size_t cells = static_cast<size_t>(x) * y * z;
     if (cells == 0) return 0;
@@ -19,7 +12,7 @@ uint32_t dilateProbeGrid(ProbeGridSH& sh, uint32_t x, uint32_t y, uint32_t z) {
     std::vector<bool> trusted(cells, false);
     uint32_t          refused = 0;
     for (size_t i = 0; i < cells; ++i) {
-        trusted[i] = sh[0][i].w >= TRUSTED;
+        trusted[i] = probeTrusted(sh[0][i]);
         if (!trusted[i]) ++refused;
     }
     // Nothing to repair, or nothing to repair it from.

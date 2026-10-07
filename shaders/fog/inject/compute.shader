@@ -35,6 +35,11 @@ float phaseHG(float cosT, float g) {
     return (1.0 - g2) / (4.0 * PI * pow(1.0 + g2 - 2.0 * g * cosT, 1.5));
 }
 
+// The light's phase: the authored Henyey-Greenstein lobe with a share scattered back, so
+// sunlit fog keeps its light with the sun behind the eye.
+const float BACK_G     = -0.3;
+const float BACK_SHARE = 0.2;
+
 void main() {
     ivec3 froxel = ivec3(gl_GlobalInvocationID);
     if (froxel.x >= u_froxelDims.x || froxel.y >= u_froxelDims.y || froxel.z >= u_froxelDims.z) return;
@@ -68,21 +73,33 @@ void main() {
         vec3  L;
         float atten = light.color.w * punctualAttenuation(light, falloff, worldP, L);
         if (atten <= 0.0) continue;
-        // spot.w is a directional's cascade base, -1 (no cascades) scatters unshadowed.
-        // N = 0 skips the normal-offset bias: a volume has no surface to offset.
-        if (type == LIGHT_DIRECTIONAL && int(light.spot.w) >= 0) {
-            atten *= sampleCSM(worldP, vec3(0.0), 1.0);
+        // spot.w is a directional's cascade base or a light's shadow slot; -1 scatters unshadowed.
+        // N = 0 skips the normal-offset bias: a volume has no surface to offset. Every shadowed
+        // light is shadowed here, or a lamp scatters through the wall in front of it.
+        int sslot = int(light.spot.w);
+        if (sslot >= 0) {
+            if      (type == LIGHT_DIRECTIONAL) atten *= sampleCSM(worldP, vec3(0.0), 1.0);
+            else if (type == LIGHT_SPOT)        atten *= sample2DSlot(sslot, worldP, vec3(0.0), 1.0);
+            else if (type == LIGHT_POINT)       atten *= sampleCubeHard(sslot, worldP);
             if (atten <= 0.0) continue;
         }
         // Phase angle between the photon's travel (-L) and the scatter toward the eye (V), so
         // forward scattering peaks looking into the light.
-        inScatter += light.color.xyz * atten * phaseHG(-dot(V, L), u_anisotropy);
+        float cosT = -dot(V, L);
+        float phase = mix(phaseHG(cosT, u_anisotropy), phaseHG(cosT, BACK_G), BACK_SHARE);
+        inScatter += light.color.xyz * atten * phase;
     }
 
-    // The environment, scattered once: forward scattering brings most of it from beyond the
-    // froxel, so the lobe facing away from the eye stands in for the phase-weighted sphere.
-    inScatter += environmentIrradiance(worldP, -V);
+    // The environment, scattered once: the phase's first moment over the cosine lobe's (2/3)
+    // is how far the lobe facing away from the eye stands in for the phase-weighted sphere,
+    // toward the sphere's mean as the phase nears isotropic.
+    vec3  up      = environmentIrradiance(worldP, vec3(0.0, 1.0, 0.0));
+    vec3  down    = environmentIrradiance(worldP, vec3(0.0, -1.0, 0.0));
+    vec3  around  = 0.5 * (up + down);
+    float forward = clamp(1.5 * mix(u_anisotropy, BACK_G, BACK_SHARE), 0.0, 1.0);
+    inScatter += mix(around, environmentIrradiance(worldP, -V), forward);
 
-    vec3 scattering = u_albedo * density * inScatter;
+    // Held to a half float's range: one infinite froxel would poison the column behind it.
+    vec3 scattering = min(u_albedo * density * inScatter, vec3(HALF_MAX));
     imageStore(u_scatter, froxel, vec4(scattering, density));
 }

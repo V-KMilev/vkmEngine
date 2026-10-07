@@ -216,7 +216,7 @@ class MaterialEditorPanel {
         float             m_distance   = 3.0f;
         int               m_shape      = 0;     ///< Into the preview shape table
         PreviewBackground m_background = PreviewBackground::Dark;  ///< Preview backdrop.
-        float             m_lightYaw   = 0.0f;  ///< Studio rig yaw, degrees
+        float             m_lightYaw   = 0.0f;  ///< Preview light yaw, degrees
 
         // One per modal, so each cache survives the other's open/close.
         AssetPicker m_pbrFolderPicker;
