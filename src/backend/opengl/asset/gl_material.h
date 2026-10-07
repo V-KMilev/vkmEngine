@@ -106,6 +106,9 @@ class GLMaterial {
 
         MaterialType getType() const { return m_type; }
 
+        /// Whether both faces draw: the passes leave culling off for its runs.
+        bool doubleSided() const { return m_doubleSided; }
+
         const std::vector<TextureBinding>& getTextureBindings() const { return m_textureBindings; }
 
         /**
@@ -119,6 +122,7 @@ class GLMaterial {
         std::unique_ptr<Vkm::GL::UniformBuffer> m_ubo;
         std::vector<TextureBinding>             m_textureBindings;
         MaterialType                            m_type = MaterialType::Opaque;
+        bool                                    m_doubleSided = false;
         uint64_t                                m_uploadId = 0;
 };
 

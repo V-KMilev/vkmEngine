@@ -186,7 +186,7 @@ void GLSceneCapture::prepareShadow(Vkm::GL::Context& gl, const RenderView& view,
             material->bind(GLBindings::UBOBindingPoints::MATERIAL);
             material->bindTextures(*m_glView);
         }
-        m_casterBatcher.draw(draw);
+        m_casterBatcher.draw(gl, draw);
     }
 
     // One "cascade" covering everything: the whole map, and a split no view
@@ -274,10 +274,12 @@ void GLSceneCapture::captureCube(
                 material->bind(GLBindings::UBOBindingPoints::MATERIAL);
                 material->bindTextures(*m_glView);
                 boundMaterial = material;
+                gl.setFaceCulling(!material->doubleSided());
             }
-            m_batcher.draw(draw);
+            m_batcher.draw(gl, draw);
         }
     }
+    gl.setFaceCulling(true);
 }
 
 void GLSceneCapture::captureBackfaceCube(
@@ -299,10 +301,18 @@ void GLSceneCapture::captureBackfaceCube(
         m_backface.bind();
         m_objects.bind();
 
-        // No material state: the answer is a property of the winding, and every
-        // draw reads the same two-line fragment stage. An alpha-masked material
-        // counts as solid here - a probe behind a leaf card reads as enclosed.
-        for (const InstanceDraw& draw : draws) m_batcher.draw(draw);
+        // The answer is a property of the winding, except on a double-sided material, whose
+        // back is a surface too. An alpha-masked material counts as solid here - a probe
+        // behind a leaf card reads as enclosed.
+        const GLMaterial* boundMaterial = nullptr;
+        for (const InstanceDraw& draw : draws) {
+            const GLMaterial* material = m_glView->getMaterial(draw.material);
+            if (material && material != boundMaterial) {
+                m_backface.setUniform1i("u_doubleSided", material->doubleSided() ? 1 : 0);
+                boundMaterial = material;
+            }
+            m_batcher.draw(gl, draw);
+        }
     }
 }
 

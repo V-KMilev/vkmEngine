@@ -219,7 +219,7 @@ uint32_t GLPreview::render(
     const std::vector<InstanceDraw>& draws = m_batcher.buildGrouped(m_object.visible, m_object, glView, 0);
     material->bind(GLBindings::UBOBindingPoints::MATERIAL);
     material->bindTextures(glView);
-    for (const InstanceDraw& draw : draws) m_batcher.draw(draw);
+    for (const InstanceDraw& draw : draws) m_batcher.draw(gl, draw);
 
     if (transparent) gl.setBlending(false);
 

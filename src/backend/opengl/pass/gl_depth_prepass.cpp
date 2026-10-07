@@ -7,6 +7,8 @@
 
 #include "gl_frame_context.h"
 #include "gl_target.h"
+#include "gl_view.h"
+#include "asset/gl_material.h"
 #include "frame/gl_object_buffer.h"
 #include "frame/gl_skin_palette.h"
 
@@ -31,6 +33,8 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
     ctx.objects.bind();
     if (ctx.skinPalette.count() > 0) ctx.skinPalette.bind();
 
+    // A double-sided material's back faces lay depth too, or the forward pass's LEQUAL would
+    // find nothing to draw them against.
     const Vkm::GL::Shader* boundProgram = nullptr;
     for (const InstanceDraw& draw : ctx.opaqueBatch.draws()) {
         Vkm::GL::Shader& program = draw.skinned ? m_skinnedShader : m_shader;
@@ -38,8 +42,11 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
             program.bind();
             boundProgram = &program;
         }
-        ctx.opaqueBatch.draw(draw);
+        const GLMaterial* material = ctx.resources.getMaterial(draw.material);
+        ctx.gl.setFaceCulling(!(material && material->doubleSided()));
+        ctx.opaqueBatch.draw(ctx.gl, draw);
     }
+    ctx.gl.setFaceCulling(true);
 }
 
 } // namespace Vkm::Engine

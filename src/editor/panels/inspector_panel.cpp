@@ -1326,6 +1326,19 @@ void InspectorPanel::drawLightSection(EditorContext& ec, EntityId id) {
                     sourceRadiusTooltip
                 );
             }
+        } else if (light.type == LightType::Spot || light.type == LightType::Point) {
+            const char* sourceRadiusTooltip =
+                "Radius of the emitter: how wide its highlight is and how soft its "
+                "shadows are, softest far from what casts them";
+            changed |= propDrag(
+                "Source Radius",
+                &light.sourceRadius,
+                0.005f,
+                0.0f,
+                2.0f,
+                "%.3f m",
+                sourceRadiusTooltip
+            );
         }
         changed |= propCheckbox("Enabled", &light.enabled);
 

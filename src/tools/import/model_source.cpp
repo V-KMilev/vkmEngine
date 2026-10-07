@@ -377,6 +377,8 @@ class GltfReader {
             }
             if (material->has_anisotropy) v.anisotropy = material->anisotropy.anisotropy_strength;
 
+            v.doubleSided = material->double_sided != 0;
+
             // Transmission glass keeps alpha at 1, so transmission classifies it Transparent; the
             // spec ignores an OPAQUE material's alpha.
             switch (material->alpha_mode) {
