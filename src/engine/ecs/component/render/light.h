@@ -49,27 +49,30 @@ struct Light {
     bool castShadows = true;
 
     /**
-     * @brief Depth comparison bias, grown at grazing light.
+     * @brief How far the depth compare slides toward the light, in shadow texels (0..4).
      *
-     * Directional: a cascade depth, scaled with slope. Spot/point: a fraction of
-     * the range slid toward the light - twice this at grazing, two fifths head-on.
+     * In texels of the light's own map at the receiver, so one value holds for every
+     * light type, range and distance; grown where the light grazes (biasSlide in
+     * shaders/shadows.glsl).
      */
-    float shadowBias = 0.005f;
+    float shadowBias = 0.5f;
 
     /**
-     * @brief Directional and spot: normal offset before the depth compare, in shadow texels (0..4).
+     * @brief How far the point moves off the surface before the compare, in shadow texels (0..4).
      *
-     * Tripled at grazing light. Point lights take none.
+     * Along the surface's normal, by this times the sine of the light's angle to it:
+     * nothing head-on, all of it where the light grazes.
      */
-    float shadowNormalBias = 1.5f;
+    float shadowNormalBias = 1.0f;
     float shadowDistance   = 100.0f;  ///< Directional only: world distance the cascades cover.
 
     /**
      * @brief How large the light's source is, which is how soft its shadows are.
      *
      * Directional: angular radius in radians (the sun is about 0.0047), also
-     * sizing its highlight. Spot: emitter radius in metres. 0 is hard. Point
-     * shadows ignore it; the sky's drawn sun is sized by SkySettings.
+     * sizing its highlight. Spot and point: emitter radius in metres, sizing
+     * their highlight too (a sphere light). 0 is hard. The procedural sky draws
+     * the key light's sun at this size.
      */
     float sourceRadius = glm::radians(0.5f);
 

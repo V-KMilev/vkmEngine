@@ -1,8 +1,9 @@
 /*
- * Depth reconstruction and exponential slice mapping, taking projection inputs
- * as parameters so graphics and compute stages run identical code. The slice
- * pair is the one definition of Forward+/froxel slicing: slicing any other way
- * disagrees with the cluster cull and lights pop at slice borders.
+ * Depth reconstruction and the view's slice mappings, taking projection inputs
+ * as parameters so graphics and compute stages run identical code. The
+ * exponential pair is the one definition of Forward+/froxel slicing: slicing any
+ * other way disagrees with the cluster cull and lights pop at slice borders. The
+ * squared pair slices the aerial-perspective volume.
  */
 
 // Window depth (0..1) -> positive linear view depth through the inverse
@@ -41,4 +42,17 @@ float sliceToViewDepth(float slice, float zNear, float zFar, float numSlices) {
 // near plane. Callers floor/clamp to index.
 float viewDepthToSlice(float viewDepth, float zNear, float zFar, float numSlices) {
     return log(max(viewDepth, zNear) / zNear) / log(zFar / zNear) * numSlices;
+}
+
+// Aerial-perspective slice coordinate (slice + 0.5 for a centre) -> positive linear view depth.
+// Squared over @p reach, so the near slices are metres deep and the far ones kilometres
+// (Hillaire 2020).
+float aerialSliceToViewDepth(float slice, float numSlices, float reach) {
+    float w = slice / numSlices;
+    return reach * w * w;
+}
+
+// Positive linear view depth -> continuous aerial-perspective slice coordinate.
+float viewDepthToAerialSlice(float viewDepth, float numSlices, float reach) {
+    return sqrt(max(viewDepth, 0.0) / reach) * numSlices;
 }

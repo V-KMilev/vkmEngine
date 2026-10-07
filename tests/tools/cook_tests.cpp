@@ -622,6 +622,64 @@ void testAnSrgbTextureIsFilteredInLinearLight() {
     check("  to half the number", linearMean >= 120 && linearMean <= 135);
 }
 
+// A glossy metallic-roughness map paired with a bumpy normal map: its levels below the top keep
+// the roughness the bumps they average away would have spread the highlight to, so a surface at
+// range does not shine as a mirror; the top level, whose texels each see one normal, keeps its
+// own; and unpaired, nothing moves.
+void testARoughnessMapTakesItsNormalMapsLostDetail() {
+    std::printf("A roughness map paired with its normal map:\n");
+
+    constexpr uint32_t SIZE  = 16;
+    constexpr uint8_t  GLOSS = 26;  // roughness 0.1
+    TextureAsset roughness = aDecodedTexture(SIZE, SIZE, TextureInternalFormat::RGBA8);
+    roughness.params.generateMipmaps = true;
+    roughness.params.filterOverride  = TextureFilterOverride::Nearest;  // stored as bytes, readable
+    for (size_t i = 0; i < roughness.pixelData.size(); i += 4) roughness.pixelData[i + 1] = GLOSS;
+
+    // Alternate texels tilted 37 degrees either way along x.
+    TextureAsset normal = aDecodedTexture(SIZE, SIZE, TextureInternalFormat::RG8);
+    for (uint32_t y = 0; y < SIZE; ++y) {
+        for (uint32_t x = 0; x < SIZE; ++x) {
+            const size_t i = (static_cast<size_t>(y) * SIZE + x) * 2;
+            normal.pixelData[i + 0] = (x % 2 == 0) ? 204 : 51;
+            normal.pixelData[i + 1] = 128;
+        }
+    }
+
+    // A level's mean G.
+    const auto meanGreen = [](const TextureAsset& baked, uint32_t level) {
+        size_t offset = 0;
+        for (uint32_t l = 0; l < level; ++l) {
+            offset += static_cast<size_t>(textureLevelBytes(baked.params, l));
+        }
+        const size_t bytes = static_cast<size_t>(textureLevelBytes(baked.params, level));
+        double sum = 0.0;
+        for (size_t i = offset; i < offset + bytes; i += 4) sum += baked.pixelData[i + 1];
+        return sum / static_cast<double>(bytes / 4);
+    };
+
+    TextureAsset plain;
+    TextureAsset folded;
+    check("it bakes unpaired", AssetCooker::bakeTexture(roughness, plain));
+    check("  and paired", AssetCooker::bakeTexture(roughness, folded, &normal));
+    std::printf(
+        "      level 0 %.1f -> %.1f, level 1 %.1f -> %.1f\n",
+        meanGreen(plain, 0),
+        meanGreen(folded, 0),
+        meanGreen(plain, 1),
+        meanGreen(folded, 1)
+    );
+    check("its top level keeps its own roughness", std::abs(meanGreen(folded, 0) - GLOSS) < 1.0);
+    check("  the next is rougher by what its texels averaged", meanGreen(folded, 1) > 2.0 * GLOSS);
+    check("unpaired, the next keeps the gloss", std::abs(meanGreen(plain, 1) - GLOSS) < 1.0);
+
+    TextureAsset flat = aDecodedTexture(SIZE, SIZE, TextureInternalFormat::RG8);
+    std::fill(flat.pixelData.begin(), flat.pixelData.end(), uint8_t{128});
+    TextureAsset smooth;
+    check("paired with a flat map", AssetCooker::bakeTexture(roughness, smooth, &flat));
+    check("  the next keeps the gloss", std::abs(meanGreen(smooth, 1) - GLOSS) < 1.0);
+}
+
 // Averaging two directions gives a vector shorter than one; stored as is, its x and y
 // rebuild too large a z and the level tilts flat. Each level is renormalised first.
 void testANormalMapsLevelsAreDirections() {
@@ -2138,6 +2196,7 @@ void runCookTests() {
     testAnSrgbTextureIsFilteredInLinearLight();
     testAChainIsRoundedOncePerLevel();
     testANormalMapsLevelsAreDirections();
+    testARoughnessMapTakesItsNormalMapsLostDetail();
     testACutOutKeepsItsCoverageAtRange();
     testTheCookWritesTheBakedTexture();
     testASaveRecordsNowAndBakesInTheBackground();

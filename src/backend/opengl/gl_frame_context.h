@@ -21,12 +21,14 @@ class GLTarget;
 class GLShadowAtlas;
 class GLShadowData;
 class GLIBL;
+class GLAtmosphere;
 class GLBloom;
 class GLClusterGrid;
 class GLFogVolume;
 class GLIrradianceVolume;
 class GLSkinPalette;
 class GLObjectBuffer;
+struct SkyParams;
 
 /**
  * @brief Everything a GLPass needs for one frame.
@@ -46,6 +48,7 @@ struct GLFrameContext {
     GLShadowAtlas&     shadowAtlas;      ///< The shadow depth atlas.
     const GLShadowData& shadowData;      ///< This frame's shadow plan (matrices + slots).
     const GLIBL&       ibl;              ///< Baked IBL product set (see GLPass::bindAmbient).
+    GLAtmosphere&      atmosphere;       ///< The procedural sky's tables (see GLAtmospherePass).
     GLBloom&           bloom;            ///< Bloom mip chain.
     GLTarget&          ao;               ///< GTAO factor + octahedral bent normal.
     GLClusterGrid&     clusters;         ///< Forward+ per-cluster light lists.
@@ -113,6 +116,13 @@ struct GLFrameContext {
      */
     glm::vec3 sunDir{0.0f, 1.0f, 0.0f};
 
+    /**
+     * @brief The procedural sky this frame shows, lit by its sun.
+     *
+     * Null under an HDR sky or none, which have no atmosphere.
+     */
+    const SkyParams* sky = nullptr;
+
     // The fields below are pass products: set by an earlier pass, read by later ones.
 
     /**
@@ -136,6 +146,20 @@ struct GLFrameContext {
      * conditions and the fog compute's drift apart.
      */
     bool fogReady = false;
+
+    /**
+     * @brief Set by the atmosphere pass when it computes the sky-view table.
+     *
+     * The skybox then draws the procedural sky from it rather than from the env cube.
+     */
+    bool skyViewReady = false;
+
+    /**
+     * @brief Set by the atmosphere pass when it computes the aerial-perspective volume.
+     *
+     * GLPass::bindFog binds the volume only when set, as it does the fog's.
+     */
+    bool aerialPerspectiveReady = false;
 };
 
 } // namespace Vkm::Engine

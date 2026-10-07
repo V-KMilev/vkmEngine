@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -13,7 +14,9 @@
 #include "frame/gl_lights.h"
 #include "frame/gl_instance_batcher.h"
 #include "frame/gl_object_buffer.h"
+#include "system/render/data/light_data.h"
 #include "system/render/data/render_objects.h"
+#include "system/render/render_settings.h"
 
 namespace Vkm::GL {
     class Context;
@@ -31,13 +34,26 @@ class ResourceManager;
 struct PreviewRequest;
 
 /**
+ * @brief What a preview borrows from the scene, so a material looks as it will in it.
+ *
+ * Before any frame, and in a scene with no directional light, a preview takes the studio rig.
+ */
+struct PreviewScene {
+    std::optional<LightData> sun;                                ///< The key light, shadowless.
+    float                    skyIntensity = 1.0f;                ///< Environment's sky.intensity.
+    Tonemap                  tonemap      = RenderSettings{}.tonemap;
+    float                    exposure     = RenderSettings{}.exposure;  ///< In stops.
+};
+
+/**
  * @brief Renders editor material/mesh previews offscreen.
  *
- * A request is one (mesh, material) pair under a three-light studio rig and the global IBL,
- * drawn from an orbit camera into a shared HDR scratch, then tonemapped into a per-key LDR
- * texture. It rebinds the camera UBO and lights SSBO, so it must run outside the frame's passes.
- * The geometry and sky programs are the backend's, borrowed; the tonemap program and scratch are
- * built on the first request, so a host that never previews pays nothing.
+ * A request is one (mesh, material) pair under the scene's key light (the studio rig where it
+ * has none), its sky and its grade, drawn from an orbit camera into a shared HDR scratch, then
+ * tonemapped into a per-key LDR texture. It rebinds the camera UBO and lights SSBO, so it must
+ * run outside the frame's passes. The geometry and sky programs are the backend's, borrowed; the
+ * tonemap program and scratch are built on the first request, so a host that never previews
+ * pays nothing.
  */
 class GLPreview {
     public:
@@ -61,7 +77,8 @@ class GLPreview {
          *
          * @param gl        Live GL context the preview draws through.
          * @param glView    GPU mirror the mesh and material resolve against.
-         * @param ibl       The environment the studio is lit by.
+         * @param ibl       The environment the preview is lit by.
+         * @param scene     The sun, sky strength, tonemap and exposure the scene renders by.
          * @param shadows   The atlas, bound for the shader's sake; a preview casts no shadow.
          * @param req       What to draw, at what size, under which key.
          * @param resources Resolves the request's handles.
@@ -71,6 +88,7 @@ class GLPreview {
             Vkm::GL::Context& gl,
             GLView& glView,
             const GLIBL& ibl,
+            const PreviewScene& scene,
             const GLShadowAtlas& shadows,
             const PreviewRequest& req,
             const ResourceManager& resources

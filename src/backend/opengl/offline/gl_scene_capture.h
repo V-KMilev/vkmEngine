@@ -14,6 +14,7 @@
 #include "frame/gl_lights.h"
 #include "frame/gl_shadow_data.h"
 #include "frame/gl_instance_batcher.h"
+#include "system/render/data/irradiance_volume_data.h"
 
 namespace Vkm::GL {
     class Context;
@@ -25,6 +26,7 @@ namespace Vkm::GL {
 namespace Vkm::Engine {
 
 class GLIBL;
+class GLIrradianceVolume;
 class GLMesh;
 class GLObjectBuffer;
 class GLView;
@@ -34,11 +36,12 @@ struct RenderView;
 /**
  * @brief Offline capture of the opaque scene + skybox into the six faces of a cube.
  *
- * Full forward PBR and the global sky, lit by direct lights and the global IBL only: probes,
- * clusters and screen-space inputs off, which is also the recursion guard. The destination
- * arrives as a face-attach callback, as GLCubeConvolver takes its own. The key light casts
- * through a map of the capture's own, since the frame's atlas fits the camera and without one
- * the sun lights a room's floor through its roof; other lights capture unshadowed.
+ * Full forward PBR and the global sky, lit by direct lights, the global IBL and, where one is
+ * lent (setAmbientVolume), an irradiance volume: probes, clusters and screen-space inputs off,
+ * which is also the recursion guard. The destination arrives as a face-attach callback, as
+ * GLCubeConvolver takes its own. The key light casts through a map of the capture's own, since
+ * the frame's atlas fits the camera and without one the sun lights a room's floor through its
+ * roof; other lights capture unshadowed.
  *
  * begin() prepares what every face of every position shares, and captureCube() draws one cube
  * per call, so a probe grid batches the scene once; the caller owns the FBO and the state around
@@ -72,6 +75,7 @@ class GLSceneCapture {
          *
          * Takes the view's scene-wide objects, not the camera's, syncing their materials into
          * @p glView (GLView::sync skips most), and draws the key light's map fitted to @p region.
+         * The captured surfaces take their ambient from the sky until setAmbientVolume().
          *
          * @param gl        Live GL context the shadow map is drawn on.
          * @param view      Supplies the objects and the lights.
@@ -91,6 +95,20 @@ class GLSceneCapture {
             float faceSize,
             const Math::AABB& region
         );
+
+        /**
+         * @brief Light the captured surfaces inside @p box from @p volume rather than the sky.
+         *
+         * Their diffuse ambient is the volume's wherever it covers them, with no fade at the
+         * box's faces, so a wall on a face takes none of the sky, and their reflection of the sky
+         * is dimmed by it as the frame dims it (Lazarov). Outside the box they keep the sky's.
+         * Holds until the next begin().
+         *
+         * @param volume A grid other than the one being written, outliving the captures; null
+         *               for the sky alone.
+         * @param box    The world box @p volume fills.
+         */
+        void setAmbientVolume(const GLIrradianceVolume* volume, const IrradianceVolumeData& box);
 
         /**
          * @brief Draw the six faces of one cube centred on @p position.
@@ -133,10 +151,17 @@ class GLSceneCapture {
          * At the far plane, depth writes and culling off, no sun disc (it would blow out a
          * capture). Leaves depth as the geometry after it wants: LESS, writes on.
          *
-         * @param gl  Live context whose depth and cull state the backdrop sets.
-         * @param ibl The baked environment, found ready by the caller.
+         * @param gl         Live context whose depth and cull state the backdrop sets.
+         * @param ibl        The baked environment, found ready by the caller.
+         * @param projection The bound camera's projection, which the sky draws by.
+         * @param intensity  What the environment's radiance is scaled by.
          */
-        void drawSky(Vkm::GL::Context& gl, const GLIBL& ibl);
+        void drawSky(
+            Vkm::GL::Context& gl,
+            const GLIBL& ibl,
+            const glm::mat4& projection,
+            float intensity = 1.0f
+        );
 
         /**
          * @brief The offline rig, for a consumer that draws its own scene rather than a cube.
@@ -210,13 +235,17 @@ class GLSceneCapture {
         const GLView* m_glView   = nullptr;  ///< begin()'s scene, drawn by every captureCube().
         const GLIBL*  m_ibl      = nullptr;
         float         m_faceSize = 0.0f;     ///< begin()'s face resolution: every face camera's viewport.
+
+        const GLIrradianceVolume* m_volume = nullptr;  ///< The captured surfaces' ambient; null for the sky.
+        IrradianceVolumeData      m_volumeBox{};       ///< Where m_volume lies, as the captures read it.
 };
 
 /**
  * @brief Bind @p pbr and set the uniforms every offline draw shares.
  *
  * The per-frame inputs (AO, scene colour copy, clusters, probes, irradiance volume, fog) exist
- * for no offscreen draw, so each is off; u_probeCount = 0 also stops probe bakes recursing.
+ * for no offscreen draw, so each is off - the volume until GLSceneCapture::setAmbientVolume lends
+ * one; u_probeCount = 0 also stops probe bakes recursing.
  * u_iblIntensity is one, not the scene's: the shader scales probe and volume reads by it, so a
  * capture would carry it twice. Set, because unset is 0 and drops the indirect term. The render
  * size is the camera's (GLCamera::update).

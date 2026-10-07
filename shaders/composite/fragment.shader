@@ -52,15 +52,48 @@ vec3 tonemapReinhard(vec3 c) {
     return c / (c + vec3(1.0));
 }
 
-// Narkowicz's fit of the ACES film curve: more contrast than Reinhard, and
-// highlights roll off warm instead of toward white.
+// Hill's fit of the ACES RRT and ODT (MJP's BakingLab), the ACES of three.js, Godot and Bevy:
+// into the ACES working space, the curve, and back, with no pre-scale.
 vec3 tonemapACES(vec3 c) {
-    const float a = 2.51;
-    const float b = 0.03;
-    const float k = 2.43;
-    const float d = 0.59;
-    const float e = 0.14;
-    return clamp((c * (a * c + b)) / (c * (k * c + d) + e), 0.0, 1.0);
+    const mat3 IN = mat3(
+        0.59719, 0.07600, 0.02840,
+        0.35458, 0.90834, 0.13383,
+        0.04823, 0.01566, 0.83777
+    );
+    const mat3 OUT = mat3(
+        1.60475, -0.10208, -0.00327,
+        -0.53108, 1.10813, -0.07276,
+        -0.07367, -0.00605, 1.07602
+    );
+    vec3 v = IN * c;
+    v = (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081);
+    return clamp(OUT * v, 0.0, 1.0);
+}
+
+// AgX (Sobotka), Wrensch's minimal fit: into a wider gamut, a log2 encoding over 16.5 stops,
+// a sigmoid, and out. Every channel runs to white together, so a bright saturated light whitens
+// rather than turning yellow, and a primary reaches white at all. The sigmoid's output is
+// display-encoded; it is linearised here, since linearToSrgb encodes after every curve.
+vec3 tonemapAgX(vec3 c) {
+    const mat3 IN = mat3(
+        0.842479062253094, 0.0423282422610123, 0.0423756549057051,
+        0.0784335999999992, 0.878468636469772, 0.0784336,
+        0.0792237451477643, 0.0791661274605434, 0.879142973793104
+    );
+    const mat3 OUT = mat3(
+        1.19687900512017, -0.0528968517574562, -0.0529716355144438,
+        -0.0980208811401368, 1.15190312990417, -0.0980434501171241,
+        -0.0990297440797205, -0.0989611768448433, 1.15107367264116
+    );
+    const float MIN_EV = -12.47393;
+    const float MAX_EV = 4.026069;
+    vec3 x = clamp(log2(max(IN * max(c, 0.0), 1e-10)), MIN_EV, MAX_EV);
+    x = (x - MIN_EV) / (MAX_EV - MIN_EV);
+    vec3 x2 = x * x;
+    vec3 x4 = x2 * x2;
+    vec3 s = 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2
+        + 0.1191 * x - 0.00232;
+    return pow(clamp(OUT * s, 0.0, 1.0), vec3(2.2));
 }
 
 // glTF's Khronos PBR Neutral.
@@ -91,7 +124,8 @@ vec3 resolve(vec2 uv) {
     if (u_bloomStrength > 0.0) c += texture(u_bloom, uv).rgb * u_bloomStrength;
     c *= u_exposure;
 
-    if      (u_tonemap == TONEMAP_ACES)            c = tonemapACES(c);
+    if      (u_tonemap == TONEMAP_AGX)             c = tonemapAgX(c);
+    else if (u_tonemap == TONEMAP_ACES)            c = tonemapACES(c);
     else if (u_tonemap == TONEMAP_KHRONOS_NEUTRAL) c = tonemapKhronosNeutral(c);
     else                                           c = tonemapReinhard(c);
 
@@ -105,8 +139,9 @@ void main() {
         return;
     }
 
-    // Half a step of noise either way on the encoded value turns the 8-bit backbuffer's
-    // banding of smooth gradients into grain no eye resolves.
-    float dither = (effectNoise(gl_FragCoord.xy, NOISE_DITHER) - 0.5) / 255.0;
-    FragColor = vec4(resolve(vUV) + dither, 1.0);
+    // Triangular noise of one step either way turns the 8-bit backbuffer's banding into grain,
+    // equally strong at every level (Gjol, INSIDE).
+    float n = effectNoise(gl_FragCoord.xy, NOISE_DITHER) * 2.0 - 1.0;
+    n = sign(n) * (1.0 - sqrt(1.0 - abs(n)));
+    FragColor = vec4(clamp(resolve(vUV) + n / 255.0, 0.0, 1.0), 1.0);
 }

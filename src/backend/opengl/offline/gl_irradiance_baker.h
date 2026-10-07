@@ -1,11 +1,14 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include "gl_compute_shader.h"
 #include "gl_frame_buffer.h"
 #include "gl_render_buffer.h"
 #include "gl_texture_cube.h"
+
+#include "storage/gl_irradiance_volume.h"
 
 namespace Vkm::GL {
     class Context;
@@ -14,7 +17,6 @@ namespace Vkm::GL {
 namespace Vkm::Engine {
 
 class GLIBL;
-class GLIrradianceVolume;
 class GLSceneCapture;
 class GLView;
 class ResourceManager;
@@ -23,7 +25,7 @@ struct IrradianceVolumeData;
 
 /**
  * @brief Bakes an irradiance volume: a scene capture per grid probe, projected
- *        to SH-L1.
+ *        to SH-L1, gathered again once per bounce.
  *
  * Per probe: render the opaque scene (instanced, full PBR) plus the global skybox
  * into a small cube from that grid point, render a second cube saying which
@@ -33,11 +35,18 @@ struct IrradianceVolumeData;
  * GLSceneCapture's, with the key light's shadow from a map fitted to the
  * volume's box.
  *
+ * The grid is gathered BOUNCES times. In each the captured surfaces inside the
+ * box take their ambient from the grid the gather before produced, held in a
+ * second volume, and the first reads one that is black: a wall is lit by what
+ * reaches it, never by the open sky through the wall, and each gather adds a
+ * bounce. Outside the box surfaces take the sky's, and directions that meet no
+ * geometry see the sky itself.
+ *
  * The capture faces are deliberately small: the result is a 4-coefficient
  * spherical average, so face resolution buys almost nothing while multiplying the
  * bake by the probe count.
  *
- * After the grid is filled, the probes the projection refused are replaced by a
+ * After each gather, the probes the projection refused are replaced by a
  * blend of their trusted neighbours (dilateProbeGrid) and the repaired grid is
  * uploaded again. A volume where no probe at all could be trusted is not
  * marked ready (see GLPass::bindAmbient), so the global IBL stands in rather
@@ -51,6 +60,9 @@ struct IrradianceVolumeData;
 class GLIrradianceBaker {
     public:
         static constexpr int CAPTURE_SIZE = 32;  ///< Per-face capture resolution.
+
+        /// Gathers per bake: the most times light reaching a probe has bounced off a surface.
+        static constexpr int BOUNCES = 3;
 
         /**
          * @brief Compile the SH projection program, drawing through @p capture.
@@ -94,6 +106,23 @@ class GLIrradianceBaker {
          */
         void ensureTargets();
 
+        /**
+         * @brief Capture and project the probes of the grid once, into @p volume.
+         *
+         * @param gl      Live GL context the captures draw through.
+         * @param volume  Destination SH volume, resized to the grid.
+         * @param data    The volume's world box + grid resolution.
+         * @param trusted The first gather's verdict per cell, X fastest: a gather given it skips
+         *                the refused probes and the backface mask, and its cells' verdicts are
+         *                not its own. Null on the first gather, which judges every probe.
+         */
+        void gather(
+            Vkm::GL::Context& gl,
+            GLIrradianceVolume& volume,
+            const IrradianceVolumeData& data,
+            const std::vector<bool>* trusted
+        );
+
     private:
         Vkm::GL::ComputeShader m_project;  ///< Cube -> SH-L1 coefficients + the probe's verdict.
 
@@ -101,6 +130,8 @@ class GLIrradianceBaker {
         Vkm::GL::TextureCube                   m_backface;  ///< Which surfaces face away, same faces.
         Vkm::GL::FrameBuffer                   m_fbo;
         std::unique_ptr<Vkm::GL::RenderBuffer> m_depth;
+
+        GLIrradianceVolume m_previous;  ///< The last gather's grid, lighting the next one's surfaces.
 
         GLSceneCapture& m_capture;  ///< Scene -> the six faces of m_cube.
 };

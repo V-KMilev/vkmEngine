@@ -26,7 +26,8 @@ namespace Vkm::Engine {
     X(SSBOBindingPoints,      INSTANCE_SKIN_BASE,    6,  SSBO_INSTANCE_SKIN_BASE,             Per object: its first bone in SKIN_PALETTE)                          \
     X(SSBOBindingPoints,      INSTANCE_MODELS,       10, SSBO_INSTANCE_MODELS,                Per object: its model matrix)                                        \
     X(ShadowTextureSlots,     ATLAS_2D,              11, SHADOW_SLOT_ATLAS_2D,                Tiled 2D depth atlas (sampler2DShadow))                              \
-    X(ShadowTextureSlots,     CUBE_BASE,             12, SHADOW_SLOT_CUBE_BASE,               First point-light depth cube (samplerCubeShadow[]))                  \
+    X(ShadowTextureSlots,     CUBE,                  12, SHADOW_SLOT_CUBE,                    Point-light depth cubes: a layer each (samplerCubeArrayShadow))      \
+    X(ShadowTextureSlots,     CUBE_RAW,              13, SHADOW_SLOT_CUBE_RAW,                The cubes uncompared (samplerCubeArray) for the blocker search)      \
     X(ShadowTextureSlots,     ATLAS_2D_RAW,          25, SHADOW_SLOT_ATLAS_2D_RAW,            The atlas uncompared (sampler2D): a unit holds one comparison mode) \
     X(IBLTextureSlots,        IRRADIANCE,            14, IBL_SLOT_IRRADIANCE,                 Diffuse irradiance cubemap (samplerCube))                            \
     X(IBLTextureSlots,        PREFILTER,             15, IBL_SLOT_PREFILTER,                  Roughness-prefiltered specular cubemap (samplerCube))                \
@@ -36,6 +37,9 @@ namespace Vkm::Engine {
     X(CompositeTextureSlots,  BLOOM,                 1,  COMPOSITE_SLOT_BLOOM,                Bloom mip 0 (u_bloom))                                               \
     X(BloomTextureSlots,      SOURCE,                0,  BLOOM_SLOT_SOURCE,                   Downsample/upsample source (u_src))                                  \
     X(BakeTextureSlots,       SOURCE,                0,  BAKE_SLOT_SOURCE,                    The equirect (u_equirect) or the env cube (u_envCube))               \
+    X(BakeTextureSlots,       TRANSMITTANCE,         1,  BAKE_SLOT_TRANSMITTANCE,             The atmosphere transmittance table (u_transmittance))                \
+    X(BakeTextureSlots,       MULTISCATTERING,       2,  BAKE_SLOT_MULTISCATTERING,           The atmosphere multiple-scattering table (u_multiScattering))        \
+    X(SkyTextureSlots,        VIEW,                  0,  SKY_SLOT_VIEW,                       The sky-view table the skybox draws the sky from (u_skyViewLut))     \
     X(OverlayTextureSlots,    UI_ATLAS,              0,  UI_SLOT_ATLAS,                       The UI font atlas or the empty one a run without text reads (u_tex)) \
     X(OverlayTextureSlots,    UI_IMAGE,              1,  UI_SLOT_IMAGE,                       The picture a UIImage run shows (u_image))                           \
     X(OverlayTextureSlots,    SPLASH_LOGO,           0,  SPLASH_SLOT_LOGO,                    The splash logo (u_logo))                                            \
@@ -56,6 +60,7 @@ namespace Vkm::Engine {
     X(IrradianceVolumeSlots,  SH1,                   27, IRRADIANCE_SLOT_SH1,                 Baked SH-L1 coefficient 1 (sampler3D))                               \
     X(IrradianceVolumeSlots,  SH2,                   28, IRRADIANCE_SLOT_SH2,                 Baked SH-L1 coefficient 2 (sampler3D))                               \
     X(IrradianceVolumeSlots,  SH3,                   29, IRRADIANCE_SLOT_SH3,                 Baked SH-L1 coefficient 3 (sampler3D))                               \
+    X(PostTextureSlots,       AERIAL_PERSPECTIVE,    30, POST_SLOT_AERIAL_PERSPECTIVE,        The sky air in front of the view (sampler3D) read through fog.glsl)  \
     X(PostTextureSlots,       AO_DEPTH,              31, POST_SLOT_AO_DEPTH,                  GTAO linear-depth mip chain)                                         \
     X(TextureSlots,           ALBEDO,                0,  MATERIAL_SLOT_ALBEDO,                Material map; the slot is also its bit in MaterialUBO.textureFlags)  \
     X(TextureSlots,           NORMAL,                1,  MATERIAL_SLOT_NORMAL,                Material map)                                                        \
@@ -128,11 +133,12 @@ namespace GLBindings {
         "Material maps would overlap the shadow atlas slot"
     );
     static_assert(
-        ShadowTextureSlots::CUBE_BASE > ShadowTextureSlots::ATLAS_2D,
+        ShadowTextureSlots::CUBE > ShadowTextureSlots::ATLAS_2D,
         "The point-light cubes would overlap the 2D shadow atlas"
     );
     static_assert(
-        ShadowTextureSlots::CUBE_BASE + Config::MAX_SHADOW_CASTERS_CUBE <= IBLTextureSlots::IRRADIANCE,
+        ShadowTextureSlots::CUBE < ShadowTextureSlots::CUBE_RAW
+            && ShadowTextureSlots::CUBE_RAW < IBLTextureSlots::IRRADIANCE,
         "The point-light cubes would overlap the IBL texture slots"
     );
     static_assert(
@@ -156,8 +162,12 @@ namespace GLBindings {
         "The raw shadow atlas would overlap the irradiance volume"
     );
     static_assert(
-        IrradianceVolumeSlots::SH3 < PostTextureSlots::AO_DEPTH,
-        "The irradiance volume would overlap the GTAO depth chain"
+        IrradianceVolumeSlots::SH3 < PostTextureSlots::AERIAL_PERSPECTIVE,
+        "The irradiance volume would overlap the aerial-perspective volume"
+    );
+    static_assert(
+        PostTextureSlots::AERIAL_PERSPECTIVE < PostTextureSlots::AO_DEPTH,
+        "The aerial-perspective volume would overlap the GTAO depth chain"
     );
     static_assert(
         PostTextureSlots::AO_DEPTH <= MAX_TEXTURE_UNIT,

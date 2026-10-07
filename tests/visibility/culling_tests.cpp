@@ -113,9 +113,9 @@ void testEveryPlaneNormalIsAUnitVector() {
     check("  and absNormals is its component-wise absolute", absMatches);
 }
 
-// Shadow softness is the light's own: the sun's penumbra and highlight follow its
-// Light, not the sky's disc, which an author sizes for looks. A disc past a quarter
-// turn has no tangent to size anything by, so the frame holds it inside one.
+// Shadow softness is the light's own: the sun's penumbra, highlight and drawn disc follow
+// its Light. A disc past a quarter turn has no tangent to size anything by, so the frame
+// holds it inside one.
 void testALightsSourceIsItsOwn() {
     std::printf("What a light's source size reaches the frame as:\n");
 
@@ -139,8 +139,6 @@ void testALightsSourceIsItsOwn() {
     spot.sourceRadius = 0.2f;
     scene.add(lamp, std::move(spot));
 
-    scene.environment().sky.sunAngularRadius = 0.09f;
-
     VisibilitySystem visibility;
     visibility.update(frame.ctx);
     RenderView view;
@@ -151,10 +149,7 @@ void testALightsSourceIsItsOwn() {
     for (const LightData& light : view.lights) {
         if (light.type == LightType::Spot) lampData = &light;
     }
-    check(
-        "the sun's source is its light's, not the sky's drawn disc",
-        sunData && nearly(sunData->sourceRadius, 0.05f)
-    );
+    check("the sun's source is its light's", sunData && nearly(sunData->sourceRadius, 0.05f));
     check("  and a spot's is its own, in metres", lampData && nearly(lampData->sourceRadius, 0.2f));
 
     scene.get<Light>(sun).sourceRadius = 3.0f;

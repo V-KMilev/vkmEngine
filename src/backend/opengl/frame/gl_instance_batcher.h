@@ -7,6 +7,10 @@
 
 #include "frame/gl_draw_list.h"
 
+namespace Vkm::GL {
+    class Context;
+}
+
 namespace Vkm::Engine {
 
 class GLView;
@@ -15,7 +19,7 @@ struct RenderObjects;
 /**
  * @brief One multi-draw: consecutive runs sharing a program, material and vertex layout.
  *
- * A run is the instances of one (skinned, material, mesh) key; `count` runs' commands follow
+ * A run is the instances of one (skinned, mirrored, material, mesh) key; `count` runs' commands follow
  * from `first` in the batcher's list.
  */
 struct InstanceDraw {
@@ -32,6 +36,14 @@ struct InstanceDraw {
      * statically, in bind pose.
      */
     bool           skinned  = false;
+
+    /**
+     * @brief Whether its instances' transforms mirror them (a negative determinant).
+     *
+     * Mirroring reverses a triangle's winding, so these draw with clockwise front faces, or
+     * back-face culling would show their inside.
+     */
+    bool           mirrored = false;
 };
 
 /**
@@ -56,7 +68,7 @@ class GLInstanceBatcher {
 
     public:
         /**
-         * @brief Sort by (skinned, material, mesh) and merge identical instances.
+         * @brief Sort by (skinned, mirrored, material, mesh) and merge identical instances.
          *
          * @param list    Indices of the objects to batch.
          * @param objects The objects @p list indexes.
@@ -91,9 +103,13 @@ class GLInstanceBatcher {
         /**
          * @brief Submit one draw: one multi-draw over its runs' commands.
          *
+         * A mirrored draw turns the front face clockwise for itself and back, so a caller's
+         * winding state is what it set.
+         *
+         * @param gl   Context the winding goes through.
          * @param draw The draw to submit.
          */
-        void draw(const InstanceDraw& draw) const { m_list.draw(*draw.mesh, draw.first, draw.count); }
+        void draw(Vkm::GL::Context& gl, const InstanceDraw& draw) const;
 
         /**
          * @brief The draws from the most recent build*(), for a consumer that did not build them.
@@ -146,6 +162,7 @@ class GLInstanceBatcher {
          * @param mesh     The run's mesh.
          * @param material The run's material.
          * @param skinned  Whether the run draws through the skinned program.
+         * @param mirrored Whether its instances' transforms mirror them.
          * @param first    Where its instances start in the list.
          * @param count    How many it has.
          */
@@ -153,6 +170,7 @@ class GLInstanceBatcher {
             const GLMesh& mesh,
             const MaterialHandle& material,
             bool skinned,
+            bool mirrored,
             uint32_t first,
             uint32_t count
         );

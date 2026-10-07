@@ -36,8 +36,9 @@ GLMaterial::GLMaterial(const MaterialAsset& material) {
 GLMaterial::~GLMaterial() = default;
 
 void GLMaterial::update(const MaterialAsset& material) {
-    m_uploadId = ++g_lastUpload;
-    m_type     = material.type;
+    m_uploadId    = ++g_lastUpload;
+    m_type        = material.type;
+    m_doubleSided = material.doubleSided;
 
     m_textureBindings.clear();
 

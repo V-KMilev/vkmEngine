@@ -18,6 +18,16 @@ namespace Vkm::Engine {
 using ProbeGridSH = std::array<std::vector<glm::vec4>, 4>;
 
 /**
+ * @brief Whether the projection trusted a probe, read from its first coefficient.
+ *
+ * @param sh0 The probe's cell in `sh[0]`, before any dilation.
+ * @return True for a verdict of 1; a half survives rounding in the transfer.
+ */
+inline bool probeTrusted(const glm::vec4& sh0) {
+    return sh0.w >= 0.5f;
+}
+
+/**
  * @brief Replace every refused probe with a blend of the trusted probes around it.
  *
  * A probe inside a wall captures the far room, and hardware trilinear filtering

@@ -19,6 +19,7 @@ struct RenderView;
 class GLCubeConvolver;
 class GLView;
 class GLIBL;
+class GLIrradianceVolume;
 class ResourceManager;
 class GLProbeBaker;
 class GLProbeArray;
@@ -78,7 +79,8 @@ class GLProbeManager {
         int bind(const RenderView& view);
 
         /**
-         * @brief At frame end, bake again the probes that are new, moved, resized or bumped.
+         * @brief At frame end, bake again the probes that are new, moved, resized or bumped, or
+         *        were captured under another bake of the irradiance volume.
          *
          * Capped per frame. Run after the passes: the baker rebinds the camera UBO and the
          * lights SSBO.
@@ -88,13 +90,16 @@ class GLProbeManager {
          * @param glView    GPU mirror the captures draw from.
          * @param resources Resolves what the captures draw.
          * @param ibl       The global environment, the captures' backdrop.
+         * @param volume    The baked irradiance volume, at the view's box, lighting what the
+         *                  captures see of it; null for none.
          */
         void update(
             Vkm::GL::Context& gl,
             const RenderView& view,
             GLView& glView,
             const ResourceManager& resources,
-            const GLIBL& ibl
+            const GLIBL& ibl,
+            const GLIrradianceVolume* volume
         );
 
         /**
@@ -110,13 +115,14 @@ class GLProbeManager {
          * @brief Per-layer bake state, for change-detected re-baking.
          */
         struct BakeState {
-            bool      owned    = false;            ///< A probe in the scene holds this layer.
-            uint32_t  owner    = 0;                ///< That probe's entity slot.
-            bool      baked    = false;
-            glm::vec3 position = glm::vec3(0.0f);  ///< Position the layer was last baked at.
+            bool      owned      = false;            ///< A probe in the scene holds this layer.
+            uint32_t  owner      = 0;                ///< That probe's entity slot.
+            bool      baked      = false;
+            glm::vec3 position   = glm::vec3(0.0f);  ///< Position the layer was last baked at.
             /// Half-extents it was baked for: the key light's map is fitted to them.
-            glm::vec3 box      = glm::vec3(0.0f);
-            uint32_t  version  = 0;                ///< bakeVersion the layer was last baked at.
+            glm::vec3 box        = glm::vec3(0.0f);
+            uint32_t  version    = 0;                ///< bakeVersion the layer was last baked at.
+            uint32_t  volumeBake = 0;                ///< The irradiance volume's bakeId it was lit by.
         };
 
         /**

@@ -10,6 +10,7 @@
 #include "gl_frame_context.h"
 #include "gl_target.h"
 #include "convention/gl_bindings.h"
+#include "storage/gl_atmosphere.h"
 #include "storage/gl_fog_volume.h"
 #include "storage/gl_ibl.h"
 #include "storage/gl_irradiance_volume.h"
@@ -39,12 +40,19 @@ int32_t GLPass::backbufferBottom(const RenderView& view, int32_t top, int32_t he
     return static_cast<int32_t>(view.surfaceHeight) - static_cast<int32_t>(view.viewportY) - top - height;
 }
 
-void GLPass::bindFog(GLFrameContext& ctx, const Vkm::GL::Shader& shader) const {
+void GLPass::bindFog(GLFrameContext& ctx, const Vkm::GL::Shader& shader, bool air) const {
     if (ctx.fogReady) {
         ctx.fog.bindIntegratedSlot(GLBindings::PostTextureSlots::FOG_VOLUME);
         shader.setUniform1f("u_fogDepth", ctx.fog.depth());
     }
     shader.setUniform1i("u_hasFog", ctx.fogReady ? 1 : 0);
+    if (!air) return;
+
+    if (ctx.aerialPerspectiveReady) {
+        ctx.atmosphere.bindAerialPerspective(GLBindings::PostTextureSlots::AERIAL_PERSPECTIVE);
+        shader.setUniform1f("u_airDepth", ctx.atmosphere.aerialDepth());
+    }
+    shader.setUniform1i("u_hasAir", ctx.aerialPerspectiveReady ? 1 : 0);
 }
 
 void GLPass::bindAO(GLFrameContext& ctx, const Vkm::GL::Shader& shader, bool sampled) const {
@@ -62,18 +70,11 @@ void GLPass::bindAmbient(GLFrameContext& ctx, const Vkm::GL::ShaderBase& shader)
     shader.setUniform1f("u_iblIntensity", view.environment.sky.intensity);
 
     // The baked SH volume, and the box that places a point in its grid.
-    const bool hasIV = ctx.irradiance.isReady() && view.hasIrradianceVolume;
-    shader.setUniform1i("u_hasIrradianceVolume", hasIV ? 1 : 0);
-    if (!hasIV) return;
-    ctx.irradiance.bindSlot(0, GLBindings::IrradianceVolumeSlots::SH0);
-    ctx.irradiance.bindSlot(1, GLBindings::IrradianceVolumeSlots::SH1);
-    ctx.irradiance.bindSlot(2, GLBindings::IrradianceVolumeSlots::SH2);
-    ctx.irradiance.bindSlot(3, GLBindings::IrradianceVolumeSlots::SH3);
-    const IrradianceVolumeData& iv = view.irradianceVolume;
-    shader.setUniform3fv("u_ivMin",  iv.center - iv.halfExtents);
-    shader.setUniform3fv("u_ivSize", iv.halfExtents * 2.0f);
-    shader.setUniform1f("u_ivIntensity", iv.intensity);
-    shader.setUniform1f("u_ivBlend",     iv.blendDistance);
+    if (ctx.irradiance.isReady() && view.hasIrradianceVolume) {
+        ctx.irradiance.bindForShading(shader, view.irradianceVolume);
+    } else {
+        shader.setUniform1i("u_hasIrradianceVolume", 0);
+    }
 }
 
 void GLPass::setReflectRoughnessWritable(bool writable) const {

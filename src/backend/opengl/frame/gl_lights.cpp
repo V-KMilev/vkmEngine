@@ -41,7 +41,10 @@ void GLLights::update(const std::vector<LightData>& lights, LightSlots shadowSlo
             static_cast<float>(shadowSlots[static_cast<uint32_t>(i)])
         );
         gpu.axisU     = glm::vec4(light.axisU, light.twoSided ? 1.0f : 0.0f);
-        gpu.axisV     = glm::vec4(light.axisV, 0.0f);
+        // w: a point or spot's emitter radius in metres, which sizes its highlight as it sizes
+        // its penumbra.
+        const bool sphere = light.type == LightType::Point || light.type == LightType::Spot;
+        gpu.axisV     = glm::vec4(light.axisV, sphere ? light.sourceRadius : 0.0f);
     }
 
     // Only the header + the lights actually in use travel to the GPU; the tail

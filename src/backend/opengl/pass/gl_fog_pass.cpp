@@ -43,9 +43,10 @@ void GLFogPass::execute(GLFrameContext& ctx) {
     const uint32_t gx = Groups::covering(dims.x, Groups::IMAGE);
     const uint32_t gy = Groups::covering(dims.y, Groups::IMAGE);
 
-    // Lights, cluster grid and ShadowBlock are bound already. The inject shader reads the sun's
-    // cascades from the 2D atlas and never samples the point-light cubes.
+    // Lights, cluster grid and ShadowBlock are bound already. The inject shader shadows the sun
+    // and the spots from the 2D atlas and the point lights from their cubes.
     ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::ATLAS_2D);
+    ctx.shadowAtlas.bindCubes(GLBindings::ShadowTextureSlots::CUBE);
 
     ctx.fog.bindScatterImage(0, GL_WRITE_ONLY);
     m_inject.bind();

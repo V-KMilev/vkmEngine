@@ -2,6 +2,13 @@
 
 namespace Vkm::Engine {
 
+namespace {
+
+// A point or spot light's emitter radius, in metres: a household bulb's.
+constexpr float BULB_RADIUS = 0.03f;
+
+} // namespace
+
 Light generateLight(LightType type) {
     Light light;
     light.type = type;
@@ -11,6 +18,8 @@ Light generateLight(LightType type) {
         light.innerConeAngle = 0.0f;
         light.outerConeAngle = 0.0f;
     }
+
+    if (type == LightType::Point || type == LightType::Spot) light.sourceRadius = BULB_RADIUS;
 
     switch (type) {
         case LightType::Directional: light.radius = 0.0f;  break;  // a sun does not attenuate

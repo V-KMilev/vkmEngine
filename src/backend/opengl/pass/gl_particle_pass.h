@@ -7,6 +7,7 @@
 #include "gl_shader.h"
 
 #include "gl_pass.h"
+#include "gl_target.h"
 
 #include "system/render/data/particle_data.h"
 
@@ -48,8 +49,8 @@ class GLParticlePass : public GLPass {
          * the particles afterwards in one pass.
          */
         struct ParticleOrder {
-            float    distanceSq;  ///< Squared distance from the eye; the sort key.
-            uint32_t index;       ///< The particle's place in the unsorted list.
+            float    depth;  ///< View depth, the sort key: the quads face the view plane.
+            uint32_t index;  ///< The particle's place in the unsorted list.
         };
 
     private:
@@ -75,6 +76,9 @@ class GLParticlePass : public GLPass {
 
         std::vector<ParticleOrder> m_order;   ///< Sort keys; capacity kept across frames.
         std::vector<ParticleData>  m_sorted;  ///< The alpha particles, far to near.
+
+        /// The scene's depth, copied: the particles test against it attached and fade on it here.
+        GLTarget m_depthCopy{GLTarget::Layout::ColorDepth, GL_R8};
 };
 
 } // namespace Vkm::Engine

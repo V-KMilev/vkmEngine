@@ -1,5 +1,6 @@
 #pragma once
 
+#include <string>
 #include <type_traits>
 
 #include <nlohmann/json_fwd.hpp>
@@ -24,7 +25,20 @@ template<typename Asset>
 using RecipeImport = Handle<Asset> (*)(const nlohmann::json&, ResourceManager&);
 
 /**
- * @brief The io<->tools recipe-import seam: one import per kind that cooks to a binary.
+ * @brief Decodes a texture file into @p out on the calling thread, outside any ResourceManager.
+ *
+ * For a bake that reads one texture to make another: a roughness map's paired normal map.
+ *
+ * @param ref   The file, project-relative.
+ * @param usage What its texels mean, which picks the decoded format.
+ * @param out   The decoded texture.
+ * @return False when the file did not decode.
+ */
+using TextureDecode = bool (*)(const std::string& ref, TextureUsage usage, TextureAsset& out);
+
+/**
+ * @brief The io<->tools import seam: one recipe import per kind that cooks to a binary, and
+ * the texture decode a bake reads a second texture by.
  *
  * io loads cooked files itself but cannot link the importers, so a host that imports installs these
  * (registerRecipeAssetFactories). A material has no slot: its recipe is its runtime form, which io
@@ -36,6 +50,7 @@ struct AssetFactory {
     RecipeImport<SkeletonAsset>      createSkeleton      = nullptr;
     RecipeImport<AnimationClipAsset> createAnimationClip = nullptr;
     RecipeImport<AudioClipAsset>     createAudioClip     = nullptr;
+    TextureDecode                    decodeTexture       = nullptr;
 };
 
 /**

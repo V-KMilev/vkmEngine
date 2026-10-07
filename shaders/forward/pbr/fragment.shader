@@ -75,8 +75,8 @@ uniform int u_hasAO;
 
 #include "../../ambient.glsl"
 
-// Local reflection probes, a cube-array layer each. Weight-blended over the IBL
-// for the reflection, and for the diffuse only where no irradiance volume covers.
+// Local reflection probes, a cube-array layer each. Blended over the IBL, smallest box
+// first, for the reflection, and for the diffuse only where no irradiance volume covers.
 layout(binding = PROBE_SLOT_IRRADIANCE) uniform samplerCubeArray u_probeIrr;
 layout(binding = PROBE_SLOT_PREFILTER)  uniform samplerCubeArray u_probePref;
 uniform int u_probeCount;
@@ -372,13 +372,18 @@ float areaBroadenedAlpha(float alpha, float sourceRadius, float dist) {
     return clamp(alpha + sourceRadius / max(3.0 * dist, 1e-4), 0.0, 1.0);
 }
 
+// The direct lights' specular, summed apart as evaluateLight and the area lights shade it, so a
+// transmissive surface keeps its reflections when its colour blends toward what it refracts.
+vec3 g_directSpecular = vec3(0.0);
+
 // energyCompensation restores multi-bounce energy (Filament's
-// 1 + f0 (1 / Ess - 1)), the direct half of environmentSpecular's correction.
+// 1 + f0 (1 / Ess - 1)), the direct half of environmentEnergy's correction.
 // sourceTan is the tan of the light's angular radius (0 for a point); the lobe
 // widens over the disc unrenormalised, spreading its irradiance instead of a
 // peak a half float may not hold.
 vec3 evaluateLight(
     vec3 N,
+    vec3 Ng,
     vec3 V,
     vec3 L,
     vec3 T,
@@ -387,7 +392,9 @@ vec3 evaluateLight(
     vec3 f0,
     vec3 energyCompensation,
     vec3 radiance,
-    float sourceTan
+    float sourceTan,
+    vec3 Ls,
+    float sphereNorm
 ) {
     vec3 H = normalize(V + L);
     float NdotL = max(dot(N, L), 0.0);
@@ -398,8 +405,11 @@ vec3 evaluateLight(
 
     float a = areaBroadenedAlpha(s.roughness * s.roughness, sourceTan, 1.0);
 
-    // Base specular: anisotropic when configured, isotropic otherwise.
+    // Base specular: anisotropic when configured, isotropic otherwise. A sphere light's
+    // isotropic lobe is toward its representative point Ls (Karis), renormalised by
+    // sphereNorm; Ls is L for a point source. specNoL is the cosine the lobe takes.
     float D, Vis;
+    float specNoL = NdotL;
     if (u_material.anisotropy > 0.001) {
         // The authored direction in the shading plane, else T: a zeroed or
         // N-parallel one would normalize to NaN.
@@ -414,8 +424,10 @@ vec3 evaluateLight(
         D   = distributionGGXAniso(NdotH, dot(aT, H), dot(aB, H), at, ab);
         Vis = visSmithAniso(at, ab, dot(aT, V), dot(aB, V), NdotV, dot(aT, L), dot(aB, L), NdotL);
     } else {
-        D   = distributionGGX(NdotH, a);
-        Vis = visSmithCorrelated(NdotV, NdotL, a);
+        vec3 Hs = normalize(V + Ls);
+        specNoL = max(dot(N, Ls), 0.0);
+        D       = distributionGGX(max(dot(N, Hs), 0.0), a) * sphereNorm;
+        Vis     = visSmithCorrelated(NdotV, specNoL, a);
     }
     vec3 F = fresnelSchlick(VdotH, f0);
     vec3 specular = D * Vis * F * energyCompensation;
@@ -450,25 +462,34 @@ vec3 evaluateLight(
         }
     }
 
-    // Subsurface back translucency, tinted.
+    // Subsurface back translucency, tinted: Unreal's two-sided foliage, a wrapped back-light
+    // through a broad lobe about the light's own direction, so a leaf glows looking toward
+    // the sun and not with it behind. Normalised as the diffuse beside it is.
     vec3 sss = vec3(0.0);
     if (u_material.subsurface > 0.001) {
-        sss = u_material.subsurfaceColor.rgb * s.albedo
-            * clamp(dot(-N, L), 0.0, 1.0) * u_material.subsurface;
+        float wrap    = clamp((-dot(N, L) + 0.5) / 2.25, 0.0, 1.0);
+        float scatter = distributionGGX(clamp(-dot(V, L), 0.0, 1.0), 0.6);
+        sss = u_material.subsurfaceColor.rgb * s.albedo * (wrap * scatter * u_material.subsurface);
     }
 
-    vec3 baseLit = diffuse * diffTint * diffNoL + specular * NdotL;
+    vec3 baseLit = diffuse * diffTint * diffNoL + specular * specNoL;
 
     // Clearcoat: a dielectric GGX lobe dimming the base by its Fresnel.
     vec3 ccContrib = vec3(0.0);
+    float underCoat = 1.0;
     float ccStrength = s.clearcoat;
     if (ccStrength > 0.001) {
+        // On the geometric normal: the coat is smooth over the base's bumps (KHR_materials_clearcoat
+        // without a coat normal map), so lacquer over bumpy wood keeps a mirror top.
+        float cNoL = max(dot(Ng, L), 0.0);
+        float cNoV = max(dot(Ng, V), 1e-4);
         float cca = areaBroadenedAlpha(s.clearcoatRoughness * s.clearcoatRoughness, sourceTan, 1.0);
-        float ccD = distributionGGX(NdotH, cca);
-        float ccV = visSmithCorrelated(NdotV, NdotL, cca);
+        float ccD = distributionGGX(max(dot(Ng, H), 0.0), cca);
+        float ccV = visSmithCorrelated(cNoV, cNoL, cca);
         float ccF = fresnelSchlick(VdotH, vec3(COAT_F0)).x * ccStrength;
-        baseLit *= (1.0 - ccF);
-        ccContrib = vec3(ccD * ccV * ccF) * NdotL;
+        underCoat = 1.0 - ccF;
+        baseLit *= underCoat;
+        ccContrib = vec3(ccD * ccV * ccF) * cNoL;
     }
 
     // Off when sheenColor is black.
@@ -481,6 +502,7 @@ vec3 evaluateLight(
         sheen = sheenColor * (sheenD * sheenV * NdotL);
     }
 
+    g_directSpecular += (specular * specNoL * underCoat + ccContrib) * radiance;
     return (baseLit + ccContrib + transmitted + sss + sheen) * radiance;
 }
 
@@ -494,21 +516,20 @@ float specularOcclusion(float NoV, float ao, float alpha) {
 // drops, which darkens rough metal (Fdez-Aguera): the unemitted Ems re-emitted,
 // scaled by the average Fresnel. Matters only for rough metal.
 //
-// @param prefiltered Roughness-prefiltered radiance for the reflection vector.
-// @param irradiance  Irradiance for the shading normal; lights the diffuse-like
-//                    multi-scatter lobe.
-// @param F           Roughness-aware Fresnel at the view angle.
-// @param dfg         The split-sum LUT's scale and bias.
-// @param f0          Normal-incidence reflectance.
-vec3 environmentSpecular(vec3 prefiltered, vec3 irradiance, vec3 F, vec2 dfg, vec3 f0) {
-    vec3 FssEss = F * dfg.x + dfg.y;
-
+// The LUT integrates Schlick's Fresnel over the lobe, A = int (1 - Fc) and B = int Fc, so the
+// single-scatter energy is f0 * A + B: a view-angle Fresnel in place of f0 counts it twice,
+// up to twice too bright toward grazing (Fdez-Aguera's equation 16, not his listing).
+//
+// @param dfg    The split-sum LUT's scale and bias.
+// @param f0     Normal-incidence reflectance.
+// @param FssEss Out: the single-scatter energy, what a trace can replace.
+// @param FmsEms Out: the multi-scatter energy, lit by the irradiance.
+void environmentEnergy(vec2 dfg, vec3 f0, out vec3 FssEss, out vec3 FmsEms) {
+    FssEss = f0 * dfg.x + dfg.y;
     // Clamped: a bilinear tap at the LUT's edge can push dfg.x + dfg.y past one.
     float Ems  = clamp(1.0 - (dfg.x + dfg.y), 0.0, 1.0);
     vec3  Favg = f0 + (1.0 - f0) / 21.0;
-    vec3  Fms  = FssEss * Favg / max(1.0 - Ems * Favg, vec3(1e-4));
-
-    return prefiltered * FssEss + Fms * Ems * irradiance;
+    FmsEms = FssEss * Favg / max(1.0 - Ems * Favg, vec3(1e-4)) * Ems;
 }
 
 void main() {
@@ -526,6 +547,13 @@ void main() {
 
     // The sign cross cannot recompute: a mirrored UV shell is left-handed.
     vec3 B  = (vHandedness < 0.0) ? -cross(Ng, T) : cross(Ng, T);
+    // A double-sided material's back face is lit as its own: the whole frame turns, so the
+    // normal map mirrors with it (the glTF sample viewer's). Single-sided ones never show one.
+    if (!gl_FrontFacing) {
+        T  = -T;
+        B  = -B;
+        Ng = -Ng;
+    }
     mat3 TBN = mat3(T, B, Ng);
 
     vec2 uv   = vUV;
@@ -576,9 +604,9 @@ void main() {
 
     vec3 N = getNormal(uv, Ng, TBN);
 
-    // The coat too: it is smoother and shimmers first.
+    // The coat too, on its own smooth normal: it is smoother and shimmers first.
     s.roughness          = specularAA(N, s.roughness);
-    s.clearcoatRoughness = specularAA(N, s.clearcoatRoughness);
+    s.clearcoatRoughness = specularAA(Ng, s.clearcoatRoughness);
 
     float f0Dielectric = pow((u_material.ior - 1.0) / (u_material.ior + 1.0), 2.0);
     vec3  f0 = mix(vec3(f0Dielectric), s.albedo, s.metallic);
@@ -671,8 +699,7 @@ void main() {
             vec3 kd = (vec3(1.0) - Fc) * (1.0 - s.metallic);
             vec3 diffuseArea = kd * s.albedo * formFactor / max(area, 1e-4);
 
-            // Renormalised by (alpha / alpha')^2 so a wide emitter spreads its
-            // highlight rather than brightening it.
+            // Karis's representative point, renormalised by (alpha / alpha')^2 (lighting.md).
             vec3 specularArea = vec3(0.0);
             vec3 R = reflect(-V, N);
             vec3 closestPoint = (type == LIGHT_RECT)
@@ -692,13 +719,14 @@ void main() {
                 float norm    = (aGGX / aBroad) * (aGGX / aBroad);
                 vec3  Hcp     = normalize(V + Lcp);
                 vec3  Fcp     = fresnelSchlick(max(dot(V, Hcp), 0.0), f0);
-                float D       = distributionGGX(max(dot(N, Hcp), 0.0), aBroad);
-                float Vis     = visSmithCorrelated(NdotV, NdotLcp, aBroad);
+                float D       = distributionGGX(max(dot(N, Hcp), 0.0), aGGX);
+                float Vis     = visSmithCorrelated(NdotV, NdotLcp, aGGX);
                 specularArea  = D * Vis * Fcp * NdotLcp * norm * energyCompensation
                     / max(dist * dist, 1e-4);
             }
 
             Lo += lightCol * intensity * window * (diffuseArea + specularArea);
+            g_directSpecular += lightCol * intensity * window * specularArea;
             continue;
         }
 
@@ -715,7 +743,7 @@ void main() {
             float ndotl = dot(Ng, L);
             if      (type == LIGHT_DIRECTIONAL) visibility *= sampleCSMSoft(vWorldPos, Ng, ndotl);
             else if (type == LIGHT_SPOT)        visibility *= sample2DSlotSoft(sslot, vWorldPos, Ng, ndotl);
-            else if (type == LIGHT_POINT)       visibility *= sampleCube(sslot, vWorldPos, ndotl);
+            else if (type == LIGHT_POINT)       visibility *= sampleCube(sslot, vWorldPos, Ng, ndotl);
         }
 
         // POM self-shadowing for the sun alone, bounding the trace cost.
@@ -727,9 +755,48 @@ void main() {
             visibility *= parallaxShadow(uv, lightDirTS, uvDx, uvDy);
         }
 
+        // Micro-shadowing (Chan, CoD WWII; Filament): the material's own AO is the cone a cavity
+        // stays open over, so a grazing light leaves mortar and creases dark rather than flat.
+        // Front-lit only; the back-lights through it are the subsurface's and transmission's.
+        float NoLs = dot(N, L);
+        if (s.ao < 1.0 && NoLs > 0.0) {
+            float micro = clamp(NoLs * inversesqrt(1.0 - min(s.ao, 0.9999)), 0.0, 1.0);
+            visibility *= micro * micro;
+        }
+
+        // A point or spot of radius r is a sphere (Karis 2013), its lobe renormalised by
+        // (a / a')^2 with a' = a + r / 2d (lighting.md).
+        vec3  Ls         = L;
+        float sphereNorm = 1.0;
+        float sphereR    = light.axisV.w;
+        if (sphereR > 0.0 && (type == LIGHT_POINT || type == LIGHT_SPOT)) {
+            vec3  toLight = light.position.xyz - vWorldPos;
+            vec3  R       = reflect(-V, N);
+            vec3  toRay   = dot(toLight, R) * R - toLight;
+            vec3  closest = toLight + toRay * clamp(sphereR / max(length(toRay), 1e-4), 0.0, 1.0);
+            Ls = normalize(closest);
+            float a      = max(s.roughness * s.roughness, 1e-3);
+            float aWide  = clamp(a + 0.5 * sphereR / max(length(toLight), 1e-4), 0.0, 1.0);
+            sphereNorm   = (a / aWide) * (a / aWide);
+        }
+
         // spot.z: tan of a directional's disc, 0 otherwise.
         vec3 radiance = lightCol * intensity * atten * visibility;
-        Lo += evaluateLight(N, V, L, T, B, s, f0, energyCompensation, radiance, light.spot.z);
+        Lo += evaluateLight(
+            N,
+            Ng,
+            V,
+            L,
+            T,
+            B,
+            s,
+            f0,
+            energyCompensation,
+            radiance,
+            light.spot.z,
+            Ls,
+            sphereNorm
+        );
     }
 
     // Irradiance follows GTAO's bent normal so creases do not over-collect. The
@@ -748,22 +815,34 @@ void main() {
 
     vec3 R = reflect(-V, N);
 
-    // Roughness-aware, so grazing reflections do not blow out on rough surfaces.
-    float grazing  = 1.0 - NdotV;
-    float grazing2 = grazing * grazing;
-    vec3  F  = f0 + (max(vec3(1.0 - s.roughness), f0) - f0) * (grazing2 * grazing2 * grazing);
-    vec3  kD = (1.0 - F) * (1.0 - s.metallic);
+    // What the environment's specular takes, and the diffuse what is left (Fdez-Aguera, section 4).
+    vec3 FssEss;
+    vec3 FmsEms;
+    environmentEnergy(dfg, f0, FssEss, FmsEms);
+    vec3 kD = (1.0 - (FssEss + FmsEms)) * (1.0 - s.metallic);
 
     // Horizon occlusion drops reflections a normal map turns below the
     // geometric surface.
     float horizon = min(1.0 + dot(R, Ng), 1.0);
+
+    // Where a rough lobe peaks: GGX's dominant direction bends from R toward N as roughness
+    // grows (Lagarde, Moving Frostbite to PBR 4.9.3), so a rough floor at grazing does not
+    // reflect the bright horizon R points at. The coat reflects off its smooth top (Rc).
+    float rdA = s.roughness * s.roughness;
+    vec3  Rd  = normalize(mix(N, R, (1.0 - rdA) * (sqrt(1.0 - rdA) + rdA)));
     float specOcc = specularOcclusion(NdotV, ao, s.roughness * s.roughness) * horizon * horizon;
 
-    // environmentSpecular's single-scatter half, which a trace can replace (the
+    // environmentEnergy's single-scatter half, which a trace can replace (the
     // multi-scatter lobe it cannot), dimmed by a clear coat's Fresnel.
-    vec3  reflectWeight = (F * dfg.x + dfg.y) * specOcc;
+    // Not occluded: a trace that hits has found the occluder itself, so only the environment it
+    // replaces (ReflectEnv) carries specOcc.
+    vec3  reflectWeight = FssEss;
     bool  hasCoat       = s.clearcoat > 0.001;
-    float coatFresnel   = hasCoat ? fresnelSchlick(NdotV, vec3(COAT_F0)).x * s.clearcoat : 0.0;
+    float coatNoV       = max(dot(Ng, V), 1e-4);
+    float coatFresnel   = hasCoat ? fresnelSchlick(coatNoV, vec3(COAT_F0)).x * s.clearcoat : 0.0;
+    vec3  Rc            = reflect(-V, Ng);  // the coat's, on its smooth top
+    // The coat's top is never below its own horizon, so it takes no horizon term.
+    float coatOcc       = specularOcclusion(coatNoV, ao, s.clearcoatRoughness * s.clearcoatRoughness);
     reflectWeight *= 1.0 - coatFresnel;
     ReflectWeight = vec4(reflectWeight, s.roughness);
 
@@ -774,39 +853,41 @@ void main() {
     vec3  coat             = vec3(0.0);
     vec3  sourceIrradiance = vec3(FLAT_AMBIENT);
     if (u_hasIBL == 1) {
-        prefiltered      = textureLod(u_prefilter, R, s.roughness * MAX_REFLECTION_LOD).rgb;
-        coat             = hasCoat ? textureLod(u_prefilter, R, ccRough * MAX_REFLECTION_LOD).rgb : vec3(0.0);
+        prefiltered      = textureLod(u_prefilter, Rd, s.roughness * MAX_REFLECTION_LOD).rgb;
+        coat             = hasCoat ? textureLod(u_prefilter, Rc, ccRough * MAX_REFLECTION_LOD).rgb : vec3(0);
         sourceIrradiance = texture(u_irradiance, bentN).rgb;
     }
 
-    // Probes blended over the sky before shading, so one shading serves all.
+    // Probes blended over the sky before shading, so one shading serves all. They arrive
+    // smallest box first, and each covers only what the ones before it left: a room's probe
+    // wins inside the room over the yard's around it, where an average gave each half.
     // Coverage is the box's alone; intensity scales the contribution.
     if (u_probeCount > 0) {
         vec3  prefilteredSum = vec3(0.0);
         vec3  coatSum        = vec3(0.0);
         vec3  irradianceSum  = vec3(0.0);
-        float wSum           = 0.0;
-        for (int p = 0; p < u_probeCount && p < MAX_PROBES; ++p) {
+        float covered        = 0.0;
+        for (int p = 0; p < u_probeCount && p < MAX_PROBES && covered < 0.999; ++p) {
             vec3  center   = u_probes.probes[p].center.xyz;
             vec3  extents  = u_probes.probes[p].extents.xyz;
             float falloff  = u_probes.probes[p].params.x;
-            float w        = probeWeight(vWorldPos, center, extents, falloff);
+            float w        = probeWeight(vWorldPos, center, extents, falloff) * (1.0 - covered);
             if (w <= 0.0) continue;
             float scaled  = w * u_probes.probes[p].params.y;
             float layer   = u_probes.probes[p].params.z;
-            vec3  Rp      = probeParallax(R, vWorldPos, center, extents);
+            vec3  Rp      = probeParallax(Rd, vWorldPos, center, extents);
             vec4  RpLayer = vec4(Rp, layer);
             prefilteredSum += textureLod(u_probePref, RpLayer, s.roughness * MAX_PROBE_LOD).rgb * scaled;
-            if (hasCoat) coatSum += textureLod(u_probePref, RpLayer, ccRough * MAX_PROBE_LOD).rgb * scaled;
+            if (hasCoat) {
+                vec4 coatLayer = vec4(probeParallax(Rc, vWorldPos, center, extents), layer);
+                coatSum += textureLod(u_probePref, coatLayer, ccRough * MAX_PROBE_LOD).rgb * scaled;
+            }
             irradianceSum  += texture(u_probeIrr, vec4(bentN, layer)).rgb * scaled;
-            wSum           += w;
+            covered        += w;
         }
-        if (wSum > 0.0) {
-            float cover = min(wSum, 1.0);
-            prefiltered      = mix(prefiltered, prefilteredSum / wSum, cover);
-            coat             = mix(coat, coatSum / wSum, cover);
-            sourceIrradiance = mix(sourceIrradiance, irradianceSum / wSum, cover);
-        }
+        prefiltered      = prefilteredSum + prefiltered * (1.0 - covered);
+        coat             = coatSum + coat * (1.0 - covered);
+        sourceIrradiance = irradianceSum + sourceIrradiance * (1.0 - covered);
     }
     // Scaled where the environment is read, so a traced reflection is not.
     prefiltered      *= u_iblIntensity;
@@ -817,9 +898,11 @@ void main() {
     // where it covers; the reflection's own source elsewhere.
     vec3 irradiance = sourceIrradiance;
     if (u_hasIrradianceVolume == 1) {
-        float ivw = irradianceVolumeWeight(vWorldPos);
+        // Weighted where it is read, so a box fitted to a room's inside covers its walls.
+        vec3  lookup = irradianceVolumeLookup(vWorldPos, Ng);
+        float ivw    = irradianceVolumeWeight(lookup);
         if (ivw > 0.0) {
-            vec3 volume = sampleIrradianceVolume(vWorldPos, bentN) / PI * u_ivIntensity * u_iblIntensity;
+            vec3 volume = sampleIrradianceVolume(lookup, bentN) / PI * u_ivIntensity * u_iblIntensity;
             irradiance = mix(irradiance, volume, ivw);
         }
     }
@@ -831,15 +914,19 @@ void main() {
     coat        *= normalisation;
 
     vec3 diffuseIBL  = irradiance * s.albedo * kD;
-    vec3 specularIBL = environmentSpecular(prefiltered, irradiance, F, dfg, f0);
+    vec3 specularIBL = prefiltered * FssEss + FmsEms * irradiance;
 
     vec3 ambient = diffuseIBL * multiBounceOcclusion(ao, s.albedo) + specularIBL * specOcc;
+    vec3 ambientSpecular = specularIBL * specOcc;
 
     // The coat layer dims everything beneath by its Fresnel (Filament's clear-coat IBL).
-    if (hasCoat) ambient = ambient * (1.0 - coatFresnel) + coat * (coatFresnel * specOcc);
+    if (hasCoat) {
+        ambient         = ambient * (1.0 - coatFresnel) + coat * (coatFresnel * coatOcc);
+        ambientSpecular = ambientSpecular * (1.0 - coatFresnel) + coat * (coatFresnel * coatOcc);
+    }
 
     // Zero where nothing was read, so a trace there only adds.
-    ReflectEnv = vec4(reflectWeight * prefiltered, 1.0);
+    ReflectEnv = vec4(reflectWeight * specOcc * prefiltered, 1.0);
 
     vec3 color = ambient + Lo + s.emission;
 
@@ -851,6 +938,8 @@ void main() {
         vec3  heat = mix(vec3(0.02, 0.10, 0.02), vec3(0.15, 0.85, 0.15), clamp(t, 0.0, 1.0));
         heat       = mix(heat, vec3(0.95, 0.85, 0.10), clamp(t - 1.0, 0.0, 1.0));
         heat       = mix(heat, vec3(0.95, 0.10, 0.10), clamp(t - 2.0, 0.0, 1.0));
+        // Magenta where the list is full: lights past it are dropped, and show as a cut.
+        if (count >= uint(MAX_LIGHTS_PER_CLUSTER)) heat = vec3(0.95, 0.10, 0.95);
         FragColor  = vec4(heat, 1.0);
         return;
     }
@@ -862,8 +951,9 @@ void main() {
     ReflectWeight.rgb *= fog.a;
     ReflectEnv.rgb    *= fog.a;
 
-    // Screen-space refraction. With no Fresnel split, the specular in `color`
-    // is attenuated too.
+    // Screen-space refraction. What the surface reflects stays whole and only the rest blends
+    // toward the scene behind, itself dimmed by the reflected share (Filament), so glass keeps
+    // its reflections and highlights.
     if (u_hasSceneColor == 1 && s.transmission > 0.0) {
         vec3 rdir = refract(-V, N, 1.0 / max(u_material.ior, 1.0));
         if (dot(rdir, rdir) > 0.0) {
@@ -882,7 +972,9 @@ void main() {
                     vec3(dist / u_material.attenuationColor.a)
                 );
             }
-            color = mix(color, transmitted, s.transmission * (1.0 - s.metallic));
+            vec3 reflected = (ambientSpecular + g_directSpecular) * fog.a;
+            transmitted *= 1.0 - FssEss;
+            color = mix(color - reflected, transmitted, s.transmission * (1.0 - s.metallic)) + reflected;
         }
     }
 

@@ -38,7 +38,8 @@ void main() {
 
     // A surface direction, so the model matrix, not the normal matrix.
     vTangent = normalize(mat3(model) * tangent);
-    vHandedness = aTangent.w;
+    // A mirroring model turns the cross product the fragment rebuilds B with, so it turns the sign.
+    vHandedness = aTangent.w * sign(determinant(mat3(model)));
 
     vUV = aUV;
     gl_Position = u_camera.viewProjection * worldPos;

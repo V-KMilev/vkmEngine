@@ -1269,12 +1269,26 @@ void InspectorPanel::drawLightSection(EditorContext& ec, EntityId id) {
         }
         changed |= propCheckbox("Shadows", &light.castShadows);
         if (light.castShadows) {
-            changed |= propDrag("Shadow Bias", &light.shadowBias, 0.0005f, 0.0f, 0.1f, "%.4f");
-            if (light.type == LightType::Directional || light.type == LightType::Spot) {
+            const bool shadowed = light.type == LightType::Directional
+                || light.type == LightType::Spot || light.type == LightType::Point;
+            if (shadowed) {
+                const char* biasTooltip =
+                    "How far the shadow compare slides toward the light, in shadow texels - "
+                    "more where the light grazes. Raise it against acne; too much detaches "
+                    "a shadow from its caster";
+                changed |= propDrag(
+                    "Shadow Bias",
+                    &light.shadowBias,
+                    0.05f,
+                    0.0f,
+                    4.0f,
+                    "%.2f texels",
+                    biasTooltip
+                );
                 const char* normalBiasTooltip =
-                    "How far a point is pushed along its surface normal before the shadow "
-                    "compare, in shadow texels - three times it at grazing light. Raise it "
-                    "against acne; too much detaches the shadow from its caster";
+                    "How far a point moves off its surface before the shadow compare, in "
+                    "shadow texels - none head-on, all of it where the light grazes. Raise "
+                    "it against acne on curved surfaces; too much loses thin shadows";
                 changed |= propDrag(
                     "Normal Bias",
                     &light.shadowNormalBias,
@@ -1287,31 +1301,31 @@ void InspectorPanel::drawLightSection(EditorContext& ec, EntityId id) {
             }
             if (light.type == LightType::Directional)
                 changed |= propDrag("Shadow Distance", &light.shadowDistance, 1.0f, 1.0f, 1000.0f, "%.1f");
-            // Penumbra size: an angle for a directional, a radius for a spot; point shadows are hard.
-            if (light.type == LightType::Directional) {
-                float degrees = glm::degrees(light.sourceRadius);
-                const char* sourceSizeTooltip =
-                    "Angular radius of the disc the light is seen as: how soft its "
-                    "shadows are and how wide its highlight. The real sun is 0.27; the "
-                    "sky's drawn disc is sized on its own";
-                if (propDrag("Source Size", &degrees, 0.01f, 0.0f, 10.0f, "%.2f deg", sourceSizeTooltip)) {
-                    light.sourceRadius = glm::radians(degrees);
-                    changed = true;
-                }
-            } else if (light.type == LightType::Spot) {
-                const char* sourceRadiusTooltip =
-                    "Radius of the emitter: how soft its shadows are, softest far "
-                    "from what casts them";
-                changed |= propDrag(
-                    "Source Radius",
-                    &light.sourceRadius,
-                    0.005f,
-                    0.0f,
-                    2.0f,
-                    "%.3f m",
-                    sourceRadiusTooltip
-                );
+        }
+        // Source size, shadowed or not: it sizes the highlight as well as the penumbra.
+        if (light.type == LightType::Directional) {
+            float degrees = glm::degrees(light.sourceRadius);
+            const char* sourceSizeTooltip =
+                "Angular radius of the disc the light is seen as: how soft its "
+                "shadows are, how wide its highlight, and how large the sky draws the "
+                "sun. The real sun is 0.27";
+            if (propDrag("Source Size", &degrees, 0.01f, 0.0f, 10.0f, "%.2f deg", sourceSizeTooltip)) {
+                light.sourceRadius = glm::radians(degrees);
+                changed = true;
             }
+        } else if (light.type == LightType::Spot || light.type == LightType::Point) {
+            const char* sourceRadiusTooltip =
+                "Radius of the emitter: how wide its highlight is and how soft its "
+                "shadows are, softest far from what casts them";
+            changed |= propDrag(
+                "Source Radius",
+                &light.sourceRadius,
+                0.005f,
+                0.0f,
+                2.0f,
+                "%.3f m",
+                sourceRadiusTooltip
+            );
         }
         changed |= propCheckbox("Enabled", &light.enabled);
 
@@ -1373,7 +1387,8 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
         }
     );
 
-    // Live: a value or sun change re-bakes, so a slow drag hitches each frame.
+    // Live: a changed value re-bakes the lighting at once, so a slow drag of one hitches each
+    // frame; the sun dragged slowly is followed over frames instead.
     editWorldCard(
         state,
         "Procedural Sky",
@@ -1417,25 +1432,44 @@ void InspectorPanel::drawWorldInspector(EditorContext& ec) {
                 ImGuiColorEditFlags_Float,
                 sunLightTooltip
             );
-            changed |= propSlider("Sun Light Intensity", &env.sky.lightIntensity, 0.0f, 20.0f, "%.2f");
+            const char* sunIntensityTooltip =
+                "The sun's illuminance with it overhead. It lights the sky too, so the sky's "
+                "brightness follows it";
+            changed |= propSlider(
+                "Sun Light Intensity",
+                &env.sky.lightIntensity,
+                0.0f,
+                20.0f,
+                "%.2f",
+                sunIntensityTooltip
+            );
             ImGui::Separator();
 
-            changed |= propSlider("Sun Intensity", &env.sky.sunIntensity, 0.0f, 60.0f, "%.1f");
             changed |= propSlider("Rayleigh", &env.sky.rayleigh, 0.0f, 4.0f, "%.2f");
-            changed |= propSlider("Mie", &env.sky.mie, 0.0f, 4.0f, "%.2f");
+            changed |= propSlider("Mie", &env.sky.mie, 0.0f, 10.0f, "%.2f");
             changed |= propSlider("Mie Asymmetry", &env.sky.mieG, 0.0f, SkySettings::MAX_MIE_G, "%.2f");
-            const char* sunDiscSizeTooltip =
-                "Radius of the sun drawn in the sky, in radians. The key light's shadows "
-                "and highlight follow its own Source Size, not this";
+            const char* sunDiscTooltip =
+                "The drawn sun's brightness per unit of the sun light's intensity; its size "
+                "is the sun light's Source Size";
             changed |= propSlider(
-                "Sun Disc Size",
-                &env.sky.sunAngularRadius,
-                0.002f,
-                0.1f,
-                "%.3f",
-                sunDiscSizeTooltip
+                "Sun Disc Intensity",
+                &env.sky.sunDiscIntensity,
+                0.0f,
+                20.0f,
+                "%.1f",
+                sunDiscTooltip
             );
-            changed |= propSlider("Sun Disc Intensity", &env.sky.sunDiscIntensity, 0.0f, 60.0f, "%.1f");
+            const char* aerialTooltip =
+                "How much of the sky's air lies between the eye and the scene, as a scale on "
+                "distance: far things fade into the horizon. 1 is the planet's, 0 none";
+            changed |= propSlider(
+                "Aerial Perspective",
+                &env.sky.aerialPerspective,
+                0.0f,
+                4.0f,
+                "%.2f",
+                aerialTooltip
+            );
 
             // Night takes over below the horizon on its own; only its look is set here.
             ImGui::Separator();
