@@ -336,11 +336,10 @@ void StressArena::onStart() {
     environment.sky.lightIntensity    = 3.2f;
     environment.sky.sunElevation      = 70.0f;
     environment.sky.sunAzimuth        = -145.0f;
-    environment.sky.sunIntensity      = 22.0f;
     environment.sky.rayleigh          = 1.0f;
-    environment.sky.mie               = 0.7f;
+    environment.sky.mie               = 3.5f;
     environment.sky.mieG              = 0.76f;
-    environment.sky.sunDiscIntensity  = 15.0f;
+    environment.sky.sunDiscIntensity  = 5.0f;
 
     // On: one of the heaviest passes. Thin enough to read as haze; the froxel grid
     // costs the same either way.

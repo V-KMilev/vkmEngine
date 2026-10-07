@@ -10,6 +10,7 @@
 #include "gl_frame_context.h"
 #include "gl_target.h"
 #include "convention/gl_bindings.h"
+#include "storage/gl_atmosphere.h"
 #include "storage/gl_fog_volume.h"
 #include "storage/gl_ibl.h"
 #include "storage/gl_irradiance_volume.h"
@@ -39,12 +40,19 @@ int32_t GLPass::backbufferBottom(const RenderView& view, int32_t top, int32_t he
     return static_cast<int32_t>(view.surfaceHeight) - static_cast<int32_t>(view.viewportY) - top - height;
 }
 
-void GLPass::bindFog(GLFrameContext& ctx, const Vkm::GL::Shader& shader) const {
+void GLPass::bindFog(GLFrameContext& ctx, const Vkm::GL::Shader& shader, bool air) const {
     if (ctx.fogReady) {
         ctx.fog.bindIntegratedSlot(GLBindings::PostTextureSlots::FOG_VOLUME);
         shader.setUniform1f("u_fogDepth", ctx.fog.depth());
     }
     shader.setUniform1i("u_hasFog", ctx.fogReady ? 1 : 0);
+    if (!air) return;
+
+    if (ctx.aerialPerspectiveReady) {
+        ctx.atmosphere.bindAerialPerspective(GLBindings::PostTextureSlots::AERIAL_PERSPECTIVE);
+        shader.setUniform1f("u_airDepth", ctx.atmosphere.aerialDepth());
+    }
+    shader.setUniform1i("u_hasAir", ctx.aerialPerspectiveReady ? 1 : 0);
 }
 
 void GLPass::bindAO(GLFrameContext& ctx, const Vkm::GL::Shader& shader, bool sampled) const {

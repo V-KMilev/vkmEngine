@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -16,6 +17,7 @@
 
 #include "gl_target.h"
 #include "gl_view.h"
+#include "storage/gl_atmosphere.h"
 #include "storage/gl_bloom.h"
 #include "frame/gl_camera.h"
 #include "storage/gl_cluster_grid.h"
@@ -154,6 +156,9 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
                 /// Forget what was baked, so the next changed() answers true.
                 void invalidate() { m_baked = false; }
 
+                /// Whether a bake has run since construction or the last invalidate().
+                bool baked() const { return m_baked; }
+
             private:
                 Signature m_last{};
                 bool      m_baked = false;
@@ -222,11 +227,17 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         void bakeEnvironment(const std::string& path);
 
         /**
-         * @brief Bake the IBL product set again, from the procedural atmosphere.
+         * @brief Keep the IBL product set showing the procedural atmosphere.
+         *
+         * A sky whose sun and moon have only drifted since the last frame (SkyParams::driftsFrom)
+         * is baked a step a frame and swapped in once complete, the next bake starting from
+         * where the sun is then, so a moving sun costs no frame the whole bake. Anything else -
+         * the first sky, a changed value, a jump - is baked at once, so nothing captured from
+         * the IBL meanwhile shows a sky the scene has left.
          *
          * @param sky The atmosphere and the sun and moon it is lit by.
          */
-        void bakeProceduralSky(const SkyParams& sky);
+        void followProceduralSky(const SkyParams& sky);
 
         /**
          * @brief Drop the baked environment, for a scene that names none.
@@ -290,6 +301,7 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
 
         GLIBL         m_ibl;
         GLIBLBaker    m_iblBaker;     ///< Persistent: the procedural sky re-bakes whenever the sun moves.
+        GLAtmosphere  m_atmosphere;   ///< The procedural sky's tables.
         GLBloom       m_bloom;
         GLSkinPalette m_skinPalette;  ///< This frame's bone palettes, in one storage buffer.
         GLClusterGrid m_clusterGrid;  ///< Forward+ per-cluster light lists (compute-filled).
@@ -311,8 +323,15 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         /// HDR path of the currently baked IBL; empty when none (or the sky is procedural).
         std::string m_bakedEnvPath;
 
-        BakedFrom<SkyParams>           m_bakedSky;
-        BakedFrom<IrradianceSignature> m_bakedIrradiance;
+        /// The procedural sky the IBL shows; none while it shows an HDR or nothing.
+        std::optional<SkyParams> m_shownSky;
+        /// The procedural sky the last frame that had one asked for.
+        std::optional<SkyParams> m_askedSky;
+
+        BakedFrom<Atmosphere::Coefficients> m_bakedAir;
+        BakedFrom<IrradianceSignature>      m_bakedIrradiance;
+        IrradianceSignature                 m_irradianceRequest{};  ///< What the last frame asked.
+        uint32_t                            m_irradianceStill = 0;  ///< Frames it has held still.
 };
 
 } // namespace Vkm::Engine

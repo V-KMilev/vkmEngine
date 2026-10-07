@@ -70,8 +70,9 @@ struct Light {
      * @brief How large the light's source is, which is how soft its shadows are.
      *
      * Directional: angular radius in radians (the sun is about 0.0047), also
-     * sizing its highlight. Spot: emitter radius in metres. 0 is hard. Point
-     * shadows ignore it; the sky's drawn sun is sized by SkySettings.
+     * sizing its highlight. Spot and point: emitter radius in metres, sizing
+     * their highlight too (a sphere light). 0 is hard. The procedural sky draws
+     * the key light's sun at this size.
      */
     float sourceRadius = glm::radians(0.5f);
 

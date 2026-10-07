@@ -252,9 +252,9 @@ for vkmGL's own headers):
 | `convention/` | `gl_bindings` (UBO/sampler contract), `gl_format_conversion`              |
 | `asset/`      | the GPU copy of one engine asset, kept current by `GLView`: `GLMesh` (a range in the `GLMeshPool` every mesh shares), `GLMaterial`, `GLTexture` |
 | `frame/`      | what one frame uploads from the `RenderView`: `GLCamera`, `GLLights`, the object buffer, the skin palette, the instance batcher and the `GLDrawList` it and the shadow pass submit through, `GLShadowData`, the stream upload |
-| `storage/`    | GPU-only state that outlives a frame, filled by a pass or a bake and sampled by others: `GLShadowAtlas`, `GLIBL`, `GLIrradianceVolume`, the probe array and manager, `GLBloom`, the cluster grid, the fog volume |
+| `storage/`    | GPU-only state that outlives a frame, filled by a pass or a bake and sampled by others: `GLShadowAtlas`, `GLIBL`, `GLAtmosphere`, `GLIrradianceVolume`, the probe array and manager, `GLBloom`, the cluster grid, the fog volume |
 | `offline/`    | GPU work that runs outside the pass list: the shared rig (`GLSceneCapture`, `GLCubeConvolver`) and everything it is lent to - the IBL, irradiance and probe bakers, and the editor's material preview |
-| `pass/`       | the passes: shadow, depth-prepass, resolve (depth + colour scopes), gtao, cluster-cull, fog (compute), skybox, forward, particle, decal, reflection, dof, bloom, grid, composite, ui, splash |
+| `pass/`       | the passes: shadow, depth-prepass, resolve (depth + colour scopes), gtao, cluster-cull, fog (compute), atmosphere, skybox, forward, particle, decal, reflection, dof, bloom, grid, composite, ui, splash |
 
 Editor (`src/editor/`): at the root, the parts every panel sees - `EditorSystem`,
 `EditorState`, `EditorContext`, the settings that persist the first and the verbs
@@ -321,12 +321,13 @@ that list is the record, ending in the splash. There is
 no render-graph abstraction and no shader variant cache.
 
 Real features: five light types including LTC area lights, Forward+ clustered
-lighting, CSM + spot + point-cube shadows, IBL (HDR or procedural sky), GTAO with
-bent normals, froxel volumetric fog, a baked SH irradiance volume, reflection
-probes, screen-space reflections (a pass on this frame's lit colour), projected
-decals, CPU billboard particles, MSAA, DoF, bloom, and a screen-space in-game UI
-(SDF text, wrapping, clipping, scrolling, buttons). Not present: TAA, FXAA,
-motion blur, lens flare, auto-exposure, contact shadows.
+lighting, CSM + spot + point-cube shadows, IBL (an HDR or a physically based
+procedural sky, with aerial perspective), GTAO with bent normals, froxel
+volumetric fog, a baked SH irradiance volume, reflection probes, screen-space
+reflections (a pass on this frame's lit colour), projected decals, CPU billboard
+particles, MSAA, DoF, bloom, and a screen-space in-game UI (SDF text, wrapping,
+clipping, scrolling, buttons). Not present: TAA, FXAA, motion blur, lens flare,
+auto-exposure, contact shadows.
 
 Engine code never includes a `gl_*` header; `MaterialAsset` is the renderer
 contract. See [rendering.md](rendering.md) and

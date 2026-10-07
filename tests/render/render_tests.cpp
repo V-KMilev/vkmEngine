@@ -44,7 +44,11 @@
 #include "frame/gl_lights.h"
 #include "frame/gl_shadow_data.h"
 #include "frame/gl_camera.h"
+#include "offline/gl_cube_convolver.h"
 #include "offline/gl_ibl_baker.h"
+#include "storage/gl_atmosphere.h"
+#include "storage/gl_ibl.h"
+#include "system/sky/atmosphere.h"
 #include "ecs/environment.h"
 #include "asset/gl_material.h"
 #include "storage/gl_cluster_grid.h"
@@ -1480,6 +1484,121 @@ void testASkyBakesAgainOnlyOnceItsSunHasMoved() {
     };
     check("a sun a hundredth of a degree on bakes the same", at(30.0f) == at(30.01f));
     check("  and one a degree on does not", !(at(30.0f) == at(31.0f)));
+
+    // Within a few degrees a bake spread over frames follows the sun; a jump, or a sky changed
+    // otherwise, is baked at once.
+    check("a sun four degrees on has drifted", at(34.0f).driftsFrom(at(30.0f)));
+    check("  and one ten degrees on has jumped", !at(40.0f).driftsFrom(at(30.0f)));
+    SkyParams hazier = at(30.0f);
+    hazier.air.mieScattering += glm::vec3(1.0e-6f);
+    check("  as has a sky in hazier air", !hazier.driftsFrom(at(30.0f)));
+}
+
+// The transmittance table the sky bake reads and the CPU's sunlight integrate one atmosphere;
+// a term in one and not the other shows as a sky and a sun disagreeing about the time of day.
+void testTheSkysTransmittanceIsTheSunlights() {
+    std::printf("The sky bake's transmittance against the sunlight's:\n");
+    using namespace Vkm::Engine;
+    namespace A = Atmosphere;
+
+    Vkm::GL::setShaderPrelude(OPENGL_GLSL_VERSION, GLBackend::shaderConstants());
+    Vkm::GL::Context gl;
+    GLMeshPool pool;
+    const GLMesh cube(pool, generateCube());
+    GLCubeConvolver convolver(cube);
+    GLIBLBaker baker(convolver);
+    GLAtmosphere atmosphere;
+
+    Environment env;
+    baker.bakeAir(gl, atmosphere, A::coefficients(env.sky));
+
+    constexpr int W = GLAtmosphere::TRANSMITTANCE_WIDTH;
+    constexpr int H = GLAtmosphere::TRANSMITTANCE_HEIGHT;
+    std::vector<float> lut(static_cast<size_t>(W) * H * 4);
+    atmosphere.bindTransmittance(0);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_FLOAT, lut.data());
+
+    // shaders/atmosphere.glsl's transmittanceUnit and lutUv, then a bilinear read.
+    const auto read = [&](float mu) {
+        const double top2 = double(A::TOP_RADIUS) * A::TOP_RADIUS;
+        const double bot2 = double(A::PLANET_RADIUS) * A::PLANET_RADIUS;
+        const double r    = A::PLANET_RADIUS + A::EYE_ALTITUDE;
+        const double h    = std::sqrt(top2 - bot2);
+        const double rho  = std::sqrt(r * r - bot2);
+        const double d    = -r * mu + std::sqrt(r * r * (mu * mu - 1.0) + top2);
+        const double dMin = A::TOP_RADIUS - r;
+        const double x    = (d - dMin) / (rho + h - dMin) * (W - 1);
+        const double y    = rho / h * (H - 1);
+        const int    x0   = std::min(static_cast<int>(x), W - 2);
+        const int    y0   = std::min(static_cast<int>(y), H - 2);
+        const auto texel = [&](int tx, int ty) {
+            const float* p = &lut[(static_cast<size_t>(ty) * W + tx) * 4];
+            return glm::dvec3(p[0], p[1], p[2]);
+        };
+        const double fx = x - x0;
+        const double fy = y - y0;
+        return glm::mix(
+            glm::mix(texel(x0, y0), texel(x0 + 1, y0), fx),
+            glm::mix(texel(x0, y0 + 1), texel(x0 + 1, y0 + 1), fx),
+            fy
+        );
+    };
+
+    bool agree = true;
+    for (const float elevation : {4.0f, 10.0f, 30.0f, 60.0f}) {
+        env.sky.sunElevation = elevation;
+        const glm::dvec3 baked = read(std::sin(glm::radians(elevation))) / read(1.0f);
+        const glm::vec3  cpu   = A::sunTransmittance(env.sky);
+        std::printf(
+            "      %4.0f degrees: baked %.3f %.3f %.3f, cpu %.3f %.3f %.3f\n",
+            elevation,
+            baked.r,
+            baked.g,
+            baked.b,
+            cpu.r,
+            cpu.g,
+            cpu.b
+        );
+        for (int c = 0; c < 3; ++c) {
+            if (std::abs(baked[c] - cpu[c]) > 0.02 * cpu[c] + 0.002) agree = false;
+        }
+    }
+    check("the table holds the sunlight's transmittance at every elevation", agree);
+    check("with no GL error behind any of it", noGlError());
+}
+
+// GLIBLBaker::slicedSteps counts the schedule its constructor builds, apart from it: the frames a
+// moving sun's ambient light trails it by are read off the count.
+void testASkyBakedAStepAFrameTakesTheStepsItCounts() {
+    std::printf("A procedural sky baked a step a frame:\n");
+    using namespace Vkm::Engine;
+
+    Vkm::GL::setShaderPrelude(OPENGL_GLSL_VERSION, GLBackend::shaderConstants());
+    Vkm::GL::Context gl;
+    GLMeshPool pool;
+    const GLMesh cube(pool, generateCube());
+    GLCubeConvolver convolver(cube);
+    GLIBLBaker baker(convolver);
+    GLAtmosphere atmosphere;
+    GLIBL ibl;
+
+    Environment env;
+    SkyParams sky;
+    sky.sunDir = env.sunDirection();
+    sky.air    = Atmosphere::coefficients(env.sky);
+    baker.bakeAir(gl, atmosphere, sky.air);
+
+    baker.beginProcedural(sky);
+    int  steps   = 0;
+    bool swapped = false;
+    while (baker.baking() && steps <= GLIBLBaker::slicedSteps()) {
+        swapped = baker.advance(gl, ibl, atmosphere);
+        ++steps;
+    }
+    std::printf("      %d steps taken, %d counted\n", steps, GLIBLBaker::slicedSteps());
+    check("the bake takes as many steps as slicedSteps counts", steps == GLIBLBaker::slicedSteps());
+    check("  and the last swaps it in", swapped && ibl.isReady());
+    check("with no GL error behind any of it", noGlError());
 }
 
 int runTests() {
@@ -1537,6 +1656,8 @@ int runTests() {
     testTheSharedBlocksAgreeWithTheirStructs();
     testMeshesInOnePoolDrawAsOneMultiDraw();
     testASkyBakesAgainOnlyOnceItsSunHasMoved();
+    testTheSkysTransmittanceIsTheSunlights();
+    testASkyBakedAStepAFrameTakesTheStepsItCounts();
     // Last: it gives the context a surface, which the tests above do not want.
     Vkm::Test::runGoldenTests(gl, g_failures);
 

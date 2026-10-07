@@ -65,15 +65,17 @@ class GLPass {
         static int32_t backbufferBottom(const RenderView& view, int32_t top, int32_t height);
 
         /**
-         * @brief Give the bound @p shader this frame's froxel fog, or tell it there is none.
+         * @brief Give the bound @p shader this frame's froxel fog and the sky's air in front of the view.
          *
-         * For a shader including shaders/fog.glsl: binds the volume only when the fog compute
-         * filled it this frame, and sets u_hasFog to match.
+         * For a shader including shaders/fog.glsl: binds each volume only when its compute filled
+         * it this frame - the fog pass, the atmosphere pass - and sets u_hasFog and u_hasAir to
+         * match.
          *
-         * @param ctx    For the fog volume and whether it is ready.
+         * @param ctx    For the volumes and whether each is ready.
          * @param shader The program that draws; it must be bound.
+         * @param air    False for the sky, which holds its own: the froxel fog alone.
          */
-        void bindFog(GLFrameContext& ctx, const Vkm::GL::Shader& shader) const;
+        void bindFog(GLFrameContext& ctx, const Vkm::GL::Shader& shader, bool air = true) const;
 
         /**
          * @brief Give the bound @p shader this frame's GTAO, or tell it there is none.

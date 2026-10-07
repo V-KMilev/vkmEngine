@@ -127,7 +127,7 @@ struct RenderSettings {
      * Authored, never adapted; 0 is as lit. One stop up by default, for the daylight balance
      * the procedural sky gives (docs/guides/engine.md section 4).
      */
-    float exposure = 0.0f;
+    float exposure = 1.0f;
 
     // Culling
     float cullMaxDistance = 500.0f;  ///< World-space.

@@ -26718,6 +26718,7 @@
       "starIntensity": 3.0
     },
     "sky": {
+      "aerialPerspective": 1.0,
       "hdrPath": "",
       "intensity": 1.0,
       "lightColor": [
@@ -26726,16 +26727,14 @@
         0.8999999761581421
       ],
       "lightIntensity": 3.0,
-      "mie": 1.0,
+      "mie": 5.0,
       "mieG": 0.7599999904632568,
       "procedural": true,
       "rayleigh": 1.0,
       "showSkybox": true,
-      "sunAngularRadius": 0.019999999552965164,
       "sunAzimuth": 30.0,
-      "sunDiscIntensity": 15.0,
-      "sunElevation": 50.0,
-      "sunIntensity": 22.0
+      "sunDiscIntensity": 5.0,
+      "sunElevation": 50.0
     }
   },
   "physics": {

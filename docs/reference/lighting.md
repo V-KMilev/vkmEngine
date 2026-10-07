@@ -408,15 +408,25 @@ Shadow rendering goes through `GLShadowPass`, which:
   own tile, so a caster too thin for the coarse map still shadows; that fallback
   keeps its full width, faint enough to hide the hard compare that admits it.
   A spot has one map and nothing coarser, so its search and filter stop at
-  `SOFT_SPOT_REACH` (7) texels, its taps a little further apart. A point light's cube keeps its single filtered tap: a blocker search
-  would need each cube bound a second time without comparison, and every tap
-  walked over the slots to keep the index dynamically uniform. The fog's sun
-  samples stay on the 3x3 kernel.
+  `SOFT_SPOT_REACH` (7) texels, its taps a little further apart, each compared
+  against the receiver's plane where it falls (`receiverSlopePerspective`: a
+  perspective tile's depth is affine in its uv over a plane, so two points of
+  the plane give the slope exactly).
 
-  A directional light's highlight is the same disc as its penumbra. The
-  sky's drawn sun is sized on its own (`SkySettings::sunAngularRadius`), so a
-  stylised disc in the sky does not force a soft shadow, or the other way
-  round.
+  A point light is soft the same way, from its `sourceRadius` in metres. Its
+  taps are laid on a disk across the light's ray, and each compares the
+  receiver's plane where its own ray meets it (`cubeReference`), so a wide
+  filter neither finds the receiver among its blockers nor shades it. The
+  blocker search reads the same array a second time on its own unit
+  (`u_shadowCubeRaw`, uncompared), as the atlas's does. A source of zero is a
+  hard edge, filtered a texel wide rather than one 2x2 compare, which stair-steps
+  once a texel outgrows a pixel. The fog's sun samples stay on the 3x3 kernel.
+
+  A directional light's highlight is the same disc as its penumbra, and the
+  procedural sky draws the sun at that size too (as Unreal's sky draws its
+  light's source angle), at `SkySettings::sunDiscIntensity` times
+  `sky.lightIntensity`, so one light sets the sun's size and brightness
+  everywhere.
 
   The atlas is read both ways within a frame, so the comparison lives on
   a sampler object bound to a texture unit rather than on the texture.
@@ -458,12 +468,14 @@ evenly instead of concentrating the shortfall in the foreground.
 
 ## Image-based lighting (IBL)
 
-A persistent `GLIBLBaker` re-bakes when the environment changes (a helper
-invoked from `GLBackend::render`, not a pass): when `Environment.sky.hdrPath`
-(an equirectangular HDR image) is swapped, or - with the procedural sky
-enabled - when a sky parameter changes or the sun or the moon moves by more
-than about half a degree (`SkyParams::SAME_DIRECTION`), so a sun animated a
-fraction of a degree a frame is not a bake a frame. A scene that names
+A persistent `GLIBLBaker` keeps the IBL product set showing the scene's sky (a
+helper invoked from `GLBackend::render`, not a pass). An HDR sky -
+`Environment.sky.hdrPath`, an equirectangular image - is baked when the path
+changes. The procedural sky is baked again when a sky parameter changes or the
+sun or the moon moves by more than about half a degree
+(`SkyParams::SAME_DIRECTION`), so a sun animated a fraction of a degree a frame
+is not a bake a frame - and while the sun only drifts, a step a frame (see
+"Following the sun" below). A scene that names
 neither, and an HDR that fails to load, leave no environment baked: the ambient
 term and the skybox then draw what a scene with no sky draws, rather than the
 last scene's sky. The reflection probes and the irradiance volume are captures
@@ -482,6 +494,104 @@ with it, since they are lit by it. It produces:
   (`GLIBLBaker::integrateBrdf`), and a scene with no sky reads it too: the
   direct lights' energy compensation and the reflection weight the
   screen-space reflections replace through both come from it.
+
+**The procedural sky** is Hillaire's production sky and atmosphere (EGSR 2020,
+"A Scalable and Production Ready Sky and Atmosphere Rendering Technique"), as
+Unreal's SkyAtmosphere renders it: a few small tables, from which the sky drawn,
+the environment's lighting and the air in front of the scene are each
+integrated. The four live in `GLAtmosphere`. Two depend on the air alone and are
+drawn again only when it changes (`GLIBLBaker::bakeAir`): the atmosphere's
+**transmittance** (`shaders/atmosphere/transmittance`,
+`GLAtmosphere::TRANSMITTANCE_WIDTH` by `TRANSMITTANCE_HEIGHT`, Bruneton's
+parameterisation of altitude and view angle), and from it the **multiple
+scattering** (`shaders/atmosphere/multiscatter`,
+`GLAtmosphere::MULTISCATTERING_SIZE` square, by altitude and the sun's angle):
+Hillaire's Psi_ms, the second order gathered isotropically from a sphere of
+directions and the orders past it summed as a geometric series. Two follow the
+camera and the sun and are computed every frame by the Atmosphere pass
+([rendering.md](rendering.md#the-passes-fixed-order)): the sky-view table and
+the aerial-perspective volume, below.
+
+The sky's radiance and the aerial perspective march the same way (`integrateAir`
+in `shaders/atmosphere.glsl`): at each sample it adds the sun's light
+single-scattered by Rayleigh and Mie, the sunlight read from the transmittance
+table and zero where the planet hides the sun, plus the multiple-scattering
+table times the air's scattering. Each step is integrated over its length
+against the transmittance falling across it (Hillaire's energy-conserving step),
+so a long step neither overshoots nor darkens. The sky (`skyRadiance`) marches
+each view ray from the eye, at `Atmosphere::EYE_ALTITUDE`, in `SKY_STEPS` steps
+spaced quadratically - short in the dense air near the eye, long where a horizon
+ray runs a thousand kilometres. The air is Rayleigh, Mie and an ozone layer that
+absorbs without scattering - a tent of density peaking at
+`Atmosphere::OZONE_ALTITUDE` - which keeps the twilight sky overhead blue. A ray
+that meets the planet ends there and sees the ground, diffuse at
+`Atmosphere::GROUND_ALBEDO` in the sunlight that reaches it, through the air
+between; below the horizon is that ground rather than black, so what faces down
+has sky light too. The ground's albedo feeds the multiple scattering as well
+(why its value,
+[engine.md](../guides/engine.md#4-what-has-already-been-decided)).
+
+**The sky drawn** is the **sky-view table** (`shaders/atmosphere/sky_view`,
+`GLAtmosphere::SKY_VIEW_WIDTH` by `SKY_VIEW_HEIGHT`): the sky's radiance from
+the eye for every view, in Hillaire's latitude/longitude parameterisation
+(`skyViewUnit`). The sky is symmetric about the sun's vertical plane, so the
+longitude is the azimuth from the sun's, over half the circle and densest toward
+the sun; the latitude runs from the zenith to the horizon over half the table
+and on to the nadir over the other, densest at the horizon from either side, so
+the ground's edge stays sharp where a cube's texels would blur it. It is
+computed every frame, so the sky drawn is always the current sun's, even while
+the IBL is still following it. The skybox reads it and adds what night adds
+(`skyNightGlow`), the sun disc, the moon and the stars. The env cube's bake
+(`shaders/ibl/sky`) marches the same integral into the cube's texels.
+
+**The air in front of the scene**, aerial perspective, is the
+**aerial-perspective volume** (`shaders/atmosphere/aerial_perspective`,
+`GLAtmosphere::AERIAL_PERSPECTIVE_SIZE` froxels across, down and deep -
+Hillaire's camera volume): for each froxel of the view, the light the sky's air
+scatters toward the eye in front of it and the mean of its transmittance. Its
+slices are squared in view depth (`aerialSliceToViewDepth`) out to the camera's
+far plane or `GLAtmosphere::AERIAL_PERSPECTIVE_REACH`, the nearer, so the near
+ones are metres deep and the far ones kilometres. Each froxel marches from the
+eye to its own depth through `integrateAir`, over its distance scaled by
+`sky.aerialPerspective` (Unreal's aerial perspective distance scale: 1 is the
+planet's air, 0 turns it off), and its light is the sun's at the sky's
+`intensity`, as the skybox draws the sky. Every surface drawn through the air
+takes it where it takes the froxel fog, at its own depth and beneath the fog
+([rendering.md](rendering.md#fog)), so a distant hill fades into the horizon the
+sky draws behind it (how much, and why the default,
+[engine.md](../guides/engine.md#4-what-has-already-been-decided)). The sky holds
+its own air and takes none, and an HDR sky has no atmosphere to apply.
+
+**Following the sun.** The env cube and its convolutions are too slow for one
+frame, so a procedural sky baked whole each time the sun moves half a degree
+would drop a frame every few seconds of a day-night cycle. A sky whose sun and
+moon have only drifted since the last frame - by no more than
+`SkyParams::DRIFT`, every other term the same - is baked a step a frame instead,
+as Unreal time-slices its real-time sky capture: the env cube's six faces, then
+its mips with the prefilter's mirror level, then each irradiance face in
+`GLIBLBaker::IRRADIANCE_SLICES` shares of its azimuths, added together, then
+each prefilter level a face at a time, the largest in bands of
+`GLIBLBaker::BAND_TEXELS` texels - `GLIBLBaker::slicedSteps` steps in all.
+`GLIBL` holds two sets of the three cubes: shading reads one while a bake fills
+the other, which is swapped in once complete, so no frame reads a half-made set,
+and the next bake starts from wherever the sun is then. The ambient light and
+reflections so trail a moving sun by up to two bakes' worth of frames, while the
+sky drawn and the key light never do. The first sky, a changed value and a jump
+past `DRIFT` are baked whole at once, as an HDR is: a probe or the irradiance
+volume captured in the meantime would otherwise picture a sky the scene has
+left. What each step costs, and the whole bake,
+[engine.md](../guides/engine.md#4-what-has-already-been-decided).
+
+**One sun lights the scene and the sky.** The sky's sun is
+`Atmosphere::solarIlluminance`: `sky.lightColor` times `sky.lightIntensity`,
+divided by the air's transmittance straight down - the sun above the air that,
+overhead, arrives as the scene's key light. Sky radiance is that times the
+atmosphere's integral, with no constant between them. So raising the sun
+brightens the sky with it, and the sky's light on the ground keeps the share of
+the sun's that the air gives it - measured, and why no constant,
+[engine.md](../guides/engine.md#4-what-has-already-been-decided).
+`sky.intensity` scales the skybox, the ambient and the air's light in front of
+the scene.
 
 **Where the sun is** is authored on the `Environment`, as `sunElevation` and
 `sunAzimuth` in degrees, and nowhere else. The sky is scene-global and has to
@@ -502,30 +612,31 @@ intensity** are the sky's: all three are written every frame, the rotation from
 **The sunlight crosses the sky's air.** By day the colour written is
 `Atmosphere::sunlight`, `sky.lightColor` times `Atmosphere::sunTransmittance`
 (`system/sky/atmosphere.h`): the sun's transmittance from the eye through the
-same Rayleigh and Mie layers the sky bake scatters, scaled by the scene's
+same Rayleigh, Mie and ozone layers the sky integrates, scaled by the scene's
 `rayleigh` and `mie`, divided by the transmittance straight up. A sun overhead
-is the authored colour; at the default 50 degrees it has lost a few per cent,
-blue most; at five degrees blue is down to a tenth and red to three fifths, so
-the light turns orange with the sky rather than staying white under it. The
-skybox draws its sun disc in the same `sunlight`, so the disc and the light it
-stands for agree. The atmosphere is stated once, in that header: its geometry
-reaches `shaders/ibl/sky` through the prelude as `ATMOSPHERE_*`, and its
-coefficients under the scene's scales - `Atmosphere::coefficients`, Mie's
-absorption folded into its extinction - as uniforms, so the sky bake and the
-CPU integration share every term of the extinction they integrate. Over the
-twilight band the intensity still fades to nothing at the horizon, where the
-light swaps to the moon. The
-direction is the world's, so a key light parented under something turned has
-its parent's world rotation divided out of the local rotation written. Author
-those, not the `Light` - an edit typed into the light is gone before the next
-frame draws, and the value the scene saves is the sky's. Shadow settings, the
-type and the enabled flag stay the light's. The editor's Light card says this
-on the card itself and greys the two fields it does not own, because the same
-`findKeyLight` tells it which light the sky is driving.
+is the authored colour; under the default haze at 50 degrees it has lost 3% of
+its red and 9% of its blue, and at five degrees blue is down to a sixteenth and
+red to about a third, so the light turns orange with the sky rather than staying
+white under it. The skybox draws its sun disc in the same `sunlight`, so the
+disc and the light it stands for agree. The atmosphere is stated once, in that
+header: its geometry, ozone and ground reach `shaders/atmosphere.glsl` through
+the prelude as `ATMOSPHERE_*`, and its coefficients under the scene's scales -
+`Atmosphere::coefficients`, Mie's absorption folded into its extinction - as
+uniforms, so the sky's integrals and the CPU's share every term of the
+extinction they integrate. Over the twilight band the intensity still fades to
+nothing at the horizon, where the light swaps to the moon. The direction is the
+world's, so a key light parented under something turned has its parent's world
+rotation divided out of the local rotation written. Author those, not the
+`Light` - an edit typed into the light is gone before the next frame draws, and
+the value the scene saves is the sky's. Shadow settings, the type and the
+enabled flag stay the light's. The editor's Light card says this on the card
+itself and greys the two fields it does not own, because the same `findKeyLight`
+tells it which light the sky is driving.
 
 Below the horizon is night: the atmosphere is nearly black there, so a skyglow
-floor plus a moon lobe take over across a twilight band (`shaders/sky.glsl`,
-shared with the skybox so the two cannot disagree about the time of day). The
+floor plus a moon lobe take over across a twilight band (`skyNightGlow` and
+the rest of `shaders/sky.glsl`, which the env-cube bake and the skybox share,
+so the two cannot disagree about the time of day). The
 band is `NightSkySettings::TWILIGHT_DEGREES` either side of the horizon, and
 the key light fades across the same band, so the sky darkens as its light
 does. The
@@ -569,8 +680,10 @@ arrive the same way, as `#define`s a layout qualifier can take
 ([rendering.md](rendering.md#shader-binding-contract)).
 
 The same holds for constants that are not limits: the twilight band
-(`SKY_TWILIGHT`) and the procedural atmosphere's geometry (`ATMOSPHERE_*`,
-from `system/sky/atmosphere.h`) reach the shaders that way too.
+(`SKY_TWILIGHT`), the procedural atmosphere's geometry, ozone and ground
+(`ATMOSPHERE_*`, from `system/sky/atmosphere.h`) and the sizes of its
+tables (`TRANSMITTANCE_LUT_SIZE`, `MULTISCATTERING_LUT_SIZE`,
+`SKY_VIEW_LUT_SIZE`, from `GLAtmosphere`) reach the shaders that way too.
 
 Do not re-define a prelude constant in a shader - GLSL rejects the redefinition,
 which is the check that keeps a shader from quietly holding a copy of its own.

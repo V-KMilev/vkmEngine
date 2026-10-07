@@ -238,15 +238,22 @@ void GLSceneCapture::beginFace(
     );
 }
 
-void GLSceneCapture::drawSky(Vkm::GL::Context& gl, const GLIBL& ibl) {
+void GLSceneCapture::drawSky(
+    Vkm::GL::Context& gl,
+    const GLIBL& ibl,
+    const glm::mat4& projection,
+    float intensity
+) {
     gl.setDepthFunc(GL_LEQUAL);
     gl.setDepthWrite(false);
     gl.setFaceCulling(false);
     m_skybox.bind();
     m_skybox.setUniform1i("u_hasSky", 1);
-    m_skybox.setUniform1f("u_iblIntensity", 1.0f);
+    m_skybox.setUniform1f("u_iblIntensity", intensity);
     m_skybox.setUniform1i("u_hasSun", 0);
     m_skybox.setUniform1i("u_hasFog", 0);
+    // The skybox projects by its own matrix: an orthographic camera's sky takes a perspective one.
+    m_skybox.setUniformMatrix4fv("u_skyProjection", projection);
     ibl.bindEnvCube(GLBindings::IBLTextureSlots::ENV_CUBE);
     m_cube.draw();
     gl.setDepthFunc(GL_LESS);
@@ -276,7 +283,7 @@ void GLSceneCapture::captureCube(
         beginFace(gl, face, position, proj, attach);
 
         // The global sky, so directions that miss geometry carry sky radiance, not black.
-        if (hasIBL) drawSky(gl, *m_ibl);
+        if (hasIBL) drawSky(gl, *m_ibl, proj);
 
         // The skybox draw rebound the program; begin()'s uniforms and IBL binds persist on m_pbr.
         gl.setFaceCulling(true);
