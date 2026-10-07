@@ -291,6 +291,13 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     {
         PROFILE_SCOPE("Shadow/Plan");
         m_shadowData.build(view, m_view, m_shadowAtlas.tileResolution());
+        // Latched, so a plan the atlas refuses says so once.
+        const bool laidOut = m_shadowAtlas.layout(m_shadowData.tileSizes());
+        if (!laidOut && !m_layoutRefusedLogged) {
+            LOG_ERROR("Shadow tiles did not fit the atlas; shadows keep last frame's places");
+        }
+        m_layoutRefusedLogged = !laidOut;
+        m_shadowData.placeTiles(m_shadowAtlas);
     }
 
     // Per-frame UBOs: uploaded and bound once here, visible to every pass.

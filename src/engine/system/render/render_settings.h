@@ -141,7 +141,7 @@ struct RenderSettings {
     uint32_t textureAnisotropy = 16;
 
     // Shadows
-    /// Per-tile shadow-atlas resolution (1024/2048/4096); costly to raise.
+    /// The largest shadow tile's edge (1024/2048/4096), the sun's near cascades'; costly to raise.
     uint32_t shadowResolution = 4096;
 
     // Overlays

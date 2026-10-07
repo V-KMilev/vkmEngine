@@ -440,7 +440,8 @@ void testAnAtlasThatForgetsDrawsEveryTileAgain() {
 
     Vkm::GL::Context gl;
     Vkm::Engine::GLShadowAtlas atlas;
-    atlas.init(gl, Vkm::Engine::SHADOW_ATLAS_MIN_TILE_RES);
+    atlas.init(gl, Vkm::Engine::SHADOW_ATLAS_MIN_BLOCK_RES);
+    atlas.layout({Vkm::Engine::SHADOW_ATLAS_MIN_TILE_RES});
 
     constexpr uint64_t PICTURE = 42;
     atlas.begin2D(gl);
@@ -463,7 +464,8 @@ void testAnAtlasHoldsOnlyWhatWasDrawn() {
 
     Vkm::GL::Context gl;
     Vkm::Engine::GLShadowAtlas atlas;
-    atlas.init(gl, Vkm::Engine::SHADOW_ATLAS_MIN_TILE_RES);
+    atlas.init(gl, Vkm::Engine::SHADOW_ATLAS_MIN_BLOCK_RES);
+    atlas.layout({Vkm::Engine::SHADOW_ATLAS_MIN_TILE_RES, Vkm::Engine::SHADOW_ATLAS_MIN_TILE_RES});
 
     constexpr uint64_t PICTURE = 7;
     atlas.tileHolds(1, PICTURE);
@@ -483,44 +485,145 @@ void testANewAtlasReadsAsTheFarPlane() {
 
     Vkm::GL::Context gl;
     Vkm::Engine::GLShadowAtlas atlas;
-    atlas.init(gl, Vkm::Engine::SHADOW_ATLAS_MIN_TILE_RES);
+    atlas.init(gl, Vkm::Engine::SHADOW_ATLAS_MIN_BLOCK_RES);
 
     constexpr uint32_t UNIT = 3;
     const auto allFar = [](const std::vector<float>& depth) {
         return !depth.empty() && std::all_of(depth.begin(), depth.end(), [](float d) { return d == 1.0f; });
     };
 
-    const uint32_t tile = atlas.tileResolution();
-    std::vector<float> atlasDepth(
-        static_cast<size_t>(tile) * tile * Vkm::Engine::SHADOW_ATLAS_COLS * Vkm::Engine::SHADOW_ATLAS_ROWS,
-        0.0f
-    );
+    const size_t side = static_cast<size_t>(atlas.tileResolution()) * Vkm::Engine::SHADOW_ATLAS_BLOCKS;
+    std::vector<float> atlasDepth(side * side, 0.0f);
     atlas.bind2D(UNIT);
     glActiveTexture(GL_TEXTURE0 + UNIT);
     glGetTexImage(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, GL_FLOAT, atlasDepth.data());
     check("every tile of the 2D atlas is at the far plane", allFar(atlasDepth));
 
-    bool facesFar = true;
-    std::vector<float> faceDepth(
-        static_cast<size_t>(Vkm::Engine::SHADOW_CUBE_RES) * Vkm::Engine::SHADOW_CUBE_RES
+    // Every layer-face of the cube array at once.
+    std::vector<float> cubeDepth(
+        static_cast<size_t>(Vkm::Engine::SHADOW_CUBE_RES) * Vkm::Engine::SHADOW_CUBE_RES * 6
+            * Vkm::Engine::Config::MAX_SHADOW_CASTERS_CUBE,
+        0.0f
     );
-    for (uint32_t slot = 0; slot < Vkm::Engine::Config::MAX_SHADOW_CASTERS_CUBE; ++slot) {
-        atlas.bindCube(slot, UNIT);
-        for (int face = 0; face < 6; ++face) {
-            std::fill(faceDepth.begin(), faceDepth.end(), 0.0f);
-            glGetTexImage(
-                GL_TEXTURE_CUBE_MAP_POSITIVE_X + face,
-                0,
-                GL_DEPTH_COMPONENT,
-                GL_FLOAT,
-                faceDepth.data()
-            );
-            facesFar = facesFar && allFar(faceDepth);
+    atlas.bindCubes(UNIT);
+    glActiveTexture(GL_TEXTURE0 + UNIT);
+    glGetTexImage(GL_TEXTURE_CUBE_MAP_ARRAY, 0, GL_DEPTH_COMPONENT, GL_FLOAT, cubeDepth.data());
+    glBindSampler(UNIT, 0);
+    check("  and so is every face of every cube", allFar(cubeDepth));
+    check("with no GL error behind any of it", noGlError());
+}
+
+// Tiles of several sizes share the atlas: each inside it, none over another, and one
+// whose size and place are unchanged keeps the picture it holds.
+void testAnAtlasLaysOutTilesOfEverySize() {
+    std::printf("A shadow atlas laying out tiles of several sizes:\n");
+
+    using Vkm::Engine::SHADOW_ATLAS_MIN_TILE_RES;
+    Vkm::GL::Context gl;
+    Vkm::Engine::GLShadowAtlas atlas;
+    atlas.init(gl, 1024);
+    const uint32_t full = atlas.tileResolution();
+
+    // The sun's cascades as the plan sizes them, then two spots.
+    const uint32_t              half  = full / 2;
+    const uint32_t              least = SHADOW_ATLAS_MIN_TILE_RES;
+    const std::vector<uint32_t> sizes = {full, full, full, half, half, least};
+    check("the sun's cascades and two spots are laid out", atlas.layout(sizes));
+    bool inside  = true;
+    bool overlap = false;
+    for (uint32_t a = 0; a < sizes.size(); ++a) {
+        const glm::vec4 ta = atlas.tileUV(a);
+        inside = inside && ta.x >= 0.0f && ta.y >= 0.0f && ta.x + ta.z <= 1.0f && ta.y + ta.w <= 1.0f;
+        for (uint32_t b = a + 1; b < sizes.size(); ++b) {
+            const glm::vec4 tb = atlas.tileUV(b);
+            overlap = overlap
+                || (ta.x < tb.x + tb.z && tb.x < ta.x + ta.z && ta.y < tb.y + tb.w && tb.y < ta.y + ta.w);
         }
     }
-    glBindSampler(UNIT, 0);
-    check("  and so is every face of every cube", facesFar);
+    check("  each inside the atlas", inside);
+    check("  and none over another", !overlap);
+    const float leastUV = static_cast<float>(least) / (2.0f * static_cast<float>(full));
+    check("  each its own size", atlas.tileUV(5).z == leastUV);
+    check("more than the atlas holds is refused", !atlas.layout({full, full, full, full, full / 2}));
+
+    constexpr uint64_t PICTURE = 9;
+    atlas.layout(sizes);
+    atlas.begin2D(gl);
+    atlas.beginTile(gl, 5, PICTURE);
+    atlas.layout(sizes);
+    check("the same sizes keep a tile's picture", atlas.tileHolds(5, PICTURE));
+    std::vector<uint32_t> moved = sizes;
+    moved[5] = half;
+    atlas.layout(moved);
+    check("  a tile that changes size forgets it", !atlas.tileHolds(5, PICTURE));
     check("with no GL error behind any of it", noGlError());
+}
+
+// A spot's tile follows how much of the screen its cone covers, and every tile the plan
+// sizes fits the atlas, however many spots ask for the largest.
+void testASpotsTileFollowsItsShareOfTheScreen() {
+    std::printf("A spot light's shadow tile, near and far:\n");
+
+    using namespace Vkm::Engine;
+    constexpr uint32_t FULL = 4096;
+    RenderObjects objects;
+    objects.casterCount = 0;
+    RenderView view;
+    view.objects        = &objects;
+    view.viewportWidth  = 1920;
+    view.viewportHeight = 1080;
+    const auto lookFrom = [&](glm::vec3 eye) {
+        view.camera = CameraData::from(
+            glm::lookAt(eye, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
+            glm::perspective(glm::radians(60.0f), 16.0f / 9.0f, 0.1f, 500.0f),
+            eye
+        );
+    };
+    LightData spot{};
+    spot.type           = LightType::Spot;
+    spot.position       = glm::vec3(0.0f, 4.0f, 0.0f);
+    spot.direction      = glm::vec3(0.0f, -1.0f, 0.0f);
+    spot.radius         = 6.0f;
+    spot.innerConeAngle = 0.4f;
+    spot.outerConeAngle = 0.5f;
+    spot.castShadows    = true;
+    view.lights.push_back(spot);
+
+    GLView       glView;
+    GLShadowData plan;
+    const auto tileAt = [&](glm::vec3 eye) {
+        lookFrom(eye);
+        plan.build(view, glView, FULL);
+        plan.finishCull();
+        return plan.tileSizes().empty() ? 0u : plan.tileSizes()[0];
+    };
+    const uint32_t close   = tileAt({0.0f, 2.0f, 4.0f});
+    const uint32_t distant = tileAt({0.0f, 2.0f, 120.0f});
+    std::printf("      %u texels a side at 4 m, %u at 120 m\n", close, distant);
+    check("a spot filling the view takes a large tile", close >= FULL / 2);
+    check("  and a distant one a small tile", distant < close && distant >= SHADOW_ATLAS_MIN_TILE_RES);
+
+    LightData sun{};
+    sun.type           = LightType::Directional;
+    sun.direction      = glm::normalize(glm::vec3(0.3f, -1.0f, 0.2f));
+    sun.castShadows    = true;
+    sun.shadowDistance = 100.0f;
+    view.lights.push_back(sun);
+    for (int i = 0; i < 4; ++i) {
+        LightData more = spot;
+        more.entitySlot = static_cast<uint32_t>(i + 2);
+        view.lights.push_back(more);
+    }
+    view.lights[1].entitySlot = 1;
+    tileAt({0.0f, 2.0f, 4.0f});
+    const std::vector<uint32_t>& sizes = plan.tileSizes();
+    uint64_t area = 0;
+    for (const uint32_t size : sizes) area += static_cast<uint64_t>(size) * size;
+    check("with a sun and five spots, every slot is taken", sizes.size() == Config::MAX_SHADOW_CASTERS_2D);
+    const bool halved = sizes.size() >= 4 && sizes[0] == FULL && sizes[1] == FULL
+        && sizes[2] == FULL && sizes[3] == FULL / 2;
+    check("  the nearest three at the largest tile, the last at half", halved);
+    check("and every tile fits the atlas", area <= GLShadowAtlas::capacity(FULL));
 }
 
 // Many meshes as one glMultiDrawElementsIndirect: one vertex array and index buffer,
@@ -594,27 +697,38 @@ void testMeshesInOnePoolDrawAsOneMultiDraw() {
     check("with no GL error behind any of it", noGlError());
 }
 
-// A point light's cube is compared in hardware through a samplerCubeShadow, which
+// A point light's cube is compared in hardware through a samplerCubeArrayShadow, which
 // returns undefined values unless the texture compares - so the unit
-// GLShadowAtlas::bindCube binds must carry a comparing sampler.
+// GLShadowAtlas::bindCubes binds must carry a comparing sampler, and the one
+// bindCubesRaw binds, for the blocker search, a sampler that does not.
 void testAShadowCubeIsBoundForComparison() {
     std::printf("A point light's shadow cube, bound for the forward pass:\n");
 
     Vkm::GL::Context gl;
     Vkm::Engine::GLShadowAtlas atlas;
-    atlas.init(gl, Vkm::Engine::SHADOW_ATLAS_MIN_TILE_RES);
+    atlas.init(gl, Vkm::Engine::SHADOW_ATLAS_MIN_BLOCK_RES);
 
     constexpr uint32_t UNIT = 5;
-    atlas.bindCube(0, UNIT);
-    glActiveTexture(GL_TEXTURE0 + UNIT);
+    const auto compareMode = [&](GLint& sampler) {
+        glActiveTexture(GL_TEXTURE0 + UNIT);
+        glGetIntegerv(GL_SAMPLER_BINDING, &sampler);
+        GLint mode = GL_NONE;
+        if (sampler != 0) {
+            glGetSamplerParameteriv(static_cast<GLuint>(sampler), GL_TEXTURE_COMPARE_MODE, &mode);
+        }
+        glBindSampler(UNIT, 0);
+        return mode;
+    };
     GLint sampler = 0;
-    glGetIntegerv(GL_SAMPLER_BINDING, &sampler);
-    GLint mode = GL_NONE;
-    if (sampler != 0) glGetSamplerParameteriv(static_cast<GLuint>(sampler), GL_TEXTURE_COMPARE_MODE, &mode);
-    glBindSampler(UNIT, 0);
-
+    atlas.bindCubes(UNIT);
+    const GLint compared = compareMode(sampler);
     check("the unit carries a sampler", sampler != 0);
-    check("  and it compares against the stored depth", mode == GL_COMPARE_REF_TO_TEXTURE);
+    check("  and it compares against the stored depth", compared == GL_COMPARE_REF_TO_TEXTURE);
+    GLint raw = 0;
+    atlas.bindCubesRaw(UNIT);
+    const GLint read = compareMode(raw);
+    check("the raw unit carries a sampler too", raw != 0);
+    check("  and it reads the depth as stored", read == GL_NONE);
     check("with no GL error behind it", noGlError());
 }
 
@@ -1402,6 +1516,8 @@ int runTests() {
     testAnAtlasThatForgetsDrawsEveryTileAgain();
     testAnAtlasHoldsOnlyWhatWasDrawn();
     testANewAtlasReadsAsTheFarPlane();
+    testAnAtlasLaysOutTilesOfEverySize();
+    testASpotsTileFollowsItsShareOfTheScreen();
     testAShadowCubeIsBoundForComparison();
     testEveryShippedShaderCompiles();
     testABackendInstallsItsConstantsBeforeItCompilesAnything();

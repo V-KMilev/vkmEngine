@@ -17,6 +17,7 @@ namespace Vkm::GL {
 
 namespace Vkm::Engine {
 
+class GLShadowAtlas;
 class GLView;
 struct RenderView;
 struct LightData;
@@ -36,8 +37,8 @@ glm::vec3 stableUp(const glm::vec3& dir);
  *
  *   lightVP : world -> light clip space
  *   atlas   : xy = tile UV offset, zw = tile UV scale (sample = offset + uv*scale)
- *   params  : x = Light::shadowBias (a cascade's in depth; a spot's a fraction of its range, as
- *             a point light's: rayBias in shaders/shadows.glsl), y = world size of a shadow texel
+ *   params  : x = Light::shadowBias, in texels at the receiver (biasSlide in
+ *             shaders/shadows.glsl), y = world size of a shadow texel
  *             (a spot's at its range), z = far plane (the world depth an ortho tile's 0..1 spans;
  *             a spot's range), w = source size for the penumbra filter, 0 = hard 3x3 (a
  *             cascade's: tan of the sun's angular radius; a spot's: source radius over the
@@ -49,20 +50,21 @@ glm::vec3 stableUp(const glm::vec3& dir);
 struct alignas(16) Shadow2DGPU {
     glm::mat4 lightVP = glm::mat4(1.0f);
     glm::vec4 atlas   = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
-    glm::vec4 params  = glm::vec4(0.001f, 0.0f, 0.0f, 0.0f);
-    glm::vec4 shape   = glm::vec4(1.5f, 0.0f, 0.0f, 0.0f);
+    glm::vec4 params  = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
+    glm::vec4 shape   = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
 };
 
 /**
  * @brief One cube shadow caster (std140) - a point light.
  *
  *   posRange : xyz = light world position, w = range, the faces' far plane
- *   params   : x = Light::shadowBias, a fraction of the range (rayBias in
- *              shaders/shadows.glsl); y = the faces' near plane
+ *   params   : x = Light::shadowBias and z = Light::shadowNormalBias, both in the cube's
+ *              texels at the receiver; y = the faces' near plane; w = Light::sourceRadius,
+ *              the penumbra's source in metres (0 = hard)
  */
 struct alignas(16) ShadowCubeGPU {
     glm::vec4 posRange = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
-    glm::vec4 params   = glm::vec4(0.001f, 0.0f, 0.0f, 0.0f);
+    glm::vec4 params   = glm::vec4(0.0f, 0.0f, 0.0f, 0.0f);
 };
 
 /**
@@ -187,12 +189,31 @@ class GLShadowData {
          * goes first whatever its slot: spots ahead of it could leave too short a run for its
          * consecutive cascades.
          *
+         * Each tile is sized as the plan fits it: the sun's nearest cascades at @p tileRes, the
+         * rest at half, and a spot by how much of the screen its cone covers, all within what
+         * the atlas holds. placeTiles() then takes where the atlas put them.
+         *
          * @param view    Its lights and its camera.
          * @param glView  Already synced: a caster's geometry upload is part of its tile's look.
-         * @param tileRes The tile edge as the atlas built it (GLShadowAtlas::tileResolution), not
-         *                as asked: the normal-offset bias sizes a shadow texel from it.
+         * @param tileRes The largest tile's edge as the atlas built it
+         *                (GLShadowAtlas::tileResolution), not as asked: a shadow texel's size is
+         *                measured from the tiles.
          */
         void build(const RenderView& view, const GLView& glView, uint32_t tileRes);
+
+        /**
+         * @brief Per 2D slot, the edge of its tile in texels, as build() sized it.
+         *
+         * @return What GLShadowAtlas::layout places; valid until the next build().
+         */
+        const std::vector<uint32_t>& tileSizes() const { return m_tileSizes; }
+
+        /**
+         * @brief Point each 2D slot's GPU entry at its tile, once the atlas has laid them out.
+         *
+         * @param atlas The atlas, laid out from tileSizes().
+         */
+        void placeTiles(const GLShadowAtlas& atlas);
 
         /**
          * @brief Upload the ShadowBlock UBO and bind it to its binding point.
@@ -272,6 +293,14 @@ class GLShadowData {
             float farDepth  = 0.0f;
         };
 
+        /**
+         * @brief A spot's tile edge, by the spot's entity slot.
+         */
+        struct SpotTile {
+            uint32_t entitySlot = 0;
+            uint32_t size       = 0;
+        };
+
     private:
         /**
          * @brief Fork the cull of the caster list against every job recorded this frame.
@@ -323,6 +352,26 @@ class GLShadowData {
         void fitSpot(const LightData& light, uint32_t lightIndex, uint32_t& next2D);
 
         /**
+         * @brief A spot's tile edge: about SPOT_TEXELS_PER_PIXEL texels per pixel its cone covers.
+         *
+         * A power of two from SHADOW_ATLAS_MIN_TILE_RES to the largest tile. It shrinks only once
+         * its cone needs well under the tile it had, so one at the edge of a size does not flip
+         * between two every frame.
+         *
+         * @param light The spot light.
+         * @param range Its range, as the fit clamped it.
+         * @return The edge in texels.
+         */
+        uint32_t spotTileSize(const LightData& light, float range) const;
+
+        /**
+         * @brief Halve the largest spot tiles until every tile fits the atlas.
+         *
+         * Then measures each spot's texel by its tile, and records the sizes for next frame.
+         */
+        void fitTilesToAtlas();
+
+        /**
          * @brief Fit a point light into the next free shadow cube.
          *
          * @param light      The point light.
@@ -342,8 +391,20 @@ class GLShadowData {
         uint32_t m_refused      = 0;      ///< Shadow casters this frame that found no free atlas tile.
         bool     m_budgetLogged = false;  ///< Whether that refusal has been reported; cleared once it stops.
 
-        /// The atlas's own tile resolution this frame, for world-texel bias sizing.
-        uint32_t m_shadowRes = 0;
+        /// The atlas's largest tile this frame, which the cascades and spot sizes start from.
+        uint32_t m_tileRes = 0;
+
+        std::vector<uint32_t> m_tileSizes;   ///< Per 2D slot, its tile's edge in texels.
+        std::vector<uint32_t> m_tileOwners;  ///< Per 2D slot, its light's entity slot.
+
+        /// Per spot, its tile's edge last frame: what a spot shrinks from. Few, so searched in turn.
+        std::vector<SpotTile> m_spotTiles;
+        std::vector<SpotTile> m_spotTilesNext;  ///< This frame's, swapped in.
+
+        // The camera, for how much of the screen a spot covers.
+        glm::vec3 m_eye          = glm::vec3(0.0f);
+        float     m_focalPixels  = 1.0f;   ///< projection[1][1] times half the viewport height.
+        bool      m_orthographic = false;
 
         /**
          * @brief This frame's shadow-casting lights, in entity-slot order.

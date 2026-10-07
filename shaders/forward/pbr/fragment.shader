@@ -715,7 +715,7 @@ void main() {
             float ndotl = dot(Ng, L);
             if      (type == LIGHT_DIRECTIONAL) visibility *= sampleCSMSoft(vWorldPos, Ng, ndotl);
             else if (type == LIGHT_SPOT)        visibility *= sample2DSlotSoft(sslot, vWorldPos, Ng, ndotl);
-            else if (type == LIGHT_POINT)       visibility *= sampleCube(sslot, vWorldPos, ndotl);
+            else if (type == LIGHT_POINT)       visibility *= sampleCube(sslot, vWorldPos, Ng, ndotl);
         }
 
         // POM self-shadowing for the sun alone, bounding the trace cost.
