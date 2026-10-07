@@ -113,41 +113,46 @@ view each frame.
   the ground; it draws while any is on, `gridShown()`.
 - **Per-effect params:** GTAO (radius/intensity/power), screen-space
   reflections (`ssrMaxRoughness`, `ssrMaxDistance`), bloom
-  (strength/threshold/knee/radius).
-- **Quality:** `msaaSamples` (1/2/4/8), `shadowResolution` (1024/2048/4096 per
-  atlas tile; each sun and spot's penumbra is its own `sourceRadius`,
-  [lighting.md](lighting.md)), `textureFiltering` (`Nearest` / `Bilinear` / `Trilinear`) and
+  (strength/threshold/knee/radius; the threshold and knee are as the viewer sees
+  the frame, after the `exposure`, so raising it does not change what glows).
+- **Quality:** `msaaSamples` (1/2/4/8), `shadowResolution` (1024/2048/4096, the
+  largest shadow tile, which the sun's near cascades take; each sun and spot's
+  penumbra is its own `sourceRadius`, [lighting.md](lighting.md)),
+  `textureFiltering` (`Nearest` / `Bilinear` / `Trilinear`) and
   `textureAnisotropy` - the degree layered on trilinear sampling, pinned to 1 by
   the coarser two modes and clamped to the ceiling that
   `RenderBackend::maxAnisotropy()` reports. The editor shows the pair as one
   list (Nearest ... Anisotropic 16x, truncated to that ceiling);
   `GLView::setTextureFiltering` offers it to every synced texture when it
-  changes, and a texture uploaded since takes it as it is built - sampler
-  state rides no version gate, so those are the two ways a texture can lack
-  it. Offered, not imposed: each texture
-  resolves it against its own `TextureParams::filterOverride`, and one that
-  states `Nearest` keeps `Nearest` - see [Resources](resources.md#textureasset)
-  for why the asset outranks the setting on that one question. The same resolve
-  respects whether the texture has a mip chain (`isMipmapped` - the one it
-  carries from the cook, or the one GL builds at upload), so a texture without
-  one is never given a mipmap minification filter.
+  changes, and a texture uploaded since takes it as it is built - sampler state
+  rides no version gate, so those are the two ways a texture can lack it.
+  Offered, not imposed: each texture resolves it against its own
+  `TextureParams::filterOverride`, and one that states `Nearest` keeps
+  `Nearest` - see [Resources](resources.md#textureasset) for why the asset
+  outranks the setting on that one question. The same resolve respects whether
+  the texture has a mip chain (`isMipmapped` - the one it carries from the cook,
+  or the one GL builds at upload), so a texture without one is never given a
+  mipmap minification filter.
 - **`tonemap`:** the display transform the composite pass ends the frame with -
-  `Reinhard` (`c/(c+1)`, the default), `ACES` (Narkowicz's fit of the film curve)
-  or `KhronosNeutral` (glTF's, built to hold an object's authored albedo as it
-  brightens rather than pushing it toward white). It ships in `project.json`,
-  unlike `renderMode` beside it, because it is a decision about what the game
-  looks like rather than about what a developer is inspecting. Reinhard is the
-  default: every scene in the tree was authored against it, and changing the
-  default re-grades all of them. The `TONEMAP_*` constants the shader switches on are
+  `ACES` (the default: Hill's fit of the RRT and ODT, the ACES of three.js, Godot
+  and Bevy, without three.js's 1/0.6 pre-scale),
+  `Reinhard` (`c/(c+1)`, which never reaches white and flattens the mid-tones),
+  `KhronosNeutral` (glTF's, built to hold an object's authored albedo as it
+  brightens rather than pushing it toward white) or `AgX` (Sobotka's, in
+  Wrensch's minimal fit: every channel runs to white together through a wider
+  gamut, so a bright saturated light whitens instead of turning another colour,
+  for a flatter look). It ships in `project.json`, unlike `renderMode` beside it,
+  because it is a decision about what the game looks like rather than about what a
+  developer is inspecting. The `TONEMAP_*` constants the shader switches on are
   written out of the enum by `GLBackend::shaderConstants`, the same way `MODE_*`
   are. This is not auto-exposure, which the engine refuses - a fixed curve
   decides how an authored range lands, where auto-exposure makes the brightness
   itself a moving target.
-- **`exposure`:** a fixed exposure in stops (EV; 0 is as lit) the
-  composite scales the frame by - 2^exposure, after the bloom is added and before
-  the tonemap - so an author decides where the lit range lands on the curve.
-  It sits beside `tonemap` because the two together are the display transform
-  the project ships. Authored and constant, it is the opposite of the refused
+- **`exposure`:** a fixed exposure in stops (EV; 0 is as lit) the composite
+  scales the frame by - 2^exposure, after the bloom is added and before the
+  tonemap - so an author decides where the lit range lands on the curve. It sits
+  beside `tonemap` because the two together are the display transform the
+  project ships. Authored and constant, it is the opposite of the refused
   auto-exposure, which would move it every frame.
 - **`cullMaxDistance` / `cullMinPixels`:** the visibility pass's two thresholds -
   how far away an entity stops being drawn, and how small on screen. They ship
@@ -219,9 +224,10 @@ them, because what a pixel's samples should become differs per image. Depth
 and the G-buffer take sample 0 - the same sample for both - since along a
 silhouette the average of two surfaces' depths or encoded normals is neither
 surface, and every screen-space reader wants one that exists. Colour is
-averaged through a tonemap (Karis: each sample weighted by `1 / (1 + luma)`),
-so one bright sample of a highlight does not outweigh the rest of its pixel
-and a bright edge stays antialiased. The reflection inputs take the same
+averaged through a tonemap (Karis: each sample weighted by `1 / (1 + c)`, `c`
+its brightest channel after the `exposure`), so one bright sample of a highlight
+does not outweigh the rest of its pixel and a bright edge stays antialiased - a
+saturated blue one too, which luma would barely weigh. The reflection inputs take the same
 weights, so the reflection the Reflections pass subtracts is the one the
 resolved colour holds. When it is off, the geometry passes render straight into `m_sceneHDR`, the
 two resolve passes no-op, and the multisample storage is released rather than

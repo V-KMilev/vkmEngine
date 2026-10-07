@@ -25,8 +25,8 @@ vec3 softKnee(vec3 c) {
     float brightness = max(c.r, max(c.g, c.b));
     float knee = max(u_knee, 1e-4);
     vec3  curve = vec3(u_threshold - knee, 2.0 * knee, 0.25 / knee);
-    float soft  = max(brightness - curve.x, 0.0);
-    soft = clamp((soft * soft) * curve.z, 0.0, soft * curve.y * 0.5);
+    float soft  = clamp(brightness - curve.x, 0.0, curve.y);
+    soft = soft * soft * curve.z;
     float contribution = max(soft, brightness - u_threshold) / max(brightness, 1e-4);
     return c * contribution;
 }
