@@ -5,7 +5,7 @@
  * by gl_InstanceID. The quad is built on the camera's right/up axes, so it faces the view.
  */
 struct Particle {
-    vec4 positionSize;  // xyz = world position, w = world-space size
+    vec4 positionSize;  // xyz = world position, w = half the billboard's width
     vec4 color;
     vec4 params;        // x = edge softness (0 hard .. 1 soft), yzw reserved
 };
@@ -19,6 +19,7 @@ layout(std430, binding = SSBO_PARTICLES) readonly buffer ParticleBlock {
 out vec2  vCorner;
 out vec4  vColor;
 out float vSoftness;
+out float vSize;      // half the billboard's width (the authored size), how deep its fade runs
 
 void main() {
     Particle p = u_particles.particles[gl_InstanceID];
@@ -28,6 +29,7 @@ void main() {
     vCorner   = corner;
     vColor    = p.color;
     vSoftness = p.params.x;
+    vSize     = p.positionSize.w;
 
     // The view matrix's rows are the camera's right and up in world space.
     vec3 camRight = vec3(u_camera.view[0][0], u_camera.view[1][0], u_camera.view[2][0]);
