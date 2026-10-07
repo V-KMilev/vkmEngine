@@ -54,6 +54,14 @@
 
 namespace Vkm::Engine {
 
+namespace {
+
+// Frames a changed irradiance volume holds still before it bakes: a bake is hundreds of
+// milliseconds, and a dragged box changes every frame.
+constexpr uint32_t VOLUME_SETTLE_FRAMES = 8;
+
+} // namespace
+
 std::string GLBackend::shaderConstants() {
     std::ostringstream out;
 
@@ -424,14 +432,26 @@ void GLBackend::bakeCaptures(const RenderView& view, const ResourceManager& reso
             iv.resolutionZ,
             iv.bakeVersion
         };
-        if (m_bakedIrradiance.changed(want)) {
+        // A box being dragged changes every frame: until it holds still, the last bake stands. A
+        // new bake version is a request to bake now.
+        const bool asked = want.bakeVersion != m_irradianceRequest.bakeVersion;
+        if (want == m_irradianceRequest) {
+            ++m_irradianceStill;
+        } else {
+            m_irradianceRequest = want;
+            m_irradianceStill   = 0;
+        }
+        const bool settled = asked || m_irradianceStill >= VOLUME_SETTLE_FRAMES || !m_bakedIrradiance.baked();
+        if (settled && m_bakedIrradiance.changed(want)) {
             m_irradiance.resize(iv.resolutionX, iv.resolutionY, iv.resolutionZ);
             m_irradianceBaker.bake(m_context, m_irradiance, iv, view, m_view, resources, m_ibl);
         }
     }
 
-    // Re-bake probes that are new, moved, resized or version-bumped.
-    m_probes.update(m_context, view, m_view, resources, m_ibl);
+    // Re-bake probes that are new, moved, resized, version-bumped or lit by an older volume, after
+    // the volume, which lights what they capture of it.
+    const bool lit = view.hasIrradianceVolume && m_irradiance.isReady();
+    m_probes.update(m_context, view, m_view, resources, m_ibl, lit ? &m_irradiance : nullptr);
 }
 
 void GLBackend::bakeEnvironment(const std::string& path) {

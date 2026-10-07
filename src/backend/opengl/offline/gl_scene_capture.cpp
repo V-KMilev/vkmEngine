@@ -16,6 +16,7 @@
 #include "convention/gl_bindings.h"
 #include "offline/gl_cubemap.h"
 #include "storage/gl_ibl.h"
+#include "storage/gl_irradiance_volume.h"
 #include "asset/gl_material.h"
 #include "asset/gl_mesh.h"
 #include "frame/gl_object_buffer.h"
@@ -89,7 +90,15 @@ void GLSceneCapture::begin(
     prepareShadow(gl, view, region);
 
     m_faceSize = faceSize;
+    m_volume   = nullptr;
     bindOfflinePbrUniforms(m_pbr, ibl);
+}
+
+void GLSceneCapture::setAmbientVolume(const GLIrradianceVolume* volume, const IrradianceVolumeData& box) {
+    m_volume    = volume;
+    m_volumeBox = box;
+    // A fade would let the sky onto a wall on the box's face.
+    m_volumeBox.blendDistance = 0.0f;
 }
 
 void GLSceneCapture::prepareShadow(Vkm::GL::Context& gl, const RenderView& view, const Math::AABB& region) {
@@ -254,6 +263,14 @@ void GLSceneCapture::captureCube(
     const bool      hasIBL = m_ibl->isReady();
 
     const std::vector<InstanceDraw>& draws = m_batcher.draws();
+
+    // Uniforms persist on m_pbr through the skybox draws below.
+    m_pbr.bind();
+    if (m_volume) {
+        m_volume->bindForShading(m_pbr, m_volumeBox);
+    } else {
+        m_pbr.setUniform1i("u_hasIrradianceVolume", 0);
+    }
 
     for (int face = 0; face < 6; ++face) {
         beginFace(gl, face, position, proj, attach);

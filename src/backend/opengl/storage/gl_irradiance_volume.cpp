@@ -1,6 +1,10 @@
 #include "storage/gl_irradiance_volume.h"
 
+#include "gl_shader_base.h"
 #include "gl_texture_3d.h"
+
+#include "convention/gl_bindings.h"
+#include "system/render/data/irradiance_volume_data.h"
 
 namespace Vkm::Engine {
 
@@ -29,6 +33,11 @@ void GLIrradianceVolume::resize(uint32_t x, uint32_t y, uint32_t z) {
 
     // Contents are undefined until a bake fills every cell.
     m_ready = false;
+}
+
+void GLIrradianceVolume::setBaked(bool baked) {
+    m_ready = baked;
+    if (baked) ++m_bakeId;
 }
 
 uint32_t GLIrradianceVolume::cellCount() const {
@@ -62,6 +71,21 @@ void GLIrradianceVolume::bindImage(int i, uint32_t unit, GLenum access) const {
 
 void GLIrradianceVolume::bindSlot(int i, uint32_t slot) const {
     if (i >= 0 && i < SH_COEFFS && m_sh[i]) m_sh[i]->bindSlot(slot);
+}
+
+void GLIrradianceVolume::bindForShading(
+    const Vkm::GL::ShaderBase& shader,
+    const IrradianceVolumeData& box
+) const {
+    bindSlot(0, GLBindings::IrradianceVolumeSlots::SH0);
+    bindSlot(1, GLBindings::IrradianceVolumeSlots::SH1);
+    bindSlot(2, GLBindings::IrradianceVolumeSlots::SH2);
+    bindSlot(3, GLBindings::IrradianceVolumeSlots::SH3);
+    shader.setUniform1i("u_hasIrradianceVolume", 1);
+    shader.setUniform3fv("u_ivMin", box.center - box.halfExtents);
+    shader.setUniform3fv("u_ivSize", box.halfExtents * 2.0f);
+    shader.setUniform1f("u_ivIntensity", box.intensity);
+    shader.setUniform1f("u_ivBlend", box.blendDistance);
 }
 
 } // namespace Vkm::Engine

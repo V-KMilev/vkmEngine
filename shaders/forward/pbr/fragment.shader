@@ -75,8 +75,8 @@ uniform int u_hasAO;
 
 #include "../../ambient.glsl"
 
-// Local reflection probes, a cube-array layer each. Weight-blended over the IBL
-// for the reflection, and for the diffuse only where no irradiance volume covers.
+// Local reflection probes, a cube-array layer each. Blended over the IBL, smallest box
+// first, for the reflection, and for the diffuse only where no irradiance volume covers.
 layout(binding = PROBE_SLOT_IRRADIANCE) uniform samplerCubeArray u_probeIrr;
 layout(binding = PROBE_SLOT_PREFILTER)  uniform samplerCubeArray u_probePref;
 uniform int u_probeCount;
@@ -858,18 +858,20 @@ void main() {
         sourceIrradiance = texture(u_irradiance, bentN).rgb;
     }
 
-    // Probes blended over the sky before shading, so one shading serves all.
+    // Probes blended over the sky before shading, so one shading serves all. They arrive
+    // smallest box first, and each covers only what the ones before it left: a room's probe
+    // wins inside the room over the yard's around it, where an average gave each half.
     // Coverage is the box's alone; intensity scales the contribution.
     if (u_probeCount > 0) {
         vec3  prefilteredSum = vec3(0.0);
         vec3  coatSum        = vec3(0.0);
         vec3  irradianceSum  = vec3(0.0);
-        float wSum           = 0.0;
-        for (int p = 0; p < u_probeCount && p < MAX_PROBES; ++p) {
+        float covered        = 0.0;
+        for (int p = 0; p < u_probeCount && p < MAX_PROBES && covered < 0.999; ++p) {
             vec3  center   = u_probes.probes[p].center.xyz;
             vec3  extents  = u_probes.probes[p].extents.xyz;
             float falloff  = u_probes.probes[p].params.x;
-            float w        = probeWeight(vWorldPos, center, extents, falloff);
+            float w        = probeWeight(vWorldPos, center, extents, falloff) * (1.0 - covered);
             if (w <= 0.0) continue;
             float scaled  = w * u_probes.probes[p].params.y;
             float layer   = u_probes.probes[p].params.z;
@@ -881,14 +883,11 @@ void main() {
                 coatSum += textureLod(u_probePref, coatLayer, ccRough * MAX_PROBE_LOD).rgb * scaled;
             }
             irradianceSum  += texture(u_probeIrr, vec4(bentN, layer)).rgb * scaled;
-            wSum           += w;
+            covered        += w;
         }
-        if (wSum > 0.0) {
-            float cover = min(wSum, 1.0);
-            prefiltered      = mix(prefiltered, prefilteredSum / wSum, cover);
-            coat             = mix(coat, coatSum / wSum, cover);
-            sourceIrradiance = mix(sourceIrradiance, irradianceSum / wSum, cover);
-        }
+        prefiltered      = prefilteredSum + prefiltered * (1.0 - covered);
+        coat             = coatSum + coat * (1.0 - covered);
+        sourceIrradiance = irradianceSum + sourceIrradiance * (1.0 - covered);
     }
     // Scaled where the environment is read, so a traced reflection is not.
     prefiltered      *= u_iblIntensity;
@@ -901,7 +900,7 @@ void main() {
     if (u_hasIrradianceVolume == 1) {
         float ivw = irradianceVolumeWeight(vWorldPos);
         if (ivw > 0.0) {
-            vec3 volume = sampleIrradianceVolume(vWorldPos, bentN) / PI * u_ivIntensity * u_iblIntensity;
+            vec3 volume = sampleIrradianceVolume(lookup, bentN) / PI * u_ivIntensity * u_iblIntensity;
             irradiance = mix(irradiance, volume, ivw);
         }
     }

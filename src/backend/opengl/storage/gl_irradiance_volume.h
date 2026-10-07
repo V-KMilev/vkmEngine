@@ -9,10 +9,13 @@
 #include "system/render/irradiance_dilation.h"
 
 namespace Vkm::GL {
+    class ShaderBase;
     class Texture3D;
 }
 
 namespace Vkm::Engine {
+
+struct IrradianceVolumeData;
 
 /**
  * @brief GPU storage for one baked irradiance volume: SH-L1 on a probe grid.
@@ -66,6 +69,18 @@ class GLIrradianceVolume {
         void bindSlot(int i, uint32_t slot) const;
 
         /**
+         * @brief Bind the grid for sampling and place it over @p box, in a shader that includes
+         *        shaders/irradiance_volume.glsl.
+         *
+         * Sets u_hasIrradianceVolume to 1; a caller with no volume to lend sets it to 0 itself.
+         *
+         * @param shader Program whose uniforms are set; bound by the caller.
+         * @param box    The world box the grid fills, what its light is scaled by, and how far
+         *               inside the box it fades in.
+         */
+        void bindForShading(const Vkm::GL::ShaderBase& shader, const IrradianceVolumeData& box) const;
+
+        /**
          * @brief Read every coefficient grid back into @p sh, sized to the grid.
          *
          * A synchronising read, for the bake's dilation; @p sh comes back empty with no storage.
@@ -86,19 +101,26 @@ class GLIrradianceVolume {
         /**
          * @brief Record whether the grid holds a finished bake of the current volume.
          *
+         * A finished bake also takes a new bakeId(), by which a capture that read the grid knows
+         * it is stale.
+         *
          * @param baked False while a bake runs or after it refused the volume;
          *              true once it filled and repaired the grid.
          */
-        void setBaked(bool baked) { m_ready = baked; }
+        void setBaked(bool baked);
 
         /// Probes in the grid, as the last resize() allocated it.
         uint32_t cellCount() const;
 
         bool isReady() const { return m_ready; }
 
+        /// Which finished bake the grid holds: a new value with every one, 0 before the first.
+        uint32_t bakeId() const { return m_bakeId; }
+
     private:
         std::unique_ptr<Vkm::GL::Texture3D> m_sh[SH_COEFFS];
-        bool m_ready = false;
+        bool     m_ready  = false;
+        uint32_t m_bakeId = 0;
 };
 
 } // namespace Vkm::Engine
