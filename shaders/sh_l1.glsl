@@ -16,3 +16,7 @@ const float SH_Y1 = 0.488603;  // Y(1, -1) / Y(1, 0) / Y(1, 1) scale
 // Lambertian cosine-lobe convolution per band.
 const float SH_A0 = PI;
 const float SH_A1 = 2.0 * PI / 3.0;
+// Band 2's, and its zonal basis scale: Y(2, 0) = SH_Y20 * (3 z^2 - 1). Stored by no bake; the
+// lookup predicts the zonal term from L1 (ZH3).
+const float SH_A2  = PI / 4.0;
+const float SH_Y20 = 0.315392;

@@ -13,6 +13,7 @@
 #include "storage/gl_probe_array.h"
 #include "offline/gl_scene_capture.h"
 #include "system/render/data/probe_data.h"
+#include "system/render/render_view.h"
 
 namespace Vkm::Engine {
 
@@ -34,9 +35,10 @@ void GLProbeBaker::bake(
     const RenderView& view,
     GLView& glView,
     const ResourceManager& resources,
-    const GLIBL& globalIBL
+    const GLIBL& globalIBL,
+    const GLIrradianceVolume* volume
 ) {
-    captureFaces(gl, arr, probe, view, glView, resources, globalIBL);
+    captureFaces(gl, arr, probe, view, glView, resources, globalIBL, volume);
     convolve(gl, arr, layer);
     LOG_INFO(
         "Reflection probe baked: layer %d at (%.1f, %.1f, %.1f)",
@@ -54,11 +56,13 @@ void GLProbeBaker::captureFaces(
     const RenderView& view,
     GLView& glView,
     const ResourceManager& resources,
-    const GLIBL& globalIBL
+    const GLIBL& globalIBL,
+    const GLIrradianceVolume* volume
 ) {
     // The reflection is parallax-corrected to the influence box, so the capture must get it right.
     const Math::AABB box{probe.position - probe.halfExtents, probe.position + probe.halfExtents};
     m_capture.begin(gl, view, glView, resources, globalIBL, static_cast<float>(arr.resolution()), box);
+    m_capture.setAmbientVolume(volume, view.irradianceVolume);
 
     arr.bindCaptureFbo();
     m_capture.captureCube(gl, probe.position, CAPTURE_FAR, [&](int face) { arr.attachEnvFace(gl, face); });

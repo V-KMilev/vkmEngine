@@ -39,6 +39,7 @@
 #include "ecs/component/core/transform.h"
 #include "ecs/component/render/camera.h"
 #include "ecs/component/render/decal.h"
+#include "ecs/component/render/irradiance_volume.h"
 #include "ecs/component/render/light.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/component/render/particle_emitter.h"
@@ -865,6 +866,40 @@ void testAnOpenFloorIsNotOccluded(int& failures) {
     expect("an open floor is not darkened", mean >= 240.0f, failures);
 }
 
+// The mean of every channel of a frame, 0..255.
+float meanValue(const std::vector<unsigned char>& frame) {
+    long sum = 0;
+    for (const unsigned char value : frame) sum += value;
+    return static_cast<float>(sum) / static_cast<float>(frame.size());
+}
+
+// A room with no opening, under a bright sky and sun, stores no light in its volume: its walls
+// are lit only by what reaches them, and nothing does. Lit by the sky as the frame lights
+// open ground, the walls would light every probe inside through solid plaster.
+void testASealedRoomHoldsNoSkyLight(int& failures) {
+    std::printf("An irradiance volume inside a room, its indirect light alone:\n");
+
+    RenderSettings settings;
+    settings.renderMode = RenderMode::GiOnly;
+    float means[2] = {};
+    for (const bool openings : {false, true}) {
+        restoreContextDefaults();
+        WindowManager window;
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        buildRoomShell(s, openings);
+        sunAndCamera(s, {3.0f, 1.7f, 3.0f}, {-2.5f, 1.2f, -3.0f});
+        means[openings ? 1 : 0] = meanValue(render(s, backend, nullptr, settings));
+    }
+    std::printf("      mean %.2f sealed, %.2f with a doorway and a window\n", means[0], means[1]);
+    expect("a sealed room is dark inside", means[0] < 1.0f, failures);
+    expect("  and one with openings keeps the light they let in", means[1] > 8.0f, failures);
+}
+
 // The overlay drawn by the real pass over a real frame, asserted per pixel, not against
 // a golden: where its edges land is arithmetic that holds on any GPU.
 void testTheUIOverlayLandsOnItsPixels(int& failures) {
@@ -989,6 +1024,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testAFrameWithNoCameraKeepsTheProbesBaked(failures);
     testASplashFadesLinearlyOnTheGlass(failures);
     testAnOpenFloorIsNotOccluded(failures);
+    testASealedRoomHoldsNoSkyLight(failures);
 }
 
 } // namespace

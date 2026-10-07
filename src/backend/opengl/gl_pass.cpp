@@ -62,18 +62,11 @@ void GLPass::bindAmbient(GLFrameContext& ctx, const Vkm::GL::ShaderBase& shader)
     shader.setUniform1f("u_iblIntensity", view.environment.sky.intensity);
 
     // The baked SH volume, and the box that places a point in its grid.
-    const bool hasIV = ctx.irradiance.isReady() && view.hasIrradianceVolume;
-    shader.setUniform1i("u_hasIrradianceVolume", hasIV ? 1 : 0);
-    if (!hasIV) return;
-    ctx.irradiance.bindSlot(0, GLBindings::IrradianceVolumeSlots::SH0);
-    ctx.irradiance.bindSlot(1, GLBindings::IrradianceVolumeSlots::SH1);
-    ctx.irradiance.bindSlot(2, GLBindings::IrradianceVolumeSlots::SH2);
-    ctx.irradiance.bindSlot(3, GLBindings::IrradianceVolumeSlots::SH3);
-    const IrradianceVolumeData& iv = view.irradianceVolume;
-    shader.setUniform3fv("u_ivMin",  iv.center - iv.halfExtents);
-    shader.setUniform3fv("u_ivSize", iv.halfExtents * 2.0f);
-    shader.setUniform1f("u_ivIntensity", iv.intensity);
-    shader.setUniform1f("u_ivBlend",     iv.blendDistance);
+    if (ctx.irradiance.isReady() && view.hasIrradianceVolume) {
+        ctx.irradiance.bindForShading(shader, view.irradianceVolume);
+    } else {
+        shader.setUniform1i("u_hasIrradianceVolume", 0);
+    }
 }
 
 void GLPass::setReflectRoughnessWritable(bool writable) const {

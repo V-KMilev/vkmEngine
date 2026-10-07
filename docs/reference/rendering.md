@@ -304,8 +304,10 @@ back faces, so from inside a solid it sees straight through the walls and
 records the room on the far side - light a trilinear fetch would then blend into
 the near one. So each probe is captured twice: once for radiance, once as a
 backface mask (`shaders/irradiance/backface`, culling off, one bit per
-direction). The SH projection reads both, and a probe whose nearest surface
-faces away over more than a quarter of the sphere is marked refused in the
+direction). The SH projection reads both - every texel of each 32-texel cube,
+weighted by the solid angle it covers, one workgroup a probe, so a small
+bright patch reaches every probe that sees it - and a probe whose nearest
+surface faces away over more than a quarter of the sphere is marked refused in the
 alpha of its first coefficient. `dilateProbeGrid`
 (`system/render/irradiance_dilation.h`) then reads the grid back and replaces
 every refused probe with a blend of its trusted neighbours, spreading one cell
@@ -317,12 +319,12 @@ IBL rather than to a grid of guesses.
 
 **A capture is shadowed by the key light.** The frame's cascades are fitted to
 the camera, so a probe or irradiance capture draws a map of its own: the key
-light's depth over the region the bake describes - a probe's influence box,
-the volume's box - across the light, and along it every caster standing over
-that region, since a roof well above a room still shades its floor. Without it
-the sun would light indoor floors through their ceilings in the only indirect
-diffuse there is. The other lights capture unshadowed. The map is 2048 texels across
-the region and read through the ordinary hard kernel, installed as a
+light's depth over the region the bake describes - a probe's influence box, the
+volume's box - across the light, and along it every caster standing over that
+region, since a roof well above a room still shades its floor. Without it the
+sun would light indoor floors through their ceilings in the only indirect
+diffuse there is. The other lights capture unshadowed. The map is 2048 texels
+across the region and read through the ordinary hard kernel, installed as a
 one-cascade ShadowBlock the next frame's own upload replaces.
 
 **A bake is frame time.** All three run inside `render()`, so the frame that

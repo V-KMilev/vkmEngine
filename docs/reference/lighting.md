@@ -113,11 +113,18 @@ The PBR fragment shader (`shaders/forward/pbr/`) implements:
   The LUT is integrated with the same height-correlated visibility the
   direct lights use, so the two lobes are one lobe.
 - **Where the ambient comes from**: the reflection is the covering
-  reflection probes, parallax-corrected and weight-blended, over the global
-  sky. The diffuse is the irradiance volume wherever one covers the point -
+  reflection probes, parallax-corrected, over the global sky. They are taken
+  smallest box first, each covering only what the ones before it left (Unreal's
+  rule), so a room's probe wins inside the room over the yard's around it,
+  whatever their scene order. The diffuse is the irradiance volume wherever one covers the point -
   fading in over `blendDistance` metres from each face of its box -
   and the reflection's own source (probe, else sky) elsewhere - a probe's
-  irradiance is one sample at its centre, the volume's is taken here. Inside
+  irradiance is one sample at its centre, the volume's is taken here - offset
+  off the surface (`irradianceVolumeLookup`) along its geometric normal, so a floor reads the
+  room above it rather than the probes inside its own slab (DDGI's surface
+  bias). The volume stores SH-L1; its lookup adds the quadratic zonal term L1
+  predicts (Activision's ZH3), so light bounced from one side gives a pillar's
+  two sides the contrast L1 alone flattens. Inside
   the volume the reflection is **normalised** (Lazarov, *Black Ops 2*): it
   is dimmed by the ratio of the irradiance here to the irradiance its capture
   saw, so a floor in shade stops reflecting the open sky at full strength.
@@ -179,6 +186,52 @@ The PBR fragment shader (`shaders/forward/pbr/`) implements:
 - **Horizon occlusion**: a normal map can turn a reflection below the
   geometric surface, where the environment holds light nothing there could
   reflect; the specular occlusion fades it out.
+
+### What a capture is lit by
+
+The irradiance volume and the reflection probes are captures of the scene
+(`GLSceneCapture`): the opaque scene and the sky drawn into a cube around each
+probe, which the volume projects to SH-L1 and a reflection probe convolves
+(how, in [rendering.md](rendering.md#the-passes-fixed-order)). Whatever lights the
+captured surfaces is what the probes pass on, so a wall lit by the open sky
+would light every probe in a sealed room through solid plaster. A captured
+surface takes its ambient from the volume wherever the volume covers it, and
+from the sky only outside its box:
+
+- **The volume is gathered in bounces**, the recursion DDGI runs across frames
+  (Majercik et al., *Dynamic Diffuse Global Illumination with Ray-Traced
+  Irradiance Fields*: a ray's hit is shaded by the probes' previous
+  irradiance), run here to a fixed count at bake time. `GLIrradianceBaker`
+  gathers the grid `GLIrradianceBaker::BOUNCES` times. In the first, the
+  captured surfaces inside the box read a grid that is black, so a wall is
+  lit only by what reaches it - the lights, the key light through its shadow,
+  its own emission. Each later gather lights them from the grid the gather
+  before produced, kept in a second volume, and adds one bounce. A direction
+  that meets no geometry sees the sky itself, so the sky reaches a room
+  through its doorway and windows and nowhere else, and a sealed room under a
+  noon sky stores nothing. How many gathers, and what they cost:
+  [engine.md](../guides/engine.md#4-what-has-already-been-decided).
+- **Inside the box the volume is all there is**: a capture reads it with no
+  fade at the box's faces, so a wall on a face takes none of the sky, and the
+  gathers read it at unit intensity, since the frame scales the finished grid
+  by `intensity` and a gather lit at it would compound it once per bounce. A
+  captured glossy surface's reflection of the sky is normalised by the volume
+  as the frame's is (Lazarov, above), so in the first gather it reflects none.
+- **Only the first gather judges** which probes stand inside geometry; the
+  verdict depends on where a probe stands, not on the light, so the later
+  gathers skip those probes and the backface mask, and dilation repairs the
+  refused cells after every gather.
+- **The reflection probes are captured after the volume**, lit by it where it
+  covers them, at its `intensity` and with no fade, so a room's probe reflects
+  its walls as the frame lights them rather than lit by the sky. A probe
+  remembers which bake of the volume lit it (`GLIrradianceVolume::bakeId`) and
+  is captured again when the volume is.
+
+The frame does fade the volume in over `blendDistance` from each face of its
+box, toward the light outside it. A volume filling a room wants its box out to
+the middle of the walls and a fade shorter than their half-thickness; with a
+longer one, the room's surfaces near a face of the box - its corners above all -
+take part of the sky.
 
 ### Area lights: LTC + representative point
 
@@ -415,11 +468,12 @@ neither, and an HDR that fails to load, leave no environment baked: the ambient
 term and the skybox then draw what a scene with no sky draws, rather than the
 last scene's sky. The reflection probes and the irradiance volume are captures
 of the scene under the sky they were baked with, and a sky change does not bake
-them again; bumping their `bakeVersion` does. It produces:
+them again; bumping their `bakeVersion` does - the volume's takes the probes
+with it, since they are lit by it. It produces:
 
-- The **environment cube**: what the skybox draws and what the other two
-  cubes are convolved from. Shading never reads it: a mirror reflection is
-  the prefilter cube's sharpest level.
+- The **environment cube**: what an HDR sky's skybox and every capture's sky
+  draw, and what the other two cubes are convolved from. Shading never reads it:
+  a mirror reflection is the prefilter cube's sharpest level.
 - The **irradiance cube**: diffuse contribution.
 - The **prefilter cube**: specular contribution, with one roughness
   level per mip.
