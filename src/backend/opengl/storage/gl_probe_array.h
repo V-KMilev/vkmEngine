@@ -26,7 +26,6 @@ namespace Vkm::Engine {
  */
 class GLProbeArray {
     public:
-        static constexpr int ENV_MIPS       = 5;  ///< Env cube mips (prefilter source)
         static constexpr int PREFILTER_MIPS = 5;  ///< Roughness mips per cube.
 
         // Requested capture resolution bounds (the env cube face size). The

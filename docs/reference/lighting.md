@@ -566,10 +566,11 @@ its own air and takes none, and an HDR sky has no atmosphere to apply.
 frame, so a procedural sky baked whole each time the sun moves half a degree
 would drop a frame every few seconds of a day-night cycle. A sky whose sun and
 moon have only drifted since the last frame - by no more than
-`SkyParams::DRIFT`, every other term the same - is baked a step a frame instead,
+`SkyParams::DRIFT`, every other term the same - is baked a step a frame instead
+(more while the sun or moon has run ahead of the sky shown, `GLIBLBaker::stepsFor`, so a
+time-lapse's light keeps pace),
 as Unreal time-slices its real-time sky capture: the env cube's six faces, then
-its mips with the prefilter's mirror level, then each irradiance face in
-`GLIBLBaker::IRRADIANCE_SLICES` shares of its azimuths, added together, then
+its mips with the prefilter's mirror level, then each irradiance face, then
 each prefilter level a face at a time, the largest in bands of
 `GLIBLBaker::BAND_TEXELS` texels - `GLIBLBaker::slicedSteps` steps in all.
 `GLIBL` holds two sets of the three cubes: shading reads one while a bake fills

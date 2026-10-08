@@ -24,17 +24,20 @@ class GLCubeConvolver;
  * the backend: the procedural sky re-bakes whenever the sun moves, and a transient baker would
  * recompile its programs each time. Every bake fills GLIBL's back set and swaps it in once
  * complete. bake() and bakeProcedural() do it at once: the source into the env cube, then
- * irradiance and GGX-prefiltered specular. beginProcedural() and advance() do it a step a frame
- * (Unreal's time-sliced sky capture) - the env cube, a share of an irradiance face, a band of a
+ * irradiance and GGX-prefiltered specular. beginProcedural() and advance() do it a step at a time
+ * (Unreal's time-sliced sky capture) - the env cube, an irradiance face, a band of a
  * prefilter level - so a sun moving across the sky costs no frame the whole bake.
  * integrateBrdf() fills the BRDF LUT once at start.
  */
 class GLIBLBaker {
     public:
-        /// Each irradiance face is convolved in this many shares of its azimuths.
-        static constexpr int IRRADIANCE_SLICES = 4;
         /// The most texels of a prefilter level's face one step draws; a larger face takes bands.
         static constexpr int BAND_TEXELS = 128 * 256;
+
+        /// A sky shown this many degrees behind the one asked for takes a step more a frame.
+        static constexpr float CATCH_UP_DEGREES = 1.5f;
+        /// The most steps a frame takes (why this many: engine.md, the sky's lighting row).
+        static constexpr int   MAX_CATCH_UP_STEPS = 6;
 
         /**
          * @brief Compile the bake programs, borrowing @p convolver for the convolution loops.
@@ -65,14 +68,27 @@ class GLIBLBaker {
         /**
          * @brief The steps, and so the frames, of a bake spread over frames.
          *
-         * @return The env cube, its mips with the mirror level, every irradiance slice and every
+         * @return The env cube, its mips with the mirror level, every irradiance face and every
          *         prefilter band past the mirror level.
          */
         static constexpr int slicedSteps() {
             int prefilter = 0;
             for (int mip = 1; mip < GLIBL::PREFILTER_MIPS; ++mip) prefilter += prefilterBands(mip);
-            return 1 + 1 + 6 * IRRADIANCE_SLICES + 6 * prefilter;
+            return 1 + 1 + 6 + 6 * prefilter;
         }
+
+        /**
+         * @brief The steps a frame takes on a bake toward @p asked while @p shown is shown.
+         *
+         * One while the shown sky's sun and moon are within CATCH_UP_DEGREES of the asked one's;
+         * one more for each CATCH_UP_DEGREES further they have run ahead, up to
+         * MAX_CATCH_UP_STEPS in all, so a time-lapse's light keeps pace.
+         *
+         * @param asked The sky the scene asks for.
+         * @param shown The sky the shown cubes were baked from.
+         * @return At least one.
+         */
+        static int stepsFor(const SkyParams& asked, const SkyParams& shown);
 
         /**
          * @brief Bake @p ibl from the HDR at @p path, at once.
@@ -157,15 +173,15 @@ class GLIBLBaker {
             enum class Kind {
                 Capture,     ///< The env cube's six faces from the sky.
                 Mips,        ///< The env mips, and the prefilter's mirror level from them.
-                Irradiance,  ///< A share of an irradiance face's azimuths.
+                Irradiance,  ///< An irradiance face.
                 Prefilter    ///< A band of rows of a prefilter level's face.
             };
 
             Kind kind  = Kind::Capture;
             int  face  = 0;
             int  mip   = 0;
-            int  part  = 0;  ///< The slice or band.
-            int  parts = 1;  ///< Slices or bands in the face.
+            int  part  = 0;  ///< A prefilter step's band.
+            int  parts = 1;  ///< Bands in the face.
         };
 
     private:

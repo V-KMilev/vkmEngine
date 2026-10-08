@@ -23,15 +23,7 @@ GLCubeConvolver::GLCubeConvolver(const GLMesh& cube)
 GLCubeConvolver::~GLCubeConvolver() = default;
 
 void GLCubeConvolver::irradiance(const AttachFace& attach) {
-    m_irradiance.bind();
-    m_irradiance.setUniformMatrix4fv("u_projection", m_projection);
-    m_irradiance.setUniform1i("u_slice", 0);
-    m_irradiance.setUniform1i("u_slices", 1);
-    for (int face = 0; face < 6; ++face) {
-        m_irradiance.setUniformMatrix4fv("u_view", m_faceViews[face]);
-        attach(face);
-        m_cube.draw();
-    }
+    for (int face = 0; face < 6; ++face) irradianceFace(face, attach);
 }
 
 void GLCubeConvolver::prefilter(int mips, const AttachMipFace& attach) {
@@ -47,25 +39,12 @@ void GLCubeConvolver::prefilter(int mips, const AttachMipFace& attach) {
     }
 }
 
-void GLCubeConvolver::irradianceSlice(
-    Vkm::GL::Context& gl,
-    int face,
-    int slice,
-    int slices,
-    const AttachFace& attach
-) {
+void GLCubeConvolver::irradianceFace(int face, const AttachFace& attach) {
     m_irradiance.bind();
     m_irradiance.setUniformMatrix4fv("u_projection", m_projection);
     m_irradiance.setUniformMatrix4fv("u_view", m_faceViews[face]);
-    m_irradiance.setUniform1i("u_slice", slice);
-    m_irradiance.setUniform1i("u_slices", slices);
     attach(face);
-    if (slice > 0) {
-        gl.setBlending(true);
-        gl.setBlendFunc(GL_ONE, GL_ONE);
-    }
     m_cube.draw();
-    gl.setBlending(false);
 }
 
 void GLCubeConvolver::prefilterBand(

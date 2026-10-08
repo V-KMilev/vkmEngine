@@ -528,7 +528,12 @@ void GLBackend::followProceduralSky(const SkyParams& sky) {
     PROFILE_SCOPE("Render/IBLStep");
     PROFILE_GPU_SCOPE("Render/IBLStep");
     if (!m_iblBaker.baking()) m_iblBaker.beginProcedural(sky);
-    if (m_iblBaker.advance(m_context, m_ibl, m_atmosphere)) m_shownSky = m_iblBaker.target();
+    for (int step = GLIBLBaker::stepsFor(sky, *m_shownSky); step > 0; --step) {
+        if (m_iblBaker.advance(m_context, m_ibl, m_atmosphere)) {
+            m_shownSky = m_iblBaker.target();
+            break;
+        }
+    }
 }
 
 void GLBackend::onWorldReplaced(const RenderView& view, const ResourceManager& resources) {

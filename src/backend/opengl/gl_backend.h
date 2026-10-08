@@ -231,8 +231,9 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
          * @brief Keep the IBL product set showing the procedural atmosphere.
          *
          * A sky whose sun and moon have only drifted since the last frame (SkyParams::driftsFrom)
-         * is baked a step a frame and swapped in once complete, the next bake starting from
-         * where the sun is then, so a moving sun costs no frame the whole bake. Anything else -
+         * is baked a step a frame - more while it runs ahead of the sky shown, so a fast sun's
+         * light keeps pace - and swapped in once complete, the next bake starting from where
+         * the sun is then, so a moving sun costs no frame the whole bake. Anything else -
          * the first sky, a changed value, a jump - is baked at once, so nothing captured from
          * the IBL meanwhile shows a sky the scene has left.
          *

@@ -14,8 +14,6 @@ uniform float u_roughness;
 #include "../../sampling.glsl"
 #include "../../brdf.glsl"
 
-const uint SAMPLE_COUNT = 1024u;
-
 void main() {
     vec3 N = normalize(vLocalPos);
     vec3 V = N;  // split-sum approximation: view = reflection = normal
@@ -31,24 +29,29 @@ void main() {
     float envRes = float(textureSize(u_envCube, 0).x);
     float saTexel = 4.0 * PI / (6.0 * envRes * envRes);
 
+    // Each sample reads the level its share of the lobe covers, so a narrow lobe is smooth on
+    // few; a wide one spreads its samples across the cube, and takes more to cover it evenly.
+    uint count = u_roughness < 0.25 ? 256u : u_roughness < 0.75 ? 512u : 1024u;
+
     vec3  prefiltered = vec3(0.0);
     float totalWeight = 0.0;
 
-    for (uint i = 0u; i < SAMPLE_COUNT; ++i) {
-        vec2 xi = hammersley(i, SAMPLE_COUNT);
+    for (uint i = 0u; i < count; ++i) {
+        vec2 xi = hammersley(i, count);
         vec3 H  = importanceSampleGGX(xi, N, u_roughness);
         vec3 L  = normalize(2.0 * dot(V, H) * H - V);
 
         float NdotL = max(dot(N, L), 0.0);
         if (NdotL > 0.0) {
             // Karis prefiltered importance sampling: a low pdf reads a coarser mip, so the sun
-            // does not alias into fireflies on rough metal.
+            // does not alias into fireflies on rough metal. Colbert and Krivanek's +1 level and
+            // cube-distortion term are left out (engine.md, importance-sampled convolutions).
             float NdotH    = max(dot(N, H), 0.0);
             // distributionGGX takes the GGX alpha (roughness^2).
             float D        = distributionGGX(NdotH, u_roughness * u_roughness);
             // pdf of L is D * NdotH / (4 * VdotH); V is N here, so it is D / 4.
             float pdf      = D * 0.25 + 1e-4;
-            float saSample = 1.0 / (float(SAMPLE_COUNT) * pdf + 1e-4);
+            float saSample = 1.0 / (float(count) * pdf + 1e-4);
             float mip      = 0.5 * log2(saSample / saTexel);
 
             prefiltered += textureLod(u_envCube, L, max(mip, 0.0)).rgb * NdotL;

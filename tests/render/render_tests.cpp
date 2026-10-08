@@ -15,6 +15,7 @@
 #include <GL/glew.h>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include "logger.h"
 
@@ -1494,6 +1495,143 @@ void testASkyBakesAgainOnlyOnceItsSunHasMoved() {
     check("  as has a sky in hazier air", !hazier.driftsFrom(at(30.0f)));
 }
 
+// The sky's convolutions draw their samples by their lobes (shaders/ibl): what they make must be
+// the integral they stand for, against skies with an answer in closed form. Under a sky of one
+// radiance everywhere, every lobe returns it; under one bright above the horizon and black below,
+// irradiance over pi is L (1 + cos a) / 2, a the normal's angle from straight up.
+void testTheSkysConvolutionsAreTheIntegralsTheyStandFor() {
+    std::printf("The sky's convolutions against skies with known answers:\n");
+    using namespace Vkm::Engine;
+
+    Vkm::GL::setShaderPrelude(OPENGL_GLSL_VERSION, GLBackend::shaderConstants());
+    Vkm::GL::Context gl;
+    GLMeshPool pool;
+    const GLMesh cube(pool, generateCube());
+    GLCubeConvolver convolver(cube);
+
+    constexpr int ENV  = 256;
+    constexpr int OUT  = 16;
+    constexpr int MIPS = 5;
+    // GL's cube faces, +X -X +Y -Y +Z -Z: the direction through texel (s, t) in [-1, 1].
+    const auto direction = [](int face, float s, float t) {
+        switch (face) {
+            case 0:  return glm::vec3(1.0f, -t, -s);
+            case 1:  return glm::vec3(-1.0f, -t, s);
+            case 2:  return glm::vec3(s, 1.0f, t);
+            case 3:  return glm::vec3(s, -1.0f, -t);
+            case 4:  return glm::vec3(s, -t, 1.0f);
+            default: return glm::vec3(-s, -t, -1.0f);
+        }
+    };
+    const auto convolve = [&](bool hemisphere, std::vector<float>& irradiance, std::vector<float>& rough) {
+        // On the 4.3 context the engine asks for: no direct state access.
+        GLuint env = 0;
+        glGenTextures(1, &env);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, env);
+        glTexStorage2D(GL_TEXTURE_CUBE_MAP, fullMipChain(ENV), GL_RGBA16F, ENV, ENV);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        std::vector<float> face(static_cast<size_t>(ENV) * ENV * 4);
+        for (int f = 0; f < 6; ++f) {
+            for (int y = 0; y < ENV; ++y) {
+                for (int x = 0; x < ENV; ++x) {
+                    const float s  = 2.0f * (static_cast<float>(x) + 0.5f) / ENV - 1.0f;
+                    const float t  = 2.0f * (static_cast<float>(y) + 0.5f) / ENV - 1.0f;
+                    const float up = direction(f, s, t).y;
+                    const float l  = !hemisphere || up > 0.0f ? 1.0f : 0.0f;
+                    float* texel = &face[(static_cast<size_t>(y) * ENV + x) * 4];
+                    texel[0] = texel[1] = texel[2] = l;
+                    texel[3] = 1.0f;
+                }
+            }
+            const GLenum side = GL_TEXTURE_CUBE_MAP_POSITIVE_X + static_cast<GLenum>(f);
+            glTexSubImage2D(side, 0, 0, 0, ENV, ENV, GL_RGBA, GL_FLOAT, face.data());
+        }
+        glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
+
+        GLuint targets[2] = {};
+        glGenTextures(2, targets);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, targets[0]);
+        glTexStorage2D(GL_TEXTURE_CUBE_MAP, 1, GL_RGBA32F, OUT, OUT);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, targets[1]);
+        glTexStorage2D(GL_TEXTURE_CUBE_MAP, MIPS, GL_RGBA32F, OUT, OUT);
+        GLuint fbo = 0;
+        glGenFramebuffers(1, &fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        gl.setDepthTest(false);
+        gl.setBlending(false);
+        gl.setFaceCulling(false);
+        glActiveTexture(GL_TEXTURE0 + GLBindings::BakeTextureSlots::SOURCE);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, env);
+        glActiveTexture(GL_TEXTURE0);
+        gl.setViewport(0, 0, OUT, OUT);
+        convolver.irradiance([&](int f) {
+            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, targets[0], 0, f);
+        });
+        convolver.prefilter(MIPS, [&](int f, int mip) {
+            gl.setViewport(0, 0, OUT >> mip, OUT >> mip);
+            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, targets[1], mip, f);
+        });
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        // Every face of @p level of @p cube, one after another, as floats.
+        const auto readCube = [](GLuint cube, int level, int size, std::vector<float>& texels) {
+            const size_t face = static_cast<size_t>(size) * size * 4;
+            texels.resize(face * 6);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, cube);
+            for (int f = 0; f < 6; ++f) {
+                const GLenum side = GL_TEXTURE_CUBE_MAP_POSITIVE_X + static_cast<GLenum>(f);
+                glGetTexImage(side, level, GL_RGBA, GL_FLOAT, &texels[face * static_cast<size_t>(f)]);
+            }
+        };
+        readCube(targets[0], 0, OUT, irradiance);
+        // The roughest level, a texel a face at its base: what the widest lobe makes.
+        readCube(targets[1], MIPS - 1, OUT >> (MIPS - 1), rough);
+        glDeleteFramebuffers(1, &fbo);
+        glDeleteTextures(2, targets);
+        glDeleteTextures(1, &env);
+    };
+
+    // A face's middle, the mean of its four middle texels, red channel.
+    const auto middle = [](const std::vector<float>& cube, int size, int face) {
+        if (size == 1) return cube[static_cast<size_t>(face) * 4];
+        float sum = 0.0f;
+        for (int y = size / 2 - 1; y <= size / 2; ++y) {
+            for (int x = size / 2 - 1; x <= size / 2; ++x) {
+                sum += cube[((static_cast<size_t>(face) * size + y) * size + x) * 4];
+            }
+        }
+        return 0.25f * sum;
+    };
+
+    std::vector<float> irradiance;
+    std::vector<float> rough;
+    convolve(false, irradiance, rough);
+    float uniform = 0.0f;
+    for (int f = 0; f < 6; ++f) {
+        uniform = std::max(uniform, std::abs(middle(irradiance, OUT, f) - 1.0f));
+        uniform = std::max(uniform, std::abs(middle(rough, OUT >> (MIPS - 1), f) - 1.0f));
+    }
+    std::printf("      under a uniform sky, every lobe within %.4f of it\n", uniform);
+    check("a uniform sky convolves to itself, diffuse and roughest", uniform < 0.005f);
+
+    convolve(true, irradiance, rough);
+    const float above = middle(irradiance, OUT, 2);
+    const float level = middle(irradiance, OUT, 4);
+    const float below = middle(irradiance, OUT, 3);
+    std::printf(
+        "      under half a sky: facing up %.4f, level %.4f, down %.4f (1, 0.5, 0)\n",
+        above,
+        level,
+        below
+    );
+    check(
+        "half a sky's irradiance is the closed form's, within a percent",
+        std::abs(above - 1.0f) < 0.01f && std::abs(level - 0.5f) < 0.01f && below < 0.01f
+    );
+    check("with no GL error behind any of it", noGlError());
+}
+
 // The transmittance table the sky bake reads and the CPU's sunlight integrate one atmosphere;
 // a term in one and not the other shows as a sky and a sun disagreeing about the time of day.
 void testTheSkysTransmittanceIsTheSunlights() {
@@ -1599,6 +1737,30 @@ void testASkyBakedAStepAFrameTakesTheStepsItCounts() {
     check("the bake takes as many steps as slicedSteps counts", steps == GLIBLBaker::slicedSteps());
     check("  and the last swaps it in", swapped && ibl.isReady());
     check("with no GL error behind any of it", noGlError());
+
+    // A sky within CATCH_UP_DEGREES of the shown one takes a step a frame; one run further ahead, a
+    // step more for each CATCH_UP_DEGREES its sun or moon is behind, so a time-lapse keeps pace.
+    // Turned about an axis square to it, so by the whole angle.
+    const auto turned = [](const glm::vec3& direction, float degrees) {
+        const glm::vec3 up   = glm::vec3(0.0f, 1.0f, 0.0f);
+        const glm::vec3 side = std::abs(direction.y) < 0.9f ? up : glm::vec3(1.0f, 0.0f, 0.0f);
+        return glm::angleAxis(glm::radians(degrees), glm::normalize(glm::cross(direction, side))) * direction;
+    };
+    const float three = 3.0f * GLIBLBaker::CATCH_UP_DEGREES + 0.1f;
+    SkyParams ahead = sky;
+    ahead.sunDir = turned(sky.sunDir, three);
+    SkyParams moonlit = sky;
+    moonlit.moonDir = turned(sky.moonDir, three);
+    SkyParams risen = sky;
+    risen.sunDir = turned(sky.sunDir, 90.0f);
+    check("a sky as shown takes a step a frame", GLIBLBaker::stepsFor(sky, sky) == 1);
+    const bool caught = GLIBLBaker::stepsFor(ahead, sky) == 4;
+    check("  one whose sun has run ahead, a step more per its degrees", caught);
+    check("  and so does one whose moon has", GLIBLBaker::stepsFor(moonlit, sky) == 4);
+    check(
+        "  but never more than a frame can afford",
+        GLIBLBaker::stepsFor(risen, sky) == GLIBLBaker::MAX_CATCH_UP_STEPS
+    );
 }
 
 int runTests() {
@@ -1657,6 +1819,7 @@ int runTests() {
     testMeshesInOnePoolDrawAsOneMultiDraw();
     testASkyBakesAgainOnlyOnceItsSunHasMoved();
     testTheSkysTransmittanceIsTheSunlights();
+    testTheSkysConvolutionsAreTheIntegralsTheyStandFor();
     testASkyBakedAStepAFrameTakesTheStepsItCounts();
     // Last: it gives the context a surface, which the tests above do not want.
     Vkm::Test::runGoldenTests(gl, g_failures);

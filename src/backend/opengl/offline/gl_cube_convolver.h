@@ -27,8 +27,8 @@ class GLMesh;
  *
  * The caller owns GL state: bind the capture FBO and set depth/cull/blending
  * off first; these methods set uniforms, run the caller's attach, and draw.
- * The two that convolve a share of a face (irradianceSlice, prefilterBand), for
- * a bake spread over frames, also blend or scissor, and turn it off again.
+ * irradianceFace and prefilterBand convolve a face or a share of one, for a bake
+ * spread over frames; prefilterBand also scissors, and turns it off again.
  */
 class GLCubeConvolver {
     public:
@@ -70,19 +70,14 @@ class GLCubeConvolver {
         void prefilter(int mips, const AttachMipFace& attach);
 
         /**
-         * @brief Convolve one share of one irradiance face: the azimuths of @p slice of @p slices.
+         * @brief Convolve one irradiance face, as irradiance() draws it.
          *
-         * Slice 0 writes the face and each later one adds to it, so all of them in order are
-         * the face irradiance() draws. The caller has bound the env cube at
-         * BakeTextureSlots::SOURCE.
+         * The caller has bound the env cube at BakeTextureSlots::SOURCE.
          *
-         * @param gl     Live GL context the later slices blend through.
          * @param face   Cube face index (0..5).
-         * @param slice  Which share, from 0.
-         * @param slices How many shares the face is convolved in.
          * @param attach Callback that attaches the destination face as colour 0.
          */
-        void irradianceSlice(Vkm::GL::Context& gl, int face, int slice, int slices, const AttachFace& attach);
+        void irradianceFace(int face, const AttachFace& attach);
 
         /**
          * @brief Prefilter one band of rows of one face and level, as prefilter() draws them.
