@@ -215,7 +215,12 @@ round's answer and the inspector's cannot differ.
   thrown crate is judged against the present. Players are what players shoot at,
   and remembering every body means a ring per crate.
 - **Nothing a client says has to arrive.** Input is already repeated across a
-  twelve-tick window (188 ms at the default 64 Hz), and nothing else goes upstream.
+  twelve-tick window (188 ms at the default 64 Hz), and nothing else goes upstream
+  but what rides on it: a command carries up to `MAX_COMMAND_PAYLOAD` bytes of the
+  game's own (`InputMap::setPayload`, read back off `InputCommand::payload`), held
+  like the view until the game changes it. A message that must arrive is sent as
+  held state - kept in the payload until the server's replicated state shows it was
+  applied - since the server repeats a lost command's payload rather than losing it.
 
 - **A connection lost mid-game leaves the world holding still.** The session
   goes to `NetRole::Disconnected` - deliberately *not* Offline, which is the

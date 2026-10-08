@@ -15,6 +15,9 @@ namespace Vkm::Engine {
  */
 inline constexpr uint32_t MAX_INPUT_ACTIONS = 32;
 
+/// Bytes of a game's own a command can carry (InputCommand::payload).
+inline constexpr uint32_t MAX_COMMAND_PAYLOAD = 16;
+
 /**
  * @brief Everything one simulation tick was told to do, as a value.
  *
@@ -45,6 +48,11 @@ struct InputCommand {
      * moved. A quaternion, so there is no Euler convention; identity (looking down -Z) until set.
      */
     glm::quat view{1.0f, 0.0f, 0.0f, 0.0f};
+
+    /// What the game says beside the actions, for its own rules on the server to read: a chess
+    /// move, a choice in a lobby. The engine gives the bytes no meaning; payloadSize of them travel.
+    std::array<uint8_t, MAX_COMMAND_PAYLOAD> payload{};
+    uint8_t payloadSize = 0;
 };
 
 } // namespace Vkm::Engine

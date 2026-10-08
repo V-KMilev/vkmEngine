@@ -126,6 +126,9 @@ int main(int argc, char** argv) {
         }
 
         // After the scene, which a spawner may reference, and the module, which holds the entry.
+        // Set up whether or not the command line joins a game, so the game can join one from
+        // its own menu (NetSession::connect) with the schema its server expects.
+        const bool networked = scriptModule.setupNetwork(engine.getNet());
         if (!net.server.empty()) {
             // Resolved here, not with the arguments, so a missing port falls back to the project's.
             const Vkm::Engine::NetAddress server =
@@ -134,7 +137,7 @@ int main(int argc, char** argv) {
                 LOG_ERROR("'%s' is not an address this machine can reach", net.server.c_str());
                 return EXIT_FAILURE;
             }
-            if (!scriptModule.setupNetwork(engine.getNet())) {
+            if (!networked) {
                 LOG_ERROR("This project has no vkmSetupNetwork entry, so it cannot join a game");
                 return EXIT_FAILURE;
             }

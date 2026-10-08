@@ -10,6 +10,10 @@ namespace {
 
 /// Bits of a packet's command count.
 constexpr uint32_t COUNT_BITS = 5;
+
+/// Bits of a command's payload length.
+constexpr uint32_t PAYLOAD_SIZE_BITS = 5;
+static_assert(MAX_COMMAND_PAYLOAD < (1u << PAYLOAD_SIZE_BITS), "the payload's length has to fit its field");
 static_assert(
     NET_MAX_PACKET_COMMANDS < (1u << COUNT_BITS),
     "the count field has to be able to say how many commands are in the packet"
@@ -72,6 +76,9 @@ size_t writeCommands(
         out.bits(command.pressed, actionCount);
         out.bits(command.released, actionCount);
         Quantize::writeRotation(out, command.view);
+        const uint32_t size = std::min<uint32_t>(command.payloadSize, MAX_COMMAND_PAYLOAD);
+        out.bits(size, PAYLOAD_SIZE_BITS);
+        for (uint32_t b = 0; b < size; ++b) out.u8(command.payload[b]);
     }
     return count;
 }
@@ -104,6 +111,11 @@ bool readCommands(BitReader& in, uint32_t actionCount, std::vector<InputCommand>
         command.pressed  = in.bits(actionCount);
         command.released = in.bits(actionCount);
         command.view     = Quantize::readRotation(in);
+        // The length arrives from the network; bound it before it indexes anything.
+        const uint32_t size = in.bits(PAYLOAD_SIZE_BITS);
+        if (in.failed() || size > MAX_COMMAND_PAYLOAD) return false;
+        command.payloadSize = static_cast<uint8_t>(size);
+        for (uint32_t b = 0; b < size; ++b) command.payload[b] = in.u8();
 
         if (in.failed()) return false;
         out.push_back(command);

@@ -70,8 +70,9 @@ constexpr float DEGREES_PER_STEP = 1.5f;
 constexpr int   MAX_STEPS        = 12;
 
 int stepsBehind(const SkyParams& asked, const SkyParams& shown) {
-    const float cosine = glm::clamp(glm::dot(glm::normalize(asked.sunDir), glm::normalize(shown.sunDir)), -1.0f, 1.0f);
-    return std::clamp(1 + static_cast<int>(glm::degrees(std::acos(cosine)) / DEGREES_PER_STEP), 1, MAX_STEPS);
+    const float cosine = glm::dot(glm::normalize(asked.sunDir), glm::normalize(shown.sunDir));
+    const float behind = glm::degrees(std::acos(glm::clamp(cosine, -1.0f, 1.0f)));
+    return std::clamp(1 + static_cast<int>(behind / DEGREES_PER_STEP), 1, MAX_STEPS);
 }
 
 } // namespace

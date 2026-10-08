@@ -236,6 +236,8 @@ void InputMap::beginTick(uint32_t tick) {
     m_command.sequence = m_nextSequence++;
     m_command.tick     = tick;
     m_command.view     = m_view;
+    m_command.payload     = m_payload;
+    m_command.payloadSize = m_payloadSize;
     m_command.axis.fill(0.0f);
     for (const auto& [_, action] : m_actions) {
         if (action.slot >= 0) m_command.axis[static_cast<size_t>(action.slot)] = action.value;
@@ -246,6 +248,12 @@ void InputMap::beginTick(uint32_t tick) {
     m_command.released = m_pendingReleased;
     m_pendingPressed  = 0;
     m_pendingReleased = 0;
+}
+
+void InputMap::setPayload(const uint8_t* bytes, size_t size) {
+    m_payloadSize = static_cast<uint8_t>(std::min<size_t>(size, MAX_COMMAND_PAYLOAD));
+    m_payload.fill(0);
+    if (bytes) std::copy(bytes, bytes + m_payloadSize, m_payload.begin());
 }
 
 bool InputMap::held(std::string_view action) const {

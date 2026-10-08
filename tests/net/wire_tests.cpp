@@ -1,5 +1,7 @@
 #include "net/net_support.h"
 
+#include <algorithm>
+#include <iterator>
 #include <limits>
 
 #include "core/fnv1a.h"
@@ -328,6 +330,45 @@ void testTheCommonestValuesSurviveExactly() {
     check("  and so is a kinematic one, which a script moves", !isStaticBody(scene, platform));
 }
 
+void testAGamesBytesRideACommand() {
+    std::printf("A command's payload:\n");
+    std::vector<InputCommand> sent(2);
+    sent[0].sequence = 7;
+    sent[0].tick     = 40;
+    sent[1].sequence = 8;
+    sent[1].tick     = 41;
+    const uint8_t move[] = {3, 12, 28, 0, 255};
+    std::copy(std::begin(move), std::end(move), sent[0].payload.begin());
+    sent[0].payloadSize = sizeof(move);
+    std::vector<uint8_t> bytes;
+    BitWriter writer(bytes, 256);
+    writeCommands(writer, sent, 0, 4);
+    writer.finish();
+    BitReader reader(bytes.data(), bytes.size());
+    std::vector<InputCommand> got;
+    const bool read = readCommands(reader, 4, got) && got.size() == 2;
+    const bool same = read && got[0].payloadSize == sizeof(move)
+        && std::equal(std::begin(move), std::end(move), got[0].payload.begin());
+    check("a command's bytes come back as they went", same);
+    check("  and one with none carries none", read && got[1].payloadSize == 0);
+
+    // A length past the most a command holds is a hostile packet, refused.
+    std::vector<uint8_t> forged;
+    BitWriter liar(forged, 256);
+    liar.bits(1, 5);   // one command
+    liar.u32(1);
+    liar.u32(1);
+    for (int a = 0; a < 4; ++a) liar.boolean(false);
+    liar.bits(0, 4);
+    liar.bits(0, 4);
+    Quantize::writeRotation(liar, glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
+    liar.bits(31, 5);  // a payload longer than any command carries
+    liar.finish();
+    BitReader hostile(forged.data(), forged.size());
+    std::vector<InputCommand> refused;
+    check("a payload longer than a command holds is refused", !readCommands(hostile, 4, refused));
+}
+
 void testTheSchemaCarriesComponentsThroughAScene() {
     std::printf("What a registered component costs, and what survives the trip:\n");
 
@@ -503,6 +544,7 @@ void runNetWireTests() {
     testOddWidthsSurviveEveryBoundary();
     testQuantisedValuesSurviveTheRoundTrip();
     testTheCommonestValuesSurviveExactly();
+    testAGamesBytesRideACommand();
     testTheSchemaCarriesComponentsThroughAScene();
     testTwoEndsRefuseToPlayDifferentGames();
     testAnAddressIsReadTheWayAPlayerTypesIt();
