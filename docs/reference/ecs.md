@@ -74,6 +74,7 @@ scene.remove<Mesh>(entity);
 | `BoneSocket`          | `component/animation/bone_socket.h`        | `string bone` + `Transform offset` - what rides a joint of the rig it is parented to                  |
 | `Hierarchy`           | `component/core/hierarchy.h`               | `EntityId parent`, `firstChild`, `lastChild`, `nextSibling`, `prevSibling`                            |
 | `Name`                | `component/core/name.h`                    | `char value[64]` - the entity's display name, in the editor and in log lines                          |
+| `NetLocal`            | `component/core/net_local.h`               | Nothing - its presence keeps the entity and everything below it off the wire ([Networking](networking.md#what-does-not-replicate)) |
 | `Collider`            | `component/physics/collider.h`             | One or more `ColliderPart`s (a `ColliderShape` tag - Box, Capsule or Mesh - plus the fields for each) + `isTrigger` + `enabled` |
 | `CharacterController` | `component/physics/character_controller.h` | `moveInput` + `jumpRequested` + `climbing` + `climbNormal` in, tuning, `grounded` + `groundNormal` + `walkSpeed` out |
 | `Rigidbody`           | `component/physics/rigidbody.h`            | Body: linear/angular velocity, `motion` (Dynamic, Kinematic or Static), mass, damping, restitution, friction, gravity scale, plus the `supported` / `supportNormal` / `blockNormal` outputs |

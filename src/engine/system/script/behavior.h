@@ -464,7 +464,7 @@ class Behavior {
          * @return True when this end simulates the entity.
          */
         bool isSimulated() const {
-            return m_ctx->net->simulates(m_entity);
+            return m_ctx->net->simulates(*m_ctx->scene, m_entity);
         }
 
         /**
@@ -505,13 +505,12 @@ class Behavior {
         /**
          * @brief Create a new, empty entity; add components to it through scene().
          *
-         * Safe from a hook; a behavior added during a pass starts on the next. Local to
-         * this end, so a client warns once; use NetSession::spawn on the server instead.
+         * Safe from a hook; a behavior added during a pass starts on the next. This end's
+         * own: on a server, NetSession::spawn is what every player is told about.
          *
          * @return The new entity.
          */
         EntityId spawn() {
-            if (m_ctx->net->role() == NetRole::Client) warnSpawnOnClient();
             return m_ctx->scene->createEntity();
         }
 
@@ -657,13 +656,6 @@ class Behavior {
             for (auto& unsubscribe : m_subscriptions) unsubscribe();
             m_subscriptions.clear();
         }
-
-        /**
-         * @brief Say, once per process, that a connected client made an entity of its own.
-         *
-         * Defined in vkm_core, or each module copy would hold its own latch.
-         */
-        static void warnSpawnOnClient();
 
     private:
         EntityId         m_entity{};

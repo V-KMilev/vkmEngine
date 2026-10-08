@@ -27,6 +27,7 @@ struct NetServer::Peer {
     NetConnection    connection;
     NetBaseline      baseline;
     NetCommandBuffer commands;
+    NetInbox         inbox;              ///< This player's messages, each handed on once.
     InputCommand     current;            ///< What this player's entity runs this tick.
     PlayerId         id = NO_PLAYER;     ///< Never NO_PLAYER once made.
     EntityId         entity;
@@ -71,6 +72,7 @@ void NetServer::close() {
     for (auto& peer : m_peers) sendBare(m_core, peer->connection, NetMessage::Goodbye, peer->token);
 
     m_peers.clear();
+    m_messages.clear();
     m_rewind.clear();
     m_rewound.clear();
     m_seconds      = 0.0;
@@ -198,7 +200,7 @@ void NetServer::receive(Scene& scene, ResourceManager& resources) {
 
 void NetServer::acceptCommands(Peer& peer, BitReader& reader) {
     const uint32_t drawnWhole    = reader.u32();
-    const uint32_t drawnFraction = reader.bits(8);
+    const uint32_t drawnFraction = reader.bits(NET_DRAWN_FRACTION_BITS);
     if (reader.failed()) return;
 
     std::vector<InputCommand>& commands = m_received;
@@ -207,6 +209,12 @@ void NetServer::acceptCommands(Peer& peer, BitReader& reader) {
         return;
     }
     for (const InputCommand& command : commands) peer.commands.accept(command);
+
+    // After the commands, in the room they left.
+    const bool read = peer.inbox.read(reader, [&](const uint8_t* bytes, size_t size) {
+        m_messages.push_back({peer.id, peer.entity, std::vector<uint8_t>(bytes, bytes + size)});
+    });
+    if (!read) LOG_ERROR("Player %u sent messages that did not decode", peer.id);
 
     // What the client drew belongs to its newest command; with none it says nothing.
     if (commands.empty()) return;
@@ -428,6 +436,9 @@ void NetServer::dropPeer(Scene& scene, ResourceManager& resources, size_t index,
     LOG_INFO("Player %u left: %s", peer.id, why);
     if (m_despawn && peer.entity) m_despawn(scene, resources, peer.id, peer.entity);
     m_rewind.forget(peer.entity);
+    // What they said this frame goes with them: their seat is gone, and DespawnPlayer has run.
+    const auto theirs = [&](const PlayerMessageEvent& said) { return said.player == peer.id; };
+    m_messages.erase(std::remove_if(m_messages.begin(), m_messages.end(), theirs), m_messages.end());
     m_peers.erase(m_peers.begin() + static_cast<long>(index));
 }
 
@@ -484,6 +495,8 @@ NetSnapshotStats NetServer::sendSnapshot(Scene& scene, const NetSchema& schema, 
         NET_QUEUE_DEPTH_BITS
     );
     peer.commands.restartLowWater();
+    // The newest message handed on, so the client stops sending it.
+    writer.u16(peer.inbox.acknowledge());
 
     // What the headers leave; what does not fit is deferred, never a second datagram.
     NetBudget budget;
@@ -574,6 +587,12 @@ void NetServer::restore(Scene& scene) {
         if (Transform* at = scene.tryGet<Transform>(was.entity)) *at = was.transform;
     }
     m_rewound.clear();
+}
+
+std::vector<PlayerMessageEvent> NetServer::takeMessages() {
+    std::vector<PlayerMessageEvent> taken;
+    taken.swap(m_messages);
+    return taken;
 }
 
 std::string NetServer::describe() const {

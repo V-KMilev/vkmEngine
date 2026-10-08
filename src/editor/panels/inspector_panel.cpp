@@ -41,6 +41,7 @@
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
+#include "ecs/component/core/net_local.h"
 #include "ecs/component/ui/ui_scroll.h"
 #include "ecs/component/ui/ui_slider.h"
 #include "ecs/component/ui/ui_toggle.h"
@@ -678,7 +679,8 @@ void drawWireIdentity(const Scene& scene, EntityId id) {
             "",
             "inside a prefab instance",
             "the animation places it",
-            "it cannot move"
+            "it cannot move",
+            "each end runs its own"
         };
         static_assert(
             std::size(WHY) == static_cast<size_t>(NetSilence::Count),
@@ -947,6 +949,14 @@ void InspectorPanel::drawUIButtonSection(EditorContext& ec, EntityId id) {
     });
 }
 
+void InspectorPanel::drawNetLocalSection(EditorContext& ec, EntityId id) {
+    editComponentCard<NetLocal>(ec, id, [&](NetLocal&) {
+        ImGui::TextWrapped("This entity and everything below it stay off the wire: each end runs its own.");
+        ImGui::TextDisabled("For what every end works out for itself, as scenery a behavior moves.");
+        return false;
+    });
+}
+
 void InspectorPanel::drawUISliderSection(EditorContext& ec, EntityId id) {
     Scene& scene = ec.frame.scene;
 
@@ -1108,6 +1118,7 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         // one writes it); Name is the + beside the entity title.
         section("Core");
         addItem(Transform{});
+        addItem(NetLocal{});
 
         section("Render");
         addItem(Mesh{});

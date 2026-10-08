@@ -726,6 +726,33 @@ void testACommandIsReadByName() {
     check("  and so does one past the command cap", map.indexOf(past) < 0 && !map.pressed(command, past));
 }
 
+// A game's bytes are held as the view is: latched into each tick's command until changed, never
+// cut short, and gone with the session.
+void testACommandCarriesTheGamesBytes() {
+    std::printf("A command carries the game's own bytes:\n");
+
+    InputMap map;
+    const uint8_t move[] = {4, 9, 1};
+    map.setPayload(move, sizeof(move));
+    map.beginTick(1);
+    const InputCommand& first = map.command();
+    const bool same = std::equal(std::begin(move), std::end(move), first.payload.begin());
+    check("the tick's command takes the bytes the game set", first.payloadSize == sizeof(move) && same);
+    map.beginTick(2);
+    check("  and the next keeps them, held until changed", map.command().payloadSize == sizeof(move));
+
+    std::array<uint8_t, MAX_COMMAND_PAYLOAD + 4> long_{};
+    long_.fill(7);
+    const bool refused = !map.setPayload(long_.data(), long_.size());
+    map.beginTick(3);
+    const bool kept = map.command().payloadSize == sizeof(move);
+    check("more than a command holds is refused, keeping what was held", refused && kept);
+
+    map.reset();
+    map.beginTick(4);
+    check("  and none outlives the session", map.command().payloadSize == 0);
+}
+
 // A command must say everything a tick did with it: a character steers relative to a
 // view turning on the render clock, and a tick asking the scene reads the last frame's.
 void testCommandCarriesTheView() {
@@ -1086,6 +1113,7 @@ void runCoreTests() {
     testTheCallerRunsWhatNoWorkerHasTaken();
     testACommandIsReadByName();
     testCommandCarriesTheView();
+    testACommandCarriesTheGamesBytes();
     testAScreenshotIsTheFrameTheBackendDrew();
     testABackendThatFailsToInitStopsTheHost();
     testACappedLoopKeepsItsRate();

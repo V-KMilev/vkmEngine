@@ -34,6 +34,7 @@
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
+#include "ecs/component/core/net_local.h"
 #include "ecs/component/ui/ui_scroll.h"
 #include "ecs/component/ui/ui_slider.h"
 #include "ecs/component/ui/ui_toggle.h"
@@ -87,7 +88,8 @@ class ResourceManager;
     P(UIButton,            "UIButton")            \
     P(UIScroll,            "UIScroll")            \
     E(UISlider,            "UISlider")            \
-    E(UIToggle,            "UIToggle")
+    E(UIToggle,            "UIToggle")            \
+    P(NetLocal,            "NetLocal")
 
 /**
  * @brief Per-component (de)serialization to JSON.
@@ -230,6 +232,9 @@ namespace ComponentSerializer {
 
     nlohmann::json save(const UIScroll&);
     void load(const nlohmann::json&, UIScroll&);
+
+    nlohmann::json save(const NetLocal&);
+    void load(const nlohmann::json&, NetLocal&);
 
     nlohmann::json save(const UISlider&, const EntityNamer&);
     void load(const nlohmann::json&, UISlider&, const EntityResolver&);

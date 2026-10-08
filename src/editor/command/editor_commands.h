@@ -39,6 +39,7 @@
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
+#include "ecs/component/core/net_local.h"
 #include "ecs/component/ui/ui_scroll.h"
 #include "ecs/component/ui/ui_slider.h"
 #include "ecs/component/ui/ui_toggle.h"
@@ -337,6 +338,7 @@ class ScriptEditCommand : public Command {
     X(UIScroll,            uiScroll)            \
     X(UISlider,            uiSlider)            \
     X(UIToggle,            uiToggle)            \
+    X(NetLocal,            netLocal)            \
     S(PrefabEntity,        prefabEntity)        \
     S(PrefabInstance,      prefabInstance)
 

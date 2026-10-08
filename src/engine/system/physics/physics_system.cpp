@@ -339,7 +339,7 @@ bool PhysicsSystem::gatherBodies(Scene& scene, const ResourceManager& resources,
         }
 
         frame.pose    = worldPoseOf(scene, id, *local);
-        frame.decided = net.simulates(id);
+        frame.decided = net.simulates(scene, id);
         const glm::vec3 worldPos = frame.pose.position;
         const glm::quat worldRot = frame.pose.rotation;
 

@@ -482,6 +482,9 @@ void load(const nlohmann::json& j, UIButton& b) { loadReflected(j, b); }
 nlohmann::json save(const UIScroll& s)          { return saveReflected(s); }
 void load(const nlohmann::json& j, UIScroll& s) { loadReflected(j, s); }
 
+nlohmann::json save(const NetLocal& local)          { return saveReflected(local); }
+void load(const nlohmann::json& j, NetLocal& local) { loadReflected(j, local); }
+
 nlohmann::json save(const UISlider& slider, const EntityNamer& name) {
     nlohmann::json out = saveReflected(slider);
     out["fill"] = name(slider.fill);

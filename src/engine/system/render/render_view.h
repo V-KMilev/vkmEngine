@@ -110,7 +110,7 @@ struct RenderView {
          * @param poses This frame's pose, or null (or empty) when nothing posed:
          *              objects then draw bind poses.
          * @param particles ParticleSystem's live particles, or null if it has not run.
-         * @param seconds   The ocean's time, as oceanTime gives it.
+         * @param seconds   The ocean's time, as NetSession::worldTime gives it.
          */
         void build(
             const Scene& scene,

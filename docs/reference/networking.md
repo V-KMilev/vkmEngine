@@ -6,11 +6,12 @@ everything else a fraction of a second late. The same executables run a game
 networked or single-player, and a project that never opens a session pays
 nothing for the code being there.
 
-> The one idea: **one predicate decides who moves what.** `simulates(entity)`
-> answers yes to everything on a server and offline, and on a client for what
-> that client owns plus what its character is currently pushing. Everything else - why props stay consistent between
-> players, why a character does not get corrected every frame, why single-player
-> is unchanged - follows from that one answer.
+> The one idea: **one predicate decides who moves what.** `simulates(scene,
+> entity)` answers yes to everything on a server and offline, and on a client for
+> the character it plays, what that character is pushing, and what the server
+> never names. Everything else - why props stay consistent between players, why a
+> character does not get corrected every frame, why single-player is unchanged -
+> follows from that one answer.
 
 ## Running one
 
@@ -125,6 +126,37 @@ would move all four from one keyboard, so the lab adds a question of its own:
 offline, only the first authored character - the seat a server hands the first
 player to join - takes input (`isOfflineSeat`, `examples/physics_lab/src/lab_walker.h`).
 
+### Messages
+
+What a player says that must arrive - a move, a name, a choice in a lobby - is a
+message, and goes with `net().sendMessage(bytes, size)`:
+
+```cpp
+const uint8_t move[] = {MOVE, from, to};
+net().sendMessage(move, sizeof move);
+```
+
+On the server each one arrives once, in the order its player sent it, as a
+`PlayerMessageEvent` (`net/player_message.h`) carrying the player, the entity
+they drive and the bytes, at the event flush after it arrived. Once is at most
+once: what a player said in the frame they left, or what was still on its way,
+goes with their seat:
+
+```cpp
+subscribe([this](const PlayerMessageEvent& said) { apply(said.player, said.bytes); });
+```
+
+A message is up to `NET_MESSAGE_MAX_BYTES` (255) of the game's own bytes, and a
+send is refused - false, nothing sent - anywhere but on a client playing
+(offline, on a server, before the Welcome), and while `NET_MESSAGE_WINDOW` (64)
+are still unacknowledged: past that, the link is not keeping up, and the game
+decides what to drop. Offline there is nobody to tell: the game is its own
+authority and applies a choice where it makes it. A message is not input for a
+moment. It is not run with a tick's command and nothing predicts it; what is
+held from tick to tick beside the actions - where a player is looking at a
+board, say - is `InputMap::setPayload`, up to `MAX_COMMAND_PAYLOAD` bytes every
+command carries, read back off `InputCommand::payload`.
+
 ### What replicates
 
 `Transform`, `Rigidbody`, `CharacterController`, `Ragdoll` and `NetSpawn` are
@@ -161,7 +193,7 @@ error at the registration line.
 
 ### What does not replicate
 
-Three rules, all the same rule: **replicate causes, not effects.** State that
+Four rules, all the same rule: **replicate causes, not effects.** State that
 every end recomputes from something already on the wire is not merely wasted
 bandwidth - it arrives as a second writer for a value that already had one, and
 which of the two a frame shows then depends on how many fixed steps that frame
@@ -191,11 +223,25 @@ happened to run.
   only by half: its `NetSpawn` travels, which is what it is and the exact pose
   it was built at, and nothing else about it ever does.
 
-- **An entity inside a prefab instance** (`Prefab::isInsideInstance`). Both ends
-  build it from the same file, into the same slot, and its root carries it: see
-  *Identity is the scene slot*.
+- **An entity at or below a `NetLocal`** - what every end works out for itself:
+  scenery a behavior moves by the clock, the parts of a table a screen animates.
+  Left on the wire, a server that never moves it would describe it to every
+  player who joins, and each client would then draw it at the server's word - a
+  scale held to the wire's bound, a drift fought every snapshot. Put it on the
+  root of such a subtree; nothing at or under it is sent or drawn from a
+  snapshot, but for a spawned entity's `NetSpawn`, as with a static body. Move
+  it by `NetSession::worldTime`, which is the server's time at what a client
+  draws, and every end moves it alike; each end's own clock started when it did.
+  `simulates()` answers yes for it on a client too, outside a replay - which
+  re-runs only what the client predicts - so its bodies fall and its behaviors
+  ask `isSimulated()` as anywhere. A client's own entities need no such mark:
+  the server never names them.
 
-`netSilence` asks the three for one entity, and is what the editor's inspector
+- **An entity inside a prefab instance** (`Prefab::isInsideInstance`). Both ends
+  build it from the same file, into the same slot where it is free, and its root
+  carries it: see *Identity is the server's slot*.
+
+`netSilence` asks the four for one entity, and is what the editor's inspector
 shows. A server classifies the whole world once per send round instead
 (`NetSilenceMap`), however many peers it then writes for: the answer depends on
 the world and not on who receives it, and a ragdoll bone found one entity at a
@@ -206,25 +252,30 @@ round's answer and the inspector's cannot differ.
 ## What it does not do
 
 - **A spawned prefab's children do not replicate.** Each end builds them from
-  the file into the same slots (the spawn names them), and they follow their
-  root, so only the root's state is on the wire. An animator poses them
-  correctly on both ends; a ragdoll does not, so a ragdoll belongs on a
-  character the scene author placed. Lifting this is a matter of not silencing
-  them - their slots already agree - at the cost of their bones' bandwidth.
+  the file, into the same slots where they are free (the spawn names them), and
+  they follow their root, so only the root's state is on the wire. An animator
+  poses them correctly on both ends; a ragdoll does not, so a ragdoll belongs on
+  a character the scene author placed. Lifting this means not silencing them and
+  having the client's `NetNames` record the slots each spawn built, at the cost
+  of their bones' bandwidth.
 - **Only players are lag-compensated.** A moving platform, a swinging door or a
   thrown crate is judged against the present. Players are what players shoot at,
   and remembering every body means a ring per crate.
-- **Nothing a client says has to arrive.** Input is already repeated across a
-  twelve-tick window (188 ms at the default 64 Hz), and nothing else goes upstream.
+- **A server says nothing to one player that is not state.** A player's
+  messages go up (see *Messages*, above); what the server has to tell them is in
+  the components it replicates, which every player is told until they confirm
+  it. A game that needs to tell one player something no component holds - a
+  reason a move was refused, a line of chat - has no channel for it yet.
 
 - **A connection lost mid-game leaves the world holding still.** The session
   goes to `NetRole::Disconnected` - deliberately *not* Offline, which is the
   opposite state on the one question that matters: Offline decides everything
-  because there is nobody else, and a dropped client decides nothing because it
-  spent the session being told and has just lost the teller. Made Offline it
-  would inherit a world it had only ever been shown, every unowned body handed
-  to its physics at once from interpolated positions. What to do about it is the
-  game's - a message, a menu, a lobby - and `isDisconnected()` plus
+  because there is nobody else, and a dropped client decides nothing of the
+  server's world, because it spent the session being told and has just lost the
+  teller; its own entities and what runs itself it goes on running. Made Offline
+  it would inherit a world it had only ever been shown, every unowned body
+  handed to its physics at once from interpolated positions. What to do about it
+  is the game's - a message, a menu, a lobby - and `isDisconnected()` plus
   `lastError()` say what happened. A game that never asks shows a frozen world.
 
   A join that never got as far as playing ends the same way. Refused - full, a
@@ -250,32 +301,52 @@ engine answers it, for whoever maintains that half.
 
 ### How it works
 
-#### Identity is the scene slot
+#### Identity is the server's slot
 
-An entity is named on the wire by its slot in the `Scene`. Both ends loaded the
-same scene file, which records the slot, so they agree with no handshake, no
-mapping table, and nothing to keep in step. `SceneSerializer` writes
-`entity["id"] = id.slot()` and restores through `createEntityAt`.
+An entity is named on the wire by its slot in the server's `Scene`. Both ends
+loaded the same scene file, which records the slot, so for the world as loaded
+they agree with no handshake: `SceneSerializer` writes `entity["id"] = id.slot()`
+and restores through `createEntityAt`, and the host tells the session the world
+it opened (`NetSession::setWorld`, from `bootProjectWorld`) before anything in it
+runs - which is what the client's names start from.
+
+**A client makes entities of its own freely.** UI is entities, an effect is an
+entity, and a game that could not make one while connected could not show a
+menu. So a client keeps a table of what the server's slots name here
+(`NetNames`, `net/replication/names.h`): every entity of the world as loaded
+names its own slot, and whatever the server names that this end has not heard of
+is made where there is room - at that same slot when it is free, which is the
+usual case, and anywhere else when an entity of the client's own stands in it. A
+snapshot about a slot lands on what the table says, never on the client's own; a
+report that the slot is gone destroys what it named. The client's own are its to
+run: `simulates()` answers yes for them outside a replay, so an effect's bodies
+fall as they would offline. When the session is closed, what it made leaves with
+it - destroyed on the session's next `receive`, if the world is still the one it
+was made in - so a client that joins again finds its slots free and builds the
+server's entities once; the world as loaded is kept for the next session. A
+session lost rather than closed keeps what it made, holding still, until the
+game closes it or joins again. A world replaced while a session is live is taken
+as the one both ends now share, slot for slot, as the first was.
+
+Keeping the server's slot when it is free is not cosmetic: the simulation walks
+entities in slot order, and a client replaying ticks must visit the bodies it
+predicts in the order the server did. Only an entity moved aside for one of the
+client's own can come out of order, and only against the bodies it is predicted
+with.
+
+A replicated component that names another entity sends the server's slot, and
+the client asks `NetSession::entityFor(scene, slot)` what that names here. On a
+server and offline the answer is the slot itself.
 
 An entity built after the scene loads has no slot the other end knows, so
 content spawning names one: `NetSession::spawn` builds a prefab and the root it
 built carries which prefab it was, at the server's slot (see *Spawning*), and
-the slot each entity below it took. The client builds each into the same slot,
-so the two ends' slots go on agreeing and a root the server names later is
-free on every client. What remains is narrower - **an entity inside a prefab
-instance says nothing on the wire.** The root replicates and the hierarchy
-carries the rest, which is correct for anything posed the same way on both
-ends and wrong for a ragdoll, whose bones fall on the server and are never
+the slot each entity below it took. The client builds each into the same slot
+when it is free, for the same reason. What remains is narrower - **an entity
+inside a prefab instance says nothing on the wire.** The root replicates and the
+hierarchy carries the rest, which is correct for anything posed the same way on
+both ends and wrong for a ragdoll, whose bones fall on the server and are never
 heard about. The editor says so on the entity: see *In the editor*, below.
-
-**A client does not create entities of its own while connected.** Its slots are
-the server's names: an entity a client makes for itself - an effect, a marker -
-takes the next free slot, and the server may give that same slot to something it
-spawns. Every snapshot about that slot then lands on the client's own entity,
-and the spawned prefab is built into it unless it is part of an instance this
-end built, which is said once and left alone. Every entity takes a slot, so what
-a client wants to show only itself belongs in a component on an entity it
-already has.
 
 #### Spawning
 
@@ -283,15 +354,15 @@ already has.
 root it built: the prefab path, the pose it was built at, and the slot each
 entity below the root took, by `PrefabEntity` uid (`Prefab::BuiltSlots`, for up
 to `NET_SPAWN_MAX_SLOTS` of them; a larger instance is sent with none, and the
-server says so). `NetSpawn` is a
-replicated component like any other, so it goes out in the same snapshot entry
-as the root's state, is said again until the client confirms it, and reaches a
-player who joins an hour later exactly as it reached one who was there - a
-joiner's baseline holds nothing, so its first snapshot says what every root is.
-The client builds the same file into the root the snapshot created at the
-server's slot, each entity into the slot the spawn names, so the subtree's
-state is never on the wire; only the root is described. A slot the client
-already holds something in is said once - the two ends' slots part there.
+server says so). `NetSpawn` is a replicated component like any other, so it goes
+out in the same snapshot entry as the root's state, is said again until the
+client confirms it, and reaches a player who joins an hour later exactly as it
+reached one who was there - a joiner's baseline holds nothing, so its first
+snapshot says what every root is. The client builds the same file into the root
+the snapshot named (see *Identity is the server's slot*), each entity into the
+slot the spawn names, so the subtree's state is never on the wire; only the root
+is described. A slot the client already holds something in is said once - the
+two ends' slots part there.
 
 The pose goes whole and unquantised - position, rotation and scale as the floats
 the server used. It is said once, and a static body is never described again,
@@ -461,7 +532,12 @@ a quarter-second stutter goes out over two frames rather than one.
 
 Commands go in unbroken runs - each one sequence and one tick after the last,
 which is what every tick makes - so a packet carries the first command's two
-numbers and nothing per command after it.
+numbers and nothing per command after it. The same run lets each command say in a
+bit what it shares with the one before: a view held, a payload held, no edge at
+all. A player holds a view far longer than a tick and a command rides up to
+twelve packets, so a packet of a player looking at something costs 62 bytes
+(`testWhatAFrameOfInputCostsOnTheWire`), where the same twelve commands each
+saying their own view and payload would cost 170.
 
 Retransmission is the other answer and it is the wrong one: by the time a
 retransmit arrived, the tick it belonged to would be long past.
@@ -501,6 +577,33 @@ that runs, or one moment of input would move the character twice.
 A repeat may only run as far dry as the buffer is allowed to run deep. Past that
 the other end is not merely late, it is slower than this one, and a server
 running ahead of everything that client will ever send would discard all of it.
+
+#### Messages: once, in order
+
+A player's messages ride the command packet, after the commands and in whatever
+room they leave (`NetOutbox`, `net/transport/messages.h`). Each is numbered, and
+every packet carries every one still unacknowledged that fits, oldest first,
+until a snapshot's header says the server has it - one sixteen-bit number, the
+newest it handed on, which acknowledges everything before it too. So a message
+rides each packet sent until one arrives, and a lost datagram costs a packet
+interval rather than a timeout and a resend.
+
+The server's `NetInbox` hands on only the message after the newest it has: a copy
+is behind it and is skipped, and one past a gap - which an honest sender never
+makes, since it always starts from what is unacknowledged - waits to be said again
+in order. It hands on at most a window's worth between two acknowledgements it
+sends, which is all an honest sender can have waiting, so a peer that floods
+packets of messages costs the game no more than one keeping up. Sequences wrap,
+and zero means none yet, so the count steps over it on both ends. The window of sixty-four is small against the sixteen-bit space, so a
+cumulative acknowledgement is never read the wrong way round.
+
+Commands are written first because they are for this tick and a message is for
+whenever: at their widest - sixteen commands of every action - they leave about
+120 bytes, and a message that does not fit waits for the next packet. The datagram
+bound counts the one bit that says whether any follow.
+
+What is decided once, by the server, from what players said, stays state: the
+answer to a message goes back in a replicated component, not in a message.
 
 #### Pacing
 
@@ -640,7 +743,8 @@ would otherwise be a bug:
   once per replayed tick.
 
 Behaviors are ticked only for entities this end simulates while replaying,
-which on a client is the one it drives and the bodies it has leased. And a body
+which on a client is the one it drives and the bodies it has leased: what it
+runs for itself, it ran once already. And a body
 this end does not decide is made unpairable for the pass, so the broadphase's
 static-against-static skip drops every pair that involves neither the character
 nor a body it leases - which is what stops a replay costing a full tick over every body in the world.
@@ -809,8 +913,11 @@ retransmit could be asked for.
 
 What genuinely cannot be dropped - an entity gone, a prefab spawned - is not a
 message either. It is state: a lost report is said again by the next snapshot
-because the receiver never confirmed it, the same rule every position rides, so
-nothing on the wire has to be delivered rather than described.
+because the receiver never confirmed it, the same rule every position rides.
+
+A player's messages are the one thing delivered rather than described, and they
+use the commands' answer, not a retransmit: every packet carries every message
+the server has not yet said it has (see *Messages: once, in order*, above).
 
 The property this rests on is tested rather than assumed: with a third of
 every snapshot lost, some delivered twice and others reordered, the two worlds
@@ -892,6 +999,7 @@ role decides which one the session asks.
 advance(dt)              wall clock, so a paused editor still notices a peer leaving
 receive(scene, res)      apply what arrived, reconcile, seat whoever joined,
                          build what the server spawned
+deliver(events)          players' messages onto the bus, on a server
 pacing()                 how fast the clock owes ticks from the next frame on
 interpolate(...)         draw what this end is only told about
 replayCommands()         ticks the server disagreed about, run again
@@ -925,8 +1033,8 @@ decodes into nonsense.
 
 **The inspector's identity header** says what the other end will see of the
 selected entity: its wire slot and which of its components replicate, or a
-warning naming whichever of the three silence rules keeps it off the wire -
-inside a prefab instance, posed by animation, or a static body - with the
+warning naming whichever of the four silence rules keeps it off the wire -
+under a `NetLocal`, inside a prefab instance, posed by animation, or a static body - with the
 reason as its tooltip. It
 is drawn only for a project that replicates something and only for an entity
 carrying some of it, because most entities are not on the wire.
@@ -1048,6 +1156,7 @@ session sits above them because it is the one thing a project touches.
 - `src/engine/net/net_session.{h,cpp}` - `NetSession`, the API, and `NetCore`, what its halves share
 - `src/engine/net/net_server.{h,cpp}` - `NetServer`, the authority's half
 - `src/engine/net/net_client.{h,cpp}` - `NetClient`, a guest's half
+- `src/engine/net/player_message.h` - `PlayerMessageEvent`, what a player said, on the server's bus
 
 **`net/wire/`** - how a value becomes bytes.
 
@@ -1061,11 +1170,13 @@ session sits above them because it is the one thing a project touches.
 **`net/transport/`** - how a datagram gets there, and what happens when it does not.
 
 - `connection.{h,cpp}` - sequencing, acknowledgement, round-trip
+- `messages.{h,cpp}` - `NetOutbox` / `NetInbox`: a player's messages, once each and in order
 - `join_cookie.{h,cpp}` - `NetJoinCookie`, the token a join proves its address with, and `sipHash24`
 
 **`net/replication/`** - what travels.
 
 - `snapshot.{h,cpp}` - `writeSnapshot` / `readSnapshot` / `NetBaseline` / `NetBudget`
+- `names.{h,cpp}` - `NetNames`: what the server's slots name on a client
 - `silence.{h,cpp}` - `netSilence` and `NetSilenceMap`: which entities are described at all
 
 **`net/prediction/`** - the client's own copy of time.

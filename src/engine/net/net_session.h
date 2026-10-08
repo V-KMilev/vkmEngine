@@ -17,6 +17,8 @@
 
 namespace Vkm::Engine {
 
+class Clock;
+class EventBus;
 class Scene;
 class ResourceManager;
 
@@ -193,15 +195,18 @@ class NetSession {
 
     public:
         /**
-         * @brief Say which world this end loaded, so both can agree they match.
+         * @brief Say which world this end loaded, as loaded, before anything in it has run.
          *
          * Slots name entities on the wire, so different scenes would agree on
-         * every name and mean different things. Zero means no file behind this
-         * world and is compared against nothing.
+         * every name and mean different things: the fingerprint is compared at a join,
+         * and zero - no file behind this world - against nothing. What @p scene holds
+         * now is what both ends share; a client names those entities by their own
+         * slots, and makes whatever else the server names where it has room.
          *
          * @param fingerprint What fingerprintScene said of the entry scene.
+         * @param scene       The world, just opened.
          */
-        void setWorld(uint64_t fingerprint) { m_core.world = fingerprint; }
+        void setWorld(uint64_t fingerprint, const Scene& scene);
 
         /**
          * @brief Take players on @p port.
@@ -227,7 +232,11 @@ class NetSession {
          */
         bool connect(const NetAddress& server, uint32_t tickRate);
 
-        /// Say goodbye and go back to Offline. Safe to call when already offline.
+        /**
+         * @brief Say goodbye and go back to Offline. Safe to call when already offline.
+         *
+         * What the session made goes at the next receive().
+         */
         void close();
 
         /// What the game does when a player joins and leaves. Set before host().
@@ -285,15 +294,18 @@ class NetSession {
         /**
          * @brief Whether this end decides what happens to @p entity.
          *
-         * A server says yes to everything, offline too; a client only to what
-         * it owns or leases. A client that loses or is refused by its server
-         * ends Disconnected and answers no to everything. Ask the role, not
-         * isPlaying(), which is false for both Disconnected and Offline.
+         * A server says yes to everything, offline too. A client says yes to the character it
+         * plays and what it leases, and, outside a replay, to what no slot of the server's names:
+         * its own entities, and those at or below a NetLocal. A replay re-runs only what the
+         * client predicts. A client that loses or is refused by its server ends Disconnected,
+         * and answers no for the server's world it holds still. Ask the role, not isPlaying(),
+         * which is false for both Disconnected and Offline.
          *
+         * @param scene  The world @p entity is in.
          * @param entity The entity asked about; a null id is never simulated by a client.
          * @return Whether this end decides what happens to @p entity.
          */
-        bool simulates(EntityId entity) const;
+        bool simulates(const Scene& scene, EntityId entity) const;
 
         /**
          * @brief Also simulate @p entities, for a while.
@@ -311,6 +323,25 @@ class NetSession {
         void lease(const std::vector<EntityId>& entities) { m_client.lease(entities); }
 
         /**
+         * @brief Send the server something it must have: a move, a name, a choice in a lobby.
+         *
+         * Delivered at most once and in the order sent, as a PlayerMessageEvent at the server's
+         * next event flush; what is still on its way when this end leaves goes with it. It rides
+         * every packet this end sends until the server says it has it, so a lost datagram costs a
+         * packet interval, not the message. Input for a tick is not a message: the command
+         * carries that, and setPayload what is held beside it. Offline there is no server to
+         * tell: the game is its own authority and applies the choice where it makes it.
+         *
+         * @param bytes The message; the game's own bytes.
+         * @param size  1 to NET_MESSAGE_MAX_BYTES of them.
+         * @return False, sending nothing, unless this end is a client playing, the message
+         *         fits, and fewer than NET_MESSAGE_WINDOW are still unacknowledged.
+         */
+        bool sendMessage(const uint8_t* bytes, size_t size) {
+            return m_role == NetRole::Client && m_client.sendMessage(bytes, size);
+        }
+
+        /**
          * @brief How many bodies this end is simulating on top of its own.
          *
          * @return The number of live leases.
@@ -325,6 +356,19 @@ class NetSession {
          *         client, and for nothing on a server.
          */
         bool isMine(EntityId entity) const;
+
+        /**
+         * @brief What the server's @p slot names on this end.
+         *
+         * An entity's name on the wire is the server's slot. A client makes what the server
+         * names where it has room, so a replicated component that names an entity sends the
+         * server's slot, and a client looks it up here. On a server or offline it is the slot.
+         *
+         * @param scene The world it is in.
+         * @param slot  The server's slot.
+         * @return The entity, or a null id when this end has nothing for it.
+         */
+        EntityId entityFor(const Scene& scene, uint32_t slot) const;
 
         /**
          * @brief The input driving @p entity on the tick about to run.
@@ -349,6 +393,15 @@ class NetSession {
          * @param resources Loads a spawned player's or prefab's assets.
          */
         void receive(Scene& scene, ResourceManager& resources);
+
+        /**
+         * @brief Hand what players sent since the last call to @p events, as PlayerMessageEvent.
+         *
+         * Once a frame, after receive. Only a server has any.
+         *
+         * @param events Where they are queued, for the next flush.
+         */
+        void deliver(EventBus& events);
 
         /**
          * @brief The ticks a correction wants run again, oldest first.
@@ -420,7 +473,8 @@ class NetSession {
          * client, and every later joiner, builds the same file into it. Offline
          * it is an ordinary instantiate. Undone by destroying the root's subtree
          * (HierarchyOperations::destroyHierarchy or Behavior::destroy). Authority
-         * only: a client-only entity would be corrected out of existence.
+         * only: refused on a client, as the server would never hear of what it built;
+         * a client's own entity is an ordinary Prefab::instantiate.
          *
          * @param scene     World to build into.
          * @param resources Resolves the prefab's asset names.
@@ -465,6 +519,22 @@ class NetSession {
         float renderDelay() const;
 
         /**
+         * @brief The seconds of the authority's world this end is drawing.
+         *
+         * What moves by the clock and must look alike at every end is moved by these. Offline and
+         * on a server, the clock's ticks and the fraction past the last, so it stops with the
+         * game, and inside a tick that tick's own, getTick() * getFixedStep(), so what a tick
+         * decides by it it decides the same way each time. On a playing client, from the first
+         * snapshot on, the server tick it draws others at, so what the server floats is drawn on
+         * the sea it floated on; the two clocks are otherwise unrelated, and a client that has
+         * lost its server goes back to its own.
+         *
+         * @param clock The engine's clock.
+         * @return Seconds of the authority's simulated time.
+         */
+        double worldTime(const Clock& clock) const;
+
+        /**
          * @brief How much faster than the wall clock this end should run its ticks.
          *
          * A playing client's answer from NetPacing; exactly one in every other
@@ -493,6 +563,9 @@ class NetSession {
         std::string describe() const;
 
     private:
+        static constexpr uint64_t NO_WORLD = UINT64_MAX;  ///< No world's epoch seen yet.
+
+    private:
         /**
          * @brief Whether a session can run at @p tickRate, saying why not when it cannot.
          *
@@ -504,9 +577,13 @@ class NetSession {
         /**
          * @brief End a client's session as NetRole::Disconnected rather than Offline.
          *
-         * So a client that did not get to play never plays alone instead.
+         * So a client that did not get to play never plays alone instead, and the world it was
+         * shown holds still - what the session made stays until close() or the next connect().
          */
         void disconnect();
+
+        /// Close the link, whichever half held it, and reset what a session counts.
+        void hangUp();
 
         /**
          * @brief Drop everything naming an entity, because the world has gone.
@@ -531,11 +608,14 @@ class NetSession {
 
         /// Real seconds owed toward the next send; starts full so the first goes at once.
         float m_sendAccumulator = 1.0f;
+        bool  m_tickOpen        = false;  ///< Between beginTick and endTick: worldTime is the tick's.
 
         uint32_t m_rewindDepth = 0;  ///< Open scopes; only the outermost moves anything.
         EntityId m_rewoundFor;       ///< Whose moment the open scope is.
 
-        uint64_t m_worldEpoch = 0;  ///< Which world the halves' entity ids name.
+        /// Which world the halves' entity ids name; none seen yet is its own value, as a world
+        /// built in code and never loaded is epoch zero.
+        uint64_t m_worldEpoch = NO_WORLD;
 };
 
 } // namespace Vkm::Engine

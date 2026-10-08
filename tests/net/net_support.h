@@ -15,6 +15,7 @@
 #include "ecs/component/physics/rigidbody.h"
 #include "net/net_session.h"
 #include "net/prediction/command.h"
+#include "net/replication/names.h"
 #include "net/replication/silence.h"
 #include "net/replication/snapshot.h"
 #include "net/wire/bit_stream.h"
@@ -60,9 +61,14 @@ inline RawSocket rawSocketUdp() {
  * @param body   The snapshot body, header excluded.
  * @return False when readSnapshot found the body malformed.
  */
-inline bool readSnapshotFrom(Scene& scene, const NetSchema& schema, const std::vector<uint8_t>& body) {
+inline bool readSnapshotFrom(
+    Scene& scene,
+    const NetSchema& schema,
+    const std::vector<uint8_t>& body,
+    NetNames& names
+) {
     BitReader reader(body.data(), body.size());
-    return readSnapshot(scene, schema, reader);
+    return readSnapshot(scene, schema, reader, names);
 }
 
 /**

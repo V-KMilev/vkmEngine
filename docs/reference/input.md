@@ -163,6 +163,15 @@ and read it back off the command, where it is a fact about that tick:
 const glm::vec3 forward = Math::computeForward(command().view);
 ```
 
+### Bytes of the game's own
+
+What a game holds beside its actions from tick to tick - where a player is
+looking at a board, say - goes the same way: `setPayload(bytes, size)` holds up
+to `MAX_COMMAND_PAYLOAD` bytes that every command carries until they change,
+read back off `InputCommand::payload`, and refuses more rather than cutting them
+short. What must arrive once - a move, a name - is not held state but a message
+(`NetSession::sendMessage`, [networking.md](networking.md#messages)).
+
 ## What the engine binds for itself
 
 Two sets. The first is in your map from its construction and again after every
@@ -251,5 +260,5 @@ would use.
 
 - `src/engine/platform/input/input_map.{h,cpp}` - actions, bindings, both query sets, and
   `InputActions`, the engine's own
-- `src/engine/platform/input/input_command.h` - `InputCommand`, `MAX_INPUT_ACTIONS`
+- `src/engine/platform/input/input_command.h` - `InputCommand`, `MAX_INPUT_ACTIONS`, `MAX_COMMAND_PAYLOAD`
 - `src/engine/platform/input/input_handle.h` - raw keyboard/mouse state

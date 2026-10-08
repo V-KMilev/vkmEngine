@@ -130,6 +130,8 @@ the reason, and - where there is one - what would reopen it.
 | Multi-draw indirect | Adopted. Every mesh lives in one `GLMeshPool`, so a run of different meshes goes out as one `glMultiDrawElementsIndirect` (core 4.3) per change of program or material. Six interleaved runs a side: on project_alpha the shadow pass's CPU fell 0.71 -> 0.34 ms, the depth prepass 0.40 -> 0.18 and the forward pass 0.98 -> 0.75, the backend's whole frame 3.78 -> 2.88 ms, with GPU time within 1% either way; on stress_arena, whose few meshes were already instanced, 0.02-0.06 ms a pass. The forward pass binds a material per run, for its textures; the prepass binds only its block, for a `waves` surface's vertices. |
 | A glm precompiled header | Rejected while `ccache` is active: a one-file rebuild takes 10.8 s without the PCH and 15.4 s with it, because ccache caches a PCH compile badly. Without ccache it is a ~25% win - revisit if ccache goes. |
 | TCP for the wire | Rejected. In-order delivery stalls the snapshot describing the present behind one describing the past, and retransmission resends state the next packet supersedes. The design survives loss instead ([networking.md](../reference/networking.md)): a snapshot says again whatever the receiver has not confirmed, so what must arrive - an entity gone, a prefab spawned - is state the next snapshot repeats, not a message a channel resends. |
+| Reliable messages from a player | Adopted, upstream only. A move or a name must arrive once and in order; carried as held state in the command payload it cost the game a nonce, an acknowledgement in its replicated state and a round trip per message. They ride every command packet until a snapshot acknowledges them - the commands' redundancy, not a retransmit timer ([networking.md](../reference/networking.md#messages-once-in-order)). Downstream stays state; revisit when a game must tell one player a fact no component holds. |
+| A name table for entities on the wire | Adopted on the client alone. The server's slot stays an entity's name, but "a client makes no entity of its own while connected" could not hold where UI and effects are entities. A client maps the server's slots, keeping each one's own slot when it is free so slot order - which replay depends on - is kept ([networking.md](../reference/networking.md#identity-is-the-servers-slot)). |
 | Replicating an inactive ragdoll's bones | Rejected: replicate causes, not effects. Inactive, the bones are posed from a clip both ends choose from the replicated velocity; sent, four characters of twenty bones were 96% of every snapshot. An active ragdoll's bones are the answer rather than a copy of it, and all of them travel ([networking.md](../reference/networking.md)). |
 | Fixed gains for client tick pacing | Rejected. Gains tuned at 30 ms overshot on every round trip of a 200 ms link and swung between the two bounds about a hundred times a minute; the gains scale with the measured round trip and the tick rate. |
 | GJK replacing the narrowphase | Rejected. The hand-written primitive pairs return up to four contact points, which resting stability needs; GJK+EPA returns one. GJK answers overlap alone, for a mesh triangle before its manifold is built, and there is no EPA. |
@@ -193,11 +195,11 @@ A mistake in one of these is never local:
   is its only reader, so nothing past the `Visibility` product knows whose view
   it was. An authoring need to see the world differently extends this rather
   than teaching a system that the editor exists.
-- **`NetSession`** - one object, four states. `simulates(entity)` decides which
+- **`NetSession`** - one object, four states. `simulates(scene, entity)` decides which
   end moves what; offline it answers yes to everything, so single-player is
   unchanged by its existence. `Disconnected` is not bookkeeping: it is the
   opposite of `Offline` on the only question that matters - an offline end
-  decides everything, a dropped client decides nothing. Owned by `Engine` by
+  decides everything, a dropped client nothing of the world it was shown. Owned by `Engine` by
   value like `Clock` and `EventBus`, it brackets the frame rather than taking
   part in it ([networking.md](../reference/networking.md)).
 - **`Handle<T>` and `ResourceManager`** - assets owned once, referenced by

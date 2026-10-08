@@ -265,8 +265,8 @@ them is worth caching in a member.
   entity from a hook. The two named `spawn` overloads create, name and parent
   in one call; `spawn(name, parent)` is `HierarchyOperations::setParent`, so a UI
   element is parented exactly like anything else. Every one is local to this
-  end: on a connected client the new entity takes a slot the server may give to
-  something it spawns, and the first such call says so in the log. What every
+  end, a connected client's too - the server never writes over what a client
+  made ([networking.md](networking.md#identity-is-the-servers-slot)). What every
   end should see is `NetSession::spawn`, on the server
   ([networking.md](networking.md#spawning)).
 - **Spawning a prefab** is `Prefab::instantiate(scene(), resources(),

@@ -309,7 +309,7 @@ skipping the Rule of 5 on a `class`, it is probably a struct.
   so it sits beside `entityCount()` on one class. Decide per name, not per class;
   the `getX()` accessors already in the tree are not renamed for this alone.
 - **A predicate reads as a yes-or-no question about its object**:
-  `Clock::isPaused()`, `SparseSet::contains(key)`, `NetSession::simulates(entity)`,
+  `Clock::isPaused()`, `SparseSet::contains(key)`, `NetSession::simulates(scene, entity)`,
   `WindowManager::shouldClose()`. `is` / `has` is the common form, not the only
   one. A function whose `bool` is an outcome - `load`, `save`, `open` - is named
   for the work, as any mutator is. Setters are `setX(value)`.

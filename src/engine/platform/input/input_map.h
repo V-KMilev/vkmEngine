@@ -173,6 +173,19 @@ class InputMap {
         void setView(const glm::quat& view) { m_view = view; }
 
         /**
+         * @brief Say what the game sends beside the actions, for the commands that follow.
+         *
+         * Held, as the view is: every command carries it until it changes - state beside the
+         * actions, such as where a player is looking. What must arrive once is a message
+         * (NetSession::sendMessage). Read back off InputCommand::payload; zero bytes clears it.
+         *
+         * @param bytes What to send.
+         * @param size  How many, up to MAX_COMMAND_PAYLOAD.
+         * @return False, keeping what was held, when there are more than a command carries.
+         */
+        bool setPayload(const uint8_t* bytes, size_t size);
+
+        /**
          * @brief The command's slot for @p action, or -1 when it has none.
          *
          * Assigned in definition order, stable for the session. An action past MAX_INPUT_ACTIONS
@@ -448,6 +461,8 @@ class InputMap {
 
         InputCommand m_command;              ///< The current tick's.
         glm::quat    m_view{1.0f, 0.0f, 0.0f, 0.0f};  ///< Latched into every command beginTick builds.
+        std::array<uint8_t, MAX_COMMAND_PAYLOAD> m_payload{};  ///< Latched too, payloadSize of it.
+        uint8_t      m_payloadSize = 0;
         uint32_t     m_pendingPressed  = 0;  ///< Edges latched since the last command.
         uint32_t     m_pendingReleased = 0;
         uint32_t     m_nextSequence    = 1;  ///< 0 is the zeroed pre-first-tick command.

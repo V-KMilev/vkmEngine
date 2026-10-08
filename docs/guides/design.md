@@ -104,7 +104,7 @@ The directory tree encodes responsibility. Let it place your code:
 `src/engine/net/` is the row most often read wrong, because it is not a system:
 `NetSession` is owned by `Engine` by value and brackets the frame. A change about
 *when* the wire is read or written belongs in `Engine::run`; a system that wants
-to know who decides an entity asks `ctx.net.simulates(entity)`. The socket is
+to know who decides an entity asks `ctx.net.simulates(ctx.scene, entity)`. The socket is
 `platform/net/`.
 
 Two rows are easy to miss because they leave `src/engine/`: a new asset kind is

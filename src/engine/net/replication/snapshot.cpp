@@ -9,6 +9,7 @@
 #include "debug/profiler.h"
 #include "ecs/hierarchy_operations.h"
 #include "ecs/scene.h"
+#include "net/replication/names.h"
 #include "net/replication/silence.h"
 #include "net/wire/codecs.h"
 
@@ -449,7 +450,13 @@ NetSnapshotStats writeSnapshot(
     return stats;
 }
 
-bool readSnapshot(Scene& scene, const NetSchema& schema, BitReader& reader, std::vector<uint32_t>* touched) {
+bool readSnapshot(
+    Scene& scene,
+    const NetSchema& schema,
+    BitReader& reader,
+    NetNames& names,
+    std::vector<EntityId>* touched
+) {
     PROFILE_SCOPE("readSnapshot");
     const uint32_t typeCount = static_cast<uint32_t>(schema.size());
 
@@ -457,11 +464,7 @@ bool readSnapshot(Scene& scene, const NetSchema& schema, BitReader& reader, std:
     for (uint32_t i = 0; i < lostCount; ++i) {
         const uint32_t slot = reader.bits(LARGE_GAP_BITS);
         if (reader.failed()) return false;
-        // entityAt answers for any slot in range. The subtree goes too: an
-        // instance's children have no name on the wire.
-        if (scene.isAliveAtIndex(slot)) {
-            HierarchyOperations::destroyHierarchy(scene, scene.entityAt(slot));
-        }
+        names.forget(scene, slot);
     }
 
     uint32_t previous = 0;
@@ -474,17 +477,15 @@ bool readSnapshot(Scene& scene, const NetSchema& schema, BitReader& reader, std:
         const uint32_t mask = reader.bits(typeCount);
         if (reader.failed()) return false;
 
-        // Created, not refused: the server may have made it since.
-        const EntityId entity = scene.isAliveAtIndex(slot)
-            ? scene.entityAt(slot)
-            : scene.createEntityAt(slot);
+        // Made, not refused: the server may have made it since.
+        const EntityId entity = names.claim(scene, slot);
         if (!entity) return false;
 
         for (uint32_t type = 0; type < typeCount; ++type) {
             if (!(mask & (1u << type))) continue;
             if (!schema.types()[type].decode(scene, entity, reader)) return false;
         }
-        if (touched) touched->push_back(slot);
+        if (touched) touched->push_back(entity);
     }
     return !reader.failed();
 }

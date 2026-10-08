@@ -218,7 +218,7 @@ Engine code, single include root `src/engine/`:
 | `system/async/`            | `AsyncLoaderSystem`                                                      |
 | `system/audio/`            | `AudioSystem`, `AudioDevice` (the only engine file that includes the audio backend) |
 | `system/hierarchy/`        | `HierarchySystem`                                                        |
-| `system/ocean/`            | `OceanSurface`, `oceanTime` (the sea's waves, which the vertex shaders and gameplay both read) |
+| `system/ocean/`            | `OceanSurface` (the sea's waves, which the vertex shaders and gameplay both read) |
 | `system/particle/`         | `ParticleSystem` (CPU simulation; `GLParticlePass` draws what it emits)  |
 | `system/physics/`          | `PhysicsSystem`, `CharacterControllerSystem`, and `authoring/`, `character/`, `collision/`, `query/`, `solver/` (see [physics.md](physics.md) for the folder map) |
 | `system/render/`           | `RenderSystem`, `RenderBackend`, `RenderView`, `RenderSettings`, `data/` |

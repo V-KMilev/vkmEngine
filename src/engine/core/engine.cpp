@@ -61,6 +61,7 @@ void Engine::run() {
         // editor still has to notice a peer that has gone.
         m_net.advance(m_clock.getDeltaTime());
         m_net.receive(m_scene, m_resources);
+        m_net.deliver(m_events);
 
         // See NetSession::pacing.
         m_clock.setPacing(m_net.pacing());

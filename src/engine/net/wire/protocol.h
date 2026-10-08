@@ -11,7 +11,7 @@ namespace Vkm::Engine {
 constexpr uint16_t NET_PROTOCOL_TAG = 0x564B;
 
 /// Which version of it. Both ends run the same build, so a mismatch is refused.
-constexpr uint8_t NET_PROTOCOL_VERSION = 8;
+constexpr uint8_t NET_PROTOCOL_VERSION = 10;
 
 /**
  * @brief What a datagram is, read from the header every payload starts with.
@@ -53,6 +53,9 @@ enum class NetSender : uint8_t {
     OtherBuild,  ///< This engine's wire at another version, saying Hello or Refuse.
     Unknown      ///< Anything else, which is dropped unread.
 };
+
+/// What writeMessageHeader writes: the tag, the version, what it is, the token.
+constexpr uint32_t NET_MESSAGE_HEADER_BITS = 16 + 8 + 8 + 64;
 
 /**
  * @brief Start a payload: the tag, the version, what it is and the sender's token.

@@ -2,6 +2,9 @@
 
 #include <thread>
 
+#include "core/math/random.h"
+#include "net/transport/messages.h"
+
 namespace {
 
 void testTwoSocketsCanTalk() {
@@ -192,6 +195,104 @@ void testSequencesSurviveTheirOwnWrap() {
     std::printf("      %zu packets, sequence wrapped %d time(s)\n", accepted, 70000 / 65536);
 }
 
+// What a game sends that must arrive - a move, a name - arrives once and in order through a link
+// that loses a third of everything and delivers some packets twice.
+void testMessagesArriveOnceInOrderThroughLoss() {
+    std::printf("Messages through a link that loses and repeats:\n");
+
+    NetOutbox outbox;
+    NetInbox  inbox;
+    Math::Rng rng(7, 1);
+    std::vector<uint32_t> heard;
+    const auto deliver = [&](const uint8_t* bytes, size_t size) {
+        uint32_t value = 0;
+        for (size_t i = 0; i < size && i < 4; ++i) value |= static_cast<uint32_t>(bytes[i]) << (8 * i);
+        heard.push_back(value);
+    };
+
+    // Three hundred messages, a few added each packet.
+    uint32_t made = 0, packets = 0, refusedFull = 0;
+    std::vector<uint8_t> wire;
+    for (int round = 0; round < 4000; ++round) {
+        for (int n = 0; n < 3 && made < 300; ++n) {
+            const uint8_t bytes[4] = {static_cast<uint8_t>(made), static_cast<uint8_t>(made >> 8), 0, 0};
+            if (outbox.push(bytes, sizeof bytes)) ++made;
+            else ++refusedFull;
+        }
+        wire.clear();
+        BitWriter out(wire, 1200);
+        outbox.write(out, 8u * 300u);
+        out.finish();
+        ++packets;
+        // A third lost; of what arrives, one in five arrives twice.
+        if (rng.nextFloat() < 0.33f) continue;
+        for (int copy = 0; copy < (rng.nextFloat() < 0.2f ? 2 : 1); ++copy) {
+            BitReader in(wire.data(), wire.size());
+            if (!inbox.read(in, deliver)) check("a packet of messages decodes", false);
+        }
+        // The acknowledgement comes back on a packet of its own, which may be lost too.
+        const uint16_t told = inbox.acknowledge();
+        if (rng.nextFloat() >= 0.33f) outbox.acknowledge(told);
+    }
+    bool inOrder = heard.size() == 300;
+    for (size_t i = 0; inOrder && i < heard.size(); ++i) inOrder = heard[i] == i;
+    check("every message is heard once, in the order sent", inOrder);
+    check("  and the sender holds none of them once told", outbox.pending() == 0);
+    std::printf(
+        "      %zu heard over %u packets; %u sends refused while the window was full\n",
+        heard.size(),
+        packets,
+        refusedFull
+    );
+
+    const uint8_t big[NET_MESSAGE_MAX_BYTES + 1] = {};
+    check("a message too long to send is refused", !outbox.push(big, sizeof big));
+    check("  and so is an empty one", !outbox.push(big, 0));
+
+    // Across the sixteen-bit wrap: seventy thousand, acknowledged as they go.
+    NetOutbox longer;
+    NetInbox  across;
+    size_t    counted = 0;
+    for (int i = 0; i < 70000; ++i) {
+        const uint8_t one = static_cast<uint8_t>(i);
+        longer.push(&one, 1);
+        wire.clear();
+        BitWriter out(wire, 1200);
+        longer.write(out, 8u * 300u);
+        out.finish();
+        BitReader in(wire.data(), wire.size());
+        across.read(in, [&](const uint8_t*, size_t) { ++counted; });
+        longer.acknowledge(across.acknowledge());
+    }
+    check("past the wrap every message is still heard once", counted == 70000 && longer.pending() == 0);
+
+    // A sender that tells itself it was acknowledged, and sends packet after packet: the game is
+    // handed no more than an honest one could have waiting, until the server acknowledges.
+    NetOutbox flood;
+    NetInbox  guarded;
+    size_t    handed = 0;
+    for (int packet = 0; packet < 6; ++packet) {
+        const uint8_t one = 1;
+        while (flood.push(&one, 1)) {}
+        wire.clear();
+        BitWriter out(wire, 1200);
+        flood.write(out, 8u * 1000u);
+        out.finish();
+        BitReader in(wire.data(), wire.size());
+        guarded.read(in, [&](const uint8_t*, size_t) { ++handed; });
+        flood.acknowledge(guarded.newest());
+    }
+    check("a sender flooding between acknowledgements gets a window's worth", handed == NET_MESSAGE_WINDOW);
+    guarded.acknowledge();
+    wire.clear();
+    BitWriter out(wire, 1200);
+    flood.write(out, 8u * 1000u);
+    out.finish();
+    BitReader in(wire.data(), wire.size());
+    guarded.read(in, [&](const uint8_t*, size_t) { ++handed; });
+    check("  and more once acknowledged", handed > NET_MESSAGE_WINDOW);
+}
+
 // The acknowledgement window is the newest sequence and the thirty-two before
 // it. A packet exactly thirty-two behind the one that just landed is the
 // window's last bit, not outside it: dropped there, a snapshot that arrived is
@@ -325,6 +426,7 @@ void runNetTransportTests() {
     testAConversationKnowsWhatArrived();
     testSequencesSurviveTheirOwnWrap();
     testThePacketThirtyTwoBackIsStillAcknowledged();
+    testMessagesArriveOnceInOrderThroughLoss();
     testAJoinTokenProvesOneAddressForAWhile();
     testAPeerThatHasHeardNothingAcknowledgesNothing();
 }

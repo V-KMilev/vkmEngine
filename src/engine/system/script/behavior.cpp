@@ -1,10 +1,6 @@
-#define VKM_LOG_CATEGORY "SCRIPT"
-
 #include "system/script/behavior.h"
 
 #include <utility>
-
-#include "logger.h"
 
 #include "system/script/script_component.h"
 
@@ -32,18 +28,6 @@ ScreenView Behavior::screen() const {
 
 std::optional<Math::Ray> Behavior::pointerRay() const {
     return screen().rayThrough(m_ctx->input->pointer());
-}
-
-void Behavior::warnSpawnOnClient() {
-    static bool s_warned = false;
-    if (s_warned) return;
-    s_warned = true;
-    LOG_WARNING(
-        "A behavior spawned an entity on a connected client. It exists "
-        "here alone, and its slot is one the server may give to "
-        "something it spawns; see networking.md, \"Identity is the "
-        "scene slot\""
-    );
 }
 
 } // namespace Vkm::Engine

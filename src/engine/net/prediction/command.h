@@ -24,7 +24,8 @@ constexpr uint32_t NET_COMMAND_REDUNDANCY = 12;
  * @brief The most commands one packet carries.
  *
  * More than the redundancy window, since one frame can run more ticks and
- * every one must go out. Sixteen of the widest commands still fit a datagram.
+ * every one must go out. Sixteen of the widest commands still fit a datagram, as
+ * command.cpp asserts.
  */
 constexpr uint32_t NET_MAX_PACKET_COMMANDS = 16;
 
@@ -36,6 +37,17 @@ constexpr uint32_t NET_MAX_PACKET_COMMANDS = 16;
  * oldest needed command is gone and the prediction goes uncorrected.
  */
 constexpr uint32_t NET_COMMAND_MEMORY = 64;
+
+/**
+ * @brief Bits of a command packet's share of a tick past the server tick it draws.
+ *
+ * The packet opens with that tick, whole, and then this, in 255ths: when the client saw what it
+ * aimed at, for the server's rewind.
+ */
+constexpr uint32_t NET_DRAWN_FRACTION_BITS = 8;
+
+/// The drawn tick a command packet opens with, whole and its fraction.
+constexpr uint32_t NET_DRAWN_TICK_BITS = 32 + NET_DRAWN_FRACTION_BITS;
 
 /**
  * @brief Bits an axis is carried in.

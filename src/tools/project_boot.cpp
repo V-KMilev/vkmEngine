@@ -120,7 +120,7 @@ SceneBootResult bootProjectWorld(
     }
 
     // Zero, which agrees with nothing, unless an authored file stands behind the world.
-    net.setWorld(fingerprintScene(boot.path));
+    net.setWorld(fingerprintScene(boot.path), scene);
     return boot;
 }
 

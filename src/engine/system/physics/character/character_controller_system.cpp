@@ -183,7 +183,7 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
 
     scene.forEach<CharacterController, Rigidbody>([&](EntityId id, CharacterController& cc, Rigidbody& rb) {
         // Left where the authority put it, grounded included (see netEncode for CharacterController).
-        if (!ctx.net.simulates(id)) return;
+        if (!ctx.net.simulates(scene, id)) return;
         // A body not Dynamic is placed by script, not moved by velocity: there is nothing to steer, and
         // nothing of walking carries over - no jump pressed meanwhile fires once it moves again.
         if (rb.motion != RigidbodyMotion::Dynamic) {

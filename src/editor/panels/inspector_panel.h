@@ -61,6 +61,7 @@ class SceneIOController;
     X(UIScroll,            drawUIScrollSection,            "UI Scroll",           UI)        \
     X(UISlider,            drawUISliderSection,            "UI Slider",           UI)        \
     X(UIToggle,            drawUIToggleSection,            "UI Toggle",           UI)        \
+    X(NetLocal,            drawNetLocalSection,            "Net Local",           HIERARCHY) \
     X(Hierarchy,           drawHierarchySection,           "Hierarchy",           HIERARCHY) \
 
 /**

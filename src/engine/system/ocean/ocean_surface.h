@@ -9,8 +9,6 @@
 
 namespace Vkm::Engine {
 
-class Clock;
-
 /// JONSWAP's peak enhancement, and its widths below and above the peak (Hasselmann et al. 1973).
 constexpr double JONSWAP_GAMMA       = 3.3;
 constexpr double JONSWAP_SIGMA_BELOW = 0.07;
@@ -72,7 +70,8 @@ struct OceanSurface {
      *
      * @param ocean  The authored sea.
      * @param centre Its Transform's world position; only X and Z are read.
-     * @param time   Seconds, as oceanTime gives them; held in double so phases stay exact for hours.
+     * @param time   Seconds, as NetSession::worldTime gives them; held in double so phases stay
+     *               exact for hours.
      * @return The surface; with no waves (count 0) for a windless or bandless ocean, though
      *         its surges still lift the water.
      */
@@ -134,7 +133,7 @@ struct OceanRipples {
      * @brief The ripples of @p ocean, @p time seconds in: none for a windless ocean.
      *
      * @param ocean The authored sea.
-     * @param time  Seconds, as oceanTime gives them.
+     * @param time  Seconds, as NetSession::worldTime gives them.
      * @return Its ripples; adding them moves no wave.
      */
     static OceanRipples at(const Ocean& ocean, double time);
@@ -148,15 +147,5 @@ struct OceanRipples {
     /// The variance of the slope the ripples between wavenumbers @p from and @p to raise.
     float slopeVariance(float from, float to) const;
 };
-
-/**
- * @brief The seconds an ocean is moved by: the simulation's, ticks and the fraction past the last.
- *
- * So it stops with the game, and every end of a networked game sees the same waves.
- *
- * @param clock The engine's clock.
- * @return Seconds of simulated time.
- */
-double oceanTime(const Clock& clock);
 
 } // namespace Vkm::Engine

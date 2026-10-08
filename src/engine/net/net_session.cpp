@@ -9,6 +9,8 @@
 #include "l_assert.h"
 #include "logger.h"
 
+#include "core/clock.h"
+#include "core/event/event_bus.h"
 #include "debug/profiler.h"
 #include "ecs/component/prefab/net_spawn.h"
 #include "ecs/scene.h"
@@ -109,20 +111,24 @@ bool NetSession::connect(const NetAddress& server, uint32_t tickRate) {
 
 void NetSession::close() {
     if (m_role == NetRole::Offline) return;
+    hangUp();
+    // Over, not lost: what the session made goes at the next receive.
+    m_client.endSession();
+    m_role = NetRole::Offline;
+}
 
+void NetSession::disconnect() {
+    hangUp();
+    m_role = NetRole::Disconnected;
+}
+
+void NetSession::hangUp() {
     // Each half says goodbye before the socket goes.
     m_client.close();
     m_server.close();
     m_core.socket.close();
-
-    m_role            = NetRole::Offline;
     m_sendAccumulator = 1.0f;
     m_core.serverTick = 0;
-}
-
-void NetSession::disconnect() {
-    close();
-    m_role = NetRole::Disconnected;
 }
 
 void NetSession::onSpawn(NetServer::SpawnPlayer spawn, NetServer::DespawnPlayer despawn) {
@@ -148,9 +154,9 @@ size_t NetSession::playerCount() const {
     return isPlaying() ? 1u : 0u;
 }
 
-bool NetSession::simulates(EntityId entity) const {
+bool NetSession::simulates(const Scene& scene, EntityId entity) const {
     if (isAuthority(m_role)) return true;
-    return m_client.simulates(entity);
+    return m_client.simulates(scene, entity);
 }
 
 bool NetSession::isMine(EntityId entity) const {
@@ -178,6 +184,7 @@ void NetSession::beginTick(
 ) {
     m_currentCommand = command;
     m_core.ticked    = true;
+    m_tickOpen       = true;
     m_client.ageLeases();
 
     // A server's count comes from the joining client: its own behaviors may
@@ -197,6 +204,7 @@ void NetSession::beginReplayTick(const InputCommand& command) {
 }
 
 void NetSession::endTick(Scene& scene, uint32_t tick) {
+    m_tickOpen = false;
     // A client learns the server's tick from snapshot headers only.
     if (isAuthority(m_role)) m_core.serverTick = tick;
 
@@ -225,6 +233,13 @@ float NetSession::renderDelay() const {
     return m_role == NetRole::Client ? m_client.renderDelay() : 0.0f;
 }
 
+double NetSession::worldTime(const Clock& clock) const {
+    const double step = static_cast<double>(clock.getFixedStep());
+    if (m_role == NetRole::Client && m_client.drawingServerTicks()) return m_client.drawnTick() * step;
+    const double tick = static_cast<double>(clock.getTick());
+    return (m_tickOpen ? tick : tick + static_cast<double>(clock.getFixedAlpha())) * step;
+}
+
 void NetSession::advance(float seconds) {
     m_sendAccumulator += seconds;
     m_server.advance(seconds);
@@ -237,25 +252,49 @@ void NetSession::forgetWorld() {
 }
 
 void NetSession::receive(Scene& scene, ResourceManager& resources) {
-    if (m_role == NetRole::Offline) return;
-    PROFILE_SCOPE("NetSession::receive");
+    // A session closed since the last call leaves with what it made, whatever the role is now.
+    m_client.sweepEnded(scene);
 
+    // Offline too, so the next session starts from the world as it is now; and the first time
+    // too, for a host that never said which world it opened.
     if (scene.epoch() != m_worldEpoch) {
-        if (m_worldEpoch != 0) {
-            LOG_WARNING(
-                "The world was replaced while a session was live; "
-                "what this end remembered about it is dropped"
-            );
+        if (m_worldEpoch != NO_WORLD) {
+            if (m_role != NetRole::Offline) {
+                LOG_WARNING(
+                    "The world was replaced while a session was live; "
+                    "what this end remembered about it is dropped"
+                );
+            }
             forgetWorld();
         }
+        // The world is the one both ends share, slot for slot.
+        m_client.adoptWorld(scene);
         m_worldEpoch = scene.epoch();
     }
+
+    if (m_role == NetRole::Offline) return;
+    PROFILE_SCOPE("NetSession::receive");
 
     if (m_role == NetRole::Server) {
         m_server.receive(scene, resources);
     } else if (!m_client.receive(scene, resources)) {
         disconnect();
     }
+}
+
+EntityId NetSession::entityFor(const Scene& scene, uint32_t slot) const {
+    if (m_role == NetRole::Client || m_role == NetRole::Disconnected) return m_client.entityFor(scene, slot);
+    return scene.isAliveAtIndex(slot) ? scene.entityAt(slot) : EntityId{};
+}
+
+void NetSession::setWorld(uint64_t fingerprint, const Scene& scene) {
+    m_core.world = fingerprint;
+    m_client.adoptWorld(scene);
+}
+
+void NetSession::deliver(EventBus& events) {
+    if (m_role != NetRole::Server) return;
+    for (PlayerMessageEvent& message : m_server.takeMessages()) events.enqueue(std::move(message));
 }
 
 void NetSession::send(Scene& scene, uint32_t tick) {
@@ -306,7 +345,7 @@ EntityId NetSession::spawn(
     }
     if (m_role != NetRole::Server) return root;
 
-    // So every client builds each entity in the same slot.
+    // So every client builds each entity in the same slot, where it is free.
     said.slots = Prefab::builtSlotsOf(scene, root);
     if (said.slots.size() > NET_SPAWN_MAX_SLOTS) {
         LOG_WARNING(

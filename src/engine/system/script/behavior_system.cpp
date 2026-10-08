@@ -135,7 +135,7 @@ void BehaviorSystem::tickBehaviors(
     m_tickList.reserve(storage->size());
     storage->forEach([&](uint32_t entityIdx, ScriptComponent&) {
         const EntityId entity = scene.entityAt(entityIdx);
-        if (replaying && !ctx.net.simulates(entity)) return;
+        if (replaying && !ctx.net.simulates(ctx.scene, entity)) return;
         m_tickList.push_back(entity);
     });
 

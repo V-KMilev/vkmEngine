@@ -5,7 +5,6 @@
 
 #include <glm/gtc/constants.hpp>
 
-#include "core/clock.h"
 #include "core/math/random.h"
 
 namespace Vkm::Engine {
@@ -399,10 +398,6 @@ OceanSurface OceanSurface::withoutSurges() const {
     OceanSurface swell = *this;
     swell.surges       = {};
     return swell;
-}
-
-double oceanTime(const Clock& clock) {
-    return (double(clock.getTick()) + double(clock.getFixedAlpha())) * double(clock.getFixedStep());
 }
 
 } // namespace Vkm::Engine

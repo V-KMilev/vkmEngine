@@ -1,6 +1,8 @@
 #include "net/replication/silence.h"
 
+#include "ecs/component/core/net_local.h"
 #include "ecs/component/physics/rigidbody.h"
+#include "ecs/hierarchy_operations.h"
 #include "ecs/scene.h"
 #include "io/scene/prefab.h"
 
@@ -10,6 +12,7 @@ namespace {
 
 /// The rules in the order they are asked, with the costly one answered.
 NetSilence classify(const Scene& scene, EntityId entity, bool posed) {
+    if (HierarchyOperations::findInSelfOrAncestors<NetLocal>(scene, entity)) return NetSilence::Local;
     if (Prefab::isInsideInstance(scene, entity)) return NetSilence::InsidePrefabInstance;
     if (posed)                                   return NetSilence::PosedByAnimation;
     if (isStaticBody(scene, entity))             return NetSilence::StaticBody;
@@ -51,7 +54,7 @@ NetSilence NetSilenceMap::of(EntityId entity) const {
 const char* toString(NetSilence reason) {
     switch (reason) {
         case NetSilence::InsidePrefabInstance:
-            return "Both ends build the subtree from the same prefab file, into the same slots. "
+            return "Both ends build the subtree from the same prefab file. "
                 "The root replicates; the hierarchy carries the rest.";
         case NetSilence::PosedByAnimation:
             return "A ragdoll bone is placed from the animated pose every tick while the "
@@ -62,6 +65,9 @@ const char* toString(NetSilence reason) {
             return "A static body cannot move, so both ends hold it "
                 "exactly as the scene file wrote it. Sending it would replace that with "
                 "a quantised copy.";
+        case NetSilence::Local:
+            return "It or an entity above it is NetLocal: every end works it out for itself, "
+                "so the server never describes it and a client never draws it from a snapshot.";
         case NetSilence::None:
         case NetSilence::Count:
             return nullptr;
