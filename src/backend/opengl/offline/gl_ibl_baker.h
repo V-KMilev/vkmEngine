@@ -24,7 +24,7 @@ class GLCubeConvolver;
  * the backend: the procedural sky re-bakes whenever the sun moves, and a transient baker would
  * recompile its programs each time. Every bake fills GLIBL's back set and swaps it in once
  * complete. bake() and bakeProcedural() do it at once: the source into the env cube, then
- * irradiance and GGX-prefiltered specular. beginProcedural() and advance() do it a step a frame
+ * irradiance and GGX-prefiltered specular. beginProcedural() and advance() do it a step at a time
  * (Unreal's time-sliced sky capture) - the env cube, a share of an irradiance face, a band of a
  * prefilter level - so a sun moving across the sky costs no frame the whole bake.
  * integrateBrdf() fills the BRDF LUT once at start.

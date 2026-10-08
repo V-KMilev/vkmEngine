@@ -63,6 +63,17 @@ namespace {
 // milliseconds, and a dragged box changes every frame.
 constexpr uint32_t VOLUME_SETTLE_FRAMES = 8;
 
+// A drifting sun's bake takes a step a frame. One that has run ahead of the sky being shown -
+// a time-lapse - takes a step more for every DEGREES_PER_STEP it is behind, up to MAX_STEPS,
+// so its light keeps pace instead of popping in two bakes behind.
+constexpr float DEGREES_PER_STEP = 1.5f;
+constexpr int   MAX_STEPS        = 12;
+
+int stepsBehind(const SkyParams& asked, const SkyParams& shown) {
+    const float cosine = glm::clamp(glm::dot(glm::normalize(asked.sunDir), glm::normalize(shown.sunDir)), -1.0f, 1.0f);
+    return std::clamp(1 + static_cast<int>(glm::degrees(std::acos(cosine)) / DEGREES_PER_STEP), 1, MAX_STEPS);
+}
+
 } // namespace
 
 std::string GLBackend::shaderConstants() {
@@ -528,7 +539,12 @@ void GLBackend::followProceduralSky(const SkyParams& sky) {
     PROFILE_SCOPE("Render/IBLStep");
     PROFILE_GPU_SCOPE("Render/IBLStep");
     if (!m_iblBaker.baking()) m_iblBaker.beginProcedural(sky);
-    if (m_iblBaker.advance(m_context, m_ibl, m_atmosphere)) m_shownSky = m_iblBaker.target();
+    for (int step = stepsBehind(sky, *m_shownSky); step > 0; --step) {
+        if (m_iblBaker.advance(m_context, m_ibl, m_atmosphere)) {
+            m_shownSky = m_iblBaker.target();
+            break;
+        }
+    }
 }
 
 void GLBackend::onWorldReplaced(const RenderView& view, const ResourceManager& resources) {

@@ -285,8 +285,8 @@ loaders - reads it, uploading once per logo rather than once per frame.
 
 IBL is **not** a pass: the persistent `GLIBLBaker` re-bakes inside `render()`
 when `environment.sky.hdrPath` changes or, for the procedural sky, when the sun
-angles or a sky parameter change - a step a frame while the sun only drifts
-([lighting.md](lighting.md#image-based-lighting-ibl)) - producing the irradiance
+angles or a sky parameter change - a step a frame while the sun only drifts, more
+while it runs ahead ([lighting.md](lighting.md#image-based-lighting-ibl)) - producing the irradiance
 and prefilter products the forward pass samples. The BRDF/DFG LUT beside them
 depends on no environment, so the backend integrates it once at `init` and every
 bake leaves it alone. A scene that names no sky drops the baked one. A
