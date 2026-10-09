@@ -454,6 +454,9 @@ void load(const nlohmann::json& j, AudioListener& l) { loadReflected(j, l); }
 nlohmann::json save(const IrradianceVolume& v)          { return saveReflected(v); }
 void load(const nlohmann::json& j, IrradianceVolume& v) { loadReflected(j, v); }
 
+nlohmann::json save(const Ocean& o)          { return saveReflected(o); }
+void load(const nlohmann::json& j, Ocean& o) { loadReflected(j, o); }
+
 nlohmann::json save(const UICanvas& c)          { return saveReflected(c); }
 void load(const nlohmann::json& j, UICanvas& c) { loadReflected(j, c); }
 

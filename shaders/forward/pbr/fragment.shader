@@ -22,6 +22,11 @@ in vec3 vNormal;
 in vec2 vUV;
 in vec3 vTangent;
 in float vHandedness;
+in vec2  vRest;
+in float vHeight;
+in vec3  vAlongX;
+in vec3  vAlongZ;
+in float vLingering;
 
 layout(location = OUT_COLOR) out vec4 FragColor;
 
@@ -39,6 +44,56 @@ layout(location = OUT_REFLECT_ENV) out vec4 ReflectEnv;  // rgb: that weight x t
 #include "../../fog.glsl"
 
 #include "../../shadows.glsl"
+#include "../../ocean.glsl"
+
+// The material's own subsurface lobe: the scene's ocean's water scatters by oceanScatter instead,
+// and with no ocean a `waves` material is an ordinary one.
+bool hasSubsurface() {
+    return u_material.subsurface > 0.001 && (u_material.waves == 0 || !oceanPresent());
+}
+
+// The ocean's ripple fields (GLOceanFields), repeating, a layer each, the longest ripples in 0.
+layout(binding = OCEAN_SLOT_RIPPLES) uniform sampler2DArray u_ripples;
+// Metres from each point of a square of sea to whatever breaks the water (GLOceanFields), and where
+// the square lies: xy its corner on the XZ plane (least X, most Z), z its edge; w how far it looks
+// round a point, 0 when there is none.
+layout(binding = OCEAN_SLOT_SHORE) uniform sampler2D u_oceanShoreMap;
+uniform vec4 u_oceanShore;
+
+// Ripple field @p layer at @p uv, cubic B-spline filtered by four bilinear reads (Sigg and Hadwiger,
+// GPU Gems 2 ch. 20). Bilinear is smooth only within a texel, and foam's threshold over a field
+// magnified on screen picks out every texel's square; the B-spline has none to pick out.
+vec4 smoothRipples(vec2 uv, float layer) {
+    const vec2 size = vec2(textureSize(u_ripples, 0).xy);
+    const vec2 st   = uv * size - 0.5;
+    const vec2 cell = floor(st);
+    const vec2 f    = st - cell;
+    const vec2 w0   = (1.0 / 6.0) * (1.0 - f) * (1.0 - f) * (1.0 - f);
+    const vec2 w1   = (1.0 / 6.0) * (4.0 - 6.0 * f * f + 3.0 * f * f * f);
+    const vec2 w2   = (1.0 / 6.0) * (1.0 + 3.0 * f + 3.0 * f * f - 3.0 * f * f * f);
+    const vec2 w3   = (1.0 / 6.0) * f * f * f;
+    const vec2 g0   = w0 + w1;
+    const vec2 g1   = w2 + w3;
+    const vec2 at0  = (cell - 0.5 + w1 / g0) / size;
+    const vec2 at1  = (cell + 1.5 + w3 / g1) / size;
+    const vec4 near0 = texture(u_ripples, vec3(at0.x, at0.y, layer));
+    const vec4 near1 = texture(u_ripples, vec3(at1.x, at0.y, layer));
+    const vec4 far0  = texture(u_ripples, vec3(at0.x, at1.y, layer));
+    const vec4 far1  = texture(u_ripples, vec3(at1.x, at1.y, layer));
+    return g0.y * (g0.x * near0 + g1.x * near1) + g1.y * (g0.x * far0 + g1.x * far1);
+}
+
+// How much of the shore's square a waterline fades out over at its edges.
+const float SHORE_FADE = 0.1;
+
+// Metres from @p point on the XZ plane to whatever breaks the water, and how much of a waterline
+// the shore can say there: 1 inside its square, fading to 0 at its edges.
+vec2 oceanShoreAt(vec2 point) {
+    const vec2 uv   = vec2(point.x - u_oceanShore.x, u_oceanShore.y - point.y) / u_oceanShore.z;
+    const vec2 edge = min(uv, 1.0 - uv);
+    const float say = clamp(min(edge.x, edge.y) / SHORE_FADE, 0.0, 1.0);
+    return vec2(texture(u_oceanShoreMap, uv).r, say);
+}
 
 layout(binding = MATERIAL_SLOT_ALBEDO) uniform sampler2D u_albedoTexture;
 layout(binding = MATERIAL_SLOT_NORMAL) uniform sampler2D u_normalTexture;
@@ -438,7 +493,7 @@ vec3 evaluateLight(
     vec3 diffuse = kd * s.albedo / PI;
     float diffNoL = NdotL;
     vec3  diffTint = vec3(1.0);
-    if (u_material.subsurface > 0.001) {
+    if (hasSubsurface()) {
         float w      = u_material.subsurface;
         float rawNoL = dot(N, L);
         diffNoL = clamp((rawNoL + w) / ((1.0 + w) * (1.0 + w)), 0.0, 1.0);
@@ -466,7 +521,7 @@ vec3 evaluateLight(
     // through a broad lobe about the light's own direction, so a leaf glows looking toward
     // the sun and not with it behind. Normalised as the diffuse beside it is.
     vec3 sss = vec3(0.0);
-    if (u_material.subsurface > 0.001) {
+    if (hasSubsurface()) {
         float wrap    = clamp((-dot(N, L) + 0.5) / 2.25, 0.0, 1.0);
         float scatter = distributionGGX(clamp(-dot(V, L), 0.0, 1.0), 0.6);
         sss = u_material.subsurfaceColor.rgb * s.albedo * (wrap * scatter * u_material.subsurface);
@@ -539,11 +594,42 @@ void main() {
     vec3 V = toViewer(vWorldPos);
 
     vec3 Ng = normalize(vNormal);
+    vec3 tangent = vTangent;
+    // The ocean's water: the waves' frame as the vertices left it, with the ripples this pixel can show.
+    const bool water = u_material.waves != 0 && oceanPresent();
+    OceanShade sea;
+    float      seaFoam = 0.0;  // whitecaps and waterlines
+    if (water) {
+        // With no ripples the fields are not summed, and their unit holds another pass's texture.
+        vec4 fields[OCEAN_RIPPLE_FIELDS];
+        for (int f = 0; f < OCEAN_RIPPLE_FIELDS; ++f) fields[f] = vec4(0.0);
+        if (u_ocean.squeeze.y > 0.0) {
+            // The longest ripples' texels are the widest on screen: those are B-spline filtered.
+            fields[0] = smoothRipples(vRest * u_ocean.tiles.x, 0.0);
+            fields[1] = texture(u_ripples, vec3(vRest * u_ocean.tiles.y, 1.0));
+            fields[2] = texture(u_ripples, vec3(vRest * u_ocean.tiles.z, 2.0));
+        }
+        sea = oceanShadeAt(vRest, vAlongX, vAlongZ, fields);
+        // Foam's share of the ripples dies away with the waves, as their light does.
+        for (int f = 0; f < OCEAN_RIPPLE_FIELDS; ++f) fields[f] *= oceanReach(vRest);
+        // Foam where a crest squeezes the water now or did a moment ago, its edge torn by the ripples.
+        const float whitecap = max(sea.pressed, vLingering) + oceanTear(fields);
+        seaFoam = oceanFoam(whitecap, fwidth(whitecap));
+        // A waterline: water near whatever breaks it (the shore), torn by the ripples and
+        // washed out and back by the waves.
+        if (u_oceanShore.w > 0.0) {
+            const vec2  shore = oceanShoreAt(vWorldPos.xz);
+            const float past  = oceanWaterline(shore.x, u_oceanShore.w, fields, oceanCrest(vHeight));
+            seaFoam = max(seaFoam, shore.y * oceanFroth(past, fwidth(past)));
+        }
+        Ng      = sea.normal;
+        tangent = sea.tangent;
+    }
     // Interpolation skews the frame; re-orthogonalise, or normal maps and the
     // anisotropic lobe read a tilted basis.
-    vec3 tanFlat = vTangent - Ng * dot(Ng, vTangent);
+    vec3 tanFlat = tangent - Ng * dot(Ng, tangent);
     // A tangent interpolated onto the normal keeps the frame it was given.
-    vec3 T = (dot(tanFlat, tanFlat) > 1e-8) ? normalize(tanFlat) : normalize(vTangent);
+    vec3 T = (dot(tanFlat, tanFlat) > 1e-8) ? normalize(tanFlat) : normalize(tangent);
 
     // The sign cross cannot recompute: a mirrored UV shell is left-handed.
     vec3 B  = (vHandedness < 0.0) ? -cross(Ng, T) : cross(Ng, T);
@@ -584,6 +670,20 @@ void main() {
 
     Surface s = sampleSurface(uv);
 
+    // The water's scattering colour, its strength in it.
+    const vec3 scatter = water ? u_material.subsurfaceColor.rgb * u_material.subsurface : vec3(0.0);
+    if (water) {
+        // Ripples too fine for the pixel roughen it: GGX's alpha squared takes twice their slope
+        // variance, as Beckmann's would.
+        float alpha = s.roughness * s.roughness;
+        s.roughness = sqrt(sqrt(alpha * alpha + 2.0 * sea.variance));
+        // Whitecaps: where the crests squeeze the surface, foam over the water.
+        s.albedo       = mix(s.albedo, u_ocean.foam.rgb, seaFoam);
+        s.roughness    = mix(s.roughness, FOAM_ROUGHNESS, seaFoam);
+        s.metallic     = mix(s.metallic, 0.0, seaFoam);
+        s.transmission = mix(s.transmission, 0.0, seaFoam);
+    }
+
     // The material views: the surface as sampled, before any light, shown raw.
     if (u_renderMode == MODE_ALBEDO)    { FragColor = vec4(linearToSrgb(s.albedo), 1.0); return; }
     if (u_renderMode == MODE_ROUGHNESS) { FragColor = vec4(vec3(s.roughness), 1.0); return; }
@@ -619,7 +719,7 @@ void main() {
     vec3 energyCompensation = 1.0 + f0 * (1.0 / max(dfg.x + dfg.y, 1e-4) - 1.0);
 
     // Only these light a fragment from behind; others skip such a light before its shadow.
-    bool hasBack = (u_material.subsurface > 0.001) || (s.transmission > 0.001);
+    bool hasBack = hasSubsurface() || (s.transmission > 0.001) || water;
 
     vec3 Lo = vec3(0.0);
 
@@ -797,6 +897,10 @@ void main() {
             Ls,
             sphereNorm
         );
+        if (water) {
+            const vec3 into = 1.0 - fresnelSchlick(NdotV, f0);
+            Lo += into * oceanScatter(scatter, N, V, L, radiance, oceanCrest(vHeight));
+        }
     }
 
     // Irradiance follows GTAO's bent normal so creases do not over-collect. The
@@ -914,6 +1018,8 @@ void main() {
     coat        *= normalisation;
 
     vec3 diffuseIBL  = irradiance * s.albedo * kD;
+    // The water's own colour, lit by the sky it takes in.
+    if (water) diffuseIBL += irradiance * scatter * (SCATTER_AMBIENT * kD);
     vec3 specularIBL = prefiltered * FssEss + FmsEms * irradiance;
 
     vec3 ambient = diffuseIBL * multiBounceOcclusion(ao, s.albedo) + specularIBL * specOcc;

@@ -9,6 +9,8 @@ layout(location = ATTR_NORMAL) in vec3 aNormal;
 #include "../../skinning_instanced.glsl"
 #endif
 #include "../../camera.glsl"
+#include "../../material.glsl"
+#include "../../ocean.glsl"
 
 out vec3 vViewNormal;
 
@@ -27,6 +29,14 @@ void main() {
 
     // The fragment stage normalises.
     vec3 worldN = normalMatrix(model) * normal;
+#ifndef SKINNED
+    // The ocean's water, moved as the forward pass moves it (forward/pbr/vertex.shader).
+    if (u_material.waves != 0 && oceanPresent()) {
+        const OceanPoint water = oceanAt(worldPos.xz);
+        worldPos.xyz += water.offset;
+        worldN       = cross(water.alongZ, water.alongX);
+    }
+#endif
     vViewNormal = mat3(u_camera.view) * worldN;
 
     gl_Position = u_camera.viewProjection * worldPos;

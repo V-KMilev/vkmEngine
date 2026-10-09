@@ -1,0 +1,1 @@
+#include "../shore/fragment.shader"

@@ -22,6 +22,7 @@
 #include "frame/gl_object_buffer.h"
 #include "gl_view.h"
 #include "system/render/data/camera_data.h"
+#include "system/render/data/ocean_data.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {
@@ -236,6 +237,7 @@ void GLSceneCapture::beginFace(
         CameraData::from(GLCubemap::faceView(face, position), proj, position),
         glm::vec2(m_faceSize)
     );
+    m_ocean.update(OceanData{}, false);
 }
 
 void GLSceneCapture::drawSky(

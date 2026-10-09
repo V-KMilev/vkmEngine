@@ -47,6 +47,7 @@ class SceneIOController;
     X(AudioSource,         drawAudioSourceSection,         "Audio Source",        AUDIO)     \
     X(AudioListener,       drawAudioListenerSection,       "Audio Listener",      AUDIO)     \
     X(IrradianceVolume,    drawIrradianceVolumeSection,    "Irradiance Volume",   PROBE)     \
+    X(Ocean,               drawOceanSection,               "Ocean",               MESH)      \
     X(LOD,                 drawLODSection,                 "LOD",                 MESH)      \
     X(Animation,           drawAnimationSection,           "Animation",           ANIM)      \
     X(Animator,            drawAnimatorSection,            "Animator",            ANIM)      \

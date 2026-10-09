@@ -14,6 +14,8 @@
 #include "resource/asset/texture_asset.h"
 #include "resource/resource_manager.h"
 #include "debug/profiler.h"
+#include "core/clock.h"
+#include "system/ocean/ocean_surface.h"
 #include "debug/screenshot.h"
 
 namespace Vkm::Engine {
@@ -32,7 +34,8 @@ void RenderSystem::update(FrameContext& ctx) {
     m_view.surfaceHeight  = static_cast<uint32_t>(ctx.window.getHeight());
     m_view.settings       = ctx.render;
 
-    m_view.build(ctx.scene, *ctx.visibility, ctx.ui, ctx.splash, ctx.poses, ctx.particles);
+    const double seconds = oceanTime(ctx.clock);
+    m_view.build(ctx.scene, *ctx.visibility, ctx.ui, ctx.splash, ctx.poses, ctx.particles, seconds);
     m_backend->render(m_view, ctx.resources);
     if (std::string path = ctx.window.takeScreenshotRequest(); !path.empty()) writeScreenshot(path);
     if (m_releaseUploadedPixels) releaseHeldPixels(ctx.resources);

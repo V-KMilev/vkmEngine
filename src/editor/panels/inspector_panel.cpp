@@ -24,12 +24,15 @@
 #include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/missing_assets.h"
 #include "ecs/component/core/transform.h"
+#include "ecs/component/core/world_transform.h"
 #include "ecs/component/physics/collider.h"
 #include "ecs/component/physics/rigidbody.h"
 #include "ecs/component/prefab/prefab_entity.h"
 #include "ecs/component/prefab/prefab_instance.h"
 #include "ecs/component/render/decal.h"
 #include "ecs/component/render/irradiance_volume.h"
+#include "ecs/component/render/ocean.h"
+#include "system/ocean/ocean_surface.h"
 #include "ecs/component/render/light.h"
 #include "ecs/component/render/particle_emitter.h"
 #include "system/particle/live_particles.h"
@@ -125,6 +128,9 @@ glm::vec3 meshScaleRelativeTo(const Scene& scene, EntityId collider, EntityId me
 // Touching clip planes are degenerate: glm::perspective divides by (zFar - zNear) and the
 // cluster pass takes log(zFar / zNear).
 constexpr float CLIP_PLANE_SEPARATION = 0.001f;
+
+// Metres a `waves` surface may stand off its ocean's height before the card says so.
+constexpr float WATER_LEVEL_TOLERANCE = 0.01f;
 
 // Edits a Behavior*'s authored fields through the visitor serialization uses; rows are
 // labelled fieldLabel(name), the name staying the saved key.
@@ -989,6 +995,7 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         addItem(ParticleEmitter{});
         addItem(ReflectionProbe{});
         addItem(IrradianceVolume{});
+        addItem(Ocean{});
 
         section("Animation");
         addItem(Animation{});
@@ -1947,6 +1954,164 @@ void InspectorPanel::drawIrradianceVolumeSection(EditorContext& ec, EntityId id)
             ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::WARNING);
             ImGui::TextWrapped("Not the scene's volume: '%s' is baked.", name);
             ImGui::PopStyleColor();
+        }
+
+        return changed;
+    });
+}
+
+void InspectorPanel::drawOceanSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+
+    editComponentCard<Ocean>(ec, id, [&](Ocean& o) {
+        bool changed = false;
+
+        changed |= propDrag(
+            "Wind Speed",
+            &o.windSpeed,
+            0.05f,
+            0.0f,
+            40.0f,
+            "%.1f m/s",
+            "The waves' energy grows nearly with its square"
+        );
+        changed |= propDrag(
+            "Wind Direction",
+            &o.windDirection,
+            0.5f,
+            -360.0f,
+            360.0f,
+            "%.0f deg",
+            "Round from +Z toward +X: the way the waves roll"
+        );
+        changed |= propDrag(
+            "Fetch",
+            &o.fetch,
+            0.5f,
+            0.1f,
+            2000.0f,
+            "%.1f km",
+            "Open water the wind has blown over"
+        );
+        changed |= propDrag(
+            "Depth",
+            &o.depth,
+            0.1f,
+            0.0f,
+            500.0f,
+            "%.1f m",
+            "Shallower slows and flattens the waves; 0 is deep"
+        );
+        changed |= propSlider(
+            "Spread",
+            &o.spread,
+            0.0f,
+            1.0f,
+            "%.2f",
+            "0 every wave rolls with the wind; 1 from all ahead of it"
+        );
+        changed |= propSlider(
+            "Choppiness",
+            &o.choppiness,
+            0.0f,
+            1.0f,
+            "%.2f",
+            "0 round swells; 1 crests drawn to a point"
+        );
+        changed |= propDrag("Height Scale", &o.heightScale, 0.01f, 0.0f, 10.0f, "%.2f");
+        changed |= propDrag(
+            "Shortest Wave",
+            &o.minWavelength,
+            0.05f,
+            0.1f,
+            1000.0f,
+            "%.2f m",
+            "Shorter are ripples, light and foam only: keep it above twice the mesh's spacing"
+        );
+        changed |= propDrag("Longest Wave", &o.maxWavelength, 0.5f, 0.2f, 5000.0f, "%.1f m");
+        changed |= propDragU32("Waves", &o.waveCount, 0.1f, 1u, Ocean::MAX_WAVES);
+        changed |= propDragU32("Seed", &o.seed, 0.1f, 0u, 1000000u);
+        changed |= propDrag(
+            "Shortest Ripple",
+            &o.shortestRipple,
+            0.001f,
+            0.001f,
+            1.0f,
+            "%.3f m",
+            "The ripples run from the shortest wave down to this"
+        );
+        changed |= propDrag(
+            "Calm Radius",
+            &o.calmRadius,
+            0.5f,
+            0.0f,
+            100000.0f,
+            "%.1f m",
+            "Past it the waves begin to fade"
+        );
+        changed |= propDrag(
+            "Still Radius",
+            &o.stillRadius,
+            0.5f,
+            0.0f,
+            100000.0f,
+            "%.1f m",
+            "Where they are gone; at or inside the calm radius they never fade"
+        );
+        changed |= propSlider("Foam", &o.foam, 0.0f, 1.0f, "%.2f", "How readily a squeezed crest whitens");
+        changed |= propColor3("Foam Color", glm::value_ptr(o.foamColor));
+        changed |= propDrag(
+            "Waterline Foam",
+            &o.waterlineFoam,
+            0.01f,
+            0.0f,
+            10.0f,
+            "%.2f m",
+            "Foam where the water meets anything standing in it; 0 none"
+        );
+        changed |= propDrag(
+            "Detail Scale",
+            &o.detailScale,
+            0.05f,
+            0.1f,
+            1000.0f,
+            "%.2f m",
+            "Metres across one repeat of the material's maps, drifting with the wind"
+        );
+
+        const OceanSurface surface = OceanSurface::at(o, glm::vec3(0.0f), 0.0);
+        ImGui::TextDisabled("Significant wave height %.2f m.", surface.significantHeight());
+
+        // A scene has one sea; a second moves nothing.
+        const EntityId sea = findOcean(scene);
+        if (sea && sea != id) {
+            char name[64] = {};
+            getEntityDisplayName(scene, sea, name, sizeof(name));
+            ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::WARNING);
+            ImGui::TextWrapped("Not the scene's ocean: '%s' moves the water.", name);
+            ImGui::PopStyleColor();
+        }
+
+        // The water rests at the ocean's height: the shore, and so the waterlines, are found there.
+        if (sea == id && scene.has<Transform>(id)) {
+            const float level = resolvedWorldPosition(scene, id, scene.get<Transform>(id)).y;
+            int         off   = 0;
+            scene.forEach<Mesh>([&](EntityId entity, const Mesh& mesh) {
+                const MaterialAsset* surface = ec.frame.resources.tryGet(mesh.material);
+                const Transform*     at      = scene.tryGet<Transform>(entity);
+                if (!surface || !surface->waves || !at) return;
+                const float height = resolvedWorldPosition(scene, entity, *at).y;
+                if (std::abs(height - level) > WATER_LEVEL_TOLERANCE) ++off;
+            });
+            if (off > 0) {
+                ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::WARNING);
+                ImGui::TextWrapped(
+                    "%d water surface(s) rest away from this ocean's height; their waterlines "
+                        "foam at its.",
+                    off
+                );
+                ImGui::PopStyleColor();
+            }
         }
 
         return changed;

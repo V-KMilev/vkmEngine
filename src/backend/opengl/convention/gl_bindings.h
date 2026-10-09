@@ -19,6 +19,7 @@ namespace Vkm::Engine {
     X(UBOBindingPoints,       CAMERA,                2,  UBO_CAMERA,                          CameraBlock: matrices + position + viewport + planes)                \
     X(UBOBindingPoints,       SHADOW,                3,  UBO_SHADOW,                          Shadow casters (cascades / spot / cube))                             \
     X(UBOBindingPoints,       PROBES,                4,  UBO_PROBES,                          Reflection-probe boxes + layers (ProbeBlock))                        \
+    X(UBOBindingPoints,       OCEAN,                 5,  UBO_OCEAN,                           The scene ocean: its waves and foam (OceanBlock))                    \
     X(SSBOBindingPoints,      LIGHTS,                0,  SSBO_LIGHTS,                         Scene light list (grows past the UBO size limit))                    \
     X(SSBOBindingPoints,      CLUSTER_GRID,          1,  SSBO_CLUSTER_GRID,                   Per-cluster light lists)                                             \
     X(SSBOBindingPoints,      PARTICLES,             2,  SSBO_PARTICLES,                      Billboard particle instances)                                        \
@@ -33,6 +34,7 @@ namespace Vkm::Engine {
     X(IBLTextureSlots,        PREFILTER,             15, IBL_SLOT_PREFILTER,                  Roughness-prefiltered specular cubemap (samplerCube))                \
     X(IBLTextureSlots,        BRDF_LUT,              16, IBL_SLOT_BRDF_LUT,                   Split-sum BRDF/DFG LUT (sampler2D))                                  \
     X(IBLTextureSlots,        ENV_CUBE,              17, IBL_SLOT_ENV_CUBE,                   Sharp environment cubemap for the skybox (samplerCube))              \
+    X(OceanTextureSlots,      SHORE,                 17, OCEAN_SLOT_SHORE,                    Metres to what breaks the ocean (sampler2D) - ENV_CUBE unit: the sky is drawn) \
     X(CompositeTextureSlots,  SCENE,                 0,  COMPOSITE_SLOT_SCENE,                Final post-chain colour (u_hdr))                                     \
     X(CompositeTextureSlots,  BLOOM,                 1,  COMPOSITE_SLOT_BLOOM,                Bloom mip 0 (u_bloom))                                               \
     X(BloomTextureSlots,      SOURCE,                0,  BLOOM_SLOT_SOURCE,                   Downsample/upsample source (u_src))                                  \
@@ -62,6 +64,7 @@ namespace Vkm::Engine {
     X(IrradianceVolumeSlots,  SH3,                   29, IRRADIANCE_SLOT_SH3,                 Baked SH-L1 coefficient 3 (sampler3D))                               \
     X(PostTextureSlots,       AERIAL_PERSPECTIVE,    30, POST_SLOT_AERIAL_PERSPECTIVE,        The sky air in front of the view (sampler3D) read through fog.glsl)  \
     X(PostTextureSlots,       AO_DEPTH,              31, POST_SLOT_AO_DEPTH,                  GTAO linear-depth mip chain)                                         \
+    X(OceanTextureSlots,      RIPPLES,               31, OCEAN_SLOT_RIPPLES,                  The ocean ripple fields (sampler2DArray) - AO_DEPTH unit: GTAO is done)   \
     X(TextureSlots,           ALBEDO,                0,  MATERIAL_SLOT_ALBEDO,                Material map; the slot is also its bit in MaterialUBO.textureFlags)  \
     X(TextureSlots,           NORMAL,                1,  MATERIAL_SLOT_NORMAL,                Material map)                                                        \
     X(TextureSlots,           METALLIC_ROUGHNESS,    2,  MATERIAL_SLOT_METALLIC_ROUGHNESS,    Material map)                                                        \
@@ -85,7 +88,8 @@ namespace Vkm::Engine {
     X(FragmentOutputs,        REFLECT_WEIGHT,        2,  OUT_REFLECT_WEIGHT,                  The environment reflection weight (rgb) + roughness (a))             \
     X(FragmentOutputs,        REFLECT_ENV,           3,  OUT_REFLECT_ENV,                     That weight times the probe / sky radiance)                          \
     X(ComputeGroups,          IMAGE,                 8,  GROUP_IMAGE,                         Edge of a square group over a 2D image or a froxel slice)            \
-    X(ComputeGroups,          CLUSTERS,              64, GROUP_CLUSTERS,                      Clusters culled per group)
+    X(ComputeGroups,          CLUSTERS,              64, GROUP_CLUSTERS,                      Clusters culled per group)                                           \
+    X(ComputeGroups,          OCEAN_FFT,             256, GROUP_OCEAN_FFT,                    A butterfly each across a line of an ocean ripple field: half its texels)
 
 /**
  * @brief The fixed contract between the OpenGL backend and its GLSL shaders.

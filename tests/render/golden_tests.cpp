@@ -43,6 +43,7 @@
 #include "ecs/component/render/irradiance_volume.h"
 #include "ecs/component/render/light.h"
 #include "ecs/component/render/mesh.h"
+#include "ecs/component/render/ocean.h"
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/component/render/reflection_probe.h"
 #include "net/net_session.h"
@@ -809,7 +810,7 @@ std::vector<unsigned char> render(
     for (int frame = 0; frame < FRAMES; ++frame) {
         sky.update(ctx);
         visibility.update(ctx);
-        view.build(s.scene, *ctx.visibility, ui, splash, nullptr, &s.particles);
+        view.build(s.scene, *ctx.visibility, ui, splash, nullptr, &s.particles, 0.0);
         backend.render(view, s.resources);
     }
 
@@ -1334,6 +1335,70 @@ void testASplashFadesLinearlyOnTheGlass(int& failures) {
     expect("  and the ground around it black", pixel(frame, 4, 4) == glm::ivec3(0), failures);
 }
 
+// The ocean's waterline foam is read off its shore, drawn in the world: water rings a post the
+// camera cannot see, standing on a seabed that hides its foot, and nothing hovering clear of the
+// water foams it. Asserted per pixel, foam coloured green over dark water, looking straight down.
+void testTheShoreRingsWhatBreaksTheWater(int& failures) {
+    std::printf("The ocean's waterline foam:\n");
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+
+    Scenery s;
+    base(s);
+    MaterialAsset sea;
+    sea.albedo    = glm::vec4(0.01f, 0.02f, 0.04f, 1.0f);
+    sea.roughness = 0.3f;
+    sea.waves     = true;
+    const MaterialHandle water = s.resources.add(std::move(sea), "golden:sea");
+    place(s, s.cube, water, {0.0f, -0.5f, 0.0f}, {200.0f, 1.0f, 200.0f});
+
+    const EntityId oceanId = s.scene.createEntity();
+    s.scene.add(oceanId, Transform{});
+    Ocean ocean;
+    ocean.windSpeed     = 2.0f;
+    ocean.foam          = 0.0f;
+    ocean.waterlineFoam = 1.0f;
+    ocean.foamColor     = glm::vec3(0.0f, 1.0f, 0.0f);
+    s.scene.add(oceanId, ocean);
+
+    // Looking down from six metres the frame spans seven and a half either way across: the post
+    // stands just past its right edge, its top too low to show, and the block hovers clear of
+    // the water on the left.
+    const MaterialHandle grey = material(s, "golden:post", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
+    place(s, s.cube, grey, {8.0f, -0.6f, 0.0f}, {0.5f, 1.8f, 0.5f});
+    place(s, s.cube, grey, {8.0f, -1.5f, 0.0f}, {6.0f, 1.0f, 6.0f});
+    place(s, s.cube, grey, {-3.5f, 1.0f, 0.0f}, {1.0f, 0.6f, 1.0f});
+    sunAndCamera(s, {0.0f, 6.0f, 0.01f}, {0.0f, 0.0f, 0.0f});
+
+    const std::vector<unsigned char> frame = render(s, backend);
+    const auto foamIn = [&](glm::ivec2 from, glm::ivec2 to) {
+        int foam = 0;
+        for (int y = from.y; y < to.y; ++y) {
+            for (int x = from.x; x < to.x; ++x) {
+                const glm::ivec3 p = pixel(frame, x, y);
+                if (p.y > 40 && p.y > 2 * p.x && p.y > 2 * p.z) ++foam;
+            }
+        }
+        return static_cast<float>(foam) / static_cast<float>((to.x - from.x) * (to.y - from.y));
+    };
+    // The right edge's last half metre; the whole left half.
+    const float right = foamIn({WIDTH - 10, 0}, {WIDTH, HEIGHT});
+    const float left  = foamIn({0, 0}, {WIDTH / 2, HEIGHT});
+    std::printf(
+        "      foam over %.0f%% of the right edge, %.2f%% of the left half\n",
+        100.0f * right,
+        100.0f * left
+    );
+    expect("water foams round a post the camera cannot see", right > 0.04f, failures);
+    expect("  and nowhere else: not round a block hovering clear of it", left == 0.0f, failures);
+}
+
 void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     std::printf("Whole frames against their goldens:\n");
     if (!gl.attachSurface(WIDTH, HEIGHT)) {
@@ -1366,6 +1431,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testASplashFadesLinearlyOnTheGlass(failures);
     testAnOpenFloorIsNotOccluded(failures);
     testASealedRoomHoldsNoSkyLight(failures);
+    testTheShoreRingsWhatBreaksTheWater(failures);
 }
 
 } // namespace

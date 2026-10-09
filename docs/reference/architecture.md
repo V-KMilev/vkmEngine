@@ -208,7 +208,7 @@ Engine code, single include root `src/engine/`:
 | `core/event/`              | `EventBus` (typed pub/sub; engine-owned infrastructure) and the `EventSender` view behaviors get |
 | `ecs/`                     | `Scene`, `EntityId`, `Environment`, `PhysicsSettings`, `EntityResolver` and `EntityNamer` (in `entity_mapping.h`), `HierarchyOperations` (free functions) |
 | `ecs/component/core/`      | `Transform`, `WorldTransform`, `Hierarchy`, `Name`                       |
-| `ecs/component/render/`    | `Mesh`, `Light`, `Camera`, `Decal`, `LOD`, `ParticleEmitter`, `ReflectionProbe`, `IrradianceVolume` |
+| `ecs/component/render/`    | `Mesh`, `Light`, `Camera`, `Decal`, `LOD`, `ParticleEmitter`, `ReflectionProbe`, `IrradianceVolume`, `Ocean` |
 | `ecs/component/animation/` | `Animation`, `Animator`, `BoneSocket`, `AnimationTrack`                  |
 | `ecs/component/audio/`     | `AudioSource`, `AudioListener`                                           |
 | `ecs/component/physics/`   | `Rigidbody`, `Collider`, `CharacterController`, `Joint`, `Ragdoll`       |
@@ -218,6 +218,7 @@ Engine code, single include root `src/engine/`:
 | `system/async/`            | `AsyncLoaderSystem`                                                      |
 | `system/audio/`            | `AudioSystem`, `AudioDevice` (the only engine file that includes the audio backend) |
 | `system/hierarchy/`        | `HierarchySystem`                                                        |
+| `system/ocean/`            | `OceanSurface`, `oceanTime` (the sea's waves, which the vertex shaders and gameplay both read) |
 | `system/particle/`         | `ParticleSystem` (CPU simulation; `GLParticlePass` draws what it emits)  |
 | `system/physics/`          | `PhysicsSystem`, `CharacterControllerSystem`, and `authoring/`, `character/`, `collision/`, `query/`, `solver/` (see [physics.md](physics.md) for the folder map) |
 | `system/render/`           | `RenderSystem`, `RenderBackend`, `RenderView`, `RenderSettings`, `data/` |

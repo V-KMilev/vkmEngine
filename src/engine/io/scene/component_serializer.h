@@ -27,6 +27,7 @@
 #include "ecs/component/render/light.h"
 #include "ecs/component/render/lod.h"
 #include "ecs/component/render/mesh.h"
+#include "ecs/component/render/ocean.h"
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/component/render/reflection_probe.h"
 #include "ecs/component/ui/ui_button.h"
@@ -71,6 +72,7 @@ class ResourceManager;
     R(AudioSource,         "AudioSource")         \
     P(AudioListener,       "AudioListener")       \
     P(IrradianceVolume,    "IrradianceVolume")    \
+    P(Ocean,               "Ocean")               \
     P(ReflectionProbe,     "ReflectionProbe")     \
     P(Animation,           "Animation")           \
     R(Animator,            "Animator")            \
@@ -200,6 +202,9 @@ namespace ComponentSerializer {
 
     nlohmann::json save(const IrradianceVolume&);
     void load(const nlohmann::json&, IrradianceVolume&);
+
+    nlohmann::json save(const Ocean&);
+    void load(const nlohmann::json&, Ocean&);
 
     nlohmann::json save(const ReflectionProbe&);
     void load(const nlohmann::json&, ReflectionProbe&);

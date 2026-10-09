@@ -37,7 +37,9 @@ VisibilitySystem::update(ctx)
        from the local Transform (HierarchySystem already ran, at the Transform stage).
      - Pick the local box: the mesh's own bounds, or - for a skinned mesh the
        frame posed - the posed one (see below), then transform it to a world
-       AABB (Arvo's method, 18 mults).
+       AABB (Arvo's method, 18 mults). A `waves` surface under the scene's
+       ocean grows by as far as the sea carries water
+       (`OceanSurface::farthestReach`, [rendering.md](rendering.md#the-ocean)).
      - Write the object's columns - model, world AABB, chosen mesh, material,
        its rig's bone range, entity - for EVERY valid mesh (not just
        camera-visible ones), so the serial scene-wide gather below reaches
@@ -47,7 +49,9 @@ VisibilitySystem::update(ctx)
      - Math::frustumIntersectsAABB    - reject if fully outside frustum.
      - Culling::isNearEnough          - reject if too far from camera.
      - Culling::isLargeEnough         - reject if projected size below minPixels.
-     - Set the state bits: drawn, casts, and visible for survivors.
+     - Set the state bits: drawn, casts - never for a `waves` surface under
+       an ocean, whose held shadow would picture one moment of it - and
+       visible for survivors.
   5. Serial gather: walk the state in Mesh order, appending each visible
      index to `objects.visible` and each caster's to `objects.scene`, count
      the casters into `casterCount`, then walk again appending the
@@ -97,6 +101,7 @@ struct ObjectDraw {
     MeshHandle     mesh;          // geometry to draw - the LOD-selected one, if any
     MaterialHandle material;      // the Mesh component's, so the render path looks nothing up
     uint32_t       skinCount = 0; // bones in its rig's palette slice; 0 = drawn static
+    bool           waves = false; // its surface is the scene's ocean
 };
 
 struct RenderObjects {                  // system/render/data/render_objects.h
@@ -243,7 +248,8 @@ The result is exact while the bind transform between mesh space and rig space is
 rigid, which it is in every real rig, and conservative otherwise.
 
 Unskinned meshes, and skinned ones with no rig above them, take the stored
-bounds unchanged - which is the right box for both, since neither moves.
+bounds unchanged - which is the right box for both, since neither moves, but
+for the sea's own surface, grown as step 4 says.
 
 ## AABB helpers
 

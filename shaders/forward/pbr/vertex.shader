@@ -9,12 +9,19 @@ layout(location = ATTR_TANGENT) in vec4 aTangent;  // xyz = tangent, w = handedn
 #include "../../skinning_instanced.glsl"
 #endif
 #include "../../camera.glsl"
+#include "../../material.glsl"
+#include "../../ocean.glsl"
 
 out vec3 vWorldPos;
 out vec3 vNormal;
 out vec2 vUV;
 out vec3 vTangent;
 out float vHandedness;   // the fragment rebuilds B from it
+out vec2  vRest;         // where the ocean's water rests: where the fragment reads its ripples and reach
+out float vHeight;       // how high the ocean has lifted it
+out vec3  vAlongX;       // the waves' tangents there (OceanPoint): the pixel's frame and squeeze
+out vec3  vAlongZ;
+out float vLingering;    // the foam a crest left there (oceanLingering)
 
 // Bit-exact with the depth prepass so the two agree under LEQUAL early-Z.
 invariant gl_Position;
@@ -32,8 +39,6 @@ void main() {
     vec3 normal      = aNormal;
     vec3 tangent     = aTangent.xyz;
 #endif
-    vWorldPos = worldPos.xyz;
-
     vNormal = normalize(normalMatrix(model) * normal);
 
     // A surface direction, so the model matrix, not the normal matrix.
@@ -41,6 +46,29 @@ void main() {
     // A mirroring model turns the cross product the fragment rebuilds B with, so it turns the sign.
     vHandedness = aTangent.w * sign(determinant(mat3(model)));
 
-    vUV = aUV;
+    vUV   = aUV;
+    vRest   = worldPos.xz;
+    vHeight = 0.0;
+    vAlongX = vec3(1.0, 0.0, 0.0);
+    vAlongZ = vec3(0.0, 0.0, 1.0);
+    vLingering = 0.0;
+#ifndef SKINNED
+    // The ocean's water: moved by the waves, its frame theirs, its maps laid over it in world
+    // space with v along +Z - so B = -cross(N, T). As in the prepass, term for term.
+    if (u_material.waves != 0 && oceanPresent()) {
+        const OceanPoint water = oceanAt(worldPos.xz);
+        vUV          = oceanUV(worldPos.xz);
+        worldPos.xyz += water.offset;
+        vNormal      = normalize(cross(water.alongZ, water.alongX));
+        vTangent     = normalize(water.alongX);
+        vHandedness  = -1.0;
+        vHeight      = water.offset.y;
+        vAlongX      = water.alongX;
+        vAlongZ      = water.alongZ;
+        vLingering   = max(oceanLingering(vRest), oceanSurgeFoam(vRest));
+    }
+#endif
+    vWorldPos = worldPos.xyz;
+
     gl_Position = u_camera.viewProjection * worldPos;
 }

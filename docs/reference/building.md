@@ -184,7 +184,7 @@ file named for it, every such file a row, and that the list below names them
 all. The suites that run today are `core`, `ecs`, `hierarchy`, `query`,
 `collision`, `solver`, `joint`, `ragdoll`, `character`, `resource`, `async`,
 `cook`, `import`, `authoring`, `prefab`, `scene`, `play`, `undo`, `culling`,
-`sky`, `animation`, `particle`, `wire`, `transport`, `replication`, `prediction`,
+`sky`, `ocean`, `animation`, `particle`, `wire`, `transport`, `replication`, `prediction`,
 `session`, `ui`, `audio`, `script`, `hostile`, `docs`. All of it is computation over a
 `Scene`, so it runs on a machine with no GPU and no display.
 

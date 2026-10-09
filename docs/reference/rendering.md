@@ -16,7 +16,7 @@ What it does have is listed below.
 - `src/engine/system/render/render_system.h` - RenderSystem (System subclass; owns the backend)
 - `src/engine/system/render/render_view.h` - RenderView (the engine -> backend contract)
 - `src/engine/system/render/data/` - the POD frame structs: CameraData, RenderObjects (with ObjectDraw), LightData, ProbeData
-- `src/engine/system/render/data/` also carries DecalData, IrradianceVolumeData and ParticleData - the same flattening for what the decal, forward and particle passes read per frame
+- `src/engine/system/render/data/` also carries DecalData, IrradianceVolumeData, ParticleData and OceanData - the same flattening for what the decal, forward, particle and ocean passes read per frame
 - `src/engine/system/render/editor_render_hooks.h` - EditorRenderHooks, the authoring-only second seam (thumbnails, material previews); see [engine.md](../guides/engine.md#5-what-everything-else-stands-on)
 - `src/engine/system/render/render_settings.h` - RenderSettings + RenderMode (editable tuning)
 - `src/engine/system/render/render_backend.h` - RenderBackend (the abstract seam)
@@ -82,12 +82,13 @@ the `VisibilitySystem` output, reusing the vectors' capacity across frames.
 | `surfaceWidth` / `surfaceHeight` | `uint32_t` | The full backbuffer the viewport rect sits within: what a window-wide pass measures against, and what lets a bottom-left backend flip the rect |
 | `camera` | `CameraData` | view / projection / viewProjection + position, from whatever `Visibility` rendered through: the scene's active camera, or an authoring host's view (`HostView`, [visibility.md](visibility.md#where-the-view-comes-from)). The view never knows which |
 | `hasCamera` | `bool` | Whether a camera resolved this frame. Without one the scene's lists - lights, probes, decals, particles, the irradiance volume - are left empty rather than gathered, so a backend keeps what it baked of them instead of taking the empty lists for a scene without them |
-| `objects` | `const RenderObjects*` | Borrowed from the `Visibility` product, which outlives the render: one object per Mesh, at its storage index, as parallel columns the cull wrote once - `models`, `bounds`, `draws` (mesh, material, bone count) and `skinFirst` - and two lists of object indices. `visible` is what the camera sees, in object order (UNSORTED; the backend sorts and partitions). `scene` is every drawn mesh, camera or not, shadow casters first: the shadow pass draws its first `casterCount`, the reflection-probe and irradiance captures the opaque ones, because a capture looks every way - and the opaque ones of the caster prefix again, into the key light's map a capture draws for itself. Every item a pass draws is an index into it; nothing copies a matrix. Never null once `build()` has run |
+| `objects` | `const RenderObjects*` | Borrowed from the `Visibility` product, which outlives the render: one object per Mesh, at its storage index, as parallel columns the cull wrote once - `models`, `bounds`, `draws` (mesh, material, bone count, whether the ocean is its surface) and `skinFirst` - and two lists of object indices. `visible` is what the camera sees, in object order (UNSORTED; the backend sorts and partitions). `scene` is every drawn mesh, camera or not, shadow casters first: the shadow pass draws its first `casterCount`, the reflection-probe and irradiance captures the opaque ones, because a capture looks every way - and the opaque ones of the caster prefix again, into the key light's map a capture draws for itself. Every item a pass draws is an index into it; nothing copies a matrix. Never null once `build()` has run |
 | `skinMatrices` | `const vector<mat4>*` | The frame's bone palettes (`PoseBuffer::palette()`, borrowed whole); each object carries its rig's range in them (`skinFirst`, and `ObjectDraw::skinCount`, 0 = not posed). Null when the frame posed nothing, which is what turns the backend's whole skinned half off |
 | `lights` | `vector<LightData>` | Enabled lights with world transforms, each with its entity slot - which decides which lights get the scarce shadow tiles; the tile itself is the backend's to assign |
 | `probes` | `vector<ProbeData>` | Reflection probes in the scene |
 | `decals` | `vector<DecalData>` | Gathered scene-wide, not camera-culled: a decal's own material is usually its own, so the backend syncs it off this list |
 | `particlesAdditive` / `particlesAlpha` | `vector<ParticleData>` | Billboards, split by blend and unsorted: the additive half is order-independent, and `GLParticlePass` sorts the alpha half back-to-front |
+| `ocean` / `hasOcean` | `OceanData` + `bool` | The scene's one ocean (`findOcean`) at the frame's moment: its waves as `OceanSurface::at` draws them at `oceanTime`, its foam and the drift of a `waves` material's maps - see "The ocean" below |
 | `irradianceVolume` / `hasIrradianceVolume` | `IrradianceVolumeData` + `bool` | The scene's one baked-GI volume, chosen by `findIrradianceVolume` and with its grid clamped to `IrradianceVolume::MAX_RESOLUTION` on the way here. A value and a flag rather than a list, the way `Visibility` carries its camera - see "A scene has one irradiance volume" below |
 | `settings` | `RenderSettings` | Pass toggles + per-effect params, copied each frame |
 | `environment` | `Environment` | The scene's sky (HDR or procedural), night sky and fog, copied whole |
@@ -255,24 +256,25 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 | # | Pass | Does |
 |---|------|------|
 | 1 | Shadow | Renders directional CSM + spot + point-cube depth maps into the atlas. A spot's tile or a point light's face is redrawn only when what it holds changed - its matrix, or a caster in it moved, was re-uploaded or is posed - and the sun's cascades, which follow the camera, every frame, with their depth clamped so a caster nearer the sun than a cascade's near plane still shadows. Culling and grouping are **not** done here - `GLShadowData::build` does both on the thread pool. The pass uploads the drawn tiles' lists of objects, and a draw command per run of casters sharing a mesh, into one `GLDrawList` - the transforms are the frame's object buffer - then draws each tile as one multi-draw per program and vertex layout - its runs are keyed static meshes first, then skinned ones drawn as stored, then posed ones (`ShadowRun::key`), so neither alternates - skinned casters included, through programs a frame that posed nothing never binds (see [animation.md](animation.md#the-gpu-path)), and alpha-masked ones, per material, through programs that cut the shadow by it ([lighting.md](lighting.md#shadow-atlas)). A tile with no casters is still cleared |
-| 2 | DepthPrepass | Clears the scene target; early-Z for opaque geometry + writes the G-buffer (an oct view-normal, two channels, which GTAO, the decals, the Normals view and the reflection trace and resolve read). Draws `ctx.opaqueBatch`, the shared batch the forward pass reuses, one multi-draw per material run; it binds no material, since nothing it writes depends on one, and looks one up only to leave culling off for a double-sided material's runs. Two programs (`prepass` / `prepass_skinned`), switched once at the skinned boundary |
+| 2 | DepthPrepass | Clears the scene target; early-Z for opaque geometry + writes the G-buffer (an oct view-normal, two channels, which GTAO, the decals, the Normals view and the reflection trace and resolve read). Draws `ctx.opaqueBatch`, the shared batch the forward pass reuses, one multi-draw per material run, binding each run's material (a `waves` one moves its vertices by the ocean) and leaving culling off for a double-sided material's runs. Two programs (`prepass` / `prepass_skinned`), switched once at the skinned boundary |
 | 3 | ResolveDepth | MSAA only: one draw resolving depth and the G-buffer into `m_sceneHDR`, sample 0 of each |
 | 4 | GTAO | Full-res ground-truth AO + bent normal into `m_ao`. First folds the scene depth into a linear-depth mip chain of its own (`shaders/gtao/prefilter`); the horizon search then reads each step from the level its pixel length picks, which is what keeps a wide radius in cache. The search writes a target of the pass's own, and one compute dispatch (`shaders/gtao/denoise`) averages its visibility over a 5x5 neighbourhood on each pixel's own plane into `m_ao` - edge-aware and spatial only, with no history - and only then shapes it by intensity and power |
 | 5 | ClusterCull | Compute: culls lights into the Forward+ cluster grid SSBO |
 | 6 | FogCompute | Compute: froxel light inject + front-to-back integration (allocates the volumes on the first fog frame). Before anything is lit, because everything lit fogs itself through it - see [Fog](#fog) |
 | 7 | Atmosphere | Compute, under the procedural sky: the sky-view table the skybox draws the sky from and the aerial-perspective volume every lit pass lays over what it draws, both from the atmosphere's air tables, every frame ([lighting.md](lighting.md#image-based-lighting-ibl)). Each half is skipped when nothing reads it - the skybox hidden, `aerialPerspective` at 0 |
 | 8 | Skybox | Fills the background before geometry so transparents blend over it: the procedural sky from this frame's sky-view table, with its sun, moon and stars, or an HDR sky's env cube. Only the froxel fog lies over it, at the far plane. With fog on and no sky to show it still draws, black, so the fog lies in front of the background too |
-| 9 | Forward | The PBR ubershader: opaque (depth-primed), alpha-mask (writes depth, alpha-to-coverage under MSAA), then back-to-front transparents sampling an opaque snapshot for refraction; one multi-draw per material in each, since its textures are bound per material. Every surface takes the sky's air and the fog in the shader, at its own depth. Beside the colour, while `ssr` is on, it writes each pixel's reflection inputs - the environment reflection's weight and roughness, and the reflection itself as it was added (weight times radiance), both dimmed by the fog as the colour is - into colour attachments 2 and 3 of the scene target, which the Reflections pass reads, and which the target does not carry at all with `ssr` off; a transparent surface dims both under it by its own opacity ([lighting.md](lighting.md)). Two programs (`pbr` / `pbr_skinned`) sharing one fragment file and one per-frame uniform set |
-| 10 | Particles | CPU billboard particles into the scene target, depth-tested, never depth-writing, each fogged in the shader at its own depth, and soft: faded over its authored size (half its width) where the scene behind comes near and over half a metre from the near plane, against a copy of the scene's depth the pass blits first (the target's own is attached as it draws). Alpha ones sorted far to near by view depth. Into the reflection inputs too, as zero at the particle's opacity, so smoke dims the reflection behind it as a transparent surface does |
-| 11 | ResolveColor | MSAA only: one draw resolving colour and the reflection inputs, all tonemap-weighted alike, into `m_sceneHDR`, and depth again when alpha-mask drew |
-| 12 | Reflections | Screen-space reflections on the resolved frame. Copies the lit colour into a mip chain and filters it down; traces each pixel smoother than `ssrMaxRoughness` along its G-buffer normal's reflection through this frame's depth, rejecting surfaces seen from behind; then, through the reflection weight and the environment reflection the forward pass wrote beside the colour, replaces the probe / sky reflection with the traced colour - a glossy pixel averaging its neighbours' rays on the same surface (chain: src -> dst) |
-| 13 | Decals | Projected decal boxes blended into the post colour chain, sampling depth + G-buffer, faded where the surface turns from the projector and over the last fifth of each half of the box's depth, lit as the surface they land on is lit diffusely - by the key light through its cascades, and by the irradiance volume or the sky under GTAO (`shaders/ambient.glsl`, which the fog reads too) - and fogged at its depth. After the reflections, so a glossy floor's reflection does not paint over what is stuck to it. With the reflections on, the chain is already off the geometry target and the decals blend in place; with them off, the pass first copies the frame into the chain (`GLPass::promoteColorChain`) |
-| 14 | DoF | Circle-of-confusion disk blur driven by the camera's focus distance / amount, with a radius of at most `Camera::dofMaxBlur` of the viewport's height, so it looks the same at any resolution (chain: src -> dst) |
-| 15 | Bloom | Compute, one dispatch per level (a framebuffer bind and a draw cost the CPU about three times as much). Bright-pass + mip-chain down/upsample off the chain, the first level capped and cleared of NaNs; composite adds it |
-| 16 | Composite | The bloom added at `bloomStrength` - it holds only the light past the threshold, so nothing else is dimmed - then the `exposure`, then the `tonemap` curve and the exact sRGB encode (`shaders/color.glsl`, which the UI pass shares) to the backbuffer viewport, dithered by a step of triangular noise after the encode (or a debug buffer per `renderMode`) |
-| 17 | Grid | The editor's world grid: grids on the XZ, XY and ZY planes and the three axis lines, one fullscreen draw blended into the backbuffer viewport. After the tonemap, so the axes keep `Math::AXIS_COLORS` as the gizmos show them. Each pixel's ray finds its point on each plane and its nearest point on each axis, each tested against the scene's depth in the shader, and they blend far to near |
-| 18 | UI | Screen-space in-game UI overlay drawn flat on top (no-op when empty). See [ui.md](ui.md) |
-| 19 | Splash | The startup logo over black, covering the whole surface. A no-op once the sequence is over |
+| 9 | Ocean | Under a scene's ocean: draws its ripples into the three repeating fields a `waves` surface's pixels read (`GLOceanFields::drawRipples`, `shaders/ocean_ripples.glsl`), and their levels; and captures its shore, how far the sea ahead of the eye is from anything breaking it (`GLOceanFields::captureShore`). After the sky and GTAO, whose texture units the forward pass reads them on ([The ocean](#the-ocean)) |
+| 10 | Forward | The PBR ubershader: opaque (depth-primed), alpha-mask (writes depth, alpha-to-coverage under MSAA), then back-to-front transparents sampling an opaque snapshot for refraction; one multi-draw per material in each, since its textures are bound per material. Every surface takes the sky's air and the fog in the shader, at its own depth. Beside the colour, while `ssr` is on, it writes each pixel's reflection inputs - the environment reflection's weight and roughness, and the reflection itself as it was added (weight times radiance), both dimmed by the fog as the colour is - into colour attachments 2 and 3 of the scene target, which the Reflections pass reads, and which the target does not carry at all with `ssr` off; a transparent surface dims both under it by its own opacity ([lighting.md](lighting.md)). Two programs (`pbr` / `pbr_skinned`) sharing one fragment file and one per-frame uniform set |
+| 11 | Particles | CPU billboard particles into the scene target, depth-tested, never depth-writing, each fogged in the shader at its own depth, and soft: faded over its authored size (half its width) where the scene behind comes near and over half a metre from the near plane, against a copy of the scene's depth the pass blits first (the target's own is attached as it draws). Alpha ones sorted far to near by view depth. Into the reflection inputs too, as zero at the particle's opacity, so smoke dims the reflection behind it as a transparent surface does |
+| 12 | ResolveColor | MSAA only: one draw resolving colour and the reflection inputs, all tonemap-weighted alike, into `m_sceneHDR`, and depth again when alpha-mask drew |
+| 13 | Reflections | Screen-space reflections on the resolved frame. Copies the lit colour into a mip chain and filters it down; traces each pixel smoother than `ssrMaxRoughness` along its G-buffer normal's reflection through this frame's depth, rejecting surfaces seen from behind; then, through the reflection weight and the environment reflection the forward pass wrote beside the colour, replaces the probe / sky reflection with the traced colour - a glossy pixel averaging its neighbours' rays on the same surface (chain: src -> dst) |
+| 14 | Decals | Projected decal boxes blended into the post colour chain, sampling depth + G-buffer, faded where the surface turns from the projector and over the last fifth of each half of the box's depth, lit as the surface they land on is lit diffusely - by the key light through its cascades, and by the irradiance volume or the sky under GTAO (`shaders/ambient.glsl`, which the fog reads too) - and fogged at its depth. After the reflections, so a glossy floor's reflection does not paint over what is stuck to it. With the reflections on, the chain is already off the geometry target and the decals blend in place; with them off, the pass first copies the frame into the chain (`GLPass::promoteColorChain`) |
+| 15 | DoF | Circle-of-confusion disk blur driven by the camera's focus distance / amount, with a radius of at most `Camera::dofMaxBlur` of the viewport's height, so it looks the same at any resolution (chain: src -> dst) |
+| 16 | Bloom | Compute, one dispatch per level (a framebuffer bind and a draw cost the CPU about three times as much). Bright-pass + mip-chain down/upsample off the chain, the first level capped and cleared of NaNs; composite adds it |
+| 17 | Composite | The bloom added at `bloomStrength` - it holds only the light past the threshold, so nothing else is dimmed - then the `exposure`, then the `tonemap` curve and the exact sRGB encode (`shaders/color.glsl`, which the UI pass shares) to the backbuffer viewport, dithered by a step of triangular noise after the encode (or a debug buffer per `renderMode`) |
+| 18 | Grid | The editor's world grid: grids on the XZ, XY and ZY planes and the three axis lines, one fullscreen draw blended into the backbuffer viewport. After the tonemap, so the axes keep `Math::AXIS_COLORS` as the gizmos show them. Each pixel's ray finds its point on each plane and its nearest point on each axis, each tested against the scene's depth in the shader, and they blend far to near |
+| 19 | UI | Screen-space in-game UI overlay drawn flat on top (no-op when empty). See [ui.md](ui.md) |
+| 20 | Splash | The startup logo over black, covering the whole surface. A no-op once the sequence is over |
 
 The Splash pass is last because a splash is not drawn on top of the frame -
 it is what is on screen instead of one. It covers the whole surface rather
@@ -413,6 +415,93 @@ and the editor preview take neither - `u_hasFog` and `u_hasAir` read 0 in their
 programs - because each volume describes this camera's frustum, not a probe's.
 The Grid and UI draw after everything and are overlays, so they are not fogged
 either.
+
+### The ocean
+
+Wind-driven waves for a scene's sea, made as Unreal's water system makes them:
+a sum of Gerstner waves. The scene's `Ocean` (`findOcean`) is a spectrum, not
+a list: `OceanSurface::at` draws `waveCount` waves from JONSWAP - shortened by
+TMA's correction where `depth` is set (Horvath 2015) - one to each frequency
+band, the bands even in log between `maxWavelength` and `minWavelength`, each
+wave as tall as its band's energy and turned off the wind by a cos^2s spread.
+Each crest draws the water `choppiness` amplitudes toward it, held where the
+slopes add past one, so the surface never folds over.
+
+A surface whose material is `waves` rides them - in a scene with an ocean,
+windless or not; without one it is an ordinary surface, and casts as one. The
+depth prepass and the forward pass move each vertex by `shaders/ocean.glsl`'s
+sum, both, so depth matches under LEQUAL, and hand the fragment the surface's
+tangents there. The spectrum on below `minWavelength`, down to `shortestRipple`
+(`OceanRipples`), is too short for any vertex: the Ocean pass draws it once a
+frame into three repeating fields of 512 texels square, the band split evenly
+between them in log, each repeating every 7.93 of its longest ripples
+(`GLOcean`, `GLOceanFields`). As an FFT ocean's cascades are (Tessendorf 2001),
+each field is a grid of wavenumbers, every one in its band a ripple - a Gaussian
+of `OceanRipples::density` there, rolling a whole number of turns in
+`OceanRipples::LOOP` so float phases stay exact - transformed to the surface in
+shared memory, along X a row a group (`shaders/ocean/ripples`), then along Z a
+column a group (`shaders/ocean/ripples_columns`): thousands of ripples a field,
+for the cost engine.md's ocean row gives. A texel holds the slopes, the squeeze
+and the slope squared, so the levels a far pixel reads keep the variance it
+spans (LEAN mapping, Olano and Baker 2010) and the shading takes it as roughness
+- a far sea grows rough, not noisy. Six anisotropic reads a pixel, the longest
+field's four B-spline filtered: the light on the water is as fine as the screen.
+
+The water lights as water: the material's `subsurfaceColor` times `subsurface`
+is what it scatters back (after Atlas's ocean, GDC 2019) - through a backlit
+crest, in proportion to its height in the sea's significant heights, toward the
+viewer, on the lit side, and from the sky. Where the crests squeeze the surface
+- its Jacobian below one - it whitens: `foam` says how readily, against a
+squeeze three standard deviations of the sum's, widened by how fast it changes
+across the pixel so it never steps, and foam takes `foamColor` and a rough
+finish. A crest's foam lingers: a Gerstner wave carries its water back to its
+rest point, so each vertex looks back a few seconds at how squeezed its water
+was (`oceanLingering`) and the foam fades from there, trailing the crest. The
+long and middle ripples' squeeze tears its edge into patches, and it thins from
+dense to lace as it fades. Where anything stands in the water it foams too,
+`waterlineFoam` metres out, read off the ocean's shore: a square of sea
+`Ocean::WATERLINE_SQUARE` (128 metres) on an edge ahead of the eye
+(`GLOceanFields::captureShore`). The Ocean pass draws everything but the water
+looking straight down over it twice, against the water's height off a coarse
+grid of `oceanHeightAt` (the inversion `OceanSurface::heightAt` makes). Under
+the water it keeps the topmost thing a texel: a face turned up is something
+under the surface, a face turned away the inside of something breaking it. Over
+the water it keeps the lowest: a face turned up is the top of something whose
+inside the surface is in. Either alone misses a post - from above its walls draw
+nothing - the one when a seabed hides its foot, the other when a roof hides its
+top. A distance transform, a row and then a column at a time (Felzenszwalb and
+Huttenlocher), turns that into metres to the nearest thing breaking the water,
+its depth under counted thrice as distance. Drawn in the world, it rings what
+the camera cannot see as well as what it can, and costs the same however much
+sea is in view. The middle and short ripples tear the foam into suds, frayed
+half a width past its edge and no further, and a passing crest widens it, though
+never past twice the width (at most 8 metres) the transform looks round a point.
+The ripples and the shore take the units of the env cube and GTAO's depth chain,
+both done with by the forward pass. The waves fade out between `calmRadius` and
+`stillRadius` from the ocean's Transform.
+
+Gameplay can raise up to four surges (`Ocean::surges`, `OceanSurge`): straight
+ridges of water a cosine across the way each rolls, their ends tapered, which only
+lift the water and are not faded by `calmRadius`. They are session state, set as the
+game runs and never saved; the same sum moves the drawn surface (`oceanSurgeAt`) and
+answers gameplay, and each crest foams (`oceanSurgeFoam`). A game that floats things
+on the wind's sea alone, under a surge passing over them, asks `withoutSurges()`.
+
+Gameplay asks the same `OceanSurface`: `displacement` for the water resting at a
+point, `heightAt`, `normalAt` and `sampleAt` for a point fixed in the world,
+found by four fixed-point steps back to the water over it. Its time is
+`oceanTime` - the simulation's ticks and the fraction past the last - so the sea
+stops with the game and every end of a networked game sees the same one; the
+phases are wrapped in double before `GLOcean` uploads them (`OceanBlock`, once
+a frame), so the water stays smooth for days. The ripples carry nothing afloat.
+
+A `waves` surface under an ocean casts no shadow, as a held shadow tile would
+picture one moment of it; the cull grows its box by as far as the sea carries
+water (`OceanSurface::farthestReach`); the offline captures and the material
+preview have no sea, so draw it as an ordinary surface; a skinned mesh is shaded
+as the water but not moved; and waterlines past the shore's square fade out, the
+shore taking the water to rest at the ocean's Transform's height. Its mesh wants
+vertices closer than half of `minWavelength` where the waves are whole.
 
 ### Particles
 

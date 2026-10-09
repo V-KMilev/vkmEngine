@@ -28,7 +28,7 @@ layout(std140, binding = UBO_MATERIAL) uniform MaterialBlock {
     float alphaCutoff;
     int   type;
     int   textureFlags;
-    int   _mp0;
+    int   waves;  // 1: the scene's ocean moves the surface (ocean.glsl)
 } u_material;
 
 // Whether the material binds a map: textureFlags carries one bit per MATERIAL_SLOT_*.

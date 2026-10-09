@@ -29,6 +29,7 @@
 #include "ecs/component/render/camera.h"
 #include "ecs/component/render/decal.h"
 #include "ecs/component/render/irradiance_volume.h"
+#include "ecs/component/render/ocean.h"
 #include "ecs/component/render/light.h"
 #include "ecs/component/render/lod.h"
 #include "ecs/component/render/mesh.h"
@@ -321,6 +322,7 @@ class ScriptEditCommand : public Command {
     X(Ragdoll,             ragdoll)             \
     X(ReflectionProbe,     reflectionProbe)     \
     X(IrradianceVolume,    irradianceVolume)    \
+    X(Ocean,               ocean)               \
     X(Decal,               decal)               \
     X(ParticleEmitter,     particleEmitter)     \
     X(AudioSource,         audioSource)         \

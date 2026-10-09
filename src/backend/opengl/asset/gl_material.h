@@ -56,7 +56,7 @@ struct MaterialUBO {
     float alphaCutoff;
     int   type;          ///< MaterialType as int (the shader branches on Unlit / AlphaMask)
     int   textureFlags;  ///< Bit `1 << slot` set for each bound map (GLBindings::TextureSlots)
-    int   pad0;
+    int   waves;         ///< 1 where the scene's ocean moves the surface (shaders/ocean.glsl)
 };
 static_assert(sizeof(MaterialUBO) == 160, "MaterialUBO must match the std140 MaterialBlock layout");
 

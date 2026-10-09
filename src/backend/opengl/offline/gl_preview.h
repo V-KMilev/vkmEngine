@@ -11,6 +11,7 @@
 
 #include "gl_target.h"
 #include "frame/gl_camera.h"
+#include "frame/gl_ocean.h"
 #include "frame/gl_lights.h"
 #include "frame/gl_instance_batcher.h"
 #include "frame/gl_object_buffer.h"
@@ -149,6 +150,7 @@ class GLPreview {
          */
         GLTarget          m_scratch{GLTarget::Layout::ColorDepth};
         GLCamera          m_camera;    ///< Orbit camera UBO.
+        GLOcean           m_ocean;     ///< No sea: a `waves` material previews as an ordinary one.
         GLLights          m_lights;    ///< Studio rig lights SSBO.
         GLInstanceBatcher m_batcher;   ///< Single-object instanced draw.
 

@@ -9,6 +9,7 @@
 #include "gl_target.h"
 #include "gl_view.h"
 #include "asset/gl_material.h"
+#include "convention/gl_bindings.h"
 #include "frame/gl_object_buffer.h"
 #include "frame/gl_skin_palette.h"
 
@@ -35,14 +36,20 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
 
     // A double-sided material's back faces lay depth too, or the forward pass's LEQUAL would
     // find nothing to draw them against.
-    const Vkm::GL::Shader* boundProgram = nullptr;
+    const Vkm::GL::Shader* boundProgram  = nullptr;
+    const GLMaterial*      boundMaterial = nullptr;
     for (const InstanceDraw& draw : ctx.opaqueBatch.draws()) {
         Vkm::GL::Shader& program = draw.skinned ? m_skinnedShader : m_shader;
         if (&program != boundProgram) {
             program.bind();
             boundProgram = &program;
         }
+        // The material too: a `waves` surface moves here exactly as the forward pass moves it.
         const GLMaterial* material = ctx.resources.getMaterial(draw.material);
+        if (material && material != boundMaterial) {
+            material->bind(GLBindings::UBOBindingPoints::MATERIAL);
+            boundMaterial = material;
+        }
         ctx.gl.setFaceCulling(!(material && material->doubleSided()));
         ctx.opaqueBatch.draw(ctx.gl, draw);
     }

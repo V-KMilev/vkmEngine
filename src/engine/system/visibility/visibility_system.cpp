@@ -19,10 +19,12 @@
 #include "ecs/component/render/camera.h"
 #include "ecs/component/render/lod.h"
 #include "ecs/component/render/mesh.h"
+#include "ecs/component/render/ocean.h"
 
 #include "core/host_chrome.h"
 #include "core/math/bounds.h"
 #include "system/animation/pose_buffer.h"
+#include "system/ocean/ocean_surface.h"
 #include "system/render/render_settings.h"
 #include "system/visibility/culling.h"
 #include "system/visibility/host_view.h"
@@ -243,6 +245,13 @@ void VisibilitySystem::update(FrameContext& ctx) {
 
     std::memset(m_state.data(), 0, meshCount);
 
+    // A `waves` surface the scene's ocean moves is carried past its mesh's box by as far as the
+    // sea moves water, and casts no shadow: a held shadow tile would picture one moment of it.
+    // With no ocean it draws, and casts, as any surface.
+    const EntityId sea = findOcean(ctx.scene);
+    glm::vec2      swell(0.0f);
+    if (sea) swell = OceanSurface::at(ctx.scene.get<Ocean>(sea), glm::vec3(0.0f), 0.0).farthestReach();
+
     {
         PROFILE_SCOPE("Visibility/Cull");
         parallelFor(meshCount, [&](size_t i) {
@@ -271,7 +280,13 @@ void VisibilitySystem::update(FrameContext& ctx) {
             glm::vec3 localMin, localMax;
             poseLocalBounds(meshAsset, slice, localMin, localMax);
 
-            const Math::AABB world = Math::transform(modelMatrix, {localMin, localMax});
+            Math::AABB world = Math::transform(modelMatrix, {localMin, localMax});
+            const MaterialAsset* surface = resources.tryGet(mesh.material);
+            const bool           waves   = sea && surface && surface->waves;
+            if (waves) {
+                world.min -= glm::vec3(swell.x, swell.y, swell.x);
+                world.max += glm::vec3(swell.x, swell.y, swell.x);
+            }
 
             // Every valid mesh, not just visible ones, so the scene-wide gather reaches
             // off-screen occluders.
@@ -280,13 +295,14 @@ void VisibilitySystem::update(FrameContext& ctx) {
             objects.draws[i]       = ObjectDraw{
                 selectLOD(mesh, lodStorage, entityIdx, world.min, world.max, context),
                 mesh.material,
-                slice ? slice->count : 0u
+                slice ? slice->count : 0u,
+                waves
             };
             objects.skinFirst[i]   = slice ? slice->first : 0u;
             m_result.entities[i]   = ctx.scene.entityAt(entityIdx);
 
             uint8_t state = STATE_DRAWN;
-            if (mesh.castShadows) state |= STATE_CASTS;
+            if (mesh.castShadows && !waves) state |= STATE_CASTS;
 
             if (Math::frustumIntersectsAABB(context.frustum, world)
                 && Culling::isNearEnough(world, context)

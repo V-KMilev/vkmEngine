@@ -111,6 +111,10 @@ struct MaterialAsset : public Resource {
 
     /// Parallax-occlusion depth scale (0: off; 0.02-0.1 typical)
     float heightScale = 0.0f;
+    /// Moved by the scene's Ocean: the surface rides its waves, the maps lie over the water by its
+    /// detailScale, crests whiten with its foam, and it casts no shadow (see rendering.md, "The
+    /// ocean"). With no ocean in the scene it draws, and casts, as an ordinary surface.
+    bool waves = false;
 
 #define VKM_MATERIAL_MAP_MEMBER(key, member, slot, doc) TextureHandle member;
     VKM_MATERIAL_MAPS(VKM_MATERIAL_MAP_MEMBER)
@@ -149,4 +153,5 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::MaterialAsset)
     VKM_F(attenuationDistance)
     VKM_F(attenuationColor)
     VKM_F(heightScale)
+    VKM_F(waves)
 VKM_REFLECT_END()

@@ -45,10 +45,12 @@
 #include "frame/gl_lights.h"
 #include "frame/gl_shadow_data.h"
 #include "frame/gl_camera.h"
+#include "frame/gl_ocean.h"
 #include "offline/gl_cube_convolver.h"
 #include "offline/gl_ibl_baker.h"
 #include "storage/gl_atmosphere.h"
 #include "storage/gl_ibl.h"
+#include "storage/gl_ocean_fields.h"
 #include "system/sky/atmosphere.h"
 #include "ecs/environment.h"
 #include "asset/gl_material.h"
@@ -62,6 +64,7 @@
 #include "system/render/data/particle_data.h"
 #include "system/render/editor_render_hooks.h"
 #include "system/render/render_view.h"
+#include "system/render/data/ocean_data.h"
 #include "platform/window/window_manager.h"
 #include "platform/threading/thread_pool.h"
 
@@ -990,6 +993,250 @@ void testTheDisplayEncodeInvertsTheSrgbDecode() {
     check("with no GL error behind it", noGlError());
 }
 
+// Gameplay floats things on OceanSurface's water and the vertex shaders draw ocean.glsl's: the two
+// are one sum stated twice, so they must put the water in the same place, point for point.
+void testTheDrawnSeaIsTheOneGameplayFloatsOn() {
+    using namespace Vkm::Engine;
+    std::printf("The ocean the GPU draws and the one gameplay asks:\n");
+
+    Ocean storm;
+    storm.windSpeed     = 14.0f;
+    storm.choppiness    = 1.0f;
+    storm.waveCount     = Ocean::MAX_WAVES;
+    storm.calmRadius    = 30.0f;
+    storm.stillRadius   = 90.0f;
+    // Two surges over the probed square, one whole and one with its end in it.
+    storm.surges[0] = {{-20.0f, 10.0f}, glm::normalize(glm::vec2(0.6f, 0.8f)), 1.4f, 1.5f, 12.0f};
+    storm.surges[1] = {{40.0f, -30.0f}, {1.0f, 0.0f}, 0.8f, 1.0f, 20.0f};
+
+    constexpr int POINTS = 256;
+    std::vector<glm::vec4> points(POINTS);
+    for (int i = 0; i < POINTS; ++i) {
+        points[i] = glm::vec4(i * 0.43f - 55.0f, std::fmod(i * 7.9f, 120.0f) - 60.0f, 0.0f, 0.0f);
+    }
+    const uint32_t bytes = static_cast<uint32_t>(points.size() * sizeof(glm::vec4));
+    const Vkm::GL::ComputeShader probe("tests/render/shaders/ocean_surface");
+    check("the probe compiles", probe.isValid());
+
+    // Where the GPU moves each point's water from @p sea's block - xyz, and w = 1 where the block
+    // says there is an ocean - and, after them, its normals.
+    GLOcean block;
+    const auto drawn = [&](const OceanData& sea, bool present) {
+        block.update(sea, present);
+        Vkm::GL::ShaderStorageBuffer buffer(points.data(), bytes);
+        std::vector<glm::vec4> read(2 * POINTS);
+        Vkm::GL::ShaderStorageBuffer normals(read.data(), bytes);
+        buffer.bindBase(0);
+        normals.bindBase(1);
+        probe.bind();
+        probe.dispatch(POINTS / 64);
+        glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+        buffer.bind();
+        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, bytes, read.data());
+        normals.bind();
+        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, bytes, read.data() + POINTS);
+        return read;
+    };
+    // How far the GPU's water is from the CPU's at worst; a point with no ocean is a metre off.
+    const auto offBy = [&](const OceanData& sea) {
+        const std::vector<glm::vec4> moved = drawn(sea, true);
+        float worst = 0.0f;
+        for (int i = 0; i < POINTS; ++i) {
+            const glm::vec3 cpu = sea.surface.displacement(glm::vec2(points[i]));
+            const float     off = moved[i].w > 0.5f ? glm::length(glm::vec3(moved[i]) - cpu) : 1.0f;
+            worst = std::max(worst, off);
+        }
+        return worst;
+    };
+
+    OceanData sea;
+    sea.surface = OceanSurface::at(storm, glm::vec3(5.0f, 0.0f, -5.0f), 1234.5);
+    const float worst = offBy(sea);
+    const float height = sea.surface.significantHeight();
+    std::printf("      Hs %.2f m; the GPU's water within %.4f m of the CPU's\n", height, worst);
+    check("the GPU moves the water where OceanSurface says, within a centimetre", worst < 0.01f);
+
+    // The normal the GPU shades by, against the CPU's over the same water: it rests at the point.
+    const std::vector<glm::vec4> faced = drawn(sea, true);
+    float worstNormal = 0.0f;
+    for (int i = 0; i < POINTS; ++i) {
+        const glm::vec3 moved = glm::vec3(faced[i]);
+        const glm::vec2 over  = glm::vec2(points[i]) + glm::vec2(moved.x, moved.z);
+        const glm::vec3 gpu   = glm::vec3(faced[POINTS + i]);
+        worstNormal = std::max(worstNormal, glm::length(gpu - sea.surface.normalAt(over)));
+    }
+    std::printf("      its normals within %.4f of the CPU's, across the fade too\n", worstNormal);
+    check("  and turns it as OceanSurface says", worstNormal < 0.01f);
+
+    // No wind is still a sea: its surges lift the water, and its waterlines foam.
+    Ocean lake = storm;
+    lake.windSpeed = 0.0f;
+    OceanData still;
+    still.surface = OceanSurface::at(lake, glm::vec3(5.0f, 0.0f, -5.0f), 1234.5);
+    check("  and on a windless one, its surges", still.surface.count == 0 && offBy(still) < 0.01f);
+    check("  with no ocean, the block says there is none", drawn(OceanData{}, false)[0].w == 0.0f);
+    check("with no GL error behind it", noGlError());
+}
+
+// The ripples are drawn on grids of wavenumbers and transformed (shaders/ocean_ripples.glsl): each
+// field must hold the slope OceanRipples' spectrum gives its band, so the water is as rough as the
+// sea it stands for, its slopes centred, its squeeze the waves' choppiness of it - and steepest
+// along the wind, X here, the way they roll.
+void testTheRippleFieldsHoldTheSpectrumsSlope() {
+    using namespace Vkm::Engine;
+    std::printf("The ocean's ripple fields:\n");
+
+    Ocean sea;
+    sea.windSpeed      = 10.0f;
+    sea.minWavelength  = 3.0f;
+    sea.shortestRipple = 0.03f;
+    sea.choppiness     = 0.8f;
+    sea.windDirection  = 90.0f;
+    sea.spread         = 0.3f;
+    OceanData data;
+    data.surface = OceanSurface::at(sea, glm::vec3(0.0f), 77.0);
+    data.ripples = OceanRipples::at(sea, 77.0);
+    GLOcean block;
+    block.update(data, true);
+    GLOceanFields fields;
+    fields.drawRipples();
+    fields.bind();
+
+    // Read where bind() put it, on the 4.3 context: no direct state access.
+    glActiveTexture(GL_TEXTURE0 + GLBindings::OceanTextureSlots::RIPPLES);
+    GLint size = 0;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D_ARRAY, 0, GL_TEXTURE_WIDTH, &size);
+    const size_t texels = static_cast<size_t>(size) * static_cast<size_t>(size);
+    std::vector<glm::vec4> read(texels * RIPPLE_FIELDS);
+    glGetTexImage(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA, GL_FLOAT, read.data());
+    glActiveTexture(GL_TEXTURE0);
+
+    // The band split as GLOcean splits it, evenly in log.
+    const OceanRipples& on = data.ripples;
+    bool held = true;
+    bool centred = true;
+    bool squeezed = true;
+    glm::dvec2 slopes(0.0);  // the mean square slope across X and across Z, every field
+    for (int f = 0; f < RIPPLE_FIELDS; ++f) {
+        const float from = on.longest * std::pow(on.shortest / on.longest, float(f) / RIPPLE_FIELDS);
+        const float to   = on.longest * std::pow(on.shortest / on.longest, float(f + 1) / RIPPLE_FIELDS);
+        glm::dvec4 mean(0.0);
+        double     squeeze = 0.0;
+        for (size_t i = 0; i < texels; ++i) {
+            const glm::vec4& texel = read[f * texels + i];
+            mean    += glm::dvec4(texel) / double(texels);
+            squeeze += double(texel.z) * texel.z / double(texels);
+            slopes  += glm::dvec2(texel.x * texel.x, texel.y * texel.y) / double(texels);
+        }
+        const double expected = on.slopeVariance(from, to);
+        std::printf(
+            "      field %d: slope variance %.5f against the spectrum's %.5f, squeeze %.5f\n",
+            f,
+            mean.w,
+            expected,
+            squeeze
+        );
+        held     = held && std::fabs(mean.w - expected) < 0.1 * expected;
+        centred  = centred && glm::length(glm::dvec2(mean)) < 0.05 * std::sqrt(expected);
+        const double chop = double(sea.choppiness) * sea.choppiness * mean.w;
+        squeezed = squeezed && std::fabs(squeeze - chop) < 0.1 * chop;
+    }
+    check("each field holds the slope the spectrum gives its band", held);
+    check("  its slopes centred on level", centred);
+    check("  its squeeze choppiness times its slope", squeezed);
+    std::printf("      mean square slope %.5f across X, %.5f across Z\n", slopes.x, slopes.y);
+    check("  and steepest the way the wind rolls them", slopes.x > 3.0 * slopes.y);
+    check("with no GL error behind it", noGlError());
+}
+
+// OceanRipples::density is stated again on the GPU (ocean_ripples.glsl, rippleDensity), and the
+// fields are drawn from that statement: the two must be one density, wavenumber for wavenumber,
+// in deep water and shallow, with the wind and against it.
+void testTheRipplesDensityIsTheCPUs() {
+    using namespace Vkm::Engine;
+    std::printf("The ripples' density on the GPU and the CPU:\n");
+
+    bool agree = true;
+    for (const float depth : {0.0f, 1.5f}) {
+        Ocean sea;
+        sea.windSpeed     = 9.0f;
+        sea.windDirection = 40.0f;
+        sea.spread        = 0.4f;
+        sea.depth         = depth;
+        sea.heightScale   = 1.3f;
+        OceanData data;
+        data.surface = OceanSurface::at(sea, glm::vec3(0.0f), 3.0);
+        data.ripples = OceanRipples::at(sea, 3.0);
+        GLOcean block;
+        block.update(data, true);
+
+        constexpr int POINTS = 128;
+        std::vector<glm::vec4> points(POINTS);
+        for (int i = 0; i < POINTS; ++i) {
+            const float k     = data.ripples.longest * std::pow(40.0f, static_cast<float>(i % 16) / 15.0f);
+            const float angle = glm::two_pi<float>() * static_cast<float>(i / 16) / 8.0f + 0.3f;
+            points[i] = glm::vec4(k * std::cos(angle), k * std::sin(angle), 0.0f, 0.0f);
+        }
+        const uint32_t bytes = static_cast<uint32_t>(points.size() * sizeof(glm::vec4));
+        Vkm::GL::ShaderStorageBuffer buffer(points.data(), bytes);
+        const Vkm::GL::ComputeShader probe("tests/render/shaders/ocean_density");
+        buffer.bindBase(0);
+        probe.bind();
+        probe.dispatch(POINTS / 64);
+        glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+        std::vector<glm::vec4> read(POINTS);
+        buffer.bind();
+        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, bytes, read.data());
+
+        float worst = 0.0f;
+        for (int i = 0; i < POINTS; ++i) {
+            const float cpu = data.ripples.density(glm::vec2(points[i]));
+            const float gpu = read[i].x;
+            if (cpu > 1e-12f) worst = std::max(worst, std::abs(gpu - cpu) / cpu);
+            else if (gpu > 1e-12f) worst = 1.0f;
+        }
+        const char* water = depth > 0.0f ? "shallow" : "deep";
+        std::printf("      %s water: the GPU's density within %.4f%% of the CPU's\n", water, 100.0f * worst);
+        agree = agree && worst < 0.001f;
+    }
+    check("the GPU draws the ripples from the CPU's density, deep and shallow", agree);
+    check("with no GL error behind it", noGlError());
+}
+
+// The ripple fields are transformed a line at a time in shared memory (ocean_ripples.glsl,
+// rippleTransform): a single frequency must come out its plane wave, e^(2 pi i m n / N), turning
+// the right way, from either half of the line.
+void testTheRipplesTransformMakesPlaneWaves() {
+    using namespace Vkm::Engine;
+    std::printf("The ripples' line transform:\n");
+
+    const int size = RIPPLE_FIELD_SIZE;
+    std::vector<glm::vec4> line(static_cast<size_t>(size));
+    const uint32_t bytes = static_cast<uint32_t>(line.size() * sizeof(glm::vec4));
+    Vkm::GL::ShaderStorageBuffer buffer(line.data(), bytes);
+    const Vkm::GL::ComputeShader probe("tests/render/shaders/ocean_fft");
+    check("the probe compiles", probe.isValid());
+    const glm::ivec2 bins(3, size - 5);  // three turns a line, and five the other way
+    buffer.bindBase(0);
+    probe.bind();
+    probe.setUniform2i("u_bins", bins.x, bins.y);
+    probe.dispatch(1);
+    glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+    buffer.bind();
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, bytes, line.data());
+
+    float worst = 0.0f;
+    for (int n = 0; n < size; ++n) {
+        const float first  = glm::two_pi<float>() * static_cast<float>(bins.x * n) / static_cast<float>(size);
+        const float second = glm::two_pi<float>() * static_cast<float>(-5 * n) / static_cast<float>(size);
+        const glm::vec4 wave(std::cos(first), std::sin(first), std::cos(second), std::sin(second));
+        worst = std::max(worst, glm::length(line[static_cast<size_t>(n)] - wave));
+    }
+    std::printf("      every texel within %.5f of its plane wave\n", worst);
+    check("a single frequency transforms to its plane wave, either way round", worst < 1e-3f);
+    check("with no GL error behind it", noGlError());
+}
+
 // A cutout's shadow is cut by its albedo map, so the map is part of a held tile: a map
 // re-uploaded under the same handle must re-sign it. And cutouts sharing a mesh but not
 // a material are two runs (a run binds one material); opaque casters sharing a mesh are one.
@@ -1435,6 +1682,18 @@ void testTheSharedBlocksAgreeWithTheirStructs() {
             && uniformAt("MaterialBlock.metallic", offsetof(MaterialUBO, metallic))
             && uniformAt("MaterialBlock.alphaCutoff", offsetof(MaterialUBO, alphaCutoff))
             && uniformAt("MaterialBlock.textureFlags", offsetof(MaterialUBO, textureFlags))
+            && uniformAt("MaterialBlock.waves", offsetof(MaterialUBO, waves))
+    );
+
+    check(
+        "the ocean block is the size of OceanUBO",
+        programResource(forward, GL_UNIFORM_BLOCK, "OceanBlock", GL_BUFFER_DATA_SIZE)
+            == static_cast<GLint>(sizeof(OceanUBO))
+    );
+    check(
+        "  its waves where the struct has them",
+        uniformAt("OceanBlock.squeeze", offsetof(OceanUBO, squeeze))
+            && uniformAt("OceanBlock.waves", offsetof(OceanUBO, waves))
     );
 
     check(
@@ -1816,6 +2075,10 @@ int runTests() {
     testAStubKeepsTheFilteringOfTheUploadItReplaces();
     testAStaleHandleFindsNothing();
     testTheSharedBlocksAgreeWithTheirStructs();
+    testTheDrawnSeaIsTheOneGameplayFloatsOn();
+    testTheRippleFieldsHoldTheSpectrumsSlope();
+    testTheRipplesDensityIsTheCPUs();
+    testTheRipplesTransformMakesPlaneWaves();
     testMeshesInOnePoolDrawAsOneMultiDraw();
     testASkyBakesAgainOnlyOnceItsSunHasMoved();
     testTheSkysTransmittanceIsTheSunlights();

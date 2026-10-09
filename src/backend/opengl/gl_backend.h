@@ -20,6 +20,8 @@
 #include "storage/gl_atmosphere.h"
 #include "storage/gl_bloom.h"
 #include "frame/gl_camera.h"
+#include "frame/gl_ocean.h"
+#include "storage/gl_ocean_fields.h"
 #include "storage/gl_cluster_grid.h"
 #include "offline/gl_cube_convolver.h"
 #include "storage/gl_fog_volume.h"
@@ -287,6 +289,7 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         std::unordered_map<std::string, std::unique_ptr<Vkm::GL::Texture2D>> m_chromeImages;
 
         GLCamera m_camera;
+        GLOcean  m_ocean;
         GLLights m_lights;
 
         GLShadowAtlas m_shadowAtlas;
@@ -309,6 +312,7 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         GLClusterGrid m_clusterGrid;  ///< Forward+ per-cluster light lists (compute-filled).
         GLFogVolume   m_fog;          ///< Froxel volumetric-fog volumes (compute-filled).
 
+        GLOceanFields      m_oceanFields;  ///< The ocean's ripple fields and shore.
         GLIrradianceVolume m_irradiance;  ///< Baked SH irradiance volume (GI).
         GLIrradianceBaker  m_irradianceBaker;
 

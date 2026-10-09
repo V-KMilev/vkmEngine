@@ -74,7 +74,7 @@ void GLMaterial::update(const MaterialAsset& material) {
     data.alphaCutoff        = material.alphaCutoff;
     data.type               = static_cast<int>(material.type);
     data.textureFlags       = flags;
-    data.pad0               = 0;
+    data.waves              = material.waves ? 1 : 0;
 
     if (m_ubo) m_ubo->update(&data, sizeof(data));
     else       m_ubo = std::make_unique<Vkm::GL::UniformBuffer>(&data, sizeof(data), GL_DYNAMIC_DRAW);
