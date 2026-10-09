@@ -153,6 +153,14 @@ if(Python3_Interpreter_FOUND AND _vkm_this_build STREQUAL _vkm_tool_build)
     )
 endif()
 
+# How the project tool fetches a pinned tool from a server that fails, against a local one.
+if(Python3_Interpreter_FOUND)
+    add_test(NAME vkm_download
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/vkm_download_tests.py
+            ${CMAKE_SOURCE_DIR}/tools
+    )
+endif()
+
 # The GPU suite, built only where EGL can be found.
 #
 # Separate from vkm_engine_tests on purpose: that binary must stay runnable on a

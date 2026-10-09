@@ -24,7 +24,12 @@ if (-not [Environment]::Is64BitOperatingSystem) {
 $compiler = if ($env:VKM_COMPILER) { $env:VKM_COMPILER } else { 'gcc' }
 if ($compiler -notin @('gcc', 'clang')) { throw "VKM_COMPILER is gcc or clang, not '$compiler'" }
 
+# The newest release is GitHub's latest. $env:VKM_DOWNLOADS serves a release's files from
+# elsewhere - CI installs the archive it just built - and names no latest.
 $version = $env:VKM_VERSION
+if (-not $version -and $env:VKM_DOWNLOADS) {
+    throw 'VKM_DOWNLOADS needs VKM_VERSION: there is no newest release to ask it for'
+}
 if (-not $version) {
     $version = (Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest").tag_name.TrimStart('v')
 }
@@ -35,7 +40,22 @@ New-Item -ItemType Directory -Path $work | Out-Null
 
 try {
     Say "downloading $version, for $compiler"
-    Invoke-WebRequest "https://github.com/$repo/releases/download/v$version/$name.zip" -OutFile $archive
+    $release = if ($env:VKM_DOWNLOADS) { $env:VKM_DOWNLOADS } else { "https://github.com/$repo/releases/download/v$version" }
+    Invoke-WebRequest -UseBasicParsing "$release/$name.zip" -OutFile $archive
+
+    # Checked before it is unpacked: a download cut short or changed on its way is not installed.
+    $sums = Join-Path $work 'SHA256SUMS'
+    try { Invoke-WebRequest -UseBasicParsing "$release/SHA256SUMS" -OutFile $sums }
+    catch { throw "release v$version carries no SHA256SUMS to check $name.zip against" }
+    # A name marked '*' was summed in binary mode, as Windows builds of sha256sum write it.
+    $expected = Get-Content $sums | ForEach-Object {
+        $fields = $_ -split '\s+', 2
+        if ($fields.Count -eq 2 -and $fields[1].TrimStart('*') -eq "$name.zip") { $fields[0] }
+    } | Select-Object -First 1
+    if (-not $expected) { throw "the release's SHA256SUMS does not name $name.zip" }
+    if ((Get-FileHash -Algorithm SHA256 $archive).Hash -ne $expected) {
+        throw "$name.zip does not match the release's SHA256SUMS; nothing was installed"
+    }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     [IO.Compression.ZipFile]::ExtractToDirectory($archive, $work)
 

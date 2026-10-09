@@ -1,13 +1,11 @@
-# Every push to master or a vkm/ branch, and every pull request: build.yml, all of it.
+# build.yml, all of it, on a branch, run by hand (Actions > CI > Run workflow). Nothing runs
+# it on a push: a version tag runs release.yml, which builds the same first.
 name: CI
 
 on:
-  push:
-    branches: [master, "vkm/**"]
-  pull_request:
   workflow_dispatch:
 
-# A newer push to the same branch makes the running one moot.
+# A newer run on the same branch makes the running one moot.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true

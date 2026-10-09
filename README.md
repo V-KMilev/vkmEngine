@@ -135,7 +135,9 @@ irm https://github.com/V-KMilev/vkmEngine/releases/latest/download/install.ps1 |
 
 No administrator and nothing else to install: the engine brings its own Python, and its first
 build fetches the compiler, CMake and Ninja it was built with - GCC by default, or Clang with
-`VKM_COMPILER=clang` before the installer. Then open **vkmEngine** from your app menu, or:
+`VKM_COMPILER=clang` before the installer. The installer checks the download against the release's
+`SHA256SUMS` before it unpacks anything. Each release also carries the examples built as games,
+ready to play. Then open **vkmEngine** from your app menu, or:
 
 ```bash
 vkm new mygame                   # or: vkm new lab -t physics_lab, a copy of an example

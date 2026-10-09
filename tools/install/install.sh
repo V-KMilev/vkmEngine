@@ -27,9 +27,14 @@ case "$compiler" in
 esac
 command -v curl > /dev/null || die "curl is needed to download the engine"
 command -v tar > /dev/null || die "tar is needed to unpack the engine"
+command -v sha256sum > /dev/null || die "sha256sum is needed to check the engine"
 
-# The newest release is the tag GitHub's /latest redirects to.
+# The newest release is the tag GitHub's /latest redirects to. VKM_DOWNLOADS serves a
+# release's files from elsewhere - CI installs the archive it just built - and names no latest.
 version="${VKM_VERSION:-}"
+if [ -z "$version" ] && [ -n "${VKM_DOWNLOADS:-}" ]; then
+    die "VKM_DOWNLOADS needs VKM_VERSION: there is no newest release to ask it for"
+fi
 if [ -z "$version" ]; then
     latest=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest")
     version="${latest##*/v}"
@@ -41,8 +46,17 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 say "downloading $version, for $compiler"
-curl -fL --progress-bar -o "$work/$archive" "https://github.com/$repo/releases/download/v$version/$archive" \
-    || die "no $archive in release v$version"
+release="${VKM_DOWNLOADS:-https://github.com/$repo/releases/download/v$version}"
+curl -fL --progress-bar -o "$work/$archive" "$release/$archive" || die "no $archive in release v$version"
+
+# Checked before it is unpacked: a download cut short or changed on its way is not installed.
+curl -fsSL -o "$work/SHA256SUMS" "$release/SHA256SUMS" \
+    || die "release v$version carries no SHA256SUMS to check $archive against"
+# A name marked '*' was summed in binary mode, as Windows builds of sha256sum write it.
+sum=$(awk -v name="$archive" '$2 == name || $2 == "*" name { print $1 }' "$work/SHA256SUMS")
+[ -n "$sum" ] || die "the release's SHA256SUMS does not name $archive"
+echo "$sum  $work/$archive" | sha256sum -c --status - \
+    || die "$archive does not match the release's SHA256SUMS; nothing was installed"
 tar -xJf "$work/$archive" -C "$work"
 
 # Swapped whole, so a failed unpack leaves the old engine as it was.

@@ -18,6 +18,11 @@ from .shell import EXE, die, megabytes, note, platform_tag
 # engine come from one compiler.
 TOOLCHAIN_FILE = TOOL_DIR / "toolchain.json"
 
+# Tries at a download a server failed - a 5xx, a dropped connection, a body cut short - each wait
+# twice the last, from DOWNLOAD_WAIT seconds. A refusal (4xx) or a wrong file is not tried again.
+DOWNLOAD_ATTEMPTS = 4
+DOWNLOAD_WAIT = 5
+
 
 def tools_cache() -> Path:
     """Where pinned tools are unpacked, once per user and shared by every SDK: VKM_TOOLS_DIR overrides."""
@@ -66,7 +71,10 @@ class Tool:
     def fetch(self):
         """Download, verify and unpack the tool; an unpacked one is kept only once it verified."""
         import hashlib
+        import http.client
         import tarfile
+        import time
+        import urllib.error
         import urllib.request
         import zipfile
 
@@ -75,23 +83,32 @@ class Tool:
         with tempfile.TemporaryDirectory(dir=cache) as tmp:
             archive = Path(tmp) / self.url.rsplit("/", 1)[-1]
             note(f"vkm: fetching {self.name} {self.version}, once for every project")
-            digest = hashlib.sha256()
-            try:
-                with urllib.request.urlopen(self.url) as src, open(archive, "wb") as dst:
-                    total = int(src.headers.get("Content-Length") or 0)
-                    done = 0
-                    shown = -1
-                    while chunk := src.read(1 << 20):
-                        dst.write(chunk)
-                        digest.update(chunk)
-                        done += len(chunk)
-                        if total and sys.stderr.isatty() and done * 10 // total != shown:
-                            shown = done * 10 // total
-                            note(f"\r  {megabytes(done)} of {megabytes(total)}", end="")
-                if total and sys.stderr.isatty():
-                    note("")
-            except OSError as e:
-                die(f"could not download {self.url}: {e}")
+            for attempt in range(DOWNLOAD_ATTEMPTS):
+                digest = hashlib.sha256()
+                try:
+                    with urllib.request.urlopen(self.url) as src, open(archive, "wb") as dst:
+                        total = int(src.headers.get("Content-Length") or 0)
+                        done = 0
+                        shown = -1
+                        while chunk := src.read(1 << 20):
+                            dst.write(chunk)
+                            digest.update(chunk)
+                            done += len(chunk)
+                            if total and sys.stderr.isatty() and done * 10 // total != shown:
+                                shown = done * 10 // total
+                                note(f"\r  {megabytes(done)} of {megabytes(total)}", end="")
+                        if total and done != total:
+                            raise http.client.IncompleteRead(b"", total - done)
+                    if total and sys.stderr.isatty():
+                        note("")
+                    break
+                except (OSError, http.client.HTTPException) as e:
+                    refused = isinstance(e, urllib.error.HTTPError) and e.code < 500
+                    if refused or attempt + 1 == DOWNLOAD_ATTEMPTS:
+                        die(f"could not download {self.url}: {e}")
+                    wait = DOWNLOAD_WAIT * 2 ** attempt
+                    note(f"vkm: {self.name} did not download ({e}); trying again in {wait} s")
+                    time.sleep(wait)
             if digest.hexdigest() != self.sha256:
                 got = digest.hexdigest()
                 die(f"{archive.name} is not the file {TOOLCHAIN_FILE.name} pins; its SHA-256 is {got}")
