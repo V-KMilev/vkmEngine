@@ -30,12 +30,6 @@
 
 namespace Vkm::App {
 
-// The UI font's bake scales with the display height (a distance field magnifies
-// well but not forever); the cap keeps the worst case a 2048-square atlas.
-constexpr int   UI_FONT_REFERENCE_HEIGHT = 1080;
-constexpr float UI_FONT_BASE_PIXELS      = 64.0f;
-constexpr float UI_FONT_MAX_PIXELS       = 128.0f;
-
 /**
  * @brief Bake the default UI font (DEFAULT_UI_FONT) unless it is already present.
  *
@@ -48,17 +42,11 @@ constexpr float UI_FONT_MAX_PIXELS       = 128.0f;
  */
 inline void ensureDefaultUIFont(Engine::ResourceManager& resources, int displayHeight) {
     if (resources.findByName<Engine::FontAsset>(Engine::DEFAULT_UI_FONT)) return;
-
-    const float height = static_cast<float>(displayHeight);
-    const float wanted = displayHeight > 0
-        ? UI_FONT_BASE_PIXELS * height / static_cast<float>(UI_FONT_REFERENCE_HEIGHT)
-        : UI_FONT_BASE_PIXELS;
-
     Engine::bakeFontSDF(
         resources,
         (Engine::ProjectPaths::engineFonts() / "Roboto-Medium.ttf").string(),
         Engine::DEFAULT_UI_FONT,
-        std::clamp(wanted, UI_FONT_BASE_PIXELS, UI_FONT_MAX_PIXELS)
+        Engine::uiFontPixels(displayHeight)
     );
 }
 

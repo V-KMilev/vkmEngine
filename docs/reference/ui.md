@@ -184,10 +184,11 @@ measured and the glyphs drawn cannot disagree.
 **Wide, not unlimited.** A distance field cannot represent a corner sharper than
 its own texel grid, so past roughly three times the baked height the corners
 start rounding off - which is why the bake size follows the display rather than
-being a constant. `ensureDefaultUIFont` (`app/engine_app.h`) scales it from
+being a constant. `uiFontPixels` (`tools/loader/font_baker.h`) scales it from
 `WindowManager::displayHeight()` against a 1080-line reference, from 64px up to
-a capped 128px; the monitor rather than the window, because the bake happens
-once and has to cover whatever that window is later resized into. The
+a capped 128px, for the engine's font and a project's alike; the monitor rather
+than the window, because a bake has to cover whatever that window is later
+resized into. The
 distance-field spread is derived from that height, and the atlas dimension from
 the glyphs the baker actually rendered at it - the smallest power of two that
 packs them, doubled until it does - so no estimate can fall short of what a

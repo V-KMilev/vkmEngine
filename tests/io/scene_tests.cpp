@@ -24,8 +24,123 @@
 #include "resource/generate/mesh_generators.h"
 #include "system/physics/authoring/ragdoll_build.h"
 #include "system/script/script_component.h"
+#include "io/reflect_json.h"
+
+// A project's own settings file, as ReflectJson writes and reads it.
+namespace ReflectJsonTest {
+enum class Quality : uint8_t { Low, High, Count };
+struct Key {
+    std::string action;
+    int         code = 0;
+};
+struct Settings {
+    float            volume  = 0.8f;
+    bool             vsync   = true;
+    std::string      name    = "Player";
+    Quality          quality = Quality::High;
+    glm::vec3        tint    = {1.0f, 1.0f, 1.0f};
+    std::vector<Key> keys;
+};
+} // namespace ReflectJsonTest
+
+VKM_ENUM_NAMES(::ReflectJsonTest::Quality, "Low", "High")
+VKM_REFLECT_BEGIN(::ReflectJsonTest::Key)
+    VKM_F(action)
+    VKM_F(code)
+VKM_REFLECT_END()
+VKM_REFLECT_BEGIN(::ReflectJsonTest::Settings)
+    VKM_F(volume)
+    VKM_F(vsync)
+    VKM_F(name)
+    VKM_F(quality)
+    VKM_F(tint)
+    VKM_F(keys)
+VKM_REFLECT_END()
 
 namespace {
+
+// A project keeps its settings in a file of its own, a key a field: what it wrote comes back,
+// a field the file lacks keeps its default, and one it holds wrongly costs that field alone.
+void testAProjectsOwnFileRoundTrips() {
+    std::printf("A project's own settings, through ReflectJson:\n");
+    using namespace ReflectJsonTest;
+    Settings saved;
+    saved.volume  = 0.25f;
+    saved.vsync   = false;
+    saved.name    = "Vilimir";
+    saved.quality = Quality::Low;
+    saved.tint    = {0.5f, 0.25f, 1.0f};
+    saved.keys    = {{"jump", 32}, {"dash", 340}};
+    const nlohmann::json doc = ReflectJson::toJson(saved);
+    check(
+        "it writes a key a field, an enum by its name",
+        doc.value("quality", std::string()) == "Low" && doc.contains("tint")
+    );
+
+    Settings back;
+    ReflectJson::fromJson(doc, back);
+    const bool same = back.volume == 0.25f && !back.vsync && back.name == "Vilimir"
+        && back.quality == Quality::Low && back.tint == saved.tint && back.keys.size() == 2
+        && back.keys[1].action == "dash" && back.keys[1].code == 340;
+    check("  and reads all of it back", same);
+
+    nlohmann::json older = doc;
+    older.erase("vsync");
+    older["volume"] = "loud";
+    Settings partly;
+    partly.vsync = true;
+    ReflectJson::fromJson(older, partly);
+    check("  a field it lacks keeps its default", partly.vsync);
+    check(
+        "  one it holds wrongly keeps its own, the rest load",
+        partly.volume == 0.8f && partly.name == "Vilimir"
+    );
+
+    // A list kept whole: one that is no list, or wrong anywhere, keeps the one there was.
+    const nlohmann::json notAList = 5;
+    const nlohmann::json wrongInside = nlohmann::json::parse(
+        R"([{"action": "fire", "code": 9}, {"action": "aim", "code": "x"}])"
+    );
+    const nlohmann::json noObject = nlohmann::json::parse(R"([{"action": "fire", "code": 9}, 5])");
+    for (const nlohmann::json& wrong : {notAList, wrongInside, noObject}) {
+        nlohmann::json listed = doc;
+        listed["keys"] = wrong;
+        Settings held = back;
+        ReflectJson::fromJson(listed, held);
+        check(
+            ("  a list wrong as " + wrong.dump() + " keeps the one there was").c_str(),
+            held.keys.size() == 2 && held.keys[1].action == "dash"
+        );
+    }
+}
+
+// The scene file is not a project's own: a field of the wrong type there fails the load, which
+// names where it stood, and the scene loaded into is left as it was.
+void testAMistypedSceneFieldFailsTheLoad() {
+    std::printf("A scene with one component field of the wrong type:\n");
+    Scene scene;
+    ResourceManager resources;
+    const EntityId entity = scene.createEntity();
+    scene.add<Transform>(entity, Transform{});
+    scene.add<Light>(entity, Light{});
+    nlohmann::json doc = nlohmann::json::parse(SceneSerializer::saveToString(scene, resources));
+    doc["entities"][0]["components"]["Light"]["intensity"] = "bright";
+
+    Scene live;
+    const EntityId kept = live.createEntity();
+    live.add<Transform>(kept, Transform{});
+    const bool loaded = SceneSerializer::loadFromString(doc.dump(), live, resources);
+    check("the load fails", !loaded);
+    const bool untouched = live.isAlive(kept) && live.has<Transform>(kept);
+    check("  and the scene it was loading into is as it was", untouched);
+
+    // A list that is no list is a field of the wrong type too, not an empty list.
+    scene.add<LOD>(entity, LOD{});
+    nlohmann::json listed = nlohmann::json::parse(SceneSerializer::saveToString(scene, resources));
+    listed["entities"][0]["components"]["LOD"]["levels"] = 5;
+    const bool listLoaded = SceneSerializer::loadFromString(listed.dump(), live, resources);
+    check("a list that is no list fails the load too", !listLoaded);
+}
 
 // JSON has no NaN or infinity, so a document carrying one dumps to a file nothing
 // can read back. writeJsonFile writes each as zero.
@@ -416,6 +531,7 @@ void testAProjectSurvivesBeingWritten() {
     "maxPlayers": 3,
     "netPort": 27888,
     "splash": [{"image": "logo.png", "seconds": 2.0}],
+    "fonts": [{"name": "game:display", "file": "fonts/display.ttf"}, {"name": "game:nameless"}],
     "somethingThisBuildDoesNotKnow": {"kept": true}
 })";
     }
@@ -424,6 +540,11 @@ void testAProjectSurvivesBeingWritten() {
     check("a hand-authored project reads", loadProject(root, project));
     check("with the seats it names", project.maxPlayers == 3);
     check("and the port", project.netPort == 27888);
+    const bool oneFont = project.fonts.size() == 1;
+    check(
+        "and the fonts that name a file, by name",
+        oneFont && project.fonts[0].name == "game:display" && project.fonts[0].file == "fonts/display.ttf"
+    );
 
     project.maxPlayers = 8;
     check("and writes back", saveProject(root, project));
@@ -450,6 +571,7 @@ void testAProjectSurvivesBeingWritten() {
         "and the splash list it never writes",
         doc.contains("splash") && doc["splash"].is_array() && doc["splash"].size() == 1
     );
+    check("and the font list, as it was", doc.contains("fonts") && doc["fonts"].size() == 2);
 
     // A project.json with no render block (as above) opens with the engine's defaults,
     // not everything switched off.
@@ -840,6 +962,42 @@ void testAKeptNameSurvivesAFillThatIsTakenBack() {
     check("  so the save still writes the name back", saved["Mesh"]["mesh"] == "gone:mesh");
 }
 
+// A settings screen's one quality choice: each tier at least the one under it, and what the game
+// looks like left as the project set it.
+void testAGraphicsPresetSetsWhatCostsAndKeepsTheLook() {
+    std::printf("A graphics preset:\n");
+    RenderSettings project;
+    project.exposure      = 1.5f;
+    project.tonemap       = Tonemap::AgX;
+    project.bloomStrength = 0.2f;
+    const RenderSettings low   = withPreset(project, GraphicsPreset::Low);
+    const RenderSettings ultra = withPreset(RenderSettings{}, GraphicsPreset::Ultra);
+    check("low turns the costly passes off", low.msaaSamples == 1 && !low.gtao && !low.ssr && !low.bloom);
+    check(
+        "  ultra has them all, at the most",
+        ultra.msaaSamples == 8 && ultra.gtao && ultra.ssr && ultra.shadowResolution == 4096
+    );
+    check("  each sample count one the renderer takes", RenderSettings::isMsaaSampleCount(low.msaaSamples));
+    check(
+        "  the look kept",
+        low.exposure == 1.5f && low.tonemap == Tonemap::AgX && low.bloomStrength == 0.2f
+    );
+    bool rising = true;
+    RenderSettings under = withPreset(RenderSettings{}, GraphicsPreset::Low);
+    for (int tier = 1; tier < static_cast<int>(GraphicsPreset::Count); ++tier) {
+        const RenderSettings next = withPreset(RenderSettings{}, static_cast<GraphicsPreset>(tier));
+        rising = rising && next.msaaSamples >= under.msaaSamples
+            && next.shadowResolution >= under.shadowResolution;
+        under = next;
+    }
+    check("  each tier at least the one under it", rising);
+
+    // An effect the project turned off for its look stays off at any tier.
+    RenderSettings plain;
+    plain.bloom = false;
+    check("an effect the project turned off stays off", !withPreset(plain, GraphicsPreset::Ultra).bloom);
+}
+
 // A scene's render tuning: a camera's widest blur, a light's normal bias, a volume's
 // blend, the fog's reach. A reader forgetting one would load its default silently.
 void testTheRenderTuningSurvivesASave() {
@@ -880,6 +1038,8 @@ void testTheRenderTuningSurvivesASave() {
 
 void runSceneTests() {
     testAFileTheEngineWritesIsOneItCanReadBack();
+    testAProjectsOwnFileRoundTrips();
+    testAMistypedSceneFieldFailsTheLoad();
     testASceneWithANonFiniteNumberStillRoundTrips();
     testImportedHierarchy();
     testComponentRoundTrip();
@@ -894,4 +1054,5 @@ void runSceneTests() {
     testAnUnresolvedArrayElementIsNotKept();
     testAKeptNameSurvivesAFillThatIsTakenBack();
     testTheRenderTuningSurvivesASave();
+    testAGraphicsPresetSetsWhatCostsAndKeepsTheLook();
 }

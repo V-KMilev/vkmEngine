@@ -21,6 +21,7 @@
 #include "ecs/environment.h"
 #include "ecs/component/core/transform.h"
 #include "io/json_vec.h"
+#include "io/reflect_json.h"
 #include "core/reflect.h"
 #include "resource/resource_manager.h"
 #include "system/physics/authoring/mesh_collider.h"
@@ -40,64 +41,8 @@ using ::Vkm::Engine::detail::jsonToVec2;
 using ::Vkm::Engine::detail::jsonToVec3;
 using ::Vkm::Engine::detail::jsonToVec4;
 using ::Vkm::Engine::detail::jsonToQuat;
-
-// The leaves saveReflected / loadReflected forward each field to; a new field
-// type adds a pair here.
-inline nlohmann::json toJson(bool        v) { return v; }
-inline nlohmann::json toJson(int         v) { return v; }
-inline nlohmann::json toJson(uint32_t    v) { return v; }
-inline nlohmann::json toJson(float       v) { return v; }
-inline nlohmann::json toJson(const std::string& s) { return s; }
-inline nlohmann::json toJson(const glm::vec2& v) { return vec2ToJson(v); }
-inline nlohmann::json toJson(const glm::vec3& v) { return vec3ToJson(v); }
-inline nlohmann::json toJson(const glm::vec4& v) { return vec4ToJson(v); }
-inline nlohmann::json toJson(const glm::quat& q) { return quatToJson(q); }
-
-inline void fromJson(const nlohmann::json& j, bool&     v) { v = j.get<bool>(); }
-inline void fromJson(const nlohmann::json& j, int&      v) { v = j.get<int>(); }
-inline void fromJson(const nlohmann::json& j, uint32_t& v) { v = j.get<uint32_t>(); }
-inline void fromJson(const nlohmann::json& j, float&    v) { v = j.get<float>(); }
-inline void fromJson(const nlohmann::json& j, std::string& s) { s = j.get<std::string>(); }
-inline void fromJson(const nlohmann::json& j, glm::vec2& v) { v = jsonToVec2(j, v); }
-inline void fromJson(const nlohmann::json& j, glm::vec3& v) { v = jsonToVec3(j, v); }
-inline void fromJson(const nlohmann::json& j, glm::vec4& v) { v = jsonToVec4(j, v); }
-inline void fromJson(const nlohmann::json& j, glm::quat& q) { q = jsonToQuat(j, q); }
-
-// Fixed-size character buffers (Name::value).
-template<std::size_t N>
-inline nlohmann::json toJson(const char (&v)[N]) { return std::string(v); }
-template<std::size_t N>
-inline void fromJson(const nlohmann::json& j, char (&v)[N]) {
-    const std::string s = j.get<std::string>();
-    std::strncpy(v, s.c_str(), N - 1);
-    v[N - 1] = '\0';
-}
-
-// Scoped enums registered via VKM_ENUM_NAMES. The SFINAE leaves non-enum types
-// to the overloads above.
-template<typename E, typename = std::enable_if_t<std::is_enum_v<E>>>
-inline nlohmann::json toJson(E v) { return Reflect::enumName(v); }
-template<typename E, typename = std::enable_if_t<std::is_enum_v<E>>>
-inline void fromJson(const nlohmann::json& j, E& v) {
-    const std::string name = j.get<std::string>();
-    // An unknown name keeps the constructed default and warns, rather than
-    // becoming a valid-looking enumerator zero.
-    if (!Reflect::enumFromNameChecked(name, v)) {
-        LOG_WARNING(
-            "No enumerator called '%s' in this build; leaving the field at its default",
-            name.c_str()
-        );
-    }
-}
-
-// A Handle is not a toJson leaf: it needs the ResourceManager to become its name
-// and back.
-template<typename T>  struct IsHandle                     : std::false_type {};
-template<typename A>  struct IsHandle<Handle<A>>          : std::true_type  {};
-
-// A vector is a JSON array of its elements, each through the same dispatch.
-template<typename T>     struct IsVector                     : std::false_type {};
-template<typename E, typename A> struct IsVector<std::vector<E, A>> : std::true_type {};
+using ReflectJson::leafFromJson;
+using ReflectJson::leafToJson;
 
 // Defined beside the unresolved-reference list it appends to.
 template<typename Asset>
@@ -109,119 +54,50 @@ Handle<Asset> resolveAssetRef(
 );
 
 /**
- * @brief Stand-in context for a component that names no assets.
- *
- * Reaching a handle with this is a static_assert: the component needs the other
- * overload.
+ * @brief The resource manager as ReflectJson's context: a handle is its asset's name, and a
+ *        name no asset answers to is kept for the next save (resolveAssetRef).
  */
-struct NoResources {};
+struct Assets {
+    /// A drifted field fails the load, which names its entity and component.
+    static constexpr bool KEEPS_WRONG_FIELDS = false;
 
-template<typename T, typename Ctx>
-nlohmann::json saveReflected(const T& obj, const Ctx& ctx);
-template<typename T, typename Ctx>
-void loadReflected(const nlohmann::json& j, T& obj, const Ctx& ctx, bool inArray = false);
+    const ResourceManager& resources;
 
-/**
- * @brief One value to JSON, whatever kind of value it is.
- *
- * A handle becomes its name, a vector an array of recursive calls, a reflected
- * struct an object, and anything else a toJson leaf.
- *
- * @tparam V   The value's type.
- * @tparam Ctx ResourceManager, or NoResources for a component that names no assets.
- * @param val  The value to write.
- * @param ctx  Resolves a handle to its name.
- * @return The value as JSON.
- */
-template<typename V, typename Ctx>
-nlohmann::json valueToJson(const V& val, const Ctx& ctx) {
-    if constexpr (IsHandle<V>::value) {
-        static_assert(
-            !std::is_same_v<Ctx, NoResources>,
-            "a component holding a Handle<T> serializes through the "
-                "ResourceManager overload - the name is the identity"
-        );
-        return val ? ctx.get(val).name() : std::string{};
-    } else if constexpr (IsVector<V>::value) {
-        nlohmann::json arr = nlohmann::json::array();
-        for (const auto& element : val) arr.push_back(valueToJson(element, ctx));
-        return arr;
-    } else if constexpr (Reflect::IS_REFLECTED<V>) {
-        return saveReflected(val, ctx);
-    } else {
-        return toJson(val);
+    template<typename A>
+    nlohmann::json handleToJson(const Handle<A>& handle) const {
+        return handle ? resources.get(handle).name() : std::string{};
     }
-}
 
-/**
- * @brief The same question in the other direction.
- *
- * @tparam V    The value's type.
- * @tparam Ctx  ResourceManager, or NoResources for a component that names no assets.
- * @param j     The JSON to read.
- * @param val   The value to fill.
- * @param ctx   Resolves a name back to a handle.
- * @param field Key the value is stored under, labelling an unresolved asset
- *              reference; null inside an array, where a kept name has nowhere to go.
- */
-template<typename V, typename Ctx>
-void valueFromJson(const nlohmann::json& j, V& val, const Ctx& ctx, const char* field) {
-    if constexpr (IsHandle<V>::value) {
-        static_assert(
-            !std::is_same_v<Ctx, NoResources>,
-            "a component holding a Handle<T> serializes through the "
-                "ResourceManager overload - the name is the identity"
-        );
-        using Asset = typename V::resource_t;
-        val = resolveAssetRef<Asset>(
-            ctx,
+    template<typename A>
+    void handleFromJson(const nlohmann::json& j, Handle<A>& handle, const char* field) const {
+        handle = resolveAssetRef<A>(
+            resources,
             j.is_string() ? j.get<std::string>() : std::string{},
-            Reflect::enumName(ASSET_TYPE<Asset>),
+            Reflect::enumName(ASSET_TYPE<A>),
             field
         );
-    } else if constexpr (IsVector<V>::value) {
-        val.clear();
-        if (!j.is_array()) return;
-        val.reserve(j.size());
-        for (const nlohmann::json& element : j) {
-            typename V::value_type item{};
-            // An array element has no key to restore a kept name into. See
-            // resolveAssetRef.
-            valueFromJson(element, item, ctx, nullptr);
-            val.push_back(std::move(item));
-        }
-    } else if constexpr (Reflect::IS_REFLECTED<V>) {
-        // A struct inside an array stays inside it: its keys address the element.
-        const bool inArray = field == nullptr;
-        loadReflected(j, val, ctx, inArray);
-    } else {
-        fromJson(j, val);
     }
-}
+};
 
-template<typename T, typename Ctx>
-nlohmann::json saveReflected(const T& obj, const Ctx& ctx) {
-    nlohmann::json out = nlohmann::json::object();
-    ::Vkm::Engine::Reflect::forEachField(obj, [&](std::string_view name, const auto& val) {
-        out[std::string(name)] = valueToJson(val, ctx);
-    });
-    return out;
-}
-
-template<typename T, typename Ctx>
-void loadReflected(const nlohmann::json& j, T& obj, const Ctx& ctx, bool inArray) {
-    ::Vkm::Engine::Reflect::forEachField(obj, [&](std::string_view name, auto& val) {
-        const std::string key(name);
-        auto it = j.find(key);
-        if (it != j.end()) valueFromJson(*it, val, ctx, inArray ? nullptr : key.c_str());
-    });
+template<typename T>
+nlohmann::json saveReflected(const T& obj, const ResourceManager& resources) {
+    return ReflectJson::saveFields(obj, Assets{resources});
 }
 
 template<typename T>
-nlohmann::json saveReflected(const T& obj) { return saveReflected(obj, NoResources{}); }
+void loadReflected(const nlohmann::json& j, T& obj, const ResourceManager& resources) {
+    ReflectJson::loadFields(j, obj, Assets{resources});
+}
 
 template<typename T>
-void loadReflected(const nlohmann::json& j, T& obj) { loadReflected(j, obj, NoResources{}); }
+nlohmann::json saveReflected(const T& obj) {
+    return ReflectJson::saveFields(obj, ReflectJson::PlainData{});
+}
+
+template<typename T>
+void loadReflected(const nlohmann::json& j, T& obj) {
+    ReflectJson::loadFields(j, obj, ReflectJson::PlainData{});
+}
 
 } // namespace
 
@@ -525,7 +401,7 @@ nlohmann::json saveTrack(const AnimationTrack<T>& track, ValueWriter writeValue)
         keyframes.push_back({{"t", times[i]}, {"v", writeValue(values[i])}});
     }
     return {
-        {"easing",    toJson(track.getEasing())},
+        {"easing",    leafToJson(track.getEasing())},
         {"keyframes", std::move(keyframes)},
     };
 }
@@ -535,7 +411,7 @@ void loadTrack(const nlohmann::json& j, AnimationTrack<T>& track, ValueReader re
     track.clear();
     if (j.contains("easing")) {
         Easing easing = Easing::Linear;
-        fromJson(j["easing"], easing);
+        leafFromJson(j["easing"], easing);
         track.setEasing(easing);
     }
     if (j.contains("keyframes") && j["keyframes"].is_array()) {

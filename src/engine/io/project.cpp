@@ -131,6 +131,18 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
             }
         }
 
+        if (doc.contains("fonts") && doc["fonts"].is_array()) {
+            for (const nlohmann::json& entry : doc["fonts"]) {
+                FontEntry font;
+                font.name = entry.value("name", std::string{});
+                font.file = entry.value("file", std::string{});
+                if (font.name.empty() || font.file.empty()) {
+                    LOG_WARNING("A font wants a name and a file; %s is skipped", entry.dump().c_str());
+                    continue;
+                }
+                out.fonts.push_back(std::move(font));
+            }
+        }
         // An entry with no image is skipped rather than shown as a black pause.
         if (doc.contains("splash") && doc["splash"].is_array()) {
             for (const nlohmann::json& entry : doc["splash"]) {

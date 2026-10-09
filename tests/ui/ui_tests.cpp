@@ -7,6 +7,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "debug/engine_error_log.h"
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
@@ -1610,6 +1611,32 @@ void testAFileThatIsNotAFontIsRefusedRatherThanRead() {
     std::filesystem::remove_all(dir, ec);
 }
 
+// A project's fonts baked again - the project opened twice, its font changed between - are the
+// new bake, behind the handles already given out; one that will not bake is the author's to hear.
+void testAProjectsFontsBakeAsItOpens() {
+    std::printf("A project's own fonts:\n");
+
+    ResourceManager resources;
+    const std::filesystem::path roboto =
+        std::filesystem::path(VKM_ENGINE_DIR) / "assets" / "fonts" / "Roboto-Medium.ttf";
+    check("the engine's font is there to bake", std::filesystem::exists(roboto));
+    const std::vector<FontEntry> fonts = {FontEntry{"ui:project", roboto.string()}};
+    bakeProjectFonts(resources, fonts, 32.0f);
+    const Handle<FontAsset> first  = resources.findByName<FontAsset>("ui:project");
+    const float             before = first ? resources.get(first).lineHeight : 0.0f;
+    bakeProjectFonts(resources, fonts, 64.0f);
+    const bool again = first && resources.findByName<FontAsset>("ui:project") == first
+        && resources.get(first).lineHeight > before * 1.5f;
+    check("a font baked again is the new bake, behind the same handle", again);
+
+    EngineErrorLog errors;
+    setErrorSink(&errors);
+    bakeProjectFonts(resources, {FontEntry{"ui:gone", "fonts/absent.ttf"}}, 32.0f);
+    setErrorSink(nullptr);
+    const bool told = errors.entries().size() == 1 && errors.entries()[0].source == "fonts/absent.ttf";
+    check("  one that will not bake is reported to the author, by its file", told);
+}
+
 } // namespace
 
 namespace {
@@ -1699,5 +1726,6 @@ void runUITests() {
     testAPictureIsSavedByName();
     testUIComponentsRoundTrip();
     testAFileThatIsNotAFontIsRefusedRatherThanRead();
+    testAProjectsFontsBakeAsItOpens();
     testTheScreenViewIsTheScenesRectNotTheWindow();
 }

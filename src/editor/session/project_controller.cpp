@@ -16,6 +16,8 @@
 #include "io/asset/asset_library.h"
 #include "io/project.h"
 #include "io/project_paths.h"
+#include "loader/font_baker.h"
+#include "platform/window/window_manager.h"
 #include "session/scene_io_controller.h"
 #include "project_boot.h"
 #include "system/audio/audio_system.h"
@@ -72,6 +74,7 @@ bool open(
     // shipped and view sets are disjoint, so neither overwrites the other.
     ec.frame.render = project.render;
     EditorSettings::applyViewDefaults(ec.frame.render);
+    bakeProjectFonts(ec.frame.resources, project.fonts, uiFontPixels(ec.frame.window.displayHeight()));
 
     // Emptied before the assets it references go away, through the teardown a
     // New Scene runs: behaviors get onDestroy while the old module still holds

@@ -1,7 +1,11 @@
+#define VKM_LOG_CATEGORY "IO"
+
 #include "io/project_paths.h"
 
 #include <cstdlib>
 #include <system_error>
+
+#include "logger.h"
 
 #include "platform/windows_api.h"
 
@@ -117,6 +121,26 @@ std::filesystem::path userRoot() {
         return ec ? engineRoot() : dir;
     }();
     return s_resolved;
+}
+
+std::filesystem::path playerRoot(const std::string& game) {
+    // The name's last part, a trailing separator or not, so the files never land loose in the base.
+    std::filesystem::path name = std::filesystem::path(game).lexically_normal();
+    if (name.filename().empty()) name = name.parent_path();
+    name = name.filename();
+    const std::filesystem::path base = userConfigBase();
+    if (base.empty() || name.empty() || name == "." || name == "..") return projectRoot();
+
+    const std::filesystem::path dir = base / name;
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    if (!ec) return dir;
+    LOG_WARNING(
+        "A game's files cannot go in '%s' (%s); keeping them in the project",
+        dir.string().c_str(),
+        ec.message().c_str()
+    );
+    return projectRoot();
 }
 
 std::filesystem::path userLogs() {

@@ -177,6 +177,17 @@ view each frame.
   the prelude every stage is compiled with - there is no generated file and
   nothing to include.
 
+**Presets.** A settings screen offering one quality choice renders with
+`withPreset(project, GraphicsPreset::Low / Medium / High / Ultra)`: the
+project's settings with what costs frame time - `msaaSamples`,
+`shadowResolution` and `textureAnisotropy` - from a table beside it, each tier
+at least the one under it, and `gtao`, `ssr` and `bloom` on only where both the
+project and the tier have them. The look (an effect the project turned off, the
+tonemap, the exposure, each effect's tuning, the culling) stays the project's,
+and since each tier is built from the project's settings, choosing High after
+Low brings back what Low turned off. A player who then turns one setting by
+hand has changed that field alone.
+
 Scene-look settings (the HDR or procedural sky, the night sky, fog, IBL
 intensity) live in `Environment` and serialize with the scene. `RenderSettings`
 is the project's: everything above except `renderMode` and the grid, which are the

@@ -43,14 +43,38 @@ void Player::onStart() {
 held binding and clamps to -1..1, so two keys become one signed value and a
 future analogue stick binds to the same action with no call site changing.
 
-`addBinding(action, binding)` adds one without replacing the rest - that is the
-call a rebinding screen makes. `bindings(action)` reads them back, `actions()`
-lists every defined name in name order, and `clearBindings(action)` empties one
-while leaving the action defined.
+`define` states an action's **defaults**. A rebinding screen calls
+`rebind(action, bindings)`, which changes what feeds the action and keeps the
+defaults, `addBinding(action, binding)` to add one beside the rest, or
+`clearBindings(action)` to empty one while leaving the action defined - each the
+player's choice, kept by `saveBindings()`. `bindings(action)` reads them back,
+and `actions()` lists every defined name in name order.
+
+While it waits for the player's choice, the screen asks `struck()`: the key or
+mouse button that went down this frame, bound or not, as an `InputBinding` ready
+to `rebind` with. A repeat or a key only held is not a press; a device the host's
+UI holds says nothing. `bindingName(binding)` names one for showing it - "W",
+"Left Shift", "Right mouse" - by where the key is, the way the codes are. A UI
+button clicks when let go, so the click that opens the wait is never heard as
+the choice.
 
 Names are the stable identity: they are what gameplay asks for and what a saved
-binding file would refer to. Nothing in the engine needs to know your action
-exists.
+binding file refers to. Nothing in the engine needs to know your action exists.
+
+### Keeping the player's keys
+
+`saveBindings()` is the player's rebindings as JSON, an action a key - only those
+that differ from their defaults, so a key left alone follows the game's default
+when a later version changes it - for a settings file under `playerRoot(game)`.
+`loadBindings(json)` puts them back. Either order works: loaded before the game
+defines its actions, a saved binding waits, and `define` puts it in place of the
+default; the player's choices survive `reset()` the same way, and an action
+redefined in a later session takes them again. An action whose saved list cannot
+be read - a source this build does not name, a code its source does not have,
+anything wrong anywhere in it - keeps its own bindings and warns, rather than
+half a list that could leave it unpressable; one for an action this run never
+defines is kept for the next save. `resetBindings()` puts every action back to
+its defaults and forgets them.
 
 ## Reading it on the frame clock
 

@@ -21,6 +21,14 @@ struct SplashEntry {
 };
 
 /**
+ * @brief A font a project draws its UI text in, beside the engine's own: a UIText names it.
+ */
+struct FontEntry {
+    std::string name;  ///< The FontAsset's name, as UIText::font names it.
+    std::string file;  ///< The .ttf, relative to the project root.
+};
+
+/**
  * @brief What a project.json says about the game it describes.
  *
  * A project is a directory with a project.json at its root. engineVersion is
@@ -52,6 +60,9 @@ struct Project {
     /// Logos shown after the engine's own, in the order listed. Usually empty.
     std::vector<SplashEntry> splash;
 
+    /// Fonts of the game's own, baked as the runtime starts and as the editor opens it. Usually empty.
+    std::vector<FontEntry> fonts;
+
     /**
      * @brief What the game looks like, as the author left it.
      *
@@ -77,7 +88,7 @@ bool loadProject(const std::filesystem::path& projectRoot, Project& out);
  * @brief Write @p project back to the project.json at @p projectRoot.
  *
  * Read-modify-write: keys this struct does not describe are left as they were.
- * splash is not written, since loadProject drops entries naming no image and
+ * splash and fonts are not written, since loadProject drops entries naming nothing and
  * writing the list back would delete them; an edit to it is not saved.
  *
  * @param projectRoot Directory holding project.json; it is created if missing.

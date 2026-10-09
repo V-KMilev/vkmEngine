@@ -106,6 +106,8 @@ int main(int argc, char** argv) {
 
         // Applied before the world is built.
         engine.getRenderSettings() = project.render;
+        const float fontPixels = Vkm::Engine::uiFontPixels(engine.getWindow().displayHeight());
+        Vkm::Engine::bakeProjectFonts(engine.getResources(), project.fonts, fontPixels);
 
         for (const Vkm::Engine::SplashEntry& entry : project.splash) {
             const std::string image = Vkm::Engine::ProjectPaths::resolveProjectPath(entry.image).string();

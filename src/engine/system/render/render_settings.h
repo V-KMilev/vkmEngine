@@ -1,6 +1,11 @@
 #pragma once
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <iterator>
+
+#include "l_assert.h"
 
 #include "core/reflect.h"
 
@@ -222,6 +227,59 @@ void visitShippedRenderFields(Settings& r, Fn&& f) {
     f("shadowResolution",  r.shadowResolution);
 }
 
+/**
+ * @brief A quality tier a game offers its players as one choice.
+ */
+enum class GraphicsPreset : uint8_t {
+    Low,
+    Medium,
+    High,
+    Ultra,
+    Count  ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
+};
+
+/**
+ * @brief @p project's settings at @p preset's tier: the fields that cost frame time - anti-aliasing,
+ *        the shadow tile, the anisotropy - the tier's, and each screen-space effect on only where
+ *        both the project and the tier have it.
+ *
+ * What the game looks like - an effect the project turned off, the tonemap, the exposure, each
+ * effect's tuning, the culling - stays the project's, and the overlays and debug view the
+ * editor's. Built from the project's settings each time, so a tier chosen after a lower one
+ * brings back what that one turned off.
+ *
+ * @param project The project's own settings.
+ * @param preset  The tier; Count, which is none, asserts, and reads as the last.
+ * @return The settings to render with.
+ */
+inline RenderSettings withPreset(const RenderSettings& project, GraphicsPreset preset) {
+    VKM_ASSERT(preset < GraphicsPreset::Count, "withPreset takes a tier, not the Count sentinel");
+    struct Tier {
+        uint32_t msaa;
+        uint32_t shadows;
+        bool     gtao;
+        bool     ssr;
+        bool     bloom;
+        uint32_t anisotropy;
+    };
+    static constexpr Tier TIERS[] = {
+        {1, 1024, false, false, false, 4},   // Low
+        {2, 2048, true,  false, true,  8},   // Medium
+        {4, 4096, true,  true,  true,  16},  // High
+        {8, 4096, true,  true,  true,  16},  // Ultra
+    };
+    static_assert(std::size(TIERS) == static_cast<size_t>(GraphicsPreset::Count));
+    const Tier&    tier = TIERS[std::min(static_cast<size_t>(preset), std::size(TIERS) - 1)];
+    RenderSettings r    = project;
+    r.msaaSamples       = tier.msaa;
+    r.shadowResolution  = tier.shadows;
+    r.gtao              = project.gtao && tier.gtao;
+    r.ssr               = project.ssr && tier.ssr;
+    r.bloom             = project.bloom && tier.bloom;
+    r.textureAnisotropy = tier.anisotropy;
+    return r;
+}
+
 } // namespace Vkm::Engine
 
 #define VKM_TONEMAP_LABEL(name, label, glsl) label,
@@ -233,3 +291,5 @@ VKM_ENUM_NAMES(::Vkm::Engine::RenderMode, VKM_RENDER_MODES(VKM_RENDER_MODE_LABEL
 #undef VKM_RENDER_MODE_LABEL
 
 VKM_ENUM_NAMES(::Vkm::Engine::TextureFiltering, "Nearest", "Bilinear", "Trilinear")
+
+VKM_ENUM_NAMES(::Vkm::Engine::GraphicsPreset, "Low", "Medium", "High", "Ultra")

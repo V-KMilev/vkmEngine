@@ -758,8 +758,8 @@ Every override carries `override`, the destructor included
 
 - **A template anyone else can instantiate lives entirely in a header.** A
   `.cpp` may define one in three shapes, all of which keep that rule:
-    - **file-local**, in the anonymous namespace (the reflection driver in
-      `io/scene/component_serializer.cpp`);
+    - **file-local**, in the anonymous namespace (`saveReflected` /
+      `loadReflected` in `io/scene/component_serializer.cpp`);
     - **a private member template** whose only callers are in that file
       (`GLView::ensure`);
     - **explicitly instantiated**: the header ends in `extern template`
