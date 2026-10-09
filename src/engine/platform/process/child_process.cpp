@@ -9,6 +9,9 @@
     #include <csignal>
     #include <fcntl.h>
     #include <sys/wait.h>
+    #if defined(__linux__)
+        #include <sys/prctl.h>
+    #endif
     #include <unistd.h>
 #endif
 
@@ -197,10 +200,16 @@ bool ChildProcess::start(
         return false;
     }
 
+    const pid_t parent = getpid();
     const pid_t pid = fork();
     if (pid == 0) {
         // A group of its own, so stop() reaches everything it starts.
         setpgid(0, 0);
+#if defined(__linux__)
+        // Ended with this process, as Windows' job ends it, should this one die first.
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+        if (getppid() != parent) _exit(127);
+#endif
         dup2(fds[1], STDOUT_FILENO);
         dup2(fds[1], STDERR_FILENO);
         if (!dir.empty() && chdir(dir.c_str()) != 0) _exit(127);

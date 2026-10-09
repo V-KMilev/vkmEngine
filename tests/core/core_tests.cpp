@@ -1,11 +1,19 @@
 #include "support.h"
 
 #include <atomic>
+#include <cerrno>
 #include <chrono>
+#include <csignal>
+#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <thread>
 #include <vector>
+
+#if defined(__linux__)
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 #include "stb_image.h"
 #include "stb_image_write.h"
@@ -999,6 +1007,48 @@ void testAChildProcessIsHeardAndCanBeStopped() {
     check("  and reads as stopped, not as succeeded", child.exitCode() == -1);
 }
 
+#if defined(__linux__)
+// A host that dies - crashed, killed - takes what it started with it, as a Windows job does: a
+// server a game hosted must not outlive the game.
+void testAProgramEndsWhenItsHostDies() {
+    std::printf("What a dead host's program does:\n");
+
+    int fds[2];
+    check("a pipe opens", pipe(fds) == 0);
+    const pid_t host = fork();
+    if (host == 0) {
+        close(fds[0]);
+        ChildProcess child;
+        child.start("/bin/sh", {"-c", "echo $$; exec sleep 30"});
+        std::string said;
+        for (int i = 0; i < 500 && said.find('\n') == std::string::npos; ++i) {
+            said += child.takeOutput();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        const ssize_t sent = write(fds[1], said.data(), said.size());
+        // Gone as a crash goes: no destructor stops what it started.
+        _exit(sent > 0 ? 0 : 1);
+    }
+    close(fds[1]);
+    char said[32] = {};
+    const ssize_t got = read(fds[0], said, sizeof(said) - 1);
+    close(fds[0]);
+    int status = 0;
+    waitpid(host, &status, 0);
+    const pid_t program = got > 0 ? static_cast<pid_t>(std::atoi(said)) : 0;
+    check("the host's program said who it is, and the host died", program > 0);
+
+    bool gone = false;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (program > 0 && !gone && std::chrono::steady_clock::now() < deadline) {
+        gone = kill(program, 0) != 0 && errno == ESRCH;
+        if (!gone) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    check("  and its program died with it", gone);
+    if (program > 0 && !gone) kill(program, SIGKILL);
+}
+#endif
+
 } // namespace
 
 TypeId typeIdOfCoreTestsProbe() {
@@ -1040,4 +1090,7 @@ void runCoreTests() {
     testABackendThatFailsToInitStopsTheHost();
     testACappedLoopKeepsItsRate();
     testAChildProcessIsHeardAndCanBeStopped();
+#if defined(__linux__)
+    testAProgramEndsWhenItsHostDies();
+#endif
 }

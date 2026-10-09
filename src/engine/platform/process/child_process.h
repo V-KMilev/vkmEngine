@@ -13,7 +13,8 @@ namespace Vkm::Engine {
  *
  * Standard output and error share one pipe, read on a thread of the process's own, so
  * a caller polls output() and finished() from its frame. stop() ends the program and
- * everything it started - a build's compilers included - so nothing outlives it.
+ * everything it started - a build's compilers included - so nothing outlives it. Should
+ * this process die without stopping it, the program is ended too.
  */
 class ChildProcess {
     public:
