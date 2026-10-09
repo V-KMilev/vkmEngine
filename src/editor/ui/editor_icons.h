@@ -18,7 +18,7 @@ enum class EditorIcon {
     Play, Pause, Stop, Step, Loop, Key, Plus, Cross,
     Entity, Mesh, Camera, LightDir, LightPoint, LightSpot, Anim,
     Probe, Volume, Decal, Particle, UIWidget, Audio, Audio2D, Listener,
-    UICanvas, UIText, UIImage, UIButton, UIScroll,
+    UICanvas, UIText, UIImage, UIButton, UIScroll, UISlider, UIToggle,
     LightRect, LightDisk,
     Cube, Sphere, Plane, Pyramid, Cone, Triangle,
     Empty, Import, Colliders, Material, Texture, Skeleton,

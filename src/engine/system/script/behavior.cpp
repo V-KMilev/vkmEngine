@@ -25,6 +25,15 @@ Behavior* findBehaviorNamed(Scene& scene, EntityId entity, std::string_view type
     return const_cast<Behavior*>(findBehaviorNamed(std::as_const(scene), entity, typeName));
 }
 
+ScreenView Behavior::screen() const {
+    if (!m_ctx->window || !m_ctx->chrome) return {};
+    return ScreenView::of(*m_ctx->scene, *m_ctx->window, *m_ctx->chrome);
+}
+
+std::optional<Math::Ray> Behavior::pointerRay() const {
+    return screen().rayThrough(m_ctx->input->pointer());
+}
+
 void Behavior::warnSpawnOnClient() {
     static bool s_warned = false;
     if (s_warned) return;

@@ -59,6 +59,8 @@ class SceneIOController;
     X(UIText,              drawUITextSection,              "UI Text",             UI)        \
     X(UIButton,            drawUIButtonSection,            "UI Button",           UI)        \
     X(UIScroll,            drawUIScrollSection,            "UI Scroll",           UI)        \
+    X(UISlider,            drawUISliderSection,            "UI Slider",           UI)        \
+    X(UIToggle,            drawUIToggleSection,            "UI Toggle",           UI)        \
     X(Hierarchy,           drawHierarchySection,           "Hierarchy",           HIERARCHY) \
 
 /**

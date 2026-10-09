@@ -49,7 +49,8 @@ class UISystem : public System {
          */
         struct ButtonHit {
             EntityId entity;
-            uint32_t firstVertex;  ///< Start of its 6-vertex quad.
+            uint32_t firstVertex;      ///< Start of its 6-vertex quad.
+            float    opacity = 1.0f;   ///< Its subtree's, as the walk had it.
         };
 
         /**
@@ -61,6 +62,9 @@ class UISystem : public System {
         };
 
     private:
+        /// Every visible canvas, in sort order, laid out over @p viewport and emitted.
+        void layOutCanvases(FrameContext& ctx, const UIRect& viewport);
+
         /**
          * @brief Resolve @p entity's screen rect, emit its visuals, then recurse.
          *
@@ -177,12 +181,14 @@ class UISystem : public System {
         /**
          * @brief Settle this frame's pointer interaction across all buttons, and route the wheel.
          *
-         * Only the topmost blocker can hover or press; a release over the button the
-         * press began on fires a UIClickEvent.
+         * Only the topmost blocker can hover or press; a release over the button the press began
+         * on fires a UIClickEvent, and flips a UIToggle on it. A UISlider follows the pointer
+         * while its press lasts. Either enqueues a UIValueEvent when its value changes.
          *
          * @param ctx Frame context supplying the scene, the input map and the bus.
+         * @return Whether a toggle or a slider changed, so its parts have moved.
          */
-        void resolveInteraction(FrameContext& ctx);
+        bool resolveInteraction(FrameContext& ctx);
 
         /**
          * @brief Append a two-triangle quad spanning @p p0..p1 with @p uv0..uv1.
@@ -257,6 +263,7 @@ class UISystem : public System {
 
         /// Everything under the pointer that blocks it, buttons included, in painter order.
         std::vector<EntityId> m_pointerBlockers;
+        float m_opacity = 1.0f;  ///< The opacity the walk has inherited, where it is.
 
         EntityId  m_pressedButton{};        ///< Button a press started over.
         glm::vec2 m_pointer{0.0f};          ///< Pointer in viewport-local pixels this frame.

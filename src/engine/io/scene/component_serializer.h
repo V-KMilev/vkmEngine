@@ -35,6 +35,8 @@
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
 #include "ecs/component/ui/ui_scroll.h"
+#include "ecs/component/ui/ui_slider.h"
+#include "ecs/component/ui/ui_toggle.h"
 #include "ecs/component/ui/ui_text.h"
 #include "system/script/script_component.h"
 
@@ -83,7 +85,9 @@ class ResourceManager;
     R(UIImage,             "UIImage")             \
     P(UIText,              "UIText")              \
     P(UIButton,            "UIButton")            \
-    P(UIScroll,            "UIScroll")
+    P(UIScroll,            "UIScroll")            \
+    E(UISlider,            "UISlider")            \
+    E(UIToggle,            "UIToggle")
 
 /**
  * @brief Per-component (de)serialization to JSON.
@@ -226,6 +230,12 @@ namespace ComponentSerializer {
 
     nlohmann::json save(const UIScroll&);
     void load(const nlohmann::json&, UIScroll&);
+
+    nlohmann::json save(const UISlider&, const EntityNamer&);
+    void load(const nlohmann::json&, UISlider&, const EntityResolver&);
+
+    nlohmann::json save(const UIToggle&, const EntityNamer&);
+    void load(const nlohmann::json&, UIToggle&, const EntityResolver&);
 
     /**
      * @brief Hierarchy: only `parent` is serialized, as the parent's slot.

@@ -42,6 +42,8 @@
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
 #include "ecs/component/ui/ui_scroll.h"
+#include "ecs/component/ui/ui_slider.h"
+#include "ecs/component/ui/ui_toggle.h"
 #include "ecs/component/ui/ui_text.h"
 #include "ecs/environment.h"
 #include "command/component_edit.h"
@@ -526,6 +528,44 @@ void warnNoUIElement(const Scene& scene, EntityId id) {
     ImGui::TextDisabled("Nothing draws for it until one is added.");
 }
 
+/**
+ * @brief A row naming another entity of the scene, picked from all but @p self.
+ *
+ * Read-only in a prefab instance: an override cannot name an entity, so a pick would not load.
+ *
+ * @param scene   Scene holding both.
+ * @param self    Entity whose card is being drawn.
+ * @param label   The row's name.
+ * @param target  The reference edited.
+ * @param tooltip What the reference is for, or null.
+ * @return True when the pick changed @p target.
+ */
+bool propEntity(Scene& scene, EntityId self, const char* label, EntityId& target, const char* tooltip) {
+    // Every entity, named or not; the scene is walked only while the list is open.
+    char preview[96] = "None";
+    if (scene.isAlive(target)) getEntityDisplayName(scene, target, preview, sizeof(preview));
+    const bool prefabOwned = static_cast<bool>(PrefabOverrides::instanceRoot(scene, self));
+    ImGui::BeginDisabled(prefabOwned);
+    const bool changed = propRow(label, tooltip, [&] {
+        if (!beginCombo("##v", preview)) return false;
+        const EntityId was = target;
+        if (ImGui::Selectable("None", !scene.isAlive(was))) target = {};
+        scene.forEachEntity([&](EntityId other) {
+            if (other == self) return;
+            char name[96];
+            getEntityDisplayName(scene, other, name, sizeof(name));
+            ImGui::PushID(static_cast<int>(other.slot()));
+            if (ImGui::Selectable(name, other == was)) target = other;
+            ImGui::PopID();
+        });
+        ImGui::EndCombo();
+        return target != was;
+    });
+    ImGui::EndDisabled();
+    if (prefabOwned) ImGui::TextDisabled("Set in the prefab: an override cannot name an entity.");
+    return changed;
+}
+
 // The first capsule's radius, or 0: a character wears one, and a compound fit is all boxes.
 float capsuleRadiusOf(const Scene& scene, EntityId id) {
     const Collider* collider = scene.tryGet<Collider>(id);
@@ -761,6 +801,14 @@ void InspectorPanel::drawUIElementSection(EditorContext& ec, EntityId id) {
             );
         });
         changed |= propCheckbox("Visible", &e.visible, "Hides this element and its whole subtree.");
+        changed |= propSlider(
+            "Opacity",
+            &e.opacity,
+            0.0f,
+            1.0f,
+            "%.2f",
+            "How opaque this element and its whole subtree draw; at 0 it is skipped, and takes no clicks."
+        );
         const char* blocksPointerTooltip =
             "Stops a click reaching what is behind. Off for a decorative "
             "overlay meant to be clicked through. Only consulted on an "
@@ -856,6 +904,13 @@ void InspectorPanel::drawUITextSection(EditorContext& ec, EntityId id) {
             "newline in the text always breaks, wrap or not.";
         changed |= propCheckbox("Wrap", &t.wrap, wrapTooltip);
         changed |= propColor4("Color", glm::value_ptr(t.color));
+        changed |= propColor4(
+            "Shadow",
+            glm::value_ptr(t.shadow),
+            ImGuiColorEditFlags_Float,
+            "A drop shadow under the text, so it reads over the scene without a panel;\n"
+            "none while transparent."
+        );
 
         warnNoUIElement(scene, id);
 
@@ -888,6 +943,76 @@ void InspectorPanel::drawUIButtonSection(EditorContext& ec, EntityId id) {
         changed |= drawShapeRows(b.shape);
 
         warnNoUIElement(scene, id);
+        return changed;
+    });
+}
+
+void InspectorPanel::drawUISliderSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+
+    editComponentCard<UISlider>(ec, id, [&](UISlider& s) {
+        bool changed = false;
+        changed |= propDrag(
+            "Value",
+            &s.value,
+            0.01f,
+            s.minValue,
+            s.maxValue,
+            "%.3f",
+            "Set by a drag; write it to set the slider."
+        );
+        changed |= propDrag(
+            "Min",
+            &s.minValue,
+            0.01f,
+            0.0f,
+            0.0f,
+            "%.3f",
+            "The value at the track's left end."
+        );
+        changed |= propDrag("Max", &s.maxValue, 0.01f, 0.0f, 0.0f, "%.3f", "The value at its right end.");
+        changed |= propDrag(
+            "Step",
+            &s.step,
+            0.01f,
+            0.0f,
+            0.0f,
+            "%.3f",
+            "What a drag snaps to; 0 is continuous."
+        );
+        changed |= propEntity(scene, id, "Fill", s.fill, "Grown to the value: best a child of the track.");
+        changed |= propEntity(scene, id, "Knob", s.knob, "Stood at the value: best a child of the track.");
+
+        warnNoUIElement(scene, id);
+        if (!scene.has<UIButton>(id)) {
+            ImGui::TextColored(EditorStyle::DANGER, "No UI Button: nothing to drag.");
+        }
+        if (!(s.maxValue > s.minValue)) {
+            ImGui::TextColored(EditorStyle::DANGER, "Max is not above Min: it cannot move.");
+        }
+        return changed;
+    });
+}
+
+void InspectorPanel::drawUIToggleSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+
+    editComponentCard<UIToggle>(ec, id, [&](UIToggle& t) {
+        bool changed = false;
+        changed |= propCheckbox("On", &t.on);
+        changed |= propColor4("On Colour", glm::value_ptr(t.onColor));
+        changed |= propEntity(
+            scene,
+            id,
+            "Knob",
+            t.knob,
+            "At its parent's left end when off, the right when on: best the button's child."
+        );
+
+        warnNoUIElement(scene, id);
+        if (!scene.has<UIButton>(id)) {
+            ImGui::TextColored(EditorStyle::DANGER, "No UI Button: nothing to click.");
+        }
         return changed;
     });
 }
@@ -1020,6 +1145,8 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         addItem(UIText{});
         addItem(UIButton{});
         addItem(UIScroll{});
+        addItem(UISlider{});
+        addItem(UIToggle{});
 
         // Move-only, so not AddComponentCommand: ScriptEditCommand holds it serialized.
         section("Script");
@@ -2326,32 +2453,7 @@ void InspectorPanel::drawJointSection(EditorContext& ec, EntityId id) {
         bool changed = false;
 
         changed |= propEnumCombo("Type", joint.type);
-
-        // Every entity, named or not; the scene is walked only while the list is open.
-        char preview[96] = "None";
-        if (scene.isAlive(joint.connected)) {
-            getEntityDisplayName(scene, joint.connected, preview, sizeof(preview));
-        }
-        // In an instance it is the prefab's: an override cannot name an entity, so a pick would not load.
-        const bool prefabOwned = static_cast<bool>(PrefabOverrides::instanceRoot(scene, id));
-        ImGui::BeginDisabled(prefabOwned);
-        changed |= propRow("Connected", nullptr, [&] {
-            if (!beginCombo("##v", preview)) return false;
-            const EntityId was = joint.connected;
-            if (ImGui::Selectable("None", !scene.isAlive(was))) joint.connected = {};
-            scene.forEachEntity([&](EntityId other) {
-                if (other == id) return;
-                char label[96];
-                getEntityDisplayName(scene, other, label, sizeof(label));
-                ImGui::PushID(static_cast<int>(other.slot()));
-                if (ImGui::Selectable(label, other == was)) joint.connected = other;
-                ImGui::PopID();
-            });
-            ImGui::EndCombo();
-            return joint.connected != was;
-        });
-        ImGui::EndDisabled();
-        if (prefabOwned) ImGui::TextDisabled("Set in the prefab: an override cannot name an entity.");
+        changed |= propEntity(scene, id, "Connected", joint.connected, nullptr);
 
         changed |= drawVec3Control("Anchor", glm::value_ptr(joint.anchor), 0.0f, 0.05f);
         changed |= drawVec3Control("Connected Anchor", glm::value_ptr(joint.connectedAnchor), 0.0f, 0.05f);

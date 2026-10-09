@@ -192,6 +192,8 @@ class Behavior {
         Clock&           clock();       // time, and the play state behind it
         WindowManager*   window();      // null on a host that draws nothing
         RenderSettings&  render();      // the quality the frame is drawn at
+        ScreenView       screen();      // the 3D view: a ray through a point, a point on a canvas
+        std::optional<Math::Ray> pointerRay(); // the ray under the cursor, if it is on the view
 
         bool                isSimulated();  // does this end decide this entity
         bool                isMine();       // is this the player sitting here
@@ -245,7 +247,11 @@ when to ask each, and
 
 `window()` is the one that hands back a pointer, and that is the nullability
 made visible - a dedicated server runs the same behaviors with no window at all,
-so anything reading the cursor or the framebuffer size checks first.
+so anything reading the cursor or the framebuffer size checks first. To aim the
+cursor into the world, or to pin a label over something in it, ask `screen()`
+instead of dividing by the window: the scene is drawn into the host's rect,
+which in the editor's Play panel is not the window (see
+[ui.md](ui.md#the-world-on-the-screen)).
 
 `Behavior` is **non-copyable and non-movable** - instances are owned by
 `unique_ptr` inside the `ScriptComponent`. `BehaviorSystem` binds its

@@ -21,4 +21,15 @@ struct UIClickEvent {
     std::string eventId;  ///< The clicked UIButton's `eventId`.
 };
 
+/**
+ * @brief Fired when a UISlider is dragged to a new value or a UIToggle is flipped.
+ *
+ * Enqueued by the UISystem like UIClickEvent, which a toggle's click fires as well.
+ */
+struct UIValueEvent {
+    EntityId    entity;   ///< The slider's or toggle's entity.
+    std::string eventId;  ///< Its UIButton's `eventId`.
+    float       value;    ///< The slider's value; a toggle's 1 on, 0 off.
+};
+
 } // namespace Vkm::Engine

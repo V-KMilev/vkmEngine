@@ -93,11 +93,13 @@ scene.remove<Mesh>(entity);
 | `NetSpawn`            | `component/prefab/net_spawn.h`             | `prefab` path, the exact `Transform at` it was built at, and `slots` - where the server built each entity below the root; runtime only, put on a spawned root by `NetSession::spawn` so every client builds the same thing ([Networking](networking.md#spawning)) |
 | `MissingAssets`       | `component/core/missing_assets.h`          | Asset names a load could not resolve, kept so the next save writes them back rather than erasing them |
 | `UICanvas`            | `component/ui/ui_canvas.h`                 | `referenceHeight`, `scaleMode`, `sortOrder`, `visible` - the root of one screen-space UI tree        |
-| `UIElement`           | `component/ui/ui_element.h`                | `anchor`, `pivot`, `position`, `size`, `relativeSize`, `visible`, `blocksPointer`, `clipChildren`, plus the resolved `UIRect screenRect` |
+| `UIElement`           | `component/ui/ui_element.h`                | `anchor`, `pivot`, `position`, `size`, `relativeSize`, `visible`, `opacity`, `blocksPointer`, `clipChildren`, plus the resolved `UIRect screenRect` |
 | `UIImage`             | `component/ui/ui_image.h`                  | `color`, a `UIShape` `shape` (corners, edge, fade) and an optional `TextureHandle texture` - fills its element's rect, the texture stretched over it and multiplied by the tint |
-| `UIText`              | `component/ui/ui_text.h`                   | `text`, `font` name, `pixelSize`, `color`, `align`, `valign`, `wrap`                                 |
+| `UIText`              | `component/ui/ui_text.h`                   | `text`, `font` name, `pixelSize`, `color`, `align`, `valign`, `wrap`, `shadow`                       |
 | `UIButton`            | `component/ui/ui_button.h`                 | The four state colours, a `UIShape` `shape`, `eventId`, `interactable`; `state`, `held`, `pointer` and `resolvedSize` are runtime only |
 | `UIScroll`            | `component/ui/ui_scroll.h`                 | `offset`, `wheelStep`; `contentSize` and `viewSize` are measured by the layout walk and published     |
+| `UISlider`            | `component/ui/ui_slider.h`                 | `value`, `minValue`, `maxValue`, `step`, and the `fill` and `knob` entities it lays out              |
+| `UIToggle`            | `component/ui/ui_toggle.h`                 | `on`, `onColor`, and the `knob` entity it slides                                                      |
 
 `Animation` and `Animator` are both covered in [Animation](animation.md):
 the first drives one entity's own `Transform`, the second poses a whole rig and
@@ -107,10 +109,11 @@ rig driving it is the nearest `Animator` above it in the hierarchy. `BoneSocket`
 is the third: it names a joint of the rig above it and reads that joint out of
 the published pose, which is how a weapon ends up in a hand.
 
-The six `UI*` components are one family and are covered in [UI](ui.md):
+The eight `UI*` components are one family and are covered in [UI](ui.md):
 a `UICanvas` roots a tree, every node in it carries a `UIElement` for its rect,
 and `UIImage`, `UIText`, `UIButton` and `UIScroll` are what an element can *be* -
-added to the same entity, not parented under it. Nesting is the entity
+added to the same entity, not parented under it. `UISlider` and `UIToggle` ride
+on a `UIButton`: the button takes the press, they turn it into a value. Nesting is the entity
 hierarchy, so a UI tree is built with `Hierarchy` like anything else.
 
 `AudioSource` and `AudioListener` are covered in [Audio](audio.md). There

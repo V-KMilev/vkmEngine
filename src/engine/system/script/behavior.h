@@ -24,10 +24,12 @@
 #include "net/net_session.h"
 #include "system/physics/physics_events.h"
 #include "platform/input/input_map.h"
+#include "system/ui/screen_view.h"
 
 namespace Vkm::Engine {
 
 class Behavior;
+class HostChrome;
 class Clock;
 class ResourceManager;
 class BehaviorSystem;
@@ -51,6 +53,7 @@ struct BehaviorContext {
     NetSession*            net              = nullptr;
     Clock*                 clock            = nullptr;
     RenderSettings*        render           = nullptr;
+    const HostChrome*      chrome           = nullptr;  ///< Where in the window the scene is drawn.
     std::vector<EntityId>* pendingDestroy   = nullptr;
     std::string*           pendingSceneLoad = nullptr;
 };
@@ -432,6 +435,24 @@ class Behavior {
          * @return The window, or nullptr.
          */
         WindowManager* window() { return m_ctx->window; }
+
+        /**
+         * @brief The 3D view through the scene's active camera: the pointer's ray into the world, a
+         *        point of the world on a canvas.
+         *
+         * Read off the host's rect for the scene, not the window, so it is right in the editor's
+         * Play panel too.
+         *
+         * @return The view; not valid() on a host that draws nothing, or with no active camera.
+         */
+        ScreenView screen() const;
+
+        /**
+         * @brief The ray from the camera through the cursor.
+         *
+         * @return The ray; nothing when the cursor is off the view, or there is no view.
+         */
+        std::optional<Math::Ray> pointerRay() const;
 
         /**
          * @brief Whether this end decides what happens to this entity.

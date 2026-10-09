@@ -237,6 +237,7 @@ void BehaviorSystem::init(FrameContext& ctx) {
     m_context.net       = &ctx.net;
     m_context.clock     = &ctx.clock;
     m_context.render    = &ctx.render;
+    m_context.chrome    = &ctx.chrome;
 
     ctx.scene.addObserver(this);
 

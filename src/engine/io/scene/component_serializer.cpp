@@ -482,6 +482,28 @@ void load(const nlohmann::json& j, UIButton& b) { loadReflected(j, b); }
 nlohmann::json save(const UIScroll& s)          { return saveReflected(s); }
 void load(const nlohmann::json& j, UIScroll& s) { loadReflected(j, s); }
 
+nlohmann::json save(const UISlider& slider, const EntityNamer& name) {
+    nlohmann::json out = saveReflected(slider);
+    out["fill"] = name(slider.fill);
+    out["knob"] = name(slider.knob);
+    return out;
+}
+void load(const nlohmann::json& j, UISlider& slider, const EntityResolver& resolve) {
+    loadReflected(j, slider);
+    slider.fill = resolve(j.value("fill", 0u));
+    slider.knob = resolve(j.value("knob", 0u));
+}
+
+nlohmann::json save(const UIToggle& toggle, const EntityNamer& name) {
+    nlohmann::json out = saveReflected(toggle);
+    out["knob"] = name(toggle.knob);
+    return out;
+}
+void load(const nlohmann::json& j, UIToggle& toggle, const EntityResolver& resolve) {
+    loadReflected(j, toggle);
+    toggle.knob = resolve(j.value("knob", 0u));
+}
+
 nlohmann::json save(const Hierarchy& h) {
     return nlohmann::json{{"parent", h.parent.slot()}};
 }

@@ -40,6 +40,8 @@
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
 #include "ecs/component/ui/ui_scroll.h"
+#include "ecs/component/ui/ui_slider.h"
+#include "ecs/component/ui/ui_toggle.h"
 #include "ecs/component/ui/ui_text.h"
 #include "io/scene/prefab.h"
 #include "resource/asset/material_asset.h"
@@ -333,6 +335,8 @@ class ScriptEditCommand : public Command {
     X(UIText,              uiText)              \
     X(UIButton,            uiButton)            \
     X(UIScroll,            uiScroll)            \
+    X(UISlider,            uiSlider)            \
+    X(UIToggle,            uiToggle)            \
     S(PrefabEntity,        prefabEntity)        \
     S(PrefabInstance,      prefabInstance)
 

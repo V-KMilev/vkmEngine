@@ -4,13 +4,17 @@
 #include <cmath>
 #include <limits>
 
+#include <glm/gtc/constants.hpp>
+
 #include "ecs/scene.h"
 #include "ecs/component/ui/ui_button.h"
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
 #include "ecs/component/ui/ui_scroll.h"
+#include "ecs/component/ui/ui_slider.h"
 #include "ecs/component/ui/ui_text.h"
+#include "ecs/component/ui/ui_toggle.h"
 #include "ecs/hierarchy_operations.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/font_asset.h"
@@ -37,8 +41,52 @@ glm::vec2 nothingDrawn() {
     return glm::vec2(std::numeric_limits<float>::lowest());
 }
 
+// @p color with its alpha scaled by @p opacity.
+glm::vec4 faded(glm::vec4 color, float opacity) {
+    color.a *= opacity;
+    return color;
+}
+
 const glm::vec4& fadeEnd(const glm::vec4& color, const UIShape& shape) {
     return shape.gradient ? shape.bottomColor : color;
+}
+
+// A button's tint: a toggle that is on rests in its own colour.
+const glm::vec4& tintOf(const Scene& scene, EntityId entity, const UIButton& button) {
+    const UIToggle* toggle = scene.tryGet<UIToggle>(entity);
+    const bool      resting = button.state == UIButton::State::Normal;
+    const bool      onRest  = toggle && toggle->on && toggle->onColor.a > 0.0f && resting;
+    return onRest ? toggle->onColor : button.colorForState();
+}
+
+// A slider's fill and knob, and a toggle's knob, put where the value says before the
+// walk lays them out.
+void placeParts(Scene& scene, EntityId entity) {
+    if (const UISlider* slider = scene.tryGet<UISlider>(entity)) {
+        const float along = slider->fraction();
+        if (UIElement* fill = scene.tryGet<UIElement>(slider->fill)) fill->relativeSize.x = along;
+        if (UIElement* knob = scene.tryGet<UIElement>(slider->knob)) knob->anchor.x = along;
+    }
+    if (const UIToggle* toggle = scene.tryGet<UIToggle>(entity)) {
+        if (UIElement* knob = scene.tryGet<UIElement>(toggle->knob)) {
+            knob->anchor.x = toggle->on ? 1.0f : 0.0f;
+            knob->pivot.x  = knob->anchor.x;
+        }
+    }
+}
+
+// A held slider's value, from where the pointer is across its button; true when it moved.
+bool dragSlider(UISlider& slider, const UIButton& button) {
+    if (!(slider.maxValue > slider.minValue) || button.resolvedSize.x <= 0.0f) return false;
+    const float along = glm::clamp(button.pointer.x / button.resolvedSize.x, 0.0f, 1.0f);
+    float       value = slider.minValue + along * (slider.maxValue - slider.minValue);
+    if (slider.step > 0.0f) {
+        value = slider.minValue + std::round((value - slider.minValue) / slider.step) * slider.step;
+        value = std::min(value, slider.maxValue);
+    }
+    if (value == slider.value) return false;
+    slider.value = value;
+    return true;
 }
 
 } // namespace
@@ -97,21 +145,31 @@ void UISystem::update(FrameContext& ctx) {
     );
 
     const UIRect viewport{glm::vec2(0.0f), glm::vec2(vpW, vpH)};
+    layOutCanvases(ctx, viewport);
+
+    // A toggle flipped or a slider dragged has moved its own parts, which the walk placed by
+    // the value before: laid out again, so they show the change the frame it happens.
+    if (resolveInteraction(ctx)) {
+        const EntityId target = m_drawData.pointerTarget;
+        m_drawData.clear();
+        m_buttonHits.clear();
+        m_pointerBlockers.clear();
+        m_scrollTargets.clear();
+        layOutCanvases(ctx, viewport);
+        m_drawData.pointerTarget = target;
+    }
+}
+
+void UISystem::layOutCanvases(FrameContext& ctx, const UIRect& viewport) {
     for (const CanvasRef& ref : m_canvases) {
         const UICanvas& canvas = ctx.scene.get<UICanvas>(ref.entity);
-
-        const bool scaleWithHeight = canvas.scaleMode == UICanvas::ScaleMode::ScaleWithHeight;
-        const float scale = (scaleWithHeight && canvas.referenceHeight > 0.0f)
-            ? vpH / canvas.referenceHeight
-            : 1.0f;
+        const float     scale  = UICanvas::scaleIn(canvas, viewport.size.y);
 
         // The viewport is both the top-level parent rect and the starting clip.
         HierarchyOperations::forEachChild(ctx.scene, ref.entity, [&](EntityId child) {
             resolveElement(ctx, child, viewport, viewport, scale, 0);
         });
     }
-
-    resolveInteraction(ctx);
 }
 
 glm::vec2 UISystem::resolveElement(
@@ -131,6 +189,10 @@ glm::vec2 UISystem::resolveElement(
 
     UIElement& element = *held;
     if (!element.visible) return nothingDrawn();
+    const float inherited = m_opacity;
+    const float opacity   = inherited * glm::clamp(element.opacity, 0.0f, 1.0f);
+    if (opacity <= glm::epsilon<float>()) return nothingDrawn();
+    m_opacity = opacity;
 
     const glm::vec2 sizePx   = glm::max(
         element.size * scale + element.relativeSize * parentRect.size,
@@ -165,6 +227,8 @@ glm::vec2 UISystem::resolveElement(
         if (pointerHere) m_scrollTargets.push_back(ScrollTarget{entity, m_pointerBlockers.size()});
     }
 
+    placeParts(ctx.scene, entity);
+
     glm::vec2 contentMax = nothingDrawn();
     HierarchyOperations::forEachChild(ctx.scene, entity, [&](EntityId child) {
         contentMax = glm::max(contentMax, resolveElement(ctx, child, childRect, childClip, scale, depth + 1));
@@ -175,6 +239,7 @@ glm::vec2 UISystem::resolveElement(
         scroll->offset      = glm::clamp(scroll->offset, glm::vec2(0.0f), scroll->range());
     }
 
+    m_opacity = inherited;
     if (clips) return element.screenRect.max();
 
     const glm::vec2 drawn = draws ? element.screenRect.max() : nothingDrawn();
@@ -215,7 +280,10 @@ bool UISystem::emitImage(
 
     const uint32_t first    = static_cast<uint32_t>(m_drawData.vertices.size());
     const bool     textured = static_cast<bool>(image->texture);
-    appendShaped(element.screenRect, image->color, image->shape, canvasScale, textured);
+    UIShape        shape    = image->shape;
+    shape.bottomColor.a *= m_opacity;
+    shape.borderColor.a *= m_opacity;
+    appendShaped(element.screenRect, faded(image->color, m_opacity), shape, canvasScale, textured);
     appendCommand(first, 6, {}, image->texture, clip);
     return true;
 }
@@ -235,15 +303,20 @@ bool UISystem::emitButton(
     button->resolvedSize = element.screenRect.size / canvasScale;
 
     const uint32_t first = static_cast<uint32_t>(m_drawData.vertices.size());
-    appendShaped(element.screenRect, button->colorForState(), button->shape, canvasScale, false);
+    UIShape        shape = button->shape;
+    shape.bottomColor.a *= m_opacity;
+    shape.borderColor.a *= m_opacity;
+    const glm::vec4 tint = faded(tintOf(ctx.scene, entity, *button), m_opacity);
+    appendShaped(element.screenRect, tint, shape, canvasScale, false);
     appendCommand(first, 6, {}, {}, clip);
 
-    m_buttonHits.push_back(ButtonHit{entity, first});
+    m_buttonHits.push_back(ButtonHit{entity, first, m_opacity});
     return true;
 }
 
-void UISystem::resolveInteraction(FrameContext& ctx) {
+bool UISystem::resolveInteraction(FrameContext& ctx) {
     const EntityId topmost = m_pointerBlockers.empty() ? EntityId{} : m_pointerBlockers.back();
+    bool           moved   = false;
 
     m_drawData.pointerTarget = topmost;
     ctx.input.setPointerOverUI(static_cast<bool>(topmost));
@@ -263,7 +336,19 @@ void UISystem::resolveInteraction(FrameContext& ctx) {
         const bool held      = isTopmost && button.held;
 
         if (m_mouseUpEdge && isTopmost && m_pressedButton == hit.entity) {
+            if (UIToggle* toggle = ctx.scene.tryGet<UIToggle>(hit.entity)) {
+                toggle->on   = !toggle->on;
+                moved        = true;
+                ctx.events.enqueue(UIValueEvent{hit.entity, button.eventId, toggle->on ? 1.0f : 0.0f});
+            }
             ctx.events.enqueue(UIClickEvent{hit.entity, button.eventId});
+        }
+
+        // Followed wherever the pointer goes while the press lasts, as a scrollbar is.
+        UISlider* slider = button.held ? ctx.scene.tryGet<UISlider>(hit.entity) : nullptr;
+        if (slider && dragSlider(*slider, button)) {
+            moved = true;
+            ctx.events.enqueue(UIValueEvent{hit.entity, button.eventId, slider->value});
         }
 
         if (!button.interactable) button.state = UIButton::State::Disabled;
@@ -271,8 +356,9 @@ void UISystem::resolveInteraction(FrameContext& ctx) {
         else if (isTopmost)       button.state = UIButton::State::Hover;
         else                      button.state = UIButton::State::Normal;
 
-        const glm::vec4& color = button.colorForState();
-        recolourQuad(hit.firstVertex, color, fadeEnd(color, button.shape));
+        const glm::vec4& tint = tintOf(ctx.scene, hit.entity, button);
+        const glm::vec4  end  = fadeEnd(tint, button.shape);
+        recolourQuad(hit.firstVertex, faded(tint, hit.opacity), faded(end, hit.opacity));
     }
 
     if (m_mouseUpEdge) m_pressedButton = {};
@@ -302,6 +388,7 @@ void UISystem::resolveInteraction(FrameContext& ctx) {
             );
         }
     }
+    return moved;
 }
 
 void UISystem::breakLines(
@@ -421,28 +508,34 @@ glm::vec2 UISystem::emitText(
         else if (text.align == UIText::Align::Right)  lineX += element.screenRect.size.x - lineWidth;
         lineX = std::round(lineX);
 
-        walkGlyphs(font, line, renderScale, [&](size_t, const FontGlyph& glyph, float pen) {
-            if (glyph.size.x <= 0.0f || glyph.size.y <= 0.0f) return true;
-            const glm::vec2 p0{
-                lineX + pen + glyph.offset.x * renderScale,
-                baseline + glyph.offset.y * renderScale
-            };
-            const glm::vec2 p1 = p0 + glyph.size * renderScale;
-            appendQuad(
-                p0,
-                p1,
-                glyph.uvMin,
-                glyph.uvMax,
-                text.color,
-                text.color,
-                glm::vec2(UI_TEXT_MARK, 0.0f),
-                glm::vec4(0.0f),
-                false
-            );
-            drawnTo = glm::max(drawnTo, p1);
-            emitted += 6;
-            return true;
-        });
+        // The line's shadow first, all of it, so no letter's shadow falls on its neighbour.
+        const auto emitLine = [&](const glm::vec2& offset, const glm::vec4& color) {
+            walkGlyphs(font, line, renderScale, [&](size_t, const FontGlyph& glyph, float pen) {
+                if (glyph.size.x <= 0.0f || glyph.size.y <= 0.0f) return true;
+                const glm::vec2 p0 = offset + glm::vec2{
+                    lineX + pen + glyph.offset.x * renderScale,
+                    baseline + glyph.offset.y * renderScale
+                };
+                const glm::vec2 p1 = p0 + glyph.size * renderScale;
+                appendQuad(
+                    p0,
+                    p1,
+                    glyph.uvMin,
+                    glyph.uvMax,
+                    faded(color, m_opacity),
+                    faded(color, m_opacity),
+                    glm::vec2(UI_TEXT_MARK, 0.0f),
+                    glm::vec4(0.0f),
+                    false
+                );
+                drawnTo = glm::max(drawnTo, p1);
+                emitted += 6;
+                return true;
+            });
+        };
+        const float drop = text.pixelSize * canvasScale * UIText::SHADOW_DROP;
+        if (text.shadow.a > 0.0f) emitLine(glm::vec2(drop), text.shadow);
+        emitLine(glm::vec2(0.0f), text.color);
     }
 
     if (emitted == 0) return nothing;
