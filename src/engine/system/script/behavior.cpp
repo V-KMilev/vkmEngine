@@ -21,6 +21,15 @@ Behavior* findBehaviorNamed(Scene& scene, EntityId entity, std::string_view type
     return const_cast<Behavior*>(findBehaviorNamed(std::as_const(scene), entity, typeName));
 }
 
+EntityId findEntityWithBehaviorNamed(Scene& scene, std::string_view typeName) {
+    EntityId found{};
+    scene.forEach<ScriptComponent>([&](EntityId entity, ScriptComponent&) {
+        if (found && found.slot() < entity.slot()) return;
+        if (findBehaviorNamed(scene, entity, typeName)) found = entity;
+    });
+    return found;
+}
+
 ScreenView Behavior::screen() const {
     if (!m_ctx->window || !m_ctx->chrome) return {};
     return ScreenView::of(*m_ctx->scene, *m_ctx->window, *m_ctx->chrome);

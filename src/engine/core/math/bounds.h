@@ -1,6 +1,9 @@
 #pragma once
 
+#include <optional>
+
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
 
 namespace Vkm::Engine::Math {
 
@@ -107,6 +110,21 @@ inline bool rayIntersectsAABB(
     // let a box enclosing the camera undercut every genuine hit in a ranking.
     tHit = tMin > 0.0f ? tMin : tMax;
     return tMax >= tMin && tMax >= 0.0f;
+}
+
+/**
+ * @brief Where @p ray meets the level plane at height @p y, ahead of its origin: what a click
+ *        on a floor, a table or the sea lands on.
+ *
+ * @param ray Ray in world space.
+ * @param y   The plane's height.
+ * @return The point, or none for a ray level with the plane or pointing away from it.
+ */
+inline std::optional<glm::vec3> rayHitsLevel(const Ray& ray, float y) noexcept {
+    if (glm::abs(ray.direction.y) < glm::epsilon<float>()) return std::nullopt;
+    const float t = (y - ray.origin.y) / ray.direction.y;
+    if (t <= 0.0f) return std::nullopt;
+    return ray.origin + ray.direction * t;
 }
 
 } // namespace Vkm::Engine::Math

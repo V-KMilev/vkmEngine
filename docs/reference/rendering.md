@@ -549,6 +549,15 @@ Four things about it are load-bearing and easy to get wrong:
   order-independent and goes out unsorted; the alpha half is sorted back-to-front
   by `GLParticlePass`. That is why the two lists on `RenderView` are separate.
 
+A one-off puff - a spark shower, an impact - is an emitter with `emitting` off,
+a `burst` and `destroyWhenSpent`: the next update spawns the burst whole, as far
+as `maxParticles` allows, and clears it, and once the last of them has died the
+system destroys the entity and everything under it. A game fires one and forgets
+it; one set up idle, to be fired by gameplay later, waits for its burst - an
+emitter is spent only once it has fired. `halfExtents` gives an emitter a box,
+world axes about it, to spawn anywhere in rather than at a point, so a body sheds
+from all over itself without its emitter being moved.
+
 Everything else is authored per emitter: `rate`, `lifetime`, `maxParticles`, the
 initial `velocity` plus a per-axis random `spread` (drawn from a generator the
 system owns and reseeds with each world, so a world loaded again draws the same

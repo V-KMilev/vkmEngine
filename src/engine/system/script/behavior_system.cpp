@@ -147,15 +147,24 @@ void BehaviorSystem::tickBehaviors(
         [](EntityId a, EntityId b) { return a.slot() < b.slot(); }
     );
 
+    // Every behavior due to start is bound before any onStart runs, and started before any other
+    // hook of the tick: an onStart calling one later in the order finds it bound, its own onStart
+    // perhaps still to come, and every other hook finds them all started.
+    if (startIfNeeded) {
+        for (const EntityId id : m_tickList) {
+            forEachBehaviorOf(scene, id, [&](Behavior& behavior) {
+                if (!behavior.m_disabled && !behavior.m_started) behavior.bindContext(id, m_context);
+            });
+        }
+        for (const EntityId id : m_tickList) {
+            forEachBehaviorOf(scene, id, [&](Behavior& behavior) {
+                if (!behavior.m_disabled) ensureStarted(behavior, id);
+            });
+        }
+    }
     for (const EntityId id : m_tickList) {
         forEachBehaviorOf(scene, id, [&](Behavior& behavior) {
-            if (behavior.m_disabled) return;
-            if (startIfNeeded) {
-                ensureStarted(behavior, id);
-                if (behavior.m_disabled) return;  // onStart threw
-            } else if (!behavior.m_started) {
-                return;
-            }
+            if (behavior.m_disabled || !behavior.m_started) return;  // onStart threw, or is not due
             guard(behavior, hookName, [&] { (behavior.*hook)(dt); });
         });
     }

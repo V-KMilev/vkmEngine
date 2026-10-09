@@ -11,15 +11,28 @@ namespace Vkm::Engine {
 /**
  * @brief CPU-simulated particle emitter - muzzle flashes, impacts, smoke puffs.
  *
- * Spawns at the entity's world position; size and colour lerp start -> end over
- * each particle's life. Authored data only: live particles are ParticleSystem's
- * (LiveParticles).
+ * Spawns at the entity's world position, or anywhere in a box round it; size and
+ * colour lerp start -> end over each particle's life. Authored data, `burst` too, which
+ * the system spends: live particles are ParticleSystem's (LiveParticles).
+ *
+ * A one-off puff is an entity - a prefab, say - with `emitting` off, a `burst`, and
+ * `destroyWhenSpent`: it fires once, and goes once its last particle has.
  */
 struct ParticleEmitter {
     bool     emitting     = true;
     float    rate         = 30.0f;  ///< Per second.
     float    lifetime     = 1.5f;   ///< Seconds.
     uint32_t maxParticles = 256;    ///< Cap on live particles.
+
+    /// Particles to spawn at once on the next update, besides the rate; set again to fire again.
+    uint32_t burst = 0;
+
+    /// Half the size of the box, world axes, about the entity, particles are born in; zero is a point.
+    glm::vec3 halfExtents{0.0f, 0.0f, 0.0f};
+
+    /// Destroy the entity, and everything under it, once it has fired, neither emits nor holds a
+    /// burst, and its last particle has died; one waiting to be fired stays.
+    bool destroyWhenSpent = false;
 
     glm::vec3 velocity{0.0f, 2.0f, 0.0f};       ///< Initial, world space.
     float     spread = 1.0f;                    ///< Random velocity added per axis.
@@ -41,6 +54,9 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::ParticleEmitter)
     VKM_F(rate)
     VKM_F(lifetime)
     VKM_F(maxParticles)
+    VKM_F(burst)
+    VKM_F(halfExtents)
+    VKM_F(destroyWhenSpent)
     VKM_F(velocity)
     VKM_F(spread)
     VKM_F(acceleration)

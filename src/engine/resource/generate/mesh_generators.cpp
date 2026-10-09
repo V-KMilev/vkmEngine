@@ -90,6 +90,12 @@ MeshHandle createGeneratedMesh(const nlohmann::json& source, ResourceManager& re
         mesh = generateCone(p.value("radius", 0.5f), p.value("height", 1.0f), p.value("segments", 16u));
     } else if (type == "cylinder") {
         mesh = generateCylinder(p.value("radius", 0.5f), p.value("height", 1.0f), p.value("segments", 20u));
+    } else if (type == "ring") {
+        mesh = generateRing(
+            p.value("innerRadius", 0.25f),
+            p.value("outerRadius", 0.5f),
+            p.value("segments", 32u)
+        );
     } else if (type == "pyramid") {
         mesh = generatePyramid(p.value("baseSize", 1.0f), p.value("height", 1.0f));
     } else if (type == "plane") {
@@ -548,6 +554,39 @@ MeshAsset generateCylinder(float radius, float height, uint32_t segments) {
     mesh.boundsMin = glm::vec3(-radius, -halfHeight, -radius);
     mesh.boundsMax = glm::vec3( radius,  halfHeight,  radius);
     stampGenerated(mesh, "cylinder", {{"radius", radius}, {"height", height}, {"segments", segments}});
+    return mesh;
+}
+
+MeshAsset generateRing(float innerRadius, float outerRadius, uint32_t segments) {
+    MeshAsset mesh;
+    segments = std::max(segments, 3u);
+    const float     twoPi = glm::two_pi<float>();
+    const glm::vec3 up(0.0f, 1.0f, 0.0f);
+
+    // A pair a step round, inner then outer; the seam's pair is doubled at u = 1. U grows round
+    // (-s, 0, c) and V outward, which is cross(+Y, U), so w is +1.
+    for (uint32_t i = 0; i <= segments; ++i) {
+        const float u = static_cast<float>(i) / static_cast<float>(segments);
+        const float c = std::cos(u * twoPi);
+        const float s = std::sin(u * twoPi);
+        const glm::vec4 tangent(-s, 0.0f, c, 1.0f);
+        mesh.vertices.push_back({{c * innerRadius, 0.0f, s * innerRadius}, up, {u, 0.0f}, tangent});
+        mesh.vertices.push_back({{c * outerRadius, 0.0f, s * outerRadius}, up, {u, 1.0f}, tangent});
+    }
+    // The ring runs from +X toward +Z, clockwise seen from above, so each quad winds inner,
+    // next inner, next outer to face +Y.
+    for (uint32_t i = 0; i < segments; ++i) {
+        const uint32_t a = i * 2;
+        mesh.indices.insert(mesh.indices.end(), {a, a + 2, a + 3, a, a + 3, a + 1});
+    }
+
+    mesh.boundsMin = glm::vec3(-outerRadius, 0.0f, -outerRadius);
+    mesh.boundsMax = glm::vec3( outerRadius, 0.0f,  outerRadius);
+    stampGenerated(
+        mesh,
+        "ring",
+        {{"innerRadius", innerRadius}, {"outerRadius", outerRadius}, {"segments", segments}}
+    );
     return mesh;
 }
 

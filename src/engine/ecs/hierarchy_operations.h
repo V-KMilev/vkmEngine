@@ -1,12 +1,14 @@
 #pragma once
 
 #include <cstddef>
+#include <string_view>
 #include <vector>
 
 #include <glm/glm.hpp>
 
 #include "ecs/scene.h"
 #include "ecs/component/core/hierarchy.h"
+#include "ecs/component/core/name.h"
 #include "ecs/component/core/transform.h"
 
 namespace Vkm::Engine::HierarchyOperations {
@@ -200,6 +202,24 @@ EntityId findInSelfOrDescendantsIf(const Scene& scene, EntityId root, Match matc
 template<typename T>
 EntityId findInSelfOrDescendants(const Scene& scene, EntityId root) {
     return findInSelfOrDescendantsIf(scene, root, [&](EntityId id) { return scene.has<T>(id); });
+}
+
+/**
+ * @brief The nearest entity at or below @p root with the Name @p name.
+ *
+ * How a behavior finds the parts a scene gave it, parented under its own entity. Breadth
+ * first, so of two with one name the shallower wins.
+ *
+ * @param scene Scene holding the links and the names.
+ * @param root Entity to start from, inclusive.
+ * @param name The Name to look for, whole.
+ * @return The entity so named, or an invalid id.
+ */
+inline EntityId findNamed(const Scene& scene, EntityId root, std::string_view name) {
+    return findInSelfOrDescendantsIf(scene, root, [&](EntityId id) {
+        const Name* named = scene.tryGet<Name>(id);
+        return named && name == named->value;
+    });
 }
 
 /**

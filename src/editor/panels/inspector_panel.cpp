@@ -1839,6 +1839,29 @@ void InspectorPanel::drawParticleSection(EditorContext& ec, EntityId id) {
         changed |= propDrag("Lifetime", &e.lifetime, 0.05f, 0.01f, 60.0f, "%.2f");
 
         changed |= propDragU32("Max Particles", &e.maxParticles, 1.0f, 1u, 20000u);
+        changed |= propDragU32(
+            "Burst",
+            &e.burst,
+            1.0f,
+            0u,
+            20000u,
+            "Particles spawned at once on the next update, besides the rate; spent as they are"
+        );
+        changed |= propDrag3(
+            "Half Extents",
+            glm::value_ptr(e.halfExtents),
+            0.01f,
+            0.0f,
+            100.0f,
+            "%.2f m",
+            "Half the size of the box, world axes, particles are born in; zero is a point"
+        );
+        changed |= propCheckbox(
+            "Destroy When Spent",
+            &e.destroyWhenSpent,
+            "Once it has fired, neither emits nor holds a burst, and its last particle has died,\n"
+            "the entity and everything under it go"
+        );
 
         ImGui::Spacing();
         changed |= propDrag3("Velocity", glm::value_ptr(e.velocity), 0.05f, -100.0f, 100.0f, "%.2f");

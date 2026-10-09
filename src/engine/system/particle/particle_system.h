@@ -1,5 +1,7 @@
 #pragma once
 
+#include <vector>
+
 #include "core/math/random.h"
 #include "core/system.h"
 #include "system/particle/live_particles.h"
@@ -45,6 +47,8 @@ class ParticleSystem : public System {
         LiveParticles m_live;
         uint64_t      m_step  = 0;  ///< Stamped into a pool's `seen`.
         uint64_t      m_epoch = 0;  ///< The Scene::epoch() the pools belong to.
+
+        std::vector<EntityId> m_spent;  ///< Emitters done with, to destroy after the walk.
 };
 
 } // namespace Vkm::Engine

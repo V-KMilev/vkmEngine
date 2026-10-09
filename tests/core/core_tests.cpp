@@ -21,6 +21,8 @@
 #include "stb_image.h"
 #include "stb_image_write.h"
 
+#include "core/math/bounds.h"
+#include "core/math/easing.h"
 #include "io/json_file.h"
 #include "io/project_paths.h"
 #include "platform/process/child_process.h"
@@ -168,6 +170,23 @@ void testARotationReadFromAMatrixHasOneAnswer() {
         std::isfinite(flat.w) && std::isfinite(flat.x) && std::isfinite(flat.y) && std::isfinite(flat.z)
     );
     check("  and the rotation the other two axes imply", rotationErrorDegrees(flat, turned) < 0.1f);
+}
+
+void testARayFindsTheLevelItPointsAt() {
+    std::printf("A ray onto a level plane, and closing on a target at any frame rate:\n");
+    const Math::Ray down{{1.0f, 5.0f, 2.0f}, glm::normalize(glm::vec3(1.0f, -1.0f, 0.0f))};
+    const std::optional<glm::vec3> hit = Math::rayHitsLevel(down, 1.0f);
+    const glm::vec3 under = {5.0f, 1.0f, 2.0f};
+    check("a ray down meets the plane under it", hit && glm::length(*hit - under) < 1e-4f);
+    check("  not one above it", !Math::rayHitsLevel(down, 6.0f));
+    const Math::Ray level{{0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}};
+    check("  and a level ray meets none", !Math::rayHitsLevel(level, 0.0f));
+
+    // Closing two frames of dt as far as one frame of 2 dt.
+    const float once  = damp(4.0f, 0.1f);
+    const float twice = 1.0f - (1.0f - damp(4.0f, 0.05f)) * (1.0f - damp(4.0f, 0.05f));
+    check("damp closes as far in two short frames as in one long one", std::abs(once - twice) < 1e-5f);
+    check("  and none of the way in no time", damp(4.0f, 0.0f) == 0.0f);
 }
 
 // A project's tick rate is fixedUpdate's cadence and, networked, the wire's clock.
@@ -1257,6 +1276,7 @@ TypeId typeIdOfCoreTestsConstantsProbe() {
 
 void runCoreTests() {
     testMathConvention();
+    testARayFindsTheLevelItPointsAt();
     testARotationReadFromAMatrixHasOneAnswer();
     testTickRate();
     testAStillWorldIsStillWhicheverWayItWasStopped();

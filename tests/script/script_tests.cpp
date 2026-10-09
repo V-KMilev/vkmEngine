@@ -233,9 +233,42 @@ class Seeker : public ReflectedBehavior<Seeker> {
         EntityId  target{};
         Recorder* found = nullptr;
         Seeker*   self  = nullptr;
+        Recorder* first = nullptr;  ///< The scene's lowest-slot Recorder.
+};
+
+// One behavior calling another, as gameplay wires them: the one called stands later in
+// the tick's order, yet is already bound and started when the first one's hook runs.
+class Callee : public ReflectedBehavior<Callee> {
+    public:
+        void onStart() override { started = true; }
+        bool seesItsEntity() const { return tryGet<Transform>() != nullptr; }
+
+    public:
+        bool started = false;
+};
+
+class Caller : public ReflectedBehavior<Caller> {
+    public:
+        void onStart() override { calleeBoundAtStart = callee && callee->seesItsEntity(); }
+        void onUpdate(float) override {
+            if (!callee) return;
+            calleeStarted = callee->started;
+            calleeBound   = callee->seesItsEntity();
+        }
+
+    public:
+        Callee* callee             = nullptr;
+        bool    calleeStarted      = false;
+        bool    calleeBound        = false;
+        bool    calleeBoundAtStart = false;
 };
 
 } // namespace
+
+VKM_REFLECT_BEGIN(Callee)
+VKM_REFLECT_END()
+VKM_REFLECT_BEGIN(Caller)
+VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(Recorder)
     VKM_F(speed)
@@ -290,6 +323,7 @@ namespace {
 void Seeker::onStart() {
     found = findBehavior<Recorder>(target);
     self  = findBehavior<Seeker>();
+    first = findInScene<Recorder>();
 }
 
 template <typename T>
@@ -354,6 +388,23 @@ void testStartHappensOnSimulationTime() {
 
     run.tick();
     check("starting happens once, not once a frame", recorder.starts == 1);
+}
+
+void testEveryBehaviorStartsBeforeAnyHookRuns() {
+    std::printf("A behavior calling one later in the order:\n");
+
+    Scene scene;
+    const EntityId first  = scene.createEntity();
+    const EntityId second = scene.createEntity();
+    scene.add(second, Transform{});
+    Caller& caller = attach<Caller>(scene, first);
+    caller.callee  = &attach<Callee>(scene, second);
+
+    ScriptFrame run(scene);
+    run.tick();
+    check("from the caller's onStart, the one called is already bound", caller.calleeBoundAtStart);
+    check("the one called has started before the caller's first hook", caller.calleeStarted);
+    check("  and is bound to its entity", caller.calleeBound);
 }
 
 void testPauseSplitsTheTwoTimelines() {
@@ -460,6 +511,8 @@ void testBehaviorsAreFoundAndAddedByType() {
         findEntityWithBehavior<Recorder>(scene) == first
     );
     check("  and a null id when nothing does", !findEntityWithBehavior<Seeker>(scene));
+    check("findBehavior over the scene answers the lowest slot's", findBehavior<Recorder>(scene) == &early);
+    check("  and null when nothing carries one", findBehavior<Seeker>(scene) == nullptr);
 
     Seeker& seeker = addBehavior<Seeker>(scene, second);
     seeker.target = third;
@@ -469,6 +522,7 @@ void testBehaviorsAreFoundAndAddedByType() {
     check("a behavior added in code starts on the next tick", early.starts == 1 && late.starts == 1);
     check("a behavior finds another entity's by type", seeker.found == &late);
     check("  and its own entity's", seeker.self == &seeker);
+    check("  and the scene's lowest-slot one", seeker.first == &early);
 
     // Added mid-session from outside the hooks: the same lazy start a load gives.
     Recorder& added = addBehavior<Recorder>(scene, second);
@@ -1132,6 +1186,7 @@ void runScriptTests() {
     testAModuleLoadsRegistersAndUnloadsCleanly();
     testAReloadedModuleStartsItsStaticsOver();
     testStartHappensOnSimulationTime();
+    testEveryBehaviorStartsBeforeAnyHookRuns();
     testPauseSplitsTheTwoTimelines();
     testFixedUpdateRunsOnTheFixedStep();
     testSpawnAndDeferredDestroy();

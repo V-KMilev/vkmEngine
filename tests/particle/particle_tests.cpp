@@ -144,9 +144,55 @@ void testAWorldLoadedAgainDrawsTheSameSpread() {
     check("  and draws the same spread the second time", same);
 }
 
+// A puff is a burst from a box, by an emitter that goes once it is spent: the
+// three things a game otherwise fakes with a rate, a timer and a moving emitter.
+void testABurstFiresOnceFromItsBoxAndGoesWhenSpent() {
+    std::printf("A burst, from a box, by an emitter that goes when spent:\n");
+
+    ParticleWorld w(0.0f, 100, 0.25f);
+    ParticleEmitter& emitter = w.scene.get<ParticleEmitter>(w.emitter);
+    emitter.emitting         = false;
+    emitter.burst            = 40;
+    emitter.halfExtents      = {1.0f, 0.0f, 2.0f};
+    emitter.destroyWhenSpent = true;
+    w.tick();
+
+    const std::vector<Particle>& born = w.emitterState().particles;
+    check("a burst spawns its whole count at once", born.size() == 40);
+    bool inside = true;
+    bool spread = false;
+    for (const Particle& p : born) {
+        const glm::vec3 at = p.position;
+        inside = inside && std::abs(at.x) <= 1.0f && at.y == 0.0f && std::abs(at.z) <= 2.0f;
+        spread = spread || std::abs(p.position.z) > 1.0f;
+    }
+    check("  inside its box", inside);
+    check("  and over all of it, not at a point", spread);
+    check("  and is spent", w.scene.get<ParticleEmitter>(w.emitter).burst == 0);
+
+    w.tick(8);
+    check("it fires once, however long it stands", w.emitterState().particles.size() <= 40);
+    w.tick(16);
+    check("its entity goes once its last particle has", !w.scene.isAlive(w.emitter));
+
+    // One set up to wait for gameplay's burst waits for it.
+    ParticleWorld idle(0.0f, 100, 0.25f);
+    ParticleEmitter& waiting = idle.scene.get<ParticleEmitter>(idle.emitter);
+    waiting.emitting         = false;
+    waiting.destroyWhenSpent = true;
+    idle.tick(8);
+    const bool waited = idle.scene.isAlive(idle.emitter);
+    check("one not yet fired is not spent", waited);
+    if (!waited) return;
+    idle.scene.get<ParticleEmitter>(idle.emitter).burst = 5;
+    idle.tick(24);
+    check("  and goes once its burst has", !idle.scene.isAlive(idle.emitter));
+}
+
 } // namespace
 
 void runParticleTests() {
+    testABurstFiresOnceFromItsBoxAndGoesWhenSpent();
     testAnEmitterHeldAtCapacityBanksNothing();
     testASlowEmitterStillEmits();
     testParticlesAgeOutAndTheEmitterCanBeStopped();

@@ -134,16 +134,19 @@ void Game::Crate::onCollisionEnter(const Collision& hit) {
 instead ([audio.md](audio.md)).
 
 **Another behavior.** `findBehavior<T>(entity)` answers the `T` on an entity,
-or null; `findBehavior<T>()` asks this entity. For the behaviors a game has one
-of - a director, a menu - `findEntityWithBehavior<T>(scene())` finds the entity
-carrying it:
+or null; `findBehavior<T>()` asks this entity:
 
 ```cpp
 if (Health* health = findBehavior<Health>(hit.other)) health->damage(10.0f);
 ```
 
 Ask each time rather than keeping the pointer: the other entity can be
-destroyed between two hooks.
+destroyed between two hooks. The behaviors a game has one of - a director, a
+menu - are the exception: `findInScene<T>()` finds the scene's (the lowest
+slot's, the same on every machine) by walking every scripted entity, so look it
+up once in `onStart` and keep it for as long as its entity lives - a director's
+usually lives as long as the scene.
+`findEntityWithBehavior<T>(scene())` answers the entity carrying it.
 
 **Listening for an event.** `subscribe` reads the event type off the lambda,
 and drops the listener when the behavior goes:
@@ -176,9 +179,10 @@ class Behavior {
         virtual void                      visitFields(BehaviorFieldVisitor&) {}
         virtual std::unique_ptr<Behavior> clone() const = 0;      // deep copy for duplication
 
+        EntityId entity() const;                    // this entity, to pass to anything taking one
+
     protected:
-        // This entity: what it is, and what it carries.
-        EntityId entity() const;                    // to pass to anything taking one
+        // What this entity carries.
         template<typename T> T*    tryGet();        // its T, or null - reach for this one
         template<typename T> T&    get();           // its T, which it must have
         template<typename T> bool  has() const;     // does it carry one
@@ -208,6 +212,7 @@ class Behavior {
         void     loadScene(const std::string& scenePath);  // deferred to the end of the frame's hooks
         template<typename T> T* findBehavior();          // its behavior of type T, or null
         template<typename T> T* findBehavior(EntityId);  // another entity's
+        template<typename T> T* findInScene();           // the scene's one T
         template<typename E = void, typename Fn> void subscribe(Fn&&);  // E read off Fn; auto-unsubscribes
 };
 ```
@@ -716,8 +721,9 @@ every canvas drawn over each other.
 
 Building assets in `onStart` is fine and needs no guard: `resources().add` is a
 declaration of identity, so adding `potion:rig` again replaces what stands under
-that name rather than making a `potion:rig (2)` beside it. See
-[Resources](resources.md).
+that name rather than making a `potion:rig (2)` beside it. `findOrAdd` is the
+other way: it keeps what stands under the name, so an asset it made before a
+reload is the old code's still. See [Resources](resources.md).
 
 **Nothing may hold module code across the swap.** The behavior factories, the
 wire schema's thunks, the session's spawn callbacks and the buses of the
@@ -804,8 +810,12 @@ engine answers it, for whoever maintains that half.
 Drives the lifecycle of every entity's `ScriptComponent` behaviors. One `update`
 does, in this order:
 
-1. If `getSimDelta() > 0`: tick `onUpdate(simDelta)`, starting (context inject +
-   `onStart()`) any instance whose first tick this is; then dispatch the physics
+1. If `getSimDelta() > 0`: start every instance whose first tick this is - every one's
+   context injected first, then every `onStart()`, all before any other hook - so an
+   `onStart` calling a behavior later in the order finds it bound (its own `onStart`
+   perhaps still to come) and every other hook finds them all started; tick
+   `onUpdate(simDelta)`; then
+   dispatch the physics
    `CollisionEvent` / `TriggerEvent` collected via subscriptions to the involved
    entities' hook for the event's phase - `onCollisionEnter` / `Stay` / `Exit`,
    each side handed its own `Collision`, the event's a -> b normal negated for a,

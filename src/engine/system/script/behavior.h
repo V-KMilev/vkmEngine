@@ -117,6 +117,15 @@ Behavior* findBehaviorNamed(Scene& scene, EntityId entity, std::string_view type
 const Behavior* findBehaviorNamed(const Scene& scene, EntityId entity, std::string_view typeName);
 
 /**
+ * @brief The entity carrying a behavior named @p typeName with the lowest slot.
+ *
+ * @param scene    Scene to search.
+ * @param typeName Registered behavior name.
+ * @return The entity, or a null EntityId when nothing carries one.
+ */
+EntityId findEntityWithBehaviorNamed(Scene& scene, std::string_view typeName);
+
+/**
  * @brief @p entity's behavior of type T, or null when it has none.
  *
  * Inside a behavior, Behavior::findBehavior says the same without the scene.
@@ -135,6 +144,37 @@ T* findBehavior(Scene& scene, EntityId entity) {
 template<typename T>
 const T* findBehavior(const Scene& scene, EntityId entity) {
     return static_cast<const T*>(findBehaviorNamed(scene, entity, Reflect::Traits<T>::NAME));
+}
+
+/**
+ * @brief The entity carrying a T, for the behaviors a game has one of.
+ *
+ * The lowest slot answers, so the choice is the same on every machine.
+ *
+ * @tparam T Behavior subclass with a VKM_REFLECT block.
+ * @param scene Scene to search.
+ * @return The entity, or a null EntityId when nothing carries one.
+ */
+template<typename T>
+EntityId findEntityWithBehavior(Scene& scene) {
+    return findEntityWithBehaviorNamed(scene, Reflect::Traits<T>::NAME);
+}
+
+/**
+ * @brief The scene's T, for the behaviors a game has one of: how they find each other.
+ *
+ * A walk of every entity with a ScriptComponent, so look it up once - in onStart - and keep the
+ * pointer, which holds while its entity lives.
+ *
+ * The lowest slot answers, as findEntityWithBehavior.
+ *
+ * @tparam T Behavior subclass with a VKM_REFLECT block.
+ * @param scene Scene to search.
+ * @return The T, or nullptr when nothing carries one.
+ */
+template<typename T>
+T* findBehavior(Scene& scene) {
+    return findBehavior<T>(scene, findEntityWithBehavior<T>(scene));
 }
 
 /**
@@ -218,7 +258,7 @@ class Behavior {
          * Including when the other was destroyed or disabled, so it may be dead. An
          * entity destroyed while touching hears nothing.
          *
-         * @param hit Who it stopped touching; its point and normal are zero.
+         * @param hit Who it stopped touching; its point, normal and speed are zero.
          */
         virtual void onCollisionExit(const Collision& hit) {}
 
@@ -269,13 +309,16 @@ class Behavior {
          */
         virtual std::unique_ptr<Behavior> clone() const = 0;
 
-    protected:
         /**
          * @brief The entity this behavior is attached to.
+         *
+         * Public: a behavior handed another finds where it is by asking it.
          *
          * @return The owning entity; null until bound, just before onStart.
          */
         EntityId entity() const { return m_entity; }
+
+    protected:
 
         /**
          * @brief This entity's T, or null when it has none.
@@ -336,6 +379,15 @@ class Behavior {
          */
         template<typename T>
         T* findBehavior() { return findBehavior<T>(m_entity); }
+
+        /**
+         * @brief The scene's behavior of type T, as findBehavior(Scene&) finds it.
+         *
+         * @tparam T The behavior type sought.
+         * @return The lowest-slot entity's, or null when none carries one.
+         */
+        template<typename T>
+        T* findInScene() { return ::Vkm::Engine::findBehavior<T>(*m_ctx->scene); }
 
         /**
          * @brief @p other's behavior of type T, or null when it has none.

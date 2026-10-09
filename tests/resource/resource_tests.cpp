@@ -37,6 +37,18 @@ void testHandlesAndNames() {
     check("a second asset is its own handle", second != cube);
     check("and does not answer to the first's name", resources.findByName<MeshAsset>("test:cube") == cube);
 
+    // findOrAdd makes an asset only when the name is free.
+    int made = 0;
+    const auto makeCube = [&] {
+        ++made;
+        return generateCube();
+    };
+    const MeshHandle again = resources.findOrAdd<MeshAsset>("test:cube", makeCube);
+    check("findOrAdd answers what stands under a name", again == cube && made == 0);
+    const MeshHandle fresh = resources.findOrAdd<MeshAsset>("test:fresh", makeCube);
+    const bool named = resources.findByName<MeshAsset>("test:fresh") == fresh;
+    check("  and makes it under the name when nothing does", made == 1 && named);
+
     resources.rename(second, "test:renamed");
     check("a rename moves the name", !resources.findByName<MeshAsset>("test:sphere"));
     check("  to the new one", resources.findByName<MeshAsset>("test:renamed") == second);
@@ -154,6 +166,7 @@ void testEveryGeneratedMeshCarriesItsRecipe() {
     made.push_back({"pyramid",  generatePyramid(2.0f, 0.5f)});
     made.push_back({"cone",     generateCone(0.25f, 2.0f, 7)});
     made.push_back({"cylinder", generateCylinder(0.25f, 2.0f, 9)});
+    made.push_back({"ring",     generateRing(0.1f, 0.75f, 11)});
 
     ResourceManager resources;
     std::vector<std::string> unstamped;
@@ -268,6 +281,7 @@ void testGeneratedMeshesFaceAndMapTheWayTheirVerticesSay() {
     made.push_back({"pyramid",  generatePyramid()});
     made.push_back({"cone",     generateCone()});
     made.push_back({"cylinder", generateCylinder()});
+    made.push_back({"ring",     generateRing()});
 
     for (const Made& one : made) {
         int backwards = 0;

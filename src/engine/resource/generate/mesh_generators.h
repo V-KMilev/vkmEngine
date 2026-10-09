@@ -111,4 +111,18 @@ MeshAsset generateCone(float radius = 0.5f, float height = 1.0f, uint32_t segmen
  */
 MeshAsset generateCylinder(float radius = 0.5f, float height = 1.0f, uint32_t segments = 20);
 
+/**
+ * @brief Generate a flat ring lying on the XZ plane, facing +Y, centred on the origin.
+ *
+ * A marker on the ground, a halo, a target: one sided, so its material is what
+ * decides whether it shows from below. U runs round it, V from the inner edge
+ * (0) to the outer (1).
+ *
+ * @param innerRadius Radius of the hole; zero makes a disc.
+ * @param outerRadius Radius of the outer edge.
+ * @param segments    Around the circumference; clamped up to 3.
+ * @return The ring.
+ */
+MeshAsset generateRing(float innerRadius = 0.25f, float outerRadius = 0.5f, uint32_t segments = 32);
+
 } // namespace Vkm::Engine
