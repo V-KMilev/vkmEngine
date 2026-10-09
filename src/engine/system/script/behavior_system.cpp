@@ -94,6 +94,7 @@ Collision collisionFor(const CollisionEvent& event, bool forA) {
     if (event.phase == ContactPhase::Ended) return hit;
     hit.point  = event.point;
     hit.normal = forA ? -event.normal : event.normal;
+    hit.speed  = event.speed;
     return hit;
 }
 

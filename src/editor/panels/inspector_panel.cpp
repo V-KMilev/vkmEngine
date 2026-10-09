@@ -2824,6 +2824,25 @@ void InspectorPanel::drawCharacterControllerSection(EditorContext& ec, EntityId 
             "along rather than walk into, and how tall a step the\n"
             "capsule rolls over.";
         changed |= propDrag("Max Slope", &cc.maxSlopeAngle, 0.5f, 0.0f, 90.0f, "%.0f deg", maxSlopeTooltip);
+        changed |= propDrag(
+            "Knockback Drag",
+            &cc.knockbackDrag,
+            0.1f,
+            0.0f,
+            1000.0f,
+            "%.1f m/s2",
+            "How fast a shove's speed bleeds off; zero leaves it to steering, as any other difference.\n"
+            "Above zero it is carried, and the character steers as if airborne meanwhile."
+        );
+        changed |= propDrag(
+            "Climb Speed",
+            &cc.climbSpeed,
+            0.05f,
+            0.0f,
+            100.0f,
+            "%.2f m/s",
+            "Up or down a face while gameplay holds the character to it (climbing)"
+        );
 
         const char* stepHeightTooltip =
             "Tallest thing the character mounts instead of stopping at.\n"

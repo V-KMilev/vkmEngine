@@ -64,8 +64,10 @@ All of them are plain data structs; see [ecs.md](ecs.md) for the field tables.
   session state that `syncMeshCollider` rebuilds on load, on an inspector edit
   and on any tick the mesh's uid or version or the part's scale differs from
   what they were built from (`meshBuiltFrom`). They live on the collider
-  because a query is handed the scene alone. One mesh part per collider. `isTrigger` makes it generate
-  events without an impulse response. `enabled = false` makes the collider inert -
+  because a query is handed the scene alone. One mesh part per collider: a
+  scene holding more has each of them collide as the first's triangles, placed
+  at its own centre, and the build says so in the log - merge them into one mesh.
+  `isTrigger` makes it generate events without an impulse response. `enabled = false` makes the collider inert -
   it gets no broadphase entry, produces no contacts or events, and the editor's
   collider overlay skips it (for pooled/phased objects that toggle collision
   without component churn). The solver ignores `Transform` scale - "Fit to Mesh"
@@ -78,9 +80,11 @@ All of them are plain data structs; see [ecs.md](ecs.md) for the field tables.
   catches on every seam between two floor boxes, and a capsule's round side
   slides over them.
 - **`CharacterController`** - `moveInput` (world-space desired horizontal
-  velocity, written by gameplay), `jumpRequested`, the tuning (`jumpSpeed`,
-  `acceleration`, `airControl`, `maxSlopeAngle`, `stepHeight`), the read-only
-  `grounded` / `groundNormal`, and the state of a step climb in progress
+  velocity, written by gameplay), `jumpRequested`, `climbing` and `climbNormal`
+  (written by gameplay while it is on a ladder, a rope or a wall), the tuning
+  (`jumpSpeed`, `acceleration`, `airControl`, `maxSlopeAngle`, `knockbackDrag`,
+  `stepHeight`, `climbSpeed`), the read-only
+  `grounded` / `groundNormal` / `walkSpeed`, and the state of a step climb in progress
   (`stepping`, `stepTargetY`, `stepTime`). Only the tuning is serialized: the rest
   is per-tick traffic, and a scene row holding a half-consumed jump request would
   replay it on load.
@@ -99,7 +103,8 @@ late, and a tick of steering lag is imperceptible; fresh contacts are the half
 that has to be exact, because landing, stepping off a ledge, refusing a slope and
 sliding along a wall all turn on them.
 
-Per tick, per controller:
+Per tick, per controller whose body this end simulates and is `Dynamic` - a kinematic
+body is placed by script, so there is nothing to steer:
 
 1. `grounded = rb.supported && dot(rb.supportNormal, up) >= cos(maxSlopeAngle)`,
    and `groundNormal` mirrors the surface (world up when airborne). A wall is a
@@ -119,10 +124,29 @@ Per tick, per controller:
    only the horizontal is steered (at `airControl` of the rate) and the vertical
    is gravity's alone. Either way the step is **capped** at `acceleration * dt`
    rather than approached exponentially, so the number means m/s^2 at every
-   speed.
+   speed. With `knockbackDrag` above zero, a shove - horizontal speed beyond
+   both what `moveInput` asks for and what the controller's own steering left
+   the body at last tick (`walkSpeed`): a blast, a dash set straight on the body,
+   never the walk left over when the stick lets go - is carried instead: it
+   bleeds off at `knockbackDrag` m/s^2, and the character steers at `airControl`
+   of the rate while it lasts. At zero it is steered away like any other
+   difference - at `acceleration` on the ground, `airControl` of it in the air.
 5. `jumpRequested && grounded` sets `linearVelocity.y = jumpSpeed`, clears
    `grounded` on the spot and ends any step climb, which would otherwise set the
    vertical back to its own rate next tick; the request is consumed either way.
+
+A character `climbing` skips steps 3 to 5: nothing of walking applies to it. The
+part of `moveInput` pushing into the face - against `climbNormal`, taken level -
+climbs up at most `climbSpeed`, pulling away climbs down, and the part along the
+face slides it sideways at half its speed, all steered at `acceleration`. The
+gravity `PhysicsSystem` adds before the next move is taken off ahead, so a
+climber with no input hangs where it is. A jump leaps off, up at `jumpSpeed` and
+out along the normal at half of it, so gameplay lets go as it asks for one, or
+holds the leaper again the next tick. The controller clears `climbing` after every
+tick, so gameplay decides what is climbable and sets the flag each fixed tick it
+holds, and a character whose hold has gone - its ladder destroyed, its behavior
+gone with it - falls rather than hangs. The engine has no ladder component,
+because what counts as reaching one is the game's.
 
 It writes velocity, **never position**: the solver owns the pose, so a controller
 cannot teleport a character through a wall, and friction, restitution,
@@ -251,7 +275,7 @@ top edge moved at the speed the thresholds were meant to catch.
 ```cpp
 enum class ContactPhase : uint8_t { Began, Stayed, Ended };
 
-struct CollisionEvent { EntityId a, b; ContactPhase phase; glm::vec3 point, normal; };  // normal points a -> b
+struct CollisionEvent { EntityId a, b; ContactPhase phase; glm::vec3 point, normal; float speed; };  // normal a -> b
 struct TriggerEvent   { EntityId trigger, other; ContactPhase phase; };
 ```
 
@@ -261,8 +285,11 @@ touches, **Stayed** on each later tick it still does, **Ended** on the first
 tick it does not. A collision's `a` is the
 body with the lower entity slot, so one pair is named the same way round - and
 its normal runs the same way - on every tick it lasts. `point` and `normal` are
-the first contact found, on Began and Stayed; an Ended contact touches nowhere
-and carries the pair alone. A trigger pair sends one `TriggerEvent` per trigger
+the first contact found, on Began and Stayed, and `speed` is how fast the two
+bodies' points there closed along the normal as gathered, before the solve
+pushed them apart: on Began, how hard it struck - for a thud's loudness, a
+shove's strength - and about zero while it rests. An Ended contact touches
+nowhere and carries the pair alone. A trigger pair sends one `TriggerEvent` per trigger
 in it, so with two triggers each learns who entered it.
 
 - **Ended is sent however the contact ended**: the two separating, either one

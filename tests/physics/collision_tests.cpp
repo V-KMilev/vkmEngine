@@ -812,6 +812,10 @@ void testAContactBeginsStaysAndEndsOnce() {
         "  naming the floor and the box",
         tick.collisions.size() == 1 && tick.collisions[0].a == floor && tick.collisions[0].b == box
     );
+    // Half a metre down: sqrt(2 g h), some 3.1 m/s, give or take the tick it lands in.
+    const float struck = tick.collisions.empty() ? 0.0f : tick.collisions[0].speed;
+    std::printf("      it struck at %.2f m/s\n", static_cast<double>(struck));
+    check("  how hard it struck", struck > 2.6f && struck < 3.6f);
 
     int stayedTicks = 0;
     bool onlyStayed = true;
@@ -825,6 +829,10 @@ void testAContactBeginsStaysAndEndsOnce() {
     check(
         "  carrying the contact's normal, floor to box",
         tick.collisions.size() == 1 && tick.collisions[0].normal.y > 0.9f
+    );
+    check(
+        "  and, resting, striking at no speed",
+        tick.collisions.size() == 1 && tick.collisions[0].speed < 0.3f
     );
 
     Rigidbody& lifted = scene.get<Rigidbody>(box);

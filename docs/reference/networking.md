@@ -646,9 +646,9 @@ static-against-static skip drops every pair that involves neither the character
 nor a body it leases - which is what stops a replay costing a full tick over every body in the world.
 
 What a replay does **not** rewind is unreplicated per-tick state: the character
-controller's step latch, animation, a behavior's own members. Those carry
-forward from where they now are. A replay that begins mid-climb re-runs its
-ticks with the latch as it stands, not as it stood.
+controller's step latch and `walkSpeed`, animation, a behavior's own members.
+Those carry forward from where they now are. A replay that begins mid-climb
+re-runs its ticks with the latch as it stands, not as it stood.
 
 #### Leasing
 

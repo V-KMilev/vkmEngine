@@ -75,7 +75,7 @@ scene.remove<Mesh>(entity);
 | `Hierarchy`           | `component/core/hierarchy.h`               | `EntityId parent`, `firstChild`, `lastChild`, `nextSibling`, `prevSibling`                            |
 | `Name`                | `component/core/name.h`                    | `char value[64]` - the entity's display name, in the editor and in log lines                          |
 | `Collider`            | `component/physics/collider.h`             | One or more `ColliderPart`s (a `ColliderShape` tag - Box, Capsule or Mesh - plus the fields for each) + `isTrigger` + `enabled` |
-| `CharacterController` | `component/physics/character_controller.h` | `moveInput` + `jumpRequested` in, tuning, `grounded` + `groundNormal` out                    |
+| `CharacterController` | `component/physics/character_controller.h` | `moveInput` + `jumpRequested` + `climbing` + `climbNormal` in, tuning, `grounded` + `groundNormal` + `walkSpeed` out |
 | `Rigidbody`           | `component/physics/rigidbody.h`            | Body: linear/angular velocity, `motion` (Dynamic, Kinematic or Static), mass, damping, restitution, friction, gravity scale, plus the `supported` / `supportNormal` / `blockNormal` outputs |
 | `ReflectionProbe`     | `component/render/reflection_probe.h`      | Local IBL probe: `halfExtents` influence box, `falloff`, `intensity`, `resolution`                   |
 | `AudioSource`         | `component/audio/audio_source.h`           | `AudioClipHandle clip`, `volume`, `pitch`, `loop`, `spatial`, `playOnStart`, `min`/`maxDistance`; `playing` + `started` are runtime only |

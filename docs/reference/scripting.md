@@ -114,10 +114,10 @@ without a Rigidbody is in no broadphase at all: it touches nothing and no hook
 hears it. Static ground takes a Rigidbody whose `motion` is
 `RigidbodyMotion::Static`; something a behavior moves by hand takes `Kinematic`.
 `onCollisionEnter`, `onCollisionStay` and `onCollisionExit` are handed a
-`Collision`: the entity on the other side, a contact point, and a normal that
+`Collision`: the entity on the other side, a contact point, a normal that
 points from the other entity into this one - so a crate landing on the floor
-hears a normal pointing up. On exit the two touch nowhere, and the point and
-normal are zero. A trigger collider calls `onTriggerEnter` / `Stay` / `Exit`
+hears a normal pointing up - and the speed the two struck at. On exit the two
+touch nowhere, and the point, normal and speed are zero. A trigger collider calls `onTriggerEnter` / `Stay` / `Exit`
 with the entity that entered instead.
 
 **A sound, in one line.** A one-shot that needs no entity of its own - an

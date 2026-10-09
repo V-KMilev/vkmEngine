@@ -214,6 +214,139 @@ float carriedBy(float crateMass) {
     return scene.get<Transform>(crate).position.x - 1.5f;
 }
 
+// How far a character standing still slides from a shove of 10 m/s, with @p drag.
+float slideFromAShove(float drag) {
+    Scene scene;
+    addBox(scene, {0.0f, -0.5f, 0.0f}, {40.0f, 0.5f, 4.0f});
+    const EntityId walker = addCharacter(scene, 0.3f, 0.5f, 0.0f);
+    CharacterController& controller = scene.get<CharacterController>(walker);
+    controller.moveInput     = glm::vec3(0.0f);
+    controller.knockbackDrag = drag;
+    simulate(scene, 30);  // settled on the floor
+    scene.get<Rigidbody>(walker).linearVelocity = {10.0f, 0.0f, 0.0f};
+    const float from = scene.get<Transform>(walker).position.x;
+    simulate(scene, 180);
+    return scene.get<Transform>(walker).position.x - from;
+}
+
+// A shove is speed nobody asked for: without knockbackDrag the controller steers it
+// away at its full acceleration; with it, the shove carries and dies at the drag.
+void testAShoveCarriesWithKnockbackDrag() {
+    std::printf("A shove, with and without knockbackDrag:\n");
+    const float stopped = slideFromAShove(0.0f);
+    const float carried = slideFromAShove(10.0f);
+    std::printf("      no drag slid %.3f m, drag 10 slid %.3f m\n", stopped, carried);
+    // At 40 m/s^2 a 10 m/s shove is gone in a quarter second, 1.25 m, and floor
+    // friction takes a little more. At the drag plus the airborne share of steering,
+    // 10 and 10, it lasts half a second, 2.5 m, less the same friction: about 2.
+    check("without knockbackDrag a shove dies at the acceleration", stopped < 1.4f);
+    check("  and with it the shove carries", carried > 1.7f && carried < 2.6f);
+}
+
+// How far a character walking at 4 m/s slides once its input lets go, with @p drag.
+float slideFromAStop(float drag) {
+    Scene scene;
+    addBox(scene, {0.0f, -0.5f, 0.0f}, {40.0f, 0.5f, 4.0f});
+    const EntityId walker = addCharacter(scene, 0.3f, 0.5f, 0.0f);
+    CharacterController& controller = scene.get<CharacterController>(walker);
+    controller.knockbackDrag = drag;
+    controller.moveInput     = {4.0f, 0.0f, 0.0f};
+    simulate(scene, 90);  // settled, and up to speed
+    controller.moveInput = glm::vec3(0.0f);
+    const float from = scene.get<Transform>(walker).position.x;
+    simulate(scene, 120);
+    return scene.get<Transform>(walker).position.x - from;
+}
+
+// Letting go of the stick is not a shove: a walker stops at its full acceleration
+// whatever its knockbackDrag.
+void testLettingGoIsNotAShove() {
+    std::printf("A walker letting go, with and without knockbackDrag:\n");
+    const float plain = slideFromAStop(0.0f);
+    const float drag  = slideFromAStop(10.0f);
+    std::printf("      no drag slid %.3f m, drag 10 slid %.3f m\n", plain, drag);
+    check("it stops as soon with a knockbackDrag as without", std::abs(drag - plain) < 0.05f);
+}
+
+// A character's body made kinematic is placed by script - a cut-scene, a seat, a pause -
+// and the controller leaves it be: no velocity written, nothing to warn about.
+void testAKinematicCharacterIsLeftAlone() {
+    std::printf("A character whose body is kinematic:\n");
+    Scene scene;
+    addBox(scene, {0.0f, -0.5f, 0.0f}, {8.0f, 0.5f, 4.0f});
+    const EntityId walker = addCharacter(scene, 0.3f, 0.5f, 0.0f);
+    Rigidbody& body = scene.get<Rigidbody>(walker);
+    body.motion = RigidbodyMotion::Kinematic;
+    scene.get<Collider>(walker).enabled = false;
+    const glm::vec3 from = scene.get<Transform>(walker).position;
+    simulate(scene, 64);
+    const float speed = glm::length(scene.get<Rigidbody>(walker).linearVelocity);
+    check("the controller writes it no velocity", speed == 0.0f);
+    check("  and it stays where the script put it", scene.get<Transform>(walker).position == from);
+
+    // A jump pressed while it was placed is spent then, not fired once it moves again.
+    scene.get<CharacterController>(walker).jumpRequested = true;
+    simulate(scene, 1);
+    check("  a jump pressed meanwhile is spent", !scene.get<CharacterController>(walker).jumpRequested);
+    body.motion = RigidbodyMotion::Dynamic;
+    scene.get<Collider>(walker).enabled = true;
+    simulate(scene, 30);
+    const float rose = scene.get<Transform>(walker).position.y - from.y;
+    check("  and moving again it does not jump", rose < 0.05f);
+}
+
+// A ladder is a wall gameplay says to climb, each tick it holds on: pushing into it goes up,
+// letting go hangs, a jump leaps off, and once gameplay stops saying so it falls.
+void testACharacterClimbsAWall() {
+    std::printf("A character climbing a wall:\n");
+    Scene scene;
+    addBox(scene, {0.0f, -0.5f, 0.0f}, {8.0f, 0.5f, 4.0f});
+    addBox(scene, {1.5f, 4.0f, 0.0f}, {0.5f, 4.0f, 4.0f});  // its face at x = 1
+    const EntityId climber = addCharacter(scene, 0.3f, 0.5f, 0.4f);
+    simulate(scene, 30);  // walked up against it
+    CharacterController& cc = scene.get<CharacterController>(climber);
+    cc.climbNormal = {-1.0f, 0.0f, 0.0f};
+    cc.moveInput   = {5.0f, 0.0f, 0.0f};  // faster than it climbs
+    const auto holdOn = [&cc] { cc.climbing = true; };
+    const float foot = scene.get<Transform>(climber).position.y;
+    simulate(scene, 64, holdOn);
+    const float climbed = scene.get<Transform>(climber).position.y - foot;
+    std::printf("      a second up it climbed %.2f m\n", static_cast<double>(climbed));
+    check("pushing into it climbs at about its climbSpeed", climbed > 2.5f && climbed < 3.1f);
+
+    const glm::vec3& at = scene.get<Transform>(climber).position;
+    cc.moveInput = glm::vec3(0.0f);
+    simulate(scene, 16, holdOn);  // coming to a stop
+    const float held = at.y;
+    simulate(scene, 64, holdOn);
+    std::printf("      let go, it moved %.3f m\n", static_cast<double>(at.y - held));
+    check("  letting go of the input, it hangs there", std::abs(at.y - held) < 0.05f);
+
+    cc.moveInput = {0.0f, 0.0f, 2.0f};
+    const float side = at.z;
+    simulate(scene, 32, holdOn);
+    check(
+        "  pushing along it, it edges sideways, still up",
+        at.z - side > 0.3f && std::abs(at.y - held) < 0.1f
+    );
+
+    cc.moveInput     = glm::vec3(0.0f);
+    cc.jumpRequested = true;
+    const float face = at.x;
+    simulate(scene, 1, holdOn);
+    check("  a jump leaps up off it", scene.get<Rigidbody>(climber).linearVelocity.y > 0.5f * cc.jumpSpeed);
+    simulate(scene, 19);
+    std::printf("      it leapt %.3f m off\n", static_cast<double>(face - at.x));
+    check("  leaping off, away from the face", at.x < face - 0.2f);
+
+    // Held on again, high up, then no longer: nothing keeps it there.
+    simulate(scene, 64, holdOn);
+    const float hung = at.y;
+    simulate(scene, 32);
+    std::printf("      no longer held, it fell %.2f m\n", static_cast<double>(hung - at.y));
+    check("  once gameplay stops holding it on, it falls", hung - at.y > 0.5f);
+}
+
 void testAHeavierCrateIsHarderToPush() {
     std::printf("A character pushing crates of different mass:\n");
     const float light = carriedBy(8.0f);
@@ -227,6 +360,10 @@ void testAHeavierCrateIsHarderToPush() {
 
 void runPhysicsCharacterTests() {
     testAHeavierCrateIsHarderToPush();
+    testAShoveCarriesWithKnockbackDrag();
+    testLettingGoIsNotAShove();
+    testAKinematicCharacterIsLeftAlone();
+    testACharacterClimbsAWall();
     testCharacterStaircase();
     testCharacterStepUp();
     testAJumpDuringAStepIsAWholeJump();

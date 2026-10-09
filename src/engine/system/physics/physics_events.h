@@ -24,7 +24,8 @@ enum class ContactPhase : uint8_t {
  * @brief A resolved (non-trigger) contact between two bodies began, lasted or ended this tick.
  *
  * `a` has the lower entity slot, so a pair is named the same way every tick. On Began and Stayed,
- * `point` is a representative world-space position and `normal` points a to b; on Ended both keep their
+ * `point` is a representative world-space position, `normal` points a to b and `speed` is how fast the
+ * two closed along it as the tick began - how hard it struck, on Began; on Ended all three keep their
  * defaults, and either id may name a dead entity, since Ended is sent whatever ended the contact.
  * See Behavior::onCollisionEnter for the per-entity form.
  */
@@ -34,18 +35,20 @@ struct CollisionEvent {
     ContactPhase phase  = ContactPhase::Began;
     glm::vec3    point  = {0.0f, 0.0f, 0.0f};
     glm::vec3    normal = {0.0f, 1.0f, 0.0f};
+    float        speed  = 0.0f;  ///< m/s, never below zero.
 };
 
 /**
  * @brief One entity's view of a CollisionEvent, as its behaviors' collision hooks receive it.
  *
  * `normal` points from `other` into the receiver (Unity's convention): a body landing on the floor
- * hears up, the floor hears down. On onCollisionExit `point` and `normal` are zero.
+ * hears up, the floor hears down. On onCollisionExit `point`, `normal` and `speed` are zero.
  */
 struct Collision {
     EntityId  other;                            ///< The entity on the far side of the contact.
     glm::vec3 point  = {0.0f, 0.0f, 0.0f};      ///< A representative world-space contact position.
     glm::vec3 normal = {0.0f, 0.0f, 0.0f};      ///< Unit, from other into this entity.
+    float     speed  = 0.0f;                    ///< How fast the two closed, m/s: how hard it struck.
 };
 
 /**
