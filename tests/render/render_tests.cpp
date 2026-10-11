@@ -1314,6 +1314,77 @@ void testACutoutsMapIsPartOfItsShadow() {
     check("with no GL error behind any of it", noGlError());
 }
 
+// A transparent caster's shadow is cut by its alpha too, so it is planned as a cutout is: a run
+// a material, and its map part of the tile's picture - a decal's see-through surround casts none.
+void testATransparentCastersShadowIsCutByItsAlpha() {
+    using namespace Vkm::Engine;
+    std::printf("Transparent shadow casters under a spot light:\n");
+
+    ResourceManager resources;
+    TextureAsset map;
+    map.params.width  = 2;
+    map.params.height = 2;
+    map.pixelData.assign(2 * 2 * 4, 255);
+    const TextureHandle decal = resources.add(std::move(map), "test:decal");
+    const auto material = [&](const char* name) {
+        MaterialAsset asset;
+        asset.type          = MaterialType::Transparent;
+        asset.albedoTexture = decal;
+        return resources.add(std::move(asset), name);
+    };
+    const MaterialHandle glassA = material("test:glassA");
+    const MaterialHandle glassB = material("test:glassB");
+    const MeshHandle     cube   = resources.add(generateCube(), "test:cube");
+
+    RenderObjects objects;
+    const MaterialHandle materials[2] = {glassA, glassB};
+    for (uint32_t i = 0; i < 2; ++i) {
+        const glm::vec3 at(static_cast<float>(i) - 0.5f, 0.5f, 0.0f);
+        objects.models.push_back(glm::translate(glm::mat4(1.0f), at));
+        objects.bounds.push_back({at - glm::vec3(0.5f), at + glm::vec3(0.5f)});
+        objects.draws.push_back({cube, materials[i], 0});
+        objects.skinFirst.push_back(0);
+        objects.visible.push_back(i);
+        objects.scene.push_back(i);
+    }
+    objects.casterCount = 2;
+
+    RenderView view;
+    view.objects = &objects;
+    view.camera  = Vkm::Engine::CameraData::from(
+        glm::lookAt(glm::vec3(0.0f, 3.0f, 8.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
+        glm::perspective(glm::radians(60.0f), 1.0f, 0.1f, 100.0f),
+        glm::vec3(0.0f, 3.0f, 8.0f)
+    );
+    LightData spot{};
+    spot.type           = LightType::Spot;
+    spot.position       = glm::vec3(0.0f, 6.0f, 0.0f);
+    spot.direction      = glm::vec3(0.0f, -1.0f, 0.0f);
+    spot.radius         = 20.0f;
+    spot.innerConeAngle = 0.6f;
+    spot.outerConeAngle = 0.9f;
+    spot.castShadows    = true;
+    spot.shadowBias     = 0.001f;
+    view.lights.push_back(spot);
+
+    GLView       glView;
+    GLShadowData plan;
+    const auto signature = [&]() {
+        glView.sync(view, resources);
+        plan.build(view, glView, SHADOW_ATLAS_MIN_TILE_RES);
+        plan.finishCull();
+        return plan.batch2D(0).signature;
+    };
+
+    const uint64_t first = signature();
+    const bool apart = plan.batch2D(0).runs.size() == 2;
+    check("two transparent casters on one mesh are two runs, a material each", apart);
+    resources.edit(decal).pixelData[3] = 0;
+    resources.commit(decal);
+    check("  and a new clear part in their map is a new picture", signature() != first);
+    check("with no GL error behind any of it", noGlError());
+}
+
 namespace ShadowPlan {
 
 using namespace Vkm::Engine;
@@ -2067,6 +2138,7 @@ int runTests() {
     testTheDisplayEncodeInvertsTheSrgbDecode();
     testAnAreaLightsFormFactorHoldsStraightDownTheNormal();
     testACutoutsMapIsPartOfItsShadow();
+    testATransparentCastersShadowIsCutByItsAlpha();
     testATilesRunsKeepEachLayoutTogether();
     testACutoutElsewhereLeavesAHeldTileHeld();
     testACasterAboveTheCascadesIsKept();

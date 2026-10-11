@@ -60,22 +60,11 @@ layout(binding = OCEAN_SLOT_RIPPLES) uniform sampler2DArray u_ripples;
 layout(binding = OCEAN_SLOT_SHORE) uniform sampler2D u_oceanShoreMap;
 uniform vec4 u_oceanShore;
 
-// Ripple field @p layer at @p uv, cubic B-spline filtered by four bilinear reads (Sigg and Hadwiger,
-// GPU Gems 2 ch. 20). Bilinear is smooth only within a texel, and foam's threshold over a field
-// magnified on screen picks out every texel's square; the B-spline has none to pick out.
+// Ripple field @p layer at @p uv, cubic B-spline filtered (shaders/bspline.glsl): foam's threshold
+// over a field magnified on screen would pick out every texel's square of a bilinear read.
 vec4 smoothRipples(vec2 uv, float layer) {
-    const vec2 size = vec2(textureSize(u_ripples, 0).xy);
-    const vec2 st   = uv * size - 0.5;
-    const vec2 cell = floor(st);
-    const vec2 f    = st - cell;
-    const vec2 w0   = (1.0 / 6.0) * (1.0 - f) * (1.0 - f) * (1.0 - f);
-    const vec2 w1   = (1.0 / 6.0) * (4.0 - 6.0 * f * f + 3.0 * f * f * f);
-    const vec2 w2   = (1.0 / 6.0) * (1.0 + 3.0 * f + 3.0 * f * f - 3.0 * f * f * f);
-    const vec2 w3   = (1.0 / 6.0) * f * f * f;
-    const vec2 g0   = w0 + w1;
-    const vec2 g1   = w2 + w3;
-    const vec2 at0  = (cell - 0.5 + w1 / g0) / size;
-    const vec2 at1  = (cell + 1.5 + w3 / g1) / size;
+    vec2 at0, at1, g0, g1;
+    bsplineReads(uv, vec2(textureSize(u_ripples, 0).xy), at0, at1, g0, g1);
     const vec4 near0 = texture(u_ripples, vec3(at0.x, at0.y, layer));
     const vec4 near1 = texture(u_ripples, vec3(at1.x, at0.y, layer));
     const vec4 far0  = texture(u_ripples, vec3(at0.x, at1.y, layer));

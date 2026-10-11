@@ -53,12 +53,12 @@ class GLShadowPass : public GLPass {
         };
 
         /**
-         * @brief One multi-draw of a tile: runs sharing a program, a cutout and a vertex layout.
+         * @brief One multi-draw of a tile: runs sharing a program, a cut material and a vertex layout.
          */
         struct ShadowDraw {
             /// The first run's mesh; every run's shares its vertex layout.
             const GLMesh*     mesh     = nullptr;
-            /// The cutout every run is cut by; null for solid casters.
+            /// The material every run is cut by (GLMaterial::cutsItsShadow); null for solid casters.
             const GLMaterial* material = nullptr;
             uint32_t          program  = 0;        ///< Index into m_programs.
             uint32_t          first    = 0;        ///< First command in m_list.
@@ -70,7 +70,8 @@ class GLShadowPass : public GLPass {
          */
         struct DepthProgram {
             Vkm::GL::Shader shader;
-            uint64_t        tile = 0;  ///< The beginTile() whose matrix it holds.
+            bool            cuts = false;  ///< Cuts casters by their alpha, so takes the dither's shift.
+            uint64_t        tile = 0;      ///< The beginTile() whose matrix and shift it holds.
         };
 
     private:
@@ -97,11 +98,14 @@ class GLShadowPass : public GLPass {
          * @brief Start drawing a tile or face against @p lightVP.
          *
          * Only recorded: a program gets it when a run of this tile first binds it, so a tile with
-         * no cutout never binds the masked program.
+         * no caster cut by its alpha never binds the masked program.
          *
-         * @param lightVP World to the light's clip space for this tile or face.
+         * @param lightVP     World to the light's clip space for this tile or face.
+         * @param ditherShift From the tile's texels to the light's fixed grid, which a cut
+         *                    caster's dither is keyed to (Shadow2DJob::ditherOrigin); zero for a
+         *                    face.
          */
-        void beginTile(const glm::mat4& lightVP);
+        void beginTile(const glm::mat4& lightVP, const glm::vec2& ditherShift);
 
         /**
          * @brief Write and upload the drawn tiles' commands, and bind the objects they index.
@@ -116,7 +120,7 @@ class GLShadowPass : public GLPass {
          *
          * Culling and grouping ran on the thread pool (GLShadowData::cullCasters), so this is one
          * command per run. The program (posed or not, cut or not) is chosen here from key and
-         * material; consecutive runs agreeing on program, cutout and layout are one draw.
+         * material; consecutive runs agreeing on program, cut material and layout are one draw.
          *
          * @param ctx   For the GL view and the caster list.
          * @param batch The surviving caster indices, grouped.
@@ -128,13 +132,14 @@ class GLShadowPass : public GLPass {
         /**
          * @brief Submit one tile's or face's draws against the matrix beginTile() recorded.
          *
-         * @param glView For a cutout's maps.
+         * @param glView For a cut material's maps.
          * @param tile   Where its draws sit in m_draws.
          */
         void drawTile(const GLView& glView, const TileDraws& tile);
 
         /**
-         * @brief Make @p program current, and give it this tile's matrix if it lacks it.
+         * @brief Make @p program current, and give it this tile's matrix, and a cutting one the
+         *        dither's shift, if it lacks them.
          *
          * A program must be bound to take a uniform, and matrices go out per tile and face, so the
          * current program is tracked across the pass rather than rebound per tile.
@@ -144,10 +149,11 @@ class GLShadowPass : public GLPass {
         void useProgram(DepthProgram& program);
 
     private:
-        DepthProgram m_programs[4];  ///< Indexed masked * 2 + posed.
+        DepthProgram m_programs[4];  ///< Indexed cut * 2 + posed.
 
         const Vkm::GL::Shader* m_bound = nullptr;  ///< The program that is current, reset each execute().
-        glm::mat4              m_lightVP{1.0f};    ///< The tile being drawn's matrix.
+        glm::mat4              m_lightVP{1.0f};      ///< The matrix of the tile being drawn.
+        glm::vec2              m_ditherShift{0.0f};  ///< Its beginTile() dither shift.
         /// Counts beginTile() calls; never reset, so no program holds a stale one.
         uint64_t               m_tile = 0;
         uint32_t               m_tilesDrawn = 0;   ///< Tiles and faces drawn this frame; the rest were held.

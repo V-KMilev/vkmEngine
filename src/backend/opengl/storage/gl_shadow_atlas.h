@@ -127,6 +127,11 @@ class GLShadowAtlas {
          */
         bool tileHolds(uint32_t slot, uint64_t signature) const;
 
+        /// The 2D tile @p slot's lower-left corner in the atlas, in texels; the origin for one unplaced.
+        glm::vec2 tileCorner(uint32_t slot) const {
+            return slot < m_tiles.size() ? glm::vec2(m_tiles[slot].x, m_tiles[slot].y) : glm::vec2(0.0f);
+        }
+
         /// The cube-face counterpart of tileHolds, recorded by beginCubeFace().
         bool faceHolds(uint32_t slot, uint32_t face, uint64_t signature) const;
 

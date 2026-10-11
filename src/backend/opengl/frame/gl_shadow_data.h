@@ -97,6 +97,14 @@ struct Shadow2DJob {
      * clamped, so a caster nearer the sun than its near plane is flattened onto it, not clipped.
      */
     bool      cascade;
+    /**
+     * @brief Where the tile's lower-left texel lies in the light's own fixed grid, in texels.
+     *
+     * A cascade's, from its snapped centre; zero for a spot's. Added to a fragment's place in the
+     * tile, it names one world texel whichever way the cascade has snapped, which the transparent
+     * caster's dither is keyed on so its pattern stays put as the camera moves.
+     */
+    glm::vec2 ditherOrigin = glm::vec2(0.0f);
 };
 
 /**
@@ -118,8 +126,9 @@ struct ShadowRun {
     /**
      * @brief What its casters share: `group * slots + slot`.
      *
-     * The slot is the mesh id for opaque casters; alpha-masked ones take a slot per (material,
-     * mesh) past every mesh id, so a run shares the material cutting its shadow. The group is the
+     * The slot is the mesh id for solid casters; one cut by its alpha (GLMaterial::cutsItsShadow)
+     * takes a slot per (material, mesh) past every mesh id, so a run shares the material cutting
+     * its shadow. The group is the
      * high digit (static, skinned as stored, skinned and posed), so runs come in that order and
      * neither vertex layout nor pose alternates within a tile.
      */
@@ -130,7 +139,7 @@ struct ShadowRun {
 /**
  * @brief The casters one shadow job rasterises: indices into RenderView::objects.
  *
- * Grouped by mesh (a masked caster by mesh and material), then by whether posed, so the pass
+ * Grouped by mesh (a caster cut by its alpha by mesh and material), then by whether posed, so the pass
  * issues one instanced draw per run the cull found.
  */
 struct ShadowCasterBatch {
@@ -140,7 +149,7 @@ struct ShadowCasterBatch {
      * @brief What the tile drawn from this batch looks like, as a hash.
      *
      * Of the culling matrix and each survivor's mesh id, geometry upload (GLMesh::uploadId; for a
-     * cutout also its material's and albedo map's) and model. Equal signatures draw the same
+     * caster cut by its alpha also its material's and albedo map's) and model. Equal signatures draw the same
      * picture, so the atlas keeps the tile (GLShadowAtlas::tileHolds). Zero always draws: the
      * job is not cacheable, or a survivor is posed and its picture is not in its model matrix.
      */

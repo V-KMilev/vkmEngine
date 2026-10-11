@@ -306,8 +306,9 @@ Shadow rendering goes through `GLShadowPass`, which:
   be the same picture: the cull signs each batch with a hash of the
   matrix it was culled against and every survivor's mesh id, geometry upload
   (`GLMesh::uploadId`, so a mesh re-cooked under the same handle is a new
-  picture) and model - and for an alpha-masked survivor its material's and
-  albedo map's uploads, since they say which texels cast
+  picture) and model - and for a survivor cut by its alpha
+  (`GLMaterial::cutsItsShadow`) its material's and albedo map's uploads, since
+  they say which texels cast
   (`ShadowCasterBatch::signature`) - the atlas remembers
   the signature a tile was last drawn from - recorded as the tile is
   cleared (`GLShadowAtlas::beginTile` / `beginCubeFace`), not when it is
@@ -333,8 +334,13 @@ Shadow rendering goes through `GLShadowPass`, which:
   The cull groups those casters by (material, mesh) rather than mesh alone,
   so a run binds one material; cascades, spot tiles, cube faces and the
   captures' key-light map all draw them this way. A transparent caster is
-  drawn solid - its shadow is its whole shape - and one that should cast
-  none turns `Mesh::castShadows` off.
+  cut the same way against a dither instead of a cutoff - a share of texels as
+  large as it is opaque, its see-through parts (a decal's surround) none - so
+  it casts a shadow as deep as it is opaque: smoothly where the filter is wide,
+  as grain at a hard edge's few taps. Each caster draws its own pattern, so two
+  half-clear panes cast three quarters, and the pattern is keyed to the light's
+  fixed grid, so a cascade snapping along with the camera keeps it still. One
+  wholly opaque - alpha 1, no map - casts as a solid (`GLMaterial::cutsItsShadow`).
 - Takes the first `casterCount` objects of `RenderObjects::scene` - the
   casters, which the gather lists first - from the **whole scene** rather than
   the camera's visible set (see

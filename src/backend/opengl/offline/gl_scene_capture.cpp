@@ -78,10 +78,11 @@ void GLSceneCapture::begin(
             glView.ensureMaterial(handle, resources);
         }
         const GLMaterial* material = glView.getMaterial(handle);
-        if (!material || material->getType() == MaterialType::Transparent) continue;
-        m_opaque.push_back(object);
-        // Casters lead the scene list; their opaque ones are what the key light's map draws.
+        if (!material) continue;
+        // Casters lead the scene list, and the key light's map draws each as the live map does,
+        // a transparent one by its alpha; the faces draw only what is opaque.
         if (i < casterCount) m_casters.push_back(object);
+        if (material->getType() != MaterialType::Transparent) m_opaque.push_back(object);
     }
 
     // Grouped once for every face of every cube after this. No palette: the capture draws
@@ -180,13 +181,14 @@ void GLSceneCapture::prepareShadow(Vkm::GL::Context& gl, const RenderView& view,
     m_casterBatcher.buildGrouped(m_casters, objects, *m_glView, 0);
     m_shadowMasked.bind();
     m_shadowMasked.setUniformMatrix4fv("u_lightVP", lightVP);
+    m_shadowMasked.setUniform2f("u_ditherShift", 0.0f, 0.0f);
     m_shadowDepth.bind();
     m_shadowDepth.setUniformMatrix4fv("u_lightVP", lightVP);
     m_objects.bind();
     const Vkm::GL::Shader* bound = &m_shadowDepth;
     for (const InstanceDraw& draw : m_casterBatcher.draws()) {
         const GLMaterial* material = m_glView->getMaterial(draw.material);
-        const bool        masked   = material && material->getType() == MaterialType::AlphaMask;
+        const bool        masked   = material && material->cutsItsShadow();
         Vkm::GL::Shader&  program  = masked ? m_shadowMasked : m_shadowDepth;
         if (&program != bound) {
             program.bind();

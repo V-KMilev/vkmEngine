@@ -446,7 +446,7 @@ stage (each backend pass owns its program):
 shaders/
   *.glsl        # the shared includes every program below pulls from, at the root
   forward/      # pbr/ (the ubershader), pbr_skinned/, prepass/, prepass_skinned/
-  shadow/       # depth/ (atlas tiles and cube faces alike), depth_masked/ (cutouts), and a skinned variant of each
+  shadow/       # depth/ (atlas tiles and cube faces alike), depth_masked/ (cut by alpha), and a skinned variant of each
   ibl/          # equirect/, sky/, irradiance/, prefilter/, brdf/  (IBL bake)
   irradiance/   # project/, backface/  (the SH probe grid bake)
   resolve/      # geometry/, color/  (the MSAA resolves)

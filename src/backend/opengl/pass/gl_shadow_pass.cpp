@@ -29,10 +29,10 @@ constexpr uint32_t HELD = UINT32_MAX;
 
 GLShadowPass::GLShadowPass()
     : m_programs{
-        {Vkm::GL::Shader("shaders/shadow/depth")},
-        {Vkm::GL::Shader("shaders/shadow/depth_skinned")},
-        {Vkm::GL::Shader("shaders/shadow/depth_masked")},
-        {Vkm::GL::Shader("shaders/shadow/depth_masked_skinned")}
+        {Vkm::GL::Shader("shaders/shadow/depth"), false},
+        {Vkm::GL::Shader("shaders/shadow/depth_skinned"), false},
+        {Vkm::GL::Shader("shaders/shadow/depth_masked"), true},
+        {Vkm::GL::Shader("shaders/shadow/depth_masked_skinned"), true}
     }
 {}
 
@@ -123,17 +123,15 @@ GLShadowPass::TileDraws GLShadowPass::addCasters(
         // A posed caster without a skin stream draws its stored vertices, as the static program does.
         const bool posed = framePosed && run.posed && mesh->isSkinned();
 
-        // Every caster of a masked run shares its material (ShadowRun::key).
+        // Every caster of a cut run shares its material (ShadowRun::key).
         const GLMaterial* material = glView.getMaterial(draw.material);
-        const GLMaterial* cutout   = material && material->getType() == MaterialType::AlphaMask
-            ? material
-            : nullptr;
-        const uint32_t    program  = (cutout ? 2 : 0) + (posed ? 1 : 0);
+        const GLMaterial* cut      = material && material->cutsItsShadow() ? material : nullptr;
+        const uint32_t    program  = (cut ? 2 : 0) + (posed ? 1 : 0);
 
         const ShadowDraw* last = m_draws.size() > tileFirst ? &m_draws.back() : nullptr;
-        if (!last || last->program != program || last->material != cutout
+        if (!last || last->program != program || last->material != cut
             || last->mesh->layout() != mesh->layout()) {
-            m_draws.push_back({ mesh, cutout, program, static_cast<uint32_t>(commands.size()), 0 });
+            m_draws.push_back({ mesh, cut, program, static_cast<uint32_t>(commands.size()), 0 });
         }
         commands.push_back(mesh->command(run.count, first + run.first));
         ++m_draws.back().count;
@@ -161,7 +159,8 @@ void GLShadowPass::render2D(GLFrameContext& ctx) {
         if (m_tiles2D[j].first == HELD) continue;
         clampDepth(jobs[j].cascade);
         ctx.shadowAtlas.beginTile(ctx.gl, jobs[j].slot, ctx.shadowData.batch2D(j).signature);
-        beginTile(jobs[j].lightVP);
+        // gl_FragCoord counts from the atlas's corner, the grid from the tile's.
+        beginTile(jobs[j].lightVP, jobs[j].ditherOrigin - ctx.shadowAtlas.tileCorner(jobs[j].slot));
         drawTile(ctx.resources, m_tiles2D[j]);
     }
     clampDepth(false);
@@ -176,14 +175,15 @@ void GLShadowPass::renderCube(GLFrameContext& ctx) {
             const TileDraws& tile = m_tilesCube[j * 6 + f];
             if (tile.first == HELD) continue;
             ctx.shadowAtlas.beginCubeFace(ctx.gl, job.slot, f, ctx.shadowData.batchCube(j, f).signature);
-            beginTile(job.faceVP[f]);
+            beginTile(job.faceVP[f], glm::vec2(0.0f));
             drawTile(ctx.resources, tile);
         }
     }
 }
 
-void GLShadowPass::beginTile(const glm::mat4& lightVP) {
-    m_lightVP = lightVP;
+void GLShadowPass::beginTile(const glm::mat4& lightVP, const glm::vec2& ditherShift) {
+    m_lightVP     = lightVP;
+    m_ditherShift = ditherShift;
     ++m_tile;
 }
 
@@ -210,6 +210,7 @@ void GLShadowPass::useProgram(DepthProgram& program) {
     // Uniform state is per program, so each gets a tile's matrix the first time it draws it.
     if (program.tile != m_tile) {
         program.shader.setUniformMatrix4fv("u_lightVP", m_lightVP);
+        if (program.cuts) program.shader.setUniform2f("u_ditherShift", m_ditherShift.x, m_ditherShift.y);
         program.tile = m_tile;
     }
 }

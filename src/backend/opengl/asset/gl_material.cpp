@@ -39,6 +39,8 @@ void GLMaterial::update(const MaterialAsset& material) {
     m_uploadId    = ++g_lastUpload;
     m_type        = material.type;
     m_doubleSided = material.doubleSided;
+    const bool seeThrough = material.albedo.a < 1.0f || static_cast<bool>(material.albedoTexture);
+    m_cutsShadow  = m_type == MaterialType::AlphaMask || (m_type == MaterialType::Transparent && seeThrough);
 
     m_textureBindings.clear();
 
