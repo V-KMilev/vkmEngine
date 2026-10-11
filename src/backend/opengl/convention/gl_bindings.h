@@ -45,6 +45,7 @@ namespace Vkm::Engine {
     X(OverlayTextureSlots,    UI_ATLAS,              0,  UI_SLOT_ATLAS,                       The UI font atlas or the empty one a run without text reads (u_tex)) \
     X(OverlayTextureSlots,    UI_IMAGE,              1,  UI_SLOT_IMAGE,                       The picture a UIImage run shows (u_image))                           \
     X(OverlayTextureSlots,    SPLASH_LOGO,           0,  SPLASH_SLOT_LOGO,                    The splash logo (u_logo))                                            \
+    X(OverlayTextureSlots,    SPLASH_CAPTION,        1,  SPLASH_SLOT_CAPTION,                 The line at the foot of the splash (u_caption))                      \
     X(IrradianceProjectSlots, PROBE,                 0,  PROJECT_SLOT_PROBE,                  The captured radiance cube (u_probe))                                \
     X(IrradianceProjectSlots, BACKFACE,              1,  PROJECT_SLOT_BACKFACE,               The backface mask captured beside it (u_backface))                   \
     X(ReflectionTextureSlots, WEIGHT,                0,  REFLECT_SLOT_WEIGHT,                 The forward pass reflection weight (rgb) + roughness (a))            \

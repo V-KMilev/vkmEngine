@@ -118,10 +118,12 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
 
     auto& splashSystem = engine.addSystem<Engine::SplashSystem>(Engine::SystemStage::Simulation);
     splashSystem.setFade(SPLASH_FADE_SECONDS);
-    // The mono mark, as the ground is black; from the engine root so every project shows it.
+    // The mono mark, as the ground is black, over the engine's notice; from the engine root so every
+    // project shows them.
     splashSystem.add(
         (Engine::ProjectPaths::engineAssets() / "logo" / "vkm_engine_logo_mono.png").string(),
-        VENDOR_SPLASH_SECONDS
+        VENDOR_SPLASH_SECONDS,
+        (Engine::ProjectPaths::engineAssets() / "logo" / "vkm_engine_notice.png").string()
     );
     engine.addSystem<Engine::AsyncLoaderSystem>(Engine::SystemStage::Simulation);
     auto& behaviorSystem = engine.addSystem<Engine::BehaviorSystem>(Engine::SystemStage::Simulation);

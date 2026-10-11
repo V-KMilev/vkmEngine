@@ -93,7 +93,7 @@ the `VisibilitySystem` output, reusing the vectors' capacity across frames.
 | `settings` | `RenderSettings` | Pass toggles + per-effect params, copied each frame |
 | `environment` | `Environment` | The scene's sky (HDR or procedural), night sky and fog, copied whole |
 | `ui` | `const UIDrawData*` | The UISystem's screen-space draw list, borrowed; independent of the camera, so it survives the no-camera path. Null when the UISystem has not run |
-| `splash` | `SplashFrame` | The startup logo over black, or nothing once the sequence is over. Survives the no-camera path for the same reason |
+| `splash` | `SplashFrame` | The startup logo over black, with the line of its caption if it has one, or nothing once the sequence is over. Survives the no-camera path for the same reason |
 | `worldEpoch` | `uint64_t` | `Scene::epoch()` at build time. A replaced world reuses the slots and poses of the one before it, so a backend cache of what a *place* looked like - a baked probe, a baked SH volume - cannot tell on its own; `GLBackend::onWorldReplaced` is the one place that does |
 
 The frontend does **not** sort what it draws - `visible` is in object order.
@@ -285,16 +285,18 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 | 17 | Composite | The bloom added at `bloomStrength` - it holds only the light past the threshold, so nothing else is dimmed - then the `exposure`, then the `tonemap` curve and the exact sRGB encode (`shaders/color.glsl`, which the UI pass shares) to the backbuffer viewport, dithered by a step of triangular noise after the encode (or a debug buffer per `renderMode`) |
 | 18 | Grid | The editor's world grid: grids on the XZ, XY and ZY planes and the three axis lines, one fullscreen draw blended into the backbuffer viewport. After the tonemap, so the axes keep `Math::AXIS_COLORS` as the gizmos show them. Each pixel's ray finds its point on each plane and its nearest point on each axis, each tested against the scene's depth in the shader, and they blend far to near |
 | 19 | UI | Screen-space in-game UI overlay drawn flat on top (no-op when empty). See [ui.md](ui.md) |
-| 20 | Splash | The startup logo over black, covering the whole surface. A no-op once the sequence is over |
+| 20 | Splash | The startup logo over black, covering the whole surface, and its caption's line small at the foot. A no-op once the sequence is over |
 
 The Splash pass is last because a splash is not drawn on top of the frame -
 it is what is on screen instead of one. It covers the whole surface rather
 than the viewport rect, so in the editor it hides the panels as well, and
 `EditorSystem` stands aside while it is up rather than painting chrome over
-it. What it draws arrives on `RenderView::splash` as a path and an opacity,
-not as pixels: the engine core cannot decode a file, so `SplashSystem`
-decides which logo is up and how faded, and the pass - which links the
-loaders - reads it, uploading once per logo rather than once per frame.
+it. What it draws arrives on `RenderView::splash` as paths - the logo's and
+its caption's - and an opacity, not as pixels: the engine core cannot decode
+a file, so `SplashSystem` decides which logo is up and how faded, and the
+pass - which links the loaders - reads them, uploading once per image rather
+than once per frame. The engine's own mark is captioned with its notice
+(`assets/logo/vkm_engine_notice.png`), so every game made with it shows it.
 
 IBL is **not** a pass: the persistent `GLIBLBaker` re-bakes inside `render()`
 when `environment.sky.hdrPath` changes or, for the procedural sky, when the sun

@@ -34,10 +34,12 @@ class SplashSystem : public System {
          *
          * A missing file is dropped with a log line rather than shown as a black pause.
          *
-         * @param path Image to show, as an absolute path.
-         * @param hold Seconds at full opacity, besides the two fades.
+         * @param path    Image to show, as an absolute path.
+         * @param hold    Seconds at full opacity, besides the two fades.
+         * @param caption An image of a line to show small at the foot of the screen with it, as an
+         *                absolute path; empty for none, as a missing file is too.
          */
-        void add(const std::string& path, float hold);
+        void add(const std::string& path, float hold, const std::string& caption = {});
 
         /**
          * @brief Set the fade at each end of every entry.
@@ -50,6 +52,7 @@ class SplashSystem : public System {
         struct Entry {
             std::string path;
             float       hold = 0.0f;
+            std::string caption;
         };
 
     private:

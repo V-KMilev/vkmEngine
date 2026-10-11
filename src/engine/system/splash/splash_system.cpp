@@ -22,13 +22,15 @@ constexpr float MAX_STEP_SECONDS = 1.0f / 20.0f;
 
 } // namespace
 
-void SplashSystem::add(const std::string& path, float hold) {
+void SplashSystem::add(const std::string& path, float hold, const std::string& caption) {
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) {
         LOG_WARNING("Splash image '%s' is not there; skipping it", path.c_str());
         return;
     }
-    m_entries.push_back({path, hold});
+    const bool captioned = !caption.empty() && std::filesystem::exists(caption, ec);
+    if (!caption.empty() && !captioned) LOG_WARNING("Splash caption '%s' is not there", caption.c_str());
+    m_entries.push_back({path, hold, captioned ? caption : std::string{}});
 }
 
 void SplashSystem::update(FrameContext& ctx) {
@@ -37,6 +39,7 @@ void SplashSystem::update(FrameContext& ctx) {
     // Cleared on every path, so a frame past the sequence reads as no splash.
     ctx.splash = &m_frame;
     m_frame.key.clear();   // keeps the capacity
+    m_frame.caption.clear();
     m_frame.opacity = 0.0f;
 
     if (m_current >= m_entries.size()) return;
@@ -63,6 +66,7 @@ void SplashSystem::update(FrameContext& ctx) {
 
     // Eased: the backbuffer is not sRGB-encoded, so a linear ramp reads as an appearance, not a fade.
     m_frame.key     = entry.path;
+    m_frame.caption = entry.caption;
     m_frame.opacity = glm::smoothstep(0.0f, 1.0f, std::min(rising, falling));
 }
 

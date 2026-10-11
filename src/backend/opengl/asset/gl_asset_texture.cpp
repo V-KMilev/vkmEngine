@@ -165,8 +165,8 @@ std::unique_ptr<Vkm::GL::Texture2D> uploadImageFile(const std::string& path) {
     params.width           = image.width;
     params.height          = image.height;
     params.internalFormat  = GL_SRGB8_ALPHA8;
-    params.generateMipmaps = false;
-    params.minFilter       = Vkm::GL::TextureMinFilter::Linear;
+    params.generateMipmaps = true;
+    params.minFilter       = Vkm::GL::TextureMinFilter::LinearMipmapLinear;
     params.data            = image.pixels.data();
     return std::make_unique<Vkm::GL::Texture2D>(path, params);
 }
