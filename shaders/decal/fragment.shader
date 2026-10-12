@@ -22,8 +22,9 @@ out vec4 FragColor;
 layout(binding = MATERIAL_SLOT_ALBEDO)    uniform sampler2D u_decalAlbedo;
 layout(binding = POST_SLOT_SCENE_DEPTH)   uniform sampler2D u_sceneDepth;
 layout(binding = POST_SLOT_SCENE_GBUFFER) uniform sampler2D u_sceneGBuffer;  // oct view-normal in rg
-layout(binding = POST_SLOT_AO)            uniform sampler2D u_ao;            // GTAO factor in r
-uniform int u_hasAO;  // 0 when the GTAO pass did not run this frame
+layout(binding = POST_SLOT_AO)            uniform sampler2D u_ao;  // GTAO factor in r, screen shadow in a
+uniform int u_hasAO;            // 0 when the GTAO pass did not run this frame
+uniform int u_hasScreenShadow;  // 0 when the screen-shadow pass did not
 
 uniform mat4 u_invModel;  // world -> decal local
 
@@ -57,6 +58,7 @@ void main() {
     float sun   = max(ndotl, 0.0);
     if (u_sunShadowed == 1 && sun > 0.0) {
         sun *= sampleCSMSoft(worldPos, worldN, ndotl);
+        if (u_hasScreenShadow == 1) sun *= texture(u_ao, uv).a;
     }
 
     // Lambertian, as the forward pass shades the surface beneath; irradiance is stored over PI.

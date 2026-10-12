@@ -239,6 +239,17 @@ class GLShadowData {
         void finishCull();
 
         /**
+         * @brief The light the cascades were fitted for this frame, -1 for none.
+         *
+         * The first directional caster build() walks, by entity slot, unless the budget refused
+         * it. Anything applied to the cascades' light asks here rather than picking a light by a
+         * rule of its own.
+         *
+         * @return An index into `RenderView::lights`; valid until the next build().
+         */
+        int sunLight() const { return m_sunLight; }
+
+        /**
          * @brief The packed shadow slot of each light this frame, -1 for none.
          *
          * Parallel to `RenderView::lights` as far as it goes; a light past the end has none.
@@ -397,6 +408,7 @@ class GLShadowData {
 
         int      m_lightSlot[Config::MAX_LIGHTS];  ///< Per light that made the GPU list, its slot.
         uint32_t m_lightCount = 0;
+        int      m_sunLight   = -1;  ///< See sunLight().
 
         uint32_t m_refused      = 0;      ///< Shadow casters this frame that found no free atlas tile.
         bool     m_budgetLogged = false;  ///< Whether that refusal has been reported; cleared once it stops.

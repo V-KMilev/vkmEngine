@@ -8,11 +8,12 @@ uniform float u_bloomStrength;  // 0 when bloom is unavailable
 // Debug-view inputs, read only when u_renderMode != MODE_DEFAULT; GLCompositePass binds them.
 layout(binding = POST_SLOT_SCENE_DEPTH)   uniform sampler2D u_sceneDepth;
 layout(binding = POST_SLOT_SCENE_GBUFFER) uniform sampler2D u_sceneGBuffer;  // oct view-normal
-layout(binding = POST_SLOT_AO)            uniform sampler2D u_ao;  // GTAO factor
+layout(binding = POST_SLOT_AO)            uniform sampler2D u_ao;  // GTAO factor, screen shadow in a
 // A plain sampler2D: this view shows stored depth, not a compare result. Its own binding, as a
 // comparing and a non-comparing sampler cannot share a unit.
 layout(binding = SHADOW_SLOT_ATLAS_2D_RAW) uniform sampler2D u_shadowAtlas;  // tiled 2D shadow depth
 uniform int   u_hasAO;       // 0 when GTAO is off and nothing wrote the AO target
+uniform int   u_hasScreenShadow;  // 0 when nothing wrote the AO target's alpha
 uniform int   u_renderMode;  // a RenderMode, 0 = final image; MODE_* come from the prelude
 uniform int   u_tonemap;     // which display transform ends the frame (see TONEMAP_*)
 uniform float u_exposure;    // 2^EV the frame is scaled by before the tonemap; 1 = as lit
@@ -28,6 +29,7 @@ uniform float u_exposure;    // 2^EV the frame is scaled by before the tonemap; 
 vec3 debugColor(vec2 uv) {
     if (u_renderMode == MODE_NORMALS) return octDecode(texture(u_sceneGBuffer, uv).rg) * 0.5 + 0.5;
     if (u_renderMode == MODE_AMBIENT_OCCLUSION) return vec3(u_hasAO != 0 ? texture(u_ao, uv).r : 1.0);
+    if (u_renderMode == MODE_SCREEN_SHADOWS) return vec3(u_hasScreenShadow != 0 ? texture(u_ao, uv).a : 1.0);
     if (u_renderMode == MODE_BLOOM) return texture(u_bloom, uv).rgb;
     if (u_renderMode == MODE_SHADOW_ATLAS) return vec3(texture(u_shadowAtlas, uv).r);
     if (u_renderMode == MODE_FOG) {

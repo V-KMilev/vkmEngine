@@ -62,7 +62,7 @@ namespace Vkm::Engine {
     X(PostTextureSlots,       SCENE_COLOR,           18, POST_SLOT_SCENE_COLOR,               Scene colour: refraction backdrop and a post pass source)            \
     X(PostTextureSlots,       SCENE_DEPTH,           19, POST_SLOT_SCENE_DEPTH,               Scene depth texture)                                                 \
     X(PostTextureSlots,       SCENE_GBUFFER,         20, POST_SLOT_SCENE_GBUFFER,             Scene G-buffer: oct view-normal + roughness + metalness)             \
-    X(PostTextureSlots,       AO,                    21, POST_SLOT_AO,                        GTAO occlusion factor)                                               \
+    X(PostTextureSlots,       AO,                    21, POST_SLOT_AO,                        GTAO factor + bent normal; the cascaded sun screen shadow in alpha)  \
     X(ProbeTextureSlots,      IRRADIANCE,            22, PROBE_SLOT_IRRADIANCE,               samplerCubeArray of every probe irradiance)                          \
     X(ProbeTextureSlots,      PREFILTER,             23, PROBE_SLOT_PREFILTER,                samplerCubeArray of every probe prefilter)                           \
     X(PostTextureSlots,       FOG_VOLUME,            24, POST_SLOT_FOG_VOLUME,                Integrated froxel fog (sampler3D) read through shaders/fog.glsl)     \
@@ -97,6 +97,7 @@ namespace Vkm::Engine {
     X(FragmentOutputs,        REFLECT_ENV,           3,  OUT_REFLECT_ENV,                     That weight times the probe / sky radiance)                          \
     X(ComputeGroups,          IMAGE,                 8,  GROUP_IMAGE,                         Edge of a square group over a 2D image or a froxel slice)            \
     X(ComputeGroups,          CLUSTERS,              64, GROUP_CLUSTERS,                      Clusters culled per group)                                           \
+    X(ComputeGroups,          SCREEN_SHADOW,         64, GROUP_SCREEN_SHADOW,                 Pixels a wavefront marches toward the light)                         \
     X(ComputeGroups,          OCEAN_FFT,             256, GROUP_OCEAN_FFT,                    A butterfly each across a line of an ocean ripple field: half its texels)
 
 /**

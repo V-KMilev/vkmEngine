@@ -113,10 +113,11 @@ uniform int u_hasSceneColor;
 uniform int u_useClusters;      // 1 = per-cluster light list, 0 = full list (GLSceneCapture)
 uniform int u_alphaToCoverage;  // 1 while alpha-to-coverage is on for a cutout
 
-// GTAO, for the indirect term. u_hasAO is set for the opaque bucket alone:
-// GTAO saw only what the prepass drew.
+// GTAO for the indirect term (rgb), the cascaded sun's screen shadow (a). Each flag is set for the
+// opaque bucket alone: both saw only what the prepass drew.
 layout(binding = POST_SLOT_AO) uniform sampler2D u_ao;
 uniform int u_hasAO;
+uniform int u_hasScreenShadow;
 
 #include "../../ambient.glsl"
 
@@ -713,6 +714,10 @@ void main() {
 
     vec3 Lo = vec3(0.0);
 
+    // The contacts the cascades are too coarse for, the cascaded sun's alone.
+    float screenShadow = 1.0;
+    if (u_hasScreenShadow == 1) screenShadow = texture(u_ao, gl_FragCoord.xy / u_camera.viewport).a;
+
     uint count;
     int  ci = 0;
     if (u_useClusters == 1) {
@@ -834,9 +839,13 @@ void main() {
         int sslot = int(light.spot.w);
         if (sslot >= 0) {
             float ndotl = dot(Ng, L);
-            if      (type == LIGHT_DIRECTIONAL) visibility *= sampleCSMSoft(vWorldPos, Ng, ndotl);
-            else if (type == LIGHT_SPOT)        visibility *= sample2DSlotSoft(sslot, vWorldPos, Ng, ndotl);
-            else if (type == LIGHT_POINT)       visibility *= sampleCube(sslot, vWorldPos, Ng, ndotl);
+            if (type == LIGHT_DIRECTIONAL) {
+                visibility *= sampleCSMSoft(vWorldPos, Ng, ndotl) * screenShadow;
+            } else if (type == LIGHT_SPOT) {
+                visibility *= sample2DSlotSoft(sslot, vWorldPos, Ng, ndotl);
+            } else if (type == LIGHT_POINT) {
+                visibility *= sampleCube(sslot, vWorldPos, Ng, ndotl);
+            }
         }
 
         // POM self-shadowing for the sun alone, bounding the trace cost.

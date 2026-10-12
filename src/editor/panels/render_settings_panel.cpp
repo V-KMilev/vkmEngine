@@ -214,6 +214,12 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
             &s.shadowResolution,
             "The largest shadow tile, the sun's near cascades' - usually the frame's main GPU cost lever"
         );
+        propCheckbox(
+            "Screen-Space",
+            &s.screenShadows,
+            "The sun's contacts its cascades are too coarse for, from the depth buffer: feet on "
+            "the floor, small stones, creases"
+        );
     }
     endComponentCard();
 

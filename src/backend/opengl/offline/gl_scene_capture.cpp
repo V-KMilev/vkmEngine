@@ -437,6 +437,7 @@ void bindOfflinePbrUniforms(Vkm::GL::Shader& pbr, const GLIBL& ibl) {
     }
     ibl.bindBrdf(GLBindings::IBLTextureSlots::BRDF_LUT);
     pbr.setUniform1i("u_hasAO", 0);
+    pbr.setUniform1i("u_hasScreenShadow", 0);
     pbr.setUniform1i("u_hasSceneColor", 0);
     pbr.setUniform1i("u_probeCount", 0);
     pbr.setUniform1i("u_useClusters", 0);

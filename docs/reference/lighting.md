@@ -477,6 +477,43 @@ so the far field loses density as `shadowDistance` grows: total coverage
 against texel density is a fixed budget, and the logarithmic split spends it
 evenly instead of concentrating the shortfall in the foreground.
 
+### Screen-space shadows
+
+What the cascades are too coarse for - a foot on the floor, a pebble, the crease
+under a ledge, a block pushed into a wall - `GLScreenShadowPass` finds in the
+depth buffer, for the cascaded sun alone - the lowest-slot directional light that
+casts (`GLShadowData::sunLight`). It is Bend Studio's method (Days
+Gone; SIGGRAPH 2023), ported in `shaders/screen_shadow` under its Apache-2.0
+notice: the screen is cut into wavefronts of 64 pixels in lines toward the
+light's place on it, at most four compute dispatches with the sun off the
+screen and up to eight with it on, and each wavefront puts its depths in shared memory
+divided by their screen distance to the light, where every ray toward it is
+parallel. Each pixel then compares the next 60 along its ray to its own. There
+is no noise and no history, so a still frame shades the same every time - which
+is what the settled decision against contact shadows asked of one
+([engine.md](../guides/engine.md#4-what-has-already-been-decided)).
+
+A sample shadows a ray when it lies in front of it by up to twice
+`SURFACE_THICKNESS`, 2% of its depth's distance to the far plane, which is
+about 4% of the view distance: the depth buffer holds one surface, not how
+thick the thing behind it is. Any thinner, and a solid foot's shadow is only
+its rim (Bend's own value, 0.5%, is); the cascades carry everything larger. A pixel at a
+depth edge casts nothing, or a flat floor seen at a grazing angle under a low
+sun would stripe itself (the open-floor test). The reach is 60 pixels whatever
+the resolution - a third of a metre at 5 m on a 1080-row screen - so it is a
+contact shadow, not a replacement for the cascades. An orthographic camera's
+depth is linear, so its thickness is a 60 degree camera's at the distance that
+shows the same height. The viewmodel's depth band casts and takes nothing; an
+`EyeOnly` mesh, which the shadow maps never see, does cast here, since the pass
+reads what the eye sees.
+
+The result goes into the AO target's free alpha - every texture unit is spoken
+for - which the pass clears to unoccluded first when GTAO is off. The forward
+pass multiplies the cascaded sun's visibility by it, for the opaque bucket alone
+(the prepass drew nothing else), and a decal multiplies the sun on the surface
+under it. It costs 0.17 ms of GPU in physics_lab at 1920x1053 on an RTX A4000,
+about a third of GTAO there; `screenShadows` turns it off, and the Low tier does.
+
 ## Image-based lighting (IBL)
 
 A persistent `GLIBLBaker` keeps the IBL product set showing the scene's sky (a

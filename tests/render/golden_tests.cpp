@@ -1964,6 +1964,176 @@ void testAProbeBakedUnderADebugViewHoldsTheScene(int& failures) {
     expect("a probe baked under a debug view holds the scene", share <= PIXEL_TOLERANCE, failures);
 }
 
+// The share of a frame's pixels darker than @p below in its first channel, 0..1.
+float shareDarker(const std::vector<unsigned char>& frame, int below) {
+    int dark = 0;
+    for (int y = 0; y < HEIGHT; ++y) {
+        for (int x = 0; x < WIDTH; ++x) dark += pixel(frame, x, y).x < below ? 1 : 0;
+    }
+    return static_cast<float>(dark) / static_cast<float>(WIDTH * HEIGHT);
+}
+
+// Screen-space shadows over an open floor at a grazing angle, the sun high and low, and through
+// an orthographic camera: nothing casts on it, so nothing is shadowed. A flat surface's own depth
+// steps, read as occluders, would stripe it.
+void testAnOpenFloorCastsNoScreenShadow(int& failures) {
+    std::printf("Screen-space shadows over an open floor:\n");
+    struct Case {
+        float elevation;
+        bool  orthographic;
+    };
+    for (const Case c : {Case{50.0f, false}, Case{12.0f, false}, Case{12.0f, true}}) {
+        restoreContextDefaults();
+        WindowManager window;
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        base(s);
+        s.scene.environment().sky.procedural   = false;
+        s.scene.environment().sky.sunElevation = c.elevation;
+        s.scene.environment().sky.sunAzimuth   = 30.0f;
+        place(
+            s,
+            s.cube,
+            material(s, "golden:open", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f),
+            {0.0f, -0.5f, 0.0f},
+            {200.0f, 1.0f, 200.0f}
+        );
+        sunAndCamera(s, {0.0f, 1.5f, 0.0f}, {0.0f, 0.0f, -6.0f});
+        if (c.orthographic) orthographic(s, 3.0f);
+
+        RenderSettings settings;
+        settings.renderMode  = RenderMode::ScreenShadows;
+        settings.msaaSamples = 1;
+        const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+        const float dark = shareDarker(frame, 250);
+        std::printf(
+            "      sun at %.0f degrees%s: %.3f%% of the frame shadowed\n",
+            c.elevation,
+            c.orthographic ? ", orthographic" : "",
+            100.0f * dark
+        );
+        expect("an open floor is not shadowed", dark == 0.0f, failures);
+    }
+}
+
+// A pebble on the floor under a low sun: a shadow a few centimetres long, which the screen-space
+// pass finds whether GTAO, whose target it shares, ran or not, and through an orthographic camera;
+// with the pass off, none.
+void testAPebbleCastsAScreenShadow(int& failures) {
+    std::printf("Screen-space shadows from a pebble:\n");
+    struct Case {
+        bool        gtao;
+        bool        screenShadows;
+        bool        orthographic;
+        const char* what;
+    };
+    const Case cases[] = {
+        {true,  true,  false, "a pebble casts a screen-space shadow, away from the sun"},
+        {false, true,  false, "  and does with GTAO off"},
+        {true,  true,  true,  "  and through an orthographic camera"},
+        {true,  false, false, "  and casts none with the pass off"},
+    };
+    for (const Case& c : cases) {
+        restoreContextDefaults();
+        WindowManager window;
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        base(s);
+        s.scene.environment().sky.procedural   = false;
+        s.scene.environment().sky.sunElevation = 20.0f;
+        s.scene.environment().sky.sunAzimuth   = 90.0f;
+        place(
+            s,
+            s.cube,
+            material(s, "golden:open", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f),
+            {0.0f, -0.5f, 0.0f},
+            {20.0f, 1.0f, 20.0f}
+        );
+        place(
+            s,
+            s.cube,
+            material(s, "golden:pebble", {0.4f, 0.4f, 0.4f}, 0.8f, 0.0f),
+            {0.0f, 0.03f, 0.0f},
+            glm::vec3(0.06f)
+        );
+        sunAndCamera(s, {0.0f, 0.5f, 0.6f}, {0.0f, 0.0f, 0.0f});
+        if (c.orthographic) orthographic(s, 0.2f);
+
+        RenderSettings settings;
+        settings.renderMode    = RenderMode::ScreenShadows;
+        settings.msaaSamples   = 1;
+        settings.gtao          = c.gtao;
+        settings.screenShadows = c.screenShadows;
+        const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+        const float dark = shareDarker(frame, 128);
+        // The sun stands toward +X, the camera's right, so the shadow falls to the pebble's left.
+        int left  = 0;
+        int right = 0;
+        for (int y = 0; y < HEIGHT; ++y) {
+            for (int x = 0; x < WIDTH; ++x) {
+                if (pixel(frame, x, y).x < 128) ++(x < WIDTH / 2 ? left : right);
+            }
+        }
+        std::printf("      %.2f%% of the frame in shadow: %d px left, %d right\n", 100 * dark, left, right);
+        const bool away = left > 4 * right;
+        expect(c.what, c.screenShadows ? dark > 0.001f && away : dark == 0.0f, failures);
+    }
+}
+
+// The pebble with the eye facing a low sun that stands inside the frame: the pass then marches
+// toward the sun's point on the screen from every side of it, and the shadow falls toward the eye,
+// below the pebble in the frame, never above it toward the sun.
+void testAScreenShadowFacingTheSunFallsTowardTheEye(int& failures) {
+    std::printf("Screen-space shadows facing the sun:\n");
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery s;
+    base(s);
+    s.scene.environment().sky.procedural   = false;
+    s.scene.environment().sky.sunElevation = 20.0f;
+    s.scene.environment().sky.sunAzimuth   = 90.0f;
+    const MaterialHandle open   = material(s, "golden:open", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
+    const MaterialHandle pebble = material(s, "golden:pebble", {0.4f, 0.4f, 0.4f}, 0.8f, 0.0f);
+    place(s, s.cube, open, {0.0f, -0.5f, 0.0f}, {20.0f, 1.0f, 20.0f});
+    place(s, s.cube, pebble, {0.0f, 0.03f, 0.0f}, glm::vec3(0.06f));
+    // Toward +X, as the sun stands, close and low enough that the sun is in the frame: the pebble
+    // fills the rows within 10 of the middle, its shadow those 10 to 21 below.
+    sunAndCamera(s, {-0.5f, 0.07f, 0.0f}, {0.0f, 0.03f, 0.0f});
+
+    RenderSettings settings;
+    settings.renderMode  = RenderMode::ScreenShadows;
+    settings.msaaSamples = 1;
+    const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+    // Rows clear of the pebble itself, which faces the eye from its own shade.
+    int towardEye = 0;
+    int towardSun = 0;
+    for (int y = 0; y < HEIGHT; ++y) {
+        for (int x = 0; x < WIDTH; ++x) {
+            // Half lit or darker: a contact shadow sits about 128, which devices round either way.
+            if (pixel(frame, x, y).x >= 160) continue;
+            if (y > HEIGHT / 2 + 12) ++towardEye;
+            if (y < HEIGHT / 2 - 12) ++towardSun;
+        }
+    }
+    std::printf("      %d px of shadow toward the eye, %d toward the sun\n", towardEye, towardSun);
+    // A pebble's shadow covers far less than a hundredth of the frame.
+    const bool toward = towardEye > 4 && towardEye > 4 * towardSun && towardEye < WIDTH * HEIGHT / 100;
+    expect("facing the sun, the shadow falls toward the eye", toward, failures);
+}
+
 void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     std::printf("Whole frames against their goldens:\n");
     if (!gl.attachSurface(WIDTH, HEIGHT)) {
@@ -2000,6 +2170,9 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testAnOpenFloorIsNotOccluded(failures);
     testAnOpenWallIsOpenToTheFramesEdge(failures);
     testAnOrthographicViewIsOccluded(failures);
+    testAnOpenFloorCastsNoScreenShadow(failures);
+    testAPebbleCastsAScreenShadow(failures);
+    testAScreenShadowFacingTheSunFallsTowardTheEye(failures);
     testGTAOReachesAsFarEveryWay(failures);
     testAnOrthographicViewTracesItsReflections(failures);
     testAMovedProbeBakesOnceItSettles(failures);

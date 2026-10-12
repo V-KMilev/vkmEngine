@@ -78,10 +78,10 @@ class GLPass {
         void bindFog(GLFrameContext& ctx, const Vkm::GL::Shader& shader, bool air = true) const;
 
         /**
-         * @brief Give the bound @p shader this frame's GTAO, or tell it there is none.
+         * @brief Give the bound @p shader this frame's GTAO and screen shadow, or tell it there are none.
          *
-         * Binds the AO target only when the GTAO pass filled it this frame, and sets u_hasAO to
-         * match.
+         * Binds the AO target only when the GTAO pass or the screen-shadow pass filled it this
+         * frame, and sets u_hasAO and u_hasScreenShadow to match.
          *
          * @param ctx     For the AO target and whether it is ready.
          * @param shader  The program that draws; it must be bound.

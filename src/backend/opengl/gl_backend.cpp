@@ -35,6 +35,7 @@
 #include "pass/gl_decal_pass.h"
 #include "pass/gl_particle_pass.h"
 #include "pass/gl_gtao_pass.h"
+#include "pass/gl_screen_shadow_pass.h"
 #include "pass/gl_forward_pass.h"
 #include "pass/gl_ocean_pass.h"
 #include "pass/gl_atmosphere_pass.h"
@@ -221,6 +222,7 @@ bool GLBackend::init(WindowManager& window) {
     m_passes.push_back({"DepthPrepass",   std::make_unique<GLDepthPrepass>()});
     m_passes.push_back({"ResolveDepth",   std::make_unique<GLResolvePass>(GLResolvePass::Scope::Geometry)});
     m_passes.push_back({"GTAO",           std::make_unique<GLGTAOPass>()});
+    m_passes.push_back({"ScreenShadows",  std::make_unique<GLScreenShadowPass>()});
     m_passes.push_back({"ClusterCull",    std::make_unique<GLClusterPass>()});
     m_passes.push_back({"FogCompute",     std::make_unique<GLFogPass>()});
     m_passes.push_back({"Atmosphere",     std::make_unique<GLAtmospherePass>()});

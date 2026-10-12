@@ -51,7 +51,7 @@ struct GLFrameContext {
     const GLIBL&       ibl;              ///< Baked IBL product set (see GLPass::bindAmbient).
     GLAtmosphere&      atmosphere;       ///< The procedural sky's tables (see GLAtmospherePass).
     GLBloom&           bloom;            ///< Bloom mip chain.
-    GLTarget&          ao;               ///< GTAO factor + octahedral bent normal.
+    GLTarget&          ao;               ///< GTAO factor + octahedral bent normal + screen shadow.
     GLClusterGrid&     clusters;         ///< Forward+ per-cluster light lists.
     GLFogVolume&       fog;              ///< Froxel fog volumes, read through GLPass::bindFog.
     GLIrradianceVolume& irradiance;      ///< Baked SH irradiance volume (see GLPass::bindAmbient).
@@ -128,11 +128,18 @@ struct GLFrameContext {
     // The fields below are pass products: set by an earlier pass, read by later ones.
 
     /**
-     * @brief Set by the GTAO pass when it fills the AO target.
+     * @brief Set by the GTAO pass when it fills the AO target's occlusion (rgb).
      *
-     * Unset, the AO target must not be sampled.
+     * The target is sampled when this or screenShadowReady is set; unset, its rgb is not GTAO's.
      */
     bool aoReady = false;
+
+    /**
+     * @brief Set by the screen-shadow pass when it fills the AO target's alpha.
+     *
+     * The target is then bound even with GTAO off, which the pass clears to unoccluded first.
+     */
+    bool screenShadowReady = false;
 
     /**
      * @brief Set by the bloom pass when it fills the bloom chain.

@@ -92,6 +92,7 @@ void GLShadowData::build(const RenderView& view, const GLView& glView, uint32_t 
     m_jobs2D.clear();
     m_jobsCube.clear();
     m_data = ShadowUBOData{};
+    m_sunLight = -1;
     for (int& s : m_lightSlot) s = -1;
     m_lightCount = std::min<uint32_t>(static_cast<uint32_t>(view.lights.size()), Config::MAX_LIGHTS);
 
@@ -481,7 +482,8 @@ void GLShadowData::fitDirectional(
         ++m_refused;
         return;
     }
-    haveSun = true;
+    haveSun    = true;
+    m_sunLight = static_cast<int>(lightIndex);
 
     // RenderView clamps a directional source to pi/4, so its tangent is finite.
     const float tanSource = std::tan(light.sourceRadius);

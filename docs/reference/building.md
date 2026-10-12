@@ -450,7 +450,7 @@ shaders/
   ibl/          # equirect/, sky/, irradiance/, prefilter/, brdf/  (IBL bake)
   irradiance/   # project/, backface/  (the SH probe grid bake)
   resolve/      # geometry/, color/  (the MSAA resolves)
-  gtao/  cluster/  fog/  reflection/
+  gtao/  screen_shadow/  cluster/  fog/  reflection/
   bloom/  dof/  decal/  particle/
   skybox/  grid/  composite/  ui/  splash/
 ```

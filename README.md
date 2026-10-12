@@ -74,7 +74,7 @@ today, Vulkan on the roadmap.
 <img src="assets/docs/rendering.jpg" alt="Ice blocks on a reflective ice sheet" width="100%">
 
 **Rendering**<br>
-<sub>Forward+ clustered lighting, cascaded, spot and cube shadows, area lights, IBL and a
+<sub>Forward+ clustered lighting, cascaded, spot, cube and screen-space shadows, area lights, IBL and a
 procedural sky, reflection probes, screen-space reflections, GTAO, volumetric fog, decals,
 particles, depth of field and bloom.</sub>
 </td>
@@ -230,4 +230,5 @@ them, free, with no royalty; change the engine for your own games, which ship it
 to the engine itself are shared only as contributions to this repository or in a fork of it on
 GitHub - the engine's source, changed or not, is not published or sold anywhere else, and it is
 not offered as an engine or toolkit of your own. `vkm package` puts the license and its notice in
-every game it builds. The third-party libraries under `modules/` keep their own licenses.
+every game it builds. The third-party libraries under `modules/` keep their own licenses, and so does
+`shaders/screen_shadow`, a port of Bend Studio's screen-space shadows under Apache-2.0.
