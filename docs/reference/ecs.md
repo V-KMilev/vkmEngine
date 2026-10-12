@@ -76,8 +76,8 @@ scene.remove<Mesh>(entity);
 | `Name`                | `component/core/name.h`                    | `char value[64]` - the entity's display name, in the editor and in log lines                          |
 | `NetLocal`            | `component/core/net_local.h`               | Nothing - its presence keeps the entity and everything below it off the wire ([Networking](networking.md#what-does-not-replicate)) |
 | `Collider`            | `component/physics/collider.h`             | One or more `ColliderPart`s (a `ColliderShape` tag - Box, Capsule or Mesh - plus the fields for each) + `isTrigger` + `enabled` |
-| `CharacterController` | `component/physics/character_controller.h` | `moveInput` + `jumpRequested` + `climbing` + `climbNormal` in, tuning, `grounded` + `groundNormal` + `walkSpeed` out |
-| `Rigidbody`           | `component/physics/rigidbody.h`            | Body: linear/angular velocity, `motion` (Dynamic, Kinematic or Static), mass, damping, restitution, friction, gravity scale, plus the `supported` / `supportNormal` / `blockNormal` outputs |
+| `CharacterController` | `component/physics/character_controller.h` | `moveInput` + `jumpRequested` + `climbing` + `climbNormal` + `crouching` in, tuning, `grounded` + `groundNormal` + `walkSpeed` + `groundVelocity` + `groundSpin` + `crouched` out |
+| `Rigidbody`           | `component/physics/rigidbody.h`            | Body: linear/angular velocity, `motion` (Dynamic, Kinematic or Static), mass, damping, restitution, friction, gravity scale, plus the `supported` / `supportNormal` / `supportBody` / `blockNormal` outputs |
 | `ReflectionProbe`     | `component/render/reflection_probe.h`      | Local IBL probe: `halfExtents` influence box, `falloff`, `intensity`, `resolution`                   |
 | `AudioSource`         | `component/audio/audio_source.h`           | `AudioClipHandle clip`, `volume`, `pitch`, `loop`, `spatial`, `playOnStart`, `min`/`maxDistance`, `rolloff`; `playing` + `started` are runtime only |
 | `AudioListener`       | `component/audio/audio_listener.h`         | `active`, `volume` - the ear every spatial source is heard relative to                               |

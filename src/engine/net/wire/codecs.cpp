@@ -188,10 +188,12 @@ void netDecode(Rigidbody& value, BitReader& in) {
 
 void netEncode(const CharacterController& value, BitWriter& out) {
     out.boolean(value.grounded);
+    out.boolean(value.crouched);
 }
 
 void netDecode(CharacterController& value, BitReader& in) {
     value.grounded = in.boolean();
+    value.crouched = in.boolean();
 }
 
 void netEncode(const Ragdoll& value, BitWriter& out) {

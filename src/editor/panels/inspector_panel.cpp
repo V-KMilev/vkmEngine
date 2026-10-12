@@ -3046,6 +3046,15 @@ void InspectorPanel::drawCharacterControllerSection(EditorContext& ec, EntityId 
             "%.2f m/s",
             "Up or down a face while gameplay holds the character to it (climbing)"
         );
+        changed |= propDrag(
+            "Crouch Height",
+            &cc.crouchHeight,
+            0.01f,
+            0.1f,
+            10.0f,
+            "%.2f m",
+            "The capsule's whole height while crouching, caps included; its feet stay put"
+        );
 
         const char* stepHeightTooltip =
             "Tallest thing the character mounts instead of stopping at.\n"
@@ -3064,7 +3073,11 @@ void InspectorPanel::drawCharacterControllerSection(EditorContext& ec, EntityId 
 
         // Live state: moveInput is gameplay's, the rest the system's.
         ImGui::Spacing();
-        ImGui::TextDisabled("%s", cc.grounded ? "Grounded" : "Airborne");
+        ImGui::TextDisabled("%s%s", cc.grounded ? "Grounded" : "Airborne", cc.crouched ? ", crouched" : "");
+        if (glm::dot(cc.groundVelocity, cc.groundVelocity) > 0.0f) {
+            const glm::vec3 carry = cc.groundVelocity;
+            ImGui::TextDisabled("Carried at %.2f, %.2f, %.2f m/s", carry.x, carry.y, carry.z);
+        }
         if (cc.grounded) {
             ImGui::TextDisabled(
                 "Ground %.0f deg from flat",

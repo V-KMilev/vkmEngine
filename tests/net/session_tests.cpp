@@ -1560,6 +1560,19 @@ void testStandingIsToldRatherThanGuessed() {
         clientWorld.get<CharacterController>(clientWalker).grounded
     );
 
+    // A crouch is the server's to decide too, and the client's capsule follows what it is told.
+    const auto clientHalf = [&]() { return clientWorld.get<Collider>(clientWalker).parts[0].halfHeight; };
+    serverWorld.get<CharacterController>(walker).crouching = true;
+    for (int i = 0; i < 10; ++i) frame();
+    check(
+        "a crouch the server decides reaches the client",
+        clientWorld.get<CharacterController>(clientWalker).crouched && clientHalf() < 0.6f
+    );
+    serverWorld.get<CharacterController>(walker).crouching = false;
+    for (int i = 0; i < 10; ++i) frame();
+    check("  and so does standing again", !clientWorld.get<CharacterController>(clientWalker).crouched);
+    check("  its capsule standing as it was", clientHalf() == 0.6f);
+
     client.close();
     server.close();
 }

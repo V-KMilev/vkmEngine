@@ -194,6 +194,7 @@ struct BodyFrame {
 struct BodyContacts {
     // Below any unit normal, so the first contact replaces it, even a vertical wall's.
     glm::vec3 support = {0.0f, -2.0f, 0.0f};  ///< Most upward contact normal
+    uint32_t  supportBody = UINT32_MAX;       ///< The body whose surface gave it, by index
 
     // World up has no horizontal part, so level floor leaves "nothing in the way".
     glm::vec3 block = {0.0f, 1.0f, 0.0f};  ///< Most horizontal contact normal

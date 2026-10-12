@@ -12,7 +12,7 @@ namespace Vkm::Engine {
  * Driven by a System rather than a Behavior: the writer of moveInput changes, the reader should not.
  * Needs a Rigidbody and a capsule Collider; the body should set freezeRotation and canSleep false, so
  * standing still does not park a body the input then has to wake. It climbs what gameplay says it is
- * on - a ladder, a rope, a wall - by `climbing`. No crouch, no platform riding.
+ * on - a ladder, a rope, a wall - by `climbing`, crouches by `crouching`, and rides what it stands on.
  */
 struct CharacterController {
     glm::vec3 moveInput     = {0.0f, 0.0f, 0.0f};  ///< Desired horizontal velocity, world space, m/s.
@@ -54,6 +54,15 @@ struct CharacterController {
     glm::vec3 climbNormal = {0.0f, 0.0f, 1.0f};  ///< Out of the face climbed, world space; level part counts.
     float     climbSpeed  = 3.0f;                ///< Up or down a face, m/s.
 
+    /**
+     * @brief Crouch while set: the capsule shortens to `crouchHeight`, its feet where they were.
+     *
+     * Held, not cleared: gameplay sets it while the key is down. Let go, the character stands once
+     * there is room over its head, and until then stays `crouched`.
+     */
+    bool  crouching    = false;
+    float crouchHeight = 1.0f;  ///< The capsule's whole height crouched, caps included, metres.
+
     bool  grounded  = false;                     ///< Read-only: on a surface within maxSlopeAngle.
     float walkSpeed = 0.0f;                      ///< Read-only: horizontal speed its steering left, m/s.
 
@@ -63,6 +72,18 @@ struct CharacterController {
     float     stepTargetY  = 0.0f;                ///< Read-only: world Y the feet are climbing to.
     float     stepTime     = 0.0f;                ///< Read-only: seconds the current climb has run.
     glm::vec3 groundNormal = {0.0f, 1.0f, 0.0f};  ///< Read-only: its normal; world up when airborne.
+
+    /**
+     * @brief Read-only: how fast what it stands on carries its feet, m/s, which steering is relative to.
+     *
+     * A moving or turning body - a kinematic one by the velocities it is driven with, as a contact
+     * reads them. Zero on static ground, or in the air.
+     */
+    glm::vec3 groundVelocity = {0.0f, 0.0f, 0.0f};
+    float     groundSpin     = 0.0f;  ///< Read-only: how fast that turns about up, rad/s, for a view.
+
+    bool  crouched           = false;  ///< Read-only: the capsule is short, by `crouching` or a low ceiling.
+    float standingHalfHeight = 0.0f;   ///< Read-only: the capsule's halfHeight standing, kept while crouched.
 };
 
 } // namespace Vkm::Engine
@@ -76,4 +97,5 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::CharacterController)
     VKM_F(knockbackDrag)
     VKM_F(stepHeight)
     VKM_F(climbSpeed)
+    VKM_F(crouchHeight)
 VKM_REFLECT_END()

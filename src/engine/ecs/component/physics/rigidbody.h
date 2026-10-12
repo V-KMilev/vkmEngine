@@ -5,6 +5,7 @@
 #include <glm/glm.hpp>
 
 #include "core/reflect.h"
+#include "ecs/entity.h"
 
 namespace Vkm::Engine {
 
@@ -82,6 +83,7 @@ struct Rigidbody {
      */
     glm::vec3 supportNormal = {0.0f, 1.0f, 0.0f};
     bool      supported     = false;
+    EntityId  supportBody{};  ///< The body whose surface gave supportNormal; empty while unsupported.
 
     /**
      * @brief The most horizontal normal among the same contacts: what blocks this body.
@@ -107,7 +109,7 @@ struct Rigidbody {
 
 VKM_ENUM_NAMES(::Vkm::Engine::RigidbodyMotion, "Dynamic", "Kinematic", "Static")
 
-// sleeping / sleepTimer / supported / supportNormal / blockNormal are runtime-only.
+// sleeping / sleepTimer / supported / supportNormal / supportBody / blockNormal are runtime-only.
 VKM_REFLECT_BEGIN(::Vkm::Engine::Rigidbody)
     VKM_F(linearVelocity)
     VKM_F(angularVelocity)

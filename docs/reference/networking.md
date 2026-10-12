@@ -162,9 +162,12 @@ command carries, read back off `InputCommand::payload`.
 `Transform`, `Rigidbody`, `CharacterController`, `Ragdoll` and `NetSpawn` are
 registered by the engine (`registerEngineNetTypes`). `NetSpawn` is what a
 spawned root is - see *Spawning*, below. `CharacterController` and `Ragdoll`
-carry one field each and are worth saying why:
+carry a bit or two each and are worth saying why:
 
-- **`CharacterController` sends `grounded` and nothing else.** It reads like an
+- **`CharacterController` sends `grounded` and `crouched`, nothing else.**
+  `crouched` because an end that does not simulate the character never decides
+  it, and its capsule follows it there (physics.md, *Crouching*). `grounded`
+  reads like an
   observation each end could make for itself, and it is not. The contact under a
   resting capsule exists because gravity presses the capsule into the floor
   every tick; an end that does not simulate the body applies no gravity to it and

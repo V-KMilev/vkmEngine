@@ -77,11 +77,12 @@ void netEncode(const Rigidbody& value, BitWriter& out);
 void netDecode(Rigidbody& value, BitReader& in);
 
 /**
- * @brief Whether the character is standing on something, and nothing else.
+ * @brief Whether the character is standing on something, and whether crouched; nothing else.
  *
- * A non-simulating end cannot work it out: it applies no gravity, and the
- * wire's position precision is coarser than the contact. The rest is derived
- * locally; sending it would overwrite an owner's prediction with old news.
+ * A non-simulating end cannot work either out: it applies no gravity, and the
+ * wire's position precision is coarser than the contact; it never decides a
+ * crouch, and shapes the capsule by this one. The rest is derived locally;
+ * sending it would overwrite an owner's prediction with old news.
  */
 void netEncode(const CharacterController& value, BitWriter& out);
 void netDecode(CharacterController& value, BitReader& in);
