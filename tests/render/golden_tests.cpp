@@ -1369,6 +1369,42 @@ void testAnOpenFloorIsNotOccluded(int& failures) {
     expect("an open floor is not darkened", mean >= 240.0f, failures);
 }
 
+// Make the scene's camera orthographic, showing @p halfHeight metres above and below its centre.
+void orthographic(Scenery& s, float halfHeight) {
+    s.scene.forEach<Camera>([&](EntityId, Camera& camera) {
+        camera.projection  = ProjectionType::Orthographic;
+        camera.orthoHeight = halfHeight;
+    });
+}
+
+// The mirror scene through an orthographic camera, its reflections traced and not: they differ.
+// An orthographic camera's depth is linear, so the viewmodel's band at the front of it is
+// VIEWMODEL_DEPTH_SHARE of the whole scene, and read as the viewmodel's, nothing in it would trace.
+void testAnOrthographicViewTracesItsReflections(int& failures) {
+    std::printf("Screen-space reflections through an orthographic camera:\n");
+    std::vector<unsigned char> frames[2];
+    for (const bool ssr : {false, true}) {
+        restoreContextDefaults();
+        WindowManager window;
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        buildMirror(s);
+        orthographic(s, 2.5f);
+        RenderSettings settings;
+        settings.ssr = ssr;
+        frames[ssr ? 1 : 0] = render(s, backend, nullptr, settings);
+    }
+    long sum = 0;
+    for (size_t i = 0; i < frames[0].size(); ++i) sum += std::abs(frames[1][i] - frames[0][i]);
+    const float mean = static_cast<float>(sum) / static_cast<float>(frames[0].size());
+    std::printf("      the traced frame differs by %.2f a channel on average\n", mean);
+    expect("an orthographic view traces its reflections", mean > 0.05f, failures);
+}
+
 // The mean of every channel of a frame, 0..255.
 float meanValue(const std::vector<unsigned char>& frame) {
     long sum = 0;
@@ -1742,6 +1778,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testADriftingSunIsFollowedOverFrames(failures);
     testASplashFadesLinearlyOnTheGlass(failures);
     testAnOpenFloorIsNotOccluded(failures);
+    testAnOrthographicViewTracesItsReflections(failures);
     testASealedRoomHoldsNoSkyLight(failures);
     testTheShoreRingsWhatBreaksTheWater(failures);
     testATransparentPanesShadowIsAsDeepAsItIsOpaque(failures);
