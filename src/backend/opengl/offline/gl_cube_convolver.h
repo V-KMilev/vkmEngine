@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <vector>
 
 #include <glm/glm.hpp>
 
@@ -27,13 +28,57 @@ class GLMesh;
  *
  * The caller owns GL state: bind the capture FBO and set depth/cull/blending
  * off first; these methods set uniforms, run the caller's attach, and draw.
- * irradianceFace and prefilterBand convolve a face or a share of one, for a bake
- * spread over frames; prefilterBand also scissors, and turns it off again.
+ * slices() cuts a convolution into steps for a bake spread over frames, and run()
+ * takes one into a Target: the mirror level, an irradiance face, or a band of a prefilter
+ * level's face, which it scissors, turning the scissor off again.
  */
 class GLCubeConvolver {
     public:
         using AttachFace    = std::function<void(int face)>;
         using AttachMipFace = std::function<void(int face, int mip)>;
+
+        /// The most texels of a prefilter level's face one step draws; a larger face takes bands.
+        static constexpr int BAND_TEXELS = 128 * 256;
+
+        /// One frame's share of a convolution spread over frames.
+        struct Step {
+            enum class Kind {
+                Mirror,      ///< The prefilter's mirror level, every face.
+                Irradiance,  ///< An irradiance face.
+                Prefilter    ///< A band of rows of a prefilter level's face, past the mirror level.
+            };
+
+            Kind kind  = Kind::Mirror;
+            int  face  = 0;
+            int  mip   = 0;
+            int  size  = 0;  ///< The level's face size in texels.
+            int  mips  = 1;  ///< The levels the whole prefilter fills.
+            int  part  = 0;  ///< A prefilter step's band.
+            int  parts = 1;  ///< Bands in the face.
+        };
+
+        /// What a convolution spread over frames reads and draws into; run() decides when.
+        class Target {
+            public:
+                Target() = default;
+                virtual ~Target() = default;
+
+                Target(const Target& other) = delete;
+                Target& operator=(const Target& other) = delete;
+
+                Target(Target && other) = delete;
+                Target& operator=(Target && other) = delete;
+
+            public:
+                /// Make the source cube's mips.
+                virtual void makeSourceMips() = 0;
+                /// Bind the source cube at BakeTextureSlots::SOURCE.
+                virtual void bindSource() = 0;
+                /// Attach irradiance face @p face as colour 0.
+                virtual void attachIrradiance(int face) = 0;
+                /// Attach prefilter face @p face of level @p mip as colour 0.
+                virtual void attachPrefilter(int face, int mip) = 0;
+        };
 
         /**
          * @brief Compile the convolution programs, drawing each face with @p cube.
@@ -50,6 +95,38 @@ class GLCubeConvolver {
         GLCubeConvolver& operator=(GLCubeConvolver && other) = delete;
 
     public:
+        /**
+         * @brief How many bands a prefilter face of @p size texels is drawn in.
+         *
+         * @param size The level's face size in texels.
+         * @return One, or as many as keep a band within BAND_TEXELS.
+         */
+        static constexpr int bands(int size) {
+            return size * size > BAND_TEXELS ? size * size / BAND_TEXELS : 1;
+        }
+
+        /**
+         * @brief How many steps slices() cuts a convolution into.
+         *
+         * @param prefilterSize The prefilter's mirror-level face size in texels.
+         * @param mips          Its levels.
+         * @return The mirror level, six irradiance faces and every prefilter band past the mirror.
+         */
+        static constexpr int sliceCount(int prefilterSize, int mips) {
+            int prefilter = 0;
+            for (int mip = 1; mip < mips; ++mip) prefilter += bands(prefilterSize >> mip);
+            return 1 + 6 + 6 * prefilter;
+        }
+
+        /**
+         * @brief Cut the convolution of a prefilter of @p prefilterSize and @p mips into steps.
+         *
+         * @param prefilterSize The prefilter's mirror-level face size in texels.
+         * @param mips          Its levels.
+         * @return sliceCount() steps, in the order they must run: the mirror level first.
+         */
+        static std::vector<Step> slices(int prefilterSize, int mips);
+
         /**
          * @brief Convolve the env cube into six diffuse-irradiance faces.
          *
@@ -69,6 +146,29 @@ class GLCubeConvolver {
          */
         void prefilter(int mips, const AttachMipFace& attach);
 
+        /**
+         * @brief Take one step of a convolution spread over frames into @p target.
+         *
+         * The mirror step makes the source's mips first, which every step after it reads.
+         *
+         * @param gl     Live GL context a band is scissored through.
+         * @param step   One of slices()'s steps.
+         * @param target What the step reads and draws into.
+         */
+        void run(Vkm::GL::Context& gl, const Step& step, Target& target);
+
+        /**
+         * @brief The unit cube each face is drawn with.
+         */
+        const GLMesh& cube() const { return m_cube; }
+
+        /**
+         * @brief The shared 90deg convolution projection + per-face view basis.
+         */
+        const glm::mat4& projection() const { return m_projection; }
+        const glm::mat4& faceView(int face) const { return m_faceViews[face]; }
+
+    private:
         /**
          * @brief Convolve one irradiance face, as irradiance() draws it.
          *
@@ -104,18 +204,6 @@ class GLCubeConvolver {
             const AttachMipFace& attach
         );
 
-        /**
-         * @brief The unit cube each face is drawn with.
-         */
-        const GLMesh& cube() const { return m_cube; }
-
-        /**
-         * @brief The shared 90deg convolution projection + per-face view basis.
-         */
-        const glm::mat4& projection() const { return m_projection; }
-        const glm::mat4& faceView(int face) const { return m_faceViews[face]; }
-
-    private:
         /**
          * @brief The roughness prefilter() gives level @p mip of @p mips.
          *

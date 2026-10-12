@@ -10,6 +10,7 @@
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "l_assert.h"
 #include "logger.h"
 
 #include "gl_uniform_buffer.h"
@@ -197,6 +198,13 @@ void GLShadowData::build(const RenderView& view, const GLView& glView, uint32_t 
         }
     }
     fitTilesToAtlas();
+
+    // The sun that casts here is the one a capture shadows (GLCaptureShadow).
+    [[maybe_unused]] const LightData* captured = lowestSlotDirectionalCaster(view.lights);
+    VKM_ASSERT(
+        m_sunLight < 0 || &view.lights[static_cast<size_t>(m_sunLight)] == captured,
+        "The cascaded sun is not lowestSlotDirectionalCaster"
+    );
 
     // Otherwise a refused light just stops casting, which reads as a content bug, not a budget.
     // Latched, so an over-budget scene says so once.

@@ -22,10 +22,17 @@ struct IrradianceVolume {
     /**
      * @brief Most probes one axis may carry.
      *
-     * The bake runs inside one frame and renders around every probe (see
-     * GLIrradianceBaker::bake), so the cost is cubic in this.
+     * The backend's bake runs inside one frame and renders around every probe;
+     * MAX_PROBES bounds its cost.
      */
     static constexpr uint32_t MAX_RESOLUTION = 64;
+
+    /**
+     * @brief Most probes the whole grid may carry.
+     *
+     * Each keeps what it sees on the GPU for relighting, at the face size of the backend's bake.
+     */
+    static constexpr uint32_t MAX_PROBES = 4096;
 
     glm::vec3 halfExtents = glm::vec3(10.0f, 5.0f, 10.0f);  ///< World units.
 
@@ -47,24 +54,19 @@ struct IrradianceVolume {
     /**
      * @brief Bump to force a re-bake.
      *
-     * For changes the params miss (sun moved, geometry edited); moving or resizing re-bakes alone.
+     * For changes the params miss (geometry edited); moving or resizing re-bakes alone, and a change
+     * of the lights or the sky relights the bake without one.
      */
     uint32_t bakeVersion = 0;
 
     /**
      * @brief The probe grid size every reader walks; loading does not clamp, so readers clamp here.
      *
-     * Also keeps the product of the three inside a uint32.
-     *
      * @param volume The volume asked about.
-     * @return Each axis, clamped to MAX_RESOLUTION.
+     * @return Each axis clamped to MAX_RESOLUTION, then all three scaled down alike until the
+     *         grid holds at most MAX_PROBES.
      */
-    static glm::uvec3 clampedResolution(const IrradianceVolume& volume) {
-        const auto axis = [](uint32_t asked) {
-            return asked > MAX_RESOLUTION ? MAX_RESOLUTION : asked;
-        };
-        return glm::uvec3(axis(volume.resolutionX), axis(volume.resolutionY), axis(volume.resolutionZ));
-    }
+    static glm::uvec3 clampedResolution(const IrradianceVolume& volume);
 };
 
 /**

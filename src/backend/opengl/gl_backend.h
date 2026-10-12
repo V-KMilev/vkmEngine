@@ -35,7 +35,8 @@
 #include "frame/gl_object_buffer.h"
 #include "offline/gl_preview.h"
 #include "storage/gl_probe_manager.h"
-#include "offline/gl_capture_settle.h"
+#include "offline/gl_baked_from.h"
+#include "offline/gl_capture_lighting.h"
 #include "offline/gl_scene_capture.h"
 #include "gl_screen_triangle.h"
 #include "storage/gl_shadow_atlas.h"
@@ -123,70 +124,6 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
             ConstantsInstalled();
         };
 
-        /**
-         * @brief A cached bake, and the signature it was baked from.
-         *
-         * changed() both compares (the signature's `operator==`) and records, so a field cannot be
-         * assigned in one place and left out of the comparison in another.
-         *
-         * @tparam Signature Everything the bake depends on, comparable for equality.
-         */
-        template <typename Signature>
-        class BakedFrom {
-            public:
-                BakedFrom()  = default;
-                ~BakedFrom() = default;
-
-                BakedFrom(const BakedFrom& other) = default;
-                BakedFrom& operator=(const BakedFrom& other) = default;
-
-                BakedFrom(BakedFrom && other) = default;
-                BakedFrom& operator=(BakedFrom && other) = default;
-
-            public:
-                /**
-                 * @brief Whether @p now differs from what is baked; adopts it if so.
-                 *
-                 * @param now What this frame would bake from.
-                 * @return Whether the bake has to run.
-                 */
-                bool changed(const Signature& now) {
-                    if (m_baked && m_last == now) return false;
-                    m_last  = now;
-                    m_baked = true;
-                    return true;
-                }
-
-                /// Forget what was baked, so the next changed() answers true.
-                void invalidate() { m_baked = false; }
-
-                /// Whether a bake has run since construction or the last invalidate().
-                bool baked() const { return m_baked; }
-
-            private:
-                Signature m_last{};
-                bool      m_baked = false;
-        };
-
-        /**
-         * @brief Everything the irradiance-volume bake depends on.
-         */
-        struct IrradianceSignature {
-            glm::vec3 center{0.0f};
-            glm::vec3 halfExtents{0.0f};
-            uint32_t  resolutionX = 0, resolutionY = 0, resolutionZ = 0;
-            uint32_t  bakeVersion = 0;
-
-            bool operator==(const IrradianceSignature& other) const {
-                return center      == other.center
-                    && halfExtents == other.halfExtents
-                    && resolutionX == other.resolutionX
-                    && resolutionY == other.resolutionY
-                    && resolutionZ == other.resolutionZ
-                    && bakeVersion == other.bakeVersion;
-            }
-        };
-
     private:
         /**
          * @brief Drop every GPU cache the world it was built from has outlived.
@@ -213,7 +150,8 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         void partitionDrawables(const RenderView& view);
 
         /**
-         * @brief At frame end, bake again the irradiance volume and the probes that changed.
+         * @brief At frame end, bake again the irradiance volume and the probes that changed, and
+         *        take the next step of a relight or a probe refresh the lighting asked for.
          *
          * Only from a view that gathered the scene: a frame with no camera lists neither, and
          * taking that for a scene without them would drop and re-bake every capture.
@@ -315,8 +253,8 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         GLFogVolume   m_fog;          ///< Froxel volumetric-fog volumes (compute-filled).
 
         GLOceanFields      m_oceanFields;  ///< The ocean's ripple fields and shore.
-        GLIrradianceVolume m_irradiance;  ///< Baked SH irradiance volume (GI).
-        GLIrradianceBaker  m_irradianceBaker;
+        GLIrradianceVolume m_irradiance;       ///< Baked SH irradiance volume (GI).
+        GLIrradianceBaker  m_irradianceBaker;  ///< Its bake, relight and their bookkeeping.
 
         GLProbeManager m_probes;   ///< Reflection-probe arrays, baker, bake state, UBO.
         GLPreview      m_preview;       ///< Editor material/mesh preview renders.
@@ -338,8 +276,6 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         std::optional<SkyParams> m_askedSky;
 
         BakedFrom<Atmosphere::Coefficients> m_bakedAir;
-        BakedFrom<IrradianceSignature>      m_bakedIrradiance;
-        CaptureSettle<IrradianceSignature>  m_irradianceAsked;  ///< What the frames ask its bake for.
 };
 
 } // namespace Vkm::Engine

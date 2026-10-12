@@ -31,6 +31,8 @@
 
 #include "gl_backend.h"
 #include "offline/gl_ibl_baker.h"
+#include "offline/gl_irradiance_baker.h"
+#include "offline/gl_probe_baker.h"
 #include "core/clock.h"
 #include "core/event/event_bus.h"
 #include "core/host_chrome.h"
@@ -73,6 +75,9 @@ constexpr int HEIGHT = 180;
 
 // Enough frames for the bakes a first frame starts to be in the picture.
 constexpr int FRAMES = 4;
+
+// The resolution buildProbe's probe asks for, which the arrays raise to GLProbeArray::MIN_RESOLUTION.
+constexpr uint32_t PROBE_RESOLUTION = 64;
 
 // A channel further than this from the golden is a differing pixel; more than this
 // share of them is a differing frame. Loose enough for a driver update; a lost lobe,
@@ -1122,7 +1127,7 @@ void buildProbe(Scenery& s) {
     at.position = {0.0f, 1.0f, 0.0f};
     s.scene.add(probe, std::move(at));
     ReflectionProbe capture;
-    capture.resolution = 64;
+    capture.resolution = PROBE_RESOLUTION;
     s.scene.add(probe, std::move(capture));
     sunAndCamera(s, {0.0f, 1.5f, 4.0f}, {0.0f, 1.0f, 0.0f});
 }
@@ -1180,7 +1185,7 @@ void testABackendDropsWhatTheSceneNoLongerAsksFor(int& failures) {
         failures
     );
 
-    // A probe's capture is lit by the key light's map fitted to its box, so a resized
+    // A probe's capture is lit by the sun's map fitted to its box, so a resized
     // box is recaptured - here under a sunset a noon capture would not show.
     sameAsAFreshBackend(
         "a probe whose box changes is captured again",
@@ -1259,9 +1264,57 @@ void testADriftingSunIsFollowedOverFrames(int& failures) {
     expect("the frame after its bake is a fresh backend's", share <= PIXEL_TOLERANCE, failures);
 }
 
+// A probe follows its light a step a frame into a layer no probe holds, copied in whole: once the
+// refresh is through, the frame is the one a fresh backend draws, which captures the new light
+// at once.
+void testAProbeFollowsItsLight(int& failures) {
+    std::printf("A reflection probe whose sun sets:\n");
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend lived;
+    if (!lived.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery setting;
+    buildProbe(setting);
+    render(setting, lived);
+    setting.scene.environment().sky.sunElevation = 4.0f;
+    // The refresh of buildProbe's probe, a step a frame.
+    const int steps = GLProbeBaker::refreshSteps(PROBE_RESOLUTION);
+    const std::vector<unsigned char> early = render(setting, lived);
+    int frames = FRAMES;
+    std::vector<unsigned char> midway;
+    for (; frames + FRAMES < steps; frames += FRAMES) midway = render(setting, lived);
+    std::vector<unsigned char> seen;
+    for (; frames < steps + 2 * FRAMES; frames += FRAMES) seen = render(setting, lived);
+
+    // Partway through, the probe is the capture it had: its faces are not the new light one by one.
+    const float kept = differingShare(midway, early.data());
+    std::printf("      %.2f%% of pixels differ partway through\n", kept * 100.0f);
+    expect("until it is refreshed, the probe shows the capture it had", kept <= PIXEL_TOLERANCE, failures);
+
+    restoreContextDefaults();
+    GLBackend fresh;
+    if (!fresh.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery set;
+    buildProbe(set);
+    set.scene.environment().sky.sunElevation = 4.0f;
+    const std::vector<unsigned char> want = render(set, fresh);
+
+    const float share = differingShare(seen, want.data());
+    std::printf("      %.2f%% of pixels differ\n", share * 100.0f);
+    expect("  and once it is, the frame is a fresh backend's", share <= PIXEL_TOLERANCE, failures);
+}
+
 // A frame with no camera gathers no probes; the scene has not lost them. A noon capture
 // still shows at sunset after cameraless frames, as with a backend that drew every
-// frame through one; dropped and retaken, it would show the sunset.
+// frame through one until its refresh, a step a frame, is through; dropped and baked
+// again, it would show the sunset at once.
 void testAFrameWithNoCameraKeepsTheProbesBaked(int& failures) {
     std::printf("A backend that drew frames with no camera:\n");
 
@@ -1542,6 +1595,136 @@ void testASealedRoomHoldsNoSkyLight(int& failures) {
     std::printf("      mean %.2f sealed, %.2f with a doorway and a window\n", means[0], means[1]);
     expect("a sealed room is dark inside", means[0] < 1.0f, failures);
     expect("  and one with openings keeps the light they let in", means[1] > 8.0f, failures);
+}
+
+// A point lamp under buildRoomShell's ceiling, casting no shadow.
+void switchOnTheLamp(Scenery& s) {
+    const EntityId lamp = s.scene.createEntity();
+    Transform at;
+    at.position = {-2.0f, 3.2f, -2.0f};
+    s.scene.add(lamp, std::move(at));
+    Light bulb;
+    bulb.type        = LightType::Point;
+    bulb.intensity   = 60.0f;
+    bulb.radius      = 12.0f;
+    bulb.castShadows = false;
+    s.scene.add(lamp, std::move(bulb));
+}
+
+// A volume's light follows its lights and its sky without a new bake version: its surfels are lit
+// again, and the frame then is the one a fresh bake under the new light draws. The room's own
+// direct light changes too, but the bounce it sends round the room is what a stale grid would
+// keep.
+void testAnIrradianceVolumeFollowsItsLight(int& failures) {
+    std::printf("An irradiance volume whose lighting changes:\n");
+
+    sameAsAFreshBackend(
+        "a room whose sun moves is lit again as a fresh bake lights it",
+        [](Scenery& s) {
+            buildRoomShell(s, true);
+            sunAndCamera(s, {3.0f, 1.7f, 3.0f}, {-2.5f, 1.2f, -3.0f});
+        },
+        [](Scenery&) {},
+        [](Scenery& s) {
+            s.scene.environment().sky.sunElevation = 20.0f;
+            s.scene.environment().sky.sunAzimuth   = 80.0f;
+        },
+        failures
+    );
+
+    // Sealed, so all the light inside is the lamp's, and the room's bounce all of what a grid
+    // baked in the dark would not hold.
+    sameAsAFreshBackend(
+        "a lamp switched on in a sealed room lights its bounce",
+        [](Scenery& s) {
+            buildRoomShell(s, false);
+            sunAndCamera(s, {3.0f, 1.7f, 3.0f}, {-2.5f, 1.2f, -3.0f});
+        },
+        [](Scenery&) {},
+        switchOnTheLamp,
+        failures
+    );
+}
+
+// A relight cut short: the lamp switched on starts one, and the volume nudged and put back before
+// it settles ends it. No bake runs - the box is the baked one again - so the relight has to be
+// asked for anew, or the room keeps the dark it was baked in.
+void testACutShortRelightIsAskedForAgain(int& failures) {
+    std::printf("An irradiance volume whose relight was cut short:\n");
+    const auto nudge = [](Scenery& s, float by) {
+        s.scene.forEach<IrradianceVolume, Transform>([by](EntityId, IrradianceVolume&, Transform& t) {
+            t.position.x += by;
+        });
+    };
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend lived;
+    if (!lived.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery room;
+    buildRoomShell(room, false);
+    sunAndCamera(room, {3.0f, 1.7f, 3.0f}, {-2.5f, 1.2f, -3.0f});
+    render(room, lived);
+    switchOnTheLamp(room);
+    render(room, lived, nullptr, RenderSettings{}, nullptr, 1);
+    nudge(room, 0.5f);
+    render(room, lived, nullptr, RenderSettings{}, nullptr, 1);
+    nudge(room, -0.5f);
+    render(room, lived);
+    render(room, lived);
+    const std::vector<unsigned char> seen = render(room, lived);
+
+    restoreContextDefaults();
+    GLBackend fresh;
+    if (!fresh.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery lit;
+    buildRoomShell(lit, false);
+    sunAndCamera(lit, {3.0f, 1.7f, 3.0f}, {-2.5f, 1.2f, -3.0f});
+    switchOnTheLamp(lit);
+    const std::vector<unsigned char> want = render(lit, fresh);
+
+    const float share = differingShare(seen, want.data());
+    std::printf("      %.2f%% of pixels differ from a fresh bake\n", share * 100.0f);
+    expect("the lamp's bounce comes, as a fresh bake has it", share <= PIXEL_TOLERANCE, failures);
+}
+
+// A relight lights grids of its own, a gather a frame, and the volume takes them only once the
+// last is done, so a room never steps through its bounces. Seen as GI alone, the frames before
+// then are the grid baked in the dark, and the ones after are not.
+void testAVolumeShowsItsGridUntilItsRelightIsThrough(int& failures) {
+    std::printf("An irradiance volume partway through its relight:\n");
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery room;
+    buildRoomShell(room, false);
+    sunAndCamera(room, {3.0f, 1.7f, 3.0f}, {-2.5f, 1.2f, -3.0f});
+    RenderSettings gi;
+    gi.renderMode = RenderMode::GiOnly;
+    gi.ssr        = false;
+    const std::vector<unsigned char> dark = render(room, backend, nullptr, gi);
+    switchOnTheLamp(room);
+    const std::vector<unsigned char> midway =
+        render(room, backend, nullptr, gi, nullptr, GLIrradianceBaker::BOUNCES - 2);
+    render(room, backend, nullptr, gi);
+    const std::vector<unsigned char> relit = render(room, backend, nullptr, gi);
+
+    const float kept    = differingShare(midway, dark.data());
+    const float changed = differingShare(relit, dark.data());
+    std::printf("      %.2f%% of pixels differ partway through\n", kept * 100.0f);
+    std::printf("      %.2f%% once through\n", changed * 100.0f);
+    expect("until its relight is through, the volume shows its old grid", kept <= PIXEL_TOLERANCE, failures);
+    expect("  and then the lamp's", changed > 0.25f, failures);
 }
 
 // The overlay drawn by the real pass over a real frame, asserted per pixel, not against
@@ -2430,6 +2613,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testAViewmodelShadesNothingBehindIt(failures);
     testABackendDropsWhatTheSceneNoLongerAsksFor(failures);
     testAFrameWithNoCameraKeepsTheProbesBaked(failures);
+    testAProbeFollowsItsLight(failures);
     testADriftingSunIsFollowedOverFrames(failures);
     testASplashFadesLinearlyOnTheGlass(failures);
     testAnOpenFloorIsNotOccluded(failures);
@@ -2447,6 +2631,9 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testASheenAddsNoLight(failures);
     testAProbeBakedUnderADebugViewHoldsTheScene(failures);
     testASealedRoomHoldsNoSkyLight(failures);
+    testAnIrradianceVolumeFollowsItsLight(failures);
+    testACutShortRelightIsAskedForAgain(failures);
+    testAVolumeShowsItsGridUntilItsRelightIsThrough(failures);
     testTheShoreRingsWhatBreaksTheWater(failures);
     testATransparentPanesShadowIsAsDeepAsItIsOpaque(failures);
 }

@@ -91,7 +91,7 @@ the `VisibilitySystem` output, reusing the vectors' capacity across frames.
 | `particlesAdditive` / `particlesAlpha` | `vector<ParticleData>` | Billboards, split by blend and unsorted: the additive half is order-independent, and `GLParticlePass` sorts the alpha half back-to-front |
 | `particleTextures` | `vector<TextureHandle>` | What the particles show, each once; a particle names its own by `params.z`, 1 + its place here, 0 for the soft disc. `GLParticlePass` draws a run of particles a texture |
 | `ocean` | `OceanData` | `OceanSystem`'s sea at the frame's moment (`present` when the scene has one, and a camera draws it): its waves, its foam and the drift of a `waves` material's maps - see "The ocean" below |
-| `irradianceVolume` / `hasIrradianceVolume` | `IrradianceVolumeData` + `bool` | The scene's one baked-GI volume, chosen by `findIrradianceVolume` and with its grid clamped to `IrradianceVolume::MAX_RESOLUTION` on the way here. A value and a flag rather than a list, the way `Visibility` carries its camera - see "A scene has one irradiance volume" below |
+| `irradianceVolume` / `hasIrradianceVolume` | `IrradianceVolumeData` + `bool` | The scene's one baked-GI volume, chosen by `findIrradianceVolume` and with its grid clamped by `IrradianceVolume::clampedResolution` on the way here. A value and a flag rather than a list, the way `Visibility` carries its camera - see "A scene has one irradiance volume" below |
 | `settings` | `RenderSettings` | Pass toggles + per-effect params, copied each frame |
 | `environment` | `Environment` | The scene's sky (HDR or procedural), night sky and fog, copied whole |
 | `ui` | `const UIDrawData*` | The UISystem's screen-space draw list, borrowed; independent of the camera, so it survives the no-camera path. Null when the UISystem has not run |
@@ -316,10 +316,15 @@ bake as its box follows it - and the baked ones are bound per frame into a probe
 irradiance volume re-bakes, before the probes, at once when its bake version
 changes, or once a changed box or grid has held still for as long, and a probe
 also re-bakes when the volume it was lit by does
-([lighting.md](lighting.md#what-a-capture-is-lit-by)). Neither re-bakes when the
-sky changes: each is a capture of the scene under the sky it was baked with, and
-its `bakeVersion` is how an author takes it again. A frame with no camera bakes
-neither and keeps both.
+([lighting.md](lighting.md#what-a-capture-is-lit-by)). Both follow the lights and the
+sky with no bake: when either changes, the volume's surfels are lit again (below), and a
+probe captured under other light is refreshed a step a frame - a face of the capture,
+then a share of the convolution (`GLCubeConvolver::slices`) - into a layer of the arrays
+no probe holds, copied into the probe's after the last step, so no frame samples half a
+probe. One probe refreshes at a time: the one that has waited longest for how near the eye
+it is (`GLProbeManager::REFRESH_NEAR`), and never one away from where it was captured, which
+keeps its last capture as its box follows it. A bake in between ends the refresh, which begins
+again in its turn. A frame with no camera bakes neither and keeps both.
 
 **A scene has one irradiance volume**, and which one is `findIrradianceVolume` -
 the lowest-slot entity carrying an `IrradianceVolume` and a `Transform`, the
@@ -330,41 +335,57 @@ reads, which is why the Inspector's card says so on the ones it did not pick.
 `RenderView` therefore carries `irradianceVolume` and `hasIrradianceVolume`
 rather than a list, the way `Visibility` carries its camera.
 
-**A probe inside a wall is refused, not shipped.** The radiance capture culls
-back faces, so from inside a solid it sees straight through the walls and
-records the room on the far side - light a trilinear fetch would then blend into
-the near one. So each probe is captured twice: once for radiance, once as a
-backface mask (`shaders/irradiance/backface`, culling off, one bit per
-direction). The SH projection reads both - every texel of each 32-texel cube,
-weighted by the solid angle it covers, one workgroup a probe, so a small
-bright patch reaches every probe that sees it - and a probe whose nearest
-surface faces away over more than a quarter of the sphere is marked refused in the
-alpha of its first coefficient. `dilateProbeGrid`
-(`system/render/irradiance_dilation.h`) then reads the grid back and replaces
-every refused probe with a blend of its trusted neighbours, spreading one cell
-per round, before the grid is uploaded again. The repair is offline because the
-forward pass samples the volume with hardware trilinear filtering and so cannot
-skip a probe. A volume where *no* probe
-was trusted is not marked ready at all, so the frame falls back to the global
-IBL rather than to a grid of guesses.
+**What an irradiance probe sees is kept as surfaces, and lit apart.** The bake draws
+one small cube around each probe - `GLIrradianceBaker::FACE_SIZE` texels a face,
+`shaders/irradiance/surfels` - into the probe's tile of an atlas that stays on the
+GPU: through every texel, the nearest surface's bounce colour, normal, distance and
+emission (`shaders/irradiance/surfel.glsl`), or nothing, the sky. Lighting it is a
+compute pass, `shaders/irradiance/relight`, one workgroup a probe: every surfel lit
+as a diffuse surface, then every texel integrated against SH-L1, weighted by the
+solid angle it covers, so a small bright patch reaches every probe that sees it.
+The bake's gathers ([lighting.md](lighting.md#what-a-capture-is-lit-by)) are that pass
+run again, and so is a relight when the lights or the sky change: the scene is never
+drawn round the probes again for a change of light alone. A surfel reads the
+directional lights and those listed for its probe cell - the lights whose reach meets
+the cell, listed on the CPU each gather (`GLIrradianceBaker::listLights`) - or, outside
+the box, those reaching out of it: never every light, which in a scene of a few hundred
+small lamps would be most of a gather.
+
+**A probe inside a wall is refused, not shipped.** The surfel cube is drawn with
+culling off, so a probe inside a solid sees the backs of the faces enclosing it; one
+seeing backs over more than a quarter of its sphere is marked refused in the alpha of
+its first coefficient, since what it sees is the room on the far side - light a
+trilinear fetch would blend into the near one. The verdicts depend on where probes
+stand, not on the light, so the bake reads the first gather's back once, and
+`probeFillWeights` (`system/render/irradiance_dilation.h`) turns them into a fixed
+blend of trusted neighbours for each refused probe, spreading one cell per round;
+`shaders/irradiance/fill` applies it after every gather of every bake and relight,
+with nothing read back. The repair comes before anything samples the grid because
+the forward pass samples it with hardware trilinear filtering and so cannot skip a
+probe. A volume where *no* probe was trusted is not marked ready at all, so the frame
+falls back to the global IBL rather than to a grid of guesses.
 
 **A capture is shadowed by the key light.** The frame's cascades are fitted to
-the camera, so a probe or irradiance capture draws a map of its own: the key
+the camera, so a probe capture or an irradiance gather draws a map of its own: the key
 light's depth over the region the bake describes - a probe's influence box, the
 volume's box - across the light, and along it every caster standing over that
 region, since a roof well above a room still shades its floor. Without it the
 sun would light indoor floors through their ceilings in the only indirect
 diffuse there is. The other lights capture unshadowed. The map is 2048 texels
 across the region and read through the ordinary hard kernel, installed as a
-one-cascade ShadowBlock the next frame's own upload replaces.
+one-cascade ShadowBlock the next frame's own upload replaces. Two are kept, each for
+the key light and region it was drawn for: a probe capture draws its own, while a
+relight reuses the volume's until the key light or the box changes, so a probe being
+refreshed and the volume being relit in the same frames do not draw each other's away.
 
 **A bake is frame time.** All three run inside `render()`, so the frame that
 notices the change is the frame that pays - but for the procedural sky's IBL
-following a drifting sun, spread a step a frame: an irradiance grid is twelve
-cube faces per probe for its first gather and six per trusted probe for each
-after it. That is why `IrradianceVolume::MAX_RESOLUTION` exists and why
-`RenderView` clamps every axis to it - the grid is a product, so the cost is
-cubic in a number a scene file can hold anything in.
+following a drifting sun, spread a step a frame, and the irradiance volume's relight,
+spread a gather a frame: an irradiance bake draws six cube faces per probe once and
+runs its gathers at once, a relight runs the gathers alone. That is why
+`IrradianceVolume::MAX_RESOLUTION` and `MAX_PROBES` exist and why `RenderView` clamps
+the grid to them - the grid is a product, so its bake and its atlas are cubic in
+numbers a scene file can hold anything in.
 
 ### Fog
 

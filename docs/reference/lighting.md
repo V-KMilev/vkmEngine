@@ -210,43 +210,57 @@ The PBR fragment shader (`shaders/forward/pbr/`) implements:
 
 ### What a capture is lit by
 
-The irradiance volume and the reflection probes are captures of the scene
-(`GLSceneCapture`): the opaque scene and the sky drawn into a cube around each
-probe, which the volume projects to SH-L1 and a reflection probe convolves
-(how, in [rendering.md](rendering.md#the-passes-fixed-order)). Whatever lights the
-captured surfaces is what the probes pass on, so a wall lit by the open sky
-would light every probe in a sealed room through solid plaster. A captured
-surface takes its ambient from the volume wherever the volume covers it, and
-from the sky only outside its box:
+The irradiance volume and the reflection probes are pictures of the scene
+(`GLSceneCapture`): a reflection probe draws the opaque scene and the sky into a
+cube and convolves it; the volume keeps what each of its probes sees as surfaces and
+lights them in a compute pass that projects to SH-L1 (how, in
+[rendering.md](rendering.md#the-passes-fixed-order)). Whatever lights the captured
+surfaces is what the probes pass on, so a wall lit by the open sky would light every
+probe in a sealed room through solid plaster. A captured surface takes its ambient
+from the volume wherever the volume covers it, and from the sky only outside its box:
 
 - **The volume is gathered in bounces**, the recursion DDGI runs across frames
   (Majercik et al., *Dynamic Diffuse Global Illumination with Ray-Traced
   Irradiance Fields*: a ray's hit is shaded by the probes' previous
-  irradiance), run here to a fixed count at bake time. `GLIrradianceBaker`
-  gathers the grid `GLIrradianceBaker::BOUNCES` times. In the first, the
-  captured surfaces inside the box read a grid that is black, so a wall is
-  lit only by what reaches it - the lights, the key light through its shadow,
-  its own emission. Each later gather lights them from the grid the gather
-  before produced, kept in a second volume, and adds one bounce. A direction
-  that meets no geometry sees the sky itself, so the sky reaches a room
-  through its doorway and windows and nowhere else, and a sealed room under a
-  noon sky stores nothing. How many gathers, and what they cost:
-  [engine.md](../guides/engine.md#4-what-has-already-been-decided).
-- **Inside the box the volume is all there is**: a capture reads it with no
-  fade at the box's faces, so a wall on a face takes none of the sky, and the
-  gathers read it at unit intensity, since the frame scales the finished grid
-  by `intensity` and a gather lit at it would compound it once per bounce. A
-  captured glossy surface's reflection of the sky is normalised by the volume
-  as the frame's is (Lazarov, above), so in the first gather it reflects none.
-- **Only the first gather judges** which probes stand inside geometry; the
-  verdict depends on where a probe stands, not on the light, so the later
-  gathers skip those probes and the backface mask, and dilation repairs the
-  refused cells after every gather.
+  irradiance), run here to a fixed count. `GLIrradianceBaker` gathers the grid
+  `GLIrradianceBaker::BOUNCES` times. In the first, the surfels inside the box take
+  no ambient, so a wall is lit only by what reaches it - the lights, the key light
+  through its shadow, its own emission. Each later gather lights them from the grid
+  the gather before produced and adds one bounce. A direction that meets no geometry
+  sees the sky itself, so the sky reaches a room through its doorway and windows and
+  nowhere else, and a sealed room under a noon sky stores nothing. How many gathers,
+  and what they cost: [engine.md](../guides/engine.md#4-what-has-already-been-decided).
+- **A surfel is a diffuse surface**: its light times its bounce colour, the diffuse
+  albedo and what the specular reflects as one - `albedo * (1 - metallic) * (1 - f0)
+  + f0` - so a metal bounces its `f0`, and no share of the light waits on a view no
+  probe has.
+- **Inside the box the volume is all there is**: a gather reads it with no fade at the
+  box's faces, so a wall on a face takes none of the sky, and at unit intensity, since
+  the frame scales the finished grid by `intensity` and a gather lit at it would
+  compound it once per bounce. A probe capture's glossy reflection of the sky is
+  normalised by the volume as the frame's is (Lazarov, above).
+- **Only the bake judges** which probes stand inside geometry, from its first
+  gather; the verdict depends on where a probe stands, not on the light, so every
+  gather of every relight repairs the refused cells by the bake's blend.
+- **The volume's light follows its lights and its sky.** When the frame's lights
+  (`lightingDigest`) or the sky (`GLIBL::version`) differ from those it was lit by, the
+  bake's surfels are lit again with no new bake version, the geometry being the
+  bake's: a gather a frame into grids of the baker's own, the last traded in whole, so
+  the light trails a moving sun by `BOUNCES` frames and no frame shows a half-lit grid.
+  A change during a relight asks for another once it ends. Under still lights none
+  runs.
 - **The reflection probes are captured after the volume**, lit by it where it
   covers them, at its `intensity` and with no fade, so a room's probe reflects
   its walls as the frame lights them rather than lit by the sky. A probe
   remembers which bake of the volume lit it (`GLIrradianceVolume::bakeId`) and
-  is captured again when the volume is.
+  is captured again at once when the volume is baked again.
+- **A probe follows its light too.** It remembers the lights, the sky and the
+  volume's light it was captured under (`CaptureLighting`, which the volume's
+  relight compares too), and one captured under other light is refreshed a step a
+  frame into the arrays' staging layer (`GLProbeBaker::advance`), copied in whole
+  after the last step. A 1024-texel probe
+  is 43 steps of at most 0.7 ms. Under a sun that never stops one is always being
+  refreshed: the one that has waited longest for how near the eye it is.
 
 The frame does fade the volume in over `blendDistance` from each face of its
 box, toward the light outside it. A volume filling a room wants its box out to
@@ -545,10 +559,10 @@ is not a bake a frame - and while the sun only drifts, a step a frame (see
 "Following the sun" below). A scene that names
 neither, and an HDR that fails to load, leave no environment baked: the ambient
 term and the skybox then draw what a scene with no sky draws, rather than the
-last scene's sky. The reflection probes and the irradiance volume are captures
-of the scene under the sky they were baked with, and a sky change does not bake
-them again; bumping their `bakeVersion` does - the volume's takes the probes
-with it, since they are lit by it. It produces:
+last scene's sky. The irradiance volume and the reflection probes follow the sky
+without a bake ([What a capture is lit by](#what-a-capture-is-lit-by)); bumping the
+volume's `bakeVersion` bakes the probes again with it, since they are lit by it. It
+produces:
 
 - The **environment cube**: what an HDR sky's skybox and every capture's sky
   draw, and what the other two cubes are convolved from. Shading never reads it:
@@ -639,7 +653,7 @@ time-lapse's light keeps pace),
 as Unreal time-slices its real-time sky capture: the env cube's six faces, then
 its mips with the prefilter's mirror level, then each irradiance face, then
 each prefilter level a face at a time, the largest in bands of
-`GLIBLBaker::BAND_TEXELS` texels - `GLIBLBaker::slicedSteps` steps in all.
+`GLCubeConvolver::BAND_TEXELS` texels - `GLIBLBaker::slicedSteps` steps in all.
 `GLIBL` holds two sets of the three cubes: shading reads one while a bake fills
 the other, which is swapped in once complete, so no frame reads a half-made set,
 and the next bake starts from wherever the sun is then. The ambient light and

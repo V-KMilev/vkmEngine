@@ -450,6 +450,29 @@ void testTheKeyLightIsTheLowestSlotNotTheFirstListed() {
     check("  and none when there is no directional at all", lowestSlotDirectional(lights) == nullptr);
 }
 
+// The sun a shadow is drawn for is the lowest-slot directional light that casts: a key light that
+// casts none leaves it to the next, which the frame's cascades are fitted for and a capture must
+// shadow by too.
+void testTheShadowedSunIsTheLowestSlotCaster() {
+    std::printf("Which directional light a shadow is drawn for:\n");
+
+    std::vector<LightData> lights(3);
+    lights[0].type        = LightType::Directional;
+    lights[0].entitySlot  = 5;
+    lights[0].castShadows = true;
+    lights[1].type        = LightType::Directional;
+    lights[1].entitySlot  = 1;
+    lights[1].castShadows = false;
+    lights[2].type        = LightType::Point;
+    lights[2].entitySlot  = 0;
+    lights[2].castShadows = true;
+
+    check("the lowest-slot one that casts", lowestSlotDirectionalCaster(lights) == &lights[0]);
+    check("  though the key light is another", lowestSlotDirectional(lights) == &lights[1]);
+    lights[0].castShadows = false;
+    check("  and none when no directional casts", lowestSlotDirectionalCaster(lights) == nullptr);
+}
+
 // The editor picks and drags along the ray under the pointer. Cast from the camera
 // position it is right only for perspective: an orthographic view's rays are
 // parallel and start at the pixel, so a pick from the eye fans out and misses.
@@ -798,6 +821,7 @@ void runCullingTests() {
     testAWorldWithNoMeshesHasNoCasters();
     testAMeshWithNoMaterialCastsNothing();
     testTheKeyLightIsTheLowestSlotNotTheFirstListed();
+    testTheShadowedSunIsTheLowestSlotCaster();
     testThePickRayHoldsUnderEitherProjection();
     testAHostViewIsRenderedThroughWhileItIsOffered();
     testASceneWithNoCameraIsSeenThroughTheHost();

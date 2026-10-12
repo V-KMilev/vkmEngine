@@ -2,9 +2,12 @@
 
 #include <algorithm>
 
+#include <glm/glm.hpp>
+
 #include "gl_buffer_upload.h"
 #include "gl_uniform_buffer.h"
 
+#include "gl_profiler.h"
 #include "convention/gl_bindings.h"
 #include "offline/gl_probe_baker.h"
 #include "offline/gl_scene_capture.h"
@@ -108,9 +111,11 @@ void GLProbeManager::update(
     GLView& glView,
     const ResourceManager& resources,
     const GLIBL& ibl,
-    const GLIrradianceVolume* volume
+    const GLIrradianceVolume* volume,
+    const CaptureLighting& lighting
 ) {
     if (!m_baker || !m_array) return;
+    ++m_frame;
 
     // The layers bind() assigned this frame, from this same view.
     const size_t n = std::min(view.probes.size(), m_layerOf.size());
@@ -128,6 +133,7 @@ void GLProbeManager::update(
     if (any && desired != m_array->resolution()) {
         m_array->createTargets(m_array->capacity(), desired);
         for (BakeState& st : m_state) st.baked = false;
+        m_baker->endRefresh();
     }
 
     // How long each probe has held its place and box, every frame, whichever bakes below.
@@ -139,33 +145,106 @@ void GLProbeManager::update(
 
     // Throttled so several probes changing at once don't hitch the frame.
     constexpr int MAX_REBAKES_PER_FRAME = 1;
-    const uint32_t lighting = volume ? volume->bakeId() : 0;
+    const uint32_t volumeBake = volume ? volume->bakeId() : 0;
     int rebakes = 0;
     for (size_t i = 0; i < n && rebakes < MAX_REBAKES_PER_FRAME; ++i) {
         const int layer = m_layerOf[i];
         if (layer < 0) continue;
         const ProbeData& pd = view.probes[i];
         BakeState&       st = m_state[static_cast<size_t>(layer)];
-        const bool moved   = glm::distance(st.position, pd.position) > 1e-3f;
-        const bool resized = st.box != pd.halfExtents;
-        const bool forced  = st.version != pd.bakeVersion;
-        const bool relit   = st.volumeBake != lighting;
+        const Placement here{pd.position, pd.halfExtents};
+        const bool      moved  = st.placed != here;
+        const bool      forced = st.version != pd.bakeVersion;
+        const bool      relit  = st.volumeBake != volumeBake;
 
         // A probe being moved or resized bakes once it holds still; a new version is a request
         // to bake now, and a new lighting or a first bake does not wait either.
-        if (st.baked && !forced && !relit && !((moved || resized) && st.seen.settled())) continue;
+        if (st.baked && !forced && !relit && !(moved && st.seen.settled())) continue;
         m_baker->bake(gl, *m_array, layer, pd, view, glView, resources, ibl, volume);
         st.baked      = true;
-        st.position   = pd.position;
-        st.box        = pd.halfExtents;
+        st.placed     = here;
         st.version    = pd.bakeVersion;
-        st.volumeBake = lighting;
+        st.volumeBake = volumeBake;
+        st.lighting   = lighting;
+        st.captured   = m_frame;
         ++rebakes;
     }
+
+    // A bake is the frame's capture, and ended any refresh (GLProbeBaker::bake).
+    if (rebakes > 0) return;
+    refresh(gl, view, glView, resources, ibl, volume, lighting);
+}
+
+void GLProbeManager::refresh(
+    Vkm::GL::Context& gl,
+    const RenderView& view,
+    GLView& glView,
+    const ResourceManager& resources,
+    const GLIBL& ibl,
+    const GLIrradianceVolume* volume,
+    const CaptureLighting& lighting
+) {
+    const size_t n = std::min(view.probes.size(), m_layerOf.size());
+
+    // Where it was captured: one away from there - riding a platform, being dragged - is not
+    // refreshed, or its faces would come from as many places.
+    const auto inPlace = [&](size_t i, const BakeState& st) {
+        return st.placed == Placement{view.probes[i].position, view.probes[i].halfExtents};
+    };
+
+    // The probe whose refresh is under way, while it still holds its layer and its place.
+    size_t probe = n;
+    if (m_refreshLayer >= 0) {
+        for (size_t i = 0; i < n; ++i) {
+            if (m_layerOf[i] == m_refreshLayer) probe = i;
+        }
+        const bool keep = probe < n && m_baker->refreshing()
+            && inPlace(probe, m_state[static_cast<size_t>(m_refreshLayer)]);
+        if (!keep) {
+            m_baker->endRefresh();
+            m_refreshLayer = -1;
+        }
+    }
+
+    // Else the one captured under other light that has waited longest for how near the eye it is
+    // (REFRESH_NEAR).
+    if (m_refreshLayer < 0) {
+        float best = 0.0f;
+        for (size_t i = 0; i < n; ++i) {
+            const int layer = m_layerOf[i];
+            if (layer < 0) continue;
+            const BakeState& st = m_state[static_cast<size_t>(layer)];
+            if (!st.baked || st.lighting == lighting || !inPlace(i, st)) continue;
+            const float waited   = static_cast<float>(m_frame - st.captured);
+            const float distance = glm::distance(view.camera.position, view.probes[i].position);
+            const float score    = waited / (1.0f + distance / REFRESH_NEAR);
+            if (score > best) {
+                best  = score;
+                probe = i;
+            }
+        }
+        if (probe == n) return;
+        m_refreshLayer    = m_layerOf[probe];
+        m_refreshLighting = lighting;
+        m_baker->beginRefresh(*m_array);
+    }
+
+    PROFILE_SCOPE("Render/ProbeRefresh");
+    PROFILE_GPU_SCOPE("Render/ProbeRefresh");
+    const ProbeData& pd = view.probes[probe];
+    if (!m_baker->advance(gl, *m_array, m_refreshLayer, pd, view, glView, resources, ibl, volume)) return;
+
+    // Under the light it began under: one that changed since takes another refresh.
+    BakeState& refreshed = m_state[static_cast<size_t>(m_refreshLayer)];
+    refreshed.lighting = m_refreshLighting;
+    refreshed.captured = m_frame;
+    m_refreshLayer = -1;
 }
 
 void GLProbeManager::invalidate() {
     for (BakeState& st : m_state) st.baked = false;
+    if (m_baker) m_baker->endRefresh();
+    m_refreshLayer = -1;
 }
 
 } // namespace Vkm::Engine

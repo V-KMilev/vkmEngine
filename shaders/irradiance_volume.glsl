@@ -31,9 +31,12 @@ float irradianceVolumeWeight(vec3 worldPos) {
     return clamp(d / max(u_ivBlend, 1e-4), 0.0, 1.0);
 }
 
-// Where a surface reads the volume: a third of a cell off it along its geometric normal
-// @p Ng, so a floor between the probe layer above it and one inside its slab reads the room
-// above, not the slab's - which dilation filled from the room below too (DDGI's surface bias).
+const float SURFACE_BIAS = 0.3;  // of the smallest cell side
+
+// Where a surface reads the volume: SURFACE_BIAS of the smallest cell side off it along its
+// geometric normal @p Ng, so a floor between the probe layer above it and one inside its slab
+// reads the room above, not the slab's, which the probe fill repaired from the room below too
+// (DDGI's surface bias).
 vec3 irradianceVolumeLookup(vec3 worldPos, vec3 Ng) {
     vec3 cell = u_ivSize / vec3(textureSize(u_shVolume0, 0));
     return worldPos + Ng * (0.3 * min(cell.x, min(cell.y, cell.z)));

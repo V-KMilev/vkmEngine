@@ -448,7 +448,7 @@ shaders/
   forward/      # pbr/ (the ubershader), pbr_skinned/, prepass/, prepass_skinned/
   shadow/       # depth/ (atlas tiles and cube faces alike), depth_masked/ (cut by alpha), and a skinned variant of each
   ibl/          # equirect/, sky/, irradiance/, prefilter/, brdf/  (IBL bake)
-  irradiance/   # project/, backface/  (the SH probe grid bake)
+  irradiance/   # surfels/, relight/, fill/, surfel.glsl  (the SH probe grid: capture, light, repair)
   resolve/      # geometry/, color/  (the MSAA resolves)
   gtao/  screen_shadow/  cluster/  fog/  reflection/
   bloom/  dof/  decal/  particle/

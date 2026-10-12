@@ -195,9 +195,9 @@ void testAShaderStorageBufferBindsToItsPoint() {
     check("  and the driver agrees it is bound there", bound == static_cast<GLint>(ssbo.getID()));
 }
 
-// The irradiance bake reads the SH grid back, repairs refused probes on the CPU
-// (dilateProbeGrid) and writes it again. A volume returning zeroes would look exactly
-// like an unlit scene.
+// The irradiance bake reads its first gather's grid back for the probes' verdicts
+// (GLIrradianceBaker::recordRepair). A volume returning zeroes would look exactly like a
+// grid of probes all inside walls.
 void testAVolumeTextureRoundTrips() {
     std::printf("A 3D texture, written and read back:\n");
 

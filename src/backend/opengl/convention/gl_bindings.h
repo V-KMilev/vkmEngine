@@ -28,10 +28,12 @@ namespace Vkm::Engine {
     X(SSBOBindingPoints,      LIGHTS,                0,  SSBO_LIGHTS,                         Scene light list (grows past the UBO size limit))                    \
     X(SSBOBindingPoints,      CLUSTER_GRID,          1,  SSBO_CLUSTER_GRID,                   Per-cluster light lists)                                             \
     X(SSBOBindingPoints,      PARTICLES,             2,  SSBO_PARTICLES,                      Billboard particle instances)                                        \
+    X(SSBOBindingPoints,      IRRADIANCE_FILL,       3,  SSBO_IRRADIANCE_FILL,                How an irradiance bake repairs the probes it refused)                \
     X(SSBOBindingPoints,      SKIN_PALETTE,          5,  SSBO_SKIN_PALETTE,                   Every skinned item palette end to end)                               \
     X(SSBOBindingPoints,      INSTANCE_SKIN_BASE,    6,  SSBO_INSTANCE_SKIN_BASE,             Per object: its first bone in SKIN_PALETTE)                          \
     X(SSBOBindingPoints,      INSTANCE_FLAGS,        7,  SSBO_INSTANCE_FLAGS,                 Per object: how the eye draws it (shaders/viewmodel.glsl))           \
     X(SSBOBindingPoints,      INSTANCE_MODELS,       10, SSBO_INSTANCE_MODELS,                Per object: its model matrix)                                        \
+    X(SSBOBindingPoints,      RELIGHT_LIGHTS,        15, SSBO_RELIGHT_LIGHTS,                 The lights reaching each irradiance probe cell (the relight))        \
     X(ShadowTextureSlots,     ATLAS_2D,              11, SHADOW_SLOT_ATLAS_2D,                Tiled 2D depth atlas (sampler2DShadow))                              \
     X(ShadowTextureSlots,     CUBE,                  12, SHADOW_SLOT_CUBE,                    Point-light depth cubes: a layer each (samplerCubeArrayShadow))      \
     X(ShadowTextureSlots,     CUBE_RAW,              13, SHADOW_SLOT_CUBE_RAW,                The cubes uncompared (samplerCubeArray) for the blocker search)      \
@@ -53,8 +55,7 @@ namespace Vkm::Engine {
     X(OverlayTextureSlots,    UI_IMAGE,              1,  UI_SLOT_IMAGE,                       The picture a UIImage run shows (u_image))                           \
     X(OverlayTextureSlots,    SPLASH_LOGO,           0,  SPLASH_SLOT_LOGO,                    The splash logo (u_logo))                                            \
     X(OverlayTextureSlots,    SPLASH_CAPTION,        1,  SPLASH_SLOT_CAPTION,                 The line at the foot of the splash (u_caption))                      \
-    X(IrradianceProjectSlots, PROBE,                 0,  PROJECT_SLOT_PROBE,                  The captured radiance cube (u_probe))                                \
-    X(IrradianceProjectSlots, BACKFACE,              1,  PROJECT_SLOT_BACKFACE,               The backface mask captured beside it (u_backface))                   \
+    X(IrradianceRelightSlots, SURFELS,               0,  RELIGHT_SLOT_SURFELS,                What the irradiance probes see as surfaces to light (u_surfels))     \
     X(ReflectionTextureSlots, WEIGHT,                0,  REFLECT_SLOT_WEIGHT,                 The forward pass reflection weight (rgb) + roughness (a))            \
     X(ReflectionTextureSlots, ENV,                   1,  REFLECT_SLOT_ENV,                    That weight times the probe / sky radiance)                          \
     X(ReflectionTextureSlots, TRACE,                 2,  REFLECT_SLOT_TRACE,                  Each pixel hit: uv + trust + the chain level its lobe spans)         \

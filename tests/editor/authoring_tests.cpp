@@ -7,7 +7,7 @@
 #include <iterator>
 #include <string>
 
-#include "system/render/irradiance_dilation.h"
+#include "system/render/probe_fill.h"
 
 #include "overlays/gizmo_snap.h"
 #include "overlays/mesh_pick.h"
@@ -19,90 +19,64 @@ namespace {
 // is a glowing wall, a bad snap a drifting transform, a bad pick the room instead
 // of the crate in it.
 
-// A probe grid as the bake reads it back: every cell the same, alpha saying trusted.
-ProbeGridSH makeGrid(uint32_t x, uint32_t y, uint32_t z, float value) {
-    ProbeGridSH sh;
-    for (std::vector<glm::vec4>& grid : sh) {
-        grid.assign(static_cast<size_t>(x) * y * z, glm::vec4(value, value, value, 1.0f));
-    }
-    return sh;
-}
+// The repair of a refused probe as weights, found from the verdicts alone: a probe inside a wall
+// captures the far room, and the fill applies them to every grid the bake and its relights make.
+void testTheRepairIsABlendOfTrustedProbes() {
+    std::printf("The repair of a refused probe, as weights:\n");
 
-void refuse(ProbeGridSH& sh, size_t cell) {
-    for (std::vector<glm::vec4>& grid : sh) grid[cell] = glm::vec4(0.0f);
-}
-
-void testRepairingTheProbesABakeRefused() {
-    std::printf("A probe grid with probes the bake would not trust:\n");
-
-    // A grid changed with nothing refused would be a bake blurring itself every run.
-    ProbeGridSH clean = makeGrid(3, 1, 1, 2.0f);
-    check("a grid the bake trusted entirely reports nothing refused", dilateProbeGrid(clean, 3, 1, 1) == 0);
-    check("  and comes back untouched", nearly(clean[0][1].x, 2.0f) && nearly(clean[3][1].x, 2.0f));
-
-    // One probe inside a wall, between two that are not: its own capture - the room
-    // on the far side - must disappear.
-    ProbeGridSH one = makeGrid(3, 1, 1, 4.0f);
-    refuse(one, 1);
-    check("one refused probe is counted", dilateProbeGrid(one, 3, 1, 1) == 1);
-    check(
-        "  and every coefficient of it comes from the probes beside it",
-        nearly(one[0][1].x, 4.0f)
-            && nearly(one[1][1].y, 4.0f)
-            && nearly(one[2][1].z, 4.0f)
-            && nearly(one[3][1].x, 4.0f)
-    );
-    check("  leaving no verdict behind for the sampler to trip over", nearly(one[0][1].w, 1.0f));
-
-    // A pocket three deep, a different light at each end. Borrowing a neighbour filled
-    // in the same round would give the middle the left end's light, not the average.
-    ProbeGridSH pocket = makeGrid(5, 1, 1, 0.0f);
-    for (int c = 0; c < 4; ++c) {
-        pocket[c][0] = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-        pocket[c][4] = glm::vec4(9.0f, 9.0f, 9.0f, 1.0f);
-    }
-    refuse(pocket, 1);
-    refuse(pocket, 2);
-    refuse(pocket, 3);
-    check("a pocket three deep is filled from its rim inwards", dilateProbeGrid(pocket, 5, 1, 1) == 3);
+    // A pocket three deep: its middle blends both ends, by half each.
+    const std::vector<bool> pocket = {true, false, false, false, true};
+    const std::vector<ProbeFill> fills = probeFillWeights(pocket, 5, 1, 1);
+    check("a fill per refused probe", fills.size() == 3);
+    const auto weightOf = [](const ProbeFill& fill, uint32_t source) {
+        for (const auto& [cell, weight] : fill.sources) {
+            if (cell == source) return weight;
+        }
+        return 0.0f;
+    };
     check(
         "  the cell beside each end takes that end",
-        nearly(pocket[0][1].x, 1.0f) && nearly(pocket[0][3].x, 9.0f)
+        fills.size() == 3 && nearly(weightOf(fills[0], 0), 1.0f) && nearly(weightOf(fills[2], 4), 1.0f)
     );
+    // Borrowing a neighbour filled in the same round would give it the left end's light.
     check(
-        "  and the one between them takes both, not whichever was filled first",
-        nearly(pocket[0][2].x, 5.0f)
+        "  and the middle one takes each end by half, not whichever was filled first",
+        fills.size() == 3 && fills[1].cell == 2 && nearly(weightOf(fills[1], 0), 0.5f)
+            && nearly(weightOf(fills[1], 4), 0.5f)
     );
 
-    // The spread must cross the whole box, or the corner opposite the one trusted
-    // probe stays black - a shadow nothing casts.
-    ProbeGridSH sparse = makeGrid(4, 4, 4, 0.0f);
-    for (int c = 0; c < 4; ++c) sparse[c][0] = glm::vec4(3.0f, 3.0f, 3.0f, 1.0f);
-    for (size_t cell = 1; cell < 64; ++cell) refuse(sparse, cell);
-    check("one trusted probe is enough to reach the whole grid", dilateProbeGrid(sparse, 4, 4, 4) == 63);
-    bool reached = true;
-    for (size_t cell = 0; cell < 64; ++cell) {
-        reached = reached && nearly(sparse[0][cell].x, 3.0f) && nearly(sparse[0][cell].w, 1.0f);
+    // The spread must cross the whole box, or the corner opposite the one trusted probe stays
+    // black - a shadow nothing casts.
+    std::vector<bool> lone(64, false);
+    lone[0] = true;
+    check("one trusted probe reaches the whole grid", probeFillWeights(lone, 4, 4, 4).size() == 63);
+
+    // Deeper pockets compound blends of blends; whatever the depth, a fill reads trusted probes
+    // alone and keeps the light it is given.
+    std::vector<bool> sparse(64, false);
+    sparse[0]  = true;
+    sparse[63] = true;
+    bool whole = true;
+    bool fromTrusted = true;
+    for (const ProbeFill& fill : probeFillWeights(sparse, 4, 4, 4)) {
+        float sum = 0.0f;
+        for (const auto& [cell, weight] : fill.sources) {
+            sum += weight;
+            fromTrusted = fromTrusted && sparse[cell];
+        }
+        whole = whole && nearly(sum, 1.0f);
     }
-    check("  including the corner furthest from it", reached);
+    check("every fill's weights sum to one", whole);
+    check("  and every source is a trusted probe", fromTrusted);
 
-    // Nothing to repair from: the grid comes back as it went in, since the baker then
-    // refuses the volume, and a half-filled grid shipped would be worse than the leak.
-    ProbeGridSH lost = makeGrid(2, 2, 2, 7.0f);
-    for (size_t cell = 0; cell < 8; ++cell) refuse(lost, cell);
-    check("a volume where nothing was trusted says so", dilateProbeGrid(lost, 2, 2, 2) == 8);
-    bool untouched = true;
-    for (size_t cell = 0; cell < 8; ++cell) untouched = untouched && nearly(lost[0][cell].w, 0.0f);
-    check("  and is left for the caller to refuse rather than guessed at", untouched);
-
-    // A grid that does not match its stated resolution is a caller bug; writing half
-    // of it would put a wall's light into a room.
-    ProbeGridSH wrong = makeGrid(3, 1, 1, 5.0f);
-    refuse(wrong, 1);
-    check(
-        "a grid sized differently from the resolution given is left alone",
-        dilateProbeGrid(wrong, 4, 1, 1) == 0 && nearly(wrong[0][1].w, 0.0f)
-    );
+    const std::vector<bool> none(8, false);
+    const std::vector<bool> all(8, true);
+    check("nothing trusted, nothing to fill from", probeFillWeights(none, 2, 2, 2).empty());
+    check("nothing refused, nothing to fill", probeFillWeights(all, 2, 2, 2).empty());
+    // A caller bug; filling half of it would put a wall's light into a room. Read as a grid of
+    // four, the second cell would have something to fill.
+    const std::vector<bool> longer = {true, false, true, true, true, true, true, true};
+    check("verdicts sized differently from the grid find nothing", probeFillWeights(longer, 4, 1, 1).empty());
 }
 
 // Snapping moves a drag in whole steps from where it began. Rounding the value
@@ -234,7 +208,7 @@ void testABehaviorFieldIsLabelledInWords() {
 } // namespace
 
 void runAuthoringTests() {
-    testRepairingTheProbesABakeRefused();
+    testTheRepairIsABlendOfTrustedProbes();
     testAGizmoSnapStepsFromWhereTheDragBegan();
     testAPickLandsOnTrianglesNotOnABox();
     testTheDefaultLayoutNamesTabsAsImGuiDoes();

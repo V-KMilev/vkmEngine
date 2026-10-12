@@ -89,6 +89,7 @@ class GLIBL {
         void swap() {
             m_front = 1 - m_front;
             m_ready = true;
+            ++m_version;
         }
 
         void markUnready() { m_ready = false; }
@@ -160,6 +161,9 @@ class GLIBL {
 
         bool isReady() const { return m_ready; }
 
+        /// Which finished bake readers bind: a new value with every swap(), 0 before the first.
+        uint32_t version() const { return m_version; }
+
     private:
         /// One complete product: what a bake fills and readers bind.
         struct Cubes {
@@ -185,8 +189,9 @@ class GLIBL {
         std::unique_ptr<Vkm::GL::Texture2D>   m_brdf;
         std::unique_ptr<Vkm::GL::FrameBuffer> m_captureFbo;
 
-        int  m_front = 0;
-        bool m_ready = false;
+        int      m_front   = 0;
+        bool     m_ready   = false;
+        uint32_t m_version = 0;
 };
 
 } // namespace Vkm::Engine

@@ -1,5 +1,7 @@
 #include "storage/gl_irradiance_volume.h"
 
+#include <utility>
+
 #include "gl_shader_base.h"
 #include "gl_texture_3d.h"
 
@@ -35,9 +37,19 @@ void GLIrradianceVolume::resize(uint32_t x, uint32_t y, uint32_t z) {
     m_ready = false;
 }
 
+void GLIrradianceVolume::release() {
+    for (auto& sh : m_sh) sh.reset();
+    m_ready = false;
+}
+
 void GLIrradianceVolume::setBaked(bool baked) {
     m_ready = baked;
     if (baked) ++m_bakeId;
+}
+
+void GLIrradianceVolume::swapGrid(GLIrradianceVolume& other) {
+    for (int i = 0; i < SH_COEFFS; ++i) std::swap(m_sh[i], other.m_sh[i]);
+    ++m_lightId;
 }
 
 uint32_t GLIrradianceVolume::cellCount() const {
@@ -54,15 +66,6 @@ void GLIrradianceVolume::download(ProbeGridSH& sh) const {
         sh[i].resize(cells);
         m_sh[i]->download(sh[i].data());
     }
-}
-
-void GLIrradianceVolume::upload(const ProbeGridSH& sh) const {
-    const size_t cells = cellCount();
-    if (cells == 0) return;
-    for (int i = 0; i < SH_COEFFS; ++i) {
-        if (!m_sh[i] || sh[i].size() != cells) return;
-    }
-    for (int i = 0; i < SH_COEFFS; ++i) m_sh[i]->upload(sh[i].data());
 }
 
 void GLIrradianceVolume::bindImage(int i, uint32_t unit, GLenum access) const {
