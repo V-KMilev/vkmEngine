@@ -166,6 +166,7 @@ void AudioSystem::reconcileSource(
     params.position    = worldPosition;
     params.minDistance = source.minDistance;
     params.maxDistance = source.maxDistance;
+    params.rolloff     = source.rolloff;
 
     if (it != m_voices.end()) {
         it->second.seenOnFrame = m_frame;

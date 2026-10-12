@@ -61,6 +61,7 @@ void buildLights(RenderView& view, const Scene& scene) {
         data.shadowBias       = light.shadowBias;
         data.shadowNormalBias = light.shadowNormalBias;
         data.shadowDistance   = light.shadowDistance;
+        data.shadowPriority   = light.shadowPriority;
         // Held to 45 degrees of radius: the tangent the disc is sized by diverges at 90.
         data.sourceRadius = light.type == LightType::Directional
             ? std::clamp(light.sourceRadius, 0.0f, glm::quarter_pi<float>())
@@ -138,18 +139,44 @@ void buildParticles(RenderView& view, const Scene& scene, const LiveParticles* p
     PROFILE_SCOPE("RenderView::buildParticles");
     view.particlesAdditive.clear();
     view.particlesAlpha.clear();
+    view.particleTextures.clear();
 
     scene.forEach<ParticleEmitter>([&](EntityId id, const ParticleEmitter& emitter) {
         const std::vector<Particle>* live = particles ? particles->of(id) : nullptr;
         if (!live) return;
         auto& out = emitter.additive ? view.particlesAdditive : view.particlesAlpha;
+
+        // A few emitters a frame, so a walk finds a texture's place.
+        float texture = 0.0f;
+        if (emitter.texture) {
+            auto& textures = view.particleTextures;
+            const auto found = std::find(textures.begin(), textures.end(), emitter.texture);
+            texture = static_cast<float>(found - textures.begin()) + 1.0f;
+            if (found == textures.end()) textures.push_back(emitter.texture);
+        }
+        const uint32_t columns = std::max(emitter.sheetColumns, 1u);
+        const uint32_t rows    = std::max(emitter.sheetRows, 1u);
+        const glm::vec2 frameSize(1.0f / static_cast<float>(columns), 1.0f / static_cast<float>(rows));
+        // A streak lies along its trail, turned by nothing, even where its trail is too short to.
+        const auto angle = [&](const Particle& p) {
+            return emitter.stretch > 0.0f ? 0.0f : p.angle + emitter.spin * p.age;
+        };
+
         for (const Particle& p : *live) {
             // Age drives the size + colour ramp; the simulation already retired expired ones.
             const float t = (p.lifetime > 0.0f) ? (p.age / p.lifetime) : 1.0f;
+            // The sheet's top row first; an image loads bottom row first (image_loaders.cpp).
+            const uint32_t frame = sheetFrameAt(emitter, p.age, p.lifetime, p.frame);
+            const glm::vec2 corner(
+                static_cast<float>(frame % columns) * frameSize.x,
+                1.0f - static_cast<float>(frame / columns + 1) * frameSize.y
+            );
             out.push_back({
                 glm::vec4(p.position, glm::mix(emitter.startSize, emitter.endSize, t)),
                 glm::mix(emitter.startColor, emitter.endColor, t),
-                glm::vec4(emitter.softness, 0.0f, 0.0f, 0.0f),
+                glm::vec4(emitter.softness, angle(p), texture, emitter.viewmodel ? 1.0f : 0.0f),
+                glm::vec4(corner, frameSize),
+                glm::vec4(-p.velocity * std::max(emitter.stretch, 0.0f), 0.0f),
             });
         }
     });
@@ -229,9 +256,10 @@ void RenderView::build(
             decalList,
             particlesAdd,
             particlesBlend,
+            particleTextureList,
             volume,
             volumePresent,
-            sea,
+            seaState,
             palettes,
             renderSettings,
             env,
@@ -246,8 +274,9 @@ void RenderView::build(
         decalList.clear();
         particlesAdd.clear();
         particlesBlend.clear();
+        particleTextureList.clear();
         volumePresent = false;
-        sea.present   = false;
+        seaState.present = false;
         palettes      = nullptr;
         return;
     }

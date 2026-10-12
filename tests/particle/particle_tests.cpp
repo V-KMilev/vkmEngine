@@ -4,6 +4,8 @@
 #include "ecs/component/core/transform.h"
 #include "ecs/component/render/particle_emitter.h"
 #include "system/particle/particle_system.h"
+#include "system/render/render_view.h"
+#include "system/visibility/visibility.h"
 
 namespace {
 
@@ -189,6 +191,100 @@ void testABurstFiresOnceFromItsBoxAndGoesWhenSpent() {
     check("  and goes once its burst has", !idle.scene.isAlive(idle.emitter));
 }
 
+// A sheet plays once over a life, or loops at its rate, from the frame a particle was born on.
+void testASheetPlaysOnceOverALifeOrAtItsRate() {
+    std::printf("Which frame of its sheet a particle shows:\n");
+
+    ParticleEmitter e;
+    e.sheetColumns = 2;
+    e.sheetRows    = 2;
+    const bool once = sheetFrameAt(e, 0.0f, 4.0f, 0) == 0 && sheetFrameAt(e, 1.5f, 4.0f, 0) == 1
+        && sheetFrameAt(e, 3.9f, 4.0f, 0) == 3 && sheetFrameAt(e, 4.0f, 4.0f, 0) == 3;
+    check("over a life, a quarter of it each, held on the last", once);
+    check("  from the frame it was born on, round the sheet", sheetFrameAt(e, 1.5f, 4.0f, 3) == 0);
+    e.sheetFps = 10.0f;
+    check("at a rate, looping", sheetFrameAt(e, 0.25f, 4.0f, 0) == 2 && sheetFrameAt(e, 0.45f, 4.0f, 0) == 0);
+    e.sheetColumns = 0;
+    check("a sheet of no columns is one column", sheetFrames(e) == 2);
+}
+
+// What the renderer is handed for a particle: its frame's rect, the top row first, its angle,
+// its trail behind it, and its texture once however many show it.
+void testAParticleIsHandedOnAsItsFrameTurnedOrStreaked() {
+    std::printf("A particle as the frame hands it to the renderer:\n");
+
+    Scene scene;
+    ResourceManager resources;
+    const TextureHandle sheet = resources.add(TextureAsset{}, "particle:sheet");
+    LiveParticles live;
+    const auto emitter = [&](const ParticleEmitter& e, const Particle& p) {
+        const EntityId id = scene.createEntity();
+        scene.add(id, e);
+        LiveParticles::Pool& pool = live.pools[id.slot()];
+        pool.emitter = id;
+        pool.particles.push_back(p);
+    };
+    ParticleEmitter cards;
+    cards.additive     = false;
+    cards.texture      = sheet;
+    cards.sheetColumns = 4;
+    cards.sheetRows    = 2;
+    cards.spin         = 2.0f;
+    Particle turned;
+    turned.lifetime = 8.0f;
+    turned.age      = 5.5f;
+    turned.angle    = 0.5f;
+    emitter(cards, turned);
+    emitter(cards, turned);
+    ParticleEmitter sparks;
+    sparks.stretch = 0.1f;
+    Particle fast;
+    fast.velocity = {4.0f, 0.0f, -2.0f};
+    emitter(sparks, fast);
+
+    Visibility seen;
+    seen.hasCamera = true;
+    RenderView view;
+    view.build(scene, seen, nullptr, nullptr, nullptr, &live, nullptr);
+    check("one texture, listed once", view.particleTextures.size() == 1 && view.particleTextures[0] == sheet);
+    const bool alpha = view.particlesAlpha.size() == 2 && view.particlesAdditive.size() == 1;
+    check("  split by blend", alpha);
+    if (!alpha) return;
+    const ParticleData& card  = view.particlesAlpha[0];
+    const ParticleData& spark = view.particlesAdditive[0];
+    check("a card names its texture", card.params.z == 1.0f && spark.params.z == 0.0f);
+    // 5.5 of 8 seconds is frame 5: the second row's second, the sheet's top row first.
+    check("  shows its frame", card.uvRect == glm::vec4(0.25f, 0.0f, 0.25f, 0.5f));
+    check("  turned by where it began and how long it spun", card.params.y == 0.5f + 2.0f * 5.5f);
+    check("a spark streaks behind it by its stretch", spark.trail == glm::vec4(-0.4f, 0.0f, 0.2f, 0.0f));
+    check("  and a card not at all", card.trail == glm::vec4(0.0f));
+}
+
+// Asked for, each particle is born on a frame and at an angle of its own.
+void testParticlesAreBornOnFramesAndAnglesOfTheirOwn() {
+    std::printf("Particles born on frames and at angles of their own:\n");
+
+    ParticleWorld w(0.0f, 100, 10.0f);
+    ParticleEmitter& emitter = w.scene.get<ParticleEmitter>(w.emitter);
+    emitter.sheetColumns   = 4;
+    emitter.sheetRows      = 4;
+    emitter.randomFrame    = true;
+    emitter.randomRotation = true;
+    emitter.burst          = 64;
+    w.tick();
+    bool inSheet = true;
+    bool frames  = false;
+    bool angles  = false;
+    const Particle& first = w.emitterState().particles.front();
+    for (const Particle& p : w.emitterState().particles) {
+        inSheet = inSheet && p.frame < 16 && p.angle >= 0.0f && p.angle < glm::two_pi<float>();
+        frames  = frames || p.frame != first.frame;
+        angles  = angles || p.angle != first.angle;
+    }
+    check("on frames of the sheet, at angles of a turn", inSheet);
+    check("  and not all the same", frames && angles);
+}
+
 } // namespace
 
 void runParticleTests() {
@@ -197,4 +293,7 @@ void runParticleTests() {
     testASlowEmitterStillEmits();
     testParticlesAgeOutAndTheEmitterCanBeStopped();
     testAWorldLoadedAgainDrawsTheSameSpread();
+    testASheetPlaysOnceOverALifeOrAtItsRate();
+    testAParticleIsHandedOnAsItsFrameTurnedOrStreaked();
+    testParticlesAreBornOnFramesAndAnglesOfTheirOwn();
 }

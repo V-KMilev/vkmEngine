@@ -291,6 +291,172 @@ void buildSmoke(Scenery& s) {
     sunAndCamera(s, {0.0f, 1.2f, 3.5f}, {0.0f, 0.0f, -1.5f});
 }
 
+// Particles as a sheet's frames, turned, and streaked. Above the floor, left to right: a 2x2
+// sheet's four frames, a particle born on frame 0 at each quarter of its life - red, green,
+// blue, white, each with a dark bar along its top and left edges; one turned an eighth of a
+// turn; then additive streaks, level, rising and coming at the eye, which barely streaks. Below
+// the cards a plain disc, blended with them: a second run of the alpha batch.
+void buildSprites(Scenery& s) {
+    base(s);
+    place(
+        s,
+        s.cube,
+        material(s, "golden:slate", {0.12f, 0.12f, 0.13f}, 0.8f, 0.0f),
+        {0.0f, -0.5f, 0.0f},
+        {20.0f, 1.0f, 20.0f}
+    );
+
+    constexpr uint32_t SIZE  = 64;
+    constexpr uint32_t FRAME = SIZE / 2;
+    constexpr uint32_t BAR   = 5;
+    // Rows bottom first, as an image loads (image_loaders.cpp): the top row is y = SIZE - 1.
+    const uint8_t tint[4][3] = {{230, 40, 30}, {40, 220, 60}, {40, 80, 240}, {240, 240, 240}};
+    TextureAsset sheet;
+    sheet.params.width  = SIZE;
+    sheet.params.height = SIZE;
+    sheet.pixelData.resize(SIZE * SIZE * 4);
+    for (uint32_t y = 0; y < SIZE; ++y) {
+        for (uint32_t x = 0; x < SIZE; ++x) {
+            const uint32_t fromTop = SIZE - 1 - y;
+            const uint32_t frame   = (fromTop / FRAME) * 2 + x / FRAME;
+            const bool     edge    = fromTop % FRAME < BAR || x % FRAME < BAR;
+            uint8_t* p = &sheet.pixelData[(y * SIZE + x) * 4];
+            for (int c = 0; c < 3; ++c) p[c] = edge ? 20 : tint[frame][c];
+            p[3] = 255;
+        }
+    }
+    const TextureHandle frames = s.resources.add(std::move(sheet), "golden:sheet");
+
+    const auto emitter = [&](ParticleEmitter e) {
+        const EntityId id = s.scene.createEntity();
+        s.scene.add(id, Transform{});
+        s.scene.add(id, std::move(e));
+        LiveParticles::Pool& pool = s.particles.pools[id.slot()];
+        pool.emitter = id;
+        return &pool.particles;
+    };
+
+    ParticleEmitter cards;
+    cards.additive     = false;
+    cards.texture      = frames;
+    cards.sheetColumns = 2;
+    cards.sheetRows    = 2;
+    cards.startColor   = glm::vec4(1.0f);
+    cards.endColor     = glm::vec4(1.0f);
+    cards.startSize    = 0.3f;
+    cards.endSize      = 0.3f;
+    cards.lifetime     = 4.0f;
+    std::vector<Particle>* card = emitter(cards);
+    for (int i = 0; i < 5; ++i) {
+        Particle p;
+        p.position = {-2.6f + 0.75f * static_cast<float>(i), 1.0f, 0.0f};
+        p.lifetime = 4.0f;
+        p.age      = i < 4 ? 0.5f + static_cast<float>(i) : 0.5f;
+        p.angle    = i < 4 ? 0.0f : glm::quarter_pi<float>();
+        card->push_back(p);
+    }
+
+    ParticleEmitter puff;
+    puff.additive   = false;
+    puff.startColor = glm::vec4(0.9f, 0.8f, 0.2f, 1.0f);
+    puff.endColor   = puff.startColor;
+    puff.startSize  = 0.25f;
+    puff.endSize    = 0.25f;
+    Particle disc;
+    disc.position = {-1.5f, 0.45f, 0.3f};
+    emitter(puff)->push_back(disc);
+
+    ParticleEmitter sparks;
+    sparks.startColor = glm::vec4(3.0f, 1.6f, 0.4f, 1.0f);
+    sparks.endColor   = sparks.startColor;
+    sparks.startSize  = 0.05f;
+    sparks.endSize    = 0.05f;
+    sparks.softness   = 0.3f;
+    sparks.stretch    = 0.1f;
+    std::vector<Particle>* spark = emitter(sparks);
+    const glm::vec3 headings[3] = {{8.0f, 0.0f, 0.0f}, {0.0f, 8.0f, 0.0f}, {0.0f, 0.0f, 8.0f}};
+    for (int i = 0; i < 3; ++i) {
+        Particle p;
+        p.position = {1.8f + 0.8f * static_cast<float>(i), 1.0f, 0.0f};
+        p.velocity = headings[i];
+        spark->push_back(p);
+    }
+    sunAndCamera(s, {0.0f, 1.3f, 4.0f}, {0.0f, 1.0f, 0.0f});
+}
+
+// A weapon held into a wall. The eye stands 0.4 m from a wall, wide (100 degrees); two blocks are
+// held @p depth ahead, into the wall: on the right one seen by @p seenBy, on the left an EyeOnly
+// one, which the wall hides. Lit by the sun and by a lamp beside the right one, which glows @p glow.
+void buildHeld(Scenery& s, SeenBy seenBy, float depth, glm::vec3 glow = glm::vec3(0.0f)) {
+    base(s);
+    place(
+        s,
+        s.cube,
+        material(s, "golden:ground", {0.4f, 0.4f, 0.38f}, 0.8f, 0.0f),
+        {0.0f, -0.5f, 0.0f},
+        {20.0f, 1.0f, 20.0f}
+    );
+    const MaterialHandle plaster = material(s, "golden:wall", {0.55f, 0.5f, 0.45f}, 0.7f, 0.0f);
+    place(s, s.cube, plaster, {0.0f, 1.5f, -0.9f}, {6.0f, 3.0f, 1.0f});
+
+    const glm::vec3 eye = {0.0f, 1.6f, 0.0f};
+    const auto held = [&](float x, SeenBy seenBy, MaterialHandle paint) {
+        const EntityId id = s.scene.createEntity();
+        Transform at;
+        at.position = eye + glm::vec3(x, -0.2f, depth);
+        at.scale    = {0.12f, 0.12f, 0.4f};
+        s.scene.add(id, std::move(at));
+        Mesh mesh{s.cube, paint};
+        mesh.seenBy = seenBy;
+        s.scene.add(id, std::move(mesh));
+    };
+    held(0.22f, seenBy, material(s, "golden:gunmetal", {0.6f, 0.62f, 0.66f}, 0.35f, 1.0f, glow));
+    held(-0.22f, SeenBy::EyeOnly, material(s, "golden:red", {0.8f, 0.1f, 0.08f}, 0.5f, 0.0f));
+
+    // Its light is found where it is: drawn through its own lens, at the depth of the near plane, it
+    // lands in clusters this lamp - a hand's breadth over its tip, reaching 20 cm - never touches.
+    const EntityId lamp = s.scene.createEntity();
+    Transform lampAt;
+    lampAt.position = eye + glm::vec3(0.22f, -0.08f, -0.37f);
+    s.scene.add(lamp, std::move(lampAt));
+    Light bulb;
+    bulb.type        = LightType::Point;
+    bulb.color       = {1.0f, 0.55f, 0.2f};
+    bulb.intensity   = 0.15f;
+    bulb.radius      = 0.2f;
+    bulb.castShadows = false;
+    s.scene.add(lamp, std::move(bulb));
+
+    sunAndCamera(s, eye, eye + glm::vec3(0.0f, 0.0f, -1.0f));
+    s.scene.forEach<Camera>([](EntityId, Camera& lens) {
+        lens.fovY          = glm::radians(100.0f);
+        lens.viewmodelFovY = glm::radians(50.0f);
+        lens.zNear         = 0.1f;
+    });
+}
+
+// The right block on the viewmodel layer, its tip out of the wall: drawn whole, in front of it,
+// with a muzzle flash past its far end, inside the wall, on the layer too.
+void buildViewmodel(Scenery& s) {
+    buildHeld(s, SeenBy::Viewmodel, -0.55f);
+
+    const EntityId muzzle = s.scene.createEntity();
+    s.scene.add(muzzle, Transform{});
+    ParticleEmitter flash;
+    flash.viewmodel  = true;
+    flash.startColor = glm::vec4(4.0f, 2.4f, 0.8f, 1.0f);
+    flash.endColor   = flash.startColor;
+    flash.startSize  = 0.05f;
+    flash.endSize    = 0.05f;
+    flash.softness   = 0.5f;
+    s.scene.add(muzzle, std::move(flash));
+    LiveParticles::Pool& pool = s.particles.pools[muzzle.slot()];
+    pool.emitter = muzzle;
+    Particle spark;
+    spark.position = glm::vec3(0.22f, 1.45f, -0.9f);
+    pool.particles.push_back(spark);
+}
+
 // A card cut by its albedo alpha, in the sun on a glossy floor: its shadow is the cut
 // pattern, and its holes show the floor rather than a reflection traced from inside.
 void buildCutout(Scenery& s) {
@@ -1239,6 +1405,63 @@ void testASealedRoomHoldsNoSkyLight(int& failures) {
 
 // The overlay drawn by the real pass over a real frame, asserted per pixel, not against
 // a golden: where its edges land is arithmetic that holds on any GPU.
+// GTAO reads a viewmodel's squashed depth as sky: as near as it is drawn, it would shade the wall
+// it is held against with a halo. Against the same wall with the block hidden in it, the wall
+// round the block's outline keeps its shade.
+void testAViewmodelShadesNothingBehindIt(int& failures) {
+    std::printf("A weapon held into a wall, and the wall round it:\n");
+
+    const auto frameWith = [&](SeenBy seenBy, glm::vec3 glow) {
+        restoreContextDefaults();
+        WindowManager window;
+        GLBackend backend;
+        if (!backend.init(window)) return std::vector<unsigned char>{};
+        Scenery s;
+        buildHeld(s, seenBy, -0.75f, glow);
+        // No bloom: the marked block's glow would spread over the wall measured.
+        s.settings.bloom = false;
+        return render(s, backend, nullptr, s.settings);
+    };
+    const std::vector<unsigned char> held   = frameWith(SeenBy::Viewmodel, glm::vec3(0.0f));
+    const std::vector<unsigned char> hidden = frameWith(SeenBy::EyeOnly, glm::vec3(0.0f));
+    // The block glowing green: where it is drawn, however like the wall its own shade.
+    const std::vector<unsigned char> marked = frameWith(SeenBy::Viewmodel, glm::vec3(0.0f, 0.5f, 0.0f));
+    if (held.empty() || hidden.empty() || marked.empty()) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+
+    const auto shade = [&](const std::vector<unsigned char>& f, int x, int y) {
+        const glm::ivec3 p = pixel(f, x, y);
+        return p.x + p.y + p.z;
+    };
+    const auto outline = [&](int x, int y) { return pixel(marked, x, y).y - pixel(held, x, y).y > 8; };
+    // Whether the outline comes within @p reach of a pixel.
+    const auto within = [&](int x, int y, int reach) {
+        for (int dy = -reach; dy <= reach; ++dy) {
+            for (int dx = -reach; dx <= reach; ++dx) {
+                if (outline(x + dx, y + dy)) return true;
+            }
+        }
+        return false;
+    };
+    // Wall pixels two to five from the block's outline - past the edge its own pixels blend - and
+    // how much darker the block left them.
+    constexpr int RING = 5;
+    int ring    = 0;
+    int darkest = 0;
+    for (int y = RING; y < HEIGHT - RING; ++y) {
+        for (int x = RING; x < WIDTH - RING; ++x) {
+            if (within(x, y, 1) || !within(x, y, RING)) continue;
+            ++ring;
+            darkest = std::max(darkest, shade(hidden, x, y) - shade(held, x, y));
+        }
+    }
+    std::printf("      %d wall pixels round it, the most it darkened one: %d of 765\n", ring, darkest);
+    expect("the block shows", ring > 50, failures);
+    expect("  and darkens no wall round it", darkest <= 3, failures);
+}
+
 void testTheUIOverlayLandsOnItsPixels(int& failures) {
     std::printf("The UI overlay, drawn:\n");
 
@@ -1496,6 +1719,8 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     compare("reflections", buildReflections, gl.renderer(), failures);
     compare("glint",       buildGlint,       gl.renderer(), failures);
     compare("smoke",       buildSmoke,       gl.renderer(), failures);
+    compare("sprites",     buildSprites,     gl.renderer(), failures);
+    compare("viewmodel",   buildViewmodel,   gl.renderer(), failures);
     compare("cutout",      buildCutout,      gl.renderer(), failures);
     compare("decals",      buildDecals,      gl.renderer(), failures);
     compare("fog",         buildFog,         gl.renderer(), failures);
@@ -1511,6 +1736,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     compare("aerial",      buildAerial,      gl.renderer(), failures);
 
     testTheUIOverlayLandsOnItsPixels(failures);
+    testAViewmodelShadesNothingBehindIt(failures);
     testABackendDropsWhatTheSceneNoLongerAsksFor(failures);
     testAFrameWithNoCameraKeepsTheProbesBaked(failures);
     testADriftingSunIsFollowedOverFrames(failures);

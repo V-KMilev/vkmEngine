@@ -94,6 +94,8 @@ std::string GLBackend::shaderConstants() {
         << "const float MAX_REFLECTION_LOD      = " << (GLIBL::PREFILTER_MIPS - 1)   << ".0;\n"
         << "const float MAX_PROBE_LOD           = " << (GLProbeArray::PREFILTER_MIPS - 1) << ".0;\n"
         << "const float UI_TEXT_MARK            = " << std::to_string(UI_TEXT_MARK) << ";\n"
+        << "const uint  INSTANCE_FLAG_VIEWMODEL = " << INSTANCE_FLAG_VIEWMODEL << "u;\n"
+        << "const float VIEWMODEL_DEPTH_SHARE   = " << std::to_string(VIEWMODEL_DEPTH_SHARE) << ";\n"
         << "const vec2  TRANSMITTANCE_LUT_SIZE  = vec2("
         << GLAtmosphere::TRANSMITTANCE_WIDTH << ".0, " << GLAtmosphere::TRANSMITTANCE_HEIGHT << ".0);\n"
         << "const vec2  MULTISCATTERING_LUT_SIZE = vec2("

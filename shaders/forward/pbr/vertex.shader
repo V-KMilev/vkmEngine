@@ -9,6 +9,7 @@ layout(location = ATTR_TANGENT) in vec4 aTangent;  // xyz = tangent, w = handedn
 #include "../../skinning_instanced.glsl"
 #endif
 #include "../../camera.glsl"
+#include "../../viewmodel.glsl"
 #include "../../material.glsl"
 #include "../../ocean.glsl"
 
@@ -22,6 +23,7 @@ out float vHeight;       // how high the ocean has lifted it
 out vec3  vAlongX;       // the waves' tangents there (OceanPoint): the pixel's frame and squeeze
 out vec3  vAlongZ;
 out float vLingering;    // the foam a crest left there (oceanLingering)
+flat out uint vViewmodel; // drawn through the viewmodel projection: its lights are found by vWorldPos
 
 // Bit-exact with the depth prepass so the two agree under LEQUAL early-Z.
 invariant gl_Position;
@@ -68,7 +70,8 @@ void main() {
         vLingering   = max(oceanLingering(vRest), oceanSurgeFoam(vRest));
     }
 #endif
-    vWorldPos = worldPos.xyz;
+    vWorldPos  = worldPos.xyz;
+    vViewmodel = instanceIsViewmodel() ? 1u : 0u;
 
-    gl_Position = u_camera.viewProjection * worldPos;
+    gl_Position = eyeClip(worldPos);
 }

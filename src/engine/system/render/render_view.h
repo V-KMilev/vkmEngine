@@ -17,6 +17,7 @@
 #include "system/splash/splash_frame.h"
 #include "system/ui/ui_draw_data.h"
 #include "ecs/environment.h"
+#include "resource/asset/texture_asset.h"
 
 namespace Vkm::Engine {
 
@@ -31,6 +32,10 @@ struct LiveParticles;
  * The whole engine -> backend contract besides the asset graph. build() refills
  * it each frame: what it gathers from the scene it owns; other systems' products
  * it borrows by pointer, valid until the next build().
+ *
+ * A member added here fails the build at two structured bindings that name every member on
+ * purpose - GLView::sync and build()'s no-camera branch - each asking what the new member means
+ * there: an asset handle to make resident, a list to clear without a camera.
  */
 struct RenderView {
     /// Viewport rect within the backbuffer, top-left origin (surfaceHeight flips it).
@@ -62,6 +67,7 @@ struct RenderView {
     std::vector<DecalData>            decals;
     std::vector<ParticleData>         particlesAdditive;  ///< Order-independent.
     std::vector<ParticleData>         particlesAlpha;     ///< Unsorted; the backend orders them.
+    std::vector<TextureHandle>        particleTextures;   ///< What they show, by ParticleData::params.z - 1.
 
     /**
      * @brief The scene's baked-GI volume, meaningful while @ref hasIrradianceVolume.

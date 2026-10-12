@@ -10,8 +10,10 @@
 #include <string>
 #include <vector>
 
+#include "import/audio_loaders.h"
 #include "import/model_part_names.h"
 #include "import/model_source.h"
+#include "resource/resource_manager.h"
 
 namespace {
 
@@ -426,6 +428,51 @@ Connections:  {
     );
 }
 
+// @p v as the four little-endian bytes a RIFF file holds.
+std::string u32(uint32_t v) {
+    std::string bytes(4, '\0');
+    for (size_t i = 0; i < 4; ++i) bytes[i] = static_cast<char>(v >> (8 * i));
+    return bytes;
+}
+
+// A 16-bit mono wav of @p frames silent frames, with @p chunk (id, then body) after its data.
+std::string wavWith(uint32_t frames, const std::string& chunk) {
+    const auto u16 = [](uint16_t v) { return std::string{static_cast<char>(v), static_cast<char>(v >> 8)}; };
+    std::string body = "WAVE";
+    body += "fmt " + u32(16) + u16(1) + u16(1) + u32(8000) + u32(16000) + u16(2) + u16(16);
+    body += "data" + u32(frames * 2) + std::string(frames * 2, '\0');
+    body += chunk;
+    return "RIFF" + u32(static_cast<uint32_t>(body.size())) + body;
+}
+
+// A wav's loop, as an audio editor saves it, is where the clip's loop starts.
+void testAWavsLoopIsTheClipsLoopStart() {
+    std::printf("A wav carrying a loop:\n");
+
+    const ScratchProject project("vkm_import_wav_loop");
+    // smpl: seven fields, numSampleLoops, samplerData, then one loop {id, type, start, end, fraction, count}.
+    const std::string smpl = "smpl" + u32(60) + std::string(28, '\0') + u32(1) + u32(0)
+        + u32(0) + u32(0) + u32(40) + u32(99) + u32(0) + u32(0);
+    // cue : two points {id, position, 'data', chunkStart, blockStart, sampleOffset}, the later
+    // listed first.
+    const auto point = [](uint32_t id, uint32_t at) {
+        return u32(id) + u32(0) + "data" + u32(0) + u32(0) + u32(at);
+    };
+    const std::string cue = std::string("cue ") + u32(52) + u32(2) + point(1, 50) + point(2, 30);
+    write(project.root() / "smpl.wav", wavWith(100, smpl));
+    write(project.root() / "cue.wav", wavWith(100, cue));
+    write(project.root() / "plain.wav", wavWith(100, ""));
+
+    ResourceManager resources;
+    const auto loopOf = [&](const char* name) {
+        const AudioClipHandle clip = loadAudioClip((project.root() / name).string(), resources);
+        return clip ? static_cast<long long>(resources.get(clip).loopStart) : -1LL;
+    };
+    check("a smpl chunk's loop is the clip's loop start", loopOf("smpl.wav") == 40);
+    check("  as is the earliest cue point, where Source keeps its loops", loopOf("cue.wav") == 30);
+    check("and a wav with neither loops whole", loopOf("plain.wav") == 0);
+}
+
 } // namespace
 
 void runImportTests() {
@@ -436,4 +483,5 @@ void runImportTests() {
     testAReExportedModelIsParsedAgain();
     testAGltfThisImporterCannotDecodeIsRefused();
     testTwoModelsWithOneStemAreTwoModels();
+    testAWavsLoopIsTheClipsLoopStart();
 }

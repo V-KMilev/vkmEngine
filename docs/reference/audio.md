@@ -16,7 +16,7 @@ class - `AudioDevice` - is the engine's whole surface onto the audio backend.
 
 | Component | Holds | Notes |
 |-----------|-------|-------|
-| `AudioSource` | clip handle, volume, pitch, loop, spatial, playOnStart, min/max distance | One entity, at most one voice. `playing` is the state the source *wants* to be in - gameplay writes it to start or stop, and reads it back to learn a one-shot finished. |
+| `AudioSource` | clip handle, volume, pitch, loop, spatial, playOnStart, min/max distance, rolloff | One entity, at most one voice. `playing` is the state the source *wants* to be in - gameplay writes it to start or stop, and reads it back to learn a one-shot finished. |
 | `AudioListener` | active, volume | The pose every spatial source is heard relative to, plus the master gain. |
 
 `playing` and `started` on `AudioSource` are runtime state: not reflected, not
@@ -108,9 +108,18 @@ frame.
 
 ## Spatialization
 
-A spatial source is attenuated **linearly** between `minDistance` (full volume)
-and `maxDistance` (silent), so both authored numbers mean what they say; the
-inverse-square default of most backends never reaches zero.
+A spatial source fades between `minDistance` (full volume) and `maxDistance`
+(silent), so both authored numbers mean what they say, by its `rolloff`:
+
+- **`Linear`** (the default): a straight line, miniaudio's own curve.
+- **`Inverse`**: as 1/distance, steep near and gentle far, as sound falls off in
+  the open, bent to reach zero at `maxDistance`:
+  `(min/d - min/max) / (1 - min/max)` (`inverseRolloffGain`). The 1/distance of
+  most backends, miniaudio's included, never reaches zero, so the device works
+  this one out itself and folds it into the voice's volume, again whenever the
+  ear moves, so a one-shot fades as the player walks off. A `minDistance` under
+  `INVERSE_ROLLOFF_MIN_DISTANCE` is read as it, as 1/distance needs somewhere to
+  be full volume.
 
 Every gain - `AudioSource::volume`, `AudioListener::volume`, a
 `PlaySoundEvent`'s - is a **linear gain**: 0.5 is half the amplitude, roughly
@@ -137,7 +146,10 @@ The engine warns rather than converts: the Inspector's card says it where the
 mistake is made, and `AudioSystem` says it once per clip per world when a
 positioned voice starts, for a project that plays through `PlaySoundEvent`
 alone. Nothing downmixes the file
-([engine.md](../guides/engine.md#4-what-has-already-been-decided)).
+([engine.md](../guides/engine.md#4-what-has-already-been-decided)). Content
+brought over from an engine that downmixes at play time - Valve's Source does, for a
+stereo wave played at a position - needs a mono copy made for positioned use,
+as the import or the game keeps it.
 
 A spatial source with no `Transform` is heard at the world origin, which the
 inspector names on the card.
@@ -184,13 +196,19 @@ Same shape as every other asset kind:
 |-------|--------------|
 | Import | `loadAudioClip("assets/audio/step.wav")` decodes wav / mp3 / flac to s16 at the file's own rate. The project-relative path is the clip's name. |
 | Recipe | `{"kind": "file", "path": "assets/audio/step.wav"}`, written to `library/sounds/<uid>.json` - by the cook, not by the import. A clip that has been imported and not yet baked exists in memory only, and nothing that reads the library can find it |
-| Cook | `AssetCook::writeAudioClip` -> `cooked/sounds/<uid>.vkmc` (header + rate + channels + sample count + the PCM) |
+| Cook | `AssetCook::writeAudioClip` -> `cooked/sounds/<uid>.vkmc` (header + rate + channels + sample count + loop start + the PCM) |
 | Reference | The scene's `assets.sounds` block lists the clip by name; `AudioSource` resolves it through `findByName` on load |
 | Runtime | `loadCookedAudioClip` reads the binary synchronously - the cooked file is already the PCM the mixer wants, so there is nothing to decode off-thread |
 
 The clip's rate is preserved rather than resampled at import: the mixer converts
 at play time, so a project moved between a 44.1 kHz and a 48 kHz machine does
 not re-cook.
+
+A looping voice goes back to the clip's **`loopStart`** frame, so what comes
+before it plays once, as an intro. The import reads it from the wav, where an
+audio editor saves a loop: the first loop of its `smpl` chunk, else its first
+cue point (`cue `), where Source's sounds keep theirs. The loop runs to the
+clip's end; a `smpl` loop's own end is not read.
 
 ## Not implemented
 
@@ -397,8 +415,8 @@ its length clicks at the loop point by itself.
 
 ### Key files
 
-- `src/engine/resource/asset/audio_clip_asset.h` - `AudioClipAsset` (decoded PCM + rate + channels)
-- `src/engine/ecs/component/audio/audio_source.h` - `AudioSource` (clip, gain, pitch, loop, spatial, distances)
+- `src/engine/resource/asset/audio_clip_asset.h` - `AudioClipAsset` (decoded PCM + rate + channels + loop start)
+- `src/engine/ecs/component/audio/audio_source.h` - `AudioSource` (clip, gain, pitch, loop, spatial, distances, rolloff)
 - `src/engine/ecs/component/audio/audio_listener.{h,cpp}` - `AudioListener` (the ear + master gain) and `findActiveListener`
 - `src/engine/system/audio/audio_device.{h,cpp}` - `AudioDevice` (the backend seam; the only *engine* file that includes `miniaudio.h`)
 - `src/engine/system/audio/audio_events.h` - `PlaySoundEvent` (the fire-and-forget request)

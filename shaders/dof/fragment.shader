@@ -23,7 +23,11 @@ const int TAPS = 16;
 void main() {
     vec3 centre = texture(u_sceneColor, vUV).rgb;
 
-    float viewDepth = linearizeViewDepth(texture(u_sceneDepth, vUV).r, u_camera.invProjection);
+    float depth01 = texture(u_sceneDepth, vUV).r;
+    // A viewmodel's depth is squashed toward the near plane (shaders/viewmodel.glsl): the weapon in
+    // hand is held sharp rather than blurred as if at the lens.
+    if (depth01 < VIEWMODEL_DEPTH_SHARE) { FragColor = vec4(centre, 1.0); return; }
+    float viewDepth = linearizeViewDepth(depth01, u_camera.invProjection);
 
     // Circle of confusion: 0 at the focus plane, saturating away from it.
     float coc = clamp(abs(viewDepth - u_focusDistance) / max(u_focusDistance, 1e-3), 0.0, 1.0) * u_amount;

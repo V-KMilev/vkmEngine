@@ -634,6 +634,72 @@ void testASpotsTileFollowsItsShareOfTheScreen() {
     check("and every tile fits the atlas", area <= GLShadowAtlas::capacity(FULL));
 }
 
+// When more spots cast than the atlas holds, the nearest keep their shadows, and a raised
+// shadowPriority keeps one however far.
+void testShadowsGoToTheNearestAndThePrioritised() {
+    std::printf("More shadowed spots than tiles:\n");
+
+    using namespace Vkm::Engine;
+    RenderObjects objects;
+    objects.casterCount = 0;
+    RenderView view;
+    view.objects        = &objects;
+    view.viewportWidth  = 1920;
+    view.viewportHeight = 1080;
+    const glm::vec3 eye(0.0f, 2.0f, 0.0f);
+    view.camera = CameraData::from(
+        glm::lookAt(eye, glm::vec3(0.0f, 0.0f, -10.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
+        glm::perspective(glm::radians(60.0f), 16.0f / 9.0f, 0.1f, 500.0f),
+        eye
+    );
+    // Lower slots farther, so slot order would hand the tiles to the farthest.
+    constexpr uint32_t SPOTS = Config::MAX_SHADOW_CASTERS_2D + 2;
+    for (uint32_t i = 0; i < SPOTS; ++i) {
+        LightData spot{};
+        spot.type           = LightType::Spot;
+        spot.entitySlot     = i;
+        spot.position       = glm::vec3(0.0f, 4.0f, -4.0f - 4.0f * static_cast<float>(SPOTS - i));
+        spot.direction      = glm::vec3(0.0f, -1.0f, 0.0f);
+        spot.radius         = 6.0f;
+        spot.innerConeAngle = 0.4f;
+        spot.outerConeAngle = 0.5f;
+        spot.castShadows    = true;
+        view.lights.push_back(spot);
+    }
+
+    GLView       glView;
+    GLShadowData plan;
+    const auto shadowed = [&](uint32_t i) {
+        plan.build(view, glView, 2048);
+        plan.finishCull();
+        return plan.lightSlots()[i] >= 0;
+    };
+    check("the nearest spot keeps its shadow", shadowed(SPOTS - 1));
+    check("  and the farthest goes without", !shadowed(0));
+    view.lights[0].shadowPriority = 1;
+    check("a raised priority keeps the farthest's", shadowed(0));
+
+    // While all fit, slot order holds, wherever the camera is: a light keeps its tile.
+    view.lights.resize(2);
+    view.lights[0].shadowPriority = 0;
+    plan.build(view, glView, 2048);
+    plan.finishCull();
+    check("with tiles for all, the lowest slot takes the first", plan.lightSlots()[0] == 0);
+
+    // A sun's priority is unread: the lowest-slot sun casts, as it keys the sky.
+    LightData sun{};
+    sun.type           = LightType::Directional;
+    sun.direction      = glm::vec3(0.0f, -1.0f, 0.0f);
+    sun.castShadows    = true;
+    sun.shadowDistance = 50.0f;
+    sun.entitySlot     = 100;
+    LightData other    = sun;
+    other.entitySlot     = 101;
+    other.shadowPriority = 5;
+    view.lights        = {other, sun};
+    check("a sun's priority does not make it the one that casts", !shadowed(0) && shadowed(1));
+}
+
 // Many meshes as one glMultiDrawElementsIndirect: one vertex array and index buffer,
 // each command finding its mesh by firstIndex and baseVertex and its instances by
 // baseInstance. A full pool grows by GPU copy, so pooled meshes must draw the same after.
@@ -1743,6 +1809,7 @@ void testTheSharedBlocksAgreeWithTheirStructs() {
             && uniformAt("CameraBlock.viewport", offsetof(CameraUBO, viewport))
             && uniformAt("CameraBlock.zNear", offsetof(CameraUBO, zNear))
             && uniformAt("CameraBlock.zFar", offsetof(CameraUBO, zFar))
+            && uniformAt("CameraBlock.viewmodelViewProjection", offsetof(CameraUBO, viewmodelViewProjection))
     );
 
     check(
@@ -2132,6 +2199,7 @@ int runTests() {
     testANewAtlasReadsAsTheFarPlane();
     testAnAtlasLaysOutTilesOfEverySize();
     testASpotsTileFollowsItsShareOfTheScreen();
+    testShadowsGoToTheNearestAndThePrioritised();
     testAShadowCubeIsBoundForComparison();
     testEveryShippedShaderCompiles();
     testABackendInstallsItsConstantsBeforeItCompilesAnything();

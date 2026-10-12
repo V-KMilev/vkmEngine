@@ -295,6 +295,131 @@ void testAKinematicCharacterIsLeftAlone() {
     check("  and moving again it does not jump", rose < 0.05f);
 }
 
+// A beam at head height stops a character standing and lets one crouching under; let go beneath
+// it, the character stays crouched until it has walked out from under.
+void testACrouchPassesUnderABeamAndStandsOnlyWithRoom() {
+    std::printf("A character crouching under a beam:\n");
+
+    constexpr float RADIUS = 0.3f, HALF = 0.6f;
+    const auto world = [&](Scene& scene) {
+        addBox(scene, {0.0f, -0.5f, 0.0f}, {10.0f, 0.5f, 4.0f});
+        addBox(scene, {2.5f, 1.4f, 0.0f}, {0.5f, 0.2f, 4.0f});
+        const EntityId walker = addCharacter(scene, RADIUS, HALF, 0.4f);
+        scene.get<CharacterController>(walker).crouchHeight = 1.0f;
+        return walker;
+    };
+
+    Scene upright;
+    const EntityId standing = world(upright);
+    simulate(upright, 150);
+    check("standing, the beam stops it", upright.get<Transform>(standing).position.x < 2.0f);
+
+    Scene low;
+    const EntityId walker = world(low);
+    CharacterController& cc = low.get<CharacterController>(walker);
+    const auto part = [&]() { return low.get<Collider>(walker).parts[0]; };
+    cc.crouching = true;
+    simulate(low, 1);
+    const float feet = low.get<Transform>(walker).position.y + part().center.y - part().halfHeight - RADIUS;
+    const float tall = 2.0f * (part().halfHeight + RADIUS);
+    check("crouched, the capsule is crouchHeight tall", std::abs(tall - 1.0f) < 1e-5f);
+    check("  its feet where they were", std::abs(feet) < 0.01f);
+
+    simulate(low, 74);
+    const float under = low.get<Transform>(walker).position.x;
+    check("  and it walks under the beam", under > 2.0f && under < 3.0f);
+    cc.crouching = false;
+    cc.moveInput = glm::vec3(0.0f);
+    simulate(low, 20);
+    check("let go beneath it, it stays crouched", cc.crouched && part().halfHeight < HALF);
+    cc.moveInput = {2.0f, 0.0f, 0.0f};
+    simulate(low, 100);
+    check("walked out, it stands", !cc.crouched && part().halfHeight == HALF && part().center.y == 0.0f);
+
+    // Told it is crouched, as a snapshot tells a client, while its capsule still stands: it still
+    // asks for room before standing, rather than taking the tall capsule for an answer.
+    Scene told;
+    const EntityId crouched = world(told);
+    told.get<Transform>(crouched).position.x = 2.5f;
+    CharacterController& snapshot = told.get<CharacterController>(crouched);
+    snapshot.crouched  = true;
+    snapshot.moveInput = glm::vec3(0.0f);
+    TestFrame frame(told);
+    CharacterControllerSystem controller;
+    controller.fixedUpdate(frame.ctx);
+    const ColliderPart told0 = told.get<Collider>(crouched).parts[0];
+    check("told it is crouched under the beam, it stays so", snapshot.crouched && told0.halfHeight < HALF);
+}
+
+// A deck that slides, and one that turns, carry what stands on them: let go, a character stays
+// where it stood on the deck, and on a turntable goes round with it, drifting out only as the
+// step along the tangent takes anything on it (physics.md, "Riding what it stands on").
+void testACharacterRidesWhatItStandsOn() {
+    std::printf("A character on a moving deck:\n");
+
+    const auto deck = [](Scene& scene, glm::vec3 velocity, glm::vec3 spin) {
+        const EntityId id = addBox(scene, {0.0f, -0.5f, 0.0f}, {6.0f, 0.5f, 6.0f});
+        Rigidbody& body     = scene.get<Rigidbody>(id);
+        body.motion          = RigidbodyMotion::Kinematic;
+        body.linearVelocity  = velocity;
+        body.angularVelocity = spin;
+        return id;
+    };
+    // The deck moved as a driver moves one: its Transform, at the velocities it carries.
+    const auto drive = [](Scene& scene, EntityId id) {
+        constexpr float DT = 1.0f / static_cast<float>(Config::DEFAULT_TICK_RATE);
+        const Rigidbody& body = scene.get<Rigidbody>(id);
+        Transform&       at   = scene.get<Transform>(id);
+        at.position += body.linearVelocity * DT;
+        const float turn = glm::length(body.angularVelocity) * DT;
+        if (turn > 0.0f) {
+            at.rotation = glm::angleAxis(turn, glm::normalize(body.angularVelocity)) * at.rotation;
+        }
+    };
+
+    Scene sliding;
+    const EntityId slider = deck(sliding, {1.5f, 0.0f, 0.0f}, glm::vec3(0.0f));
+    const EntityId rider  = addCharacter(sliding, 0.3f, 0.5f, 0.4f);
+    sliding.get<CharacterController>(rider).moveInput = glm::vec3(0.0f);
+    simulate(sliding, 128, [&]() { drive(sliding, slider); });
+    const float apart = sliding.get<Transform>(rider).position.x - sliding.get<Transform>(slider).position.x;
+    std::printf("      after 2 s on a deck at 1.5 m/s, %.3f m from where it stood on it\n", apart);
+    check("standing still on a sliding deck, it goes with it", std::abs(apart) < 0.05f);
+
+    // One that carries shoves (knockbackDrag) does not take the deck's speed under it for one: it
+    // lags its deck no more than one that carries none.
+    const auto lagOn3 = [&](float drag) {
+        Scene scene;
+        const EntityId fast   = deck(scene, {3.0f, 0.0f, 0.0f}, glm::vec3(0.0f));
+        const EntityId braced = addCharacter(scene, 0.3f, 0.5f, 0.4f);
+        scene.get<CharacterController>(braced).moveInput     = glm::vec3(0.0f);
+        scene.get<CharacterController>(braced).knockbackDrag = drag;
+        simulate(scene, 128, [&]() { drive(scene, fast); });
+        return scene.get<Transform>(braced).position.x - scene.get<Transform>(fast).position.x;
+    };
+    const float plain   = lagOn3(0.0f);
+    const float dragged = lagOn3(4.0f);
+    std::printf("      on a 3 m/s deck, %.3f m behind, %.3f m with knockbackDrag\n", plain, dragged);
+    check("  even one that carries shoves", std::abs(dragged - plain) < 0.01f);
+    const float carry = sliding.get<CharacterController>(rider).groundVelocity.x;
+    check("  and says how fast", std::abs(carry - 1.5f) < 1e-3f);
+
+    // The rider made first here, so it is the other body of its pair than on the sliding deck.
+    Scene turning;
+    const EntityId spun  = addCharacter(turning, 0.3f, 0.5f, 0.4f);
+    const EntityId table = deck(turning, glm::vec3(0.0f), {0.0f, 1.0f, 0.0f});
+    turning.get<CharacterController>(spun).moveInput = glm::vec3(0.0f);
+    turning.get<Transform>(spun).position.x = 3.0f;
+    simulate(turning, 192, [&]() { drive(turning, table); });
+    const glm::vec3 at = turning.get<Transform>(spun).position;
+    const float radius = glm::length(glm::vec2(at.x, at.z));
+    const float round  = std::atan2(-at.z, at.x);
+    std::printf("      after 3 s at 1 rad/s, %.3f m from the middle, %.2f rad round\n", radius, round);
+    check("on a turntable it keeps its distance from the middle, but drifts", std::abs(radius - 3.0f) < 0.1f);
+    check("  going round with it", std::abs(round - 3.0f) < 0.1f);
+    check("  and says how fast it turns", turning.get<CharacterController>(spun).groundSpin == 1.0f);
+}
+
 // A ladder is a wall gameplay says to climb, each tick it holds on: pushing into it goes up,
 // letting go hangs, a jump leaps off, and once gameplay stops saying so it falls.
 void testACharacterClimbsAWall() {
@@ -364,6 +489,8 @@ void runPhysicsCharacterTests() {
     testLettingGoIsNotAShove();
     testAKinematicCharacterIsLeftAlone();
     testACharacterClimbsAWall();
+    testACrouchPassesUnderABeamAndStandsOnlyWithRoom();
+    testACharacterRidesWhatItStandsOn();
     testCharacterStaircase();
     testCharacterStepUp();
     testAJumpDuringAStepIsAWholeJump();

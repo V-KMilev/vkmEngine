@@ -54,8 +54,8 @@ constexpr uint64_t CLIP_FIXED_BYTES = sizeof(uint64_t) + sizeof(float)
     + sizeof(uint64_t) * 6 + sizeof(uint32_t)
     + sizeof(uint64_t) * 2;
 constexpr uint64_t CLIP_PER_MARKER_BYTES = sizeof(float) + sizeof(uint32_t);
-// Audio body: sampleRate + channels + sampleCount, then the interleaved PCM.
-constexpr uint64_t AUDIO_FIXED_BYTES = sizeof(uint32_t) * 2 + sizeof(uint64_t);
+// Audio body: sampleRate + channels + sampleCount + loopStart, then the interleaved PCM.
+constexpr uint64_t AUDIO_FIXED_BYTES = sizeof(uint32_t) * 2 + sizeof(uint64_t) * 2;
 
 template<typename T>
 void writeRaw(std::ostream& os, const T& v) {
@@ -983,6 +983,15 @@ bool writeAudioClip(const std::filesystem::path& path, const AudioClipAsset& aud
         );
         return false;
     }
+    if (audio.loopStart >= audio.frameCount() && audio.loopStart != 0) {
+        LOG_ERROR(
+            "Cooked sound '%s': loop start %llu is past its %llu frames",
+            p.c_str(),
+            static_cast<unsigned long long>(audio.loopStart),
+            static_cast<unsigned long long>(audio.frameCount())
+        );
+        return false;
+    }
 
     std::ofstream os = openCookedWrite(path, "sound");
     if (!os) return false;
@@ -993,6 +1002,7 @@ bool writeAudioClip(const std::filesystem::path& path, const AudioClipAsset& aud
     writeRaw(os, audio.sampleRate);
     writeRaw(os, audio.channels);
     writeRaw(os, static_cast<uint64_t>(audio.sampleCount()));
+    writeRaw(os, audio.loopStart);
     if (audio.samples) writeBulk(os, *audio.samples);
 
     if (!os) {
@@ -1011,7 +1021,9 @@ bool readAudioClip(const std::filesystem::path& path, AudioClipAsset& out) {
     uint32_t sampleRate  = 0;
     uint32_t channels    = 0;
     uint64_t sampleCount = 0;
-    if (!readRaw(is, sampleRate) || !readRaw(is, channels) || !readRaw(is, sampleCount)) {
+    uint64_t loopStart   = 0;
+    if (!readRaw(is, sampleRate) || !readRaw(is, channels) || !readRaw(is, sampleCount)
+        || !readRaw(is, loopStart)) {
         LOG_ERROR("Cooked sound '%s': truncated body", p.c_str());
         return false;
     }
@@ -1047,6 +1059,10 @@ bool readAudioClip(const std::filesystem::path& path, AudioClipAsset& out) {
         );
         return false;
     }
+    if (loopStart != 0 && loopStart >= sampleCount / channels) {
+        LOG_ERROR("Cooked sound '%s': loop start past its last frame", p.c_str());
+        return false;
+    }
 
     std::vector<int16_t> samples;
     readBulk(is, samples, sampleCount);
@@ -1057,6 +1073,7 @@ bool readAudioClip(const std::filesystem::path& path, AudioClipAsset& out) {
 
     out.sampleRate = sampleRate;
     out.channels   = channels;
+    out.loopStart  = loopStart;
     out.samples    = ClipSamples(std::move(samples));
     return true;
 }

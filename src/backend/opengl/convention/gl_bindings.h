@@ -13,6 +13,11 @@ namespace Vkm::Engine {
  * stage, and a note. Material maps take the lowest units, then shadows, IBL and post; a pass that
  * reads no material map reuses the low ones. A fragment output is the scene target's colour
  * attachment of that number: GLTarget indexes draw-buffer lists by location.
+ *
+ * Every texture unit up to MAX_TEXTURE_UNIT is spoken for: a new one shares a unit whose owner no
+ * pass reading it binds, as the ocean's take the env cube's and GTAO's, or the numbering moves past
+ * the per-stage count. The note is bare macro tokens, so it holds no apostrophe: one opens a
+ * character literal, and the error lands in whichever file includes this first.
  */
 #define VKM_GL_BINDINGS(X)                                                                                                                                         \
     X(UBOBindingPoints,       MATERIAL,              0,  UBO_MATERIAL,                        Per-material PBR properties)                                         \
@@ -25,6 +30,7 @@ namespace Vkm::Engine {
     X(SSBOBindingPoints,      PARTICLES,             2,  SSBO_PARTICLES,                      Billboard particle instances)                                        \
     X(SSBOBindingPoints,      SKIN_PALETTE,          5,  SSBO_SKIN_PALETTE,                   Every skinned item palette end to end)                               \
     X(SSBOBindingPoints,      INSTANCE_SKIN_BASE,    6,  SSBO_INSTANCE_SKIN_BASE,             Per object: its first bone in SKIN_PALETTE)                          \
+    X(SSBOBindingPoints,      INSTANCE_FLAGS,        7,  SSBO_INSTANCE_FLAGS,                 Per object: how the eye draws it (shaders/viewmodel.glsl))           \
     X(SSBOBindingPoints,      INSTANCE_MODELS,       10, SSBO_INSTANCE_MODELS,                Per object: its model matrix)                                        \
     X(ShadowTextureSlots,     ATLAS_2D,              11, SHADOW_SLOT_ATLAS_2D,                Tiled 2D depth atlas (sampler2DShadow))                              \
     X(ShadowTextureSlots,     CUBE,                  12, SHADOW_SLOT_CUBE,                    Point-light depth cubes: a layer each (samplerCubeArrayShadow))      \
@@ -42,6 +48,7 @@ namespace Vkm::Engine {
     X(BakeTextureSlots,       TRANSMITTANCE,         1,  BAKE_SLOT_TRANSMITTANCE,             The atmosphere transmittance table (u_transmittance))                \
     X(BakeTextureSlots,       MULTISCATTERING,       2,  BAKE_SLOT_MULTISCATTERING,           The atmosphere multiple-scattering table (u_multiScattering))        \
     X(SkyTextureSlots,        VIEW,                  0,  SKY_SLOT_VIEW,                       The sky-view table the skybox draws the sky from (u_skyViewLut))     \
+    X(ParticleTextureSlots,   SPRITE,                0,  PARTICLE_SLOT_SPRITE,                What a run of particles shows (u_sprite) - a free material unit)     \
     X(OverlayTextureSlots,    UI_ATLAS,              0,  UI_SLOT_ATLAS,                       The UI font atlas or the empty one a run without text reads (u_tex)) \
     X(OverlayTextureSlots,    UI_IMAGE,              1,  UI_SLOT_IMAGE,                       The picture a UIImage run shows (u_image))                           \
     X(OverlayTextureSlots,    SPLASH_LOGO,           0,  SPLASH_SLOT_LOGO,                    The splash logo (u_logo))                                            \

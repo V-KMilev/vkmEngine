@@ -7,9 +7,9 @@
 
 #include <glm/glm.hpp>
 
-namespace Vkm::Engine {
+#include "ecs/component/audio/audio_source.h"
 
-struct AudioClipAsset;
+namespace Vkm::Engine {
 
 /**
  * @brief Identifies one playing sound; 0 is the null sentinel, like a handle index.
@@ -36,13 +36,14 @@ struct VoiceParams {
      * Negative and non-finite values are heard as silence, since one infinite gain
      * would take the whole mix non-finite.
      */
-    float     volume      = 1.0f;
-    float     pitch       = 1.0f;
-    bool      loop        = false;
-    bool      spatial     = true;
-    glm::vec3 position    = {0.0f, 0.0f, 0.0f};
-    float     minDistance = 1.0f;
-    float     maxDistance = 50.0f;
+    float        volume      = 1.0f;
+    float        pitch       = 1.0f;
+    bool         loop        = false;
+    bool         spatial     = true;
+    glm::vec3    position    = {0.0f, 0.0f, 0.0f};
+    float        minDistance = 1.0f;
+    float        maxDistance = 50.0f;
+    AudioRolloff rolloff     = AudioRolloff::Linear;
 
     /**
      * @brief The near distance as the mixer takes it.
@@ -67,6 +68,30 @@ struct VoiceParams {
      */
     bool hasFar() const { return heardMaxDistance() > heardMinDistance(); }
 };
+
+/**
+ * @brief The nearest minDistance AudioRolloff::Inverse takes: 1/distance needs a distance to
+ *        be full volume at.
+ */
+inline constexpr float INVERSE_ROLLOFF_MIN_DISTANCE = 0.01f;
+
+/**
+ * @brief AudioRolloff::Inverse's gain at @p distance: 1 to minDistance, then
+ *        (min/d - min/max) / (1 - min/max), which is 0 at maxDistance and past it.
+ *
+ * @param params   The voice's range; one with no far is never attenuated.
+ * @param distance From the listener, in metres.
+ * @return The gain, 0..1.
+ */
+inline float inverseRolloffGain(const VoiceParams& params, float distance) {
+    if (!params.hasFar()) return 1.0f;
+    const float lo = std::max(params.heardMinDistance(), INVERSE_ROLLOFF_MIN_DISTANCE);
+    const float hi = params.heardMaxDistance();
+    if (!(distance > lo)) return 1.0f;
+    if (distance >= hi) return 0.0f;
+    const float floor = lo / hi;
+    return (lo / distance - floor) / (1.0f - floor);
+}
 
 /**
  * @brief The engine's whole surface onto the audio backend.

@@ -30,13 +30,15 @@ struct CameraUBO {
     glm::vec2 viewport;        ///< The render target's size in pixels.
     float     zNear;
     float     zFar;
+    glm::mat4 viewmodelViewProjection;  ///< CameraData::viewmodelViewProjection.
 };
 
 static_assert(offsetof(CameraUBO, cameraPosition) == 384, "CameraBlock: cameraPosition");
 static_assert(offsetof(CameraUBO, viewport)       == 400, "CameraBlock: viewport");
 static_assert(offsetof(CameraUBO, zNear)          == 408, "CameraBlock: zNear");
 static_assert(offsetof(CameraUBO, zFar)           == 412, "CameraBlock: zFar");
-static_assert(sizeof(CameraUBO)                   == 416, "CameraBlock: size");
+static_assert(offsetof(CameraUBO, viewmodelViewProjection) == 416, "CameraBlock: viewmodelViewProjection");
+static_assert(sizeof(CameraUBO)                   == 480, "CameraBlock: size");
 
 /**
  * @brief GPU mirror of a camera - the CameraBlock UBO.

@@ -192,11 +192,12 @@ class GLShadowData {
          * cull it forks is left running; the batches are unreadable until finishCull.
          *
          * Atlas slots run out before lights do (Config::NUM_CASCADES of the
-         * Config::MAX_SHADOW_CASTERS_2D tiles go to the sun). Lights go in entity-slot order,
-         * since `view.lights` is SparseSet packing order and destroying an unrelated light would
-         * hand a shadow to another mid-session (tie-break: findLowestSlot, ecs/scene.h). The sun
-         * goes first whatever its slot: spots ahead of it could leave too short a run for its
-         * consecutive cascades.
+         * Config::MAX_SHADOW_CASTERS_2D tiles go to the sun). The sun goes first whatever its
+         * priority: spots ahead of it could leave too short a run for its consecutive cascades.
+         * Then lights go by Light::shadowPriority, highest first, and - for a kind of tile more ask
+         * for than there are - nearness to the eye; ties by entity slot, since `view.lights` is
+         * SparseSet packing order and destroying an unrelated light would hand a shadow to another
+         * mid-session (findLowestSlot, ecs/scene.h).
          *
          * Each tile is sized as the plan fits it: the sun's nearest cascades at @p tileRes, the
          * rest at half, and a spot by how much of the screen its cone covers, all within what
@@ -416,7 +417,7 @@ class GLShadowData {
         bool      m_orthographic = false;
 
         /**
-         * @brief This frame's shadow-casting lights, in entity-slot order.
+         * @brief This frame's shadow-casting lights, in the order they take tiles.
          *
          * A member for its capacity, like the cull scratch below: refilled every frame.
          */

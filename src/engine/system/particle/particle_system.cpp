@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include <glm/gtc/constants.hpp>
+
 #include "core/clock.h"
 #include "ecs/hierarchy_operations.h"
 #include "ecs/scene.h"
@@ -72,6 +74,12 @@ void ParticleSystem::update(FrameContext& ctx) {
                 );
                 p.age      = 0.0f;
                 p.lifetime = emitter.lifetime;
+                // Drawn only when asked for: an emitter without them draws the same sequence regardless.
+                if (emitter.randomRotation) p.angle = m_rng.nextFloat(0.0f, glm::two_pi<float>());
+                if (emitter.randomFrame) {
+                    const int frames = static_cast<int>(sheetFrames(emitter));
+                    p.frame = static_cast<uint32_t>(m_rng.nextInt(0, frames - 1));
+                }
                 pool.particles.push_back(p);
                 pool.fired = true;
             };

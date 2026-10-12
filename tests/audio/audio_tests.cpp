@@ -198,6 +198,74 @@ void testDistanceTakesTheSoundAway() {
     check("and past maxDistance it is inaudible", beyond < far_ * 0.5);
 }
 
+// AudioRolloff::Inverse falls as 1/distance near the source and still reaches silence at
+// maxDistance, and its gain is redone as the ear moves, for a one-shot nothing updates too.
+void testAnInverseRolloffFallsAsOneOverDistanceToSilence() {
+    std::printf("An inverse-distance rolloff:\n");
+
+    VoiceParams range;
+    range.minDistance = 1.0f;
+    range.maxDistance = 8.0f;
+    check(
+        "full volume to minDistance",
+        inverseRolloffGain(range, 0.5f) == 1.0f && inverseRolloffGain(range, 1.0f) == 1.0f
+    );
+    check(
+        "  then 1/distance, bent to reach zero at maxDistance",
+        std::abs(inverseRolloffGain(range, 2.0f) - (0.5f - 0.125f) / 0.875f) < 1e-6f
+            && inverseRolloffGain(range, 8.0f) == 0.0f && inverseRolloffGain(range, 20.0f) == 0.0f
+    );
+
+    const AudioClipAsset tone = makeTone(1, 1.0f);
+    AudioDevice device;
+    device.openOffline(RATE, CHANNELS);
+    placeEar(device);
+    VoiceParams params = range;
+    params.spatial  = true;
+    params.rolloff  = AudioRolloff::Inverse;
+    params.position = {0.0f, 0.0f, -1.0f};
+    device.play(tone, params);
+    const double atOne = loudness(mix(device, RATE / 50));
+    device.setListener({0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, -1.0f}, Math::WORLD_UP);
+    const double atTwo = loudness(mix(device, RATE / 50));
+    device.setListener({0.0f, 0.0f, 9.0f}, {0.0f, 0.0f, -1.0f}, Math::WORLD_UP);
+    const double atTen = loudness(mix(device, RATE / 50));
+    std::printf("      1 m %.4f, 2 m %.4f, 10 m %.4f\n", atOne, atTwo, atTen);
+    // 0.43 by the curve; miniaudio's linear fade stacked on it would make it 0.37.
+    check(
+        "a one-shot fades as the ear walks off, as the curve says",
+        std::abs(atTwo / atOne - 0.4286) < 0.025
+    );
+    check("  and is silent past maxDistance", atTen < atOne * 1e-3);
+    device.close();
+}
+
+// A clip's loopStart plays what comes before it once: the loop goes back to it, not to the top.
+void testALoopGoesBackToTheClipsLoopStart() {
+    std::printf("A clip with an intro before its loop:\n");
+
+    // A silent tenth of a second, then a tone: looping whole would come back to silence.
+    AudioClipAsset clip = makeTone(1, 0.2f);
+    std::vector<int16_t> samples = *clip.samples;
+    const size_t intro = RATE / 10;
+    std::fill(samples.begin(), samples.begin() + static_cast<std::ptrdiff_t>(intro), int16_t{0});
+    clip.samples   = ClipSamples(std::move(samples));
+    clip.loopStart = intro;
+
+    AudioDevice device;
+    device.openOffline(RATE, CHANNELS);
+    VoiceParams flat;
+    flat.spatial = false;
+    flat.loop    = true;
+    device.play(clip, flat);
+    const double introHeard = loudness(mix(device, RATE / 20));
+    mix(device, RATE / 20 + RATE / 10);
+    const double secondTime = loudness(mix(device, RATE / 20));
+    check("the intro plays", introHeard < 1e-4);
+    check("  and once: the second time round is the loop", secondTime > 0.1);
+    device.close();
+}
+
 void testWithNoEarASpatialSourceIsSilentAndAFlatOneIsNot() {
     std::printf("A world with no listener in it:\n");
 
@@ -752,4 +820,6 @@ void runAudioTests() {
     testAVoiceDoesNotOutliveTheEntityThatOwnedIt();
     testAPlayingSourceRePointedAtAnotherClipPlaysIt();
     testTheEarIsTheLowestSlotListener();
+    testAnInverseRolloffFallsAsOneOverDistanceToSilence();
+    testALoopGoesBackToTheClipsLoopStart();
 }

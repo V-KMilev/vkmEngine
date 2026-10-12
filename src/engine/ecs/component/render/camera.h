@@ -39,6 +39,16 @@ struct Camera {
     bool active               = true;
 
     /**
+     * @brief Vertical field of view the eye draws Viewmodel meshes at, radians; 0 is fovY's.
+     *
+     * Arms and a weapon keep their look whatever the world's field of view (Mesh::seenBy).
+     */
+    float viewmodelFovY = 0.0f;
+
+    /// Near plane of the viewmodel's projection: a weapon held close is not cut by the world's.
+    static constexpr float VIEWMODEL_Z_NEAR = 0.01f;
+
+    /**
      * @brief Compute the projection matrix for this camera.
      *
      * @param camera         The camera.
@@ -60,6 +70,24 @@ struct Camera {
                 camera.zFar
             );
         }
+    }
+
+    /**
+     * @brief The projection Viewmodel meshes draw through: viewmodelFovY, VIEWMODEL_Z_NEAR.
+     *
+     * An orthographic camera's own: a field of view means nothing to it.
+     *
+     * @param camera         The camera.
+     * @param viewportAspect Used while camera.aspect <= 0.
+     * @return The projection matrix.
+     */
+    static glm::mat4 computeViewmodelProjection(const Camera& camera, float viewportAspect) {
+        if (camera.projection != ProjectionType::Perspective) {
+            return computeProjection(camera, viewportAspect);
+        }
+        const float aspect = camera.aspect > 0.0f ? camera.aspect : viewportAspect;
+        const float fovY   = camera.viewmodelFovY > 0.0f ? camera.viewmodelFovY : camera.fovY;
+        return glm::perspective(fovY, aspect, VIEWMODEL_Z_NEAR, camera.zFar);
     }
 };
 
@@ -91,4 +119,5 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::Camera)
     VKM_F(dofAmount)
     VKM_F(dofMaxBlur)
     VKM_F(active)
+    VKM_F(viewmodelFovY)
 VKM_REFLECT_END()

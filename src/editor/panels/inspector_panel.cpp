@@ -1303,6 +1303,12 @@ void InspectorPanel::drawMeshSection(EditorContext& ec, EntityId id) {
 
         changed |= propCheckbox("Visible", &mesh.visible);
         changed |= propCheckbox("Cast Shadow", &mesh.castShadows);
+        const char* seenByTooltip =
+            "Who draws it, through a scene camera: All; All But Eye - a first-person body, "
+            "with its shadow and in baked reflections but not in the camera; Eye Only - arms or a "
+            "weapon, in the camera alone; Viewmodel - as Eye Only, at the camera's Viewmodel FOV "
+            "and never into a wall. The editor's own view draws everything";
+        changed |= propEnumCombo("Seen By", mesh.seenBy, seenByTooltip);
 
         if (const MeshAsset* held = resources.tryGet(mesh.mesh)) {
             const MeshAsset& asset = *held;
@@ -1446,6 +1452,19 @@ void InspectorPanel::drawLightSection(EditorContext& ec, EntityId id) {
             }
             if (light.type == LightType::Directional)
                 changed |= propDrag("Shadow Distance", &light.shadowDistance, 1.0f, 1.0f, 1000.0f, "%.1f");
+            if (light.type == LightType::Spot || light.type == LightType::Point) {
+                const char* priorityTooltip =
+                    "When more lights cast than the shadow atlas holds, which keep their "
+                    "shadow: the highest first, then the nearest to the camera";
+                changed |= propDragInt(
+                    "Shadow Priority",
+                    &light.shadowPriority,
+                    0.1f,
+                    -100,
+                    100,
+                    priorityTooltip
+                );
+            }
         }
         // Source size, shadowed or not: it sizes the highlight as well as the penumbra.
         if (light.type == LightType::Directional) {
@@ -1831,6 +1850,8 @@ void InspectorPanel::drawDecalSection(EditorContext& ec, EntityId id) {
 }
 
 void InspectorPanel::drawParticleSection(EditorContext& ec, EntityId id) {
+    ResourceManager& resources = ec.frame.resources;
+
     editComponentCard<ParticleEmitter>(ec, id, [&](ParticleEmitter& e) {
         bool changed = false;
 
@@ -1873,19 +1894,59 @@ void InspectorPanel::drawParticleSection(EditorContext& ec, EntityId id) {
         changed |= propColor4("End Color", glm::value_ptr(e.endColor));
         changed |= propDrag("Start Size", &e.startSize, 0.005f, 0.0f, 20.0f, "%.3f");
         changed |= propDrag("End Size", &e.endSize, 0.005f, 0.0f, 20.0f, "%.3f");
-        changed |= propSlider(
-            "Softness",
-            &e.softness,
-            0.0f,
-            1.0f,
-            "%.2f",
-            "Edge falloff: 1 = soft blob, 0 = hard-edged crisp disc"
-        );
         changed |= propCheckbox(
             "Additive",
             &e.additive,
             "Additive blend suits sparks/fire; alpha blend suits smoke"
         );
+
+        ImGui::Spacing();
+        changed |= pickAsset<TextureAsset>("##ParticleTexPick", "Texture", resources, e.texture);
+        if (!e.texture) {
+            changed |= propSlider(
+                "Softness",
+                &e.softness,
+                0.0f,
+                1.0f,
+                "%.2f",
+                "Edge falloff: 1 = soft blob, 0 = hard-edged crisp disc"
+            );
+        } else {
+            const char* sheetTooltip = "The texture as a sheet of frames, read left to right from the top";
+            changed |= propDragU32("Sheet Columns", &e.sheetColumns, 0.1f, 1u, 64u, sheetTooltip);
+            changed |= propDragU32("Sheet Rows", &e.sheetRows, 0.1f, 1u, 64u, sheetTooltip);
+            if (sheetFrames(e) > 1) {
+                changed |= propDrag(
+                    "Sheet FPS",
+                    &e.sheetFps,
+                    0.1f,
+                    0.0f,
+                    120.0f,
+                    "%.1f",
+                    "Frames a second, looping; 0 plays the sheet once over each particle's life"
+                );
+                const char* randomFrameTooltip = "Each particle starts on a frame of its own";
+                changed |= propCheckbox("Random Frame", &e.randomFrame, randomFrameTooltip);
+            }
+        }
+        changed |= propDrag(
+            "Stretch",
+            &e.stretch,
+            0.005f,
+            0.0f,
+            2.0f,
+            "%.3f s",
+            "Seconds of its travel a particle streaks behind it, along its velocity - sparks, rain"
+        );
+        if (e.stretch <= 0.0f) {
+            changed |= propDrag("Spin", &e.spin, 0.05f, -50.0f, 50.0f, "%.2f rad/s", "How fast each turns");
+            const char* rotationTooltip = "Each particle starts at an angle of its own";
+            changed |= propCheckbox("Random Rotation", &e.randomRotation, rotationTooltip);
+        }
+        const char* viewmodelTooltip =
+            "Drawn as a Viewmodel mesh is - a muzzle flash on the weapon in hand lines up with it "
+            "and shows in front of it";
+        changed |= propCheckbox("Viewmodel", &e.viewmodel, viewmodelTooltip);
 
         const std::vector<Particle>* live = ec.frame.particles ? ec.frame.particles->of(id) : nullptr;
         ImGui::TextDisabled("Live: %d particle(s).", live ? static_cast<int>(live->size()) : 0);
@@ -1931,6 +1992,12 @@ void InspectorPanel::drawAudioSourceSection(EditorContext& ec, EntityId id) {
             "Playback rate; also shifts the pitch"
         );
         changed |= propCheckbox("Loop", &source.loop);
+        if (clip && clip->loopStart > 0 && clip->sampleRate > 0) {
+            ImGui::TextDisabled(
+                "Loops from %.2fs, its wav's loop point",
+                static_cast<double>(clip->loopStart) / static_cast<double>(clip->sampleRate)
+            );
+        }
         const char* playOnStartTooltip =
             "Starts by itself once the simulation runs. In the editor that "
             "means on Play, never while a scene is only open";
@@ -1958,8 +2025,13 @@ void InspectorPanel::drawAudioSourceSection(EditorContext& ec, EntityId id) {
                 0.0f,
                 5000.0f,
                 "%.1f",
-                "Silent at this radius; the falloff between the two is linear"
+                "Silent at this radius"
             );
+            const char* rolloffTooltip =
+                "How the sound fades between the two: Linear in a straight line, Inverse "
+                "as 1/distance - steep near the source, gentle far off - still silent at "
+                "Max Distance";
+            changed |= propEnumCombo("Rolloff", source.rolloff, rolloffTooltip);
             if (source.maxDistance <= source.minDistance) {
                 ImGui::TextColored(
                     EditorStyle::WARNING,
@@ -2258,9 +2330,9 @@ void InspectorPanel::drawOceanSection(EditorContext& ec, EntityId id) {
             const float level = resolvedWorldPosition(scene, id, scene.get<Transform>(id)).y;
             int         off   = 0;
             scene.forEach<Mesh>([&](EntityId entity, const Mesh& mesh) {
-                const MaterialAsset* surface = ec.frame.resources.tryGet(mesh.material);
-                const Transform*     at      = scene.tryGet<Transform>(entity);
-                if (!surface || !surface->waves || !at) return;
+                const MaterialAsset* look = ec.frame.resources.tryGet(mesh.material);
+                const Transform*     at   = scene.tryGet<Transform>(entity);
+                if (!look || !look->waves || !at) return;
                 const float height = resolvedWorldPosition(scene, entity, *at).y;
                 if (std::abs(height - level) > WATER_LEVEL_TOLERANCE) ++off;
             });
@@ -2644,6 +2716,10 @@ void InspectorPanel::drawCameraSection(EditorContext& ec, EntityId id) {
 
         if (cam.projection == ProjectionType::Perspective) {
             changed |= propAngleSlider("FOV", &cam.fovY, 10.0f, 170.0f);
+            const char* viewmodelTooltip =
+                "The field of view arms and a weapon draw at (Mesh Seen By: Viewmodel), whatever the "
+                "world's; 0 is the camera's own";
+            changed |= propAngleSlider("Viewmodel FOV", &cam.viewmodelFovY, 0.0f, 170.0f, viewmodelTooltip);
         } else {
             changed |= propDrag("Ortho Height", &cam.orthoHeight, 0.1f, 0.1f, 1000.0f);
         }
@@ -2979,6 +3055,15 @@ void InspectorPanel::drawCharacterControllerSection(EditorContext& ec, EntityId 
             "%.2f m/s",
             "Up or down a face while gameplay holds the character to it (climbing)"
         );
+        changed |= propDrag(
+            "Crouch Height",
+            &cc.crouchHeight,
+            0.01f,
+            0.1f,
+            10.0f,
+            "%.2f m",
+            "The capsule's whole height while crouching, caps included; its feet stay put"
+        );
 
         const char* stepHeightTooltip =
             "Tallest thing the character mounts instead of stopping at.\n"
@@ -2997,7 +3082,11 @@ void InspectorPanel::drawCharacterControllerSection(EditorContext& ec, EntityId 
 
         // Live state: moveInput is gameplay's, the rest the system's.
         ImGui::Spacing();
-        ImGui::TextDisabled("%s", cc.grounded ? "Grounded" : "Airborne");
+        ImGui::TextDisabled("%s%s", cc.grounded ? "Grounded" : "Airborne", cc.crouched ? ", crouched" : "");
+        if (glm::dot(cc.groundVelocity, cc.groundVelocity) > 0.0f) {
+            const glm::vec3 carry = cc.groundVelocity;
+            ImGui::TextDisabled("Carried at %.2f, %.2f, %.2f m/s", carry.x, carry.y, carry.z);
+        }
         if (cc.grounded) {
             ImGui::TextDisabled(
                 "Ground %.0f deg from flat",

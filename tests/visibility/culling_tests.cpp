@@ -336,6 +336,95 @@ void testWaterCastsUnlessTheSeaMovesIt() {
     );
 }
 
+// A first-person body is everywhere but the eye, and the arms are only in it; an editor's free
+// view is no eye, and sees both.
+void testWhatTheEyeSeesAndWhatOnlyItSees() {
+    std::printf("A body the eye does not see, and arms only it does:\n");
+
+    Scene scene;
+    TestFrame frame(scene);
+    const MeshHandle cube = frame.resources.add(generateCube(), "culling:seen-by");
+    MaterialAsset paintAsset;
+    const MaterialHandle paint = frame.resources.add(std::move(paintAsset), "culling:seen-by-paint");
+
+    const EntityId eye = scene.createEntity();
+    scene.add(eye, Transform{});
+    scene.add(eye, Camera{});
+    const auto place = [&](float x, SeenBy seenBy) {
+        const EntityId entity = scene.createEntity();
+        Transform at;
+        at.position = {x, 0.0f, -5.0f};
+        scene.add(entity, std::move(at));
+        Mesh mesh{cube, paint};
+        mesh.seenBy = seenBy;
+        scene.add(entity, std::move(mesh));
+    };
+    place(-1.0f, SeenBy::AllButEye);
+    place(1.0f, SeenBy::EyeOnly);
+
+    VisibilitySystem visibility;
+    visibility.update(frame.ctx);
+    const RenderObjects& objects = frame.ctx.visibility->objects;
+    const auto xOf = [&](uint32_t i) { return objects.models[i][3].x; };
+    check("the eye sees only the arms", objects.visible.size() == 1 && xOf(objects.visible[0]) == 1.0f);
+    check(
+        "  and only the body casts and is captured",
+        objects.casterCount == 1 && objects.scene.size() == 1 && xOf(objects.scene[0]) == -1.0f
+    );
+
+    HostView host;
+    host.position = {0.0f, 0.0f, 0.0f};
+    frame.ctx.hostView = &host;
+    visibility.update(frame.ctx);
+    check("a host's free view sees both", objects.visible.size() == 2);
+    check("  and both cast", objects.casterCount == 2);
+}
+
+// A weapon on the viewmodel layer is the eye's alone, drawn through its own projection, and seen
+// held nearer than the world's near plane; an editor's free view draws it as any mesh.
+void testAViewmodelIsTheEyesThroughItsOwnLens() {
+    std::printf("A weapon on the viewmodel layer:\n");
+
+    Scene scene;
+    TestFrame frame(scene);
+    const MeshHandle cube = frame.resources.add(generateCube(), "culling:viewmodel");
+    MaterialAsset paintAsset;
+    const MaterialHandle paint = frame.resources.add(std::move(paintAsset), "culling:viewmodel-paint");
+
+    const EntityId eye = scene.createEntity();
+    scene.add(eye, Transform{});
+    Camera lens;
+    lens.zNear         = 0.5f;
+    lens.viewmodelFovY = glm::radians(40.0f);
+    scene.add(eye, lens);
+    // A small block a quarter metre ahead: inside the world's near plane, not the viewmodel's.
+    const EntityId gun = scene.createEntity();
+    Transform held;
+    held.position = {0.0f, 0.0f, -0.25f};
+    held.scale    = glm::vec3(0.05f);
+    scene.add(gun, std::move(held));
+    Mesh mesh{cube, paint};
+    mesh.seenBy = SeenBy::Viewmodel;
+    scene.add(gun, std::move(mesh));
+
+    VisibilitySystem visibility;
+    visibility.update(frame.ctx);
+    const Visibility& seen = *frame.ctx.visibility;
+    const RenderObjects& objects = seen.objects;
+    check("the eye sees it, nearer than its near plane", objects.visible.size() == 1);
+    check("  through its own lens", objects.draws[0].viewmodel);
+    check("  which is not the world's", seen.camera.viewmodelViewProjection != seen.camera.viewProjection);
+    check("  and nothing else draws it", objects.scene.empty() && objects.casterCount == 0);
+
+    HostView host;
+    host.position = {0.0f, 0.0f, 2.0f};
+    frame.ctx.hostView = &host;
+    visibility.update(frame.ctx);
+    const bool plain = objects.visible.size() == 1 && !objects.draws[0].viewmodel;
+    check("a host's free view draws it as any mesh", plain);
+    check("  shadow and all", objects.casterCount == 1);
+}
+
 // The frame's light list is in SparseSet packing order, which destroying an unrelated
 // light reorders; taking its first directional would disagree with findKeyLight's
 // lowest slot.
@@ -699,6 +788,8 @@ void testWhatIsTooSmallIsNotDrawn() {
 void runCullingTests() {
     testALightsSourceIsItsOwn();
     testWaterCastsUnlessTheSeaMovesIt();
+    testWhatTheEyeSeesAndWhatOnlyItSees();
+    testAViewmodelIsTheEyesThroughItsOwnLens();
     testTheFrustumKeepsWhatIsInFrontOfIt();
     testABoxOnTheEdgeCountsAsVisible();
     testTheFrustumNarrowsWithTheFieldOfView();

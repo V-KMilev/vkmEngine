@@ -9,9 +9,11 @@
 #include "gl_context.h"
 #include "gl_error_handle.h"
 #include "gl_shader_storage_buffer.h"
+#include "gl_texture.h"
 
 #include "gl_frame_context.h"
 #include "gl_target.h"
+#include "gl_view.h"
 #include "convention/gl_bindings.h"
 #include "gl_screen_triangle.h"
 #include "frame/gl_stream_upload.h"
@@ -47,7 +49,25 @@ void GLParticlePass::sortAlpha(const RenderView& view) {
     for (size_t i = 0; i < m_order.size(); ++i) m_sorted[i] = particles[m_order[i].index];
 }
 
-void GLParticlePass::drawBatch(const std::vector<ParticleData>& batch, const ScreenTriangle& emptyVao) {
+void GLParticlePass::sortAdditive(const RenderView& view) {
+    // By texture, a draw each; the blend adds in any order.
+    m_sorted = view.particlesAdditive;
+    std::stable_sort(m_sorted.begin(), m_sorted.end(), [](const ParticleData& a, const ParticleData& b) {
+        return a.params.z < b.params.z;
+    });
+}
+
+void GLParticlePass::bindTexture(GLFrameContext& ctx, float texture) {
+    // 0 is the soft disc; a texture loading or failed shows the missing checker, as a map would.
+    const auto index = static_cast<size_t>(texture);
+    m_shader.setUniform1i("u_textured", index > 0 ? 1 : 0);
+    if (index == 0 || index > ctx.view.particleTextures.size()) return;
+    const Vkm::GL::Texture2D* sprite = ctx.resources.getTexture(ctx.view.particleTextures[index - 1]);
+    if (!sprite) sprite = &ctx.resources.missingTexture();
+    sprite->bindSlot(GLBindings::ParticleTextureSlots::SPRITE);
+}
+
+void GLParticlePass::drawBatch(GLFrameContext& ctx, const std::vector<ParticleData>& batch) {
     if (batch.empty()) return;
 
     const uint32_t count = static_cast<uint32_t>(batch.size());
@@ -57,10 +77,17 @@ void GLParticlePass::drawBatch(const std::vector<ParticleData>& batch, const Scr
     growAndUpload(m_instances, m_capacity, batch.data(), bytes);
     m_instances->bindBase(GLBindings::SSBOBindingPoints::PARTICLES);
 
-    // Attribute-less: per-particle data is read from the SSBO by gl_InstanceID,
-    // and core profile still wants a VAO bound to draw.
-    emptyVao.bind();
-    VKM_GL_CHECK(glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, static_cast<GLsizei>(count)));
+    // Attribute-less: per-particle data is read from the SSBO by gl_InstanceID plus the run's
+    // first, and core profile still wants a VAO bound to draw. A run per texture in a row.
+    ctx.screenTri.bind();
+    for (uint32_t first = 0; first < count;) {
+        uint32_t end = first + 1;
+        while (end < count && batch[end].params.z == batch[first].params.z) ++end;
+        bindTexture(ctx, batch[first].params.z);
+        m_shader.setUniform1i("u_firstInstance", static_cast<int>(first));
+        VKM_GL_CHECK(glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, static_cast<GLsizei>(end - first)));
+        first = end;
+    }
 }
 
 void GLParticlePass::execute(GLFrameContext& ctx) {
@@ -87,15 +114,16 @@ void GLParticlePass::execute(GLFrameContext& ctx) {
     // Additive first (its blend is commutative), then alpha far to near. u_additive also tells
     // the shader how to fog each half.
     if (!view.particlesAdditive.empty()) {
+        sortAdditive(view);
         ctx.gl.setBlendFunc(GL_SRC_ALPHA, GL_ONE);
         m_shader.setUniform1i("u_additive", 1);
-        drawBatch(view.particlesAdditive, ctx.screenTri);
+        drawBatch(ctx, m_sorted);
     }
     if (!view.particlesAlpha.empty()) {
         sortAlpha(view);
         ctx.gl.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         m_shader.setUniform1i("u_additive", 0);
-        drawBatch(m_sorted, ctx.screenTri);
+        drawBatch(ctx, m_sorted);
     }
     setReflectRoughnessWritable(true);
 }

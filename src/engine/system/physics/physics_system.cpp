@@ -502,8 +502,14 @@ void PhysicsSystem::narrowphase(bool replaying) {
                 // The most upward normal each body is held by: A's surface pushes along -normal, B's +normal.
                 for (int k = 0; k < manifold->count; ++k) {
                     const glm::vec3& normal = manifold->contacts[k].normal;
-                    if (-normal.y > m_contacts[A.body].support.y) m_contacts[A.body].support = -normal;
-                    if ( normal.y > m_contacts[B.body].support.y) m_contacts[B.body].support =  normal;
+                    if (-normal.y > m_contacts[A.body].support.y) {
+                        m_contacts[A.body].support     = -normal;
+                        m_contacts[A.body].supportBody = B.body;
+                    }
+                    if (normal.y > m_contacts[B.body].support.y) {
+                        m_contacts[B.body].support     = normal;
+                        m_contacts[B.body].supportBody = A.body;
+                    }
 
                     // The normals differ only in sign, so one measure serves both.
                     const float horizontal = horizontalLengthSq(normal);
@@ -1002,6 +1008,8 @@ void PhysicsSystem::writeback(Scene& scene, bool replaying, float dt) {
             rb.supported     = m_contacts[k].touched;
             rb.supportNormal = rb.supported ? m_contacts[k].support : Math::WORLD_UP;
             rb.blockNormal   = rb.supported ? m_contacts[k].block   : Math::WORLD_UP;
+            const uint32_t under = m_contacts[k].supportBody;
+            rb.supportBody   = rb.supported && under < m_bodies.size() ? m_bodies[under] : EntityId{};
         }
         if (!decided) continue;
 

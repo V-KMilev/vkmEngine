@@ -8,6 +8,7 @@
 
 #include "logger.h"
 
+#include "core/clock.h"
 #include "debug/profiler.h"
 #include "platform/threading/thread_pool.h"
 #include "platform/window/window_manager.h"
@@ -120,6 +121,7 @@ void VisibilitySystem::publishCamera(
     const glm::mat4 projection = Camera::computeProjection(camera, viewportAspect);
     CameraData&     data       = m_result.camera;
     data = CameraData::from(Transform::computeView(pose), projection, position);
+    data.viewmodelViewProjection = Camera::computeViewmodelProjection(camera, viewportAspect) * data.view;
     data.focusDistance = camera.focusDistance;
     data.dofAmount     = camera.dofAmount;
     data.dofMaxBlur    = camera.dofMaxBlur;
@@ -183,8 +185,10 @@ void VisibilitySystem::update(FrameContext& ctx) {
     const float viewportAspect = vpH > 0.0f ? vpW / vpH : 16.0f / 9.0f;
 
     if (!resolveCamera(ctx, viewportAspect)) {
-        // A supported state (see RenderView::build); logged on the edge only.
-        if (!ctx.hostView && !m_noCameraLogged) {
+        // A supported state (see RenderView::build); logged on the edge only, and not before the
+        // world has run at all: a behavior's onStart, which may make the camera, has not either.
+        const bool notRunYet = ctx.clock.getTick() == 0 && ctx.clock.isSimulationStill();
+        if (!ctx.hostView && !m_noCameraLogged && !notRunYet) {
             LOG_WARNING("No active camera found for visibility");
             m_noCameraLogged = true;
         }
@@ -250,6 +254,11 @@ void VisibilitySystem::update(FrameContext& ctx) {
     const bool      sea   = ctx.ocean && ctx.ocean->present;
     const glm::vec2 swell = sea ? ctx.ocean->surface.farthestReach() : glm::vec2(0.0f);
 
+    // Mesh::seenBy names a scene camera's view; a host's free view sees everything.
+    const bool throughAnEye = static_cast<bool>(m_result.cameraEntity);
+    // A weapon held nearer than the world's near plane is still in its own projection's view.
+    const Math::Frustum viewmodelFrustum = Math::extractFrustum(eye.viewmodelViewProjection);
+
     {
         PROFILE_SCOPE("Visibility/Cull");
         parallelFor(meshCount, [&](size_t i) {
@@ -290,19 +299,24 @@ void VisibilitySystem::update(FrameContext& ctx) {
             // off-screen occluders.
             objects.models[i]      = modelMatrix;
             objects.bounds[i]      = world;
+            const bool viewmodel = throughAnEye && mesh.seenBy == SeenBy::Viewmodel;
             objects.draws[i]       = ObjectDraw{
                 selectLOD(mesh, lodStorage, entityIdx, world.min, world.max, context),
                 mesh.material,
                 slice ? slice->count : 0u,
-                waves
+                waves,
+                viewmodel
             };
             objects.skinFirst[i]   = slice ? slice->first : 0u;
             m_result.entities[i]   = ctx.scene.entityAt(entityIdx);
 
-            uint8_t state = STATE_DRAWN;
-            if (mesh.castShadows && !waves) state |= STATE_CASTS;
+            const bool eyeOnly   = viewmodel || (throughAnEye && mesh.seenBy == SeenBy::EyeOnly);
+            const bool notTheEye = throughAnEye && mesh.seenBy == SeenBy::AllButEye;
+            uint8_t state = eyeOnly ? 0 : STATE_DRAWN;
+            if (mesh.castShadows && !waves && !eyeOnly) state |= STATE_CASTS;
 
-            if (Math::frustumIntersectsAABB(context.frustum, world)
+            const Math::Frustum& frustum = viewmodel ? viewmodelFrustum : context.frustum;
+            if (!notTheEye && Math::frustumIntersectsAABB(frustum, world)
                 && Culling::isNearEnough(world, context)
                 && Culling::isLargeEnough(world, context)) {
                 state |= STATE_VISIBLE;
@@ -315,10 +329,8 @@ void VisibilitySystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("Visibility/Gather");
     for (uint32_t i = 0; i < meshCount; ++i) {
         const uint8_t state = m_state[i];
-        if ((state & STATE_DRAWN) == 0) continue;
-
         if (state & STATE_VISIBLE) objects.visible.push_back(i);
-        if (state & STATE_CASTS)   objects.scene.push_back(i);
+        if ((state & (STATE_DRAWN | STATE_CASTS)) == (STATE_DRAWN | STATE_CASTS)) objects.scene.push_back(i);
     }
     objects.casterCount = static_cast<uint32_t>(objects.scene.size());
     for (uint32_t i = 0; i < meshCount; ++i) {

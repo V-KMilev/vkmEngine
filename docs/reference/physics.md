@@ -35,10 +35,11 @@ All of them are plain data structs; see [ecs.md](ecs.md) for the field tables.
   `Collider` into its per-tick `BodyFrame`, so editing either takes effect
   without an "apply" step.
 
-  It also carries three **outputs**, written by `writeback` and never read by the
+  It also carries four **outputs**, written by `writeback` and never read by the
   system that writes them: `supported` (a resolved, non-trigger contact reached
-  this body this tick), `supportNormal` (the most **upward** of those normals)
-  and `blockNormal` (the most **horizontal** of them). Both normals are the
+  this body this tick), `supportNormal` (the most **upward** of those normals),
+  `supportBody` (the body whose surface gave it) and `blockNormal` (the most
+  **horizontal** of them). Both normals are the
   surface's as it acts on *this* body, so the two bodies of one contact see
   opposite directions.
 
@@ -81,13 +82,15 @@ All of them are plain data structs; see [ecs.md](ecs.md) for the field tables.
   slides over them.
 - **`CharacterController`** - `moveInput` (world-space desired horizontal
   velocity, written by gameplay), `jumpRequested`, `climbing` and `climbNormal`
-  (written by gameplay while it is on a ladder, a rope or a wall), the tuning
+  (written by gameplay while it is on a ladder, a rope or a wall), `crouching`
+  (held by gameplay while the key is down), the tuning
   (`jumpSpeed`, `acceleration`, `airControl`, `maxSlopeAngle`, `knockbackDrag`,
-  `stepHeight`, `climbSpeed`), the read-only
-  `grounded` / `groundNormal` / `walkSpeed`, and the state of a step climb in progress
-  (`stepping`, `stepTargetY`, `stepTime`). Only the tuning is serialized: the rest
-  is per-tick traffic, and a scene row holding a half-consumed jump request would
-  replay it on load.
+  `stepHeight`, `climbSpeed`, `crouchHeight`), the read-only
+  `grounded` / `groundNormal` / `walkSpeed` / `groundVelocity` / `groundSpin` /
+  `crouched`, and the state of a step climb in progress
+  (`stepping`, `stepTargetY`, `stepTime`) or a crouch (`standingHalfHeight`).
+  Only the tuning is serialized: the rest is per-tick traffic, and a scene row
+  holding a half-consumed jump request would replay it on load.
 - **Scene physics settings** - `gravity` and `solverIterations` live in the
   scene-global `PhysicsSettings` (`ecs/physics_settings.h`), reached through
   `Scene::physics()` and serialized with the scene in a block of its own. It sits
@@ -224,20 +227,59 @@ long as forward is held. The wall deflection prevents it: the character stops
 pushing into the edge and settles back onto the floor, stopped by the step
 rather than hovering on it.
 
-**A System driving a component**, not a `Behavior`, because the thing that writes
-`moveInput` changes and the thing that reads it should not: gameplay writes it,
-so may any other driver, and an engine system cannot address a hot-reloadable
-game behavior.
-
-**Partial by design:** velocity-driven, with no crouch, no moving platforms
-and no runtime capsule resize.
-
 Step-up is built on the sweep queries: `findStep` probes with two spherecasts - clearance at step height, then straight
 down for a walkable landing - through the body's own collision mask, so a
 character's ragdoll bones never block their own stairs. A climb ends by arriving
 at the measured height, by the character no longer asking, or by its deadline;
 never because the step stopped blocking, since rising is exactly what un-blocks
 a riser.
+
+**A System driving a component**, not a `Behavior`, because the thing that writes
+`moveInput` changes and the thing that reads it should not: gameplay writes it,
+so may any other driver, and an engine system cannot address a hot-reloadable
+game behavior.
+
+**Partial by design:** velocity-driven; the capsule changes size only to crouch.
+
+### Crouching
+
+`crouching` held, the character is `crouched` at once: `fitCapsule` shortens its
+first capsule part to `crouchHeight` overall - never below its own width, two
+radii, nor above its standing height - lowering the part's `center` by
+what it takes off, so the feet stay where they were and the next tick's solve
+sees the short capsule. The standing `halfHeight` is kept in
+`standingHalfHeight` until it stands again. Let go, it stands only once
+`roomToStand` - its top cap swept up by what standing adds, a shade narrower
+than the capsule so a wall at its sides does not count - finds nothing over its
+head; under a low ceiling it stays `crouched`, which is what a game reads to
+pose it, slow it and lower the view. A character this end does not simulate
+takes `crouched` from the authority, which replicates it, and its capsule
+follows, so a client's traces meet the shape the server's do; one that does
+simulate fits its capsule to a `crouched` it was told before deciding, so
+standing up from it still asks for room. Two gaps are known: `Collider` is not
+replicated and `PhysicsSystem` runs before the controller, so the first tick of
+a replay solves with the capsule as it is now, which mispredicts a crouch
+begun or ended within a round trip until the next correction; and
+`NetRewind` rewinds pose alone, so a lag-compensated hit meets the crouch as it
+is now, not as it was when the shot was fired.
+
+### Riding what it stands on
+
+`rb.supportBody` is the body whose surface gave `supportNormal`, written by
+`PhysicsSystem` with it. Grounded on a body that is not static, the character
+is carried at `groundVelocity`: the velocity of that body's surface at the feet,
+as the contact solver takes it - its velocity and its spin's tangent - so the
+two never pull a rider apart. Stepping along the tangent, a rider on a
+turntable drifts outward as anything on it does, about `r (w dt)^2 / 2` a tick:
+7 cm in 3 s at 3 m and 1 rad/s. Steering runs relative to it - the
+velocity read less the carry, the carry added back to what is written - so
+walking on a moving deck is walking, a stick let go stands still on it, and a
+lift going down holds its rider rather than falling away beneath it. A jump
+takes the carry with it. A kinematic platform carries by the velocities it is
+driven with, as its contacts already read them: one moved by its Transform
+alone carries nothing. `groundSpin` is how fast it turns about up; the
+character's facing is gameplay's, so a view that should turn with the deck adds
+it.
 
 ## Sleeping
 

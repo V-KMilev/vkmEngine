@@ -130,9 +130,10 @@ void GLShadowData::build(const RenderView& view, const GLView& glView, uint32_t 
     uint32_t nextCube = 0;
     bool     haveSun  = false;
 
-    // Entity-slot order, not `view.lights` order, which is a SparseSet's packing
-    // and moves when an unrelated light is destroyed; the sun first, because its
-    // cascades need Config::NUM_CASCADES consecutive tiles.
+    // The sun first, because its cascades need Config::NUM_CASCADES consecutive tiles; then by
+    // Light::shadowPriority, and nearness to the eye where tiles are short; ties by entity slot, not
+    // `view.lights` order, which is a SparseSet's packing and moves when an unrelated light is
+    // destroyed.
     m_refused = 0;
     m_shadowOrder.clear();
     // A spot or point whose reach misses the view lights nothing seen: no slot, so one that is
@@ -152,8 +153,36 @@ void GLShadowData::build(const RenderView& view, const GLView& glView, uint32_t 
     const auto sunFirst = [&](uint32_t i) {
         return view.lights[i].type == LightType::Directional ? 0 : 1;
     };
+    // Nearness ranks only a kind of tile more lights ask for than there are: while all fit, a light
+    // keeps its tile however the camera moves, and a held tile its picture.
+    bool     sun    = false;
+    uint32_t spots  = 0;
+    uint32_t points = 0;
+    for (const uint32_t i : m_shadowOrder) {
+        const LightType type = view.lights[i].type;
+        sun    = sun || type == LightType::Directional;
+        spots  += type == LightType::Spot ? 1u : 0u;
+        points += type == LightType::Point ? 1u : 0u;
+    }
+    const uint32_t spotTiles = Config::MAX_SHADOW_CASTERS_2D - (sun ? Config::NUM_CASCADES : 0u);
+    const bool spotsShort  = spots > spotTiles;
+    const bool pointsShort = points > Config::MAX_SHADOW_CASTERS_CUBE;
+    // A sun's priority and position say nothing: the lowest slot casts, as findKeyLight keys the sky.
+    const auto priority = [&](uint32_t i) {
+        return view.lights[i].type == LightType::Directional ? 0 : view.lights[i].shadowPriority;
+    };
+    const auto distanceSq = [&](uint32_t i) {
+        const LightType type   = view.lights[i].type;
+        const bool      ranked = (type == LightType::Spot && spotsShort)
+            || (type == LightType::Point && pointsShort);
+        if (!ranked) return 0.0f;
+        const glm::vec3 d = view.lights[i].position - camPos;
+        return glm::dot(d, d);
+    };
     std::sort(m_shadowOrder.begin(), m_shadowOrder.end(), [&](uint32_t a, uint32_t b) {
         if (sunFirst(a) != sunFirst(b)) return sunFirst(a) < sunFirst(b);
+        if (priority(a) != priority(b)) return priority(a) > priority(b);
+        if (distanceSq(a) != distanceSq(b)) return distanceSq(a) < distanceSq(b);
         return view.lights[a].entitySlot < view.lights[b].entitySlot;
     });
 

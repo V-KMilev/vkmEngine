@@ -13,6 +13,7 @@ layout(std140, binding = UBO_CAMERA) uniform CameraBlock {
     vec2  viewport;        // render target size in pixels
     float zNear;
     float zFar;
+    mat4  viewmodelViewProjection;  // what a Viewmodel mesh draws through (shaders/viewmodel.glsl)
 } u_camera;
 
 // The same test CameraData::from makes.

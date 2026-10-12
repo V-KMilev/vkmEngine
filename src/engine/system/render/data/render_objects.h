@@ -33,6 +33,9 @@ struct ObjectDraw {
     /// Its surface is the scene's ocean: a `waves` material, in a scene with an ocean. A skinned
     /// one is shaded as the water and not moved.
     bool waves = false;
+
+    /// A Viewmodel mesh seen through the eye: drawn through CameraData::viewmodelViewProjection.
+    bool viewmodel = false;
 };
 
 /**
