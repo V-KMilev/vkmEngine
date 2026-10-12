@@ -1929,6 +1929,41 @@ void testAnOrthographicViewIsOccluded(int& failures) {
     expect("an orthographic view finds the crease", darkest < 200, failures);
 }
 
+// A reflection probe baked while the frame shows a debug view: the forward pass and the capture
+// draw with one PBR program, so the capture puts back what the pass left set on it, or the probe
+// would hold the albedo view for good.
+void testAProbeBakedUnderADebugViewHoldsTheScene(int& failures) {
+    std::printf("A probe baked while a debug view shows:\n");
+    RenderSettings albedo;
+    albedo.renderMode = RenderMode::Albedo;
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend viewed;
+    if (!viewed.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery debugged;
+    buildProbe(debugged);
+    render(debugged, viewed, nullptr, albedo);
+    const std::vector<unsigned char> seen = render(debugged, viewed);
+
+    restoreContextDefaults();
+    GLBackend fresh;
+    if (!fresh.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery plain;
+    buildProbe(plain);
+    const std::vector<unsigned char> want = render(plain, fresh);
+
+    const float share = differingShare(seen, want.data());
+    std::printf("      %.2f%% of pixels differ\n", share * 100.0f);
+    expect("a probe baked under a debug view holds the scene", share <= PIXEL_TOLERANCE, failures);
+}
+
 void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     std::printf("Whole frames against their goldens:\n");
     if (!gl.attachSurface(WIDTH, HEIGHT)) {
@@ -1968,6 +2003,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testGTAOReachesAsFarEveryWay(failures);
     testAnOrthographicViewTracesItsReflections(failures);
     testAMovedProbeBakesOnceItSettles(failures);
+    testAProbeBakedUnderADebugViewHoldsTheScene(failures);
     testASealedRoomHoldsNoSkyLight(failures);
     testTheShoreRingsWhatBreaksTheWater(failures);
     testATransparentPanesShadowIsAsDeepAsItIsOpaque(failures);

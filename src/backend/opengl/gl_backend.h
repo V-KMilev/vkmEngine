@@ -300,8 +300,9 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         /// Every object's model matrix, once a frame.
         GLObjectBuffer m_objects;
 
-        // Lent to the offline renderers below: one compile of the PBR ubershader and convolution
-        // programs. Declared ahead of them, as they bind references to it.
+        // Lent to the offline renderers below and the forward pass in m_passes: one compile of
+        // the PBR ubershader and the convolution programs. Declared ahead of them, as they bind
+        // references to them.
         GLSceneCapture  m_sceneCapture;
         GLCubeConvolver m_cubeConvolver;
 

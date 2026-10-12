@@ -226,7 +226,7 @@ bool GLBackend::init(WindowManager& window) {
     m_passes.push_back({"Atmosphere",     std::make_unique<GLAtmospherePass>()});
     m_passes.push_back({"Skybox",         std::make_unique<GLSkyboxPass>()});
     m_passes.push_back({"Ocean",          std::make_unique<GLOceanPass>()});
-    m_passes.push_back({"Forward",        std::make_unique<GLForwardPass>()});
+    m_passes.push_back({"Forward",        std::make_unique<GLForwardPass>(m_sceneCapture.pbrProgram())});
     m_passes.push_back({"Particles",      std::make_unique<GLParticlePass>()});
     m_passes.push_back({"ResolveColor",   std::make_unique<GLResolvePass>(GLResolvePass::Scope::Color)});
     m_passes.push_back({"Reflections",    std::make_unique<GLReflectionPass>()});

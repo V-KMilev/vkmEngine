@@ -25,8 +25,8 @@
 
 namespace Vkm::Engine {
 
-GLForwardPass::GLForwardPass()
-    : m_shader("shaders/forward/pbr")
+GLForwardPass::GLForwardPass(Vkm::GL::Shader& pbr)
+    : m_shader(pbr)
     , m_skinnedShader("shaders/forward/pbr_skinned") {}
 
 GLForwardPass::~GLForwardPass() = default;
@@ -222,6 +222,7 @@ void GLForwardPass::bindFrameUniforms(Vkm::GL::Shader& shader, GLFrameContext& c
 
     shader.setUniform1i("u_useClusters", 1);
     shader.setUniform1i("u_renderMode", static_cast<int>(view.settings.renderMode));
+    shader.setUniform1i("u_wirePass", 0);
 }
 
 void GLForwardPass::bindBucketUniforms(Vkm::GL::Shader& shader, GLFrameContext& ctx, Bucket bucket) const {

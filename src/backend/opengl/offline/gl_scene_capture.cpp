@@ -9,6 +9,7 @@
 
 #include "gl_buffer_upload.h"
 #include "gl_context.h"
+#include "gl_error_handle.h"
 #include "gl_sampler.h"
 #include "gl_texture.h"
 #include "gl_uniform_buffer.h"
@@ -37,6 +38,31 @@ constexpr uint32_t SHADOW_RES = 2048;
 
 /// Kept clear of the region's edge on every side, in the map's own world units.
 constexpr float SHADOW_MARGIN = 0.5f;
+
+/// The values in a uniform of GL type @p type; 0 for one GLSceneCapture::resetPbr() leaves.
+uint32_t floatsIn(GLenum type) {
+    switch (type) {
+        case GL_FLOAT:
+        case GL_INT:
+        case GL_BOOL:
+        case GL_UNSIGNED_INT:      return 1;
+        case GL_FLOAT_VEC2:
+        case GL_INT_VEC2:
+        case GL_BOOL_VEC2:
+        case GL_UNSIGNED_INT_VEC2: return 2;
+        case GL_FLOAT_VEC3:
+        case GL_INT_VEC3:
+        case GL_BOOL_VEC3:
+        case GL_UNSIGNED_INT_VEC3: return 3;
+        case GL_FLOAT_VEC4:
+        case GL_INT_VEC4:
+        case GL_BOOL_VEC4:
+        case GL_UNSIGNED_INT_VEC4: return 4;
+        case GL_FLOAT_MAT3:        return 9;
+        case GL_FLOAT_MAT4:        return 16;
+        default:                   return 0;  // a sampler or an image keeps the unit it is bound to
+    }
+}
 
 } // namespace
 
@@ -93,7 +119,62 @@ void GLSceneCapture::begin(
 
     m_faceSize = faceSize;
     m_volume   = nullptr;
+    resetPbr();
     bindOfflinePbrUniforms(m_pbr, ibl);
+}
+
+void GLSceneCapture::resetPbr() {
+    m_pbr.bind();
+    GLint program = 0;
+    VKM_GL_CHECK(glGetIntegerv(GL_CURRENT_PROGRAM, &program));
+    if (static_cast<uint32_t>(program) != m_pbrListed) {
+        // Listed again after a hot reload links another program.
+        m_pbrListed = static_cast<uint32_t>(program);
+        m_pbrUniforms.clear();
+        GLint active = 0;
+        VKM_GL_CHECK(glGetProgramiv(program, GL_ACTIVE_UNIFORMS, &active));
+        for (GLint i = 0; i < active; ++i) {
+            char   name[256];
+            GLint  count = 0;
+            GLenum type  = 0;
+            VKM_GL_CHECK(glGetActiveUniform(program, i, sizeof(name), nullptr, &count, &type, name));
+            const GLint location = glGetUniformLocation(program, name);
+            if (location >= 0 && floatsIn(type) > 0) m_pbrUniforms.push_back({location, count, type});
+        }
+    }
+
+    size_t most = 0;
+    for (const PlainUniform& u : m_pbrUniforms) most = std::max<size_t>(most, u.count * floatsIn(u.type));
+    const std::vector<GLfloat> zeros(most, 0.0f);
+    const std::vector<GLint>   ints(most, 0);
+    const std::vector<GLuint>  uints(most, 0u);
+    for (const PlainUniform& u : m_pbrUniforms) {
+        const GLsizei n = u.count;
+        switch (u.type) {
+            case GL_FLOAT:             glProgramUniform1fv(program, u.location, n, zeros.data()); break;
+            case GL_FLOAT_VEC2:        glProgramUniform2fv(program, u.location, n, zeros.data()); break;
+            case GL_FLOAT_VEC3:        glProgramUniform3fv(program, u.location, n, zeros.data()); break;
+            case GL_FLOAT_VEC4:        glProgramUniform4fv(program, u.location, n, zeros.data()); break;
+            case GL_FLOAT_MAT3:
+                glProgramUniformMatrix3fv(program, u.location, n, GL_FALSE, zeros.data());
+                break;
+            case GL_FLOAT_MAT4:
+                glProgramUniformMatrix4fv(program, u.location, n, GL_FALSE, zeros.data());
+                break;
+            case GL_INT:
+            case GL_BOOL:              glProgramUniform1iv(program, u.location, n, ints.data()); break;
+            case GL_INT_VEC2:
+            case GL_BOOL_VEC2:         glProgramUniform2iv(program, u.location, n, ints.data()); break;
+            case GL_INT_VEC3:
+            case GL_BOOL_VEC3:         glProgramUniform3iv(program, u.location, n, ints.data()); break;
+            case GL_INT_VEC4:
+            case GL_BOOL_VEC4:         glProgramUniform4iv(program, u.location, n, ints.data()); break;
+            case GL_UNSIGNED_INT:      glProgramUniform1uiv(program, u.location, n, uints.data()); break;
+            case GL_UNSIGNED_INT_VEC2: glProgramUniform2uiv(program, u.location, n, uints.data()); break;
+            case GL_UNSIGNED_INT_VEC3: glProgramUniform3uiv(program, u.location, n, uints.data()); break;
+            case GL_UNSIGNED_INT_VEC4: glProgramUniform4uiv(program, u.location, n, uints.data()); break;
+        }
+    }
 }
 
 void GLSceneCapture::setAmbientVolume(const GLIrradianceVolume* volume, const IrradianceVolumeData& box) {
