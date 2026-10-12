@@ -61,6 +61,7 @@ void buildLights(RenderView& view, const Scene& scene) {
         data.shadowBias       = light.shadowBias;
         data.shadowNormalBias = light.shadowNormalBias;
         data.shadowDistance   = light.shadowDistance;
+        data.shadowPriority   = light.shadowPriority;
         // Held to 45 degrees of radius: the tangent the disc is sized by diverges at 90.
         data.sourceRadius = light.type == LightType::Directional
             ? std::clamp(light.sourceRadius, 0.0f, glm::quarter_pi<float>())

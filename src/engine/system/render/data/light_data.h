@@ -46,6 +46,7 @@ struct LightData {
     float shadowBias;       ///< See Light::shadowBias
     float shadowNormalBias; ///< See Light::shadowNormalBias
     float shadowDistance;   ///< Directional only: world distance the cascades cover.
+    int   shadowPriority;   ///< See Light::shadowPriority
 
     /**
      * @brief Light::sourceRadius: radians for a directional light, metres otherwise.

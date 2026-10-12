@@ -1446,6 +1446,19 @@ void InspectorPanel::drawLightSection(EditorContext& ec, EntityId id) {
             }
             if (light.type == LightType::Directional)
                 changed |= propDrag("Shadow Distance", &light.shadowDistance, 1.0f, 1.0f, 1000.0f, "%.1f");
+            if (light.type == LightType::Spot || light.type == LightType::Point) {
+                const char* priorityTooltip =
+                    "When more lights cast than the shadow atlas holds, which keep their "
+                    "shadow: the highest first, then the nearest to the camera";
+                changed |= propDragInt(
+                    "Shadow Priority",
+                    &light.shadowPriority,
+                    0.1f,
+                    -100,
+                    100,
+                    priorityTooltip
+                );
+            }
         }
         // Source size, shadowed or not: it sizes the highlight as well as the penumbra.
         if (light.type == LightType::Directional) {

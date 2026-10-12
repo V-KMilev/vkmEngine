@@ -67,6 +67,14 @@ struct Light {
     float shadowDistance   = 100.0f;  ///< Directional only: world distance the cascades cover.
 
     /**
+     * @brief Which lights keep a shadow when more cast than the atlas holds; higher first.
+     *
+     * Among equals the nearest to the camera wins. Unread on a directional light: one always comes
+     * before any spot or point, and the lowest slot casts.
+     */
+    int shadowPriority = 0;
+
+    /**
      * @brief How large the light's source is, which is how soft its shadows are.
      *
      * Directional: angular radius in radians (the sun is about 0.0047), also
@@ -109,6 +117,7 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::Light)
     VKM_F(shadowBias)
     VKM_F(shadowNormalBias)
     VKM_F(shadowDistance)
+    VKM_F(shadowPriority)
     VKM_F(sourceRadius)
     VKM_F(enabled)
 VKM_REFLECT_END()

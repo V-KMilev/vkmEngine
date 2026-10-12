@@ -45,6 +45,7 @@ struct Light {
     float     shadowBias     = 0.5f;      // compare slid toward the light, in shadow texels, more grazing
     float     shadowNormalBias = 1.0f;    // point moved off the surface, in shadow texels, none head-on
     float     shadowDistance = 100.0f;    // directional only: cascade coverage distance (world units)
+    int       shadowPriority = 0;         // over budget, higher keeps its shadow, then the nearest
     float     sourceRadius   = glm::radians(0.5f); // directional: disc radius (radians); spot, point: emitter radius (m) - the penumbra
 
     bool      enabled        = true;
@@ -278,7 +279,10 @@ The shadow system has two depth stores sized by `engine_config.h`:
   indexes one square tile and is sampled through a per-tile UV
   offset/scale. The first shadow-casting directional light takes
   `Config::NUM_CASCADES` consecutive slots for a CSM (cascaded shadow
-  maps) split; spot lights take the slots left over. Tiles differ in size,
+  maps) split; spot lights take the slots left over, by `shadowPriority`,
+  highest first, then - only while more ask than fit, so a light keeps its
+  tile as the camera moves - nearest the camera. Two lights an even distance
+  off at the budget's edge trade the shadow as the camera crosses between. Tiles differ in size,
   each a power of two (`GLShadowData::build`): the sun's first
   `FULL_CASCADES` cascades take the largest tile and the rest take half,
   whose texels already span more of the world; a spot whose reach misses the
@@ -715,5 +719,6 @@ which is the check that keeps a shader from quietly holding a copy of its own.
 - Light entities can be created from `Add Component -> Light` and
   parametrised live; shadow atlas slots are reassigned automatically
   when the lit set changes between frames - `GLShadowData::build` hands
-  out 2D tiles and cube slots each frame in entity-slot order, the sun's
-  cascades first.
+  out 2D tiles and cube slots each frame, the sun's cascades first, then by
+  `shadowPriority`, nearness to the camera while tiles are short, and entity
+  slot.
