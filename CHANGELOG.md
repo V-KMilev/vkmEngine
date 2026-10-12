@@ -2,6 +2,55 @@
 
 Notable changes to vkmEngine, newest first. Each release is tagged `vX.Y.Z`.
 
+## 1.0.4
+
+What games built on the engine kept writing for themselves, made the engine's.
+
+- **An ocean.** An `Ocean` component raises wind-driven waves from a real sea spectrum
+  (JONSWAP, shallower where `depth` is set) on every surface whose material is `waves`. The
+  GPU moves the water and `OceanSurface` answers gameplay by the same sum, so what floats
+  rides what is drawn, on every end of a networked game. Ripples down to centimetres for
+  the light, foam that lingers behind crests, foam where the water meets whatever stands in
+  it, and surges - ridges of water gameplay rolls across the sea. `OceanSystem` builds the sea
+  once a tick and once a frame for the renderer and gameplay alike; a behavior reads it as
+  `ocean()`, and the Ocean card says when water rests off the ocean's height.
+- **Networking.** `NetSession::sendMessage` sends the server what must arrive - a move, a
+  name - once and in order, as a `PlayerMessageEvent`; `InputMap::setPayload` carries a few
+  bytes beside every command; `NetLocal` keeps what each end runs itself off the wire; a
+  client may make entities of its own while it plays, and runs them, and what sits under a
+  `NetLocal`, as it would offline (`simulates(scene, entity)`); `NetSession::worldTime` is
+  the server's clock at what a client draws, and inside a tick that tick's own. A player
+  holding still costs a third of what they did on the wire. A game can join from its own
+  menu.
+- **Characters.** `knockbackDrag` lets a character carry a shove, `climbing` holds it on a
+  ladder or a rope while gameplay sets it each tick, and a collision says how fast its
+  bodies met (`CollisionEvent::speed`).
+- **UI.** `UISlider` and `UIToggle`, opacity that fades a whole subtree, shadowed text, and
+  labels pinned in the scene's own view.
+- **A player's files.** `playerRoot(game)` is where a game keeps its player's files, and
+  `readOwnFile` / `writeOwnFile` read and write them; keys rebind and are kept
+  (`InputMap::rebind`, `saveBindings`, `loadBindings`); a project's own fonts bake as it
+  starts; graphics presets (`withPreset`) cap the project's look at a quality tier rather
+  than replacing it.
+- **For behaviors.** `findBehavior<T>`, `findEntityWithBehavior<T>`, `findNamed`,
+  `findOrAdd`, a ray onto the level, `damp`, `generateRing`; particle bursts, spawn boxes
+  and emitters that go once spent. Every behavior due to start is bound before any of them
+  starts.
+- **Rendering.** A transparent surface casts a shadow as deep as it is opaque, and a
+  decal's clear surround casts none; a lamp's glow in fog no longer shows squares; the
+  sky's lighting bakes in a third of the time (37 -> 13.5 ms) and keeps pace with a
+  time-lapse sun.
+- **The engine's splash** carries its notice at the foot of the screen.
+- **A hosted server ends with its game** on Linux, as it already did on Windows.
+- **A scene field holding the wrong kind of list or object fails the load**, naming its
+  entity and component, as a wrong number or string already did, rather than loading empty.
+- **The installers verify their downloads** against the release's `SHA256SUMS`, and so need
+  it: they install releases from 1.0.4 on.
+- **CI runs when asked**, from GitHub's Run workflow button; a push starts nothing, and a
+  version tag builds before it releases.
+- **`vkm` tries a download again** when the server fails it, up to four times, rather than
+  failing the build on one bad answer.
+
 ## 1.0.3
 
 Rendering, measured against current practice and brought up to it.
