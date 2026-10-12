@@ -2,6 +2,35 @@
 
 Notable changes to vkmEngine, newest first. Each release is tagged `vX.Y.Z`.
 
+## 1.0.5
+
+What a port of another engine's game ran into first.
+
+- **A first-person view.** A mesh says who draws it (`Mesh::seenBy`): a body the
+  player's own camera does not see but that still casts its shadow and shows in
+  reflections (`AllButEye`), arms only that camera sees (`EyeOnly`), and a weapon on
+  the viewmodel layer (`Viewmodel`), drawn at the camera's own `viewmodelFovY` and in
+  front of the world, so it never goes into a wall it is held against.
+- **Characters crouch and ride.** `crouching` shortens the capsule to `crouchHeight`,
+  feet kept, and it stands only with room overhead; a character on a moving or turning
+  body is carried by it (`groundVelocity`, `groundSpin`). Protocol version 11.
+- **Particles show textures.** An emitter's `texture` replaces the soft disc, read as a
+  sprite sheet played over a life or at a rate; `stretch` streaks a particle along its
+  velocity, and `spin` turns one.
+- **Sound.** `AudioRolloff::Inverse` fades as 1/distance, still silent at `maxDistance`;
+  a looping clip goes back to its `loopStart`, read from the wav's own loop, so an intro
+  plays once. Cooked sounds bake again (`COOKER_VERSION` 13).
+- **The nearest shadows.** Past the shadow budget, spots and points keep their shadows
+  by `Light::shadowPriority`, then by nearness to the camera.
+- **A two-GPU laptop draws the game on its discrete GPU.** On Windows the game and the
+  editor ask NVIDIA's or AMD's driver for it themselves; on Linux, Getting Started names
+  the variables that choose it.
+- **No missing-camera warning on the first frame** of a game whose behavior makes its
+  camera in `onStart`.
+- **Docs:** which headers a behavior includes, and the names other engines lead one to
+  guess; that a stereo clip needs a mono copy to play at a position; and, for work on the
+  engine, where `RenderView`'s members are named and that every texture unit is spoken for.
+
 ## 1.0.4
 
 What games built on the engine kept writing for themselves, made the engine's.
