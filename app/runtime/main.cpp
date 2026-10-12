@@ -10,6 +10,7 @@
 #include "io/project.h"
 #include "io/project_paths.h"
 #include "net/net_session.h"
+#include "platform/discrete_gpu.h"
 #include "project_boot.h"
 #include "system/script/script_module.h"
 #include "gl_backend.h"
@@ -70,6 +71,8 @@ bool readNetArgs(int argc, char** argv, NetArgs& args) {
 }
 
 } // namespace
+
+VKM_PREFER_DISCRETE_GPU()
 
 int main(int argc, char** argv) {
     try {

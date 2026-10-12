@@ -203,6 +203,12 @@ engine's license too, as `LICENSE-vkmEngine.txt`: its terms go wherever a copy
 of the engine does. `vkm package --archive` also packs it into one file to
 hand out, a `.zip` on Windows and a `.tar.gz` elsewhere.
 
+**On a laptop with two GPUs** the integrated one draws at a fraction of the
+discrete one's frame rate. On Windows the game and the editor ask NVIDIA's or
+AMD's driver for the discrete GPU themselves. On Linux the environment decides:
+`__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia` before the command
+for NVIDIA's offload, `DRI_PRIME=1` for Mesa's.
+
 Beside it, `dist/mygame-0.1.0-linux-x64-symbols/` holds the binaries' debug
 info, moved out of them: most of what the engine weighs, and nothing a player
 needs. Keep it for every version you ship - a crash report from a player is read

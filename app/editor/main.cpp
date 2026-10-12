@@ -7,6 +7,7 @@
 #include "core/engine.h"
 #include "input/camera_controller_system.h"
 #include "cook/recipe_registration.h"
+#include "platform/discrete_gpu.h"
 #include "project_boot.h"
 #include "editor_system.h"
 #include "system/script/script_module.h"
@@ -14,6 +15,8 @@
 #include "gl_debug.h"
 
 #include "app/engine_app.h"
+
+VKM_PREFER_DISCRETE_GPU()
 
 int main(int argc, char** argv) {
     try {
