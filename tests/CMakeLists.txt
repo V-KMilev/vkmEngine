@@ -42,6 +42,7 @@ add_executable(vkm_engine_tests
     ${CMAKE_SOURCE_DIR}/src/tools/cook/lod_generator.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/cook/mesh_processing.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/cook/texture_bake.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/import/audio_loaders.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/import/model_source.cpp
 )
 
@@ -50,6 +51,13 @@ target_include_directories(vkm_engine_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/src/editor
     $<TARGET_PROPERTY:imgui,INTERFACE_INCLUDE_DIRECTORIES>
+)
+
+# miniaudio's declarations for the audio import, with the definitions vkm_core compiled it
+# with, as vkm_cook takes them (src/tools/CMakeLists.txt).
+target_include_directories(vkm_engine_tests SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/modules/miniaudio)
+target_compile_definitions(vkm_engine_tests PRIVATE
+    $<TARGET_PROPERTY:miniaudio,INTERFACE_COMPILE_DEFINITIONS>
 )
 
 # vkm_tools as well as the engine, for bakeFontSDF: the UI suite needs real

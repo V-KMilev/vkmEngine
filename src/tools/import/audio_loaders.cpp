@@ -4,6 +4,9 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstring>
+#include <fstream>
+#include <iterator>
 #include <utility>
 #include <vector>
 
@@ -66,6 +69,62 @@ bool decodeAll(ma_decoder& decoder, uint32_t channels, std::vector<int16_t>& sam
     }
 }
 
+/**
+ * @brief A little-endian uint32 at @p at; the caller has checked the four bytes are there.
+ */
+uint32_t readU32(const std::vector<char>& bytes, size_t at) {
+    uint32_t v = 0;
+    for (int i = 3; i >= 0; --i) v = (v << 8) | static_cast<uint8_t>(bytes[at + static_cast<size_t>(i)]);
+    return v;
+}
+
+/**
+ * @brief The frame a wav's own loop starts at, as an audio editor writes it.
+ *
+ * The first loop of its `smpl` chunk, else its earliest cue point (`cue `), where Source's
+ * sounds keep theirs. The loop's end is not read: a voice loops to the clip's end.
+ *
+ * @param path The file; anything not a RIFF wave has no loop.
+ * @return The frame, or 0 when the file says none.
+ */
+uint64_t wavLoopStart(const std::string& path) {
+    // The header alone first: an mp3 or a flac is read no further.
+    std::ifstream file(path, std::ios::binary);
+    std::vector<char> bytes(12);
+    if (!file.read(bytes.data(), 12) || std::memcmp(bytes.data(), "RIFF", 4) != 0
+        || std::memcmp(bytes.data() + 8, "WAVE", 4) != 0) {
+        return 0;
+    }
+    bytes.insert(bytes.end(), std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+
+    constexpr size_t SMPL_LOOPS_AT = 28;  // numSampleLoops, after seven fields
+    constexpr size_t SMPL_LOOP_AT  = 36;  // the first loop: cuePointId, type, start, ...
+    constexpr size_t CUE_POINT     = 24;  // id, position, chunk, chunkStart, blockStart, sampleOffset
+    constexpr size_t CUE_OFFSET_AT = 20;  // sampleOffset, within a point
+    uint64_t cue = 0;
+    for (size_t at = 12; at + 8 <= bytes.size(); ) {
+        const char*  id   = bytes.data() + at;
+        const size_t size = readU32(bytes, at + 4);
+        const size_t body = at + 8;
+        if (size > bytes.size() - body) break;
+        if (std::memcmp(id, "smpl", 4) == 0 && size >= SMPL_LOOP_AT + 16
+            && readU32(bytes, body + SMPL_LOOPS_AT) > 0) {
+            return readU32(bytes, body + SMPL_LOOP_AT + 8);
+        }
+        // Points are listed in no promised order: the earliest in the sound.
+        if (std::memcmp(id, "cue ", 4) == 0 && size >= 4) {
+            const size_t points = std::min<size_t>(readU32(bytes, body), (size - 4) / CUE_POINT);
+            for (size_t k = 0; k < points; ++k) {
+                const uint64_t offset = readU32(bytes, body + 4 + k * CUE_POINT + CUE_OFFSET_AT);
+                cue = k == 0 ? offset : std::min(cue, offset);
+            }
+        }
+        // Chunks are padded to an even length.
+        at = body + size + (size & 1);
+    }
+    return cue;
+}
+
 } // namespace
 
 AudioClipHandle loadAudioClip(const std::string& filePath, ResourceManager& resources) {
@@ -99,6 +158,12 @@ AudioClipHandle loadAudioClip(const std::string& filePath, ResourceManager& reso
         return {};
     }
     clip.samples = ClipSamples(std::move(samples));
+
+    clip.loopStart = wavLoopStart(resolved);
+    if (clip.loopStart >= clip.frameCount()) {
+        LOG_WARNING("Sound '%s' loops from past its end; it loops whole", ref.c_str());
+        clip.loopStart = 0;
+    }
 
     LOG_VERBOSE(
         "Loaded sound '%s' (%.2fs, %u channel(s), %u Hz)",

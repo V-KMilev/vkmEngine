@@ -7,6 +7,15 @@
 namespace Vkm::Engine {
 
 /**
+ * @brief How a positioned source fades between minDistance and maxDistance.
+ */
+enum class AudioRolloff {
+    Linear  = 0,  ///< A straight line from full volume to silence.
+    Inverse = 1,  ///< As 1/distance, steep near and gentle far, bent to reach silence at maxDistance.
+    Count         ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
+};
+
+/**
  * @brief A sound emitter: one clip, how loud, and where it is heard from.
  *
  * `playing` is the state the source wants, not a device report; it reads back false
@@ -42,15 +51,19 @@ struct AudioSource {
     /**
      * @brief Distance at which the source is inaudible.
      *
-     * Attenuation is linear between the two; at or below minDistance disables it.
+     * Attenuation follows `rolloff` between the two; at or below minDistance disables it.
      */
     float maxDistance = 50.0f;
+
+    AudioRolloff rolloff = AudioRolloff::Linear;  ///< How it fades between the two distances.
 
     bool playing = false;  ///< Session state.
     bool started = false;  ///< Whether playOnStart has been honoured; session state.
 };
 
 } // namespace Vkm::Engine
+
+VKM_ENUM_NAMES(::Vkm::Engine::AudioRolloff, "Linear", "Inverse")
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::AudioSource)
     VKM_F(clip)
@@ -61,4 +74,5 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::AudioSource)
     VKM_F(playOnStart)
     VKM_F(minDistance)
     VKM_F(maxDistance)
+    VKM_F(rolloff)
 VKM_REFLECT_END()

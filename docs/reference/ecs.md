@@ -79,7 +79,7 @@ scene.remove<Mesh>(entity);
 | `CharacterController` | `component/physics/character_controller.h` | `moveInput` + `jumpRequested` + `climbing` + `climbNormal` in, tuning, `grounded` + `groundNormal` + `walkSpeed` out |
 | `Rigidbody`           | `component/physics/rigidbody.h`            | Body: linear/angular velocity, `motion` (Dynamic, Kinematic or Static), mass, damping, restitution, friction, gravity scale, plus the `supported` / `supportNormal` / `blockNormal` outputs |
 | `ReflectionProbe`     | `component/render/reflection_probe.h`      | Local IBL probe: `halfExtents` influence box, `falloff`, `intensity`, `resolution`                   |
-| `AudioSource`         | `component/audio/audio_source.h`           | `AudioClipHandle clip`, `volume`, `pitch`, `loop`, `spatial`, `playOnStart`, `min`/`maxDistance`; `playing` + `started` are runtime only |
+| `AudioSource`         | `component/audio/audio_source.h`           | `AudioClipHandle clip`, `volume`, `pitch`, `loop`, `spatial`, `playOnStart`, `min`/`maxDistance`, `rolloff`; `playing` + `started` are runtime only |
 | `AudioListener`       | `component/audio/audio_listener.h`         | `active`, `volume` - the ear every spatial source is heard relative to                               |
 | `Decal`               | `component/render/decal.h`                 | `MaterialHandle material`, `angleFade`, `opacity`, `enabled` - projected onto whatever its box covers |
 | `LOD`                 | `component/render/lod.h`                   | `levels` (a `MeshHandle` + `maxDistance` each) and `bias`; the mesh drawn is chosen by the camera's distance to the world bounds' centre, shortened for a camera zoomed in past the reference field of view (lengthened for a wider one) and divided by `bias` |

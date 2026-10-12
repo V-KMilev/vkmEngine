@@ -109,6 +109,8 @@ struct AudioDevice::Backend {
         // Held at its cursor, and by whom. The mixer cannot say: a held sound and one
         // that ran out are both stopped nodes, and only the latter is reaped.
         Hold hold = Hold::None;
+        // As last applied: an inverse rolloff's gain is ours, redone as the ear moves.
+        VoiceParams params;
     };
 
     ma_log    log;
@@ -145,9 +147,29 @@ struct AudioDevice::Backend {
         ma_audio_buffer_ref_uninit(&voice.buffer);
     }
 
-    static void apply(Voice& voice, const VoiceParams& params) {
-        const float gain = std::isfinite(params.volume) ? std::max(0.0f, params.volume) : 0.0f;
+    /**
+     * @brief Whether the mixer's own curve fades @p params with distance, or applyGain does.
+     *
+     * Linear is miniaudio's; its inverse model never reaches silence, so Inverse is ours.
+     */
+    static bool rolledOffHere(const VoiceParams& params) {
+        return params.spatial && params.rolloff == AudioRolloff::Inverse;
+    }
+
+    void applyGain(Voice& voice) const {
+        const VoiceParams& params = voice.params;
+        float gain = std::isfinite(params.volume) ? std::max(0.0f, params.volume) : 0.0f;
+        if (rolledOffHere(params)) {
+            const ma_vec3f ear = ma_engine_listener_get_position(&engine, 0);
+            const glm::vec3 offset = params.position - glm::vec3(ear.x, ear.y, ear.z);
+            gain *= inverseRolloffGain(params, glm::length(offset));
+        }
         ma_sound_set_volume(&voice.sound, gain);
+    }
+
+    void apply(Voice& voice, const VoiceParams& params) const {
+        voice.params = params;
+        applyGain(voice);
 
         // Floored: miniaudio ignores pitch <= 0, and a NaN passes that check and is stored.
         // A max, not std::clamp, which would hand the NaN on.
@@ -158,6 +180,8 @@ struct AudioDevice::Backend {
         if (!params.spatial) return;
 
         ma_sound_set_position(&voice.sound, params.position.x, params.position.y, params.position.z);
+        // Our curve rides a flat linear one: miniaudio's model `none` drops the panning and volume too.
+        ma_sound_set_rolloff(&voice.sound, rolledOffHere(params) ? 0.0f : 1.0f);
 
         // Clamped, because a non-finite distance survives the attenuation curve's own
         // divide-by-zero guard (`min >= max` is false for a NaN).
@@ -402,6 +426,10 @@ VoiceId AudioDevice::play(const AudioClipAsset& clip, const VoiceParams& params)
     // ma_audio_buffer_ref_init takes no rate, and a zero rate mixes as the device's:
     // a 22 kHz clip would play an octave high.
     voice->buffer.sampleRate = clip.sampleRate;
+    if (clip.loopStart > 0 && clip.loopStart < clip.frameCount()) {
+        const ma_uint64 toTheEnd = ~static_cast<ma_uint64>(0);
+        ma_data_source_set_loop_point_in_pcm_frames(&voice->buffer, clip.loopStart, toTheEnd);
+    }
 
     const ma_result soundResult = ma_sound_init_from_data_source(
         &m_backend->engine,
@@ -415,16 +443,15 @@ VoiceId AudioDevice::play(const AudioClipAsset& clip, const VoiceParams& params)
         return 0;
     }
 
-    // Linear: the only model where minDistance and maxDistance mean what they say.
-    // No Doppler: nothing tracks velocity.
+    // Linear: the only model where minDistance and maxDistance mean what they say; apply
+    // flattens it under a curve of ours. No Doppler: nothing tracks velocity.
     ma_sound_set_attenuation_model(&voice->sound, ma_attenuation_model_linear);
-    ma_sound_set_rolloff(&voice->sound, 1.0f);
     ma_sound_set_doppler_factor(&voice->sound, 0.0f);
 
     const VoiceId id = m_backend->nextVoice++;
     Backend::Voice& stored = *(m_backend->voices[id] = std::move(voice));
 
-    Backend::apply(stored, params);
+    m_backend->apply(stored, params);
     if (ma_sound_start(&stored.sound) != MA_SUCCESS) {
         stopVoice(id);
         return 0;
@@ -434,7 +461,7 @@ VoiceId AudioDevice::play(const AudioClipAsset& clip, const VoiceParams& params)
 
 void AudioDevice::updateVoice(VoiceId voice, const VoiceParams& params) {
     if (!m_backend) return;
-    if (Backend::Voice* v = m_backend->find(voice)) Backend::apply(*v, params);
+    if (Backend::Voice* v = m_backend->find(voice)) m_backend->apply(*v, params);
 }
 
 bool AudioDevice::isVoiceActive(VoiceId voice) const {
@@ -592,6 +619,10 @@ void AudioDevice::setListener(const glm::vec3& position, const glm::vec3& forwar
     ma_engine_listener_set_position(&m_backend->engine, 0, position.x, position.y, position.z);
     ma_engine_listener_set_direction(&m_backend->engine, 0, forward.x, forward.y, forward.z);
     ma_engine_listener_set_world_up(&m_backend->engine, 0, up.x, up.y, up.z);
+    // Every voice, the ones nothing updates included: a one-shot fades as the ear walks off.
+    for (auto& entry : m_backend->voices) {
+        if (Backend::rolledOffHere(entry.second->params)) m_backend->applyGain(*entry.second);
+    }
 }
 
 void AudioDevice::setListenerActive(bool active) {

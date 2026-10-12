@@ -224,6 +224,9 @@ void testATextureAndASoundSurviveTheRoundTrip() {
     audio.sampleRate = 48000;
     audio.channels   = 2;
     audio.samples    = ClipSamples(std::vector<int16_t>{0, 16384, -16384, 32767});
+    audio.loopStart  = 2;
+    check("a loop starting past the sound's end is refused", !AssetCook::writeAudioClip(wav, audio));
+    audio.loopStart  = 1;
     check("the sound writes", AssetCook::writeAudioClip(wav, audio));
 
     AudioClipAsset readAudio;
@@ -234,6 +237,7 @@ void testATextureAndASoundSurviveTheRoundTrip() {
         readAudio.sampleCount() == 4 && readAudio.samples && (*readAudio.samples)[2] == -16384
     );
     check("  and a frame count the two of them agree on", readAudio.frameCount() == 2);
+    check("  and the frame its loop starts at", readAudio.loopStart == 1);
 
     std::error_code ec;
     std::filesystem::remove(texPath, ec);
@@ -1886,7 +1890,7 @@ void testALoadNeverRenamesAnAssetThatWasAlreadyThere() {
 // is in every artifact's name, so a bump strands old artifacts and the next cook bakes
 // new ones; changing the bytes without a bump leaves every project serving the old
 // output under a name claiming otherwise.
-constexpr uint32_t PINNED_COOKER_VERSION = 12;
+constexpr uint32_t PINNED_COOKER_VERSION = 13;
 constexpr uint64_t PINNED_COOKER_OUTPUT  = 0x5bf5388222df3440ull;
 
 // Everything a cook decides itself, from fixed inputs: a scrambled mesh (vertex

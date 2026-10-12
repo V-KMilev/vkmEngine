@@ -61,6 +61,14 @@ struct AudioClipAsset : public Resource {
 
     ClipSamples samples;  ///< Interleaved PCM, shared with the voices playing it.
 
+    /**
+     * @brief The frame a looping voice goes back to at the end; 0 loops it whole.
+     *
+     * Whatever comes before it plays once, as an intro. Imported from a wav's loop (its
+     * `smpl` chunk, else its first cue point).
+     */
+    uint64_t loopStart = 0;
+
     /// Total samples across all channels.
     size_t sampleCount() const { return samples ? samples->size() : 0; }
 

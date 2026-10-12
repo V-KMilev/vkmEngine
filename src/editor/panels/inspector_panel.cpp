@@ -1944,6 +1944,12 @@ void InspectorPanel::drawAudioSourceSection(EditorContext& ec, EntityId id) {
             "Playback rate; also shifts the pitch"
         );
         changed |= propCheckbox("Loop", &source.loop);
+        if (clip && clip->loopStart > 0 && clip->sampleRate > 0) {
+            ImGui::TextDisabled(
+                "Loops from %.2fs, its wav's loop point",
+                static_cast<double>(clip->loopStart) / static_cast<double>(clip->sampleRate)
+            );
+        }
         const char* playOnStartTooltip =
             "Starts by itself once the simulation runs. In the editor that "
             "means on Play, never while a scene is only open";
@@ -1971,8 +1977,13 @@ void InspectorPanel::drawAudioSourceSection(EditorContext& ec, EntityId id) {
                 0.0f,
                 5000.0f,
                 "%.1f",
-                "Silent at this radius; the falloff between the two is linear"
+                "Silent at this radius"
             );
+            const char* rolloffTooltip =
+                "How the sound fades between the two: Linear in a straight line, Inverse "
+                "as 1/distance - steep near the source, gentle far off - still silent at "
+                "Max Distance";
+            changed |= propEnumCombo("Rolloff", source.rolloff, rolloffTooltip);
             if (source.maxDistance <= source.minDistance) {
                 ImGui::TextColored(
                     EditorStyle::WARNING,
