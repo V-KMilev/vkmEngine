@@ -12,11 +12,16 @@ mutex and two condition variables.
 
 ## ThreadPool
 
-Singleton via `ThreadPool::get()`. Spawns one worker fewer than
-`hardware_concurrency()`, because the thread that calls `parallelFor` runs a chunk
-too - a worker per core would make one more thread runnable than there are cores.
-At least one, since the count is allowed to be unknown. Non-copyable,
-non-movable; the constructor and destructor are private.
+Singleton via `ThreadPool::get()`. Spawns one worker fewer than the physical
+cores, because the thread that calls `parallelFor` runs a chunk too, and counts a
+core's SMT siblings once, so the logical CPUs keep room for the driver's, the
+audio's and the OS's threads (why is a row in
+[engine.md](../guides/engine.md#4-what-has-already-been-decided)). The cores are
+counted from the online CPUs' `/sys/devices/system/cpu/cpu*/topology` on Linux and
+`GetLogicalProcessorInformationEx` on Windows (every processor group's), falling
+back to `hardware_concurrency()` where neither answers. At least one, since the
+count is allowed to be unknown. Non-copyable, non-movable; the constructor and
+destructor are private.
 
 ```cpp
 class ThreadPool {
