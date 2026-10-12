@@ -380,6 +380,51 @@ void testWhatTheEyeSeesAndWhatOnlyItSees() {
     check("  and both cast", objects.casterCount == 2);
 }
 
+// A weapon on the viewmodel layer is the eye's alone, drawn through its own projection, and seen
+// held nearer than the world's near plane; an editor's free view draws it as any mesh.
+void testAViewmodelIsTheEyesThroughItsOwnLens() {
+    std::printf("A weapon on the viewmodel layer:\n");
+
+    Scene scene;
+    TestFrame frame(scene);
+    const MeshHandle cube = frame.resources.add(generateCube(), "culling:viewmodel");
+    MaterialAsset paintAsset;
+    const MaterialHandle paint = frame.resources.add(std::move(paintAsset), "culling:viewmodel-paint");
+
+    const EntityId eye = scene.createEntity();
+    scene.add(eye, Transform{});
+    Camera lens;
+    lens.zNear         = 0.5f;
+    lens.viewmodelFovY = glm::radians(40.0f);
+    scene.add(eye, lens);
+    // A small block a quarter metre ahead: inside the world's near plane, not the viewmodel's.
+    const EntityId gun = scene.createEntity();
+    Transform held;
+    held.position = {0.0f, 0.0f, -0.25f};
+    held.scale    = glm::vec3(0.05f);
+    scene.add(gun, std::move(held));
+    Mesh mesh{cube, paint};
+    mesh.seenBy = SeenBy::Viewmodel;
+    scene.add(gun, std::move(mesh));
+
+    VisibilitySystem visibility;
+    visibility.update(frame.ctx);
+    const Visibility& seen = *frame.ctx.visibility;
+    const RenderObjects& objects = seen.objects;
+    check("the eye sees it, nearer than its near plane", objects.visible.size() == 1);
+    check("  through its own lens", objects.draws[0].viewmodel);
+    check("  which is not the world's", seen.camera.viewmodelViewProjection != seen.camera.viewProjection);
+    check("  and nothing else draws it", objects.scene.empty() && objects.casterCount == 0);
+
+    HostView host;
+    host.position = {0.0f, 0.0f, 2.0f};
+    frame.ctx.hostView = &host;
+    visibility.update(frame.ctx);
+    const bool plain = objects.visible.size() == 1 && !objects.draws[0].viewmodel;
+    check("a host's free view draws it as any mesh", plain);
+    check("  shadow and all", objects.casterCount == 1);
+}
+
 // The frame's light list is in SparseSet packing order, which destroying an unrelated
 // light reorders; taking its first directional would disagree with findKeyLight's
 // lowest slot.
@@ -744,6 +789,7 @@ void runCullingTests() {
     testALightsSourceIsItsOwn();
     testWaterCastsUnlessTheSeaMovesIt();
     testWhatTheEyeSeesAndWhatOnlyItSees();
+    testAViewmodelIsTheEyesThroughItsOwnLens();
     testTheFrustumKeepsWhatIsInFrontOfIt();
     testABoxOnTheEdgeCountsAsVisible();
     testTheFrustumNarrowsWithTheFieldOfView();

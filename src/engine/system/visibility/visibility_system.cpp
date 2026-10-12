@@ -121,6 +121,7 @@ void VisibilitySystem::publishCamera(
     const glm::mat4 projection = Camera::computeProjection(camera, viewportAspect);
     CameraData&     data       = m_result.camera;
     data = CameraData::from(Transform::computeView(pose), projection, position);
+    data.viewmodelViewProjection = Camera::computeViewmodelProjection(camera, viewportAspect) * data.view;
     data.focusDistance = camera.focusDistance;
     data.dofAmount     = camera.dofAmount;
     data.dofMaxBlur    = camera.dofMaxBlur;
@@ -255,6 +256,8 @@ void VisibilitySystem::update(FrameContext& ctx) {
 
     // Mesh::seenBy names a scene camera's view; a host's free view sees everything.
     const bool throughAnEye = static_cast<bool>(m_result.cameraEntity);
+    // A weapon held nearer than the world's near plane is still in its own projection's view.
+    const Math::Frustum viewmodelFrustum = Math::extractFrustum(eye.viewmodelViewProjection);
 
     {
         PROFILE_SCOPE("Visibility/Cull");
@@ -296,21 +299,24 @@ void VisibilitySystem::update(FrameContext& ctx) {
             // off-screen occluders.
             objects.models[i]      = modelMatrix;
             objects.bounds[i]      = world;
+            const bool viewmodel = throughAnEye && mesh.seenBy == SeenBy::Viewmodel;
             objects.draws[i]       = ObjectDraw{
                 selectLOD(mesh, lodStorage, entityIdx, world.min, world.max, context),
                 mesh.material,
                 slice ? slice->count : 0u,
-                waves
+                waves,
+                viewmodel
             };
             objects.skinFirst[i]   = slice ? slice->first : 0u;
             m_result.entities[i]   = ctx.scene.entityAt(entityIdx);
 
-            const bool eyeOnly   = throughAnEye && mesh.seenBy == SeenBy::EyeOnly;
+            const bool eyeOnly   = viewmodel || (throughAnEye && mesh.seenBy == SeenBy::EyeOnly);
             const bool notTheEye = throughAnEye && mesh.seenBy == SeenBy::AllButEye;
             uint8_t state = eyeOnly ? 0 : STATE_DRAWN;
             if (mesh.castShadows && !waves && !eyeOnly) state |= STATE_CASTS;
 
-            if (!notTheEye && Math::frustumIntersectsAABB(context.frustum, world)
+            const Math::Frustum& frustum = viewmodel ? viewmodelFrustum : context.frustum;
+            if (!notTheEye && Math::frustumIntersectsAABB(frustum, world)
                 && Culling::isNearEnough(world, context)
                 && Culling::isLargeEnough(world, context)) {
                 state |= STATE_VISIBLE;

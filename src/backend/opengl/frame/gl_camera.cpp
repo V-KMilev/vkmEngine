@@ -23,6 +23,7 @@ void GLCamera::update(const CameraData& camera, const glm::vec2& viewport) {
     data.viewport          = viewport;
     data.zNear             = camera.zNear;
     data.zFar              = camera.zFar;
+    data.viewmodelViewProjection = camera.viewmodelViewProjection;
 
     Vkm::GL::uploadIfChanged(m_ubo, m_last, data);
     if (m_ubo) m_ubo->bindBase(GLBindings::UBOBindingPoints::CAMERA);

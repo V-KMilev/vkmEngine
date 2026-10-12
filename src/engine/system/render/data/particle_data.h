@@ -15,7 +15,7 @@ struct ParticleData {
     glm::vec4 color;         ///< Linear RGBA.
 
     /// x = edge softness (0 hard .. 1 soft); y = angle, radians; z = its texture, as 1 + its
-    /// place in RenderView::particleTextures, 0 for the soft disc; w reserved.
+    /// place in RenderView::particleTextures, 0 for the soft disc; w = 1 on the viewmodel layer.
     glm::vec4 params;
     glm::vec4 uvRect;        ///< Its sheet frame: xy = the corner at the quad's (-1,-1), zw = the size.
     glm::vec4 trail;         ///< xyz = where it streaks to behind it, world space; zero for none. w reserved.

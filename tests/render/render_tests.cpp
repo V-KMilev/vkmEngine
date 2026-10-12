@@ -1809,6 +1809,7 @@ void testTheSharedBlocksAgreeWithTheirStructs() {
             && uniformAt("CameraBlock.viewport", offsetof(CameraUBO, viewport))
             && uniformAt("CameraBlock.zNear", offsetof(CameraUBO, zNear))
             && uniformAt("CameraBlock.zFar", offsetof(CameraUBO, zFar))
+            && uniformAt("CameraBlock.viewmodelViewProjection", offsetof(CameraUBO, viewmodelViewProjection))
     );
 
     check(

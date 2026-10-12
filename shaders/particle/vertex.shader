@@ -9,7 +9,8 @@
 struct Particle {
     vec4 positionSize;  // xyz = world position, w = half the billboard's width
     vec4 color;
-    vec4 params;        // x = edge softness (0 hard .. 1 soft), y = angle, z = its texture (0 none)
+    vec4 params;        // x = edge softness (0 hard .. 1 soft), y = angle, z = its texture (0 none),
+                        // w = 1 on the viewmodel layer
     vec4 uvRect;        // its sheet frame: xy = the corner at (-1,-1), zw = the size
     vec4 trail;         // xyz = where it streaks to behind it, world space
 };
@@ -28,6 +29,7 @@ flat out vec4 vFrame;  // the sheet frame's rect, which the fragment keeps its r
 out vec4  vColor;
 out float vSoftness;
 out float vSize;      // half the billboard's width (the authored size), how deep its fade runs
+flat out int vViewmodel;  // drawn as a Viewmodel mesh is: its depth is the squashed band, so no fade
 
 void main() {
     Particle p = u_particles.particles[u_firstInstance + gl_InstanceID];
@@ -64,5 +66,13 @@ void main() {
         vec2 turned = vec2(c * corner.x - s * corner.y, s * corner.x + c * corner.y);
         world = p.positionSize.xyz + (camRight * turned.x + camUp * turned.y) * size;
     }
-    gl_Position = u_camera.viewProjection * vec4(world, 1.0);
+    // On the viewmodel layer, projected as shaders/viewmodel.glsl's eyeClip projects the weapon.
+    vViewmodel = p.params.w > 0.5 ? 1 : 0;
+    if (vViewmodel == 1) {
+        vec4 clip = u_camera.viewmodelViewProjection * vec4(world, 1.0);
+        clip.z = mix(-clip.w, clip.z, VIEWMODEL_DEPTH_SHARE);
+        gl_Position = clip;
+    } else {
+        gl_Position = u_camera.viewProjection * vec4(world, 1.0);
+    }
 }

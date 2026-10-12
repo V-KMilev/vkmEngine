@@ -56,7 +56,8 @@ RenderSystem::update(FrameContext)
         |                     its count is the frame's "is anything posed?", and
         |                     every skinned code path below is gated on it
         |-- objects           upload every object's model once (GLObjectBuffer,
-        |                     SSBO 10), and its first bone (SSBO 6) when posed;
+        |                     SSBO 10), its flags (SSBO 7: the viewmodel), and
+        |                     its first bone (SSBO 6) when posed;
         |                     every instanced draw of the frame indexes it
         |-- opaque batch      group the opaque bucket into instanced runs (once,
         |                     shared): an index list of objects, in run order,
@@ -593,7 +594,53 @@ draws the same sequence whatever these fields hold elsewhere. `GLParticlePass`
 draws a run of particles showing one texture at a time: the additive half
 grouped by texture, the alpha half in its far-to-near order, broken where the
 texture changes - so two overlapping alpha emitters of different textures cost a
-draw for each change in that order, up to one a particle.
+draw for each change in that order, up to one a particle. `viewmodel` draws an
+emitter as a Viewmodel mesh is drawn ([The viewmodel](#the-viewmodel)).
+
+### The viewmodel
+
+A first-person game's arms and weapon are `Mesh::seenBy = Viewmodel`: the eye's
+alone, like `EyeOnly`, and drawn through a projection of their own - the
+camera's `viewmodelFovY`, or its `fovY` at 0, with a near plane of
+`Camera::VIEWMODEL_Z_NEAR` - so they keep their look whatever the world's field
+of view, and a weapon held close is not cut by the world's near plane. They
+are lit and shadowed where they are; only the clip position differs.
+
+The cull flags each as `ObjectDraw::viewmodel`; `GLObjectBuffer` uploads a word
+of flags an object beside its matrix (`INSTANCE_FLAGS`), and the prepass and
+forward vertex shaders project through `eyeClip` (`shaders/viewmodel.glsl`),
+which for a flagged object takes `CameraBlock::viewmodelViewProjection` and
+squashes its depth into the nearest `VIEWMODEL_DEPTH_SHARE` of the range
+(`gl_object_buffer.h`, which the shader prelude carries). Only what lies within
+about that share of the near plane beyond it can then draw over it, and the near
+plane sits inside the character's capsule, so a weapon pushed into a wall stays
+in front of it. The same formula in both passes keeps their depths equal under
+`LEQUAL`.
+
+What reads the depth afterwards reads the squashed one, as about the near
+plane, and each reader is answered:
+
+- **Fog** is the near plane's, which is none worth counting.
+- **A decal** box would have to reach within that near band to land on it, and
+  **a particle** behind it fails the depth test, as behind any surface.
+- **GTAO** would take it for an occluder a few centimetres from the eye and
+  darken the wall it is held against round its outline, so its depth prefilter
+  reads the band as sky: the weapon takes no AO of its own and gives the wall
+  none.
+- **Depth of field** holds the band sharp rather than blurring it as if at the
+  lens.
+- **The reflection trace** skips the band: a ray from the near plane would start
+  in the wrong place, so a weapon keeps the probe or sky reflection the forward
+  pass gave it.
+- **The light clusters**: the forward fragment finds a viewmodel pixel's cluster
+  from its world position through the world's projection, not from where its
+  own projection drew it, so a lamp beside the weapon lights it.
+
+Nothing else draws a viewmodel mesh: it casts no shadow and no capture takes it.
+An emitter with `viewmodel` set - a muzzle flash on the barrel - is projected
+the same way, so it lines up with the weapon and shows in front of it, and
+skips the soft fades, which its squashed depth and the weapon's would take to
+nothing. A decal does not land on a weapon.
 
 ### GLView - GPU sync
 
@@ -670,8 +717,9 @@ the list outgrows a uniform block. UBO binding points cover the Material,
 Camera, Shadow and Probe blocks. The Camera block (`shaders/camera.glsl`,
 `CameraUBO` in `gl_camera.h`) carries every fact about the eye a pass reads -
 view, projection and their inverses, the position, the viewport size, near and
-far - so no pass sets one as a uniform of its own; the scene capture and the
-editor preview fill their own. Texture slots cover the PBR material maps plus
+far, and what a viewmodel draws through - so no pass sets one as a uniform of
+its own; the scene capture and the editor preview fill their own. Texture slots
+cover the PBR material maps plus
 the shadow depth (one tiled 2D atlas, then one cube per point-light slot), IBL
 set (irradiance / prefilter / BRDF LUT / env cube), the GTAO factor, the scene
 colour/depth/G-buffer samplers, the froxel fog volume, the SH irradiance volume,

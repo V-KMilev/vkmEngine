@@ -24,6 +24,7 @@ flat in vec4 vFrame;
 in vec4  vColor;
 in float vSoftness;
 in float vSize;
+flat in int vViewmodel;
 
 layout(location = OUT_COLOR)          out vec4 FragColor;
 layout(location = OUT_REFLECT_WEIGHT) out vec4 ReflectWeight;
@@ -52,8 +53,12 @@ void main() {
     float sceneDepth = texelFetch(u_sceneDepth, ivec2(gl_FragCoord.xy), 0).r;
     float sceneView  = linearSceneDepth(sceneDepth, u_camera.invProjection);
     float ownView    = linearSceneDepth(gl_FragCoord.z, u_camera.invProjection);
-    falloff *= clamp((sceneView - ownView) / max(vSize, 1e-3), 0.0, 1.0);
-    falloff *= clamp((ownView - u_camera.zNear) / 0.5, 0.0, 1.0);
+    // Not on the viewmodel layer: there its depth and the weapon's are both the squashed band
+    // about the near plane, which would fade it to nothing.
+    if (vViewmodel == 0) {
+        falloff *= clamp((sceneView - ownView) / max(vSize, 1e-3), 0.0, 1.0);
+        falloff *= clamp((ownView - u_camera.zNear) / 0.5, 0.0, 1.0);
+    }
 
     vec4 fog = fragmentFog();
     vec3 rgb = color.rgb * fog.a + (u_additive == 1 ? vec3(0.0) : fog.rgb);

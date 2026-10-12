@@ -18,6 +18,7 @@
 #include "../../color.glsl"
 
 in vec3 vWorldPos;
+flat in uint vViewmodel;
 in vec3 vNormal;
 in vec2 vUV;
 in vec3 vTangent;
@@ -715,12 +716,15 @@ void main() {
     uint count;
     int  ci = 0;
     if (u_useClusters == 1) {
-        ci = clusterIndex(
-            gl_FragCoord.xy / u_camera.viewport,
-            linearizeViewDepth(gl_FragCoord.z, u_camera.invProjection),
-            u_camera.zNear,
-            u_camera.zFar
-        );
+        vec2  clusterUV    = gl_FragCoord.xy / u_camera.viewport;
+        float clusterDepth = linearizeViewDepth(gl_FragCoord.z, u_camera.invProjection);
+        // Its lights are where it is, not where its own projection drew it.
+        if (vViewmodel != 0u) {
+            vec4 seen    = u_camera.viewProjection * vec4(vWorldPos, 1.0);
+            clusterUV    = seen.xy / seen.w * 0.5 + 0.5;
+            clusterDepth = -(u_camera.view * vec4(vWorldPos, 1.0)).z;
+        }
+        ci = clusterIndex(clusterUV, clusterDepth, u_camera.zNear, u_camera.zFar);
         count = u_clusters.clusters[ci].count;
     } else {
         count = uint(min(u_lights.lightCount, MAX_LIGHTS));

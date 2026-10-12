@@ -174,7 +174,7 @@ void buildParticles(RenderView& view, const Scene& scene, const LiveParticles* p
             out.push_back({
                 glm::vec4(p.position, glm::mix(emitter.startSize, emitter.endSize, t)),
                 glm::mix(emitter.startColor, emitter.endColor, t),
-                glm::vec4(emitter.softness, angle(p), texture, 0.0f),
+                glm::vec4(emitter.softness, angle(p), texture, emitter.viewmodel ? 1.0f : 0.0f),
                 glm::vec4(corner, frameSize),
                 glm::vec4(-p.velocity * std::max(emitter.stretch, 0.0f), 0.0f),
             });

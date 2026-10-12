@@ -30,6 +30,7 @@ namespace Vkm::Engine {
     X(SSBOBindingPoints,      PARTICLES,             2,  SSBO_PARTICLES,                      Billboard particle instances)                                        \
     X(SSBOBindingPoints,      SKIN_PALETTE,          5,  SSBO_SKIN_PALETTE,                   Every skinned item palette end to end)                               \
     X(SSBOBindingPoints,      INSTANCE_SKIN_BASE,    6,  SSBO_INSTANCE_SKIN_BASE,             Per object: its first bone in SKIN_PALETTE)                          \
+    X(SSBOBindingPoints,      INSTANCE_FLAGS,        7,  SSBO_INSTANCE_FLAGS,                 Per object: how the eye draws it (shaders/viewmodel.glsl))           \
     X(SSBOBindingPoints,      INSTANCE_MODELS,       10, SSBO_INSTANCE_MODELS,                Per object: its model matrix)                                        \
     X(ShadowTextureSlots,     ATLAS_2D,              11, SHADOW_SLOT_ATLAS_2D,                Tiled 2D depth atlas (sampler2DShadow))                              \
     X(ShadowTextureSlots,     CUBE,                  12, SHADOW_SLOT_CUBE,                    Point-light depth cubes: a layer each (samplerCubeArrayShadow))      \

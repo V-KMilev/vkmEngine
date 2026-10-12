@@ -54,8 +54,11 @@ VisibilitySystem::update(ctx)
        visible for survivors. Through a scene camera, `Mesh::seenBy` takes
        its say: `AllButEye` (a first-person body) is never visible but still
        drawn and cast, `EyeOnly` (arms, a weapon) neither drawn nor cast, so
-       only the eye has it. A host's free view, the editor's, is no eye and
-       sees both.
+       only the eye has it, and `Viewmodel` as `EyeOnly`, flagged
+       `ObjectDraw::viewmodel` and culled against its own frustum, so a
+       weapon held nearer than the world's near plane is still seen
+       ([rendering.md](rendering.md#the-viewmodel)). A host's free view, the
+       editor's, is no eye and sees each as any mesh.
   5. Serial gather: walk the state in Mesh order, appending each visible
      index to `objects.visible` and each caster's to `objects.scene`, count
      the casters into `casterCount`, then walk again appending the

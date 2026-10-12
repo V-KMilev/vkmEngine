@@ -9,6 +9,7 @@ layout(location = ATTR_NORMAL) in vec3 aNormal;
 #include "../../skinning_instanced.glsl"
 #endif
 #include "../../camera.glsl"
+#include "../../viewmodel.glsl"
 #include "../../material.glsl"
 #include "../../ocean.glsl"
 
@@ -39,5 +40,5 @@ void main() {
 #endif
     vViewNormal = mat3(u_camera.view) * worldN;
 
-    gl_Position = u_camera.viewProjection * worldPos;
+    gl_Position = eyeClip(worldPos);
 }

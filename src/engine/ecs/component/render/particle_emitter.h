@@ -65,6 +65,10 @@ struct ParticleEmitter {
 
     float spin           = 0.0f;   ///< Radians a second each turns, about the view. Unread when streaking.
     bool  randomRotation = false;  ///< Each particle starts turned at an angle of its own.
+
+    /// Drawn as Viewmodel meshes are (Mesh::seenBy): a muzzle flash on the weapon in hand lines up
+    /// with it and shows in front of it.
+    bool viewmodel = false;
 };
 
 /**
@@ -127,4 +131,5 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::ParticleEmitter)
     VKM_F(stretch)
     VKM_F(spin)
     VKM_F(randomRotation)
+    VKM_F(viewmodel)
 VKM_REFLECT_END()

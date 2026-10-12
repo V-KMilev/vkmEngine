@@ -1305,8 +1305,9 @@ void InspectorPanel::drawMeshSection(EditorContext& ec, EntityId id) {
         changed |= propCheckbox("Cast Shadow", &mesh.castShadows);
         const char* seenByTooltip =
             "Who draws it, through a scene camera: All; All But Eye - a first-person body, "
-            "with its shadow and reflection but not in the camera; Eye Only - arms or a "
-            "weapon, in the camera alone. The editor's own view draws everything";
+            "with its shadow and in baked reflections but not in the camera; Eye Only - arms or a "
+            "weapon, in the camera alone; Viewmodel - as Eye Only, at the camera's Viewmodel FOV "
+            "and never into a wall. The editor's own view draws everything";
         changed |= propEnumCombo("Seen By", mesh.seenBy, seenByTooltip);
 
         if (const MeshAsset* held = resources.tryGet(mesh.mesh)) {
@@ -1942,6 +1943,10 @@ void InspectorPanel::drawParticleSection(EditorContext& ec, EntityId id) {
             const char* rotationTooltip = "Each particle starts at an angle of its own";
             changed |= propCheckbox("Random Rotation", &e.randomRotation, rotationTooltip);
         }
+        const char* viewmodelTooltip =
+            "Drawn as a Viewmodel mesh is - a muzzle flash on the weapon in hand lines up with it "
+            "and shows in front of it";
+        changed |= propCheckbox("Viewmodel", &e.viewmodel, viewmodelTooltip);
 
         const std::vector<Particle>* live = ec.frame.particles ? ec.frame.particles->of(id) : nullptr;
         ImGui::TextDisabled("Live: %d particle(s).", live ? static_cast<int>(live->size()) : 0);
@@ -2711,6 +2716,10 @@ void InspectorPanel::drawCameraSection(EditorContext& ec, EntityId id) {
 
         if (cam.projection == ProjectionType::Perspective) {
             changed |= propAngleSlider("FOV", &cam.fovY, 10.0f, 170.0f);
+            const char* viewmodelTooltip =
+                "The field of view arms and a weapon draw at (Mesh Seen By: Viewmodel), whatever the "
+                "world's; 0 is the camera's own";
+            changed |= propAngleSlider("Viewmodel FOV", &cam.viewmodelFovY, 0.0f, 170.0f, viewmodelTooltip);
         } else {
             changed |= propDrag("Ortho Height", &cam.orthoHeight, 0.1f, 0.1f, 1000.0f);
         }

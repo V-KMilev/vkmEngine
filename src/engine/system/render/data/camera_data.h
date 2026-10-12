@@ -16,6 +16,9 @@ struct CameraData {
     glm::mat4 invViewProj    = glm::mat4(1.0f);
     glm::vec3 position       = glm::vec3(0.0f);
 
+    /// World to clip for Viewmodel meshes (Camera::computeViewmodelProjection); `from` sets viewProjection.
+    glm::mat4 viewmodelViewProjection = glm::mat4(1.0f);
+
     float zNear = 0.1f;    ///< Extracted from the projection.
     float zFar  = 1000.0f; ///< Extracted from the projection.
 
@@ -40,6 +43,7 @@ struct CameraData {
         camera.projection     = projection;
         camera.position       = position;
         camera.viewProjection = projection * view;
+        camera.viewmodelViewProjection = camera.viewProjection;
         camera.invProjection  = glm::inverse(projection);
         camera.invView        = glm::inverse(view);
         camera.invViewProj    = glm::inverse(camera.viewProjection);
