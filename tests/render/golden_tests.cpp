@@ -1896,6 +1896,39 @@ void testGTAOReachesAsFarEveryWay(int& failures) {
     expect("a crease up close is as occluded rolled a quarter turn", even, failures);
 }
 
+// A box on a floor through an orthographic camera, in the AO view: the crease where they meet is
+// occluded. An orthographic camera's depth is linear, so read as the viewmodel's band, the nearest
+// VIEWMODEL_DEPTH_SHARE of its range would be taken for sky and occlude nothing.
+void testAnOrthographicViewIsOccluded(int& failures) {
+    std::printf("Ambient occlusion through an orthographic camera:\n");
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery s;
+    base(s);
+    const MaterialHandle grey = material(s, "golden:grey", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
+    place(s, s.cube, grey, {0.0f, -0.5f, 0.0f}, {20.0f, 1.0f, 20.0f});
+    place(s, s.cube, grey, {0.0f, 0.5f, 0.0f}, glm::vec3(1.0f));
+    sunAndCamera(s, {0.0f, 3.0f, 5.0f}, {0.0f, 0.0f, 0.0f});
+    orthographic(s, 2.0f);
+
+    RenderSettings settings;
+    settings.renderMode    = RenderMode::AmbientOcclusion;
+    settings.msaaSamples   = 1;
+    settings.gtaoIntensity = 3.0f;
+    const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+    int darkest = 255;
+    for (int y = 0; y < HEIGHT; ++y) {
+        for (int x = 0; x < WIDTH; ++x) darkest = std::min(darkest, pixel(frame, x, y).x);
+    }
+    std::printf("      darkest %d\n", darkest);
+    expect("an orthographic view finds the crease", darkest < 200, failures);
+}
+
 void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     std::printf("Whole frames against their goldens:\n");
     if (!gl.attachSurface(WIDTH, HEIGHT)) {
@@ -1931,6 +1964,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testASplashFadesLinearlyOnTheGlass(failures);
     testAnOpenFloorIsNotOccluded(failures);
     testAnOpenWallIsOpenToTheFramesEdge(failures);
+    testAnOrthographicViewIsOccluded(failures);
     testGTAOReachesAsFarEveryWay(failures);
     testAnOrthographicViewTracesItsReflections(failures);
     testAMovedProbeBakesOnceItSettles(failures);

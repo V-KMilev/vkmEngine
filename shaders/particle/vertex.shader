@@ -69,9 +69,7 @@ void main() {
     // On the viewmodel layer, projected as shaders/viewmodel.glsl's eyeClip projects the weapon.
     vViewmodel = p.params.w > 0.5 ? 1 : 0;
     if (vViewmodel == 1) {
-        vec4 clip = u_camera.viewmodelViewProjection * vec4(world, 1.0);
-        clip.z = mix(-clip.w, clip.z, VIEWMODEL_DEPTH_SHARE);
-        gl_Position = clip;
+        gl_Position = intoViewmodelBand(u_camera.viewmodelViewProjection * vec4(world, 1.0));
     } else {
         gl_Position = u_camera.viewProjection * vec4(world, 1.0);
     }

@@ -639,6 +639,14 @@ plane, and each reader is answered:
   from its world position through the world's projection, not from where its
   own projection drew it, so a lamp beside the weapon lights it.
 
+GTAO, depth of field and the reflection trace find the band by
+`inViewmodelBand` (`shaders/camera.glsl`). An orthographic camera has none: depth
+there is linear, so the band would be the nearest `VIEWMODEL_DEPTH_SHARE` of the whole
+scene, and everything in it would lose its occlusion, its depth of field and its
+reflections. So `intoViewmodelBand`, which both `eyeClip` and a viewmodel
+particle squash through, leaves a viewmodel at its own depth there, as the readers
+take it.
+
 Nothing else draws a viewmodel mesh: it casts no shadow and no capture takes it.
 An emitter with `viewmodel` set - a muzzle flash on the barrel - is projected
 the same way, so it lines up with the weapon and shows in front of it, and

@@ -45,9 +45,8 @@ void main() {
     const float depth = texelFetch(u_sceneDepth, texel, 0).r;
     if (depth >= 1.0 || !sceneHasNormal(texel)) return;
     // A viewmodel's squashed depth puts it at the lens, not where it is: it keeps the probe or sky
-    // reflection the forward pass gave it. An orthographic camera's depth is linear, so there the
-    // band would be the nearest twentieth of the scene.
-    if (cameraIsPerspective() && depth < VIEWMODEL_DEPTH_SHARE) return;
+    // reflection the forward pass gave it.
+    if (inViewmodelBand(depth)) return;
 
     const vec2 size  = vec2(textureSize(u_sceneDepth, 0));
     const vec2 uv    = (vec2(texel) + 0.5) / size;

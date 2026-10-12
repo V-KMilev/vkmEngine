@@ -18,8 +18,8 @@ inline constexpr uint32_t INSTANCE_FLAG_VIEWMODEL = 1u;
 /**
  * @brief The share of the depth range nearest the eye a viewmodel object's depth is squashed into.
  *
- * Only what lies within about this share of the near plane beyond it can draw over it
- * (shaders/viewmodel.glsl); GTAO reads the band as sky (shaders/gtao/prefilter).
+ * A perspective camera's only: an orthographic one draws a viewmodel at its own depth. The band
+ * is put and found by shaders/camera.glsl's intoViewmodelBand and inViewmodelBand.
  */
 inline constexpr float VIEWMODEL_DEPTH_SHARE = 0.05f;
 
