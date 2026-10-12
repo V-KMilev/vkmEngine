@@ -1,15 +1,30 @@
 #include "support.h"
 
+#include <nlohmann/json.hpp>
+
 #include <atomic>
+#include <cerrno>
 #include <chrono>
+#include <csignal>
+#include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <memory>
 #include <thread>
 #include <vector>
 
+#if defined(__linux__)
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
+
 #include "stb_image.h"
 #include "stb_image_write.h"
 
+#include "core/math/bounds.h"
+#include "core/math/easing.h"
+#include "io/json_file.h"
+#include "io/project_paths.h"
 #include "platform/process/child_process.h"
 #include "platform/threading/thread_pool.h"
 #include "platform/window/frame_limiter.h"
@@ -155,6 +170,23 @@ void testARotationReadFromAMatrixHasOneAnswer() {
         std::isfinite(flat.w) && std::isfinite(flat.x) && std::isfinite(flat.y) && std::isfinite(flat.z)
     );
     check("  and the rotation the other two axes imply", rotationErrorDegrees(flat, turned) < 0.1f);
+}
+
+void testARayFindsTheLevelItPointsAt() {
+    std::printf("A ray onto a level plane, and closing on a target at any frame rate:\n");
+    const Math::Ray down{{1.0f, 5.0f, 2.0f}, glm::normalize(glm::vec3(1.0f, -1.0f, 0.0f))};
+    const std::optional<glm::vec3> hit = Math::rayHitsLevel(down, 1.0f);
+    const glm::vec3 under = {5.0f, 1.0f, 2.0f};
+    check("a ray down meets the plane under it", hit && glm::length(*hit - under) < 1e-4f);
+    check("  not one above it", !Math::rayHitsLevel(down, 6.0f));
+    const Math::Ray level{{0.0f, 1.0f, 0.0f}, {1.0f, 0.0f, 0.0f}};
+    check("  and a level ray meets none", !Math::rayHitsLevel(level, 0.0f));
+
+    // Closing two frames of dt as far as one frame of 2 dt.
+    const float once  = damp(4.0f, 0.1f);
+    const float twice = 1.0f - (1.0f - damp(4.0f, 0.05f)) * (1.0f - damp(4.0f, 0.05f));
+    check("damp closes as far in two short frames as in one long one", std::abs(once - twice) < 1e-5f);
+    check("  and none of the way in no time", damp(4.0f, 0.0f) == 0.0f);
 }
 
 // A project's tick rate is fixedUpdate's cadence and, networked, the wire's clock.
@@ -495,6 +527,90 @@ void testTypingArrivesAsTextAndRepeats() {
     );
 }
 
+// A game's player files go in a folder of the game's name, beside the engine's own, and a
+// name cannot climb out of it.
+void testAGameKeepsItsPlayerFilesInItsOwnFolder() {
+    std::printf("Where a game keeps its player's files:\n");
+#ifndef _WIN32
+    const char*                 was  = std::getenv("XDG_CONFIG_HOME");
+    const std::string           kept = was ? was : "";
+    const std::filesystem::path base = std::filesystem::temp_directory_path() / "vkm_player_root_test";
+    std::filesystem::remove_all(base);
+    ::setenv("XDG_CONFIG_HOME", base.c_str(), 1);
+
+    const std::filesystem::path root = ProjectPaths::playerRoot("Some Game");
+    check("in the platform's config folder, under the game's name", root == base / "Some Game");
+    check("  made when asked for", std::filesystem::is_directory(root));
+    check(
+        "a name with a path in it keeps to its last part",
+        ProjectPaths::playerRoot("../up/Other") == base / "Other"
+    );
+    const bool trailing = ProjectPaths::playerRoot("Some Game/") == root;
+    check("  and one ending in a separator is the same folder", trailing);
+
+    // Its own files: none yet is nothing, quietly; a damaged one is nothing, not the game's end.
+    const std::filesystem::path own = root / "settings.json";
+    check("a file not written yet reads as nothing", readOwnFile(own).empty());
+    check("  one written", writeOwnFile(own, nlohmann::json{{"volume", 0.5}}));
+    check("  reads back", readOwnFile(own).value("volume", 0.0) == 0.5);
+    std::ofstream(own) << "{ not json";
+    check("  and a damaged one reads as nothing", readOwnFile(own).empty());
+
+    if (was) ::setenv("XDG_CONFIG_HOME", kept.c_str(), 1);
+    else ::unsetenv("XDG_CONFIG_HOME");
+    std::filesystem::remove_all(base);
+#else
+    std::printf("  (%%APPDATA%% on Windows is not changed by a test)\n");
+#endif
+}
+
+// A controls screen listens for whatever goes down next, named for showing it; a repeat or a
+// key only held is not a new press.
+void testAPressIsHeardForRebinding() {
+    std::printf("What a rebinding screen hears:\n");
+
+    InputHandle device;
+    InputMap    map;
+    HostChrome  host;
+    constexpr int W = 87, LEFT_SHIFT = 340;   // GLFW_KEY_W, GLFW_KEY_LEFT_SHIFT
+
+    map.update(device, host);
+    check("no press, nothing heard", !map.struck());
+
+    device.onKeyEvent(LEFT_SHIFT, true);
+    device.onKeyEvent(W, true);
+    device.setButton(1, true);
+    map.update(device, host);
+    check(
+        "keys before buttons, the lowest code first",
+        map.struck() && map.struck()->source == InputSource::Key && map.struck()->code == W
+    );
+    check("  named as a player reads it", bindingName(*map.struck()) == "W");
+    check("  and a shift by its side", bindingName({InputSource::Key, LEFT_SHIFT, 1.0f}) == "Left Shift");
+
+    device.clearStrikes();
+    device.onKeyEvent(W, true);
+    map.update(device, host);
+    check("a repeat is not heard again", !map.struck());
+
+    device.clearStrikes();
+    device.setButton(1, false);
+    device.setButton(1, true);
+    map.update(device, host);
+    check(
+        "a mouse button is heard",
+        map.struck() && map.struck()->source == InputSource::MouseButton
+            && bindingName(*map.struck()) == "Right mouse"
+    );
+
+    device.clearStrikes();
+    device.setButton(1, false);
+    device.setButton(0, true);
+    host.setCapture(true, false);
+    map.update(device, host);
+    check("a click on the host's panel is not heard", !map.struck());
+}
+
 // A host's panels hold the devices while the author works in them, applied by the map:
 // typing in the inspector cannot walk a character in Play, nor a panel click press a
 // game button behind it.
@@ -670,6 +786,79 @@ void testATapInsideOneFrameIsStillSeen() {
     check("a repeat of a held key is not another press", !map.pressed("Jump"));
 }
 
+// A controls screen rebinds an action and the settings file keeps it: only what the player
+// changed, so a key left alone follows the game's default when that changes; loaded before the
+// game defines its actions, a saved binding waits for the action to be defined.
+void testARebindingIsSavedAndComesBack() {
+    std::printf("A rebinding, saved and loaded:\n");
+    InputMap map;
+    map.define("Jump", {InputBinding{InputSource::Key, 32, 1.0f}});
+    map.define("Dash", {InputBinding{InputSource::Key, 340, 1.0f}});
+    check("nothing rebound, nothing saved", map.saveBindings().empty());
+
+    map.rebind("Jump", {InputBinding{InputSource::MouseButton, 1, 1.0f}});
+    const nlohmann::json saved = map.saveBindings();
+    check("a rebinding is saved, alone", saved.size() == 1 && saved.contains("Jump"));
+
+    InputMap next;
+    next.loadBindings(saved);
+    next.define("Jump", {InputBinding{InputSource::Key, 32, 1.0f}});
+    next.define("Dash", {InputBinding{InputSource::Key, 340, 1.0f}});
+    const std::vector<InputBinding>& jump = next.bindings("Jump");
+    check(
+        "  loaded before the action is defined, it takes its place",
+        jump.size() == 1 && jump[0].source == InputSource::MouseButton && jump[0].code == 1
+    );
+    const std::vector<InputBinding>& dash = next.bindings("Dash");
+    check("  the rest keep their defaults", dash.size() == 1 && dash[0].code == 340);
+
+    next.rebind("Jump", {InputBinding{InputSource::Key, 32, 1.0f}});
+    check("rebound back to its default, it is no longer saved", next.saveBindings().empty());
+
+    next.rebind("Dash", {InputBinding{InputSource::Key, 70, 1.0f}});
+    next.resetBindings();
+    check(
+        "reset, every action is its default again",
+        next.bindings("Dash")[0].code == 340 && next.saveBindings().empty()
+    );
+
+    InputMap broken;
+    broken.define("Jump", {InputBinding{InputSource::Key, 32, 1.0f}});
+    broken.loadBindings(nlohmann::json::parse(R"({"Jump": "space", "Dash": [{"source": "Key", "code": 80}]})"));
+    check("an entry that cannot be read is skipped", broken.bindings("Jump")[0].code == 32);
+    check(
+        "  and one for an action never defined is kept for the save",
+        broken.saveBindings().contains("Dash")
+    );
+    // Each wrong somewhere inside its list: none may leave the action on key 0, unpressable.
+    for (const char* wrong : {
+             R"([{"code": "W"}])",
+             R"([7])",
+             R"([{"source": "Key", "code": 9999}])",
+             R"([{"source": "Key", "code": -1}])",
+             R"([{"source": "Pedal", "code": 3}])",
+             R"([{"source": "Key", "code": 87}, {"source": "Key"}])"
+         }) {
+        InputMap map2;
+        map2.define("Jump", {InputBinding{InputSource::Key, 32, 1.0f}});
+        map2.loadBindings(nlohmann::json{{"Jump", nlohmann::json::parse(wrong)}});
+        const std::vector<InputBinding>& kept = map2.bindings("Jump");
+        check(
+            (std::string("  wrong inside its list, ") + wrong + ", it keeps its own").c_str(),
+            kept.size() == 1 && kept[0].code == 32 && map2.saveBindings().empty()
+        );
+    }
+
+    // What a controls screen adds or clears is the player's too.
+    InputMap edited;
+    edited.define("Jump", {InputBinding{InputSource::Key, 32, 1.0f}});
+    edited.define("Dash", {InputBinding{InputSource::Key, 340, 1.0f}});
+    edited.addBinding("Jump", InputBinding{InputSource::Key, 87, 1.0f});
+    edited.clearBindings("Dash");
+    const nlohmann::json kept = edited.saveBindings();
+    check("a binding added or cleared is saved", kept.contains("Jump") && kept.contains("Dash"));
+}
+
 // A tick asks a command for an action by name as a frame does, instead of reaching
 // into the axis array and the two bitfields itself.
 void testACommandIsReadByName() {
@@ -716,6 +905,33 @@ void testACommandIsReadByName() {
     }
     const std::string past = "Pad" + std::to_string(MAX_INPUT_ACTIONS + 1);
     check("  and so does one past the command cap", map.indexOf(past) < 0 && !map.pressed(command, past));
+}
+
+// A game's bytes are held as the view is: latched into each tick's command until changed, never
+// cut short, and gone with the session.
+void testACommandCarriesTheGamesBytes() {
+    std::printf("A command carries the game's own bytes:\n");
+
+    InputMap map;
+    const uint8_t move[] = {4, 9, 1};
+    map.setPayload(move, sizeof(move));
+    map.beginTick(1);
+    const InputCommand& first = map.command();
+    const bool same = std::equal(std::begin(move), std::end(move), first.payload.begin());
+    check("the tick's command takes the bytes the game set", first.payloadSize == sizeof(move) && same);
+    map.beginTick(2);
+    check("  and the next keeps them, held until changed", map.command().payloadSize == sizeof(move));
+
+    std::array<uint8_t, MAX_COMMAND_PAYLOAD + 4> long_{};
+    long_.fill(7);
+    const bool refused = !map.setPayload(long_.data(), long_.size());
+    map.beginTick(3);
+    const bool kept = map.command().payloadSize == sizeof(move);
+    check("more than a command holds is refused, keeping what was held", refused && kept);
+
+    map.reset();
+    map.beginTick(4);
+    check("  and none outlives the session", map.command().payloadSize == 0);
 }
 
 // A command must say everything a tick did with it: a character steers relative to a
@@ -999,6 +1215,48 @@ void testAChildProcessIsHeardAndCanBeStopped() {
     check("  and reads as stopped, not as succeeded", child.exitCode() == -1);
 }
 
+#if defined(__linux__)
+// A host that dies - crashed, killed - takes what it started with it, as a Windows job does: a
+// server a game hosted must not outlive the game.
+void testAProgramEndsWhenItsHostDies() {
+    std::printf("What a dead host's program does:\n");
+
+    int fds[2];
+    check("a pipe opens", pipe(fds) == 0);
+    const pid_t host = fork();
+    if (host == 0) {
+        close(fds[0]);
+        ChildProcess child;
+        child.start("/bin/sh", {"-c", "echo $$; exec sleep 30"});
+        std::string said;
+        for (int i = 0; i < 500 && said.find('\n') == std::string::npos; ++i) {
+            said += child.takeOutput();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        const ssize_t sent = write(fds[1], said.data(), said.size());
+        // Gone as a crash goes: no destructor stops what it started.
+        _exit(sent > 0 ? 0 : 1);
+    }
+    close(fds[1]);
+    char said[32] = {};
+    const ssize_t got = read(fds[0], said, sizeof(said) - 1);
+    close(fds[0]);
+    int status = 0;
+    waitpid(host, &status, 0);
+    const pid_t program = got > 0 ? static_cast<pid_t>(std::atoi(said)) : 0;
+    check("the host's program said who it is, and the host died", program > 0);
+
+    bool gone = false;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (program > 0 && !gone && std::chrono::steady_clock::now() < deadline) {
+        gone = kill(program, 0) != 0 && errno == ESRCH;
+        if (!gone) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    check("  and its program died with it", gone);
+    if (program > 0 && !gone) kill(program, SIGKILL);
+}
+#endif
+
 } // namespace
 
 TypeId typeIdOfCoreTestsProbe() {
@@ -1018,6 +1276,7 @@ TypeId typeIdOfCoreTestsConstantsProbe() {
 
 void runCoreTests() {
     testMathConvention();
+    testARayFindsTheLevelItPointsAt();
     testARotationReadFromAMatrixHasOneAnswer();
     testTickRate();
     testAStillWorldIsStillWhicheverWayItWasStopped();
@@ -1027,6 +1286,9 @@ void runCoreTests() {
     testInputCommand();
     testAKeypressReachesAnAction();
     testTypingArrivesAsTextAndRepeats();
+    testAPressIsHeardForRebinding();
+    testARebindingIsSavedAndComesBack();
+    testAGameKeepsItsPlayerFilesInItsOwnFolder();
     testWhatTheHostHoldsReadsAsUntouched();
     testASessionLeavesTheMapAsItFoundIt();
     testATapBetweenTwoTicksStillReachesOne();
@@ -1036,8 +1298,12 @@ void runCoreTests() {
     testTheCallerRunsWhatNoWorkerHasTaken();
     testACommandIsReadByName();
     testCommandCarriesTheView();
+    testACommandCarriesTheGamesBytes();
     testAScreenshotIsTheFrameTheBackendDrew();
     testABackendThatFailsToInitStopsTheHost();
     testACappedLoopKeepsItsRate();
     testAChildProcessIsHeardAndCanBeStopped();
+#if defined(__linux__)
+    testAProgramEndsWhenItsHostDies();
+#endif
 }

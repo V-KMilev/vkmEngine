@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 // Shared by the physics suites: the worlds they build and the loop that steps them.
 
 #include "support.h"
@@ -101,8 +103,8 @@ inline ResourceManager& meshLibrary() {
 }
 
 // Physics, then the controller reading this tick's contacts, in setupEngineApp's
-// Simulation-stage order.
-inline void simulate(Scene& scene, int ticks) {
+// Simulation-stage order; @p gameplay runs ahead of each tick, as a behavior's fixed update does.
+inline void simulate(Scene& scene, int ticks, const std::function<void()>& gameplay = {}) {
     TestFrame frame(scene, meshLibrary());
     FrameContext& ctx = frame.ctx;
 
@@ -111,6 +113,7 @@ inline void simulate(Scene& scene, int ticks) {
     HierarchySystem hierarchy;
 
     for (int tick = 0; tick < ticks; ++tick) {
+        if (gameplay) gameplay();
         physics.fixedUpdate(ctx);
         controller.fixedUpdate(ctx);
         // The Transform stage: keeps WorldTransform current for whatever reads it

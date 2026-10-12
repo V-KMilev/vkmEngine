@@ -12,9 +12,11 @@
 #include "logger.h"
 
 #include "core/memory/slot_allocator.h"
+#include "ecs/component/core/net_local.h"
 #include "ecs/component/prefab/net_spawn.h"
 #include "ecs/component/prefab/prefab_entity.h"
 #include "ecs/component/prefab/prefab_instance.h"
+#include "ecs/hierarchy_operations.h"
 #include "ecs/scene.h"
 #include "io/scene/prefab.h"
 #include "net/net_session.h"
@@ -94,20 +96,31 @@ void NetClient::close() {
     m_warnedTickJump = false;
     m_prediction.clear();
     m_interpolation.clear();
+    m_outbox.clear();
+}
+
+bool NetClient::sendMessage(const uint8_t* bytes, size_t size) {
+    // From the Welcome on: before it, the server has no seat to hand a message to.
+    return isPlaying() && m_outbox.push(bytes, size);
 }
 
 void NetClient::advance(float seconds) {
     if (m_connection) m_connection->advance(seconds);
 }
 
-bool NetClient::simulates(EntityId entity) const {
+bool NetClient::simulates(const Scene& scene, EntityId entity) const {
     if (!entity) return false;
     if (entity == m_localEntity) return true;
 
     for (const Lease& lease : m_prediction.leases) {
         if (lease.entity == entity) return true;
     }
-    return false;
+
+    // What the server never names is this end's to run - its own, and what runs itself - but a
+    // replay re-runs only what this end predicts, and would run those twice.
+    if (m_prediction.replaying || !scene.isAlive(entity)) return false;
+    if (!m_names.names(scene, entity)) return true;
+    return static_cast<bool>(HierarchyOperations::findInSelfOrAncestors<NetLocal>(scene, entity));
 }
 
 void NetClient::ageLeases() {
@@ -150,6 +163,7 @@ void NetClient::endTick(const Scene& scene, uint32_t tick) {
 void NetClient::forgetWorld() {
     m_prediction.clear();
     m_interpolation.clear();
+    m_names.clear();
 }
 
 void NetClient::lease(const std::vector<EntityId>& entities) {
@@ -399,7 +413,7 @@ bool NetClient::onWelcome(Scene& scene, BitReader& reader) {
     }
 
     m_localPlayer = player;
-    m_localEntity = scene.isAliveAtIndex(slot) ? scene.entityAt(slot) : scene.createEntityAt(slot);
+    m_localEntity = m_names.claim(scene, slot);
     if (!m_localEntity) {
         m_core.lastError = "the server named an entity this world cannot hold";
         LOG_ERROR(
@@ -492,6 +506,7 @@ void NetClient::onSnapshot(Scene& scene, BitReader& reader) {
     const uint32_t confirmedTick = reader.u32();
     const uint32_t heard         = reader.u32();
     const uint32_t lowWater      = reader.bits(NET_QUEUE_DEPTH_BITS);
+    const uint16_t messages      = reader.u16();
 
     // A header cut short reads as zeros, and a server tick of zero switches
     // the jump guard off.
@@ -502,6 +517,7 @@ void NetClient::onSnapshot(Scene& scene, BitReader& reader) {
     if (!adoptServerTick(serverTick)) return;
     m_interpolation.heard(serverTick, static_cast<float>(m_core.tickRate));
     m_prediction.heard = heard;
+    m_outbox.acknowledge(messages);
     m_prediction.pacing.report(lowWater, m_connection->roundTrip(), static_cast<float>(m_core.tickRate));
 
     std::vector<DrawnFrom> takenFrom;
@@ -512,7 +528,7 @@ void NetClient::onSnapshot(Scene& scene, BitReader& reader) {
     m_interpolation.restoreConfirmed(scene);
 
     m_touched.clear();
-    if (!readSnapshot(scene, NetSchema::get(), reader, &m_touched)) {
+    if (!readSnapshot(scene, NetSchema::get(), reader, m_names, &m_touched)) {
         // Un-acknowledged too: the sender never re-describes what it believes
         // this end holds, so a standing claim would freeze those bodies.
         m_connection->refuse();
@@ -524,9 +540,8 @@ void NetClient::onSnapshot(Scene& scene, BitReader& reader) {
         return;
     }
 
-    for (uint32_t slot : m_touched) {
-        if (!scene.isAliveAtIndex(slot)) continue;
-        const EntityId entity = scene.entityAt(slot);
+    for (const EntityId entity : m_touched) {
+        if (!scene.isAlive(entity)) continue;
         // The entity this end drives is predicted, not drawn late.
         if (entity == m_localEntity) continue;
         const Transform* at = scene.tryGet<Transform>(entity);
@@ -571,7 +586,8 @@ void NetClient::send() {
         const double   drawn = m_interpolation.renderTick();
         const uint32_t whole = drawn > 0.0 ? static_cast<uint32_t>(drawn) : 0u;
         writer.u32(whole);
-        writer.bits(static_cast<uint32_t>((drawn - static_cast<double>(whole)) * 255.0), 8);
+        const double   past  = drawn - static_cast<double>(whole);
+        writer.bits(static_cast<uint32_t>(past * 255.0), NET_DRAWN_FRACTION_BITS);
 
         const size_t first   = firstCommandToSend(
             m_prediction.unacknowledged,
@@ -585,6 +601,9 @@ void NetClient::send() {
                 m_prediction.unacknowledged[first + written - 1].sequence
             );
         }
+
+        // In the room the commands left: they are for this tick, the messages for whenever.
+        m_outbox.write(writer, 8u * NetConnection::MAX_PAYLOAD - writer.bitCount());
     }
     writer.finish();
 
@@ -609,7 +628,7 @@ void NetClient::buildSpawned(Scene& scene, ResourceManager& resources) {
         // What the decoder refused arrives with no path.
         if (spawn.prefab.empty()) {
             LOG_ERROR(
-                "The server spawned something at slot %u that this end cannot read; nothing is built there",
+                "The server spawned something this end cannot read (slot %u here); nothing is built there",
                 root.slot()
             );
             continue;
@@ -618,10 +637,10 @@ void NetClient::buildSpawned(Scene& scene, ResourceManager& resources) {
         if (const PrefabInstance* instance = scene.tryGet<PrefabInstance>(root)) {
             if (instance->source != spawn.prefab) {
                 LOG_ERROR(
-                    "The server spawned '%s' at slot %u, which this end holds as '%s'; it is left as it is",
+                    "The server spawned '%s' where this end holds '%s' (slot %u here); it is left as it is",
                     spawn.prefab.c_str(),
-                    root.slot(),
-                    instance->source.c_str()
+                    instance->source.c_str(),
+                    root.slot()
                 );
             }
             continue;
@@ -629,8 +648,8 @@ void NetClient::buildSpawned(Scene& scene, ResourceManager& resources) {
         // Part of an instance built without named slots (too large to name).
         if (scene.has<PrefabEntity>(root)) {
             LOG_ERROR(
-                "The server spawned '%s' at slot %u, which holds part of an instance "
-                    "this end built; nothing is built over it",
+                "The server spawned '%s' where this end holds part of an instance (slot %u here) "
+                    "it built; nothing is built over it",
                 spawn.prefab.c_str(),
                 root.slot()
             );
@@ -676,7 +695,7 @@ void NetClient::buildInto(Scene& scene, ResourceManager& resources, EntityId roo
     // A slot was already held here, so the ends' slots now differ.
     if (slots && Prefab::builtSlotsOf(scene, root) != spawn.slots) {
         LOG_WARNING(
-            "'%s' at slot %u was not built into every slot the server used; a later spawn may "
+            "'%s' (slot %u here) was not built into every slot the server used; a later spawn may "
                 "find one taken",
             spawn.prefab.c_str(),
             root.slot()

@@ -260,6 +260,38 @@ void testWhatAFrameOfInputCostsOnTheWire() {
     // A frame of input, every copy included, must stay far from a datagram, or the
     // redundancy protecting a jump would lose the packet carrying it.
     check("a frame of input is nowhere near a datagram", packet.size() < UdpSocket::MAX_DATAGRAM / 3);
+
+    // The common case: a view held steady and a payload held beside it - a player looking at a
+    // board - which each command but the first says, in a bit, it holds.
+    constexpr uint32_t ACTIONS = 16;
+    std::vector<InputCommand> holding;
+    for (uint32_t i = 0; i < NET_COMMAND_REDUNDANCY; ++i) {
+        InputCommand command = walkCommand(i, 2000 + i, 0.0f, false);
+        command.view        = glm::angleAxis(0.4f, glm::vec3(0.0f, 1.0f, 0.0f));
+        command.payloadSize = 6;
+        for (uint8_t b = 0; b < 6; ++b) command.payload[b] = static_cast<uint8_t>(40 + b);
+        if (i == 7) command.payload[2] = 99;  // it moved its head once
+        holding.push_back(command);
+    }
+    std::vector<uint8_t> still;
+    BitWriter stillWriter(still, 512);
+    writeCommands(stillWriter, holding, 0, ACTIONS);
+    stillWriter.finish();
+    BitReader stillReader(still.data(), still.size());
+    check("a packet of held views and payloads decodes", readCommands(stillReader, ACTIONS, got));
+    bool kept = got.size() == holding.size();
+    for (size_t i = 0; kept && i < got.size(); ++i) {
+        kept = got[i].payloadSize == 6 && got[i].payload == holding[i].payload
+            && rotationErrorDegrees(holding[i].view, got[i].view) < 0.3f;
+    }
+    check("  each command with its own view and payload, the change among them", kept);
+    std::printf(
+        "      held still: %zu commands, %zu bits each, %zu bytes a packet, %.1f KB/s up\n",
+        holding.size(),
+        stillWriter.bitCount() / holding.size(),
+        still.size(),
+        still.size() * NET_COMMAND_RATE / 1024.0
+    );
 }
 
 void testAPacketCannotTalkTheDecoderPastTheEndOfACommand() {
@@ -585,6 +617,7 @@ void testAPredictionThatWasWrongIsRunAgainRatherThanArguedWith() {
     Scene clientWorld;
     const EntityId clientWalker = addWalker(clientWorld);
     NetSession client;
+    client.setWorld(0, clientWorld);
     client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
 
     // The server holds the client against a wall it does not know about, so each
@@ -848,6 +881,7 @@ void testAPlayerIsNotDraggedBackwardsByTheirOwnConnection() {
     Scene clientWorld;
     const EntityId clientWalker = addWalker(clientWorld);
     NetSession client;
+    client.setWorld(0, clientWorld);
     client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
 
     // One rule, run by both ends: step along x by the command. Prediction is the client

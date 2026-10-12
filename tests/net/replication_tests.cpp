@@ -3,9 +3,11 @@
 
 #include <algorithm>
 
+#include "ecs/component/core/net_local.h"
 #include "ecs/hierarchy_operations.h"
 #include "io/scene/prefab.h"
 #include "net/net_session.h"
+#include "net/replication/silence.h"
 #include "net/wire/codecs.h"
 #include "system/physics/authoring/ragdoll_build.h"
 
@@ -28,7 +30,8 @@ void testTheFirstSnapshotIsTheWholeWorld() {
     check("with no separate mode for it", first.entitiesDeferred == 0);
 
     Scene client;
-    check("and the client takes it", readSnapshotFrom(client, schema, body));
+    NetNames clientNames;
+    check("and the client takes it", readSnapshotFrom(client, schema, body, clientNames));
     check("building every entity it had never heard of", client.entityCount() == 40);
 
     const EntityId last = client.entityAt(crates.back().slot());
@@ -65,7 +68,8 @@ void testALostSnapshotIsSaidAgain() {
     baseline.confirm(1);
 
     Scene client;
-    readSnapshotFrom(client, schema, body);
+    NetNames clientNames;
+    readSnapshotFrom(client, schema, body, clientNames);
 
     // The crate moves, that snapshot is lost, then it stops. A server that folded the
     // snapshot in when writing it would leave the crate at the old position for good.
@@ -77,7 +81,7 @@ void testALostSnapshotIsSaidAgain() {
     const NetSnapshotStats again = writeSnapshotTo(server, schema, 3, budget, baseline, body);
     check("and while it is unconfirmed the move is written again", again.entitiesWritten == 1);
 
-    readSnapshotFrom(client, schema, body);
+    readSnapshotFrom(client, schema, body, clientNames);
     baseline.confirm(3);
     check(
         "so the client ends up where the server put it",
@@ -136,6 +140,7 @@ void testABurstIsDeferredRatherThanDropped() {
     });
 
     Scene client;
+    NetNames clientNames;
     uint16_t sequence = 1;
     int snapshots = 0;
     uint32_t worst = 0;
@@ -145,7 +150,7 @@ void testABurstIsDeferredRatherThanDropped() {
         const NetSnapshotStats stats = writeSnapshotTo(server, schema, sequence, budget, baseline, body);
         worst = std::max(worst, stats.bytesWritten);
         check("no snapshot exceeds what a datagram can carry", stats.bytesWritten <= budget.bytes);
-        readSnapshotFrom(client, schema, body);
+        readSnapshotFrom(client, schema, body, clientNames);
         baseline.confirm(sequence);
         ++sequence;
         ++snapshots;
@@ -164,7 +169,8 @@ void testABurstIsDeferredRatherThanDropped() {
     check("the burst does not fit one snapshot", first.entitiesDeferred > 0);
 
     Scene probe;
-    readSnapshotFrom(probe, schema, body);
+    NetNames probeNames;
+    readSnapshotFrom(probe, schema, body, probeNames);
     check("and the owner is in it anyway", probe.isAliveAtIndex(budget.owner.slot()));
 }
 
@@ -183,7 +189,8 @@ void testAnEntityThatLeavesTheWorldLeavesEveryClient() {
     writeSnapshotTo(server, schema, 1, budget, baseline, body);
     baseline.confirm(1);
     Scene client;
-    readSnapshotFrom(client, schema, body);
+    NetNames clientNames;
+    readSnapshotFrom(client, schema, body, clientNames);
     check("six crates to start", client.entityCount() == 6);
 
     const uint32_t goneSlot = crates[2].slot();
@@ -196,7 +203,7 @@ void testAnEntityThatLeavesTheWorldLeavesEveryClient() {
     const NetSnapshotStats retold = writeSnapshotTo(server, schema, 3, budget, baseline, body);
     check("and keeps reporting it until the client confirms", retold.entitiesLost == 1);
 
-    readSnapshotFrom(client, schema, body);
+    readSnapshotFrom(client, schema, body, clientNames);
     baseline.confirm(3);
     check("the client destroyed it", client.entityCount() == 5);
     check("and it was the right one", !client.isAliveAtIndex(goneSlot));
@@ -217,9 +224,10 @@ void testASlotReusedBetweenTwoSnapshotsStillReportsWhatLeft() {
     NetBudget budget;
     std::vector<uint8_t> body;
     Scene client;
+    NetNames clientNames;
 
     writeSnapshotTo(server, schema, 1, budget, baseline, body);
-    readSnapshotFrom(client, schema, body);
+    readSnapshotFrom(client, schema, body, clientNames);
     baseline.confirm(1);
 
     // The crate goes and something else takes its slot at once - alive at both sends,
@@ -232,7 +240,7 @@ void testASlotReusedBetweenTwoSnapshotsStillReportsWhatLeft() {
 
     const NetSnapshotStats told = writeSnapshotTo(server, schema, 2, budget, baseline, body);
     check("the old occupant is reported gone", told.entitiesLost == 1);
-    readSnapshotFrom(client, schema, body);
+    readSnapshotFrom(client, schema, body, clientNames);
     baseline.confirm(2);
 
     // Written onto the crate the client still held, the marker would carry the crate's
@@ -401,7 +409,8 @@ void testABoneTheAnimationPlacesIsNotWorthAPacket() {
     // The switch itself travels, which keeps the two states agreeing.
     baseline.confirm(2);
     Scene client;
-    check("the client takes it", readSnapshotFrom(client, schema, body));
+    NetNames clientNames;
+    check("the client takes it", readSnapshotFrom(client, schema, body, clientNames));
     const EntityId mirror = client.entityAt(rig.slot());
     check(
         "the client learned the ragdoll is active",
@@ -514,6 +523,42 @@ void testASpawnRefusesWhatItCannotMean() {
     check("  and the stream is still in step after it", poison.u32() == MARKER);
 }
 
+// Scenery every end moves for itself stays off the wire, and so does all below it: a joiner is
+// not told where drifting scenery is, nor held to it.
+void testWhatEachEndRunsItselfIsNeverSent() {
+    std::printf("What each end runs for itself:\n");
+
+    NetSchema schema;
+    registerEngineNetTypes(schema);
+    Scene server;
+
+    const EntityId world = server.createEntity();
+    server.add(world, Transform{});
+    server.add(world, NetLocal{});
+    const EntityId drifter = server.createEntity();
+    Transform distant;
+    distant.scale = glm::vec3(5000.0f);  // past what the wire carries
+    server.add(drifter, distant);
+    HierarchyOperations::setParent(server, drifter, world);
+    const EntityId player = server.createEntity();
+    server.add(player, Transform{});
+
+    check("a NetLocal entity is off the wire", netSilence(server, world) == NetSilence::Local);
+    check("  and so is one below it", netSilence(server, drifter) == NetSilence::Local);
+    check("  but not an entity beside them", netSilence(server, player) == NetSilence::None);
+
+    NetBaseline baseline;
+    NetBudget budget;
+    std::vector<uint8_t> body;
+    const NetSnapshotStats told = writeSnapshotTo(server, schema, 1, budget, baseline, body);
+    check("a joiner's first snapshot describes only the entity beside them", told.entitiesWritten == 1);
+
+    Scene client;
+    NetNames clientNames;
+    readSnapshotFrom(client, schema, body, clientNames);
+    check("  and the client holds nothing of the scenery", !client.isAliveAtIndex(drifter.slot()));
+}
+
 void testWhatASpawnedRootIsGoesOutWhenItsStateDoesNot() {
     std::printf("A spawned static body, and the entity a peer drives:\n");
 
@@ -543,7 +588,8 @@ void testWhatASpawnedRootIsGoesOutWhenItsStateDoesNot() {
     check("  by what it is and nothing else", told.componentsWritten == 1);
 
     Scene client;
-    readSnapshotFrom(client, schema, body);
+    NetNames clientNames;
+    readSnapshotFrom(client, schema, body, clientNames);
     const EntityId mirror = client.entityAt(wall.slot());
     check("the client holds what it is", client.isAlive(mirror) && client.has<NetSpawn>(mirror));
     check("  and not a quantised copy of where it stands", !client.has<Transform>(mirror));
@@ -646,10 +692,22 @@ class SpawnMatch {
     public:
         /// Join, and wait for everything the server holds now to arrive.
         bool join() {
+            m_client.setWorld(0, m_clientWorld);
+            return joinTheWorldItWasTold();
+        }
+
+        /// Join without telling the client its world first, as a host joining from its menu.
+        bool joinTheWorldItWasTold() {
             m_client.connect(NetAddress{0x7F000001u, m_server.localAddress().port}, TEST_TICK_RATE);
             const size_t world = m_serverWorld.entityCount();
             return pumpUntil([&]() { frame(); }, [&]() { return m_client.isPlaying(); })
                 && pumpUntil([&]() { frame(); }, [&]() { return m_clientWorld.entityCount() >= world; }, 80);
+        }
+
+        /// The client leaves, and a frame passes, as a host's would.
+        void leave() {
+            m_client.close();
+            frame();
         }
 
         /// One frame of both ends, in a host's order.
@@ -665,11 +723,14 @@ class SpawnMatch {
             m_client.advance(1.0f / 60.0f);
         }
 
+        /// What the server's @p root is on the client, if it has arrived.
+        EntityId mirrorOf(EntityId root) const { return m_client.entityFor(m_clientWorld, root.slot()); }
+
         /// Whether @p root has arrived at the client built from its prefab.
         bool isBuilt(EntityId root, int parts) const {
-            if (!m_clientWorld.isAliveAtIndex(root.slot())) return false;
-            const EntityId mirror = m_clientWorld.entityAt(root.slot());
-            return m_clientWorld.has<PrefabInstance>(mirror) && childrenOf(m_clientWorld, mirror) == parts;
+            const EntityId mirror = mirrorOf(root);
+            return m_clientWorld.isAlive(mirror) && m_clientWorld.has<PrefabInstance>(mirror)
+                && childrenOf(m_clientWorld, mirror) == parts;
         }
 
     public:
@@ -677,6 +738,7 @@ class SpawnMatch {
         Scene&           serverWorld() { return m_serverWorld; }
         Scene&           clientWorld() { return m_clientWorld; }
         NetSession&      server()      { return m_server; }
+        NetSession&      client()      { return m_client; }
 
     private:
         ScratchProject  m_project{"vkm_net_spawn"};
@@ -948,10 +1010,138 @@ void testASlotSpawnedIntoAgainBuildsTheNewThing() {
 
     const auto isSecond = [&]() {
         if (!match.isBuilt(second, 0)) return false;
-        const EntityId mirror = match.clientWorld().entityAt(second.slot());
+        const EntityId mirror = match.mirrorOf(second);
         return match.clientWorld().get<PrefabInstance>(mirror).source == secondPath;
     };
     check("and the client ends holding the second, not the first", pumpUntil(frame, isSecond, 80));
+}
+
+// A client's world replaced mid-session by the same world - a level loaded again - is the world it
+// shares with the server, slot for slot: what the server says of a crate moves the new world's
+// crate rather than building a second.
+void testAWorldReplacedMidSessionIsAdoptedAgain() {
+    std::printf("A client's world replaced while it plays:\n");
+    // A world loaded from a file, and one built in code, which a scene's epoch alone names as none.
+    for (const bool fromFile : {true, false}) {
+        const ScopedEngineSchema wire;
+        SpawnMatch match(2);
+        Scene first;
+        buildCrates(fromFile ? first : match.clientWorld(), 2);  // the same world as the server's
+        if (fromFile) match.clientWorld().swap(first);
+        const char* joins = fromFile ? "joined, its world read off a file" : "joined, its world made in code";
+        check(joins, match.join());
+
+        Scene fresh;
+        buildCrates(fresh, 2);
+        match.clientWorld().swap(fresh);
+        const EntityId crate = match.serverWorld().entityAt(match.clientWorld().entityAt(1).slot());
+        match.serverWorld().get<Transform>(crate).position.y = 9.0f;
+        const auto frame = [&]() { match.frame(); };
+        const auto moved = [&]() {
+            const Transform* at = match.clientWorld().tryGet<Transform>(match.mirrorOf(crate));
+            return at && at->position.y > 8.0f;
+        };
+        check("  what the server says of a crate reaches the new world", pumpUntil(frame, moved, 80));
+        int crates = 0;
+        match.clientWorld().forEach<Rigidbody>([&](EntityId, const Rigidbody&) { ++crates; });
+        check("  its own crate, not a second one beside it", crates == 2);
+    }
+
+    // Replaced before any session, after the host told the session its world: the next join
+    // shares the world as it is then, not the one it was told.
+    // The world it was told lacks a crate the world it shares has, at a slot of its own.
+    const ScopedEngineSchema wire;
+    SpawnMatch match(3);
+    Scene told;
+    buildCrates(told, 2);
+    match.clientWorld().swap(told);
+    match.client().setWorld(0, match.clientWorld());
+    match.frame();
+    Scene loaded;
+    buildCrates(loaded, 3);
+    match.clientWorld().swap(loaded);
+    match.frame();
+    check("joined after its world was replaced offline", match.joinTheWorldItWasTold());
+    for (int i = 0; i < 30; ++i) match.frame();
+    int crates = 0;
+    match.clientWorld().forEach<Rigidbody>([&](EntityId, const Rigidbody&) { ++crates; });
+    check("  the server's crates are the world's own, not built beside them", crates == 3);
+}
+
+// A client leaves and joins again: what the server made is built once, not beside a leftover of
+// the session before.
+void testAClientJoiningAgainBuildsTheServersThingsOnce() {
+    std::printf("A client that leaves and joins again:\n");
+
+    const ScopedEngineSchema wire;
+    SpawnMatch match(2);
+    const std::string path = scratchPrefab("net_spawn_rejoin_test.json");
+    check("a prefab is written", writeSpawnablePrefab(path, match.resources(), 2));
+    check("the client joins", match.join());
+    const EntityId spawned = match.server().spawn(match.serverWorld(), match.resources(), path, Transform{});
+    const auto frame = [&]() { match.frame(); };
+    const auto built = [&]() { return match.isBuilt(spawned, 2); };
+    check("the spawn is built on the client", pumpUntil(frame, built, 80));
+    const EntityId first = match.mirrorOf(spawned);
+
+    match.leave();
+    check("leaving, the session's spawn leaves the client", !match.clientWorld().isAlive(first));
+
+    check("it joins again", match.join());
+    check("  the spawn built again", pumpUntil(frame, built, 80));
+    int copies = 0;
+    match.clientWorld().forEach<Name>([&](EntityId, const Name& name) {
+        copies += std::string_view(name.value) == "SpawnedThing" ? 1 : 0;
+    });
+    check("  once", copies == 1);
+}
+
+// A client makes entities of its own while it plays - a menu, an effect - in whatever slot is
+// free, and the server spawns into whatever slot it has: neither ever writes over the other.
+void testAClientsOwnEntityIsNeverWrittenOver() {
+    std::printf("An entity of the client's own, where the server spawns:\n");
+
+    const ScopedEngineSchema wire;
+    SpawnMatch match(2);
+
+    const std::string path = scratchPrefab("net_spawn_beside_test.json");
+    check("a prefab is written", writeSpawnablePrefab(path, match.resources(), 2));
+    check("the client joins", match.join());
+
+    // The server spawns; before a word of it reaches the client, the client has made something
+    // of its own in that very slot.
+    const EntityId spawned = match.server().spawn(match.serverWorld(), match.resources(), path, Transform{});
+    const EntityId own     = match.clientWorld().createEntityAt(spawned.slot());
+    check("the client holds an entity of its own in the slot the server spawned into", bool(own));
+    match.clientWorld().add(own, makeName("Menu"));
+    match.clientWorld().add(own, Transform{});
+
+    const auto frame = [&]() { match.frame(); };
+    const auto built = [&]() { return match.isBuilt(spawned, 2); };
+    check("the spawn is built on the client", pumpUntil(frame, built, 80));
+    check("  beside the client's own, not into it", match.mirrorOf(spawned) != own);
+    check(
+        "the client's own is untouched",
+        match.clientWorld().isAlive(own) && !match.clientWorld().has<PrefabInstance>(own)
+            && std::string_view(match.clientWorld().get<Name>(own).value) == "Menu"
+    );
+
+    match.serverWorld().get<Transform>(spawned).position = {4.0f, 0.0f, 0.0f};
+    const auto moved = [&]() {
+        const EntityId mirror = match.mirrorOf(spawned);
+        return match.clientWorld().isAlive(mirror)
+            && std::abs(match.clientWorld().get<Transform>(mirror).position.x - 4.0f) < 0.01f;
+    };
+    check("what the server says of its spawn reaches the spawn", pumpUntil(frame, moved, 80));
+    check("  and not the client's own", std::abs(match.clientWorld().get<Transform>(own).position.x) < 1e-6f);
+
+    HierarchyOperations::destroyHierarchy(match.serverWorld(), spawned);
+    const EntityId mirror = match.mirrorOf(spawned);
+    check(
+        "the server's spawn leaves the client when it goes",
+        pumpUntil(frame, [&]() { return !match.clientWorld().isAlive(mirror); }, 80)
+    );
+    check("  and the client's own stays", match.clientWorld().isAlive(own));
 }
 
 } // namespace
@@ -972,5 +1162,9 @@ void runNetReplicationTests() {
     testABurstOfSpawnsArrivesBuiltRatherThanBare();
     testAPlayerWhoJoinsLateSeesWhatWasSpawned();
     testASpawnedStaticBodyKeepsItsExactPose();
+    testWhatEachEndRunsItselfIsNeverSent();
     testASlotSpawnedIntoAgainBuildsTheNewThing();
+    testAClientsOwnEntityIsNeverWrittenOver();
+    testAClientJoiningAgainBuildsTheServersThingsOnce();
+    testAWorldReplacedMidSessionIsAdoptedAgain();
 }

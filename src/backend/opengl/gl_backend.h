@@ -20,6 +20,8 @@
 #include "storage/gl_atmosphere.h"
 #include "storage/gl_bloom.h"
 #include "frame/gl_camera.h"
+#include "frame/gl_ocean.h"
+#include "storage/gl_ocean_fields.h"
 #include "storage/gl_cluster_grid.h"
 #include "offline/gl_cube_convolver.h"
 #include "storage/gl_fog_volume.h"
@@ -231,8 +233,9 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
          * @brief Keep the IBL product set showing the procedural atmosphere.
          *
          * A sky whose sun and moon have only drifted since the last frame (SkyParams::driftsFrom)
-         * is baked a step a frame and swapped in once complete, the next bake starting from
-         * where the sun is then, so a moving sun costs no frame the whole bake. Anything else -
+         * is baked a step a frame - more while it runs ahead of the sky shown, so a fast sun's
+         * light keeps pace - and swapped in once complete, the next bake starting from where
+         * the sun is then, so a moving sun costs no frame the whole bake. Anything else -
          * the first sky, a changed value, a jump - is baked at once, so nothing captured from
          * the IBL meanwhile shows a sky the scene has left.
          *
@@ -286,6 +289,7 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         std::unordered_map<std::string, std::unique_ptr<Vkm::GL::Texture2D>> m_chromeImages;
 
         GLCamera m_camera;
+        GLOcean  m_ocean;
         GLLights m_lights;
 
         GLShadowAtlas m_shadowAtlas;
@@ -308,6 +312,7 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         GLClusterGrid m_clusterGrid;  ///< Forward+ per-cluster light lists (compute-filled).
         GLFogVolume   m_fog;          ///< Froxel volumetric-fog volumes (compute-filled).
 
+        GLOceanFields      m_oceanFields;  ///< The ocean's ripple fields and shore.
         GLIrradianceVolume m_irradiance;  ///< Baked SH irradiance volume (GI).
         GLIrradianceBaker  m_irradianceBaker;
 

@@ -32,6 +32,7 @@ struct LiveParticles {
         EntityId              emitter;
         std::vector<Particle> particles;
         float                 spawnAccumulator = 0.0f;  ///< Fractional spawns carried to the next frame.
+        bool                  fired = false;            ///< Whether it has spawned anything yet.
         uint64_t              seen = 0;                 ///< Last simulation step that found its emitter.
     };
 

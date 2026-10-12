@@ -7,10 +7,13 @@
 
 #include <nlohmann/json.hpp>
 
+#include "debug/engine_error_log.h"
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
 #include "ecs/component/ui/ui_scroll.h"
+#include "ecs/component/ui/ui_slider.h"
+#include "ecs/component/ui/ui_toggle.h"
 #include "ecs/component/ui/ui_text.h"
 #include "system/ui/ui_system.h"
 #include "system/ui/ui_events.h"
@@ -24,6 +27,9 @@
 #include "system/ui/text_layout.h"
 #include "io/scene/component_serializer.h"
 #include "io/scene/scene_serializer.h"
+#include "ecs/component/render/camera.h"
+#include "system/ui/screen_view.h"
+#include "system/hierarchy/hierarchy_system.h"
 
 namespace {
 
@@ -170,6 +176,29 @@ void testTheCommonCaseHasAName() {
         "  leaving the other fields at their defaults",
         element.visible && element.blocksPointer && !element.clipChildren
     );
+}
+
+void testOpacityFadesASubtree() {
+    std::printf("An element's opacity, down its subtree:\n");
+
+    Scene scene;
+    const EntityId canvas = addCanvas(scene);
+    const EntityId panel  = addBox(scene, canvas, {10.0f, 10.0f}, {100.0f, 50.0f});
+    const EntityId child  = addBox(scene, panel, {0.0f, 0.0f}, {10.0f, 10.0f});
+    UIImage dim;
+    dim.color = {1.0f, 1.0f, 1.0f, 0.8f};
+    scene.add(panel, dim);
+    scene.add(child, dim);
+
+    UIFrame ui(scene);
+    scene.get<UIElement>(panel).opacity = 0.5f;
+    scene.get<UIElement>(child).opacity = 0.5f;
+    const UIDrawData& half = ui.run();
+    check("an element draws at its opacity", std::abs(half.vertices[0].color.a - 0.4f) < 1e-4f);
+    check("  and its child at both theirs", std::abs(half.vertices[6].color.a - 0.2f) < 1e-4f);
+
+    scene.get<UIElement>(panel).opacity = 0.0f;
+    check("faded out, the subtree draws nothing", ui.run().commands.empty());
 }
 
 void testAnElementCanFillItsParent() {
@@ -719,6 +748,137 @@ void testAHeldButtonFollowsTheDrag() {
         nearly(button.resolvedSize.x, laidOut)
             && button.resolvedSize.x > 40.0f
             && nearly(button.resolvedSize.y, 20.0f)
+    );
+}
+
+// A slider is the drag two projects wrote for themselves: the value follows a held press
+// across the track, snaps to its step, and its fill and knob stand where it says.
+void testASliderFollowsTheDrag() {
+    std::printf("A slider:\n");
+
+    Scene scene;
+    const EntityId canvas = addCanvas(scene);
+    const EntityId track  = addBox(scene, canvas, {0.0f, 0.0f}, {100.0f, 20.0f});
+    UIButton grab;
+    grab.eventId = "volume";
+    scene.add(track, std::move(grab));
+    const EntityId fill = addBox(scene, track, {0.0f, 0.0f}, {0.0f, 20.0f});
+    scene.get<UIElement>(fill).relativeSize.y = 0.0f;
+    const EntityId knob = addElement(scene, track, {0.0f, 0.5f}, {0.5f, 0.5f}, {0.0f, 0.0f}, {10.0f, 10.0f});
+    UISlider slider;
+    slider.maxValue = 10.0f;
+    slider.fill     = fill;
+    slider.knob     = knob;
+    scene.add(track, std::move(slider));
+
+    UIFrame ui(scene);
+    ui.frame.input.reset();
+    std::vector<UIValueEvent> heard;
+    ui.frame.events.subscribe<UIValueEvent>([&](const UIValueEvent& e) { heard.push_back(e); });
+    const UISlider& value = scene.get<UISlider>(track);
+
+    pointAt(ui, {25.0f, 10.0f});
+    ui.run();
+    ui.frame.events.flush();
+    check("hovering moves nothing", heard.empty() && nearly(value.value, 0.0f));
+
+    pointAt(ui, {25.0f, 10.0f}, 0.0f, PRESSED);
+    ui.run();
+    ui.frame.events.flush();
+    check("a press sets the value where it lands", nearly(value.value, 2.5f));
+    check(
+        "  and says so once, with the button's event id",
+        heard.size() == 1 && heard[0].eventId == "volume" && nearly(heard[0].value, 2.5f)
+    );
+    const float filled = scene.get<UIElement>(fill).screenRect.size.x;
+    check("  its fill reaching it the same frame", nearly(filled, 25.0f));
+    check("  and its knob standing on it", nearly(scene.get<UIElement>(knob).screenRect.pos.x + 5.0f, 25.0f));
+
+    ui.run();
+    ui.frame.events.flush();
+    check("  held still, it says nothing more", heard.size() == 1);
+
+    pointAt(ui, {300.0f, 10.0f}, 0.0f, PRESSED);
+    ui.run();
+    check("dragged past the end, it stops at the top", nearly(value.value, 10.0f));
+
+    pointAt(ui, {300.0f, 10.0f}, 0.0f, RELEASED);
+    ui.run();
+    scene.get<UISlider>(track).step = 2.0f;
+    pointAt(ui, {33.0f, 10.0f}, 0.0f, PRESSED);
+    ui.run();
+    check("a step snaps the drag to it", nearly(value.value, 4.0f));
+
+    pointAt(ui, {33.0f, 10.0f}, 0.0f, RELEASED);
+    ui.run();
+    ui.frame.events.flush();
+    const size_t before = heard.size();
+    scene.get<UISlider>(track).value = 5.0f;
+    ui.run();
+    ui.frame.events.flush();
+    check("a value written by the game shows", nearly(scene.get<UIElement>(fill).screenRect.size.x, 50.0f));
+    check("  without telling the game what it did", heard.size() == before);
+}
+
+// A toggle flips on its click and says so, its knob crossing to the end that says
+// which, and rests in its own colour while on.
+void testAToggleFlipsOnItsClick() {
+    std::printf("A toggle:\n");
+
+    Scene scene;
+    const EntityId canvas = addCanvas(scene);
+    const EntityId pill   = addBox(scene, canvas, {0.0f, 0.0f}, {60.0f, 30.0f});
+    UIButton press;
+    press.eventId = "radar";
+    scene.add(pill, std::move(press));
+    const EntityId knob = addElement(scene, pill, {0.0f, 0.5f}, {0.0f, 0.5f}, {0.0f, 0.0f}, {30.0f, 30.0f});
+    UIToggle toggle;
+    toggle.onColor = {0.0f, 1.0f, 0.0f, 1.0f};
+    toggle.knob    = knob;
+    scene.add(pill, std::move(toggle));
+
+    UIFrame ui(scene);
+    ui.frame.input.reset();
+    std::vector<std::string> order;
+    float said = -1.0f;
+    ui.frame.events.subscribe<UIValueEvent>([&](const UIValueEvent& e) {
+        order.push_back("value");
+        said = e.value;
+    });
+    ui.frame.events.subscribe<UIClickEvent>([&](const UIClickEvent&) { order.push_back("click"); });
+
+    pointAt(ui, {10.0f, 10.0f}, 0.0f, PRESSED);
+    ui.run();
+    pointAt(ui, {10.0f, 10.0f}, 0.0f, RELEASED);
+    ui.run();
+    ui.frame.events.flush();
+    check("a click turns it on", scene.get<UIToggle>(pill).on);
+    check("  its knob crossing the same frame", nearly(scene.get<UIElement>(knob).screenRect.pos.x, 30.0f));
+    check(
+        "  saying so beside the click",
+        order.size() == 2 && std::count(order.begin(), order.end(), "value") == 1 && nearly(said, 1.0f)
+    );
+
+    pointAt(ui, {400.0f, 400.0f});
+    const UIDrawData& resting = ui.run();
+    check("the knob crosses to the right end", nearly(scene.get<UIElement>(knob).screenRect.pos.x, 30.0f));
+    check(
+        "  and the toggle rests in its on colour",
+        !resting.vertices.empty() && resting.vertices[0].color == scene.get<UIToggle>(pill).onColor
+    );
+
+    pointAt(ui, {10.0f, 10.0f}, 0.0f, PRESSED);
+    ui.run();
+    pointAt(ui, {10.0f, 10.0f}, 0.0f, RELEASED);
+    ui.run();
+    ui.frame.events.flush();
+    check("a second click turns it off", !scene.get<UIToggle>(pill).on && nearly(said, 0.0f));
+    pointAt(ui, {400.0f, 400.0f});
+    const UIDrawData& off = ui.run();
+    check("  the knob back at the left", nearly(scene.get<UIElement>(knob).screenRect.pos.x, 0.0f));
+    check(
+        "  and the toggle in its normal tint",
+        !off.vertices.empty() && off.vertices[0].color == scene.get<UIButton>(pill).normalColor
     );
 }
 
@@ -1338,6 +1498,24 @@ void testUIComponentsRoundTrip() {
     text.wrap = true;
     scene.add(view, std::move(text));
 
+    // A slider and a toggle name their parts, which have to come back as the same entities.
+    const EntityId track = addBox(scene, canvas, {0.0f, 100.0f}, {100.0f, 20.0f});
+    const EntityId fill  = addBox(scene, track, {0.0f, 0.0f}, {0.0f, 20.0f});
+    scene.add(fill, makeName("Fill"));
+    UISlider slider;
+    slider.value    = 3.0f;
+    slider.maxValue = 8.0f;
+    slider.step     = 0.5f;
+    slider.fill     = fill;
+    scene.add(track, std::move(slider));
+    const EntityId knob = addBox(scene, track, {0.0f, 0.0f}, {10.0f, 10.0f});
+    scene.add(knob, makeName("Knob"));
+    UIToggle toggle;
+    toggle.on      = true;
+    toggle.onColor = {0.1f, 0.2f, 0.3f, 1.0f};
+    toggle.knob    = knob;
+    scene.add(view, std::move(toggle));
+
     const std::filesystem::path path = runScratch() / "vkm_ui_roundtrip.json";
     check("the scene saves", SceneSerializer::save(scene, resources, path.string()));
 
@@ -1364,6 +1542,33 @@ void testUIComponentsRoundTrip() {
         );
         check("the text's wrap flag survived", loaded.get<UIText>(reloaded).wrap);
         check("  and its newline", loaded.get<UIText>(reloaded).text == "two\nlines");
+    }
+
+    const auto named = [&](const char* name) {
+        EntityId found{};
+        loaded.forEach<Name>([&](EntityId id, Name& n) {
+            if (std::string_view(n.value) == name) found = id;
+        });
+        return found;
+    };
+    EntityId slid{};
+    loaded.forEach<UISlider>([&](EntityId id, UISlider&) { slid = id; });
+    check("the slider came back", slid != EntityId{});
+    if (slid) {
+        const UISlider& back = loaded.get<UISlider>(slid);
+        check(
+            "  with its value, range and step",
+            nearly(back.value, 3.0f) && nearly(back.maxValue, 8.0f) && nearly(back.step, 0.5f)
+        );
+        check("  its fill the same entity", back.fill == named("Fill") && back.fill);
+        check("  and no knob, as it had none", !back.knob);
+    }
+    if (reloaded && loaded.has<UIToggle>(reloaded)) {
+        const UIToggle& back = loaded.get<UIToggle>(reloaded);
+        check("the toggle came back on, in its colour", back.on && nearly(back.onColor.z, 0.3f));
+        check("  its knob the same entity", back.knob == named("Knob") && back.knob);
+    } else {
+        check("the toggle came back", false);
     }
     std::filesystem::remove(path);
 }
@@ -1406,12 +1611,95 @@ void testAFileThatIsNotAFontIsRefusedRatherThanRead() {
     std::filesystem::remove_all(dir, ec);
 }
 
+// A project's fonts baked again - the project opened twice, its font changed between - are the
+// new bake, behind the handles already given out; one that will not bake is the author's to hear.
+void testAProjectsFontsBakeAsItOpens() {
+    std::printf("A project's own fonts:\n");
+
+    ResourceManager resources;
+    const std::filesystem::path roboto =
+        std::filesystem::path(VKM_ENGINE_DIR) / "assets" / "fonts" / "Roboto-Medium.ttf";
+    check("the engine's font is there to bake", std::filesystem::exists(roboto));
+    const std::vector<FontEntry> fonts = {FontEntry{"ui:project", roboto.string()}};
+    bakeProjectFonts(resources, fonts, 32.0f);
+    const Handle<FontAsset> first  = resources.findByName<FontAsset>("ui:project");
+    const float             before = first ? resources.get(first).lineHeight : 0.0f;
+    bakeProjectFonts(resources, fonts, 64.0f);
+    const bool again = first && resources.findByName<FontAsset>("ui:project") == first
+        && resources.get(first).lineHeight > before * 1.5f;
+    check("a font baked again is the new bake, behind the same handle", again);
+
+    EngineErrorLog errors;
+    setErrorSink(&errors);
+    bakeProjectFonts(resources, {FontEntry{"ui:gone", "fonts/absent.ttf"}}, 32.0f);
+    setErrorSink(nullptr);
+    const bool told = errors.entries().size() == 1 && errors.entries()[0].source == "fonts/absent.ttf";
+    check("  one that will not bake is reported to the author, by its file", told);
+}
+
+} // namespace
+
+namespace {
+
+// A game picks and labels through the view the scene is drawn in, which in the
+// editor's Play panel is a rect inside the window, not the window.
+void testTheScreenViewIsTheScenesRectNotTheWindow() {
+    std::printf("The screen view, offset in the window:\n");
+    Scene scene;
+    const EntityId eye = scene.createEntity();
+    scene.add(eye, Transform{});
+    scene.add(eye, Camera{});
+    TestFrame frame(scene);
+    frame.chrome.setViewport(100, 50, 400, 300);
+    const ScreenView view = ScreenView::of(scene, frame.window, frame.chrome);
+    check("a camera and a rect make a view", view.valid());
+
+    const std::optional<Math::Ray> middle = view.rayThrough({300.0f, 200.0f});
+    const bool ahead = middle && sameDirection(middle->direction, {0.0f, 0.0f, -1.0f});
+    check("the view's middle looks straight ahead", ahead);
+    check("  and a point beside the view is in no view", !view.rayThrough({50.0f, 20.0f}));
+
+    // Out along the ray under a point, and back onto a canvas: the same point.
+    const std::optional<Math::Ray> ray = view.rayThrough({180.0f, 120.0f});
+    UICanvas fixed;
+    fixed.scaleMode = UICanvas::ScaleMode::Fixed;
+    std::optional<glm::vec2> back;
+    if (ray) back = view.toCanvas(ray->origin + ray->direction * 7.0f, fixed);
+    const bool landed = back && glm::length(*back - glm::vec2(80.0f, 70.0f)) < 0.01f;
+    check("a point of the world lands on the canvas where its ray left", landed);
+
+    UICanvas scaled;
+    scaled.referenceHeight = 600.0f;
+    const std::optional<glm::vec2> front = view.toCanvas({0.0f, 0.0f, -5.0f}, scaled);
+    const bool middleOfIt = front && glm::length(*front - glm::vec2(400.0f, 300.0f)) < 0.01f;
+    check("  in the canvas's own pixels, scaled as the UI is", middleOfIt);
+    check("  and a point behind the camera is on no canvas", !view.toCanvas({0.0f, 0.0f, 5.0f}, scaled));
+
+    // A camera on a rig sees from where the rig has carried it, as the renderer draws it.
+    Scene rigged;
+    const EntityId rig = rigged.createEntity();
+    rigged.add(rig, Transform{{10.0f, 0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 0.0f}, glm::vec3(1.0f)});
+    const EntityId carried = rigged.createEntity();
+    rigged.add(carried, Transform{});
+    rigged.add(carried, Camera{});
+    HierarchyOperations::setParent(rigged, carried, rig);
+    TestFrame rigFrame(rigged);
+    rigFrame.chrome.setViewport(0, 0, 400, 300);
+    HierarchySystem hierarchy;
+    hierarchy.update(rigFrame.ctx);
+    const std::optional<Math::Ray> fromRig =
+        ScreenView::of(rigged, rigFrame.window, rigFrame.chrome).rayThrough({200.0f, 150.0f});
+    const bool carriedAlong = fromRig && glm::length(fromRig->origin - glm::vec3(10.0f, 0.0f, 0.0f)) < 0.5f;
+    check("a camera on a rig looks from where the rig carried it", carriedAlong);
+}
+
 } // namespace
 
 void runUITests() {
     testLayoutResolvesRects();
     testTheCommonCaseHasAName();
     testCanvasScaleAndVisibility();
+    testOpacityFadesASubtree();
     testAnElementCanFillItsParent();
     testCommandsMergeUntilTheStateChanges();
     testClippingBoundsPixelsAndPointer();
@@ -1421,6 +1709,8 @@ void runUITests() {
     testAReleaseTheChromeTakesDisarmsThePress();
     testAPressOnTheUIIsTheUIs();
     testAHeldButtonFollowsTheDrag();
+    testASliderFollowsTheDrag();
+    testAToggleFlipsOnItsClick();
     testALockedCursorPointsAtNothing();
     testAButtonKeepsItsFadeInEveryState();
     testTheWheelGoesWhereTheClickGoes();
@@ -1436,4 +1726,6 @@ void runUITests() {
     testAPictureIsSavedByName();
     testUIComponentsRoundTrip();
     testAFileThatIsNotAFontIsRefusedRatherThanRead();
+    testAProjectsFontsBakeAsItOpens();
+    testTheScreenViewIsTheScenesRectNotTheWindow();
 }

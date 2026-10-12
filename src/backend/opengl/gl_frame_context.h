@@ -28,6 +28,7 @@ class GLFogVolume;
 class GLIrradianceVolume;
 class GLSkinPalette;
 class GLObjectBuffer;
+class GLOceanFields;
 struct SkyParams;
 
 /**
@@ -56,6 +57,7 @@ struct GLFrameContext {
     GLIrradianceVolume& irradiance;      ///< Baked SH irradiance volume (see GLPass::bindAmbient).
     GLSkinPalette&     skinPalette;      ///< Every skinned item's bone palette, uploaded once per frame.
     const GLObjectBuffer& objects;       ///< Every object's model (and first bone), uploaded once per frame.
+    GLOceanFields&     oceanFields;      ///< The ocean's ripples and shore, for the water's pixels.
 
     /**
      * @brief The camera's objects by draw bucket, as indices into RenderView::objects.

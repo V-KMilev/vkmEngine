@@ -27,13 +27,17 @@
 #include "ecs/component/render/light.h"
 #include "ecs/component/render/lod.h"
 #include "ecs/component/render/mesh.h"
+#include "ecs/component/render/ocean.h"
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/component/render/reflection_probe.h"
 #include "ecs/component/ui/ui_button.h"
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
+#include "ecs/component/core/net_local.h"
 #include "ecs/component/ui/ui_scroll.h"
+#include "ecs/component/ui/ui_slider.h"
+#include "ecs/component/ui/ui_toggle.h"
 #include "ecs/component/ui/ui_text.h"
 #include "system/script/script_component.h"
 
@@ -71,6 +75,7 @@ class ResourceManager;
     R(AudioSource,         "AudioSource")         \
     P(AudioListener,       "AudioListener")       \
     P(IrradianceVolume,    "IrradianceVolume")    \
+    P(Ocean,               "Ocean")               \
     P(ReflectionProbe,     "ReflectionProbe")     \
     P(Animation,           "Animation")           \
     R(Animator,            "Animator")            \
@@ -81,7 +86,10 @@ class ResourceManager;
     R(UIImage,             "UIImage")             \
     P(UIText,              "UIText")              \
     P(UIButton,            "UIButton")            \
-    P(UIScroll,            "UIScroll")
+    P(UIScroll,            "UIScroll")            \
+    E(UISlider,            "UISlider")            \
+    E(UIToggle,            "UIToggle")            \
+    P(NetLocal,            "NetLocal")
 
 /**
  * @brief Per-component (de)serialization to JSON.
@@ -201,6 +209,9 @@ namespace ComponentSerializer {
     nlohmann::json save(const IrradianceVolume&);
     void load(const nlohmann::json&, IrradianceVolume&);
 
+    nlohmann::json save(const Ocean&);
+    void load(const nlohmann::json&, Ocean&);
+
     nlohmann::json save(const ReflectionProbe&);
     void load(const nlohmann::json&, ReflectionProbe&);
 
@@ -221,6 +232,15 @@ namespace ComponentSerializer {
 
     nlohmann::json save(const UIScroll&);
     void load(const nlohmann::json&, UIScroll&);
+
+    nlohmann::json save(const NetLocal&);
+    void load(const nlohmann::json&, NetLocal&);
+
+    nlohmann::json save(const UISlider&, const EntityNamer&);
+    void load(const nlohmann::json&, UISlider&, const EntityResolver&);
+
+    nlohmann::json save(const UIToggle&, const EntityNamer&);
+    void load(const nlohmann::json&, UIToggle&, const EntityResolver&);
 
     /**
      * @brief Hierarchy: only `parent` is serialized, as the parent's slot.

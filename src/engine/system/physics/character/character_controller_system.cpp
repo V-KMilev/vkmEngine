@@ -134,6 +134,35 @@ bool findStep(
     return rise > Physics::CONTACT_TOLERANCE && rise <= stepHeight;
 }
 
+// Of moveInput's speed along a face being climbed, the share kept: a climber edges sideways.
+constexpr float CLIMB_SIDE_SHARE = 0.5f;
+// Of jumpSpeed, the share a leap off a face goes out from it at.
+constexpr float CLIMB_LEAP_SHARE = 0.5f;
+
+/**
+ * @brief The velocity a climbing character closes on: up or down the face for the part of
+ *        @p flatInput into or away from it, along it for the rest.
+ *
+ * @param flatInput   moveInput, level.
+ * @param climbNormal Out of the face; only its level part counts.
+ * @param climbSpeed  The fastest up or down.
+ * @param[out] out    The level unit normal used.
+ * @return The target velocity.
+ */
+glm::vec3 climbTarget(
+    const glm::vec3& flatInput,
+    const glm::vec3& climbNormal,
+    float climbSpeed,
+    glm::vec3& out
+) {
+    out = {climbNormal.x, 0.0f, climbNormal.z};
+    const float lengthSq = glm::dot(out, out);
+    out = lengthSq > Physics::DEGENERATE_SQ ? out / std::sqrt(lengthSq) : glm::vec3(0.0f, 0.0f, 1.0f);
+    const float     into  = -glm::dot(flatInput, out);
+    const glm::vec3 along = flatInput + out * into;
+    return Math::WORLD_UP * glm::clamp(into, -climbSpeed, climbSpeed) + along * CLIMB_SIDE_SHARE;
+}
+
 // Seconds to mount a step, independent of walking speed.
 constexpr float STEP_CLIMB_TIME = 0.12f;
 
@@ -154,7 +183,18 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
 
     scene.forEach<CharacterController, Rigidbody>([&](EntityId id, CharacterController& cc, Rigidbody& rb) {
         // Left where the authority put it, grounded included (see netEncode for CharacterController).
-        if (!ctx.net.simulates(id)) return;
+        if (!ctx.net.simulates(scene, id)) return;
+        // A body not Dynamic is placed by script, not moved by velocity: there is nothing to steer, and
+        // nothing of walking carries over - no jump pressed meanwhile fires once it moves again.
+        if (rb.motion != RigidbodyMotion::Dynamic) {
+            cc.grounded      = false;
+            cc.groundNormal  = Math::WORLD_UP;
+            cc.stepping      = false;
+            cc.climbing      = false;
+            cc.jumpRequested = false;
+            cc.walkSpeed     = 0.0f;
+            return;
+        }
 
         // A wall is a resolved contact too, and standing on one is not standing.
         const float slopeLimit = std::cos(glm::radians(glm::clamp(cc.maxSlopeAngle, 0.0f, 90.0f)));
@@ -176,8 +216,31 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
         const bool wants = asked > MOVE_SPEED_SQ || cc.jumpRequested;
         if (wants && rb.sleeping) Rigidbody::wake(rb);
 
-        // Deflected before the ground projection, so the slope's vertical follows the final direction.
         const glm::vec3 flatInput = {cc.moveInput.x, 0.0f, cc.moveInput.z};
+
+        // On a face, nothing of walking applies: steered toward the climb at `acceleration`, with the
+        // gravity the step to come adds (PhysicsSystem's integrateForces) taken off ahead.
+        if (cc.climbing) {
+            cc.stepping = false;
+            glm::vec3       out(0.0f);
+            const glm::vec3 target   = climbTarget(flatInput, cc.climbNormal, cc.climbSpeed, out);
+            glm::vec3       velocity = rb.linearVelocity;
+            const glm::vec3 delta    = target - velocity;
+            const float     distance = glm::length(delta);
+            const float     step     = cc.acceleration * dt;
+            velocity += distance > step ? delta * (step / distance) : delta;
+            if (cc.jumpRequested) {
+                velocity = Math::WORLD_UP * cc.jumpSpeed + out * (CLIMB_LEAP_SHARE * cc.jumpSpeed);
+            } else {
+                velocity -= scene.physics().gravity * rb.gravityScale * dt;
+            }
+            // Held for this tick alone: a character whose hold is gone falls rather than hangs.
+            cc.climbing       = false;
+            cc.jumpRequested  = false;
+            cc.walkSpeed      = glm::length(glm::vec3(velocity.x, 0.0f, velocity.z));
+            rb.linearVelocity = velocity;
+            return;
+        }
         const float inputLenSq = glm::dot(flatInput, flatInput);
         const bool blocked = glm::dot(rb.blockNormal, Math::WORLD_UP) < slopeLimit;
 
@@ -235,6 +298,7 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
             : 0.0f;
 
         glm::vec3 velocity = rb.linearVelocity;
+        // Deflected before the ground projection, so the slope's vertical follows the final direction.
         glm::vec3 target = cc.stepping
             ? cc.moveInput
             : deflectAlongBlock(cc.moveInput, rb.blockNormal, slopeLimit);
@@ -250,7 +314,20 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
         }
 
         // Capped, not exponential, so acceleration means m/s^2 at every speed.
-        const float rate = cc.acceleration * (cc.grounded ? 1.0f : glm::max(cc.airControl, 0.0f));
+        float rate = cc.acceleration * (cc.grounded ? 1.0f : glm::max(cc.airControl, 0.0f));
+
+        // A shove - horizontal speed past both what is asked for and what this steering last left - is
+        // carried, bleeding off at knockbackDrag, and steered only as in the air while it lasts.
+        const glm::vec3 flatVelocity = {velocity.x, 0.0f, velocity.z};
+        const float     speed        = glm::length(flatVelocity);
+        const float     wanted       = glm::length(glm::vec3(target.x, 0.0f, target.z));
+        const float     kept         = glm::max(wanted, cc.walkSpeed);
+        const float     carried      = speed - kept;
+        const bool      shoved       = cc.knockbackDrag > 0.0f && carried > Physics::CONTACT_TOLERANCE;
+        if (shoved) {
+            velocity -= flatVelocity * (glm::min(carried, cc.knockbackDrag * dt) / speed);
+            rate = cc.acceleration * glm::max(cc.airControl, 0.0f);
+        }
         const glm::vec3 delta = target - velocity;
         const float distance = glm::length(delta);
         const float step = rate * dt;
@@ -276,6 +353,9 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
             cc.jumpRequested = false;
         }
 
+        // What steering left, less any shove still carried, is the walk the next shove is measured from.
+        const float left = glm::length(glm::vec3(velocity.x, 0.0f, velocity.z));
+        cc.walkSpeed     = shoved ? glm::min(left, kept) : left;
         rb.linearVelocity = velocity;
     });
 

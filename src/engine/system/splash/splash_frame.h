@@ -12,6 +12,7 @@ namespace Vkm::Engine {
  */
 struct SplashFrame {
     std::string key;              ///< Image path; empty means there is no splash.
+    std::string caption;          ///< An image of a line shown small at the screen's foot with it; or none.
     float       opacity = 0.0f;   ///< 0..1.
 
     bool isShowing() const { return !key.empty(); }

@@ -1,11 +1,8 @@
-#define VKM_LOG_CATEGORY "SCRIPT"
-
 #include "system/script/behavior.h"
 
 #include <utility>
 
-#include "logger.h"
-
+#include "system/ocean/ocean_data.h"
 #include "system/script/script_component.h"
 
 namespace Vkm::Engine {
@@ -25,16 +22,27 @@ Behavior* findBehaviorNamed(Scene& scene, EntityId entity, std::string_view type
     return const_cast<Behavior*>(findBehaviorNamed(std::as_const(scene), entity, typeName));
 }
 
-void Behavior::warnSpawnOnClient() {
-    static bool s_warned = false;
-    if (s_warned) return;
-    s_warned = true;
-    LOG_WARNING(
-        "A behavior spawned an entity on a connected client. It exists "
-        "here alone, and its slot is one the server may give to "
-        "something it spawns; see networking.md, \"Identity is the "
-        "scene slot\""
-    );
+EntityId findEntityWithBehaviorNamed(Scene& scene, std::string_view typeName) {
+    EntityId found{};
+    scene.forEach<ScriptComponent>([&](EntityId entity, ScriptComponent&) {
+        if (found && found.slot() < entity.slot()) return;
+        if (findBehaviorNamed(scene, entity, typeName)) found = entity;
+    });
+    return found;
+}
+
+const OceanData* Behavior::ocean() const {
+    const OceanData* sea = m_ctx->ocean;
+    return sea && sea->present ? sea : nullptr;
+}
+
+ScreenView Behavior::screen() const {
+    if (!m_ctx->window || !m_ctx->chrome) return {};
+    return ScreenView::of(*m_ctx->scene, *m_ctx->window, *m_ctx->chrome);
+}
+
+std::optional<Math::Ray> Behavior::pointerRay() const {
+    return screen().rayThrough(m_ctx->input->pointer());
 }
 
 } // namespace Vkm::Engine

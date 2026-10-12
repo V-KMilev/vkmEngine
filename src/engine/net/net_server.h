@@ -15,6 +15,8 @@
 #include "net/replication/snapshot.h"
 #include "net/transport/connection.h"
 #include "net/transport/join_cookie.h"
+#include "net/transport/messages.h"
+#include "net/player_message.h"
 #include "net/wire/bit_stream.h"
 #include "net/wire/protocol.h"
 
@@ -105,6 +107,9 @@ class NetServer {
         size_t playerCount() const { return m_peers.size(); }
 
         std::string describe() const;
+
+        /// What players sent since the last call, in the order each sent it; taken, so said once.
+        std::vector<PlayerMessageEvent> takeMessages();
 
     private:
         struct Peer;
@@ -233,6 +238,7 @@ class NetServer {
         uint32_t m_refusedFull     = 0;  ///< Joins refused because every seat was taken.
 
         std::vector<InputCommand> m_received;  ///< One command packet, decoded.
+        std::vector<PlayerMessageEvent> m_messages;  ///< Arrived, not yet taken.
 
         /// Frames a reply to an address that holds no seat.
         NetConnection m_unseated;

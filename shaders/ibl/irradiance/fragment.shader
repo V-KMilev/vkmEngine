@@ -2,22 +2,21 @@
  * IBL bake - cosine-weighted diffuse irradiance convolution.
  *
  * Output is irradiance over pi - what a white Lambertian surface facing that way reflects - so a
- * reader multiplies it by the albedo alone. A draw sums the azimuths of slice u_slice of u_slices,
- * each over the whole sample count, so the slices added together are the face.
+ * reader multiplies it by the albedo alone. Directions are drawn by the cosine itself, so each
+ * sample counts the same, and each reads the level whose texel covers its share of the
+ * hemisphere (Colbert and Krivanek, GPU Gems 3 ch. 20): a sun a few texels wide is averaged in
+ * rather than hit or missed.
  */
 in vec3 vLocalPos;
 
 out vec4 FragColor;
 
 layout(binding = BAKE_SLOT_SOURCE) uniform samplerCube u_envCube;
-uniform int u_slice;
-uniform int u_slices;
 
 #include "../../constants.glsl"
+#include "../../sampling.glsl"
 
-const float SAMPLE_DELTA = 0.025;
-const int   PHI_STEPS    = int(ceil(2.0 * PI / SAMPLE_DELTA));
-const int   THETA_STEPS  = int(ceil(0.5 * PI / SAMPLE_DELTA));
+const uint SAMPLE_COUNT = 1024u;
 
 void main() {
     vec3 N = normalize(vLocalPos);
@@ -26,22 +25,24 @@ void main() {
     vec3 right = normalize(cross(up, N));
     up = normalize(cross(N, right));
 
-    // Read at the level whose texel spans the step between samples, so a sun a few texels
-    // wide is averaged in rather than hit or missed by the grid.
-    float texelAngle = 0.5 * PI / float(textureSize(u_envCube, 0).x);
-    float lod        = max(log2(SAMPLE_DELTA / texelAngle), 0.0);
+    float envRes  = float(textureSize(u_envCube, 0).x);
+    float saTexel = 4.0 * PI / (6.0 * envRes * envRes);
 
     vec3 irradiance = vec3(0.0);
-    for (int i = PHI_STEPS * u_slice / u_slices; i < PHI_STEPS * (u_slice + 1) / u_slices; ++i) {
-        float phi = float(i) * SAMPLE_DELTA;
-        for (int j = 0; j < THETA_STEPS; ++j) {
-            float theta = float(j) * SAMPLE_DELTA;
-            vec3 tangentSample = vec3(sin(theta) * cos(phi), sin(theta) * sin(phi), cos(theta));
-            vec3 sampleVec = tangentSample.x * right + tangentSample.y * up + tangentSample.z * N;
-            irradiance += textureLod(u_envCube, sampleVec, lod).rgb * cos(theta) * sin(theta);
-        }
+    for (uint i = 0u; i < SAMPLE_COUNT; ++i) {
+        vec2  xi       = hammersley(i, SAMPLE_COUNT);
+        float phi      = 2.0 * PI * xi.x;
+        float cosTheta = sqrt(1.0 - xi.y);
+        float sinTheta = sqrt(xi.y);
+        vec3  L = (cos(phi) * sinTheta) * right + (sin(phi) * sinTheta) * up + cosTheta * N;
+
+        // pdf = cos / pi.
+        float pdf      = max(cosTheta, 1e-4) / PI;
+        float saSample = 1.0 / (float(SAMPLE_COUNT) * pdf);
+        float mip      = 0.5 * log2(saSample / saTexel);
+        irradiance += textureLod(u_envCube, L, max(mip, 0.0)).rgb;
     }
 
-    irradiance = PI * irradiance / float(PHI_STEPS * THETA_STEPS);
-    FragColor = vec4(irradiance, 1.0 / float(u_slices));
+    // The integral of L cos over the hemisphere is pi times the samples' mean; over pi, the mean.
+    FragColor = vec4(irradiance / float(SAMPLE_COUNT), 1.0);
 }

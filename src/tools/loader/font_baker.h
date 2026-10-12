@@ -1,12 +1,43 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
+#include "io/project.h"
 #include "resource/asset/font_asset.h"
 
 namespace Vkm::Engine {
 
 class ResourceManager;
+
+// The UI's fonts are baked at a height that scales with the display (a distance field magnifies
+// well but not forever); the cap keeps the worst case a 2048-square atlas.
+constexpr int   UI_FONT_REFERENCE_HEIGHT = 1080;
+constexpr float UI_FONT_BASE_PIXELS      = 64.0f;
+constexpr float UI_FONT_MAX_PIXELS       = 128.0f;
+
+/**
+ * @brief The height a UI font is baked at on a display @p displayHeight pixels tall.
+ *
+ * @param displayHeight The display's height in pixels; 0 or less when unknown.
+ * @return Pixels; UI_FONT_BASE_PIXELS for an unknown display.
+ */
+float uiFontPixels(int displayHeight);
+
+/**
+ * @brief Bake a project's own fonts (Project::fonts) at @p pixelHeight.
+ *
+ * Any number of times: each is baked again in place of what its name held, so a font whose file
+ * changed between two opens of a project is the new one. One that will not read is reported
+ * (reportError) - the editor shows it in its Errors panel - and its text draws nothing, or the
+ * last bake its name held. A name
+ * the project no longer lists keeps what it held until the host closes.
+ *
+ * @param resources   Receives the fonts.
+ * @param fonts       The project's list.
+ * @param pixelHeight Baked glyph height: uiFontPixels for the display.
+ */
+void bakeProjectFonts(ResourceManager& resources, const std::vector<FontEntry>& fonts, float pixelHeight);
 
 /**
  * @brief Bake a TrueType font into an SDF FontAsset registered in @p resources.
@@ -20,7 +51,8 @@ class ResourceManager;
  *
  * @param resources   Manager that takes ownership of the FontAsset.
  * @param ttfPath     Absolute path to the .ttf file to read.
- * @param name        Asset name for the FontAsset (its findByName key).
+ * @param name        Asset name for the FontAsset (its findByName key); one already held is
+ *                    baked again in place, its handle kept.
  * @param pixelHeight Baked glyph height; 64 is a good default for UI text.
  * @return Handle to the baked FontAsset, or an invalid handle on failure.
  */

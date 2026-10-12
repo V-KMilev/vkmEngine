@@ -10,6 +10,7 @@
 
 namespace Vkm::Engine {
 
+class NetNames;
 class NetSilenceMap;
 class Scene;
 
@@ -197,14 +198,14 @@ NetSnapshotStats writeSnapshot(
 /**
  * @brief Apply a snapshot body to @p scene.
  *
- * Entities are addressed by scene slot, which both ends agree on from the same
- * scene file; there is no mapping table.
+ * Entities are named by the server's slot; @p names says what each names here, and makes what
+ * this end has not heard of yet.
  *
  * @param scene   The world the body is applied to.
  * @param schema  What replicates, agreed with the sender.
  * @param in      The packet, at the start of the body.
- * @param touched Filled, when given, with the slots this snapshot said
- *                anything about.
+ * @param names   What the server's slots name on this end.
+ * @param touched Filled, when given, with the entities this snapshot said anything about.
  * @return False when the body is malformed. What was applied before the fault
  *         stays: nothing refused is confirmed, so the next snapshot says it again.
  */
@@ -212,7 +213,8 @@ bool readSnapshot(
     Scene& scene,
     const NetSchema& schema,
     BitReader& in,
-    std::vector<uint32_t>* touched = nullptr
+    NetNames& names,
+    std::vector<EntityId>* touched = nullptr
 );
 
 } // namespace Vkm::Engine

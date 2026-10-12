@@ -56,7 +56,7 @@ struct MaterialUBO {
     float alphaCutoff;
     int   type;          ///< MaterialType as int (the shader branches on Unlit / AlphaMask)
     int   textureFlags;  ///< Bit `1 << slot` set for each bound map (GLBindings::TextureSlots)
-    int   pad0;
+    int   waves;         ///< 1 where the scene's ocean moves the surface (shaders/ocean.glsl)
 };
 static_assert(sizeof(MaterialUBO) == 160, "MaterialUBO must match the std140 MaterialBlock layout");
 
@@ -106,6 +106,15 @@ class GLMaterial {
 
         MaterialType getType() const { return m_type; }
 
+        /**
+         * @brief Whether its shadow is cut by its alpha.
+         *
+         * A cutout's at its cutoff, a transparent one's dithered by its opacity
+         * (shaders/shadow/depth_masked), so a see-through part casts none. A transparent one wholly
+         * opaque - alpha 1, no map to say otherwise - casts as a solid.
+         */
+        bool cutsItsShadow() const { return m_cutsShadow; }
+
         /// Whether both faces draw: the passes leave culling off for its runs.
         bool doubleSided() const { return m_doubleSided; }
 
@@ -123,6 +132,7 @@ class GLMaterial {
         std::vector<TextureBinding>             m_textureBindings;
         MaterialType                            m_type = MaterialType::Opaque;
         bool                                    m_doubleSided = false;
+        bool                                    m_cutsShadow = false;  ///< See cutsItsShadow().
         uint64_t                                m_uploadId = 0;
 };
 

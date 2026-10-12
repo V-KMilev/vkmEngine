@@ -24,12 +24,15 @@
 #include "ecs/component/audio/audio_source.h"
 #include "ecs/component/core/missing_assets.h"
 #include "ecs/component/core/transform.h"
+#include "ecs/component/core/world_transform.h"
 #include "ecs/component/physics/collider.h"
 #include "ecs/component/physics/rigidbody.h"
 #include "ecs/component/prefab/prefab_entity.h"
 #include "ecs/component/prefab/prefab_instance.h"
 #include "ecs/component/render/decal.h"
 #include "ecs/component/render/irradiance_volume.h"
+#include "ecs/component/render/ocean.h"
+#include "system/ocean/ocean_surface.h"
 #include "ecs/component/render/light.h"
 #include "ecs/component/render/particle_emitter.h"
 #include "system/particle/live_particles.h"
@@ -38,7 +41,10 @@
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
+#include "ecs/component/core/net_local.h"
 #include "ecs/component/ui/ui_scroll.h"
+#include "ecs/component/ui/ui_slider.h"
+#include "ecs/component/ui/ui_toggle.h"
 #include "ecs/component/ui/ui_text.h"
 #include "ecs/environment.h"
 #include "command/component_edit.h"
@@ -125,6 +131,9 @@ glm::vec3 meshScaleRelativeTo(const Scene& scene, EntityId collider, EntityId me
 // Touching clip planes are degenerate: glm::perspective divides by (zFar - zNear) and the
 // cluster pass takes log(zFar / zNear).
 constexpr float CLIP_PLANE_SEPARATION = 0.001f;
+
+// Metres a `waves` surface may stand off its ocean's height before the card says so.
+constexpr float WATER_LEVEL_TOLERANCE = 0.01f;
 
 // Edits a Behavior*'s authored fields through the visitor serialization uses; rows are
 // labelled fieldLabel(name), the name staying the saved key.
@@ -520,6 +529,44 @@ void warnNoUIElement(const Scene& scene, EntityId id) {
     ImGui::TextDisabled("Nothing draws for it until one is added.");
 }
 
+/**
+ * @brief A row naming another entity of the scene, picked from all but @p self.
+ *
+ * Read-only in a prefab instance: an override cannot name an entity, so a pick would not load.
+ *
+ * @param scene   Scene holding both.
+ * @param self    Entity whose card is being drawn.
+ * @param label   The row's name.
+ * @param target  The reference edited.
+ * @param tooltip What the reference is for, or null.
+ * @return True when the pick changed @p target.
+ */
+bool propEntity(Scene& scene, EntityId self, const char* label, EntityId& target, const char* tooltip) {
+    // Every entity, named or not; the scene is walked only while the list is open.
+    char preview[96] = "None";
+    if (scene.isAlive(target)) getEntityDisplayName(scene, target, preview, sizeof(preview));
+    const bool prefabOwned = static_cast<bool>(PrefabOverrides::instanceRoot(scene, self));
+    ImGui::BeginDisabled(prefabOwned);
+    const bool changed = propRow(label, tooltip, [&] {
+        if (!beginCombo("##v", preview)) return false;
+        const EntityId was = target;
+        if (ImGui::Selectable("None", !scene.isAlive(was))) target = {};
+        scene.forEachEntity([&](EntityId other) {
+            if (other == self) return;
+            char name[96];
+            getEntityDisplayName(scene, other, name, sizeof(name));
+            ImGui::PushID(static_cast<int>(other.slot()));
+            if (ImGui::Selectable(name, other == was)) target = other;
+            ImGui::PopID();
+        });
+        ImGui::EndCombo();
+        return target != was;
+    });
+    ImGui::EndDisabled();
+    if (prefabOwned) ImGui::TextDisabled("Set in the prefab: an override cannot name an entity.");
+    return changed;
+}
+
 // The first capsule's radius, or 0: a character wears one, and a compound fit is all boxes.
 float capsuleRadiusOf(const Scene& scene, EntityId id) {
     const Collider* collider = scene.tryGet<Collider>(id);
@@ -632,7 +679,8 @@ void drawWireIdentity(const Scene& scene, EntityId id) {
             "",
             "inside a prefab instance",
             "the animation places it",
-            "it cannot move"
+            "it cannot move",
+            "each end runs its own"
         };
         static_assert(
             std::size(WHY) == static_cast<size_t>(NetSilence::Count),
@@ -755,6 +803,14 @@ void InspectorPanel::drawUIElementSection(EditorContext& ec, EntityId id) {
             );
         });
         changed |= propCheckbox("Visible", &e.visible, "Hides this element and its whole subtree.");
+        changed |= propSlider(
+            "Opacity",
+            &e.opacity,
+            0.0f,
+            1.0f,
+            "%.2f",
+            "How opaque this element and its whole subtree draw; at 0 it is skipped, and takes no clicks."
+        );
         const char* blocksPointerTooltip =
             "Stops a click reaching what is behind. Off for a decorative "
             "overlay meant to be clicked through. Only consulted on an "
@@ -850,6 +906,13 @@ void InspectorPanel::drawUITextSection(EditorContext& ec, EntityId id) {
             "newline in the text always breaks, wrap or not.";
         changed |= propCheckbox("Wrap", &t.wrap, wrapTooltip);
         changed |= propColor4("Color", glm::value_ptr(t.color));
+        changed |= propColor4(
+            "Shadow",
+            glm::value_ptr(t.shadow),
+            ImGuiColorEditFlags_Float,
+            "A drop shadow under the text, so it reads over the scene without a panel;\n"
+            "none while transparent."
+        );
 
         warnNoUIElement(scene, id);
 
@@ -882,6 +945,84 @@ void InspectorPanel::drawUIButtonSection(EditorContext& ec, EntityId id) {
         changed |= drawShapeRows(b.shape);
 
         warnNoUIElement(scene, id);
+        return changed;
+    });
+}
+
+void InspectorPanel::drawNetLocalSection(EditorContext& ec, EntityId id) {
+    editComponentCard<NetLocal>(ec, id, [&](NetLocal&) {
+        ImGui::TextWrapped("This entity and everything below it stay off the wire: each end runs its own.");
+        ImGui::TextDisabled("For what every end works out for itself, as scenery a behavior moves.");
+        return false;
+    });
+}
+
+void InspectorPanel::drawUISliderSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+
+    editComponentCard<UISlider>(ec, id, [&](UISlider& s) {
+        bool changed = false;
+        changed |= propDrag(
+            "Value",
+            &s.value,
+            0.01f,
+            s.minValue,
+            s.maxValue,
+            "%.3f",
+            "Set by a drag; write it to set the slider."
+        );
+        changed |= propDrag(
+            "Min",
+            &s.minValue,
+            0.01f,
+            0.0f,
+            0.0f,
+            "%.3f",
+            "The value at the track's left end."
+        );
+        changed |= propDrag("Max", &s.maxValue, 0.01f, 0.0f, 0.0f, "%.3f", "The value at its right end.");
+        changed |= propDrag(
+            "Step",
+            &s.step,
+            0.01f,
+            0.0f,
+            0.0f,
+            "%.3f",
+            "What a drag snaps to; 0 is continuous."
+        );
+        changed |= propEntity(scene, id, "Fill", s.fill, "Grown to the value: best a child of the track.");
+        changed |= propEntity(scene, id, "Knob", s.knob, "Stood at the value: best a child of the track.");
+
+        warnNoUIElement(scene, id);
+        if (!scene.has<UIButton>(id)) {
+            ImGui::TextColored(EditorStyle::DANGER, "No UI Button: nothing to drag.");
+        }
+        if (!(s.maxValue > s.minValue)) {
+            ImGui::TextColored(EditorStyle::DANGER, "Max is not above Min: it cannot move.");
+        }
+        return changed;
+    });
+}
+
+void InspectorPanel::drawUIToggleSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+
+    editComponentCard<UIToggle>(ec, id, [&](UIToggle& t) {
+        bool changed = false;
+        changed |= propCheckbox("On", &t.on);
+        changed |= propColor4("On Colour", glm::value_ptr(t.onColor));
+        changed |= propEntity(
+            scene,
+            id,
+            "Knob",
+            t.knob,
+            "At its parent's left end when off, the right when on: best the button's child."
+        );
+
+        warnNoUIElement(scene, id);
+        if (!scene.has<UIButton>(id)) {
+            ImGui::TextColored(EditorStyle::DANGER, "No UI Button: nothing to click.");
+        }
         return changed;
     });
 }
@@ -977,6 +1118,7 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         // one writes it); Name is the + beside the entity title.
         section("Core");
         addItem(Transform{});
+        addItem(NetLocal{});
 
         section("Render");
         addItem(Mesh{});
@@ -989,6 +1131,7 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         addItem(ParticleEmitter{});
         addItem(ReflectionProbe{});
         addItem(IrradianceVolume{});
+        addItem(Ocean{});
 
         section("Animation");
         addItem(Animation{});
@@ -1013,6 +1156,8 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         addItem(UIText{});
         addItem(UIButton{});
         addItem(UIScroll{});
+        addItem(UISlider{});
+        addItem(UIToggle{});
 
         // Move-only, so not AddComponentCommand: ScriptEditCommand holds it serialized.
         section("Script");
@@ -1694,6 +1839,29 @@ void InspectorPanel::drawParticleSection(EditorContext& ec, EntityId id) {
         changed |= propDrag("Lifetime", &e.lifetime, 0.05f, 0.01f, 60.0f, "%.2f");
 
         changed |= propDragU32("Max Particles", &e.maxParticles, 1.0f, 1u, 20000u);
+        changed |= propDragU32(
+            "Burst",
+            &e.burst,
+            1.0f,
+            0u,
+            20000u,
+            "Particles spawned at once on the next update, besides the rate; spent as they are"
+        );
+        changed |= propDrag3(
+            "Half Extents",
+            glm::value_ptr(e.halfExtents),
+            0.01f,
+            0.0f,
+            100.0f,
+            "%.2f m",
+            "Half the size of the box, world axes, particles are born in; zero is a point"
+        );
+        changed |= propCheckbox(
+            "Destroy When Spent",
+            &e.destroyWhenSpent,
+            "Once it has fired, neither emits nor holds a burst, and its last particle has died,\n"
+            "the entity and everything under it go"
+        );
 
         ImGui::Spacing();
         changed |= propDrag3("Velocity", glm::value_ptr(e.velocity), 0.05f, -100.0f, 100.0f, "%.2f");
@@ -1953,6 +2121,164 @@ void InspectorPanel::drawIrradianceVolumeSection(EditorContext& ec, EntityId id)
     });
 }
 
+void InspectorPanel::drawOceanSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+
+    editComponentCard<Ocean>(ec, id, [&](Ocean& o) {
+        bool changed = false;
+
+        changed |= propDrag(
+            "Wind Speed",
+            &o.windSpeed,
+            0.05f,
+            0.0f,
+            40.0f,
+            "%.1f m/s",
+            "The waves' energy grows nearly with its square"
+        );
+        changed |= propDrag(
+            "Wind Direction",
+            &o.windDirection,
+            0.5f,
+            -360.0f,
+            360.0f,
+            "%.0f deg",
+            "Round from +Z toward +X: the way the waves roll"
+        );
+        changed |= propDrag(
+            "Fetch",
+            &o.fetch,
+            0.5f,
+            0.1f,
+            2000.0f,
+            "%.1f km",
+            "Open water the wind has blown over"
+        );
+        changed |= propDrag(
+            "Depth",
+            &o.depth,
+            0.1f,
+            0.0f,
+            500.0f,
+            "%.1f m",
+            "Shallower slows and flattens the waves; 0 is deep"
+        );
+        changed |= propSlider(
+            "Spread",
+            &o.spread,
+            0.0f,
+            1.0f,
+            "%.2f",
+            "0 every wave rolls with the wind; 1 from all ahead of it"
+        );
+        changed |= propSlider(
+            "Choppiness",
+            &o.choppiness,
+            0.0f,
+            1.0f,
+            "%.2f",
+            "0 round swells; 1 crests drawn to a point"
+        );
+        changed |= propDrag("Height Scale", &o.heightScale, 0.01f, 0.0f, 10.0f, "%.2f");
+        changed |= propDrag(
+            "Shortest Wave",
+            &o.minWavelength,
+            0.05f,
+            0.1f,
+            1000.0f,
+            "%.2f m",
+            "Shorter are ripples, light and foam only: keep it above twice the mesh's spacing"
+        );
+        changed |= propDrag("Longest Wave", &o.maxWavelength, 0.5f, 0.2f, 5000.0f, "%.1f m");
+        changed |= propDragU32("Waves", &o.waveCount, 0.1f, 1u, Ocean::MAX_WAVES);
+        changed |= propDragU32("Seed", &o.seed, 0.1f, 0u, 1000000u);
+        changed |= propDrag(
+            "Shortest Ripple",
+            &o.shortestRipple,
+            0.001f,
+            0.001f,
+            1.0f,
+            "%.3f m",
+            "The ripples run from the shortest wave down to this"
+        );
+        changed |= propDrag(
+            "Calm Radius",
+            &o.calmRadius,
+            0.5f,
+            0.0f,
+            100000.0f,
+            "%.1f m",
+            "Past it the waves begin to fade"
+        );
+        changed |= propDrag(
+            "Still Radius",
+            &o.stillRadius,
+            0.5f,
+            0.0f,
+            100000.0f,
+            "%.1f m",
+            "Where they are gone; at or inside the calm radius they never fade"
+        );
+        changed |= propSlider("Foam", &o.foam, 0.0f, 1.0f, "%.2f", "How readily a squeezed crest whitens");
+        changed |= propColor3("Foam Color", glm::value_ptr(o.foamColor));
+        changed |= propDrag(
+            "Waterline Foam",
+            &o.waterlineFoam,
+            0.01f,
+            0.0f,
+            10.0f,
+            "%.2f m",
+            "Foam where the water meets anything standing in it; 0 none"
+        );
+        changed |= propDrag(
+            "Detail Scale",
+            &o.detailScale,
+            0.05f,
+            0.1f,
+            1000.0f,
+            "%.2f m",
+            "Metres across one repeat of the material's maps, drifting with the wind"
+        );
+
+        const OceanSurface surface = OceanSurface::at(o, glm::vec3(0.0f), 0.0);
+        ImGui::TextDisabled("Significant wave height %.2f m.", surface.significantHeight());
+
+        // A scene has one sea; a second moves nothing.
+        const EntityId sea = findOcean(scene);
+        if (sea && sea != id) {
+            char name[64] = {};
+            getEntityDisplayName(scene, sea, name, sizeof(name));
+            ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::WARNING);
+            ImGui::TextWrapped("Not the scene's ocean: '%s' moves the water.", name);
+            ImGui::PopStyleColor();
+        }
+
+        // The water rests at the ocean's height: the shore, and so the waterlines, are found there.
+        if (sea == id && scene.has<Transform>(id)) {
+            const float level = resolvedWorldPosition(scene, id, scene.get<Transform>(id)).y;
+            int         off   = 0;
+            scene.forEach<Mesh>([&](EntityId entity, const Mesh& mesh) {
+                const MaterialAsset* surface = ec.frame.resources.tryGet(mesh.material);
+                const Transform*     at      = scene.tryGet<Transform>(entity);
+                if (!surface || !surface->waves || !at) return;
+                const float height = resolvedWorldPosition(scene, entity, *at).y;
+                if (std::abs(height - level) > WATER_LEVEL_TOLERANCE) ++off;
+            });
+            if (off > 0) {
+                ImGui::PushStyleColor(ImGuiCol_Text, EditorStyle::WARNING);
+                ImGui::TextWrapped(
+                    "%d water surface(s) rest away from this ocean's height; their waterlines "
+                        "foam at its.",
+                    off
+                );
+                ImGui::PopStyleColor();
+            }
+        }
+
+        return changed;
+    });
+}
+
 void InspectorPanel::drawRigidbodySection(EditorContext& ec, EntityId id) {
     Scene& scene = ec.frame.scene;
 
@@ -2161,32 +2487,7 @@ void InspectorPanel::drawJointSection(EditorContext& ec, EntityId id) {
         bool changed = false;
 
         changed |= propEnumCombo("Type", joint.type);
-
-        // Every entity, named or not; the scene is walked only while the list is open.
-        char preview[96] = "None";
-        if (scene.isAlive(joint.connected)) {
-            getEntityDisplayName(scene, joint.connected, preview, sizeof(preview));
-        }
-        // In an instance it is the prefab's: an override cannot name an entity, so a pick would not load.
-        const bool prefabOwned = static_cast<bool>(PrefabOverrides::instanceRoot(scene, id));
-        ImGui::BeginDisabled(prefabOwned);
-        changed |= propRow("Connected", nullptr, [&] {
-            if (!beginCombo("##v", preview)) return false;
-            const EntityId was = joint.connected;
-            if (ImGui::Selectable("None", !scene.isAlive(was))) joint.connected = {};
-            scene.forEachEntity([&](EntityId other) {
-                if (other == id) return;
-                char label[96];
-                getEntityDisplayName(scene, other, label, sizeof(label));
-                ImGui::PushID(static_cast<int>(other.slot()));
-                if (ImGui::Selectable(label, other == was)) joint.connected = other;
-                ImGui::PopID();
-            });
-            ImGui::EndCombo();
-            return joint.connected != was;
-        });
-        ImGui::EndDisabled();
-        if (prefabOwned) ImGui::TextDisabled("Set in the prefab: an override cannot name an entity.");
+        changed |= propEntity(scene, id, "Connected", joint.connected, nullptr);
 
         changed |= drawVec3Control("Anchor", glm::value_ptr(joint.anchor), 0.0f, 0.05f);
         changed |= drawVec3Control("Connected Anchor", glm::value_ptr(joint.connectedAnchor), 0.0f, 0.05f);
@@ -2659,6 +2960,25 @@ void InspectorPanel::drawCharacterControllerSection(EditorContext& ec, EntityId 
             "along rather than walk into, and how tall a step the\n"
             "capsule rolls over.";
         changed |= propDrag("Max Slope", &cc.maxSlopeAngle, 0.5f, 0.0f, 90.0f, "%.0f deg", maxSlopeTooltip);
+        changed |= propDrag(
+            "Knockback Drag",
+            &cc.knockbackDrag,
+            0.1f,
+            0.0f,
+            1000.0f,
+            "%.1f m/s2",
+            "How fast a shove's speed bleeds off; zero leaves it to steering, as any other difference.\n"
+            "Above zero it is carried, and the character steers as if airborne meanwhile."
+        );
+        changed |= propDrag(
+            "Climb Speed",
+            &cc.climbSpeed,
+            0.05f,
+            0.0f,
+            100.0f,
+            "%.2f m/s",
+            "Up or down a face while gameplay holds the character to it (climbing)"
+        );
 
         const char* stepHeightTooltip =
             "Tallest thing the character mounts instead of stopping at.\n"

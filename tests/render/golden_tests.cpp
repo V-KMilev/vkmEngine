@@ -43,6 +43,7 @@
 #include "ecs/component/render/irradiance_volume.h"
 #include "ecs/component/render/light.h"
 #include "ecs/component/render/mesh.h"
+#include "ecs/component/render/ocean.h"
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/component/render/reflection_probe.h"
 #include "net/net_session.h"
@@ -57,6 +58,7 @@
 #include "system/particle/live_particles.h"
 #include "system/render/render_view.h"
 #include "system/ui/ui_draw_data.h"
+#include "system/ocean/ocean_system.h"
 #include "system/sky/sky_system.h"
 #include "system/visibility/visibility_system.h"
 
@@ -798,6 +800,7 @@ std::vector<unsigned char> render(
     FrameContext   ctx{s.scene, s.resources, clock, events, window, input, net, chrome, tuning};
 
     SkySystem        sky;
+    OceanSystem      ocean;
     VisibilitySystem visibility;
     RenderView       view;
     view.viewportWidth  = WIDTH;
@@ -808,8 +811,9 @@ std::vector<unsigned char> render(
 
     for (int frame = 0; frame < FRAMES; ++frame) {
         sky.update(ctx);
+        ocean.update(ctx);
         visibility.update(ctx);
-        view.build(s.scene, *ctx.visibility, ui, splash, nullptr, &s.particles);
+        view.build(s.scene, *ctx.visibility, ui, splash, nullptr, &s.particles, ctx.ocean);
         backend.render(view, s.resources);
     }
 
@@ -1334,6 +1338,153 @@ void testASplashFadesLinearlyOnTheGlass(int& failures) {
     expect("  and the ground around it black", pixel(frame, 4, 4) == glm::ivec3(0), failures);
 }
 
+// A transparent pane's shadow is as deep as the pane is opaque: half clear casts about half a
+// shadow, and two half-clear panes stacked about three quarters, each pane its own dither. Read off
+// the direct light alone, whose display curve (Reinhard, then sRGB) the test undoes.
+void testATransparentPanesShadowIsAsDeepAsItIsOpaque(int& failures) {
+    std::printf("Shadows of transparent panes:\n");
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+
+    Scenery s;
+    base(s);
+    const MaterialHandle ground = material(s, "golden:ground", {0.3f, 0.3f, 0.3f}, 0.9f, 0.0f);
+    place(s, s.cube, ground, {0.0f, -0.5f, 0.0f}, {80.0f, 1.0f, 80.0f});
+    const auto pane = [&](const char* name, float opacity) {
+        MaterialAsset m;
+        m.type      = MaterialType::Transparent;
+        m.albedo    = glm::vec4(0.8f, 0.8f, 0.8f, opacity);
+        m.roughness = 0.5f;
+        return s.resources.add(std::move(m), name);
+    };
+    // The sun 45 degrees up from +X: a pane 4 m up shades the floor 4 m toward -X of itself.
+    s.scene.environment().sky.sunElevation = 45.0f;
+    s.scene.environment().sky.sunAzimuth   = 90.0f;
+    const glm::vec3 slab = {3.0f, 0.1f, 3.0f};
+    place(s, s.cube, pane("golden:opaque", 1.0f), {6.0f, 4.0f, -5.0f}, slab);
+    place(s, s.cube, pane("golden:half", 0.5f), {6.0f, 4.0f, 0.0f}, slab);
+    place(s, s.cube, pane("golden:lower", 0.5f), {6.0f, 4.0f, 5.0f}, slab);
+    place(s, s.cube, pane("golden:upper", 0.5f), {6.0f, 4.05f, 5.0f}, slab);
+    // Looking down at a slant, so no pane stands between the eye and a shadow it is read at.
+    const glm::vec3 eye    = {0.0f, 16.0f, 12.0f};
+    const glm::vec3 target = {1.0f, 0.0f, 0.0f};
+    sunAndCamera(s, eye, target);
+
+    RenderSettings settings;
+    settings.renderMode  = RenderMode::DirectOnly;
+    settings.tonemap     = Tonemap::Reinhard;
+    settings.msaaSamples = 1;
+    settings.bloom       = false;
+    settings.ssr         = false;
+    settings.gtao        = false;
+    const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+
+    // Linear light under a floor point, as the frame drew it: a 5x5 mean, the curves undone.
+    Camera lens;
+    lens.aspect = static_cast<float>(WIDTH) / static_cast<float>(HEIGHT);
+    Transform pose;
+    pose.position = eye;
+    pose.rotation = glm::quatLookAt(glm::normalize(target - eye), glm::vec3(0.0f, 1.0f, 0.0f));
+    const glm::mat4 projection     = Camera::computeProjection(lens, lens.aspect);
+    const glm::mat4 viewProjection = projection * Transform::computeView(pose);
+    const auto lightAt = [&](glm::vec3 at) {
+        const glm::vec4 clip = viewProjection * glm::vec4(at, 1.0f);
+        const int       cx   = static_cast<int>((clip.x / clip.w * 0.5f + 0.5f) * WIDTH);
+        const int       cy   = static_cast<int>((0.5f - clip.y / clip.w * 0.5f) * HEIGHT);
+        float sum = 0.0f;
+        for (int y = cy - 2; y <= cy + 2; ++y) {
+            for (int x = cx - 2; x <= cx + 2; ++x) {
+                const float encoded = static_cast<float>(pixel(frame, x, y).y) / 255.0f;
+                const float shown   = encoded <= 0.04045f
+                    ? encoded / 12.92f
+                    : std::pow((encoded + 0.055f) / 1.055f, 2.4f);
+                sum += shown / std::max(1.0f - shown, 1e-3f);
+            }
+        }
+        return sum / 25.0f;
+    };
+    const float open  = lightAt({-8.0f, 0.0f, 0.0f});
+    // How deep the shadow under the pane at depth @p z is, by the light the open floor has.
+    const auto depthAt = [&](float z) { return open > 0.0f ? 1.0f - lightAt({2.0f, 0.0f, z}) / open : 0.0f; };
+    const float full  = depthAt(-5.0f);
+    const float shade = depthAt(0.0f);
+    const float two   = depthAt(5.0f);
+    std::printf("      shadow depth: opaque %.2f, half clear %.2f, two half clear %.2f\n", full, shade, two);
+    expect("a pane wholly opaque casts a whole shadow", full > 0.9f, failures);
+    expect("  a half-clear pane's about half", shade > 0.35f && shade < 0.65f, failures);
+    expect("  and two of them stacked about three quarters", two > 0.6f && two < 0.9f, failures);
+}
+
+// The ocean's waterline foam is read off its shore, drawn in the world: water rings a post the
+// camera cannot see, standing on a seabed that hides its foot, and nothing hovering clear of the
+// water foams it. Asserted per pixel, foam coloured green over dark water, looking straight down.
+void testTheShoreRingsWhatBreaksTheWater(int& failures) {
+    std::printf("The ocean's waterline foam:\n");
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+
+    Scenery s;
+    base(s);
+    MaterialAsset sea;
+    sea.albedo    = glm::vec4(0.01f, 0.02f, 0.04f, 1.0f);
+    sea.roughness = 0.3f;
+    sea.waves     = true;
+    const MaterialHandle water = s.resources.add(std::move(sea), "golden:sea");
+    place(s, s.cube, water, {0.0f, -0.5f, 0.0f}, {200.0f, 1.0f, 200.0f});
+
+    const EntityId oceanId = s.scene.createEntity();
+    s.scene.add(oceanId, Transform{});
+    Ocean ocean;
+    ocean.windSpeed     = 2.0f;
+    ocean.foam          = 0.0f;
+    ocean.waterlineFoam = 1.0f;
+    ocean.foamColor     = glm::vec3(0.0f, 1.0f, 0.0f);
+    s.scene.add(oceanId, ocean);
+
+    // Looking down from six metres the frame spans seven and a half either way across: the post
+    // stands just past its right edge, its top too low to show, and the block hovers clear of
+    // the water on the left.
+    const MaterialHandle grey = material(s, "golden:post", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
+    place(s, s.cube, grey, {8.0f, -0.6f, 0.0f}, {0.5f, 1.8f, 0.5f});
+    place(s, s.cube, grey, {8.0f, -1.5f, 0.0f}, {6.0f, 1.0f, 6.0f});
+    place(s, s.cube, grey, {-3.5f, 1.0f, 0.0f}, {1.0f, 0.6f, 1.0f});
+    sunAndCamera(s, {0.0f, 6.0f, 0.01f}, {0.0f, 0.0f, 0.0f});
+
+    const std::vector<unsigned char> frame = render(s, backend);
+    const auto foamIn = [&](glm::ivec2 from, glm::ivec2 to) {
+        int foam = 0;
+        for (int y = from.y; y < to.y; ++y) {
+            for (int x = from.x; x < to.x; ++x) {
+                const glm::ivec3 p = pixel(frame, x, y);
+                if (p.y > 40 && p.y > 2 * p.x && p.y > 2 * p.z) ++foam;
+            }
+        }
+        return static_cast<float>(foam) / static_cast<float>((to.x - from.x) * (to.y - from.y));
+    };
+    // The right edge's last half metre; the whole left half.
+    const float right = foamIn({WIDTH - 10, 0}, {WIDTH, HEIGHT});
+    const float left  = foamIn({0, 0}, {WIDTH / 2, HEIGHT});
+    std::printf(
+        "      foam over %.0f%% of the right edge, %.2f%% of the left half\n",
+        100.0f * right,
+        100.0f * left
+    );
+    expect("water foams round a post the camera cannot see", right > 0.04f, failures);
+    expect("  and nowhere else: not round a block hovering clear of it", left == 0.0f, failures);
+}
+
 void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     std::printf("Whole frames against their goldens:\n");
     if (!gl.attachSurface(WIDTH, HEIGHT)) {
@@ -1366,6 +1517,8 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testASplashFadesLinearlyOnTheGlass(failures);
     testAnOpenFloorIsNotOccluded(failures);
     testASealedRoomHoldsNoSkyLight(failures);
+    testTheShoreRingsWhatBreaksTheWater(failures);
+    testATransparentPanesShadowIsAsDeepAsItIsOpaque(failures);
 }
 
 } // namespace

@@ -30,6 +30,7 @@
     X("undo",        runUndoTests,           "the editor's undo history")                  \
     X("culling",     runCullingTests,        "frustum extraction and the AABB test")       \
     X("sky",         runSkyTests,            "the sun: where the key light points, and its colour") \
+    X("ocean",       runOceanTests,          "the sea: how high the wind raises it, and where its water is") \
     X("animation",   runAnimationTests,      "AnimationTrack sampling and its boundaries") \
     X("particle",    runParticleTests,       "emitter spawn accounting")                   \
     X("wire",        runNetWireTests,        "net wire")                                   \

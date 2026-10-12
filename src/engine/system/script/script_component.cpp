@@ -2,15 +2,6 @@
 
 namespace Vkm::Engine {
 
-EntityId findEntityWithBehaviorNamed(Scene& scene, std::string_view typeName) {
-    EntityId found{};
-    scene.forEach<ScriptComponent>([&](EntityId entity, ScriptComponent& script) {
-        if (found && found.slot() < entity.slot()) return;
-        if (findBehaviorNamed(scene, entity, typeName)) found = entity;
-    });
-    return found;
-}
-
 void reportUnregisteredBehavior(const char* typeName) {
     reportError(
         "Behavior",

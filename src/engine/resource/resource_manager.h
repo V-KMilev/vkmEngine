@@ -110,6 +110,28 @@ class ResourceManager {
         }
 
         /**
+         * @brief The asset under @p name, or the one @p make makes, added under it.
+         *
+         * For an asset made in code that may already be there - the library's, or made the
+         * first time round. What stands under the name is kept as it is: to change it in place,
+         * swapValue it.
+         *
+         * @code
+         * const MaterialHandle red = resources().findOrAdd<MaterialAsset>("game:red", makeRed);
+         * @endcode
+         *
+         * @tparam T The asset type, deriving from Resource.
+         * @param name Name to look up, and to stamp on what @p make returns.
+         * @param make Callable returning a T, called only when nothing stands under @p name.
+         * @return Handle for the asset under @p name.
+         */
+        template<typename T, typename Make>
+        Handle<T> findOrAdd(const std::string& name, Make&& make) {
+            if (const Handle<T> found = findByName<T>(name)) return found;
+            return add(T(std::forward<Make>(make)()), name);
+        }
+
+        /**
          * @brief add() under @p name, setting Resource::isHidden: kept from the user and scene saves.
          *
          * @tparam ResourceType The asset type, deriving from Resource.

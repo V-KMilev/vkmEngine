@@ -36,6 +36,7 @@
 #include "pass/gl_particle_pass.h"
 #include "pass/gl_gtao_pass.h"
 #include "pass/gl_forward_pass.h"
+#include "pass/gl_ocean_pass.h"
 #include "pass/gl_atmosphere_pass.h"
 #include "pass/gl_skybox_pass.h"
 #include "pass/gl_bloom_pass.h"
@@ -43,6 +44,7 @@
 #include "pass/gl_composite_pass.h"
 #include "pass/gl_splash_pass.h"
 #include "pass/gl_ui_pass.h"
+#include "storage/gl_ocean_fields.h"
 #include "storage/gl_probe_array.h"
 #include "core/fnv1a.h"
 #include "ecs/environment.h"
@@ -76,6 +78,16 @@ std::string GLBackend::shaderConstants() {
         << "const int   CLUSTER_Z               = " << Config::CLUSTER_Z               << ";\n"
         << "const int   MAX_LIGHTS_PER_CLUSTER  = " << Config::MAX_LIGHTS_PER_CLUSTER  << ";\n"
         << "const int   NUM_CLUSTERS            = " << GLClusterGrid::NUM_CLUSTERS     << ";\n"
+        << "const int   MAX_OCEAN_WAVES         = " << Ocean::MAX_WAVES << ";\n"
+        << "const int   MAX_OCEAN_SURGES        = " << Ocean::MAX_SURGES << ";\n"
+        << "const int   OCEAN_RIPPLE_FIELDS     = " << RIPPLE_FIELDS << ";\n"
+        << "const int   OCEAN_INVERSE_STEPS     = " << OceanSurface::INVERSE_STEPS << ";\n"
+        << "const float OCEAN_GRAVITY           = " << std::to_string(OceanSurface::GRAVITY) << ";\n"
+        << "const float OCEAN_SURGE_WHOLE       = " << std::to_string(OceanSurface::SURGE_WHOLE) << ";\n"
+        << "const float JONSWAP_GAMMA           = " << std::to_string(JONSWAP_GAMMA) << ";\n"
+        << "const float JONSWAP_SIGMA_BELOW     = " << std::to_string(JONSWAP_SIGMA_BELOW) << ";\n"
+        << "const float JONSWAP_SIGMA_ABOVE     = " << std::to_string(JONSWAP_SIGMA_ABOVE) << ";\n"
+        << "const int   OCEAN_FIELD             = " << RIPPLE_FIELD_SIZE << ";\n"
         << "const int   MAX_PROBES              = "
         << GLBindings::ProbeTextureSlots::MAX_PROBES << ";\n"
         // A LOD index, so one less than the mip count each cube carries.
@@ -219,6 +231,7 @@ bool GLBackend::init(WindowManager& window) {
     m_passes.push_back({"FogCompute",     std::make_unique<GLFogPass>()});
     m_passes.push_back({"Atmosphere",     std::make_unique<GLAtmospherePass>()});
     m_passes.push_back({"Skybox",         std::make_unique<GLSkyboxPass>()});
+    m_passes.push_back({"Ocean",          std::make_unique<GLOceanPass>()});
     m_passes.push_back({"Forward",        std::make_unique<GLForwardPass>()});
     m_passes.push_back({"Particles",      std::make_unique<GLParticlePass>()});
     m_passes.push_back({"ResolveColor",   std::make_unique<GLResolvePass>(GLResolvePass::Scope::Color)});
@@ -339,6 +352,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         const float width  = static_cast<float>(view.viewportWidth);
         const float height = static_cast<float>(view.viewportHeight);
         m_camera.update(view.camera, glm::vec2(width, height));
+        m_ocean.update(view.ocean);
         m_lights.update(view.lights, m_shadowData.lightSlots());
         m_shadowData.uploadAndBind();
     }
@@ -387,6 +401,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         m_irradiance,
         m_skinPalette,
         m_objects,
+        m_oceanFields,
         m_alphaMask,
         m_transparent,
         m_opaqueBatcher
@@ -394,6 +409,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
 
     ctx.sunDir = sunDir;
     ctx.sky    = sky ? &*sky : nullptr;
+    m_oceanFields.beginFrame();
 
     // Post colour chain: the scene starts on the geometry target; the first
     // post pass moves it into a scratch and the chain ping-pongs from there.
@@ -528,7 +544,12 @@ void GLBackend::followProceduralSky(const SkyParams& sky) {
     PROFILE_SCOPE("Render/IBLStep");
     PROFILE_GPU_SCOPE("Render/IBLStep");
     if (!m_iblBaker.baking()) m_iblBaker.beginProcedural(sky);
-    if (m_iblBaker.advance(m_context, m_ibl, m_atmosphere)) m_shownSky = m_iblBaker.target();
+    for (int step = GLIBLBaker::stepsFor(sky, *m_shownSky); step > 0; --step) {
+        if (m_iblBaker.advance(m_context, m_ibl, m_atmosphere)) {
+            m_shownSky = m_iblBaker.target();
+            break;
+        }
+    }
 }
 
 void GLBackend::onWorldReplaced(const RenderView& view, const ResourceManager& resources) {

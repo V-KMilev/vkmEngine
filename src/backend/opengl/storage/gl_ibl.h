@@ -13,6 +13,22 @@
 namespace Vkm::Engine {
 
 /**
+ * @brief The levels of a whole mip chain from @p size down to one texel.
+ *
+ * What an environment the convolutions sample keeps: each sample reads the level its share of the
+ * lobe covers, and the rarest samples of the widest lobes reach the last levels, which a cut chain
+ * would clamp to texels each spanning several of theirs.
+ *
+ * @param size The base level's width, in texels.
+ * @return How many levels, the base included.
+ */
+constexpr int fullMipChain(int size) {
+    int levels = 1;
+    while ((size >> levels) > 0) ++levels;
+    return levels;
+}
+
+/**
  * @brief GPU-side image-based lighting product set (split-sum).
  *
  * Owns every texture the split-sum path needs plus the shared capture FBO; the
@@ -35,7 +51,7 @@ namespace Vkm::Engine {
 class GLIBL {
     public:
         static constexpr int ENV_SIZE        = 512;  ///< Environment cubemap face size
-        static constexpr int ENV_MIPS        = 6;    ///< Env cube mip count (prefilter source)
+        static constexpr int ENV_MIPS        = fullMipChain(ENV_SIZE);  ///< The whole chain.
         static constexpr int IRRADIANCE_SIZE = 32;   ///< Diffuse irradiance face size
         static constexpr int PREFILTER_SIZE  = 512;  ///< Prefiltered specular base face size
         /// Roughness mip count, 512 down to 8.

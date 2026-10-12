@@ -11,6 +11,7 @@ float interleavedGradientNoise(vec2 p) {
 // Two effects turned by one value draw the same grain twice, so each has its own.
 const int NOISE_GTAO   = 1;
 const int NOISE_DITHER = 2;
+const int NOISE_SHADOW = 3;
 
 // The pattern offset by Jimenez's 5.588238-pixel step per effect, decorrelating them.
 float effectNoise(vec2 p, int effect) {

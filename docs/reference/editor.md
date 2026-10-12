@@ -363,7 +363,7 @@ warning that it is inside a prefab instance and so says nothing on the wire.
 Both ends build such a subtree from the same prefab file into the same slots -
 the root replicates and the hierarchy carries the rest, which is right for anything posed
 the same way on both ends and wrong for a ragdoll
-([networking.md](networking.md#identity-is-the-scene-slot)).
+([networking.md](networking.md#identity-is-the-servers-slot)).
 
 Drawn only for a project that replicates something, and only for an entity
 carrying some of it. Most entities are not on the wire, and a line saying so on

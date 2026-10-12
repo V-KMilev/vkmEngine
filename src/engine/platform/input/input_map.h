@@ -3,12 +3,16 @@
 #include <cstdint>
 #include <bitset>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <nlohmann/json_fwd.hpp>
+
+#include "core/reflect.h"
 
 #include "platform/input/input_command.h"
 #include "platform/input/input_handle.h"
@@ -41,6 +45,7 @@ namespace InputActions {
 enum class InputSource : uint8_t {
     Key,
     MouseButton,
+    Count  ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
 };
 
 /**
@@ -53,6 +58,16 @@ struct InputBinding {
     int         code   = 0;     ///< GLFW key or mouse-button code.
     float       scale  = 1.0f;  ///< Contribution to axis(); sign gives direction.
 };
+
+/**
+ * @brief What a binding is called, for a controls screen: "W", "Left Shift", "Left mouse".
+ *
+ * In English and by position, as the codes are: the key a US layout prints there.
+ *
+ * @param binding The key or button.
+ * @return Its name; "Key N" or "Mouse N" for one with no name of its own.
+ */
+std::string bindingName(const InputBinding& binding);
 
 /**
  * @brief Named actions resolved from physical bindings, sampled once per frame.
@@ -74,16 +89,55 @@ class InputMap {
 
     public:
         /**
-         * @brief Define (or replace) an action's bindings.
+         * @brief Define (or replace) an action and its default bindings.
+         *
+         * A binding the player saved for it (loadBindings) is put in their place.
          *
          * @param action   Action name, e.g. "Move/Forward"; the stable identity a saved
          *                 binding file refers to.
-         * @param bindings Physical controls feeding it.
+         * @param bindings Physical controls feeding it by default.
          */
         void define(std::string_view action, std::vector<InputBinding> bindings);
 
         /**
+         * @brief The player's own bindings for @p action, its defaults kept; what a controls
+         *        screen sets. Defines an action that was not.
+         *
+         * @param action   Action name.
+         * @param bindings Physical controls feeding it now.
+         */
+        void rebind(std::string_view action, std::vector<InputBinding> bindings);
+
+        /**
+         * @brief Every action back to its defaults, the player's own bindings forgotten.
+         */
+        void resetBindings();
+
+        /**
+         * @brief The actions the player rebound, each its bindings, for a settings file.
+         *
+         * Only those that differ from their defaults: one left alone follows its default when the
+         * game changes it.
+         *
+         * @return An object, an action name a key, each an array of bindings.
+         */
+        nlohmann::json saveBindings() const;
+
+        /**
+         * @brief Rebinds each action @p saved names, as saveBindings wrote it.
+         *
+         * Kept as the player's, as rebind's are, through reset(): one not defined yet, or
+         * defined again, takes them when it is. An entry that cannot be read is skipped.
+         *
+         * @param saved An object as saveBindings writes; anything else changes nothing.
+         */
+        void loadBindings(const nlohmann::json& saved);
+
+        /**
          * @brief Add one binding to an action, defining it if new.
+         *
+         * A change the player made, as rebind() is: saveBindings() writes the action's bindings
+         * from then on. A game's own defaults belong in define().
          *
          * @param action  Action name.
          * @param binding Control added alongside the existing ones.
@@ -92,6 +146,8 @@ class InputMap {
 
         /**
          * @brief Drop every binding for @p action, keeping the action defined.
+         *
+         * A change the player made, as rebind() is: saveBindings() writes the action unbound.
          *
          * @param action Action name; an undefined one is a no-op.
          */
@@ -171,6 +227,19 @@ class InputMap {
          * @param view Orientation the input from now on is aimed with.
          */
         void setView(const glm::quat& view) { m_view = view; }
+
+        /**
+         * @brief Say what the game sends beside the actions, for the commands that follow.
+         *
+         * Held, as the view is: every command carries it until it changes - state beside the
+         * actions, such as where a player is looking. What must arrive once is a message
+         * (NetSession::sendMessage). Read back off InputCommand::payload; zero bytes clears it.
+         *
+         * @param bytes What to send.
+         * @param size  How many, up to MAX_COMMAND_PAYLOAD.
+         * @return False, keeping what was held, when there are more than a command carries.
+         */
+        bool setPayload(const uint8_t* bytes, size_t size);
 
         /**
          * @brief The command's slot for @p action, or -1 when it has none.
@@ -335,6 +404,16 @@ class InputMap {
         bool typed(int key) const { return key >= 0 && key <= MAX_KEY && m_typed[static_cast<size_t>(key)]; }
 
         /**
+         * @brief The key or mouse button that went down this frame, bound or not.
+         *
+         * What a rebinding screen listens for. Keys before buttons, the lowest code first, when
+         * several went down together; a device the host's UI holds says nothing.
+         *
+         * @return The press, as a binding of scale one; nothing when there was none.
+         */
+        const std::optional<InputBinding>& struck() const { return m_struck; }
+
+        /**
          * @brief The command the current fixed step is running under.
          *
          * Zeroed before the first beginTick(), so an early reader sees no input, not stale input.
@@ -356,6 +435,7 @@ class InputMap {
     private:
         struct Action {
             std::vector<InputBinding> bindings;
+            std::vector<InputBinding> defaults;  ///< As defined; what a rebinding is measured from.
 
             float value     = 0.0f;   ///< This frame's axis value.
             bool  active    = false;  ///< |value| past the threshold.
@@ -437,6 +517,8 @@ class InputMap {
          * Transparent comparator: a string_view lookup builds no std::string.
          */
         std::map<std::string, Action, std::less<>> m_actions;
+        /// The player's own bindings, by action, rebound or loaded: define() puts them in place.
+        std::map<std::string, std::vector<InputBinding>, std::less<>> m_saved;
 
         glm::vec2 m_pointer{0.0f};       ///< Window pixels.
         glm::vec2 m_pointerDelta{0.0f};
@@ -445,9 +527,12 @@ class InputMap {
 
         std::u32string             m_text;   ///< Capacity reused.
         std::bitset<MAX_KEY + 1>   m_typed;  ///< Keys pressed or repeated this frame.
+        std::optional<InputBinding> m_struck;  ///< The press this frame, for a rebinding screen.
 
         InputCommand m_command;              ///< The current tick's.
         glm::quat    m_view{1.0f, 0.0f, 0.0f, 0.0f};  ///< Latched into every command beginTick builds.
+        std::array<uint8_t, MAX_COMMAND_PAYLOAD> m_payload{};  ///< Latched too, payloadSize of it.
+        uint8_t      m_payloadSize = 0;
         uint32_t     m_pendingPressed  = 0;  ///< Edges latched since the last command.
         uint32_t     m_pendingReleased = 0;
         uint32_t     m_nextSequence    = 1;  ///< 0 is the zeroed pre-first-tick command.
@@ -464,3 +549,5 @@ class InputMap {
 };
 
 } // namespace Vkm::Engine
+
+VKM_ENUM_NAMES(::Vkm::Engine::InputSource, "Key", "MouseButton")

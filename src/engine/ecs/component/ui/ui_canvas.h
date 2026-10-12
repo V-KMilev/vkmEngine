@@ -32,6 +32,18 @@ struct UICanvas {
     int32_t   sortOrder       = 0;
     /// Skip the canvas and its whole subtree when false.
     bool      visible         = true;
+
+    /**
+     * @brief Screen pixels a pixel of @p canvas spans, drawn into a view @p viewHeight pixels tall.
+     *
+     * @param canvas     The canvas.
+     * @param viewHeight The view's height, in screen pixels.
+     * @return The scale its layout is drawn at.
+     */
+    static float scaleIn(const UICanvas& canvas, float viewHeight) {
+        const bool scaled = canvas.scaleMode == ScaleMode::ScaleWithHeight && canvas.referenceHeight > 0.0f;
+        return scaled ? viewHeight / canvas.referenceHeight : 1.0f;
+    }
 };
 
 /**

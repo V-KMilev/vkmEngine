@@ -427,6 +427,27 @@ void testAWideSubtreeIsSearchedWhole() {
     check("the grandchild under the last child is found", found == deep);
 }
 
+// A behavior finds the parts its scene gave it by name: the nearest wins, and a name
+// is matched whole.
+void testAPartIsFoundByItsName() {
+    std::printf("A part found by its name:\n");
+
+    Scene scene;
+    const EntityId root  = named(scene, "Table");
+    const EntityId rim   = named(scene, "Rim");
+    const EntityId leg   = named(scene, "Leg");
+    const EntityId inner = named(scene, "Rim");
+    HierarchyOperations::setParent(scene, leg, root);
+    HierarchyOperations::setParent(scene, inner, leg);
+    HierarchyOperations::setParent(scene, rim, root);
+
+    check("a child is found by its name", HierarchyOperations::findNamed(scene, root, "Leg") == leg);
+    check("  the shallower of two with one name", HierarchyOperations::findNamed(scene, root, "Rim") == rim);
+    check("  the root itself, by its own", HierarchyOperations::findNamed(scene, root, "Table") == root);
+    check("a name is matched whole, not by its start", !HierarchyOperations::findNamed(scene, root, "Ri"));
+    check("  and one outside the subtree is not found", !HierarchyOperations::findNamed(scene, leg, "Table"));
+}
+
 // Links not written by HierarchyOperations - a damaged file, a bug - can close a
 // sibling list into a ring; every walk across one must end, and in the same place.
 void testASiblingRingEndsEveryWalk() {
@@ -530,6 +551,7 @@ void runHierarchyTests() {
     testASearchInsideASearchKeepsItsOwnQueue();
     testSiblingsKeepTheOrderTheyWereAttachedIn();
     testAWideSubtreeIsSearchedWhole();
+    testAPartIsFoundByItsName();
     testASiblingRingEndsEveryWalk();
     testAStaleIdIsNotParented();
 }

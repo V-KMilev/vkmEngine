@@ -8,6 +8,7 @@
 #include "io/project_paths.h"
 
 #include "system/async/async_loader_system.h"
+#include "system/ocean/ocean_system.h"
 #include "system/script/behavior_system.h"
 #include "system/sky/sky_system.h"
 #include "system/animation/animation_system.h"
@@ -30,12 +31,6 @@
 
 namespace Vkm::App {
 
-// The UI font's bake scales with the display height (a distance field magnifies
-// well but not forever); the cap keeps the worst case a 2048-square atlas.
-constexpr int   UI_FONT_REFERENCE_HEIGHT = 1080;
-constexpr float UI_FONT_BASE_PIXELS      = 64.0f;
-constexpr float UI_FONT_MAX_PIXELS       = 128.0f;
-
 /**
  * @brief Bake the default UI font (DEFAULT_UI_FONT) unless it is already present.
  *
@@ -48,17 +43,11 @@ constexpr float UI_FONT_MAX_PIXELS       = 128.0f;
  */
 inline void ensureDefaultUIFont(Engine::ResourceManager& resources, int displayHeight) {
     if (resources.findByName<Engine::FontAsset>(Engine::DEFAULT_UI_FONT)) return;
-
-    const float height = static_cast<float>(displayHeight);
-    const float wanted = displayHeight > 0
-        ? UI_FONT_BASE_PIXELS * height / static_cast<float>(UI_FONT_REFERENCE_HEIGHT)
-        : UI_FONT_BASE_PIXELS;
-
     Engine::bakeFontSDF(
         resources,
         (Engine::ProjectPaths::engineFonts() / "Roboto-Medium.ttf").string(),
         Engine::DEFAULT_UI_FONT,
-        std::clamp(wanted, UI_FONT_BASE_PIXELS, UI_FONT_MAX_PIXELS)
+        Engine::uiFontPixels(displayHeight)
     );
 }
 
@@ -130,12 +119,16 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
 
     auto& splashSystem = engine.addSystem<Engine::SplashSystem>(Engine::SystemStage::Simulation);
     splashSystem.setFade(SPLASH_FADE_SECONDS);
-    // The mono mark, as the ground is black; from the engine root so every project shows it.
+    // The mono mark, as the ground is black, over the engine's notice; from the engine root so every
+    // project shows them.
     splashSystem.add(
         (Engine::ProjectPaths::engineAssets() / "logo" / "vkm_engine_logo_mono.png").string(),
-        VENDOR_SPLASH_SECONDS
+        VENDOR_SPLASH_SECONDS,
+        (Engine::ProjectPaths::engineAssets() / "logo" / "vkm_engine_notice.png").string()
     );
     engine.addSystem<Engine::AsyncLoaderSystem>(Engine::SystemStage::Simulation);
+    // Ahead of the behaviors that float things on its sea, and of the cull and the renderer.
+    engine.addSystem<Engine::OceanSystem>(Engine::SystemStage::Simulation);
     auto& behaviorSystem = engine.addSystem<Engine::BehaviorSystem>(Engine::SystemStage::Simulation);
     engine.addSystem<Engine::AnimationSystem>(Engine::SystemStage::Simulation);
     engine.addSystem<Engine::SkeletalAnimationSystem>(Engine::SystemStage::Simulation);

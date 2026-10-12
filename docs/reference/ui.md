@@ -17,11 +17,13 @@ editor's own tooling, never the shipped game UI.
 | Component | Holds | Notes |
 |-----------|-------|-------|
 | `UICanvas` | reference height, scale mode, sort order, visible | Root of a UI layer; spans the viewport. A scene can have several (HUD, menu); they draw - and hit-test - in ascending `sortOrder`. Put it on a root entity and parent `UIElement`s under it. |
-| `UIElement` | anchor, pivot, position, size, relativeSize, visible, blocksPointer, clipChildren (+ resolved `screenRect`) | The 2D analogue of `Transform`. Nesting reuses the **normal entity hierarchy**; `visible = false` skips the element and its whole subtree. `blocksPointer` (on by default) decides whether it stops a click reaching what is behind it, and `clipChildren` (off by default) whether its rect bounds what its descendants may draw - both below. |
+| `UIElement` | anchor, pivot, position, size, relativeSize, visible, opacity, blocksPointer, clipChildren (+ resolved `screenRect`) | The 2D analogue of `Transform`. Nesting reuses the **normal entity hierarchy**; `visible = false` skips the element and its whole subtree, and `opacity` multiplies down it, so one value fades a panel and all it holds. `blocksPointer` (on by default) decides whether it stops a click reaching what is behind it, and `clipChildren` (off by default) whether its rect bounds what its descendants may draw - both below. |
 | `UIImage` | colour, shape, texture | A filled quad over the element's rect. `shape` (a `UIShape`) gives it rounded corners, a border stroke and a top-to-bottom gradient; at its defaults the quad is the flat tint. A `texture` makes it a picture - an icon, a logo - stretched over the rect, multiplied by the tint and cut by the same corners. The texture is a handle, saved by name, like a material's maps. |
-| `UIText` | text, font, pixel size, colour, align, valign, wrap | SDF text, aligned in the rect on both axes. Newlines break; `wrap` breaks on width too. The font is named, not handle-referenced (see Text). |
+| `UIText` | text, font, pixel size, colour, align, valign, shadow, wrap | SDF text, aligned in the rect on both axes. Newlines break; `wrap` breaks on width too. A `shadow` colour draws the text again under itself, down and right by `UIText::SHADOW_DROP` of its height, for text over the scene with no panel. The font is named, not handle-referenced (see Text). |
 | `UIButton` | normal/hover/pressed/disabled tints, shape, eventId, interactable (+ resolved `state`, `held`, `pointer`, `resolvedSize`) | Hit-tested topmost-wins; the `UISystem` drives its visual `state` and fires `UIClickEvent`. A label rides the **same entity** - see Text. It is also the drag primitive - see Interaction. |
 | `UIScroll` | offset, wheel step (+ resolved `contentSize` / `viewSize`) | Makes the element a window onto its children. Always clips. |
+| `UISlider` | value, min, max, step, fill and knob entities | Rides a `UIButton`, which is its track: a held press sets the value from the pointer. See Sliders and toggles. |
+| `UIToggle` | on, on colour, knob entity | Rides a `UIButton` and flips on its click. See Sliders and toggles. |
 
 `screenRect` (on `UIElement`, a `UIRect`), `state`, `held`, `pointer` and `resolvedSize` (on `UIButton`) and
 `contentSize` / `viewSize` (on `UIScroll`) are resolved every frame, so they are
@@ -182,10 +184,11 @@ measured and the glyphs drawn cannot disagree.
 **Wide, not unlimited.** A distance field cannot represent a corner sharper than
 its own texel grid, so past roughly three times the baked height the corners
 start rounding off - which is why the bake size follows the display rather than
-being a constant. `ensureDefaultUIFont` (`app/engine_app.h`) scales it from
+being a constant. `uiFontPixels` (`tools/loader/font_baker.h`) scales it from
 `WindowManager::displayHeight()` against a 1080-line reference, from 64px up to
-a capped 128px; the monitor rather than the window, because the bake happens
-once and has to cover whatever that window is later resized into. The
+a capped 128px, for the engine's font and a project's alike; the monitor rather
+than the window, because a bake has to cover whatever that window is later
+resized into. The
 distance-field spread is derived from that height, and the atlas dimension from
 the glyphs the baker actually rendered at it - the smallest power of two that
 packs them, doubled until it does - so no estimate can fall short of what a
@@ -259,10 +262,37 @@ true from that press until it is let go, wherever the pointer goes meanwhile, an
 `pointer` is the pointer in the element's own reference pixels, from its top-left,
 with `resolvedSize` the element's laid-out size in the same pixels - `size` plus
 whatever `relativeSize` took from its parent. That makes the button the one drag
-primitive. A slider is a clear button over its track that sets
-`value = pointer.x / resolvedSize.x` while `held`, with its fill and knob letting
-the pointer through; a scrollbar thumb is the same along y. No project converts
-pointer spaces or decides who a press belongs to.
+primitive: `UISlider` is built on it, and a scrollbar thumb is the same along y.
+No project converts pointer spaces or decides who a press belongs to.
+
+### Sliders and toggles
+
+The two controls two projects built the same way are components on a
+`UIButton`; what they look like stays the project's, parented together from
+images as anything else is.
+
+- **`UISlider`** makes its button the track. While a press that began on it is
+  held, `value` follows the pointer across it between `minValue` and `maxValue`,
+  snapped to `step` when that is set, and each change enqueues a `UIValueEvent`.
+  Each frame it lays out the parts it names before the walk reaches them: `fill`
+  grows from the left to the value (the slider owns its `relativeSize.x`) and
+  `knob` stands on it (its `anchor.x`). Make them the track's children, so they
+  move with it and are placed the frame the value changes, and leave
+  `blocksPointer` off on them, so a press on the knob is a press on the track.
+  A value the game writes shows without an event.
+- **`UIToggle`** flips `on` when its button is clicked and enqueues a
+  `UIValueEvent` (1 on, 0 off) beside the button's `UIClickEvent`; the event bus
+  keeps a queue per type, so neither is promised first, and `on` has flipped by
+  either. Its `knob` sits at the left end while off and the right while on (the
+  toggle owns its `anchor.x` and `pivot.x`), and while on the button rests in
+  `onColor` instead of `normalColor`, unless `onColor` is clear.
+
+```cpp
+subscribe<UIValueEvent>([this](const UIValueEvent& e) {
+    if (e.eventId == "volume") setVolume(e.value);
+    if (e.eventId == "vsync")  setVSync(e.value > 0.5f);
+});
+```
 
 While the cursor is disabled for mouse-look (`CursorMode::Disabled`) nothing is
 hit-tested: the position GLFW reports then is a virtual one that drifts with the
@@ -289,9 +319,27 @@ whatever button a press armed, so a press dragged onto a panel and let go there
 is over, not waiting to become a click on the next release. The runtime never
 sets it.
 
+## The world on the screen
+
+`ScreenView` (`system/ui/screen_view.h`) is the 3D view as one frame draws it:
+the rect the scene is drawn into, which the host states on `ctx.chrome`, and the
+active camera, an auto-aspect lens at that rect's aspect. A behavior gets one from `screen()`, and the
+cursor's ray from `pointerRay()`:
+
+- `rayThrough(windowPoint)` - the ray under a point of the window, in the units
+  `InputMap::pointer()` reports. A point off the view has none.
+- `toCanvas(world, canvas)` - where a point of the world lands on a canvas, in
+  the canvas's own pixels from its top left, scaled as `UISystem` scales it. An
+  element anchored at the canvas's top left with that offset sits over the point:
+  a name over a head, a bubble over a speaker. A point behind the camera has none.
+
+Both read the host's rect, not the window. In the editor's Play panel the two
+differ, and a game that divided the pointer by the window would pick beside the
+cursor and draw its labels off their targets.
+
 ## Text input
 
-There is no text field component: a field is a composition, like a slider
+There is no text field component: a field is a composition, like a scrollbar
 ([engine.md](../guides/engine.md#4-what-has-already-been-decided) - no widget
 library). What the engine gives it is the input and the measuring: `InputMap`
 hands over the characters typed this frame (`input().text()`, UTF-32) and which
@@ -368,6 +416,9 @@ Because UI elements are entities, the editor support is mostly inherited:
   under the selected canvas/element. Scroll View is a panel plus a `UIScroll` -
   a backing image as well, because a scroll view with nothing drawn on it is an
   invisible hole an author cannot see the edge of.
+- The **UI Slider** and **UI Toggle** cards pick their parts from the scene's
+  entities, with the picker the Joint card uses, and name a missing `UIButton`
+  or a range that cannot move.
 - The **UI Scroll** card shows the measured content and view sizes rather than
   offering them: they are resolved every frame, and "why will this not scroll"
   is answered by the content being no bigger than the window.
@@ -378,12 +429,13 @@ inspector.
 ## Not built
 
 Layout containers (rows / stacks), 9-slice sprites, a texture atlas region on
-`UIImage` (a picture is the whole texture), a scrollbar or slider widget (a
-project builds one from a held `UIButton` and, for a scrollbar, `UIScroll`'s
-measured sizes - the engine has no widget library and is not growing one),
+`UIImage` (a picture is the whole texture), a scrollbar (a project builds one from a held `UIButton` and `UIScroll`'s
+measured sizes), any control beyond the slider and the toggle until two projects
+want the same one,
 keyboard focus and navigation (a field's focus is a flag on the project's
 behavior - see Text input - and nothing moves it between fields), UI
-animation, world-space / diegetic UI, and a visual 2D edit mode.
+animation, world-space / diegetic UI (a label is pinned over the world with
+`ScreenView::toCanvas`, above, each frame), and a visual 2D edit mode.
 
 ---
 
@@ -405,8 +457,11 @@ UISystem::update(FrameContext)
   |-- for each canvas, in order:
   |     derive a uniform scale from the viewport (ScaleWithHeight)
   |     walk its hierarchy parent-before-child, carrying a clip rect that
-  |     starts as the viewport (skipping invisible subtrees):
+  |     starts as the viewport and the opacity inherited (skipping invisible
+  |     subtrees, and ones faded to nothing):
   |       resolve UIElement.screenRect from anchor/pivot/position/size x scale
+  |       place a UISlider's fill and knob, or a UIToggle's knob, by its value,
+  |         before its children are walked
   |       emit a quad per UIImage, per UIButton, glyphs per UIText - each
   |         command tagged with the clip it draws inside
   |       record a hit candidate per UIButton, and a blocker per drawn
@@ -414,9 +469,12 @@ UISystem::update(FrameContext)
   |       narrow the clip for the children where the element clips, offset
   |         their parent rect where it scrolls, and measure what they filled
   |-- resolveInteraction(): topmost candidate wins the pointer; states +
-  |     button quad colours settled; UIClickEvent fired on click; the wheel
-  |     given to the innermost scroll view entered after the topmost blocker,
-  |     else handed up from that blocker to the scroll view holding it
+  |     button quad colours settled; UIClickEvent fired on click; a toggle
+  |     flipped or a slider dragged, with a UIValueEvent; the wheel given to
+  |     the innermost scroll view entered after the topmost blocker, else
+  |     handed up from that blocker to the scroll view holding it
+  |-- a toggle or slider changed: the canvases walked again, so its parts
+  |     show the new value this frame
   |-- publish the batched UIDrawData on ctx.ui   (mirrors ctx.visibility)
 
 RenderSystem::update
@@ -483,15 +541,18 @@ scroll view's `offset` is authored, and saved.
 ### Key files
 
 - `src/engine/ecs/component/ui/ui_canvas.h` - `UICanvas` (layer root + reference-resolution scaling + sort order)
-- `src/engine/ecs/component/ui/ui_element.h` - `UIRect` and `UIElement` (the 2D rect: anchor / pivot / position / size / visible / blocksPointer / clipChildren)
+- `src/engine/ecs/component/ui/ui_element.h` - `UIRect` and `UIElement` (the 2D rect: anchor / pivot / position / size / visible / opacity / blocksPointer / clipChildren)
 - `src/engine/ecs/component/ui/ui_image.h` - `UIImage` (filled quad)
 - `src/engine/ecs/component/ui/ui_shape.h` - `UIShape` (corners, border and gradient, for `UIImage` and `UIButton` alike)
 - `src/engine/ecs/component/ui/ui_text.h` - `UIText` (string + font name + size + colour + h/v alignment)
 - `src/engine/ecs/component/ui/ui_button.h` - `UIButton` (per-state tints + event id)
 - `src/engine/ecs/component/ui/ui_scroll.h` - `UIScroll` (offset + wheel step; measured content and view size)
+- `src/engine/ecs/component/ui/ui_slider.h` - `UISlider` (value, range, step; the fill and knob it lays out)
+- `src/engine/ecs/component/ui/ui_toggle.h` - `UIToggle` (on, its colour; the knob it slides)
 - `src/engine/system/ui/ui_system.{h,cpp}` - `UISystem` (layout resolve + draw build + interaction resolve)
 - `src/engine/system/ui/ui_draw_data.h` - `UIVertex` / `UIDrawCmd` / `UIDrawData` (the engine -> backend contract)
-- `src/engine/system/ui/ui_events.h` - `UIClickEvent`
+- `src/engine/system/ui/ui_events.h` - `UIClickEvent`, `UIValueEvent`
+- `src/engine/system/ui/screen_view.{h,cpp}` - `ScreenView` (the pointer's ray into the world, a point of it on a canvas)
 - `src/engine/system/ui/text_layout.h` - `walkGlyphs` / `measureText` (the one kerned walk along a line)
 - `src/engine/core/utf8.h` - `Utf8::next` / `append` / `previous` (what UI text is decoded and edited by)
 - `src/engine/platform/input/input_map.h` - `InputMap::text` / `typed` (what a text field reads)

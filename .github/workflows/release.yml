@@ -1,6 +1,7 @@
 # Every version tag: build.yml on the tag, then the four SDKs - GCC and Clang, Linux and
-# Windows - and the installers on that tag's GitHub release. Run workflow rebuilds a tag
-# that already exists.
+# Windows - the examples as games for each platform, the installers, and a SHA256SUMS the
+# installers check every download against, on that tag's GitHub release. Run workflow
+# rebuilds a tag that already exists.
 name: Release
 run-name: Release ${{ github.event.inputs.tag || github.ref_name }}
 
@@ -39,9 +40,22 @@ jobs:
           path: release
           merge-multiple: true
 
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: games-*
+          path: release
+          merge-multiple: true
+
       # The installers fetch the newest release, so every release carries them.
       - name: The installers
         run: cp tools/install/install.sh tools/install/install.ps1 release/
+
+      # What the installers check a download against before they unpack it.
+      - name: Checksums
+        run: |
+          cd release
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
 
       # The release says what the changelog says about this version.
       - name: Notes from the changelog

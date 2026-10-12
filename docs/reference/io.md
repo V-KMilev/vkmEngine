@@ -21,6 +21,7 @@ repo, and `Vkm::Engine::Project` (`src/engine/io/project.h`) is everything it sa
 | `maxPlayers` | Seats the game has, clamped to 64. A property of the game, not of a run: a scene with four characters authored into it is a four-player game wherever it is served. Zero is kept and means it - the session refuses to host rather than opening a seat the author closed |
 | `netPort` | Port the game is served on unless a run says otherwise, so serving a project and joining it need no argument to agree |
 | `splash` | Logos the **runtime** shows after the engine's own, in order. Usually empty; the editor shows only the engine's mark, because the editor is not the game |
+| `fonts` | Fonts of the game's own, `{"name", "file"}`, baked by the runtime as it starts and by the editor each time it opens the project, at the size the engine's UI font is; a `UIText` names one by its `name`, and one that will not bake goes through `reportError`. Usually empty |
 | `render` | What the game looks like: the pass toggles and their parameters, written and read through `visitShippedRenderFields`. Absent fields keep the engine's defaults, so a file without the block opens as the engine's own look. `renderMode` and `grid` are not in it - see [Which root owns a path](#which-root-owns-a-path) |
 
 `tickRate` is the project's rather than the engine's because it is not only a
@@ -62,6 +63,7 @@ owns them, because three different things live on disk:
 | `engineRoot()` | What ships with the engine, read-only to a game. One copy serves every project | `engineShaders()`, `engineAssets()`, `engineFonts()` |
 | `projectRoot()` | The game being made: its content, its code, its asset database | `assets()`, `scenes()`, `prefabs()`, `envs()`, `screenshots()`, `library()`, `cooked()`, `projectBin()` |
 | `userRoot()` | How one person likes their tools, across every project and every engine install | `userLogs()`, a sibling under the platform's *state* directory rather than a child of this root |
+| `playerRoot(game)` | What a game writes for its player - settings, a profile, saves - in a folder of the game's own name beside the engine's | |
 
 `engineRoot()` resolves once at first use. `projectRoot()` returns the override
 when one is set and falls back to `engineRoot()` otherwise, so `setProjectRoot()`
@@ -89,7 +91,8 @@ directory at all - a service account, a stripped container - both fall back to
 the engine root (`userLogs()` to its `logs/`), and `userRoot()` does the same
 when it cannot create its folder inside the one it names. That fallback is why
 the repository ignores `imgui.ini` and `editor_user.json` at its root.
-`userRoot()` creates its directory when first asked for; `userLogs()` does not,
+`playerRoot(game)` falls back to the project root the same way, and like
+`userRoot()` creates its directory when asked for; `userLogs()` does not,
 because `bootHost` creates the per-project subdirectory it writes into.
 
 `editor_settings.json` is the deliberate exception: it stays in the project root,
@@ -215,6 +218,26 @@ Two judgments behind that table:
   `SceneIOController::loadPath` moves the current path only when the read
   succeeded, so a failed `File > Open` leaves the title - and the file the next
   Ctrl+S writes - on the scene still in the viewport.
+
+## A project's own files
+
+A game's settings, a player's profile, a save: a struct the project reflects
+(`VKM_REFLECT`, as a component is) goes to JSON and back by its field names with
+`ReflectJson::toJson(obj)` and `ReflectJson::fromJson(json, obj)`
+(`src/engine/io/reflect_json.h`), and to disk under `playerRoot(game)` with
+`writeOwnFile` / `readOwnFile` (`src/engine/io/json_file.h`): written whole or not
+at all, and read as an empty object when there is none yet - a first run - or
+when it will not parse, which warns. Leaves, scoped enums by their
+`VKM_ENUM_NAMES`, nested reflected structs and vectors of them all go through. A
+field the file lacks keeps its value, so a file written before a field was added
+still loads; a field holding the wrong type of value warns and keeps its own,
+costing that field alone, and a list wrong anywhere inside keeps the one there
+was, whole. It is the scene file's own walk, with a stricter context:
+`ComponentSerializer`'s turns a `Handle` into its asset's name and back, and
+there a number, string, list or struct of the wrong type fails the load
+(below), because a scene saved over a field that silently fell back to its
+default loses what the author meant. A glm value of the wrong shape warns and
+keeps its own in either.
 
 ## Components
 
@@ -364,9 +387,10 @@ and counts them into a toast rather than letting them vanish quietly. See
    says and what the Inspector's Prefab card repeats on the empty instance.
 4. On full success, swap both staging containers in one step:
    `Scene::swap` for the scene, and `ResourceManager::swap` for the assets. The
-   swap leaves the font slot where it is: fonts are baked at startup and never
-   enter a scene file, so the staging RM has none, and trading the slot away
-   would lose every `UIText` its font on load.
+   swap leaves the font slot where it is: fonts are baked by the host - as it
+   starts, and by the editor as it opens a project - and never enter a scene
+   file, so the staging RM has none, and trading the slot away would lose every
+   `UIText` its font on load.
 
 ### A reference that did not resolve is kept, not erased
 

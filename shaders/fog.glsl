@@ -9,6 +9,7 @@
  * The air lies beneath the fog: (colour * T_air + S_air) * T_fog + S_fog.
  */
 
+#include "bspline.glsl"
 #include "depth.glsl"
 #include "camera.glsl"
 
@@ -30,7 +31,15 @@ vec4 localFogAt(vec2 uv, float viewDepth) {
     float slices = float(textureSize(u_fog, 0).z);
     float slice  = viewDepthToSlice(min(viewDepth, u_fogDepth), u_camera.zNear, u_fogDepth, slices);
     float w      = (slice - 0.5) / slices;
-    return texture(u_fog, vec3(uv, w));
+    // Across the screen B-spline filtered (bspline.glsl), through the slices trilinear: a lamp or a
+    // beam a few froxels wide would show every froxel's square in a trilinear read alone.
+    vec2 at0, at1, g0, g1;
+    bsplineReads(uv, vec2(textureSize(u_fog, 0).xy), at0, at1, g0, g1);
+    vec4 near0 = texture(u_fog, vec3(at0.x, at0.y, w));
+    vec4 near1 = texture(u_fog, vec3(at1.x, at0.y, w));
+    vec4 far0  = texture(u_fog, vec3(at0.x, at1.y, w));
+    vec4 far1  = texture(u_fog, vec3(at1.x, at1.y, w));
+    return g0.y * (g0.x * near0 + g1.x * near1) + g1.y * (g0.x * far0 + g1.x * far1);
 }
 
 // The sky's air to the same point: its light (rgb) and mean transmittance (a).

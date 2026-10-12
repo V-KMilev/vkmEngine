@@ -9,6 +9,8 @@
 
 #include "logger.h"
 
+#include "debug/engine_error_log.h"
+#include "io/project_paths.h"
 #include "platform/threading/thread_pool.h"
 #include "resource/resource_manager.h"
 
@@ -230,6 +232,7 @@ Handle<FontAsset> bakeFontSDF(
         }
     }
 
+    // A name already held takes the new bake in place, so a handle given out reads it.
     const size_t pairs = fontAsset.kerning.size();
     const Handle<FontAsset> handle = resources.add(std::move(fontAsset), name);
     LOG_INFO(
@@ -243,6 +246,21 @@ Handle<FontAsset> bakeFontSDF(
         ttfPath.c_str()
     );
     return handle;
+}
+
+float uiFontPixels(int displayHeight) {
+    const float share  = static_cast<float>(displayHeight) / static_cast<float>(UI_FONT_REFERENCE_HEIGHT);
+    const float wanted = displayHeight > 0 ? UI_FONT_BASE_PIXELS * share : UI_FONT_BASE_PIXELS;
+    return std::clamp(wanted, UI_FONT_BASE_PIXELS, UI_FONT_MAX_PIXELS);
+}
+
+void bakeProjectFonts(ResourceManager& resources, const std::vector<FontEntry>& fonts, float pixelHeight) {
+    for (const FontEntry& font : fonts) {
+        const std::string path = ProjectPaths::resolveProjectPath(font.file).string();
+        if (bakeFontSDF(resources, path, font.name, pixelHeight)) continue;
+        const std::string failed = "font '" + font.name + "' could not be baked";
+        reportError("Project", font.file, failed + "; its text draws none, or its last bake");
+    }
 }
 
 } // namespace Vkm::Engine

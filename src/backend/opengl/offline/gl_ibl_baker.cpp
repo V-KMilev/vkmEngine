@@ -2,6 +2,9 @@
 
 #include "offline/gl_ibl_baker.h"
 
+#include <algorithm>
+#include <cmath>
+
 #include <GL/glew.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -51,6 +54,15 @@ void bakeState(Vkm::GL::Context& gl) {
 
 } // namespace
 
+int GLIBLBaker::stepsFor(const SkyParams& asked, const SkyParams& shown) {
+    const auto degrees = [](const glm::vec3& a, const glm::vec3& b) {
+        const float cosine = glm::dot(glm::normalize(a), glm::normalize(b));
+        return glm::degrees(std::acos(glm::clamp(cosine, -1.0f, 1.0f)));
+    };
+    const float behind = std::max(degrees(asked.sunDir, shown.sunDir), degrees(asked.moonDir, shown.moonDir));
+    return std::clamp(1 + static_cast<int>(behind / CATCH_UP_DEGREES), 1, MAX_CATCH_UP_STEPS);
+}
+
 GLIBLBaker::GLIBLBaker(GLCubeConvolver& convolver)
     : m_equirect("shaders/ibl/equirect")
     , m_sky("shaders/ibl/sky")
@@ -63,11 +75,7 @@ GLIBLBaker::GLIBLBaker(GLCubeConvolver& convolver)
     using Kind = Step::Kind;
     m_steps.push_back({Kind::Capture, 0, 0, 0, 1});
     m_steps.push_back({Kind::Mips, 0, 0, 0, 1});
-    for (int face = 0; face < 6; ++face) {
-        for (int slice = 0; slice < IRRADIANCE_SLICES; ++slice) {
-            m_steps.push_back({Kind::Irradiance, face, 0, slice, IRRADIANCE_SLICES});
-        }
-    }
+    for (int face = 0; face < 6; ++face) m_steps.push_back({Kind::Irradiance, face, 0, 0, 1});
     for (int face = 0; face < 6; ++face) {
         for (int mip = 1; mip < GLIBL::PREFILTER_MIPS; ++mip) {
             const int bands = prefilterBands(mip);
@@ -239,9 +247,7 @@ void GLIBLBaker::runStep(Vkm::GL::Context& gl, GLIBL& ibl, const Step& step) {
             break;
         case Kind::Irradiance:
             ibl.bindBackEnvCube(GLBindings::BakeTextureSlots::SOURCE);
-            m_convolver.irradianceSlice(gl, step.face, step.part, step.parts, [&](int face) {
-                ibl.attachIrradianceFace(gl, face);
-            });
+            m_convolver.irradianceFace(step.face, [&](int face) { ibl.attachIrradianceFace(gl, face); });
             break;
         case Kind::Prefilter:
             ibl.bindBackEnvCube(GLBindings::BakeTextureSlots::SOURCE);

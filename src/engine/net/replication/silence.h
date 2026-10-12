@@ -26,7 +26,7 @@ bool isStaticBody(const Scene& scene, EntityId entity);
 /**
  * @brief Why an entity is not described on the wire, or None when it is.
  *
- * Prefab::isInsideInstance, isPosedByAnimation and isStaticBody, asked in one
+ * NetLocal, Prefab::isInsideInstance, isPosedByAnimation and isStaticBody, asked in one
  * place so the snapshot and what an author is told cannot disagree.
  */
 enum class NetSilence : uint8_t {
@@ -35,14 +35,15 @@ enum class NetSilence : uint8_t {
     /**
      * @brief Its root speaks for it.
      *
-     * Both ends build the subtree from the same prefab into the same slots, so
-     * only the root is described. A ragdoll therefore belongs on a character
+     * Both ends build the subtree from the same prefab, so only the root is
+     * described. A ragdoll therefore belongs on a character
      * the scene placed: inside a spawned instance its bones would fall on the
      * server alone.
      */
     InsidePrefabInstance,
     PosedByAnimation,      ///< Both ends work it out; see isPosedByAnimation.
     StaticBody,            ///< It cannot move, and the scene file is exact.
+    Local,                 ///< It or an ancestor is NetLocal: each end runs its own.
     Count
 };
 

@@ -41,34 +41,11 @@ struct ScriptComponent {
 };
 
 /**
- * @brief The entity carrying a behavior named @p typeName with the lowest slot.
- *
- * @param scene    Scene to search.
- * @param typeName Registered behavior name.
- * @return The entity, or a null EntityId when nothing carries one.
- */
-EntityId findEntityWithBehaviorNamed(Scene& scene, std::string_view typeName);
-
-/**
  * @brief Report a behavior added in code whose type the registry does not know.
  *
  * @param typeName The unregistered type's name.
  */
 void reportUnregisteredBehavior(const char* typeName);
-
-/**
- * @brief The entity carrying a T, for the behaviors a game has one of.
- *
- * The lowest slot answers, so the choice is the same on every machine.
- *
- * @tparam T Behavior subclass with a VKM_REFLECT block.
- * @param scene Scene to search.
- * @return The entity, or a null EntityId when nothing carries one.
- */
-template<typename T>
-EntityId findEntityWithBehavior(Scene& scene) {
-    return findEntityWithBehaviorNamed(scene, Reflect::Traits<T>::NAME);
-}
 
 /**
  * @brief Attach a new T to @p entity, giving it a ScriptComponent if it has none.

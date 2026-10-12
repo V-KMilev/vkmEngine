@@ -11,7 +11,8 @@ namespace Vkm::Engine {
  *
  * Driven by a System rather than a Behavior: the writer of moveInput changes, the reader should not.
  * Needs a Rigidbody and a capsule Collider; the body should set freezeRotation and canSleep false, so
- * standing still does not park a body the input then has to wake. No crouch, no platform riding.
+ * standing still does not park a body the input then has to wake. It climbs what gameplay says it is
+ * on - a ladder, a rope, a wall - by `climbing`. No crouch, no platform riding.
  */
 struct CharacterController {
     glm::vec3 moveInput     = {0.0f, 0.0f, 0.0f};  ///< Desired horizontal velocity, world space, m/s.
@@ -23,6 +24,16 @@ struct CharacterController {
     float maxSlopeAngle = 50.0f;   ///< Degrees; a steeper surface holds nothing up.
 
     /**
+     * @brief How fast a shove's horizontal speed bleeds off, m/s^2; zero leaves it to steering.
+     *
+     * A shove is speed nobody asked for - a blast, a dash: horizontal speed past both moveInput's and
+     * what the controller's own steering left the body at (`walkSpeed`), so letting go of the stick is
+     * not one. Above zero it is carried, losing this much a second, and the character steers at
+     * `airControl` of the rate meanwhile, as if airborne.
+     */
+    float knockbackDrag = 0.0f;
+
+    /**
      * @brief Tallest obstacle, in metres, the character mounts instead of stopping at; zero disables it.
      *
      * Taller is a wall to slide along. A step needs clear space at the top and walkable ground beyond,
@@ -30,7 +41,21 @@ struct CharacterController {
      */
     float stepHeight = 0.4f;
 
-    bool grounded = false;                       ///< Read-only: on a surface within maxSlopeAngle.
+    /**
+     * @brief Held to a face being climbed instead of by gravity, for the tick it is set.
+     *
+     * Gravity is undone; moveInput into the face climbs at up to `climbSpeed`, away from it climbs
+     * down, along it slides at half its speed. A jump leaps off, up at `jumpSpeed` and out at half
+     * of it - so gameplay lets go as it asks for one, or holds the leaper again the next tick. The
+     * controller clears it after each tick, so gameplay sets it - from where the body is - each
+     * fixed tick it holds on, and a character whose hold has gone falls.
+     */
+    bool      climbing    = false;
+    glm::vec3 climbNormal = {0.0f, 0.0f, 1.0f};  ///< Out of the face climbed, world space; level part counts.
+    float     climbSpeed  = 3.0f;                ///< Up or down a face, m/s.
+
+    bool  grounded  = false;                     ///< Read-only: on a surface within maxSlopeAngle.
+    float walkSpeed = 0.0f;                      ///< Read-only: horizontal speed its steering left, m/s.
 
     // A climb outlives the condition that started it: it leaves the ground first, so re-deciding it
     // from `grounded` each tick would abort it. These carry it to the measured height.
@@ -48,5 +73,7 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::CharacterController)
     VKM_F(acceleration)
     VKM_F(airControl)
     VKM_F(maxSlopeAngle)
+    VKM_F(knockbackDrag)
     VKM_F(stepHeight)
+    VKM_F(climbSpeed)
 VKM_REFLECT_END()

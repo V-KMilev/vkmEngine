@@ -40,6 +40,8 @@
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
 #include "ecs/component/ui/ui_scroll.h"
+#include "ecs/component/ui/ui_slider.h"
+#include "ecs/component/ui/ui_toggle.h"
 #include "ecs/component/ui/ui_text.h"
 
 namespace Vkm::Engine {
@@ -558,6 +560,8 @@ EntityLabel entityLabelOf(const Scene& scene, EntityId id) {
             : EntityLabel{"2D Sound", EditorIcon::Audio2D};
     }
     if (scene.has<AudioListener>(id))    return {"Listener",  EditorIcon::Listener};
+    if (scene.has<UISlider>(id))         return {"Slider",    EditorIcon::UISlider};
+    if (scene.has<UIToggle>(id))         return {"Toggle",    EditorIcon::UIToggle};
     if (scene.has<UIButton>(id))         return {"Button",    EditorIcon::UIButton};
     if (scene.has<UIText>(id))           return {"Text",      EditorIcon::UIText};
     if (scene.has<UIScroll>(id))         return {"Scroll",    EditorIcon::UIScroll};

@@ -86,6 +86,7 @@ struct TrackedPair {
     bool      bTrigger = false;                        ///< b's collider is a trigger
     glm::vec3 point    = glm::vec3(0.0f);              ///< The event's representative contact
     glm::vec3 normal   = glm::vec3(0.0f, 1.0f, 0.0f);  ///< That contact's normal, a -> b
+    float     speed    = 0.0f;                         ///< How fast a and b closed along it, before the solve
 
     /**
      * @brief The order tracked pairs are kept and reported in: slot pair, generation, trigger flags.

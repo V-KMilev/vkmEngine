@@ -74,8 +74,9 @@ scene.remove<Mesh>(entity);
 | `BoneSocket`          | `component/animation/bone_socket.h`        | `string bone` + `Transform offset` - what rides a joint of the rig it is parented to                  |
 | `Hierarchy`           | `component/core/hierarchy.h`               | `EntityId parent`, `firstChild`, `lastChild`, `nextSibling`, `prevSibling`                            |
 | `Name`                | `component/core/name.h`                    | `char value[64]` - the entity's display name, in the editor and in log lines                          |
+| `NetLocal`            | `component/core/net_local.h`               | Nothing - its presence keeps the entity and everything below it off the wire ([Networking](networking.md#what-does-not-replicate)) |
 | `Collider`            | `component/physics/collider.h`             | One or more `ColliderPart`s (a `ColliderShape` tag - Box, Capsule or Mesh - plus the fields for each) + `isTrigger` + `enabled` |
-| `CharacterController` | `component/physics/character_controller.h` | `moveInput` + `jumpRequested` in, tuning, `grounded` + `groundNormal` out                    |
+| `CharacterController` | `component/physics/character_controller.h` | `moveInput` + `jumpRequested` + `climbing` + `climbNormal` in, tuning, `grounded` + `groundNormal` + `walkSpeed` out |
 | `Rigidbody`           | `component/physics/rigidbody.h`            | Body: linear/angular velocity, `motion` (Dynamic, Kinematic or Static), mass, damping, restitution, friction, gravity scale, plus the `supported` / `supportNormal` / `blockNormal` outputs |
 | `ReflectionProbe`     | `component/render/reflection_probe.h`      | Local IBL probe: `halfExtents` influence box, `falloff`, `intensity`, `resolution`                   |
 | `AudioSource`         | `component/audio/audio_source.h`           | `AudioClipHandle clip`, `volume`, `pitch`, `loop`, `spatial`, `playOnStart`, `min`/`maxDistance`; `playing` + `started` are runtime only |
@@ -83,7 +84,8 @@ scene.remove<Mesh>(entity);
 | `Decal`               | `component/render/decal.h`                 | `MaterialHandle material`, `angleFade`, `opacity`, `enabled` - projected onto whatever its box covers |
 | `LOD`                 | `component/render/lod.h`                   | `levels` (a `MeshHandle` + `maxDistance` each) and `bias`; the mesh drawn is chosen by the camera's distance to the world bounds' centre, shortened for a camera zoomed in past the reference field of view (lengthened for a wider one) and divided by `bias` |
 | `IrradianceVolume`    | `component/render/irradiance_volume.h`     | `halfExtents`, `resolutionX/Y/Z`, `intensity`, `blendDistance` (metres its light fades in from each face), `bakeVersion` - the baked SH-L1 grid indirect diffuse comes from |
-| `ParticleEmitter`     | `component/render/particle_emitter.h`      | `emitting`, `rate`, `lifetime`, `maxParticles`, `velocity`, `spread`; the live particles are `ParticleSystem`'s |
+| `Ocean`               | `component/render/ocean.h`                 | `windSpeed`, `windDirection`, `fetch`, `depth`, `spread`, `choppiness` and the wave band - the spectrum a `waves` material's surface moves by; `calmRadius`/`stillRadius` from its Transform, `foam`, `detailScale`. One a scene (`findOcean`); see [rendering.md](rendering.md#the-ocean) |
+| `ParticleEmitter`     | `component/render/particle_emitter.h`      | `emitting`, `rate`, `burst`, `halfExtents`, `destroyWhenSpent`, `lifetime`, `maxParticles`, `velocity`, `spread`; the live particles are `ParticleSystem`'s |
 | `Joint`               | `component/physics/joint.h`                | `JointType`, `connected` entity, the two anchors, `distance`, `stiffness`, `collideConnected`        |
 | `Ragdoll`             | `component/physics/ragdoll.h`              | `active`, `root`, `boneLayer`, `rigScale`, and one `RagdollBone` per body (bone index, body entity, `bodyFromBone`) |
 | `ScriptComponent`     | `system/script/script_component.h`         | The behaviors attached to this entity, owned as `unique_ptr<Behavior>`; see [Scripting](scripting.md) |
@@ -92,11 +94,13 @@ scene.remove<Mesh>(entity);
 | `NetSpawn`            | `component/prefab/net_spawn.h`             | `prefab` path, the exact `Transform at` it was built at, and `slots` - where the server built each entity below the root; runtime only, put on a spawned root by `NetSession::spawn` so every client builds the same thing ([Networking](networking.md#spawning)) |
 | `MissingAssets`       | `component/core/missing_assets.h`          | Asset names a load could not resolve, kept so the next save writes them back rather than erasing them |
 | `UICanvas`            | `component/ui/ui_canvas.h`                 | `referenceHeight`, `scaleMode`, `sortOrder`, `visible` - the root of one screen-space UI tree        |
-| `UIElement`           | `component/ui/ui_element.h`                | `anchor`, `pivot`, `position`, `size`, `relativeSize`, `visible`, `blocksPointer`, `clipChildren`, plus the resolved `UIRect screenRect` |
+| `UIElement`           | `component/ui/ui_element.h`                | `anchor`, `pivot`, `position`, `size`, `relativeSize`, `visible`, `opacity`, `blocksPointer`, `clipChildren`, plus the resolved `UIRect screenRect` |
 | `UIImage`             | `component/ui/ui_image.h`                  | `color`, a `UIShape` `shape` (corners, edge, fade) and an optional `TextureHandle texture` - fills its element's rect, the texture stretched over it and multiplied by the tint |
-| `UIText`              | `component/ui/ui_text.h`                   | `text`, `font` name, `pixelSize`, `color`, `align`, `valign`, `wrap`                                 |
+| `UIText`              | `component/ui/ui_text.h`                   | `text`, `font` name, `pixelSize`, `color`, `align`, `valign`, `wrap`, `shadow`                       |
 | `UIButton`            | `component/ui/ui_button.h`                 | The four state colours, a `UIShape` `shape`, `eventId`, `interactable`; `state`, `held`, `pointer` and `resolvedSize` are runtime only |
 | `UIScroll`            | `component/ui/ui_scroll.h`                 | `offset`, `wheelStep`; `contentSize` and `viewSize` are measured by the layout walk and published     |
+| `UISlider`            | `component/ui/ui_slider.h`                 | `value`, `minValue`, `maxValue`, `step`, and the `fill` and `knob` entities it lays out              |
+| `UIToggle`            | `component/ui/ui_toggle.h`                 | `on`, `onColor`, and the `knob` entity it slides                                                      |
 
 `Animation` and `Animator` are both covered in [Animation](animation.md):
 the first drives one entity's own `Transform`, the second poses a whole rig and
@@ -106,10 +110,11 @@ rig driving it is the nearest `Animator` above it in the hierarchy. `BoneSocket`
 is the third: it names a joint of the rig above it and reads that joint out of
 the published pose, which is how a weapon ends up in a hand.
 
-The six `UI*` components are one family and are covered in [UI](ui.md):
+The eight `UI*` components are one family and are covered in [UI](ui.md):
 a `UICanvas` roots a tree, every node in it carries a `UIElement` for its rect,
 and `UIImage`, `UIText`, `UIButton` and `UIScroll` are what an element can *be* -
-added to the same entity, not parented under it. Nesting is the entity
+added to the same entity, not parented under it. `UISlider` and `UIToggle` ride
+on a `UIButton`: the button takes the press, they turn it into a value. Nesting is the entity
 hierarchy, so a UI tree is built with `Hierarchy` like anything else.
 
 `AudioSource` and `AudioListener` are covered in [Audio](audio.md). There

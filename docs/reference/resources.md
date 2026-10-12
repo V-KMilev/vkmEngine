@@ -62,6 +62,11 @@ MeshHandle handle = rm.add(MeshAsset{ ... });
 // hands back the handle that already had it, so this is safe to run twice.
 MeshHandle named  = rm.add(MeshAsset{ ... }, "wall_512");
 
+// Find the name, or make it once: what stands under it is kept, the library's or
+// one made before - so across a script reload it is the old code's, and an edited
+// make() takes effect only once the asset is gone. add() is the one that replaces.
+MaterialHandle red = rm.findOrAdd<MaterialAsset>("game:red", makeRed);
+
 // Read-only access
 const MeshAsset& mesh = rm.get(handle);
 
@@ -539,7 +544,7 @@ imports and (re)cooks recipes into the cache.
 
 | File                    | Provides                                                       |
 |-------------------------|----------------------------------------------------------------|
-| `mesh_generators.cpp`   | `generateTriangle/Plane/Cube/Sphere/Pyramid/Cone/Cylinder` free functions |
+| `mesh_generators.cpp`   | `generateTriangle/Plane/Cube/Sphere/Pyramid/Cone/Cylinder/Ring` free functions |
 | `texture_generators.cpp`| Solid color, white, black, normal, gray (1x1 fallback)         |
 | `material_generators.cpp`| Default PBR material with the fallback texture suite          |
 | `light_generators.cpp`  | `generateLight(LightType)` - a light component with that type's defaults |

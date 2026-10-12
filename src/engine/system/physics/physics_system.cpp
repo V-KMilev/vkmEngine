@@ -221,6 +221,22 @@ void expandSubShapes(
     p.capsuleCount = static_cast<uint32_t>(capsules.size()) - p.capsuleFirst;
 }
 
+/**
+ * @brief How fast two bodies' points at @p point close along @p normal (a -> b), m/s; zero apart.
+ *
+ * Read before the solve, as gathered: how hard a contact struck, not what is left of it after.
+ */
+float closingSpeed(
+    const PhysicsBody& a,
+    const PhysicsBody& b,
+    const glm::vec3& point,
+    const glm::vec3& normal
+) {
+    const glm::vec3 va = a.linearVelocity + glm::cross(a.angularVelocity, point - a.position);
+    const glm::vec3 vb = b.linearVelocity + glm::cross(b.angularVelocity, point - b.position);
+    return glm::max(glm::dot(va - vb, normal), 0.0f);
+}
+
 } // namespace
 
 void PhysicsSystem::fixedUpdate(FrameContext& ctx) {
@@ -323,7 +339,7 @@ bool PhysicsSystem::gatherBodies(Scene& scene, const ResourceManager& resources,
         }
 
         frame.pose    = worldPoseOf(scene, id, *local);
-        frame.decided = net.simulates(id);
+        frame.decided = net.simulates(scene, id);
         const glm::vec3 worldPos = frame.pose.position;
         const glm::quat worldRot = frame.pose.rotation;
 
@@ -469,6 +485,12 @@ void PhysicsSystem::narrowphase(bool replaying) {
                 tracked.bTrigger = B.isTrigger;
                 tracked.point    = touch.point;
                 tracked.normal   = touch.normal;
+                tracked.speed    = closingSpeed(
+                    m_solverBodies[A.body],
+                    m_solverBodies[B.body],
+                    touch.point,
+                    touch.normal
+                );
                 m_touchingThisTick.push_back(tracked);
             }
 
@@ -514,6 +536,7 @@ void PhysicsSystem::reportContacts(const Scene& scene, EventBus& events) {
             if (phase != ContactPhase::Ended) {
                 event.point  = pair.point;
                 event.normal = pair.normal;
+                event.speed  = pair.speed;
             }
             events.enqueue(event);
             return;

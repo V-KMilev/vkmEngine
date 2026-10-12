@@ -63,11 +63,7 @@ void NetInterpolation::record(
     if (track.entity != entity) track = Track{entity, {}, false};
 
     track.history.record(tick, position, rotation);
-
-    if (!m_started || tick > m_newestTick) {
-        m_newestTick = tick;
-        m_started    = true;
-    }
+    heardOf(tick);
 }
 
 void NetInterpolation::heard(uint32_t tick, float tickRate) {
@@ -82,6 +78,16 @@ void NetInterpolation::heard(uint32_t tick, float tickRate) {
     m_heardAt   = m_seconds;
     m_heardTick = tick;
     m_heardAny  = true;
+
+    // A snapshot naming nothing still says where the server is: the render clock runs on it.
+    heardOf(tick);
+}
+
+void NetInterpolation::heardOf(uint32_t tick) {
+    if (!m_started || tick > m_newestTick) {
+        m_newestTick = tick;
+        m_started    = true;
+    }
 }
 
 float NetInterpolation::delayTicks(float tickRate, float snapshotRate) const {

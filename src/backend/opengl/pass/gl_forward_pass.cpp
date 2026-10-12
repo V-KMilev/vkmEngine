@@ -13,6 +13,7 @@
 #include "storage/gl_cluster_grid.h"
 #include "storage/gl_irradiance_volume.h"
 #include "storage/gl_shadow_atlas.h"
+#include "storage/gl_ocean_fields.h"
 #include "gl_view.h"
 #include "core/engine_config.h"
 #include "convention/gl_bindings.h"
@@ -58,6 +59,11 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
 
     ctx.clusters.bind();
     ctx.objects.bind();
+    // The ocean's ripples and shore, if the frame made them; with none its water reads neither.
+    // The static program alone: a skinned mesh is never moved as water, so has no waterline.
+    ctx.oceanFields.bind();
+    m_shader.bind();
+    m_shader.setUniform4fv("u_oceanShore", ctx.oceanFields.shore());
 
     // With no palette no run is skinned, so the skinned program is never bound
     // and never told anything.

@@ -15,6 +15,7 @@
 #include <GL/glew.h>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include "logger.h"
 
@@ -44,10 +45,12 @@
 #include "frame/gl_lights.h"
 #include "frame/gl_shadow_data.h"
 #include "frame/gl_camera.h"
+#include "frame/gl_ocean.h"
 #include "offline/gl_cube_convolver.h"
 #include "offline/gl_ibl_baker.h"
 #include "storage/gl_atmosphere.h"
 #include "storage/gl_ibl.h"
+#include "storage/gl_ocean_fields.h"
 #include "system/sky/atmosphere.h"
 #include "ecs/environment.h"
 #include "asset/gl_material.h"
@@ -61,6 +64,7 @@
 #include "system/render/data/particle_data.h"
 #include "system/render/editor_render_hooks.h"
 #include "system/render/render_view.h"
+#include "system/ocean/ocean_data.h"
 #include "platform/window/window_manager.h"
 #include "platform/threading/thread_pool.h"
 
@@ -989,6 +993,253 @@ void testTheDisplayEncodeInvertsTheSrgbDecode() {
     check("with no GL error behind it", noGlError());
 }
 
+// Gameplay floats things on OceanSurface's water and the vertex shaders draw ocean.glsl's: the two
+// are one sum stated twice, so they must put the water in the same place, point for point.
+void testTheDrawnSeaIsTheOneGameplayFloatsOn() {
+    using namespace Vkm::Engine;
+    std::printf("The ocean the GPU draws and the one gameplay asks:\n");
+
+    Ocean storm;
+    storm.windSpeed     = 14.0f;
+    storm.choppiness    = 1.0f;
+    storm.waveCount     = Ocean::MAX_WAVES;
+    storm.calmRadius    = 30.0f;
+    storm.stillRadius   = 90.0f;
+    // Two surges over the probed square, one whole and one with its end in it.
+    storm.surges[0] = {{-20.0f, 10.0f}, glm::normalize(glm::vec2(0.6f, 0.8f)), 1.4f, 1.5f, 12.0f};
+    storm.surges[1] = {{40.0f, -30.0f}, {1.0f, 0.0f}, 0.8f, 1.0f, 20.0f};
+
+    constexpr int POINTS = 256;
+    std::vector<glm::vec4> points(POINTS);
+    for (int i = 0; i < POINTS; ++i) {
+        points[i] = glm::vec4(i * 0.43f - 55.0f, std::fmod(i * 7.9f, 120.0f) - 60.0f, 0.0f, 0.0f);
+    }
+    const uint32_t bytes = static_cast<uint32_t>(points.size() * sizeof(glm::vec4));
+    const Vkm::GL::ComputeShader probe("tests/render/shaders/ocean_surface");
+    check("the probe compiles", probe.isValid());
+
+    // Where the GPU moves each point's water from @p sea's block - xyz, and w = 1 where the block
+    // says there is an ocean - and, after them, its normals.
+    GLOcean block;
+    const auto drawn = [&](OceanData sea, bool present) {
+        sea.present = present;
+        block.update(sea);
+        Vkm::GL::ShaderStorageBuffer buffer(points.data(), bytes);
+        std::vector<glm::vec4> read(2 * POINTS);
+        Vkm::GL::ShaderStorageBuffer normals(read.data(), bytes);
+        buffer.bindBase(0);
+        normals.bindBase(1);
+        probe.bind();
+        probe.dispatch(POINTS / 64);
+        glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+        buffer.bind();
+        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, bytes, read.data());
+        normals.bind();
+        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, bytes, read.data() + POINTS);
+        return read;
+    };
+    // How far the GPU's water is from the CPU's at worst; a point with no ocean is a metre off.
+    const auto offBy = [&](const OceanData& sea) {
+        const std::vector<glm::vec4> moved = drawn(sea, true);
+        float worst = 0.0f;
+        for (int i = 0; i < POINTS; ++i) {
+            const glm::vec3 cpu = sea.surface.displacement(glm::vec2(points[i]));
+            const float     off = moved[i].w > 0.5f ? glm::length(glm::vec3(moved[i]) - cpu) : 1.0f;
+            worst = std::max(worst, off);
+        }
+        return worst;
+    };
+
+    OceanData sea;
+    sea.surface = OceanSurface::at(storm, glm::vec3(5.0f, 0.0f, -5.0f), 1234.5);
+    const float worst = offBy(sea);
+    const float height = sea.surface.significantHeight();
+    std::printf("      Hs %.2f m; the GPU's water within %.4f m of the CPU's\n", height, worst);
+    check("the GPU moves the water where OceanSurface says, within a centimetre", worst < 0.01f);
+
+    // The normal the GPU shades by, against the CPU's over the same water: it rests at the point.
+    const std::vector<glm::vec4> faced = drawn(sea, true);
+    float worstNormal = 0.0f;
+    for (int i = 0; i < POINTS; ++i) {
+        const glm::vec3 moved = glm::vec3(faced[i]);
+        const glm::vec2 over  = glm::vec2(points[i]) + glm::vec2(moved.x, moved.z);
+        const glm::vec3 gpu   = glm::vec3(faced[POINTS + i]);
+        worstNormal = std::max(worstNormal, glm::length(gpu - sea.surface.normalAt(over)));
+    }
+    std::printf("      its normals within %.4f of the CPU's, across the fade too\n", worstNormal);
+    check("  and turns it as OceanSurface says", worstNormal < 0.01f);
+
+    // No wind is still a sea: its surges lift the water, and its waterlines foam.
+    Ocean lake = storm;
+    lake.windSpeed = 0.0f;
+    OceanData still;
+    still.surface = OceanSurface::at(lake, glm::vec3(5.0f, 0.0f, -5.0f), 1234.5);
+    check("  and on a windless one, its surges", still.surface.count == 0 && offBy(still) < 0.01f);
+    check("  with no ocean, the block says there is none", drawn(OceanData{}, false)[0].w == 0.0f);
+    check("with no GL error behind it", noGlError());
+}
+
+// The ripples are drawn on grids of wavenumbers and transformed (shaders/ocean_ripples.glsl): each
+// field must hold the slope OceanRipples' spectrum gives its band, so the water is as rough as the
+// sea it stands for, its slopes centred, its squeeze the waves' choppiness of it - and steepest
+// along the wind, X here, the way they roll.
+void testTheRippleFieldsHoldTheSpectrumsSlope() {
+    using namespace Vkm::Engine;
+    std::printf("The ocean's ripple fields:\n");
+
+    Ocean sea;
+    sea.windSpeed      = 10.0f;
+    sea.minWavelength  = 3.0f;
+    sea.shortestRipple = 0.03f;
+    sea.choppiness     = 0.8f;
+    sea.windDirection  = 90.0f;
+    sea.spread         = 0.3f;
+    OceanData data;
+    data.surface = OceanSurface::at(sea, glm::vec3(0.0f), 77.0);
+    data.ripples = OceanRipples::at(sea, 77.0);
+    GLOcean block;
+    data.present = true;
+    block.update(data);
+    GLOceanFields fields;
+    fields.drawRipples();
+    fields.bind();
+
+    // Read where bind() put it, on the 4.3 context: no direct state access.
+    glActiveTexture(GL_TEXTURE0 + GLBindings::OceanTextureSlots::RIPPLES);
+    GLint size = 0;
+    glGetTexLevelParameteriv(GL_TEXTURE_2D_ARRAY, 0, GL_TEXTURE_WIDTH, &size);
+    const size_t texels = static_cast<size_t>(size) * static_cast<size_t>(size);
+    std::vector<glm::vec4> read(texels * RIPPLE_FIELDS);
+    glGetTexImage(GL_TEXTURE_2D_ARRAY, 0, GL_RGBA, GL_FLOAT, read.data());
+    glActiveTexture(GL_TEXTURE0);
+
+    // The band split as GLOcean splits it, evenly in log.
+    const OceanRipples& on = data.ripples;
+    bool held = true;
+    bool centred = true;
+    bool squeezed = true;
+    glm::dvec2 slopes(0.0);  // the mean square slope across X and across Z, every field
+    for (int f = 0; f < RIPPLE_FIELDS; ++f) {
+        const float from = on.longest * std::pow(on.shortest / on.longest, float(f) / RIPPLE_FIELDS);
+        const float to   = on.longest * std::pow(on.shortest / on.longest, float(f + 1) / RIPPLE_FIELDS);
+        glm::dvec4 mean(0.0);
+        double     squeeze = 0.0;
+        for (size_t i = 0; i < texels; ++i) {
+            const glm::vec4& texel = read[f * texels + i];
+            mean    += glm::dvec4(texel) / double(texels);
+            squeeze += double(texel.z) * texel.z / double(texels);
+            slopes  += glm::dvec2(texel.x * texel.x, texel.y * texel.y) / double(texels);
+        }
+        const double expected = on.slopeVariance(from, to);
+        std::printf(
+            "      field %d: slope variance %.5f against the spectrum's %.5f, squeeze %.5f\n",
+            f,
+            mean.w,
+            expected,
+            squeeze
+        );
+        held     = held && std::fabs(mean.w - expected) < 0.1 * expected;
+        centred  = centred && glm::length(glm::dvec2(mean)) < 0.05 * std::sqrt(expected);
+        const double chop = double(sea.choppiness) * sea.choppiness * mean.w;
+        squeezed = squeezed && std::fabs(squeeze - chop) < 0.1 * chop;
+    }
+    check("each field holds the slope the spectrum gives its band", held);
+    check("  its slopes centred on level", centred);
+    check("  its squeeze choppiness times its slope", squeezed);
+    std::printf("      mean square slope %.5f across X, %.5f across Z\n", slopes.x, slopes.y);
+    check("  and steepest the way the wind rolls them", slopes.x > 3.0 * slopes.y);
+    check("with no GL error behind it", noGlError());
+}
+
+// OceanRipples::density is stated again on the GPU (ocean_ripples.glsl, rippleDensity), and the
+// fields are drawn from that statement: the two must be one density, wavenumber for wavenumber,
+// in deep water and shallow, with the wind and against it.
+void testTheRipplesDensityIsTheCPUs() {
+    using namespace Vkm::Engine;
+    std::printf("The ripples' density on the GPU and the CPU:\n");
+
+    bool agree = true;
+    for (const float depth : {0.0f, 1.5f}) {
+        Ocean sea;
+        sea.windSpeed     = 9.0f;
+        sea.windDirection = 40.0f;
+        sea.spread        = 0.4f;
+        sea.depth         = depth;
+        sea.heightScale   = 1.3f;
+        OceanData data;
+        data.surface = OceanSurface::at(sea, glm::vec3(0.0f), 3.0);
+        data.ripples = OceanRipples::at(sea, 3.0);
+        GLOcean block;
+        data.present = true;
+        block.update(data);
+
+        constexpr int POINTS = 128;
+        std::vector<glm::vec4> points(POINTS);
+        for (int i = 0; i < POINTS; ++i) {
+            const float k     = data.ripples.longest * std::pow(40.0f, static_cast<float>(i % 16) / 15.0f);
+            const float angle = glm::two_pi<float>() * static_cast<float>(i / 16) / 8.0f + 0.3f;
+            points[i] = glm::vec4(k * std::cos(angle), k * std::sin(angle), 0.0f, 0.0f);
+        }
+        const uint32_t bytes = static_cast<uint32_t>(points.size() * sizeof(glm::vec4));
+        Vkm::GL::ShaderStorageBuffer buffer(points.data(), bytes);
+        const Vkm::GL::ComputeShader probe("tests/render/shaders/ocean_density");
+        buffer.bindBase(0);
+        probe.bind();
+        probe.dispatch(POINTS / 64);
+        glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+        std::vector<glm::vec4> read(POINTS);
+        buffer.bind();
+        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, bytes, read.data());
+
+        float worst = 0.0f;
+        for (int i = 0; i < POINTS; ++i) {
+            const float cpu = data.ripples.density(glm::vec2(points[i]));
+            const float gpu = read[i].x;
+            if (cpu > 1e-12f) worst = std::max(worst, std::abs(gpu - cpu) / cpu);
+            else if (gpu > 1e-12f) worst = 1.0f;
+        }
+        const char* water = depth > 0.0f ? "shallow" : "deep";
+        std::printf("      %s water: the GPU's density within %.4f%% of the CPU's\n", water, 100.0f * worst);
+        agree = agree && worst < 0.001f;
+    }
+    check("the GPU draws the ripples from the CPU's density, deep and shallow", agree);
+    check("with no GL error behind it", noGlError());
+}
+
+// The ripple fields are transformed a line at a time in shared memory (ocean_ripples.glsl,
+// rippleTransform): a single frequency must come out its plane wave, e^(2 pi i m n / N), turning
+// the right way, from either half of the line.
+void testTheRipplesTransformMakesPlaneWaves() {
+    using namespace Vkm::Engine;
+    std::printf("The ripples' line transform:\n");
+
+    const int size = RIPPLE_FIELD_SIZE;
+    std::vector<glm::vec4> line(static_cast<size_t>(size));
+    const uint32_t bytes = static_cast<uint32_t>(line.size() * sizeof(glm::vec4));
+    Vkm::GL::ShaderStorageBuffer buffer(line.data(), bytes);
+    const Vkm::GL::ComputeShader probe("tests/render/shaders/ocean_fft");
+    check("the probe compiles", probe.isValid());
+    const glm::ivec2 bins(3, size - 5);  // three turns a line, and five the other way
+    buffer.bindBase(0);
+    probe.bind();
+    probe.setUniform2i("u_bins", bins.x, bins.y);
+    probe.dispatch(1);
+    glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+    buffer.bind();
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, bytes, line.data());
+
+    float worst = 0.0f;
+    for (int n = 0; n < size; ++n) {
+        const float first  = glm::two_pi<float>() * static_cast<float>(bins.x * n) / static_cast<float>(size);
+        const float second = glm::two_pi<float>() * static_cast<float>(-5 * n) / static_cast<float>(size);
+        const glm::vec4 wave(std::cos(first), std::sin(first), std::cos(second), std::sin(second));
+        worst = std::max(worst, glm::length(line[static_cast<size_t>(n)] - wave));
+    }
+    std::printf("      every texel within %.5f of its plane wave\n", worst);
+    check("a single frequency transforms to its plane wave, either way round", worst < 1e-3f);
+    check("with no GL error behind it", noGlError());
+}
+
 // A cutout's shadow is cut by its albedo map, so the map is part of a held tile: a map
 // re-uploaded under the same handle must re-sign it. And cutouts sharing a mesh but not
 // a material are two runs (a run binds one material); opaque casters sharing a mesh are one.
@@ -1063,6 +1314,77 @@ void testACutoutsMapIsPartOfItsShadow() {
     resources.edit(holes).pixelData[3] = 0;
     resources.commit(holes);
     check("a new cut in the map is a new picture", signature() != first);
+    check("with no GL error behind any of it", noGlError());
+}
+
+// A transparent caster's shadow is cut by its alpha too, so it is planned as a cutout is: a run
+// a material, and its map part of the tile's picture - a decal's see-through surround casts none.
+void testATransparentCastersShadowIsCutByItsAlpha() {
+    using namespace Vkm::Engine;
+    std::printf("Transparent shadow casters under a spot light:\n");
+
+    ResourceManager resources;
+    TextureAsset map;
+    map.params.width  = 2;
+    map.params.height = 2;
+    map.pixelData.assign(2 * 2 * 4, 255);
+    const TextureHandle decal = resources.add(std::move(map), "test:decal");
+    const auto material = [&](const char* name) {
+        MaterialAsset asset;
+        asset.type          = MaterialType::Transparent;
+        asset.albedoTexture = decal;
+        return resources.add(std::move(asset), name);
+    };
+    const MaterialHandle glassA = material("test:glassA");
+    const MaterialHandle glassB = material("test:glassB");
+    const MeshHandle     cube   = resources.add(generateCube(), "test:cube");
+
+    RenderObjects objects;
+    const MaterialHandle materials[2] = {glassA, glassB};
+    for (uint32_t i = 0; i < 2; ++i) {
+        const glm::vec3 at(static_cast<float>(i) - 0.5f, 0.5f, 0.0f);
+        objects.models.push_back(glm::translate(glm::mat4(1.0f), at));
+        objects.bounds.push_back({at - glm::vec3(0.5f), at + glm::vec3(0.5f)});
+        objects.draws.push_back({cube, materials[i], 0});
+        objects.skinFirst.push_back(0);
+        objects.visible.push_back(i);
+        objects.scene.push_back(i);
+    }
+    objects.casterCount = 2;
+
+    RenderView view;
+    view.objects = &objects;
+    view.camera  = Vkm::Engine::CameraData::from(
+        glm::lookAt(glm::vec3(0.0f, 3.0f, 8.0f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f)),
+        glm::perspective(glm::radians(60.0f), 1.0f, 0.1f, 100.0f),
+        glm::vec3(0.0f, 3.0f, 8.0f)
+    );
+    LightData spot{};
+    spot.type           = LightType::Spot;
+    spot.position       = glm::vec3(0.0f, 6.0f, 0.0f);
+    spot.direction      = glm::vec3(0.0f, -1.0f, 0.0f);
+    spot.radius         = 20.0f;
+    spot.innerConeAngle = 0.6f;
+    spot.outerConeAngle = 0.9f;
+    spot.castShadows    = true;
+    spot.shadowBias     = 0.001f;
+    view.lights.push_back(spot);
+
+    GLView       glView;
+    GLShadowData plan;
+    const auto signature = [&]() {
+        glView.sync(view, resources);
+        plan.build(view, glView, SHADOW_ATLAS_MIN_TILE_RES);
+        plan.finishCull();
+        return plan.batch2D(0).signature;
+    };
+
+    const uint64_t first = signature();
+    const bool apart = plan.batch2D(0).runs.size() == 2;
+    check("two transparent casters on one mesh are two runs, a material each", apart);
+    resources.edit(decal).pixelData[3] = 0;
+    resources.commit(decal);
+    check("  and a new clear part in their map is a new picture", signature() != first);
     check("with no GL error behind any of it", noGlError());
 }
 
@@ -1434,6 +1756,18 @@ void testTheSharedBlocksAgreeWithTheirStructs() {
             && uniformAt("MaterialBlock.metallic", offsetof(MaterialUBO, metallic))
             && uniformAt("MaterialBlock.alphaCutoff", offsetof(MaterialUBO, alphaCutoff))
             && uniformAt("MaterialBlock.textureFlags", offsetof(MaterialUBO, textureFlags))
+            && uniformAt("MaterialBlock.waves", offsetof(MaterialUBO, waves))
+    );
+
+    check(
+        "the ocean block is the size of OceanUBO",
+        programResource(forward, GL_UNIFORM_BLOCK, "OceanBlock", GL_BUFFER_DATA_SIZE)
+            == static_cast<GLint>(sizeof(OceanUBO))
+    );
+    check(
+        "  its waves where the struct has them",
+        uniformAt("OceanBlock.squeeze", offsetof(OceanUBO, squeeze))
+            && uniformAt("OceanBlock.waves", offsetof(OceanUBO, waves))
     );
 
     check(
@@ -1492,6 +1826,143 @@ void testASkyBakesAgainOnlyOnceItsSunHasMoved() {
     SkyParams hazier = at(30.0f);
     hazier.air.mieScattering += glm::vec3(1.0e-6f);
     check("  as has a sky in hazier air", !hazier.driftsFrom(at(30.0f)));
+}
+
+// The sky's convolutions draw their samples by their lobes (shaders/ibl): what they make must be
+// the integral they stand for, against skies with an answer in closed form. Under a sky of one
+// radiance everywhere, every lobe returns it; under one bright above the horizon and black below,
+// irradiance over pi is L (1 + cos a) / 2, a the normal's angle from straight up.
+void testTheSkysConvolutionsAreTheIntegralsTheyStandFor() {
+    std::printf("The sky's convolutions against skies with known answers:\n");
+    using namespace Vkm::Engine;
+
+    Vkm::GL::setShaderPrelude(OPENGL_GLSL_VERSION, GLBackend::shaderConstants());
+    Vkm::GL::Context gl;
+    GLMeshPool pool;
+    const GLMesh cube(pool, generateCube());
+    GLCubeConvolver convolver(cube);
+
+    constexpr int ENV  = 256;
+    constexpr int OUT  = 16;
+    constexpr int MIPS = 5;
+    // GL's cube faces, +X -X +Y -Y +Z -Z: the direction through texel (s, t) in [-1, 1].
+    const auto direction = [](int face, float s, float t) {
+        switch (face) {
+            case 0:  return glm::vec3(1.0f, -t, -s);
+            case 1:  return glm::vec3(-1.0f, -t, s);
+            case 2:  return glm::vec3(s, 1.0f, t);
+            case 3:  return glm::vec3(s, -1.0f, -t);
+            case 4:  return glm::vec3(s, -t, 1.0f);
+            default: return glm::vec3(-s, -t, -1.0f);
+        }
+    };
+    const auto convolve = [&](bool hemisphere, std::vector<float>& irradiance, std::vector<float>& rough) {
+        // On the 4.3 context the engine asks for: no direct state access.
+        GLuint env = 0;
+        glGenTextures(1, &env);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, env);
+        glTexStorage2D(GL_TEXTURE_CUBE_MAP, fullMipChain(ENV), GL_RGBA16F, ENV, ENV);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        std::vector<float> face(static_cast<size_t>(ENV) * ENV * 4);
+        for (int f = 0; f < 6; ++f) {
+            for (int y = 0; y < ENV; ++y) {
+                for (int x = 0; x < ENV; ++x) {
+                    const float s  = 2.0f * (static_cast<float>(x) + 0.5f) / ENV - 1.0f;
+                    const float t  = 2.0f * (static_cast<float>(y) + 0.5f) / ENV - 1.0f;
+                    const float up = direction(f, s, t).y;
+                    const float l  = !hemisphere || up > 0.0f ? 1.0f : 0.0f;
+                    float* texel = &face[(static_cast<size_t>(y) * ENV + x) * 4];
+                    texel[0] = texel[1] = texel[2] = l;
+                    texel[3] = 1.0f;
+                }
+            }
+            const GLenum side = GL_TEXTURE_CUBE_MAP_POSITIVE_X + static_cast<GLenum>(f);
+            glTexSubImage2D(side, 0, 0, 0, ENV, ENV, GL_RGBA, GL_FLOAT, face.data());
+        }
+        glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
+
+        GLuint targets[2] = {};
+        glGenTextures(2, targets);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, targets[0]);
+        glTexStorage2D(GL_TEXTURE_CUBE_MAP, 1, GL_RGBA32F, OUT, OUT);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, targets[1]);
+        glTexStorage2D(GL_TEXTURE_CUBE_MAP, MIPS, GL_RGBA32F, OUT, OUT);
+        GLuint fbo = 0;
+        glGenFramebuffers(1, &fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+        gl.setDepthTest(false);
+        gl.setBlending(false);
+        gl.setFaceCulling(false);
+        glActiveTexture(GL_TEXTURE0 + GLBindings::BakeTextureSlots::SOURCE);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, env);
+        glActiveTexture(GL_TEXTURE0);
+        gl.setViewport(0, 0, OUT, OUT);
+        convolver.irradiance([&](int f) {
+            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, targets[0], 0, f);
+        });
+        convolver.prefilter(MIPS, [&](int f, int mip) {
+            gl.setViewport(0, 0, OUT >> mip, OUT >> mip);
+            glFramebufferTextureLayer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, targets[1], mip, f);
+        });
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        // Every face of @p level of @p cube, one after another, as floats.
+        const auto readCube = [](GLuint cube, int level, int size, std::vector<float>& texels) {
+            const size_t face = static_cast<size_t>(size) * size * 4;
+            texels.resize(face * 6);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, cube);
+            for (int f = 0; f < 6; ++f) {
+                const GLenum side = GL_TEXTURE_CUBE_MAP_POSITIVE_X + static_cast<GLenum>(f);
+                glGetTexImage(side, level, GL_RGBA, GL_FLOAT, &texels[face * static_cast<size_t>(f)]);
+            }
+        };
+        readCube(targets[0], 0, OUT, irradiance);
+        // The roughest level, a texel a face at its base: what the widest lobe makes.
+        readCube(targets[1], MIPS - 1, OUT >> (MIPS - 1), rough);
+        glDeleteFramebuffers(1, &fbo);
+        glDeleteTextures(2, targets);
+        glDeleteTextures(1, &env);
+    };
+
+    // A face's middle, the mean of its four middle texels, red channel.
+    const auto middle = [](const std::vector<float>& cube, int size, int face) {
+        if (size == 1) return cube[static_cast<size_t>(face) * 4];
+        float sum = 0.0f;
+        for (int y = size / 2 - 1; y <= size / 2; ++y) {
+            for (int x = size / 2 - 1; x <= size / 2; ++x) {
+                sum += cube[((static_cast<size_t>(face) * size + y) * size + x) * 4];
+            }
+        }
+        return 0.25f * sum;
+    };
+
+    std::vector<float> irradiance;
+    std::vector<float> rough;
+    convolve(false, irradiance, rough);
+    float uniform = 0.0f;
+    for (int f = 0; f < 6; ++f) {
+        uniform = std::max(uniform, std::abs(middle(irradiance, OUT, f) - 1.0f));
+        uniform = std::max(uniform, std::abs(middle(rough, OUT >> (MIPS - 1), f) - 1.0f));
+    }
+    std::printf("      under a uniform sky, every lobe within %.4f of it\n", uniform);
+    check("a uniform sky convolves to itself, diffuse and roughest", uniform < 0.005f);
+
+    convolve(true, irradiance, rough);
+    const float above = middle(irradiance, OUT, 2);
+    const float level = middle(irradiance, OUT, 4);
+    const float below = middle(irradiance, OUT, 3);
+    std::printf(
+        "      under half a sky: facing up %.4f, level %.4f, down %.4f (1, 0.5, 0)\n",
+        above,
+        level,
+        below
+    );
+    check(
+        "half a sky's irradiance is the closed form's, within a percent",
+        std::abs(above - 1.0f) < 0.01f && std::abs(level - 0.5f) < 0.01f && below < 0.01f
+    );
+    check("with no GL error behind any of it", noGlError());
 }
 
 // The transmittance table the sky bake reads and the CPU's sunlight integrate one atmosphere;
@@ -1599,6 +2070,30 @@ void testASkyBakedAStepAFrameTakesTheStepsItCounts() {
     check("the bake takes as many steps as slicedSteps counts", steps == GLIBLBaker::slicedSteps());
     check("  and the last swaps it in", swapped && ibl.isReady());
     check("with no GL error behind any of it", noGlError());
+
+    // A sky within CATCH_UP_DEGREES of the shown one takes a step a frame; one run further ahead, a
+    // step more for each CATCH_UP_DEGREES its sun or moon is behind, so a time-lapse keeps pace.
+    // Turned about an axis square to it, so by the whole angle.
+    const auto turned = [](const glm::vec3& direction, float degrees) {
+        const glm::vec3 up   = glm::vec3(0.0f, 1.0f, 0.0f);
+        const glm::vec3 side = std::abs(direction.y) < 0.9f ? up : glm::vec3(1.0f, 0.0f, 0.0f);
+        return glm::angleAxis(glm::radians(degrees), glm::normalize(glm::cross(direction, side))) * direction;
+    };
+    const float three = 3.0f * GLIBLBaker::CATCH_UP_DEGREES + 0.1f;
+    SkyParams ahead = sky;
+    ahead.sunDir = turned(sky.sunDir, three);
+    SkyParams moonlit = sky;
+    moonlit.moonDir = turned(sky.moonDir, three);
+    SkyParams risen = sky;
+    risen.sunDir = turned(sky.sunDir, 90.0f);
+    check("a sky as shown takes a step a frame", GLIBLBaker::stepsFor(sky, sky) == 1);
+    const bool caught = GLIBLBaker::stepsFor(ahead, sky) == 4;
+    check("  one whose sun has run ahead, a step more per its degrees", caught);
+    check("  and so does one whose moon has", GLIBLBaker::stepsFor(moonlit, sky) == 4);
+    check(
+        "  but never more than a frame can afford",
+        GLIBLBaker::stepsFor(risen, sky) == GLIBLBaker::MAX_CATCH_UP_STEPS
+    );
 }
 
 int runTests() {
@@ -1646,6 +2141,7 @@ int runTests() {
     testTheDisplayEncodeInvertsTheSrgbDecode();
     testAnAreaLightsFormFactorHoldsStraightDownTheNormal();
     testACutoutsMapIsPartOfItsShadow();
+    testATransparentCastersShadowIsCutByItsAlpha();
     testATilesRunsKeepEachLayoutTogether();
     testACutoutElsewhereLeavesAHeldTileHeld();
     testACasterAboveTheCascadesIsKept();
@@ -1654,9 +2150,14 @@ int runTests() {
     testAStubKeepsTheFilteringOfTheUploadItReplaces();
     testAStaleHandleFindsNothing();
     testTheSharedBlocksAgreeWithTheirStructs();
+    testTheDrawnSeaIsTheOneGameplayFloatsOn();
+    testTheRippleFieldsHoldTheSpectrumsSlope();
+    testTheRipplesDensityIsTheCPUs();
+    testTheRipplesTransformMakesPlaneWaves();
     testMeshesInOnePoolDrawAsOneMultiDraw();
     testASkyBakesAgainOnlyOnceItsSunHasMoved();
     testTheSkysTransmittanceIsTheSunlights();
+    testTheSkysConvolutionsAreTheIntegralsTheyStandFor();
     testASkyBakedAStepAFrameTakesTheStepsItCounts();
     // Last: it gives the context a surface, which the tests above do not want.
     Vkm::Test::runGoldenTests(gl, g_failures);

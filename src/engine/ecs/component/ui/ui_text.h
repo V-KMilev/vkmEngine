@@ -25,6 +25,9 @@ struct UIText {
     enum class Align  : uint8_t { Left, Center, Right, Count };
     enum class VAlign : uint8_t { Top, Middle, Bottom, Count };
 
+    /// How far the shadow falls, down and right, in the text's heights.
+    static constexpr float SHADOW_DROP = 1.0f / 16.0f;
+
     /// UTF-8; what the font does not cover draws nothing.
     std::string text;
     /// Baked SDF font asset name; nothing draws if unresolved.
@@ -33,6 +36,9 @@ struct UIText {
     glm::vec4   color     = {1.0f, 1.0f, 1.0f, 1.0f};  ///< Straight (non-premultiplied) RGBA.
     Align       align     = Align::Left;               ///< Horizontal alignment within the element rect.
     VAlign      valign    = VAlign::Top;               ///< Vertical alignment within the element rect.
+    /// A drop shadow under the text, down and right by SHADOW_DROP of its height, so it reads
+    /// over the scene without a panel behind it; none while transparent.
+    glm::vec4   shadow    = {0.0f, 0.0f, 0.0f, 0.0f};
 
     /**
      * @brief Whether a line too wide for the element rect breaks onto the next.
@@ -53,5 +59,6 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::UIText)
     VKM_F(color)
     VKM_F(align)
     VKM_F(valign)
+    VKM_F(shadow)
     VKM_F(wrap)
 VKM_REFLECT_END()

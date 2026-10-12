@@ -14,7 +14,9 @@
 #include "net/prediction/command.h"
 #include "net/prediction/interpolation.h"
 #include "net/prediction/pacing.h"
+#include "net/replication/names.h"
 #include "net/transport/connection.h"
+#include "net/transport/messages.h"
 #include "net/wire/bit_stream.h"
 #include "net/wire/protocol.h"
 
@@ -54,8 +56,11 @@ class NetClient {
         /// Start talking to @p server. Nothing is sent until the first tick has run.
         void open(const NetAddress& server);
 
-        /// Tell the server goodbye and forget everything this session held.
+        /// Tell the server goodbye and forget everything this session held but what it made.
         void close();
+
+        /// Mark what this session made to go at the next sweepEnded: the session is over.
+        void endSession() { m_names.endSession(); }
 
         void advance(float seconds);
 
@@ -72,8 +77,8 @@ class NetClient {
         /// Send a Hello until welcomed, then the commands the server has not heard.
         void send();
 
-        /// Whether this end decides @p entity: its own, or one it leases.
-        bool simulates(EntityId entity) const;
+        /// See NetSession::simulates.
+        bool simulates(const Scene& scene, EntityId entity) const;
 
         /// See NetSession::lease.
         void lease(const std::vector<EntityId>& entities);
@@ -103,6 +108,18 @@ class NetClient {
         /// Drop everything naming an entity; see NetSession::forgetWorld.
         void forgetWorld();
 
+        /// See NetSession::entityFor.
+        EntityId entityFor(const Scene& scene, uint32_t slot) const { return m_names.find(scene, slot); }
+
+        /// The world as loaded; see NetSession::setWorld.
+        void adoptWorld(const Scene& scene) { m_names.adoptWorld(scene); }
+
+        /// Destroy what the session last closed had made (NetNames::sweepEnded).
+        void sweepEnded(Scene& scene) { m_names.sweepEnded(scene); }
+
+        /// See NetSession::sendMessage.
+        bool sendMessage(const uint8_t* bytes, size_t size);
+
         std::string describe() const;
 
     public:
@@ -123,6 +140,11 @@ class NetClient {
         float predictionError() const { return m_prediction.error; }
 
         float renderDelay() const { return m_interpolation.behindTicks(); }
+
+        /// Whether a snapshot has arrived, so drawnTick() is the server's.
+        bool drawingServerTicks() const { return m_interpolation.started(); }
+
+        double drawnTick() const { return m_interpolation.renderTick(); }
 
         float pacing() const { return m_prediction.pacing.scale(); }
 
@@ -304,7 +326,9 @@ class NetClient {
         Prediction m_prediction;
 
         NetInterpolation      m_interpolation;
-        std::vector<uint32_t> m_touched;
+        std::vector<EntityId> m_touched;
+        NetNames              m_names;   ///< What the server's slots name here.
+        NetOutbox             m_outbox;  ///< Messages the server has not said it has.
 };
 
 } // namespace Vkm::Engine

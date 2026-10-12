@@ -84,7 +84,8 @@ class NetInterpolation {
          *
          * Once per snapshot. How far each arrival is off its due time is the
          * jitter the delay grows to ride out; a fixed delay would run the
-         * clock into the newest sample and the world would pause.
+         * clock into the newest sample and the world would pause. The first
+         * starts the render clock, whether or not it named anything.
          *
          * @param tick     The server tick the snapshot's header names.
          * @param tickRate Ticks a second, to turn ticks into time.
@@ -152,6 +153,9 @@ class NetInterpolation {
          */
         double renderTick() const { return m_renderTick; }
 
+        /// Whether a snapshot has been heard, so the render clock runs.
+        bool started() const { return m_started; }
+
         /**
          * @brief How far behind the newest news it is drawing, in ticks.
          *
@@ -173,6 +177,9 @@ class NetInterpolation {
 
         /// Whether an inactive ragdoll poses the entity at @p slot, as last marked.
         bool isPosed(uint32_t slot) const { return slot < m_posed.size() && m_posed[slot]; }
+
+        /// Start the render clock at @p tick, or move its newest on to it.
+        void heardOf(uint32_t tick);
 
     private:
         std::unordered_map<uint32_t, Track> m_tracks;

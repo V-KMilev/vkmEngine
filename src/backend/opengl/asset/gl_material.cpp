@@ -39,6 +39,8 @@ void GLMaterial::update(const MaterialAsset& material) {
     m_uploadId    = ++g_lastUpload;
     m_type        = material.type;
     m_doubleSided = material.doubleSided;
+    const bool seeThrough = material.albedo.a < 1.0f || static_cast<bool>(material.albedoTexture);
+    m_cutsShadow  = m_type == MaterialType::AlphaMask || (m_type == MaterialType::Transparent && seeThrough);
 
     m_textureBindings.clear();
 
@@ -74,7 +76,7 @@ void GLMaterial::update(const MaterialAsset& material) {
     data.alphaCutoff        = material.alphaCutoff;
     data.type               = static_cast<int>(material.type);
     data.textureFlags       = flags;
-    data.pad0               = 0;
+    data.waves              = material.waves ? 1 : 0;
 
     if (m_ubo) m_ubo->update(&data, sizeof(data));
     else       m_ubo = std::make_unique<Vkm::GL::UniformBuffer>(&data, sizeof(data), GL_DYNAMIC_DRAW);

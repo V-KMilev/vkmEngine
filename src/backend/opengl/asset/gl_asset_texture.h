@@ -87,11 +87,12 @@ class GLTexture {
 };
 
 /**
- * @brief Decode the image at @p path and upload it as sRGB colour with no mip chain.
+ * @brief Decode the image at @p path and upload it as sRGB colour, with a mip chain.
  *
- * For a picture the host shows at about its own size and no asset describes,
- * so it is read straight off disk. Rows arrive bottom-up (see decodeImageRGBA);
- * a drawer whose UVs run the other way flips them at the draw.
+ * For a picture the host shows and no asset describes, so it is read straight off disk. The
+ * chain keeps an image drawn several times smaller than its pixels from shedding its fine
+ * strokes. Rows arrive bottom-up (see decodeImageRGBA); a drawer whose UVs run the other way
+ * flips them at the draw.
  *
  * @param path Image file to read.
  * @return The texture, or null when the file does not decode.

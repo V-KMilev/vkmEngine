@@ -164,6 +164,7 @@ The suites are split by **what each one needs to run**, not by what it covers:
 | `vkm_engine` | `vkm_engine_tests`            | nothing                                  |
 | `render`     | `vkm_render_tests`            | an EGL device                            |
 | `vkm_tool`   | `tests/tools/vkm_tool.cmake`  | Python 3.8, and the build tree at `build/` |
+| `vkm_download` | `tests/tools/vkm_download_tests.py` | Python 3.8                         |
 
 `vkm_gl` covers the parts of vkmGL that need no GL context (vertex layout
 arithmetic, and the shader preprocessor's include resolution, cycle guard and
@@ -184,7 +185,7 @@ file named for it, every such file a row, and that the list below names them
 all. The suites that run today are `core`, `ecs`, `hierarchy`, `query`,
 `collision`, `solver`, `joint`, `ragdoll`, `character`, `resource`, `async`,
 `cook`, `import`, `authoring`, `prefab`, `scene`, `play`, `undo`, `culling`,
-`sky`, `animation`, `particle`, `wire`, `transport`, `replication`, `prediction`,
+`sky`, `ocean`, `animation`, `particle`, `wire`, `transport`, `replication`, `prediction`,
 `session`, `ui`, `audio`, `script`, `hostile`, `docs`. All of it is computation over a
 `Scene`, so it runs on a machine with no GPU and no display.
 
@@ -347,24 +348,31 @@ Without it, a game packaged from the SDK ships on the development engine, and
 
 ### CI and releases
 
-Every push to `master` or a `vkm/` branch, and every pull request, runs
-`.github/workflows/ci.yml`, which is `.github/workflows/build.yml` and nothing
-else:
+Nothing runs on a push. A version tag builds before it releases (below), and
+any branch can be built by hand - Actions > CI > Run workflow on GitHub, or
+`gh workflow run ci.yml --ref <branch>` - through `.github/workflows/ci.yml`,
+which is `.github/workflows/build.yml` and nothing else - two stages, a job each,
+so a run says which failed and reruns only that, after a Plan job that says once
+what they run on:
 
-- **GCC and Clang, each on Linux and Windows** - four runs of one job, with the same
-  steps: the pinned compiler `-DVKM_COMPILER` names, the shipping engine, the SDK
-  with the pinned Python, the tests, the archive - and then the archive used as a
-  person uses it: unpacked elsewhere, `vkm new`, `vkm new -t physics_lab`,
-  `vkm doctor` and `vkm package`. Linux builds on Ubuntu 22.04, whose glibc is the
-  oldest a release runs on.
-
-Every compile goes through ccache, whose store each run carries from its last one,
-so a push recompiles only what it changed.
+- **Build** - GCC and Clang, each on Linux and Windows: four runs of one job, with the
+  same steps: the pinned compiler `-DVKM_COMPILER` names, the shipping engine, the SDK
+  with the pinned Python, the tests, the archive. Linux builds on Ubuntu 22.04, whose
+  glibc is the oldest a release runs on.
+- **Use the SDK** - each archive used as a person uses it, on a machine that never saw
+  the source: served beside a `SHA256SUMS` and installed by the platform's installer
+  (`VKM_DOWNLOADS` points it at the served files), its pinned tools fetched as a
+  person's are, then `vkm new`, `vkm doctor` and
+  `vkm package`, and every example made with `vkm new -t` and packaged with
+  `--archive`. A file the archive forgot fails here rather than being found in the
+  build tree beside it, and the GCC runs' packaged examples are the release's games.
 
 A version tag (`vX.Y.Z`) runs `.github/workflows/release.yml`: the same
-`build.yml` on the tag, then all four archives and the two installers
-(`tools/install/install.sh`, `install.ps1`) on that tag's GitHub release, its
-notes taken from the version's section of `CHANGELOG.md`. The installers fetch
+`build.yml` on the tag, then all four archives, the examples as games for Linux and
+Windows, the two installers (`tools/install/install.sh`, `install.ps1`) and a
+`SHA256SUMS` of them all on that tag's GitHub release, its notes taken from the
+version's section of `CHANGELOG.md`. The installers check the archive they download
+against `SHA256SUMS` before unpacking it, and install nothing that does not match. The installers fetch
 the newest release, so every release carries them. Its Run workflow button
 rebuilds a tag that already exists, replacing assets of the same name.
 
@@ -438,7 +446,7 @@ stage (each backend pass owns its program):
 shaders/
   *.glsl        # the shared includes every program below pulls from, at the root
   forward/      # pbr/ (the ubershader), pbr_skinned/, prepass/, prepass_skinned/
-  shadow/       # depth/ (atlas tiles and cube faces alike), depth_masked/ (cutouts), and a skinned variant of each
+  shadow/       # depth/ (atlas tiles and cube faces alike), depth_masked/ (cut by alpha), and a skinned variant of each
   ibl/          # equirect/, sky/, irradiance/, prefilter/, brdf/  (IBL bake)
   irradiance/   # project/, backface/  (the SH probe grid bake)
   resolve/      # geometry/, color/  (the MSAA resolves)

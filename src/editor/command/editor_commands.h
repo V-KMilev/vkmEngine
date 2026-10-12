@@ -29,6 +29,7 @@
 #include "ecs/component/render/camera.h"
 #include "ecs/component/render/decal.h"
 #include "ecs/component/render/irradiance_volume.h"
+#include "ecs/component/render/ocean.h"
 #include "ecs/component/render/light.h"
 #include "ecs/component/render/lod.h"
 #include "ecs/component/render/mesh.h"
@@ -38,7 +39,10 @@
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
+#include "ecs/component/core/net_local.h"
 #include "ecs/component/ui/ui_scroll.h"
+#include "ecs/component/ui/ui_slider.h"
+#include "ecs/component/ui/ui_toggle.h"
 #include "ecs/component/ui/ui_text.h"
 #include "io/scene/prefab.h"
 #include "resource/asset/material_asset.h"
@@ -321,6 +325,7 @@ class ScriptEditCommand : public Command {
     X(Ragdoll,             ragdoll)             \
     X(ReflectionProbe,     reflectionProbe)     \
     X(IrradianceVolume,    irradianceVolume)    \
+    X(Ocean,               ocean)               \
     X(Decal,               decal)               \
     X(ParticleEmitter,     particleEmitter)     \
     X(AudioSource,         audioSource)         \
@@ -331,6 +336,9 @@ class ScriptEditCommand : public Command {
     X(UIText,              uiText)              \
     X(UIButton,            uiButton)            \
     X(UIScroll,            uiScroll)            \
+    X(UISlider,            uiSlider)            \
+    X(UIToggle,            uiToggle)            \
+    X(NetLocal,            netLocal)            \
     S(PrefabEntity,        prefabEntity)        \
     S(PrefabInstance,      prefabInstance)
 

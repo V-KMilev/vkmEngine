@@ -59,6 +59,20 @@ std::filesystem::path projectRoot();
 std::filesystem::path userRoot();
 
 /**
+ * @brief Directory a game keeps its player's own files in: settings, a profile, saves.
+ *
+ * A @p game folder in the same platform directory as userRoot(), not inside the
+ * engine's: a player knows the game, not what it was made with. The project root
+ * when there is no home or no name, and when the folder cannot be created, which
+ * warns. Exists when this returns. readOwnFile and writeOwnFile read and write there.
+ *
+ * @param game The folder's name, the game's own - its Project::name serves; only its last
+ *             part counts.
+ * @return Absolute path to the folder.
+ */
+std::filesystem::path playerRoot(const std::string& game);
+
+/**
  * @brief Directory a host writes its log to when the project cannot hold one.
  *
  * Under $XDG_STATE_HOME (or ~/.local/state) or %LOCALAPPDATA%: a log is state,

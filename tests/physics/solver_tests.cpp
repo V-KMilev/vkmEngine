@@ -12,7 +12,10 @@
 #include "system/physics/solver/solver.h"
 #include "system/physics/solver/solver_math.h"
 #include "system/physics/solver/contact_cache.h"
+#include "ecs/component/core/net_local.h"
+#include "ecs/component/core/world_transform.h"
 #include "ecs/component/physics/joint.h"
+#include "ecs/hierarchy_operations.h"
 #include "io/scene/scene_serializer.h"
 #include "system/physics/physics_events.h"
 #include "system/physics/physics_system.h"
@@ -431,6 +434,48 @@ void testAReplayedTickDoesNotCountTowardSleep() {
     check("  nor put it to sleep", !scene.get<Rigidbody>(box).sleeping);
 }
 
+// What no slot of the server's names is a client's own to run: a body it made itself, and one at
+// or below a NetLocal, fall on the client as they would offline. The server's body does not, and
+// a replay, which re-runs only what the client predicts, moves none of them.
+void testAClientRunsWhatTheServerNeverNames() {
+    std::printf("What a client runs for itself:\n");
+
+    Scene scene;
+    const EntityId scenery = scene.createEntity();
+    scene.add(scenery, Transform{});
+    scene.add(scenery, NetLocal{});
+    const EntityId local  = addFallingBody(scene, {0.0f, 10.0f, 0.0f}, 0.5f);
+    HierarchyOperations::setParent(scene, local, scenery);
+    const EntityId theirs = addFallingBody(scene, {5.0f, 10.0f, 0.0f}, 0.5f);
+
+    NetSession client;
+    check("a client session", client.connect(NetAddress{0x7F000001u, 9}, TEST_TICK_RATE));
+    client.setWorld(0, scene);
+    const EntityId mine = addFallingBody(scene, {-5.0f, 10.0f, 0.0f}, 0.5f);  // made while it plays
+    TestFrame frame(scene, client);
+    PhysicsSystem physics;
+
+    const auto height = [&](EntityId body) {
+        return resolvedWorldPosition(scene, body, scene.get<Transform>(body)).y;
+    };
+    for (int tick = 0; tick < 30; ++tick) physics.fixedUpdate(frame.ctx);
+    check(
+        "a body under a NetLocal falls on the client",
+        client.simulates(scene, local) && height(local) < 9.0f
+    );
+    check("  and one the client made", client.simulates(scene, mine) && height(mine) < 9.0f);
+    check("  but not the server's", !client.simulates(scene, theirs) && height(theirs) == 10.0f);
+
+    const float before = height(mine);
+    client.beginReplayTick(InputCommand{});
+    const bool held = !client.simulates(scene, mine) && !client.simulates(scene, local);
+    physics.fixedUpdate(frame.ctx);
+    client.endReplay(scene);
+    check("a replay runs neither again", held && height(mine) == before);
+
+    client.close();
+}
+
 // A client does not decide a body it neither owns nor leases, so the gather hands it
 // over immovable. Gravity integrated into its velocity anyway would make a remote crate
 // on a decided body read as pressing down a tick of gravity, every tick - a press the
@@ -447,6 +492,7 @@ void testABodyThisEndDoesNotDecideGetsNoGravity() {
     // A client with nothing to talk to: every body is the server's but the leased one.
     NetSession client;
     check("a client session", client.connect(NetAddress{0x7F000001u, 9}, TEST_TICK_RATE));
+    client.setWorld(0, scene);
     TestFrame frame(scene, client);
     PhysicsSystem physics;
 
@@ -454,8 +500,8 @@ void testABodyThisEndDoesNotDecideGetsNoGravity() {
         client.lease({held});
         physics.fixedUpdate(frame.ctx);
     }
-    check("the client decides the box it leased", client.simulates(held));
-    check("  and not the one resting on it", !client.simulates(remote));
+    check("the client decides the box it leased", client.simulates(scene, held));
+    check("  and not the one resting on it", !client.simulates(scene, remote));
     check(
         "which is not driven down by a crate this end does not drop",
         std::fabs(scene.get<Transform>(held).position.y - 0.5f) < 0.005f
@@ -1177,6 +1223,7 @@ void testADynamicBodyWithNoMassIsNamedAndHeldStill() {
 void runPhysicsSolverTests() {
     testAStackSleepsTogetherOrNotAtAll();
     testABodyThisEndDoesNotDecideGetsNoGravity();
+    testAClientRunsWhatTheServerNeverNames();
     testAReplayedTickDoesNotCountTowardSleep();
     testABoxPastBalanceFallsOverRatherThanSleeping();
     testABodyHeldByAJointFallsAsleep();

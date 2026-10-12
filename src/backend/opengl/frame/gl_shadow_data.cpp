@@ -312,7 +312,7 @@ void GLShadowData::cullCasters(const RenderView& view, const GLView& glView) {
             const GLMesh*     mesh     = glView.getMesh(draw.mesh);
             const GLMaterial* material = glView.getMaterial(draw.material);
             uint64_t upload = mesh ? mesh->uploadId() : 0;
-            if (material && material->getType() == MaterialType::AlphaMask) {
+            if (material && material->cutsItsShadow()) {
                 const uint64_t cut[2] = {material->uploadId(), glView.textureUploadId(material->albedoMap())};
                 upload = fnv1a64Bytes(cut, sizeof(cut), fnv1a64Bytes(&upload, sizeof(upload)));
                 m_maskedCasters.push_back(i);
@@ -523,7 +523,9 @@ void GLShadowData::fitDirectional(
         // becomes metres between a blocker and what it shades.
         e.params  = glm::vec4(light.shadowBias, worldTexel, 2.0f * radius + zExtend, tanSource);
         e.shape   = glm::vec4(light.shadowNormalBias, 0.0f, 0.0f, 0.0f);
-        m_jobs2D.push_back({ lightVP, slot, true });
+        const glm::vec2 half = glm::vec2(0.5f * static_cast<float>(tile));
+        const glm::vec2 grid = glm::round(glm::vec2(centerLight) / worldTexel) - half;
+        m_jobs2D.push_back({ lightVP, slot, true, grid });
 
         m_data.cascadeSplits[static_cast<int>(c)] =
             cam.nearDepth + fr[c + 1] * (cam.farDepth - cam.nearDepth);

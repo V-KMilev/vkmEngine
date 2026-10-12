@@ -24,20 +24,24 @@
 #include "net/net_session.h"
 #include "system/physics/physics_events.h"
 #include "platform/input/input_map.h"
+#include "system/ui/screen_view.h"
 
 namespace Vkm::Engine {
 
 class Behavior;
+class HostChrome;
 class Clock;
 class ResourceManager;
 class BehaviorSystem;
 class BehaviorFieldVisitor;
+struct OceanData;
 
 /**
  * @brief Everything gameplay code may reach, bundled behind one pointer.
  *
- * Session-stable, unlike FrameContext, so subscribe() lambdas may keep using it.
- * A field belongs here exactly when behaviors are meant to use it.
+ * Session-stable, unlike FrameContext, so subscribe() lambdas may keep using it - but for
+ * `ocean`, a frame product BehaviorSystem refreshes each tick and frame. A field belongs here
+ * exactly when behaviors are meant to use it.
  */
 struct BehaviorContext {
     Scene*                 scene            = nullptr;
@@ -51,8 +55,10 @@ struct BehaviorContext {
     NetSession*            net              = nullptr;
     Clock*                 clock            = nullptr;
     RenderSettings*        render           = nullptr;
+    const HostChrome*      chrome           = nullptr;  ///< Where in the window the scene is drawn.
     std::vector<EntityId>* pendingDestroy   = nullptr;
     std::string*           pendingSceneLoad = nullptr;
+    const OceanData*       ocean            = nullptr;  ///< OceanSystem's, this tick's or frame's.
 };
 
 namespace detail {
@@ -114,6 +120,15 @@ Behavior* findBehaviorNamed(Scene& scene, EntityId entity, std::string_view type
 const Behavior* findBehaviorNamed(const Scene& scene, EntityId entity, std::string_view typeName);
 
 /**
+ * @brief The entity carrying a behavior named @p typeName with the lowest slot.
+ *
+ * @param scene    Scene to search.
+ * @param typeName Registered behavior name.
+ * @return The entity, or a null EntityId when nothing carries one.
+ */
+EntityId findEntityWithBehaviorNamed(Scene& scene, std::string_view typeName);
+
+/**
  * @brief @p entity's behavior of type T, or null when it has none.
  *
  * Inside a behavior, Behavior::findBehavior says the same without the scene.
@@ -132,6 +147,37 @@ T* findBehavior(Scene& scene, EntityId entity) {
 template<typename T>
 const T* findBehavior(const Scene& scene, EntityId entity) {
     return static_cast<const T*>(findBehaviorNamed(scene, entity, Reflect::Traits<T>::NAME));
+}
+
+/**
+ * @brief The entity carrying a T, for the behaviors a game has one of.
+ *
+ * The lowest slot answers, so the choice is the same on every machine.
+ *
+ * @tparam T Behavior subclass with a VKM_REFLECT block.
+ * @param scene Scene to search.
+ * @return The entity, or a null EntityId when nothing carries one.
+ */
+template<typename T>
+EntityId findEntityWithBehavior(Scene& scene) {
+    return findEntityWithBehaviorNamed(scene, Reflect::Traits<T>::NAME);
+}
+
+/**
+ * @brief The scene's T, for the behaviors a game has one of: how they find each other.
+ *
+ * A walk of every entity with a ScriptComponent, so look it up once - in onStart - and keep the
+ * pointer, which holds while its entity lives.
+ *
+ * The lowest slot answers, as findEntityWithBehavior.
+ *
+ * @tparam T Behavior subclass with a VKM_REFLECT block.
+ * @param scene Scene to search.
+ * @return The T, or nullptr when nothing carries one.
+ */
+template<typename T>
+T* findBehavior(Scene& scene) {
+    return findBehavior<T>(scene, findEntityWithBehavior<T>(scene));
 }
 
 /**
@@ -215,7 +261,7 @@ class Behavior {
          * Including when the other was destroyed or disabled, so it may be dead. An
          * entity destroyed while touching hears nothing.
          *
-         * @param hit Who it stopped touching; its point and normal are zero.
+         * @param hit Who it stopped touching; its point, normal and speed are zero.
          */
         virtual void onCollisionExit(const Collision& hit) {}
 
@@ -266,13 +312,16 @@ class Behavior {
          */
         virtual std::unique_ptr<Behavior> clone() const = 0;
 
-    protected:
         /**
          * @brief The entity this behavior is attached to.
+         *
+         * Public: a behavior handed another finds where it is by asking it.
          *
          * @return The owning entity; null until bound, just before onStart.
          */
         EntityId entity() const { return m_entity; }
+
+    protected:
 
         /**
          * @brief This entity's T, or null when it has none.
@@ -333,6 +382,15 @@ class Behavior {
          */
         template<typename T>
         T* findBehavior() { return findBehavior<T>(m_entity); }
+
+        /**
+         * @brief The scene's behavior of type T, as findBehavior(Scene&) finds it.
+         *
+         * @tparam T The behavior type sought.
+         * @return The lowest-slot entity's, or null when none carries one.
+         */
+        template<typename T>
+        T* findInScene() { return ::Vkm::Engine::findBehavior<T>(*m_ctx->scene); }
 
         /**
          * @brief @p other's behavior of type T, or null when it has none.
@@ -434,6 +492,35 @@ class Behavior {
         WindowManager* window() { return m_ctx->window; }
 
         /**
+         * @brief The 3D view through the scene's active camera: the pointer's ray into the world, a
+         *        point of the world on a canvas.
+         *
+         * Read off the host's rect for the scene, not the window, so it is right in the editor's
+         * Play panel too.
+         *
+         * @return The view; not valid() on a host that draws nothing, or with no active camera.
+         */
+        ScreenView screen() const;
+
+        /**
+         * @brief The scene's sea at this moment: the tick's in onFixedUpdate, the frame's in
+         *        onUpdate (OceanSystem).
+         *
+         * What a float rides - `surface.sampleAt(point)` is the water over a point of the plane,
+         * above `level`, where it rests - and what the renderer draws, the same at every end.
+         *
+         * @return The sea, or null when the scene has no ocean.
+         */
+        const OceanData* ocean() const;
+
+        /**
+         * @brief The ray from the camera through the cursor.
+         *
+         * @return The ray; nothing when the cursor is off the view, or there is no view.
+         */
+        std::optional<Math::Ray> pointerRay() const;
+
+        /**
          * @brief Whether this end decides what happens to this entity.
          *
          * True offline and on a server; on a client only for what it owns. Ask before
@@ -443,7 +530,7 @@ class Behavior {
          * @return True when this end simulates the entity.
          */
         bool isSimulated() const {
-            return m_ctx->net->simulates(m_entity);
+            return m_ctx->net->simulates(*m_ctx->scene, m_entity);
         }
 
         /**
@@ -484,13 +571,12 @@ class Behavior {
         /**
          * @brief Create a new, empty entity; add components to it through scene().
          *
-         * Safe from a hook; a behavior added during a pass starts on the next. Local to
-         * this end, so a client warns once; use NetSession::spawn on the server instead.
+         * Safe from a hook; a behavior added during a pass starts on the next. This end's
+         * own: on a server, NetSession::spawn is what every player is told about.
          *
          * @return The new entity.
          */
         EntityId spawn() {
-            if (m_ctx->net->role() == NetRole::Client) warnSpawnOnClient();
             return m_ctx->scene->createEntity();
         }
 
@@ -636,13 +722,6 @@ class Behavior {
             for (auto& unsubscribe : m_subscriptions) unsubscribe();
             m_subscriptions.clear();
         }
-
-        /**
-         * @brief Say, once per process, that a connected client made an entity of its own.
-         *
-         * Defined in vkm_core, or each module copy would hold its own latch.
-         */
-        static void warnSpawnOnClient();
 
     private:
         EntityId         m_entity{};

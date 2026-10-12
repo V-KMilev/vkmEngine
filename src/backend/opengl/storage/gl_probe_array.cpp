@@ -6,6 +6,8 @@
 
 #include "logger.h"
 
+#include "storage/gl_ibl.h"
+
 namespace Vkm::Engine {
 
 int GLProbeArray::clampResolution(int resolution) {
@@ -28,7 +30,7 @@ void GLProbeArray::createTargets(int capacity, int resolution) {
     // prior allocation, so this doubles as a rebuild.
     m_irradiance.create(irradianceSize(), 1, m_capacity, GL_RGBA16F);
     m_prefilter.create(prefilterSize(), PREFILTER_MIPS, m_capacity, GL_RGBA16F);
-    m_env.create(m_resolution, ENV_MIPS, GL_RGBA16F, GL_RGBA, GL_FLOAT, true);
+    m_env.create(m_resolution, fullMipChain(m_resolution), GL_RGBA16F, GL_RGBA, GL_FLOAT, true);
 
     // Shared capture depth for the six geometry captures (convolution runs
     // depth-off and ignores it).

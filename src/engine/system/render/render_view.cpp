@@ -1,6 +1,7 @@
 #include "system/render/render_view.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -192,7 +193,8 @@ void RenderView::build(
     const UIDrawData* uiData,
     const SplashFrame* splashFrame,
     const PoseBuffer* poses,
-    const LiveParticles* particles
+    const LiveParticles* particles,
+    const OceanData* sea
 ) {
     PROFILE_SCOPE("RenderView::build");
 
@@ -229,6 +231,7 @@ void RenderView::build(
             particlesBlend,
             volume,
             volumePresent,
+            sea,
             palettes,
             renderSettings,
             env,
@@ -244,6 +247,7 @@ void RenderView::build(
         particlesAdd.clear();
         particlesBlend.clear();
         volumePresent = false;
+        sea.present   = false;
         palettes      = nullptr;
         return;
     }
@@ -255,6 +259,7 @@ void RenderView::build(
     buildDecals(*this, scene);
     buildParticles(*this, scene, particles);
     buildIrradianceVolume(*this, scene);
+    ocean = sea ? *sea : OceanData{};
 
     // A buffer holding no slices posed nothing, so it is passed on as null.
     skinMatrices = (poses && !poses->slices().empty()) ? &poses->palette() : nullptr;

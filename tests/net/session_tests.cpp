@@ -1,9 +1,14 @@
 #include "physics/physics_support.h"
 #include "net/net_support.h"
 
+#include <chrono>
 #include <set>
+#include <thread>
 
 #include "project_boot.h"
+#include "core/clock.h"
+#include "core/event/event_bus.h"
+#include "net/player_message.h"
 #include "core/math/random.h"
 #include "system/physics/character/character_controller_system.h"
 #include "system/physics/physics_system.h"
@@ -40,6 +45,7 @@ void testTwoSessionsPlayTheSameGame() {
 
     Scene clientWorld;
     NetSession client;
+    client.setWorld(0, clientWorld);
     check(
         "the client opens a socket",
         client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE)
@@ -95,10 +101,10 @@ void testTwoSessionsPlayTheSameGame() {
 
     // The client predicts its own entity only, or it would shove every crate its way
     // and be corrected.
-    check("the client simulates what it owns", client.simulates(client.localEntity()));
-    check("and not the crates", !client.simulates(mirror));
+    check("the client simulates what it owns", client.simulates(clientWorld, client.localEntity()));
+    check("and not the crates", !client.simulates(clientWorld, mirror));
     check("and knows which is its own", client.isMine(client.localEntity()));
-    check("the server simulates everything", server.simulates(probe));
+    check("the server simulates everything", server.simulates(serverWorld, probe));
     check("but owns nothing itself", !server.isMine(probe));
 
     // Input goes the other way, and the server runs it on the tick it names.
@@ -130,6 +136,174 @@ void testTwoSessionsPlayTheSameGame() {
     server.close();
 }
 
+// What a player says that must arrive - a move, a name - reaches the server's behaviors once each,
+// in order, with who said it; offline and before the welcome there is nobody to say it to.
+void testAPlayersMessagesReachTheServerOnceInOrder() {
+    std::printf("A player's messages, on real sockets:\n");
+
+    const ScopedEngineSchema wire;
+    ResourceManager resources;
+    Scene serverWorld, clientWorld;
+
+    NetSession server;
+    EntityId   seated;
+    server.onSpawn(
+        [&seated](Scene& scene, ResourceManager&, PlayerId) {
+            seated = scene.createEntity();
+            scene.add(seated, Transform{});
+            return seated;
+        },
+        [](Scene&, ResourceManager&, PlayerId, EntityId) {}
+    );
+    check("the server binds a port", server.host(0, 2, TEST_TICK_RATE));
+
+    NetSession offline;
+    const uint8_t hello[] = {'h', 'i'};
+    check("offline there is nobody to send a message to", !offline.sendMessage(hello, sizeof hello));
+
+    NetSession client;
+    client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
+    check("nor before the welcome", !client.sendMessage(hello, sizeof hello));
+
+    EventBus bus;
+    std::vector<PlayerMessageEvent> heard;
+    bus.subscribe<PlayerMessageEvent>([&](const PlayerMessageEvent& e) { heard.push_back(e); });
+
+    uint32_t tick = 0;
+    const auto frame = [&]() {
+        server.receive(serverWorld, resources);
+        server.deliver(bus);
+        bus.flush();
+        client.receive(clientWorld, resources);
+        ++tick;
+        server.beginTick(tick, InputCommand{}, 1);
+        client.beginTick(tick, InputCommand{}, 1);
+        server.send(serverWorld, tick);
+        client.send(clientWorld, tick);
+        server.advance(0.016f);
+        client.advance(0.016f);
+    };
+    check("the client is welcomed", pumpUntil(frame, [&]() { return client.isPlaying(); }));
+
+    bool sent = true;
+    for (uint8_t i = 1; i <= 3; ++i) {
+        const uint8_t message[] = {'m', i};
+        sent = sent && client.sendMessage(message, sizeof message);
+    }
+    check("a playing client can send", sent);
+    check("the server hears all three", pumpUntil(frame, [&]() { return heard.size() >= 3; }));
+    for (int i = 0; i < 20; ++i) frame();
+    check("  once each, though they rode several packets", heard.size() == 3);
+    bool ordered = heard.size() == 3;
+    for (size_t i = 0; ordered && i < heard.size(); ++i) {
+        ordered = heard[i].bytes.size() == 2 && heard[i].bytes[1] == i + 1;
+    }
+    check("  in the order sent", ordered);
+    check(
+        "  naming who sent them and what they drive",
+        !heard.empty() && heard[0].player == client.localPlayer() && heard[0].entity == seated
+    );
+
+    // Said in the packet before the goodbye: both land in one receive, and the player who
+    // said it is gone - with the entity the message would name - before the flush.
+    const uint8_t last[] = {'m', 4};
+    client.sendMessage(last, sizeof last);
+    client.advance(1.0f);
+    client.send(clientWorld, ++tick);
+    client.close();
+    server.receive(serverWorld, resources);
+    server.deliver(bus);
+    bus.flush();
+    check("a player's last words before leaving are not handed on", heard.size() == 3);
+
+    server.close();
+}
+
+// The authority's time between frames carries the fraction past the last tick; a tick decides
+// at its own, or what it floats on the sea would depend on the frame rate it ran at.
+void testATickIsAtItsOwnTime() {
+    std::printf("What time a tick is at:\n");
+
+    Clock clock;
+    clock.setTickRate(TEST_TICK_RATE);
+    clock.requestStep(3);
+    while (clock.consumeFixedStep()) {}
+    clock.beginFrame();
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    clock.beginFrame();  // a part of a tick, not a whole one
+
+    Scene scene;
+    NetSession offline;
+    const double step = static_cast<double>(clock.getFixedStep());
+    offline.beginTick(clock.getTick(), InputCommand{}, 0);
+    const double inTick = offline.worldTime(clock);
+    offline.endTick(scene, clock.getTick());
+    const double between = offline.worldTime(clock);
+    check("inside a tick, the tick's own time", std::abs(inTick - 3.0 * step) < 1e-9);
+    check("  and between ticks, the fraction past it as well", between > inTick && between < inTick + step);
+}
+
+// The ocean, and scenery a behavior moves by the clock, must look alike at every end; each end's
+// own clock started when it did, so a client draws by the server's ticks instead.
+void testAClientDrawsByTheServersTime() {
+    std::printf("What time a client late to the game draws its world at:\n");
+
+    const ScopedEngineSchema wire;
+    ResourceManager resources;
+    Scene serverWorld, clientWorld;
+
+    Clock serverClock, clientClock;
+    serverClock.setTickRate(TEST_TICK_RATE);
+    clientClock.setTickRate(TEST_TICK_RATE);
+    serverClock.requestStep(5000);
+    while (serverClock.consumeFixedStep()) {}
+
+    NetSession server;
+    server.onSpawn(
+        [](Scene& scene, ResourceManager&, PlayerId) { return scene.createEntity(); },
+        [](Scene&, ResourceManager&, PlayerId, EntityId) {}
+    );
+    check("the server binds a port", server.host(0, 2, TEST_TICK_RATE));
+
+    NetSession client;
+    client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
+    check("before it joins, a client's time is its own", client.worldTime(clientClock) == 0.0);
+
+    const auto frame = [&]() {
+        server.receive(serverWorld, resources);
+        client.receive(clientWorld, resources);
+        client.interpolate(clientWorld, 0.016f);
+        serverClock.requestStep();
+        clientClock.requestStep();
+        serverClock.consumeFixedStep();
+        clientClock.consumeFixedStep();
+        server.beginTick(serverClock.getTick(), InputCommand{}, 1);
+        client.beginTick(clientClock.getTick(), InputCommand{}, 1);
+        server.send(serverWorld, serverClock.getTick());
+        client.send(clientWorld, clientClock.getTick());
+        server.advance(0.016f);
+        client.advance(0.016f);
+    };
+    check("the client is welcomed", pumpUntil(frame, [&]() { return client.isPlaying(); }));
+    for (int i = 0; i < 30; ++i) frame();
+
+    const double step   = 1.0 / TEST_TICK_RATE;
+    const double behind = server.worldTime(serverClock) - client.worldTime(clientClock);
+    std::printf(
+        "      server %.3f s, client %.3f s on its own clock, %.3f s drawn\n",
+        server.worldTime(serverClock),
+        clientClock.getTick() * step,
+        client.worldTime(clientClock)
+    );
+    check(
+        "  it draws the server's, as far behind as it draws others",
+        behind >= 0.0 && std::abs(behind - client.renderDelay() * step) < 4.0 * step
+    );
+
+    client.close();
+    server.close();
+}
+
 void testAClientBuiltFromDifferentSourceIsTurnedAway() {
     std::printf("What happens when two ends do not agree on what a world is:\n");
 
@@ -146,6 +320,7 @@ void testAClientBuiltFromDifferentSourceIsTurnedAway() {
 
     Scene clientWorld;
     NetSession client;
+    client.setWorld(0, clientWorld);
     client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
 
     // The hello carries a fingerprint of what this build replicates and is sent before
@@ -200,6 +375,7 @@ void testTheSameActionsInAnotherOrderAreTurnedAway() {
 
     Scene clientWorld;
     NetSession client;
+    client.setWorld(0, clientWorld);
     client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
 
     uint32_t tick = 0;
@@ -242,6 +418,7 @@ void testAClientAtAnotherTickRateIsTurnedAway() {
 
     Scene clientWorld;
     NetSession client;
+    client.setWorld(0, clientWorld);
     client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE * 2);
 
     uint32_t tick = 0;
@@ -337,6 +514,7 @@ void testAnotherBuildIsToldRatherThanIgnored() {
     check("another build's server opens", otherServer.open(0));
     Scene clientWorld;
     NetSession client;
+    client.setWorld(0, clientWorld);
     client.connect(NetAddress{0x7F000001u, otherServer.localAddress().port}, TEST_TICK_RATE);
     client.beginTick(1, InputCommand{}, 3);
     client.send(clientWorld, 1);
@@ -396,6 +574,7 @@ void testBothEndsHoldTheScaleTheWireCarries() {
     );
     check("the server is up", server.host(0, 4, TEST_TICK_RATE));
     NetSession client;
+    client.setWorld(0, clientWorld);  // both built it: the same entities at the same slots
     client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
 
     uint32_t tick = 0;
@@ -474,6 +653,7 @@ void testAFullServerSaysSoRatherThanIgnoring() {
     const uint16_t port = server.localAddress().port;
 
     Scene firstWorld, secondWorld;
+    const EntityId loaded = secondWorld.createEntity();  // the world it opened, the server's
     NetSession first, second;
     first.connect(NetAddress{0x7F000001u, port}, TEST_TICK_RATE);
 
@@ -506,7 +686,7 @@ void testAFullServerSaysSoRatherThanIgnoring() {
     // would silently play the scene alone.
     check(
         "and is left deciding nothing rather than playing alone",
-        !second.isOffline() && !second.simulates(secondWorld.createEntity())
+        !second.isOffline() && !second.simulates(secondWorld, loaded)
     );
     check("and the first player is undisturbed", first.isPlaying());
 
@@ -587,6 +767,7 @@ void testAClientThatLosesItsServerDoesNotInheritTheWorld() {
 
     Scene clientWorld;
     NetSession client;
+    client.setWorld(0, clientWorld);
     client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
 
     uint32_t tick = 0;
@@ -610,8 +791,8 @@ void testAClientThatLosesItsServerDoesNotInheritTheWorld() {
 
     const EntityId mine   = client.localEntity();
     const EntityId theirs = clientWorld.entityAt(crates.back().slot());
-    check("it decides its own", client.simulates(mine));
-    check("and not a crate", !client.simulates(theirs));
+    check("it decides its own", client.simulates(clientWorld, mine));
+    check("and not a crate", !client.simulates(clientWorld, theirs));
 
     // The server goes quiet without a goodbye - its process gone, the ordinary end of a
     // game. Its socket stays open and unread, so nothing answers or refuses.
@@ -623,11 +804,18 @@ void testAClientThatLosesItsServerDoesNotInheritTheWorld() {
 
     // Offline means "decide everything, nobody else does"; this end decided nothing and
     // just lost who did. Made Offline, it would take a world it had only been shown.
-    check("it does not become the authority", !client.simulates(theirs));
-    check("nor over what it used to drive", !client.simulates(mine));
+    check("it does not become the authority", !client.simulates(clientWorld, theirs));
+    check("nor over what it used to drive", !client.simulates(clientWorld, mine));
     check("and it owns nothing now", !client.isMine(mine));
     check("which is not the same as never having played", !client.isOffline());
     check("and it says why", client.lastError() == std::string("the server stopped answering"));
+
+    // The world it was shown holds still for the game to say so over, until the game is done.
+    client.receive(clientWorld, resources);
+    check("what the session made stays while the game says so", clientWorld.isAlive(mine));
+    client.close();
+    client.receive(clientWorld, resources);
+    check("  and goes once it closes the session", !clientWorld.isAlive(mine));
 }
 
 void testAStutterDoesNotCostTheTicksItRan() {
@@ -803,6 +991,7 @@ void testTheServersQueueSetsTheClientsPace() {
         Scene clientWorld;
         addWalker(clientWorld);
         NetSession client;
+        client.setWorld(0, clientWorld);
         check(
             "the client opens a socket",
             client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE)
@@ -961,6 +1150,7 @@ void testAHelloThatNeverAnswersTakesNoSeat() {
 
     Scene clientWorld;
     NetSession client;
+    client.setWorld(0, clientWorld);
     client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
     uint32_t tick = 1;
     const auto frame = [&]() {
@@ -1065,6 +1255,7 @@ void testAJoinAcrossAWindowsTurnIsStillSeated() {
 
     Scene clientWorld;
     NetSession client;
+    client.setWorld(0, clientWorld);
     client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
     client.beginTick(1, InputCommand{}, 3);
     const auto say = [&]() {
@@ -1222,6 +1413,7 @@ void testAServerThatHasBeenUpAWhileStillTakesAJoin() {
 
     Scene clientWorld;
     NetSession client;
+    client.setWorld(0, clientWorld);
     client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
 
     // The server's tick counts from its own start and a fresh client's is near zero -
@@ -1318,6 +1510,7 @@ void testStandingIsToldRatherThanGuessed() {
     const EntityId clientWalker = addWorld(clientWorld, clientFloor);
     (void)clientFloor;
     NetSession client;
+    client.setWorld(0, clientWorld);
     client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
 
     PhysicsSystem serverPhysics, clientPhysics;
@@ -1349,7 +1542,7 @@ void testStandingIsToldRatherThanGuessed() {
     for (int i = 0; i < 30; ++i) frame();
 
     check("the server has the character standing", serverWorld.get<CharacterController>(walker).grounded);
-    check("and the client does not decide this one", !client.simulates(clientWalker));
+    check("and the client does not decide this one", !client.simulates(clientWorld, clientWalker));
 
     // Leave the client nothing to measure. Collider enablement does not replicate, so
     // this sticks where moving the floor would not; real scenes get the gap from rounding.
@@ -1405,6 +1598,7 @@ void testAClientDoesNotMoveWhatItDoesNotOwn() {
 
     Scene clientWorld;
     NetSession client;
+    client.setWorld(0, clientWorld);
     client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
 
     PhysicsSystem serverPhysics, clientPhysics;
@@ -1439,8 +1633,8 @@ void testAClientDoesNotMoveWhatItDoesNotOwn() {
         pumpUntil(frame, [&]() { return clientWorld.isAliveAtIndex(crate.slot()); })
     );
     const EntityId mirror = clientWorld.entityAt(crate.slot());
-    check("and does not decide the crate's fate", !client.simulates(mirror));
-    check("while it does decide its own", client.simulates(client.localEntity()));
+    check("and does not decide the crate's fate", !client.simulates(clientWorld, mirror));
+    check("while it does decide its own", client.simulates(clientWorld, client.localEntity()));
 
     for (int i = 0; i < 30; ++i) frame();
 
@@ -1537,6 +1731,7 @@ void testAClientPredictsWhatItIsPushing() {
     Scene clientWorld;
     build(clientWorld);
     NetSession client;
+    client.setWorld(0, clientWorld);  // both built it: the same entities at the same slots
     client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
 
     PhysicsSystem serverPhysics, clientPhysics;
@@ -1580,13 +1775,16 @@ void testAClientPredictsWhatItIsPushing() {
     const EntityId clientOther = clientWorld.entityAt(serverOther.slot());
     const EntityId clientHat   = clientWorld.entityAt(serverHat.slot());
 
-    check("the crate it is standing on is now its to move", client.simulates(clientNear));
-    check("  and the crate that one rests on", client.simulates(clientBase));
+    check("the crate it is standing on is now its to move", client.simulates(clientWorld, clientNear));
+    check("  and the crate that one rests on", client.simulates(clientWorld, clientBase));
     check("but it is still not the client's own entity", !client.isMine(clientNear));
-    check("the floor is not: the closure stops at what cannot move", !client.simulates(clientFloor));
-    check("nor another player's character on the same crate", !client.simulates(clientOther));
-    check("  nor what rests on that character alone", !client.simulates(clientHat));
-    check("and neither is a crate on the other side of the level", !client.simulates(clientFar));
+    check(
+        "the floor is not: the closure stops at what cannot move",
+        !client.simulates(clientWorld, clientFloor)
+    );
+    check("nor another player's character on the same crate", !client.simulates(clientWorld, clientOther));
+    check("  nor what rests on that character alone", !client.simulates(clientWorld, clientHat));
+    check("and neither is a crate on the other side of the level", !client.simulates(clientWorld, clientFar));
     check("  so it leases those two and nothing else", client.leaseCount() == 2);
     std::printf(
         "      leasing %zu body(s) of %zu in the world\n",
@@ -1600,7 +1798,7 @@ void testAClientPredictsWhatItIsPushing() {
     bool lapsed = false;
     for (int i = 0; i < 200 && !lapsed; ++i) {
         frame();
-        lapsed = !client.simulates(clientNear);
+        lapsed = !client.simulates(clientWorld, clientNear);
     }
     check("and once nothing is touching it, the lease lapses", lapsed);
 
@@ -1621,6 +1819,7 @@ void testAWorldConvergesThroughALossyLink() {
     budget.owner = crates.front();
 
     Scene client;
+    NetNames clientNames;
 
     // Seeded, so a failure repeats every run; which packets are lost should not matter.
     Math::Rng noise(12345u);
@@ -1639,7 +1838,7 @@ void testAWorldConvergesThroughALossyLink() {
     const auto arrive = [&](const std::vector<uint8_t>& bytes) {
         acknowledged.clear();
         if (!clientEnd.accept(bytes.data(), bytes.size(), payload, acknowledged)) return false;
-        if (!readSnapshotFrom(client, schema, payload)) {
+        if (!readSnapshotFrom(client, schema, payload, clientNames)) {
             clientEnd.refuse();
             return false;
         }
@@ -1768,4 +1967,7 @@ void runNetSessionTests() {
     testAClientDoesNotMoveWhatItDoesNotOwn();
     testAClientPredictsWhatItIsPushing();
     testAWorldConvergesThroughALossyLink();
+    testAPlayersMessagesReachTheServerOnceInOrder();
+    testAClientDrawsByTheServersTime();
+    testATickIsAtItsOwnTime();
 }

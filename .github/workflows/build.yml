@@ -1,7 +1,16 @@
 # Builds, tests and packages the engine as it ships, then uses the archive as a person
 # would - with the pinned GCC and the pinned Clang, on Linux and on Windows, every run
 # the same steps. All four archives are a release (release.yml), so a person picks the
-# compiler. Called by ci.yml on every push and by release.yml on every version tag.
+# compiler. Called by ci.yml when run by hand and by release.yml on every version tag.
+#
+# Two stages, a job each, so a run says which one failed and reruns only that:
+#   Build       - each compiler and platform builds, tests and packages the SDK;
+#   Use the SDK - each archive, on a machine that never saw the source, installed by the
+#                 installers people run, its tools fetched as a person's are, then a
+#                 project and every example made and packaged with it: nothing it needs
+#                 is missing, and the examples ship as games (the GCC ones, which
+#                 release.yml publishes).
+# Plan says once what both run on.
 name: Build
 
 on:
@@ -12,31 +21,36 @@ on:
         type: string
         default: ""
 
-env:
-  # The pinned tools, fetched once and cached per pin file.
-  VKM_TOOLS_DIR: ${{ github.workspace }}/../vkm-tools
-  # Every compile goes through ccache, whose store a run carries from its last one.
-  CCACHE_DIR: ${{ github.workspace }}/../ccache
-  CCACHE_MAXSIZE: 1500M
-  CCACHE_COMPILERCHECK: content
-  CMAKE_C_COMPILER_LAUNCHER: ccache
-  CMAKE_CXX_COMPILER_LAUNCHER: ccache
-  CCACHE_WINDOWS_URL: https://github.com/ccache/ccache/releases/download/v4.14.1/ccache-4.14.1-windows-x86_64.zip
-  CCACHE_WINDOWS_SHA256: 6219f3865ca59aec41ee4b678df171d5d35855ecb2b6dbbbd20690b3a68af7b4
-
 jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      builds: ${{ steps.plan.outputs.builds }}
+    steps:
+      # 22.04 for its older glibc: what the SDK is built against is the oldest it runs on.
+      - id: plan
+        run: |
+          python3 - >> "$GITHUB_OUTPUT" <<'PLAN'
+          import json
+          platforms = [
+              {"platform": "linux-x64", "runner": "ubuntu-22.04", "python": "python3",
+               "archive": "tar.xz", "game": "tar.gz"},
+              {"platform": "windows-x64", "runner": "windows-2022", "python": "python",
+               "archive": "zip", "game": "zip"},
+          ]
+          compilers = [{"compiler": "gcc", "label": "GCC"}, {"compiler": "clang", "label": "Clang"}]
+          builds = [{**compiler, **platform} for platform in platforms for compiler in compilers]
+          print("builds=" + json.dumps({"include": builds}))
+          PLAN
+
   build:
     name: ${{ matrix.label }} (${{ matrix.platform }})
+    needs: plan
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
-      matrix:
-        # 22.04 for its older glibc: what the SDK is built against is the oldest it runs on.
-        include:
-          - { compiler: gcc,   label: GCC,   platform: linux-x64,   runner: ubuntu-22.04, python: python3, archive: tar.xz }
-          - { compiler: clang, label: Clang, platform: linux-x64,   runner: ubuntu-22.04, python: python3, archive: tar.xz }
-          - { compiler: gcc,   label: GCC,   platform: windows-x64, runner: windows-2022, python: python,  archive: zip }
-          - { compiler: clang, label: Clang, platform: windows-x64, runner: windows-2022, python: python,  archive: zip }
+      matrix: ${{ fromJSON(needs.plan.outputs.builds) }}
     defaults:
       run:
         shell: bash
@@ -51,31 +65,15 @@ jobs:
           ref: ${{ inputs.ref }}
           submodules: recursive
 
-      - uses: actions/cache@v6
-        with:
-          path: ${{ env.VKM_TOOLS_DIR }}
-          key: vkm-tools-${{ matrix.platform }}-${{ hashFiles('tools/toolchain.json') }}
-
-      - uses: actions/cache@v6
-        with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ matrix.compiler }}-${{ matrix.platform }}-${{ github.sha }}
-          restore-keys: ccache-${{ matrix.compiler }}-${{ matrix.platform }}-
-
-      - name: Install ccache and the window system's headers
+      # Windows needs nothing.
+      - name: Install the window system's headers
+        if: runner.os == 'Linux'
         run: |
-          if [ "$RUNNER_OS" = Windows ]; then
-            curl -sSfL -o ccache.zip "$CCACHE_WINDOWS_URL"
-            echo "$CCACHE_WINDOWS_SHA256  ccache.zip" | sha256sum -c -
-            unzip -q ccache.zip -d "$RUNNER_TEMP"
-            cygpath -w "$(ls -d "$RUNNER_TEMP"/ccache-*)" >> "$GITHUB_PATH"
-          else
-            sudo apt-get update
-            sudo apt-get install -y --no-install-recommends ccache \
-              libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev \
-              libwayland-dev libxkbcommon-dev wayland-protocols \
-              libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev
-          fi
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev \
+            libwayland-dev libxkbcommon-dev wayland-protocols \
+            libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev
 
       # CMake, Ninja and Python, as every SDK user gets them; the configures below fetch
       # the pinned compiler VKM_COMPILER names (cmake/pinned_toolchain.cmake).
@@ -97,38 +95,118 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
-      - name: What the compiler cache saved
-        run: ccache --show-stats
-
       - name: Package
         run: cmake --build build --target package
-
-      # The archive as a person gets it: unpacked somewhere else, a project made, built and packaged.
-      - name: Use the SDK
-        run: |
-          work="$RUNNER_TEMP/use-the-sdk"
-          mkdir -p "$work"
-          # The pinned Python, on PATH since the tools step, reads either archive.
-          ${{ matrix.python }} -c "import shutil, sys; shutil.unpack_archive(sys.argv[1], sys.argv[2])" \
-            build/vkmEngine-*.${{ matrix.archive }} "$work"
-          sdk="$(ls -d "$work"/vkmEngine-*)"
-          cd "$work"
-          "$sdk/vkm" --version
-          "$sdk/vkm" new game
-          "$sdk/vkm" new lab -t physics_lab
-          "$sdk/vkm" doctor game
-          "$sdk/vkm" package game
-          "$sdk/vkm" package lab
-          ls game/dist lab/dist
-
-      - name: Use the SDK from cmd.exe
-        if: runner.os == 'Windows'
-        shell: cmd
-        run: |
-          for /d %%d in ("%RUNNER_TEMP%\use-the-sdk\vkmEngine-*") do call "%%d\vkm.cmd" --version
 
       - uses: actions/upload-artifact@v7
         with:
           name: sdk-${{ matrix.compiler }}-${{ matrix.platform }}
           path: build/vkmEngine-*.${{ matrix.archive }}
+          if-no-files-found: error
+
+  use-sdk:
+    name: Use the SDK, ${{ matrix.label }} (${{ matrix.platform }})
+    needs: [plan, build]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.builds) }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Where the release's files are served from, as GitHub would serve them.
+      VKM_DOWNLOADS: http://127.0.0.1:8765
+      VKM_COMPILER: ${{ matrix.compiler }}
+    steps:
+      # No source: only the installers people run.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          sparse-checkout: tools/install
+          sparse-checkout-cone-mode: false
+
+      # The window system's headers, which a Linux user installs before building; Windows needs nothing.
+      - name: Install the window system's headers
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev \
+            libwayland-dev libxkbcommon-dev wayland-protocols \
+            libgl1-mesa-dev libegl1-mesa-dev libglu1-mesa-dev
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: sdk-${{ matrix.compiler }}-${{ matrix.platform }}
+          path: ${{ runner.temp }}/release
+
+      # The archive as a release carries it - beside a SHA256SUMS - served, and installed by
+      # the installer for this platform, as a person installs it.
+      - name: Install the SDK
+        run: |
+          cd "$RUNNER_TEMP/release"
+          sha256sum * > SHA256SUMS
+          archive="$(ls vkmEngine-*)"
+          version="${archive#vkmEngine-}"
+          version="${version%-${{ matrix.platform }}-${{ matrix.compiler }}.*}"
+          ${{ matrix.python }} -m http.server 8765 --bind 127.0.0.1 > /dev/null 2>&1 &
+          for _ in $(seq 1 100); do
+            curl -fs -o /dev/null http://127.0.0.1:8765/SHA256SUMS && break
+            sleep 0.2
+          done
+          run_installer() {
+            if [ "$RUNNER_OS" = Windows ]; then
+              VKM_VERSION="$version" powershell -NoProfile -ExecutionPolicy Bypass \
+                -File "$GITHUB_WORKSPACE/tools/install/install.ps1"
+            else
+              HOME="$RUNNER_TEMP/home" VKM_VERSION="$version" sh "$GITHUB_WORKSPACE/tools/install/install.sh"
+            fi
+          }
+          # A download changed on its way - here a byte added to the archive - is refused.
+          cp "$archive" "$archive.good"
+          printf x >> "$archive"
+          if run_installer; then
+            echo "a changed archive was installed" >&2
+            exit 1
+          fi
+          mv "$archive.good" "$archive"
+          run_installer
+          if [ "$RUNNER_OS" = Windows ]; then
+            sdk="$(cygpath "$LOCALAPPDATA")/Programs/vkmEngine"
+          else
+            sdk="$RUNNER_TEMP/home/.local/share/vkmEngine"
+          fi
+          echo "SDK=$sdk" >> "$GITHUB_ENV"
+
+      # A project made, checked and packaged with the installed SDK, then every example as
+      # a game, each archived as it is handed out.
+      - name: Use the SDK
+        run: |
+          work="$RUNNER_TEMP/use-the-sdk"
+          mkdir -p "$work" "$RUNNER_TEMP/games"
+          cd "$work"
+          "$SDK/vkm" --version
+          "$SDK/vkm" new game
+          "$SDK/vkm" doctor game
+          "$SDK/vkm" package game
+          ls game/dist
+          for example in "$SDK"/examples/*/; do
+            name="$(basename "$example")"
+            "$SDK/vkm" new "$name" -t "$name"
+            "$SDK/vkm" package "$name" --archive
+            cp "$name"/dist/*.${{ matrix.game }} "$RUNNER_TEMP/games/"
+          done
+          ls "$RUNNER_TEMP/games"
+
+      - name: Use the SDK from cmd.exe
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: call "%LOCALAPPDATA%\Programs\vkmEngine\vkm.cmd" --version
+
+      - uses: actions/upload-artifact@v7
+        if: matrix.compiler == 'gcc'
+        with:
+          name: games-${{ matrix.platform }}
+          path: ${{ runner.temp }}/games/*
           if-no-files-found: error

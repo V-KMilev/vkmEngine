@@ -29,6 +29,10 @@ struct ObjectDraw {
      * Zero means nothing poses it and it draws unskinned, i.e. in bind pose.
      */
     uint32_t skinCount = 0;
+
+    /// Its surface is the scene's ocean: a `waves` material, in a scene with an ocean. A skinned
+    /// one is shaded as the water and not moved.
+    bool waves = false;
 };
 
 /**

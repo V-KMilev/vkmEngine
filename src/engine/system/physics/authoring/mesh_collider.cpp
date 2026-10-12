@@ -2,6 +2,7 @@
 
 #include "system/physics/authoring/mesh_collider.h"
 
+#include <algorithm>
 #include <vector>
 
 #include "logger.h"
@@ -97,6 +98,16 @@ bool syncMeshCollider(Collider& collider, const ResourceManager& resources) {
 
     collider.meshPoints = trianglesOf(*asset, part->meshScale);
     collider.meshNodes  = buildMeshBvh(collider.meshPoints);
+    // A scene may hold more; each would collide as this one's triangles, placed at its own centre.
+    const auto isMesh    = [](const ColliderPart& p) { return p.shape == ColliderShape::Mesh; };
+    const auto meshParts = std::count_if(collider.parts.begin(), collider.parts.end(), isMesh);
+    if (meshParts > 1) {
+        LOG_WARNING(
+            "Collider: %d mesh parts, and a collider holds one set of triangles - "
+            "the others collide as the first's; merge them into one mesh",
+            static_cast<int>(meshParts)
+        );
+    }
     return true;
 }
 

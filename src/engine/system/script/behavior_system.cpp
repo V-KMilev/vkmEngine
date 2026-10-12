@@ -94,6 +94,7 @@ Collision collisionFor(const CollisionEvent& event, bool forA) {
     if (event.phase == ContactPhase::Ended) return hit;
     hit.point  = event.point;
     hit.normal = forA ? -event.normal : event.normal;
+    hit.speed  = event.speed;
     return hit;
 }
 
@@ -134,7 +135,7 @@ void BehaviorSystem::tickBehaviors(
     m_tickList.reserve(storage->size());
     storage->forEach([&](uint32_t entityIdx, ScriptComponent&) {
         const EntityId entity = scene.entityAt(entityIdx);
-        if (replaying && !ctx.net.simulates(entity)) return;
+        if (replaying && !ctx.net.simulates(ctx.scene, entity)) return;
         m_tickList.push_back(entity);
     });
 
@@ -146,15 +147,24 @@ void BehaviorSystem::tickBehaviors(
         [](EntityId a, EntityId b) { return a.slot() < b.slot(); }
     );
 
+    // Every behavior due to start is bound before any onStart runs, and started before any other
+    // hook of the tick: an onStart calling one later in the order finds it bound, its own onStart
+    // perhaps still to come, and every other hook finds them all started.
+    if (startIfNeeded) {
+        for (const EntityId id : m_tickList) {
+            forEachBehaviorOf(scene, id, [&](Behavior& behavior) {
+                if (!behavior.m_disabled && !behavior.m_started) behavior.bindContext(id, m_context);
+            });
+        }
+        for (const EntityId id : m_tickList) {
+            forEachBehaviorOf(scene, id, [&](Behavior& behavior) {
+                if (!behavior.m_disabled) ensureStarted(behavior, id);
+            });
+        }
+    }
     for (const EntityId id : m_tickList) {
         forEachBehaviorOf(scene, id, [&](Behavior& behavior) {
-            if (behavior.m_disabled) return;
-            if (startIfNeeded) {
-                ensureStarted(behavior, id);
-                if (behavior.m_disabled) return;  // onStart threw
-            } else if (!behavior.m_started) {
-                return;
-            }
+            if (behavior.m_disabled || !behavior.m_started) return;  // onStart threw, or is not due
             guard(behavior, hookName, [&] { (behavior.*hook)(dt); });
         });
     }
@@ -225,7 +235,8 @@ void BehaviorSystem::drainPendingSceneLoad(FrameContext& ctx) {
 }
 
 void BehaviorSystem::init(FrameContext& ctx) {
-    // Every field must be session-stable, as the FrameContext service block is.
+    // Every field but `ocean`, refreshed each tick and frame, must be session-stable, as the
+    // FrameContext service block is.
     m_context.scene     = &ctx.scene;
     m_context.resources = &ctx.resources;
     // Null on a host with no display, so a behavior knows it cannot read a device
@@ -236,6 +247,7 @@ void BehaviorSystem::init(FrameContext& ctx) {
     m_context.net       = &ctx.net;
     m_context.clock     = &ctx.clock;
     m_context.render    = &ctx.render;
+    m_context.chrome    = &ctx.chrome;
 
     ctx.scene.addObserver(this);
 
@@ -254,6 +266,7 @@ void BehaviorSystem::onEntityDestroyed(EntityId entity) {
 
 void BehaviorSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("BehaviorSystem");
+    m_context.ocean = ctx.ocean;
 
     Scene& scene = ctx.scene;
 
@@ -293,6 +306,7 @@ void BehaviorSystem::update(FrameContext& ctx) {
 
 void BehaviorSystem::fixedUpdate(FrameContext& ctx) {
     PROFILE_SCOPE("BehaviorSystem::fixed");
+    m_context.ocean = ctx.ocean;
 
     // No pause gate: the accumulator is fed from the sim delta.
     tickBehaviors(ctx, ctx.clock.getFixedStep(), "onFixedUpdate", &Behavior::onFixedUpdate, START_IF_NEEDED);

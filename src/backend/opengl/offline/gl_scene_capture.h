@@ -11,6 +11,7 @@
 
 #include "core/math/bounds.h"
 #include "frame/gl_camera.h"
+#include "frame/gl_ocean.h"
 #include "frame/gl_lights.h"
 #include "frame/gl_shadow_data.h"
 #include "frame/gl_instance_batcher.h"
@@ -217,6 +218,7 @@ class GLSceneCapture {
         const GLObjectBuffer& m_objects;  ///< The frame's transforms the batch indexes; the backend's.
 
         GLCamera          m_camera;         ///< Per-face camera UBO.
+        GLOcean           m_ocean;          ///< No sea: a `waves` surface is an ordinary one here.
         GLLights          m_lights;         ///< The frame's lights, the key light alone shadowed.
         GLInstanceBatcher m_batcher;        ///< Instanced capture draws.
         GLInstanceBatcher m_casterBatcher;  ///< Its casters, for the key light's map.

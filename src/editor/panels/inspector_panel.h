@@ -47,6 +47,7 @@ class SceneIOController;
     X(AudioSource,         drawAudioSourceSection,         "Audio Source",        AUDIO)     \
     X(AudioListener,       drawAudioListenerSection,       "Audio Listener",      AUDIO)     \
     X(IrradianceVolume,    drawIrradianceVolumeSection,    "Irradiance Volume",   PROBE)     \
+    X(Ocean,               drawOceanSection,               "Ocean",               MESH)      \
     X(LOD,                 drawLODSection,                 "LOD",                 MESH)      \
     X(Animation,           drawAnimationSection,           "Animation",           ANIM)      \
     X(Animator,            drawAnimatorSection,            "Animator",            ANIM)      \
@@ -58,6 +59,9 @@ class SceneIOController;
     X(UIText,              drawUITextSection,              "UI Text",             UI)        \
     X(UIButton,            drawUIButtonSection,            "UI Button",           UI)        \
     X(UIScroll,            drawUIScrollSection,            "UI Scroll",           UI)        \
+    X(UISlider,            drawUISliderSection,            "UI Slider",           UI)        \
+    X(UIToggle,            drawUIToggleSection,            "UI Toggle",           UI)        \
+    X(NetLocal,            drawNetLocalSection,            "Net Local",           HIERARCHY) \
     X(Hierarchy,           drawHierarchySection,           "Hierarchy",           HIERARCHY) \
 
 /**

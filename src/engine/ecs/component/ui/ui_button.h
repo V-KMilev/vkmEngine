@@ -14,8 +14,8 @@ namespace Vkm::Engine {
  * @brief An interactive, hit-tested button drawn over its element's rect.
  *
  * A press released over it enqueues a UIClickEvent carrying `eventId`; add a UIText on
- * the entity for a label. Also the UI's one drag primitive: a slider is a button over
- * its track reading `pointer.x / resolvedSize.x` while `held`.
+ * the entity for a label. Also the UI's one drag primitive: UISlider is built on it,
+ * following the pointer while it is `held`.
  */
 struct UIButton {
     enum class State : uint8_t { Normal, Hover, Pressed, Disabled };
