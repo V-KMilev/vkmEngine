@@ -8,6 +8,19 @@
 namespace Vkm::Engine {
 
 /**
+ * @brief Who draws a mesh: the camera the frame is seen through (the eye), and the rest -
+ *        shadows and captures.
+ *
+ * Only a scene camera is an eye: an editor's free view draws everything.
+ */
+enum class SeenBy {
+    All       = 0,  ///< Everything: the eye, shadows and captures.
+    AllButEye = 1,  ///< A first-person body: casts its shadow, in probe captures, not in the eye.
+    EyeOnly   = 2,  ///< Arms or a weapon: in the eye alone, with no shadow and in no capture.
+    Count           ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
+};
+
+/**
  * @brief Component representing a renderable mesh (geometry + material) in the world.
  */
 struct Mesh {
@@ -15,13 +28,17 @@ struct Mesh {
     MaterialHandle material;
     bool           visible     = true;
     bool           castShadows = true;
+    SeenBy         seenBy      = SeenBy::All;
 };
 
 } // namespace Vkm::Engine
+
+VKM_ENUM_NAMES(::Vkm::Engine::SeenBy, "All", "AllButEye", "EyeOnly")
 
 VKM_REFLECT_BEGIN(::Vkm::Engine::Mesh)
     VKM_F(mesh)
     VKM_F(material)
     VKM_F(visible)
     VKM_F(castShadows)
+    VKM_F(seenBy)
 VKM_REFLECT_END()

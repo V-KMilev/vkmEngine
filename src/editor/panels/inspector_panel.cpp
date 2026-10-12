@@ -1303,6 +1303,11 @@ void InspectorPanel::drawMeshSection(EditorContext& ec, EntityId id) {
 
         changed |= propCheckbox("Visible", &mesh.visible);
         changed |= propCheckbox("Cast Shadow", &mesh.castShadows);
+        const char* seenByTooltip =
+            "Who draws it, through a scene camera: All; All But Eye - a first-person body, "
+            "with its shadow and reflection but not in the camera; Eye Only - arms or a "
+            "weapon, in the camera alone. The editor's own view draws everything";
+        changed |= propEnumCombo("Seen By", mesh.seenBy, seenByTooltip);
 
         if (const MeshAsset* held = resources.tryGet(mesh.mesh)) {
             const MeshAsset& asset = *held;

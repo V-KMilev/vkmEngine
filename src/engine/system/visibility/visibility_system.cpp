@@ -253,6 +253,9 @@ void VisibilitySystem::update(FrameContext& ctx) {
     const bool      sea   = ctx.ocean && ctx.ocean->present;
     const glm::vec2 swell = sea ? ctx.ocean->surface.farthestReach() : glm::vec2(0.0f);
 
+    // Mesh::seenBy names a scene camera's view; a host's free view sees everything.
+    const bool throughAnEye = static_cast<bool>(m_result.cameraEntity);
+
     {
         PROFILE_SCOPE("Visibility/Cull");
         parallelFor(meshCount, [&](size_t i) {
@@ -302,10 +305,12 @@ void VisibilitySystem::update(FrameContext& ctx) {
             objects.skinFirst[i]   = slice ? slice->first : 0u;
             m_result.entities[i]   = ctx.scene.entityAt(entityIdx);
 
-            uint8_t state = STATE_DRAWN;
-            if (mesh.castShadows && !waves) state |= STATE_CASTS;
+            const bool eyeOnly   = throughAnEye && mesh.seenBy == SeenBy::EyeOnly;
+            const bool notTheEye = throughAnEye && mesh.seenBy == SeenBy::AllButEye;
+            uint8_t state = eyeOnly ? 0 : STATE_DRAWN;
+            if (mesh.castShadows && !waves && !eyeOnly) state |= STATE_CASTS;
 
-            if (Math::frustumIntersectsAABB(context.frustum, world)
+            if (!notTheEye && Math::frustumIntersectsAABB(context.frustum, world)
                 && Culling::isNearEnough(world, context)
                 && Culling::isLargeEnough(world, context)) {
                 state |= STATE_VISIBLE;
@@ -318,10 +323,8 @@ void VisibilitySystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("Visibility/Gather");
     for (uint32_t i = 0; i < meshCount; ++i) {
         const uint8_t state = m_state[i];
-        if ((state & STATE_DRAWN) == 0) continue;
-
         if (state & STATE_VISIBLE) objects.visible.push_back(i);
-        if (state & STATE_CASTS)   objects.scene.push_back(i);
+        if ((state & (STATE_DRAWN | STATE_CASTS)) == (STATE_DRAWN | STATE_CASTS)) objects.scene.push_back(i);
     }
     objects.casterCount = static_cast<uint32_t>(objects.scene.size());
     for (uint32_t i = 0; i < meshCount; ++i) {

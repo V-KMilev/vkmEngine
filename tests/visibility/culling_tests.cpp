@@ -336,6 +336,50 @@ void testWaterCastsUnlessTheSeaMovesIt() {
     );
 }
 
+// A first-person body is everywhere but the eye, and the arms are only in it; an editor's free
+// view is no eye, and sees both.
+void testWhatTheEyeSeesAndWhatOnlyItSees() {
+    std::printf("A body the eye does not see, and arms only it does:\n");
+
+    Scene scene;
+    TestFrame frame(scene);
+    const MeshHandle cube = frame.resources.add(generateCube(), "culling:seen-by");
+    MaterialAsset paintAsset;
+    const MaterialHandle paint = frame.resources.add(std::move(paintAsset), "culling:seen-by-paint");
+
+    const EntityId eye = scene.createEntity();
+    scene.add(eye, Transform{});
+    scene.add(eye, Camera{});
+    const auto place = [&](float x, SeenBy seenBy) {
+        const EntityId entity = scene.createEntity();
+        Transform at;
+        at.position = {x, 0.0f, -5.0f};
+        scene.add(entity, std::move(at));
+        Mesh mesh{cube, paint};
+        mesh.seenBy = seenBy;
+        scene.add(entity, std::move(mesh));
+    };
+    place(-1.0f, SeenBy::AllButEye);
+    place(1.0f, SeenBy::EyeOnly);
+
+    VisibilitySystem visibility;
+    visibility.update(frame.ctx);
+    const RenderObjects& objects = frame.ctx.visibility->objects;
+    const auto xOf = [&](uint32_t i) { return objects.models[i][3].x; };
+    check("the eye sees only the arms", objects.visible.size() == 1 && xOf(objects.visible[0]) == 1.0f);
+    check(
+        "  and only the body casts and is captured",
+        objects.casterCount == 1 && objects.scene.size() == 1 && xOf(objects.scene[0]) == -1.0f
+    );
+
+    HostView host;
+    host.position = {0.0f, 0.0f, 0.0f};
+    frame.ctx.hostView = &host;
+    visibility.update(frame.ctx);
+    check("a host's free view sees both", objects.visible.size() == 2);
+    check("  and both cast", objects.casterCount == 2);
+}
+
 // The frame's light list is in SparseSet packing order, which destroying an unrelated
 // light reorders; taking its first directional would disagree with findKeyLight's
 // lowest slot.
@@ -699,6 +743,7 @@ void testWhatIsTooSmallIsNotDrawn() {
 void runCullingTests() {
     testALightsSourceIsItsOwn();
     testWaterCastsUnlessTheSeaMovesIt();
+    testWhatTheEyeSeesAndWhatOnlyItSees();
     testTheFrustumKeepsWhatIsInFrontOfIt();
     testABoxOnTheEdgeCountsAsVisible();
     testTheFrustumNarrowsWithTheFieldOfView();

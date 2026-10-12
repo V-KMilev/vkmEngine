@@ -67,7 +67,7 @@ scene.remove<Mesh>(entity);
 | `Transform`           | `component/core/transform.h`               | `vec3 position`, `quat rotation`, `vec3 scale`                                                        |
 | `WorldTransform`      | `component/core/world_transform.h`         | `mat4 model` (resolved each frame by `HierarchySystem`); read it via `resolvedWorld{Matrix,Position,Rotation,Scale}` |
 | `Camera`              | `component/render/camera.h`                | `projection` (`ProjectionType`), `fovY`, `aspect`, `orthoHeight`, `zNear`, `zFar`, `focusDistance`, `dofAmount`, `dofMaxBlur`, `active`; `findActiveCamera` picks the one already held, else the lowest-slot active one |
-| `Mesh`                | `component/render/mesh.h`                  | `MeshHandle mesh`, `MaterialHandle material`, `bool visible`, `bool castShadows`                      |
+| `Mesh`                | `component/render/mesh.h`                  | `MeshHandle mesh`, `MaterialHandle material`, `bool visible`, `bool castShadows`, `SeenBy seenBy` (All, AllButEye, EyeOnly) |
 | `Light`               | `component/render/light.h`                 | `LightType` (Directional, Point, Spot, Rect, Disk), color, intensity, attenuation, cone, area, shadow |
 | `Animation`           | `component/animation/animation.h`          | Three tracks (position vec3, rotation quat, scale vec3) plus playback state and explicit `length`     |
 | `Animator`            | `component/animation/animator.h`           | `SkeletonHandle skeleton`, `AnimationClipHandle clip`, `speed`, `looping`, `playOnStart`; `time`, `playing`, `started`, the cross-fade state and `adjust` are runtime only - one per rigged character, not per mesh |

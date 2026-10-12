@@ -51,7 +51,11 @@ VisibilitySystem::update(ctx)
      - Culling::isLargeEnough         - reject if projected size below minPixels.
      - Set the state bits: drawn, casts - never for a `waves` surface under
        an ocean, whose held shadow would picture one moment of it - and
-       visible for survivors.
+       visible for survivors. Through a scene camera, `Mesh::seenBy` takes
+       its say: `AllButEye` (a first-person body) is never visible but still
+       drawn and cast, `EyeOnly` (arms, a weapon) neither drawn nor cast, so
+       only the eye has it. A host's free view, the editor's, is no eye and
+       sees both.
   5. Serial gather: walk the state in Mesh order, appending each visible
      index to `objects.visible` and each caster's to `objects.scene`, count
      the casters into `casterCount`, then walk again appending the
