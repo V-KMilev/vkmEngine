@@ -91,6 +91,25 @@ The PBR fragment shader (`shaders/forward/pbr/`) implements:
   (Filament's split), so glass keeps its reflections and highlights. Subsurface is Unreal's two-sided foliage, a wrapped
   back-light through a broad lobe about the light's direction, so a leaf glows
   looking toward the sun and not with it behind.
+  Sheen and anisotropy follow their glTF extensions. A sheen is the Charlie
+  lobe with its own visibility (Estevez and Kulla, as the glTF sample viewer
+  has them), over the base and under a coat; what it reflects at an angle,
+  its directional albedo, is baked into the BRDF LUT's third channel beside
+  the split sum, and the base is dimmed by that much on the way in and out
+  (`KHR_materials_sheen`'s albedo scaling), so a white sheen over a white base
+  moves the light toward the rim without adding to it. In the environment it
+  takes that albedo of the irradiance - a lobe as broad as cloth's gathers
+  nearly what a diffuse one does - where Filament reads the prefiltered sky
+  at the sheen's roughness. An anisotropic lobe is rougher along its
+  direction, `mix(a, 1, strength^2)`, and as rough as authored across it
+  (`KHR_materials_anisotropy`); the environment reflects about a normal bent
+  toward the stretch, the glTF sample viewer's, and the trace, which reflects
+  about the G-buffer's normal, is handed the lobe as wide as its widest axis.
+  The import takes the strength and rotation, and the sheen's colour and
+  roughness; their textures have no unit of their own (`convention/gl_bindings.h`),
+  and the import says so when it leaves one behind. A direction needs a tangent
+  field that runs the way the material does: the built-in sphere is six
+  patches and shows their seams.
 - **Double-sided materials** (`MaterialAsset::doubleSided`, glTF's
   `doubleSided`): their runs draw with culling off in the depth prepass and the
   forward pass, and a back face is lit as its own - the shader turns the whole

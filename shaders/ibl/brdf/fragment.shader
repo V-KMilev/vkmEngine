@@ -2,15 +2,37 @@
  * IBL bake - split-sum BRDF/DFG integration LUT.
  *
  * x = N.V, y = roughness; .rg is the (scale, bias) on the prefiltered specular: F * dfg.x + dfg.y.
+ * .b is the sheen lobe's directional albedo at that roughness (KHR_materials_sheen's E), what a
+ * sheen takes of the light, so the layer under it can be dimmed by as much.
  */
 in vec2 vUV;
 
-out vec2 FragColor;
+out vec4 FragColor;  // RGBA: GL requires RGBA16F renderable, not RGB16F
 
 #include "../../brdf.glsl"
 #include "../../sampling.glsl"
 
 const uint SAMPLE_COUNT = 1024u;
+
+// The Charlie lobe is broad enough for samples spread evenly over the hemisphere.
+const uint SHEEN_SAMPLES = 256u;
+
+// The integral of the sheen lobe's D V cos over the hemisphere, as the forward pass shades it.
+float sheenAlbedo(vec3 V, float NdotV, float roughness) {
+    float alpha = roughness * roughness;
+    float sum   = 0.0;
+    for (uint i = 0u; i < SHEEN_SAMPLES; ++i) {
+        vec2  xi    = hammersley(i, SHEEN_SAMPLES);
+        float cosT  = xi.x;
+        float sinT  = sqrt(1.0 - cosT * cosT);
+        float phi   = 2.0 * PI * xi.y;
+        vec3  L     = vec3(sinT * cos(phi), sinT * sin(phi), cosT);
+        vec3  H     = normalize(V + L);
+        float NdotL = L.z;
+        sum += distributionCharlie(H.z, alpha) * visCharlie(NdotV, NdotL, alpha) * NdotL;
+    }
+    return sum * 2.0 * PI / float(SHEEN_SAMPLES);
+}
 
 void main() {
     float NdotV = max(vUV.x, 1e-4);
@@ -41,5 +63,5 @@ void main() {
         }
     }
 
-    FragColor = vec2(A, B) / float(SAMPLE_COUNT);
+    FragColor = vec4(vec2(A, B) / float(SAMPLE_COUNT), sheenAlbedo(V, NdotV, roughness), 1.0);
 }

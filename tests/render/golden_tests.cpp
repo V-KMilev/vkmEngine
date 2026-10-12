@@ -2315,6 +2315,89 @@ void testSmokeIsLitWhereItIs(int& failures) {
     expect("a lamp that does not reach a puff lights none of it", centre[1] <= centre[0] + 2.0f, failures);
 }
 
+// Velvet and brushed metal under a sun 25 degrees up: the velvet's sheen glows at its rim, lit and in the
+// sky's light alike, over a base it dims by as much; the metal's highlight and its reflection of
+// the sky stretch round the can, its rougher way.
+void buildCloth(Scenery& s) {
+    base(s);
+    s.scene.environment().sky.sunElevation = 25.0f;
+    place(
+        s,
+        s.cube,
+        material(s, "golden:floor", {0.3f, 0.3f, 0.3f}, 0.7f, 0.0f),
+        {0.0f, -0.5f, 0.0f},
+        {30.0f, 1.0f, 30.0f}
+    );
+    const glm::vec3 sun    = s.scene.environment().sunDirection();
+    const glm::vec3 eye    = {0.0f, 1.6f, 0.0f};
+    const glm::vec3 toward = -glm::normalize(glm::vec3(sun.x, 0.0f, sun.z));
+    const glm::vec3 across = glm::cross(toward, glm::vec3(0.0f, 1.0f, 0.0f));
+
+    MaterialAsset velvet;
+    velvet.albedo         = glm::vec4(0.25f, 0.02f, 0.05f, 1.0f);
+    velvet.roughness      = 0.9f;
+    velvet.sheenColor     = {0.9f, 0.45f, 0.55f};
+    velvet.sheenRoughness = 0.4f;
+    MaterialAsset brushed;
+    brushed.albedo     = glm::vec4(0.9f, 0.9f, 0.92f, 1.0f);
+    brushed.roughness  = 0.25f;
+    brushed.metallic   = 1.0f;
+    brushed.anisotropy = 0.8f;
+    const MaterialHandle cloth = s.resources.add(std::move(velvet), "golden:velvet");
+    const MaterialHandle metal = s.resources.add(std::move(brushed), "golden:brushed");
+    // The metal a cylinder turned on a lathe: its tangents run round it, as no sphere's can.
+    const MeshHandle can = s.resources.add(generateCylinder(0.5f, 1.0f, 48), "golden:can");
+    const glm::vec3 left  = eye + toward * 3.2f - across * 1.05f;
+    const glm::vec3 right = eye + toward * 3.2f + across * 1.05f;
+    place(s, s.sphere, cloth, {left.x, 0.9f, left.z}, glm::vec3(1.8f));
+    place(s, can, metal, {right.x, 0.9f, right.z}, glm::vec3(1.6f, 1.8f, 1.6f));
+    sunAndCamera(s, eye, eye + toward * 3.2f + glm::vec3(0.0f, -0.7f, 0.0f));
+}
+
+// A white sphere with a white sheen and one without, under the sun and the flat ambient of a scene
+// with no sky: the sheen takes from the base what it reflects (KHR_materials_sheen's albedo
+// scaling), so it moves the light round the sphere, toward its rim, without adding to it.
+void testASheenAddsNoLight(int& failures) {
+    std::printf("A white sheen over a white base:\n");
+    float mean[2] = {};
+    for (const bool sheen : {false, true}) {
+        restoreContextDefaults();
+        WindowManager window;
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        base(s);
+        s.scene.environment().sky.procedural = false;
+        MaterialAsset white;
+        white.albedo    = glm::vec4(1.0f);
+        white.roughness = 1.0f;
+        if (sheen) {
+            white.sheenColor     = glm::vec3(1.0f);
+            white.sheenRoughness = 0.5f;
+        }
+        const MaterialHandle paint = s.resources.add(std::move(white), "golden:white");
+        place(s, s.sphere, paint, {0.0f, 0.0f, 0.0f}, glm::vec3(2.0f));
+        sunAndCamera(s, s.scene.environment().sunDirection() * 4.0f, {0.0f, 0.0f, 0.0f});
+
+        RenderSettings settings;
+        settings.msaaSamples = 1;
+        settings.tonemap     = Tonemap::Reinhard;
+        settings.exposure    = -2.0f;
+        const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+        long sum = 0;
+        for (int y = HEIGHT / 4; y < HEIGHT * 3 / 4; ++y) {
+            for (int x = WIDTH / 2 - HEIGHT / 4; x < WIDTH / 2 + HEIGHT / 4; ++x) sum += pixel(frame, x, y).x;
+        }
+        mean[sheen ? 1 : 0] = static_cast<float>(sum) / static_cast<float>((HEIGHT / 2) * (HEIGHT / 2));
+    }
+    std::printf("      %.1f bare, %.1f with the sheen\n", mean[0], mean[1]);
+    // A few percent is the ambient light the base's own Fresnel had kept from it.
+    expect("a white sheen adds no light to a white base", mean[1] <= mean[0] * 1.05f, failures);
+}
+
 void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     std::printf("Whole frames against their goldens:\n");
     if (!gl.attachSurface(WIDTH, HEIGHT)) {
@@ -2338,6 +2421,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     compare("mirror",      buildMirror,      gl.renderer(), failures);
     compare("twosided",    buildTwoSided,    gl.renderer(), failures);
     compare("coat",        buildCoat,        gl.renderer(), failures);
+    compare("cloth",       buildCloth,       gl.renderer(), failures);
     compare("sunset",      buildSunset,      gl.renderer(), failures);
     compare("room",        buildRoom,        gl.renderer(), failures);
     compare("aerial",      buildAerial,      gl.renderer(), failures);
@@ -2360,6 +2444,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testADecalIsLitAsTheFloorUnderIt(failures);
     testSmokeIsLitWhereItIs(failures);
     testAMovedProbeBakesOnceItSettles(failures);
+    testASheenAddsNoLight(failures);
     testAProbeBakedUnderADebugViewHoldsTheScene(failures);
     testASealedRoomHoldsNoSkyLight(failures);
     testTheShoreRingsWhatBreaksTheWater(failures);

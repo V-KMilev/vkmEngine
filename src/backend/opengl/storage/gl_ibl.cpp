@@ -34,7 +34,7 @@ void GLIBL::createBrdf() {
     if (!m_captureFbo) m_captureFbo = std::make_unique<Vkm::GL::FrameBuffer>();
     m_brdf = std::make_unique<Vkm::GL::Texture2D>(
         "ibl_brdf_lut",
-        lookupTableParams(BRDF_SIZE, BRDF_SIZE, GL_RG16F, GL_RG)
+        lookupTableParams(BRDF_SIZE, BRDF_SIZE, GL_RGBA16F, GL_RGBA)
     );
 }
 

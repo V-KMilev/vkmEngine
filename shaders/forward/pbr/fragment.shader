@@ -279,16 +279,42 @@ float specularAA(vec3 N, float roughness) {
     return sqrt(sqrt(a2));   // back to perceptual roughness
 }
 
-// Charlie sheen distribution + Ashikhmin visibility (KHR_materials_sheen).
-float distributionCharlie(float NdotH, float roughness) {
-    float invR = 1.0 / max(roughness, 0.07);
-    float cos2 = NdotH * NdotH;
-    float sin2 = max(1.0 - cos2, 0.0);
-    return (2.0 + invR) * pow(sin2, invR * 0.5) / (2.0 * PI);
+// The anisotropy's direction in the shading plane: the authored one in tangent space, else T, as
+// a zeroed or N-parallel one would normalize to NaN.
+vec3 anisotropyTangent(vec3 T, vec3 B, vec3 N) {
+    vec3 authored = u_material.anisotropyDirection.xyz;
+    vec3 aT = T * authored.x + B * authored.y + N * authored.z;
+    aT -= N * dot(aT, N);
+    float aTLen = length(aT);
+    return (aTLen > 1e-4) ? aT / aTLen : T;
 }
 
-float visAshikhmin(float NdotV, float NdotL) {
-    return clamp(1.0 / (4.0 * (NdotL + NdotV - NdotL * NdotV)), 0.0, 1.0);
+// The sheen lobe's directional albedo at this angle to the normal, from the BRDF LUT's third
+// channel.
+float sheenAlbedo(float NdotX) {
+    return texture(u_brdfLUT, vec2(NdotX, u_material.sheenColor.a)).b;
+}
+
+// The sheen colour's strongest channel, 0 for no sheen.
+float sheenStrength() {
+    vec3 sheenColor = u_material.sheenColor.rgb;
+    return max(sheenColor.r, max(sheenColor.g, sheenColor.b));
+}
+
+// How much of the light a sheen takes at this angle, its albedo times its strength: the layer
+// under it keeps the rest (KHR_materials_sheen's albedo scaling).
+float sheenTaken(float NdotX) {
+    return sheenStrength() * sheenAlbedo(NdotX);
+}
+
+bool hasSheen() {
+    return sheenStrength() > 0.0;
+}
+
+// The GGX alpha along an anisotropic material's direction, from @p a across it
+// (KHR_materials_anisotropy): rougher along it, as rough as authored across.
+float anisotropicAlpha(float a) {
+    return mix(a, 1.0, u_material.anisotropy * u_material.anisotropy);
 }
 
 // Anisotropic GGX (Burley / Filament): at, ab are tangent/bitangent alphas.
@@ -421,16 +447,10 @@ vec3 evaluateLight(
     float D, Vis;
     float specNoL = NdotL;
     if (u_material.anisotropy > 0.001) {
-        // The authored direction in the shading plane, else T: a zeroed or
-        // N-parallel one would normalize to NaN.
-        vec3 authored = u_material.anisotropyDirection.xyz;
-        vec3 aT = T * authored.x + B * authored.y + N * authored.z;
-        aT -= N * dot(aT, N);
-        float aTLen = length(aT);
-        aT = (aTLen > 1e-4) ? aT / aTLen : T;
+        vec3 aT = anisotropyTangent(T, B, N);
         vec3 aB = cross(N, aT);   // unit: N and aT are unit and perpendicular
-        float at = max(a * (1.0 + u_material.anisotropy), 1e-3);
-        float ab = max(a * (1.0 - u_material.anisotropy), 1e-3);
+        float at = max(anisotropicAlpha(a), 1e-3);
+        float ab = max(a, 1e-3);
         D   = distributionGGXAniso(NdotH, dot(aT, H), dot(aB, H), at, ab);
         Vis = visSmithAniso(at, ab, dot(aT, V), dot(aB, V), NdotV, dot(aT, L), dot(aB, L), NdotL);
     } else {
@@ -502,18 +522,20 @@ vec3 evaluateLight(
         ccContrib = vec3(ccD * ccV * ccF) * cNoL;
     }
 
-    // Off when sheenColor is black.
-    vec3 sheen = vec3(0.0);
-    vec3 sheenColor = u_material.sheenColor.rgb;
-    if (max(sheenColor.r, max(sheenColor.g, sheenColor.b)) > 0.0) {
+    // A sheen over the base and under the coat, off when its colour is black. What it takes of the
+    // light going in or coming out the base below does not get (KHR_materials_sheen).
+    vec3  sheen      = vec3(0.0);
+    float underSheen = 1.0;
+    if (hasSheen()) {
         float sheenAlpha = u_material.sheenColor.a * u_material.sheenColor.a;
         float sheenD     = distributionCharlie(NdotH, sheenAlpha);
-        float sheenV     = visAshikhmin(NdotV, NdotL);
-        sheen = sheenColor * (sheenD * sheenV * NdotL);
+        float sheenV     = visCharlie(NdotV, NdotL, sheenAlpha);
+        sheen      = u_material.sheenColor.rgb * (sheenD * sheenV * NdotL) * underCoat;
+        underSheen = 1.0 - max(sheenTaken(NdotV), sheenTaken(NdotL));
     }
 
-    g_directSpecular += (specular * specNoL * underCoat + ccContrib) * radiance;
-    return (baseLit + ccContrib + transmitted + sss + sheen) * radiance;
+    g_directSpecular += (specular * specNoL * underCoat * underSheen + ccContrib) * radiance;
+    return ((baseLit + transmitted + sss) * underSheen + ccContrib + sheen) * radiance;
 }
 
 // Specular occlusion (Lagarde): AO weighted by view angle and roughness, since
@@ -846,7 +868,18 @@ void main() {
     // Both measure the same occlusion, so the stronger wins, not the product.
     float ao = min(s.ao, gtao);
 
-    vec3 R = reflect(-V, N);
+    // An anisotropic lobe reflects about a normal bent toward its stretch, the more the rougher
+    // across it (the glTF sample viewer's): the bend across the surface draws the stretch. The
+    // trace, which reflects about the G-buffer's normal, is handed it as wide as its widest axis,
+    // so a strong one keeps this reflection rather than one about the wrong normal.
+    vec3  R             = reflect(-V, N);
+    float lobeRoughness = sqrt(anisotropicAlpha(s.roughness * s.roughness));  // its widest axis
+    if (u_material.anisotropy > 0.001) {
+        vec3  aB     = cross(N, anisotropyTangent(T, B, N));
+        vec3  across = cross(cross(aB, V), aB);
+        float bend   = 1.0 - u_material.anisotropy * (1.0 - s.roughness);
+        R = reflect(-V, normalize(mix(across, N, bend * bend * bend * bend)));
+    }
 
     // What the environment's specular takes, and the diffuse what is left (Fdez-Aguera, section 4).
     vec3 FssEss;
@@ -870,14 +903,15 @@ void main() {
     // Not occluded: a trace that hits has found the occluder itself, so only the environment it
     // replaces (ReflectEnv) carries specOcc.
     vec3  reflectWeight = FssEss;
+    float underSheen    = hasSheen() ? 1.0 - sheenTaken(NdotV) : 1.0;
     bool  hasCoat       = s.clearcoat > 0.001;
     float coatNoV       = max(dot(Ng, V), 1e-4);
     float coatFresnel   = hasCoat ? fresnelSchlick(coatNoV, vec3(COAT_F0)).x * s.clearcoat : 0.0;
     vec3  Rc            = reflect(-V, Ng);  // the coat's, on its smooth top
     // The coat's top is never below its own horizon, so it takes no horizon term.
     float coatOcc       = specularOcclusion(coatNoV, ao, s.clearcoatRoughness * s.clearcoatRoughness);
-    reflectWeight *= 1.0 - coatFresnel;
-    ReflectWeight = vec4(reflectWeight, s.roughness);
+    reflectWeight *= (1.0 - coatFresnel) * underSheen;
+    ReflectWeight = vec4(reflectWeight, lobeRoughness);
 
     // Without a baked sky: no reflection and a flat floor, which probes and the
     // irradiance volume still replace where they cover.
@@ -949,6 +983,15 @@ void main() {
 
     vec3 ambient = diffuseIBL * multiBounceOcclusion(ao, s.albedo) + specularIBL * specOcc;
     vec3 ambientSpecular = specularIBL * specOcc;
+
+    // A sheen takes its share of the environment before the base does: its directional albedo of
+    // the irradiance, since a lobe as broad as cloth's gathers nearly what a diffuse one does
+    // (Filament reads the prefiltered sky at its roughness instead).
+    if (hasSheen()) {
+        vec3 sheenIBL = u_material.sheenColor.rgb * sheenAlbedo(NdotV) * irradiance * ao;
+        ambient         = ambient * underSheen + sheenIBL;
+        ambientSpecular = ambientSpecular * underSheen;
+    }
 
     // The coat layer dims everything beneath by its Fresnel (Filament's clear-coat IBL).
     if (hasCoat) {
