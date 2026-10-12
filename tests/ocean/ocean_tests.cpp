@@ -4,7 +4,11 @@
 
 #include <glm/gtc/constants.hpp>
 
+#include "ecs/component/core/transform.h"
+#include "ecs/scene.h"
+#include "net/net_session.h"
 #include "system/ocean/ocean_surface.h"
+#include "system/ocean/ocean_system.h"
 
 namespace {
 
@@ -303,6 +307,40 @@ void testTheRipplesAreTheSpectrumBelowTheWaves() {
     check("  no wind, no ripples", !OceanRipples::at(calm, 5.0).any());
 }
 
+// OceanSystem builds the one sea everything reads: published every frame, an ocean or none, and
+// inside a tick at the tick's own time, so what a tick floats on it does not depend on the frame.
+void testTheOceanSystemBuildsTheOneSea() {
+    std::printf("The scene's one sea:\n");
+
+    Scene scene;
+    TestFrame frame(scene);
+    frame.clock.setTickRate(60);
+    OceanSystem system;
+    system.update(frame.ctx);
+    check("with no ocean, the frame still says so", frame.ctx.ocean && !frame.ctx.ocean->present);
+
+    const Ocean     sea    = openSea();
+    const glm::vec3 centre = {3.0f, -1.0f, 2.0f};
+    const EntityId  entity = scene.createEntity();
+    scene.add(entity, Transform{centre, {1.0f, 0.0f, 0.0f, 0.0f}, glm::vec3(1.0f)});
+    scene.add(entity, sea);
+    frame.clock.requestStep(7);
+    while (frame.clock.consumeFixedStep()) {}
+
+    frame.ctx.net.beginTick(frame.clock.getTick(), InputCommand{}, 0);
+    system.fixedUpdate(frame.ctx);
+    frame.ctx.net.endTick(scene, frame.clock.getTick());
+    const double       tick  = 7.0 * static_cast<double>(frame.clock.getFixedStep());
+    const OceanSurface again = OceanSurface::at(sea, centre, tick);
+    const glm::vec2    point = {4.0f, -6.0f};
+    const OceanData&   built = *frame.ctx.ocean;
+    check("an ocean is built where it stands", built.present && built.level == centre.y);
+    check(
+        "  inside a tick, at that tick's own time",
+        built.surface.count == again.count && built.surface.heightAt(point) == again.heightAt(point)
+    );
+}
+
 } // namespace
 
 void runOceanTests() {
@@ -315,4 +353,5 @@ void runOceanTests() {
     testASurgeRollsTheWayItPoints();
     testTheWavesDieAwayFromTheCentre();
     testTheRipplesAreTheSpectrumBelowTheWaves();
+    testTheOceanSystemBuildsTheOneSea();
 }

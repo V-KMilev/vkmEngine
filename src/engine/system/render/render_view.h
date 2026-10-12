@@ -12,7 +12,7 @@
 #include "system/render/data/decal_data.h"
 #include "system/render/data/particle_data.h"
 #include "system/render/data/irradiance_volume_data.h"
-#include "system/render/data/ocean_data.h"
+#include "system/ocean/ocean_data.h"
 #include "system/render/render_settings.h"
 #include "system/splash/splash_frame.h"
 #include "system/ui/ui_draw_data.h"
@@ -71,9 +71,8 @@ struct RenderView {
     IrradianceVolumeData irradianceVolume{};
     bool                 hasIrradianceVolume = false;
 
-    /// The scene's ocean (findOcean's pick) at the frame's moment, meaningful while @ref hasOcean.
+    /// The scene's sea at the frame's moment (OceanSystem); not present without a camera.
     OceanData ocean{};
-    bool      hasOcean = false;
 
     /**
      * @brief The frame's bone palettes: PoseBuffer::palette(), borrowed whole.
@@ -110,7 +109,7 @@ struct RenderView {
          * @param poses This frame's pose, or null (or empty) when nothing posed:
          *              objects then draw bind poses.
          * @param particles ParticleSystem's live particles, or null if it has not run.
-         * @param seconds   The ocean's time, as NetSession::worldTime gives it.
+         * @param ocean     OceanSystem's sea, or null if it has not run.
          */
         void build(
             const Scene& scene,
@@ -119,7 +118,7 @@ struct RenderView {
             const SplashFrame* splash,
             const PoseBuffer* poses,
             const LiveParticles* particles,
-            double seconds
+            const OceanData* ocean
         );
 };
 

@@ -8,6 +8,7 @@
 #include "io/project_paths.h"
 
 #include "system/async/async_loader_system.h"
+#include "system/ocean/ocean_system.h"
 #include "system/script/behavior_system.h"
 #include "system/sky/sky_system.h"
 #include "system/animation/animation_system.h"
@@ -126,6 +127,8 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
         (Engine::ProjectPaths::engineAssets() / "logo" / "vkm_engine_notice.png").string()
     );
     engine.addSystem<Engine::AsyncLoaderSystem>(Engine::SystemStage::Simulation);
+    // Ahead of the behaviors that float things on its sea, and of the cull and the renderer.
+    engine.addSystem<Engine::OceanSystem>(Engine::SystemStage::Simulation);
     auto& behaviorSystem = engine.addSystem<Engine::BehaviorSystem>(Engine::SystemStage::Simulation);
     engine.addSystem<Engine::AnimationSystem>(Engine::SystemStage::Simulation);
     engine.addSystem<Engine::SkeletalAnimationSystem>(Engine::SystemStage::Simulation);

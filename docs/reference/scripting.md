@@ -198,6 +198,7 @@ class Behavior {
         RenderSettings&  render();      // the quality the frame is drawn at
         ScreenView       screen();      // the 3D view: a ray through a point, a point on a canvas
         std::optional<Math::Ray> pointerRay(); // the ray under the cursor, if it is on the view
+        const OceanData* ocean();       // the scene's sea, this tick's or frame's, or null
 
         bool                isSimulated();  // does this end decide this entity
         bool                isMine();       // is this the player sitting here

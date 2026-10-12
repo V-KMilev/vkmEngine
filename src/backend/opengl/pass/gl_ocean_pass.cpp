@@ -7,7 +7,7 @@
 namespace Vkm::Engine {
 
 void GLOceanPass::execute(GLFrameContext& ctx) {
-    if (!ctx.view.hasOcean) return;
+    if (!ctx.view.ocean.present) return;
     if (ctx.view.ocean.ripples.any()) ctx.oceanFields.drawRipples();
     if (ctx.view.hasCamera && ctx.view.ocean.waterline > 0.0f) ctx.oceanFields.captureShore(ctx);
 }

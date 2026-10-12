@@ -352,7 +352,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         const float width  = static_cast<float>(view.viewportWidth);
         const float height = static_cast<float>(view.viewportHeight);
         m_camera.update(view.camera, glm::vec2(width, height));
-        m_ocean.update(view.ocean, view.hasOcean);
+        m_ocean.update(view.ocean);
         m_lights.update(view.lights, m_shadowData.lightSlots());
         m_shadowData.uploadAndBind();
     }

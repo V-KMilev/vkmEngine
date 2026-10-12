@@ -19,12 +19,11 @@
 #include "ecs/component/render/camera.h"
 #include "ecs/component/render/lod.h"
 #include "ecs/component/render/mesh.h"
-#include "ecs/component/render/ocean.h"
 
 #include "core/host_chrome.h"
 #include "core/math/bounds.h"
 #include "system/animation/pose_buffer.h"
-#include "system/ocean/ocean_surface.h"
+#include "system/ocean/ocean_data.h"
 #include "system/render/render_settings.h"
 #include "system/visibility/culling.h"
 #include "system/visibility/host_view.h"
@@ -248,9 +247,8 @@ void VisibilitySystem::update(FrameContext& ctx) {
     // A `waves` surface the scene's ocean moves is carried past its mesh's box by as far as the
     // sea moves water, and casts no shadow: a held shadow tile would picture one moment of it.
     // With no ocean it draws, and casts, as any surface.
-    const EntityId sea = findOcean(ctx.scene);
-    glm::vec2      swell(0.0f);
-    if (sea) swell = OceanSurface::at(ctx.scene.get<Ocean>(sea), glm::vec3(0.0f), 0.0).farthestReach();
+    const bool      sea   = ctx.ocean && ctx.ocean->present;
+    const glm::vec2 swell = sea ? ctx.ocean->surface.farthestReach() : glm::vec2(0.0f);
 
     {
         PROFILE_SCOPE("Visibility/Cull");

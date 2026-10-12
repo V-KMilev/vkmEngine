@@ -235,7 +235,8 @@ void BehaviorSystem::drainPendingSceneLoad(FrameContext& ctx) {
 }
 
 void BehaviorSystem::init(FrameContext& ctx) {
-    // Every field must be session-stable, as the FrameContext service block is.
+    // Every field but `ocean`, refreshed each tick and frame, must be session-stable, as the
+    // FrameContext service block is.
     m_context.scene     = &ctx.scene;
     m_context.resources = &ctx.resources;
     // Null on a host with no display, so a behavior knows it cannot read a device
@@ -265,6 +266,7 @@ void BehaviorSystem::onEntityDestroyed(EntityId entity) {
 
 void BehaviorSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("BehaviorSystem");
+    m_context.ocean = ctx.ocean;
 
     Scene& scene = ctx.scene;
 
@@ -304,6 +306,7 @@ void BehaviorSystem::update(FrameContext& ctx) {
 
 void BehaviorSystem::fixedUpdate(FrameContext& ctx) {
     PROFILE_SCOPE("BehaviorSystem::fixed");
+    m_context.ocean = ctx.ocean;
 
     // No pause gate: the accumulator is fed from the sim delta.
     tickBehaviors(ctx, ctx.clock.getFixedStep(), "onFixedUpdate", &Behavior::onFixedUpdate, START_IF_NEEDED);

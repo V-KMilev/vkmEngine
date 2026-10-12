@@ -8,6 +8,7 @@
 #include "ecs/component/render/mesh.h"
 #include "ecs/component/render/ocean.h"
 #include "resource/generate/mesh_generators.h"
+#include "system/ocean/ocean_system.h"
 #include "system/render/render_view.h"
 #include "system/visibility/culling.h"
 #include "system/visibility/host_view.h"
@@ -143,7 +144,7 @@ void testALightsSourceIsItsOwn() {
     VisibilitySystem visibility;
     visibility.update(frame.ctx);
     RenderView view;
-    view.build(scene, *frame.ctx.visibility, nullptr, nullptr, nullptr, nullptr, 0.0);
+    view.build(scene, *frame.ctx.visibility, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     const LightData* sunData  = lowestSlotDirectional(view.lights);
     const LightData* lampData = nullptr;
@@ -154,7 +155,7 @@ void testALightsSourceIsItsOwn() {
     check("  and a spot's is its own, in metres", lampData && nearly(lampData->sourceRadius, 0.2f));
 
     scene.get<Light>(sun).sourceRadius = 3.0f;
-    view.build(scene, *frame.ctx.visibility, nullptr, nullptr, nullptr, nullptr, 0.0);
+    view.build(scene, *frame.ctx.visibility, nullptr, nullptr, nullptr, nullptr, nullptr);
     sunData = lowestSlotDirectional(view.lights);
     check(
         "a disc wider than a quarter turn is held to one",
@@ -204,7 +205,7 @@ void testTheFrameCarriesWhatTheCameraCannotSee() {
     check("the camera resolved", frame.ctx.visibility && frame.ctx.visibility->hasCamera);
 
     RenderView view;
-    view.build(scene, *frame.ctx.visibility, nullptr, nullptr, nullptr, nullptr, 0.0);
+    view.build(scene, *frame.ctx.visibility, nullptr, nullptr, nullptr, nullptr, nullptr);
 
     const RenderObjects& objects = *view.objects;
     check("a mesh behind the camera is not one the camera draws", objects.visible.empty());
@@ -261,7 +262,7 @@ void testAWorldWithNoMeshesHasNoCasters() {
     );
 
     RenderView view;
-    view.build(bare, result, nullptr, nullptr, nullptr, nullptr, 0.0);
+    view.build(bare, result, nullptr, nullptr, nullptr, nullptr, nullptr);
     check("  so the frame hands the shadow pass none", view.objects->casterCount == 0);
 }
 
@@ -291,7 +292,7 @@ void testAMeshWithNoMaterialCastsNothing() {
     visibility.update(frame.ctx);
 
     RenderView view;
-    view.build(scene, *frame.ctx.visibility, nullptr, nullptr, nullptr, nullptr, 0.0);
+    view.build(scene, *frame.ctx.visibility, nullptr, nullptr, nullptr, nullptr, nullptr);
     check("a mesh in view with no material is not drawn", view.objects->visible.empty());
     check("  and casts no shadow either", view.objects->casterCount == 0 && view.objects->scene.empty());
 }
@@ -317,7 +318,9 @@ void testWaterCastsUnlessTheSeaMovesIt() {
     scene.add(pool, std::move(at));
     scene.add(pool, Mesh{cube, water});
 
+    OceanSystem      ocean;
     VisibilitySystem visibility;
+    ocean.update(frame.ctx);
     visibility.update(frame.ctx);
     const RenderObjects& objects = frame.ctx.visibility->objects;
     check("with no ocean it casts", objects.casterCount == 1 && !objects.draws[0].waves);
@@ -325,6 +328,7 @@ void testWaterCastsUnlessTheSeaMovesIt() {
     const EntityId sea = scene.createEntity();
     scene.add(sea, Transform{});
     scene.add(sea, Ocean{});
+    ocean.update(frame.ctx);
     visibility.update(frame.ctx);
     check(
         "  with one, the sea moves it and it casts none",

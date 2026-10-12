@@ -2,6 +2,7 @@
 
 #include <utility>
 
+#include "system/ocean/ocean_data.h"
 #include "system/script/script_component.h"
 
 namespace Vkm::Engine {
@@ -28,6 +29,11 @@ EntityId findEntityWithBehaviorNamed(Scene& scene, std::string_view typeName) {
         if (findBehaviorNamed(scene, entity, typeName)) found = entity;
     });
     return found;
+}
+
+const OceanData* Behavior::ocean() const {
+    const OceanData* sea = m_ctx->ocean;
+    return sea && sea->present ? sea : nullptr;
 }
 
 ScreenView Behavior::screen() const {

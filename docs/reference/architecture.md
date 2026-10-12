@@ -104,7 +104,7 @@ two never do:
 | Stage      | Systems                                                                         |
 |------------|---------------------------------------------------------------------------------|
 | Input      | `CameraControllerSystem` (**editor binary only** - the editor's own view and its fly controls, published as `ctx.hostView`; an authoring tool, so the authoring host is what registers it) |
-| Simulation | (EventBus flush), `SplashSystem` (the startup logo; frame-clock presentation, publishes `ctx.splash`), `AsyncLoaderSystem`, `BehaviorSystem`, `AnimationSystem`, `SkeletalAnimationSystem`, `RagdollSystem` (after the pose it reads, before the bodies it writes), `PhysicsSystem`, `CharacterControllerSystem`, `SkySystem` |
+| Simulation | (EventBus flush), `SplashSystem` (the startup logo; frame-clock presentation, publishes `ctx.splash`), `AsyncLoaderSystem`, `OceanSystem` (the scene's sea, once a tick and once a frame; publishes `ctx.ocean`), `BehaviorSystem`, `AnimationSystem`, `SkeletalAnimationSystem`, `RagdollSystem` (after the pose it reads, before the bodies it writes), `PhysicsSystem`, `CharacterControllerSystem`, `SkySystem` |
 | Transform  | `BoneSocketSystem`, `HierarchySystem`, `UISystem` (the game UI; runs in **every** host), `AudioSystem` and `ParticleSystem` (both after the world resolve they read poses from) |
 | Visibility | `VisibilitySystem`                                                            |
 | Render     | `RenderSystem`                                                                |
@@ -154,6 +154,7 @@ struct FrameContext {
     const UIDrawData* ui         = nullptr;  // UISystem's draw list
     const SplashFrame* splash    = nullptr;  // SplashSystem's logo + fade
     const LiveParticles* particles = nullptr; // ParticleSystem's live particles
+    const OceanData* ocean       = nullptr;  // OceanSystem's sea, this tick's or this frame's
 };
 ```
 
@@ -218,7 +219,7 @@ Engine code, single include root `src/engine/`:
 | `system/async/`            | `AsyncLoaderSystem`                                                      |
 | `system/audio/`            | `AudioSystem`, `AudioDevice` (the only engine file that includes the audio backend) |
 | `system/hierarchy/`        | `HierarchySystem`                                                        |
-| `system/ocean/`            | `OceanSurface` (the sea's waves, which the vertex shaders and gameplay both read) |
+| `system/ocean/`            | `OceanSystem`, `OceanData`, `OceanSurface` (the sea's waves, built once and read by the vertex shaders, the cull and gameplay) |
 | `system/particle/`         | `ParticleSystem` (CPU simulation; `GLParticlePass` draws what it emits)  |
 | `system/physics/`          | `PhysicsSystem`, `CharacterControllerSystem`, and `authoring/`, `character/`, `collision/`, `query/`, `solver/` (see [physics.md](physics.md) for the folder map) |
 | `system/render/`           | `RenderSystem`, `RenderBackend`, `RenderView`, `RenderSettings`, `data/` |

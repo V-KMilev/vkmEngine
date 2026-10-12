@@ -144,7 +144,6 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
         irradianceVolume,
         hasIrradianceVolume,
         ocean,
-        hasOcean,
         skinMatrices,
         settings,
         environment,

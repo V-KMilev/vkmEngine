@@ -15,7 +15,6 @@
 #include "ecs/component/render/decal.h"
 #include "ecs/component/render/irradiance_volume.h"
 #include "ecs/component/render/light.h"
-#include "ecs/component/render/ocean.h"
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/component/render/reflection_probe.h"
 #include "ecs/environment.h"
@@ -186,41 +185,6 @@ void buildIrradianceVolume(RenderView& view, const Scene& scene) {
     view.hasIrradianceVolume = true;
 }
 
-/**
- * @brief Snapshot the scene's ocean (findOcean's pick) at @p seconds.
- *
- * @param view    The view being refilled.
- * @param scene   Scene to take the ocean from.
- * @param seconds The ocean's time.
- */
-void buildOcean(RenderView& view, const Scene& scene, double seconds) {
-    view.hasOcean = false;
-
-    const EntityId id = findOcean(scene);
-    if (!id) return;
-
-    const Ocean& ocean  = scene.get<Ocean>(id);
-    const float  repeat = std::max(ocean.detailScale, 1e-3f);
-    OceanData&   data   = view.ocean;
-    const glm::vec3 centre = resolvedWorldPosition(scene, id, scene.get<Transform>(id));
-    data.surface     = OceanSurface::at(ocean, centre, seconds);
-    data.ripples     = OceanRipples::at(ocean, seconds);
-    data.level       = centre.y;
-    data.foamColor   = ocean.foamColor;
-    data.foam        = ocean.foam;
-    data.waterline   = std::max(ocean.waterlineFoam, 0.0f);
-    data.detailScale = repeat;
-
-    // The maps drift downwind at the speed of a wave as long as one repeat, wrapped in double
-    // so they stay smooth however long the sea has run.
-    const double heading = glm::radians(double(ocean.windDirection));
-    const double speed   = std::sqrt(OceanSurface::GRAVITY * repeat / glm::two_pi<double>());
-    const double moved   = speed * seconds / repeat;
-    const auto   wrap    = [](double repeats) { return float(repeats - std::floor(repeats)); };
-    data.detailDrift = glm::vec2(wrap(std::sin(heading) * moved), wrap(std::cos(heading) * moved));
-    view.hasOcean = true;
-}
-
 } // namespace
 
 void RenderView::build(
@@ -230,7 +194,7 @@ void RenderView::build(
     const SplashFrame* splashFrame,
     const PoseBuffer* poses,
     const LiveParticles* particles,
-    double seconds
+    const OceanData* sea
 ) {
     PROFILE_SCOPE("RenderView::build");
 
@@ -268,7 +232,6 @@ void RenderView::build(
             volume,
             volumePresent,
             sea,
-            seaPresent,
             palettes,
             renderSettings,
             env,
@@ -284,7 +247,7 @@ void RenderView::build(
         particlesAdd.clear();
         particlesBlend.clear();
         volumePresent = false;
-        seaPresent    = false;
+        sea.present   = false;
         palettes      = nullptr;
         return;
     }
@@ -296,7 +259,7 @@ void RenderView::build(
     buildDecals(*this, scene);
     buildParticles(*this, scene, particles);
     buildIrradianceVolume(*this, scene);
-    buildOcean(*this, scene, seconds);
+    ocean = sea ? *sea : OceanData{};
 
     // A buffer holding no slices posed nothing, so it is passed on as null.
     skinMatrices = (poses && !poses->slices().empty()) ? &poses->palette() : nullptr;

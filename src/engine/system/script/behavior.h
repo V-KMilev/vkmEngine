@@ -34,12 +34,14 @@ class Clock;
 class ResourceManager;
 class BehaviorSystem;
 class BehaviorFieldVisitor;
+struct OceanData;
 
 /**
  * @brief Everything gameplay code may reach, bundled behind one pointer.
  *
- * Session-stable, unlike FrameContext, so subscribe() lambdas may keep using it.
- * A field belongs here exactly when behaviors are meant to use it.
+ * Session-stable, unlike FrameContext, so subscribe() lambdas may keep using it - but for
+ * `ocean`, a frame product BehaviorSystem refreshes each tick and frame. A field belongs here
+ * exactly when behaviors are meant to use it.
  */
 struct BehaviorContext {
     Scene*                 scene            = nullptr;
@@ -56,6 +58,7 @@ struct BehaviorContext {
     const HostChrome*      chrome           = nullptr;  ///< Where in the window the scene is drawn.
     std::vector<EntityId>* pendingDestroy   = nullptr;
     std::string*           pendingSceneLoad = nullptr;
+    const OceanData*       ocean            = nullptr;  ///< OceanSystem's, this tick's or frame's.
 };
 
 namespace detail {
@@ -498,6 +501,17 @@ class Behavior {
          * @return The view; not valid() on a host that draws nothing, or with no active camera.
          */
         ScreenView screen() const;
+
+        /**
+         * @brief The scene's sea at this moment: the tick's in onFixedUpdate, the frame's in
+         *        onUpdate (OceanSystem).
+         *
+         * What a float rides - `surface.sampleAt(point)` is the water over a point of the plane,
+         * above `level`, where it rests - and what the renderer draws, the same at every end.
+         *
+         * @return The sea, or null when the scene has no ocean.
+         */
+        const OceanData* ocean() const;
 
         /**
          * @brief The ray from the camera through the cursor.

@@ -9,7 +9,7 @@
 
 #include "convention/gl_bindings.h"
 #include "gl_buffer_upload.h"
-#include "system/render/data/ocean_data.h"
+#include "system/ocean/ocean_data.h"
 
 namespace Vkm::Engine {
 
@@ -27,9 +27,9 @@ constexpr float RARE_SPREADS = 3.0f;
 GLOcean::GLOcean()  = default;
 GLOcean::~GLOcean() = default;
 
-void GLOcean::update(const OceanData& ocean, bool present) {
+void GLOcean::update(const OceanData& ocean) {
     OceanUBO data{};
-    if (present) {
+    if (ocean.present) {
         const OceanSurface& surface = ocean.surface;
         data.place  = glm::vec4(surface.centre, surface.calmRadius, surface.stillRadius);
         data.detail = glm::vec4(ocean.detailDrift, 1.0f / ocean.detailScale, float(surface.count));

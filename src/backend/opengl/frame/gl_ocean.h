@@ -77,12 +77,11 @@ class GLOcean {
 
     public:
         /**
-         * @brief Upload @p ocean, or a still sea when @p present is false, and bind it.
+         * @brief Upload @p ocean, or a still sea when it is not present, and bind it.
          *
-         * @param ocean   The frame's ocean.
-         * @param present Whether the scene has one.
+         * @param ocean The frame's ocean.
          */
-        void update(const OceanData& ocean, bool present);
+        void update(const OceanData& ocean);
 
     private:
         std::unique_ptr<Vkm::GL::UniformBuffer> m_ubo;

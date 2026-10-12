@@ -88,7 +88,7 @@ the `VisibilitySystem` output, reusing the vectors' capacity across frames.
 | `probes` | `vector<ProbeData>` | Reflection probes in the scene |
 | `decals` | `vector<DecalData>` | Gathered scene-wide, not camera-culled: a decal's own material is usually its own, so the backend syncs it off this list |
 | `particlesAdditive` / `particlesAlpha` | `vector<ParticleData>` | Billboards, split by blend and unsorted: the additive half is order-independent, and `GLParticlePass` sorts the alpha half back-to-front |
-| `ocean` / `hasOcean` | `OceanData` + `bool` | The scene's one ocean (`findOcean`) at the frame's moment: its waves as `OceanSurface::at` draws them at `NetSession::worldTime`, its foam and the drift of a `waves` material's maps - see "The ocean" below |
+| `ocean` | `OceanData` | `OceanSystem`'s sea at the frame's moment (`present` when the scene has one, and a camera draws it): its waves, its foam and the drift of a `waves` material's maps - see "The ocean" below |
 | `irradianceVolume` / `hasIrradianceVolume` | `IrradianceVolumeData` + `bool` | The scene's one baked-GI volume, chosen by `findIrradianceVolume` and with its grid clamped to `IrradianceVolume::MAX_RESOLUTION` on the way here. A value and a flag rather than a list, the way `Visibility` carries its camera - see "A scene has one irradiance volume" below |
 | `settings` | `RenderSettings` | Pass toggles + per-effect params, copied each frame |
 | `environment` | `Environment` | The scene's sky (HDR or procedural), night sky and fog, copied whole |
@@ -504,15 +504,17 @@ game runs and never saved; the same sum moves the drawn surface (`oceanSurgeAt`)
 answers gameplay, and each crest foams (`oceanSurgeFoam`). A game that floats things
 on the wind's sea alone, under a surge passing over them, asks `withoutSurges()`.
 
-Gameplay asks the same `OceanSurface`: `displacement` for the water resting at a
-point, `heightAt`, `normalAt` and `sampleAt` for a point fixed in the world,
-found by four fixed-point steps back to the water over it. Its time is
-`NetSession::worldTime` - the simulation's ticks and the fraction past the last,
-and on a client the server's tick it draws others at - so the sea stops with the
-game and every end of a networked game draws the one the server floats things
-on; a tick's own simulation asks at its tick. The phases are wrapped in double
-before `GLOcean` uploads them (`OceanBlock`, once a frame), so the water stays
-smooth for days. The ripples carry nothing afloat.
+`OceanSystem` builds the scene's sea once a tick and once a frame, at
+`NetSession::worldTime` - inside a tick on the authority that tick's own, in the
+frame the moment drawn, and on a client the server's tick it draws others at -
+and publishes it as `ctx.ocean` for the cull, the renderer and gameplay alike, so
+the sea stops with the game and every end of a networked game draws the one the
+server floats things on. A behavior asks `ocean()`: its `surface` answers
+`displacement` for the water resting at a point, `heightAt`, `normalAt` and
+`sampleAt` for a point fixed in the world, found by four fixed-point steps back
+to the water over it, above `level`. The phases are wrapped in double before
+`GLOcean` uploads them (`OceanBlock`, once a frame), so the water stays smooth
+for days. The ripples carry nothing afloat.
 
 A `waves` surface under an ocean casts no shadow, as a held shadow tile would
 picture one moment of it; the cull grows its box by as far as the sea carries

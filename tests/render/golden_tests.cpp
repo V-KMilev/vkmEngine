@@ -58,6 +58,7 @@
 #include "system/particle/live_particles.h"
 #include "system/render/render_view.h"
 #include "system/ui/ui_draw_data.h"
+#include "system/ocean/ocean_system.h"
 #include "system/sky/sky_system.h"
 #include "system/visibility/visibility_system.h"
 
@@ -799,6 +800,7 @@ std::vector<unsigned char> render(
     FrameContext   ctx{s.scene, s.resources, clock, events, window, input, net, chrome, tuning};
 
     SkySystem        sky;
+    OceanSystem      ocean;
     VisibilitySystem visibility;
     RenderView       view;
     view.viewportWidth  = WIDTH;
@@ -809,8 +811,9 @@ std::vector<unsigned char> render(
 
     for (int frame = 0; frame < FRAMES; ++frame) {
         sky.update(ctx);
+        ocean.update(ctx);
         visibility.update(ctx);
-        view.build(s.scene, *ctx.visibility, ui, splash, nullptr, &s.particles, 0.0);
+        view.build(s.scene, *ctx.visibility, ui, splash, nullptr, &s.particles, ctx.ocean);
         backend.render(view, s.resources);
     }
 

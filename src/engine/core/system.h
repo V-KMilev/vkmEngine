@@ -20,6 +20,7 @@ struct Visibility;
 struct UIDrawData;
 struct SplashFrame;
 struct LiveParticles;
+struct OceanData;
 
 /**
  * @brief Named per-frame execution stages.
@@ -70,6 +71,7 @@ struct FrameContext {
     const UIDrawData*    ui         = nullptr;  ///< From UISystem.
     const SplashFrame*   splash     = nullptr;  ///< From SplashSystem.
     const LiveParticles* particles  = nullptr;  ///< From ParticleSystem.
+    const OceanData*     ocean      = nullptr;  ///< From OceanSystem.
 };
 
 /**

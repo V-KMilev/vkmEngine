@@ -26,7 +26,7 @@
 #include "system/render/editor_render_hooks.h"
 #include "system/render/render_view.h"
 #include "system/render/data/camera_data.h"
-#include "system/render/data/ocean_data.h"
+#include "system/ocean/ocean_data.h"
 
 namespace Vkm::Engine {
 
@@ -179,7 +179,7 @@ uint32_t GLPreview::render(
     );
     const glm::mat4 lookAt = glm::lookAt(eye, center, glm::vec3(0.0f, 1.0f, 0.0f));
     m_camera.update(CameraData::from(lookAt, projection, eye), glm::vec2(static_cast<float>(SCENE_SIZE)));
-    m_ocean.update(OceanData{}, false);
+    m_ocean.update(OceanData{});
 
     // An empty slot view answers -1 for every light, so the PBR shader reads
     // no shadow value: a preview's lights cast none.

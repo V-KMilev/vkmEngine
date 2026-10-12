@@ -64,7 +64,7 @@
 #include "system/render/data/particle_data.h"
 #include "system/render/editor_render_hooks.h"
 #include "system/render/render_view.h"
-#include "system/render/data/ocean_data.h"
+#include "system/ocean/ocean_data.h"
 #include "platform/window/window_manager.h"
 #include "platform/threading/thread_pool.h"
 
@@ -1021,8 +1021,9 @@ void testTheDrawnSeaIsTheOneGameplayFloatsOn() {
     // Where the GPU moves each point's water from @p sea's block - xyz, and w = 1 where the block
     // says there is an ocean - and, after them, its normals.
     GLOcean block;
-    const auto drawn = [&](const OceanData& sea, bool present) {
-        block.update(sea, present);
+    const auto drawn = [&](OceanData sea, bool present) {
+        sea.present = present;
+        block.update(sea);
         Vkm::GL::ShaderStorageBuffer buffer(points.data(), bytes);
         std::vector<glm::vec4> read(2 * POINTS);
         Vkm::GL::ShaderStorageBuffer normals(read.data(), bytes);
@@ -1097,7 +1098,8 @@ void testTheRippleFieldsHoldTheSpectrumsSlope() {
     data.surface = OceanSurface::at(sea, glm::vec3(0.0f), 77.0);
     data.ripples = OceanRipples::at(sea, 77.0);
     GLOcean block;
-    block.update(data, true);
+    data.present = true;
+    block.update(data);
     GLOceanFields fields;
     fields.drawRipples();
     fields.bind();
@@ -1168,7 +1170,8 @@ void testTheRipplesDensityIsTheCPUs() {
         data.surface = OceanSurface::at(sea, glm::vec3(0.0f), 3.0);
         data.ripples = OceanRipples::at(sea, 3.0);
         GLOcean block;
-        block.update(data, true);
+        data.present = true;
+        block.update(data);
 
         constexpr int POINTS = 128;
         std::vector<glm::vec4> points(POINTS);

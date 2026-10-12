@@ -7,9 +7,11 @@
 namespace Vkm::Engine {
 
 /**
- * @brief The scene's ocean for the frame (see GLOcean): its waves at this moment, and its look.
+ * @brief The scene's sea at the moment being computed (OceanSystem): its waves, its ripples and
+ *        its look - what gameplay floats things on and what the renderer draws (GLOcean).
  */
 struct OceanData {
+    bool         present = false;  ///< The scene has an ocean; with none, nothing below is read.
     OceanSurface surface;
     OceanRipples ripples;
     float        level       = 0.0f;             ///< World height the water rests at: its Transform's.
