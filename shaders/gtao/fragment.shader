@@ -40,6 +40,12 @@ float arc(float h, float n) {
     return 0.25 * (-cos(2.0 * h - n) + cos(n) + 2.0 * h * sin(n));
 }
 
+// A view-space point's screen UV, for the symmetric projection viewPosFromLinearDepth inverts.
+vec2 viewToUV(vec3 p, float p00, float p11, bool perspective) {
+    vec2 ndc = perspective ? vec2(p00, p11) * p.xy / max(-p.z, 1e-4) : vec2(p00, p11) * p.xy;
+    return ndc * 0.5 + 0.5;
+}
+
 // An occluder's weight by its distance: whole to 0.385 of the radius, then linearly to none at
 // it (XeGTAO's falloff), so mid-range occluders count fully.
 float gtaoFalloff(float len) {
@@ -48,7 +54,7 @@ float gtaoFalloff(float len) {
 }
 
 void main() {
-    // projection[0][0] takes a view x to the screen, [1][1] a world radius.
+    // The projection's scales, for viewToUV and viewPosFromLinearDepth.
     float proj00      = u_camera.projection[0][0];
     float proj11      = u_camera.projection[1][1];
     bool  perspective = cameraIsPerspective();
@@ -61,33 +67,36 @@ void main() {
     vec3 N = octDecode(texture(u_sceneGBuffer, vUV).rg);
     vec3 V = perspective ? normalize(-P) : vec3(0.0, 0.0, 1.0);
 
-    // World radius -> per-axis UV radius, true at any aspect. The cap keeps a
-    // surface at the lens from sampling the whole screen.
-    float depthScale   = perspective ? max(-P.z, 1e-3) : 1.0;
-    float radiusUV     = min(u_radius * proj11 / (2.0 * depthScale), 0.25);
-    vec2  radiusAxisUV = radiusUV * vec2(proj00 / proj11, 1.0);
+    // Slices turn evenly about V itself, not about the screen's axis: off the centre of a
+    // perspective view, directions even on the screen bunch about V, and an open wall would
+    // average 92% at a 70 degree view's edge. Two vectors across V carry them.
+    vec3 across1 = normalize(cross(abs(V.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), V));
+    vec3 across2 = cross(V, across1);
 
     float noise      = effectNoise(gl_FragCoord.xy, NOISE_GTAO);
     float visibility = 0.0;
     vec3  bent       = vec3(0.0);  // average unoccluded direction, accumulated per slice
 
     for (int s = 0; s < SLICES; ++s) {
-        float phi = (float(s) + noise) * (PI / float(SLICES));
-        vec2  dir = vec2(cos(phi), sin(phi));
+        float phi  = (float(s) + noise) * (PI / float(SLICES));
+        vec3  dir3 = across1 * cos(phi) + across2 * sin(phi);
 
-        // Slice plane = span(V, dir); n is the projected normal's signed angle from V.
-        vec3  dir3     = vec3(dir, 0.0);
-        vec3  sliceN   = cross(dir3, V);
-        float sliceLen = length(sliceN);
-        if (sliceLen < 1e-5) continue;
-        sliceN /= sliceLen;
+        // The slice's screen line: where the radius across V lands, capped in pixels - a quarter
+        // of the frame's height whichever way it runs - so a surface at the lens does not sample
+        // the whole screen.
+        vec2  radiusUV = viewToUV(P + dir3 * u_radius, proj00, proj11, perspective) - vUV;
+        float reach    = length(radiusUV * u_camera.viewport);
+        if (reach < 1e-3) continue;
+        radiusUV *= min(1.0, 0.25 * u_camera.viewport.y / reach);
+
+        // Slice plane = span(V, dir3); n is the projected normal's signed angle from V.
+        vec3 sliceN = normalize(cross(dir3, V));
 
         vec3  projN    = N - sliceN * dot(N, sliceN);
         float projNLen = length(projN);
         if (projNLen < 1e-4) continue;
 
-        vec3  ortho    = normalize(dir3 - V * dot(dir3, V));
-        float sgn      = sign(dot(ortho, projN));
+        float sgn      = sign(dot(dir3, projN));
         float n        = sgn * acos(clamp(dot(projN, V) / projNLen, -1.0, 1.0));
 
         // Horizon search: keep the highest cos (smallest angle to V) per side, from the
@@ -98,7 +107,7 @@ void main() {
         float cHorizon2 = low2;  // +dir side
         for (int t = 1; t <= STEPS; ++t) {
             float st  = (float(t) - 0.5 * noise) / float(STEPS);
-            vec2  off = dir * radiusAxisUV * st;
+            vec2  off = radiusUV * st;
 
             // Far steps read coarse levels so fetches stay local; the constant
             // puts the first coarser level at about ten pixels.
@@ -131,7 +140,7 @@ void main() {
 
         // The visible arc's bisector, weighted like the visibility.
         float bentAngle = (h1 + h2) * 0.5;
-        bent += projNLen * (V * cos(bentAngle) + ortho * sin(bentAngle));
+        bent += projNLen * (V * cos(bentAngle) + dir3 * sin(bentAngle));
     }
 
     visibility /= float(SLICES);

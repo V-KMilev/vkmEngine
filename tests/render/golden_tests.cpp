@@ -1464,6 +1464,52 @@ void testAMovedProbeBakesOnceItSettles(int& failures) {
     expect("  and bakes where it settles", settled <= PIXEL_TOLERANCE, failures);
 }
 
+// A wide open wall faced square on, in the AO view: nothing occludes it, so it is as open at the
+// frame's edges as at its centre. Slices turned evenly on the screen would bunch about an
+// off-centre pixel's view ray and darken the wall toward the edges.
+void testAnOpenWallIsOpenToTheFramesEdge(int& failures) {
+    std::printf("Ambient occlusion across an open wall:\n");
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery s;
+    base(s);
+    place(
+        s,
+        s.cube,
+        material(s, "golden:grey", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f),
+        {0.0f, 1.5f, -0.5f},
+        {40.0f, 30.0f, 1.0f}
+    );
+    sunAndCamera(s, {0.0f, 1.5f, 3.0f}, {0.0f, 1.5f, 0.0f});
+
+    RenderSettings settings;
+    settings.renderMode    = RenderMode::AmbientOcclusion;
+    settings.msaaSamples   = 1;
+    settings.gtaoIntensity = 3.0f;  // strong, so a bias shows
+    const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+
+    const auto meanOver = [&](int from, int to) {
+        long sum = 0;
+        int  n   = 0;
+        for (int y = 0; y < HEIGHT; ++y) {
+            for (int x = from; x < to; ++x) {
+                sum += pixel(frame, x, y).x;
+                ++n;
+            }
+        }
+        return static_cast<float>(sum) / static_cast<float>(n);
+    };
+    const float centre = meanOver(WIDTH / 2 - 20, WIDTH / 2 + 20);
+    const float edges  = 0.5f * (meanOver(0, 20) + meanOver(WIDTH - 20, WIDTH));
+    std::printf("      %.1f at the centre, %.1f at the edges\n", centre, edges);
+    expect("an open wall is as open at the frame's edges", edges >= 0.97f * centre, failures);
+}
+
 // The mean of every channel of a frame, 0..255.
 float meanValue(const std::vector<unsigned char>& frame) {
     long sum = 0;
@@ -1803,6 +1849,53 @@ void testTheShoreRingsWhatBreaksTheWater(int& failures) {
     expect("  and nowhere else: not round a block hovering clear of it", left == 0.0f, failures);
 }
 
+// A crease 35 cm away, near enough that GTAO caps its reach, seen level and with the camera
+// rolled a quarter turn: the same occlusion either way. The cap is in pixels; one in screen UV
+// would reach 1.78 times as far across a 16:9 frame as up it, and the crease would darken by
+// which way it ran. Over the frame's central square, which the roll turns onto itself.
+void testGTAOReachesAsFarEveryWay(int& failures) {
+    std::printf("Ambient occlusion up close, level and rolled:\n");
+    float darkness[2] = {};
+    for (const bool rolled : {false, true}) {
+        restoreContextDefaults();
+        WindowManager window;
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        base(s);
+        const MaterialHandle grey = material(s, "golden:grey", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
+        place(s, s.cube, grey, {0.0f, -0.5f, 0.0f}, {20.0f, 1.0f, 20.0f});
+        place(s, s.cube, grey, {0.0f, 2.0f, -0.5f}, {20.0f, 4.0f, 1.0f});
+        sunAndCamera(s, {0.0f, 0.25f, 0.25f}, {0.0f, 0.0f, 0.0f});
+        if (rolled) {
+            s.scene.forEach<Camera>([&](EntityId id, Camera&) {
+                Transform& eye = s.scene.get<Transform>(id);
+                const glm::quat roll = glm::angleAxis(glm::half_pi<float>(), glm::vec3(0.0f, 0.0f, 1.0f));
+                eye.rotation         = eye.rotation * roll;
+            });
+        }
+
+        RenderSettings settings;
+        settings.renderMode    = RenderMode::AmbientOcclusion;
+        settings.msaaSamples   = 1;
+        settings.gtaoIntensity = 3.0f;
+        const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+        long sum = 0;
+        for (int y = 0; y < HEIGHT; ++y) {
+            for (int x = (WIDTH - HEIGHT) / 2; x < (WIDTH + HEIGHT) / 2; ++x) {
+                sum += 255 - pixel(frame, x, y).x;
+            }
+        }
+        darkness[rolled ? 1 : 0] = static_cast<float>(sum) / static_cast<float>(HEIGHT * HEIGHT);
+    }
+    std::printf("      darkness %.2f level, %.2f rolled\n", darkness[0], darkness[1]);
+    const bool even = std::abs(darkness[1] - darkness[0]) <= 0.1f * darkness[0];
+    expect("a crease up close is as occluded rolled a quarter turn", even, failures);
+}
+
 void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     std::printf("Whole frames against their goldens:\n");
     if (!gl.attachSurface(WIDTH, HEIGHT)) {
@@ -1837,6 +1930,8 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testADriftingSunIsFollowedOverFrames(failures);
     testASplashFadesLinearlyOnTheGlass(failures);
     testAnOpenFloorIsNotOccluded(failures);
+    testAnOpenWallIsOpenToTheFramesEdge(failures);
+    testGTAOReachesAsFarEveryWay(failures);
     testAnOrthographicViewTracesItsReflections(failures);
     testAMovedProbeBakesOnceItSettles(failures);
     testASealedRoomHoldsNoSkyLight(failures);
