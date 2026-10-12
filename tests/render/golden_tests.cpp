@@ -2134,6 +2134,127 @@ void testAScreenShadowFacingTheSunFallsTowardTheEye(int& failures) {
     expect("facing the sun, the shadow falls toward the eye", toward, failures);
 }
 
+// A puff of smoke at the centre of the frame under an overhead sun, with a roof over it and
+// without: an alpha-blended particle scatters the light reaching it, so the roof's shadow darkens
+// it; an additive one emits, so the roof leaves it as it was.
+void testSmokeIsShadowedAndSparksAreNot(int& failures) {
+    std::printf("Particles under a roof:\n");
+    float centre[2][2] = {};
+    for (const bool additive : {false, true}) {
+        for (const bool roof : {false, true}) {
+            restoreContextDefaults();
+            WindowManager window;
+            GLBackend backend;
+            if (!backend.init(window)) {
+                expect("the backend starts", false, failures);
+                return;
+            }
+            Scenery s;
+            base(s);
+            s.scene.environment().sky.sunElevation = 89.0f;
+            place(
+                s,
+                s.cube,
+                material(s, "golden:floor", {0.3f, 0.3f, 0.3f}, 0.8f, 0.0f),
+                {0.0f, -0.5f, 0.0f},
+                {40.0f, 1.0f, 40.0f}
+            );
+            if (roof) {
+                place(
+                    s,
+                    s.cube,
+                    material(s, "golden:roof", {0.3f, 0.3f, 0.3f}, 0.8f, 0.0f),
+                    {0.0f, 6.0f, 0.0f},
+                    {30.0f, 0.5f, 30.0f}
+                );
+            }
+            const EntityId puff = s.scene.createEntity();
+            s.scene.add(puff, Transform{});
+            ParticleEmitter emitter;
+            emitter.additive   = additive;
+            emitter.startColor = glm::vec4(0.6f, 0.6f, 0.6f, 1.0f);
+            emitter.startSize  = 0.5f;
+            emitter.softness   = 0.2f;
+            s.scene.add(puff, std::move(emitter));
+            LiveParticles::Pool& pool = s.particles.pools[puff.slot()];
+            pool.emitter = puff;
+            Particle p;
+            p.position = {0.0f, 1.0f, 0.0f};
+            pool.particles.push_back(p);
+            sunAndCamera(s, {0.0f, 1.0f, 3.0f}, {0.0f, 1.0f, 0.0f});
+
+            RenderSettings settings;
+            settings.msaaSamples = 1;
+            const glm::ivec3 c = pixel(render(s, backend, nullptr, settings), WIDTH / 2, HEIGHT / 2);
+            centre[additive ? 1 : 0][roof ? 1 : 0] = static_cast<float>(c.x + c.y + c.z) / 3.0f;
+        }
+    }
+    std::printf(
+        "      smoke %.0f in the sun, %.0f under the roof; sparks %.0f and %.0f\n",
+        centre[0][0],
+        centre[0][1],
+        centre[1][0],
+        centre[1][1]
+    );
+    expect("a puff of smoke under a roof is darker", centre[0][1] < 0.6f * centre[0][0], failures);
+    expect("  and sparks are not", std::abs(centre[1][1] - centre[1][0]) <= 2.0f, failures);
+}
+
+// A puff of smoke at night beside a lamp whose reach ends short of the puff's centre but takes in
+// a corner of its quad: the lamp lights none of it. Lit at a corner instead, it would take a lamp's
+// light at a point it does not fill, a light turning with the view and the puff's spin.
+void testSmokeIsLitWhereItIs(int& failures) {
+    std::printf("A puff of smoke just past a lamp's reach:\n");
+    float centre[2] = {};
+    for (const bool lamp : {false, true}) {
+        restoreContextDefaults();
+        WindowManager window;
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        base(s);
+        s.scene.environment().sky.sunElevation = -30.0f;
+        const glm::vec3 at(0.0f, 2.0f, 0.0f);
+        if (lamp) {
+            // 1.41 m from the centre, 0.42 m from the quad's upper right corner (the camera's right
+            // is +X).
+            const EntityId bulb = s.scene.createEntity();
+            Transform pose;
+            pose.position = at + glm::vec3(1.0f, 1.0f, 0.0f);
+            s.scene.add(bulb, std::move(pose));
+            Light light;
+            light.type        = LightType::Point;
+            light.intensity   = 20.0f;
+            light.radius      = 1.1f;
+            light.castShadows = false;
+            s.scene.add(bulb, std::move(light));
+        }
+        const EntityId puff = s.scene.createEntity();
+        s.scene.add(puff, Transform{});
+        ParticleEmitter emitter;
+        emitter.additive   = false;
+        emitter.startColor = glm::vec4(0.6f, 0.6f, 0.6f, 1.0f);
+        emitter.startSize  = 0.7f;
+        s.scene.add(puff, std::move(emitter));
+        LiveParticles::Pool& pool = s.particles.pools[puff.slot()];
+        pool.emitter = puff;
+        Particle p;
+        p.position = at;
+        pool.particles.push_back(p);
+        sunAndCamera(s, at + glm::vec3(0.0f, 0.0f, 3.0f), at);
+
+        RenderSettings settings;
+        settings.msaaSamples = 1;
+        const glm::ivec3 c = pixel(render(s, backend, nullptr, settings), WIDTH / 2, HEIGHT / 2);
+        centre[lamp ? 1 : 0] = static_cast<float>(c.x + c.y + c.z) / 3.0f;
+    }
+    std::printf("      %.0f without the lamp, %.0f with it\n", centre[0], centre[1]);
+    expect("a lamp that does not reach a puff lights none of it", centre[1] <= centre[0] + 2.0f, failures);
+}
+
 void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     std::printf("Whole frames against their goldens:\n");
     if (!gl.attachSurface(WIDTH, HEIGHT)) {
@@ -2175,6 +2296,8 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testAScreenShadowFacingTheSunFallsTowardTheEye(failures);
     testGTAOReachesAsFarEveryWay(failures);
     testAnOrthographicViewTracesItsReflections(failures);
+    testSmokeIsShadowedAndSparksAreNot(failures);
+    testSmokeIsLitWhereItIs(failures);
     testAMovedProbeBakesOnceItSettles(failures);
     testAProbeBakedUnderADebugViewHoldsTheScene(failures);
     testASealedRoomHoldsNoSkyLight(failures);

@@ -193,11 +193,14 @@ bool GLBackend::init(WindowManager& window) {
 
     // Every unit gl_bindings.h numbers must exist in each stage that samples
     // one, or a sampler past the last binds to nothing and reads black.
+    // A vertex stage samples too (shaders/particle/vertex.shader).
     GLint fragmentUnits = 0;
     GLint computeUnits  = 0;
+    GLint vertexUnits   = 0;
     VKM_GL_CHECK(glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &fragmentUnits));
     VKM_GL_CHECK(glGetIntegerv(GL_MAX_COMPUTE_TEXTURE_IMAGE_UNITS, &computeUnits));
-    const GLint units = std::min(fragmentUnits, computeUnits);
+    VKM_GL_CHECK(glGetIntegerv(GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS, &vertexUnits));
+    const GLint units = std::min({fragmentUnits, computeUnits, vertexUnits});
     if (units <= static_cast<GLint>(GLBindings::MAX_TEXTURE_UNIT)) {
         LOG_ERROR(
             "This GPU samples %d texture units a stage; the renderer binds up to %u",

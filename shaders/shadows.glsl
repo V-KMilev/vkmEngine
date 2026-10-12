@@ -483,8 +483,8 @@ float searchCubeBlockers(
     return count > 0.0 ? sum / count : -1.0;
 }
 
-// A point light's shadow at a volume sample: one compare, no offset and no filter, since a
-// sample has no surface and its froxel is the filter.
+// A point light's shadow in one compare, no offset and no filter, for a point with no surface to
+// bias from.
 float sampleCubeHard(int slot, vec3 worldPos) {
     ShadowCube sc = u_shadow.scube[slot];
     vec3 rel = worldPos - sc.posRange.xyz;
@@ -542,4 +542,14 @@ float sampleCube(int slot, vec3 worldPos, vec3 N, float ndotl) {
     float penumbra = source * (d - blocker) / max(blocker, nearPlane);
     float radius   = clamp(penumbra, SOFT_MIN_TEXELS * texel, SOFT_SPOT_REACH * texel);
     return filterCube(rel, N, T, B, layer, radius, texel, slide, nearPlane, farPlane);
+}
+
+// A light's shadow at a point with no surface: the hard lookups, with no normal to offset along;
+// lit for a light with no shadow slot.
+float pointShadow(int type, int slot, vec3 worldPos) {
+    if (slot < 0) return 1.0;
+    if (type == LIGHT_DIRECTIONAL) return sampleCSM(worldPos, vec3(0.0), 1.0);
+    if (type == LIGHT_SPOT)        return sample2DSlot(slot, worldPos, vec3(0.0), 1.0);
+    if (type == LIGHT_POINT)       return sampleCubeHard(slot, worldPos);
+    return 1.0;
 }

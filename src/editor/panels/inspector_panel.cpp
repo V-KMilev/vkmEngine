@@ -1897,7 +1897,8 @@ void InspectorPanel::drawParticleSection(EditorContext& ec, EntityId id) {
         changed |= propCheckbox(
             "Additive",
             &e.additive,
-            "Additive blend suits sparks/fire; alpha blend suits smoke"
+            "Additive: the particle gives off its colour, for sparks and fire. Alpha: its colour is lit by "
+            "the scene's lights and shadows, for smoke and dust"
         );
 
         ImGui::Spacing();

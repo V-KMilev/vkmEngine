@@ -279,7 +279,7 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 | 9 | Skybox | Fills the background before geometry so transparents blend over it: the procedural sky from this frame's sky-view table, with its sun, moon and stars, or an HDR sky's env cube. Only the froxel fog lies over it, at the far plane. With fog on and no sky to show it still draws, black, so the fog lies in front of the background too |
 | 10 | Ocean | Under a scene's ocean: draws its ripples into the three repeating fields a `waves` surface's pixels read (`GLOceanFields::drawRipples`, `shaders/ocean_ripples.glsl`), and their levels; and captures its shore, how far the sea ahead of the eye is from anything breaking it (`GLOceanFields::captureShore`). After the sky and GTAO, whose texture units the forward pass reads them on ([The ocean](#the-ocean)) |
 | 11 | Forward | The PBR ubershader: opaque (depth-primed), alpha-mask (writes depth, alpha-to-coverage under MSAA), then back-to-front transparents sampling an opaque snapshot for refraction; one multi-draw per material in each, since its textures are bound per material. Every surface takes the sky's air and the fog in the shader, at its own depth. Beside the colour, while `ssr` is on, it writes each pixel's reflection inputs - the environment reflection's weight and roughness, and the reflection itself as it was added (weight times radiance), both dimmed by the fog as the colour is - into colour attachments 2 and 3 of the scene target, which the Reflections pass reads, and which the target does not carry at all with `ssr` off; a transparent surface dims both under it by its own opacity ([lighting.md](lighting.md)). Two programs (`pbr` / `pbr_skinned`) sharing one fragment file and one per-frame uniform set |
-| 12 | Particles | CPU billboard particles into the scene target, depth-tested, never depth-writing, each fogged in the shader at its own depth, and soft: faded over its authored size (half its width) where the scene behind comes near and over half a metre from the near plane, against a copy of the scene's depth the pass blits first (the target's own is attached as it draws). Alpha ones sorted far to near by view depth. Into the reflection inputs too, as zero at the particle's opacity, so smoke dims the reflection behind it as a transparent surface does |
+| 12 | Particles | CPU billboard particles into the scene target, depth-tested, never depth-writing, the alpha-blended ones lit at their centres ([Particles](#particles)), each fogged in the shader at its own depth, and soft: faded over its authored size (half its width) where the scene behind comes near and over half a metre from the near plane, against a copy of the scene's depth the pass blits first (the target's own is attached as it draws). Alpha ones sorted far to near by view depth. Into the reflection inputs too, as zero at the particle's opacity, so smoke dims the reflection behind it as a transparent surface does |
 | 13 | ResolveColor | MSAA only: one draw resolving colour and the reflection inputs, all tonemap-weighted alike, into `m_sceneHDR`, and depth again when alpha-mask drew |
 | 14 | Reflections | Screen-space reflections on the resolved frame. Copies the lit colour into a mip chain and filters it down; traces each pixel smoother than `ssrMaxRoughness` along its G-buffer normal's reflection through this frame's depth, rejecting surfaces seen from behind; then, through the reflection weight and the environment reflection the forward pass wrote beside the colour, replaces the probe / sky reflection with the traced colour - a glossy pixel averaging its neighbours' rays on the same surface (chain: src -> dst) |
 | 15 | Decals | Projected decal boxes blended into the post colour chain, sampling depth + G-buffer, faded where the surface turns from the projector and over the last fifth of each half of the box's depth, lit as the surface they land on is lit diffusely - by the key light through its cascades and its screen-space shadow, and by the irradiance volume or the sky under GTAO (`shaders/ambient.glsl`, which the fog reads too) - and fogged at its depth. After the reflections, so a glossy floor's reflection does not paint over what is stuck to it. With the reflections on, the chain is already off the geometry target and the decals blend in place; with them off, the pass first copies the frame into the chain (`GLPass::promoteColorChain`) |
@@ -542,7 +542,7 @@ CPU-side: the counts an FPS needs - muzzle flashes, impacts, sparks - are small,
 and it keeps an emitter authorable as plain component data rather than as a
 compute program.
 
-Four things about it are load-bearing and easy to get wrong:
+Five things about it are load-bearing and easy to get wrong:
 
 - **Particles are world-space and are never re-based.** A particle records the
   emitter's *resolved world position* at the instant it spawned and then moves on
@@ -562,6 +562,18 @@ Four things about it are load-bearing and easy to get wrong:
 - **`additive` splits the draw, not just the blend.** The additive half is
   order-independent and goes out unsorted; the alpha half is sorted back-to-front
   by `GLParticlePass`. That is why the two lists on `RenderView` are separate.
+- **`additive` also says what the colour is.** An additive particle emits -
+  fire, sparks, a muzzle flash - so its colour is the radiance it adds. An
+  alpha-blended one scatters the light reaching it - smoke, dust, steam - so its
+  colour is an albedo, lit at its centre in the vertex stage: by each light of
+  its cluster as a diffuse card facing that light, an area light as the small
+  source it is from a distance, through the light's shadow - the hard lookups,
+  for a point with no surface (`pointShadow`) - and by the environment's mean
+  radiance, the irradiance averaged over the six axes, since a puff has no
+  normal. Smoke in a building's shadow is dark, and smoke beside a lamp - a
+  fire's `Light`, not its additive flames, which light nothing - takes its light.
+  At its centre, not its corners: a corner lies off the puff, past a wall or in a
+  lamp's reach the puff is not, and turns with the view and the puff's spin.
 
 A one-off puff - a spark shower, an impact - is an emitter with `emitting` off,
 a `burst` and `destroyWhenSpent`: the next update spawns the burst whole, as far

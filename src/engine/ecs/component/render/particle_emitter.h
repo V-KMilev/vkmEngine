@@ -43,13 +43,14 @@ struct ParticleEmitter {
     float     spread = 1.0f;                    ///< Random velocity added per axis.
     glm::vec3 acceleration{0.0f, -2.0f, 0.0f};
 
-    // Lerped start -> end over each particle's life
+    // Lerped start -> end over each particle's life. An additive particle's colour is the light
+    // it adds; an alpha one's is an albedo, lit where it is.
     glm::vec4 startColor{1.0f, 0.8f, 0.4f, 1.0f};
     glm::vec4 endColor{1.0f, 0.2f, 0.0f, 0.0f};
     float     startSize = 0.25f;
     float     endSize   = 0.02f;
     float     softness  = 1.0f;  ///< 1 = soft blob, 0 = hard disc. Unread with a texture.
-    bool      additive  = true;  ///< Additive (sparks/fire) vs alpha (smoke).
+    bool      additive  = true;  ///< Additive and emitting (sparks/fire) vs alpha and lit (smoke).
 
     /// What each particle shows, tinted by its colour; none draws the soft disc.
     TextureHandle texture;
