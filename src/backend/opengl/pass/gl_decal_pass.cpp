@@ -13,6 +13,7 @@
 #include "asset/gl_material.h"
 #include "asset/gl_mesh.h"
 #include "storage/gl_shadow_atlas.h"
+#include "storage/gl_cluster_grid.h"
 #include "core/math/rotation.h"
 #include "system/render/render_view.h"
 
@@ -44,18 +45,14 @@ void GLDecalPass::execute(GLFrameContext& ctx) {
     bindFog(ctx, m_shader);
     ctx.sceneHDR.bindTexture(GLTarget::Attachment::Depth, GLBindings::PostTextureSlots::SCENE_DEPTH);
     ctx.sceneHDR.bindTexture(GLTarget::Attachment::GBuffer, GLBindings::PostTextureSlots::SCENE_GBUFFER);
-    // The cascades: compared on one unit, raw on the other for the soft path's
-    // blocker search.
+    // Every light of a decal's cluster, through its shadow, so a decal agrees with the surface
+    // under it: the 2D maps and the cubes, each compared on one unit and raw on another for the
+    // soft path's blocker search.
+    ctx.clusters.bind();
     ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::ATLAS_2D);
     ctx.shadowAtlas.bind2DRaw(GLBindings::ShadowTextureSlots::ATLAS_2D_RAW);
-
-    // The key light (see lowestSlotDirectional), so a decal agrees with the surface under it.
-    // The cascades are the lowest-slot directional caster's (GLShadowData::build): the key
-    // light's exactly when it casts.
-    const LightData* key = lowestSlotDirectional(view.lights);
-    m_shader.setUniform3fv("u_sunDir",   key ? -key->direction : ctx.sunDir);
-    m_shader.setUniform3fv("u_sunColor", key ? key->color * key->intensity : glm::vec3(0.0f));
-    m_shader.setUniform1i("u_sunShadowed", (key && key->castShadows) ? 1 : 0);
+    ctx.shadowAtlas.bindCubes(GLBindings::ShadowTextureSlots::CUBE);
+    ctx.shadowAtlas.bindCubesRaw(GLBindings::ShadowTextureSlots::CUBE_RAW);
 
     // The environment's light as the surface under the decal takes it, occlusion included.
     bindAmbient(ctx, m_shader);

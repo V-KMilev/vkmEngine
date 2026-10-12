@@ -213,9 +213,6 @@ void GLForwardPass::bindFrameUniforms(Vkm::GL::Shader& shader, GLFrameContext& c
     // environment it falls back to flat ambient.
     bindAmbient(ctx, shader);
 
-    // The backend bound the probe arrays and ProbeBlock; this hands over the count, 0 when off.
-    shader.setUniform1i("u_probeCount", view.settings.probes ? ctx.probeCount : 0);
-
     // Every bucket fogs itself at its own depth, so the opaque scene the
     // refraction copies and the transparents blend over is fogged already.
     bindFog(ctx, shader);

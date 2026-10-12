@@ -1,12 +1,13 @@
 /*
  * The diffuse light the environment sends a point: the baked irradiance volume
- * where it covers the point, else the sky's irradiance, else a flat floor.
- * A shader blending reflection probes into the sky term reads the pieces instead
- * of environmentIrradiance. GLPass::bindAmbient fills the uniforms here.
+ * where it covers the point, else the reflection probes' where theirs do, else the
+ * sky's irradiance, else a flat floor. A shader that also reflects the probes reads
+ * the pieces in a loop of its own. GLPass::bindAmbient fills the uniforms here.
  */
 
 #include "constants.glsl"
 #include "irradiance_volume.glsl"
+#include "probes.glsl"
 
 // Diffuse irradiance, as radiance (E / PI).
 layout(binding = IBL_SLOT_IRRADIANCE) uniform samplerCube u_irradiance;
@@ -29,6 +30,7 @@ vec3 multiBounceOcclusion(float visibility, vec3 albedo) {
 // intensity.
 vec3 environmentIrradiance(vec3 worldPos, vec3 n) {
     vec3 irradiance = u_hasIBL == 1 ? texture(u_irradiance, n).rgb : vec3(FLAT_AMBIENT);
+    if (u_probeCount > 0) irradiance = probeIrradiance(worldPos, n, irradiance);
     if (u_hasIrradianceVolume == 1) {
         float w = irradianceVolumeWeight(worldPos);
         if (w > 0.0) {

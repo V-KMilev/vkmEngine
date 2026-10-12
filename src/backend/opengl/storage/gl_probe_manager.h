@@ -27,7 +27,7 @@ class GLProbeArray;
 class GLSceneCapture;
 
 /**
- * @brief One probe in the ProbeBlock UBO, std140 - must match ProbeEntry in shaders/forward/pbr.
+ * @brief One probe in the ProbeBlock UBO, std140 - must match ProbeEntry in shaders/probes.glsl.
  */
 struct GpuProbe {
     glm::vec4 center;    ///< xyz world centre, w pad
@@ -36,7 +36,7 @@ struct GpuProbe {
 };
 
 /**
- * @brief The ProbeBlock UBO, std140 - must match ProbeBlock in shaders/forward/pbr.
+ * @brief The ProbeBlock UBO, std140 - must match ProbeBlock in shaders/probes.glsl.
  */
 struct ProbeBlock {
     GpuProbe probes[GLBindings::ProbeTextureSlots::MAX_PROBES];

@@ -2200,6 +2200,66 @@ void testSmokeIsShadowedAndSparksAreNot(int& failures) {
     expect("  and sparks are not", std::abs(centre[1][1] - centre[1][0]) <= 2.0f, failures);
 }
 
+// A grey decal on a floor of the same grey, at night under a lamp: lit as the floor under it is,
+// it is all but invisible. Lit by the sun and the environment alone, it would be a dark patch.
+void testADecalIsLitAsTheFloorUnderIt(int& failures) {
+    std::printf("A decal under a lamp:\n");
+    float centre[2] = {};
+    for (const bool painted : {false, true}) {
+        restoreContextDefaults();
+        WindowManager window;
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        base(s);
+        s.scene.environment().sky.procedural = false;
+        place(
+            s,
+            s.cube,
+            material(s, "golden:floor", {0.5f, 0.5f, 0.5f}, 1.0f, 0.0f),
+            {0.0f, -0.5f, 0.0f},
+            {20.0f, 1.0f, 20.0f}
+        );
+        if (painted) {
+            MaterialAsset grey;
+            grey.type   = MaterialType::Transparent;
+            grey.albedo = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f);
+            const EntityId id = s.scene.createEntity();
+            Transform pose;
+            pose.rotation = glm::quatLookAt(glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f));
+            pose.scale    = {1.0f, 1.0f, 1.0f};
+            s.scene.add(id, std::move(pose));
+            Decal projector;
+            projector.material = s.resources.add(std::move(grey), "golden:grey");
+            s.scene.add(id, std::move(projector));
+        }
+        const EntityId lamp = s.scene.createEntity();
+        Transform lampAt;
+        lampAt.position = {0.0f, 1.5f, 0.0f};
+        s.scene.add(lamp, std::move(lampAt));
+        Light bulb;
+        bulb.type      = LightType::Point;
+        bulb.intensity = 6.0f;
+        bulb.radius    = 6.0f;
+        s.scene.add(lamp, std::move(bulb));
+        camera(s, {0.0f, 4.0f, 3.0f}, {0.0f, 0.0f, 0.0f});
+
+        RenderSettings settings;
+        settings.msaaSamples = 1;
+        const glm::ivec3 c = pixel(render(s, backend, nullptr, settings), WIDTH / 2, HEIGHT / 2);
+        centre[painted ? 1 : 0] = static_cast<float>(c.x + c.y + c.z) / 3.0f;
+    }
+    std::printf("      the floor %.0f, the decal on it %.0f\n", centre[0], centre[1]);
+    expect(
+        "a decal under a lamp is lit as the floor under it",
+        centre[1] > 0.85f * centre[0] && centre[1] < 1.15f * centre[0],
+        failures
+    );
+}
+
 // A puff of smoke at night beside a lamp whose reach ends short of the puff's centre but takes in
 // a corner of its quad: the lamp lights none of it. Lit at a corner instead, it would take a lamp's
 // light at a point it does not fill, a light turning with the view and the puff's spin.
@@ -2297,6 +2357,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testGTAOReachesAsFarEveryWay(failures);
     testAnOrthographicViewTracesItsReflections(failures);
     testSmokeIsShadowedAndSparksAreNot(failures);
+    testADecalIsLitAsTheFloorUnderIt(failures);
     testSmokeIsLitWhereItIs(failures);
     testAMovedProbeBakesOnceItSettles(failures);
     testAProbeBakedUnderADebugViewHoldsTheScene(failures);

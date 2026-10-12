@@ -121,42 +121,6 @@ uniform int u_hasScreenShadow;
 
 #include "../../ambient.glsl"
 
-// Local reflection probes, a cube-array layer each. Blended over the IBL, smallest box
-// first, for the reflection, and for the diffuse only where no irradiance volume covers.
-layout(binding = PROBE_SLOT_IRRADIANCE) uniform samplerCubeArray u_probeIrr;
-layout(binding = PROBE_SLOT_PREFILTER)  uniform samplerCubeArray u_probePref;
-uniform int u_probeCount;
-
-struct ProbeEntry {
-    vec4 center;    // xyz world centre, w pad
-    vec4 extents;   // xyz half-extents, w pad
-    vec4 params;    // x falloff, y intensity, z layer, w pad
-};
-layout(std140, binding = UBO_PROBES) uniform ProbeBlock {
-    ProbeEntry probes[MAX_PROBES];
-} u_probes;
-
-// Parallax box correction: the direction from the box centre to where R leaves
-// the box, so a cube captured at one point does not reflect as if at infinity.
-vec3 probeParallax(vec3 R, vec3 worldPos, vec3 center, vec3 extents) {
-    vec3  boxMin = center - extents;
-    vec3  boxMax = center + extents;
-    vec3  invR   = 1.0 / R;
-    vec3  t1     = (boxMin - worldPos) * invR;
-    vec3  t2     = (boxMax - worldPos) * invR;
-    vec3  tFar   = max(t1, t2);
-    float t      = min(min(tFar.x, tFar.y), tFar.z);
-    return (worldPos + R * t) - center;
-}
-
-// 1 deep inside, fading to 0 at the face over falloff. Falloff 0 is held a thousandth wide:
-// smoothstep's edges must differ.
-float probeWeight(vec3 worldPos, vec3 center, vec3 extents, float falloff) {
-    vec3  d = abs(worldPos - center) / max(extents, vec3(1e-3));
-    float m = max(max(d.x, d.y), d.z);
-    return 1.0 - smoothstep(1.0 - max(falloff, 1e-3), 1.0, m);
-}
-
 // Depth below the top of the height field at uv, 0..1 (height maps are white
 // where high). Explicit derivatives: the marches leave their loops per pixel,
 // where implicit ones are undefined.
@@ -761,35 +725,8 @@ void main() {
             float window   = distanceWindow(dist, radius);
             if (window <= 0.0) continue;
 
-            // Seen from the lit side, the corners (bl -> tl -> tr -> br) wind
-            // counter-clockwise about N at local +Z, as the edge sum counts positive.
-            mat3 toLocal = ltcTangentFrame(N);
-            vec3 F = vec3(0.0);
             float area;
-            if (type == LIGHT_RECT) {
-                vec3 p0 = normalize(toLocal * ((lightPos - U - Vv) - vWorldPos));
-                vec3 p1 = normalize(toLocal * ((lightPos - U + Vv) - vWorldPos));
-                vec3 p2 = normalize(toLocal * ((lightPos + U + Vv) - vWorldPos));
-                vec3 p3 = normalize(toLocal * ((lightPos + U - Vv) - vWorldPos));
-                F = ltcEdgeIntegral(p0, p1) + ltcEdgeIntegral(p1, p2)
-                    + ltcEdgeIntegral(p2, p3) + ltcEdgeIntegral(p3, p0);
-                area = 4.0 * length(U) * length(Vv);
-            } else {
-                // 12 vertices read as circular; a 4-vertex diamond loses ~36% of the area.
-                const int N_DISK = 12;
-                vec3 verts[N_DISK];
-                for (int dv = 0; dv < N_DISK; ++dv) {
-                    float t = -float(dv) / float(N_DISK) * 2.0 * PI;  // CW order
-                    vec3 worldP = lightPos + cos(t) * U + sin(t) * Vv;
-                    verts[dv] = normalize(toLocal * (worldP - vWorldPos));
-                }
-                for (int de = 0; de < N_DISK; ++de) {
-                    F += ltcEdgeIntegral(verts[de], verts[(de + 1) % N_DISK]);
-                }
-                area = PI * dot(U, U);
-            }
-            if (facing < 0.0) F = -F;
-            float formFactor = horizonClippedFormFactor(F);
+            float formFactor = areaFormFactor(type, lightPos, U, Vv, vWorldPos, N, facing, area);
 
             // Fresnel at the centre sets the split: the polygon has no single H.
             vec3 Lc = toCenter / max(dist, 1e-4);
@@ -836,17 +773,7 @@ void main() {
         // The bias follows the geometric surface, not the normal map.
         float visibility = 1.0;
 
-        int sslot = int(light.spot.w);
-        if (sslot >= 0) {
-            float ndotl = dot(Ng, L);
-            if (type == LIGHT_DIRECTIONAL) {
-                visibility *= sampleCSMSoft(vWorldPos, Ng, ndotl) * screenShadow;
-            } else if (type == LIGHT_SPOT) {
-                visibility *= sample2DSlotSoft(sslot, vWorldPos, Ng, ndotl);
-            } else if (type == LIGHT_POINT) {
-                visibility *= sampleCube(sslot, vWorldPos, Ng, ndotl);
-            }
-        }
+        visibility *= surfaceShadow(type, int(light.spot.w), vWorldPos, Ng, dot(Ng, L), screenShadow);
 
         // POM self-shadowing for the sun alone, bounding the trace cost.
         if (type == LIGHT_DIRECTIONAL
@@ -964,21 +891,18 @@ void main() {
         sourceIrradiance = texture(u_irradiance, bentN).rgb;
     }
 
-    // Probes blended over the sky before shading, so one shading serves all. They arrive
-    // smallest box first, and each covers only what the ones before it left: a room's probe
-    // wins inside the room over the yard's around it, where an average gave each half.
-    // Coverage is the box's alone; intensity scales the contribution.
+    // Probes blended over the sky before shading, so one shading serves all (shaders/probes.glsl):
+    // the reflection as well as the irradiance, so the loop is this pass's own.
     if (u_probeCount > 0) {
         vec3  prefilteredSum = vec3(0.0);
         vec3  coatSum        = vec3(0.0);
         vec3  irradianceSum  = vec3(0.0);
         float covered        = 0.0;
         for (int p = 0; p < u_probeCount && p < MAX_PROBES && covered < 0.999; ++p) {
-            vec3  center   = u_probes.probes[p].center.xyz;
-            vec3  extents  = u_probes.probes[p].extents.xyz;
-            float falloff  = u_probes.probes[p].params.x;
-            float w        = probeWeight(vWorldPos, center, extents, falloff) * (1.0 - covered);
+            float w = probeShare(p, vWorldPos, covered);
             if (w <= 0.0) continue;
+            vec3  center  = u_probes.probes[p].center.xyz;
+            vec3  extents = u_probes.probes[p].extents.xyz;
             float scaled  = w * u_probes.probes[p].params.y;
             float layer   = u_probes.probes[p].params.z;
             vec3  Rp      = probeParallax(Rd, vWorldPos, center, extents);
@@ -988,8 +912,7 @@ void main() {
                 vec4 coatLayer = vec4(probeParallax(Rc, vWorldPos, center, extents), layer);
                 coatSum += textureLod(u_probePref, coatLayer, ccRough * MAX_PROBE_LOD).rgb * scaled;
             }
-            irradianceSum  += texture(u_probeIrr, vec4(bentN, layer)).rgb * scaled;
-            covered        += w;
+            irradianceSum += texture(u_probeIrr, vec4(bentN, layer)).rgb * scaled;
         }
         prefiltered      = prefilteredSum + prefiltered * (1.0 - covered);
         coat             = coatSum + coat * (1.0 - covered);
