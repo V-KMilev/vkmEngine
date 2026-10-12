@@ -17,6 +17,7 @@
 #include "system/splash/splash_frame.h"
 #include "system/ui/ui_draw_data.h"
 #include "ecs/environment.h"
+#include "resource/asset/texture_asset.h"
 
 namespace Vkm::Engine {
 
@@ -66,6 +67,7 @@ struct RenderView {
     std::vector<DecalData>            decals;
     std::vector<ParticleData>         particlesAdditive;  ///< Order-independent.
     std::vector<ParticleData>         particlesAlpha;     ///< Unsorted; the backend orders them.
+    std::vector<TextureHandle>        particleTextures;   ///< What they show, by ParticleData::params.z - 1.
 
     /**
      * @brief The scene's baked-GI volume, meaningful while @ref hasIrradianceVolume.

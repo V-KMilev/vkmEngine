@@ -18,6 +18,8 @@ struct Particle {
     glm::vec3 velocity{0.0f};  ///< World space.
     float     age      = 0.0f; ///< Seconds since spawn.
     float     lifetime = 1.0f; ///< Seconds.
+    float     angle    = 0.0f; ///< Radians it was born turned by (ParticleEmitter::randomRotation).
+    uint32_t  frame    = 0;    ///< The sheet frame it was born on (ParticleEmitter::randomFrame).
 };
 
 /**

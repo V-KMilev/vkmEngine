@@ -88,6 +88,7 @@ the `VisibilitySystem` output, reusing the vectors' capacity across frames.
 | `probes` | `vector<ProbeData>` | Reflection probes in the scene |
 | `decals` | `vector<DecalData>` | Gathered scene-wide, not camera-culled: a decal's own material is usually its own, so the backend syncs it off this list |
 | `particlesAdditive` / `particlesAlpha` | `vector<ParticleData>` | Billboards, split by blend and unsorted: the additive half is order-independent, and `GLParticlePass` sorts the alpha half back-to-front |
+| `particleTextures` | `vector<TextureHandle>` | What the particles show, each once; a particle names its own by `params.z`, 1 + its place here, 0 for the soft disc. `GLParticlePass` draws a run of particles a texture |
 | `ocean` | `OceanData` | `OceanSystem`'s sea at the frame's moment (`present` when the scene has one, and a camera draws it): its waves, its foam and the drift of a `waves` material's maps - see "The ocean" below |
 | `irradianceVolume` / `hasIrradianceVolume` | `IrradianceVolumeData` + `bool` | The scene's one baked-GI volume, chosen by `findIrradianceVolume` and with its grid clamped to `IrradianceVolume::MAX_RESOLUTION` on the way here. A value and a flag rather than a list, the way `Visibility` carries its camera - see "A scene has one irradiance volume" below |
 | `settings` | `RenderSettings` | Pass toggles + per-effect params, copied each frame |
@@ -574,6 +575,26 @@ and the colour/size ramp that `RenderView::build` evaluates at each particle's
 age, so the pass draws each billboard as it is handed. `softness`
 is the billboard's edge falloff - 1 is a soft blob, 0 a hard-edged disc.
 
+An emitter with a `texture` draws it instead of the disc, tinted by the
+particle's colour. `sheetColumns` by `sheetRows` read it as a sheet of frames,
+left to right from the top, played once over each particle's life or looping at
+`sheetFps` (`sheetFrameAt`); `randomFrame` starts each on a frame of its own.
+`RenderView::build` hands each particle its frame's rect, and the shader keeps
+its reads half a texel of the coarser level it reads inside it, so a filtered
+read takes nothing of the frame beside - down to the mip level whose texels
+straddle two frames, which holds both already, so a sheet whose frames are a
+power of two across keeps them apart furthest. `stretch` streaks a particle
+along its velocity: its quad runs from its head back by that many seconds of its
+travel, capped at both ends by half its width, along the trail as the view sees
+it - a spark coming at the eye is a dot. One that does not streak turns by
+`spin` radians a second, from an angle of its own with `randomRotation`. The
+random draws are made only for an emitter that asks for them, so one without
+draws the same sequence whatever these fields hold elsewhere. `GLParticlePass`
+draws a run of particles showing one texture at a time: the additive half
+grouped by texture, the alpha half in its far-to-near order, broken where the
+texture changes - so two overlapping alpha emitters of different textures cost a
+draw for each change in that order, up to one a particle.
+
 ### GLView - GPU sync
 
 Holds four tables keyed by handle id - mesh, material, texture, font atlas - each
@@ -582,7 +603,8 @@ slot remembering the version and handle generation it was uploaded at.
 the objects the camera sees (mesh, material and the material's textures), the
 scene-wide objects (mesh, and for the shadow casters among them the material
 and its textures too, since a cutout casts through its map), decals (material
-and its textures) and the UI draw commands (font atlas, and each image's texture) - and
+and its textures), the particles' textures and the UI draw commands (font atlas,
+and each image's texture) - and
 `ensure()`s each asset, uploading only when the version moved on or the
 generation says the slot was recycled (see [resources.md](resources.md) for
 the version mechanism). Each sync bumps a stamp, and a slot remembers the stamp

@@ -291,6 +291,99 @@ void buildSmoke(Scenery& s) {
     sunAndCamera(s, {0.0f, 1.2f, 3.5f}, {0.0f, 0.0f, -1.5f});
 }
 
+// Particles as a sheet's frames, turned, and streaked. Above the floor, left to right: a 2x2
+// sheet's four frames, a particle born on frame 0 at each quarter of its life - red, green,
+// blue, white, each with a dark bar along its top and left edges; one turned an eighth of a
+// turn; then additive streaks, level, rising and coming at the eye, which barely streaks. Below
+// the cards a plain disc, blended with them: a second run of the alpha batch.
+void buildSprites(Scenery& s) {
+    base(s);
+    place(
+        s,
+        s.cube,
+        material(s, "golden:slate", {0.12f, 0.12f, 0.13f}, 0.8f, 0.0f),
+        {0.0f, -0.5f, 0.0f},
+        {20.0f, 1.0f, 20.0f}
+    );
+
+    constexpr uint32_t SIZE  = 64;
+    constexpr uint32_t FRAME = SIZE / 2;
+    constexpr uint32_t BAR   = 5;
+    // Rows bottom first, as an image loads (image_loaders.cpp): the top row is y = SIZE - 1.
+    const uint8_t tint[4][3] = {{230, 40, 30}, {40, 220, 60}, {40, 80, 240}, {240, 240, 240}};
+    TextureAsset sheet;
+    sheet.params.width  = SIZE;
+    sheet.params.height = SIZE;
+    sheet.pixelData.resize(SIZE * SIZE * 4);
+    for (uint32_t y = 0; y < SIZE; ++y) {
+        for (uint32_t x = 0; x < SIZE; ++x) {
+            const uint32_t fromTop = SIZE - 1 - y;
+            const uint32_t frame   = (fromTop / FRAME) * 2 + x / FRAME;
+            const bool     edge    = fromTop % FRAME < BAR || x % FRAME < BAR;
+            uint8_t* p = &sheet.pixelData[(y * SIZE + x) * 4];
+            for (int c = 0; c < 3; ++c) p[c] = edge ? 20 : tint[frame][c];
+            p[3] = 255;
+        }
+    }
+    const TextureHandle frames = s.resources.add(std::move(sheet), "golden:sheet");
+
+    const auto emitter = [&](ParticleEmitter e) {
+        const EntityId id = s.scene.createEntity();
+        s.scene.add(id, Transform{});
+        s.scene.add(id, std::move(e));
+        LiveParticles::Pool& pool = s.particles.pools[id.slot()];
+        pool.emitter = id;
+        return &pool.particles;
+    };
+
+    ParticleEmitter cards;
+    cards.additive     = false;
+    cards.texture      = frames;
+    cards.sheetColumns = 2;
+    cards.sheetRows    = 2;
+    cards.startColor   = glm::vec4(1.0f);
+    cards.endColor     = glm::vec4(1.0f);
+    cards.startSize    = 0.3f;
+    cards.endSize      = 0.3f;
+    cards.lifetime     = 4.0f;
+    std::vector<Particle>* card = emitter(cards);
+    for (int i = 0; i < 5; ++i) {
+        Particle p;
+        p.position = {-2.6f + 0.75f * static_cast<float>(i), 1.0f, 0.0f};
+        p.lifetime = 4.0f;
+        p.age      = i < 4 ? 0.5f + static_cast<float>(i) : 0.5f;
+        p.angle    = i < 4 ? 0.0f : glm::quarter_pi<float>();
+        card->push_back(p);
+    }
+
+    ParticleEmitter puff;
+    puff.additive   = false;
+    puff.startColor = glm::vec4(0.9f, 0.8f, 0.2f, 1.0f);
+    puff.endColor   = puff.startColor;
+    puff.startSize  = 0.25f;
+    puff.endSize    = 0.25f;
+    Particle disc;
+    disc.position = {-1.5f, 0.45f, 0.3f};
+    emitter(puff)->push_back(disc);
+
+    ParticleEmitter sparks;
+    sparks.startColor = glm::vec4(3.0f, 1.6f, 0.4f, 1.0f);
+    sparks.endColor   = sparks.startColor;
+    sparks.startSize  = 0.05f;
+    sparks.endSize    = 0.05f;
+    sparks.softness   = 0.3f;
+    sparks.stretch    = 0.1f;
+    std::vector<Particle>* spark = emitter(sparks);
+    const glm::vec3 headings[3] = {{8.0f, 0.0f, 0.0f}, {0.0f, 8.0f, 0.0f}, {0.0f, 0.0f, 8.0f}};
+    for (int i = 0; i < 3; ++i) {
+        Particle p;
+        p.position = {1.8f + 0.8f * static_cast<float>(i), 1.0f, 0.0f};
+        p.velocity = headings[i];
+        spark->push_back(p);
+    }
+    sunAndCamera(s, {0.0f, 1.3f, 4.0f}, {0.0f, 1.0f, 0.0f});
+}
+
 // A card cut by its albedo alpha, in the sun on a glossy floor: its shadow is the cut
 // pattern, and its holes show the floor rather than a reflection traced from inside.
 void buildCutout(Scenery& s) {
@@ -1496,6 +1589,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     compare("reflections", buildReflections, gl.renderer(), failures);
     compare("glint",       buildGlint,       gl.renderer(), failures);
     compare("smoke",       buildSmoke,       gl.renderer(), failures);
+    compare("sprites",     buildSprites,     gl.renderer(), failures);
     compare("cutout",      buildCutout,      gl.renderer(), failures);
     compare("decals",      buildDecals,      gl.renderer(), failures);
     compare("fog",         buildFog,         gl.renderer(), failures);

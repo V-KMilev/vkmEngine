@@ -47,6 +47,7 @@ namespace Vkm::Engine {
     X(BakeTextureSlots,       TRANSMITTANCE,         1,  BAKE_SLOT_TRANSMITTANCE,             The atmosphere transmittance table (u_transmittance))                \
     X(BakeTextureSlots,       MULTISCATTERING,       2,  BAKE_SLOT_MULTISCATTERING,           The atmosphere multiple-scattering table (u_multiScattering))        \
     X(SkyTextureSlots,        VIEW,                  0,  SKY_SLOT_VIEW,                       The sky-view table the skybox draws the sky from (u_skyViewLut))     \
+    X(ParticleTextureSlots,   SPRITE,                0,  PARTICLE_SLOT_SPRITE,                What a run of particles shows (u_sprite) - a free material unit)     \
     X(OverlayTextureSlots,    UI_ATLAS,              0,  UI_SLOT_ATLAS,                       The UI font atlas or the empty one a run without text reads (u_tex)) \
     X(OverlayTextureSlots,    UI_IMAGE,              1,  UI_SLOT_IMAGE,                       The picture a UIImage run shows (u_image))                           \
     X(OverlayTextureSlots,    SPLASH_LOGO,           0,  SPLASH_SLOT_LOGO,                    The splash logo (u_logo))                                            \

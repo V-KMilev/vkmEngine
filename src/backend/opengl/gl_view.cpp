@@ -141,6 +141,7 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
         decals,
         particlesAdditive,
         particlesAlpha,
+        particleTextures,
         irradianceVolume,
         hasIrradianceVolume,
         ocean,
@@ -181,6 +182,11 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
     // Decals are gathered scene-wide, and a decal's material is usually its own.
     for (const DecalData& decal : decals) {
         ensureMaterial(decal.material, resources);
+    }
+
+    for (const TextureHandle& texture : particleTextures) {
+        ensure(m_textures, texture, resources);
+        reportIfMissing(texture, resources);
     }
 
     // Font atlases live inside FontAssets, so ensure them off the text commands; images are

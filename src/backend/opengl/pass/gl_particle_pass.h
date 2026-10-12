@@ -17,15 +17,15 @@ namespace Vkm::GL {
 
 namespace Vkm::Engine {
 
-class ScreenTriangle;
 struct RenderView;
 
 /**
  * @brief Draws the frame's particles as camera-facing billboards.
  *
  * Runs after the forward pass, depth-tested without writing depth. Additive emitters draw first,
- * then alpha ones, which arrive unsorted and are sorted back-to-front here; each fogs at its own
- * depth. Attribute-less: instances live in an SSBO, so a batch is one instanced 4-vertex draw.
+ * grouped by texture, then alpha ones, which arrive unsorted and are sorted back-to-front here;
+ * each fogs at its own depth. Attribute-less: instances live in an SSBO, so a batch is one upload
+ * and an instanced 4-vertex draw for each run of particles showing one texture.
  */
 class GLParticlePass : public GLPass {
     public:
@@ -62,12 +62,27 @@ class GLParticlePass : public GLPass {
         void sortAlpha(const RenderView& view);
 
         /**
-         * @brief Upload @p batch to the instance SSBO and draw it as one instanced quad call.
+         * @brief Copy the view's additive particles into m_sorted, grouped by texture.
          *
-         * @param batch    The billboards to draw.
-         * @param emptyVao The frame's attribute-less VAO, which the draw binds.
+         * @param view The particles.
          */
-        void drawBatch(const std::vector<ParticleData>& batch, const ScreenTriangle& emptyVao);
+        void sortAdditive(const RenderView& view);
+
+        /**
+         * @brief Bind what a run of particles shows, and tell the shader whether it is a texture.
+         *
+         * @param ctx     The frame: its view's texture list, and the uploads.
+         * @param texture ParticleData::params.z: 0 for the soft disc, else 1 + its place in the list.
+         */
+        void bindTexture(GLFrameContext& ctx, float texture);
+
+        /**
+         * @brief Upload @p batch to the instance SSBO and draw it, an instanced quad call a run.
+         *
+         * @param ctx   The frame: its attribute-less VAO, which the draws bind, and the textures.
+         * @param batch The billboards to draw, each texture's in runs.
+         */
+        void drawBatch(GLFrameContext& ctx, const std::vector<ParticleData>& batch);
 
     private:
         Vkm::GL::Shader                               m_shader;
@@ -75,7 +90,7 @@ class GLParticlePass : public GLPass {
         uint32_t                                      m_capacity = 0;  ///< Bytes the SSBO can hold.
 
         std::vector<ParticleOrder> m_order;   ///< Sort keys; capacity kept across frames.
-        std::vector<ParticleData>  m_sorted;  ///< The alpha particles, far to near.
+        std::vector<ParticleData>  m_sorted;  ///< The batch drawing: by texture, or alpha far to near.
 
         /// The scene's depth, copied: the particles test against it attached and fade on it here.
         GLTarget m_depthCopy{GLTarget::Layout::ColorDepth, GL_R8};

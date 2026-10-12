@@ -71,7 +71,7 @@ class ResourceManager;
     R(Mesh,                "Mesh")                \
     R(LOD,                 "LOD")                 \
     R(Decal,               "Decal")               \
-    P(ParticleEmitter,     "ParticleEmitter")     \
+    R(ParticleEmitter,     "ParticleEmitter")     \
     R(AudioSource,         "AudioSource")         \
     P(AudioListener,       "AudioListener")       \
     P(IrradianceVolume,    "IrradianceVolume")    \
@@ -191,8 +191,8 @@ namespace ComponentSerializer {
     nlohmann::json save(const Decal&, const ResourceManager&);
     void load(const nlohmann::json&, Decal&, const ResourceManager&);
 
-    nlohmann::json save(const ParticleEmitter&);
-    void load(const nlohmann::json&, ParticleEmitter&);
+    nlohmann::json save(const ParticleEmitter&, const ResourceManager&);
+    void load(const nlohmann::json&, ParticleEmitter&, const ResourceManager&);
 
     /**
      * @brief AudioSource: the clip it names and how it should be heard.
@@ -302,6 +302,7 @@ namespace ComponentSerializer {
     void emitAssetRefs(const Mesh&,        AssetRefs&);
     void emitAssetRefs(const LOD&,         AssetRefs&);
     void emitAssetRefs(const Decal&,       AssetRefs&);
+    void emitAssetRefs(const ParticleEmitter&, AssetRefs&);
     void emitAssetRefs(const AudioSource&, AssetRefs&);
     void emitAssetRefs(const Animator&,    AssetRefs&);
     void emitAssetRefs(const UIImage&,     AssetRefs&);

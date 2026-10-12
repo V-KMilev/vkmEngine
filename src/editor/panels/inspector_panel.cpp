@@ -1849,6 +1849,8 @@ void InspectorPanel::drawDecalSection(EditorContext& ec, EntityId id) {
 }
 
 void InspectorPanel::drawParticleSection(EditorContext& ec, EntityId id) {
+    ResourceManager& resources = ec.frame.resources;
+
     editComponentCard<ParticleEmitter>(ec, id, [&](ParticleEmitter& e) {
         bool changed = false;
 
@@ -1891,19 +1893,55 @@ void InspectorPanel::drawParticleSection(EditorContext& ec, EntityId id) {
         changed |= propColor4("End Color", glm::value_ptr(e.endColor));
         changed |= propDrag("Start Size", &e.startSize, 0.005f, 0.0f, 20.0f, "%.3f");
         changed |= propDrag("End Size", &e.endSize, 0.005f, 0.0f, 20.0f, "%.3f");
-        changed |= propSlider(
-            "Softness",
-            &e.softness,
-            0.0f,
-            1.0f,
-            "%.2f",
-            "Edge falloff: 1 = soft blob, 0 = hard-edged crisp disc"
-        );
         changed |= propCheckbox(
             "Additive",
             &e.additive,
             "Additive blend suits sparks/fire; alpha blend suits smoke"
         );
+
+        ImGui::Spacing();
+        changed |= pickAsset<TextureAsset>("##ParticleTexPick", "Texture", resources, e.texture);
+        if (!e.texture) {
+            changed |= propSlider(
+                "Softness",
+                &e.softness,
+                0.0f,
+                1.0f,
+                "%.2f",
+                "Edge falloff: 1 = soft blob, 0 = hard-edged crisp disc"
+            );
+        } else {
+            const char* sheetTooltip = "The texture as a sheet of frames, read left to right from the top";
+            changed |= propDragU32("Sheet Columns", &e.sheetColumns, 0.1f, 1u, 64u, sheetTooltip);
+            changed |= propDragU32("Sheet Rows", &e.sheetRows, 0.1f, 1u, 64u, sheetTooltip);
+            if (sheetFrames(e) > 1) {
+                changed |= propDrag(
+                    "Sheet FPS",
+                    &e.sheetFps,
+                    0.1f,
+                    0.0f,
+                    120.0f,
+                    "%.1f",
+                    "Frames a second, looping; 0 plays the sheet once over each particle's life"
+                );
+                const char* randomFrameTooltip = "Each particle starts on a frame of its own";
+                changed |= propCheckbox("Random Frame", &e.randomFrame, randomFrameTooltip);
+            }
+        }
+        changed |= propDrag(
+            "Stretch",
+            &e.stretch,
+            0.005f,
+            0.0f,
+            2.0f,
+            "%.3f s",
+            "Seconds of its travel a particle streaks behind it, along its velocity - sparks, rain"
+        );
+        if (e.stretch <= 0.0f) {
+            changed |= propDrag("Spin", &e.spin, 0.05f, -50.0f, 50.0f, "%.2f rad/s", "How fast each turns");
+            const char* rotationTooltip = "Each particle starts at an angle of its own";
+            changed |= propCheckbox("Random Rotation", &e.randomRotation, rotationTooltip);
+        }
 
         const std::vector<Particle>* live = ec.frame.particles ? ec.frame.particles->of(id) : nullptr;
         ImGui::TextDisabled("Live: %d particle(s).", live ? static_cast<int>(live->size()) : 0);
