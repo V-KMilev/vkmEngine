@@ -2330,9 +2330,9 @@ void InspectorPanel::drawOceanSection(EditorContext& ec, EntityId id) {
             const float level = resolvedWorldPosition(scene, id, scene.get<Transform>(id)).y;
             int         off   = 0;
             scene.forEach<Mesh>([&](EntityId entity, const Mesh& mesh) {
-                const MaterialAsset* surface = ec.frame.resources.tryGet(mesh.material);
-                const Transform*     at      = scene.tryGet<Transform>(entity);
-                if (!surface || !surface->waves || !at) return;
+                const MaterialAsset* look = ec.frame.resources.tryGet(mesh.material);
+                const Transform*     at   = scene.tryGet<Transform>(entity);
+                if (!look || !look->waves || !at) return;
                 const float height = resolvedWorldPosition(scene, entity, *at).y;
                 if (std::abs(height - level) > WATER_LEVEL_TOLERANCE) ++off;
             });

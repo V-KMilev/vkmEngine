@@ -259,7 +259,7 @@ void RenderView::build(
             particleTextureList,
             volume,
             volumePresent,
-            sea,
+            seaState,
             palettes,
             renderSettings,
             env,
@@ -276,7 +276,7 @@ void RenderView::build(
         particlesBlend.clear();
         particleTextureList.clear();
         volumePresent = false;
-        sea.present   = false;
+        seaState.present = false;
         palettes      = nullptr;
         return;
     }
