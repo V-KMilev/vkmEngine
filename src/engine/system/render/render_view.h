@@ -31,6 +31,10 @@ struct LiveParticles;
  * The whole engine -> backend contract besides the asset graph. build() refills
  * it each frame: what it gathers from the scene it owns; other systems' products
  * it borrows by pointer, valid until the next build().
+ *
+ * A member added here fails the build at two structured bindings that name every member on
+ * purpose - GLView::sync and build()'s no-camera branch - each asking what the new member means
+ * there: an asset handle to make resident, a list to clear without a camera.
  */
 struct RenderView {
     /// Viewport rect within the backbuffer, top-left origin (surfaceHeight flips it).

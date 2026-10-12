@@ -137,7 +137,10 @@ The engine warns rather than converts: the Inspector's card says it where the
 mistake is made, and `AudioSystem` says it once per clip per world when a
 positioned voice starts, for a project that plays through `PlaySoundEvent`
 alone. Nothing downmixes the file
-([engine.md](../guides/engine.md#4-what-has-already-been-decided)).
+([engine.md](../guides/engine.md#4-what-has-already-been-decided)). Content
+brought over from an engine that downmixes at play time - Valve's Source does, for a
+stereo wave played at a position - needs a mono copy made for positioned use,
+as the import or the game keeps it.
 
 A spatial source with no `Transform` is heard at the world origin, which the
 inspector names on the card.

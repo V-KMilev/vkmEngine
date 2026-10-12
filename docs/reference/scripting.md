@@ -16,6 +16,12 @@ A behavior is a C++ class in your project's `src/`, built into the project's
 module by `vkm build`. One include brings in what a behavior commonly reaches -
 the base class, the reflect block, the body components, input, the physics and
 audio events, the asset graph and the log: `system/script/behavior_api.h`.
+Past it, names guessed from other engines go wrong: the log is `logger.h`, its
+macros `LOG_INFO`, `LOG_WARNING` and `LOG_ERROR`; GLFW, for its key codes, comes
+in through `platform/window/glfw_include.h` and never `<GLFW/glfw3.h>`, which
+would take the GL declarations from the wrong header; and anything else a
+behavior uses is included by its path under `src/engine/`, as the engine's own
+code does.
 
 **The class and its fields.** Derive from `ReflectedBehavior<YourClass>`, put
 the values a designer tunes in a public block, and list them in a reflect block

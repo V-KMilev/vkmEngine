@@ -13,6 +13,11 @@ namespace Vkm::Engine {
  * stage, and a note. Material maps take the lowest units, then shadows, IBL and post; a pass that
  * reads no material map reuses the low ones. A fragment output is the scene target's colour
  * attachment of that number: GLTarget indexes draw-buffer lists by location.
+ *
+ * Every texture unit up to MAX_TEXTURE_UNIT is spoken for: a new one shares a unit whose owner no
+ * pass reading it binds, as the ocean's take the env cube's and GTAO's, or the numbering moves past
+ * the per-stage count. The note is bare macro tokens, so it holds no apostrophe: one opens a
+ * character literal, and the error lands in whichever file includes this first.
  */
 #define VKM_GL_BINDINGS(X)                                                                                                                                         \
     X(UBOBindingPoints,       MATERIAL,              0,  UBO_MATERIAL,                        Per-material PBR properties)                                         \
