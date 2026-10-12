@@ -1148,6 +1148,9 @@ void sameAsAFreshBackend(
     before(changed);
     render(changed, lived);
     after(changed);
+    // Held still past CAPTURE_SETTLE_FRAMES, so a capture the change moved has settled.
+    render(changed, lived);
+    render(changed, lived);
     const std::vector<unsigned char> seen = render(changed, lived);
 
     restoreContextDefaults();
@@ -1403,6 +1406,62 @@ void testAnOrthographicViewTracesItsReflections(int& failures) {
     const float mean = static_cast<float>(sum) / static_cast<float>(frames[0].size());
     std::printf("      the traced frame differs by %.2f a channel on average\n", mean);
     expect("an orthographic view traces its reflections", mean > 0.05f, failures);
+}
+
+// A reflection probe dragged to a new place keeps its last bake while it moves and bakes once it
+// holds still, so a probe crossing the scene costs one bake, not one a frame. render() draws
+// FRAMES frames: three calls hold it still past CAPTURE_SETTLE_FRAMES.
+void testAMovedProbeBakesOnceItSettles(int& failures) {
+    std::printf("A reflection probe moved:\n");
+    const glm::vec3 from = {0.0f, 1.0f, 0.0f};
+    const glm::vec3 to   = {-3.0f, 1.0f, 1.0f};
+    const auto build = [](Scenery& s, glm::vec3 at) {
+        buildProbe(s);
+        place(
+            s,
+            s.cube,
+            material(s, "golden:red", {0.8f, 0.1f, 0.08f}, 0.5f, 0.0f),
+            {-6.0f, 1.5f, 0.0f},
+            {1.0f, 3.0f, 8.0f}
+        );
+        s.scene.forEach<ReflectionProbe>([&](EntityId id, ReflectionProbe&) {
+            s.scene.tryGet<Transform>(id)->position = at;
+        });
+    };
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend fresh;
+    if (!fresh.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery there;
+    build(there, to);
+    const std::vector<unsigned char> want = render(there, fresh);
+
+    restoreContextDefaults();
+    GLBackend dragged;
+    if (!dragged.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery moved;
+    build(moved, from);
+    render(moved, dragged);
+    moved.scene.forEach<ReflectionProbe>([&](EntityId id, ReflectionProbe&) {
+        moved.scene.tryGet<Transform>(id)->position = to;
+    });
+    const float moving = differingShare(render(moved, dragged), want.data());
+    render(moved, dragged);
+    const float settled = differingShare(render(moved, dragged), want.data());
+    std::printf(
+        "      %.2f%% of pixels differ while it moves, %.2f%% once it settles\n",
+        moving * 100.0f,
+        settled * 100.0f
+    );
+    expect("a probe being moved keeps its last bake", moving > PIXEL_TOLERANCE, failures);
+    expect("  and bakes where it settles", settled <= PIXEL_TOLERANCE, failures);
 }
 
 // The mean of every channel of a frame, 0..255.
@@ -1779,6 +1838,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testASplashFadesLinearlyOnTheGlass(failures);
     testAnOpenFloorIsNotOccluded(failures);
     testAnOrthographicViewTracesItsReflections(failures);
+    testAMovedProbeBakesOnceItSettles(failures);
     testASealedRoomHoldsNoSkyLight(failures);
     testTheShoreRingsWhatBreaksTheWater(failures);
     testATransparentPanesShadowIsAsDeepAsItIsOpaque(failures);

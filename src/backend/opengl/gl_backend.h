@@ -35,6 +35,7 @@
 #include "frame/gl_object_buffer.h"
 #include "offline/gl_preview.h"
 #include "storage/gl_probe_manager.h"
+#include "offline/gl_capture_settle.h"
 #include "offline/gl_scene_capture.h"
 #include "gl_screen_triangle.h"
 #include "storage/gl_shadow_atlas.h"
@@ -337,8 +338,7 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
 
         BakedFrom<Atmosphere::Coefficients> m_bakedAir;
         BakedFrom<IrradianceSignature>      m_bakedIrradiance;
-        IrradianceSignature                 m_irradianceRequest{};  ///< What the last frame asked.
-        uint32_t                            m_irradianceStill = 0;  ///< Frames it has held still.
+        CaptureSettle<IrradianceSignature>  m_irradianceAsked;  ///< What the frames ask its bake for.
 };
 
 } // namespace Vkm::Engine
