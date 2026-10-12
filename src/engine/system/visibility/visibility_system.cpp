@@ -8,6 +8,7 @@
 
 #include "logger.h"
 
+#include "core/clock.h"
 #include "debug/profiler.h"
 #include "platform/threading/thread_pool.h"
 #include "platform/window/window_manager.h"
@@ -183,8 +184,10 @@ void VisibilitySystem::update(FrameContext& ctx) {
     const float viewportAspect = vpH > 0.0f ? vpW / vpH : 16.0f / 9.0f;
 
     if (!resolveCamera(ctx, viewportAspect)) {
-        // A supported state (see RenderView::build); logged on the edge only.
-        if (!ctx.hostView && !m_noCameraLogged) {
+        // A supported state (see RenderView::build); logged on the edge only, and not before the
+        // world has run at all: a behavior's onStart, which may make the camera, has not either.
+        const bool notRunYet = ctx.clock.getTick() == 0 && ctx.clock.isSimulationStill();
+        if (!ctx.hostView && !m_noCameraLogged && !notRunYet) {
             LOG_WARNING("No active camera found for visibility");
             m_noCameraLogged = true;
         }
