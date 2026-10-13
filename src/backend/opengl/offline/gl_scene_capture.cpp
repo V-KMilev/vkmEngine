@@ -15,6 +15,7 @@
 #include "gl_uniform_buffer.h"
 
 #include "convention/gl_bindings.h"
+#include "convention/gl_depth.h"
 #include "offline/gl_cubemap.h"
 #include "storage/gl_ibl.h"
 #include "storage/gl_irradiance_volume.h"
@@ -336,17 +337,17 @@ void GLSceneCapture::prepareShadow(Vkm::GL::Context& gl, const RenderView& view,
     gl.setViewport(0, 0, static_cast<int32_t>(SHADOW_RES), static_cast<int32_t>(SHADOW_RES));
     gl.setDepthTest(true);
     gl.setDepthWrite(true);
-    gl.setDepthFunc(GL_LESS);
+    gl.setDepthFunc(GLDepth::SHADOW_TEST);
     gl.setBlending(false);
     gl.setFaceCulling(false);
-    gl.clear(false, true, false);
+    gl.clear(false, true, false, GLDepth::SHADOW_CLEAR);
 
     m_casterBatcher.buildGrouped(m_overRegion, objects, *m_glView, 0);
     m_shadowMasked.bind();
-    m_shadowMasked.setUniformMatrix4fv("u_lightVP", lightVP);
+    m_shadowMasked.setUniformMatrix4fv("u_lightVP", GLDepth::shadowProjection(lightVP));
     m_shadowMasked.setUniform2f("u_ditherShift", 0.0f, 0.0f);
     m_shadowDepth.bind();
-    m_shadowDepth.setUniformMatrix4fv("u_lightVP", lightVP);
+    m_shadowDepth.setUniformMatrix4fv("u_lightVP", GLDepth::shadowProjection(lightVP));
     m_objects.bind();
     const Vkm::GL::Shader* bound = &m_shadowDepth;
     for (const InstanceDraw& draw : m_casterBatcher.draws()) {
@@ -390,10 +391,10 @@ void GLSceneCapture::beginFace(
     attach(face);
     gl.setDepthTest(true);
     gl.setDepthWrite(true);
-    gl.setDepthFunc(GL_LESS);
+    gl.setDepthFunc(GLDepth::EYE_TEST);
     gl.setBlending(false);
     gl.setClearColor({0.0f, 0.0f, 0.0f, 1.0f});
-    gl.clear(true, true, false);
+    gl.clear(true, true, false, GLDepth::EYE_CLEAR);
 
     m_camera.update(
         CameraData::from(GLCubemap::faceView(face, position), proj, position),
@@ -408,7 +409,7 @@ void GLSceneCapture::drawSky(
     const glm::mat4& projection,
     float intensity
 ) {
-    gl.setDepthFunc(GL_LEQUAL);
+    gl.setDepthFunc(GLDepth::EYE_TEST_EQUAL);
     gl.setDepthWrite(false);
     gl.setFaceCulling(false);
     m_skybox.bind();
@@ -420,7 +421,7 @@ void GLSceneCapture::drawSky(
     m_skybox.setUniformMatrix4fv("u_skyProjection", projection);
     ibl.bindEnvCube(GLBindings::IBLTextureSlots::ENV_CUBE);
     m_cube.draw();
-    gl.setDepthFunc(GL_LESS);
+    gl.setDepthFunc(GLDepth::EYE_TEST);
     gl.setDepthWrite(true);
 }
 
@@ -485,7 +486,7 @@ void GLSceneCapture::captureSurfels(
 
     gl.setDepthTest(true);
     gl.setDepthWrite(true);
-    gl.setDepthFunc(GL_LESS);
+    gl.setDepthFunc(GLDepth::EYE_TEST);
     gl.setBlending(false);
     // Off whatever the material: a back face is how a probe learns it is inside a solid.
     gl.setFaceCulling(false);

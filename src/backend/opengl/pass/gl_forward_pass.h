@@ -14,9 +14,10 @@ namespace Vkm::Engine {
 /**
  * @brief The lit forward draw of the scene's geometry.
  *
- * Three buckets in order: Opaque/Unlit against GLDepthPrepass's depth (LEQUAL, writes off),
- * AlphaMask priming its own, then Transparent back-to-front. Never clears; back faces are culled
- * (materials are single-sided). Each surface fogs at its own depth (see GLPass::bindFog).
+ * Three buckets in order: Opaque/Unlit against GLDepthPrepass's depth (GLDepth::EYE_TEST_EQUAL,
+ * writes off), AlphaMask priming its own, then Transparent back-to-front. Never clears; back faces
+ * are culled (materials are single-sided). Each surface fogs at its own depth (see
+ * GLPass::bindFog).
  *
  * Skinned runs sort after static ones, so a bucket switches program once. One place sets both
  * programs' uniforms: one set on only one would silently go missing on characters.

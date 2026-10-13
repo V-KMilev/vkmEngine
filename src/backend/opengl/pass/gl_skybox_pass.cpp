@@ -55,7 +55,7 @@ void GLSkyboxPass::execute(GLFrameContext& ctx) {
     const bool sky = (ctx.skyViewReady || ctx.ibl.isReady()) && view.environment.sky.showSkybox;
     if (!sky && !ctx.fogReady) return;
 
-    // The vertex shader forces z = w, putting the cube at the far plane, where the LEQUAL
+    // The vertex shader puts the cube at the far plane, depth 0, where the GLDepth::EYE_TEST_EQUAL
     // GLBackend::render sets passes it. Culling stays off: the cube is seen from inside.
     ctx.sceneRender.bind(ctx.gl);
     ctx.gl.setDepthWrite(false);

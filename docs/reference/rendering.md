@@ -263,6 +263,18 @@ two resolve passes no-op, and the multisample storage is released rather than
 kept against the setting coming back - at 4x it is the largest allocation in the
 frame.
 
+**Depth.** Clip z runs 0..w (`glClipControl`), and the eye's depth is
+reversed - 1 at the near plane, 0 at the far - in a 32-bit float buffer
+(`convention/gl_depth.h`). Perspective packs depth toward the near plane and a
+float packs its precision toward zero, so reversed the two cancel: two surfaces
+a centimetre apart a kilometre out stay apart, where a 24-bit buffer rounds them
+to one depth past a few hundred metres. The engine's projections are glm's;
+`GLCamera` remaps the camera block's matrices on the way in, and every shader
+reads depth through `shaders/depth.glsl` (`FAR_DEPTH`, `isFarDepth`,
+`nearerDepth`, ...). Shadow maps keep near 0, far 1 - the depth they always
+wrote, through `GLDepth::shadowProjection` - since most are orthographic, whose
+depth is linear and gains nothing reversed.
+
 Post passes do not blit results back into `m_sceneHDR`: the frame context
 carries a colour chain (`colorSrc`/`colorDst` + `flipColor()`). A pass samples
 `colorSrc`, writes `colorDst`, and flips; after the first flip the chain
@@ -483,7 +495,7 @@ slopes add past one, so the surface never folds over.
 A surface whose material is `waves` rides them - in a scene with an ocean,
 windless or not; without one it is an ordinary surface, and casts as one. The
 depth prepass and the forward pass move each vertex by `shaders/ocean.glsl`'s
-sum, both, so depth matches under LEQUAL, and hand the fragment the surface's
+sum, both, so depth matches under GEQUAL, and hand the fragment the surface's
 tangents there. The spectrum on below `minWavelength`, down to `shortestRipple`
 (`OceanRipples`), is too short for any vertex: the Ocean pass draws it once a
 frame into three repeating fields of 512 texels square, the band split evenly
@@ -661,7 +673,7 @@ squashes its depth into the nearest `VIEWMODEL_DEPTH_SHARE` of the range
 about that share of the near plane beyond it can then draw over it, and the near
 plane sits inside the character's capsule, so a weapon pushed into a wall stays
 in front of it. The same formula in both passes keeps their depths equal under
-`LEQUAL`.
+`GEQUAL`.
 
 What reads the depth afterwards reads the squashed one, as about the near
 plane, and each reader is answered:
@@ -762,7 +774,7 @@ them. That is what lets a run of different meshes go out as one
 `glMultiDrawElementsIndirect` (core in 4.3): a `GLDrawList` holds the object
 indices and a command per run - the mesh's `firstIndex` and `baseVertex`, and a
 `baseInstance` that slices the object list through the divisor-1 attribute,
-since 4.3 core has no `gl_BaseInstance`. A pass binds program and material state
+since 4.5 core has no `gl_BaseInstance`. A pass binds program and material state
 between multi-draws and nothing between the commands of one, which is the point
 on a driver whose cost is the validation after each state change. A full stream
 grows by doubling and copies on the GPU; a mesh's range is offsets, so nothing

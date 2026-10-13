@@ -13,6 +13,7 @@
 #include "gl_sampler.h"
 #include "gl_texture.h"
 #include "gl_texture_cube_array.h"
+#include "convention/gl_depth.h"
 #include "core/engine_config.h"
 
 namespace Vkm::Engine {
@@ -124,7 +125,7 @@ void GLShadowAtlas::init(Vkm::GL::Context& gl, uint32_t tileRes) {
     // held. The cubes likewise.
     gl.setDepthWrite(true);
     gl.setViewport(0, 0, static_cast<int32_t>(atlasW), static_cast<int32_t>(atlasH));
-    gl.clear(false, true, false);
+    gl.clear(false, true, false, GLDepth::SHADOW_CLEAR);
     m_fbo2D.unbind();
 
     // Cubes use SHADOW_CUBE_RES, so they and their FBO are built once; a 2D resize leaves them be.
@@ -146,7 +147,7 @@ void GLShadowAtlas::init(Vkm::GL::Context& gl, uint32_t tileRes) {
         for (int layer = 0; layer < static_cast<int>(Config::MAX_SHADOW_CASTERS_CUBE); ++layer) {
             for (int face = 0; face < 6; ++face) {
                 m_cubes->attachFace(GL_DEPTH_ATTACHMENT, layer, face, 0);
-                gl.clear(false, true, false);
+                gl.clear(false, true, false, GLDepth::SHADOW_CLEAR);
             }
         }
         m_fboCube.unbind();
@@ -220,7 +221,7 @@ void GLShadowAtlas::beginTile(Vkm::GL::Context& gl, uint32_t slot, uint64_t sign
     // picture from an earlier frame that nothing this frame will redraw.
     gl.setScissor(x, y, tile, tile);
     gl.enableScissor(true);
-    gl.clear(false, true, false);
+    gl.clear(false, true, false, GLDepth::SHADOW_CLEAR);
     gl.enableScissor(false);
 }
 
@@ -249,7 +250,7 @@ void GLShadowAtlas::beginCubeFace(
     m_fboCube.bind();
     m_cubes->attachFace(GL_DEPTH_ATTACHMENT, static_cast<int>(slot), static_cast<int>(face), 0);
     gl.setViewport(0, 0, static_cast<int32_t>(SHADOW_CUBE_RES), static_cast<int32_t>(SHADOW_CUBE_RES));
-    gl.clear(false, true, false);
+    gl.clear(false, true, false, GLDepth::SHADOW_CLEAR);
 }
 
 void GLShadowAtlas::bind2D(uint32_t unit) const {

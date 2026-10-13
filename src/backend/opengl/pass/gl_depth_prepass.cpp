@@ -10,6 +10,7 @@
 #include "gl_view.h"
 #include "asset/gl_material.h"
 #include "convention/gl_bindings.h"
+#include "convention/gl_depth.h"
 #include "frame/gl_object_buffer.h"
 #include "frame/gl_skin_palette.h"
 #include "system/render/render_view.h"
@@ -27,7 +28,7 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
     // Background G-buffer pixels must stay zero, which the reflections read as no surface.
     ctx.gl.setClearColor(glm::vec4(0.0f));
     ctx.sceneRender.clearForFrame(ctx.gl);
-    ctx.gl.setDepthFunc(GL_LESS);
+    ctx.gl.setDepthFunc(GLDepth::EYE_TEST);
     ctx.gl.setFaceCulling(true);
     ctx.gl.setCullFace(GL_BACK);
     ctx.sceneRender.bindGBufferPass(ctx.gl);
@@ -47,8 +48,8 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
 }
 
 void GLDepthPrepass::drawBatch(GLFrameContext& ctx, GLOcclusionCull::Set set) {
-    // A double-sided material's back faces lay depth too, or the forward pass's LEQUAL would
-    // find nothing to draw them against.
+    // A double-sided material's back faces lay depth too, or the forward pass's
+    // GLDepth::EYE_TEST_EQUAL would find nothing to draw them against.
     const Vkm::GL::Shader* boundProgram  = nullptr;
     const GLMaterial*      boundMaterial = nullptr;
     for (const InstanceDraw& draw : ctx.opaqueBatch.draws()) {

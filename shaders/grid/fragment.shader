@@ -137,8 +137,8 @@ void main() {
 
     // The pixel's ray, from the near plane: an orthographic camera's start where the pixel is.
     vec2 ndc  = vUV * 2.0 - 1.0;
-    vec4 near = u_camera.invViewProjection * vec4(ndc, -1.0, 1.0);
-    vec4 far  = u_camera.invViewProjection * vec4(ndc,  1.0, 1.0);
+    vec4 near = u_camera.invViewProjection * vec4(ndc, NEAR_DEPTH, 1.0);
+    vec4 far  = u_camera.invViewProjection * vec4(ndc, FAR_DEPTH, 1.0);
     vec3 origin = near.xyz / near.w;
     vec3 dir    = normalize(far.xyz / far.w - origin);
 

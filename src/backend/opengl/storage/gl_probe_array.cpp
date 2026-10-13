@@ -8,6 +8,7 @@
 
 #include "gl_error_handle.h"
 
+#include "convention/gl_depth.h"
 #include "storage/gl_ibl.h"
 
 namespace Vkm::Engine {
@@ -39,7 +40,7 @@ void GLProbeArray::createTargets(int capacity, int resolution) {
     Vkm::GL::Texture2DParams depth;
     depth.width           = m_resolution;
     depth.height          = m_resolution;
-    depth.internalFormat  = GL_DEPTH_COMPONENT24;
+    depth.internalFormat  = GLDepth::EYE_FORMAT;
     depth.format          = GL_DEPTH_COMPONENT;
     depth.type            = GL_FLOAT;
     depth.minFilter       = Vkm::GL::TextureMinFilter::Nearest;

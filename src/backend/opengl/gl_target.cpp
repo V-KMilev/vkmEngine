@@ -13,6 +13,7 @@
 #include "gl_error_handle.h"
 
 #include "convention/gl_bindings.h"
+#include "convention/gl_depth.h"
 
 namespace Vkm::Engine {
 
@@ -32,7 +33,7 @@ namespace Out = GLBindings::FragmentOutputs;
 // read texel for texel. The colour format here is only the default GLTarget's constructor takes.
 constexpr AttachmentSpec SPECS[] = {
     {GL_COLOR_ATTACHMENT0 + Out::COLOR,          GL_RGBA16F,           true,  "target_color"},
-    {GL_DEPTH_ATTACHMENT,                        GL_DEPTH_COMPONENT24, false, "target_depth"},
+    {GL_DEPTH_ATTACHMENT,                        GLDepth::EYE_FORMAT,  false, "target_depth"},
     {GL_COLOR_ATTACHMENT0 + Out::GBUFFER,        GL_RG16F,             false, "target_gbuffer"},
     {GL_COLOR_ATTACHMENT0 + Out::REFLECT_WEIGHT, GL_RGBA8,             false, "target_reflect_weight"},
     {GL_COLOR_ATTACHMENT0 + Out::REFLECT_ENV,    GL_R11F_G11F_B10F,    false, "target_reflect_env"},
@@ -257,7 +258,7 @@ void GLTarget::clearForFrame(const Vkm::GL::Context& gl) {
     } else {
         bind(gl);
     }
-    gl.clear(true, true, false);
+    gl.clear(true, true, false, GLDepth::EYE_CLEAR);
 }
 
 void GLTarget::bindDrawing(const Vkm::GL::Context& gl, const GLenum* buffers, int count) {

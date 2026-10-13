@@ -14,6 +14,7 @@
 #include "gl_target.h"
 #include "frame/gl_shadow_data.h"
 #include "convention/gl_bindings.h"
+#include "convention/gl_depth.h"
 #include "ecs/component/render/camera.h"
 #include "system/render/render_view.h"
 
@@ -74,10 +75,10 @@ WaveDispatches buildDispatches(glm::vec4 lightClip, int width, int height) {
     const float least = std::max(reach / FAR_PIXELS, 1e-12f);
     if (std::abs(lightClip.w) < least) lightClip.w = lightClip.w < 0.0f ? -least : least;
 
-    // GL's pixel rows run up, as its clip y does, and its clip z spans -1..1.
+    // GL's pixel rows run up, as its clip y does; the depth is the eye's, reversed (gl_depth.h).
     result.light.x = (lightClip.x / lightClip.w * 0.5f + 0.5f) * static_cast<float>(width);
     result.light.y = (lightClip.y / lightClip.w * 0.5f + 0.5f) * static_cast<float>(height);
-    result.light.z = lightClip.z / lightClip.w * 0.5f + 0.5f;
+    result.light.z = GLDepth::eyeDepth(lightClip.z, lightClip.w);
     result.light.w = lightClip.w > 0.0f ? 1.0f : -1.0f;
 
     const int lightX = static_cast<int>(result.light.x + 0.5f);

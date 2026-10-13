@@ -189,7 +189,8 @@ void GLForwardPass::drawWireframe(GLFrameContext& ctx, bool posed) {
     // Raw, as alpha-to-coverage is: the Context does not model these, and they are closed below.
     VKM_GL_CHECK(glPolygonMode(GL_FRONT_AND_BACK, GL_LINE));
     VKM_GL_CHECK(glEnable(GL_POLYGON_OFFSET_LINE));
-    VKM_GL_CHECK(glPolygonOffset(-1.0f, -1.0f));
+    // Toward the eye, which the reversed depth puts at the greater (gl_depth.h).
+    VKM_GL_CHECK(glPolygonOffset(1.0f, 1.0f));
 
     m_shader.bind();
     m_shader.setUniform1i("u_wirePass", 1);

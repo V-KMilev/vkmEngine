@@ -32,7 +32,7 @@ Breaking one of these is a design problem to raise, not a tradeoff to make.
 
 ## 1. What this is
 
-A C++17 engine with an OpenGL 4.3 backend, for Windows and Linux, that **runs
+A C++17 engine with an OpenGL 4.5 backend, for Windows and Linux, that **runs
 projects**. It holds no game of its own. A game is a directory - a
 `project.json`, its scenes and assets, and gameplay code built into its own
 module - and the same four executables (`vkm_editor`, `vkm_runtime`, `vkm_cook`,

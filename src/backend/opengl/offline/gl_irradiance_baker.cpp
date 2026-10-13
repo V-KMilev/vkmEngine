@@ -15,6 +15,7 @@
 #include "gl_render_buffer.h"
 
 #include "convention/gl_bindings.h"
+#include "convention/gl_depth.h"
 #include "debug/profiler.h"
 #include "offline/gl_cubemap.h"
 #include "offline/gl_scene_capture.h"
@@ -220,7 +221,7 @@ void GLIrradianceBaker::captureSurfels(Vkm::GL::Context& gl, const IrradianceVol
     Vkm::GL::RenderBuffer depth;
     const auto width  = static_cast<int32_t>(m_atlas->getWidth());
     const auto height = static_cast<int32_t>(m_atlas->getHeight());
-    depth.storage(GL_DEPTH_COMPONENT24, width, height);
+    depth.storage(GLDepth::EYE_FORMAT, width, height);
 
     // Once for every tile: zero is the sky, and each face's depth is its own tile's.
     m_fbo.bind();
@@ -228,7 +229,7 @@ void GLIrradianceBaker::captureSurfels(Vkm::GL::Context& gl, const IrradianceVol
     gl.setDepthWrite(true);
     const GLuint sky[4] = {0, 0, 0, 0};
     VKM_GL_CHECK(glClearBufferuiv(GL_COLOR, 0, sky));
-    gl.clear(false, true, false);
+    gl.clear(false, true, false, GLDepth::EYE_CLEAR);
 
     for (uint32_t cell = 0; cell < cells; ++cell) {
         const auto x = static_cast<int32_t>((cell % m_tilesPerRow) * 6 * FACE_SIZE);

@@ -22,6 +22,7 @@
 #include "offline/gl_scene_capture.h"
 #include "storage/gl_shadow_atlas.h"
 #include "convention/gl_bindings.h"
+#include "convention/gl_depth.h"
 #include "resource/resource_manager.h"
 #include "system/render/editor_render_hooks.h"
 #include "system/render/render_view.h"
@@ -188,7 +189,7 @@ uint32_t GLPreview::render(
     m_scratch.bind(gl);
     gl.setDepthTest(true);
     gl.setDepthWrite(true);
-    gl.setDepthFunc(GL_LESS);
+    gl.setDepthFunc(GLDepth::EYE_TEST);
     gl.setBlending(false);
     // Backdrop clear colors are linear HDR (pre-tonemap): Grey lands near
     // mid-grey after the composite pass.
@@ -196,7 +197,7 @@ uint32_t GLPreview::render(
         ? glm::vec4(0.18f, 0.18f, 0.19f, 1.0f)
         : glm::vec4(0.028f, 0.028f, 0.033f, 1.0f);
     gl.setClearColor(backdrop);
-    gl.clear(true, true, false);
+    gl.clear(true, true, false, GLDepth::EYE_CLEAR);
 
     const bool hasIBL = ibl.isReady();
 

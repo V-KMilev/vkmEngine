@@ -15,7 +15,7 @@
  *   either express or implied. See the License for the specific language governing permissions
  *   and limitations under the License.
  *
- * Changed from the original: GLSL; standard depth (near 0, far 1) hard-coded; texelFetch with a
+ * Changed from the original: GLSL; reversed depth (near 1, far 0) hard-coded; texelFetch with a
  * bounds test for its clamp-to-border sampler; a shared flag for its wave-intrinsic early-out; the
  * viewmodel's depth band read as far; an orthographic camera's span fixed; a thicker
  * surface, with edge pixels casting nothing; the result written into one channel of an existing
@@ -44,9 +44,9 @@ const float BILINEAR_THRESHOLD = 0.08;
 // How sharply a near miss turns to shadow: 1 is linear, higher closes the gap.
 const float SHADOW_CONTRAST    = 4.0;
 
-const float FAR_DEPTH = 1.0;
-const float Z_SIGN    = 1.0;  // the far plane is the larger depth
+const float Z_SIGN = -1.0;  // the far plane is the smaller depth
 
+#include "../depth.glsl"   // FAR_DEPTH, NEAR_DEPTH, isFarDepth
 #include "../camera.glsl"  // inViewmodelBand
 
 layout(binding = POST_SLOT_SCENE_DEPTH) uniform sampler2D u_depth;
@@ -150,7 +150,7 @@ void main() {
 
     // The sky needs no shadow; a group of nothing but sky leaves at once. Every thread reaches
     // the barriers, so the return is the whole group's.
-    const bool skip = samplingDepth[0] >= FAR_DEPTH || samplingDepth[0] <= 0.0;
+    const bool skip = isFarDepth(samplingDepth[0]) || samplingDepth[0] >= NEAR_DEPTH;
     if (gl_LocalInvocationIndex == 0u) s_anyShaded = 0u;
     barrier();
     if (!skip) atomicOr(s_anyShaded, 1u);

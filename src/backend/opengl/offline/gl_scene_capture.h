@@ -201,7 +201,7 @@ class GLSceneCapture {
          * @brief Draw the baked environment behind whatever the bound camera frames.
          *
          * At the far plane, depth writes and culling off, no sun disc (it would blow out a
-         * capture). Leaves depth as the geometry after it wants: LESS, writes on.
+         * capture). Leaves depth as the geometry after it wants: GLDepth::EYE_TEST, writes on.
          *
          * @param gl         Live context whose depth and cull state the backdrop sets.
          * @param ibl        The baked environment, found ready by the caller.

@@ -22,17 +22,18 @@ bool cameraIsPerspective() {
 }
 
 // Whether a window depth lies in the viewmodel's band (shaders/viewmodel.glsl), where a held
-// weapon's squashed depth is, not where it is. A perspective camera's band lies within about
-// VIEWMODEL_DEPTH_SHARE of the near distance past the near plane; an orthographic camera's depth
-// is linear, so there it would be that share of the whole scene, and it is taken to hold none.
+// weapon's squashed depth is, not where it is: the nearest VIEWMODEL_DEPTH_SHARE of the reversed
+// depth (shaders/depth.glsl). A perspective camera's band lies within about that share of the near
+// distance past the near plane; an orthographic camera's depth is linear, so there it would be
+// that share of the whole scene, and it is taken to hold none.
 bool inViewmodelBand(float depth01) {
-    return cameraIsPerspective() && depth01 < VIEWMODEL_DEPTH_SHARE;
+    return cameraIsPerspective() && depth01 > 1.0 - VIEWMODEL_DEPTH_SHARE;
 }
 
 // A viewmodel's clip position squashed into that band, which only a perspective camera has: an
 // orthographic one draws it at its own depth.
 vec4 intoViewmodelBand(vec4 clip) {
-    if (cameraIsPerspective()) clip.z = mix(-clip.w, clip.z, VIEWMODEL_DEPTH_SHARE);
+    if (cameraIsPerspective()) clip.z = mix(clip.w, clip.z, VIEWMODEL_DEPTH_SHARE);
     return clip;
 }
 

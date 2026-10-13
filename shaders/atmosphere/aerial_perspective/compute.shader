@@ -33,7 +33,7 @@ void main() {
     vec3  viewDir    = vec3(0.0, 0.0, -1.0);
     float pathLength = viewDepth;
     if (cameraIsPerspective()) {
-        vec4 nearH = u_camera.invProjection * vec4(uv * 2.0 - 1.0, -1.0, 1.0);
+        vec4 nearH = u_camera.invProjection * vec4(uv * 2.0 - 1.0, NEAR_DEPTH, 1.0);
         vec3 ray   = nearH.xyz / nearH.w;
         viewDir    = normalize(ray);
         pathLength = viewDepth * length(ray) / abs(ray.z);

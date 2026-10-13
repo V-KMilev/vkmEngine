@@ -5,7 +5,7 @@
 - CMake 3.25+ and Ninja
 - Python 3.8+, for `tools/vkm`; on Windows a Windows build of it (MSYS2's
   `mingw-w64-ucrt-x86_64-python`, or python.org's)
-- OpenGL 4.3 capable GPU and drivers
+- OpenGL 4.5 capable GPU and drivers
 
 No compiler: a configure that names none builds with a compiler releases are built
 with - the pinned GCC, or with `-DVKM_COMPILER=clang` the pinned Clang - which

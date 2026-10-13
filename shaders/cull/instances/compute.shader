@@ -59,11 +59,12 @@ uniform int  u_instanceCount;
 uniform int  u_commandCount;
 uniform vec2 u_sceneSize;  // the scene's pixels, which the pyramid halves
 
-// Window-depth slack the box's nearest point must clear: four steps of a 24-bit buffer. In window
-// depth, not metres: a slack the size of the rounding, which a perspective camera's depth grows
-// with distance squared, would not cull past a building at range.
-const float DEPTH_SLACK = 4.0 / 16777216.0;
+// Window-depth slack the box's nearest point must clear, as a share of the depth there: a float
+// rounds by a share of its size, and the eye's reversed depth (shaders/depth.glsl) falls as one over
+// the distance, so this is the same share of the distance too - a centimetre a kilometre out.
+const float DEPTH_SLACK = 1.0e-5;
 
+#include "../../depth.glsl"   // nearerDepth, fartherDepth
 #include "../../camera.glsl"
 
 layout(std430, binding = SSBO_INSTANCE_MODELS) readonly buffer InstanceModels { mat4 b_models[]; };
@@ -95,7 +96,7 @@ void emit(int set, uint command, uint object) {
 bool occluded(vec3 lo, vec3 hi) {
     vec2  minUV = vec2(1.0);
     vec2  maxUV = vec2(0.0);
-    float near  = 1.0;
+    float near  = FAR_DEPTH;
     for (int i = 0; i < 8; ++i) {
         const vec3 corner = mix(lo, hi, vec3(i & 1, (i >> 1) & 1, (i >> 2) & 1));
         const vec4 clip   = u_camera.viewProjection * vec4(corner, 1.0);
@@ -104,7 +105,7 @@ bool occluded(vec3 lo, vec3 hi) {
         const vec3 ndc = clip.xyz / clip.w;
         minUV = min(minUV, ndc.xy * 0.5 + 0.5);
         maxUV = max(maxUV, ndc.xy * 0.5 + 0.5);
-        near  = min(near, ndc.z * 0.5 + 0.5);
+        near  = nearerDepth(near, ndc.z);
     }
     minUV = clamp(minUV, 0.0, 1.0);
     maxUV = clamp(maxUV, 0.0, 1.0);
@@ -121,14 +122,14 @@ bool occluded(vec3 lo, vec3 hi) {
     const vec2  scale  = texels / exp2(float(level));
     const ivec2 a      = min(ivec2(minUV * scale), last);
     const ivec2 b      = min(ivec2(maxUV * scale), last);
-    const float far    = max(
-        max(texelFetch(u_pyramid, a, level).r, texelFetch(u_pyramid, ivec2(b.x, a.y), level).r),
-        max(texelFetch(u_pyramid, ivec2(a.x, b.y), level).r, texelFetch(u_pyramid, b, level).r)
+    const float far    = fartherDepth(
+        fartherDepth(texelFetch(u_pyramid, a, level).r, texelFetch(u_pyramid, ivec2(b.x, a.y), level).r),
+        fartherDepth(texelFetch(u_pyramid, ivec2(a.x, b.y), level).r, texelFetch(u_pyramid, b, level).r)
     );
     // An object seen last frame is tested against its own depth, which the rasteriser reached by
     // another product and the depth buffer rounded: without the slack a face filling its footprint
     // can hide itself, wherever the two roundings fall apart the hiding way.
-    return near > far + DEPTH_SLACK;
+    return near < far * (1.0 - DEPTH_SLACK);
 }
 
 void main() {

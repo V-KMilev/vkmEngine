@@ -45,7 +45,7 @@ vec3 debugColor(vec2 uv) {
     }
     // The material views, which the forward pass wrote in place of the colour; the sky
     // is no surface.
-    if (texture(u_sceneDepth, uv).r >= 1.0) return vec3(0.0);
+    if (isFarDepth(texture(u_sceneDepth, uv).r)) return vec3(0.0);
     return texture(u_hdr, uv).rgb;
 }
 

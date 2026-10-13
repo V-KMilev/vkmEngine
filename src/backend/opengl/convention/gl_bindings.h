@@ -1,6 +1,8 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
+#include <string_view>
 
 #include "core/engine_config.h"
 
@@ -63,7 +65,7 @@ namespace Vkm::Engine {
     X(IrradianceRelightSlots, SURFELS,               0,  RELIGHT_SLOT_SURFELS,                What the irradiance probes see as surfaces to light (u_surfels))     \
     X(CullTextureSlots,       DEPTH,                 0,  CULL_SLOT_DEPTH,                     The scene depth the pyramid is built from (u_depth))                 \
     X(CullTextureSlots,       DEPTH_MS,              1,  CULL_SLOT_DEPTH_MS,                  The same while it is multisample (u_depthMS))                        \
-    X(CullTextureSlots,       PYRAMID,               2,  CULL_SLOT_PYRAMID,                   The farthest-depth pyramid the cull tests bounds against (u_pyramid)) \
+    X(CullTextureSlots,       PYRAMID,               2,  CULL_SLOT_PYRAMID,                   The farthest-depth pyramid the cull tests boxes against)             \
     X(ReflectionTextureSlots, WEIGHT,                0,  REFLECT_SLOT_WEIGHT,                 The forward pass reflection weight (rgb) + roughness (a))            \
     X(ReflectionTextureSlots, ENV,                   1,  REFLECT_SLOT_ENV,                    That weight times the probe / sky radiance)                          \
     X(ReflectionTextureSlots, TRACE,                 2,  REFLECT_SLOT_TRACE,                  Each pixel hit: uv + trust + the chain level its lobe spans)         \
@@ -108,6 +110,7 @@ namespace Vkm::Engine {
     X(ComputeGroups,          CLUSTERS,              64, GROUP_CLUSTERS,                      Clusters culled per group)                                           \
     X(ComputeGroups,          SCREEN_SHADOW,         64, GROUP_SCREEN_SHADOW,                 Pixels a wavefront marches toward the light)                         \
     X(ComputeGroups,          CULL,                  64, GROUP_CULL,                          Instances the GPU occlusion cull sorts per group)                    \
+    X(ComputeGroups,          FILL,                  64, GROUP_FILL,                          Refused irradiance probes filled per group)                          \
     X(ComputeGroups,          OCEAN_FFT,             256, GROUP_OCEAN_FFT,                    A butterfly each across a line of an ocean ripple field: half its texels)
 
 /**
@@ -145,10 +148,28 @@ namespace GLBindings {
     /**
      * @brief Highest texture unit this backend binds.
      *
-     * GL 4.3 guarantees 16 per stage; the numbering relies on the at least 32 every targeted
-     * desktop driver reports. GLBackend::init refuses a device with fewer.
+     * The OpenGL version this backend asks for (gl_window_surface.h) guarantees 16 per stage; the
+     * numbering relies on the at least 32 every targeted desktop driver reports. GLBackend::init
+     * refuses a device with fewer.
      */
     constexpr uint32_t MAX_TEXTURE_UNIT = 31;
+
+    /**
+     * @brief The highest storage-buffer binding point the table numbers.
+     *
+     * The OpenGL version this backend asks for (gl_window_surface.h) guarantees eight binding points;
+     * GLBackend::init refuses a device with no more than this one.
+     *
+     * @return The largest SSBOBindingPoints value.
+     */
+    constexpr uint32_t highestSSBOBinding() {
+        uint32_t highest = 0;
+#define VKM_GL_BINDING_SSBO(group, name, value, glsl, doc) \
+        if (std::string_view(#group) == "SSBOBindingPoints") highest = std::max(highest, uint32_t{value});
+        VKM_GL_BINDINGS(VKM_GL_BINDING_SSBO)
+#undef VKM_GL_BINDING_SSBO
+        return highest;
+    }
 
     // The boundaries between the families, checked: a unit goes wrong only by meeting another.
     static_assert(

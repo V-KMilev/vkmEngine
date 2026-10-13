@@ -9,6 +9,8 @@
 
 layout(local_size_x = GROUP_IMAGE, local_size_y = GROUP_IMAGE) in;
 
+#include "../../depth.glsl"  // NEAR_DEPTH, fartherDepth
+
 layout(binding = CULL_SLOT_DEPTH)    uniform sampler2D   u_depth;
 layout(binding = CULL_SLOT_DEPTH_MS) uniform sampler2DMS u_depthMS;
 layout(binding = CULL_SLOT_PYRAMID)  uniform sampler2D   u_pyramid;  // the level before, at u_level - 1
@@ -20,8 +22,10 @@ uniform int u_samples;  // the scene depth's samples; 1 reads u_depth
 
 float farthestOfPixel(ivec2 pixel) {
     if (u_samples <= 1) return texelFetch(u_depth, pixel, 0).r;
-    float far = 0.0;
-    for (int s = 0; s < u_samples; ++s) far = max(far, texelFetch(u_depthMS, pixel, s).r);
+    float far = NEAR_DEPTH;
+    for (int s = 0; s < u_samples; ++s) {
+        far = fartherDepth(far, texelFetch(u_depthMS, pixel, s).r);
+    }
     return far;
 }
 
@@ -30,12 +34,14 @@ void main() {
     const ivec2 size  = imageSize(u_out);
     if (any(greaterThanEqual(texel, size))) return;
 
-    float far = 0.0;
+    float far = NEAR_DEPTH;
     if (u_level == 0) {
         const ivec2 scene = u_samples <= 1 ? textureSize(u_depth, 0) : textureSize(u_depthMS);
         const ivec2 last  = min(texel * 2 + 1, scene - 1);
         for (int y = texel.y * 2; y <= last.y; ++y) {
-            for (int x = texel.x * 2; x <= last.x; ++x) far = max(far, farthestOfPixel(ivec2(x, y)));
+            for (int x = texel.x * 2; x <= last.x; ++x) {
+                far = fartherDepth(far, farthestOfPixel(ivec2(x, y)));
+            }
         }
     } else {
         // By GL's halving of level 0's size, as shaders/cull/instances reads the levels.
@@ -44,7 +50,8 @@ void main() {
         const ivec2 last = texel * 2 + 1 + ivec2(equal(texel, size - 1)) * (below & 1);
         for (int y = texel.y * 2; y <= last.y; ++y) {
             for (int x = texel.x * 2; x <= last.x; ++x) {
-                far = max(far, texelFetch(u_pyramid, min(ivec2(x, y), below - 1), u_level - 1).r);
+                const float depth = texelFetch(u_pyramid, min(ivec2(x, y), below - 1), u_level - 1).r;
+                far = fartherDepth(far, depth);
             }
         }
     }

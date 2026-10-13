@@ -8,7 +8,7 @@ namespace Vkm::Engine {
 
 /// The OpenGL this backend asks the window for; GLSL's "#version" follows it.
 inline constexpr int OPENGL_MAJOR_VERSION = 4;
-inline constexpr int OPENGL_MINOR_VERSION = 3;
+inline constexpr int OPENGL_MINOR_VERSION = 5;
 inline constexpr int OPENGL_GLSL_VERSION  = OPENGL_MAJOR_VERSION * 100 + OPENGL_MINOR_VERSION * 10;
 
 /**

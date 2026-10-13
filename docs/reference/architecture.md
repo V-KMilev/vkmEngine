@@ -14,7 +14,7 @@ cmake --build build
 ./build/bin/vkm_runtime examples/potion_runner   # play it
 ```
 
-CMake 3.25+, Ninja, C++17, OpenGL 4.3 core. The build produces four executables
+CMake 3.25+, Ninja, C++17, OpenGL 4.5 core. The build produces four executables
 - `vkm_editor`, `vkm_runtime`, and the headless `vkm_cook` and `vkm_server`. The
 three that build an `Engine` share a header-only bootstrap (`setupEngineApp` in
 `app/engine_app.h`); `vkm_cook` builds none.

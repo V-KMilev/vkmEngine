@@ -26,6 +26,7 @@
 #include "gl_window_surface.h"
 #include "asset/gl_asset_texture.h"
 #include "asset/gl_material.h"
+#include "convention/gl_depth.h"
 #include "pass/gl_shadow_pass.h"
 #include "pass/gl_depth_prepass.h"
 #include "pass/gl_resolve_pass.h"
@@ -279,7 +280,22 @@ bool GLBackend::init(WindowManager& window) {
         return false;
     }
 
+    // Likewise every storage-buffer binding point it numbers.
+    GLint storageBindings = 0;
+    VKM_GL_CHECK(glGetIntegerv(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS, &storageBindings));
+    if (storageBindings <= static_cast<GLint>(GLBindings::highestSSBOBinding())) {
+        LOG_ERROR(
+            "This GPU has %d storage-buffer binding points; the renderer binds up to %u",
+            storageBindings,
+            GLBindings::highestSSBOBinding() + 1
+        );
+        return false;
+    }
+
     m_context.setDefaultState();
+
+    // Clip z in 0..w: the depth convention/gl_depth.h states, the eye's reversed.
+    VKM_GL_CHECK(glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE));
 
     // Uploads are tightly packed in a file's own channel count, so a row need not be a multiple
     // of four bytes; at GL's default alignment such a texture uploads sheared and overreads.
@@ -508,7 +524,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         // Context caches these, so an agreeing pass pays nothing.
         m_context.setDepthTest(true);
         m_context.setDepthWrite(true);
-        m_context.setDepthFunc(GL_LEQUAL);
+        m_context.setDepthFunc(GLDepth::EYE_TEST_EQUAL);
         m_context.setBlending(false);
         m_context.setFaceCulling(false);
 

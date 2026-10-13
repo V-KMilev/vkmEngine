@@ -17,6 +17,7 @@
 #include "frame/gl_object_buffer.h"
 #include "frame/gl_skin_palette.h"
 #include "convention/gl_bindings.h"
+#include "convention/gl_depth.h"
 #include "frame/gl_ocean.h"
 #include "ecs/component/render/ocean.h"
 #include "system/render/data/render_objects.h"
@@ -239,7 +240,7 @@ void GLOceanFields::captureShore(GLFrameContext& ctx) {
                 Vkm::GL::Shader& program = draw.skinned ? m_shoreSkinned : m_shore;
                 if (&program != bound) {
                     program.bind();
-                    program.setUniformMatrix4fv("u_shoreVP", shoreVP);
+                    program.setUniformMatrix4fv("u_shoreVP", GLDepth::shadowProjection(shoreVP));
                     program.setUniform1f("u_level", ocean.level);
                     program.setUniform4fv("u_area", area);
                     program.setUniform1i("u_drawOver", over ? 1 : 0);
