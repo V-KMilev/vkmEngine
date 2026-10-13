@@ -2,6 +2,25 @@
 
 Notable changes to vkmEngine, newest first. Each release is tagged `vX.Y.Z`.
 
+## 1.0.6
+
+Fixes and frame time, before the renderer's new features in 1.0.7.
+
+- **Steadier frames on SMT CPUs.** The thread pool sizes itself by physical cores, not
+  hardware threads, so the main thread is stalled less often waking workers: Backstab at
+  Ultra keeps 1% lows of 88-96 fps where it had 80-85, and 0.1% lows of 77-84 where it had
+  44-69.
+- **A first launch compiles the engine's largest shader once, not twice**: the forward pass
+  and the probe captures share it, about 6 s off a cold start.
+- **GTAO no longer darkens open walls toward the frame's edges**, which it did to 92% at the
+  edges of a 70 degree view, and reaches as far with the camera rolled as level.
+- **Orthographic views** keep their ambient occlusion, depth of field and screen-space
+  reflections near the camera, where they read 50 m of the scene as a held weapon's.
+- **A reflection probe being dragged bakes once it settles**, not on every frame it moves.
+- **Measured and left out:** cone specular occlusion from GTAO's bent normal, and
+  visibility-bitmask GTAO, each looked worse than what it would replace; why is in the
+  settled decisions (`docs/guides/engine.md`).
+
 ## 1.0.5
 
 What a port of another engine's game ran into first.
