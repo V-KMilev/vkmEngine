@@ -288,7 +288,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
             poseLocalBounds(meshAsset, slice, localMin, localMax);
 
             Math::AABB world = Math::transform(modelMatrix, {localMin, localMax});
-            const MaterialAsset* surface = resources.tryGet(mesh.material);
+            const MaterialAsset* surface = sea ? resources.tryGet(mesh.material) : nullptr;
             const bool           waves   = sea && surface && surface->waves;
             if (waves) {
                 world.min -= glm::vec3(swell.x, swell.y, swell.x);
