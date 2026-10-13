@@ -10,9 +10,10 @@ well, this one says what you are building and inside which limits.
 
 Breaking one of these is a design problem to raise, not a tradeoff to make.
 
-- **Engine code never includes a `gl_*` header.** The GPU is reached only
-  through the abstract interfaces in `system/render/` - `RenderBackend` for the
-  frame, `EditorRenderHooks` for authoring-only work (section 5).
+- **Engine code never names a graphics API.** The GPU is reached only through
+  abstract interfaces - `RenderBackend` for the frame, `EditorRenderHooks` for
+  authoring-only work, `WindowSurface` for the window it draws into (section 5).
+  No `gl_*` header, GL loader or API version outside `src/backend/`.
 - **`Scene` is never edited to "support" a component.** Any plain struct is a
   component already; `scene.add<T>(entity, ...)` is the whole mechanism.
 - **Components hold `Handle<T>`, never asset pointers or copies.** Serialization
@@ -90,10 +91,10 @@ Positions, not preferences, each with its reason:
   temporal filter are off the table with it (section 4).
 - **No speculative abstraction.** No flag, virtual or interface without a
   concrete second user you can name today.
-- **No engine-level render pass abstraction.** Passes are an OpenGL detail inside
-  the backend. The engine's view of rendering is `RenderBackend`, the
-  backend-agnostic `RenderView` it is handed, and `EditorRenderHooks`. No fourth
-  without the owner.
+- **No engine-level render pass abstraction.** Passes are a backend detail. The
+  engine's view of rendering is `RenderBackend`, the backend-agnostic `RenderView`
+  it is handed, `EditorRenderHooks`, and the `WindowSurface` the window presents
+  through. No fifth without the owner.
 - **No bulk recovery of pre-refactor code.** A rewritten subsystem is not mined
   for the missing feature; it is written fresh against the new shape. Recovered
   code carries the assumptions of the design it came from.
@@ -140,7 +141,7 @@ the reason, and - where there is one - what would reopen it.
 | Fixed gains for client tick pacing | Rejected. Gains tuned at 30 ms overshot on every round trip of a 200 ms link and swung between the two bounds about a hundred times a minute; the gains scale with the measured round trip and the tick rate. |
 | GJK replacing the narrowphase | Rejected. The hand-written primitive pairs return up to four contact points, which resting stability needs; GJK+EPA returns one. GJK answers overlap alone, for a mesh triangle before its manifold is built, and there is no EPA. |
 | A render graph | Rejected. A render graph solves barriers and transient-memory aliasing; OpenGL has neither problem to solve - the driver tracks hazards and there is no aliasing API. The fixed, hand-ordered pass list *is* the design. Revisit only alongside a second backend. |
-| A second graphics backend | Not planned. Its real cost is not the port but that every simplification a single backend allows - the pass list, the state model, `RenderView` itself - becomes an abstraction. Revisit if a target platform drops GL, a needed feature exists only in Vulkan, or driver divergence costs more than the port would. |
+| A second graphics backend | Planned, not started: Vulkan as the default, OpenGL kept to switch to. The engine already names no API (the absolute above), so the work is the backend itself. What to keep in view: what one backend lets stay simple - the fixed pass list, the state model - stays inside each backend rather than becoming an engine abstraction. |
 | Raising the GL floor to 4.5/4.6 | Deferred with a trigger. Direct state access, `glClipControl` and SPIR-V would each delete code, but the value is in *using* 4.5, not requesting it, and using it is a backend rewrite verified only by looking at frames. Do it in one pass, in its own release, at a display - a half-converted backend is two state models at once. |
 | A scripting language | Rejected. Gameplay is a native module built against the SDK and hot-reloaded by swapping the library. A second language brings a second toolchain, a marshalling layer and a second debugger, for authors this engine does not have. |
 | Thread pool sized by physical cores | Adopted in 1.0.6: one worker fewer than the physical cores, a core's SMT siblings counted once ([threading.md](../reference/threading.md#threadpool)). On an 8-thread 4-module FX-8320, seven workers - one fewer than the logical CPUs - left the main thread waiting a scheduler slice 20-35 times in 40 s of a game scene, three workers 0-9 times, at the same frame rate, with 1% lows of 88-96 fps where they were 80-85. That measures how many threads were runnable beside the driver's, the audio's and the OS's, not how much a `parallelFor` gains from a core's second thread; the stress arena's CPU-bound frame took 6.0-6.2 ms with three workers and 6.1 with seven. Revisit on a many-core SMT machine - a 16-core one now runs 15 workers where it ran 31 - if its parallel stages slow.
@@ -216,11 +217,15 @@ A mistake in one of these is never local:
 - **`RenderBackend`** - the frame-path seam between engine and GPU. The second
   seam is deliberate: `EditorRenderHooks` (`system/render/editor_render_hooks.h`)
   is offscreen rendering for authoring tools - thumbnails, material previews -
-  that a shipped game never asks for. `GLBackend` implements both and opts in by
-  overriding `RenderBackend::editorHooks()`; the editor shows placeholders when
-  the answer is null. It lives in `system/render` because the backend must
-  implement it and cannot see editor code. An authoring-side GPU need extends
-  this seam rather than inventing a third.
+  that a shipped game never asks for, and the renderer of the editor's own ImGui.
+  `GLBackend` implements both and opts in by overriding
+  `RenderBackend::editorHooks()`; the editor will not start without them. It lives
+  in `system/render` because the backend must implement it and cannot see editor
+  code. An authoring-side GPU need extends this seam rather than inventing a third.
+- **`WindowSurface`** (`platform/window/window_surface.h`) - what a backend asks of
+  the window: the hints before it exists, attaching to it, presenting, the swap
+  interval. A host hands one to `setupEngineApp` beside its backend
+  (`GLWindowSurface` with `GLBackend`); a host that draws nothing hands none.
 - **Stage order** - Input, Simulation, Transform, Visibility, Render, Editor. A
   system is placed by responsibility and relies on ordering, never on manual
   sequencing.

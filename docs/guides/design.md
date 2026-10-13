@@ -211,7 +211,7 @@ enforces none of them:
 
 ### 2.6 A render pass
 
-Passes are an OpenGL detail and stay in the backend
+Passes are a backend detail and stay in the backend
 ([engine.md](engine.md#3-what-the-engine-refuses)), so the whole procedure is in
 `src/backend/opengl/`:
 

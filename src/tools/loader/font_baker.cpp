@@ -13,6 +13,7 @@
 #include "io/project_paths.h"
 #include "platform/threading/thread_pool.h"
 #include "resource/resource_manager.h"
+#include "system/render/render_backend.h"
 
 #define STB_RECT_PACK_IMPLEMENTATION
 #include "stb_rect_pack.h"
@@ -28,8 +29,8 @@ constexpr unsigned char SDF_ONEDGE = 128;  ///< Field value on the glyph edge (0
 // Texels between glyphs: what the smallest mip level averages into one, so none mixes two glyphs.
 constexpr int GUTTER = 1 << (FontAsset::MIP_LEVELS - 1);
 
-// The largest atlas a bake makes; half GL 4.3's minimum GL_MAX_TEXTURE_SIZE.
-constexpr int MAX_ATLAS = 8192;
+// The largest atlas a bake makes: half the edge every backend takes.
+constexpr int MAX_ATLAS = static_cast<int>(BACKEND_MIN_TEXTURE_EDGE / 2);
 
 /**
  * @brief Distance-field spread for a bake of @p pixelHeight, in texels.
@@ -60,9 +61,9 @@ struct BakedGlyph {
  * Doubles from the power of two whose area covers the rects' until every one fits.
  *
  * @param rects Glyph rects, gutter included; their placement is written back.
- * @return The atlas dimension, a power of two of at least 256 (a multiple of four, as GL's
- *         default unpack alignment needs). MAX_ATLAS when even that does not hold them, with
- *         the rects that did not fit left unpacked.
+ * @return The atlas dimension, a power of two of at least 256 (a multiple of four, so rows of
+ *         single bytes stay four-byte aligned). MAX_ATLAS when even that does not hold them,
+ *         with the rects that did not fit left unpacked.
  */
 int packAtlas(std::vector<stbrp_rect>& rects) {
     int64_t area = 0;

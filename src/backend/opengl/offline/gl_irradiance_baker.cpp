@@ -21,6 +21,7 @@
 #include "gl_view.h"
 #include "storage/gl_ibl.h"
 #include "system/render/probe_fill.h"
+#include "system/render/render_backend.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {
@@ -30,7 +31,7 @@ namespace {
 constexpr float CAPTURE_FAR = 500.0f;
 
 /// Widest the atlas grows before it takes another row of tiles.
-constexpr int MAX_ATLAS_WIDTH = 16384;
+constexpr int MAX_ATLAS_WIDTH = static_cast<int>(BACKEND_MIN_TEXTURE_EDGE);
 
 // The probes sit at texel centres, so a (worldPos - boxMin) / boxSize lookup interpolates them.
 glm::vec3 probePosition(const IrradianceVolumeData& data, uint32_t cell) {

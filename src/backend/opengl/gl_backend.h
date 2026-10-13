@@ -47,6 +47,7 @@
 namespace Vkm::Engine {
 
 class GLPass;
+class WindowSurface;
 struct Environment;
 
 /**
@@ -78,6 +79,13 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         GLBackend& operator=(GLBackend && other) = delete;
 
     public:
+        /**
+         * @brief The surface this backend draws a window through, for setupEngineApp.
+         *
+         * @return A GL window surface: the context hints, the loader and the swap.
+         */
+        static std::unique_ptr<WindowSurface> windowSurface();
+
         /// This backend is its own editor hooks; see RenderBackend::editorHooks.
         EditorRenderHooks* editorHooks() override { return this; }
 
@@ -95,6 +103,13 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         GpuTextureId textureId(const TextureHandle& handle) const override;
         GpuTextureId ensureTexture(const TextureHandle& handle, const ResourceManager& resources) override;
         GpuTextureId chromeImage(const std::string& path) override;
+
+        // The editor's ImGui, drawn by GL into the window after the scene.
+        void initImGui(GLFWwindow* window) override;
+        void beginImGuiFrame() override;
+        void renderImGui(ImDrawData* data) override;
+        void shutdownImGui() override;
+
         uint32_t reloadChangedShaders() override;
         uint32_t maxAnisotropy() const override;
         bool holdsPixels(const TextureHandle& texture, uint64_t version) const override;

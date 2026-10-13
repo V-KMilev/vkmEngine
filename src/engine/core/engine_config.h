@@ -11,7 +11,7 @@ namespace Vkm::Engine {
  * system's Settings struct; a backend knob in the backend's config (e.g.
  * src/backend/opengl/convention/gl_bindings.h).
  *
- * Most are written into every shader's prelude (GLBackend::shaderConstants);
+ * Most are written into every shader's prelude by the backend;
  * never re-declare one in a shader. See docs/reference/lighting.md.
  */
 namespace Config {

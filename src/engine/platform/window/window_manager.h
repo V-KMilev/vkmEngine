@@ -1,22 +1,20 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 
 #include "platform/window/frame_limiter.h"
 #include "platform/input/input_handle.h"
+#include "platform/window/window_surface.h"
 
 struct GLFWwindow;
 struct GLFWmonitor;
 
 namespace Vkm::Engine {
 
-// Window-creation defaults; the GL version is here because WindowManager creates the context.
-inline constexpr int OPENGL_MAJOR_VERSION  = 4;
-inline constexpr int OPENGL_MINOR_VERSION  = 3;
-/// GLSL "#version" the shader loader injects.
-inline constexpr int OPENGL_GLSL_VERSION   = OPENGL_MAJOR_VERSION * 100 + OPENGL_MINOR_VERSION * 10;
+// Window-creation defaults.
 inline constexpr int DEFAULT_WINDOW_WIDTH  = 1920;
 inline constexpr int DEFAULT_WINDOW_HEIGHT = 1080;
 
@@ -53,7 +51,7 @@ constexpr const char* toString(WindowMode type) {
 }
 
 /**
- * @brief Owns the application's window, GL context, input, and frame limiting.
+ * @brief Owns the application's window, its WindowSurface, input, and frame limiting.
  *
  * **A closed window accepts every request and performs none**, and reporters answer zero
  * (framebufferScale answers one): a windowless world still ticks and must still be able to end.
@@ -73,9 +71,12 @@ class WindowManager {
         /**
          * @brief Creates the main application window with the specified title.
          *
-         * @param title The window title.
+         * @param title   The window title.
+         * @param surface What the graphics backend draws into it through (WindowSurface): hinted
+         *                before the window exists, given it after, and kept to present each frame.
+         * @throws std::runtime_error when there is no surface, or GLFW or the surface fails.
          */
-        void createWindow(const std::string& title);
+        void createWindow(const std::string& title, std::unique_ptr<WindowSurface> surface);
 
         /**
          * @brief Sets the window/taskbar icon from an image file (PNG, etc.).
@@ -111,7 +112,7 @@ class WindowManager {
         void setTitle(const std::string& title);
 
         /**
-         * @brief Swaps the front and back buffers of the window, presenting the rendered image.
+         * @brief Present the rendered image through the window's surface, then keep the frame cap.
          */
         void swapBuffers();
 
@@ -283,7 +284,8 @@ class WindowManager {
         int getRefreshRate() const;
 
     private:
-        GLFWwindow* m_windowHandle = nullptr;
+        GLFWwindow*                    m_windowHandle = nullptr;
+        std::unique_ptr<WindowSurface> m_surface;  ///< The backend's tie to the window; null headless.
         std::string m_title;
 
         /// Ours rather than GLFW's, so a windowless world can still be told to end.

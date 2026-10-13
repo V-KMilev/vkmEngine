@@ -7,7 +7,6 @@
 
 namespace Vkm::Engine {
 
-class RenderSystem;
 class ResourceManager;
 
 /**
@@ -21,8 +20,8 @@ class ResourceManager;
  */
 class MaterialPreviewSession {
     public:
-        explicit MaterialPreviewSession(RenderSystem& renderSystem)
-            : m_renderSystem(renderSystem) {}
+        explicit MaterialPreviewSession(EditorRenderHooks& hooks)
+            : m_hooks(hooks) {}
         ~MaterialPreviewSession() = default;
 
         MaterialPreviewSession(const MaterialPreviewSession& other) = delete;
@@ -80,7 +79,7 @@ class MaterialPreviewSession {
         static constexpr uint32_t THUMB_SIZE = 256;  ///< A thumbnail's edge, in pixels
 
     private:
-        RenderSystem& m_renderSystem;
+        EditorRenderHooks& m_hooks;
 
         /**
          * @brief key -> version stamp of the last render, so unchanged assets skip.

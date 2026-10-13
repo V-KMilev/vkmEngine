@@ -43,6 +43,7 @@
 #include "ecs/component/ui/ui_slider.h"
 #include "ecs/component/ui/ui_toggle.h"
 #include "ecs/component/ui/ui_text.h"
+#include "io/project_paths.h"
 
 namespace Vkm::Engine {
 
@@ -673,6 +674,16 @@ bool entitySelectable(const char* idStr, bool selected, EditorIcon icon, const c
     const bool clicked = ImGui::Selectable(label, selected);
     drawRowGlyph(icon, p.x + EditorStyle::px(4.0f), p, ImGui::GetItemRectSize().y);
     return clicked;
+}
+
+bool drawEngineMark(EditorRenderHooks& hooks, float side) {
+    const GpuTextureId mark = hooks.chromeImage(
+        (ProjectPaths::engineAssets() / "logo" / "vkm_engine_mark.png").string()
+    );
+    if (!mark) return false;
+    // The UVs flip because the decode is bottom-up and ImGui's are not.
+    ImGui::Image(imTexture(mark), ImVec2(side, side), ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.0f));
+    return true;
 }
 
 } // namespace Vkm::Engine

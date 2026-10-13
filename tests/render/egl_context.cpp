@@ -5,7 +5,7 @@
 
 #include <GL/glew.h>
 
-#include "platform/window/window_manager.h"
+#include "gl_window_surface.h"
 
 namespace Vkm::Test {
 

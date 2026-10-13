@@ -12,6 +12,7 @@ class EngineErrorLog;
 class AudioSystem;
 class CameraControllerSystem;
 class MaterialPreviewSession;
+class EditorRenderHooks;
 class RenderSystem;
 
 /**
@@ -25,6 +26,7 @@ struct EditorContext {
 
     CameraControllerSystem& cameraController;
     RenderSystem&           renderSystem;
+    EditorRenderHooks&      hooks;  ///< The backend's editor half, which the editor requires.
     MaterialPreviewSession& materialPreviews;
 
     /**

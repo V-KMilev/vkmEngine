@@ -12,7 +12,6 @@
 #include "editor_system.h"
 #include "system/script/script_module.h"
 #include "gl_backend.h"
-#include "gl_debug.h"
 
 #include "app/engine_app.h"
 
@@ -36,9 +35,8 @@ int main(int argc, char** argv) {
         // The default title is a placeholder: syncWindowTitle in editor_system.cpp writes the real one.
         Vkm::App::AppConfig config;
         config.startPaused = true;
-        auto sys = Vkm::App::setupEngineApp(engine, config);
+        auto sys = Vkm::App::setupEngineApp(engine, config, Vkm::Engine::GLBackend::windowSurface());
 
-        Vkm::GL::enableGLDebugLogging(false);
         sys.render.setBackend(std::make_unique<Vkm::Engine::GLBackend>(), engine.getWindow());
 
         // Registered by the authoring host only: right-drag grabs the pointer, which a

@@ -2,7 +2,6 @@
 
 #include "core/fnv1a.h"
 #include "system/render/editor_render_hooks.h"
-#include "system/render/render_system.h"
 
 namespace Vkm::Engine {
 
@@ -12,13 +11,12 @@ uint32_t MaterialPreviewSession::texture(
     uint64_t version,
     bool live
 ) {
-    EditorRenderHooks* backend = editorRenderHooks(m_renderSystem.backend());
-    if (!backend || !req.material || !req.mesh) return 0;
+    if (!req.material || !req.mesh) return 0;
 
     // The scene's light is part of the picture, as the asset is.
-    version = fnv1a64Bytes(&version, sizeof(version), backend->previewLook());
+    version = fnv1a64Bytes(&version, sizeof(version), m_hooks.previewLook());
 
-    const GpuTextureId cached = backend->previewTexture(req.key);
+    const GpuTextureId cached = m_hooks.previewTexture(req.key);
     const auto it = m_versions.find(req.key);
     if (cached && it != m_versions.end() && it->second == version) {
         return cached;
@@ -33,23 +31,19 @@ uint32_t MaterialPreviewSession::texture(
 
     req.size = live ? LIVE_SIZE : THUMB_SIZE;
 
-    const GpuTextureId tex = backend->renderPreview(req, resources);
+    const GpuTextureId tex = m_hooks.renderPreview(req, resources);
     if (tex) m_versions[req.key] = version;
     return tex ? tex : cached;
 }
 
 void MaterialPreviewSession::evict(uint64_t key) {
     m_versions.erase(key);
-    if (EditorRenderHooks* backend = editorRenderHooks(m_renderSystem.backend())) {
-        backend->releasePreview(key);
-    }
+    m_hooks.releasePreview(key);
 }
 
 void MaterialPreviewSession::clear() {
     m_versions.clear();
-    if (EditorRenderHooks* backend = editorRenderHooks(m_renderSystem.backend())) {
-        backend->releaseAllPreviews();
-    }
+    m_hooks.releaseAllPreviews();
 }
 
 } // namespace Vkm::Engine

@@ -58,8 +58,8 @@ argument, and says what to run instead.
 
 `vkm_server` opens no window, installs no render backend, and runs where
 `DISPLAY` and `WAYLAND_DISPLAY` are unset - on a machine with no display at all.
-It still needs the GL and X11 *shared libraries* present, because `vkm_core`
-links glfw and GLEW.
+It still needs glfw's *shared library* present, because `vkm_core` links
+glfw.
 
 The system stack is identical to the runtime's, and that is the point: an
 authority that simulated differently from the clients it corrects would not be
@@ -289,11 +289,10 @@ round's answer and the inspector's cannot differ.
 
 - **No fragmentation.** A datagram over 1200 bytes is refused, not split. One
   lost fragment loses all of it, and the budget exists so it never comes up.
-- **No GL-free server binary.** `vkm_server` links no render backend, but
-  `vkm_core` links glfw and GLEW, so the shared libraries must be present even
-  though no display is. Freeing it of those means routing every glfw and GLEW
-  call through an internal seam in a class every host uses; simplicity
-  outranks features.
+- **No glfw-free server binary.** `vkm_server` links no render backend and no
+  GL loader, but `vkm_core` links glfw, so its shared library must be present
+  even though no display is. Freeing it means routing every glfw call through
+  an internal seam in a class every host uses; simplicity outranks features.
 
 ---
 

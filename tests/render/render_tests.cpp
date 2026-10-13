@@ -36,6 +36,7 @@
 #include "gl_context.h"
 #include "gl_view.h"
 #include "gl_backend.h"
+#include "gl_window_surface.h"
 #include "asset/gl_asset_texture.h"
 #include "asset/gl_mesh.h"
 #include "asset/gl_mesh_pool.h"

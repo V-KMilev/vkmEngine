@@ -381,7 +381,7 @@ rebuilds a tag that already exists, replacing assets of the same name.
 
 ```
 vkm_editor_app (executable)             vkm_runtime_app (executable)
-  |-- vkm_core                            |-- vkm_core (glm, vkm_log, nlohmann_json; glfw, glew, stb, miniaudio private)
+  |-- vkm_core                            |-- vkm_core (glm, vkm_log, nlohmann_json; glfw, stb, miniaudio private)
   |-- vkm_render -- vkm_core              |-- vkm_render -- vkm_core
   |-- vkm_tools -- vkm_core               |-- vkm_tools -- vkm_core (registration, loader/, project_boot; no importer)
   |-- vkm_backend_gl -- vkm_gl, ...       |-- vkm_backend_gl -- vkm_gl, vkm_render, vkm_tools
@@ -389,12 +389,12 @@ vkm_editor_app (executable)             vkm_runtime_app (executable)
   |     vkm_tools (+ cgltf, ufbx, mikktspace, meshoptimizer, stb_image_resize, bc7e private)
   |-- vkm_editor -- vkm_core,           vkm_cook_app (executable)
   |     vkm_tools, vkm_cook,              |-- vkm_cook -- vkm_core, vkm_tools
-  |     imgui, vkm_gl                     |-- vkm_build_info
+  |     imgui                             |-- vkm_build_info
   |-- vkm_build_info                      (no window, no GL, no Engine)
 
 vkm_server_app (executable)
   |-- vkm_core, vkm_render, vkm_tools, vkm_build_info
-  (no window, no render backend; still links GL and X11 through vkm_core's glfw)
+  (no window, no render backend; still links glfw through vkm_core)
 
 vkm_editor_app, vkm_runtime_app and vkm_server_app #include app/engine_app.h
 for Vkm::App::setupEngineApp (no EngineApp lib). vkm_cook_app does not: it
@@ -497,8 +497,8 @@ nothing on Linux.
 
 `src/engine/platform/window/glfw_include.h` is the same idea for GLFW: it pulls
 the Windows headers in through the header above, then defines
-`GLFW_INCLUDE_NONE` so GLEW owns the GL function declarations rather than GLFW's
-own header.
+`GLFW_INCLUDE_NONE` so a backend's loader owns the API's declarations rather than
+GLFW's own header.
 
 Neither is enforced by anything. A new file that includes `<windows.h>` or
 `<GLFW/glfw3.h>` directly compiles on Linux and fails on Windows, in a place

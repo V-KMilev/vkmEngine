@@ -26,11 +26,6 @@ target_include_directories(vkm_core PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-# GLEW headers for window_manager.cpp's glewInit (glew uses old-style include dirs).
-target_include_directories(vkm_core PRIVATE
-    ${PROJECT_SOURCE_DIR}/modules/vkmGL/modules/glew/include
-)
-
 # glm, vkm_log and nlohmann are header-only or shared, so a consumer linking them
 # too costs nothing and resolves to one copy.
 target_link_libraries(vkm_core PUBLIC
@@ -47,7 +42,6 @@ target_link_libraries(vkm_core PUBLIC
 # time. Linux hides this because the dynamic linker picks one; Windows does not.
 target_link_libraries(vkm_core PRIVATE
     glfw
-    glew
     vkm_warnings
     vkm_build_info     # io/project_paths.h resolves paths against APP_ROOT_DIR
     stb                # image decode and encode

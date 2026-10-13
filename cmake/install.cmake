@@ -27,7 +27,6 @@ set(VKM_EXPORTED_DEPS
     glfw
     vkm_log
     nlohmann_json
-    glew
     stb
     miniaudio
     vkm_build_info
@@ -47,7 +46,7 @@ install(TARGETS vkm_core ${VKM_EXPORTED_DEPS}
 
 # Shared libraries the hosts load but a project never links: they ship as files,
 # not as imported targets.
-install(TARGETS vkm_render vkm_gl
+install(TARGETS vkm_render vkm_gl glew
     LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
@@ -99,8 +98,8 @@ install(DIRECTORY ${CMAKE_SOURCE_DIR}/modules/glfw/include/GLFW
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
-# No GL headers: nothing a project can reach names an OpenGL type. The GPU
-# profiler header includes glew, and it belongs to the backend, not src/engine.
+# No GL headers: nothing a project can reach names a graphics API. GLEW is the
+# OpenGL backend's, through vkmGL.
 install(FILES
     ${CMAKE_SOURCE_DIR}/modules/vkmLog/src/logger.h
     ${CMAKE_SOURCE_DIR}/modules/vkmLog/src/l_assert.h

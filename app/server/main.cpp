@@ -70,9 +70,8 @@ int main(int argc, char** argv) {
 
         Vkm::App::AppConfig config;
         config.windowTitle       = project.name.c_str();
-        config.headless          = true;
         config.headlessFrameRate = project.tickRate;
-        Vkm::App::setupEngineApp(engine, config);
+        Vkm::App::setupEngineApp(engine, config, nullptr);
 
         const Vkm::Engine::SceneBootResult boot = Vkm::Engine::bootProjectWorld(
             project,

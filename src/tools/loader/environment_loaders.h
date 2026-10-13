@@ -9,7 +9,7 @@ namespace Vkm::Engine {
 /**
  * @brief CPU-side equirectangular HDR image (linear RGB, 3 floats/texel).
  *
- * Row-major, bottom-up (GL's origin). Empty pixels means the load failed.
+ * Row-major, bottom-up, the engine's row order. Empty pixels means the load failed.
  */
 struct HDRImage {
     uint32_t width  = 0;
@@ -22,7 +22,7 @@ struct HDRImage {
 /**
  * @brief Load a Radiance .hdr equirectangular image as linear float RGB.
  *
- * Flipped so v = 1 is "up", as the GL origin and the equirect bake shader expect.
+ * Flipped so v = 1 is "up", as the engine's row order and the equirect bake expect.
  *
  * @param filePath Path to the .hdr file.
  * @return The image, or one whose isValid() is false on a (logged) failure.

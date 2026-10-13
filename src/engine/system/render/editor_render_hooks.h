@@ -9,6 +9,9 @@
 #include "resource/asset/material_asset.h"
 #include "system/render/render_backend.h"
 
+struct GLFWwindow;
+struct ImDrawData;
+
 namespace Vkm::Engine {
 
 class ResourceManager;
@@ -52,10 +55,11 @@ using GpuTextureId = uint64_t;
 /**
  * @brief What a backend may offer an authoring tool beyond drawing the frame.
  *
- * Asset thumbnails, GPU mirrors of textures, and the host chrome's images - none
- * of which a shipped game asks for. Here, not in the editor, because the backend
- * implements it. A backend opts in by inheriting this and overriding
- * RenderBackend::editorHooks().
+ * Asset thumbnails, GPU mirrors of textures, the host chrome's images and the
+ * renderer of the editor's own ImGui - none of which a shipped game asks for.
+ * Here, not in the editor, because the backend implements it. A backend offers it
+ * by inheriting this and overriding RenderBackend::editorHooks(); the editor will
+ * not start without it.
  */
 class EditorRenderHooks {
     public:
@@ -146,6 +150,29 @@ class EditorRenderHooks {
          * @return Its id, or 0 when it could not be decoded.
          */
         virtual GpuTextureId chromeImage(const std::string& path) = 0;
+
+        /**
+         * @brief Start ImGui's renderer on @p window, and the platform half that has to know it.
+         *
+         * GLFW's ImGui backend is started for a graphics API, so it starts here with the renderer.
+         * The host draws ImGui after the scene, into the same window. Pairs with shutdownImGui().
+         *
+         * @param window The window the editor draws into.
+         */
+        virtual void initImGui(GLFWwindow* window) = 0;
+
+        /// Begin the renderer's half of an ImGui frame, before the platform's and ImGui's own.
+        virtual void beginImGuiFrame() = 0;
+
+        /**
+         * @brief Draw ImGui's finished frame into the window.
+         *
+         * @param data ImGui::GetDrawData() after ImGui::Render().
+         */
+        virtual void renderImGui(ImDrawData* data) = 0;
+
+        /// Stop the renderer and the platform half initImGui() started.
+        virtual void shutdownImGui() = 0;
 };
 
 /**

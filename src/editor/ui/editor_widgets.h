@@ -766,4 +766,16 @@ inline ImTextureID imTexture(GpuTextureId id) {
     return static_cast<ImTextureID>(static_cast<intptr_t>(id));
 }
 
+/**
+ * @brief Draw the engine's mark, @p side pixels square, through the render seam.
+ *
+ * Not a texture of the editor's own: the mark is the engine's, so it must not land in the
+ * project's asset library.
+ *
+ * @param hooks Whose chromeImage() loads it.
+ * @param side  Its edge, in pixels.
+ * @return Whether it drew; false when the image could not be decoded.
+ */
+bool drawEngineMark(EditorRenderHooks& hooks, float side);
+
 } // namespace Vkm::Engine

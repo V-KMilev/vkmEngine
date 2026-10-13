@@ -4,12 +4,12 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <stdexcept>
 #include <string>
 #include <system_error>
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
-#include <imgui_impl_opengl3.h>
 #include <GLFW/glfw3.h>
 
 #include "logger.h"
@@ -35,6 +35,7 @@
 #include "input/camera_controller_system.h"
 #include "system/splash/splash_frame.h"
 #include "system/ui/ui_draw_data.h"
+#include "system/render/editor_render_hooks.h"
 #include "system/render/render_system.h"
 #include "system/script/script_module.h"
 #include "ui/editor_theme.h"
@@ -114,6 +115,18 @@ void applyUiScale(const UiScale& scale) {
     applyEditorTheme(scale.product());
 }
 
+/**
+ * @brief The backend's editor hooks; the editor cannot draw itself without them.
+ *
+ * @param renderSystem Its backend is set before the editor is made.
+ * @throws std::runtime_error when the backend offers no editor hooks.
+ */
+EditorRenderHooks& requireEditorHooks(RenderSystem& renderSystem) {
+    EditorRenderHooks* hooks = editorRenderHooks(renderSystem.backend());
+    if (!hooks) throw std::runtime_error("The editor needs a render backend with editor hooks");
+    return *hooks;
+}
+
 } // namespace
 
 EditorSystem::EditorSystem(
@@ -127,11 +140,12 @@ EditorSystem::EditorSystem(
 )
     : m_cameraController(cameraController)
     , m_renderSystem(renderSystem)
+    , m_hooks(requireEditorHooks(renderSystem))
     , m_render(render)
     , m_audioSystem(audioSystem)
     , m_behaviorSystem(behaviorSystem)
     , m_scriptModule(scriptModule)
-    , m_materialPreviews(renderSystem)
+    , m_materialPreviews(m_hooks)
     , m_sceneIO(cameraController, m_materialPreviews, behaviorSystem)
 {
     IMGUI_CHECKVERSION();
@@ -159,8 +173,7 @@ EditorSystem::EditorSystem(
     applyUiScale(scale);
     m_appliedUiScale = scale.product();
 
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init(("#version " + std::to_string(OPENGL_GLSL_VERSION)).c_str());
+    m_hooks.initImGui(window);
 
     setErrorSink(&m_errorLog);
 
@@ -176,8 +189,7 @@ void EditorSystem::shutdown() {
     } else {
         EditorSettings::saveUser(m_state);
     }
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
+    m_hooks.shutdownImGui();
     ImGui::DestroyContext();
 }
 
@@ -201,6 +213,7 @@ EditorContext EditorSystem::makeContext(FrameContext& ctx) {
         m_state,
         m_cameraController,
         m_renderSystem,
+        m_hooks,
         m_materialPreviews,
         m_audioSystem,
         m_errorLog,
@@ -273,9 +286,11 @@ namespace {
  */
 class ImGuiFrame {
     public:
-        ImGuiFrame() {
+        explicit ImGuiFrame(EditorRenderHooks& hooks)
+            : m_hooks(hooks)
+        {
             PROFILE_SCOPE("Editor/ImGuiNewFrame");
-            ImGui_ImplOpenGL3_NewFrame();
+            m_hooks.beginImGuiFrame();
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
         }
@@ -283,7 +298,7 @@ class ImGuiFrame {
         ~ImGuiFrame() {
             PROFILE_SCOPE("Editor/ImGuiRender");
             ImGui::Render();
-            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+            m_hooks.renderImGui(ImGui::GetDrawData());
         }
 
         ImGuiFrame(const ImGuiFrame& other) = delete;
@@ -291,6 +306,9 @@ class ImGuiFrame {
 
         ImGuiFrame(ImGuiFrame && other) = delete;
         ImGuiFrame& operator=(ImGuiFrame && other) = delete;
+
+    private:
+        EditorRenderHooks& m_hooks;
 };
 
 void drawToast(EditorState& state, float deltaTime) {
@@ -375,10 +393,7 @@ void EditorSystem::pollShaderReload(FrameContext& ctx) {
     if (m_shaderPollTimer < DISK_POLL_INTERVAL) return;
     m_shaderPollTimer = 0.0f;
 
-    RenderBackend* backend = m_renderSystem.backend();
-    if (!backend) return;
-
-    const uint32_t reloaded = backend->reloadChangedShaders();
+    const uint32_t reloaded = m_renderSystem.backend()->reloadChangedShaders();
     if (reloaded > 0) {
         m_state.pushToast(ToastKind::Info, "Reloaded " + std::to_string(reloaded) + " shader(s)");
     }
@@ -612,7 +627,7 @@ void EditorSystem::update(FrameContext& ctx) {
 
     // The editor-toggle keybind is read inside the frame, where ImGui's key state is
     // this frame's, and before the hidden branch, so it works shown or hidden.
-    const ImGuiFrame imguiFrame;
+    const ImGuiFrame imguiFrame(m_hooks);
 
     // A splash covers the whole surface; nothing is worth submitting panels over.
     if (ctx.splash && ctx.splash->isShowing()) return;

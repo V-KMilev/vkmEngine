@@ -23,6 +23,7 @@
 #include "gl_frame_context.h"
 #include "gl_pass.h"
 #include "gl_profiler.h"
+#include "gl_window_surface.h"
 #include "asset/gl_asset_texture.h"
 #include "asset/gl_material.h"
 #include "pass/gl_shadow_pass.h"
@@ -119,6 +120,10 @@ uint64_t lightingDigest(const std::vector<LightData>& lights) {
 }
 
 } // namespace
+
+std::unique_ptr<WindowSurface> GLBackend::windowSurface() {
+    return std::make_unique<GLWindowSurface>();
+}
 
 std::string GLBackend::shaderConstants() {
     using CullSet = GLOcclusionCull::Set;

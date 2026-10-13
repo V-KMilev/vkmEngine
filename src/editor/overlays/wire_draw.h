@@ -16,7 +16,7 @@ namespace Vkm::Engine {
 /**
  * @brief Signed distance from a clip-space point to the near plane, positive in front of it.
  *
- * GL clip space puts the plane at z = -w, so this covers perspective and orthographic
+ * The engine's clip space puts the plane at z = -w, so this covers perspective and orthographic
  * alike. Testing w alone passes points nearer than the plane (tiny divisors blow up the
  * projection) and, under ortho, everything behind the camera.
  *
@@ -30,7 +30,7 @@ inline float nearPlaneSide(const glm::vec4& clip) {
 /**
  * @brief Map a clip-space point in front of the near plane to screen pixels in the viewport rect.
  *
- * The 3D pass renders at viewport size, so NDC maps to vpMin + (0..vpSize) directly.
+ * NDC spans the viewport rect, so it maps to vpMin + (0..vpSize) directly.
  *
  * @param clip   The point in clip space, in front of the near plane.
  * @param vpMin  Viewport rect's top-left, screen pixels.

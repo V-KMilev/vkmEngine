@@ -117,14 +117,14 @@ class MaterialEditorPanel {
          * @brief Draw every parameter card for one material.
          *
          * @param resources Resolves and edits texture slots.
-         * @param backend Resolves a slot's GPU texture for its tile; may be null.
+         * @param hooks Resolves a slot's GPU texture for its tile.
          * @param target The edited material, stable across slot reallocations.
          * @param mat The asset the controls write to.
          * @return Whether any field changed this frame.
          */
         bool drawParameters(
             ResourceManager& resources,
-            EditorRenderHooks* backend,
+            EditorRenderHooks& hooks,
             MaterialHandle target,
             MaterialAsset& mat
         );
@@ -133,14 +133,14 @@ class MaterialEditorPanel {
          * @brief Draw the map grid: the core slots, whatever else is bound, and the tile that adds one.
          *
          * @param resources Resolves and edits texture slots.
-         * @param backend Resolves a slot's GPU texture for its tile; may be null.
+         * @param hooks Resolves a slot's GPU texture for its tile.
          * @param target The edited material.
          * @param mat The asset the tiles write to.
          * @return Whether any slot changed this frame.
          */
         bool drawMaps(
             ResourceManager& resources,
-            EditorRenderHooks* backend,
+            EditorRenderHooks& hooks,
             MaterialHandle target,
             MaterialAsset& mat
         );
@@ -152,7 +152,7 @@ class MaterialEditorPanel {
          * the deferred picker is open.
          *
          * @param resources Resolves and edits the slot.
-         * @param backend Resolves the slot's GPU texture; null means no thumbnail.
+         * @param hooks Resolves the slot's GPU texture.
          * @param owner The slot's material.
          * @param mat The asset being edited.
          * @param label The slot's name.
@@ -164,7 +164,7 @@ class MaterialEditorPanel {
          */
         bool mapTile(
             ResourceManager& resources,
-            EditorRenderHooks* backend,
+            EditorRenderHooks& hooks,
             MaterialHandle owner,
             MaterialAsset& mat,
             const char* label,
