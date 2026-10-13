@@ -307,11 +307,14 @@ while it runs ahead ([lighting.md](lighting.md#image-based-lighting-ibl)) - prod
 and prefilter products the forward pass samples. The BRDF/DFG LUT beside them
 depends on no environment, so the backend integrates it once at `init` and every
 bake leaves it alone. A scene that names no sky drops the baked one. A
-reflection probe is baked at frame end when it is new, moved, resized or bumped,
-and the baked ones are bound per frame into a probe UBO; the SH irradiance
-volume re-bakes, before the probes, at once when its bake version changes, or
-once a changed box or grid has held still for `VOLUME_SETTLE_FRAMES` frames, and
-a probe also re-bakes when the volume it was lit by does
+reflection probe is baked at frame end when it is new or bumped, or once a
+moved or resized one has held still for `CAPTURE_SETTLE_FRAMES` frames - a probe
+dragged across the scene bakes where it is put down, not on every frame it
+crosses, and one that never holds still, riding a moving platform, keeps its last
+bake as its box follows it - and the baked ones are bound per frame into a probe UBO; the SH
+irradiance volume re-bakes, before the probes, at once when its bake version
+changes, or once a changed box or grid has held still for as long, and a probe
+also re-bakes when the volume it was lit by does
 ([lighting.md](lighting.md#what-a-capture-is-lit-by)). Neither re-bakes when the
 sky changes: each is a capture of the scene under the sky it was baked with, and
 its `bakeVersion` is how an author takes it again. A frame with no camera bakes
@@ -635,6 +638,14 @@ plane, and each reader is answered:
 - **The light clusters**: the forward fragment finds a viewmodel pixel's cluster
   from its world position through the world's projection, not from where its
   own projection drew it, so a lamp beside the weapon lights it.
+
+GTAO, depth of field and the reflection trace find the band by
+`inViewmodelBand` (`shaders/camera.glsl`). An orthographic camera has none: depth
+there is linear, so the band would be the nearest `VIEWMODEL_DEPTH_SHARE` of the whole
+scene, and everything in it would lose its occlusion, its depth of field and its
+reflections. So `intoViewmodelBand`, which both `eyeClip` and a viewmodel
+particle squash through, leaves a viewmodel at its own depth there, as the readers
+take it.
 
 Nothing else draws a viewmodel mesh: it casts no shadow and no capture takes it.
 An emitter with `viewmodel` set - a muzzle flash on the barrel - is projected

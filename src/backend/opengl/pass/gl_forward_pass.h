@@ -23,7 +23,13 @@ namespace Vkm::Engine {
  */
 class GLForwardPass : public GLPass {
     public:
-        GLForwardPass();
+        /**
+         * @brief Draws the static runs with @p pbr, which it borrows.
+         *
+         * @param pbr The scene capture's program (GLSceneCapture::pbrProgram), whose uniforms are
+         *            the last caller's: the pass sets every one it reads each frame.
+         */
+        explicit GLForwardPass(Vkm::GL::Shader& pbr);
         ~GLForwardPass() override;
 
         GLForwardPass(const GLForwardPass& other) = delete;
@@ -93,7 +99,7 @@ class GLForwardPass : public GLPass {
         void bindBucketUniforms(Vkm::GL::Shader& shader, GLFrameContext& ctx, Bucket bucket) const;
 
     private:
-        Vkm::GL::Shader   m_shader;         ///< Static geometry.
+        Vkm::GL::Shader&  m_shader;         ///< Static geometry; borrowed, see the constructor.
         Vkm::GL::Shader   m_skinnedShader;  ///< Skinned, posed by the frame's palette.
         GLInstanceBatcher m_batcher;
 

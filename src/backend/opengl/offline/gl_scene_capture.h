@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <vector>
@@ -165,17 +166,32 @@ class GLSceneCapture {
         );
 
         /**
-         * @brief The offline rig, for a consumer that draws its own scene rather than a cube.
+         * @brief The rig's PBR program, lent to whatever else draws the scene's surfaces.
          *
-         * Call bindOfflinePbrUniforms() with your own framing before drawing, as begin() does, and
-         * never draw between a begin() and its captureCube()s: a shared program's uniforms are the
-         * last caller's.
+         * Its uniforms are the last caller's: begin() puts every one back as linked before
+         * setting its own, so a borrower sets each it reads before drawing, and never draws
+         * between a begin() and its captureCube()s.
          *
          * @return The capture's forward PBR program.
          */
         Vkm::GL::Shader& pbrProgram() { return m_pbr; }
 
     private:
+        /// A uniform of m_pbr's outside a block and not a sampler, which resetPbr() zeroes.
+        struct PlainUniform {
+            int32_t  location = -1;
+            int32_t  count    = 0;  ///< Its array's length, 1 for a single value.
+            uint32_t type     = 0;  ///< Its GL type.
+        };
+
+        /**
+         * @brief Bind m_pbr and put every plain uniform back as linked: zero, as no shader
+         *        gives one another value.
+         *
+         * Whatever else drew with the program last left its own there (pbrProgram()).
+         */
+        void resetPbr();
+
         /**
          * @brief Attach face @p face, clear it, and put the camera on it.
          *
@@ -233,6 +249,9 @@ class GLSceneCapture {
         std::unique_ptr<Vkm::GL::Sampler>       m_shadowSampler;  ///< Compares, as the atlas's does.
         std::unique_ptr<Vkm::GL::UniformBuffer> m_shadowUbo;      ///< The ShadowBlock the captures read.
         ShadowUBOData                           m_shadowLast{};   ///< What m_shadowUbo holds.
+
+        std::vector<PlainUniform> m_pbrUniforms;     ///< m_pbr's plain uniforms, listed once a link.
+        uint32_t                  m_pbrListed = 0;   ///< The program m_pbrUniforms lists, 0 for none.
 
         const GLView* m_glView   = nullptr;  ///< begin()'s scene, drawn by every captureCube().
         const GLIBL*  m_ibl      = nullptr;

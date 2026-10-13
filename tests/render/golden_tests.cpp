@@ -1148,6 +1148,9 @@ void sameAsAFreshBackend(
     before(changed);
     render(changed, lived);
     after(changed);
+    // Held still past CAPTURE_SETTLE_FRAMES, so a capture the change moved has settled.
+    render(changed, lived);
+    render(changed, lived);
     const std::vector<unsigned char> seen = render(changed, lived);
 
     restoreContextDefaults();
@@ -1367,6 +1370,144 @@ void testAnOpenFloorIsNotOccluded(int& failures) {
     const float mean = static_cast<float>(sum) / static_cast<float>(count);
     std::printf("      mean %.1f, darkest %d\n", mean, least);
     expect("an open floor is not darkened", mean >= 240.0f, failures);
+}
+
+// Make the scene's camera orthographic, showing @p halfHeight metres above and below its centre.
+void orthographic(Scenery& s, float halfHeight) {
+    s.scene.forEach<Camera>([&](EntityId, Camera& camera) {
+        camera.projection  = ProjectionType::Orthographic;
+        camera.orthoHeight = halfHeight;
+    });
+}
+
+// The mirror scene through an orthographic camera, its reflections traced and not: they differ.
+// An orthographic camera's depth is linear, so the viewmodel's band at the front of it is
+// VIEWMODEL_DEPTH_SHARE of the whole scene, and read as the viewmodel's, nothing in it would trace.
+void testAnOrthographicViewTracesItsReflections(int& failures) {
+    std::printf("Screen-space reflections through an orthographic camera:\n");
+    std::vector<unsigned char> frames[2];
+    for (const bool ssr : {false, true}) {
+        restoreContextDefaults();
+        WindowManager window;
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        buildMirror(s);
+        orthographic(s, 2.5f);
+        RenderSettings settings;
+        settings.ssr = ssr;
+        frames[ssr ? 1 : 0] = render(s, backend, nullptr, settings);
+    }
+    long sum = 0;
+    for (size_t i = 0; i < frames[0].size(); ++i) sum += std::abs(frames[1][i] - frames[0][i]);
+    const float mean = static_cast<float>(sum) / static_cast<float>(frames[0].size());
+    std::printf("      the traced frame differs by %.2f a channel on average\n", mean);
+    expect("an orthographic view traces its reflections", mean > 0.05f, failures);
+}
+
+// A reflection probe dragged to a new place keeps its last bake while it moves and bakes once it
+// holds still, so a probe crossing the scene costs one bake, not one a frame. render() draws
+// FRAMES frames: three calls hold it still past CAPTURE_SETTLE_FRAMES.
+void testAMovedProbeBakesOnceItSettles(int& failures) {
+    std::printf("A reflection probe moved:\n");
+    const glm::vec3 from = {0.0f, 1.0f, 0.0f};
+    const glm::vec3 to   = {-3.0f, 1.0f, 1.0f};
+    const auto build = [](Scenery& s, glm::vec3 at) {
+        buildProbe(s);
+        place(
+            s,
+            s.cube,
+            material(s, "golden:red", {0.8f, 0.1f, 0.08f}, 0.5f, 0.0f),
+            {-6.0f, 1.5f, 0.0f},
+            {1.0f, 3.0f, 8.0f}
+        );
+        s.scene.forEach<ReflectionProbe>([&](EntityId id, ReflectionProbe&) {
+            s.scene.tryGet<Transform>(id)->position = at;
+        });
+    };
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend fresh;
+    if (!fresh.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery there;
+    build(there, to);
+    const std::vector<unsigned char> want = render(there, fresh);
+
+    restoreContextDefaults();
+    GLBackend dragged;
+    if (!dragged.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery moved;
+    build(moved, from);
+    render(moved, dragged);
+    moved.scene.forEach<ReflectionProbe>([&](EntityId id, ReflectionProbe&) {
+        moved.scene.tryGet<Transform>(id)->position = to;
+    });
+    const float moving = differingShare(render(moved, dragged), want.data());
+    render(moved, dragged);
+    const float settled = differingShare(render(moved, dragged), want.data());
+    std::printf(
+        "      %.2f%% of pixels differ while it moves, %.2f%% once it settles\n",
+        moving * 100.0f,
+        settled * 100.0f
+    );
+    expect("a probe being moved keeps its last bake", moving > PIXEL_TOLERANCE, failures);
+    expect("  and bakes where it settles", settled <= PIXEL_TOLERANCE, failures);
+}
+
+// A wide open wall faced square on, in the AO view: nothing occludes it, so it is as open at the
+// frame's edges as at its centre. Slices turned evenly on the screen would bunch about an
+// off-centre pixel's view ray and darken the wall toward the edges.
+void testAnOpenWallIsOpenToTheFramesEdge(int& failures) {
+    std::printf("Ambient occlusion across an open wall:\n");
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery s;
+    base(s);
+    place(
+        s,
+        s.cube,
+        material(s, "golden:grey", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f),
+        {0.0f, 1.5f, -0.5f},
+        {40.0f, 30.0f, 1.0f}
+    );
+    sunAndCamera(s, {0.0f, 1.5f, 3.0f}, {0.0f, 1.5f, 0.0f});
+
+    RenderSettings settings;
+    settings.renderMode    = RenderMode::AmbientOcclusion;
+    settings.msaaSamples   = 1;
+    settings.gtaoIntensity = 3.0f;  // strong, so a bias shows
+    const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+
+    const auto meanOver = [&](int from, int to) {
+        long sum = 0;
+        int  n   = 0;
+        for (int y = 0; y < HEIGHT; ++y) {
+            for (int x = from; x < to; ++x) {
+                sum += pixel(frame, x, y).x;
+                ++n;
+            }
+        }
+        return static_cast<float>(sum) / static_cast<float>(n);
+    };
+    const float centre = meanOver(WIDTH / 2 - 20, WIDTH / 2 + 20);
+    const float edges  = 0.5f * (meanOver(0, 20) + meanOver(WIDTH - 20, WIDTH));
+    std::printf("      %.1f at the centre, %.1f at the edges\n", centre, edges);
+    expect("an open wall is as open at the frame's edges", edges >= 0.97f * centre, failures);
 }
 
 // The mean of every channel of a frame, 0..255.
@@ -1708,6 +1849,121 @@ void testTheShoreRingsWhatBreaksTheWater(int& failures) {
     expect("  and nowhere else: not round a block hovering clear of it", left == 0.0f, failures);
 }
 
+// A crease 35 cm away, near enough that GTAO caps its reach, seen level and with the camera
+// rolled a quarter turn: the same occlusion either way. The cap is in pixels; one in screen UV
+// would reach 1.78 times as far across a 16:9 frame as up it, and the crease would darken by
+// which way it ran. Over the frame's central square, which the roll turns onto itself.
+void testGTAOReachesAsFarEveryWay(int& failures) {
+    std::printf("Ambient occlusion up close, level and rolled:\n");
+    float darkness[2] = {};
+    for (const bool rolled : {false, true}) {
+        restoreContextDefaults();
+        WindowManager window;
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        base(s);
+        const MaterialHandle grey = material(s, "golden:grey", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
+        place(s, s.cube, grey, {0.0f, -0.5f, 0.0f}, {20.0f, 1.0f, 20.0f});
+        place(s, s.cube, grey, {0.0f, 2.0f, -0.5f}, {20.0f, 4.0f, 1.0f});
+        sunAndCamera(s, {0.0f, 0.25f, 0.25f}, {0.0f, 0.0f, 0.0f});
+        if (rolled) {
+            s.scene.forEach<Camera>([&](EntityId id, Camera&) {
+                Transform& eye = s.scene.get<Transform>(id);
+                const glm::quat roll = glm::angleAxis(glm::half_pi<float>(), glm::vec3(0.0f, 0.0f, 1.0f));
+                eye.rotation         = eye.rotation * roll;
+            });
+        }
+
+        RenderSettings settings;
+        settings.renderMode    = RenderMode::AmbientOcclusion;
+        settings.msaaSamples   = 1;
+        settings.gtaoIntensity = 3.0f;
+        const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+        long sum = 0;
+        for (int y = 0; y < HEIGHT; ++y) {
+            for (int x = (WIDTH - HEIGHT) / 2; x < (WIDTH + HEIGHT) / 2; ++x) {
+                sum += 255 - pixel(frame, x, y).x;
+            }
+        }
+        darkness[rolled ? 1 : 0] = static_cast<float>(sum) / static_cast<float>(HEIGHT * HEIGHT);
+    }
+    std::printf("      darkness %.2f level, %.2f rolled\n", darkness[0], darkness[1]);
+    const bool even = std::abs(darkness[1] - darkness[0]) <= 0.1f * darkness[0];
+    expect("a crease up close is as occluded rolled a quarter turn", even, failures);
+}
+
+// A box on a floor through an orthographic camera, in the AO view: the crease where they meet is
+// occluded. An orthographic camera's depth is linear, so read as the viewmodel's band, the nearest
+// VIEWMODEL_DEPTH_SHARE of its range would be taken for sky and occlude nothing.
+void testAnOrthographicViewIsOccluded(int& failures) {
+    std::printf("Ambient occlusion through an orthographic camera:\n");
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery s;
+    base(s);
+    const MaterialHandle grey = material(s, "golden:grey", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
+    place(s, s.cube, grey, {0.0f, -0.5f, 0.0f}, {20.0f, 1.0f, 20.0f});
+    place(s, s.cube, grey, {0.0f, 0.5f, 0.0f}, glm::vec3(1.0f));
+    sunAndCamera(s, {0.0f, 3.0f, 5.0f}, {0.0f, 0.0f, 0.0f});
+    orthographic(s, 2.0f);
+
+    RenderSettings settings;
+    settings.renderMode    = RenderMode::AmbientOcclusion;
+    settings.msaaSamples   = 1;
+    settings.gtaoIntensity = 3.0f;
+    const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+    int darkest = 255;
+    for (int y = 0; y < HEIGHT; ++y) {
+        for (int x = 0; x < WIDTH; ++x) darkest = std::min(darkest, pixel(frame, x, y).x);
+    }
+    std::printf("      darkest %d\n", darkest);
+    expect("an orthographic view finds the crease", darkest < 200, failures);
+}
+
+// A reflection probe baked while the frame shows a debug view: the forward pass and the capture
+// draw with one PBR program, so the capture puts back what the pass left set on it, or the probe
+// would hold the albedo view for good.
+void testAProbeBakedUnderADebugViewHoldsTheScene(int& failures) {
+    std::printf("A probe baked while a debug view shows:\n");
+    RenderSettings albedo;
+    albedo.renderMode = RenderMode::Albedo;
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend viewed;
+    if (!viewed.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery debugged;
+    buildProbe(debugged);
+    render(debugged, viewed, nullptr, albedo);
+    const std::vector<unsigned char> seen = render(debugged, viewed);
+
+    restoreContextDefaults();
+    GLBackend fresh;
+    if (!fresh.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery plain;
+    buildProbe(plain);
+    const std::vector<unsigned char> want = render(plain, fresh);
+
+    const float share = differingShare(seen, want.data());
+    std::printf("      %.2f%% of pixels differ\n", share * 100.0f);
+    expect("a probe baked under a debug view holds the scene", share <= PIXEL_TOLERANCE, failures);
+}
+
 void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     std::printf("Whole frames against their goldens:\n");
     if (!gl.attachSurface(WIDTH, HEIGHT)) {
@@ -1742,6 +1998,12 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testADriftingSunIsFollowedOverFrames(failures);
     testASplashFadesLinearlyOnTheGlass(failures);
     testAnOpenFloorIsNotOccluded(failures);
+    testAnOpenWallIsOpenToTheFramesEdge(failures);
+    testAnOrthographicViewIsOccluded(failures);
+    testGTAOReachesAsFarEveryWay(failures);
+    testAnOrthographicViewTracesItsReflections(failures);
+    testAMovedProbeBakesOnceItSettles(failures);
+    testAProbeBakedUnderADebugViewHoldsTheScene(failures);
     testASealedRoomHoldsNoSkyLight(failures);
     testTheShoreRingsWhatBreaksTheWater(failures);
     testATransparentPanesShadowIsAsDeepAsItIsOpaque(failures);

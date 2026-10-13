@@ -30,7 +30,7 @@ void main() {
         const float depth = texelFetch(u_src, texel, 0).r;
         // A viewmodel's squashed band reads as sky: as near as it is drawn it would shade the wall
         // it is held against, and its true depth is not in the buffer.
-        const bool held = depth < VIEWMODEL_DEPTH_SHARE;
+        const bool held = inViewmodelBand(depth);
         imageStore(u_dst, texel, vec4(held ? SKY_DEPTH : linearSceneDepth(depth, u_camera.invProjection)));
         return;
     }

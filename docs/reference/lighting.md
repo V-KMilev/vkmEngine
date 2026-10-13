@@ -169,7 +169,8 @@ The PBR fragment shader (`shaders/forward/pbr/`) implements:
   pass still writes the weight, with nothing added under it, and the traced
   reflection is all a glossy surface shows.
 - **GTAO**: full-res ground-truth ambient occlusion computed by
-  `GLGTAOPass`, then denoised by an edge-aware 5x5 blur on each pixel's own
+  `GLGTAOPass`, its slices turned evenly about each pixel's own view ray,
+  then denoised by an edge-aware 5x5 blur on each pixel's own
   surface - spatial only, since nothing here keeps a history. The blur
   averages the integrated visibility as it is, and only then are intensity,
   power and the clamp to one applied: a slice meeting an open surface

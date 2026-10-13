@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 
 #include "convention/gl_bindings.h"
+#include "offline/gl_capture_settle.h"
 
 namespace Vkm::GL {
     class Context;
@@ -79,8 +80,8 @@ class GLProbeManager {
         int bind(const RenderView& view);
 
         /**
-         * @brief At frame end, bake again the probes that are new, moved, resized or bumped, or
-         *        were captured under another bake of the irradiance volume.
+         * @brief At frame end, bake again the probes that are new, bumped, or moved or resized
+         *        and holding still, or were captured under another bake of the irradiance volume.
          *
          * Capped per frame. Run after the passes: the baker rebinds the camera UBO and the
          * lights SSBO.
@@ -111,6 +112,16 @@ class GLProbeManager {
         void invalidate();
 
     private:
+        /// Where a probe stands and the box it reflects.
+        struct Placement {
+            glm::vec3 position{0.0f};
+            glm::vec3 box{0.0f};
+
+            bool operator==(const Placement& other) const {
+                return position == other.position && box == other.box;
+            }
+        };
+
         /**
          * @brief Per-layer bake state, for change-detected re-baking.
          */
@@ -123,6 +134,9 @@ class GLProbeManager {
             glm::vec3 box        = glm::vec3(0.0f);
             uint32_t  version    = 0;                ///< bakeVersion the layer was last baked at.
             uint32_t  volumeBake = 0;                ///< The irradiance volume's bakeId it was lit by.
+            /// Where the probe stands, so one being moved bakes once it settles, not every
+            /// frame it moves.
+            CaptureSettle<Placement> seen;
         };
 
         /**

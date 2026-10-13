@@ -3,10 +3,17 @@
 #include "platform/threading/thread_pool.h"
 
 #include <algorithm>
+#include <cctype>
 #include <exception>
+#include <filesystem>
+#include <fstream>
+#include <set>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "logger.h"
+#include "platform/windows_api.h"
 
 namespace Vkm::Engine {
 
@@ -14,11 +21,45 @@ namespace {
 // Set inside process(); see ThreadPool::isWorkerThread.
 thread_local bool t_isWorker = false;
 
-// One fewer than the cores, as the parallelFor caller runs a chunk too. At least one, since
-// hardware_concurrency() may answer 0.
+/**
+ * @brief The physical cores, a core's SMT siblings counted once (docs/reference/threading.md).
+ *
+ * @return The count, or 0 when the platform does not say.
+ */
+size_t physicalCores() {
+    size_t cores = 0;
+#if defined(_WIN32)
+    // One record per core, each as long as its Size says.
+    using Record = SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX;
+    DWORD bytes = 0;
+    GetLogicalProcessorInformationEx(RelationProcessorCore, nullptr, &bytes);
+    std::vector<char> records(bytes);
+    auto* first = reinterpret_cast<Record*>(records.data());
+    if (bytes == 0 || !GetLogicalProcessorInformationEx(RelationProcessorCore, first, &bytes)) return 0;
+    for (DWORD at = 0; at < bytes; at += reinterpret_cast<const Record*>(&records[at])->Size) ++cores;
+#elif defined(__linux__)
+    // A core is the set of logical CPUs sharing it, which each online one lists. Not core_id: an
+    // AMD module's two cores have ids of their own and share one front end.
+    std::set<std::string> siblingSets;
+    std::error_code       error;
+    for (const auto& cpu : std::filesystem::directory_iterator("/sys/devices/system/cpu", error)) {
+        // cpu0, cpu1...; not cpufreq or cpuidle.
+        const std::string name     = cpu.path().filename().string();
+        const bool        numbered = name.size() > 3 && std::isdigit(static_cast<unsigned char>(name[3]));
+        if (name.compare(0, 3, "cpu") != 0 || !numbered) continue;
+        std::ifstream file(cpu.path() / "topology" / "thread_siblings_list");
+        std::string   siblings;
+        if (std::getline(file, siblings)) siblingSets.insert(siblings);
+    }
+    cores = siblingSets.size();
+#endif
+    return cores;
+}
+
+// One fewer than the cores, as the parallelFor caller runs a chunk too, and at least one.
 size_t workerCount() {
-    const size_t cores = std::thread::hardware_concurrency();
-    return cores > 1 ? cores - 1 : 1;
+    const size_t cores = physicalCores();
+    return std::max<size_t>(cores > 0 ? cores : std::thread::hardware_concurrency(), 2) - 1;
 }
 } // namespace
 
@@ -27,6 +68,7 @@ bool ThreadPool::isWorkerThread() {
 }
 
 ThreadPool::ThreadPool(size_t threadCount) : m_running(true) {
+    LOG_INFO("Thread pool: %zu worker(s) beside the main thread", threadCount);
     for (size_t i = 0; i < threadCount; ++i) {
         m_threads.emplace_back([this]() { process(); });
     }

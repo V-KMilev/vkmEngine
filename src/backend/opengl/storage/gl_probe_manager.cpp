@@ -7,6 +7,7 @@
 
 #include "convention/gl_bindings.h"
 #include "offline/gl_probe_baker.h"
+#include "offline/gl_scene_capture.h"
 #include "storage/gl_irradiance_volume.h"
 #include "storage/gl_probe_array.h"
 #include "system/render/render_view.h"
@@ -129,6 +130,13 @@ void GLProbeManager::update(
         for (BakeState& st : m_state) st.baked = false;
     }
 
+    // How long each probe has held its place and box, every frame, whichever bakes below.
+    for (size_t i = 0; i < n; ++i) {
+        if (m_layerOf[i] < 0) continue;
+        const ProbeData& pd = view.probes[i];
+        m_state[static_cast<size_t>(m_layerOf[i])].seen.see({pd.position, pd.halfExtents});
+    }
+
     // Throttled so several probes changing at once don't hitch the frame.
     constexpr int MAX_REBAKES_PER_FRAME = 1;
     const uint32_t lighting = volume ? volume->bakeId() : 0;
@@ -142,7 +150,10 @@ void GLProbeManager::update(
         const bool resized = st.box != pd.halfExtents;
         const bool forced  = st.version != pd.bakeVersion;
         const bool relit   = st.volumeBake != lighting;
-        if (st.baked && !moved && !resized && !forced && !relit) continue;
+
+        // A probe being moved or resized bakes once it holds still; a new version is a request
+        // to bake now, and a new lighting or a first bake does not wait either.
+        if (st.baked && !forced && !relit && !((moved || resized) && st.seen.settled())) continue;
         m_baker->bake(gl, *m_array, layer, pd, view, glView, resources, ibl, volume);
         st.baked      = true;
         st.position   = pd.position;

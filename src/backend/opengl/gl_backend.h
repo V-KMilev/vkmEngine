@@ -35,6 +35,7 @@
 #include "frame/gl_object_buffer.h"
 #include "offline/gl_preview.h"
 #include "storage/gl_probe_manager.h"
+#include "offline/gl_capture_settle.h"
 #include "offline/gl_scene_capture.h"
 #include "gl_screen_triangle.h"
 #include "storage/gl_shadow_atlas.h"
@@ -299,8 +300,9 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         /// Every object's model matrix, once a frame.
         GLObjectBuffer m_objects;
 
-        // Lent to the offline renderers below: one compile of the PBR ubershader and convolution
-        // programs. Declared ahead of them, as they bind references to it.
+        // Lent to the offline renderers below and the forward pass in m_passes: one compile of
+        // the PBR ubershader and the convolution programs. Declared ahead of them, as they bind
+        // references to them.
         GLSceneCapture  m_sceneCapture;
         GLCubeConvolver m_cubeConvolver;
 
@@ -337,8 +339,7 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
 
         BakedFrom<Atmosphere::Coefficients> m_bakedAir;
         BakedFrom<IrradianceSignature>      m_bakedIrradiance;
-        IrradianceSignature                 m_irradianceRequest{};  ///< What the last frame asked.
-        uint32_t                            m_irradianceStill = 0;  ///< Frames it has held still.
+        CaptureSettle<IrradianceSignature>  m_irradianceAsked;  ///< What the frames ask its bake for.
 };
 
 } // namespace Vkm::Engine
