@@ -11,7 +11,6 @@
 #include "gl_target.h"
 #include "convention/gl_bindings.h"
 #include "frame/gl_instance_batcher.h"
-#include "frame/gl_stream_upload.h"
 #include "resource/resource_manager.h"
 #include "system/render/data/render_objects.h"
 
@@ -71,14 +70,15 @@ GLOcclusionCull::~GLOcclusionCull() = default;
 bool GLOcclusionCull::prepare(
     const GLInstanceBatcher& batch,
     const RenderObjects& objects,
-    const ResourceManager& resources
+    const ResourceManager& resources,
+    Vkm::GL::StreamRing& stream
 ) {
     const GLDrawList&               list      = batch.list();
     const std::vector<uint32_t>&    instances = list.instances();
     const std::vector<DrawCommand>& commands  = list.commands();
     m_instanceCount = static_cast<uint32_t>(instances.size());
     m_commandCount  = static_cast<uint32_t>(commands.size());
-    m_source        = list.instanceBuffer();
+    m_source        = list.instanceSpan();
     if (m_instanceCount == 0 || m_commandCount == 0 || !m_source) return false;
 
     // A command is one mesh: its local box, empty for a run that leaves it.
@@ -98,18 +98,12 @@ bool GLOcclusionCull::prepare(
     }
     for (DrawCommand& command : m_commands) command.instanceCount = 0;
 
-    growAndUpload(
-        m_boundsBuffer,
-        m_boundsCapacity,
-        m_bounds.data(),
-        static_cast<uint32_t>(m_bounds.size() * sizeof(CommandBounds))
-    );
-    growAndUpload(
-        m_commandBuffer,
-        m_commandCapacity,
-        m_commands.data(),
-        static_cast<uint32_t>(m_commands.size() * sizeof(DrawCommand))
-    );
+    const auto boundsBytes = static_cast<uint32_t>(m_bounds.size() * sizeof(CommandBounds));
+    m_boundsSpan = stream.write(m_bounds.data(), boundsBytes);
+    // Counted into by the GPU, so not streamed; grown with headroom as the batch grows.
+    const auto commandBytes = static_cast<uint32_t>(m_commands.size() * sizeof(DrawCommand));
+    ensureBytes(m_commandBuffer, commandBytes, Contents::Undefined, GL_STREAM_DRAW);
+    m_commandBuffer->update(m_commands.data(), commandBytes, 0);
 
     // Written by the cull alone.
     const auto instanceBytes = static_cast<uint32_t>(m_instanceCount * SET_COUNT * sizeof(uint32_t));
@@ -123,8 +117,8 @@ bool GLOcclusionCull::prepare(
 
 void GLOcclusionCull::bindBuffers() const {
     namespace SSBO = GLBindings::SSBOBindingPoints;
-    VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::CULL_BOUNDS, m_boundsBuffer->getID()));
-    VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::CULL_SOURCE, m_source->getID()));
+    Vkm::GL::bindRange(GL_SHADER_STORAGE_BUFFER, SSBO::CULL_BOUNDS, m_boundsSpan);
+    Vkm::GL::bindRange(GL_SHADER_STORAGE_BUFFER, SSBO::CULL_SOURCE, m_source);
     VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::CULL_VISIBLE, m_visibleBuffer->getID()));
     VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::CULL_COMMANDS, m_commandBuffer->getID()));
     VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::CULL_INSTANCES, m_instanceBuffer->getID()));
@@ -198,16 +192,14 @@ void GLOcclusionCull::buildPyramid(const GLTarget& scene) {
 }
 
 void GLOcclusionCull::draw(Vkm::GL::Context& gl, const InstanceDraw& draw, Set set) const {
-    const auto index = static_cast<uint32_t>(set);
+    // The set's own lists, end to end with the other sets' in the two buffers.
+    const auto     index         = static_cast<uint32_t>(set);
+    const uint32_t instanceBytes = m_instanceCount * uint32_t{sizeof(uint32_t)};
+    const uint32_t commandBytes  = m_commandCount * uint32_t{sizeof(DrawCommand)};
+    const Vkm::GL::BufferSpan instances{m_instanceBuffer->getID(), index * instanceBytes, instanceBytes};
+    const Vkm::GL::BufferSpan commands{m_commandBuffer->getID(), index * commandBytes, commandBytes};
     if (draw.mirrored) gl.setFrontFace(GL_CW);
-    draw.mesh->pool().drawIndirect(
-        draw.mesh->layout(),
-        *m_instanceBuffer,
-        *m_commandBuffer,
-        index * m_commandCount + draw.first,
-        draw.count,
-        index * m_instanceCount
-    );
+    draw.mesh->pool().drawIndirect(draw.mesh->layout(), instances, commands, draw.first, draw.count);
     if (draw.mirrored) gl.setFrontFace(GL_CCW);
 }
 
@@ -217,8 +209,7 @@ uint32_t GLOcclusionCull::countIn(Set set) const {
     const auto bytes  = static_cast<GLsizeiptr>(commands.size() * sizeof(DrawCommand));
     const auto first  = static_cast<size_t>(set) * m_commandCount;
     const auto offset = static_cast<GLintptr>(first * sizeof(DrawCommand));
-    m_commandBuffer->bind(GL_COPY_READ_BUFFER);
-    VKM_GL_CHECK(glGetBufferSubData(GL_COPY_READ_BUFFER, offset, bytes, commands.data()));
+    VKM_GL_CHECK(glGetNamedBufferSubData(m_commandBuffer->getID(), offset, bytes, commands.data()));
     uint32_t count = 0;
     for (const DrawCommand& command : commands) count += command.instanceCount;
     return count;

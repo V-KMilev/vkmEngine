@@ -799,10 +799,11 @@ const std::set<std::string>& identifiersInCode(const fs::path& engineRoot) {
 }
 
 // What each class, struct, union, enum and namespace holds: every identifier inside
-// its braces wherever opened, plus every `Foo::bar` code writes (out-of-line
-// definitions, X-macro enumerators). Over-generous on purpose - nested types count for
-// their parent - since it exists to catch a member written under a scope that never
-// had it. By hand, for the reason identifiersInCode gives.
+// its braces wherever opened, plus every `Foo::bar` code writes under a scope opened
+// here (out-of-line definitions, X-macro enumerators) - a library's type the code only
+// names stays unopened. Over-generous on purpose - nested types count for their parent -
+// since it exists to catch a member written under a scope that never had it. By hand,
+// for the reason identifiersInCode gives.
 const std::map<std::string, std::set<std::string>>& membersOfScopes(const fs::path& engineRoot) {
     static std::map<std::string, std::set<std::string>> scopes;
     static bool built = false;
@@ -828,6 +829,7 @@ const std::map<std::string, std::set<std::string>>& membersOfScopes(const fs::pa
         }
     };
 
+    std::map<std::string, std::set<std::string>> written;
     std::vector<fs::path> files = engineAndProjectFiles(engineRoot);
     const std::vector<fs::path> suites = suiteFiles(engineRoot);
     files.insert(files.end(), suites.begin(), suites.end());
@@ -844,6 +846,7 @@ const std::map<std::string, std::set<std::string>>& membersOfScopes(const fs::pa
                 const size_t brace = text.find_first_of("{;()", at + length);
                 if (brace == std::string::npos || text[brace] != '{') continue;
                 std::string name;
+                std::vector<std::string> outer;  // a nested namespace's enclosing names
                 for (size_t i = at + length; i < brace;) {
                     if (!word(text[i])) {
                         // `::` joins a nested name; a lone `:` starts a base list.
@@ -860,6 +863,7 @@ const std::map<std::string, std::set<std::string>>& membersOfScopes(const fs::pa
                     const std::string token = text.substr(i, j - i);
                     if (token != "class" && token != "final" && token != "alignas"
                         && token.find("_API") == std::string::npos) {
+                        if (!name.empty()) outer.push_back(name);
                         name = token;
                     }
                     i = j;
@@ -872,6 +876,7 @@ const std::map<std::string, std::set<std::string>>& membersOfScopes(const fs::pa
                     else if (text[close] == '}') --depth;
                 }
                 identifiers(text, brace + 1, close, scopes[name]);
+                for (const std::string& enclosing : outer) scopes[enclosing].insert(name);
             }
         }
 
@@ -883,8 +888,12 @@ const std::map<std::string, std::set<std::string>>& membersOfScopes(const fs::pa
             const size_t memberBegin = end;
             while (end < text.size() && word(text[end])) ++end;
             if (begin == at || end == memberBegin) continue;
-            scopes[text.substr(begin, at - begin)].insert(text.substr(memberBegin, end - memberBegin));
+            written[text.substr(begin, at - begin)].insert(text.substr(memberBegin, end - memberBegin));
         }
+    }
+    for (auto& [scope, members] : written) {
+        const auto opened = scopes.find(scope);
+        if (opened != scopes.end()) opened->second.insert(members.begin(), members.end());
     }
     return scopes;
 }

@@ -127,7 +127,7 @@ const std::vector<InstanceDraw>& GLInstanceBatcher::buildGrouped(
     }
 
     PROFILE_SCOPE("InstanceBatch/Upload");
-    m_list.upload();
+    m_list.upload(view.stream());
     return m_draws;
 }
 
@@ -151,7 +151,7 @@ const std::vector<InstanceDraw>& GLInstanceBatcher::buildSequential(
         instances.push_back(object);
     }
 
-    m_list.upload();
+    m_list.upload(view.stream());
     return m_draws;
 }
 

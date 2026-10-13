@@ -250,10 +250,12 @@ class GLIrradianceBaker {
          * upload, in order; a cell keeps the first Config::MAX_LIGHTS_PER_CLUSTER, as a forward
          * cluster does.
          *
-         * @param view Supplies the lights.
-         * @param data The volume's world box + grid resolution.
+         * @param view   Supplies the lights.
+         * @param data   The volume's world box + grid resolution.
+         * @param glView Its stream carries the lists, per-frame data as a relight under a moving
+         *               sun makes them.
          */
-        void listLights(const RenderView& view, const IrradianceVolumeData& data);
+        void listLights(const RenderView& view, const IrradianceVolumeData& data, GLView& glView);
 
         /**
          * @brief Read @p judged's verdicts back and record the repair they call for.
@@ -275,10 +277,6 @@ class GLIrradianceBaker {
         /// probeFillWeights, as the fill reads it.
         std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_repair;
         uint32_t                                      m_refused = 0;  ///< Probes the repair fills.
-
-        /// listLights(), as the relight reads it.
-        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_lightLists;
-        uint32_t                                      m_lightListBytes = 0;  ///< Bytes it holds.
 
         std::vector<uint32_t>                      m_lightWords;   ///< As listLights() last built them.
         std::vector<uint32_t>                      m_directional;  ///< listLights() scratch, kept.

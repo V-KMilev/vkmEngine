@@ -79,9 +79,7 @@ void give(SpanList& list, uint32_t offset, uint32_t count) {
 void growBuffer(std::unique_ptr<Vkm::GL::VertexBuffer>& buffer, uint32_t oldBytes, uint32_t newBytes) {
     auto bigger = std::make_unique<Vkm::GL::VertexBuffer>(nullptr, newBytes, GL_STATIC_DRAW);
     if (buffer && oldBytes > 0) {
-        VKM_GL_CHECK(glBindBuffer(GL_COPY_READ_BUFFER, buffer->getID()));
-        VKM_GL_CHECK(glBindBuffer(GL_COPY_WRITE_BUFFER, bigger->getID()));
-        VKM_GL_CHECK(glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, oldBytes));
+        VKM_GL_CHECK(glCopyNamedBufferSubData(buffer->getID(), bigger->getID(), 0, 0, oldBytes));
     }
     buffer = std::move(bigger);
 }
@@ -126,40 +124,38 @@ GLMeshPool::GLMeshPool() {
     m_noObject = std::make_unique<Vkm::GL::VertexBuffer>(&zero, static_cast<uint32_t>(sizeof(zero)));
 
     for (size_t layout = 0; layout < static_cast<size_t>(VertexLayout::Count); ++layout) {
-        m_arrays[layout].bind();
-
-        VKM_GL_CHECK(glEnableVertexAttribArray(Attr::POSITION));
-        VKM_GL_CHECK(glEnableVertexAttribArray(Attr::NORMAL));
-        VKM_GL_CHECK(glEnableVertexAttribArray(Attr::UV));
-        VKM_GL_CHECK(glEnableVertexAttribArray(Attr::TANGENT));
-        VKM_GL_CHECK(glVertexAttribFormat(Attr::POSITION, 3, GL_FLOAT, GL_FALSE, offsetof(Vertex, position)));
-        VKM_GL_CHECK(glVertexAttribFormat(Attr::NORMAL,   3, GL_FLOAT, GL_FALSE, offsetof(Vertex, normal)));
-        VKM_GL_CHECK(glVertexAttribFormat(Attr::UV,       2, GL_FLOAT, GL_FALSE, offsetof(Vertex, uv)));
-        VKM_GL_CHECK(glVertexAttribFormat(Attr::TANGENT,  4, GL_FLOAT, GL_FALSE, offsetof(Vertex, tangent)));
-        for (const uint32_t attrib : {Attr::POSITION, Attr::NORMAL, Attr::UV, Attr::TANGENT}) {
-            VKM_GL_CHECK(glVertexAttribBinding(attrib, VERTEX_BINDING));
-        }
+        const GLuint vao       = m_arrays[layout].getID();
+        const auto   attribute = [vao](uint32_t index, GLint count, uint32_t at) {
+            VKM_GL_CHECK(glEnableVertexArrayAttrib(vao, index));
+            VKM_GL_CHECK(glVertexArrayAttribFormat(vao, index, count, GL_FLOAT, GL_FALSE, at));
+            VKM_GL_CHECK(glVertexArrayAttribBinding(vao, index, VERTEX_BINDING));
+        };
+        attribute(Attr::POSITION, 3, offsetof(Vertex, position));
+        attribute(Attr::NORMAL,   3, offsetof(Vertex, normal));
+        attribute(Attr::UV,       2, offsetof(Vertex, uv));
+        attribute(Attr::TANGENT,  4, offsetof(Vertex, tangent));
 
         // The object index: an integer attribute (the float entry point would
         // convert it and lose slots past 2^24), stepping once per instance.
-        VKM_GL_CHECK(glEnableVertexAttribArray(Attr::INSTANCE));
-        VKM_GL_CHECK(glVertexAttribIFormat(Attr::INSTANCE, 1, GL_UNSIGNED_INT, 0));
-        VKM_GL_CHECK(glVertexAttribBinding(Attr::INSTANCE, INSTANCE_BINDING));
-        VKM_GL_CHECK(glVertexBindingDivisor(INSTANCE_BINDING, 1));
-        VKM_GL_CHECK(glBindVertexBuffer(INSTANCE_BINDING, m_noObject->getID(), 0, sizeof(uint32_t)));
+        VKM_GL_CHECK(glEnableVertexArrayAttrib(vao, Attr::INSTANCE));
+        VKM_GL_CHECK(glVertexArrayAttribIFormat(vao, Attr::INSTANCE, 1, GL_UNSIGNED_INT, 0));
+        VKM_GL_CHECK(glVertexArrayAttribBinding(vao, Attr::INSTANCE, INSTANCE_BINDING));
+        VKM_GL_CHECK(glVertexArrayBindingDivisor(vao, INSTANCE_BINDING, 1));
+        VKM_GL_CHECK(
+            glVertexArrayVertexBuffer(vao, INSTANCE_BINDING, m_noObject->getID(), 0, sizeof(uint32_t))
+        );
 
         if (layout != SKINNED) continue;
         // Bone indices stay integers; weights arrive as unorm8 summing to 1.0.
-        VKM_GL_CHECK(glEnableVertexAttribArray(Attr::BONES));
-        VKM_GL_CHECK(glEnableVertexAttribArray(Attr::WEIGHTS));
-        VKM_GL_CHECK(glVertexAttribIFormat(Attr::BONES, 4, GL_UNSIGNED_SHORT, offsetof(SkinVertex, bones)));
-        VKM_GL_CHECK(
-            glVertexAttribFormat(Attr::WEIGHTS, 4, GL_UNSIGNED_BYTE, GL_TRUE, offsetof(SkinVertex, weights))
-        );
-        VKM_GL_CHECK(glVertexAttribBinding(Attr::BONES, SKIN_BINDING));
-        VKM_GL_CHECK(glVertexAttribBinding(Attr::WEIGHTS, SKIN_BINDING));
+        VKM_GL_CHECK(glEnableVertexArrayAttrib(vao, Attr::BONES));
+        VKM_GL_CHECK(glEnableVertexArrayAttrib(vao, Attr::WEIGHTS));
+        const auto bones   = static_cast<GLuint>(offsetof(SkinVertex, bones));
+        const auto weights = static_cast<GLuint>(offsetof(SkinVertex, weights));
+        VKM_GL_CHECK(glVertexArrayAttribIFormat(vao, Attr::BONES, 4, GL_UNSIGNED_SHORT, bones));
+        VKM_GL_CHECK(glVertexArrayAttribFormat(vao, Attr::WEIGHTS, 4, GL_UNSIGNED_BYTE, GL_TRUE, weights));
+        VKM_GL_CHECK(glVertexArrayAttribBinding(vao, Attr::BONES, SKIN_BINDING));
+        VKM_GL_CHECK(glVertexArrayAttribBinding(vao, Attr::WEIGHTS, SKIN_BINDING));
     }
-    VKM_GL_CHECK(glBindVertexArray(0));
 }
 
 GLMeshPool::~GLMeshPool() = default;
@@ -244,7 +240,7 @@ void GLMeshPool::remove(const MeshRange& range) {
 
 void GLMeshPool::draw(const MeshRange& range) const {
     if (range.indexCount == 0) return;
-    bind(range.layout, *m_noObject);
+    bind(range.layout, Vkm::GL::BufferSpan{m_noObject->getID(), 0, m_noObject->getSize()});
     VKM_GL_CHECK(
         glDrawElementsBaseVertex(
             GL_TRIANGLES,
@@ -258,43 +254,47 @@ void GLMeshPool::draw(const MeshRange& range) const {
 
 void GLMeshPool::drawIndirect(
     VertexLayout layout,
-    const Vkm::GL::VertexBuffer& instances,
-    const Vkm::GL::VertexBuffer& commands,
+    const Vkm::GL::BufferSpan& instances,
+    const Vkm::GL::BufferSpan& commands,
     uint32_t first,
-    uint32_t count,
-    uint32_t skip
+    uint32_t count
 ) const {
     if (count == 0 || !m_indices) return;
-    bind(layout, instances, skip);
-    commands.bind(GL_DRAW_INDIRECT_BUFFER);
+    bind(layout, instances);
+    VKM_GL_CHECK(glBindBuffer(GL_DRAW_INDIRECT_BUFFER, commands.buffer));
+    const uintptr_t at = uintptr_t{commands.offset} + uintptr_t{first} * sizeof(DrawCommand);
     VKM_GL_CHECK(
         glMultiDrawElementsIndirect(
             GL_TRIANGLES,
             GL_UNSIGNED_INT,
-            reinterpret_cast<const void*>(uintptr_t{first} * sizeof(DrawCommand)),
+            reinterpret_cast<const void*>(at),
             static_cast<GLsizei>(count),
             0
         )
     );
 }
 
-void GLMeshPool::bind(VertexLayout layout, const Vkm::GL::VertexBuffer& instances, uint32_t skip) const {
-    m_arrays[static_cast<size_t>(layout)].bind();
-    VKM_GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_indices->getID()));
-    const auto offset = static_cast<GLintptr>(skip) * static_cast<GLintptr>(sizeof(uint32_t));
-    VKM_GL_CHECK(glBindVertexBuffer(INSTANCE_BINDING, instances.getID(), offset, sizeof(uint32_t)));
+void GLMeshPool::bind(VertexLayout layout, const Vkm::GL::BufferSpan& instances) const {
+    const Vkm::GL::VertexArray& vao = m_arrays[static_cast<size_t>(layout)];
+    vao.bind();
+    const auto offset = static_cast<GLintptr>(instances.offset);
+    VKM_GL_CHECK(
+        glVertexArrayVertexBuffer(vao.getID(), INSTANCE_BINDING, instances.buffer, offset, sizeof(uint32_t))
+    );
 }
 
 void GLMeshPool::wire() {
     for (size_t layout = 0; layout < static_cast<size_t>(VertexLayout::Count); ++layout) {
         if (!m_vertices[layout]) continue;
-        m_arrays[layout].bind();
-        VKM_GL_CHECK(glBindVertexBuffer(VERTEX_BINDING, m_vertices[layout]->getID(), 0, sizeof(Vertex)));
+        const GLuint vao = m_arrays[layout].getID();
+        const GLuint vertices = m_vertices[layout]->getID();
+        VKM_GL_CHECK(glVertexArrayVertexBuffer(vao, VERTEX_BINDING, vertices, 0, sizeof(Vertex)));
         if (layout == SKINNED) {
-            VKM_GL_CHECK(glBindVertexBuffer(SKIN_BINDING, m_skin->getID(), 0, sizeof(SkinVertex)));
+            const GLuint skin = m_skin->getID();
+            VKM_GL_CHECK(glVertexArrayVertexBuffer(vao, SKIN_BINDING, skin, 0, sizeof(SkinVertex)));
         }
+        if (m_indices) VKM_GL_CHECK(glVertexArrayElementBuffer(vao, m_indices->getID()));
     }
-    VKM_GL_CHECK(glBindVertexArray(0));
 }
 
 } // namespace Vkm::Engine

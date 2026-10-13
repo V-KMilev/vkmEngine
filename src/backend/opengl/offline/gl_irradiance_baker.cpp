@@ -73,10 +73,8 @@ void GLIrradianceBaker::ensureAtlas(uint32_t probes) {
     params.generateMipmaps = false;
     m_atlas = std::make_unique<Vkm::GL::Texture2D>("irradiance_surfels", params);
 
-    m_fbo.bind();
-    m_fbo.attachTexture2D(GL_COLOR_ATTACHMENT0, m_atlas->getID());
+    m_fbo.attachTexture(GL_COLOR_ATTACHMENT0, m_atlas->getID());
     m_fbo.setDrawBuffer(GL_COLOR_ATTACHMENT0);
-    m_fbo.unbind();
 }
 
 void GLIrradianceBaker::update(
@@ -130,11 +128,9 @@ void GLIrradianceBaker::update(
 void GLIrradianceBaker::release(GLIrradianceVolume& volume) {
     if (!m_atlas && !volume.isReady()) return;
     // Detached first: a texture a framebuffer still holds outlives its delete.
-    m_fbo.attachTexture2D(GL_COLOR_ATTACHMENT0, 0);
+    m_fbo.attachTexture(GL_COLOR_ATTACHMENT0, 0);
     m_atlas.reset();
     for (GLIrradianceVolume& scratch : m_scratch) scratch.release();
-    m_lightLists.reset();
-    m_lightListBytes = 0;
     volume.release();
     m_bakedFrom.invalidate();
     m_nextBounce   = 0;
@@ -165,7 +161,7 @@ void GLIrradianceBaker::bake(
     const Math::AABB box{data.center - data.halfExtents, data.center + data.halfExtents};
     m_capture.begin(gl, view, glView, resources, globalIBL, static_cast<float>(FACE_SIZE), box);
     captureSurfels(gl, data);
-    listLights(view, data);
+    listLights(view, data, glView);
     if (!light(volume, data, globalIBL)) {
         LOG_WARNING(
             "Irradiance volume at (%.1f, %.1f, %.1f): every one of its %u probes is inside "
@@ -204,7 +200,7 @@ void GLIrradianceBaker::relight(
 ) {
     const Math::AABB box{data.center - data.halfExtents, data.center + data.halfExtents};
     m_capture.beginLighting(gl, view, glView, resources, box);
-    listLights(view, data);
+    listLights(view, data, glView);
     gather(m_nextBounce, data, globalIBL);
     repair(m_scratch[m_nextBounce % 2]);
     if (++m_nextBounce < BOUNCES) return;
@@ -265,7 +261,7 @@ void GLIrradianceBaker::repair(GLIrradianceVolume& grid) {
         for (int i = 0; i < GLIrradianceVolume::SH_COEFFS; ++i) {
             grid.bindImage(i, static_cast<uint32_t>(i), GL_READ_WRITE);
         }
-        m_fill.dispatch(GLBindings::ComputeGroups::covering(m_refused, 64));
+        m_fill.dispatch(GLBindings::ComputeGroups::covering(m_refused, GLBindings::ComputeGroups::FILL));
     }
     // The next gather samples it, and the frame after the trade.
     VKM_GL_CHECK(glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT | GL_SHADER_IMAGE_ACCESS_BARRIER_BIT));
@@ -328,7 +324,7 @@ size_t cellHead(uint32_t cell) {
 
 } // namespace
 
-void GLIrradianceBaker::listLights(const RenderView& view, const IrradianceVolumeData& data) {
+void GLIrradianceBaker::listLights(const RenderView& view, const IrradianceVolumeData& data, GLView& glView) {
     const glm::ivec3 grid(data.resolutionX, data.resolutionY, data.resolutionZ);
     const uint32_t   cells   = cellCount(data);
     const glm::vec3  boxMin  = data.center - data.halfExtents;
@@ -402,13 +398,8 @@ void GLIrradianceBaker::listLights(const RenderView& view, const IrradianceVolum
     }
 
     const auto bytes = static_cast<uint32_t>(m_lightWords.size() * sizeof(uint32_t));
-    if (!m_lightLists || bytes > m_lightListBytes) {
-        m_lightListBytes = bytes + bytes / 2;
-        m_lightLists =
-            std::make_unique<Vkm::GL::ShaderStorageBuffer>(nullptr, m_lightListBytes, GL_DYNAMIC_DRAW);
-    }
-    m_lightLists->update(m_lightWords.data(), bytes, 0);
-    m_lightLists->bindBase(GLBindings::SSBOBindingPoints::RELIGHT_LIGHTS);
+    const Vkm::GL::BufferSpan lists = glView.stream().write(m_lightWords.data(), bytes);
+    Vkm::GL::bindRange(GL_SHADER_STORAGE_BUFFER, GLBindings::SSBOBindingPoints::RELIGHT_LIGHTS, lists);
 }
 
 uint32_t GLIrradianceBaker::recordRepair(const GLIrradianceVolume& judged, const IrradianceVolumeData& data) {

@@ -115,7 +115,7 @@ void GLShadowAtlas::init(Vkm::GL::Context& gl, uint32_t tileRes) {
     }
 
     m_fbo2D.bind();
-    m_fbo2D.attachTexture2D(GL_DEPTH_ATTACHMENT, m_atlas2D->getID());
+    m_fbo2D.attachTexture(GL_DEPTH_ATTACHMENT, m_atlas2D->getID());
     m_fbo2D.setDrawBuffer(GL_NONE);
     m_fbo2D.setReadBuffer(GL_NONE);
     if (!m_fbo2D.isComplete()) {
@@ -146,7 +146,7 @@ void GLShadowAtlas::init(Vkm::GL::Context& gl, uint32_t tileRes) {
         gl.setViewport(0, 0, static_cast<int32_t>(SHADOW_CUBE_RES), static_cast<int32_t>(SHADOW_CUBE_RES));
         for (int layer = 0; layer < static_cast<int>(Config::MAX_SHADOW_CASTERS_CUBE); ++layer) {
             for (int face = 0; face < 6; ++face) {
-                m_cubes->attachFace(GL_DEPTH_ATTACHMENT, layer, face, 0);
+                m_fboCube.attachLayer(GL_DEPTH_ATTACHMENT, m_cubes->getID(), 0, layer * 6 + face);
                 gl.clear(false, true, false, GLDepth::SHADOW_CLEAR);
             }
         }
@@ -248,7 +248,7 @@ void GLShadowAtlas::beginCubeFace(
     if (!m_cubes || slot >= Config::MAX_SHADOW_CASTERS_CUBE) return;
     m_faceSignature[static_cast<size_t>(slot) * 6 + face] = signature;
     m_fboCube.bind();
-    m_cubes->attachFace(GL_DEPTH_ATTACHMENT, static_cast<int>(slot), static_cast<int>(face), 0);
+    m_fboCube.attachLayer(GL_DEPTH_ATTACHMENT, m_cubes->getID(), 0, static_cast<int>(slot * 6 + face));
     gl.setViewport(0, 0, static_cast<int32_t>(SHADOW_CUBE_RES), static_cast<int32_t>(SHADOW_CUBE_RES));
     gl.clear(false, true, false, GLDepth::SHADOW_CLEAR);
 }

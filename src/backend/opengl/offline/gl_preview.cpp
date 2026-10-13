@@ -93,12 +93,10 @@ GLPreview::Entry& GLPreview::ensureEntry(uint64_t key, uint32_t size) {
         p.generateMipmaps = false;
         e.ldr = std::make_unique<Vkm::GL::Texture2D>("preview_ldr", p);
 
-        e.fbo.bind();
-        e.fbo.attachTexture2D(GL_COLOR_ATTACHMENT0, e.ldr->getID());
+        e.fbo.attachTexture(GL_COLOR_ATTACHMENT0, e.ldr->getID());
         if (!e.fbo.isComplete()) {
             LOG_ERROR("Preview framebuffer incomplete (%ux%u)", size, size);
         }
-        e.fbo.unbind();
         e.size = size;
     }
     return e;
@@ -226,7 +224,7 @@ uint32_t GLPreview::render(
 
     // No palette: the preview draws shaders/forward/pbr only, so a character
     // thumbnails in bind pose.
-    m_objectBuffer.upload(m_object, false);
+    m_objectBuffer.upload(m_object, false, glView.stream());
     m_objectBuffer.bind();
     const std::vector<InstanceDraw>& draws = m_batcher.buildGrouped(m_object.visible, m_object, glView, 0);
     material->bind(GLBindings::UBOBindingPoints::MATERIAL);

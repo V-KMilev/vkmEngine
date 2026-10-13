@@ -196,7 +196,7 @@ class GLTarget {
         /// The storage behind @p attachment; null when not carried or not allocated.
         const Texture* texture(Attachment attachment) const;
 
-        /// Detach @p attachment from the FBO, which must be bound, and free its storage.
+        /// Detach @p attachment from the FBO and free its storage.
         void detach(Attachment attachment);
 
         /**

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
 #include <vector>
 
 #include "gl_shader.h"
@@ -10,10 +9,6 @@
 #include "gl_target.h"
 
 #include "system/render/data/particle_data.h"
-
-namespace Vkm::GL {
-    class ShaderStorageBuffer;
-}
 
 namespace Vkm::Engine {
 
@@ -85,9 +80,7 @@ class GLParticlePass : public GLPass {
         void drawBatch(GLFrameContext& ctx, const std::vector<ParticleData>& batch);
 
     private:
-        Vkm::GL::Shader                               m_shader;
-        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_instances;
-        uint32_t                                      m_capacity = 0;  ///< Bytes the SSBO can hold.
+        Vkm::GL::Shader m_shader;
 
         std::vector<ParticleOrder> m_order;   ///< Sort keys; capacity kept across frames.
         std::vector<ParticleData>  m_sorted;  ///< The batch drawing: by texture, or alpha far to near.

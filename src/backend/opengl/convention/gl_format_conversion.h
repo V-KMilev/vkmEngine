@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 #include <GL/glew.h>
 
 #include "resource/texture_format.h"
@@ -178,6 +180,7 @@ inline Vkm::GL::Texture2DParams toGLParams(const TextureParams& params, const vo
     gl.magFilter       = filter.mag;
     gl.maxAnisotropy   = filter.anisotropy;
     gl.generateMipmaps = buildsMipsAtUpload(params);
+    gl.levels          = gl.generateMipmaps ? 0 : std::max(params.mipLevels, 1u);
     gl.data            = data;
     return gl;
 }

@@ -8,7 +8,7 @@
 #include "gl_shader.h"
 #include "gl_context.h"
 #include "gl_error_handle.h"
-#include "gl_shader_storage_buffer.h"
+#include "gl_stream_ring.h"
 #include "gl_texture.h"
 
 #include "gl_frame_context.h"
@@ -18,7 +18,6 @@
 #include "gl_screen_triangle.h"
 #include "storage/gl_shadow_atlas.h"
 #include "storage/gl_cluster_grid.h"
-#include "frame/gl_stream_upload.h"
 #include "debug/profiler.h"
 #include "system/render/render_view.h"
 
@@ -75,9 +74,9 @@ void GLParticlePass::drawBatch(GLFrameContext& ctx, const std::vector<ParticleDa
     const uint32_t count = static_cast<uint32_t>(batch.size());
     const uint32_t bytes = count * static_cast<uint32_t>(sizeof(ParticleData));
 
-    // Grown with headroom: sized exactly, a filling emitter would reallocate every frame.
-    growAndUpload(m_instances, m_capacity, batch.data(), bytes);
-    m_instances->bindBase(GLBindings::SSBOBindingPoints::PARTICLES);
+    // Into the frame's stream: the alpha batch does not wait on the additive one's draws.
+    const Vkm::GL::BufferSpan instances = ctx.resources.stream().write(batch.data(), bytes);
+    Vkm::GL::bindRange(GL_SHADER_STORAGE_BUFFER, GLBindings::SSBOBindingPoints::PARTICLES, instances);
 
     // Attribute-less: per-particle data is read from the SSBO by gl_InstanceID plus the run's
     // first, and core profile still wants a VAO bound to draw. A run per texture in a row.

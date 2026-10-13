@@ -224,7 +224,7 @@ void testAVolumeTextureRoundTrips() {
     check("it uploads without error", noGlError());
 
     std::vector<float> readBack(texels * 4, -1.0f);
-    volume.download(readBack.data());
+    volume.download(readBack.data(), static_cast<uint32_t>(readBack.size() * sizeof(float)));
     check("and reads back without error", noGlError());
     check("with every texel the one that went up, in the order it went up in", readBack == written);
 }
@@ -247,11 +247,11 @@ void testATextureThatArrivesLateTakesItsRealFormat() {
     loaded.pixelData.assign(2 * 2 * 4, 128);
     texture.update(loaded);
 
-    texture.getTexture().bindSlot(0);
     GLint format = 0;
     GLint wrap   = 0;
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &format);
-    glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, &wrap);
+    const GLuint id = texture.getTexture().getID();
+    glGetTextureLevelParameteriv(id, 0, GL_TEXTURE_INTERNAL_FORMAT, &format);
+    glGetTextureParameteriv(id, GL_TEXTURE_WRAP_S, &wrap);
     check("it updates without error", noGlError());
     check("with the colour space its pixels came in", format == GL_SRGB8_ALPHA8);
     check("and the wrap the texture asked for", wrap == GL_REPEAT);
@@ -274,20 +274,20 @@ void testACookedTextureUploadsTheLevelsItCarries() {
     Vkm::Engine::GLTexture compressed(blocks);
     check("a compressed chain uploads without error", noGlError());
 
-    compressed.getTexture().bindSlot(0);
     GLint format    = 0;
     GLint isBlocks  = 0;
     GLint levelSize = 0;
     GLint lastWidth = 0;
-    GLint maxLevel  = 0;
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_INTERNAL_FORMAT, &format);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_COMPRESSED, &isBlocks);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_COMPRESSED_IMAGE_SIZE, &levelSize);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, 3, GL_TEXTURE_WIDTH, &lastWidth);
-    glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, &maxLevel);
+    GLint levels    = 0;
+    const GLuint id = compressed.getTexture().getID();
+    glGetTextureLevelParameteriv(id, 0, GL_TEXTURE_INTERNAL_FORMAT, &format);
+    glGetTextureLevelParameteriv(id, 0, GL_TEXTURE_COMPRESSED, &isBlocks);
+    glGetTextureLevelParameteriv(id, 0, GL_TEXTURE_COMPRESSED_IMAGE_SIZE, &levelSize);
+    glGetTextureLevelParameteriv(id, 3, GL_TEXTURE_WIDTH, &lastWidth);
+    glGetTextureParameteriv(id, GL_TEXTURE_IMMUTABLE_LEVELS, &levels);
     check("  as sRGB BC7", format == GL_COMPRESSED_SRGB_ALPHA_BPTC_UNORM && isBlocks == GL_TRUE);
     check("  level 0 holding its four blocks", levelSize == 4 * 16);
-    check("  down to a 1x1 level, and no further", lastWidth == 1 && maxLevel == 3);
+    check("  down to a 1x1 level, and no further", lastWidth == 1 && levels == 4);
 
     // 4x4 sRGB texels with their chain, a distinct value per level, so a GL-built level
     // would not read back as the carried one.
@@ -302,11 +302,12 @@ void testACookedTextureUploadsTheLevelsItCarries() {
     Vkm::Engine::GLTexture chain(texels);
     check("a chain of texels uploads without error", noGlError());
 
-    chain.getTexture().bindSlot(0);
     std::vector<uint8_t> level1(2 * 2 * 4, 0);
     std::vector<uint8_t> level2(4, 0);
-    glGetTexImage(GL_TEXTURE_2D, 1, GL_RGBA, GL_UNSIGNED_BYTE, level1.data());
-    glGetTexImage(GL_TEXTURE_2D, 2, GL_RGBA, GL_UNSIGNED_BYTE, level2.data());
+    const GLuint carried = chain.getTexture().getID();
+    const auto   bytes   = [](const std::vector<uint8_t>& v) { return static_cast<GLsizei>(v.size()); };
+    glGetTextureImage(carried, 1, GL_RGBA, GL_UNSIGNED_BYTE, bytes(level1), level1.data());
+    glGetTextureImage(carried, 2, GL_RGBA, GL_UNSIGNED_BYTE, bytes(level2), level2.data());
     check(
         "  every level reads back as it was carried",
         std::all_of(level1.begin(), level1.end(), [](uint8_t v) { return v == 120; })
@@ -321,9 +322,9 @@ void testAOneChannelMapReadsAsGrey() {
     std::printf("A one-channel map sampled for its other channels:\n");
 
     const auto swizzleOf = [](const Vkm::Engine::GLTexture& texture) {
-        texture.getTexture().bindSlot(0);
         GLint swizzle[4] = {};
-        glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle);
+        const GLuint id = texture.getTexture().getID();
+        glGetTextureParameteriv(id, GL_TEXTURE_SWIZZLE_RGBA, swizzle);
         return std::array<GLint, 4>{swizzle[0], swizzle[1], swizzle[2], swizzle[3]};
     };
     const std::array<GLint, 4> grey     = {GL_RED, GL_RED, GL_RED, GL_ONE};
@@ -398,23 +399,24 @@ void testAFontAtlasKeepsTheLevelsItsGutterAllows() {
     Vkm::Engine::GLTexture atlas(font);
     check("it uploads without error", noGlError());
 
-    atlas.getTexture().bindSlot(0);
     const GLint lastLevel = static_cast<GLint>(Vkm::Engine::FontAsset::MIP_LEVELS) - 1;
-    GLint maxLevel  = 0;
+    GLint levels    = 0;
     GLint minFilter = 0;
     GLint lastWidth = 0;
     GLint pastWidth = 0;
-    glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, &maxLevel);
-    glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, &minFilter);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, lastLevel, GL_TEXTURE_WIDTH, &lastWidth);
-    glGetTexLevelParameteriv(GL_TEXTURE_2D, lastLevel + 1, GL_TEXTURE_WIDTH, &pastWidth);
+    const GLuint id = atlas.getTexture().getID();
+    glGetTextureParameteriv(id, GL_TEXTURE_IMMUTABLE_LEVELS, &levels);
+    glGetTextureParameteriv(id, GL_TEXTURE_MIN_FILTER, &minFilter);
+    glGetTextureLevelParameteriv(id, lastLevel, GL_TEXTURE_WIDTH, &lastWidth);
+    glGetTextureLevelParameteriv(id, lastLevel + 1, GL_TEXTURE_WIDTH, &pastWidth);
     check("  is sampled through its levels", minFilter == GL_LINEAR_MIPMAP_LINEAR);
-    check("  down to the one the gutter allows", maxLevel == lastLevel && lastWidth == (64 >> lastLevel));
+    check("  down to the one the gutter allows", levels == lastLevel + 1 && lastWidth == (64 >> lastLevel));
     check("  and builds none past it", pastWidth == 0);
 
     std::vector<uint8_t> smallest(static_cast<size_t>(lastWidth * lastWidth), 0);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
-    glGetTexImage(GL_TEXTURE_2D, lastLevel, GL_RED, GL_UNSIGNED_BYTE, smallest.data());
+    const auto smallestBytes = static_cast<GLsizei>(smallest.size());
+    glGetTextureImage(id, lastLevel, GL_RED, GL_UNSIGNED_BYTE, smallestBytes, smallest.data());
     check(
         "  whose texels are the field's, not empty",
         !smallest.empty() && std::all_of(smallest.begin(), smallest.end(), [](uint8_t v) { return v == 200; })
@@ -737,7 +739,8 @@ void testMeshesInOnePoolDrawAsOneMultiDraw() {
     GLDrawList list;
     list.instances() = {9, 3, 7};
     list.commands()  = {left.command(1, 1), right.command(1, 2)};
-    list.upload();
+    Vkm::GL::StreamRing stream;
+    list.upload(stream);
 
     GLuint target = 0;
     GLuint fbo    = 0;
@@ -769,6 +772,87 @@ void testMeshesInOnePoolDrawAsOneMultiDraw() {
     std::printf("      left %u, right %u\n", drawn[0], drawn[1]);
     check("each mesh drew its own half after the pool grew", drawn[0] != 0 && drawn[1] != 0);
     check("  each with the instance its baseInstance names", drawn[0] == 3 + 1 && drawn[1] == 7 + 1);
+    check("with no GL error behind any of it", noGlError());
+}
+
+// Per-frame data goes through a StreamRing: a region outgrown mid-frame moves to a new buffer while
+// the frame's earlier spans still read the old one, a region comes round again once the ring's
+// FRAMES have passed, and an outgrown buffer goes once no frame can read it. Every span is read by
+// the GPU, by copy, after the frames that wrote it, so a span overwritten or freed too soon reads
+// wrong.
+void testAStreamRingKeepsEverySpanItWrote() {
+    using Vkm::GL::BufferSpan;
+    using Vkm::GL::StreamRing;
+    std::printf("A stream ring across frames, outgrown mid-frame:\n");
+
+    // Four spans a frame; the third, past the region, makes it grow on the first frame.
+    constexpr uint32_t SIZES[] = {96, 200, 1000, 64};
+    constexpr int      RUN     = 3 * StreamRing::FRAMES;
+    const auto payload = [](int frame, int span, uint32_t bytes) {
+        std::vector<uint8_t> data(bytes);
+        for (uint32_t i = 0; i < bytes; ++i) data[i] = static_cast<uint8_t>(frame * 31 + span * 7 + i);
+        return data;
+    };
+
+    uint32_t total = 0;
+    for (const uint32_t bytes : SIZES) total += bytes;
+    GLuint copies = 0;
+    glCreateBuffers(1, &copies);
+    glNamedBufferStorage(copies, static_cast<GLsizeiptr>(total) * RUN, nullptr, 0);
+
+    StreamRing ring(256);
+    GLuint outgrown = 0;
+    std::vector<BufferSpan> firsts;
+    bool apart = true;
+    uint32_t at = 0;
+    for (int frame = 0; frame < RUN; ++frame) {
+        BufferSpan spans[4];
+        for (int span = 0; span < 4; ++span) {
+            const std::vector<uint8_t> data = payload(frame, span, SIZES[span]);
+            spans[span] = ring.write(data.data(), SIZES[span]);
+            if (span > 0 && spans[span].buffer == spans[span - 1].buffer) {
+                const BufferSpan& last = spans[span - 1];
+                apart = apart && spans[span].offset >= last.offset + last.bytes;
+            }
+        }
+        if (frame == 0) outgrown = spans[0].buffer;
+        firsts.push_back(spans[0]);
+        for (const BufferSpan& span : spans) {
+            glCopyNamedBufferSubData(span.buffer, copies, span.offset, at, span.bytes);
+            at += span.bytes;
+        }
+        ring.endFrame();
+    }
+
+    std::vector<uint8_t> read(static_cast<size_t>(total) * RUN);
+    glGetNamedBufferSubData(copies, 0, static_cast<GLsizeiptr>(read.size()), read.data());
+    glDeleteBuffers(1, &copies);
+    int wrong = 0;
+    at = 0;
+    for (int frame = 0; frame < RUN; ++frame) {
+        for (int span = 0; span < 4; ++span) {
+            const std::vector<uint8_t> want = payload(frame, span, SIZES[span]);
+            if (!std::equal(want.begin(), want.end(), read.begin() + at)) ++wrong;
+            at += SIZES[span];
+        }
+    }
+    // Once it holds a frame, a ring stays in one buffer, where its regions take turns.
+    int  turned = 0;
+    bool turns  = true;
+    for (int frame = StreamRing::FRAMES; frame < RUN; ++frame) {
+        const BufferSpan& now  = firsts[frame];
+        const BufferSpan& last = firsts[frame - 1];
+        const BufferSpan& then = firsts[frame - StreamRing::FRAMES];
+        if (now.buffer != then.buffer || now.buffer != last.buffer) continue;
+        ++turned;
+        turns = turns && now.offset == then.offset && now.offset != last.offset;
+    }
+
+    std::printf("      %d of %d spans read wrong\n", wrong, 4 * RUN);
+    check("every span reads as written, before and after the ring grew", wrong == 0);
+    check("  no two of a frame's spans overlap", apart);
+    check("  a region comes round again every StreamRing::FRAMES frames", turned > 0 && turns);
+    check("  the outgrown buffer is gone once no frame can read it", outgrown != 0 && !glIsBuffer(outgrown));
     check("with no GL error behind any of it", noGlError());
 }
 
@@ -1171,7 +1255,7 @@ void testTheRippleFieldsHoldTheSpectrumsSlope() {
     fields.drawRipples();
     fields.bind();
 
-    // Read where bind() put it, on the 4.3 context: no direct state access.
+    // Read where bind() put it.
     glActiveTexture(GL_TEXTURE0 + GLBindings::OceanTextureSlots::RIPPLES);
     GLint size = 0;
     glGetTexLevelParameteriv(GL_TEXTURE_2D_ARRAY, 0, GL_TEXTURE_WIDTH, &size);
@@ -1633,9 +1717,9 @@ void testATextureUploadedLaterTakesTheFiltering() {
     GLint minFilter = 0;
     GLint magFilter = 0;
     if (texture) {
-        texture->bindSlot(0);
-        glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, &minFilter);
-        glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, &magFilter);
+        const GLuint id = texture->getID();
+        glGetTextureParameteriv(id, GL_TEXTURE_MIN_FILTER, &minFilter);
+        glGetTextureParameteriv(id, GL_TEXTURE_MAG_FILTER, &magFilter);
     }
     check(
         "  filtered as the setting says, not as its upload left it",
@@ -1673,8 +1757,8 @@ void testAStubKeepsTheFilteringOfTheUploadItReplaces() {
     check("the upload it had still draws", texture != nullptr);
     GLint minFilter = 0;
     if (texture) {
-        texture->bindSlot(0);
-        glGetTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, &minFilter);
+        const GLuint id = texture->getID();
+        glGetTextureParameteriv(id, GL_TEXTURE_MIN_FILTER, &minFilter);
     }
     check(
         "  filtered as the level it has, not the chain the stub asks for",
@@ -1925,7 +2009,6 @@ void testTheSkysConvolutionsAreTheIntegralsTheyStandFor() {
         }
     };
     const auto convolve = [&](bool hemisphere, std::vector<float>& irradiance, std::vector<float>& rough) {
-        // On the 4.3 context the engine asks for: no direct state access.
         GLuint env = 0;
         glGenTextures(1, &env);
         glBindTexture(GL_TEXTURE_CUBE_MAP, env);
@@ -2224,6 +2307,7 @@ int runTests() {
     testTheRipplesDensityIsTheCPUs();
     testTheRipplesTransformMakesPlaneWaves();
     testMeshesInOnePoolDrawAsOneMultiDraw();
+    testAStreamRingKeepsEverySpanItWrote();
     testASkyBakesAgainOnlyOnceItsSunHasMoved();
     testTheSkysTransmittanceIsTheSunlights();
     testTheSkysConvolutionsAreTheIntegralsTheyStandFor();

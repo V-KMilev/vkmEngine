@@ -65,8 +65,7 @@ class GLTarget::Texture {
         Texture(const AttachmentSpec& spec, uint32_t width, uint32_t height, uint32_t samples)
             : m_target(samples > 1 ? GL_TEXTURE_2D_MULTISAMPLE : GL_TEXTURE_2D)
             , m_format(spec.format) {
-            VKM_GL_CHECK(glGenTextures(1, &m_id));
-            VKM_GL_CHECK(glBindTexture(m_target, m_id));
+            VKM_GL_CHECK(glCreateTextures(m_target, 1, &m_id));
             const GLsizei w = static_cast<GLsizei>(width);
             const GLsizei h = static_cast<GLsizei>(height);
             if (samples > 1) {
@@ -74,8 +73,8 @@ class GLTarget::Texture {
                 // must agree on them, and the resolve reads sample i of each as
                 // the same point of the pixel.
                 VKM_GL_CHECK(
-                    glTexStorage2DMultisample(
-                        m_target,
+                    glTextureStorage2DMultisample(
+                        m_id,
                         static_cast<GLsizei>(samples),
                         spec.format,
                         w,
@@ -84,15 +83,14 @@ class GLTarget::Texture {
                     )
                 );
             } else {
-                VKM_GL_CHECK(glTexStorage2D(m_target, 1, spec.format, w, h));
+                VKM_GL_CHECK(glTextureStorage2D(m_id, 1, spec.format, w, h));
                 const GLint filter = spec.linear ? GL_LINEAR : GL_NEAREST;
-                VKM_GL_CHECK(glTexParameteri(m_target, GL_TEXTURE_MIN_FILTER, filter));
-                VKM_GL_CHECK(glTexParameteri(m_target, GL_TEXTURE_MAG_FILTER, filter));
-                VKM_GL_CHECK(glTexParameteri(m_target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
-                VKM_GL_CHECK(glTexParameteri(m_target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+                VKM_GL_CHECK(glTextureParameteri(m_id, GL_TEXTURE_MIN_FILTER, filter));
+                VKM_GL_CHECK(glTextureParameteri(m_id, GL_TEXTURE_MAG_FILTER, filter));
+                VKM_GL_CHECK(glTextureParameteri(m_id, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+                VKM_GL_CHECK(glTextureParameteri(m_id, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
             }
             VKM_GL_CHECK(glObjectLabel(GL_TEXTURE, m_id, -1, spec.name));
-            VKM_GL_CHECK(glBindTexture(m_target, 0));
         }
 
         ~Texture() {
@@ -107,8 +105,7 @@ class GLTarget::Texture {
 
     public:
         void bind(uint32_t slot) const {
-            VKM_GL_CHECK(glActiveTexture(GL_TEXTURE0 + slot));
-            VKM_GL_CHECK(glBindTexture(m_target, m_id));
+            VKM_GL_CHECK(glBindTextureUnit(slot, m_id));
         }
 
         void bindImage(uint32_t unit, GLenum access) const {
@@ -145,13 +142,11 @@ const GLTarget::Texture* GLTarget::texture(Attachment attachment) const {
 void GLTarget::release() {
     // Deleting a texture detaches it only from the bound framebuffer; attached to another, its
     // storage lives on. So attachments are let go explicitly, keeping the FBO for the next
-    // resize. A target holding nothing binds nothing, so this is cheap every frame.
+    // resize. A target holding nothing returns at once, so this is cheap every frame.
     const auto held = [](const std::unique_ptr<Texture>& texture) { return texture != nullptr; };
     if (std::none_of(m_textures.begin(), m_textures.end(), held)) return;
 
-    m_fbo.bind();
     for (size_t i = 0; i < ATTACHMENT_COUNT; ++i) detach(static_cast<Attachment>(i));
-    m_fbo.unbind();
     m_width  = 0;
     m_height = 0;
 }
@@ -159,7 +154,7 @@ void GLTarget::release() {
 void GLTarget::detach(Attachment attachment) {
     std::unique_ptr<Texture>& slot = m_textures[static_cast<size_t>(attachment)];
     if (!slot) return;
-    VKM_GL_CHECK(glFramebufferTexture2D(GL_FRAMEBUFFER, pointOf(attachment), slot->target(), 0, 0));
+    m_fbo.attachTexture(pointOf(attachment), 0);
     slot.reset();
 }
 
@@ -194,7 +189,6 @@ void GLTarget::resize(uint32_t width, uint32_t height) {
     m_width  = width;
     m_height = height;
 
-    m_fbo.bind();
     for (size_t i = 0; i < ATTACHMENT_COUNT; ++i) {
         const Attachment attachment = static_cast<Attachment>(i);
         detach(attachment);
@@ -205,15 +199,12 @@ void GLTarget::resize(uint32_t width, uint32_t height) {
 
         std::unique_ptr<Texture>& slot = m_textures[i];
         slot = std::make_unique<Texture>(spec, width, height, m_samples);
-        VKM_GL_CHECK(
-            glFramebufferTexture2D(GL_FRAMEBUFFER, pointOf(attachment), slot->target(), slot->id(), 0)
-        );
+        m_fbo.attachTexture(pointOf(attachment), slot->id());
     }
 
     if (!m_fbo.isComplete()) {
         LOG_ERROR("GLTarget framebuffer incomplete (%ux%u, %u samples)", width, height, m_samples);
     }
-    m_fbo.unbind();
 }
 
 void GLTarget::bind(const Vkm::GL::Context& gl) {
@@ -271,7 +262,7 @@ void GLTarget::bindDrawBuffers(const GLenum* buffers, int count) {
     const bool same = count == m_drawBufferCount
         && std::equal(buffers, buffers + count, m_drawBuffers.begin());
     if (same) return;
-    VKM_GL_CHECK(glDrawBuffers(count, buffers));
+    m_fbo.setDrawBuffers(buffers, count);
     std::copy(buffers, buffers + count, m_drawBuffers.begin());
     m_drawBufferCount = count;
 }
@@ -286,12 +277,12 @@ void GLTarget::bindImage(Attachment attachment, uint32_t unit, GLenum access) co
 }
 
 void GLTarget::blitColorFrom(const GLTarget& src) {
-    // Colour 0 alone, so the blit never lands in the G-buffer. The bind is GL_FRAMEBUFFER (read
-    // and draw), so the read bind must come after it.
+    // Colour 0 alone, so the blit never lands in the G-buffer.
     const GLenum buffers[1] = { pointOf(Attachment::Color) };
     bindDrawBuffers(buffers, 1);
-    src.m_fbo.bind(GL_READ_FRAMEBUFFER);
     Vkm::GL::FrameBuffer::blit(
+        src.m_fbo.getID(),
+        m_fbo.getID(),
         0,
         0,
         static_cast<int32_t>(m_width),
@@ -306,9 +297,9 @@ void GLTarget::blitColorFrom(const GLTarget& src) {
 }
 
 void GLTarget::blitDepthFrom(const GLTarget& src) {
-    m_fbo.bind(GL_DRAW_FRAMEBUFFER);
-    src.m_fbo.bind(GL_READ_FRAMEBUFFER);
     Vkm::GL::FrameBuffer::blit(
+        src.m_fbo.getID(),
+        m_fbo.getID(),
         0,
         0,
         static_cast<int32_t>(m_width),

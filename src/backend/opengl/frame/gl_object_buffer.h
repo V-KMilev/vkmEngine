@@ -1,12 +1,9 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
 #include <vector>
 
-namespace Vkm::GL {
-    class ShaderStorageBuffer;
-}
+#include "gl_stream_ring.h"
 
 namespace Vkm::Engine {
 
@@ -43,12 +40,13 @@ class GLObjectBuffer {
 
     public:
         /**
-         * @brief Upload model matrices and flags, and first bones when @p posed, growing the buffers.
+         * @brief Write model matrices and flags, and first bones when @p posed, into @p stream.
          *
          * @param objects The objects this frame's index lists address.
          * @param posed   Whether the frame has a bone palette; without one no first bone is read.
+         * @param stream  The frame's streaming memory (GLView::stream).
          */
-        void upload(const RenderObjects& objects, bool posed);
+        void upload(const RenderObjects& objects, bool posed, Vkm::GL::StreamRing& stream);
 
         /**
          * @brief Bind the buffers to their storage points.
@@ -58,16 +56,18 @@ class GLObjectBuffer {
         void bind() const;
 
     private:
-        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_models;
-        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_skinFirst;
-        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_flags;  ///< An INSTANCE_FLAG_* word an object.
+        // Read by every pass that draws objects, so copied into video memory once a frame.
+        Vkm::GL::DeviceStream m_modelStream;
+        Vkm::GL::DeviceStream m_skinFirstStream;
+        Vkm::GL::DeviceStream m_flagStream;
+
+        Vkm::GL::BufferSpan m_models;
+        Vkm::GL::BufferSpan m_skinFirst;
+        Vkm::GL::BufferSpan m_flags;  ///< An INSTANCE_FLAG_* word an object.
 
         std::vector<uint32_t> m_flagScratch;  ///< The flags as uploaded; capacity kept across frames.
 
-        uint32_t m_modelCapacity     = 0;  ///< Bytes allocated for the models.
-        uint32_t m_skinFirstCapacity = 0;  ///< Bytes allocated for the first bones.
-        uint32_t m_flagCapacity      = 0;  ///< Bytes allocated for the flags.
-        bool     m_posed             = false;  ///< The last upload carried first bones.
+        bool m_posed = false;  ///< The last upload carried first bones.
 };
 
 } // namespace Vkm::Engine

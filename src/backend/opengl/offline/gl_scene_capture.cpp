@@ -331,7 +331,7 @@ void GLSceneCapture::prepareShadow(Vkm::GL::Context& gl, const RenderView& view,
     // Casters through the static depth programs (bind pose, as the capture draws a character),
     // a cutout through the one its material cuts.
     m_shadowFbo.bind();
-    m_shadowFbo.attachTexture2D(GL_DEPTH_ATTACHMENT, shadow.map->getID());
+    m_shadowFbo.attachTexture(GL_DEPTH_ATTACHMENT, shadow.map->getID());
     m_shadowFbo.setDrawBuffer(GL_NONE);
     m_shadowFbo.setReadBuffer(GL_NONE);
     gl.setViewport(0, 0, static_cast<int32_t>(SHADOW_RES), static_cast<int32_t>(SHADOW_RES));

@@ -48,12 +48,6 @@ constexpr float SHORE_NOTHING = 10000.0f;
 // Metres under the water's lowest the shore still draws: deeper counts past any reach.
 constexpr float SHORE_DEPTH = 2.0f;
 
-// Binds @p texture to texture unit @p unit, as the 4.3 context does it: no direct state access.
-void bindToUnit(uint32_t unit, GLenum target, uint32_t texture) {
-    VKM_GL_CHECK(glActiveTexture(GL_TEXTURE0 + unit));
-    VKM_GL_CHECK(glBindTexture(target, texture));
-}
-
 // Clears @p target's colour to @p colour and its depth to @p depth.
 void clearTarget(const Vkm::GL::FrameBuffer& target, float colour, float depth) {
     target.bind();
@@ -98,20 +92,18 @@ void GLOceanFields::beginFrame() {
 void GLOceanFields::drawRipples() {
     if (!m_fields) {
         constexpr int size = RIPPLE_FIELD_SIZE;
-        VKM_GL_CHECK(glGenTextures(1, &m_rows));
-        VKM_GL_CHECK(glBindTexture(GL_TEXTURE_2D_ARRAY, m_rows));
-        VKM_GL_CHECK(glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA32F, size, size, RIPPLE_FIELDS));
+        VKM_GL_CHECK(glCreateTextures(GL_TEXTURE_2D_ARRAY, 1, &m_rows));
+        VKM_GL_CHECK(glTextureStorage3D(m_rows, 1, GL_RGBA32F, size, size, RIPPLE_FIELDS));
         m_levels = mipLevelsDownToTwo(size, size, 16);
-        VKM_GL_CHECK(glGenTextures(1, &m_fields));
-        VKM_GL_CHECK(glBindTexture(GL_TEXTURE_2D_ARRAY, m_fields));
-        VKM_GL_CHECK(glTexStorage3D(GL_TEXTURE_2D_ARRAY, m_levels, GL_RGBA16F, size, size, RIPPLE_FIELDS));
-        VKM_GL_CHECK(glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT));
-        VKM_GL_CHECK(glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT));
-        VKM_GL_CHECK(glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR));
-        VKM_GL_CHECK(glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+        VKM_GL_CHECK(glCreateTextures(GL_TEXTURE_2D_ARRAY, 1, &m_fields));
+        VKM_GL_CHECK(glTextureStorage3D(m_fields, m_levels, GL_RGBA16F, size, size, RIPPLE_FIELDS));
+        VKM_GL_CHECK(glTextureParameteri(m_fields, GL_TEXTURE_WRAP_S, GL_REPEAT));
+        VKM_GL_CHECK(glTextureParameteri(m_fields, GL_TEXTURE_WRAP_T, GL_REPEAT));
+        VKM_GL_CHECK(glTextureParameteri(m_fields, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR));
+        VKM_GL_CHECK(glTextureParameteri(m_fields, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
         const float anisotropy = std::min(Vkm::GL::maxSupportedAnisotropy(), MAX_ANISOTROPY);
         if (anisotropy > 1.0f) {
-            VKM_GL_CHECK(glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_ANISOTROPY, anisotropy));
+            VKM_GL_CHECK(glTextureParameterf(m_fields, GL_TEXTURE_MAX_ANISOTROPY, anisotropy));
         }
     }
 
@@ -131,7 +123,7 @@ void GLOceanFields::drawRipples() {
 
     // The levels below, every layer at a dispatch: the driver's own mip build costs more.
     m_ripplesDown.bind();
-    bindToUnit(0, GL_TEXTURE_2D_ARRAY, m_fields);
+    VKM_GL_CHECK(glBindTextureUnit(0, m_fields));
     for (int level = 1; level < m_levels; ++level) {
         const uint32_t size = static_cast<uint32_t>(RIPPLE_FIELD_SIZE >> level);
         m_ripplesDown.setUniform1i("u_above", level - 1);
@@ -150,13 +142,12 @@ void GLOceanFields::captureShore(GLFrameContext& ctx) {
     const OceanData& ocean = ctx.view.ocean;
     if (!m_shoreMap) {
         const auto texture = [](uint32_t& id, GLenum format, int size = SHORE_SIZE) {
-            VKM_GL_CHECK(glGenTextures(1, &id));
-            VKM_GL_CHECK(glBindTexture(GL_TEXTURE_2D, id));
-            VKM_GL_CHECK(glTexStorage2D(GL_TEXTURE_2D, 1, format, size, size));
-            VKM_GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
-            VKM_GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
-            VKM_GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
-            VKM_GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
+            VKM_GL_CHECK(glCreateTextures(GL_TEXTURE_2D, 1, &id));
+            VKM_GL_CHECK(glTextureStorage2D(id, 1, format, size, size));
+            VKM_GL_CHECK(glTextureParameteri(id, GL_TEXTURE_MIN_FILTER, GL_LINEAR));
+            VKM_GL_CHECK(glTextureParameteri(id, GL_TEXTURE_MAG_FILTER, GL_LINEAR));
+            VKM_GL_CHECK(glTextureParameteri(id, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE));
+            VKM_GL_CHECK(glTextureParameteri(id, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE));
         };
         texture(m_shoreHeight, GL_R16F, SHORE_WATER);
         texture(m_shoreUnder, GL_R16F);
@@ -165,13 +156,11 @@ void GLOceanFields::captureShore(GLFrameContext& ctx) {
         texture(m_shoreOverDepth, GL_DEPTH_COMPONENT24);
         texture(m_shoreHalf, GL_R32F);
         texture(m_shoreMap, GL_R16F);
-        m_shoreTarget.bind();
-        m_shoreTarget.attachTexture2D(GL_COLOR_ATTACHMENT0, m_shoreUnder);
-        m_shoreTarget.attachTexture2D(GL_DEPTH_ATTACHMENT, m_shoreDepth);
+        m_shoreTarget.attachTexture(GL_COLOR_ATTACHMENT0, m_shoreUnder);
+        m_shoreTarget.attachTexture(GL_DEPTH_ATTACHMENT, m_shoreDepth);
         m_shoreTarget.setDrawBuffer(GL_COLOR_ATTACHMENT0);
-        m_shoreOverTarget.bind();
-        m_shoreOverTarget.attachTexture2D(GL_COLOR_ATTACHMENT0, m_shoreOver);
-        m_shoreOverTarget.attachTexture2D(GL_DEPTH_ATTACHMENT, m_shoreOverDepth);
+        m_shoreOverTarget.attachTexture(GL_COLOR_ATTACHMENT0, m_shoreOver);
+        m_shoreOverTarget.attachTexture(GL_DEPTH_ATTACHMENT, m_shoreOverDepth);
         m_shoreOverTarget.setDrawBuffer(GL_COLOR_ATTACHMENT0);
     }
 
@@ -217,24 +206,23 @@ void GLOceanFields::captureShore(GLFrameContext& ctx) {
     m_shoreWater.dispatch(waterGroups, waterGroups);
     VKM_GL_CHECK(glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT));
 
-    // Under the water the topmost thing, over it the lowest: the depth looks down, so the one
-    // keeps the least depth and the other the most.
-    const float nothing  = SHORE_NOTHING;
-    const float nearest  = 1.0f;
-    const float farthest = 0.0f;
+    // Under the water the topmost thing, over it the lowest: the depth looks down in the shadow
+    // convention, so the one keeps the least depth, as a shadow map does, and the other the most.
+    const float nothing = SHORE_NOTHING;
+    const float least   = 0.0f;
     ctx.gl.setViewport(0, 0, SHORE_SIZE, SHORE_SIZE);
-    clearTarget(m_shoreTarget, nothing, nearest);
-    clearTarget(m_shoreOverTarget, nothing, farthest);
+    clearTarget(m_shoreTarget, nothing, GLDepth::SHADOW_CLEAR);
+    clearTarget(m_shoreOverTarget, nothing, least);
 
     if (!m_shoreObjects.empty()) {
         const bool posed = ctx.skinPalette.count() > 0;
         m_shoreBatcher.buildGrouped(m_shoreObjects, objects, ctx.resources, ctx.skinPalette.count());
         ctx.objects.bind();
         if (posed) ctx.skinPalette.bind();
-        bindToUnit(0, GL_TEXTURE_2D, m_shoreHeight);
+        VKM_GL_CHECK(glBindTextureUnit(0, m_shoreHeight));
         for (const bool over : {false, true}) {
             (over ? m_shoreOverTarget : m_shoreTarget).bind();
-            ctx.gl.setDepthFunc(over ? GL_GREATER : GL_LESS);
+            ctx.gl.setDepthFunc(over ? GL_GREATER : GLDepth::SHADOW_TEST);
             const Vkm::GL::Shader* bound = nullptr;
             for (const InstanceDraw& draw : m_shoreBatcher.draws()) {
                 Vkm::GL::Shader& program = draw.skinned ? m_shoreSkinned : m_shore;
@@ -259,8 +247,8 @@ void GLOceanFields::captureShore(GLFrameContext& ctx) {
     m_shoreRows.bind();
     m_shoreRows.setUniform1f("u_texel", texel);
     m_shoreRows.setUniform1i("u_reach", reachTexels);
-    bindToUnit(0, GL_TEXTURE_2D, m_shoreUnder);
-    bindToUnit(1, GL_TEXTURE_2D, m_shoreOver);
+    VKM_GL_CHECK(glBindTextureUnit(0, m_shoreUnder));
+    VKM_GL_CHECK(glBindTextureUnit(1, m_shoreOver));
     VKM_GL_CHECK(glBindImageTexture(0, m_shoreHalf, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R32F));
     m_shoreRows.dispatch(groups, groups);
     VKM_GL_CHECK(glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT));
@@ -268,7 +256,7 @@ void GLOceanFields::captureShore(GLFrameContext& ctx) {
     m_shoreColumns.bind();
     m_shoreColumns.setUniform1f("u_texel", texel);
     m_shoreColumns.setUniform1i("u_reach", reachTexels);
-    bindToUnit(0, GL_TEXTURE_2D, m_shoreHalf);
+    VKM_GL_CHECK(glBindTextureUnit(0, m_shoreHalf));
     VKM_GL_CHECK(glBindImageTexture(0, m_shoreMap, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_R16F));
     m_shoreColumns.dispatch(groups, groups);
     VKM_GL_CHECK(glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT));
@@ -278,8 +266,8 @@ void GLOceanFields::captureShore(GLFrameContext& ctx) {
 }
 
 void GLOceanFields::bind() const {
-    if (m_rippled) bindToUnit(GLBindings::OceanTextureSlots::RIPPLES, GL_TEXTURE_2D_ARRAY, m_fields);
-    if (m_shored) bindToUnit(GLBindings::OceanTextureSlots::SHORE, GL_TEXTURE_2D, m_shoreMap);
+    if (m_rippled) VKM_GL_CHECK(glBindTextureUnit(GLBindings::OceanTextureSlots::RIPPLES, m_fields));
+    if (m_shored) VKM_GL_CHECK(glBindTextureUnit(GLBindings::OceanTextureSlots::SHORE, m_shoreMap));
 }
 
 } // namespace Vkm::Engine

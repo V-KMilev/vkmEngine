@@ -226,7 +226,12 @@ hints the context, makes it current, loads GL and presents. One backend exists
 `GLBackend` owns:
 
 - `Vkm::GL::Context` - GLEW state + draw helpers (from vkmGL)
-- `GLView` - the GPU resource synchronizer, and the `GLMeshPool` every mesh lives in
+- `GLView` - the GPU resource synchronizer, the `GLMeshPool` every mesh lives in, and the
+  frame's streaming memory (`stream()`, a `Vkm::GL::StreamRing`): every per-frame list -
+  draw lists, matrices, bone palettes, particles - is written into a persistently mapped
+  buffer of three fenced regions, so the CPU neither waits on the GPU nor has the driver
+  copy. What every pass reads - the matrices, flags and palettes - is then copied once into
+  video memory (`DeviceStream`). `GLBackend::render` fences the region at the frame's end
 - Render targets: `m_sceneHDR` (the geometry target: colour + depth + G-buffer),
   `m_sceneMS` (multisample twin when MSAA is on), `m_postA`/`m_postB`
   (colour-only post ping-pong scratches), `m_ao` (GTAO, sized by its pass once

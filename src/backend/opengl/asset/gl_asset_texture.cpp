@@ -6,7 +6,6 @@
 #include <GL/glew.h>
 
 #include "convention/gl_format_conversion.h"
-#include "gl_error_handle.h"
 #include "gl_texture.h"
 
 #include "loader/image_loaders.h"
@@ -22,52 +21,18 @@ bool uploadsByLevel(const TextureParams& params) {
     return params.mipLevels > 1 || isCompressedFormat(params.internalFormat);
 }
 
-// Fill every level the asset carries into @p texture, created with level 0 unfilled. The level
-// range is pinned to what was uploaded, so the texture is complete under any filter.
+// Fill every level the asset carries into @p texture, created with them unfilled.
 void uploadLevels(const Vkm::GL::Texture2D& texture, const TextureAsset& asset) {
-    const TextureParams& params   = asset.params;
-    const GLenum         internal = toGLenum(params.internalFormat);
-    const bool           blocks   = isCompressedFormat(params.internalFormat);
+    const TextureParams& params = asset.params;
+    const bool           blocks = isCompressedFormat(params.internalFormat);
 
-    texture.bind();
     const uint8_t* level = asset.pixelData.data();
     for (uint32_t index = 0; index < params.mipLevels; ++index) {
-        const GLsizei width  = static_cast<GLsizei>(mipExtent(params.width, index));
-        const GLsizei height = static_cast<GLsizei>(mipExtent(params.height, index));
         const uint64_t bytes = textureLevelBytes(params, index);
-        if (blocks) {
-            VKM_GL_CHECK(
-                glCompressedTexImage2D(
-                    GL_TEXTURE_2D,
-                    static_cast<GLint>(index),
-                    internal,
-                    width,
-                    height,
-                    0,
-                    static_cast<GLsizei>(bytes),
-                    level
-                )
-            );
-        } else {
-            VKM_GL_CHECK(
-                glTexImage2D(
-                    GL_TEXTURE_2D,
-                    static_cast<GLint>(index),
-                    static_cast<GLint>(internal),
-                    width,
-                    height,
-                    0,
-                    toGLenum(params.format),
-                    toGLenum(params.type),
-                    level
-                )
-            );
-        }
+        if (blocks) texture.uploadCompressedLevel(index, level, static_cast<uint32_t>(bytes));
+        else        texture.uploadLevel(index, level);
         level += bytes;
     }
-    const GLint maxLevel = static_cast<GLint>(params.mipLevels) - 1;
-    VKM_GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, maxLevel));
-    texture.unbind();
 }
 
 // Every channel of a one-channel map reads as its grey, so a shader taking roughness from green
@@ -75,9 +40,7 @@ void uploadLevels(const Vkm::GL::Texture2D& texture, const TextureAsset& asset) 
 void swizzleGrey(const Vkm::GL::Texture2D& texture, TextureInternalFormat format) {
     if (format != TextureInternalFormat::R8 && format != TextureInternalFormat::BC4R) return;
     const GLint grey[4] = {GL_RED, GL_RED, GL_RED, GL_ONE};
-    texture.bind();
-    VKM_GL_CHECK(glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, grey));
-    texture.unbind();
+    texture.setSwizzle(grey);
 }
 
 // The last upload id handed out. Textures upload on the render thread alone.
@@ -129,6 +92,9 @@ void GLTexture::update(const FontAsset& font) {
     params.minFilter       = Vkm::GL::TextureMinFilter::LinearMipmapLinear;
     params.magFilter       = Vkm::GL::TextureMagFilter::Linear;
     params.generateMipmaps = false;
+    // Text is drawn far smaller than baked, so the atlas needs levels, but only as many as the
+    // baker left a gutter for, or the smallest would blend neighbouring glyphs.
+    params.levels          = FontAsset::MIP_LEVELS;
     params.data            = font.atlasPixels.empty() ? nullptr : font.atlasPixels.data();
 
     if (!m_texture) {
@@ -139,13 +105,7 @@ void GLTexture::update(const FontAsset& font) {
     m_uploadId = ++g_lastUpload;
     if (!params.data) return;
 
-    // Text is drawn far smaller than baked, so the atlas needs levels, but only as many as the
-    // baker left a gutter for, or the smallest would blend neighbouring glyphs.
-    const GLint maxLevel = static_cast<GLint>(FontAsset::MIP_LEVELS) - 1;
-    m_texture->bind();
-    VKM_GL_CHECK(glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, maxLevel));
-    VKM_GL_CHECK(glGenerateMipmap(GL_TEXTURE_2D));
-    m_texture->unbind();
+    m_texture->generateMipmaps();
     m_hasPixels = true;
 }
 

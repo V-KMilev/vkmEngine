@@ -33,7 +33,7 @@ void GLProbeArray::createTargets(int capacity, int resolution) {
     // prior allocation, so this doubles as a rebuild.
     m_irradiance.create(irradianceSize(), 1, m_capacity + 1, GL_RGBA16F);
     m_prefilter.create(prefilterSize(), PREFILTER_MIPS, m_capacity + 1, GL_RGBA16F);
-    m_env.create(m_resolution, fullMipChain(m_resolution), GL_RGBA16F, GL_RGBA, GL_FLOAT, true);
+    m_env.create(m_resolution, fullMipChain(m_resolution), GL_RGBA16F, true);
 
     // Shared capture depth for the six geometry captures (convolution runs
     // depth-off and ignores it).
@@ -51,11 +51,9 @@ void GLProbeArray::createTargets(int capacity, int resolution) {
     m_depth = std::make_unique<Vkm::GL::Texture2D>("probe_depth", depth);
 
     m_fbo = std::make_unique<Vkm::GL::FrameBuffer>();
-    m_fbo->bind();
-    m_fbo->attachTexture2D(GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, m_depth->getID(), 0);
+    m_fbo->attachTexture(GL_DEPTH_ATTACHMENT, m_depth->getID());
     m_fbo->setDrawBuffer(GL_COLOR_ATTACHMENT0);
     m_fbo->setReadBuffer(GL_COLOR_ATTACHMENT0);
-    m_fbo->unbind();
 
     LOG_INFO(
         "Probe array allocated: %d layers and one staging @ res %d (prefilter %d/%d mips, irradiance %d)",

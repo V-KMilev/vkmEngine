@@ -99,7 +99,7 @@ bool GLShadowPass::uploadCasters(GLFrameContext& ctx) {
     if (m_tilesDrawn == 0) return false;
 
     // Object indices; every transform went up once for the frame, so nothing else uploads here.
-    m_list.upload();
+    m_list.upload(ctx.resources.stream());
     ctx.objects.bind();
     return true;
 }
