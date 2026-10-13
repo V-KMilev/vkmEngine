@@ -30,6 +30,7 @@
 #include "egl_context.h"
 
 #include "gl_backend.h"
+#include "frame/gl_occlusion_cull.h"
 #include "offline/gl_ibl_baker.h"
 #include "offline/gl_irradiance_baker.h"
 #include "offline/gl_probe_baker.h"
@@ -959,7 +960,8 @@ std::vector<unsigned char> render(
     GLBackend& backend,
     const UIDrawData* ui = nullptr,
     const RenderSettings& settings = RenderSettings{},
-    const SplashFrame* splash = nullptr
+    const SplashFrame* splash = nullptr,
+    int frames = FRAMES
 ) {
     Clock          clock;
     EventBus       events;
@@ -980,7 +982,7 @@ std::vector<unsigned char> render(
     view.surfaceHeight  = HEIGHT;
     view.settings       = tuning;
 
-    for (int frame = 0; frame < FRAMES; ++frame) {
+    for (int frame = 0; frame < frames; ++frame) {
         sky.update(ctx);
         ocean.update(ctx);
         visibility.update(ctx);
@@ -1036,26 +1038,36 @@ float differingShare(const std::vector<unsigned char>& frame, const unsigned cha
     return static_cast<float>(differing) / static_cast<float>(WIDTH * rows);
 }
 
-void compare(const char* name, void (*build)(Scenery&), const std::string& renderer, int& failures) {
+// @p culled draws with the GPU occlusion cull on, against the same golden: it may change no frame.
+void compare(
+    const char* name,
+    void (*build)(Scenery&),
+    const std::string& renderer,
+    int& failures,
+    bool culled = false
+) {
     // A backend of its own: each scene's asset handles restart where the last one's
     // did, which an outliving backend would take for the same assets.
     restoreContextDefaults();
     WindowManager window;
     GLBackend backend;
+    const std::string label = culled ? std::string(name) + ", culled" : std::string(name);
     if (!backend.init(window)) {
         ++failures;
-        std::printf("  %-62s %s\n", name, "<-- FAILED: the backend did not start");
+        std::printf("  %-62s %s\n", label.c_str(), "<-- FAILED: the backend did not start");
         return;
     }
 
     Scenery scenery;
     build(scenery);
+    scenery.settings.occlusionCulling = culled;
     const std::vector<unsigned char> frame = render(scenery, backend, nullptr, scenery.settings);
 
     const std::filesystem::path png = GOLDEN_DIR / (std::string(name) + ".png");
     const std::filesystem::path gpu = GOLDEN_DIR / (std::string(name) + ".gpu");
 
     if (std::getenv("VKM_UPDATE_GOLDENS")) {
+        if (culled) return;
         std::filesystem::create_directories(GOLDEN_DIR);
         stbi_write_png(png.string().c_str(), WIDTH, HEIGHT, 3, frame.data(), WIDTH * 3);
         std::ofstream(gpu) << renderer << "\n";
@@ -1066,11 +1078,11 @@ void compare(const char* name, void (*build)(Scenery&), const std::string& rende
     const std::string madeOn = readFile(gpu);
     if (madeOn.empty()) {
         ++failures;
-        std::printf("  %-62s %s\n", name, "<-- FAILED: no golden (VKM_UPDATE_GOLDENS=1 makes one)");
+        std::printf("  %-62s %s\n", label.c_str(), "<-- FAILED: no golden (VKM_UPDATE_GOLDENS=1 makes one)");
         return;
     }
     if (madeOn != renderer) {
-        std::printf("  %-62s skipped: golden made on %s\n", name, madeOn.c_str());
+        std::printf("  %-62s skipped: golden made on %s\n", label.c_str(), madeOn.c_str());
         return;
     }
 
@@ -1081,7 +1093,7 @@ void compare(const char* name, void (*build)(Scenery&), const std::string& rende
     if (!golden || w != WIDTH || h != HEIGHT) {
         if (golden) stbi_image_free(golden);
         ++failures;
-        std::printf("  %-62s %s\n", name, "<-- FAILED: golden unreadable or the wrong size");
+        std::printf("  %-62s %s\n", label.c_str(), "<-- FAILED: golden unreadable or the wrong size");
         return;
     }
 
@@ -1092,11 +1104,11 @@ void compare(const char* name, void (*build)(Scenery&), const std::string& rende
     if (!same) {
         ++failures;
         // Beside the log, so a failure can be looked at.
-        const std::string seen = "/tmp/vkm_golden_" + std::string(name) + ".png";
+        const std::string seen = "/tmp/vkm_golden_" + std::string(name) + (culled ? "_culled" : "") + ".png";
         stbi_write_png(seen.c_str(), WIDTH, HEIGHT, 3, frame.data(), WIDTH * 3);
         std::printf("      %.2f%% of pixels differ; this frame is at %s\n", share * 100.0f, seen.c_str());
     }
-    std::printf("  %-62s %s\n", name, same ? "ok" : "<-- FAILED");
+    std::printf("  %-62s %s\n", label.c_str(), same ? "ok" : "<-- FAILED");
 }
 
 void expect(const char* what, bool ok, int& failures) {
@@ -2032,6 +2044,145 @@ void testTheShoreRingsWhatBreaksTheWater(int& failures) {
     expect("  and nowhere else: not round a block hovering clear of it", left == 0.0f, failures);
 }
 
+// What the occlusion cull hid draws on the very frame it comes out: the prepass's second draw
+// catches what its first, from the last frame's verdicts, left out. A sphere behind a wall, the
+// wall moved aside: that one frame against a backend with no cull.
+void testWhatTheCullHidDrawsTheFrameItComesOut(int& failures) {
+    std::printf("A sphere the occlusion cull hid, when the wall in front of it moves aside:\n");
+
+    // The wall is the only box 16 wide.
+    const auto build = [](Scenery& s) {
+        base(s);
+        const MaterialHandle ground  = material(s, "golden:ground", {0.45f, 0.42f, 0.38f}, 0.9f, 0.0f);
+        const MaterialHandle red     = material(s, "golden:red", {0.8f, 0.1f, 0.1f}, 0.4f, 0.0f);
+        const MaterialHandle plaster = material(s, "golden:plaster", {0.7f, 0.68f, 0.64f}, 0.9f, 0.0f);
+        place(s, s.cube, ground, {0.0f, -0.5f, 0.0f}, {40.0f, 1.0f, 40.0f});
+        place(s, s.sphere, red, {0.0f, 1.75f, -4.0f}, glm::vec3(3.5f));
+        place(s, s.cube, plaster, {0.0f, 3.0f, 0.0f}, {16.0f, 6.0f, 0.4f});
+        sunAndCamera(s, {0.0f, 1.5f, 6.0f}, {0.0f, 1.0f, -4.0f});
+    };
+    const auto moveWall = [](Scenery& s) {
+        s.scene.forEach<Transform>([](EntityId, Transform& t) {
+            if (t.scale.x == 16.0f) t.position.x = 24.0f;
+        });
+    };
+
+    RenderSettings culling;
+    culling.occlusionCulling = true;
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend culled;
+    if (!culled.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    using Set = GLOcclusionCull::Set;
+    Scenery hidden;
+    build(hidden);
+    render(hidden, culled, nullptr, culling);
+    const uint32_t shownBehind = culled.occlusionCull().countIn(Set::Shown);
+    moveWall(hidden);
+    const std::vector<unsigned char> seen = render(hidden, culled, nullptr, culling, nullptr, 1);
+    const uint32_t revealed = culled.occlusionCull().countIn(Set::Revealed);
+    const uint32_t shown    = culled.occlusionCull().countIn(Set::Shown);
+    std::printf("      %u shown behind the wall; then %u revealed, %u shown\n", shownBehind, revealed, shown);
+    expect("behind the wall, the sphere is culled and the ground and wall shown", shownBehind == 2, failures);
+    // The wall moved out of the view: the ground and the sphere.
+    expect("  and out from behind it, the second draw takes it", revealed == 1 && shown == 2, failures);
+
+    restoreContextDefaults();
+    GLBackend plain;
+    if (!plain.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery open;
+    build(open);
+    moveWall(open);
+    const std::vector<unsigned char> want = render(open, plain);
+
+    const float share = differingShare(seen, want.data());
+    std::printf("      %.2f%% of pixels differ\n", share * 100.0f);
+    expect("its first frame out is the frame without the cull", share <= PIXEL_TOLERANCE, failures);
+}
+
+// A weapon held into a wall: its world box lies wholly behind the wall's face, yet the viewmodel
+// draws through its own lens in front of everything, so the occlusion cull shows it whatever the
+// depth says - at four samples and at the one the Low tier renders with.
+void testAWeaponHeldIntoAWallIsNotCulled(int& failures) {
+    std::printf("A weapon held into a wall, with the occlusion cull on:\n");
+    for (const uint32_t samples : {4u, 1u}) {
+        std::vector<unsigned char> frames[2];
+        for (const bool culled : {false, true}) {
+            restoreContextDefaults();
+            WindowManager window;
+            GLBackend backend;
+            if (!backend.init(window)) {
+                expect("the backend starts", false, failures);
+                return;
+            }
+            Scenery s;
+            buildHeld(s, SeenBy::Viewmodel, -0.75f);
+            s.settings.msaaSamples      = samples;
+            s.settings.occlusionCulling = culled;
+            frames[culled ? 1 : 0] = render(s, backend, nullptr, s.settings);
+        }
+        const float share = differingShare(frames[1], frames[0].data());
+        std::printf("      %u sample(s): %.2f%% of pixels differ, culled\n", samples, share * 100.0f);
+        const char* what = samples > 1 ? "the weapon shows as without the cull" : "  and at one sample";
+        expect(what, share <= PIXEL_TOLERANCE, failures);
+    }
+}
+
+// A box seen face-on, its face filling an orthographic frame, is tested against the depth it laid
+// itself: the box's nearest point and the depth buffer's rounding of the same face must not hide
+// it. Frame by frame, as the verdict alternating would show only some of them. Without the cull's
+// DEPTH_SLACK it fails only where the depth buffer rounds the hiding way.
+void testAFaceFillingTheFrameIsNotCulledByItsOwnDepth(int& failures) {
+    std::printf("A wall face-on, filling the frame, with the occlusion cull on:\n");
+
+    const auto build = [](Scenery& s) {
+        base(s);
+        const MaterialHandle plaster = material(s, "golden:plaster", {0.7f, 0.68f, 0.64f}, 0.9f, 0.0f);
+        place(s, s.cube, plaster, {0.0f, 2.0f, 0.0f}, {40.0f, 30.0f, 1.0f});
+        sunAndCamera(s, {0.0f, 2.0f, 3.5f}, {0.0f, 2.0f, 0.0f});
+        // Orthographic, as the editor's side views are: every pixel of the face at one depth.
+        orthographic(s, 5.0f);
+    };
+
+    RenderSettings culling;
+    culling.occlusionCulling = true;
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend plain;
+    if (!plain.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery seen;
+    build(seen);
+    const std::vector<unsigned char> want = render(seen, plain);
+
+    restoreContextDefaults();
+    GLBackend culled;
+    if (!culled.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery wall;
+    build(wall);
+    constexpr int WATCHED = 8;
+    float worst = 0.0f;
+    for (int frame = 0; frame < WATCHED; ++frame) {
+        const std::vector<unsigned char> frameSeen = render(wall, culled, nullptr, culling, nullptr, 1);
+        worst = std::max(worst, differingShare(frameSeen, want.data()));
+    }
+    std::printf("      at most %.2f%% of pixels differ over %d frames\n", worst * 100.0f, WATCHED);
+    expect("every frame is the frame without the cull", worst <= PIXEL_TOLERANCE, failures);
+}
+
 // A crease 35 cm away, near enough that GTAO caps its reach, seen level and with the camera
 // rolled a quarter turn: the same occlusion either way. The cap is in pixels; one in screen UV
 // would reach 1.78 times as far across a 16:9 frame as up it, and the crease would darken by
@@ -2588,32 +2739,43 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
         return;
     }
 
-    compare("materials",   buildMaterials,   gl.renderer(), failures);
-    compare("reflections", buildReflections, gl.renderer(), failures);
-    compare("glint",       buildGlint,       gl.renderer(), failures);
-    compare("smoke",       buildSmoke,       gl.renderer(), failures);
-    compare("sprites",     buildSprites,     gl.renderer(), failures);
-    compare("viewmodel",   buildViewmodel,   gl.renderer(), failures);
-    compare("cutout",      buildCutout,      gl.renderer(), failures);
-    compare("decals",      buildDecals,      gl.renderer(), failures);
-    compare("fog",         buildFog,         gl.renderer(), failures);
-    compare("nosky",       buildNoSky,       gl.renderer(), failures);
-    compare("spot",        buildSpot,        gl.renderer(), failures);
-    compare("penumbra",    buildPenumbra,    gl.renderer(), failures);
-    compare("point",       buildPoint,       gl.renderer(), failures);
-    compare("mirror",      buildMirror,      gl.renderer(), failures);
-    compare("twosided",    buildTwoSided,    gl.renderer(), failures);
-    compare("coat",        buildCoat,        gl.renderer(), failures);
-    compare("cloth",       buildCloth,       gl.renderer(), failures);
-    compare("sunset",      buildSunset,      gl.renderer(), failures);
-    compare("room",        buildRoom,        gl.renderer(), failures);
-    compare("aerial",      buildAerial,      gl.renderer(), failures);
+    struct Golden {
+        const char* name;
+        void (*build)(Scenery&);
+    };
+    const Golden goldens[] = {
+        {"materials",   buildMaterials},
+        {"reflections", buildReflections},
+        {"glint",       buildGlint},
+        {"smoke",       buildSmoke},
+        {"sprites",     buildSprites},
+        {"viewmodel",   buildViewmodel},
+        {"cutout",      buildCutout},
+        {"decals",      buildDecals},
+        {"fog",         buildFog},
+        {"nosky",       buildNoSky},
+        {"spot",        buildSpot},
+        {"penumbra",    buildPenumbra},
+        {"point",       buildPoint},
+        {"mirror",      buildMirror},
+        {"twosided",    buildTwoSided},
+        {"coat",        buildCoat},
+        {"cloth",       buildCloth},
+        {"sunset",      buildSunset},
+        {"room",        buildRoom},
+        {"aerial",      buildAerial},
+    };
+    for (const Golden& golden : goldens) compare(golden.name, golden.build, gl.renderer(), failures);
+    for (const Golden& golden : goldens) compare(golden.name, golden.build, gl.renderer(), failures, true);
 
     testTheUIOverlayLandsOnItsPixels(failures);
     testAViewmodelShadesNothingBehindIt(failures);
     testABackendDropsWhatTheSceneNoLongerAsksFor(failures);
     testAFrameWithNoCameraKeepsTheProbesBaked(failures);
     testAProbeFollowsItsLight(failures);
+    testWhatTheCullHidDrawsTheFrameItComesOut(failures);
+    testAWeaponHeldIntoAWallIsNotCulled(failures);
+    testAFaceFillingTheFrameIsNotCulledByItsOwnDepth(failures);
     testADriftingSunIsFollowedOverFrames(failures);
     testASplashFadesLinearlyOnTheGlass(failures);
     testAnOpenFloorIsNotOccluded(failures);

@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 
 #include "frame/gl_instance_batcher.h"
+#include "frame/gl_occlusion_cull.h"
 
 namespace Vkm::GL {
     class Context;
@@ -77,6 +78,28 @@ struct GLFrameContext {
     const GLInstanceBatcher& opaqueBatch;
 
     // The fields below are filled by the backend before the pass loop runs.
+
+    /**
+     * @brief The GPU occlusion cull of opaqueBatch this frame, or null when it is off.
+     *
+     * The depth prepass runs its phases and draws its first two sets; then every draw of the
+     * opaque batch is its Set::Shown (drawOpaque()).
+     */
+    GLOcclusionCull* occlusion = nullptr;
+
+    /**
+     * @brief Submit one of opaqueBatch's draws: from @p set of the cull while one runs, else whole.
+     *
+     * @param draw One of opaqueBatch's draws.
+     * @param set  Which of the cull's lists; the forward pass's by default.
+     */
+    void drawOpaque(const InstanceDraw& draw, GLOcclusionCull::Set set = GLOcclusionCull::Set::Shown) const {
+        if (occlusion) {
+            occlusion->draw(gl, draw, set);
+        } else {
+            opaqueBatch.draw(gl, draw);
+        }
+    }
 
     /**
      * @brief The post-processing colour chain.

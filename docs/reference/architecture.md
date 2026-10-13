@@ -32,10 +32,10 @@ Three roots keep the halves apart: `engineRoot()` for what ships with the engine
 (shaders, default font, icons; read-only to a game), `projectRoot()` for what the
 game owns, and `userRoot()` for how one person likes their tools - the editor's
 recent-projects list and window layout, which follow the user rather than either
-of the other two. `examples/potion_runner`, `examples/physics_lab` and
-`examples/stress_arena` are complete worked examples - the first and the last
-build their worlds in code, and the middle one is the only one that authors and
-saves a scene, which is also what makes it the multiplayer sample. See [io.md](io.md#projects-and-the-three-roots).
+of the other two. `examples/potion_runner`, `examples/physics_lab`,
+`examples/stress_arena` and `examples/city_block` are complete worked examples -
+all but physics_lab build their worlds in code, and physics_lab is the only one that
+authors and saves a scene, which is also what makes it the multiplayer sample. See [io.md](io.md#projects-and-the-three-roots).
 
 ## Overview
 

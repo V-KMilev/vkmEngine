@@ -217,12 +217,27 @@ Projects the bounding sphere radius into screen space using
 than `minPixels` (`RenderSettings::cullMinPixels`). Uses a pre-computed squared
 threshold for a sqrt-free comparison.
 
-### No occlusion culling
+### Occlusion culling, on the GPU, as an option
 
-Nothing culls by occlusion. After the depth prepass the forward pass rejects a
-hidden fragment at the depth test, so all an occlusion cull could still save is
-the vertex work of hidden instances, which is less than a GPU Hi-Z cull costs.
-See [engine.md](../guides/engine.md#4-what-has-already-been-decided).
+Nothing here culls by occlusion. With `RenderSettings::occlusionCulling` on, the
+backend culls the opaque batch on the GPU after this system's cull has built it
+(`GLOcclusionCull`, run by the depth prepass), in two phases: the prepass draws
+first what the last frame's cull showed, then every instance's box is tested
+against a farthest-depth pyramid of what that drew, and what it shows that was
+hidden is drawn next. The forward pass draws what the second test showed. The
+image is the same with it on or off - the render suite draws every golden both
+ways - and the last frame's verdicts only choose what draws first. One thing it
+does not keep is the order of a run's instances, which the GPU counts in as it
+finds them: two instances of one mesh overlapping in one plane, the same depth
+at every pixel, may swap which shows from frame to frame.
+
+After the depth prepass the forward pass already rejects a hidden fragment at
+the depth test, so all the cull can save is the GPU's vertex work on hidden
+instances. That shows in the frame only where the GPU is what bounds it and much
+of the scene is hidden behind the rest - `examples/city_block`, a city walked
+at street level, takes about a third off its forward pass, though its frame is
+bound by the CPU - and costs the frame in an open scene, so it is off by
+default. See [engine.md](../guides/engine.md#4-what-has-already-been-decided).
 
 ## Posed bounds
 
@@ -271,7 +286,7 @@ for the sea's own surface, grown as step 4 says.
 ## Configuration
 
 The two thresholds are `cullMinPixels` and `cullMaxDistance` on
-`RenderSettings`, read off `FrameContext::render` each frame - the engine's one
+`RenderSettings` (beside `occlusionCulling`, which the backend reads), read off `FrameContext::render` each frame - the engine's one
 copy, which the host seeds from the project's render block and the editor's
 Culling card or a game's settings screen edits live:
 

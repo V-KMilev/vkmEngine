@@ -33,6 +33,7 @@
 #include "frame/gl_lights.h"
 #include "asset/gl_mesh.h"
 #include "frame/gl_object_buffer.h"
+#include "frame/gl_occlusion_cull.h"
 #include "offline/gl_preview.h"
 #include "storage/gl_probe_manager.h"
 #include "offline/gl_baked_from.h"
@@ -98,6 +99,13 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         uint32_t maxAnisotropy() const override;
         bool holdsPixels(const TextureHandle& texture, uint64_t version) const override;
         bool readFrame(const RenderView& view, std::vector<uint8_t>& pixels) override;
+
+        /**
+         * @brief The GPU occlusion cull, as its last frame left it: for tests.
+         *
+         * @return The backend's cull of the opaque batch.
+         */
+        const GLOcclusionCull& occlusionCull() const { return m_occlusion; }
 
         /**
          * @brief The engine constants every shader stage is compiled with.
@@ -210,6 +218,7 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
 
         // Batches the opaque bucket once per frame (see GLFrameContext::opaqueBatch).
         GLInstanceBatcher m_opaqueBatcher;
+        GLOcclusionCull   m_occlusion;  ///< Culls m_opaqueBatcher on the GPU, when the settings ask.
 
         ScreenTriangle m_screenTri;  ///< Shared fullscreen triangle, referenced by the frame context.
         GLMesh         m_unitCube;   ///< The one unit cube, lent to whatever draws a box.

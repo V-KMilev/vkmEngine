@@ -121,8 +121,9 @@ per copy - Tracy's profiler asserts on its own singleton guard.
 
 ## The examples build the way a game does
 
-`examples/potion_runner`, `examples/physics_lab` and `examples/stress_arena` are
-projects, and one `CMakeLists.txt` each serves both ways of building them. Configured on its own -
+`examples/potion_runner`, `examples/physics_lab`, `examples/stress_arena` and
+`examples/city_block` are projects, and one `CMakeLists.txt` each serves both ways of
+building them. Configured on its own -
 
 ```bash
 ./tools/vkm build examples/potion_runner
@@ -248,7 +249,7 @@ half a smoke test turns on.
 | `vkm_editor` | Static lib | Editor UI, panels, overlays, gizmo, scene I/O |
 | `vkm_build_info` | Interface lib | Compile-time build metadata (version, branch, commit hash) |
 | `vkm_warnings` | Interface lib | Shared GCC/Clang warning flags; first-party targets opt in, submodules don't |
-| `<project>_module` | Shared lib | One per project (`potion_runner_module`, `physics_lab_module`, `stress_arena_module`): that project's gameplay sources built by `vkm_add_gameplay_module()` as `game.dll`/`libgame.so` into the project's own `bin/`. The engine ships no gameplay of its own |
+| `<project>_module` | Shared lib | One per project (`potion_runner_module`, `physics_lab_module`, `stress_arena_module`, `city_block_module`): that project's gameplay sources built by `vkm_add_gameplay_module()` as `game.dll`/`libgame.so` into the project's own `bin/`. The engine ships no gameplay of its own |
 | `vkm_runtime_app` | Executable | Bare engine, no editor. Includes `app/engine_app.h` for the shared bootstrap; links no model importer and no ImGui. Runs as `vkm_runtime` |
 | `vkm_editor_app` | Executable | Engine libs + `vkm_editor` + `vkm_cook`; loads the open project's module for hot-reload. Runs as `vkm_editor` |
 | `vkm_cook_app` | Executable | Headless asset cook: `vkm_cook` with no window, no GL context and no `Engine`, so it runs over SSH and on CI. Runs as `vkm_cook` |
@@ -450,6 +451,7 @@ shaders/
   ibl/          # equirect/, sky/, irradiance/, prefilter/, brdf/  (IBL bake)
   irradiance/   # surfels/, relight/, fill/, surfel.glsl  (the SH probe grid: capture, light, repair)
   resolve/      # geometry/, color/  (the MSAA resolves)
+  cull/         # pyramid/, instances/  (the GPU occlusion cull)
   gtao/  screen_shadow/  cluster/  fog/  reflection/
   bloom/  dof/  decal/  particle/
   skybox/  grid/  composite/  ui/  splash/

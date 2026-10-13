@@ -121,6 +121,7 @@ uint64_t lightingDigest(const std::vector<LightData>& lights) {
 } // namespace
 
 std::string GLBackend::shaderConstants() {
+    using CullSet = GLOcclusionCull::Set;
     std::ostringstream out;
 
     out << "const int   MAX_LIGHTS              = " << Config::MAX_LIGHTS              << ";\n"
@@ -148,6 +149,9 @@ std::string GLBackend::shaderConstants() {
         << "const float MAX_PROBE_LOD           = " << (GLProbeArray::PREFILTER_MIPS - 1) << ".0;\n"
         << "const float UI_TEXT_MARK            = " << std::to_string(UI_TEXT_MARK) << ";\n"
         << "const uint  INSTANCE_FLAG_VIEWMODEL = " << INSTANCE_FLAG_VIEWMODEL << "u;\n"
+        << "const int   CULL_SET_SEEN           = " << static_cast<int>(CullSet::Seen) << ";\n"
+        << "const int   CULL_SET_REVEALED       = " << static_cast<int>(CullSet::Revealed) << ";\n"
+        << "const int   CULL_SET_SHOWN          = " << static_cast<int>(CullSet::Shown) << ";\n"
         << "const float VIEWMODEL_DEPTH_SHARE   = " << std::to_string(VIEWMODEL_DEPTH_SHARE) << ";\n"
         << "const vec2  TRANSMITTANCE_LUT_SIZE  = vec2("
         << GLAtmosphere::TRANSMITTANCE_WIDTH << ".0, " << GLAtmosphere::TRANSMITTANCE_HEIGHT << ".0);\n"
@@ -468,6 +472,10 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
 
     ctx.sunDir = sunDir;
     ctx.sky    = sky ? &*sky : nullptr;
+    if (view.settings.occlusionCulling && view.hasCamera) {
+        PROFILE_SCOPE("Render/OcclusionPrepare");
+        if (m_occlusion.prepare(m_opaqueBatcher, *view.objects, resources)) ctx.occlusion = &m_occlusion;
+    }
     m_oceanFields.beginFrame();
 
     // Post colour chain: the scene starts on the geometry target; the first

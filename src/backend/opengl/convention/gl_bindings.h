@@ -33,7 +33,12 @@ namespace Vkm::Engine {
     X(SSBOBindingPoints,      INSTANCE_SKIN_BASE,    6,  SSBO_INSTANCE_SKIN_BASE,             Per object: its first bone in SKIN_PALETTE)                          \
     X(SSBOBindingPoints,      INSTANCE_FLAGS,        7,  SSBO_INSTANCE_FLAGS,                 Per object: how the eye draws it (shaders/viewmodel.glsl))           \
     X(SSBOBindingPoints,      INSTANCE_MODELS,       10, SSBO_INSTANCE_MODELS,                Per object: its model matrix)                                        \
+    X(SSBOBindingPoints,      CULL_BOUNDS,           11, SSBO_CULL_BOUNDS,                    Per opaque command: its mesh local box (GPU cull))                   \
+    X(SSBOBindingPoints,      CULL_VISIBLE,          12, SSBO_CULL_VISIBLE,                   Per object: whether the last cull saw it)                            \
+    X(SSBOBindingPoints,      CULL_COMMANDS,         13, SSBO_CULL_COMMANDS,                  The culled draws: a command list per set)                            \
+    X(SSBOBindingPoints,      CULL_INSTANCES,        14, SSBO_CULL_INSTANCES,                 The culled instances: an object list per set)                        \
     X(SSBOBindingPoints,      RELIGHT_LIGHTS,        15, SSBO_RELIGHT_LIGHTS,                 The lights reaching each irradiance probe cell (the relight))        \
+    X(SSBOBindingPoints,      CULL_SOURCE,           16, SSBO_CULL_SOURCE,                    The opaque batch instances the GPU cull sorts)                       \
     X(ShadowTextureSlots,     ATLAS_2D,              11, SHADOW_SLOT_ATLAS_2D,                Tiled 2D depth atlas (sampler2DShadow))                              \
     X(ShadowTextureSlots,     CUBE,                  12, SHADOW_SLOT_CUBE,                    Point-light depth cubes: a layer each (samplerCubeArrayShadow))      \
     X(ShadowTextureSlots,     CUBE_RAW,              13, SHADOW_SLOT_CUBE_RAW,                The cubes uncompared (samplerCubeArray) for the blocker search)      \
@@ -56,6 +61,9 @@ namespace Vkm::Engine {
     X(OverlayTextureSlots,    SPLASH_LOGO,           0,  SPLASH_SLOT_LOGO,                    The splash logo (u_logo))                                            \
     X(OverlayTextureSlots,    SPLASH_CAPTION,        1,  SPLASH_SLOT_CAPTION,                 The line at the foot of the splash (u_caption))                      \
     X(IrradianceRelightSlots, SURFELS,               0,  RELIGHT_SLOT_SURFELS,                What the irradiance probes see as surfaces to light (u_surfels))     \
+    X(CullTextureSlots,       DEPTH,                 0,  CULL_SLOT_DEPTH,                     The scene depth the pyramid is built from (u_depth))                 \
+    X(CullTextureSlots,       DEPTH_MS,              1,  CULL_SLOT_DEPTH_MS,                  The same while it is multisample (u_depthMS))                        \
+    X(CullTextureSlots,       PYRAMID,               2,  CULL_SLOT_PYRAMID,                   The farthest-depth pyramid the cull tests bounds against (u_pyramid)) \
     X(ReflectionTextureSlots, WEIGHT,                0,  REFLECT_SLOT_WEIGHT,                 The forward pass reflection weight (rgb) + roughness (a))            \
     X(ReflectionTextureSlots, ENV,                   1,  REFLECT_SLOT_ENV,                    That weight times the probe / sky radiance)                          \
     X(ReflectionTextureSlots, TRACE,                 2,  REFLECT_SLOT_TRACE,                  Each pixel hit: uv + trust + the chain level its lobe spans)         \
@@ -99,6 +107,7 @@ namespace Vkm::Engine {
     X(ComputeGroups,          IMAGE,                 8,  GROUP_IMAGE,                         Edge of a square group over a 2D image or a froxel slice)            \
     X(ComputeGroups,          CLUSTERS,              64, GROUP_CLUSTERS,                      Clusters culled per group)                                           \
     X(ComputeGroups,          SCREEN_SHADOW,         64, GROUP_SCREEN_SHADOW,                 Pixels a wavefront marches toward the light)                         \
+    X(ComputeGroups,          CULL,                  64, GROUP_CULL,                          Instances the GPU occlusion cull sorts per group)                    \
     X(ComputeGroups,          OCEAN_FFT,             256, GROUP_OCEAN_FFT,                    A butterfly each across a line of an ocean ripple field: half its texels)
 
 /**

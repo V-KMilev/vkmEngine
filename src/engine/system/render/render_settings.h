@@ -139,6 +139,13 @@ struct RenderSettings {
     // Culling
     float cullMaxDistance = 500.0f;  ///< World-space.
     float cullMinPixels   = 3.0f;    ///< Screen-pixel size; 0 disables.
+    /**
+     * @brief Cull the opaque geometry other geometry hides, on the GPU.
+     *
+     * Off by default: it pays only where the GPU bounds the frame and much of the scene is
+     * hidden (docs/reference/visibility.md).
+     */
+    bool occlusionCulling = false;
 
     // Anti-aliasing
     /// Scene-pass MSAA samples, one of MSAA_SAMPLE_COUNTS; post runs on the resolved buffer.
@@ -224,6 +231,7 @@ void visitShippedRenderFields(Settings& r, Fn&& f) {
     f("exposure",          r.exposure);
     f("cullMaxDistance",   r.cullMaxDistance);
     f("cullMinPixels",     r.cullMinPixels);
+    f("occlusionCulling",  r.occlusionCulling);
     f("msaaSamples",       r.msaaSamples);
     f("textureFiltering",  r.textureFiltering);
     f("textureAnisotropy", r.textureAnisotropy);

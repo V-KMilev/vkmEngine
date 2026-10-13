@@ -261,10 +261,11 @@ void GLMeshPool::drawIndirect(
     const Vkm::GL::VertexBuffer& instances,
     const Vkm::GL::VertexBuffer& commands,
     uint32_t first,
-    uint32_t count
+    uint32_t count,
+    uint32_t skip
 ) const {
     if (count == 0 || !m_indices) return;
-    bind(layout, instances);
+    bind(layout, instances, skip);
     commands.bind(GL_DRAW_INDIRECT_BUFFER);
     VKM_GL_CHECK(
         glMultiDrawElementsIndirect(
@@ -277,10 +278,11 @@ void GLMeshPool::drawIndirect(
     );
 }
 
-void GLMeshPool::bind(VertexLayout layout, const Vkm::GL::VertexBuffer& instances) const {
+void GLMeshPool::bind(VertexLayout layout, const Vkm::GL::VertexBuffer& instances, uint32_t skip) const {
     m_arrays[static_cast<size_t>(layout)].bind();
     VKM_GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_indices->getID()));
-    VKM_GL_CHECK(glBindVertexBuffer(INSTANCE_BINDING, instances.getID(), 0, sizeof(uint32_t)));
+    const auto offset = static_cast<GLintptr>(skip) * static_cast<GLintptr>(sizeof(uint32_t));
+    VKM_GL_CHECK(glBindVertexBuffer(INSTANCE_BINDING, instances.getID(), offset, sizeof(uint32_t)));
 }
 
 void GLMeshPool::wire() {

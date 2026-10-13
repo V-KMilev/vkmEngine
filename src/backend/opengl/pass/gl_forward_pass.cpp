@@ -145,6 +145,16 @@ void GLForwardPass::drawBatch(GLFrameContext& ctx, const GLInstanceBatcher& batc
     const GLMaterial*      boundMaterial = nullptr;
     const Vkm::GL::Shader* boundProgram  = nullptr;
 
+    // The opaque batch draws what the occlusion cull showed, while one runs.
+    const bool opaque = &batch == &ctx.opaqueBatch;
+    const auto submit = [&](const InstanceDraw& draw) {
+        if (opaque) {
+            ctx.drawOpaque(draw);
+        } else {
+            batch.draw(ctx.gl, draw);
+        }
+    };
+
     for (const InstanceDraw& draw : batch.draws()) {
         // Grouped batches sort skinned runs together, so this switches once; a
         // sequential (transparent) batch may alternate, to keep its depth order.
@@ -164,10 +174,10 @@ void GLForwardPass::drawBatch(GLFrameContext& ctx, const GLInstanceBatcher& batc
         // Blending does not depth-sort a mesh's own faces: the far side first, then the near.
         if (blended && material && material->doubleSided()) {
             ctx.gl.setCullFace(GL_FRONT);
-            batch.draw(ctx.gl, draw);
+            submit(draw);
             ctx.gl.setCullFace(GL_BACK);
         }
-        batch.draw(ctx.gl, draw);
+        submit(draw);
     }
     ctx.gl.setFaceCulling(true);
 }
