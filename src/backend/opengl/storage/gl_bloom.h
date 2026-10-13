@@ -29,16 +29,16 @@ class GLBloom {
 
     public:
         /**
-         * @brief Allocate, or reallocate, the chain for a viewport size.
+         * @brief Allocate, or reallocate, the chain for a scene size.
          *
-         * The base is half the viewport; a no-op when it already matches.
+         * The base is half the scene; a no-op when it already matches.
          *
-         * @param viewportWidth  The viewport's width in pixels.
-         * @param viewportHeight Its height.
+         * @param sceneWidth  The scene's width in pixels.
+         * @param sceneHeight Its height.
          */
-        void resize(uint32_t viewportWidth, uint32_t viewportHeight) {
-            const int w = static_cast<int>(viewportWidth) / 2;
-            const int h = static_cast<int>(viewportHeight) / 2;
+        void resize(uint32_t sceneWidth, uint32_t sceneHeight) {
+            const int w = static_cast<int>(sceneWidth) / 2;
+            const int h = static_cast<int>(sceneHeight) / 2;
             if (w <= 0 || h <= 0) return;
             if (m_chain.isReady() && w == m_chain.mipWidth(0) && h == m_chain.mipHeight(0)) return;
 

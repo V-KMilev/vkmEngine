@@ -314,6 +314,32 @@ void WindowManager::updateMode(WindowMode windowMode) {
     LOG_INFO("Mode -> %s (%dx%d @ %dHz)", toString(windowMode), targetW, targetH, targetRefresh);
 }
 
+std::vector<WindowSize> WindowManager::renderResolutions() const {
+    if (!m_windowHandle) return {};
+    GLFWmonitor* monitor = getCurrentMonitor(m_windowHandle);
+    const GLFWvidmode* own = monitor ? glfwGetVideoMode(monitor) : nullptr;
+    if (!own) return {};
+    int count = 0;
+    const GLFWvidmode* modes = glfwGetVideoModes(monitor, &count);
+    std::vector<WindowSize> sizes;
+    for (int i = 0; i < count; ++i) sizes.push_back({modes[i].width, modes[i].height});
+    return fittingWindowSizes(sizes, {own->width, own->height});
+}
+
+std::vector<WindowSize> fittingWindowSizes(const std::vector<WindowSize>& modes, WindowSize monitor) {
+    std::vector<WindowSize> fit;
+    for (const WindowSize& size : modes) {
+        const bool fits = size.width > 0 && size.height > 0 && size.width <= monitor.width
+            && size.height <= monitor.height;
+        if (fits && std::find(fit.begin(), fit.end(), size) == fit.end()) fit.push_back(size);
+    }
+    std::sort(fit.begin(), fit.end(), [](const WindowSize& a, const WindowSize& b) {
+        return a.width * a.height > b.width * b.height
+            || (a.width * a.height == b.width * b.height && a.width > b.width);
+    });
+    return fit;
+}
+
 void WindowManager::updateInput() {
     if (!m_windowHandle) return;
 

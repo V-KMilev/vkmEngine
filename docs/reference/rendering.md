@@ -127,7 +127,8 @@ view each frame.
   the frame, after the `exposure`, so raising it does not change what glows).
 - **Quality:** `msaaSamples` (1/2/4/8), `shadowResolution` (1024/2048/4096, the
   largest shadow tile, which the sun's near cascades take; each sun and spot's
-  penumbra is its own `sourceRadius`, [lighting.md](lighting.md)),
+  penumbra is its own `sourceRadius`, [lighting.md](lighting.md)), `softShadows`
+  (off, every shadow takes the hard filter), `renderScale` (below),
   `textureFiltering` (`Nearest` / `Bilinear` / `Trilinear`) and
   `textureAnisotropy` - the degree layered on trilinear sampling, pinned to 1 by
   the coarser two modes and clamped to the ceiling that
@@ -185,15 +186,28 @@ view each frame.
   nothing to include.
 
 **Presets.** A settings screen offering one quality choice renders with
-`withPreset(project, GraphicsPreset::Low / Medium / High / Ultra)`: the
+`withPreset(projectRender(), GraphicsPreset::Low / Medium / High / Ultra)`: the
 project's settings with what costs frame time - `msaaSamples`,
-`shadowResolution` and `textureAnisotropy` - from a table beside it, each tier
-at least the one under it, and `gtao`, `screenShadows`, `ssr` and `bloom` on only where both the
-project and the tier have them. The look (an effect the project turned off, the
-tonemap, the exposure, each effect's tuning, the culling) stays the project's,
-and since each tier is built from the project's settings, choosing High after
-Low brings back what Low turned off. A player who then turns one setting by
-hand has changed that field alone.
+`shadowResolution`, `textureAnisotropy` and `renderScale` - from a table beside it, each tier
+at least the one under it, and `gtao`, `screenShadows`, `ssr`, `bloom` and `softShadows` on only
+where both the project and the tier have them. The look (an effect the project turned off, the
+tonemap, the exposure, each effect's tuning, the culling) stays the project's, and since each tier
+is built from the project's settings, choosing High after Low brings back what Low turned off. A
+player who then turns one setting by hand has changed that field alone. Build a tier over
+`projectRender()`, never over `render()`: a tier built over another keeps what that one turned off.
+Medium and Low render the
+scene at 85% and 67% of the viewport on each axis with soft shadows off, the two largest levers
+after the screen-space effects: measured at High on an RTX A4000, a 75% scale took stress_arena's
+GPU frame from 9.5 to 7.5 ms and physics_lab's from 4.2 to 2.9, and hard shadows took about 0.5 ms
+off either's forward pass.
+
+**Render scale.** `renderScale` (`MIN_RENDER_SCALE`..1) sizes the scene: every scene target,
+effect and the camera's `viewport` are `RenderView::sceneWidth`/`sceneHeight`, and the composite
+draws the frame over the whole viewport, its colour filtered linearly. The UI, the splash and the
+editor's grid draw after it at the viewport's own pixels. A settings screen that offers render
+resolutions rather than a scale lists the monitor's (`WindowManager::renderResolutions`) and turns
+the chosen one into a scale with `RenderSettings::renderScaleFor`: the window stays as it is,
+fullscreen or not, and only the scene renders at fewer pixels.
 
 Scene-look settings (the HDR or procedural sky, the night sky, fog, IBL
 intensity) live in `Environment` and serialize with the scene. `RenderSettings`

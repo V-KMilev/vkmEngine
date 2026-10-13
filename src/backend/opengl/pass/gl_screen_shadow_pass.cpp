@@ -176,13 +176,13 @@ void GLScreenShadowPass::execute(GLFrameContext& ctx) {
     if (sun < 0) return;
     const LightData& key = view.lights[static_cast<size_t>(sun)];
 
-    const int width  = static_cast<int>(view.viewportWidth);
-    const int height = static_cast<int>(view.viewportHeight);
+    const int width  = static_cast<int>(view.sceneWidth());
+    const int height = static_cast<int>(view.sceneHeight());
 
     // Without GTAO the target is this pass's alone: unoccluded, the bent normal straight out of
     // the screen, every pixel lit until a wavefront writes it.
     if (!ctx.aoReady) {
-        ctx.ao.resize(view.viewportWidth, view.viewportHeight);
+        ctx.ao.resize(view.sceneWidth(), view.sceneHeight());
         ctx.ao.bind(ctx.gl);
         const GLfloat open[4] = {1.0f, 0.5f, 0.5f, 1.0f};
         VKM_GL_CHECK(glClearBufferfv(GL_COLOR, 0, open));

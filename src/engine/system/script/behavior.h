@@ -55,6 +55,7 @@ struct BehaviorContext {
     NetSession*            net              = nullptr;
     Clock*                 clock            = nullptr;
     RenderSettings*        render           = nullptr;
+    const RenderSettings*  projectRender    = nullptr;
     const HostChrome*      chrome           = nullptr;  ///< Where in the window the scene is drawn.
     std::vector<EntityId>* pendingDestroy   = nullptr;
     std::string*           pendingSceneLoad = nullptr;
@@ -456,6 +457,16 @@ class Behavior {
          * @return The session's render settings.
          */
         RenderSettings& render() { return *m_ctx->render; }
+
+        /**
+         * @brief The project's render settings, which render() started from.
+         *
+         * What a settings screen builds a quality tier over - withPreset(projectRender(), tier) -
+         * so choosing High after Low brings back what Low turned off.
+         *
+         * @return The project's render settings.
+         */
+        const RenderSettings& projectRender() const { return *m_ctx->projectRender; }
 
         /**
          * @brief Named input actions, for the frame queries and to define bindings.

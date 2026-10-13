@@ -34,7 +34,7 @@ void GLDoFPass::execute(GLFrameContext& ctx) {
     m_shader.setUniform1f("u_focusDistance", view.camera.focusDistance);
     m_shader.setUniform1f("u_amount",        view.camera.dofAmount);
     // A share of the picture's height, so a lens looks the same at 1080p and at 4K.
-    m_shader.setUniform1f("u_maxRadius", view.camera.dofMaxBlur * static_cast<float>(view.viewportHeight));
+    m_shader.setUniform1f("u_maxRadius", view.camera.dofMaxBlur * static_cast<float>(view.sceneHeight()));
 
     ctx.screenTri.draw();
 

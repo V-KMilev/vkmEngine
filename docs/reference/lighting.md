@@ -411,9 +411,10 @@ Shadow rendering goes through `GLShadowPass`, which:
   (why these, [engine.md](../guides/engine.md#4-what-has-already-been-decided)).
 
   **Soft shadows.** The sun and spot lights cast percentage-closer soft
-  shadows (Fernando 2005), sized by the light's own `sourceRadius` - the one
-  control, with no switch beside it: a source of zero is a hard shadow and
-  takes the 3x3 path. A 16-tap blocker search through the raw
+  shadows (Fernando 2005), sized by the light's own `sourceRadius`: a source
+  of zero is a hard shadow and takes the 3x3 path, and so does every light
+  with `RenderSettings::softShadows` off, which the Low and Medium presets turn
+  off for the forward pass's time. A 16-tap blocker search through the raw
   atlas, each tap a gather of four texels weighted bilinearly so the result
   does not step from texel to texel, finds the average depth of what
   shadows the point; the distance behind it, scaled by the source's size,

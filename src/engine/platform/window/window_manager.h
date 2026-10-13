@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "platform/window/frame_limiter.h"
 #include "platform/input/input_handle.h"
@@ -25,6 +26,27 @@ enum class WindowMode {
     Fullscreen = 1,
     Windowed   = 2
 };
+
+/**
+ * @brief A window's size in pixels.
+ */
+struct WindowSize {
+    int width  = 0;
+    int height = 0;
+
+    bool operator==(const WindowSize& other) const { return width == other.width && height == other.height; }
+};
+
+/**
+ * @brief The sizes of @p modes that fit on a monitor of @p monitor's size, largest first, each once.
+ *
+ * What a settings screen offers as render resolutions (WindowManager::renderResolutions).
+ *
+ * @param modes   A monitor's video modes, as GLFW lists them: any order, sizes repeated by rate.
+ * @param monitor The monitor's own resolution.
+ * @return The sizes no larger than it on either axis.
+ */
+std::vector<WindowSize> fittingWindowSizes(const std::vector<WindowSize>& modes, WindowSize monitor);
 
 /**
  * @brief Cursor visibility and confinement for the application window.
@@ -140,6 +162,17 @@ class WindowManager {
          * @param windowMode The desired window mode.
          */
         void updateMode(WindowMode windowMode);
+
+        /**
+         * @brief The resolutions a settings screen can offer to render at: the monitor's own
+         *        video modes that fit on it (fittingWindowSizes).
+         *
+         * The window stays the size it is; a chosen one becomes RenderSettings::renderScale
+         * (RenderSettings::renderScaleFor), and the frame is scaled up to the window.
+         *
+         * @return Largest first; empty with no window.
+         */
+        std::vector<WindowSize> renderResolutions() const;
 
         /**
          * @brief Updates all input states (keyboard, mouse, etc.).

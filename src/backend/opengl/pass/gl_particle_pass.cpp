@@ -96,8 +96,8 @@ void GLParticlePass::execute(GLFrameContext& ctx) {
     if (view.particlesAdditive.empty() && view.particlesAlpha.empty()) return;
 
     // The depth the particles fade against, a copy: the target's own is attached as they draw.
-    const auto width  = static_cast<uint32_t>(view.viewportWidth);
-    const auto height = static_cast<uint32_t>(view.viewportHeight);
+    const auto width  = static_cast<uint32_t>(view.sceneWidth());
+    const auto height = static_cast<uint32_t>(view.sceneHeight());
     m_depthCopy.resize(width, height, 1, false);
     m_depthCopy.blitDepthFrom(ctx.sceneRender);
     m_depthCopy.bindTexture(GLTarget::Attachment::Depth, GLBindings::PostTextureSlots::SCENE_DEPTH);

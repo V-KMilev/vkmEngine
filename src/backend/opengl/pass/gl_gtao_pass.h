@@ -35,7 +35,7 @@ class GLGTAOPass : public GLPass {
 
     private:
         /**
-         * @brief Size the depth chain to the viewport, when it is not already.
+         * @brief Size the depth chain to the scene, when it is not already.
          *
          * Full resolution down to a few texels: the search picks a level by a step's reach in
          * pixels, at most a quarter of the screen.

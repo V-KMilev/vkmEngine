@@ -396,16 +396,16 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     }
     // The reflection inputs exist only while the reflection pass reads them.
     const bool reflect = view.settings.ssr;
-    m_sceneHDR.resize(view.viewportWidth, view.viewportHeight, 1, reflect);
-    m_postA.resize(view.viewportWidth, view.viewportHeight);
-    m_postB.resize(view.viewportWidth, view.viewportHeight);
-    m_bloom.resize(view.viewportWidth, view.viewportHeight);
+    m_sceneHDR.resize(view.sceneWidth(), view.sceneHeight(), 1, reflect);
+    m_postA.resize(view.sceneWidth(), view.sceneHeight());
+    m_postB.resize(view.sceneWidth(), view.sceneHeight());
+    m_bloom.resize(view.sceneWidth(), view.sceneHeight());
 
     // The multisample twin exists only while MSAA is on; at 4x it is the frame's largest
     // allocation. What draws where: docs/reference/rendering.md.
     const uint32_t samples = view.settings.msaaSamples;
     if (samples > 1) {
-        m_sceneMS.resize(view.viewportWidth, view.viewportHeight, samples, reflect);
+        m_sceneMS.resize(view.sceneWidth(), view.sceneHeight(), samples, reflect);
     } else {
         m_sceneMS.release();
     }
@@ -450,8 +450,8 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // Per-frame UBOs: uploaded and bound once here, visible to every pass.
     {
         PROFILE_SCOPE("Render/FrameUBOs");
-        const float width  = static_cast<float>(view.viewportWidth);
-        const float height = static_cast<float>(view.viewportHeight);
+        const float width  = static_cast<float>(view.sceneWidth());
+        const float height = static_cast<float>(view.sceneHeight());
         m_camera.update(view.camera, glm::vec2(width, height));
         m_ocean.update(view.ocean);
         m_lights.update(view.lights, m_shadowData.lightSlots());

@@ -425,8 +425,10 @@ class GLShadowData {
 
         // The camera, for how much of the screen a spot covers.
         glm::vec3 m_eye          = glm::vec3(0.0f);
-        float     m_focalPixels  = 1.0f;   ///< projection[1][1] times half the viewport height.
+        float     m_focalPixels  = 1.0f;   ///< projection[1][1] times half the scene's height.
         bool      m_orthographic = false;
+
+        bool m_soft = true;  ///< RenderSettings::softShadows: the tiles carry their light's source.
 
         /**
          * @brief This frame's shadow-casting lights, in the order they take tiles.

@@ -64,6 +64,9 @@ struct FrameContext {
     NetSession&      net;
     HostChrome&      chrome;
     RenderSettings&  render;
+    /// The project's render settings, which a quality tier is built over; the host keeps them
+    /// (Engine::setProjectRenderSettings, EditorSystem::update).
+    RenderSettings&  projectRender;
 
     const HostView*      hostView   = nullptr;  ///< From CameraControllerSystem.
     const Visibility*    visibility = nullptr;  ///< From VisibilitySystem.

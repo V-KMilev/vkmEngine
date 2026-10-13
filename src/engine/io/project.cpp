@@ -105,7 +105,7 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
                 }
             });
 
-            // See RenderSettings::MIN_GTAO_RADIUS and RenderSettings::isMsaaSampleCount.
+            // See RenderSettings::MIN_GTAO_RADIUS, MIN_RENDER_SCALE and isMsaaSampleCount.
             const float radius = std::clamp(
                 out.render.gtaoRadius,
                 RenderSettings::MIN_GTAO_RADIUS,
@@ -120,6 +120,21 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
                     radius
                 );
                 out.render.gtaoRadius = radius;
+            }
+            const float scale = std::clamp(
+                out.render.renderScale,
+                RenderSettings::MIN_RENDER_SCALE,
+                RenderSettings::MAX_RENDER_SCALE
+            );
+            if (scale != out.render.renderScale) {
+                LOG_WARNING(
+                    "project.json render.renderScale %g is outside %g..%g; using %g",
+                    out.render.renderScale,
+                    RenderSettings::MIN_RENDER_SCALE,
+                    RenderSettings::MAX_RENDER_SCALE,
+                    scale
+                );
+                out.render.renderScale = scale;
             }
             if (!RenderSettings::isMsaaSampleCount(out.render.msaaSamples)) {
                 LOG_WARNING(

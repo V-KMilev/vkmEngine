@@ -970,7 +970,8 @@ std::vector<unsigned char> render(
     NetSession     net;
     HostChrome     chrome;
     RenderSettings tuning = settings;
-    FrameContext   ctx{s.scene, s.resources, clock, events, window, input, net, chrome, tuning};
+    RenderSettings project = settings;
+    FrameContext   ctx{s.scene, s.resources, clock, events, window, input, net, chrome, tuning, project};
 
     SkySystem        sky;
     OceanSystem      ocean;
@@ -1798,6 +1799,84 @@ void testAViewmodelShadesNothingBehindIt(int& failures) {
     std::printf("      %d wall pixels round it, the most it darkened one: %d of 765\n", ring, darkest);
     expect("the block shows", ring > 50, failures);
     expect("  and darkens no wall round it", darkest <= 3, failures);
+}
+
+// The penumbra scene with soft shadows off, against the same scene with a sun of no size: every
+// shadow takes the hard path whatever the light's source. With them on, the penumbra shows.
+void testSoftShadowsOffDrawTheHardPath(int& failures) {
+    std::printf("Soft shadows turned off:\n");
+    RenderSettings hard;
+    hard.msaaSamples = 1;
+    hard.softShadows = false;
+    RenderSettings soft;
+    soft.msaaSamples = 1;
+
+    restoreContextDefaults();
+    WindowManager window;
+    std::vector<unsigned char> frames[3];
+    for (int i = 0; i < 3; ++i) {
+        restoreContextDefaults();
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        buildPenumbra(s);
+        if (i == 2) s.scene.forEach<Light>([](EntityId, Light& light) { light.sourceRadius = 0.0f; });
+        frames[i] = render(s, backend, nullptr, i == 0 ? hard : soft);
+    }
+    const float off = differingShare(frames[0], frames[2].data());
+    const float on  = differingShare(frames[1], frames[2].data());
+    std::printf("      off %.2f%%, on %.2f%% of pixels unlike a sun of no size\n", off * 100.0f, on * 100.0f);
+    expect("soft shadows off draw the frame a sun of no size draws", off <= PIXEL_TOLERANCE, failures);
+    expect("  where soft ones draw another", on > PIXEL_TOLERANCE, failures);
+}
+
+// The penumbra scene at half the viewport's resolution on each axis: the composite scales it up
+// over the whole frame, close to the full-resolution one but not it. A UI clip over it lands on
+// the viewport's own pixels, as at full resolution.
+void testAHalfScaleSceneFillsTheFrame(int& failures) {
+    std::printf("A scene rendered at half scale:\n");
+    RenderSettings full;
+    full.msaaSamples = 1;
+    RenderSettings half = full;
+    half.renderScale = 0.5f;
+
+    UIDrawData ui;
+    solidQuad(ui, {0.0f, 0.0f}, {float(WIDTH), float(HEIGHT)}, glm::vec4(1.0f));
+    ui.commands.push_back(UIDrawCmd{0, 6, UIRect{{10.5f, 20.5f}, {30.2f, 40.2f}}, {}});
+
+    restoreContextDefaults();
+    WindowManager window;
+    std::vector<unsigned char> frames[2];
+    std::vector<unsigned char> clipped;
+    for (int i = 0; i < 2; ++i) {
+        restoreContextDefaults();
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        buildPenumbra(s);
+        frames[i] = render(s, backend, nullptr, i == 0 ? full : half);
+        if (i == 1) clipped = render(s, backend, &ui, half);
+    }
+    double sum = 0.0;
+    for (size_t at = 0; at < frames[0].size(); ++at) sum += std::abs(int(frames[0][at]) - int(frames[1][at]));
+    const double mean = sum / static_cast<double>(frames[0].size());
+    const float differing = differingShare(frames[1], frames[0].data());
+    std::printf("      %.2f levels apart on average, %.2f%% of pixels differ\n", mean, 100.0f * differing);
+    expect("it fills the frame, close to the full-resolution one", mean < 4.0, failures);
+    expect("  and is the scene at fewer pixels, not that one", mean > 0.0, failures);
+
+    const auto white = [&](int x, int y) { return pixel(clipped, x, y) == glm::ivec3(255); };
+    expect(
+        "a UI clip over it keeps the viewport's own pixels",
+        white(10, 20) && white(40, 60) && !white(41, 30) && !white(20, 61) && !white(9, 30) && !white(20, 19),
+        failures
+    );
 }
 
 // Two walls a centimetre apart, a kilometre out, through a 10 cm near plane: the nearer is seen
@@ -2856,6 +2935,8 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     for (const Golden& golden : goldens) compare(golden.name, golden.build, gl.renderer(), failures, true);
 
     testTheUIOverlayLandsOnItsPixels(failures);
+    testSoftShadowsOffDrawTheHardPath(failures);
+    testAHalfScaleSceneFillsTheFrame(failures);
     testTwoWallsACentimetreApartAKilometreOutDoNotFight(failures);
     testAViewmodelShadesNothingBehindIt(failures);
     testABackendDropsWhatTheSceneNoLongerAsksFor(failures);

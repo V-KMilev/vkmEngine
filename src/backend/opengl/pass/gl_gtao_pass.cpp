@@ -58,11 +58,11 @@ void GLGTAOPass::execute(GLFrameContext& ctx) {
     if (!ctx.view.settings.gtao) return;
 
     const RenderView& view = ctx.view;
-    ensureDepthMips(view.viewportWidth, view.viewportHeight);
+    ensureDepthMips(view.sceneWidth(), view.sceneHeight());
 
     // Readers bind the AO target behind ctx.aoReady or ctx.screenShadowReady. Once allocated it
-    // stays: the toggle flips too often to thrash a full-viewport target.
-    ctx.ao.resize(view.viewportWidth, view.viewportHeight);
+    // stays: the toggle flips too often to thrash a full-scene target.
+    ctx.ao.resize(view.sceneWidth(), view.sceneHeight());
 
     // Level 0 linearises the scene depth, each later level folds the one before; a dispatch a
     // level, as in GLBloomPass.
@@ -90,7 +90,7 @@ void GLGTAOPass::execute(GLFrameContext& ctx) {
 
     // Into the raw target while sampling the chain + G-buffer; the denoise
     // below writes the frame's.
-    m_raw.resize(view.viewportWidth, view.viewportHeight);
+    m_raw.resize(view.sceneWidth(), view.sceneHeight());
     m_raw.bind(ctx.gl);
 
     m_shader.bind();
@@ -116,8 +116,8 @@ void GLGTAOPass::execute(GLFrameContext& ctx) {
         ctx.ao.bindImage(GLTarget::Attachment::Color, 0, GL_WRITE_ONLY);
         namespace Groups = GLBindings::ComputeGroups;
         m_denoise.dispatch(
-            Groups::covering(view.viewportWidth,  Groups::IMAGE),
-            Groups::covering(view.viewportHeight, Groups::IMAGE)
+            Groups::covering(view.sceneWidth(),  Groups::IMAGE),
+            Groups::covering(view.sceneHeight(), Groups::IMAGE)
         );
         VKM_GL_CHECK(glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT));
     }

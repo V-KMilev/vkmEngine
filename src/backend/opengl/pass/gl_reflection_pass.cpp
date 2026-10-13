@@ -55,7 +55,7 @@ void GLReflectionPass::execute(GLFrameContext& ctx) {
     // and an environment reflection of zero: the traced one only adds.
     if (!view.settings.ssr) return;
 
-    ensureTargets(view.viewportWidth, view.viewportHeight);
+    ensureTargets(view.sceneWidth(), view.sceneHeight());
     ctx.gl.setDepthTest(false);
     ctx.screenTri.bind();
 

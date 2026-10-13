@@ -151,14 +151,14 @@ class GLTarget {
         void bindImage(Attachment attachment, uint32_t unit, GLenum access) const;
 
         /**
-         * @brief Copy @p src's colour into this target, both viewport-sized.
+         * @brief Copy @p src's colour into this target, both the scene's size.
          *
          * @param src The target copied from, resolved if it is multisample.
          */
         void blitColorFrom(const GLTarget& src);
 
         /**
-         * @brief Copy @p src's depth into this target, both viewport-sized.
+         * @brief Copy @p src's depth into this target, both the scene's size.
          *
          * For a pass that samples the depth of the target it draws into, which it may not while
          * that depth is attached: one sample of each multisample pixel.

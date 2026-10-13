@@ -43,7 +43,7 @@ void GLDepthPrepass::execute(GLFrameContext& ctx) {
 
     ctx.occlusion->cullSeen();
     drawBatch(ctx, GLOcclusionCull::Set::Seen);
-    ctx.occlusion->cullAgainst(ctx.sceneRender, ctx.view.viewportWidth, ctx.view.viewportHeight);
+    ctx.occlusion->cullAgainst(ctx.sceneRender, ctx.view.sceneWidth(), ctx.view.sceneHeight());
     drawBatch(ctx, GLOcclusionCull::Set::Revealed);
 }
 

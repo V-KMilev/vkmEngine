@@ -45,10 +45,10 @@ class GLReflectionPass : public GLPass {
 
     private:
         /**
-         * @brief (Re)allocate the colour chain and the trace target for a viewport size.
+         * @brief (Re)allocate the colour chain and the trace target for a scene size.
          *
-         * @param width  Viewport width in pixels.
-         * @param height Viewport height in pixels.
+         * @param width  The scene's width in pixels.
+         * @param height The scene's height in pixels.
          */
         void ensureTargets(uint32_t width, uint32_t height);
 

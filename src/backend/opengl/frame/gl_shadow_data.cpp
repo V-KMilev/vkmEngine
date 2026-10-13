@@ -104,7 +104,8 @@ void GLShadowData::build(const RenderView& view, const GLView& glView, uint32_t 
 
     m_eye          = view.camera.position;
     m_orthographic = view.camera.projection[3][3] != 0.0f;
-    m_focalPixels  = view.camera.projection[1][1] * 0.5f * static_cast<float>(view.viewportHeight);
+    m_focalPixels  = view.camera.projection[1][1] * 0.5f * static_cast<float>(view.sceneHeight());
+    m_soft         = view.settings.softShadows;
 
     // Camera frustum corners in world space, from the inverse view-projection.
     const glm::mat4& invVP = view.camera.invViewProj;
@@ -493,8 +494,9 @@ void GLShadowData::fitDirectional(
     haveSun    = true;
     m_sunLight = static_cast<int>(lightIndex);
 
-    // RenderView clamps a directional source to pi/4, so its tangent is finite.
-    const float tanSource = std::tan(light.sourceRadius);
+    // RenderView clamps a directional source to pi/4, so its tangent is finite. No source, with
+    // soft shadows off: the hard path (shadows.glsl).
+    const float tanSource = m_soft ? std::tan(light.sourceRadius) : 0.0f;
 
     const uint32_t base = next2D;
     m_data.csmBase  = static_cast<int>(base);
@@ -606,7 +608,7 @@ void GLShadowData::fitSpot(const LightData& light, uint32_t lightIndex, uint32_t
     // The source over the map's width one metre out: what the soft path
     // scales by the blocker's and receiver's distances to size a penumbra.
     // Its texel (y) is measured once its tile is settled, in fitTilesToAtlas.
-    const float sourceUV = light.sourceRadius / (2.0f * tanHalfFov);
+    const float sourceUV = m_soft ? light.sourceRadius / (2.0f * tanHalfFov) : 0.0f;
     e.params  = glm::vec4(light.shadowBias, 0.0f, range, sourceUV);
     e.shape   = glm::vec4(light.shadowNormalBias, Config::SHADOW_NEAR, tanHalfFov, 0.0f);
     m_jobs2D.push_back({ lightVP, slot, false });
@@ -714,7 +716,12 @@ void GLShadowData::fitPoint(const LightData& light, uint32_t lightIndex, uint32_
 
     ShadowCubeGPU& e = m_data.scube[slot];
     e.posRange = glm::vec4(light.position, range);
-    e.params   = glm::vec4(light.shadowBias, Config::SHADOW_NEAR, light.shadowNormalBias, light.sourceRadius);
+    e.params   = glm::vec4(
+        light.shadowBias,
+        Config::SHADOW_NEAR,
+        light.shadowNormalBias,
+        m_soft ? light.sourceRadius : 0.0f
+    );
 
     m_lightSlot[lightIndex] = static_cast<int>(slot);
 }

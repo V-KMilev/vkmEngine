@@ -126,6 +126,12 @@ struct RenderView {
             const LiveParticles* particles,
             const OceanData* ocean
         );
+
+        /// The scene's width in pixels: the viewport's at settings.renderScale.
+        uint32_t sceneWidth() const { return settings.sceneExtent(viewportWidth); }
+
+        /// The scene's height in pixels: the viewport's at settings.renderScale.
+        uint32_t sceneHeight() const { return settings.sceneExtent(viewportHeight); }
 };
 
 } // namespace Vkm::Engine

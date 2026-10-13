@@ -106,7 +106,7 @@ int main(int argc, char** argv) {
         sys.render.releaseUploadedPixels(true);
 
         // Applied before the world is built.
-        engine.getRenderSettings() = project.render;
+        engine.setProjectRenderSettings(project.render);
         const float fontPixels = Vkm::Engine::uiFontPixels(engine.getWindow().displayHeight());
         Vkm::Engine::bakeProjectFonts(engine.getResources(), project.fonts, fontPixels);
 

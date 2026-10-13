@@ -673,6 +673,8 @@ what an edit made there comes to:
 - **Stop says what it discarded**: a session that took an undo step of its own,
   or dirtied a scene that was clean at Play, has authored work in it, and Stop
   warns.
+- **Stop restores the render settings**, which a game's settings screen may
+  have written.
 
 `SceneIOController::stopPlaySession` is the whole of Stop, because the transport
 is not its only caller: answering **Save** to the unsaved-changes prompt ends the

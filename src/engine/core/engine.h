@@ -108,6 +108,20 @@ class Engine {
         const RenderSettings& getRenderSettings() const { return m_render; }
 
         /**
+         * @brief Start the session from @p project, the project.json render block: the session's
+         *        settings and the copy gameplay builds a quality tier over (withPreset).
+         *
+         * @param project The block, as loadProject read it.
+         */
+        void setProjectRenderSettings(const RenderSettings& project) {
+            m_projectRender = project;
+            m_render        = project;
+        }
+
+        /// The project.json render block the session started from (setProjectRenderSettings).
+        const RenderSettings& getProjectRenderSettings() const { return m_projectRender; }
+
+        /**
          * @brief The session this end is playing in, offline until told otherwise.
          *
          * A host starts a game through NetSession::host or NetSession::connect;
@@ -136,6 +150,7 @@ class Engine {
         NetSession     m_net;
         HostChrome     m_chrome;
         RenderSettings m_render;
+        RenderSettings m_projectRender;
 
         std::array<SystemList, static_cast<size_t>(SystemStage::Count)> m_systemsByStage;
 

@@ -77,6 +77,7 @@ void GLGridPass::execute(GLFrameContext& ctx) {
     }
     m_shader.setUniform3iv("u_axisShown", glm::ivec3(s.gridAxisX, s.gridAxisY, s.gridAxisZ));
     m_shader.setUniform3iv("u_planeShown", planesShown(s, ctx.view.camera));
+    m_shader.setUniform1f("u_screenHeight", static_cast<float>(ctx.view.viewportHeight));
 
     ctx.screenTri.draw();
 }

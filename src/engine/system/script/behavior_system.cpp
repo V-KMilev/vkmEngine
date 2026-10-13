@@ -237,17 +237,18 @@ void BehaviorSystem::drainPendingSceneLoad(FrameContext& ctx) {
 void BehaviorSystem::init(FrameContext& ctx) {
     // Every field but `ocean`, refreshed each tick and frame, must be session-stable, as the
     // FrameContext service block is.
-    m_context.scene     = &ctx.scene;
-    m_context.resources = &ctx.resources;
+    m_context.scene         = &ctx.scene;
+    m_context.resources     = &ctx.resources;
     // Null on a host with no display, so a behavior knows it cannot read a device
     // instead of silently reading zeros.
-    m_context.window    = ctx.window.isOpen() ? &ctx.window : nullptr;
-    m_context.events    = &ctx.events;
-    m_context.input     = &ctx.input;
-    m_context.net       = &ctx.net;
-    m_context.clock     = &ctx.clock;
-    m_context.render    = &ctx.render;
-    m_context.chrome    = &ctx.chrome;
+    m_context.window        = ctx.window.isOpen() ? &ctx.window : nullptr;
+    m_context.events        = &ctx.events;
+    m_context.input         = &ctx.input;
+    m_context.net           = &ctx.net;
+    m_context.clock         = &ctx.clock;
+    m_context.render        = &ctx.render;
+    m_context.projectRender = &ctx.projectRender;
+    m_context.chrome        = &ctx.chrome;
 
     ctx.scene.addObserver(this);
 

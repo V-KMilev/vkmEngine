@@ -203,8 +203,8 @@ void ProjectSettingsPanel::draw(EditorContext& ec) {
     ImGui::BeginDisabled(root.empty());
     if (ImGui::Button("Save project.json", ImVec2(-FLT_MIN, EditorStyle::px(30.0f)))) {
         project.engineVersion = APP_VERSION;
-        // Taken live: RenderSettingsPanel edits the engine's settings, so the loaded copy is stale.
-        project.render = ec.frame.render;
+        // The project's settings, never a game's tier (FrameContext::projectRender).
+        project.render = ec.frame.projectRender;
         if (saveProject(ProjectPaths::projectRoot(), project)) {
             // At save, not at the edit: the ticking rate and the file's then agree.
             ec.frame.clock.setTickRate(project.tickRate);
