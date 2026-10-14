@@ -839,7 +839,7 @@ model matrices, one entry per object, when the frame posed anything.
 VisibilitySystem (the cull)   stamps each skinned mesh with its rig's range
 RenderView::build             skinMatrices: the pose buffer's palette, borrowed
 GLBackend::render
-  |-- GLSkinPalette::update(view.skinMatrices)   one upload, SSBO binding 5
+  |-- GLSkinPalette::update(skinMatrices, ring)  one upload, SSBO binding 5
   |-- GLObjectBuffer::upload                      per-object skinFirst, SSBO binding 6
 ```
 
@@ -901,7 +901,7 @@ the geometry the camera sees rather than by something standing near it.
 Both skinned vertex stages take their position from one expression,
 `skinnedWorldPosition(model, base)` in `shaders/skinning.glsl`. That is
 what makes the depth agreement structural - the forward pass draws against the
-depth the prepass primed under LEQUAL with writes off, so the two programs must
+depth the prepass primed under GEQUAL with writes off, so the two programs must
 compute `gl_Position` identically, and there is only one expression for them to
 compute it from.
 

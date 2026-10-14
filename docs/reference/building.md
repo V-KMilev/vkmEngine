@@ -252,7 +252,7 @@ half a smoke test turns on.
 | `<project>_module` | Shared lib | One per project (`potion_runner_module`, `physics_lab_module`, `stress_arena_module`, `city_block_module`): that project's gameplay sources built by `vkm_add_gameplay_module()` as `game.dll`/`libgame.so` into the project's own `bin/`. The engine ships no gameplay of its own |
 | `vkm_runtime_app` | Executable | Bare engine, no editor. Includes `app/engine_app.h` for the shared bootstrap; links no model importer and no ImGui. Runs as `vkm_runtime` |
 | `vkm_editor_app` | Executable | Engine libs + `vkm_editor` + `vkm_cook`; loads the open project's module for hot-reload. Runs as `vkm_editor` |
-| `vkm_cook_app` | Executable | Headless asset cook: `vkm_cook` with no window, no GL context and no `Engine`, so it runs over SSH and on CI. Runs as `vkm_cook` |
+| `vkm_cook_app` | Executable | Headless asset cook: `vkm_cook` with no window, no graphics context and no `Engine`, so it runs over SSH and on CI. Runs as `vkm_cook` |
 | `vkm_server_app` | Executable | The refereeing host: the same system stack a client runs, with no window and no render backend. Runs as `vkm_server` |
 | `vkm_gl_tests` | Executable | vkmGL's context-free suite, registered with CTest as `vkm_gl`. Built by default; not installed. See [Tests](#tests) |
 | `vkm_engine_tests` | Executable | The engine's own context-free suite, one file per suite under `tests/<area>/`, registered as `vkm_engine`. Takes suite names as arguments. Not installed |

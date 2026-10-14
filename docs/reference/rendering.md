@@ -227,8 +227,8 @@ hints the context, makes it current, loads GL and presents. One backend exists
 
 - `Vkm::GL::Context` - GLEW state + draw helpers (from vkmGL)
 - `GLView` - the GPU resource synchronizer, the `GLMeshPool` every mesh lives in, and the
-  frame's streaming memory (`stream()`, a `Vkm::GL::StreamRing`): every per-frame list -
-  draw lists, matrices, bone palettes, particles - is written into a persistently mapped
+  frame's streaming memory (`stream()`, a `Vkm::GL::StreamRing`): the per-frame lists -
+  draw lists, matrices, bone palettes, particles - are written into a persistently mapped
   buffer of three fenced regions, so the CPU neither waits on the GPU nor has the driver
   copy. What every pass reads - the matrices, flags and palettes - is then copied once into
   video memory (`DeviceStream`). `GLBackend::render` fences the region at the frame's end
@@ -276,9 +276,9 @@ a centimetre apart a kilometre out stay apart, where a 24-bit buffer rounds them
 to one depth past a few hundred metres. The engine's projections are glm's;
 `GLCamera` remaps the camera block's matrices on the way in, and every shader
 reads depth through `shaders/depth.glsl` (`FAR_DEPTH`, `isFarDepth`,
-`nearerDepth`, ...). Shadow maps keep near 0, far 1 - the depth they always
-wrote, through `GLDepth::shadowProjection` - since most are orthographic, whose
-depth is linear and gains nothing reversed.
+`nearerDepth`, ...). Shadow maps keep near 0, far 1
+(`GLDepth::shadowProjection`): most are orthographic, whose depth is linear and
+gains nothing reversed.
 
 Post passes do not blit results back into `m_sceneHDR`: the frame context
 carries a colour chain (`colorSrc`/`colorDst` + `flipColor()`). A pass samples

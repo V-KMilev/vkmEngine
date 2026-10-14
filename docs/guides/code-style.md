@@ -101,10 +101,11 @@ Always include the **module path**, never the bare filename:
 ```
 
 **Engine code never reaches into `backend/`.** It sees the GPU only through
-`RenderBackend` and `EditorRenderHooks` in `system/render/`
-([engine.md](engine.md#absolutes)). A host constructing `GLBackend` is not an
-exception but the point: the host is the composition root, the one place that
-picks which backend the engine gets, or none.
+`RenderBackend` and `EditorRenderHooks` in `system/render/`, and the window's
+`WindowSurface` in `platform/window/` ([engine.md](engine.md#absolutes)). A host
+constructing `GLBackend` and `GLWindowSurface` is not an exception but the point:
+the host is the composition root, the one place that picks which backend the
+engine gets, or none.
 
 Within a file, includes come in groups separated by one blank line:
 
