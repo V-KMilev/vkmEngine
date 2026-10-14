@@ -1958,6 +1958,165 @@ void testHalfResolutionReflectionsAreCloseToFull(int& failures) {
     expect("  and are traced at fewer pixels, not those", mean > 0.0, failures);
 }
 
+// Meshes that never move beside one that does, which moves mid-session: the backend refreshes the
+// moved object's copy alone (RenderObjects::changed), and the frame must be the one a fresh backend
+// draws of the moved scene.
+void testAMovedObjectIsDrawnWhereItWent(int& failures) {
+    std::printf("A mesh moved among fixed ones, mid-session:\n");
+    const auto build = [](Scenery& s, float moverX) {
+        base(s);
+        const MaterialHandle stone = material(s, "golden:fixed_stone", {0.6f, 0.6f, 0.6f}, 0.8f, 0.0f);
+        const MaterialHandle red   = material(s, "golden:mover_red", {0.8f, 0.1f, 0.1f}, 0.5f, 0.0f);
+        place(s, s.cube, stone, {0.0f, -0.5f, 0.0f}, {12.0f, 1.0f, 12.0f});
+        for (int i = -2; i <= 2; ++i) {
+            place(s, s.cube, stone, {static_cast<float>(i) * 1.5f, 0.5f, -2.0f}, glm::vec3(1.0f));
+        }
+        s.scene.forEach<Mesh>([](EntityId, Mesh& mesh) { mesh.movable = false; });
+        place(s, s.sphere, red, {moverX, 0.5f, 1.0f}, glm::vec3(1.0f));
+        sunAndCamera(s, {0.0f, 4.0f, 8.0f}, {0.0f, 0.0f, 0.0f});
+    };
+    RenderSettings plain;
+    plain.msaaSamples = 1;
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend fresh;
+    if (!fresh.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery there;
+    build(there, 2.0f);
+    const std::vector<unsigned char> want = render(there, fresh, nullptr, plain);
+
+    restoreContextDefaults();
+    GLBackend moved;
+    if (!moved.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery s;
+    build(s, -2.0f);
+    Clock          clock;
+    EventBus       events;
+    WindowManager  unopened;
+    InputMap       input;
+    NetSession     net;
+    HostChrome     chrome;
+    RenderSettings tuning = plain;
+    FrameContext   ctx{s.scene, s.resources, clock, events, unopened, input, net, chrome, tuning};
+    SkySystem        sky;
+    OceanSystem      ocean;
+    VisibilitySystem visibility;
+    RenderView       view;
+    view.viewportWidth  = WIDTH;
+    view.viewportHeight = HEIGHT;
+    view.surfaceWidth   = WIDTH;
+    view.surfaceHeight  = HEIGHT;
+    view.settings       = tuning;
+    bool named = false;
+    for (int frame = 0; frame < 2 * FRAMES; ++frame) {
+        if (frame == FRAMES) {
+            s.scene.forEach<Mesh>([&](EntityId entity, Mesh& mesh) {
+                if (mesh.movable) s.scene.get<Transform>(entity).position.x = 2.0f;
+            });
+        }
+        sky.update(ctx);
+        ocean.update(ctx);
+        visibility.update(ctx);
+        if (frame == FRAMES) {
+            const RenderObjects& objects = ctx.visibility->objects;
+            named = !objects.allChanged && objects.changed.size() == 1;
+        }
+        view.build(s.scene, *ctx.visibility, nullptr, nullptr, nullptr, &s.particles, ctx.ocean);
+        moved.render(view, s.resources);
+    }
+    std::vector<unsigned char> got;
+    moved.readFrame(view, got);
+
+    const float differing = differingShare(got, want.data());
+    std::printf("      %.2f%% of pixels unlike a fresh backend's frame\n", differing * 100.0f);
+    expect("the move is named alone, the rest kept", named, failures);
+    expect("  and the frame is the fresh backend's", differing <= PIXEL_TOLERANCE, failures);
+}
+
+// A fixed mesh destroyed and two spawned mid-session: the backend's copies grow, the mesh moved
+// into the destroyed one's place and the spawned ones are refreshed alone
+// (RenderObjects::changed), and the frame must be the one a fresh backend draws of the scene as it
+// ends.
+void testASpawnAndARemovalAreDrawnAsTheyEnd(int& failures) {
+    std::printf("A fixed mesh destroyed and two spawned, mid-session:\n");
+    const auto build = [](Scenery& s) {
+        base(s);
+        const MaterialHandle stone = material(s, "golden:fixed_stone", {0.6f, 0.6f, 0.6f}, 0.8f, 0.0f);
+        material(s, "golden:spawned_red", {0.8f, 0.1f, 0.1f}, 0.5f, 0.0f);
+        place(s, s.cube, stone, {0.0f, -0.5f, 0.0f}, {12.0f, 1.0f, 12.0f});
+        for (int i = -2; i <= 2; ++i) {
+            place(s, s.cube, stone, {static_cast<float>(i) * 1.5f, 0.5f, -2.0f}, glm::vec3(1.0f));
+        }
+        s.scene.forEach<Mesh>([](EntityId, Mesh& mesh) { mesh.movable = false; });
+        sunAndCamera(s, {0.0f, 4.0f, 8.0f}, {0.0f, 0.0f, 0.0f});
+    };
+    // The leftmost cube goes, so the last in the storage moves into its place; two spheres come.
+    const auto change = [](Scenery& s) {
+        EntityId gone;
+        s.scene.forEach<Mesh>([&](EntityId entity, Mesh&) {
+            if (s.scene.get<Transform>(entity).position.x == -3.0f) gone = entity;
+        });
+        s.scene.destroyEntity(gone);
+        const MaterialHandle red = s.resources.findByName<MaterialAsset>("golden:spawned_red");
+        place(s, s.sphere, red, {1.0f, 0.5f, 1.0f}, glm::vec3(1.0f));
+        place(s, s.sphere, red, {-1.5f, 0.5f, 1.0f}, glm::vec3(1.0f));
+    };
+    // Twice: the second with the occlusion cull on, whose world boxes grow in place too.
+    for (const bool culled : {false, true}) {
+        RenderSettings settings;
+        settings.msaaSamples      = 1;
+        settings.occlusionCulling = culled;
+
+        restoreContextDefaults();
+        WindowManager window;
+        GLBackend fresh;
+        if (!fresh.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery ended;
+        build(ended);
+        change(ended);
+        const std::vector<unsigned char> want = render(ended, fresh, nullptr, settings);
+
+        restoreContextDefaults();
+        GLBackend changed;
+        if (!changed.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        build(s);
+        bool named = false;
+        const auto changeAndWatch = [&](int frame, const Visibility& seen) {
+            if (frame == FRAMES - 1) change(s);
+            if (frame == FRAMES) named = !seen.objects.allChanged && seen.objects.changed.size() == 3;
+        };
+        const std::vector<unsigned char> got = render(
+            s,
+            changed,
+            nullptr,
+            settings,
+            nullptr,
+            2 * FRAMES,
+            changeAndWatch
+        );
+
+        const float differing = differingShare(got, want.data());
+        const char* how = culled ? ", culled" : "";
+        std::printf("      %.2f%% of pixels unlike a fresh backend's frame%s\n", differing * 100.0f, how);
+        expect("the moved and the spawned are named alone, the rest kept", named, failures);
+        expect("  and the frame is the fresh backend's", differing <= PIXEL_TOLERANCE, failures);
+    }
+}
+
 void testTheUIOverlayLandsOnItsPixels(int& failures) {
     std::printf("The UI overlay, drawn:\n");
 
@@ -2972,6 +3131,8 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testAHalfScaleSceneFillsTheFrame(failures);
     testTwoWallsACentimetreApartAKilometreOutDoNotFight(failures);
     testHalfResolutionReflectionsAreCloseToFull(failures);
+    testAMovedObjectIsDrawnWhereItWent(failures);
+    testASpawnAndARemovalAreDrawnAsTheyEnd(failures);
     testAViewmodelShadesNothingBehindIt(failures);
     testABackendDropsWhatTheSceneNoLongerAsksFor(failures);
     testAFrameWithNoCameraKeepsTheProbesBaked(failures);

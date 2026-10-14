@@ -249,7 +249,12 @@ hints the context, makes it current, loads GL and presents. One backend exists
   draw lists, matrices, bone palettes, particles - are written into a persistently mapped
   buffer of three fenced regions, so the CPU neither waits on the GPU nor has the driver
   copy. What every pass reads - the matrices, flags and palettes - is then copied once into
-  video memory (`DeviceStream`). `GLBackend::render` fences the region at the frame's end
+  video memory (`DeviceStream`). `GLBackend::render` fences the region at the frame's end.
+  The video-memory copies and the asset sync's walk of every scene object follow
+  `RenderObjects::changed`: only the objects that changed are copied or walked again,
+  unless every one may have (`allChanged`) or the backend missed a frame (`serial`); the
+  shadow casters' keys are kept only while nothing changed - see
+  [visibility.md](visibility.md#fixed-meshes)
 - Render targets: `m_sceneHDR` (the geometry target: colour + depth + G-buffer),
   `m_sceneMS` (multisample twin when MSAA is on), `m_postA`/`m_postB`
   (colour-only post ping-pong scratches), `m_ao` (GTAO, sized by its pass once

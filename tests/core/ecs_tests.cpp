@@ -1,6 +1,7 @@
 #include "support.h"
 
 #include "core/memory/slot_allocator.h"
+#include "core/memory/sparse_set.h"
 
 namespace {
 
@@ -541,9 +542,32 @@ void testAClearedSceneHoldsNoComponentSets() {
     );
 }
 
+// A cache keyed on dense indices keeps what an index held while its stamp holds: swap-and-pop
+// carries the stamp with its element, and an element added again is a new one.
+void testAStampFollowsItsElement() {
+    std::printf("A set's stamps through adds and removes:\n");
+
+    SparseSet<int> set;
+    set.add(1, 10);
+    set.add(2, 20);
+    set.add(3, 30);
+    const uint64_t first = set.stampAt(0);
+    const uint64_t last  = set.stampAt(2);
+    check("every element's stamp is its own", first != set.stampAt(1) && set.stampAt(1) != last);
+
+    set.remove(2);
+    check("  a removal moves the last element's stamp with it", set.dataAt(1) == 30 && set.stampAt(1) == last);
+    check("  and leaves the others where they were", set.stampAt(0) == first);
+
+    set.remove(3);
+    set.add(3, 30);
+    check("  the same key added again is another element", set.stampAt(1) != last);
+}
+
 } // namespace
 
 void runEcsTests() {
+    testAStampFollowsItsElement();
     testATypeIdIsTheTypesAlone();
     testAListenerThatRetiresItself();
     testAListenerThatKeepsWorkingAfterRetiringItself();

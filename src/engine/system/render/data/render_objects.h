@@ -36,6 +36,13 @@ struct ObjectDraw {
 
     /// A Viewmodel mesh seen through the eye: drawn through CameraData::viewmodelViewProjection.
     bool viewmodel = false;
+
+    bool operator==(const ObjectDraw& other) const {
+        return mesh == other.mesh && material == other.material && skinCount == other.skinCount
+            && waves == other.waves && viewmodel == other.viewmodel;
+    }
+
+    bool operator!=(const ObjectDraw& other) const { return !(*this == other); }
 };
 
 /**
@@ -73,6 +80,31 @@ struct RenderObjects {
      * @brief How many of `scene` cast shadows, which are its prefix.
      */
     uint32_t casterCount = 0;
+
+    /**
+     * @brief The objects whose matrix, box, draw, first bone or place in the scene-wide list or its
+     *        caster prefix differ from the last frame's, in object order.
+     *
+     * An index that now holds another Mesh - added, or moved there by a removal - is among them. A
+     * reader keeping a copy of the per-object arrays - the GPU's - resizes it to theirs, keeping
+     * what it held, and refreshes these alone. Empty while allChanged.
+     */
+    std::vector<uint32_t> changed;
+
+    /**
+     * @brief Every object may differ from the last frame's: the world or the asset graph was
+     *        replaced, the frame before published none, or a fixed object moved in it.
+     *
+     * A copy is rebuilt whole.
+     */
+    bool allChanged = true;
+
+    /**
+     * @brief Counts the frames the cull wrote; `changed` is against the one before.
+     *
+     * A reader that did not see that frame rebuilds its copy whole, as for allChanged.
+     */
+    uint64_t serial = 0;
 };
 
 } // namespace Vkm::Engine

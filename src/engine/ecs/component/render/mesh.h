@@ -37,6 +37,16 @@ struct Mesh {
     bool           visible     = true;
     bool           castShadows = true;
     SeenBy         seenBy      = SeenBy::All;
+
+    /**
+     * @brief Off: it never moves, changes or hides while the world runs.
+     *
+     * The renderer then keeps its matrix, box and draw from the first frame it sees it rather than
+     * working them out every frame. It checks a share of what it kept each frame and rebuilds,
+     * with a warning, if one did move. A host that may edit the world keeps nothing
+     * (HostChrome::setAuthoring).
+     */
+    bool movable = true;
 };
 
 } // namespace Vkm::Engine
@@ -49,4 +59,5 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::Mesh)
     VKM_F(visible)
     VKM_F(castShadows)
     VKM_F(seenBy)
+    VKM_F(movable)
 VKM_REFLECT_END()

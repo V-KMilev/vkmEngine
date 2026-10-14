@@ -194,6 +194,8 @@ void EditorSystem::shutdown() {
 }
 
 void EditorSystem::init(FrameContext& ctx) {
+    // Open to edits from the first frame, before update() first says so.
+    ctx.chrome.setAuthoring(true);
     EditorContext ec = makeContext(ctx);
     EditorSettings::loadUser(m_state);
     // Without a project every path resolves against the engine's own directory,
@@ -652,6 +654,10 @@ void EditorSystem::update(FrameContext& ctx) {
             if (!m_editorVisible) m_state.commands.endGesture();
         }
     }
+
+    // Fixed meshes are kept only while the game runs undisturbed (HostChrome::setAuthoring).
+    const bool running = m_sceneIO.isPlaying() && !ctx.clock.isPaused() && !m_sceneIO.isEjected();
+    ctx.chrome.setAuthoring(!running || m_editorVisible);
 
     // Drawn shown or hidden: a hidden prompt has no way out, and hidden failure
     // feedback is lost.

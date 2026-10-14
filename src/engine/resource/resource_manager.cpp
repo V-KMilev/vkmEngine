@@ -38,6 +38,8 @@ void ResourceManager::swap(ResourceManager& other) noexcept {
     m_slots.slot<FontAsset>().swap(other.m_slots.slot<FontAsset>());
     ++m_epoch;
     ++other.m_epoch;
+    ++m_revision;
+    ++other.m_revision;
     LOG_INFO_C("RESOURCE", "Swap committed");
 }
 

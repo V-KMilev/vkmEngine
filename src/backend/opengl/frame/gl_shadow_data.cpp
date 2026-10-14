@@ -332,8 +332,14 @@ void GLShadowData::cullCasters(const RenderView& view, const GLView& glView) {
     m_batchesCube.resize(m_jobsCube.size() * 6);
 
     // Every caster is a 2D job's candidate: cascades and spots have no cheaper volume to reject
-    // against. Casters are the view's prefix, so non-casting meshes are never walked.
-    {
+    // against. Casters are the view's prefix, so non-casting meshes are never walked. The keys are
+    // the last frame's while no object changed, none was rebuilt and no asset was walked again.
+    const bool keysHold = !objects.allChanged && objects.changed.empty()
+        && objects.serial == m_preparedSerial + 1 && glView.syncedRevision() == m_preparedRevision
+        && objects.casterCount == m_casters.size();
+    m_preparedSerial   = objects.serial;
+    m_preparedRevision = glView.syncedRevision();
+    if (!keysHold) {
         PROFILE_SCOPE("Shadow/Cull/Prepare");
         // Keys flattened once, so each job's grouping reads them linearly.
         const uint32_t count = objects.casterCount;

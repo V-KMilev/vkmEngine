@@ -121,7 +121,10 @@ void CityBlock::place(
     const glm::quat& rotation
 ) {
     const EntityId entity = spawn();
-    scene().add(entity, Mesh{mesh, material});
+    // The city never moves: the renderer keeps what it works out about each prop.
+    Mesh drawn{mesh, material};
+    drawn.movable = false;
+    scene().add(entity, std::move(drawn));
     Transform transform;
     transform.position = position;
     transform.rotation = rotation;

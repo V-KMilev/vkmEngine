@@ -181,6 +181,16 @@ class GLView {
          */
         Vkm::GL::StreamRing& stream() const { return m_stream; }
 
+        /**
+         * @brief ResourceManager::revision() at the last sync() that walked every scene object.
+         *
+         * A change means the assets were checked again, so whatever was worked out from their GPU
+         * uploads is to be worked out again.
+         *
+         * @return The revision; 0 before the first such walk.
+         */
+        uint64_t syncedRevision() const { return m_syncedRevision; }
+
     private:
         /**
          * @brief Upload or refresh a single asset into its table, version-gated.
@@ -248,7 +258,9 @@ class GLView {
         TextureFiltering m_filtering  = RenderSettings{}.textureFiltering;
         float            m_anisotropy = static_cast<float>(RenderSettings{}.textureAnisotropy);
 
-        uint64_t m_syncStamp = 1;  ///< Bumped by every sync(); a slot checked under it is skipped.
+        uint64_t m_syncStamp      = 1;  ///< Bumped by every sync(); a slot checked under it is skipped.
+        uint64_t m_syncedRevision = 0;  ///< See syncedRevision().
+        uint64_t m_syncedSerial   = 0;  ///< RenderObjects::serial of the last frame synced.
 };
 
 } // namespace Vkm::Engine

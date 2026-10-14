@@ -1,8 +1,14 @@
 #include "support.h"
 
+#include <algorithm>
+#include <limits>
 #include <utility>
+#include <vector>
+
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "core/math/frustum.h"
+#include "ecs/component/core/world_transform.h"
 #include "ecs/component/render/camera.h"
 #include "ecs/component/render/lod.h"
 #include "ecs/component/render/mesh.h"
@@ -806,9 +812,220 @@ void testWhatIsTooSmallIsNotDrawn() {
     );
 }
 
+// A world of two meshes - one that never moves, one that does - seen from the origin.
+struct FixedWorld {
+    Scene          scene;
+    TestFrame      frame{scene};
+    MeshHandle     cube;
+    MaterialHandle paint;
+    EntityId       fixed;
+    EntityId       moving;
+
+    FixedWorld() {
+        cube  = frame.resources.add(generateCube(), "culling:fixed_cube");
+        paint = frame.resources.add(MaterialAsset{}, "culling:fixed_paint");
+        const EntityId eye = scene.createEntity();
+        scene.add(eye, Transform{});
+        scene.add(eye, Camera{});
+        fixed  = place({0.0f, 0.0f, -5.0f}, false);
+        moving = place({2.0f, 0.0f, -5.0f}, true);
+    }
+
+    EntityId place(const glm::vec3& position, bool movable) {
+        const EntityId entity = scene.createEntity();
+        Transform at;
+        at.position = position;
+        scene.add(entity, std::move(at));
+        Mesh drawn{cube, paint};
+        drawn.movable = movable;
+        scene.add(entity, std::move(drawn));
+        return entity;
+    }
+
+    // Object index of @p entity this frame: its place in the Mesh storage.
+    uint32_t indexOf(EntityId entity) const {
+        const auto& entities = frame.ctx.visibility->entities;
+        for (uint32_t i = 0; i < entities.size(); ++i) {
+            if (entities[i] == entity) return i;
+        }
+        return UINT32_MAX;
+    }
+
+    // NaN for an entity no object is, so a check on it fails rather than reading past the columns.
+    float drawnX(EntityId entity) const {
+        const uint32_t index = indexOf(entity);
+        if (index == UINT32_MAX) return std::numeric_limits<float>::quiet_NaN();
+        return frame.ctx.visibility->objects.models[index][3].x;
+    }
+};
+
+// The frame says which objects changed, so a copy of the columns - the GPU's - refreshes those
+// alone.
+void testTheChangedObjectsAreNamed() {
+    std::printf("A mesh that never moves, beside one that does:\n");
+    FixedWorld world;
+    VisibilitySystem visibility;
+    visibility.update(world.frame.ctx);
+    const RenderObjects& objects = world.frame.ctx.visibility->objects;
+    check("the first frame is all changed", objects.allChanged);
+
+    visibility.update(world.frame.ctx);
+    check("  a frame where nothing moved names nothing", !objects.allChanged && objects.changed.empty());
+
+    world.scene.get<Transform>(world.moving).position.x = 3.0f;
+    visibility.update(world.frame.ctx);
+    const bool onlyMover = objects.changed.size() == 1 && objects.changed[0] == world.indexOf(world.moving);
+    check("  a moved mesh is named alone", !objects.allChanged && onlyMover);
+    check("  and drawn where it went", world.drawnX(world.moving) == 3.0f);
+    check("  and both still drawn", objects.visible.size() == 2);
+}
+
+// A fixed mesh moved while the world runs breaks its promise; one in FIXED_CHECK_STRIDE kept meshes
+// is checked each frame, so it is noticed and drawn where it is within two rounds of the check,
+// and not wrongly before.
+void testAFixedMeshThatMovesIsNoticed() {
+    std::printf("A mesh that promised not to move, moved:\n");
+    FixedWorld world;
+    VisibilitySystem visibility;
+    visibility.update(world.frame.ctx);
+    visibility.update(world.frame.ctx);
+
+    world.scene.get<Transform>(world.fixed).position.x = -1.0f;
+    visibility.update(world.frame.ctx);
+    check("the frame after, it is still drawn where it was kept", world.drawnX(world.fixed) == 0.0f);
+    int frames = 1;
+    const int rounds = 2 * static_cast<int>(VisibilitySystem::FIXED_CHECK_STRIDE) + 2;
+    while (world.drawnX(world.fixed) != -1.0f && frames < rounds) {
+        visibility.update(world.frame.ctx);
+        ++frames;
+    }
+    std::printf("      drawn where it went after %d frames\n", frames);
+    check("  within two rounds of the check it is drawn where it went", world.drawnX(world.fixed) == -1.0f);
+}
+
+// One mesh hidden and another shown in the same frame, neither moving: the lists they are in
+// differ though their columns do not, so both are named - a copy indexed by list position (the
+// shadow casters') must not keep last frame's.
+void testAMeshHiddenOrShownIsNamed() {
+    std::printf("One mesh hidden and another shown, in one frame:\n");
+    FixedWorld world;
+    const EntityId shown = world.place({-2.0f, 0.0f, -5.0f}, true);
+    world.scene.get<Mesh>(shown).visible = false;
+    VisibilitySystem visibility;
+    visibility.update(world.frame.ctx);
+    visibility.update(world.frame.ctx);
+
+    world.scene.get<Mesh>(world.moving).visible = false;
+    world.scene.get<Mesh>(shown).visible        = true;
+    visibility.update(world.frame.ctx);
+    const std::vector<uint32_t>& changed = world.frame.ctx.visibility->objects.changed;
+    const auto named = [&](EntityId entity) {
+        return std::find(changed.begin(), changed.end(), world.indexOf(entity)) != changed.end();
+    };
+    check("the hidden one is named", named(world.moving));
+    check("  and the shown one", named(shown));
+    check("  and nothing else", changed.size() == 2);
+}
+
+// An editor showing its panels, paused or ejected, moves fixed meshes too: authoring, nothing is kept -
+// not even what a running world had kept before the pause.
+void testAuthoringKeepsNothing() {
+    std::printf("A fixed mesh moved while the world is authored:\n");
+    FixedWorld world;
+    VisibilitySystem visibility;
+    visibility.update(world.frame.ctx);
+    visibility.update(world.frame.ctx);
+
+    world.frame.chrome.setAuthoring(true);
+    world.scene.get<Transform>(world.fixed).position.x = -1.0f;
+    visibility.update(world.frame.ctx);
+    const RenderObjects& objects = world.frame.ctx.visibility->objects;
+    check("it is drawn where it went the next frame", world.drawnX(world.fixed) == -1.0f);
+    const bool named = objects.changed.size() == 1 && objects.changed[0] == world.indexOf(world.fixed);
+    check("  and named as changed", !objects.allChanged && named);
+}
+
+// A mesh spawned or destroyed reworks the indices that now hold another Mesh, and no more: a fixed
+// mesh keeps what it kept, and one moved into a destroyed one's place is not taken for it. Kept is
+// told from worked out by moving a mesh while its promise is broken.
+void testASpawnOrARemovalNamesWhatItMoved() {
+    std::printf("A fixed mesh spawned, then another destroyed:\n");
+    FixedWorld world;
+    VisibilitySystem visibility;
+    visibility.update(world.frame.ctx);
+    visibility.update(world.frame.ctx);
+    const RenderObjects& objects = world.frame.ctx.visibility->objects;
+
+    world.scene.get<Transform>(world.fixed).position.x = -1.0f;
+    const EntityId spawned = world.place({-2.0f, 0.0f, -5.0f}, false);
+    visibility.update(world.frame.ctx);
+    const bool onlySpawned = objects.changed.size() == 1 && objects.changed[0] == world.indexOf(spawned);
+    check("the spawned one is named alone", !objects.allChanged && onlySpawned);
+    check("  and drawn", objects.visible.size() == 3);
+    check("  while the fixed one keeps what it kept", world.drawnX(world.fixed) == 0.0f);
+
+    world.scene.destroyEntity(world.fixed);
+    visibility.update(world.frame.ctx);
+    const bool onlyMoved = objects.changed.size() == 1 && objects.changed[0] == world.indexOf(spawned);
+    check("  a removal names the one moved into its place", !objects.allChanged && onlyMoved);
+    check("  which is drawn where it is", world.drawnX(spawned) == -2.0f && objects.visible.size() == 2);
+}
+
+// A fixed mesh's entity gaining a WorldTransform takes its matrix from it: worked out again then,
+// though nothing about its Mesh changed, and named.
+void testAFixedMeshGainingAParentIsWorkedOut() {
+    std::printf("A fixed mesh given a WorldTransform:\n");
+    FixedWorld world;
+    VisibilitySystem visibility;
+    visibility.update(world.frame.ctx);
+    visibility.update(world.frame.ctx);
+    const RenderObjects& objects = world.frame.ctx.visibility->objects;
+
+    WorldTransform placed;
+    placed.model = glm::translate(glm::mat4(1.0f), glm::vec3(-1.0f, 0.0f, -5.0f));
+    world.scene.add(world.fixed, std::move(placed));
+    visibility.update(world.frame.ctx);
+    const bool onlyFixed = objects.changed.size() == 1 && objects.changed[0] == world.indexOf(world.fixed);
+    check("it is drawn by its WorldTransform", world.drawnX(world.fixed) == -1.0f);
+    check("  and named alone", !objects.allChanged && onlyFixed);
+}
+
+// What every object is made from: a mesh asset changing makes each suspect, and is worked out
+// again; a material is read only for a sea, so with none it keeps everything.
+void testAnAssetChangeReworksOnlyWhatReadsIt() {
+    std::printf("Assets changing:\n");
+    FixedWorld world;
+    VisibilitySystem visibility;
+    visibility.update(world.frame.ctx);
+    visibility.update(world.frame.ctx);
+    const RenderObjects& objects = world.frame.ctx.visibility->objects;
+
+    world.scene.get<Transform>(world.fixed).position.x = -1.0f;
+    world.frame.resources.commit(world.paint);
+    visibility.update(world.frame.ctx);
+    check("a material committed with no sea changes nothing", !objects.allChanged && objects.changed.empty());
+    check("  and the fixed mesh keeps what it kept", world.drawnX(world.fixed) == 0.0f);
+
+    world.frame.resources.commit(world.cube);
+    visibility.update(world.frame.ctx);
+    check("  a mesh committed works the fixed one out again", world.drawnX(world.fixed) == -1.0f);
+    const bool onlyFixed = objects.changed.size() == 1 && objects.changed[0] == world.indexOf(world.fixed);
+    check("  naming only what differs", !objects.allChanged && onlyFixed);
+
+    visibility.update(world.frame.ctx);
+    check("  and then nothing again", !objects.allChanged && objects.changed.empty());
+}
+
 } // namespace
 
 void runCullingTests() {
+    testTheChangedObjectsAreNamed();
+    testAFixedMeshThatMovesIsNoticed();
+    testAMeshHiddenOrShownIsNamed();
+    testAuthoringKeepsNothing();
+    testASpawnOrARemovalNamesWhatItMoved();
+    testAFixedMeshGainingAParentIsWorkedOut();
+    testAnAssetChangeReworksOnlyWhatReadsIt();
     testALightsSourceIsItsOwn();
     testWaterCastsUnlessTheSeaMovesIt();
     testWhatTheEyeSeesAndWhatOnlyItSees();

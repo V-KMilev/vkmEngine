@@ -80,6 +80,7 @@ void GLView::invalidate() {
     m_textures.slots.clear();
     m_fontAtlases.slots.clear();
     m_reportedMissing.clear();
+    m_syncedRevision = 0;
 }
 
 void GLView::setTextureFiltering(TextureFiltering mode, float maxAnisotropy) {
@@ -158,32 +159,41 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
 
     if (objects) {
         const std::vector<ObjectDraw>& draws = objects->draws;
+        // Props are placed in runs, so a handle is mostly the one before it: checked once a run.
+        MeshHandle     runMesh;
+        MaterialHandle runMaterial;
+        const auto ensureDraw = [&](const ObjectDraw& draw, bool material) {
+            if (draw.mesh != runMesh) {
+                ensure(m_meshes, draw.mesh, resources);
+                runMesh = draw.mesh;
+            }
+            if (material && draw.material != runMaterial) {
+                ensureMaterial(draw.material, resources);
+                runMaterial = draw.material;
+            }
+        };
         {
             PROFILE_SCOPE("SyncAssets/Drawables");
-            for (const uint32_t object : objects->visible) {
-                ensure(m_meshes, draws[object].mesh, resources);
-                ensureMaterial(draws[object].material, resources);
-            }
+            for (const uint32_t object : objects->visible) ensureDraw(draws[object], true);
         }
 
         // The scene list's materials are left out (see GLSceneCapture), but
-        // for the casters, which lead the list: a cutout casts through its map.
+        // for the casters, which lead the list: a cutout casts through its map. Walked whole only
+        // when the objects or the assets changed: otherwise every one was checked at its asset's
+        // version already, and the objects that changed are walked alone.
         {
             PROFILE_SCOPE("SyncAssets/SceneMeshes");
-            // Props are placed in runs, so a handle is mostly the one before it: checked once a run.
-            const size_t   casters = std::min<size_t>(objects->casterCount, objects->scene.size());
-            MeshHandle     runMesh;
-            MaterialHandle runMaterial;
-            for (size_t i = 0; i < objects->scene.size(); ++i) {
-                const ObjectDraw& draw = draws[objects->scene[i]];
-                if (draw.mesh != runMesh) {
-                    ensure(m_meshes, draw.mesh, resources);
-                    runMesh = draw.mesh;
+            const bool whole = objects->allChanged || objects->serial != m_syncedSerial + 1
+                || resources.revision() != m_syncedRevision;
+            m_syncedSerial = objects->serial;
+            if (whole) {
+                const size_t casters = std::min<size_t>(objects->casterCount, objects->scene.size());
+                for (size_t i = 0; i < objects->scene.size(); ++i) {
+                    ensureDraw(draws[objects->scene[i]], i < casters);
                 }
-                if (i < casters && draw.material != runMaterial) {
-                    ensureMaterial(draw.material, resources);
-                    runMaterial = draw.material;
-                }
+                m_syncedRevision = resources.revision();
+            } else {
+                for (const uint32_t object : objects->changed) ensureDraw(draws[object], true);
             }
         }
     }
