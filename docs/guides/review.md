@@ -1,23 +1,15 @@
 # Review Guide
 
-How to look at code that already exists and tell whether the design is drifting.
-
-The other guides assume you are adding something. This one asks a different
-question of what is already there: **is this the shape the engine should have?**
-It needs its own guide because it cannot be answered from inside a task. A
-review framed as "find the defects" finds defects, and every one can be real
-while the design goes wrong underneath; nobody hunting bugs in a file concludes
-that the file should not exist.
-
-The examples are from this engine. If one disagrees with the source, the source
-is right, and the drift is worth saying out loud.
+How to look at code that already exists and ask **is this the shape the engine
+should have?** - and how to review a change (section 7). A hunt for defects
+finds defects while the design goes wrong underneath; nobody hunting bugs in a
+file concludes that the file should not exist.
 
 ---
 
 ## Absolutes
 
-- **Report what you find, even when nobody asked.** Drift nobody hears about
-  continues (section 6).
+- **Report what you find, even when nobody asked** (section 6).
 - **Never silently redesign something you were asked to fix.** Name it, cost it,
   let the owner decide.
 - **Report the disconfirmations too.** "I expected X and the source says
@@ -27,8 +19,8 @@ is right, and the drift is worth saying out loud.
 
 ## 1. The tells
 
-Every one of these is the same failure in different clothes: **the code stopped
-expressing the design and started depending on someone remembering it.**
+Every one of these is the same failure: **the code stopped expressing the design
+and started depending on someone remembering it.**
 
 | Tell                                | What it means                            |
 |-------------------------------------|------------------------------------------|
@@ -43,99 +35,72 @@ expressing the design and started depending on someone remembering it.**
 
 ### 1.1 An invariant living in a comment
 
-Prose of this shape:
-
-    "Must precede scene I/O."
-    "in the one order that works"
-    "Declared before the Engine so it outlives it"
-
-says there is a rule, the code does not hold it, and the next person is expected
-to be careful. Swap two lines and the compiler is silent. The fix is almost
-never a better comment: it is a type, a constructor that cannot be called out of
-order, or one shared sequence with a single home - which is what `bootHost`
-(`tools/project_boot.h`) is for the four hosts' prologue.
-
-Some constraints are too small to be worth a type. The editor, the runtime and
-the server each declare `ScriptModule` *above* `Engine`, because a behavior is
-destroyed during engine teardown and its code must still be mapped; swap the two
-lines and the program crashes on exit in a scene with scripts. Two lines in each
-of three files, held by a comment. This tell is about noticing; acting is a
-judgment.
+Prose like *"Must precede scene I/O"* says there is a rule the code does not
+hold. The fix is rarely a better comment: it is a type, a constructor that cannot
+be called out of order, or one shared sequence with a single home (`bootHost` in
+`tools/project_boot.h` for the hosts' prologue). Some constraints are too small
+to be worth a type; acting is a judgment.
 
 ### 1.2 A field per case
 
 When something new must survive an operation and the answer is another member,
-the mechanism is accumulating rather than generalising. `SceneIOController`
-recorded a play session as `m_playSnapshot`, then `m_playAssets`, then
-`m_playSnapshotDirty`, then `m_playSnapshotHistory` - four fields, four rules,
-one incident at a time. Ask: if one more case arrived tomorrow, would this absorb
-it or grow again? (They are one `PlaySnapshot` now;
-[worked-example.md](worked-example.md) is the whole judgment.)
+the mechanism is accumulating rather than generalising: fields added one
+incident at a time, each with its own rule. Ask: would one more case be
+absorbed, or grow it again?
 
 ### 1.3 A guard instead of a state
 
-`refusedDuringPlay()` (`session/scene_io_controller.cpp`) is the whole state
-machine for "this must not run during play": a question each save path remembers
-to ask. Every new operation must remember it too, and the one that forgets is a
-bug an author finds. A state the code can be *in* beats a question every caller
-must remember to ask.
+A check every caller must remember - "refuse this during play" asked by each
+save path - means the new operation that forgets is a bug. A state the code can
+be *in* beats a question every caller must remember to ask.
 
 ### 1.4 One fact stated twice
 
-The defect this engine's reviews have found more than any other. A fact with two
-owners - a constant mirrored in GLSL, a rule re-implemented in a second file, a
-comment and the code it describes, a doc page and the struct it lists - is
-correct only until one of them changes. The second copy is usually right the day
-it is written, which is why it survives review.
+The defect this engine's reviews find most. A fact with two owners - a constant
+mirrored in GLSL, a rule re-implemented in a second file, a comment and the code
+it describes, a doc page and the struct it lists - is correct only until one of
+them changes, and the second copy is usually right the day it is written.
 
-When you find a fact, ask what *else* states it before asking whether this copy
-is wrong. The fix is one owner: a shared constant, a generated list, a helper
-both call, or a check that fails the suite when the two disagree
-(`tests/docs/docs_tests.cpp` holds the ones for docs against source).
+Ask what *else* states a fact before asking whether this copy is wrong. The fix
+is one owner: a shared constant, a generated list, a helper both call, or a
+check that fails the suite when the two disagree (`tests/docs/docs_tests.cpp`
+for docs against source).
 
 ### 1.5 One concept, several mechanisms
 
-Count the ways the engine does one thing. Persistence through a serializer here,
-a hand-rolled dump there and a third path in a tool: no one of them is wrong, and
-the sum is unmaintainable, because a fix in one never reaches the others and a
-reader must learn each variant.
+Count the ways the engine does one thing. Each of several persistence paths can
+be right while the sum is unmaintainable: a fix in one never reaches the
+others.
 
 ### 1.6 A class holding unrelated state
 
-Read a class's members as a list and ask whether they are one idea.
-`SceneIOController` holds the current scene path, a save-as dialog's buffer and
-popup flag, a file picker, and the play-session snapshot - which file is open,
-what a widget shows, and what Play captured. Each changes for reasons unrelated
-to the others.
+Read a class's members as a list and ask whether they are one idea. Members that
+each change for reasons unrelated to the others - which file is open, what a
+widget shows, what Play captured - are a container, not a design.
 
 ### 1.7 Repeated fixes in one place
 
-The cheapest and most honest signal, because it is history rather than opinion:
+The cheapest signal, because it is history rather than opinion:
 
     git log --since=6.months --format=%x01%s --name-only -- src |
         awk '/^\x01fix/{f=1;next} /^\x01/{f=0} f&&/\.(cpp|h)$/{print}' |
         sort | uniq -c | sort -rn
 
 A file that moved counts under each of its names; add them. Read a file's last
-five fixes together. If each adds a case rather than removing
-the reason for cases, the design is the defect and the fixes are interest. If the
-fixes *removed* cases - as the inspector's did, ending in one
-`editComponentCard<T>` that snapshots, draws and pushes every card's edit - the
-rank is not a verdict.
+five fixes together. If each adds a case rather than removing the reason for
+cases, the design is the defect and the fixes are interest. If the fixes
+*removed* cases, the rank is not a verdict.
 
 ### 1.8 A comment that argues
 
-A comment defending a decision against an imagined objection is doing a commit
-message's job, and usually sits where the author knew the design was
-questionable. Treat a paragraph of justification as a pointer to the thing being
-justified. How to write the replacement is
-[code-style.md](code-style.md#61-what-bounds-a-comment).
+A comment defending a decision is doing a commit message's job, and usually
+sits where the author knew the design was questionable. Treat it as a pointer to
+the thing being justified
+([code-style.md](code-style.md#61-what-bounds-a-comment)).
 
 ---
 
 ## 2. What is not a tell
-
-Being wrong in this direction wastes real work:
 
 - **Comment volume.** How many comments a file has says nothing about its design;
   what they *say* is 1.1 and 1.8.
@@ -152,14 +117,12 @@ Being wrong in this direction wastes real work:
 ## 3. How to look
 
 1. **Measure before judging.** Churn, size, counts, and for performance a
-   capture. A number kills a bad hypothesis in a minute and makes a good one
-   undeniable.
+   capture. A number kills a bad hypothesis in a minute.
 2. **Read the fixes, not just the code.** A file's last five commits say more
    about its design than the file does.
 3. **Check a claim the code makes about itself.** A comment saying what a
    function does, a `@param` naming a parameter, a doc listing a struct's fields,
-   a count in a guide - grep each against the source. Nearly every defect a
-   careful read missed sat next to a comment describing the correct behaviour.
+   a count in a guide - grep each against the source.
 4. **Compile a header on its own**, with the flags from
    `build/compile_commands.json`. A cached build hides one that only compiles by
    luck of what its includer included first.
@@ -173,22 +136,15 @@ Being wrong in this direction wastes real work:
 
 ## 4. Suffocating or smoothing
 
-Section 1 reads history. This is the forward-looking half: **does this thing make
-the next thing easier, or harder?** A **smoothing** design absorbs the next case
-without changing shape; a **suffocating** one makes everything work around it.
+**Does this thing make the next thing easier, or harder?** A **smoothing**
+design absorbs the next case without changing shape; a **suffocating** one makes
+everything work around it.
 
-The tell is in the code, not in your opinion of it:
-
-> **Do people extend it, or route around it?** Count the callers that bypass the
-> thing, duplicate a piece of it, or reach past it to what it wraps. A design
-> nobody routes around is doing its job however it looks. A design with three
-> bypasses is suffocating however clean it looks.
-
-Grep for a second path to the same outcome, a caller reconstructing internals
-instead of asking, a helper that exists to avoid the thing, and a comment saying
-"we do it this way here because X does not handle Y." For something you are
-about to build: **if a hundred things depend on this, is it still the right
-shape?** Suffocating designs are rarely bad code; they are reasonable code
+**Do people extend it, or route around it?** Count the callers that bypass it,
+duplicate a piece of it, or reach past it to what it wraps: a second path to the
+same outcome, a caller reconstructing internals, a helper that exists to avoid
+it, a comment saying "we do it this way here because X does not handle Y."
+Three bypasses mean suffocating however clean it looks - usually reasonable code
 holding a responsibility that was the wrong one to centralise.
 
 ---
@@ -209,10 +165,7 @@ growing, nothing new is being built on it.
 
 ## 6. Reporting what you find
 
-On a codebase too large to hold in one head, reporting is a duty:
-
-- **Surface it unprompted.** The owner should not have to suspect a problem to
-  hear about it.
+- **Surface it unprompted.**
 - **Lead with the evidence** - `file:line`, the churn count, the four fields
   added one at a time. A structural claim without evidence is taste.
 - **Separate confirmed from suspected,** and say which is which.
@@ -224,10 +177,8 @@ On a codebase too large to hold in one head, reporting is a duty:
 
 ## 7. Reviewing a change
 
-Everything above judges code that exists. A change under review is judged by one
-standard: **approve it when it leaves the engine better than it found it**, even
-if it is not how you would have written it. Perfect is not the bar; better is,
-and a change that is better should not wait on taste.
+**Approve a change when it leaves the engine better than it found it**, even if
+it is not how you would have written it.
 
 Look in the order that finds the expensive problems first:
 
@@ -251,10 +202,14 @@ Look in the order that finds the expensive problems first:
 Before a release, the comments the release touched get one more read, by a
 reviewer whose only job is to refute them: open the code each sentence
 describes and check it is still true. A rewrite of a comment is where invented
-mechanisms come from, and a second reader with no stake in the first is what
-catches them.
+mechanisms come from.
+
+**A branch is judged at its last commit.** The tip must build and pass every
+suite; the commits before it need not each build, and nobody spends a machine's
+hours proving they do. Polishing history - reordering, folding fixes into the
+commits they belong to - is checked by the tip's tree matching the one that
+was tested.
 
 Say which of your comments block and which are suggestions. A defect, a broken
 absolute, an unmeasured performance claim, docs that did not ship and a
 half-finished refactor block. Everything in section 2 does not.
-

@@ -1,802 +1,269 @@
 # Lighting
 
-The engine supports five light types: **Directional**, **Point**,
-**Spot**, **Rect** (rectangular area light), and **Disk** (disk area
-light). All are data-only ECS components; light evaluation lives in
-the PBR shader. Shadows go through a shared shadow atlas (2D, for
-directional and spot) and a cube map per shadowed point light. Image-based
-lighting is baked by a persistent `GLIBLBaker` helper (not a pass) from an
-HDR environment map or the procedural sky, and sampled by the shader
-through irradiance, prefilter, and BRDF LUT maps.
+How a surface is lit: five light types (Directional, Point, Spot, and the Rect
+and Disk area lights) as data-only `Light` components, evaluated in the forward
+PBR shader against a Forward+ cluster grid; shadows from a shared atlas; and the
+ambient from the sky, reflection probes and an irradiance volume. Where each of
+these runs in the frame is [rendering.md](rendering.md#the-passes-fixed-order).
 
-## Light component
+## Lights
 
-`src/engine/ecs/component/render/light.h`:
+`Light` and its fields are documented in
+`src/engine/ecs/component/render/light.h`. Position comes from the entity's
+`Transform`; direction is the entity's forward, its rotated -Z. A spot shines
+along it; an area light emits from the opposite face, along `-direction` (both
+faces when `twoSided`).
 
-```cpp
-enum class LightType {
-    Directional = 0,    // sun, no position, only direction
-    Point       = 1,    // omnidirectional, has position and radius
-    Spot        = 2,    // cone, has position, direction, and angles
-    Rect        = 3,    // rectangular emitter; faces along -direction
-    Disk        = 4     // disk emitter;        faces along -direction
-};
+`sourceRadius` is the light's size - a directional light's angular radius in
+radians, a point or spot's emitter radius in metres. It sizes both the highlight
+and the shadow's penumbra; zero is a point source with hard shadows.
 
-struct Light {
-    LightType type           = LightType::Directional;
-    glm::vec3 color          = {1, 1, 1};
-    float     intensity      = 1.0f;
+The **key light** is `findKeyLight`: the lowest-slot enabled directional light.
+The sun a shadow is drawn for is `lowestSlotDirectionalCaster`, the lowest-slot
+directional light that casts - not always the key light.
 
-    // Point / Spot / area
-    float     radius         = 10.0f;     // cutoff distance / attenuation radius
+## Shading model
 
-    // Spot
-    float     innerConeAngle = 0.5f;      // radians; full brightness
-    float     outerConeAngle = 0.785f;    // radians; falloff edge
+The forward fragment shader (`shaders/forward/pbr/`, BRDF terms in
+`shaders/brdf.glsl`):
 
-    // Area (Rect, Disk)
-    float     areaWidth      = 1.0f;      // Rect: width along local X
-    float     areaHeight     = 1.0f;      // Rect: height along local Y
-    float     areaRadius     = 0.5f;      // Disk: radius
-    bool      twoSided       = false;     // emit from both faces
+- **Direct light:** Lambertian diffuse; GGX, height-correlated Smith and
+  Schlick specular, scaled for multiple scattering from the split-sum LUT so a
+  rough metal is not too dark. Roughness never goes below `MIN_ROUGHNESS`. The
+  sun is a disc and a point or spot light a sphere of its `sourceRadius`
+  (Karis), so a mirror reflects a bulb as wide as the bulb.
+- **Optional lobes**, switched at runtime by the material's values:
+  transmission and volume absorption, clearcoat, anisotropy, subsurface, sheen,
+  parallax, alpha test. Sheen and anisotropy follow their glTF extensions
+  (import takes their factors, not their textures); subsurface is a wrapped
+  back-light for foliage. A material using none of these but alpha test draws
+  with a plain program compiled without them
+  ([rendering.md](rendering.md#the-passes-fixed-order)). An anisotropic
+  direction needs a tangent field that runs the way the material does.
+- **Double-sided materials** draw with culling off, and a back face is lit as its
+  own (the tangent frame flips on `gl_FrontFacing`).
+- **GTAO** occludes the indirect term, taking the stronger of it and the
+  material's AO (the two usually describe one crease). Only the opaque bucket
+  takes it - GTAO reads the depth prepass, which draws nothing else.
+- **Horizon occlusion** fades a normal-mapped reflection that points below the
+  geometric surface.
 
-    // Shadows
-    bool      castShadows    = true;
-    float     shadowBias     = 0.5f;      // compare slid toward the light, in shadow texels, more grazing
-    float     shadowNormalBias = 1.0f;    // point moved off the surface, in shadow texels, none head-on
-    float     shadowDistance = 100.0f;    // directional only: cascade coverage distance (world units)
-    int       shadowPriority = 0;         // over budget, higher keeps its shadow, then the nearest
-    float     sourceRadius   = glm::radians(0.5f); // directional: disc radius (radians); spot, point: emitter radius (m) - the penumbra
+### Where the ambient comes from
 
-    bool      enabled        = true;
-};
-```
-
-Position comes from the entity's `Transform` for Point, Spot, and area
-lights. Direction is the entity's forward, its rotated -Z axis. A spot
-shines along `direction`; an area light emits from the opposite face,
-along `-direction` - toward the rotation's local +Z.
-
-## Lighting model
-
-The PBR fragment shader (`shaders/forward/pbr/`) implements:
-
-- **Lambertian diffuse** with energy conservation.
-- **Cook-Torrance specular**: GGX (Trowbridge-Reitz) for normal
-  distribution, height-correlated Smith for visibility, Schlick for
-  Fresnel. The direct lobe is scaled by the energy its microfacets bounce
-  more than once (`1 + f0 (1 / Ess - 1)`, read from the split-sum LUT), so
-  a rough metal is as bright under a lamp as under the sky. Shading never
-  goes smoother than `MIN_ROUGHNESS` (0.045, `shaders/brdf.glsl`), which keeps
-  the GGX denominator off zero; the peak there, 1 / (PI alpha^2), is about
-  77,600 and is not floored, so a polished floor shows a point light's glint
-  at full height. The sun's is lower, because its lobe is widened by its disc
-  (below): about 13,100 at the default `sourceRadius` of half a degree. The key
-  light is not a point but a disc (`Light::sourceRadius`, the angular radius
-  its shadows are softened by too): its lobe, and its clear coat's, is widened by
-  the disc's tangent with no renormalisation, so a mirror reflects a disc as
-  bright as the irradiance it brings rather than a pinpoint. What the pass
-  writes is held under the RGBA16F maximum, so no channel reaches infinity
-  for bloom to spread. A point or spot light is a sphere of its `sourceRadius`
-  (Karis 2013): its highlight is shaded toward the sphere's point nearest the
-  reflection ray, the lobe renormalised by `(a / a')^2` with `a' = a + r / 2d`,
-  so a bulb's glint on a polished floor is as wide as the bulb's reflection
-  rather than a sub-pixel firefly no temporal filter averages, and one radius
-  sizes the highlight and the penumbra alike. A radius of zero is the point.
-- **Optional lobes**, gated at runtime by each material's values (one PBR
-  program, and a plain variant for a material that uses none of them but alpha
-  test - `GLMaterial::plain`): transmission,
-  volume (absorption), clearcoat, anisotropy, subsurface, sheen,
-  parallax/height, alpha test. Transmission blends only what the surface does
-  not reflect toward the scene behind it, itself dimmed by the reflected share
-  (Filament's split), so glass keeps its reflections and highlights. Subsurface is Unreal's two-sided foliage, a wrapped
-  back-light through a broad lobe about the light's direction, so a leaf glows
-  looking toward the sun and not with it behind.
-  Sheen and anisotropy follow their glTF extensions. A sheen is the Charlie
-  lobe with its own visibility (Estevez and Kulla, as the glTF sample viewer
-  has them), over the base and under a coat; what it reflects at an angle,
-  its directional albedo, is baked into the BRDF LUT's third channel beside
-  the split sum, and the base is dimmed by that much on the way in and out
-  (`KHR_materials_sheen`'s albedo scaling), so a white sheen over a white base
-  moves the light toward the rim without adding to it. In the environment it
-  takes that albedo of the irradiance - a lobe as broad as cloth's gathers
-  nearly what a diffuse one does - where Filament reads the prefiltered sky
-  at the sheen's roughness. An anisotropic lobe is rougher along its
-  direction, `mix(a, 1, strength^2)`, and as rough as authored across it
-  (`KHR_materials_anisotropy`); the environment reflects about a normal bent
-  toward the stretch, the glTF sample viewer's, and the trace, which reflects
-  about the G-buffer's normal, is handed the lobe as wide as its widest axis.
-  The import takes the strength and rotation, and the sheen's colour and
-  roughness; their textures have no unit of their own (`convention/gl_bindings.h`),
-  and the import says so when it leaves one behind. A direction needs a tangent
-  field that runs the way the material does: the built-in sphere is six
-  patches and shows their seams.
-- **Double-sided materials** (`MaterialAsset::doubleSided`, glTF's
-  `doubleSided`): their runs draw with culling off in the depth prepass and the
-  forward pass, and a back face is lit as its own - the shader turns the whole
-  tangent frame on `gl_FrontFacing`, so the normal map mirrors with it, and the
-  prepass writes the turned normal.
-- **IBL**: prefiltered specular cube + irradiance cube + split-sum
-  BRDF LUT. The LUT integrates Schlick's Fresnel over the lobe (A over
-  `1 - Fc`, B over `Fc`), so the reflected energy is `f0 * A + B`; a
-  view-angle Fresnel in place of `f0`, as the multiple-scattering paper's
-  listing has it, would count the Fresnel twice. The diffuse takes what is left,
-  `1 - (FssEss + Fms Ems)` (its section 4). A rough lobe is read along its
-  dominant direction, which bends from R toward N as roughness grows (Lagarde,
-  *Moving Frostbite to PBR* 4.9.3), so a rough floor at grazing does not
-  reflect the bright horizon R points at. The split-sum term is followed by a **multiple-scattering** lobe (Fdez-Aguera), built from the two
-  DFG channels already sampled: single scattering only accounts for light that
-  leaves the microsurface after one bounce, and at high roughness most of it
-  leaves after several, which is why a rough metal without it renders visibly
-  too dark. Under a uniform environment a perfect metal returns exactly the
-  energy it received at every roughness; a dielectric gains under a thousandth
-  and roughness 0 is untouched, so it brightens rough metal and nothing else.
-  The LUT is integrated with the same height-correlated visibility the
-  direct lights use, so the two lobes are one lobe.
-- **Where the ambient comes from**: the reflection is the covering
-  reflection probes, parallax-corrected, over the global sky. They are taken
-  smallest box first, each covering only what the ones before it left (Unreal's
-  rule), so a room's probe wins inside the room over the yard's around it,
-  whatever their scene order. The diffuse is the irradiance volume wherever one covers the point -
-  fading in over `blendDistance` metres from each face of its box -
-  and the reflection's own source (probe, else sky) elsewhere - a probe's
-  irradiance is one sample at its centre, the volume's is taken here - offset
-  off the surface (`irradianceVolumeLookup`) along its geometric normal, so a floor reads the
-  room above it rather than the probes inside its own slab (DDGI's surface
-  bias). The volume stores SH-L1; its lookup adds the quadratic zonal term L1
-  predicts (Activision's ZH3), so light bounced from one side gives a pillar's
-  two sides the contrast L1 alone flattens. Inside
-  the volume the reflection is **normalised** (Lazarov, *Black Ops 2*): it
-  is dimmed by the ratio of the irradiance here to the irradiance its capture
-  saw, so a floor in shade stops reflecting the open sky at full strength.
-  The ratio never exceeds one: a sunlit floor's extra light is the sun's, and
-  the sun is not in the reflection.
-  With no sky baked there is no reflection to read and the diffuse is a flat
-  floor (`FLAT_AMBIENT` in `shaders/ambient.glsl`); probes and the volume
-  still replace both wherever they cover the point, since they were baked
-  from the scene rather than from the sky.
-- **A probe's `intensity`** scales what it contributes, its reflection and its
-  irradiance alike; how much of the point it covers is its box's alone.
-- **Screen-space reflections** over both, on surfaces smoother than
-  `ssrMaxRoughness`, in the Reflections pass after the frame is lit. The
-  forward pass writes, beside the colour, how much of the environment's
-  reflection each pixel shows (the split-sum weight - not occluded, since a ray
-  that hits has found the occluder) with its roughness, and the reflection as it
-  added it - weight times specular occlusion times the environment's radiance,
-  stored as that product so the pass subtracts what was added whatever the
-  weight rounded to. Under MSAA the resolve averages
-  both with the weights it averages the colour with (Karis's, in [rendering.md](rendering.md)),
-  so the reflection it subtracts is the one the resolved colour holds; a plain
-  average there leaves a dark fringe along every bright silhouette. The pass traces each such pixel's ray through this
-  frame's depth, and where it meets a surface facing it, adds weight x traced
-  minus that product: the scene's colour replaces the probe or sky reflection
-  there, and nothing changes where the ray found nothing. The colour is read from a mip chain of the lit frame at the level the
-  glossy lobe spans at that distance, and a glossy pixel averages its
-  neighbours' rays on the same surface, which is what makes one ray per pixel
-  a smooth lobe and a soft edge without a temporal filter. The ray follows the
-  G-buffer's interpolated normal, not the normal map, because one ray per pixel
-  reads a normal map as noise. A transparent surface or an alpha-blended
-  particle dims the weight and the reflection under it by its own opacity, so
-  a floor seen through glass or smoke keeps its reflection at the strength
-  the glass or smoke lets through; an additive particle hides nothing and
-  leaves both alone. An alpha-masked cutout reflects its probe and the sky
-  and is never traced: the prepass does not draw it, so the G-buffer under it
-  is the surface behind, and its ray would leave along that surface's normal. The environment's intensity scales the
-  probes, the irradiance volume and the sky where they are read, not the
-  traced reflection, which is the scene as lit - and so the probe and volume
-  captures are taken at unit intensity, or they would carry it twice. With
-  no sky baked there is no environment reflection to replace: the forward
-  pass still writes the weight, with nothing added under it, and the traced
-  reflection is all a glossy surface shows.
-- **GTAO**: full-res ground-truth ambient occlusion computed by
-  `GLGTAOPass`, its slices turned evenly about each pixel's own view ray,
-  then denoised by an edge-aware 5x5 blur on each pixel's own
-  surface - spatial only, since nothing here keeps a history. The blur
-  averages the integrated visibility as it is, and only then are intensity,
-  power and the clamp to one applied: a slice meeting an open surface
-  obliquely integrates to more than one, its neighbours' to less, and clamped
-  first the average would darken surfaces nothing occludes. The stronger of it and the material's AO occludes the
-  indirect term - they usually describe the same crease, so multiplying them
-  would darken it twice. Diffuse takes it with what bounces back out of the
-  crease (Jimenez's multi-bounce fit, in the visibility and the albedo, so a
-  white corner darkens less than a black one), and specular takes the view-
-  and roughness-aware form of it (Lagarde). GTAO's bent normal is carried onto the shading normal
-  as an offset, so a normal map still shapes the indirect light. Only the
-  opaque bucket takes it: GTAO reads the depth prepass, which draws nothing
-  else, so under an alpha-masked or transparent pixel it describes the surface
-  behind - or the sky - rather than the one being shaded.
-- **Horizon occlusion**: a normal map can turn a reflection below the
-  geometric surface, where the environment holds light nothing there could
-  reflect; the specular occlusion fades it out.
+- **Reflection:** the reflection probes covering the point, parallax-corrected,
+  smallest box first (so a room's probe wins over the yard's), over the global
+  sky. A probe's `intensity` scales its reflection and irradiance alike.
+- **Diffuse:** the irradiance volume (SH-L1, `irradianceVolumeLookup`) wherever
+  it covers the point, fading over `blendDistance` from its faces; elsewhere the
+  reflection's own source. Inside the volume the reflection is normalised by the
+  ratio of the irradiance here to what its capture saw, so a floor in shade does
+  not reflect the open sky at full strength.
+- **No sky baked:** no reflection, and a flat diffuse floor (`FLAT_AMBIENT` in
+  `shaders/ambient.glsl`); probes and the volume still apply where they cover.
+- **Screen-space reflections** go over all of it on surfaces smoother than
+  `ssrMaxRoughness`: where a pixel's ray hits, the scene's colour replaces the
+  probe or sky reflection. No temporal filter: the ray follows the G-buffer's
+  interpolated normal (a normal map is noise at one ray a pixel), and alpha-masked
+  cutouts are never traced. The environment's intensity scales the probes, the
+  volume and the sky, not the traced reflection - so captures are taken at unit
+  intensity, or they would carry it twice.
 
 ### What a capture is lit by
 
 The irradiance volume and the reflection probes are pictures of the scene
-(`GLSceneCapture`): a reflection probe draws the opaque scene and the sky into a
-cube and convolves it; the volume keeps what each of its probes sees as surfaces and
-lights them in a compute pass that projects to SH-L1 (how, in
-[rendering.md](rendering.md#the-passes-fixed-order)). Whatever lights the captured
-surfaces is what the probes pass on, so a wall lit by the open sky would light every
-probe in a sealed room through solid plaster. A captured surface takes its ambient
-from the volume wherever the volume covers it, and from the sky only outside its box:
+(`GLSceneCapture`), so whatever lights the captured surfaces is what they pass
+on: a wall lit by the open sky would light every probe in a sealed room through
+the plaster. So a captured surface takes its ambient from the volume wherever the
+volume covers it, and from the sky only outside it:
 
-- **The volume is gathered in bounces**, the recursion DDGI runs across frames
-  (Majercik et al., *Dynamic Diffuse Global Illumination with Ray-Traced
-  Irradiance Fields*: a ray's hit is shaded by the probes' previous
-  irradiance), run here to a fixed count. `GLIrradianceBaker` gathers the grid
-  `GLIrradianceBaker::BOUNCES` times. In the first, the surfels inside the box take
-  no ambient, so a wall is lit only by what reaches it - the lights, the key light
-  through its shadow, its own emission. Each later gather lights them from the grid
-  the gather before produced and adds one bounce. A direction that meets no geometry
-  sees the sky itself, so the sky reaches a room through its doorway and windows and
-  nowhere else, and a sealed room under a noon sky stores nothing. How many gathers,
-  and what they cost: [engine.md](../guides/engine.md#4-what-has-already-been-decided).
-- **A surfel is a diffuse surface**: its light times its bounce colour, the diffuse
-  albedo and what the specular reflects as one - `albedo * (1 - metallic) * (1 - f0)
-  + f0` - so a metal bounces its `f0`, and no share of the light waits on a view no
-  probe has.
-- **Inside the box the volume is all there is**: a gather reads it with no fade at the
-  box's faces, so a wall on a face takes none of the sky, and at unit intensity, since
-  the frame scales the finished grid by `intensity` and a gather lit at it would
-  compound it once per bounce. A probe capture's glossy reflection of the sky is
-  normalised by the volume as the frame's is (Lazarov, above).
-- **Only the bake judges** which probes stand inside geometry, from its first
-  gather; the verdict depends on where a probe stands, not on the light, so every
-  gather of every relight repairs the refused cells by the bake's blend.
-- **The volume's light follows its lights and its sky.** When the frame's lights
-  (`lightingDigest`) or the sky (`GLIBL::version`) differ from those it was lit by, the
-  bake's surfels are lit again with no new bake version, the geometry being the
-  bake's: a gather a frame into grids of the baker's own, the last traded in whole, so
-  the light trails a moving sun by `BOUNCES` frames and no frame shows a half-lit grid.
-  A change during a relight asks for another once it ends. Under still lights none
-  runs.
-- **The reflection probes are captured after the volume**, lit by it where it
-  covers them, at its `intensity` and with no fade, so a room's probe reflects
-  its walls as the frame lights them rather than lit by the sky. A probe
-  remembers which bake of the volume lit it (`GLIrradianceVolume::bakeId`) and
-  is captured again at once when the volume is baked again.
-- **A probe follows its light too.** It remembers the lights, the sky and the
-  volume's light it was captured under (`CaptureLighting`, which the volume's
-  relight compares too), and one captured under other light is refreshed a step a
-  frame into the arrays' staging layer (`GLProbeBaker::advance`), copied in whole
-  after the last step. A 1024-texel probe
-  is 43 steps of at most 0.7 ms. Under a sun that never stops one is always being
-  refreshed: the one that has waited longest for how near the eye it is.
+- **The volume is gathered in bounces** (`GLIrradianceBaker::BOUNCES`). In the
+  first, surfels inside the box take no ambient - only lights, the sun through
+  its shadow, and emission. Each later gather lights them from the grid the one
+  before made. A direction that meets no geometry sees the sky, so the sky
+  enters a room through its doorways and windows only. Inside the box there is
+  no fade at the faces. How many gathers:
+  [engine.md](../guides/engine.md#4-what-has-already-been-decided).
+- **The volume follows its lights and sky.** When the frame's lights
+  (`lightingDigest`) or the sky (`GLIBL::version`) differ from what it was lit
+  by, its surfels are relit a gather a frame, the result swapped in whole.
+- **Probes are captured after the volume**, lit by it where it covers them, and
+  baked again at once, as a new probe is, when the volume is re-baked
+  (`GLIrradianceVolume::bakeId`). A probe captured under other light
+  (`CaptureLighting`) is refreshed a step a frame (`GLProbeBaker::advance`),
+  swapped in whole. The lights compared are the whole scene's, not those near a
+  capture, so a light animated anywhere keeps the volume relighting and the
+  probes refreshing for as long as it moves.
+- **Shadows:** a capture is shadowed by `lowestSlotDirectionalCaster` alone
+  ([rendering.md](rendering.md#bakes)).
 
-The frame does fade the volume in over `blendDistance` from each face of its
-box, toward the light outside it. A volume filling a room wants its box out to
-the middle of the walls and a fade shorter than their half-thickness; with a
-longer one, the room's surfaces near a face of the box - its corners above all -
-take part of the sky.
+A volume filling a room wants its box out to the middle of the walls and a
+`blendDistance` shorter than their half-thickness; longer, the room's surfaces
+near a face take part of the sky.
 
-### Area lights: LTC + representative point
+## Area lights
 
-Rect and Disk are evaluated using two industry-standard tricks:
+Rect and Disk lights (`shaders/area_light.glsl`, `shaders/form_factor.glsl`) cast
+no shadow.
 
-1. **Diffuse via LTC (Linearly Transformed Cosines).** The shader sums
-   Hill's stable edge integral over the emitter's outline into its vector
-   form factor (`shaders/ltc.glsl`), then clips it to the shading horizon by
-   Hill's approximation, the sphere with the same vector (close while the
-   emitter is wholly above the horizon, zero once it is wholly below). No
-   matrix LUT is sampled, and the frame the outline is taken into is built
-   from the normal alone: the cosine lobe has no preferred direction about it.
-   - Rect uses 4 vertices.
-   - Disk is approximated by a 12-vertex polygon. The error is
-     negligible for the budget.
-2. **Specular via Karis representative-point.** For each shaded pixel,
-   pick the point on the emitter closest to the perfect reflection
-   direction, then evaluate the surface's own GGX lobe toward it,
-   renormalised by `(alpha / alpha')^2` - `alpha'` the lobe broadened by the
-   emitter's size - so a wide emitter spreads its highlight rather than
-   brightening it. That factor stands in for the broadened lobe's own
-   normalisation, so the lobe itself is evaluated at `alpha`.
+- **Diffuse** is the exact form factor: Hill's edge integral over the emitter's
+  outline (a disk as a polygon, `N_DISK` sides in `shaders/form_factor.glsl`), clipped to the horizon.
+- **Specular** is Karis's representative point: the surface's own GGX lobe toward
+  the emitter point nearest the reflection ray, renormalised by
+  `(alpha / alpha')^2`, `alpha'` the lobe broadened by the emitter's size - so a
+  wide emitter spreads its highlight rather than brightening it.
 
-`intensity` is the emitter's point-equivalent intensity: its radiance is
-`intensity / area`, so far away an area light lights like a point light of
-the same intensity and near it the form factor takes over. `radius` only
-windows the light to zero; the falloff is the emitter's own geometry.
-
-`twoSided` enables emission from both faces. By default an area light
-only emits from the side its `-direction` normal points along; which side
-a point is on is a plane test, not the sign of the integral.
-
-Area lights cast no shadow: the shadow planner fits cascades, spot tiles
-and cube faces, and nothing for Rect or Disk.
+`intensity` is point-equivalent: radiance is `intensity / area`, so far away an
+area light lights like a point light of the same intensity. `radius` only windows
+the light to zero.
 
 ## Shadow atlas
 
-The shadow system has two depth stores sized by `engine_config.h`:
+Two depth stores, their counts in `engine_config.h` and the largest tile's edge
+`RenderSettings::shadowResolution`:
 
-- **2D atlas** (`Config::MAX_SHADOW_CASTERS_2D` tiles) holds
-  directional and spot shadow maps. It is one depth `Texture2D`, not a
-  texture array, `SHADOW_ATLAS_BLOCKS` x `SHADOW_ATLAS_BLOCKS` square
-  blocks each the largest tile (`shadowResolution`) across; a caster's slot
-  indexes one square tile and is sampled through a per-tile UV
-  offset/scale. The first shadow-casting directional light takes
-  `Config::NUM_CASCADES` consecutive slots for a CSM (cascaded shadow
-  maps) split; spot lights take the slots left over, by `shadowPriority`,
-  highest first, then - only while more ask than fit, so a light keeps its
-  tile as the camera moves - nearest the camera. Two lights an even distance
-  off at the budget's edge trade the shadow as the camera crosses between. Tiles differ in size,
-  each a power of two (`GLShadowData::build`): the sun's first
-  `FULL_CASCADES` cascades take the largest tile and the rest take half,
-  whose texels already span more of the world; a spot whose reach misses the
-  view takes no slot at all, and one that is seen takes
-  `SPOT_TEXELS_PER_PIXEL` texels per screen pixel its cone's bounding sphere
-  covers (Unreal's `r.Shadow.TexelsPerPixelSpotlight`), from
-  `SHADOW_ATLAS_MIN_TILE_RES` to the largest, halving only once it needs
-  well under its tile so it does not flip between two sizes. When the
-  tiles would not fit, the largest spot halves until they do.
-  `GLShadowAtlas::layout` packs them largest first into the smallest free
-  square, quartering squares as it goes, which never fails while their area
-  fits; the same sizes land in the same places, so a held tile stays held.
-- **A cube-map array** (`Config::MAX_SHADOW_CASTERS_CUBE` layers) holds
-  the six faces of each point-light shadow, a layer per light, so every point
-  light reads through one unit and its slot is a coordinate rather than a
-  sampler index.
+- **The 2D atlas** holds the sun's cascades and spot shadows as square,
+  power-of-two tiles. The sun (`lowestSlotDirectionalCaster`) takes
+  `Config::NUM_CASCADES` of them; spots share the rest by `shadowPriority`, then,
+  only while more ask than fit, by distance to the camera. A spot or point light
+  whose reach misses the view takes no tile or layer; a seen spot's tile is sized
+  by how much screen its cone covers. `GLShadowData::build` plans this;
+  `GLShadowAtlas::layout` packs the tiles, the same sizes into the same places.
+- **A cube-map array** holds a layer per shadowed point light.
 
-Shadow rendering goes through `GLShadowPass`, which:
+`GLShadowPass` draws them. Casters come from the **whole scene**, not the
+camera's visible set, culled per tile and face on the thread pool against the
+light's frustum (`GLShadowData::cullCasters`). A tile or cube face is kept
+between frames when its batch's signature (matrix and casters,
+`ShadowCasterBatch::signature`) matches, so a still view redraws no shadow; the
+fixed casters are signed all at once by `RenderObjects::fixedSerial`, the moving
+ones each, and a posed caster leaves a batch unsigned. A replaced world or a
+shader reload forgets every tile (`forgetHeld`). An alpha-masked or see-through
+transparent caster cuts its shadow by its alpha (`shadow/depth_masked`,
+`GLMaterial::cutsItsShadow`).
 
-- Runs whenever there is a shadow job, casters or none: a tile or face
-  with nothing in it is still cleared, so it reads as lit, and the atlas
-  and cubes start cleared to the far plane for the same reason. The 2D
-  half returns early only on an empty job list and the cube half loops
-  over whatever cube jobs exist. A tile or a cube face is kept between frames when it would
-  be the same picture: the cull signs each batch with a hash of the
-  matrix it was culled against and every survivor's mesh id, geometry upload
-  (`GLMesh::uploadId`, so a mesh re-cooked under the same handle is a new
-  picture) and model - and for a survivor cut by its alpha
-  (`GLMaterial::cutsItsShadow`) its material's and albedo map's uploads, since
-  they say which texels cast
-  (`ShadowCasterBatch::signature`) - the atlas remembers
-  the signature a tile was last drawn from - recorded as the tile is
-  cleared (`GLShadowAtlas::beginTile` / `beginCubeFace`), not when it is
-  asked about (`tileHolds` / `faceHolds`), so a tile is held only once
-  something drew it - and a match skips the clear and the draws. A replaced world
-  or asset graph makes the atlas forget every tile (`forgetHeld`, from
-  `GLBackend::onWorldReplaced`), and so does a shader reload
-  (`GLBackend::reloadChangedShaders`), since a held tile was drawn by the old
-  program. A posed survivor leaves the
-  batch unsigned, since its picture is in its bones. The fixed casters
-  (`Mesh::movable` off) are signed all at once by `RenderObjects::fixedSerial`,
-  the moving ones each, so the sun's cascades are signed too and a still view
-  redraws no shadow; with no object changed, a tile culled against the same
-  matrix keeps its batch.
-  A cascade is drawn with `GL_DEPTH_CLAMP` on and culled with no near plane,
-  so a caster nearer the sun than the cascade's near plane is flattened onto
-  it and still shadows, rather than being clipped away.
-  `Shadow/TilesDrawn` plots how many tiles a frame draws.
-- Cuts an alpha-masked caster's shadow by its material: such a caster draws
-  through `shadow/depth_masked` (and its skinned twin), which tests the
-  material's alpha times its albedo map's against `alphaCutoff` exactly as
-  the forward pass does, so a leaf card shadows as a leaf and not as a quad.
-  The cull groups those casters by (material, mesh) rather than mesh alone,
-  so a run binds one material; cascades, spot tiles, cube faces and the
-  captures' key-light map all draw them this way. A transparent caster is
-  cut the same way against a dither instead of a cutoff - a share of texels as
-  large as it is opaque, its see-through parts (a decal's surround) none - so
-  it casts a shadow as deep as it is opaque: smoothly where the filter is wide,
-  as grain at a hard edge's few taps. Each caster draws its own pattern, so two
-  half-clear panes cast three quarters, and the pattern is keyed to the light's
-  fixed grid, so a cascade snapping along with the camera keeps it still. One
-  wholly opaque - alpha 1, no map - casts as a solid (`GLMaterial::cutsItsShadow`).
-- Takes the first `casterCount` objects of `RenderObjects::scene` - the
-  casters, which the gather lists first - from the **whole scene** rather than
-  the camera's visible set (see
-  [Visibility](visibility.md)), then
-  culls that list per atlas tile against the tile's own light frustum in
-  `GLShadowData::cullCasters`, so a tile draws only what can reach it.
-- Draws against per-caster `lightVP` matrices, biases, and atlas tile rects
-  that `GLShadowData::uploadAndBind` writes into the ShadowBlock UBO before
-  the passes run. The forward pass samples a single tiled `sampler2DShadow`
-  atlas (`u_shadowAtlas`) - mapping each caster's UV into its tile rect
-  and taking a 3x3 kernel of hardware depth compares, each of them
-  bilinear over a 2x2 texel neighbourhood, so one tap returns a fraction
-  rather than 0 or 1 - plus the point lights' cube array, through a
-  `samplerCubeArrayShadow` (`u_shadowCube`, the light's slot as its layer). A cube
-  face is an ordinary perspective depth map, drawn by the same programs as
-  the atlas tiles, and a lookup rebuilds the face's projected depth from the
-  major axis of the direction and takes a hardware compare over 2x2 texels
-  of the face - a fraction, like a 2D tap.
+**Bias.** Every light reads `shadowBias` and `shadowNormalBias` in texels of its
+own map at the receiver, scaled by the light's angle to the surface (`biasSin`,
+`biasSlide` in `shaders/shadows.glsl`). One pair of values holds for every light
+type, range and cascade, so the defaults rarely need touching
+([engine.md](../guides/engine.md#4-what-has-already-been-decided)).
 
-  **Bias.** Every light reads `shadowBias` and `shadowNormalBias` one way, in
-  texels of its own map at the receiver (`biasSin` and `biasSlide` in
-  `shaders/shadows.glsl`, after Castano's summary for The Witness): the point
-  moves off its surface along the normal by the normal bias times the sine of
-  the light's angle to it - nothing head-on, all of it where the light grazes -
-  and the compare slides toward the light by the depth bias times 1 + the
-  tangent, capped. A texel is the map's world size at the receiver: a
-  cascade's own, a spot's grown with the distance from the light, a cube face's
-  `2 * axis / SHADOW_CUBE_RES`. So one pair of values holds for every light
-  type, range, cascade and distance, and the defaults rarely need touching
-  (why these, [engine.md](../guides/engine.md#4-what-has-already-been-decided)).
+**Soft shadows.** Sun, spot and point lights cast percentage-closer soft shadows
+sized by `sourceRadius`: a blocker search, a penumbra from the blocker distance,
+and a fixed Vogel disk of hardware compares. The disk is not rotated per pixel -
+that is grain only a temporal filter removes, and there is none. A source of
+zero, or `RenderSettings::softShadows` off, gives hard shadows. A penumbra too
+wide for its cascade is read from a coarser one; a spot or point map has none,
+and stops at `SOFT_SPOT_REACH`.
 
-  **Soft shadows.** The sun and spot lights cast percentage-closer soft
-  shadows (Fernando 2005), sized by the light's own `sourceRadius`: a source
-  of zero is a hard shadow and takes the 3x3 path, and so does every light
-  with `RenderSettings::softShadows` off, which the Low and Medium presets turn
-  off for the forward pass's time. A 16-tap blocker search through the raw
-  atlas, each tap a gather of four texels weighted bilinearly so the result
-  does not step from texel to texel, finds the average depth of what
-  shadows the point; the distance behind it, scaled by the source's size,
-  is the penumbra; and a Vogel disk of hardware compares that wide filters
-  it. A point far behind its blocker gets a wide, soft edge and a contact
-  stays sharp, which is what a light of that size does. A point whose
-  every search tap found a blocker is in the umbra - the filter's disk lies
-  inside the searched one - and skips the filter (`SOFT_UMBRA`): in
-  a game scene that took 8% off the forward pass at High and Ultra, no golden
-  moving. The cascades' fallback search of the own tile, whose filter may
-  reach past it, does not skip. The taps grow with
-  the disk - 12 for a narrow penumbra, up to 64 for the widest - so they stay
-  `SOFT_TAP_SPACING` (1.25) texels apart and each tap's 2x2 compare overlaps
-  its neighbours'. The disk is the same at every pixel: turned per pixel on
-  noise it would be grain that only a temporal filter averages away, and
-  this engine has none, so neighbouring pixels read nearly the same taps and
-  the edge is a smooth ramp. Each of the sun's taps
-  compares against the receiver's own plane at that tap rather than its
-  depth at the point (`receiverSlope`), so a surface the light grazes
-  neither finds itself in the blocker search, which would pull every
-  penumbra toward zero, nor shadows itself under a wide filter. A spot's taps
-  do the same through its perspective tile (`receiverSlopePerspective`), and
-  so do the hard path's nine. Each search reads its centre too, so a caster
-  a texel thin is not lost between taps.
+**Cascades.** `shadowDistance` sets how far the sun's cascades reach (spot and
+point use `radius`); the shadow fades out toward its reach (`SHADOW_FADE`).
+Cascades blend across a band at each split (`CASCADE_BLEND`). The split is logarithmic,
+anchored at a fixed world distance (`CASCADE_NEAR`) rather than the camera's near
+plane, so raising `shadowDistance` costs the far field density, not the
+foreground sharpness.
 
-  How wide a penumbra can be is derived, not set. A disk wider than `SOFT_REACH`
-  (5.5) texels - the most 64 taps cover at that spacing - would spread its taps
-  into dots, so the sun's path (`sampleCSMSoftFrom`) runs its search and its filter
-  each in the finest cascade that holds the point and fits the disk in that many
-  texels: a penumbra too wide for the point's own cascade is drawn from a
-  coarser one, whose texels are about the fourth root of `shadowDistance` times
-  larger (three at the default; twice that for the last, half-size cascade), and
-  which loses only detail narrower than the penumbra blurring it. The search
-  reaches one cascade radius above the point, and the penumbra is capped at the
-  radius it searched: past that rim the point reads lit, so a wider filter would
-  tear a jagged edge into the penumbra. Whatever cascade is read, the slide is
-  the point's own in metres - a depth unit is a cascade's whole span, so the
-  coarse one's would lift the point clear of anything a few metres above it -
-  while the normal offset is the read tile's, which its texels need against
-  acne; and a search the coarse tile saw nothing in falls back to the point's
-  own tile, so a caster too thin for the coarse map still shadows; that fallback
-  keeps its full width, faint enough to hide the hard compare that admits it.
-  A spot has one map and nothing coarser, so its search and filter stop at
-  `SOFT_SPOT_REACH` (7) texels, its taps a little further apart, each compared
-  against the receiver's plane where it falls (`receiverSlopePerspective`: a
-  perspective tile's depth is affine in its uv over a plane, so two points of
-  the plane give the slope exactly).
-
-  A point light is soft the same way, from its `sourceRadius` in metres. Its
-  taps are laid on a disk across the light's ray, and each compares the
-  receiver's plane where its own ray meets it (`cubeReference`), so a wide
-  filter neither finds the receiver among its blockers nor shades it. The
-  blocker search reads the same array a second time on its own unit
-  (`u_shadowCubeRaw`, uncompared), as the atlas's does. A source of zero is a
-  hard edge, filtered a texel wide rather than one 2x2 compare, which stair-steps
-  once a texel outgrows a pixel. The fog's sun samples stay on the 3x3 kernel.
-
-  A directional light's highlight is the same disc as its penumbra, and the
-  procedural sky draws the sun at that size too (as Unreal's sky draws its
-  light's source angle), at `SkySettings::sunDiscIntensity` times
-  `sky.lightIntensity`, so one light sets the sun's size and brightness
-  everywhere.
-
-  The atlas is read both ways within a frame, so the comparison lives on
-  a sampler object bound to a texture unit rather than on the texture.
-  `GLShadowAtlas::bind2D` binds a comparing sampler on
-  `ShadowTextureSlots::ATLAS_2D`; `bind2DRaw` binds a non-comparing one on
-  `ShadowTextureSlots::ATLAS_2D_RAW`, for the soft path's blocker search and
-  the `ShadowAtlas` debug view, both of which read stored depth through a plain
-  `sampler2D`. Two units, because a sampler replaces
-  every sampling parameter for the unit it is bound to - which is also
-  why both samplers carry the atlas's own linear filtering and clamp.
-
-`shadowDistance` controls how far the directional cascades cover in world
-units, and the sun's shadow fades out over the last fifth of it
-(`SHADOW_FADE`), so its reach ends in a ramp rather than a line across the
-ground. It is ignored for spot, point, and area lights, which use `radius`
-as their cutoff.
-
-A cascade hands over to the next across the last tenth of its depth
-(`CASCADE_BLEND` in `shadows.glsl`): a point there is read in both and the two
-mixed, on the hard path, the soft one and the fog alike. Read alone up to its
-split, a cascade would end in a line across the ground where the texel size
-steps, and with no temporal filter that line stands still on screen. Only the
-band pays for the second read.
-
-The four cascades are split **logarithmically**, anchored at a fixed world
-distance (`CASCADE_NEAR`, 1 unit) rather than at the camera's near plane.
-The anchor is what stops `shadowDistance` from trading away foreground
-sharpness: every boundary then grows as a fixed power of the distance - the
-first as its fourth root - so the near cascade stays small as the dial rises:
-its far edge moves 2.5 -> 4.9 units across a `shadowDistance` of 40 -> 600.
-Anchored at the camera's near plane (0.2) instead, the split would put its
-first boundary about a metre out and spend a whole cascade on the ground at
-the viewer's feet.
-
-Pulling the near cascade in leaves the outer three covering more range each,
-so the far field loses density as `shadowDistance` grows: total coverage
-against texel density is a fixed budget, and the logarithmic split spends it
-evenly instead of concentrating the shortfall in the foreground.
+The atlas is read both compared and as raw depth (blocker search, the
+`ShadowAtlas` view), so the comparison lives on a sampler object:
+`GLShadowAtlas::bind2D` and `bind2DRaw` bind the two.
 
 ### Screen-space shadows
 
-What the cascades are too coarse for - a foot on the floor, a pebble, the crease
-under a ledge, a block pushed into a wall - `GLScreenShadowPass` finds in the
-depth buffer, for the cascaded sun alone - the lowest-slot directional light that
-casts (`GLShadowData::sunLight`). It is Bend Studio's method (Days
-Gone; SIGGRAPH 2023), ported in `shaders/screen_shadow` under its Apache-2.0
-notice: the screen is cut into wavefronts of 64 pixels in lines toward the
-light's place on it, at most four compute dispatches with the sun off the
-screen and up to eight with it on, and each wavefront puts its depths in shared memory
-divided by their screen distance to the light, where every ray toward it is
-parallel. Each pixel then compares the next 60 along its ray to its own. There
-is no noise and no history, so a still frame shades the same every time - which
-is what the settled decision against contact shadows asked of one
+`GLScreenShadowPass` finds in the depth buffer what the cascades are too coarse
+for - a foot on the floor, the crease under a ledge - for the cascaded sun alone
+(`GLShadowData::sunLight`). It is Bend Studio's method (`shaders/screen_shadow`,
+under its Apache-2.0 notice): each pixel marches a fixed number of pixels
+(`SAMPLE_COUNT`) toward the light
 ([engine.md](../guides/engine.md#4-what-has-already-been-decided)).
 
-A sample shadows a ray when it lies in front of it by up to twice
-`SURFACE_THICKNESS`, 2% of its depth's distance to the far plane, which is
-about 4% of the view distance: the depth buffer holds one surface, not how
-thick the thing behind it is. Any thinner, and a solid foot's shadow is only
-its rim (Bend's own value, 0.5%, is); the cascades carry everything larger. A pixel at a
-depth edge casts nothing, or a flat floor seen at a grazing angle under a low
-sun would stripe itself (the open-floor test). The reach is 60 pixels whatever
-the resolution - a third of a metre at 5 m on a 1080-row screen - so it is a
-contact shadow, not a replacement for the cascades. An orthographic camera's
-depth is linear, so its thickness is a 60 degree camera's at the distance that
-shows the same height. The viewmodel's depth band casts and takes nothing; an
-`EyeOnly` mesh, which the shadow maps never see, does cast here, since the pass
-reads what the eye sees.
-
-The result goes into the AO target's free alpha - every texture unit is spoken
-for - which the pass clears to unoccluded first when GTAO is off. The forward
-pass multiplies the cascaded sun's visibility by it, for the opaque bucket alone
-(the prepass drew nothing else), and a decal multiplies the sun on the surface
-under it. It costs 0.17 ms of GPU in physics_lab at 1920x1053 on an RTX A4000,
-about a third of GTAO there; `screenShadows` turns it off, and the Low tier does.
+It is a contact shadow, not a replacement for the cascades. The viewmodel band
+casts and takes nothing; an `EyeOnly` mesh, which the shadow maps never see, does
+cast here. The result goes into the AO target's alpha; the forward pass
+multiplies the sun's visibility by it for the opaque bucket, and decals use it
+for the sun on the surface under them. `screenShadows` turns it off.
 
 ## Image-based lighting (IBL)
 
-A persistent `GLIBLBaker` keeps the IBL product set showing the scene's sky (a
-helper invoked from `GLBackend::render`, not a pass). An HDR sky -
-`Environment.sky.hdrPath`, an equirectangular image - is baked when the path
-changes. The procedural sky is baked again when a sky parameter changes or the
-sun or the moon moves by more than about half a degree
-(`SkyParams::SAME_DIRECTION`), so a sun animated a fraction of a degree a frame
-is not a bake a frame - and while the sun only drifts, a step a frame (see
-"Following the sun" below). A scene that names
-neither, and an HDR that fails to load, leave no environment baked: the ambient
-term and the skybox then draw what a scene with no sky draws, rather than the
-last scene's sky. The irradiance volume and the reflection probes follow the sky
-without a bake ([What a capture is lit by](#what-a-capture-is-lit-by)); bumping the
-volume's `bakeVersion` bakes the probes again with it, since they are lit by it. It
-produces:
+`GLIBLBaker` (called from `GLBackend::render`, not a pass) keeps the IBL set
+showing the scene's sky: an **environment cube** (what an HDR sky's skybox and
+the captures draw; shading never reads it), an **irradiance cube**, a
+**prefilter cube** (one roughness per mip) and the **BRDF LUT** (integrated once
+at startup). An HDR sky
+(`Environment.sky.hdrPath`) bakes when the path changes; the procedural sky when
+a sky parameter changes or the sun or moon moves past `SkyParams::SAME_DIRECTION`.
+A scene with no sky, or an HDR that fails to load, bakes nothing - it does not
+keep the last scene's sky.
 
-- The **environment cube**: what an HDR sky's skybox and every capture's sky
-  draw, and what the other two cubes are convolved from. Shading never reads it:
-  a mirror reflection is the prefilter cube's sharpest level.
-- The **irradiance cube**: diffuse contribution.
-- The **prefilter cube**: specular contribution, with one roughness
-  level per mip.
-- The **BRDF LUT**: split-sum lookup for the analytic specular term. It
-  depends on no environment, so it is integrated once when the backend starts
-  (`GLIBLBaker::integrateBrdf`), and a scene with no sky reads it too: the
-  direct lights' energy compensation and the reflection weight the
-  screen-space reflections replace through both come from it.
+**Following the sun.** A sun that only drifted (within `SkyParams::DRIFT`) is
+re-baked a step a frame into a second set of cubes, swapped in when complete
+(`GLIBL`), more steps a frame while it runs behind
+(`GLIBLBaker::MAX_CATCH_UP_STEPS`); the sky and the key light never trail. Anything bigger bakes whole at once.
 
-**The procedural sky** is Hillaire's production sky and atmosphere (EGSR 2020,
-"A Scalable and Production Ready Sky and Atmosphere Rendering Technique"), as
-Unreal's SkyAtmosphere renders it: a few small tables, from which the sky drawn,
-the environment's lighting and the air in front of the scene are each
-integrated. The four live in `GLAtmosphere`. Two depend on the air alone and are
-drawn again only when it changes (`GLIBLBaker::bakeAir`): the atmosphere's
-**transmittance** (`shaders/atmosphere/transmittance`,
-`GLAtmosphere::TRANSMITTANCE_WIDTH` by `TRANSMITTANCE_HEIGHT`, Bruneton's
-parameterisation of altitude and view angle), and from it the **multiple
-scattering** (`shaders/atmosphere/multiscatter`,
-`GLAtmosphere::MULTISCATTERING_SIZE` square, by altitude and the sun's angle):
-Hillaire's Psi_ms, the second order gathered isotropically from a sphere of
-directions and the orders past it summed as a geometric series. Two follow the
-camera and the sun and are computed every frame by the Atmosphere pass
-([rendering.md](rendering.md#the-passes-fixed-order)): the sky-view table and
-the aerial-perspective volume, below.
-
-The sky's radiance and the aerial perspective march the same way (`integrateAir`
-in `shaders/atmosphere.glsl`): at each sample it adds the sun's light
-single-scattered by Rayleigh and Mie, the sunlight read from the transmittance
-table and zero where the planet hides the sun, plus the multiple-scattering
-table times the air's scattering. Each step is integrated over its length
-against the transmittance falling across it (Hillaire's energy-conserving step),
-so a long step neither overshoots nor darkens. The sky (`skyRadiance`) marches
-each view ray from the eye, at `Atmosphere::EYE_ALTITUDE`, in `SKY_STEPS` steps
-spaced quadratically - short in the dense air near the eye, long where a horizon
-ray runs a thousand kilometres. The air is Rayleigh, Mie and an ozone layer that
-absorbs without scattering - a tent of density peaking at
-`Atmosphere::OZONE_ALTITUDE` - which keeps the twilight sky overhead blue. A ray
-that meets the planet ends there and sees the ground, diffuse at
-`Atmosphere::GROUND_ALBEDO` in the sunlight that reaches it, through the air
-between; below the horizon is that ground rather than black, so what faces down
-has sky light too. The ground's albedo feeds the multiple scattering as well
-(why its value,
-[engine.md](../guides/engine.md#4-what-has-already-been-decided)).
-
-**The sky drawn** is the **sky-view table** (`shaders/atmosphere/sky_view`,
-`GLAtmosphere::SKY_VIEW_WIDTH` by `SKY_VIEW_HEIGHT`): the sky's radiance from
-the eye for every view, in Hillaire's latitude/longitude parameterisation
-(`skyViewUnit`). The sky is symmetric about the sun's vertical plane, so the
-longitude is the azimuth from the sun's, over half the circle and densest toward
-the sun; the latitude runs from the zenith to the horizon over half the table
-and on to the nadir over the other, densest at the horizon from either side, so
-the ground's edge stays sharp where a cube's texels would blur it. It is
-computed every frame, so the sky drawn is always the current sun's, even while
-the IBL is still following it. The skybox reads it and adds what night adds
-(`skyNightGlow`), the sun disc, the moon and the stars. The env cube's bake
-(`shaders/ibl/sky`) marches the same integral into the cube's texels.
-
-**The air in front of the scene**, aerial perspective, is the
-**aerial-perspective volume** (`shaders/atmosphere/aerial_perspective`,
-`GLAtmosphere::AERIAL_PERSPECTIVE_SIZE` froxels across, down and deep -
-Hillaire's camera volume): for each froxel of the view, the light the sky's air
-scatters toward the eye in front of it and the mean of its transmittance. Its
-slices are squared in view depth (`aerialSliceToViewDepth`) out to the camera's
-far plane or `GLAtmosphere::AERIAL_PERSPECTIVE_REACH`, the nearer, so the near
-ones are metres deep and the far ones kilometres. Each froxel marches from the
-eye to its own depth through `integrateAir`, over its distance scaled by
-`sky.aerialPerspective` (Unreal's aerial perspective distance scale: 1 is the
-planet's air, 0 turns it off), and its light is the sun's at the sky's
-`intensity`, as the skybox draws the sky. Every surface drawn through the air
-takes it where it takes the froxel fog, at its own depth and beneath the fog
-([rendering.md](rendering.md#fog)), so a distant hill fades into the horizon the
-sky draws behind it (how much, and why the default,
-[engine.md](../guides/engine.md#4-what-has-already-been-decided)). The sky holds
-its own air and takes none, and an HDR sky has no atmosphere to apply.
-
-**Following the sun.** The env cube and its convolutions are too slow for one
-frame, so a procedural sky baked whole each time the sun moves half a degree
-would drop a frame every few seconds of a day-night cycle. A sky whose sun and
-moon have only drifted since the last frame - by no more than
-`SkyParams::DRIFT`, every other term the same - is baked a step a frame instead
-(more while the sun or moon has run ahead of the sky shown, `GLIBLBaker::stepsFor`, so a
-time-lapse's light keeps pace),
-as Unreal time-slices its real-time sky capture: the env cube's six faces, then
-its mips with the prefilter's mirror level, then each irradiance face, then
-each prefilter level a face at a time, the largest in bands of
-`GLCubeConvolver::BAND_TEXELS` texels - `GLIBLBaker::slicedSteps` steps in all.
-`GLIBL` holds two sets of the three cubes: shading reads one while a bake fills
-the other, which is swapped in once complete, so no frame reads a half-made set,
-and the next bake starts from wherever the sun is then. The ambient light and
-reflections so trail a moving sun by up to two bakes' worth of frames, while the
-sky drawn and the key light never do. The first sky, a changed value and a jump
-past `DRIFT` are baked whole at once, as an HDR is: a probe or the irradiance
-volume captured in the meantime would otherwise picture a sky the scene has
-left. What each step costs, and the whole bake,
-[engine.md](../guides/engine.md#4-what-has-already-been-decided).
+**The procedural sky** is Hillaire's sky and atmosphere, from four tables in
+`GLAtmosphere`. Transmittance and multiple scattering depend on the air alone and
+are redrawn when it changes (`GLIBLBaker::bakeAir`); the sky-view table and the
+aerial-perspective volume follow the camera and sun and are computed every frame
+by the Atmosphere pass. Surfaces take the aerial perspective with the fog
+([rendering.md](rendering.md#fog)), scaled by `sky.aerialPerspective`.
 
 **One sun lights the scene and the sky.** The sky's sun is
-`Atmosphere::solarIlluminance`: `sky.lightColor` times `sky.lightIntensity`,
-divided by the air's transmittance straight down - the sun above the air that,
-overhead, arrives as the scene's key light. Sky radiance is that times the
-atmosphere's integral, with no constant between them. So raising the sun
-brightens the sky with it, and the sky's light on the ground keeps the share of
-the sun's that the air gives it - measured, and why no constant,
-[engine.md](../guides/engine.md#4-what-has-already-been-decided).
-`sky.intensity` scales the skybox, the ambient and the air's light in front of
-the scene.
+`Atmosphere::solarIlluminance`, from `sky.lightColor` and `sky.lightIntensity`,
+and the sky's radiance is that times the atmosphere's integral with no constant
+between them, so a brighter sun brightens the sky with it. `sky.intensity`
+scales the skybox, the ambient and the air's light.
 
-**Where the sun is** is authored on the `Environment`, as `sunElevation` and
-`sunAzimuth` in degrees, and nowhere else. The sky is scene-global and has to
-work whether or not a scene has a directional light, so it cannot read one; and
-a sky disagreeing with the light casting the shadows looks broken in a way that
-is hard to diagnose. `SkySystem` (Simulation stage) resolves that by pointing
-the scene's key light - `findKeyLight`, the lowest-slot entity carrying an
-enabled directional `Light`, which is the one definition of that rule - from
-those same angles. A disabled light is not the key: it lights nothing, and the
-frame keys its shadows by the next directional, so that is the one the sky
-aims.
+**The sun's place is authored on the `Environment`** (`sunElevation`,
+`sunAzimuth`), because the sky must work with or without a directional light.
+While the sky is procedural, `SkySystem` writes the key light's rotation, colour
+and intensity every frame - by day `Atmosphere::sunlight`, which reddens at a low
+sun; by night the `night.moonlight*` pair. Author those on the environment, not
+the `Light`: an edit to the light is overwritten next frame
+([editor.md](editor.md#inspector-cards)). Shadow settings stay the light's.
 
-So with the procedural sky on, the key light's **rotation, colour and
-intensity** are the sky's: all three are written every frame, the rotation from
-`sunElevation` / `sunAzimuth` and the other two from `sky.lightColor` /
-`sky.lightIntensity` by day and the `night.moonlight*` pair after dark.
-
-**The sunlight crosses the sky's air.** By day the colour written is
-`Atmosphere::sunlight`, `sky.lightColor` times `Atmosphere::sunTransmittance`
-(`system/sky/atmosphere.h`): the sun's transmittance from the eye through the
-same Rayleigh, Mie and ozone layers the sky integrates, scaled by the scene's
-`rayleigh` and `mie`, divided by the transmittance straight up. A sun overhead
-is the authored colour; under the default haze at 50 degrees it has lost 3% of
-its red and 9% of its blue, and at five degrees blue is down to a sixteenth and
-red to about a third, so the light turns orange with the sky rather than staying
-white under it. The skybox draws its sun disc in the same `sunlight`, so the
-disc and the light it stands for agree. The atmosphere is stated once, in that
-header: its geometry, ozone and ground reach `shaders/atmosphere.glsl` through
-the prelude as `ATMOSPHERE_*`, and its coefficients under the scene's scales -
-`Atmosphere::coefficients`, Mie's absorption folded into its extinction - as
-uniforms, so the sky's integrals and the CPU's share every term of the
-extinction they integrate. Over the twilight band the intensity still fades to
-nothing at the horizon, where the light swaps to the moon. The direction is the
-world's, so a key light parented under something turned has its parent's world
-rotation divided out of the local rotation written. Author those, not the
-`Light` - an edit typed into the light is gone before the next frame draws, and
-the value the scene saves is the sky's. Shadow settings, the type and the
-enabled flag stay the light's. The editor's Light card says this on the card
-itself and greys the two fields it does not own, because the same `findKeyLight`
-tells it which light the sky is driving.
-
-Below the horizon is night: the atmosphere is nearly black there, so a skyglow
-floor plus a moon lobe take over across a twilight band (`skyNightGlow` and
-the rest of `shaders/sky.glsl`, which the env-cube bake and the skybox share,
-so the two cannot disagree about the time of day). The
-band is `NightSkySettings::TWILIGHT_DEGREES` either side of the horizon, and
-the key light fades across the same band, so the sky darkens as its light
-does. The
-moon is derived - opposite the sun, tilted by `moonTilt` - so dropping the sun
-raises it. Stars are drawn by the **skybox** only: at 512 with prefiltered mips
-the env cube would smear them into a uniform glow.
-
-These are bound to the dedicated IBL texture slots (see the binding note
-in [Rendering](rendering.md)). The baker is skipped when nothing changed
-(same env-map path; procedural sun/params unmoved): a comparison and an
-early-out.
+**Night.** Below the horizon a skyglow and a moon lobe take over across
+`NightSkySettings::TWILIGHT_DEGREES` either side of it (`shaders/sky.glsl`,
+shared by the bake and the skybox), and the key light fades across the same
+band. The moon sits opposite the sun, tilted by `moonTilt`. Stars are drawn by
+the skybox only; the prefiltered cubes would smear them.
 
 ## Forward+ clustering
 
 The view frustum is diced into `CLUSTER_X` x `CLUSTER_Y` screen tiles by
-`CLUSTER_Z` exponential depth slices. A compute pass (`ClusterCull`)
-culls the scene's lights into each cluster's list, capped at
-`MAX_LIGHTS_PER_CLUSTER`; the forward pass then shades a pixel against its own
-cluster's handful rather than the whole `MAX_LIGHTS` upload. That is why the
-light cap can be generous. A point light is tested as its sphere against the
-cluster's box; a spot as its cone too, against the box's bounding sphere
-(Wronski's cone test), so it takes a slot only where it shines. A
-cluster whose list is full drops the lights past it, which shows as a cut; the
-Light Clusters view draws such a cluster magenta.
-
-**The 32 x 18 split** puts a tile at roughly 60px on a 1080p-class viewport.
-Coarser tiles make each pixel iterate lights that only clip a far corner of its
-tile; finer ones cost grid memory without shortening the lists, because the
-lights left in a cluster already overlap it. The cull pass itself is
-insensitive to the split.
+`CLUSTER_Z` exponential depth slices. The ClusterCull pass lists the lights
+touching each cluster (a point as its sphere, a spot as its cone), and the
+forward pass shades a pixel against its cluster's list rather than every light -
+which is why `MAX_LIGHTS` can be generous. A list holds at most
+`MAX_LIGHTS_PER_CLUSTER`; lights past it are dropped, which shows as a cut, and
+the Light Clusters view draws such a cluster magenta. The cull is one invocation
+per cluster testing every light, so finer clusters cost the cull; coarser ones
+put more lights in each list, nearer the cap.
 
 ## Limits and the shader prelude
 
-Cross-cutting limits live in `engine_config.h`, and GLSL cannot read a C++
-header. `GLBackend::shaderConstants` writes them out as GLSL declarations from
-the C++ constants themselves, and `Vkm::GL::setShaderPrelude` puts that text
-under the `#version` of every stage the loader compiles - graphics and compute
-alike. So a shader simply uses `MAX_LIGHTS`, and there is no file to include and
-nothing to keep in step. The binding points and texture units of `gl_bindings.h`
-arrive the same way, as `#define`s a layout qualifier can take
-([rendering.md](rendering.md#shader-binding-contract)).
+Cross-cutting limits live in `src/engine/core/engine_config.h` (`Config::`), and
+GLSL cannot read a C++ header. `GLBackend::shaderConstants` writes them out as
+GLSL from the C++ constants themselves, and `Vkm::GL::setShaderPrelude` puts that
+text under the `#version` of every stage, graphics and compute. So a shader just
+uses `MAX_LIGHTS`, with nothing to include and nothing to keep in step. The same
+carries the bindings ([rendering.md](rendering.md#shader-binding-contract)), the
+render-mode and tonemap enums, and constants such as the twilight band and the
+atmosphere's geometry and table sizes.
 
-The same holds for constants that are not limits: the twilight band
-(`SKY_TWILIGHT`), the procedural atmosphere's geometry, ozone and ground
-(`ATMOSPHERE_*`, from `system/sky/atmosphere.h`) and the sizes of its
-tables (`TRANSMITTANCE_LUT_SIZE`, `MULTISCATTERING_LUT_SIZE`,
-`SKY_VIEW_LUT_SIZE`, from `GLAtmosphere`) reach the shaders that way too.
+Never re-define a prelude constant in a shader - GLSL rejects the redefinition,
+which is what keeps a shader from holding its own copy. `Config::NUM_CASCADES`
+and `Config::SHADOW_NEAR` are not in the prelude; the shader reads them from the
+shadow block.
 
-Do not re-define a prelude constant in a shader - GLSL rejects the redefinition,
-which is the check that keeps a shader from quietly holding a copy of its own.
+## Key files
 
-| C++ constant (`engine_config.h`) | Value | Consumed by |
-|----------------------------------|-------|-------------|
-| `Config::MAX_LIGHTS`             | 256   | light upload cap; `forward/pbr`, `cluster`, `fog/inject` |
-| `Config::MAX_LIGHTS_PER_CLUSTER` | 64    | Forward+ per-cluster light list cap |
-| `Config::CLUSTER_X/Y/Z`          | 32 x 18 x 24 | Forward+ cluster grid dimensions (see above) |
-| `Config::MAX_SHADOW_CASTERS_2D`  | 6     | 2D shadow atlas tiles; `MAX_SHADOW_CASTERS_2D` in `shaders/shadows.glsl` |
-| `Config::MAX_SHADOW_CASTERS_CUBE`| 2     | point-light cube maps; `MAX_SHADOW_CASTERS_CUBE` in `shaders/shadows.glsl` |
-| `Config::NUM_CASCADES`           | 4     | not mirrored to GLSL; the CSM count reaches the shader via the shadow UBO (`csmCount` / `cascadeSplits`) |
-| `Config::SHADOW_NEAR`            | 0.1   | the near plane of the spot and cube projections `gl_shadow_data.cpp` builds; not in the prelude, but carried to the shader in the shadow UBO (a cube's `params.y`), which rebuilds a face's projected depth from it. A light's range is held at twice it, and a spot's cone at a degree, so neither projection can come out degenerate |
-
-## Editor integration
-
-- The **light gizmo** (in `editor/overlays/gizmo_overlay_draw.cpp`) draws
-  a directional ray for directional lights, a cone for spotlights, a
-  sphere for points, and the rect / disk outline for area lights.
-- The **inspector** exposes the relevant fields per light type. Area
-  light fields appear only when type is Rect or Disk.
-- Light entities can be created from `Add Component -> Light` and
-  parametrised live; shadow atlas slots are reassigned automatically
-  when the lit set changes between frames - `GLShadowData::build` hands
-  out 2D tiles and cube slots each frame, the sun's cascades first, then by
-  `shadowPriority`, nearness to the camera while tiles are short, and entity
-  slot.
+- `src/engine/ecs/component/render/light.h` - `Light`, `findKeyLight`
+- `src/engine/system/render/data/light_data.h` - `LightData`, `lowestSlotDirectionalCaster`
+- `shaders/forward/pbr/fragment.shader`, `shaders/brdf.glsl` - the shading model
+- `shaders/area_light.glsl`, `shaders/form_factor.glsl` - area lights
+- `shaders/shadows.glsl` - shadow sampling, bias, soft shadows, cascades
+- `shaders/ambient.glsl`, `shaders/probes.glsl`, `shaders/irradiance_volume.glsl` - the ambient
+- `src/backend/opengl/frame/gl_shadow_data.h` - `GLShadowData`
+- `src/backend/opengl/storage/gl_shadow_atlas.h` - `GLShadowAtlas`
+- `src/backend/opengl/offline/` - `GLIBLBaker`, `GLIrradianceBaker`, `GLProbeBaker`, `GLSceneCapture`, `GLCaptureShadow`
+- `src/backend/opengl/storage/gl_atmosphere.h` - `GLAtmosphere`
+- `src/engine/system/sky/` - `SkySystem`, `Atmosphere`
+- `src/engine/core/engine_config.h` - the limits

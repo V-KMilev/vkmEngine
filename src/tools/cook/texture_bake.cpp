@@ -92,7 +92,7 @@ using Bc7Params = bc7e_scalar::bc7e_compress_block_params;
 
 Bc7Params bc7Params(bool srgb) {
     Bc7Params params;
-    // Perceptual weights suit colour, not a normal or mask. The level is measured in resources.md.
+    // Perceptual weights suit colour, not a normal or mask.
     bc7e_scalar::bc7e_compress_block_params_init_basic(&params, srgb);
     return params;
 }

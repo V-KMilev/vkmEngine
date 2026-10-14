@@ -15,7 +15,7 @@
 
 namespace {
 
-// What the editor computes and then trusts unchecked: a badly repaired probe grid
+// What the bake and the editor compute and then trust unchecked: a badly repaired probe grid
 // is a glowing wall, a bad snap a drifting transform, a bad pick the room instead
 // of the crate in it.
 

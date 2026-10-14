@@ -1,37 +1,28 @@
 # Input
 
-Gameplay asks for what it wants - `"Jump"`, `"Move/Forward"` - and never names a
-key where it reads one. That one indirection is what makes a controls screen
-possible and lets an action carry a key and a mouse-button binding at once.
+Gameplay reads named actions - `"Jump"`, `"Move/Forward"` - never keys. The key
+is named once, where the action is defined, by GLFW's code (`GLFW_KEY_*`; the
+engine has no key constants of its own), so a controls screen can rebind it and
+one action can take several keys and mouse buttons.
 
-The key is named in one place, where the action is defined, and it is named by
-GLFW's code: the engine has no key constants of its own, so the file that
-defines the bindings includes GLFW for `GLFW_KEY_*` - every example does. The
-calls that read input need no windowing header.
-
-There are **two ways to read input**, and picking the wrong one is the most
-common input bug in any engine. The rule is one sentence:
+There are two ways to read input:
 
 > **`onUpdate` reads the map. `onFixedUpdate` reads the command.**
 
-Everything below is that sentence with its reasons.
-
 ## Defining actions
 
-Do it once, in `onStart`. An action is a name and the physical controls that
-feed it:
+Once, in `onStart`. An action is a name and the controls that feed it:
 
 ```cpp
 void Player::onStart() {
     InputMap& map = input();
 
-    // One action, several bindings: both keys do the same thing.
     map.define("Jump", {
         {InputSource::Key, GLFW_KEY_SPACE, 1.0f},
         {InputSource::Key, GLFW_KEY_W,     1.0f},
     });
 
-    // One action as an *axis*: the scales oppose, so holding both reads zero.
+    // An axis: opposing scales, so holding both reads zero.
     map.define("Move/Right", {
         {InputSource::Key, GLFW_KEY_D,  1.0f},
         {InputSource::Key, GLFW_KEY_A, -1.0f},
@@ -39,102 +30,60 @@ void Player::onStart() {
 }
 ```
 
-`scale` is the whole of what makes an axis: `axis("Move/Right")` sums every
-held binding and clamps to -1..1, so two keys become one signed value and a
-future analogue stick binds to the same action with no call site changing.
+`axis()` sums every held binding's `scale`, clamped to -1..1; the action is
+held, pressed or released when that reaches 0.5 either way. A mouse button binds
+with `InputSource::MouseButton`; keyboard and mouse are the only sources. **An
+undefined action reads as inactive**, not as an error.
 
-`define` states an action's **defaults**. A rebinding screen calls
-`rebind(action, bindings)`, which changes what feeds the action and keeps the
-defaults, `addBinding(action, binding)` to add one beside the rest, or
-`clearBindings(action)` to empty one while leaving the action defined - each the
-player's choice, kept by `saveBindings()`. `bindings(action)` reads them back,
-and `actions()` lists every defined name in name order.
+### Rebinding
 
-While it waits for the player's choice, the screen asks `struck()`: the key or
-mouse button that went down this frame, bound or not, as an `InputBinding` ready
-to `rebind` with. A repeat or a key only held is not a press; a device the host's
-UI holds says nothing. `bindingName(binding)` names one for showing it - "W",
-"Left Shift", "Right mouse" - by where the key is, the way the codes are. A UI
-button clicks when let go, so the click that opens the wait is never heard as
-the choice.
+`define` states the defaults. A controls screen changes what feeds an action
+with `rebind`, `addBinding` or `clearBindings`, and reads with `bindings(action)`
+and `actions()`. While waiting for the player's choice it asks `struck()` - the
+key or button that went down this frame, bound or not, as an `InputBinding` -
+and shows one with `bindingName(binding)` ("Left Shift", "Right mouse").
 
-Names are the stable identity: they are what gameplay asks for and what a saved
-binding file refers to. Nothing in the engine needs to know your action exists.
-
-### Keeping the player's keys
-
-`saveBindings()` is the player's rebindings as JSON, an action a key - only those
-that differ from their defaults, so a key left alone follows the game's default
-when a later version changes it - for a settings file under `playerRoot(game)`.
-`loadBindings(json)` puts them back. Either order works: loaded before the game
-defines its actions, a saved binding waits, and `define` puts it in place of the
-default; the player's choices survive `reset()` the same way, and an action
-redefined in a later session takes them again. An action whose saved list cannot
-be read - a source this build does not name, a code its source does not have,
-anything wrong anywhere in it - keeps its own bindings and warns, rather than
-half a list that could leave it unpressable; one for an action this run never
-defines is kept for the next save. `resetBindings()` puts every action back to
-its defaults and forgets them.
+`saveBindings()` returns the player's rebindings as JSON - only those differing
+from the defaults, so an untouched key follows a later default - for a settings
+file under `ProjectPaths::playerRoot(game)`. `loadBindings(json)` restores them,
+before or after the actions are defined; they survive `reset()`.
+`resetBindings()` returns every action to its defaults.
 
 ## Reading it on the frame clock
 
-Inside `onUpdate` or `onRealtimeUpdate` - anything that runs once a frame:
+In `onUpdate` or `onRealtimeUpdate`:
 
 | Call | Answers |
 |---|---|
 | `input().held("Jump")` | is it down now |
-| `input().pressed("Jump")` | did it go down *this frame* |
+| `input().pressed("Jump")` | did it go down this frame |
 | `input().released("Jump")` | did it come up this frame |
 | `input().axis("Move/Right")` | its value, -1..1 |
-
-Plus the three the pointer has, which no binding can express - a position is not
-an action, and a wheel notch has no held state to name:
-
-| Call | Answers |
-|---|---|
 | `input().pointer()` | cursor position, window pixels, origin top-left |
-| `input().pointerDelta()` | how far it moved since the last frame |
-| `input().wheel()` | notches turned this frame, positive away from you; zero over a blocking element of the game's UI, which takes them |
+| `input().pointerDelta()` | movement since the last frame |
+| `input().wheel()` | notches this frame, positive away from you; zero over a blocking UI element |
+| `input().text()` | characters typed this frame, UTF-32, layout and Shift applied |
+| `input().typed(GLFW_KEY_BACKSPACE)` | did the key go down or auto-repeat this frame |
 
-A mouse *button* is an action like any other, and binds with
-`InputSource::MouseButton`.
+Text fields built from the last two: [ui.md](ui.md#text-input).
 
-And the two a text field reads, which are not actions either - a character is
-what the keys *meant*, with the layout, Shift and dead keys applied, and an
-editing key is not rebindable:
+The map is sampled once a frame before any system runs, so every reader agrees;
+a tap shorter than a frame reads as pressed one frame, released the next.
 
-| Call | Answers |
-|---|---|
-| `input().text()` | the characters typed this frame, in order, as UTF-32 |
-| `input().typed(GLFW_KEY_BACKSPACE)` | did the key go down *or auto-repeat* this frame |
-
-`typed()` is what Backspace, Delete, the arrows, Home, End and Enter act on: once
-per press and again at the system's repeat rate while held, which `pressed()`
-deliberately is not. How a project builds a field from them is
-[ui.md](ui.md#text-input).
-
-The map is sampled once, before any system runs, so every reader in the frame
-agrees about the edges. That is also why `pressed()` is correct for everybody
-without each caller keeping its own "was it down last frame" flag.
-
-In the editor, a device its panels hold reads as untouched: keys while a text
-field has the keyboard, mouse buttons, the wheel and `pointerDelta()` while a
-panel has the pointer. The map applies it, from `HostChrome`, so no reader asks.
-A key held when a panel takes the keyboard reads as released, the way letting go
-would, and `text()` and `typed()` read empty while a panel has the keyboard.
-
-The game's own UI holds a press the same way, in every host. A press of a button
-`UI/Click` is bound to that begins with the pointer over a blocking UI element
-reads as down for `UI/Click` alone, until it is let go: a click on a menu never
-fires the gun bound to the same button, nor reaches a tick's command. Whose a
-press is gets decided once, when it begins - a press that begins in the world
-stays gameplay's when it is dragged over a panel. `pointerOverUI()` says whether
-a blocker is under the pointer, as of the last UI layout
+**A device someone else holds reads as untouched.** In the editor: keys (and
+`text()`, `typed()`) while a panel's text field has the keyboard; mouse buttons,
+wheel and `pointerDelta()` while a panel has the pointer. In every host, a
+`UI/Click` press that begins over a blocking UI element belongs to the UI, and
+`pointerOverUI()` says whether a blocker is under the pointer
 ([ui.md](ui.md#interaction)).
+
+**Mouse-look locks the cursor**: `window()->setCursorMode(CursorMode::Disabled)`
+(`platform/window/window_manager.h`). `pointerDelta()` keeps reporting movement,
+the game's UI stops hit-testing, and in the editor Stop hands the cursor back.
 
 ## Reading it on the tick
 
-Inside `onFixedUpdate`, ask the same four questions of the tick's command:
+In `onFixedUpdate`, ask the same questions of the tick's command:
 
 ```cpp
 void Player::onFixedUpdate(float dt) {
@@ -146,31 +95,23 @@ void Player::onFixedUpdate(float dt) {
 }
 ```
 
-**A fixed update must not use the frame queries.** Input arrives on the render
-clock and simulation runs on the tick clock, so a fixed update that asks the
-device directly:
+**A fixed update must not use the frame queries.** Input arrives per frame and
+simulation runs per tick, so the frame queries **drop a tap** that fell between
+two ticks and **repeat a press** on every tick of a slow frame. A command holds
+the axes as they stand plus every edge since the previous tick, and it is what
+gets replayed for client-side prediction ([networking.md](networking.md)).
 
-- **drops a tap** that began and ended between two ticks, and
-- **repeats a press** on every tick of a slow frame - one keypress, three jumps.
+Whose command `command()` is on each end:
+[networking.md](networking.md#the-four-questions).
 
-A command avoids both because it is built per tick from what actually happened
-since the previous one: the axes as they stand, plus the edges latched across
-every frame in between. It is also the only form of input that can be
-**replayed**, which is what client-side prediction is made of - see
-[networking.md](networking.md).
-
-`command()` answers correctly in all three roles, which is the point of it:
-offline and on the owning client it is the local player's input, and on a server
-it is what *that entity's* player sent, run on the tick they sent it for. On a
-server or a client an entity no player drives reads as nothing held; offline,
-every entity reads the local player's command.
+While the world stands still (`Clock::isSimulationStill`), a frame that runs no
+tick drops its latched edges, so the next tick does not see a press made
+meanwhile.
 
 ### Camera-relative movement
 
-A tick cannot ask where the camera points, because the camera turns on the frame
-clock and by the time the tick runs the answer has moved - so the same command
-replayed against a camera that has since turned walks somewhere else. Hand the
-view to the input instead, once per frame, after you move the camera:
+The camera turns on the frame clock, so a tick cannot ask it. Hand the view to
+the input once per frame, after moving the camera:
 
 ```cpp
 void Player::onUpdate(float dt) {
@@ -181,108 +122,45 @@ void Player::onUpdate(float dt) {
 }
 ```
 
-and read it back off the command, where it is a fact about that tick:
+and read it off the command: `Math::computeForward(command().view)`.
 
-```cpp
-const glm::vec3 forward = Math::computeForward(command().view);
-```
+### Game state in the command
 
-### Bytes of the game's own
-
-What a game holds beside its actions from tick to tick - where a player is
-looking at a board, say - goes the same way: `setPayload(bytes, size)` holds up
-to `MAX_COMMAND_PAYLOAD` bytes that every command carries until they change,
-read back off `InputCommand::payload`, and refuses more rather than cutting them
-short. What must arrive once - a move, a name - is not held state but a message
+`setPayload(bytes, size)` holds up to `MAX_COMMAND_PAYLOAD` bytes that every
+command carries until changed (`InputCommand::payload`); more is refused, not
+truncated. Something that must arrive once is a message instead
 (`NetSession::sendMessage`, [networking.md](networking.md#messages)).
+
+### 32 actions carry to a tick
+
+A command is fixed-size so it copies and goes on the wire without allocating;
+`MAX_INPUT_ACTIONS` is 32, assigned in definition order. Actions past that read
+on the frame clock but are absent from every command, with a warning.
 
 ## What the engine binds for itself
 
-Two sets. The first is in your map from its construction and again after every
-`reset()`, and yours to override - your `define` of the same name replaces it;
-the second is the editor's, in a map you never see.
-
 | Action | Who reads it |
 |---|---|
-| `UI/Click` | `UISystem`, for pressing buttons. Bound rather than read raw so a game can rebind it, and so the edge detection is the map's rather than the UI's. |
-| `Camera/Forward`, `Camera/Right`, `Camera/Up`, `Camera/Boost`, `Camera/Look` | the editor's fly camera only, in an `InputMap` of its own - never the game's, so a game's map holds none of them and a runtime has no such map at all. |
+| `UI/Click` | `UISystem`, for pressing buttons. In the map from construction and after every `reset()`; your `define` of it replaces it. |
+| `Camera/Forward`, `Camera/Right`, `Camera/Up`, `Camera/Boost`, `Camera/Look` | the editor's fly camera, in its own `InputMap` - never the game's. |
 
-In the editor, each play session starts and ends on exactly the engine's own
-(`InputMap::reset`, called from `editor/session/scene_io_controller.cpp`): what a session's
-behaviors defined goes with it, so define your actions in `onStart`, which every
-session runs. While the world stands still - the clock paused in Edit mode or
-by a game's own pause, or a time scale of zero - a frame that runs no tick
-drops the edges it latched (`Clock::isSimulationStill`), so the first tick
-after it does not see a press made meanwhile.
+The constants: `InputActions::UI_CLICK` in `platform/input/input_map.h`, the
+camera's `CameraActions` in `src/editor/input/camera_controller_system.h`.
 
-The names are constants - `InputActions::UI_CLICK` in
-`platform/input/input_map.h`, the camera's `CameraActions` beside the
-controller in `src/editor/input/camera_controller_system.h` - so a typo in the
-engine's own actions is a compile error rather than an action that silently
-never fires. Yours can be bare
-string literals, or your own constants if you would rather have the same
-protection.
-
-## The two limits
-
-- **32 actions carry to a tick.** A command is a fixed-size value so it can be
-  copied, kept and put on a wire without an allocation, and `MAX_INPUT_ACTIONS`
-  is 32. Actions past that are still readable on the frame clock; they are
-  absent from every command, and the map logs a warning naming each action left
-  without one. Slots are handed out in definition order.
-- **An undefined action reads as inactive**, rather than erroring. A behavior
-  may ask for something the current binding set does not provide, and answering
-  "not held" is more useful than a crash.
-
----
+In the editor every play session starts and ends on just the engine's actions
+(`InputMap::reset`), so define yours in `onStart`.
 
 ## How it works inside
 
-`InputMap` holds one entry per action: its bindings, this frame's value,
-whether it is active this frame and was the previous one, and its command slot.
-`WindowManager` polls the devices, `Engine::run` calls `InputMap::update` once
-per frame before any system, and `beginTick` builds the command at the top of
-each fixed step.
+`WindowManager` polls the devices into an `InputHandle`; `Engine::run` calls
+`InputMap::update` once per frame before any system, which latches edges into a
+pending mask; `InputMap::beginTick` moves that mask into the command at the top
+of each fixed step and clears it. `InputHandle` is raw device state that
+gameplay never reads; it knows nothing of GLFW, so a windowless host or a test
+feeds it through the calls the window makes (`onKeyEvent`, `setButton`, `moveTo`).
 
-**A tap shorter than a frame still counts.** One poll can deliver a key's press
-and its release together, and the level alone would then read as a key nobody
-touched. So a key or button going down is also recorded as *struck*, and
-`update()` reads a struck binding as down for that one sample before clearing
-the strikes: the tap is held for one frame, pressed on it and released on the
-next, and reaches a tick like any other press.
+## Key files
 
-**Edges are latched at frame rate, drained at tick rate.** `update()` compares
-whether an action is active this frame against last frame and sets a bit in a
-pending mask;
-`beginTick()` moves that mask into the command and clears it. That is what makes
-a press that happened on a frame no tick followed still reach a tick, and what
-stops the second tick of a slow frame seeing a press the first already consumed.
-
-An action is "active" when its summed, clamped value reaches 0.5 either way,
-which is what lets an analogue source resolve to a button the same way a key
-does.
-
-Lookups take `std::string_view` against a `std::map` with a transparent
-comparator, so `pressed("Jump")` with a literal builds no string and allocates
-nothing - a fixed update asks several of these per entity per tick.
-
-`InputHandle` (`platform/input/input_handle.h`) is the raw device state behind
-all of it - which keys and buttons are down or struck, which keys were typed
-(struck or repeated) and the characters they made, where the cursor is, how far
-the wheel turned. Nothing in gameplay should reach it: it is per-device and
-unsampled, and its strikes belong to the one reader that consumes them.
-
-It knows nothing about where that state came from, which is what keeps the
-windowing library out of the input path. `WindowManager` fills one from GLFW on
-a host that has a window - it owns the key, character, mouse-button, scroll and cursor
-callbacks - and a host that has none writes the same
-fields directly. That is how the engine's own tests drive a keypress from device to
-action to tick without a window, and it is the seam a recorded input replay
-would use.
-
-**Key files**
-
-- `src/engine/platform/input/input_map.{h,cpp}` - actions, bindings, both query sets, and
-  `InputActions`, the engine's own
+- `src/engine/platform/input/input_map.{h,cpp}` - actions, bindings, both query sets, `InputActions`
 - `src/engine/platform/input/input_command.h` - `InputCommand`, `MAX_INPUT_ACTIONS`, `MAX_COMMAND_PAYLOAD`
 - `src/engine/platform/input/input_handle.h` - raw keyboard/mouse state

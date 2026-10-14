@@ -1,6 +1,7 @@
 # vkmEngine documentation
 
-Two audiences, and they want different things. Find yourself here first.
+Two audiences: people making a game with the engine, and people working on the
+engine itself.
 
 ## Making a game with the engine
 
@@ -17,38 +18,36 @@ writing a behavior, and shipping. Then whichever of these you need:
 | play a sound | [audio.md](reference/audio.md) |
 | play an animation | [animation.md](reference/animation.md) |
 | let two people play together | [networking.md](reference/networking.md) |
-| load a model or a texture | [io.md](reference/io.md) |
+| react to something that happened | [events.md](reference/events.md) |
+| make or find an asset in code | [resources.md](reference/resources.md) |
+| load a model or a texture | [resources.md](reference/resources.md#importing-a-model) |
 | author a scene by hand | [editor.md](reference/editor.md) |
 
-Each of those pages but io.md opens with what you write and ends with a **How
-it works inside** section. You can stop at that heading; it is there for whoever
-maintains the engine, not for whoever uses it.
+Each page opens with what you write and closes with a **How it works inside**
+section (then its key files) for whoever maintains the engine; you can stop there.
 
 ## Working on the engine itself
 
 `guides/` is the law and `reference/` is the map. The first time:
 
-1. [reference/architecture.md](reference/architecture.md) - what the engine is,
-   how a project reaches it, the core model, stage order, then the detail.
-2. The guides, in the order [guides/README.md](guides/README.md) gives - they
-   are what makes a change look like it was always there. Read engine.md's
-   settled table before proposing anything structural.
+1. [reference/architecture.md](reference/architecture.md) - the map: what the
+   engine is, the frame and its stages, where the code lives.
+2. The guides, in the order [guides/README.md](guides/README.md) gives. Read
+   engine.md's settled table before proposing anything structural.
 3. The subsystem page for whatever you are touching, under `reference/`.
 
 Then [building.md](reference/building.md) for targets and flags, and
-[threading.md](reference/threading.md), [resources.md](reference/resources.md),
+[threading.md](reference/threading.md),
 [rendering.md](reference/rendering.md),
 [lighting.md](reference/lighting.md),
-[visibility.md](reference/visibility.md),
-[hierarchy.md](reference/hierarchy.md) and
-[events.md](reference/events.md) for the parts a game never calls
+[visibility.md](reference/visibility.md) and
+[hierarchy.md](reference/hierarchy.md) for the parts a game never calls
 directly.
 
 ## The rule these pages are kept by
 
 **The code is the source of truth.** If a page disagrees with the source, the
-source is right and the page is a defect - fix it or say so. The checks in
-`tests/docs/docs_tests.cpp` fail the test suite on the ways that have actually
-rotted: a dead link or anchor, a named source file that no longer exists, a
-hand-copied list that stopped matching the code it describes, and a page no index
-links to.
+page is the defect - fix it or say so. `tests/docs/docs_tests.cpp` fails on a
+dead link or anchor, a name that does not exist, a copied list that stopped
+matching the code, and a page no index links to. What a page should hold is
+[code-style.md](guides/code-style.md#64-the-manual).

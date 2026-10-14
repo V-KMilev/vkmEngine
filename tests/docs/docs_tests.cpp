@@ -1556,7 +1556,7 @@ void testEverySuiteIsAFileAndALine() {
 
     // Backticked in the manual so this can read them: exactly the list's suites.
     const std::string text = readAll(manual);
-    const size_t begin = text.find("suites that run today are");
+    const size_t begin = text.find("The suites are `");
     std::set<std::string> listed;
     if (begin != std::string::npos) {
         const size_t end = text.find('.', text.find('`', begin));

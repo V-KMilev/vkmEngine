@@ -969,7 +969,7 @@ void PhysicsSystem::leaseContacts(Scene& scene, NetSession& net) {
     }
     if (ownerBody == UINT32_MAX) return;
 
-    // Through no immovable body and onto no other player's character; see docs/reference/networking.md,
+    // Through no immovable body and onto no other character; see docs/reference/networking.md,
     // "Leasing".
     const uint32_t count = static_cast<uint32_t>(m_bodies.size());
     m_leaseCarries.assign(count, 0);
