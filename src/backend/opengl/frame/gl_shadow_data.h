@@ -456,6 +456,8 @@ class GLShadowData {
         uint32_t                           m_slotCount = 0;
         /// Per caster, the uploads its picture is drawn from; 0 for one not on the GPU.
         std::vector<uint64_t>              m_meshUploads;
+        /// Per caster, the key group of its layout and pose (the key's high digit).
+        std::vector<uint32_t>              m_meshGroups;
         /// The alpha-masked casters, by position, while their keys are numbered.
         std::vector<uint32_t>              m_maskedCasters;
         std::vector<CullScratch>           m_scratch;         ///< One workspace per cull task.

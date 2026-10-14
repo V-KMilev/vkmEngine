@@ -341,25 +341,43 @@ void GLShadowData::cullCasters(const RenderView& view, const GLView& glView) {
         m_meshKeys.resize(count);
         m_meshUploads.resize(count);
         m_maskedCasters.clear();
-        // Each key's slot first; the group digit goes on once the slots are counted.
-        uint32_t lastMesh = 0;
+        // Each key's slot first; the group digit goes on once the slots are counted. Props are
+        // placed in runs, so a caster's mesh and material are mostly the last one's: an upload
+        // key and a skin group are worked out once a run.
+        m_meshGroups.resize(count);
+        uint32_t       lastMesh = 0;
+        MeshHandle     runMesh;
+        MaterialHandle runMaterial;
+        uint64_t       runUpload = 0;
+        bool           runMasked = false;
+        uint32_t       runGroup  = STATIC_GROUP;
         for (uint32_t i = 0; i < count; ++i) {
             const ObjectDraw& draw = objects.draws[casters[i]];
             m_casters[i] = i;
-            // The handle names the asset, not the geometry (a re-cook keeps its id), so a held tile
-            // is keyed by uploads: the mesh's, and a cutout's material and map.
-            const GLMesh*     mesh     = glView.getMesh(draw.mesh);
-            const GLMaterial* material = glView.getMaterial(draw.material);
-            uint64_t upload = mesh ? mesh->uploadId() : 0;
-            if (material && material->cutsItsShadow()) {
-                const uint64_t cut[2] = {material->uploadId(), glView.textureUploadId(material->albedoMap())};
-                upload = fnv1a64Bytes(cut, sizeof(cut), fnv1a64Bytes(&upload, sizeof(upload)));
+            if (i == 0 || draw.mesh != runMesh || draw.material != runMaterial) {
+                runMesh     = draw.mesh;
+                runMaterial = draw.material;
+                // The handle names the asset, not the geometry (a re-cook keeps its id), so a held
+                // tile is keyed by uploads: the mesh's, and a cutout's material and map.
+                const GLMesh*     mesh     = glView.getMesh(draw.mesh);
+                const GLMaterial* material = glView.getMaterial(draw.material);
+                runUpload = mesh ? mesh->uploadId() : 0;
+                runMasked = material && material->cutsItsShadow();
+                if (runMasked) {
+                    const uint64_t map    = glView.textureUploadId(material->albedoMap());
+                    const uint64_t cut[2] = {material->uploadId(), map};
+                    runUpload = fnv1a64Bytes(cut, sizeof(cut), fnv1a64Bytes(&runUpload, sizeof(runUpload)));
+                }
+                runGroup = mesh && mesh->isSkinned() ? SKINNED_GROUP : STATIC_GROUP;
+            }
+            if (runMasked) {
                 m_maskedCasters.push_back(i);
             } else {
                 m_meshKeys[i] = draw.mesh.id();
                 lastMesh = std::max(lastMesh, draw.mesh.id());
             }
-            m_meshUploads[i] = upload;
+            m_meshUploads[i] = runUpload;
+            m_meshGroups[i]  = runGroup == SKINNED_GROUP && draw.skinCount > 0 ? POSED_GROUP : runGroup;
         }
 
         // Equal pairs side by side, so each takes one slot past the last mesh.
@@ -380,13 +398,7 @@ void GLShadowData::cullCasters(const RenderView& view, const GLView& glView) {
         }
 
         m_slotCount = count ? slot + 1 : 0;
-        for (uint32_t i = 0; i < count; ++i) {
-            const ObjectDraw& draw = objects.draws[casters[i]];
-            const GLMesh*     mesh = glView.getMesh(draw.mesh);
-            if (!mesh || !mesh->isSkinned()) continue;
-            const uint32_t group = draw.skinCount > 0 ? POSED_GROUP : SKINNED_GROUP;
-            m_meshKeys[i] += group * m_slotCount;
-        }
+        for (uint32_t i = 0; i < count; ++i) m_meshKeys[i] += m_meshGroups[i] * m_slotCount;
     }
 
     // Serially: each light's sphere narrows the scene for its six face culls, which parallelise,

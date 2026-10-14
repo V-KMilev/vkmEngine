@@ -170,11 +170,20 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
         // for the casters, which lead the list: a cutout casts through its map.
         {
             PROFILE_SCOPE("SyncAssets/SceneMeshes");
-            const size_t casters = std::min<size_t>(objects->casterCount, objects->scene.size());
+            // Props are placed in runs, so a handle is mostly the one before it: checked once a run.
+            const size_t   casters = std::min<size_t>(objects->casterCount, objects->scene.size());
+            MeshHandle     runMesh;
+            MaterialHandle runMaterial;
             for (size_t i = 0; i < objects->scene.size(); ++i) {
-                const uint32_t object = objects->scene[i];
-                ensure(m_meshes, draws[object].mesh, resources);
-                if (i < casters) ensureMaterial(draws[object].material, resources);
+                const ObjectDraw& draw = draws[objects->scene[i]];
+                if (draw.mesh != runMesh) {
+                    ensure(m_meshes, draw.mesh, resources);
+                    runMesh = draw.mesh;
+                }
+                if (i < casters && draw.material != runMaterial) {
+                    ensureMaterial(draw.material, resources);
+                    runMaterial = draw.material;
+                }
             }
         }
     }
