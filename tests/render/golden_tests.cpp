@@ -2230,6 +2230,45 @@ void testGTAOReachesAsFarEveryWay(int& failures) {
     expect("a crease up close is as occluded rolled a quarter turn", even, failures);
 }
 
+// An open wall beside the eye, through a wide lens, in the AO view: a flat wall occludes nothing,
+// up close too. Near the lens a slice's radius can reach past the eye's plane, where it projects
+// back the wrong way; a slice drawn by it would read the wall's own horizons on the wrong side and
+// darken it.
+void testAWallBesideTheEyeIsOpen(int& failures) {
+    std::printf("Ambient occlusion of an open wall beside the eye:\n");
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery s;
+    base(s);
+    const MaterialHandle grey = material(s, "golden:grey", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
+    place(s, s.cube, grey, {0.3f, 1.0f, -10.0f}, {0.2f, 6.0f, 22.0f});
+    sunAndCamera(s, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, -1.0f});
+    s.scene.forEach<Camera>([](EntityId, Camera& lens) { lens.fovY = glm::radians(100.0f); });
+
+    RenderSettings settings;
+    settings.renderMode    = RenderMode::AmbientOcclusion;
+    settings.msaaSamples   = 1;
+    settings.gtaoIntensity = 3.0f;
+    const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+    // The right fifth of the frame is the wall, from a metre off down to the lens.
+    long sum = 0;
+    int  count = 0;
+    for (int y = HEIGHT / 4; y < 3 * HEIGHT / 4; ++y) {
+        for (int x = 4 * WIDTH / 5; x < WIDTH; ++x) {
+            sum += 255 - pixel(frame, x, y).x;
+            ++count;
+        }
+    }
+    const float darkness = static_cast<float>(sum) / static_cast<float>(count);
+    std::printf("      darkness %.2f on the wall\n", darkness);
+    expect("an open wall beside the eye is not occluded", darkness <= 2.0f, failures);
+}
+
 // A box on a floor through an orthographic camera, in the AO view: the crease where they meet is
 // occluded. An orthographic camera's depth is linear, so read as the viewmodel's band, the nearest
 // VIEWMODEL_DEPTH_SHARE of its range would be taken for sky and occlude nothing.
@@ -2785,6 +2824,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testAPebbleCastsAScreenShadow(failures);
     testAScreenShadowFacingTheSunFallsTowardTheEye(failures);
     testGTAOReachesAsFarEveryWay(failures);
+    testAWallBesideTheEyeIsOpen(failures);
     testAnOrthographicViewTracesItsReflections(failures);
     testSmokeIsShadowedAndSparksAreNot(failures);
     testADecalIsLitAsTheFloorUnderIt(failures);
