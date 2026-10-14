@@ -129,9 +129,11 @@ class VisibilitySystem : public System {
 
         ObjectSources     m_sources;      ///< Last frame's, which m_fixed and the columns are of.
         ObjectMemberships m_memberships;  ///< Last frame's.
-        bool              m_sourcesValid    = false;
-        uint32_t          m_checkPhase      = 0;           ///< Which residue mod FIXED_CHECK_STRIDE is checked.
-        uint64_t          m_fixedMovedEpoch = UINT64_MAX;  ///< Scene::epoch() a moved fixed mesh was logged in.
+        bool              m_sourcesValid = false;
+        uint32_t          m_checkPhase   = 0;  ///< Which residue mod FIXED_CHECK_STRIDE is checked.
+
+        /// Scene::epoch() a moved fixed mesh was logged in.
+        uint64_t m_fixedMovedEpoch = UINT64_MAX;
 };
 
 } // namespace Vkm::Engine

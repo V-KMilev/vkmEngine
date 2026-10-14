@@ -45,13 +45,18 @@ namespace {
 // Range to use for a light that carries no radius.
 constexpr float DEFAULT_LIGHT_RANGE = 50.0f;
 
-// ShadowRun::key's high digit: vertex layout, and for a skinned caster whether posed. In draw
-// order, so each layout is one stretch of a tile's runs and each program one of a layout's.
-constexpr uint32_t STATIC_GROUP  = 0;
-constexpr uint32_t SKINNED_GROUP = 1;  ///< Skinned layout, drawn as stored.
-constexpr uint32_t POSED_GROUP   = 2;
-constexpr uint32_t KEY_GROUPS    = 3;
-static_assert(STATIC_GROUP < SKINNED_GROUP && SKINNED_GROUP < POSED_GROUP && POSED_GROUP < KEY_GROUPS);
+// ShadowRun::key's high digit: whether fixed, vertex layout, and for a skinned caster whether posed.
+// In draw order, so a tile's fixed casters lead its runs and are signed by them (cullInto), each
+// layout is one stretch of them and each program one of a layout's.
+constexpr uint32_t FIXED_GROUP   = 0;  ///< A fixed mesh (ObjectDraw::fixed): static layout.
+constexpr uint32_t STATIC_GROUP  = 1;
+constexpr uint32_t SKINNED_GROUP = 2;  ///< Skinned layout, drawn as stored.
+constexpr uint32_t POSED_GROUP   = 3;
+constexpr uint32_t KEY_GROUPS    = 4;
+static_assert(
+    FIXED_GROUP < STATIC_GROUP && STATIC_GROUP < SKINNED_GROUP && SKINNED_GROUP < POSED_GROUP
+    && POSED_GROUP < KEY_GROUPS
+);
 
 // World distance the logarithmic cascade split is anchored at, rather than the
 // camera's near plane (docs/reference/lighting.md).
@@ -239,6 +244,8 @@ bool aabbIntersectsSphere(const Math::AABB& bounds, const glm::vec3& center, flo
  * A counting sort, not std::sort: keys are small dense integers, so a histogram and a prefix
  * sum take two linear passes.
  *
+ * Signs the batch as ShadowCasterBatch::signature describes.
+ *
  * @param batch          Output; its order (object indices) and runs are rebuilt.
  * @param scratch        Per-task workspace, reused across frames.
  * @param objects        The frame's objects, which the casters name.
@@ -249,8 +256,8 @@ bool aabbIntersectsSphere(const Math::AABB& bounds, const glm::vec3& center, flo
  * @param slotCount      The range of the keys' low digit; @p keys run to KEY_GROUPS times it.
  * @param source         Which casters to consider: every one, or a light's sphere survivors.
  * @param viewProjection The tile or face matrix to cull against.
- * @param cascade        Whether the job is a cascade: unsigned, and culled with no near
- *                       plane (see Shadow2DJob::cascade).
+ * @param cascade        Whether the job is a cascade: culled with no near plane (see
+ *                       Shadow2DJob::cascade).
  */
 void cullInto(
     ShadowCasterBatch& batch,
@@ -271,50 +278,68 @@ void cullInto(
         frustum.absNormals[4] = glm::vec3(0.0f);
         frustum.d[4]          = 0.0f;
     }
-    const bool cacheable = !cascade;
-    // A tile's picture is the matrix and the survivors, in order. A posed survivor's is in its
-    // bones, not here, so such a batch is unsigned. Raster state changing a tile's depth (a depth
-    // bias, a cull mode) must be hashed here too, or a held tile keeps the picture drawn without it.
-    uint64_t signature = cacheable ? fnv1a64Bytes(&viewProjection, sizeof(viewProjection)) : 0;
-    bool     posed     = false;
+    // Raster state changing a tile's depth (a depth bias, a cull mode) must be hashed here too,
+    // or a held tile keeps the picture drawn without it.
+    uint64_t fixedSignature = fnv1a64Bytes(&viewProjection, sizeof(viewProjection));
+    fixedSignature = fnv1a64Bytes(&objects.fixedSerial, sizeof(objects.fixedSerial), fixedSignature);
+
+    uint64_t movingSignature = FNV1A_OFFSET_BASIS;
+    bool     posed           = false;
 
     // Pass 1: survivors, counting each key. Signed by mesh id, not key: masked keys are numbered
     // over the scene's masked casters, so one added anywhere renumbers the rest.
-    const uint32_t keyCount = slotCount * KEY_GROUPS;
-    const uint32_t posedKey = slotCount * POSED_GROUP;
+    const uint32_t keyCount  = slotCount * KEY_GROUPS;
+    const uint32_t movingKey = slotCount * STATIC_GROUP;
+    const uint32_t posedKey  = slotCount * POSED_GROUP;
     scratch.survivors.clear();
     scratch.counts.assign(keyCount, 0);
+    scratch.firstOf.resize(movingKey);
     for (uint32_t caster : source) {
         const uint32_t object = casters[caster];
         if (!Math::frustumIntersectsAABB(frustum, objects.bounds[object]))
             continue;
         scratch.survivors.push_back(caster);
-        ++scratch.counts[keys[caster]];
-        if (cacheable) {
-            if (keys[caster] >= posedKey) posed = true;
+        const uint32_t key = keys[caster];
+        if (key < movingKey) {
+            if (scratch.counts[key] == 0) scratch.firstOf[key] = caster;
+        } else {
+            posed = posed || key >= posedKey;
             const uint32_t mesh = objects.draws[object].mesh.id();
-            signature = fnv1a64Bytes(&mesh, sizeof(mesh), signature);
-            signature = fnv1a64Bytes(&uploads[caster], sizeof(uploads[caster]), signature);
-            signature = fnv1a64Bytes(&objects.models[object], sizeof(glm::mat4), signature);
+            movingSignature = fnv1a64Bytes(&mesh, sizeof(mesh), movingSignature);
+            movingSignature = fnv1a64Bytes(&uploads[caster], sizeof(uploads[caster]), movingSignature);
+            movingSignature = fnv1a64Bytes(&objects.models[object], sizeof(glm::mat4), movingSignature);
         }
+        ++scratch.counts[key];
     }
-    // Zero is the "always draw" mark: a posed survivor earns it, and a hash
-    // that happens to land on it moves off it.
-    batch.signature = (!cacheable || posed) ? 0 : (signature == 0 ? 1 : signature);
 
     batch.order.resize(scratch.survivors.size());
     batch.runs.clear();
-    if (scratch.survivors.empty()) return;
+    batch.culledFor = viewProjection;
+    batch.culledAt  = objects.serial;
 
     // Prefix sum turns the histogram into a write cursor per key, and every key
-    // that counted anything is one run of the draw.
+    // that counted anything is one run of the draw. A fixed run is signed by its first caster's
+    // mesh and uploads, which every caster of a run shares.
     uint32_t running = 0;
     for (uint32_t key = 0; key < keyCount; ++key) {
         const uint32_t n = scratch.counts[key];
         scratch.counts[key] = running;
-        if (n > 0) batch.runs.push_back({ running, n, key, key >= posedKey });
+        if (n > 0) {
+            batch.runs.push_back({ running, n, key, key >= posedKey });
+            if (key < movingKey) {
+                const uint32_t caster = scratch.firstOf[key];
+                const uint32_t mesh   = objects.draws[casters[caster]].mesh.id();
+                fixedSignature = fnv1a64Bytes(&mesh, sizeof(mesh), fixedSignature);
+                fixedSignature = fnv1a64Bytes(&uploads[caster], sizeof(uploads[caster]), fixedSignature);
+            }
+        }
         running += n;
     }
+
+    // Zero is the "always draw" mark: a posed survivor earns it, and a hash that happens to land
+    // on it moves off it.
+    const uint64_t whole = fnv1a64Bytes(&movingSignature, sizeof(movingSignature), fixedSignature);
+    batch.signature = posed ? 0 : (whole == 0 ? 1 : whole);
 
     // Pass 2: scatter each survivor's object into its key's run.
     for (uint32_t caster : scratch.survivors) batch.order[scratch.counts[keys[caster]]++] = casters[caster];
@@ -383,7 +408,8 @@ void GLShadowData::cullCasters(const RenderView& view, const GLView& glView) {
                 lastMesh = std::max(lastMesh, draw.mesh.id());
             }
             m_meshUploads[i] = runUpload;
-            m_meshGroups[i]  = runGroup == SKINNED_GROUP && draw.skinCount > 0 ? POSED_GROUP : runGroup;
+            m_meshGroups[i]  = draw.fixed ? FIXED_GROUP
+                : (runGroup == SKINNED_GROUP && draw.skinCount > 0 ? POSED_GROUP : runGroup);
         }
 
         // Equal pairs side by side, so each takes one slot past the last mesh.
@@ -407,12 +433,30 @@ void GLShadowData::cullCasters(const RenderView& view, const GLView& glView) {
         for (uint32_t i = 0; i < count; ++i) m_meshKeys[i] += m_meshGroups[i] * m_slotCount;
     }
 
+    // With no object changed since the last frame, a tile or face culled against the same matrix
+    // then keeps its batch: a still scene culls nothing.
+    const size_t jobs2D    = m_jobs2D.size();
+    const size_t cubeFaces = m_jobsCube.size() * 6;
+    const auto   keeps     = [&](ShadowCasterBatch& batch, const glm::mat4& viewProjection) {
+        const bool culledLast = batch.culledAt + 1 == objects.serial;
+        if (!keysHold || !culledLast || batch.culledFor != viewProjection) return false;
+        batch.culledAt = objects.serial;
+        return true;
+    };
+    m_recull.resize(jobs2D + cubeFaces);
+    for (size_t j = 0; j < jobs2D; ++j) m_recull[j] = !keeps(m_batches2D[j], m_jobs2D[j].lightVP);
+    for (size_t face = 0; face < cubeFaces; ++face) {
+        m_recull[jobs2D + face] = !keeps(m_batchesCube[face], m_jobsCube[face / 6].faceVP[face % 6]);
+    }
+
     // Serially: each light's sphere narrows the scene for its six face culls, which parallelise,
     // so there are only ever a couple of iterations here to overlap.
     {
         PROFILE_SCOPE("Shadow/Cull/Sphere");
         m_cubeCandidates.resize(m_jobsCube.size());
         for (size_t j = 0; j < m_jobsCube.size(); ++j) {
+            const auto first = m_recull.begin() + static_cast<std::ptrdiff_t>(jobs2D + j * 6);
+            if (std::none_of(first, first + 6, [](uint8_t recull) { return recull != 0; })) continue;
             const ShadowCubeJob& job = m_jobsCube[j];
             std::vector<uint32_t>& candidates = m_cubeCandidates[j];
 
@@ -425,9 +469,6 @@ void GLShadowData::cullCasters(const RenderView& view, const GLView& glView) {
     }
 
     // A task per tile and face, writing disjoint batches, so nothing synchronises.
-    const size_t jobs2D    = m_jobs2D.size();
-    const size_t cubeFaces = m_jobsCube.size() * 6;
-
     PROFILE_SCOPE("Shadow/Cull/Fork");
     m_scratch.resize(jobs2D + cubeFaces);
 
@@ -449,6 +490,7 @@ void GLShadowData::cullCasters(const RenderView& view, const GLView& glView) {
 }
 
 void GLShadowData::cullTask(size_t task) {
+    if (!m_recull[task]) return;
     const RenderObjects& objects = *m_cullView->objects;
     const uint32_t*      casters = objects.scene.data();
     const size_t jobs2D = m_jobs2D.size();

@@ -114,6 +114,7 @@ struct ObjectDraw {
     uint32_t       skinCount = 0; // bones in its rig's palette slice; 0 = drawn static
     bool           waves = false; // its surface is the scene's ocean
     bool           viewmodel = false; // drawn through the camera's viewmodel projection
+    bool           fixed = false;     // Mesh::movable off: kept while fixedSerial holds
 };
 
 struct RenderObjects {                  // system/render/data/render_objects.h
@@ -127,6 +128,7 @@ struct RenderObjects {                  // system/render/data/render_objects.h
     std::vector<uint32_t>   changed;    // objects whose columns differ from last frame's
     bool                    allChanged = true;  // every object may differ; `changed` means nothing
     uint64_t                serial = 0;         // frames the cull wrote; `changed` is against the last
+    uint64_t                fixedSerial = 0;    // moved whenever a fixed object changed
 };
 
 struct Visibility {

@@ -340,7 +340,7 @@ Shadow rendering goes through `GLShadowPass`, which:
   with nothing in it is still cleared, so it reads as lit, and the atlas
   and cubes start cleared to the far plane for the same reason. The 2D
   half returns early only on an empty job list and the cube half loops
-  over whatever cube jobs exist. A spot tile or a cube face is kept between frames when it would
+  over whatever cube jobs exist. A tile or a cube face is kept between frames when it would
   be the same picture: the cull signs each batch with a hash of the
   matrix it was culled against and every survivor's mesh id, geometry upload
   (`GLMesh::uploadId`, so a mesh re-cooked under the same handle is a new
@@ -356,14 +356,14 @@ Shadow rendering goes through `GLShadowPass`, which:
   `GLBackend::onWorldReplaced`), and so does a shader reload
   (`GLBackend::reloadChangedShaders`), since a held tile was drawn by the old
   program. A posed survivor leaves the
-  batch unsigned, since its picture is in its bones, and the sun's
-  cascades are never signed: they move with the camera, so one is the same
-  picture only while the camera holds still, and a frame that must afford
-  redrawing them as it moves saves nothing it budgets for when it does not.
+  batch unsigned, since its picture is in its bones. The fixed casters
+  (`Mesh::movable` off) are signed all at once by `RenderObjects::fixedSerial`,
+  the moving ones each, so the sun's cascades are signed too and a still view
+  redraws no shadow; with no object changed, a tile culled against the same
+  matrix keeps its batch.
   A cascade is drawn with `GL_DEPTH_CLAMP` on and culled with no near plane,
   so a caster nearer the sun than the cascade's near plane is flattened onto
   it and still shadows, rather than being clipped away.
-  On a still map with static lights only the sun's cascades redraw;
   `Shadow/TilesDrawn` plots how many tiles a frame draws.
 - Cuts an alpha-masked caster's shadow by its material: such a caster draws
   through `shadow/depth_masked` (and its skinned twin), which tests the

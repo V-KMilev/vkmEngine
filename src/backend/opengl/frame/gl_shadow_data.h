@@ -93,8 +93,9 @@ struct Shadow2DJob {
     /**
      * @brief Whether this is one of the sun's cascades rather than a spot's map.
      *
-     * A cascade is never kept between frames: it moves with the camera. It draws with depth
-     * clamped, so a caster nearer the sun than its near plane is flattened onto it, not clipped.
+     * A cascade moves with the camera, so it is held only while the camera and what it shows
+     * hold still. It draws with depth clamped, so a caster nearer the sun than its near plane is
+     * flattened onto it, not clipped.
      */
     bool      cascade;
     /**
@@ -145,15 +146,22 @@ struct ShadowRun {
 struct ShadowCasterBatch {
     std::vector<uint32_t>  order;
     std::vector<ShadowRun> runs;  ///< The groups of `order`, in order.
+
     /**
      * @brief What the tile drawn from this batch looks like, as a hash.
      *
-     * Of the culling matrix and each survivor's mesh id, geometry upload (GLMesh::uploadId; for a
-     * caster cut by its alpha also its material's and albedo map's) and model. Equal signatures draw the same
-     * picture, so the atlas keeps the tile (GLShadowAtlas::tileHolds). Zero always draws: the
-     * job is not cacheable, or a survivor is posed and its picture is not in its model matrix.
+     * Of the culling matrix; of the fixed survivors (ObjectDraw::fixed) by
+     * RenderObjects::fixedSerial and each fixed run's mesh id and uploads, since while the serial
+     * holds they are as they were; and of each moving survivor by its mesh id, geometry upload
+     * (GLMesh::uploadId; for a caster cut by its alpha also its material's and albedo map's) and
+     * model. Equal signatures draw the same picture, so the atlas keeps the tile
+     * (GLShadowAtlas::tileHolds). Zero always draws: a survivor is posed, and its picture is not
+     * in its model matrix.
      */
     uint64_t signature = 0;
+
+    glm::mat4 culledFor{0.0f};  ///< The matrix it was culled against.
+    uint64_t  culledAt = 0;     ///< RenderObjects::serial of the frame it was culled or kept in.
 };
 
 /**
@@ -164,6 +172,7 @@ struct ShadowCasterBatch {
 struct CullScratch {
     std::vector<uint32_t> survivors;  ///< Frustum survivors, as caster positions, before mesh grouping.
     std::vector<uint32_t> counts;     ///< Per-key histogram, then the scatter cursor.
+    std::vector<uint32_t> firstOf;    ///< Per fixed key, its first survivor, as a caster position.
 };
 
 /**
@@ -465,6 +474,8 @@ class GLShadowData {
         /// The alpha-masked casters, by position, while their keys are numbered.
         std::vector<uint32_t>              m_maskedCasters;
         std::vector<CullScratch>           m_scratch;         ///< One workspace per cull task.
+        /// Per cull task: whether its batch is culled again this frame, or kept from the last.
+        std::vector<uint8_t>               m_recull;
 
         // The forked cull: the view it reads, the task body the pool borrows,
         // and the batch in flight until finishCull.

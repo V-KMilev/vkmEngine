@@ -2117,6 +2117,86 @@ void testASpawnAndARemovalAreDrawnAsTheyEnd(int& failures) {
     }
 }
 
+// A sphere moving through fixed scenery under the sun, a spot and a bulb: the tiles and faces it
+// crosses are signed anew and drawn again, the rest keep last frame's batch. Once it stops, the
+// frame must be the one a fresh backend draws of the scene as it ends.
+void testAMoverOverFixedScenery(int& failures) {
+    std::printf("A sphere moving over fixed scenery, under the sun, a spot and a bulb:\n");
+    constexpr float START = -1.2f;
+    constexpr float STEP  = 0.15f;
+    constexpr int   MOVES = 2 * FRAMES - 2;  // The last two frames hold still.
+    const auto build = [](Scenery& s, float sphereX) {
+        base(s);
+        const MaterialHandle stone = material(s, "golden:fixed_stone", {0.7f, 0.66f, 0.6f}, 0.8f, 0.0f);
+        const MaterialHandle red   = material(s, "golden:mover_red", {0.8f, 0.1f, 0.1f}, 0.5f, 0.0f);
+        place(s, s.cube, stone, {0.0f, -0.5f, 0.0f}, {14.0f, 1.0f, 14.0f});
+        place(s, s.cube, stone, {0.0f, 1.5f, -2.5f}, {8.0f, 3.0f, 0.4f});
+        for (float x : {-2.0f, 0.0f, 2.0f}) place(s, s.cube, stone, {x, 0.6f, -0.8f}, {0.5f, 1.2f, 0.5f});
+        s.scene.forEach<Mesh>([](EntityId, Mesh& mesh) { mesh.movable = false; });
+        place(s, s.sphere, red, {sphereX, 0.6f, 0.6f}, glm::vec3(0.8f));
+
+        const EntityId lamp = s.scene.createEntity();
+        Transform lampPose;
+        lampPose.position = {0.0f, 4.0f, 0.5f};
+        lampPose.rotation = glm::quatLookAt(glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f));
+        s.scene.add(lamp, std::move(lampPose));
+        Light spot;
+        spot.type           = LightType::Spot;
+        spot.intensity      = 40.0f;
+        spot.radius         = 10.0f;
+        spot.outerConeAngle = 1.0f;
+        spot.innerConeAngle = 0.8f;
+        spot.castShadows    = true;
+        s.scene.add(lamp, std::move(spot));
+
+        const EntityId bulb = s.scene.createEntity();
+        Transform bulbPose;
+        bulbPose.position = {1.5f, 1.4f, 1.6f};
+        s.scene.add(bulb, std::move(bulbPose));
+        Light point;
+        point.type        = LightType::Point;
+        point.intensity   = 20.0f;
+        point.radius      = 8.0f;
+        point.castShadows = true;
+        s.scene.add(bulb, std::move(point));
+        sunAndCamera(s, {0.0f, 4.0f, 7.0f}, {0.0f, 0.5f, 0.0f});
+    };
+    RenderSettings plain;
+    plain.msaaSamples = 1;
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend fresh;
+    if (!fresh.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery ended;
+    build(ended, START + STEP * static_cast<float>(MOVES));
+    const std::vector<unsigned char> want = render(ended, fresh, nullptr, plain);
+
+    restoreContextDefaults();
+    GLBackend lived;
+    if (!lived.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery s;
+    build(s, START);
+    const auto move = [&](int frame, const Visibility&) {
+        if (frame >= MOVES) return;
+        const float x = START + STEP * static_cast<float>(frame + 1);
+        s.scene.forEach<Mesh>([&](EntityId entity, Mesh& mesh) {
+            if (mesh.movable) s.scene.get<Transform>(entity).position.x = x;
+        });
+    };
+    const std::vector<unsigned char> got = render(s, lived, nullptr, plain, nullptr, 2 * FRAMES, move);
+
+    const float differing = differingShare(got, want.data());
+    std::printf("      %.2f%% of pixels unlike a fresh backend's frame\n", differing * 100.0f);
+    expect("the frame is the fresh backend's", differing <= PIXEL_TOLERANCE, failures);
+}
+
 void testTheUIOverlayLandsOnItsPixels(int& failures) {
     std::printf("The UI overlay, drawn:\n");
 
@@ -3133,6 +3213,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testHalfResolutionReflectionsAreCloseToFull(failures);
     testAMovedObjectIsDrawnWhereItWent(failures);
     testASpawnAndARemovalAreDrawnAsTheyEnd(failures);
+    testAMoverOverFixedScenery(failures);
     testAViewmodelShadesNothingBehindIt(failures);
     testABackendDropsWhatTheSceneNoLongerAsksFor(failures);
     testAFrameWithNoCameraKeepsTheProbesBaked(failures);

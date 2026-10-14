@@ -556,7 +556,8 @@ void testAStampFollowsItsElement() {
     check("every element's stamp is its own", first != set.stampAt(1) && set.stampAt(1) != last);
 
     set.remove(2);
-    check("  a removal moves the last element's stamp with it", set.dataAt(1) == 30 && set.stampAt(1) == last);
+    const bool moved = set.dataAt(1) == 30 && set.stampAt(1) == last;
+    check("  a removal moves the last element's stamp with it", moved);
     check("  and leaves the others where they were", set.stampAt(0) == first);
 
     set.remove(3);

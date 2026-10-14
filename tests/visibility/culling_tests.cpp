@@ -971,6 +971,52 @@ void testASpawnOrARemovalNamesWhatItMoved() {
     check("  which is drawn where it is", world.drawnX(spawned) == -2.0f && objects.visible.size() == 2);
 }
 
+// RenderObjects::fixedSerial vouches for every fixed object at once - a shadow tile's fixed casters
+// are signed by it - so it holds while only movers move, and moves with any fixed object.
+void testTheFixedSerialMovesWithAFixedMeshAlone() {
+    std::printf("What moves the fixed objects' serial:\n");
+    FixedWorld world;
+    VisibilitySystem visibility;
+    visibility.update(world.frame.ctx);
+    visibility.update(world.frame.ctx);
+    const RenderObjects& objects = world.frame.ctx.visibility->objects;
+    uint64_t serial = objects.fixedSerial;
+
+    world.scene.get<Transform>(world.moving).position.x = 3.0f;
+    visibility.update(world.frame.ctx);
+    check("a mover moving leaves it", objects.fixedSerial == serial);
+
+    // An editor may hide one; a running world promised not to.
+    world.frame.chrome.setAuthoring(true);
+    world.scene.get<Mesh>(world.fixed).visible = false;
+    visibility.update(world.frame.ctx);
+    check("  a fixed mesh hidden moves it", objects.fixedSerial != serial);
+    world.scene.get<Mesh>(world.fixed).visible = true;
+    visibility.update(world.frame.ctx);
+
+    serial = objects.fixedSerial;
+    world.scene.get<Transform>(world.fixed).position.x = -1.0f;
+    visibility.update(world.frame.ctx);
+    check("  so does one an author moves", objects.fixedSerial != serial);
+
+    serial = objects.fixedSerial;
+    const EntityId spawned = world.place({-2.0f, 0.0f, -5.0f}, false);
+    visibility.update(world.frame.ctx);
+    check("  and one spawned", objects.fixedSerial != serial);
+
+    // The last in the storage: nothing moves into its place to say it went.
+    visibility.update(world.frame.ctx);
+    serial = objects.fixedSerial;
+    world.scene.destroyEntity(spawned);
+    visibility.update(world.frame.ctx);
+    check("  and one destroyed from the end", objects.fixedSerial != serial);
+
+    serial = objects.fixedSerial;
+    world.scene.destroyEntity(world.fixed);
+    visibility.update(world.frame.ctx);
+    check("  and one destroyed with another moved into its place", objects.fixedSerial != serial);
+}
+
 // A fixed mesh's entity gaining a WorldTransform takes its matrix from it: worked out again then,
 // though nothing about its Mesh changed, and named.
 void testAFixedMeshGainingAParentIsWorkedOut() {
@@ -1025,6 +1071,7 @@ void runCullingTests() {
     testAuthoringKeepsNothing();
     testASpawnOrARemovalNamesWhatItMoved();
     testAFixedMeshGainingAParentIsWorkedOut();
+    testTheFixedSerialMovesWithAFixedMeshAlone();
     testAnAssetChangeReworksOnlyWhatReadsIt();
     testALightsSourceIsItsOwn();
     testWaterCastsUnlessTheSeaMovesIt();

@@ -37,9 +37,13 @@ struct ObjectDraw {
     /// A Viewmodel mesh seen through the eye: drawn through CameraData::viewmodelViewProjection.
     bool viewmodel = false;
 
+    /// A fixed mesh (Mesh::movable off) the cull can keep: while RenderObjects::fixedSerial holds,
+    /// it is as it was.
+    bool fixed = false;
+
     bool operator==(const ObjectDraw& other) const {
         return mesh == other.mesh && material == other.material && skinCount == other.skinCount
-            && waves == other.waves && viewmodel == other.viewmodel;
+            && waves == other.waves && viewmodel == other.viewmodel && fixed == other.fixed;
     }
 
     bool operator!=(const ObjectDraw& other) const { return !(*this == other); }
@@ -98,6 +102,17 @@ struct RenderObjects {
      * A copy is rebuilt whole.
      */
     bool allChanged = true;
+
+    /**
+     * @brief Moved by every frame the cull writes (serial) in which a fixed object
+     *        (ObjectDraw::fixed) changed, was listed or unlisted, or became or stopped being
+     *        fixed, or in which allChanged holds.
+     *
+     * A frame it does not write leaves it, and the next it writes moves it. While it holds every
+     * fixed object is as it was: what the fixed objects draw into a held picture - a shadow
+     * tile's - is the same.
+     */
+    uint64_t fixedSerial = 0;
 
     /**
      * @brief Counts the frames the cull wrote; `changed` is against the one before.

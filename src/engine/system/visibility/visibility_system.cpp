@@ -190,12 +190,15 @@ bool computeObject(const ObjectInputs& in, uint32_t index, ObjectColumns& out) {
     }
 
     const bool viewmodel = in.throughAnEye && mesh.seenBy == SeenBy::Viewmodel;
+    // Kept between frames: what does not move, is not skinned, rides no sea and is no held weapon.
+    const bool fixed = !mesh.movable && !skinned && !waves && !viewmodel;
     out.draw = ObjectDraw{
         selectLOD(mesh, in.lods, entityIdx, out.bounds.min, out.bounds.max, in.context),
         mesh.material,
         slice ? slice->count : 0u,
         waves,
-        viewmodel
+        viewmodel,
+        fixed
     };
     out.skinFirst = slice ? slice->first : 0u;
     out.entity    = entity;
@@ -205,9 +208,8 @@ bool computeObject(const ObjectInputs& in, uint32_t index, ObjectColumns& out) {
     out.state     = eyeOnly ? 0 : STATE_DRAWN;
     if (mesh.castShadows && !waves && !eyeOnly) out.state |= STATE_CASTS;
 
-    // Kept between frames: what does not move, is not posed, rides no sea and is no held weapon.
     out.fixedState = 0;
-    if (!mesh.movable && !skinned && !waves && !viewmodel) {
+    if (fixed) {
         out.fixedState = FIXED_KEPT;
         if (out.state & STATE_DRAWN) out.fixedState |= FIXED_DRAWN;
         if (out.state & STATE_CASTS) out.fixedState |= FIXED_CASTS;
@@ -410,7 +412,14 @@ void VisibilitySystem::update(FrameContext& ctx) {
     const bool keep      = comparable && sources == m_sources && !authoring;
     const bool recheck   = memberships != m_memberships;
     // The indices last frame's columns cover, as far as they compare.
-    const auto lastCount = comparable ? static_cast<uint32_t>(std::min<size_t>(m_stamps.size(), meshCount)) : 0u;
+    const uint32_t covered   = static_cast<uint32_t>(std::min<size_t>(m_stamps.size(), meshCount));
+    const uint32_t lastCount = comparable ? covered : 0u;
+
+    // A fixed mesh listed at an index past the end is gone, which no index below says.
+    bool fixedGone = false;
+    for (size_t i = meshCount; comparable && i < m_stamps.size(); ++i) {
+        fixedGone = fixedGone || ((m_state[i] & STATE_LISTED) && objects.draws[i].fixed);
+    }
 
     // Persistent: a steady scene allocates nothing. Each index's columns have one writer.
     m_state.resize(meshCount);
@@ -438,6 +447,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
     const uint32_t checkPhase = m_checkPhase;
     m_checkPhase = (m_checkPhase + 1) % FIXED_CHECK_STRIDE;
     std::atomic<bool> fixedMoved{false};
+    std::atomic<bool> fixedChanged{fixedGone};
 
     {
         PROFILE_SCOPE("Visibility/Cull");
@@ -479,6 +489,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
                     if (level != objects.draws[i].mesh) {
                         objects.draws[i].mesh = level;
                         state |= STATE_CHANGED;
+                        fixedChanged.store(true, std::memory_order_relaxed);
                     }
                 }
                 if (!(fixed & FIXED_NOT_EYE) && Math::frustumIntersectsAABB(context.frustum, world)
@@ -495,6 +506,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
                 // Hidden now: a change while the index was listed, though its columns stay as they were.
                 m_state[i] = listed ? STATE_CHANGED : 0;
                 m_fixed[i] = 0;
+                if (listed && objects.draws[i].fixed) fixedChanged.store(true, std::memory_order_relaxed);
                 return;
             }
 
@@ -504,6 +516,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
                 || now.skinFirst != objects.skinFirst[i] || now.bounds.min != objects.bounds[i].min
                 || now.bounds.max != objects.bounds[i].max;
             const bool changed = comparable && differs;
+            const bool wasFixed = i < lastCount && objects.draws[i].fixed;
 
             objects.models[i]    = now.model;
             objects.bounds[i]    = now.bounds;
@@ -516,6 +529,9 @@ void VisibilitySystem::update(FrameContext& ctx) {
             uint8_t state = now.state;
             // Shown or hidden, or a caster no longer, is a change too: the lists hold it or not.
             if (changed || (comparable && ((state & STATE_LISTED) != listed))) state |= STATE_CHANGED;
+            if ((state & STATE_CHANGED) && (wasFixed || now.draw.fixed)) {
+                fixedChanged.store(true, std::memory_order_relaxed);
+            }
             if (!now.notTheEye && Math::frustumIntersectsAABB(frustum, now.bounds)
                 && Culling::isNearEnough(now.bounds, context)
                 && Culling::isLargeEnough(now.bounds, context)) {
@@ -542,6 +558,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("Visibility/Gather");
     objects.allChanged = !comparable;
     ++objects.serial;
+    if (objects.allChanged || fixedChanged.load(std::memory_order_relaxed)) ++objects.fixedSerial;
     for (uint32_t i = 0; i < meshCount; ++i) {
         const uint8_t state = m_state[i];
         if (state & STATE_VISIBLE) objects.visible.push_back(i);
