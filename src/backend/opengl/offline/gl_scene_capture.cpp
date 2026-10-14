@@ -1,18 +1,13 @@
 #include "offline/gl_scene_capture.h"
 
 #include <algorithm>
-#include <limits>
 
 #include <GL/glew.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-#include "gl_buffer_upload.h"
 #include "gl_context.h"
 #include "gl_error_handle.h"
-#include "gl_sampler.h"
-#include "gl_texture.h"
-#include "gl_uniform_buffer.h"
 
 #include "convention/gl_bindings.h"
 #include "convention/gl_depth.h"
@@ -32,16 +27,6 @@ namespace Vkm::Engine {
 namespace {
 
 constexpr float CAPTURE_NEAR = 0.05f;
-
-// The sun's map over a capture region: a room's worth of it at a few
-// centimetres a texel, which the 3x3 kernel softens.
-constexpr uint32_t SHADOW_RES = 2048;
-
-/// Kept clear of the region's edge on every side, in the map's own world units.
-constexpr float SHADOW_MARGIN = 0.5f;
-
-/// A sun's direction is told apart in steps of 1/this a component (shadowKey).
-constexpr float SHADOW_DIRECTION_STEPS = 256.0f;
 
 /// The values in a uniform of GL type @p type; 0 for one GLSceneCapture::resetPbr() leaves.
 uint32_t floatsIn(GLenum type) {
@@ -74,8 +59,6 @@ GLSceneCapture::GLSceneCapture(const GLMesh& cube, const GLObjectBuffer& objects
     : m_pbr("shaders/forward/pbr")
     , m_skybox("shaders/skybox")
     , m_surfels("shaders/irradiance/surfels")
-    , m_shadowDepth("shaders/shadow/depth")
-    , m_shadowMasked("shaders/shadow/depth_masked")
     , m_cube(cube)
     , m_objects(objects) {}
 
@@ -99,7 +82,7 @@ void GLSceneCapture::begin(
     // shaders/forward/pbr only, so a character bakes into GI in bind pose.
     m_batcher.buildGrouped(m_opaque, *view.objects, glView, 0);
 
-    prepareShadow(gl, view, region);
+    m_shadow.draw(gl, view, glView, m_objects, m_casters, region, m_lights);
 
     m_faceSize = faceSize;
     m_volume   = nullptr;
@@ -173,16 +156,10 @@ void GLSceneCapture::beginLighting(
     const Math::AABB& region
 ) {
     m_glView = &glView;
-    const ShadowKey key = shadowKey(view, region);
-    for (int slot = 0; slot < SHADOW_SLOTS; ++slot) {
-        if (m_shadows[slot].key && *m_shadows[slot].key == key) {
-            useShadow(slot, view);
-            return;
-        }
-    }
+    if (m_shadow.useKept(view, region, m_lights)) return;
     const bool castersOnly = true;
     gatherScene(view, glView, resources, castersOnly);
-    prepareShadow(gl, view, region);
+    m_shadow.draw(gl, view, glView, m_objects, m_casters, region, m_lights);
 }
 
 void GLSceneCapture::gatherScene(
@@ -214,171 +191,11 @@ void GLSceneCapture::gatherScene(
     }
 }
 
-GLSceneCapture::ShadowKey GLSceneCapture::shadowKey(const RenderView& view, const Math::AABB& region) {
-    ShadowKey key;
-    key.region = region;
-    if (const LightData* light = lowestSlotDirectionalCaster(view.lights)) {
-        key.casts      = true;
-        key.light      = light->entitySlot;
-        // Steps of about a fifth of a degree: a sun crossing the sky draws its map when it has moved
-        // that far, not on every frame it moves.
-        const glm::vec3 steps = glm::round(glm::normalize(light->direction) * SHADOW_DIRECTION_STEPS);
-        key.direction  = steps / SHADOW_DIRECTION_STEPS;
-        key.bias       = light->shadowBias;
-        key.normalBias = light->shadowNormalBias;
-    }
-    return key;
-}
-
-void GLSceneCapture::useShadow(int slot, const RenderView& view) {
-    ShadowSlot& shadow = m_shadows[slot];
-    shadow.used = ++m_shadowClock;
-
-    // The lights, the shadowed sun on the map's slot while it casts.
-    const size_t lightCount = std::min<size_t>(view.lights.size(), Config::MAX_LIGHTS);
-    m_lightSlots.assign(lightCount, -1);
-    const LightData* sun = lowestSlotDirectionalCaster(view.lights);
-    if (sun && shadow.casts) {
-        const auto index = static_cast<size_t>(sun - view.lights.data());
-        if (index < lightCount) m_lightSlots[index] = 0;
-    }
-    m_lights.update(view.lights, {m_lightSlots.data(), static_cast<uint32_t>(lightCount)});
-    if (!shadow.casts) return;
-
-    shadow.ubo->bindBase(GLBindings::UBOBindingPoints::SHADOW);
-    shadow.map->bindSlot(GLBindings::ShadowTextureSlots::ATLAS_2D);
-    m_shadowSampler->bindSlot(GLBindings::ShadowTextureSlots::ATLAS_2D);
-}
-
 void GLSceneCapture::setAmbientVolume(const GLIrradianceVolume* volume, const IrradianceVolumeData& box) {
     m_volume    = volume;
     m_volumeBox = box;
     // A fade would let the sky onto a wall on the box's face.
     m_volumeBox.blendDistance = 0.0f;
-}
-
-void GLSceneCapture::prepareShadow(Vkm::GL::Context& gl, const RenderView& view, const Math::AABB& region) {
-    // Into the slot drawn for this before, or else the one bound longest ago.
-    const ShadowKey shadowFor = shadowKey(view, region);
-    int slot = 0;
-    for (int i = 0; i < SHADOW_SLOTS; ++i) {
-        if (m_shadows[i].key && *m_shadows[i].key == shadowFor) {
-            slot = i;
-            break;
-        }
-        if (m_shadows[i].used < m_shadows[slot].used) slot = i;
-    }
-    ShadowSlot& shadow = m_shadows[slot];
-
-    // The sun the frame shadows (see lowestSlotDirectionalCaster).
-    const LightData* key = lowestSlotDirectionalCaster(view.lights);
-    shadow.key   = shadowFor;
-    shadow.casts = key && !m_casters.empty();
-    if (!shadow.casts) {
-        useShadow(slot, view);
-        return;
-    }
-
-    // Across the light, the region; along it, every caster over the region's footprint, since a
-    // roof well above a volume still shades it.
-    const RenderObjects& objects   = *view.objects;
-    const glm::vec3      dir       = glm::normalize(key->direction);
-    const glm::mat4      lightView = glm::lookAt(glm::vec3(0.0f), dir, stableUp(dir));
-
-    const Math::AABB across = Math::transform(lightView, region);
-    glm::vec3 lo = across.min - glm::vec3(SHADOW_MARGIN);
-    glm::vec3 hi = across.max + glm::vec3(SHADOW_MARGIN);
-
-    // Only those over the region's footprint draw: the map shows nothing else.
-    m_overRegion.clear();
-    for (const uint32_t object : m_casters) {
-        const Math::AABB c = Math::transform(lightView, objects.bounds[object]);
-        if (c.max.x < lo.x || c.min.x > hi.x || c.max.y < lo.y || c.min.y > hi.y) continue;
-        lo.z = std::min(lo.z, c.min.z);
-        hi.z = std::max(hi.z, c.max.z);
-        m_overRegion.push_back(object);
-    }
-
-    // The view looks down -z, so what lies nearest the light has the largest z.
-    const float     zNear   = -hi.z - SHADOW_MARGIN;
-    const float     zFar    = -lo.z + SHADOW_MARGIN;
-    const glm::mat4 lightVP = glm::ortho(lo.x, hi.x, lo.y, hi.y, zNear, zFar) * lightView;
-
-    if (!shadow.map) {
-        Vkm::GL::Texture2DParams params;
-        params.width           = SHADOW_RES;
-        params.height          = SHADOW_RES;
-        params.internalFormat  = GL_DEPTH_COMPONENT24;
-        params.format          = GL_DEPTH_COMPONENT;
-        params.type            = GL_FLOAT;
-        params.minFilter       = Vkm::GL::TextureMinFilter::Linear;
-        params.magFilter       = Vkm::GL::TextureMagFilter::Linear;
-        params.wrapS           = Vkm::GL::TextureWrap::ClampToEdge;
-        params.wrapT           = Vkm::GL::TextureWrap::ClampToEdge;
-        params.generateMipmaps = false;
-        shadow.map = std::make_unique<Vkm::GL::Texture2D>("capture_shadow", params);
-    }
-    if (!m_shadowSampler) {
-        Vkm::GL::Sampler::Params compare;
-        compare.minFilter = Vkm::GL::TextureMinFilter::Linear;
-        compare.magFilter = Vkm::GL::TextureMagFilter::Linear;
-        compare.wrapS     = Vkm::GL::TextureWrap::ClampToEdge;
-        compare.wrapT     = Vkm::GL::TextureWrap::ClampToEdge;
-        compare.compare   = Vkm::GL::TextureCompare::LessEqual;
-        m_shadowSampler = std::make_unique<Vkm::GL::Sampler>(compare);
-    }
-
-    // Casters through the static depth programs (bind pose, as the capture draws a character),
-    // a cutout through the one its material cuts.
-    m_shadowFbo.bind();
-    m_shadowFbo.attachTexture(GL_DEPTH_ATTACHMENT, shadow.map->getID());
-    m_shadowFbo.setDrawBuffer(GL_NONE);
-    m_shadowFbo.setReadBuffer(GL_NONE);
-    gl.setViewport(0, 0, static_cast<int32_t>(SHADOW_RES), static_cast<int32_t>(SHADOW_RES));
-    gl.setDepthTest(true);
-    gl.setDepthWrite(true);
-    gl.setDepthFunc(GLDepth::SHADOW_TEST);
-    gl.setBlending(false);
-    gl.setFaceCulling(false);
-    gl.clear(false, true, false, GLDepth::SHADOW_CLEAR);
-
-    m_casterBatcher.buildGrouped(m_overRegion, objects, *m_glView, 0);
-    m_shadowMasked.bind();
-    m_shadowMasked.setUniformMatrix4fv("u_lightVP", GLDepth::shadowProjection(lightVP));
-    m_shadowMasked.setUniform2f("u_ditherShift", 0.0f, 0.0f);
-    m_shadowDepth.bind();
-    m_shadowDepth.setUniformMatrix4fv("u_lightVP", GLDepth::shadowProjection(lightVP));
-    m_objects.bind();
-    const Vkm::GL::Shader* bound = &m_shadowDepth;
-    for (const InstanceDraw& draw : m_casterBatcher.draws()) {
-        const GLMaterial* material = m_glView->getMaterial(draw.material);
-        const bool        masked   = material && material->cutsItsShadow();
-        Vkm::GL::Shader&  program  = masked ? m_shadowMasked : m_shadowDepth;
-        if (&program != bound) {
-            program.bind();
-            bound = &program;
-        }
-        if (masked) {
-            material->bind(GLBindings::UBOBindingPoints::MATERIAL);
-            material->bindTextures(*m_glView);
-        }
-        m_casterBatcher.draw(gl, draw);
-    }
-
-    // One "cascade" covering everything: the whole map, and a split no view
-    // depth reaches.
-    ShadowUBOData data{};
-    data.csmBase       = 0;
-    data.csmCount      = 1;
-    data.cascadeSplits = glm::vec4(std::numeric_limits<float>::max());
-    Shadow2DGPU& map = data.s2d[0];
-    map.lightVP = lightVP;
-    map.atlas   = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f);
-    const float worldTexel = std::max(hi.x - lo.x, hi.y - lo.y) / static_cast<float>(SHADOW_RES);
-    map.params  = glm::vec4(key->shadowBias, worldTexel, zFar - zNear, 0.0f);  // w = 0: the hard kernel
-    map.shape   = glm::vec4(key->shadowNormalBias, 0.0f, 0.0f, 0.0f);
-    Vkm::GL::uploadIfChanged(shadow.ubo, shadow.last, data);
-    useShadow(slot, view);
 }
 
 void GLSceneCapture::beginFace(
