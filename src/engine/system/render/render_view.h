@@ -46,6 +46,10 @@ struct RenderView {
     uint32_t surfaceWidth   = 0;  ///< Full backbuffer width.
     uint32_t surfaceHeight  = 0;  ///< Full backbuffer height.
 
+    /// Wall-clock seconds since the last frame, paused or not: what presentation that adapts
+    /// over time (auto-exposure) steps by.
+    float frameSeconds = 0.0f;
+
     CameraData camera;  ///< The view Visibility culled for: the scene's camera or a host's.
     /**
      * @brief Whether a camera resolved this frame.

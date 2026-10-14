@@ -29,6 +29,7 @@
 #include "offline/gl_ibl_baker.h"
 #include "frame/gl_instance_batcher.h"
 #include "offline/gl_irradiance_baker.h"
+#include "storage/gl_exposure.h"
 #include "storage/gl_irradiance_volume.h"
 #include "frame/gl_lights.h"
 #include "asset/gl_mesh.h"
@@ -280,7 +281,8 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         GLIrradianceVolume m_irradiance;       ///< Baked SH irradiance volume (GI).
         GLIrradianceBaker  m_irradianceBaker;  ///< Its bake, relight and their bookkeeping.
 
-        GLProbeManager m_probes;   ///< Reflection-probe arrays, baker, bake state, UBO.
+        GLProbeManager m_probes;        ///< Reflection-probe arrays, baker, bake state, UBO.
+        GLExposure     m_exposure;      ///< Auto-exposure's histogram and its readback.
         GLPreview      m_preview;       ///< Editor material/mesh preview renders.
         PreviewScene   m_previewScene;  ///< The last frame's light and grade, which a preview takes.
 

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <cstddef>
 #include <cstdio>
 #include <filesystem>
@@ -64,6 +65,7 @@
 #include "resource/resource_manager.h"
 #include "system/render/data/particle_data.h"
 #include "system/render/editor_render_hooks.h"
+#include "system/render/exposure.h"
 #include "system/render/render_view.h"
 #include "system/ocean/ocean_data.h"
 #include "platform/window/window_manager.h"
@@ -1164,6 +1166,55 @@ void testTheDisplayEncodeInvertsTheSrgbDecode() {
     }
     std::printf("      worst byte off by %d\n", worst);
     check("every byte comes back as itself", worst == 0);
+    check("with no GL error behind it", noGlError());
+}
+
+// The histogram's bins are counted on the GPU and read on the CPU (system/render/exposure.h): a bin
+// the two disagree on moves the frame's exposure by BIN_STEP stops. Each bin's centre, and what lies
+// past either end or is no number at all, land in the same bin both ways.
+void testTheHistogramBinsAsTheCpuReadsThem() {
+    using namespace Vkm::Engine;
+    std::printf("Auto-exposure's bins, counted on the GPU and read on the CPU:\n");
+
+    struct Probe {
+        float   luminance[256];
+        int32_t bin[256];
+    };
+    Probe probe{};
+    int count = 0;
+    for (int bin = 1; bin < Exposure::BINS; ++bin) {
+        probe.luminance[count++] = std::exp2(Exposure::binCentre(bin));
+    }
+    const float specials[] = {
+        0.0f,
+        -1.0f,
+        std::numeric_limits<float>::quiet_NaN(),
+        std::numeric_limits<float>::infinity(),
+        std::exp2(Exposure::MIN_LOG - 1.0f),
+        std::exp2(Exposure::MIN_LOG + 0.01f),
+        std::exp2(Exposure::MAX_LOG - 0.01f),
+        std::exp2(Exposure::MAX_LOG + 1.0f),
+    };
+    for (const float lum : specials) probe.luminance[count++] = lum;
+
+    Vkm::GL::ShaderStorageBuffer buffer(&probe, static_cast<uint32_t>(sizeof(probe)));
+    const Vkm::GL::ComputeShader binning("tests/render/shaders/exposure_bins");
+    check("the probe compiles", binning.isValid());
+    buffer.bindBase(0);
+    binning.bind();
+    binning.dispatch(1);
+    glMemoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+    buffer.bind();
+    glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(probe), &probe);
+
+    int disagree = 0;
+    for (int i = 0; i < count; ++i) {
+        const float lum = probe.luminance[i];
+        const int   cpu = lum > 0.0f ? Exposure::binOf(std::log2(lum)) : 0;
+        if (probe.bin[i] != cpu) ++disagree;
+    }
+    std::printf("      %d of %d luminances binned apart\n", disagree, count);
+    check("every bin's centre and both ends land alike", disagree == 0);
     check("with no GL error behind it", noGlError());
 }
 
@@ -2326,6 +2377,7 @@ int runTests() {
     testAStubKeepsTheFilteringOfTheUploadItReplaces();
     testAStaleHandleFindsNothing();
     testTheSharedBlocksAgreeWithTheirStructs();
+    testTheHistogramBinsAsTheCpuReadsThem();
     testTheDrawnSeaIsTheOneGameplayFloatsOn();
     testTheRippleFieldsHoldTheSpectrumsSlope();
     testTheRipplesDensityIsTheCPUs();

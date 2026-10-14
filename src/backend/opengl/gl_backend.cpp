@@ -148,6 +148,10 @@ std::string GLBackend::shaderConstants() {
         << "const float JONSWAP_SIGMA_BELOW     = " << std::to_string(JONSWAP_SIGMA_BELOW) << ";\n"
         << "const float JONSWAP_SIGMA_ABOVE     = " << std::to_string(JONSWAP_SIGMA_ABOVE) << ";\n"
         << "const int   OCEAN_FIELD             = " << RIPPLE_FIELD_SIZE << ";\n"
+        << "const int   EXPOSURE_BINS           = " << Exposure::BINS << ";\n"
+        << "const int   EXPOSURE_STRIDE         = " << Exposure::STRIDE << ";\n"
+        << "const float EXPOSURE_MIN_LOG        = " << std::to_string(Exposure::MIN_LOG) << ";\n"
+        << "const float EXPOSURE_MAX_LOG        = " << std::to_string(Exposure::MAX_LOG) << ";\n"
         << "const int   MAX_PROBES              = "
         << GLBindings::ProbeTextureSlots::MAX_PROBES << ";\n"
         // A LOD index, so one less than the mip count each cube carries.
@@ -379,7 +383,8 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // be trusted, and nothing downstream can tell.
     onWorldReplaced(view, resources);
 
-    // A material preview lights and grades as this frame does.
+    // A material preview lights and grades as this frame does, at the authored exposure: an adapting
+    // one would re-render every thumbnail each frame.
     const LightData* key = lowestSlotDirectional(view.lights);
     m_previewScene.sun          = key ? std::optional<LightData>(*key) : std::nullopt;
     m_previewScene.skyIntensity = view.environment.sky.intensity;
@@ -511,8 +516,9 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         m_opaqueBatcher
     };
 
-    ctx.sunDir = sunDir;
-    ctx.sky    = sky ? &*sky : nullptr;
+    ctx.sunDir   = sunDir;
+    ctx.exposure = m_exposure.stops(view.settings, view.frameSeconds);
+    ctx.sky      = sky ? &*sky : nullptr;
     if (occlusionCulled) {
         PROFILE_SCOPE("Render/OcclusionPrepare");
         if (m_occlusion.prepare(m_opaqueBatcher, *view.objects)) {
@@ -565,6 +571,14 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     );
     PROFILE_PLOT("Render/Probes",      static_cast<int64_t>(ctx.probeCount));
     PROFILE_PLOT("Render/SkinBones",   static_cast<int64_t>(m_skinPalette.count()));
+
+    // The scene as lit, before the bloom and the tonemap, so what it measures does not depend on
+    // the exposure it sets.
+    if (view.settings.autoExposure && view.hasCamera) {
+        PROFILE_GPU_SCOPE("Render/Exposure");
+        m_exposure.measure(*ctx.colorSrc, view.sceneWidth(), view.sceneHeight());
+    }
+    PROFILE_PLOT("Render/Exposure", static_cast<double>(ctx.exposure));
 
     // A frame with no camera gathered nothing to bake from.
     if (view.hasCamera) bakeCaptures(view, resources);
@@ -670,6 +684,7 @@ void GLBackend::onWorldReplaced(const RenderView& view, const ResourceManager& r
         m_worldEpoch = worldEpoch;
         m_probes.invalidate();    // cube captures: same probe pose, different scene
         m_irradianceBaker.invalidate();  // SH volume: same box and grid, different scene
+        m_exposure.forget();             // adapted to the last world's light
         LOG_INFO("Scene replaced; baked captures of it dropped");
     }
     // Held shadow tiles: pictures of both the world and the meshes it is made of.

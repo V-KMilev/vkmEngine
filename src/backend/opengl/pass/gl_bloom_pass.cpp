@@ -49,7 +49,7 @@ void GLBloomPass::execute(GLFrameContext& ctx) {
     m_down.bind();
     // In the scene's units: the exposure scales the frame after, so a pixel that looks bright is
     // one past threshold / 2^exposure.
-    const float unexposed = std::exp2(-settings.exposure);
+    const float unexposed = std::exp2(-ctx.exposure);
     m_down.setUniform1f("u_threshold", settings.bloomThreshold * unexposed);
     m_down.setUniform1f("u_knee",      settings.bloomKnee * unexposed);
     for (int mip = 0; mip < mips; ++mip) {

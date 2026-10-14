@@ -185,7 +185,7 @@ for vkmGL's own headers):
 | `convention/` | `gl_bindings` (UBO/sampler contract), `gl_depth` (reversed depth), `gl_format_conversion` |
 | `asset/`      | the GPU copy of one engine asset, kept current by `GLView`: `GLMesh` (a range in the `GLMeshPool` every mesh shares), `GLMaterial`, `GLTexture` |
 | `frame/`      | what one frame uploads from the `RenderView`: `GLCamera`, `GLLights`, the object buffer, the skin palette, the instance batcher and the `GLDrawList` it and the shadow pass submit through, `GLShadowData`, `GLOcean`, `GLOcclusionCull` |
-| `storage/`    | GPU state that outlives a frame, filled by a pass or a bake and sampled by others: `GLShadowAtlas`, `GLIBL`, `GLAtmosphere`, `GLIrradianceVolume`, the probe array and manager, `GLBloom`, the cluster grid, the fog volume |
+| `storage/`    | GPU state that outlives a frame, filled by a pass or a bake and sampled by others or read back: `GLShadowAtlas`, `GLIBL`, `GLAtmosphere`, `GLIrradianceVolume`, the probe array and manager, `GLBloom`, the cluster grid, the fog volume, `GLExposure` |
 | `offline/`    | GPU work that runs outside the pass list: the shared rig (`GLSceneCapture`, its sun map `GLCaptureShadow`, `GLCubeConvolver`) and everything it is lent to - the IBL, irradiance and probe bakers, and the editor's material preview |
 | `pass/`       | the passes; [rendering.md](rendering.md) lists them in order |
 

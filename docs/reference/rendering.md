@@ -7,9 +7,8 @@ render graph, and passes (`GLPass`) are the backend's own - the engine never
 sees one. Lighting and shadows are [lighting.md](lighting.md); what is drawn
 is decided by [visibility.md](visibility.md).
 
-The renderer has no TAA or auto-exposure
-([engine.md](../guides/engine.md#4-what-has-already-been-decided)); FXAA, motion
-blur and lens flare are not built.
+The renderer has no TAA ([engine.md](../guides/engine.md#4-what-has-already-been-decided));
+FXAA, motion blur and lens flare are not built.
 
 ## Per-frame flow
 
@@ -24,6 +23,7 @@ RenderSystem::update(FrameContext)
         |-- shadow plan       atlas slots; caster cull forked onto the thread pool
         |-- per-frame UBOs, partitionDrawables, skin palette, object buffer, opaque batch
         |-- run the passes in order
+        |-- measure the exposure (autoExposure)
         |-- irradiance volume: bake, or relight a gather a frame
         |-- probes: bake, or refresh a step a frame
 ```
@@ -42,6 +42,7 @@ which resolves the handles it names); a backend consumes exactly this.
 |-------|------|-------|
 | `viewportX` / `viewportY` / `viewportWidth` / `viewportHeight` | `uint32_t` | Scene render rect |
 | `surfaceWidth` / `surfaceHeight` | `uint32_t` | The backbuffer the viewport sits within |
+| `frameSeconds` | `float` | Wall-clock seconds since the last frame, for what adapts over time |
 | `camera` | `CameraData` | The view `Visibility` rendered through - the scene's camera or a host's ([visibility.md](visibility.md#where-the-view-comes-from)) |
 | `hasCamera` | `bool` | Without one the scene's lists stay empty, so a backend keeps what it baked |
 | `objects` | `const RenderObjects*` | Borrowed from `Visibility`. `visible` is what the camera sees, unsorted; `scene` is every drawn mesh, casters first (`casterCount`). Passes draw indices into it |
@@ -75,9 +76,11 @@ copied into the view each frame. It is the project's: everything but
 intensity - live on the scene's `Environment` instead. Each field's meaning is on
 the field; the ones that need more:
 
-- **`exposure`** is fixed and authored, in stops: the composite scales the frame
-  by 2^exposure before the `tonemap`. It is the opposite of the refused
-  auto-exposure.
+- **`exposure`** is in stops: the composite scales the frame by 2^exposure
+  before the `tonemap`. **`autoExposure`** adds stops adapted to the frame's
+  brightness: the backend counts the lit scene into a histogram of log2
+  luminance and reads it back a few frames late without waiting;
+  `system/render/exposure.h` turns that into stops.
 - **Texture filtering** is offered, not imposed: a texture that states
   `Nearest` keeps it ([resources.md](resources.md#textureasset)).
 - **`occlusionCulling`**: [visibility.md](visibility.md#occlusion-culling-on-the-gpu-as-an-option).
@@ -115,7 +118,7 @@ offscreen renders go through a second seam, `EditorRenderHooks`
 `GLBackend` owns the GL context, the `GLView` (GPU resources, the mesh pool and
 the frame's streaming memory), the render targets, and the persistent stores
 and bakers: shadow atlas, IBL, atmosphere, cluster grid, fog volume, irradiance
-volume and reflection probes. `m_preview` is a separate minimal forward +
+volume, reflection probes and the exposure histogram. `GLPreview` is a separate minimal forward +
 composite path for editor thumbnails; it does not run the pass list. A target
 nothing but its pass reads is that pass's own.
 

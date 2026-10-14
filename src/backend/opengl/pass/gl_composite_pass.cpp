@@ -34,7 +34,7 @@ void GLCompositePass::execute(GLFrameContext& ctx) {
     ctx.bloom.bind(GLBindings::CompositeTextureSlots::BLOOM);
     m_shader.setUniform1f("u_bloomStrength", ctx.bloomReady ? view.settings.bloomStrength : 0.0f);
     m_shader.setUniform1i("u_tonemap", static_cast<int>(view.settings.tonemap));
-    m_shader.setUniform1f("u_exposure", std::exp2(view.settings.exposure));
+    m_shader.setUniform1f("u_exposure", std::exp2(ctx.exposure));
 
     // The debug views sample the intermediate buffers.
     const int mode = static_cast<int>(view.settings.renderMode);

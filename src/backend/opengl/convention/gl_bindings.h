@@ -41,6 +41,7 @@ namespace Vkm::Engine {
     X(SSBOBindingPoints,      CULL_INSTANCES,        14, SSBO_CULL_INSTANCES,                 The culled instances: an object list per set)                        \
     X(SSBOBindingPoints,      RELIGHT_LIGHTS,        15, SSBO_RELIGHT_LIGHTS,                 The lights reaching each irradiance probe cell (the relight))        \
     X(SSBOBindingPoints,      CULL_SOURCE,           16, SSBO_CULL_SOURCE,                    The opaque batch instances the GPU cull sorts)                       \
+    X(SSBOBindingPoints,      EXPOSURE_HISTOGRAM,    17, SSBO_EXPOSURE_HISTOGRAM,             The log-luminance histogram of the frame (auto-exposure))            \
     X(ShadowTextureSlots,     ATLAS_2D,              11, SHADOW_SLOT_ATLAS_2D,                Tiled 2D depth atlas (sampler2DShadow))                              \
     X(ShadowTextureSlots,     CUBE,                  12, SHADOW_SLOT_CUBE,                    Point-light depth cubes: a layer each (samplerCubeArrayShadow))      \
     X(ShadowTextureSlots,     CUBE_RAW,              13, SHADOW_SLOT_CUBE_RAW,                The cubes uncompared (samplerCubeArray) for the blocker search)      \

@@ -51,7 +51,7 @@ void GLResolvePass::execute(GLFrameContext& ctx) {
         // a frame with none keeps the depth that resolve wrote.
         if (ctx.alphaMask.empty()) ctx.gl.setDepthTest(false);
         m_shader.setUniform1i("u_samples", static_cast<int>(ctx.sceneRender.samples()));
-        m_shader.setUniform1f("u_exposure", std::exp2(ctx.view.settings.exposure));
+        m_shader.setUniform1f("u_exposure", std::exp2(ctx.exposure));
         m_shader.setUniform1i("u_reflectInputs", ctx.sceneRender.hasReflectInputs() ? 1 : 0);
         ctx.sceneRender.bindTexture(Attachment::Color,         Post::SCENE_COLOR);
         ctx.sceneRender.bindTexture(Attachment::Depth,         Post::SCENE_DEPTH);

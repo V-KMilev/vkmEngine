@@ -305,6 +305,7 @@ shaders/
   irradiance/   # surfels/, relight/, fill/, surfel.glsl  (the SH probe grid: capture, light, repair)
   resolve/      # geometry/, color/  (the MSAA resolves)
   cull/         # pyramid/, instances/  (the GPU occlusion cull)
+  exposure/     # histogram/, bins.glsl  (auto-exposure)
   ocean/        # ripples and shore fields
   gtao/  screen_shadow/  cluster/  fog/  reflection/
   bloom/  dof/  decal/  particle/
