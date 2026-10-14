@@ -7,18 +7,21 @@
  * Either alone misses a post standing on a seabed, or one under a roof; together they see both.
  * What says nothing holds u_nothing.
  */
+
+#include "../../ocean.glsl"
+
 in vec3 vWorld;
 
 layout(binding = 0) uniform sampler2D u_water;  // ocean/shore_water: its height above its rest
 uniform float u_level;    // where the ocean's water rests
-uniform vec4  u_area;     // the shore's square: xy its corner on the XZ plane (least X, most Z), z its edge
+uniform vec4  u_area;     // the shore's square (shoreUV)
 uniform int   u_drawOver;    // 1 for the draw over the water, 0 for the one under it
 uniform float u_nothing;  // metres that say nothing breaks the water here
 
 layout(location = 0) out float outUnder;  // metres under the water
 
 void main() {
-    const vec2  uv    = vec2(vWorld.x - u_area.x, u_area.y - vWorld.z) / u_area.z;
+    const vec2  uv    = shoreUV(vWorld.xz, u_area);
     const float water = u_level + texture(u_water, uv).r;
     if (u_drawOver == 1) {
         if (vWorld.y < water) discard;

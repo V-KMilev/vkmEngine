@@ -1,5 +1,5 @@
 /*
- * Per-pixel noise, apart from the sampling helpers' constants.
+ * Per-pixel noise.
  */
 
 // Interleaved gradient noise (Jimenez 2014), in 0..1: neighbours differ as much

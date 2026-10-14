@@ -443,7 +443,7 @@ Shadow rendering goes through `GLShadowPass`, which:
 
   How wide a penumbra can be is derived, not set. A disk wider than `SOFT_REACH`
   (5.5) texels - the most 64 taps cover at that spacing - would spread its taps
-  into dots, so the sun's path (`sampleCSMSoft`) runs its search and its filter
+  into dots, so the sun's path (`sampleCSMSoftFrom`) runs its search and its filter
   each in the finest cascade that holds the point and fits the disk in that many
   texels: a penumbra too wide for the point's own cascade is drawn from a
   coarser one, whose texels are about the fourth root of `shadowDistance` times

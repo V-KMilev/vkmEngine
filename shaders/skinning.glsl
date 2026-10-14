@@ -1,7 +1,7 @@
 /*
- * Linear-blend skinning. The rig binding is a second vertex buffer (see GLMesh
- * and animation.md, "The GPU path"). Indices are 16-bit, so no 255-bone ceiling;
- * weights are unorm8 cooked to sum to exactly 255, so no stage renormalises.
+ * Linear-blend skinning. The rig binding is a second vertex buffer (see GLMesh and animation.md,
+ * "The GPU path"). Indices are 16-bit; weights are unorm8 cooked to sum to exactly 255, so no
+ * stage renormalises.
  *
  * The including stage declares aPos first.
  */
@@ -18,8 +18,6 @@ mat4 skinMatrix(uint base) {
 }
 
 /*
- * Returns the position, not the matrix, so the prepass and forward programs
- * compute gl_Position from one expression (see GLForwardPass).
  * `model` is the rig's world placement: skinned vertices are in rig-root space
  * (see importModelIntoScene).
  */

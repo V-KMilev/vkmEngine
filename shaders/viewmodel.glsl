@@ -6,10 +6,9 @@
  * instancing.glsl and camera.glsl first. The prepass and the forward pass both project by
  * eyeClip, whose answers must agree to the bit under GLDepth::EYE_TEST_EQUAL.
  */
-layout(std430, binding = SSBO_INSTANCE_FLAGS) readonly buffer InstanceFlags { uint b_flags[]; };
 
 bool instanceIsViewmodel() {
-    return (b_flags[aInstance] & INSTANCE_FLAG_VIEWMODEL) != 0u;
+    return objectIsViewmodel(aInstance);
 }
 
 vec4 eyeClip(vec4 worldPos) {

@@ -1,7 +1,7 @@
 /**
  * The ocean's ripple fields, finished (GLOceanFields): a column of ocean/ripples' rows transformed
  * along Z into the surface over one repeat. A texel holds the slopes in x and z, the squeeze, and
- * the slope squared, which mip-maps to the mean square a pixel's footprint spans (ocean.glsl,
+ * the slope squared, which mip-maps to the mean square a pixel's footprint spans (ocean_water.glsl,
  * oceanShadeAt).
  */
 layout(local_size_x = GROUP_OCEAN_FFT) in;

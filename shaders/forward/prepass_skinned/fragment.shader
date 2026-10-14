@@ -1,3 +1,2 @@
-// Identical to the static prepass: the G-buffer write does not know or care how
-// the vertex got where it is.
+// Skinning differs only in the vertex stage.
 #include "../prepass/fragment.shader"

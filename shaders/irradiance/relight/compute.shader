@@ -24,8 +24,7 @@ layout(local_size_x = 256) in;
 
 #include "../../constants.glsl"
 #include "../../sh_l1.glsl"  // SH_Y0/SH_Y1: the projection <-> evaluation contract
-#include "../../lights.glsl"
-#include "../../ltc.glsl"
+#include "../../area_light.glsl"
 #include "../../shadows.glsl"
 #include "../../ambient.glsl"  // the sky's irradiance and the volume, as the forward pass reads them
 #include "../surfel.glsl"
@@ -52,7 +51,7 @@ uniform int  u_tilesPerRow;     // probe tiles along the atlas's width, six face
 uniform mat3 u_faceToWorld[6];  // a face's view frame: (x, y, -1) through it, in world space
 
 const float BACKFACE_LIMIT = 0.25;  // sphere fraction facing away that means "inside geometry"
-const uint  GROUP          = 256u;
+const uint  GROUP          = gl_WorkGroupSize.x;
 
 // The solid angle a face's square from the centre to (x, y) subtends, in face units of -1..1.
 float cornerArea(float x, float y) {
@@ -65,18 +64,7 @@ vec3 lightIrradiance(uint i, vec3 p, vec3 n) {
     int   type  = int(light.position.w);
     vec3  color = light.color.xyz * light.color.w;
 
-    // Area lights: intensity is point-equivalent, so radiance is intensity / area.
-    if (type == LIGHT_RECT || type == LIGHT_DISK) {
-        vec3  U      = light.axisU.xyz;
-        vec3  V      = light.axisV.xyz;
-        float facing = dot(p - light.position.xyz, cross(U, V));
-        if (facing <= 0.0 && light.axisU.w <= 0.5) return vec3(0.0);
-        float window = distanceWindow(length(light.position.xyz - p), light.direction.w);
-        if (window <= 0.0) return vec3(0.0);
-        float area;
-        float formFactor = areaFormFactor(type, light.position.xyz, U, V, p, n, facing, area);
-        return color * window * formFactor / max(area, 1e-4) * PI;
-    }
+    if (type == LIGHT_RECT || type == LIGHT_DISK) return color * areaDiffuse(light, type, p, n) * PI;
 
     vec3  L;
     float atten = punctualAttenuation(light, type, p, L);
@@ -114,7 +102,7 @@ vec3 indirectIrradiance(vec3 p, vec3 n) {
     const vec3 lookup = irradianceVolumeLookup(p, n);
     if (irradianceVolumeWeight(lookup) > 0.0) {
         if (u_hasIrradianceVolume == 0) return vec3(0.0);
-        return sampleIrradianceVolume(lookup, n) / PI * u_ivIntensity;
+        return irradianceVolumeAt(lookup, n);
     }
     return u_hasIBL == 1 ? textureLod(u_irradiance, n, 0.0).rgb : vec3(FLAT_AMBIENT);
 }

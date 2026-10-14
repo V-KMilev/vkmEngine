@@ -8,13 +8,13 @@ layout(local_size_x = GROUP_IMAGE, local_size_y = GROUP_IMAGE) in;
 #include "../../ocean.glsl"
 
 layout(binding = 0, r16f) uniform writeonly image2D u_water;
-uniform vec4 u_area;  // the shore's square: xy its corner on the XZ plane (least X, most Z), z its edge
+uniform vec4 u_area;  // the shore's square (shoreUV)
 
 void main() {
     const ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
     const ivec2 size  = imageSize(u_water);
     if (texel.x >= size.x || texel.y >= size.y) return;
     const vec2 uv = (vec2(texel) + 0.5) / vec2(size);
-    const vec2 at = vec2(u_area.x + uv.x * u_area.z, u_area.y - uv.y * u_area.z);
+    const vec2 at = shorePoint(uv, u_area);
     imageStore(u_water, texel, vec4(oceanHeightAt(at)));
 }

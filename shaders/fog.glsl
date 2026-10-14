@@ -39,7 +39,7 @@ vec4 localFogAt(vec2 uv, float viewDepth) {
     vec4 near1 = texture(u_fog, vec3(at1.x, at0.y, w));
     vec4 far0  = texture(u_fog, vec3(at0.x, at1.y, w));
     vec4 far1  = texture(u_fog, vec3(at1.x, at1.y, w));
-    return g0.y * (g0.x * near0 + g1.x * near1) + g1.y * (g0.x * far0 + g1.x * far1);
+    return bsplineCombine(g0, g1, near0, near1, far0, far1);
 }
 
 // The sky's air to the same point: its light (rgb) and mean transmittance (a).

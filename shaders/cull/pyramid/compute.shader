@@ -9,7 +9,7 @@
 
 layout(local_size_x = GROUP_IMAGE, local_size_y = GROUP_IMAGE) in;
 
-#include "../../depth.glsl"  // NEAR_DEPTH, fartherDepth
+#include "../../depth.glsl"  // fartherDepth
 
 layout(binding = CULL_SLOT_DEPTH)    uniform sampler2D   u_depth;
 layout(binding = CULL_SLOT_DEPTH_MS) uniform sampler2DMS u_depthMS;
@@ -22,11 +22,11 @@ uniform int u_samples;  // the scene depth's samples; 1 reads u_depth
 
 float farthestOfPixel(ivec2 pixel) {
     if (u_samples <= 1) return texelFetch(u_depth, pixel, 0).r;
-    float far = NEAR_DEPTH;
+    float farthest = NEAR_DEPTH;
     for (int s = 0; s < u_samples; ++s) {
-        far = fartherDepth(far, texelFetch(u_depthMS, pixel, s).r);
+        farthest = fartherDepth(farthest, texelFetch(u_depthMS, pixel, s).r);
     }
-    return far;
+    return farthest;
 }
 
 void main() {
@@ -34,13 +34,13 @@ void main() {
     const ivec2 size  = imageSize(u_out);
     if (any(greaterThanEqual(texel, size))) return;
 
-    float far = NEAR_DEPTH;
+    float farthest = NEAR_DEPTH;
     if (u_level == 0) {
         const ivec2 scene = u_samples <= 1 ? textureSize(u_depth, 0) : textureSize(u_depthMS);
         const ivec2 last  = min(texel * 2 + 1, scene - 1);
         for (int y = texel.y * 2; y <= last.y; ++y) {
             for (int x = texel.x * 2; x <= last.x; ++x) {
-                far = fartherDepth(far, farthestOfPixel(ivec2(x, y)));
+                farthest = fartherDepth(farthest, farthestOfPixel(ivec2(x, y)));
             }
         }
     } else {
@@ -51,9 +51,9 @@ void main() {
         for (int y = texel.y * 2; y <= last.y; ++y) {
             for (int x = texel.x * 2; x <= last.x; ++x) {
                 const float depth = texelFetch(u_pyramid, min(ivec2(x, y), below - 1), u_level - 1).r;
-                far = fartherDepth(far, depth);
+                farthest = fartherDepth(farthest, depth);
             }
         }
     }
-    imageStore(u_out, texel, vec4(far));
+    imageStore(u_out, texel, vec4(farthest));
 }

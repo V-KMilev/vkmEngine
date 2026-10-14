@@ -39,7 +39,7 @@ const float SURFACE_BIAS = 0.3;  // of the smallest cell side
 // (DDGI's surface bias).
 vec3 irradianceVolumeLookup(vec3 worldPos, vec3 Ng) {
     vec3 cell = u_ivSize / vec3(textureSize(u_shVolume0, 0));
-    return worldPos + Ng * (0.3 * min(cell.x, min(cell.y, cell.z)));
+    return worldPos + Ng * (SURFACE_BIAS * min(cell.x, min(cell.y, cell.z)));
 }
 
 // Irradiance for normal @p n: the stored coefficients are radiance, so this
@@ -62,4 +62,17 @@ vec3 sampleIrradianceVolume(vec3 worldPos, vec3 n) {
     float fz    = dot(axis, n);
     E += SH_A2 * zh3 * (SH_Y20 * (3.0 * fz * fz - 1.0));
     return max(E, vec3(0.0));
+}
+
+// The volume's irradiance over PI at @p worldPos around @p n, at its intensity.
+vec3 irradianceVolumeAt(vec3 worldPos, vec3 n) {
+    return sampleIrradianceVolume(worldPos, n) / PI * u_ivIntensity;
+}
+
+// @p irradiance with the volume blended over it where it covers @p worldPos, read around @p n and
+// scaled by @p scale as @p irradiance already is.
+vec3 blendIrradianceVolume(vec3 irradiance, vec3 worldPos, vec3 n, float scale) {
+    const float w = irradianceVolumeWeight(worldPos);
+    if (w <= 0.0) return irradiance;
+    return mix(irradiance, irradianceVolumeAt(worldPos, n) * scale, w);
 }

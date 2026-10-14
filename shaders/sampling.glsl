@@ -3,6 +3,7 @@
  */
 
 #include "constants.glsl"
+#include "basis.glsl"
 
 float radicalInverseVdC(uint bits) {
     bits = (bits << 16u) | (bits >> 16u);
@@ -26,8 +27,14 @@ vec3 importanceSampleGGX(vec2 xi, vec3 N, float roughness) {
 
     vec3 h = vec3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
 
-    vec3 up        = abs(N.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
-    vec3 tangent   = normalize(cross(up, N));
-    vec3 bitangent = cross(N, tangent);
+    vec3 tangent, bitangent;
+    basisAcross(N, tangent, bitangent);
     return normalize(tangent * h.x + bitangent * h.y + N * h.z);
+}
+
+// The level of a cube @p envRes texels a face that a sample covering @p saSample steradians reads,
+// so a low pdf reads a coarser mip (Karis's prefiltered importance sampling).
+float cubeMipForSolidAngle(float saSample, float envRes) {
+    const float saTexel = 4.0 * PI / (6.0 * envRes * envRes);
+    return max(0.5 * log2(saSample / saTexel), 0.0);
 }

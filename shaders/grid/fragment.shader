@@ -49,11 +49,6 @@ float axisCoverage(float distPx) {
     return 1.0 - clamp(distPx / (AXIS_WIDTH * 0.5) - 0.5, 0.0, 1.0);
 }
 
-// Linear view depth of a world point.
-float viewDepth(vec3 p) {
-    return -(u_camera.view * vec4(p, 1.0)).z;
-}
-
 // World units across one pixel at view depth `depth`.
 float worldPerPixel(float depth) {
     float scale = cameraIsPerspective() ? depth : 1.0;
@@ -80,7 +75,7 @@ vec4 plane(int n, vec3 origin, vec3 dir, float sceneView, out float depth) {
     ivec2 ij = planeAxes(n);
     vec2  c = vec2(p[ij.x], p[ij.y]);
     vec2  perPixel = fwidth(c);
-    depth = viewDepth(p);
+    depth = viewDepthOf(p);
 
     // The level: world units across MIN_CELL_PX pixels, as a power of ten no finer than a
     // metre, and how far past it this pixel is - the share by which the finer level has faded.
@@ -117,7 +112,7 @@ vec4 axis(int a, vec3 origin, vec3 dir, float sceneView, out float depth) {
 
     vec3 onAxis = vec3(0.0);
     onAxis[a] = h;
-    depth = viewDepth(onAxis);
+    depth = viewDepthOf(onAxis);
     // A ray aimed away from the axis meets it nearest behind the camera, at no pixel.
     if (s <= 0.0 || depth <= 0.0 || depth > sceneView * (1.0 + DEPTH_SLACK)) return vec4(0.0);
 

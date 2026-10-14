@@ -8,15 +8,10 @@
  * a lobe, and the edge of found rays a fade, with no temporal filter.
  */
 
-#include "../../depth.glsl"
-#include "../../camera.glsl"
-#include "../../normal_codec.glsl"
-
 out vec4 FragColor;
 
-layout(binding = POST_SLOT_SCENE_COLOR)   uniform sampler2D u_scene;
+layout(binding = POST_SLOT_SCENE_COLOR)   uniform sampler2D u_sceneColor;
 layout(binding = POST_SLOT_SCENE_DEPTH)   uniform sampler2D u_sceneDepth;
-layout(binding = POST_SLOT_SCENE_GBUFFER) uniform sampler2D u_sceneGBuffer;
 layout(binding = REFLECT_SLOT_WEIGHT)     uniform sampler2D u_weight;
 layout(binding = REFLECT_SLOT_ENV)        uniform sampler2D u_env;
 layout(binding = REFLECT_SLOT_TRACE)      uniform sampler2D u_hits;
@@ -30,7 +25,7 @@ uniform int   u_traceStep;  // pixels a hit stands for on each axis: 1, or 2 at 
 
 void main() {
     const ivec2 texel = ivec2(gl_FragCoord.xy);
-    const vec4  scene = texelFetch(u_scene, texel, 0);
+    const vec4  scene = texelFetch(u_sceneColor, texel, 0);
     FragColor = scene;
 
     const vec4  weight    = texelFetch(u_weight, texel, 0);

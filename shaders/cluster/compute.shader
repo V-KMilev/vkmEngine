@@ -17,20 +17,6 @@ layout(local_size_x = GROUP_CLUSTERS) in;
 
 #include "../camera.glsl"
 
-// Screen pixel -> a point on the near plane in view space (a ray from the eye).
-vec3 screenToView(vec2 px) {
-    vec2 ndc  = px / u_camera.viewport * 2.0 - 1.0;
-    vec4 clip = vec4(ndc, NEAR_DEPTH, 1.0);
-    vec4 view = u_camera.invProjection * clip;
-    return view.xyz / view.w;
-}
-
-// Point on the eye ray through @p dir at view-space depth @p z (negative). An
-// orthographic ray runs straight down -Z from its near-plane point.
-vec3 zPlaneIntersect(vec3 dir, float z) {
-    return cameraIsPerspective() ? dir * (z / dir.z) : vec3(dir.xy, z);
-}
-
 float sqDistPointAABB(vec3 p, vec3 mn, vec3 mx) {
     vec3 d = max(max(mn - p, p - mx), vec3(0.0));
     return dot(d, d);
@@ -57,20 +43,20 @@ void main() {
     uint z = ci / uint(CLUSTER_X * CLUSTER_Y);
 
     // Screen-tile corner rays (view space, from the eye).
-    vec2 tileSize = u_camera.viewport / vec2(CLUSTER_X, CLUSTER_Y);
-    vec3 minRay = screenToView(vec2(x,      y)      * tileSize);
-    vec3 maxRay = screenToView(vec2(x + 1u, y + 1u) * tileSize);
+    vec2 tile   = 1.0 / vec2(CLUSTER_X, CLUSTER_Y);  // in screen fractions
+    vec3 minRay = nearPlaneAt(vec2(x,      y)      * tile);
+    vec3 maxRay = nearPlaneAt(vec2(x + 1u, y + 1u) * tile);
 
-    // Exponential depth slice: view-space near/far Z of this slice (negative).
-    float zNearV = -sliceToViewDepth(float(z),      u_camera.zNear, u_camera.zFar, float(CLUSTER_Z));
-    float zFarV  = -sliceToViewDepth(float(z + 1u), u_camera.zNear, u_camera.zFar, float(CLUSTER_Z));
+    // Exponential depth slice: the view depths of this slice's near and far planes.
+    float sliceNear = sliceToViewDepth(float(z),      u_camera.zNear, u_camera.zFar, float(CLUSTER_Z));
+    float sliceFar  = sliceToViewDepth(float(z + 1u), u_camera.zNear, u_camera.zFar, float(CLUSTER_Z));
 
     // AABB over the tile's two opposite corner rays at the slice's near + far
     // planes; on a plane of constant depth the other two corners lie between them.
-    vec3 p0 = zPlaneIntersect(minRay, zNearV);
-    vec3 p1 = zPlaneIntersect(minRay, zFarV);
-    vec3 p2 = zPlaneIntersect(maxRay, zNearV);
-    vec3 p3 = zPlaneIntersect(maxRay, zFarV);
+    vec3 p0 = viewPointOnRay(minRay, sliceNear);
+    vec3 p1 = viewPointOnRay(minRay, sliceFar);
+    vec3 p2 = viewPointOnRay(maxRay, sliceNear);
+    vec3 p3 = viewPointOnRay(maxRay, sliceFar);
     vec3 mn = min(min(p0, p1), min(p2, p3));
     vec3 mx = max(max(p0, p1), max(p2, p3));
 

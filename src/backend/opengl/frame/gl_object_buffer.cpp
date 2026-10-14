@@ -13,7 +13,7 @@
 
 namespace Vkm::Engine {
 
-static_assert(sizeof(Math::AABB) == 6 * sizeof(float), "the occlusion cull reads a box as six floats");
+static_assert(sizeof(Math::AABB) == 6 * sizeof(float), "shaders/objects.glsl reads a box as six floats");
 
 GLObjectBuffer::GLObjectBuffer()  = default;
 GLObjectBuffer::~GLObjectBuffer() = default;

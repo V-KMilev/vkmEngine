@@ -8,6 +8,14 @@
 
 #include "color.glsl"
 
+// The brightest a texel of the scene enters a chain at, so one glint cannot smear every level below.
+const float MAX_RADIANCE = 64.0;
+
+// A scene texel as it enters a chain: NaN-free, and capped.
+vec3 chainEntry(vec3 c) {
+    return any(isnan(c)) ? vec3(0.0) : min(c, vec3(MAX_RADIANCE));
+}
+
 struct DownsampleGroups {
     vec3 g[5];
 };

@@ -40,7 +40,8 @@ constexpr float SHORE_AHEAD = 0.3f;
 // metres and more (Ocean::minWavelength), whose shortest stand a few centimetres high.
 constexpr int   SHORE_WATER = 128;
 // How far round a point the distance transform looks, in waterline widths, at most SHORE_MOST
-// texels: the foam keeps inside it, whatever the waves and suds ask (ocean.glsl, oceanWaterline).
+// texels: the foam keeps inside it, whatever the waves and suds ask (ocean_water.glsl,
+// oceanWaterline).
 constexpr float SHORE_REACH = 2.0f;
 constexpr int   SHORE_MOST  = 32;
 // What the shore holds where nothing lies under the water: far past any reach.

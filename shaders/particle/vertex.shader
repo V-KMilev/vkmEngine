@@ -10,8 +10,8 @@
  * here, its colour an albedo: as a diffuse card facing each light, through the light's shadow,
  * plus the environment's mean radiance, since a puff has no normal of its own. An additive one
  * emits, so its colour is its radiance. It is lit at its centre - a streak's middle - each corner
- * taking the same light: a corner lies off the puff, past a wall or in a lamp's reach the puff is not, and
- * turns with the view. A puff wider than a shadow's edge takes the light at its middle.
+ * taking the same light: a corner lies off the puff, past a wall or in a lamp's reach the puff is not,
+ * and turns with the view.
  */
 struct Particle {
     vec4 positionSize;  // xyz = world position, w = half the billboard's width
@@ -28,7 +28,7 @@ layout(std430, binding = SSBO_PARTICLES) readonly buffer ParticleBlock {
 
 #include "../camera.glsl"
 #include "../constants.glsl"
-#include "../lights.glsl"
+#include "../area_light.glsl"
 #include "../shadows.glsl"
 #include "../ambient.glsl"
 
@@ -59,10 +59,8 @@ vec3 scatteredLight(vec3 p) {
     vec3 radiance = meanAmbient(p);
 
     // Its cluster is where it is in the world, whichever projection draws it.
-    vec4  seen  = u_camera.viewProjection * vec4(p, 1.0);
-    vec2  uv    = seen.xy / max(seen.w, 1e-4) * 0.5 + 0.5;
-    float depth = max(-(u_camera.view * vec4(p, 1.0)).z, u_camera.zNear);
-    int   ci    = clusterIndex(uv, depth, u_camera.zNear, u_camera.zFar);
+    float depth = max(viewDepthOf(p), u_camera.zNear);
+    int   ci    = clusterIndex(screenUvOf(p), depth, u_camera.zNear, u_camera.zFar);
 
     uint count = u_clusters.clusters[ci].count;
     for (uint k = 0u; k < count; ++k) {
@@ -73,13 +71,13 @@ vec3 scatteredLight(vec3 p) {
         // An area light as the small source it is from far enough: its point-equivalent intensity
         // over the squared distance, by how squarely its face turns to the particle.
         if (type == LIGHT_RECT || type == LIGHT_DISK) {
+            float side, window;
+            if (!areaReaches(light, p, side, window)) continue;
             vec3  toParticle = p - light.position.xyz;
             float dist       = length(toParticle);
-            float window     = distanceWindow(dist, light.direction.w);
-            vec3  face       = normalize(cross(light.axisU.xyz, light.axisV.xyz));
-            float facing     = dot(toParticle / max(dist, 1e-4), face);
-            if (light.axisU.w > 0.5) facing = abs(facing);
-            radiance += lightCol * window * max(facing, 0.0) / max(dist * dist, 1e-4) / PI;
+            vec3  face       = areaPlaneNormal(light.axisU.xyz, light.axisV.xyz);
+            float facing     = abs(dot(toParticle / max(dist, 1e-4), face));
+            radiance += lightCol * window * facing / max(dist * dist, 1e-4) / PI;
             continue;
         }
 

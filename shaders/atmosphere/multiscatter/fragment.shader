@@ -35,8 +35,8 @@ void main() {
             float sinPhi = sqrt(max(1.0 - cosPhi * cosPhi, 0.0));
             vec3  dir    = vec3(cos(theta) * sinPhi, cosPhi, sin(theta) * sinPhi);
 
-            float ground = distanceToGround(origin, dir);
-            float tMax   = ground >= 0.0 ? ground : raySphere(origin, dir, ATMOSPHERE_TOP_RADIUS).y;
+            float ground;
+            float tMax   = airPathLength(origin, dir, ground);
             float dt     = max(tMax, 0.0) / float(STEPS);
 
             vec3 throughput = vec3(1.0);
@@ -50,18 +50,13 @@ void main() {
                 // The step's transmittance integrated over its length, as the medium is constant in it.
                 vec3  along      = throughput * (1.0 - stepT) / extinction;
 
-                vec3 sun = distanceToGround(p, sunDir) >= 0.0
-                    ? vec3(0.0)
-                    : transmittanceToTop(u_transmittance, r, dot(p, sunDir) / r);
+                vec3 sun = sunlightAt(u_transmittance, p, sunDir, r, dot(p, sunDir) / r);
                 secondOrder += along * scattering * ISOTROPIC * sun;
                 transfer    += along * scattering;
                 throughput  *= stepT;
             }
             if (ground >= 0.0) {
-                vec3  up     = normalize(origin + dir * ground);
-                float cosSun = dot(up, sunDir);
-                vec3  sun    = transmittanceToTop(u_transmittance, ATMOSPHERE_PLANET_RADIUS, cosSun);
-                secondOrder += throughput * sun * max(cosSun, 0.0) * ATMOSPHERE_GROUND_ALBEDO / PI;
+                secondOrder += throughput * groundRadiance(u_transmittance, origin, dir, ground, sunDir);
             }
         }
     }

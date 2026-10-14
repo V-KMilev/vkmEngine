@@ -122,6 +122,28 @@ vec3 multipleScattering(sampler2D lut, float r, float muSun) {
     return textureLod(lut, lutUv(clamp(unit, 0.0, 1.0), MULTISCATTERING_LUT_SIZE), 0.0).rgb;
 }
 
+// How far a ray from @p origin along @p dir runs through the air: to the ground, which
+// @p ground says it meets there (negative when it misses), else to the top of the air.
+float airPathLength(vec3 origin, vec3 dir, out float ground) {
+    ground = distanceToGround(origin, dir);
+    return ground >= 0.0 ? ground : raySphere(origin, dir, ATMOSPHERE_TOP_RADIUS).y;
+}
+
+// The sun's light reaching @p p, @p r from the planet's centre with the sun @p muSun from its
+// zenith, per unit of its illuminance above the air: none where the planet hides it.
+vec3 sunlightAt(sampler2D transmittanceLut, vec3 p, vec3 sunDir, float r, float muSun) {
+    return distanceToGround(p, sunDir) >= 0.0 ? vec3(0.0) : transmittanceToTop(transmittanceLut, r, muSun);
+}
+
+// The light the ground sends back up a ray from @p origin along @p dir that meets it @p ground
+// along: diffuse at ATMOSPHERE_GROUND_ALBEDO in the sunlight reaching it.
+vec3 groundRadiance(sampler2D transmittanceLut, vec3 origin, vec3 dir, float ground, vec3 sunDir) {
+    vec3  up     = normalize(origin + dir * ground);
+    float cosSun = dot(up, sunDir);
+    vec3  sun    = transmittanceToTop(transmittanceLut, ATMOSPHERE_PLANET_RADIUS, cosSun);
+    return sun * max(cosSun, 0.0) * ATMOSPHERE_GROUND_ALBEDO / PI;
+}
+
 /**
  * The air's light toward @p origin along @p dir, out to @p tMax, per unit of the sun's
  * illuminance above the air: Rayleigh and Mie single scattering of the sunlight the
@@ -166,9 +188,7 @@ vec3 integrateAir(
         vec3  mie        = u_mieScattering * density.y;
         vec3  extinction = max(airExtinction(density), vec3(1e-30));
 
-        vec3 sun = distanceToGround(p, sunDir) >= 0.0
-            ? vec3(0.0)
-            : transmittanceToTop(transmittanceLut, r, muSun);
+        vec3 sun = sunlightAt(transmittanceLut, p, sunDir, r, muSun);
         vec3 scattered = sun * (rayleigh * phaseR + mie * phaseM)
             + multipleScattering(multiScatteringLut, r, muSun) * (rayleigh + mie);
 
@@ -191,8 +211,8 @@ const int SKY_STEPS = 32;
  */
 vec3 skyRadiance(sampler2D transmittanceLut, sampler2D multiScatteringLut, vec3 dir, vec3 sunDir) {
     vec3  origin = ATMOSPHERE_EYE;
-    float ground = distanceToGround(origin, dir);
-    float tMax   = ground >= 0.0 ? ground : raySphere(origin, dir, ATMOSPHERE_TOP_RADIUS).y;
+    float ground;
+    float tMax   = airPathLength(origin, dir, ground);
 
     vec3 throughput;
     vec3 radiance = integrateAir(
@@ -207,12 +227,7 @@ vec3 skyRadiance(sampler2D transmittanceLut, sampler2D multiScatteringLut, vec3 
         throughput
     );
 
-    if (ground >= 0.0) {
-        vec3  up     = normalize(origin + dir * ground);
-        float cosSun = dot(up, sunDir);
-        vec3  sun    = transmittanceToTop(transmittanceLut, ATMOSPHERE_PLANET_RADIUS, cosSun);
-        radiance += throughput * sun * max(cosSun, 0.0) * ATMOSPHERE_GROUND_ALBEDO / PI;
-    }
+    if (ground >= 0.0) radiance += throughput * groundRadiance(transmittanceLut, origin, dir, ground, sunDir);
     return radiance;
 }
 
