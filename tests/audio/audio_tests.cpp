@@ -442,8 +442,11 @@ void testAVoiceIsHeldAtItsCursorRatherThanRestarted() {
     device.close();
 }
 
-void testTheVoiceBudgetRefusesRatherThanSteals() {
-    std::printf("A game firing a sound every frame:\n");
+// At the cap a new sound takes the place of a voice it outranks - of a lower priority, or of its
+// own and quieter - so the music keeps playing and a gunshot is heard, and a sound a pause holds
+// is kept for its resume.
+void testTheVoiceBudgetMakesRoomByPriority() {
+    std::printf("A mix past its voice budget:\n");
 
     const AudioClipAsset tone = makeTone(1, 4.0f);
 
@@ -451,33 +454,61 @@ void testTheVoiceBudgetRefusesRatherThanSteals() {
     device.openOffline(RATE, CHANNELS);
     placeEar(device);
 
-    VoiceParams flat;
-    flat.spatial = false;
+    VoiceParams loud;
+    loud.spatial = false;
+    VoiceParams music = loud;
+    music.priority    = 10;
+    VoiceParams quiet = loud;
+    quiet.volume      = 0.1f;
+    VoiceParams held  = loud;
+    held.volume       = 0.05f;
+    VoiceParams minor = loud;
+    minor.priority    = -5;
 
-    // The first voice is the one a game would care about - a music bed, say.
-    const VoiceId music = device.play(tone, flat);
-    check("the first sound plays", music != 0);
+    const VoiceId bed     = device.play(tone, music);
+    const VoiceId paused  = device.play(tone, held);
+    const VoiceId softest = device.play(tone, quiet);
+    const VoiceId lesser  = device.play(tone, minor);
+    device.pauseVoice(paused);
+    for (size_t i = 4; i < MAX_ACTIVE_VOICES; ++i) device.play(tone, loud);
+    check("the mix fills to its budget", device.voiceCount() == MAX_ACTIVE_VOICES);
 
-    size_t started = 1;
-    VoiceId last = music;
-    for (size_t i = 1; i < MAX_ACTIVE_VOICES + 8; ++i) {
-        const VoiceId id = device.play(tone, flat);
-        if (id != 0) {
-            ++started;
-            last = id;
-        }
-    }
-
-    check("the mixer takes exactly its budget", started == MAX_ACTIVE_VOICES);
-    check("  and holds that many", device.voiceCount() == MAX_ACTIVE_VOICES);
-    check("a sound past it is refused rather than made room for", device.play(tone, flat) == 0);
-
-    // The point of refusing: the oldest voice is as likely the music as the newest a
-    // footstep.
-    check("and the first sound is still playing", device.isVoiceActive(music));
-    check("  as is the last one that fit", device.isVoiceActive(last));
-
+    const VoiceId shot = device.play(tone, loud);
+    check("a new sound past it is heard", shot != 0 && device.isVoiceActive(shot));
+    check("  in place of a lower priority, however loud", !device.isVoiceActive(lesser));
+    const VoiceId next = device.play(tone, loud);
+    check("  then of the quietest of its own", next != 0 && !device.isVoiceActive(softest));
+    check("  never of the one a pause holds, quieter still", device.isVoicePaused(paused));
+    check("  nor of the music, which matters more", device.isVoiceActive(bed));
+    check("a sound no louder than its equals cuts none of them", device.play(tone, loud) == 0);
+    check("  nor does one that matters less than every voice", device.play(tone, minor) == 0);
     device.close();
+
+    // Positioned: what is far off is quieter, so it gives way first.
+    AudioDevice spatial;
+    spatial.openOffline(RATE, CHANNELS);
+    placeEar(spatial);
+    VoiceParams nearby;
+    nearby.position = {0.0f, 0.0f, -2.0f};
+    VoiceParams distant = nearby;
+    distant.position    = {0.0f, 0.0f, -40.0f};
+    const VoiceId away = spatial.play(tone, distant);
+    for (size_t i = 1; i < MAX_ACTIVE_VOICES; ++i) spatial.play(tone, nearby);
+    const VoiceId closer = spatial.play(tone, loud);
+    check("a far voice gives way before a near one", closer != 0 && !spatial.isVoiceActive(away));
+    spatial.close();
+
+    // Nothing reaps a voice ramping out while the mixer does not run, as when the device is lost.
+    AudioDevice stalled;
+    stalled.openOffline(RATE, CHANNELS);
+    placeEar(stalled);
+    VoiceParams rising = loud;
+    for (int i = 0; i < static_cast<int>(MAX_ACTIVE_VOICES) * 3; ++i) {
+        rising.priority = i;
+        stalled.play(tone, rising);
+    }
+    check("voices ramping out never pile past a ceiling", stalled.voiceCount() <= MAX_HELD_VOICES);
+    stalled.close();
 }
 
 void testStoppingASoundDoesNotClickAndSeekingStaysInTheClip() {
@@ -809,7 +840,7 @@ void runAudioTests() {
     testOneBadGainCannotTakeTheWholeMixWithIt();
     testAPitchOfZeroDoesNotStopTheClock();
     testAVoiceIsHeldAtItsCursorRatherThanRestarted();
-    testTheVoiceBudgetRefusesRatherThanSteals();
+    testTheVoiceBudgetMakesRoomByPriority();
     testStoppingASoundDoesNotClickAndSeekingStaysInTheClip();
 
     testASourceIsOnlyStartedByTimeMoving();

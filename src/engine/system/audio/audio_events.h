@@ -13,7 +13,7 @@ namespace Vkm::Engine {
  * For when no AudioSource fits: a sound on an entity about to go, or one that must
  * overlap itself. There is no id, so it cannot be stopped or moved; `loop` is ignored.
  * A request made during Simulation is heard the same frame; at the voice ceiling it
- * is dropped.
+ * may be dropped (AudioDevice::play).
  *
  *   events().emit(PlaySoundEvent::at(m_chime, transform->position));
  */

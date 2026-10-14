@@ -19,10 +19,13 @@ using VoiceId = uint32_t;
 /**
  * @brief The most voices the mixer will hold at once.
  *
- * Well above any scene's need, so reaching it means a runaway (usually a
- * PlaySoundEvent every frame) and play() refuses rather than making room.
+ * Well above most scenes' need. At it, play() makes room or refuses (AudioDevice::play).
  */
 inline constexpr size_t MAX_ACTIVE_VOICES = 128;
+
+/// The most voices the mixer's map holds, ramping out ones too: they leave only as the mixer runs,
+/// which a lost device does not.
+inline constexpr size_t MAX_HELD_VOICES = 2 * MAX_ACTIVE_VOICES;
 
 /**
  * @brief Everything the mixer needs to know about one voice, pushed every frame.
@@ -44,6 +47,15 @@ struct VoiceParams {
     float        minDistance = 1.0f;
     float        maxDistance = 50.0f;
     AudioRolloff rolloff     = AudioRolloff::Linear;
+    /// Rank when the mixer is full; see AudioDevice::play.
+    int          priority    = 0;
+
+    /**
+     * @brief The gain as the mixer takes it.
+     *
+     * @return volume, or 0 where it is negative or not finite.
+     */
+    float heardVolume() const { return std::isfinite(volume) ? std::max(0.0f, volume) : 0.0f; }
 
     /**
      * @brief The near distance as the mixer takes it.
@@ -154,10 +166,14 @@ class AudioDevice {
         /**
          * @brief Start playing @p clip and return the voice driving it.
          *
+         * At MAX_ACTIVE_VOICES a playing voice is stopped to make room: of the lowest priority
+         * below this one's, or of its own and quieter than it as heard; the quietest of those,
+         * then the oldest. A voice held by a pause is kept.
+         *
          * @param clip Decoded clip to play; an empty one yields no voice.
-         * @param params Initial gain, pitch, looping and position.
-         * @return The new voice, or 0 if the device is closed or the sound
-         *         could not be created.
+         * @param params Initial gain, pitch, looping, position and priority.
+         * @return The new voice, or 0 if the device is closed, the sound could not be
+         *         created, or no voice at the cap gives way to it.
          */
         VoiceId play(const AudioClipAsset& clip, const VoiceParams& params);
 

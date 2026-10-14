@@ -2057,6 +2057,10 @@ void InspectorPanel::drawAudioSourceSection(EditorContext& ec, EntityId id) {
             "Starts by itself once the simulation runs. In the editor that "
             "means on Play, never while a scene is only open";
         changed |= propCheckbox("Play On Start", &source.playOnStart, playOnStartTooltip);
+        const char* priorityTooltip =
+            "When too many sounds play, the lower priority gives way. Raise it for music and voices "
+            "that must never be cut";
+        changed |= propDragInt("Priority", &source.priority, 1.0f, -100, 100, priorityTooltip);
 
         ImGui::Spacing();
         const char* spatialTooltip =

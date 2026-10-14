@@ -57,6 +57,13 @@ struct AudioSource {
 
     AudioRolloff rolloff = AudioRolloff::Linear;  ///< How it fades between the two distances.
 
+    /**
+     * @brief Which voice gives way when too many sounds play (AudioDevice::play).
+     *
+     * A source whose voice was taken reads `playing` false, as one that finished.
+     */
+    int priority = 0;
+
     bool playing = false;  ///< Session state.
     bool started = false;  ///< Whether playOnStart has been honoured; session state.
 };
@@ -75,4 +82,5 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::AudioSource)
     VKM_F(minDistance)
     VKM_F(maxDistance)
     VKM_F(rolloff)
+    VKM_F(priority)
 VKM_REFLECT_END()

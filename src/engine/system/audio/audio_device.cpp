@@ -157,15 +157,77 @@ struct AudioDevice::Backend {
         return params.spatial && params.rolloff == AudioRolloff::Inverse;
     }
 
+    /// How far @p position is from the listener.
+    float earDistance(const glm::vec3& position) const {
+        const ma_vec3f ear = ma_engine_listener_get_position(&engine, 0);
+        return glm::length(position - glm::vec3(ear.x, ear.y, ear.z));
+    }
+
     void applyGain(Voice& voice) const {
         const VoiceParams& params = voice.params;
-        float gain = std::isfinite(params.volume) ? std::max(0.0f, params.volume) : 0.0f;
-        if (rolledOffHere(params)) {
-            const ma_vec3f ear = ma_engine_listener_get_position(&engine, 0);
-            const glm::vec3 offset = params.position - glm::vec3(ear.x, ear.y, ear.z);
-            gain *= inverseRolloffGain(params, glm::length(offset));
-        }
+        float gain = params.heardVolume();
+        if (rolledOffHere(params)) gain *= inverseRolloffGain(params, earDistance(params.position));
         ma_sound_set_volume(&voice.sound, gain);
+    }
+
+    /**
+     * @brief How loud a voice of @p params reaches the ear, faded by distance as the mixer fades it.
+     *
+     * @param params The voice's.
+     * @return The gain; 0 where it is positioned with no ear, as the mixer plays it.
+     */
+    float heardGain(const VoiceParams& params) const {
+        float gain = params.heardVolume();
+        if (!params.spatial) return gain;
+        if (ma_engine_listener_is_enabled(&engine, 0) == MA_FALSE) return 0.0f;
+        if (!params.hasFar()) return gain;
+        const float distance = earDistance(params.position);
+        if (rolledOffHere(params)) {
+            gain *= inverseRolloffGain(params, distance);
+        } else {
+            const float full = params.heardMinDistance();
+            const float span = params.heardMaxDistance() - full;
+            gain *= 1.0f - std::clamp((distance - full) / span, 0.0f, 1.0f);
+        }
+        return std::isfinite(gain) ? gain : 0.0f;
+    }
+
+    /// Whether @p voice still holds its place: neither ramping out nor played to its end.
+    static bool holdsAPlace(const Voice& voice) {
+        return !voice.retiring && ma_sound_at_end(&voice.sound) == MA_FALSE;
+    }
+
+    /// Voices playing or held: what MAX_ACTIVE_VOICES counts.
+    size_t liveVoices() const {
+        size_t live = 0;
+        for (const auto& [id, voice] : voices) live += holdsAPlace(*voice) ? 1 : 0;
+        return live;
+    }
+
+    /**
+     * @brief The voice a new sound of @p params takes the place of at MAX_ACTIVE_VOICES.
+     *
+     * @param params The new sound's.
+     * @return The voice, or 0 when none qualifies; the order is AudioDevice::play's.
+     */
+    VoiceId yieldingVoice(const VoiceParams& params) const {
+        const float loudness    = heardGain(params);
+        VoiceId     weakest     = 0;
+        int         weakestRank = 0;
+        float       weakestGain = 0.0f;
+        for (const auto& [id, voice] : voices) {
+            if (!holdsAPlace(*voice) || voice->hold != Voice::Hold::None) continue;
+            const int   rank = voice->params.priority;
+            const float gain = heardGain(voice->params);
+            if (rank > params.priority || (rank == params.priority && !(gain < loudness))) continue;
+            const bool better = weakest == 0 || rank < weakestRank
+                || (rank == weakestRank && (gain < weakestGain || (gain == weakestGain && id < weakest)));
+            if (!better) continue;
+            weakest     = id;
+            weakestRank = rank;
+            weakestGain = gain;
+        }
+        return weakest;
     }
 
     void apply(Voice& voice, const VoiceParams& params) const {
@@ -399,20 +461,25 @@ uint64_t AudioDevice::render(float* frames, uint64_t frameCount) {
 VoiceId AudioDevice::play(const AudioClipAsset& clip, const VoiceParams& params) {
     if (!m_backend || clip.sampleCount() == 0 || clip.channels == 0) return 0;
 
-    // Refused, not stolen: the oldest voice may be a deliberate loop.
-    if (m_backend->voices.size() >= MAX_ACTIVE_VOICES) {
+    if (m_backend->voices.size() >= MAX_HELD_VOICES) return 0;
+
+    // Counted only when the map is full: ramping voices are in it a few milliseconds more.
+    VoiceId yielding = 0;
+    if (m_backend->voices.size() >= MAX_ACTIVE_VOICES && m_backend->liveVoices() >= MAX_ACTIVE_VOICES) {
         if (!m_voiceBudgetSpent) {
             m_voiceBudgetSpent = true;
             LOG_WARNING(
-                "Audio voice budget of %zu reached; further sounds are dropped until voices free up. "
-                "A game firing one PlaySoundEvent a frame is the usual cause.",
+                "Audio voice budget of %zu reached; the least important, quietest sounds make room "
+                "from now on. A game firing one PlaySoundEvent a frame is the usual cause.",
                 MAX_ACTIVE_VOICES
             );
         }
-        return 0;
+        yielding = m_backend->yieldingVoice(params);
+        if (yielding == 0) return 0;
+    } else {
+        // Once per saturation, not per run.
+        m_voiceBudgetSpent = false;
     }
-    // Once per saturation, not per run.
-    m_voiceBudgetSpent = false;
 
     auto voice = std::make_unique<Backend::Voice>();
     voice->samples = clip.samples;
@@ -457,6 +524,8 @@ VoiceId AudioDevice::play(const AudioClipAsset& clip, const VoiceParams& params)
         stopVoice(id);
         return 0;
     }
+    // Only once the new sound plays: one that fails to start leaves the mix as it was.
+    if (yielding != 0) stopVoice(yielding);
     return id;
 }
 
