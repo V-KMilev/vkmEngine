@@ -117,6 +117,9 @@ struct RenderSettings {
     // Screen-space reflections
     float ssrMaxRoughness = 0.6f;   ///< Rougher surfaces reflect the probes and the sky alone.
     float ssrMaxDistance  = 50.0f;  ///< World-space trace length.
+    /// A ray every two by two pixels, gathered back to each by the surfaces they lie on: the
+    /// reflected picture keeps its detail, only where a ray lands is coarser.
+    bool  ssrHalfResolution = false;
 
     // Bloom
     float bloomStrength  = 0.06f;   ///< Bloom scale, added pre-tonemap.
@@ -274,6 +277,7 @@ void visitShippedRenderFields(Settings& r, Fn&& f) {
     f("gtaoPower",         r.gtaoPower);
     f("ssrMaxRoughness",   r.ssrMaxRoughness);
     f("ssrMaxDistance",    r.ssrMaxDistance);
+    f("ssrHalfResolution", r.ssrHalfResolution);
     f("bloomStrength",     r.bloomStrength);
     f("bloomThreshold",    r.bloomThreshold);
     f("bloomKnee",         r.bloomKnee);
@@ -304,13 +308,13 @@ enum class GraphicsPreset : uint8_t {
 
 /**
  * @brief @p project's settings at @p preset's tier: the fields that cost frame time - anti-aliasing,
- *        the shadow tile, the anisotropy, the render scale - the tier's, and each screen-space effect
- *        and the soft shadows on only where both the project and the tier have them.
+ *        the shadow tile, the anisotropy, the render scale, half-resolution reflections - the
+ *        tier's, and each screen-space effect and the soft shadows on only where both the project
+ *        and the tier have them.
  *
- * What the game looks like - an effect the project turned off, the tonemap, the exposure, each
- * effect's tuning, the culling - stays the project's, and the overlays and debug view the
- * editor's. Built from the project's settings each time, so a tier chosen after a lower one
- * brings back what that one turned off.
+ * The rest - an effect the project turned off, the tonemap, the exposure, each effect's tuning,
+ * the culling, the debug view - stays @p project's. Built from the project's settings each time,
+ * so a tier chosen after a lower one brings back what that one turned off.
  *
  * @param project The project's own settings.
  * @param preset  The tier; Count, which is none, asserts, and reads as the last.
@@ -328,14 +332,14 @@ inline RenderSettings withPreset(const RenderSettings& project, GraphicsPreset p
         uint32_t anisotropy;
         bool     softShadows;
         float    renderScale;
+        bool     ssrHalf;
     };
-    // Each a measured step down (docs/reference/rendering.md, the presets): the render scale and
-    // the soft shadows are the GPU's largest levers after the screen-space effects.
+    // Low to Ultra, in GraphicsPreset order.
     static constexpr Tier TIERS[] = {
-        {1, 1024, false, false, false, false, 4,  false, 0.67f},  // Low
-        {2, 2048, true,  true,  false, true,  8,  false, 0.85f},  // Medium
-        {4, 4096, true,  true,  true,  true,  16, true,  1.0f},   // High
-        {8, 4096, true,  true,  true,  true,  16, true,  1.0f},   // Ultra
+        {1, 1024, false, false, false, false, 4,  false, 0.67f, true},   // Low
+        {2, 2048, true,  true,  false, true,  8,  false, 0.85f, true},   // Medium
+        {4, 4096, true,  true,  true,  true,  16, true,  1.0f,  true},   // High
+        {8, 4096, true,  true,  true,  true,  16, true,  1.0f,  false},  // Ultra
     };
     static_assert(std::size(TIERS) == static_cast<size_t>(GraphicsPreset::Count));
     const Tier&    tier = TIERS[std::min(static_cast<size_t>(preset), std::size(TIERS) - 1)];
@@ -349,6 +353,7 @@ inline RenderSettings withPreset(const RenderSettings& project, GraphicsPreset p
     r.textureAnisotropy = tier.anisotropy;
     r.softShadows       = project.softShadows && tier.softShadows;
     r.renderScale       = tier.renderScale;
+    r.ssrHalfResolution = tier.ssrHalf;
     return r;
 }
 

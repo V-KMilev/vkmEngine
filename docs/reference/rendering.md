@@ -122,7 +122,7 @@ view each frame.
   (`gridAxisX/Y/Z`): a line for each axis on and the plane of every two, X and Z
   the ground; it draws while any is on, `gridShown()`.
 - **Per-effect params:** GTAO (radius/intensity/power), screen-space
-  reflections (`ssrMaxRoughness`, `ssrMaxDistance`), bloom
+  reflections (`ssrMaxRoughness`, `ssrMaxDistance`, `ssrHalfResolution`), bloom
   (strength/threshold/knee/radius; the threshold and knee are as the viewer sees
   the frame, after the `exposure`, so raising it does not change what glows).
 - **Quality:** `msaaSamples` (1/2/4/8), `shadowResolution` (1024/2048/4096, the
@@ -195,7 +195,11 @@ tonemap, the exposure, each effect's tuning, the culling) stays the project's, a
 is built from the project's settings, choosing High after Low brings back what Low turned off. A
 player who then turns one setting by hand has changed that field alone. Build a tier over
 `projectRender()`, never over `render()`: a tier built over another keeps what that one turned off.
-Medium and Low render the
+High traces reflections at
+half resolution (`ssrHalfResolution`): a ray every two by two pixels, gathered back to each by the
+resolve's weights for the surface it lies on, so the reflected picture keeps its detail and only
+where a ray lands is coarser - in a game scene the Reflections pass fell from 1.6 to 0.9 ms and the
+High frame by 12%. Medium and Low render the
 scene at 85% and 67% of the viewport on each axis with soft shadows off, the two largest levers
 after the screen-space effects: measured at High on an RTX A4000, a 75% scale took stress_arena's
 GPU frame from 9.5 to 7.5 ms and physics_lab's from 4.2 to 2.9, and hard shadows took about 0.5 ms

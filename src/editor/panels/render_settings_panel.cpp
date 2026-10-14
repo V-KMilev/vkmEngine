@@ -110,7 +110,7 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
             RenderSettings::MAX_RENDER_SCALE,
             "%.2f",
             "The scene's resolution as a share of the viewport's on each axis, scaled up to it; "
-                "the UI stays sharp"
+            "the UI stays sharp"
         );
 
         // One list, two fields: past Bilinear each row is Trilinear plus an anisotropy degree.
@@ -227,7 +227,7 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
             "Soft",
             &s.softShadows,
             "Penumbras as wide as each light's source makes them; off, every shadow takes the "
-                "hard filter. The soft one is the forward pass's dearest work"
+            "hard filter. The soft one is the forward pass's dearest work"
         );
         propCheckbox(
             "Screen-Space",
@@ -262,6 +262,12 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
             500.0f,
             "%.1f",
             "World-space length a reflection ray is traced before it gives up"
+        );
+        propCheckbox(
+            "Half Resolution",
+            &s.ssrHalfResolution,
+            "A ray every two by two pixels, gathered back to each by the surfaces they lie on; "
+            "the reflected picture keeps its detail"
         );
         ImGui::EndDisabled();
         ImGui::PopID();

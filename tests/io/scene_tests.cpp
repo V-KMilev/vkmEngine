@@ -983,7 +983,7 @@ void testAGraphicsPresetSetsWhatCostsAndKeepsTheLook() {
     check(
         "  ultra has them all, at the most",
         ultra.msaaSamples == 8 && ultra.gtao && ultra.ssr && ultra.shadowResolution == 4096
-            && ultra.softShadows && ultra.renderScale == 1.0f
+            && ultra.softShadows && ultra.renderScale == 1.0f && !ultra.ssrHalfResolution
     );
     check("  each sample count one the renderer takes", RenderSettings::isMsaaSampleCount(low.msaaSamples));
     check(
@@ -996,7 +996,8 @@ void testAGraphicsPresetSetsWhatCostsAndKeepsTheLook() {
         const RenderSettings next = withPreset(RenderSettings{}, static_cast<GraphicsPreset>(tier));
         rising = rising && next.msaaSamples >= under.msaaSamples
             && next.shadowResolution >= under.shadowResolution && next.renderScale >= under.renderScale
-            && (next.softShadows || !under.softShadows);
+            && (next.softShadows || !under.softShadows)
+            && (!next.ssrHalfResolution || under.ssrHalfResolution);
         under = next;
     }
     check("  each tier at least the one under it", rising);

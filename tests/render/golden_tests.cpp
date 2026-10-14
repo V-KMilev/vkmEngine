@@ -1925,6 +1925,39 @@ void testTwoWallsACentimetreApartAKilometreOutDoNotFight(int& failures) {
     expect("the nearer wall is seen at every pixel, made first or last", farther == 0, failures);
 }
 
+// The reflections scene with a ray every two by two pixels: the resolve gathers each pixel's
+// reflection from the hits on its own surface, so the frame is close to the full-resolution
+// one, though not it.
+void testHalfResolutionReflectionsAreCloseToFull(int& failures) {
+    std::printf("Reflections traced at half resolution:\n");
+    RenderSettings full;
+    full.msaaSamples = 1;
+    RenderSettings half = full;
+    half.ssrHalfResolution = true;
+
+    restoreContextDefaults();
+    WindowManager window;
+    std::vector<unsigned char> frames[2];
+    for (int i = 0; i < 2; ++i) {
+        restoreContextDefaults();
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        buildReflections(s);
+        frames[i] = render(s, backend, nullptr, i == 0 ? full : half);
+    }
+    double sum = 0.0;
+    for (size_t at = 0; at < frames[0].size(); ++at) sum += std::abs(int(frames[0][at]) - int(frames[1][at]));
+    const double mean = sum / static_cast<double>(frames[0].size());
+    const float differing = differingShare(frames[1], frames[0].data());
+    std::printf("      %.2f levels apart on average, %.2f%% of pixels differ\n", mean, 100.0f * differing);
+    expect("they are close to the full-resolution ones", mean < 1.0 && differing < 0.02f, failures);
+    expect("  and are traced at fewer pixels, not those", mean > 0.0, failures);
+}
+
 void testTheUIOverlayLandsOnItsPixels(int& failures) {
     std::printf("The UI overlay, drawn:\n");
 
@@ -2938,6 +2971,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testSoftShadowsOffDrawTheHardPath(failures);
     testAHalfScaleSceneFillsTheFrame(failures);
     testTwoWallsACentimetreApartAKilometreOutDoNotFight(failures);
+    testHalfResolutionReflectionsAreCloseToFull(failures);
     testAViewmodelShadesNothingBehindIt(failures);
     testABackendDropsWhatTheSceneNoLongerAsksFor(failures);
     testAFrameWithNoCameraKeepsTheProbesBaked(failures);

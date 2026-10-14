@@ -31,8 +31,8 @@ GLReflectionPass::GLReflectionPass()
 
 GLReflectionPass::~GLReflectionPass() = default;
 
-void GLReflectionPass::ensureTargets(uint32_t width, uint32_t height) {
-    m_hits.resize(width, height);
+void GLReflectionPass::ensureTargets(uint32_t width, uint32_t height, uint32_t step) {
+    m_hits.resize((width + step - 1) / step, (height + step - 1) / step);
     if (m_chain.isReady() && width == m_width && height == m_height) return;
     m_width  = width;
     m_height = height;
@@ -55,7 +55,8 @@ void GLReflectionPass::execute(GLFrameContext& ctx) {
     // and an environment reflection of zero: the traced one only adds.
     if (!view.settings.ssr) return;
 
-    ensureTargets(view.sceneWidth(), view.sceneHeight());
+    const int step = view.settings.ssrHalfResolution ? 2 : 1;
+    ensureTargets(view.sceneWidth(), view.sceneHeight(), static_cast<uint32_t>(step));
     ctx.gl.setDepthTest(false);
     ctx.screenTri.bind();
 
@@ -92,6 +93,7 @@ void GLReflectionPass::execute(GLFrameContext& ctx) {
     m_trace.setUniform1f("u_maxRoughness", view.settings.ssrMaxRoughness);
     m_trace.setUniform1f("u_maxDistance",  view.settings.ssrMaxDistance);
     m_trace.setUniform1f("u_maxLod",       maxLod);
+    m_trace.setUniform1i("u_traceStep",    step);
     ctx.sceneHDR.bindTexture(GLTarget::Attachment::Depth, Post::SCENE_DEPTH);
     ctx.sceneHDR.bindTexture(GLTarget::Attachment::GBuffer, Post::SCENE_GBUFFER);
     ctx.sceneHDR.bindTexture(GLTarget::Attachment::ReflectWeight, Slots::WEIGHT);
@@ -103,6 +105,7 @@ void GLReflectionPass::execute(GLFrameContext& ctx) {
     m_resolve.bind();
     m_resolve.setUniform1f("u_maxRoughness", view.settings.ssrMaxRoughness);
     m_resolve.setUniform1f("u_maxLod",       maxLod);
+    m_resolve.setUniform1i("u_traceStep",    step);
     ctx.colorSrc->bindTexture(GLTarget::Attachment::Color, Post::SCENE_COLOR);
     ctx.sceneHDR.bindTexture(GLTarget::Attachment::ReflectEnv, Slots::ENV);
     m_hits.bindTexture(GLTarget::Attachment::Color, Slots::TRACE);
