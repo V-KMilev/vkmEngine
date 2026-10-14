@@ -9,6 +9,7 @@
 #include "ecs/scene.h"
 #include "ecs/component/ui/ui_button.h"
 #include "ecs/component/ui/ui_canvas.h"
+#include "ecs/component/ui/ui_choice.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
 #include "ecs/component/ui/ui_scroll.h"
@@ -59,8 +60,8 @@ const glm::vec4& tintOf(const Scene& scene, EntityId entity, const UIButton& but
     return onRest ? toggle->onColor : button.colorForState();
 }
 
-// A slider's fill and knob, and a toggle's knob, put where the value says before the
-// walk lays them out.
+// A slider's fill and knob, a toggle's knob and a choice's text, put where the value says before
+// the walk lays them out.
 void placeParts(Scene& scene, EntityId entity) {
     if (const UISlider* slider = scene.tryGet<UISlider>(entity)) {
         const float along = slider->fraction();
@@ -73,6 +74,31 @@ void placeParts(Scene& scene, EntityId entity) {
             knob->pivot.x  = knob->anchor.x;
         }
     }
+    if (const UIChoice* choice = scene.tryGet<UIChoice>(entity)) {
+        if (UIText* text = scene.tryGet<UIText>(choice->text)) {
+            const size_t index = static_cast<size_t>(choice->index);
+            if (choice->index < 0 || index >= choice->options.size()) text->text.clear();
+            else if (text->text != choice->options[index]) text->text = choice->options[index];
+        }
+    }
+}
+
+// Step the choice whose `back` or `next` @p button is, and say so on the bus; false for a button
+// that steps none. Every choice is looked at, which a click can afford.
+bool stepChoice(Scene& scene, EntityId button, const std::string& eventId, EventBus& events) {
+    bool stepped = false;
+    scene.forEach<UIChoice>([&](EntityId entity, UIChoice& choice) {
+        const int by = button == choice.next ? 1 : (button == choice.back ? -1 : 0);
+        if (by == 0 || choice.options.empty()) return;
+        // An index out of range steps as though from just past the end the arrow leaves.
+        const int  count   = static_cast<int>(choice.options.size());
+        const bool inRange = choice.index >= 0 && choice.index < count;
+        const int  from    = inRange ? choice.index : (by > 0 ? -1 : count);
+        choice.index       = (from + by + count) % count;
+        events.enqueue(UIValueEvent{entity, eventId, static_cast<float>(choice.index)});
+        stepped = true;
+    });
+    return stepped;
 }
 
 // A held slider's value, from where the pointer is across its button; true when it moved.
@@ -147,8 +173,8 @@ void UISystem::update(FrameContext& ctx) {
     const UIRect viewport{glm::vec2(0.0f), glm::vec2(vpW, vpH)};
     layOutCanvases(ctx, viewport);
 
-    // A toggle flipped or a slider dragged has moved its own parts, which the walk placed by
-    // the value before: laid out again, so they show the change the frame it happens.
+    // A toggle flipped, a slider dragged or a choice stepped has moved its own parts, which the
+    // walk placed by the value before: laid out again, so they show the change the frame it happens.
     if (resolveInteraction(ctx)) {
         const EntityId target = m_drawData.pointerTarget;
         m_drawData.clear();
@@ -204,6 +230,9 @@ glm::vec2 UISystem::resolveElement(
     // Clipped away is out of reach: a row scrolled out of sight takes no click.
     const bool pointerHere = m_cursorFree && clip.intersected(element.screenRect).contains(m_pointer);
 
+    // Before anything draws, so a choice that is its own text shows the option it holds now.
+    placeParts(ctx.scene, entity);
+
     const bool drewImage    = emitImage(ctx, entity, element, clip, scale);
     const bool drewButton   = emitButton(ctx, entity, element, clip, scale);
     const glm::vec2 textMax = emitText(ctx, entity, element, clip, scale);
@@ -226,8 +255,6 @@ glm::vec2 UISystem::resolveElement(
         // A scroll view always clips, so its window is the rect pointerHere tested.
         if (pointerHere) m_scrollTargets.push_back(ScrollTarget{entity, m_pointerBlockers.size()});
     }
-
-    placeParts(ctx.scene, entity);
 
     glm::vec2 contentMax = nothingDrawn();
     HierarchyOperations::forEachChild(ctx.scene, entity, [&](EntityId child) {
@@ -341,6 +368,7 @@ bool UISystem::resolveInteraction(FrameContext& ctx) {
                 moved        = true;
                 ctx.events.enqueue(UIValueEvent{hit.entity, button.eventId, toggle->on ? 1.0f : 0.0f});
             }
+            moved |= stepChoice(ctx.scene, hit.entity, button.eventId, ctx.events);
             ctx.events.enqueue(UIClickEvent{hit.entity, button.eventId});
         }
 

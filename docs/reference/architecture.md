@@ -144,7 +144,7 @@ Engine code, single include root `src/engine/`:
 | `ecs/component/animation/` | `Animation`, `Animator`, `BoneSocket`, `AnimationTrack`                  |
 | `ecs/component/audio/`     | `AudioSource`, `AudioListener`                                           |
 | `ecs/component/physics/`   | `Rigidbody`, `Collider`, `CharacterController`, `Joint`, `Ragdoll`       |
-| `ecs/component/ui/`        | `UICanvas`, `UIElement`, `UIImage`, `UIText`, `UIButton`, `UIScroll`, `UISlider`, `UIToggle`, `UIShape` |
+| `ecs/component/ui/`        | `UICanvas`, `UIElement`, `UIImage`, `UIText`, `UIButton`, `UIScroll`, `UISlider`, `UIToggle`, `UIChoice`, `UIShape` |
 | `ecs/component/prefab/`    | `PrefabEntity`, `PrefabInstance`, `NetSpawn`                             |
 | `system/animation/`        | `AnimationSystem`, `SkeletalAnimationSystem`, `PoseBuffer`, `composePose`, `BoneSocketSystem` |
 | `system/async/`            | `AsyncLoaderSystem`                                                      |

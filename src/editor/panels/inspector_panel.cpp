@@ -39,6 +39,7 @@
 #include "ecs/component/render/reflection_probe.h"
 #include "ecs/component/ui/ui_button.h"
 #include "ecs/component/ui/ui_canvas.h"
+#include "ecs/component/ui/ui_choice.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
 #include "ecs/component/core/net_local.h"
@@ -1027,6 +1028,51 @@ void InspectorPanel::drawUIToggleSection(EditorContext& ec, EntityId id) {
     });
 }
 
+void InspectorPanel::drawUIChoiceSection(EditorContext& ec, EntityId id) {
+    Scene& scene = ec.frame.scene;
+
+    editComponentCard<UIChoice>(ec, id, [&](UIChoice& c) {
+        bool changed = false;
+        // One a line: the list reads as one and edits as text.
+        std::string lines;
+        for (size_t i = 0; i < c.options.size(); ++i) lines += (i > 0 ? "\n" : "") + c.options[i];
+        const bool typed = propRow("Options", "One a line, in step order.", [&] {
+            const ImVec2 box(-1.0f, ImGui::GetTextLineHeightWithSpacing() * 5.0f);
+            return ImGui::InputTextMultiline("##v", &lines, box);
+        });
+        if (typed) {
+            lines.erase(std::remove(lines.begin(), lines.end(), '\r'), lines.end());
+            c.options.clear();
+            size_t start = 0;
+            for (size_t end; (end = lines.find('\n', start)) != std::string::npos; start = end + 1) {
+                c.options.push_back(lines.substr(start, end - start));
+            }
+            if (!lines.empty()) c.options.push_back(lines.substr(start));
+            changed = true;
+        }
+        const int last = std::max(static_cast<int>(c.options.size()) - 1, 0);
+        changed |= propSliderInt("Index", &c.index, 0, last, "Stepped by the arrows; write it to set it.");
+        changed |= propEntity(scene, id, "Back", c.back, "The UI Button stepping toward the first option.");
+        changed |= propEntity(scene, id, "Next", c.next, "The UI Button stepping toward the last.");
+        changed |= propEntity(scene, id, "Text", c.text, "Its UI Text shows the option: best a child.");
+
+        warnNoUIElement(scene, id);
+        const bool hasBack = scene.has<UIButton>(c.back);
+        const bool hasNext = scene.has<UIButton>(c.next);
+        if (!hasBack && !hasNext) {
+            ImGui::TextColored(EditorStyle::DANGER, "Back and Next are no UI Buttons: nothing steps it.");
+        } else if (!hasBack) {
+            ImGui::TextColored(EditorStyle::DANGER, "Back is no UI Button: that arrow does nothing.");
+        } else if (!hasNext) {
+            ImGui::TextColored(EditorStyle::DANGER, "Next is no UI Button: that arrow does nothing.");
+        }
+        if (c.index < 0 || c.index >= static_cast<int>(c.options.size())) {
+            ImGui::TextColored(EditorStyle::WARNING, "Index names no option: it shows nothing.");
+        }
+        return changed;
+    });
+}
+
 void InspectorPanel::drawUIScrollSection(EditorContext& ec, EntityId id) {
     Scene& scene = ec.frame.scene;
 
@@ -1158,6 +1204,7 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         addItem(UIScroll{});
         addItem(UISlider{});
         addItem(UIToggle{});
+        addItem(UIChoice{});
 
         // Move-only, so not AddComponentCommand: ScriptEditCommand holds it serialized.
         section("Script");
