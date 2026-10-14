@@ -37,7 +37,7 @@ void uploadLevels(const Vkm::GL::Texture2D& texture, const TextureAsset& asset) 
 
 // Every channel of a one-channel map reads as its grey, so a shader taking roughness from green
 // and metalness from blue gets what a grey colour file would give, not zero.
-void swizzleGrey(const Vkm::GL::Texture2D& texture, TextureInternalFormat format) {
+void swizzleGrey(Vkm::GL::Texture2D& texture, TextureInternalFormat format) {
     if (format != TextureInternalFormat::R8 && format != TextureInternalFormat::BC4R) return;
     const GLint grey[4] = {GL_RED, GL_RED, GL_RED, GL_ONE};
     texture.setSwizzle(grey);

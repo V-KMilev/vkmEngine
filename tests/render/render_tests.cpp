@@ -388,6 +388,29 @@ void testABackendHoldsOnlyThePixelsItUploaded() {
     check("  with no GL error", noGlError());
 }
 
+// A swizzle is the texture's, not its storage's: a grey map grown by setData still reads grey.
+void testASwizzleOutlivesNewStorage() {
+    std::printf("A swizzled texture given a new size:\n");
+
+    Vkm::GL::Texture2DParams params;
+    params.width           = 4;
+    params.height          = 4;
+    params.internalFormat  = GL_R8;
+    params.format          = GL_RED;
+    params.generateMipmaps = false;
+    Vkm::GL::Texture2D texture("swizzle", params);
+    const GLint grey[4] = {GL_RED, GL_RED, GL_RED, GL_ONE};
+    texture.setSwizzle(grey);
+
+    const std::vector<uint8_t> pixels(8 * 8, 128);
+    texture.setData(pixels.data(), 8, 8, GL_RED, GL_UNSIGNED_BYTE);
+    GLint swizzle[4] = {};
+    glGetTextureParameteriv(texture.getID(), GL_TEXTURE_SWIZZLE_RGBA, swizzle);
+    const bool kept = std::equal(swizzle, swizzle + 4, grey);
+    check("it grows without error", noGlError());
+    check("  and still reads its red in every colour channel", kept);
+}
+
 // Text is drawn far smaller than its atlas, minified through only as many levels as the
 // baker's gutter allows, or the smallest would average two glyphs into one texel.
 void testAFontAtlasKeepsTheLevelsItsGutterAllows() {
@@ -2277,6 +2300,7 @@ int runTests() {
     testAOneChannelMapReadsAsGrey();
     testABackendHoldsOnlyThePixelsItUploaded();
     testAFontAtlasKeepsTheLevelsItsGutterAllows();
+    testASwizzleOutlivesNewStorage();
     testAReuploadedMeshIsANewPicture();
     testAnAtlasThatForgetsDrawsEveryTileAgain();
     testAnAtlasHoldsOnlyWhatWasDrawn();
