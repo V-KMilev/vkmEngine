@@ -41,6 +41,12 @@ void GLMaterial::update(const MaterialAsset& material) {
     m_doubleSided = material.doubleSided;
     const bool seeThrough = material.albedo.a < 1.0f || static_cast<bool>(material.albedoTexture);
     m_cutsShadow  = m_type == MaterialType::AlphaMask || (m_type == MaterialType::Transparent && seeThrough);
+    m_plain       = material.anisotropy == 0.0f
+        && material.subsurface == 0.0f
+        && material.transmission == 0.0f
+        && material.clearcoat == 0.0f
+        && material.sheenColor == glm::vec3(0.0f)
+        && (material.heightScale <= 0.0f || !material.heightTexture);
 
     m_textureBindings.clear();
 

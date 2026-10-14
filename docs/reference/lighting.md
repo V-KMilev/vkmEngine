@@ -83,8 +83,9 @@ The PBR fragment shader (`shaders/forward/pbr/`) implements:
   so a bulb's glint on a polished floor is as wide as the bulb's reflection
   rather than a sub-pixel firefly no temporal filter averages, and one radius
   sizes the highlight and the penumbra alike. A radius of zero is the point.
-- **Optional lobes**, gated at runtime by each material's feature flags
-  (one shared PBR program, no compiled `#ifdef` variants): transmission,
+- **Optional lobes**, gated at runtime by each material's values (one PBR
+  program, and a plain variant for a material that uses none of them but alpha
+  test - `GLMaterial::plain`): transmission,
   volume (absorption), clearcoat, anisotropy, subsurface, sheen,
   parallax/height, alpha test. Transmission blends only what the surface does
   not reflect toward the scene behind it, itself dimmed by the reflected share

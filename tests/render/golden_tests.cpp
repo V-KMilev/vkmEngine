@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,8 @@
 #include "egl_context.h"
 
 #include "gl_backend.h"
+#include "asset/gl_material.h"
+#include "pass/gl_forward_pass.h"
 #include "frame/gl_occlusion_cull.h"
 #include "offline/gl_ibl_baker.h"
 #include "offline/gl_irradiance_baker.h"
@@ -961,7 +964,8 @@ std::vector<unsigned char> render(
     const UIDrawData* ui = nullptr,
     const RenderSettings& settings = RenderSettings{},
     const SplashFrame* splash = nullptr,
-    int frames = FRAMES
+    int frames = FRAMES,
+    const std::function<void(int frame, const Visibility& seen)>& afterFrame = {}
 ) {
     Clock          clock;
     EventBus       events;
@@ -989,6 +993,7 @@ std::vector<unsigned char> render(
         visibility.update(ctx);
         view.build(s.scene, *ctx.visibility, ui, splash, nullptr, &s.particles, ctx.ocean);
         backend.render(view, s.resources);
+        if (afterFrame) afterFrame(frame, *ctx.visibility);
     }
 
     std::vector<unsigned char> image;
@@ -1958,6 +1963,84 @@ void testHalfResolutionReflectionsAreCloseToFull(int& failures) {
     expect("  and are traced at fewer pixels, not those", mean > 0.0, failures);
 }
 
+// The plain program draws a plain material as the whole one would: the materials scene as it is,
+// every material plain, and again with each given a clearcoat too faint for the shader to draw,
+// which takes the whole program (GLForwardPass::drawsPlain). The frames are the same but for a few
+// highlight pixels the two compilations round apart; a feature lost from the plain program is
+// thousands of pixels.
+void testAPlainMaterialDrawsAsTheWholeProgramWould(int& failures) {
+    std::printf("Plain materials by the plain program and by the whole one:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+
+    restoreContextDefaults();
+    WindowManager window;
+    std::vector<unsigned char> frames[2];
+    for (int i = 0; i < 2; ++i) {
+        restoreContextDefaults();
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        buildMaterials(s);
+        if (i == 1) {
+            s.scene.forEach<Mesh>([&](EntityId, Mesh& mesh) {
+                s.resources.edit(mesh.material).clearcoat = 1e-6f;
+            });
+        }
+        frames[i] = render(s, backend, nullptr, settings);
+    }
+    double sum = 0.0;
+    for (size_t at = 0; at < frames[0].size(); ++at) sum += std::abs(int(frames[0][at]) - int(frames[1][at]));
+    const double mean = sum / static_cast<double>(frames[0].size());
+    const float differing = differingShare(frames[1], frames[0].data());
+    std::printf("      %.3f levels apart on average, %.3f%% of pixels differ\n", mean, 100.0f * differing);
+    expect("the frames are the same", mean < 0.01 && differing < 0.0005f, failures);
+}
+
+// Each optional feature alone takes a material off the plain program, which would drop it; with
+// none the material stays on it.
+void testEveryOptionalFeatureTakesTheWholeProgram(int& failures) {
+    std::printf("Which materials the plain program draws:\n");
+    Scenery s;
+    TextureAsset bumps;
+    bumps.params.width  = 1;
+    bumps.params.height = 1;
+    bumps.pixelData     = {128, 128, 128, 255};
+    const TextureHandle height = s.resources.add(std::move(bumps), "golden:bumps");
+
+    const auto plain = [](const MaterialAsset& asset) { return GLMaterial(asset).plain(); };
+    expect("a material with none is plain", plain(MaterialAsset{}), failures);
+    const GLMaterial none{MaterialAsset{}};
+    expect("  and draws with the plain program", GLForwardPass::drawsPlain(&none), failures);
+    expect("  a run with no material takes the whole program", !GLForwardPass::drawsPlain(nullptr), failures);
+
+    const std::pair<const char*, void (*)(MaterialAsset&)> features[] = {
+        {"anisotropy",   [](MaterialAsset& m) { m.anisotropy = 0.5f; }},
+        {"subsurface",   [](MaterialAsset& m) { m.subsurface = 0.5f; }},
+        {"transmission", [](MaterialAsset& m) { m.transmission = 0.5f; }},
+        {"clearcoat",    [](MaterialAsset& m) { m.clearcoat = 0.5f; }},
+        {"sheen",        [](MaterialAsset& m) { m.sheenColor = {0.0f, 0.0f, 0.5f}; }},
+    };
+    for (const auto& [name, add] : features) {
+        MaterialAsset asset;
+        add(asset);
+        const GLMaterial whole{asset};
+        expect((std::string("  one with ") + name + " is not").c_str(), !whole.plain(), failures);
+        expect("    and draws with the whole program", !GLForwardPass::drawsPlain(&whole), failures);
+    }
+
+    MaterialAsset parallax;
+    parallax.heightTexture = height;
+    expect("  one with a height map at no scale is", plain(parallax), failures);
+    parallax.heightScale = 0.05f;
+    expect("  one with a height map at a scale is not", !plain(parallax), failures);
+    parallax.heightTexture = {};
+    expect("  one with a scale and no map is", plain(parallax), failures);
+}
+
 // Meshes that never move beside one that does, which moves mid-session: the backend refreshes the
 // moved object's copy alone (RenderObjects::changed), and the frame must be the one a fresh backend
 // draws of the moved scene.
@@ -1997,42 +2080,25 @@ void testAMovedObjectIsDrawnWhereItWent(int& failures) {
     }
     Scenery s;
     build(s, -2.0f);
-    Clock          clock;
-    EventBus       events;
-    WindowManager  unopened;
-    InputMap       input;
-    NetSession     net;
-    HostChrome     chrome;
-    RenderSettings tuning = plain;
-    FrameContext   ctx{s.scene, s.resources, clock, events, unopened, input, net, chrome, tuning};
-    SkySystem        sky;
-    OceanSystem      ocean;
-    VisibilitySystem visibility;
-    RenderView       view;
-    view.viewportWidth  = WIDTH;
-    view.viewportHeight = HEIGHT;
-    view.surfaceWidth   = WIDTH;
-    view.surfaceHeight  = HEIGHT;
-    view.settings       = tuning;
+    // Moved after FRAMES frames, then watched in the frame that sees it.
     bool named = false;
-    for (int frame = 0; frame < 2 * FRAMES; ++frame) {
-        if (frame == FRAMES) {
+    const auto moveAndWatch = [&](int frame, const Visibility& seen) {
+        if (frame == FRAMES - 1) {
             s.scene.forEach<Mesh>([&](EntityId entity, Mesh& mesh) {
                 if (mesh.movable) s.scene.get<Transform>(entity).position.x = 2.0f;
             });
         }
-        sky.update(ctx);
-        ocean.update(ctx);
-        visibility.update(ctx);
-        if (frame == FRAMES) {
-            const RenderObjects& objects = ctx.visibility->objects;
-            named = !objects.allChanged && objects.changed.size() == 1;
-        }
-        view.build(s.scene, *ctx.visibility, nullptr, nullptr, nullptr, &s.particles, ctx.ocean);
-        moved.render(view, s.resources);
-    }
-    std::vector<unsigned char> got;
-    moved.readFrame(view, got);
+        if (frame == FRAMES) named = !seen.objects.allChanged && seen.objects.changed.size() == 1;
+    };
+    const std::vector<unsigned char> got = render(
+        s,
+        moved,
+        nullptr,
+        plain,
+        nullptr,
+        2 * FRAMES,
+        moveAndWatch
+    );
 
     const float differing = differingShare(got, want.data());
     std::printf("      %.2f%% of pixels unlike a fresh backend's frame\n", differing * 100.0f);
@@ -3214,6 +3280,8 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testAMovedObjectIsDrawnWhereItWent(failures);
     testASpawnAndARemovalAreDrawnAsTheyEnd(failures);
     testAMoverOverFixedScenery(failures);
+    testAPlainMaterialDrawsAsTheWholeProgramWould(failures);
+    testEveryOptionalFeatureTakesTheWholeProgram(failures);
     testAViewmodelShadesNothingBehindIt(failures);
     testABackendDropsWhatTheSceneNoLongerAsksFor(failures);
     testAFrameWithNoCameraKeepsTheProbesBaked(failures);

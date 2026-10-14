@@ -27,7 +27,9 @@ namespace Vkm::Engine {
 
 GLForwardPass::GLForwardPass(Vkm::GL::Shader& pbr)
     : m_shader(pbr)
-    , m_skinnedShader("shaders/forward/pbr_skinned") {}
+    , m_skinnedShader("shaders/forward/pbr_skinned")
+    , m_plainShader("shaders/forward/pbr_plain")
+    , m_plainSkinnedShader("shaders/forward/pbr_plain_skinned") {}
 
 GLForwardPass::~GLForwardPass() = default;
 
@@ -60,21 +62,21 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
     ctx.clusters.bind();
     ctx.objects.bind();
     // The ocean's ripples and shore, if the frame made them; with none its water reads neither.
-    // The static program alone: a skinned mesh is never moved as water, so has no waterline.
+    // The static programs alone: a skinned mesh is never moved as water, so has no waterline.
     ctx.oceanFields.bind();
-    m_shader.bind();
-    m_shader.setUniform4fv("u_oceanShore", ctx.oceanFields.shore());
+    forEachProgram(false, [&](Vkm::GL::Shader& program) {
+        program.setUniform4fv("u_oceanShore", ctx.oceanFields.shore());
+    });
 
-    // With no palette no run is skinned, so the skinned program is never bound
+    // With no palette no run is skinned, so the skinned programs are never bound
     // and never told anything.
     const bool posed = ctx.skinPalette.count() > 0;
     if (posed) ctx.skinPalette.bind();
 
-    bindFrameUniforms(m_shader, ctx);
-    if (posed) bindFrameUniforms(m_skinnedShader, ctx);
-
-    bindBucketUniforms(m_shader, ctx, Bucket::Opaque);
-    if (posed) bindBucketUniforms(m_skinnedShader, ctx, Bucket::Opaque);
+    forEachProgram(posed, [&](Vkm::GL::Shader& program) {
+        bindFrameUniforms(program, ctx);
+        bindBucketUniforms(program, ctx, Bucket::Opaque);
+    });
 
     // Batched once per frame (see GLFrameContext::opaqueBatch).
     drawBatch(ctx, ctx.opaqueBatch);
@@ -86,8 +88,9 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         ctx.gl.setDepthWrite(true);
         const bool a2c = ctx.sceneRender.samples() > 1;
         if (a2c) VKM_GL_CHECK(glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE));
-        bindBucketUniforms(m_shader, ctx, Bucket::AlphaMask);
-        if (posed) bindBucketUniforms(m_skinnedShader, ctx, Bucket::AlphaMask);
+        forEachProgram(posed, [&](Vkm::GL::Shader& program) {
+            bindBucketUniforms(program, ctx, Bucket::AlphaMask);
+        });
         m_batcher.buildGrouped(ctx.alphaMask, *view.objects, glView, ctx.skinPalette.count());
         drawBatch(ctx, m_batcher);
         if (a2c) VKM_GL_CHECK(glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE));
@@ -119,8 +122,9 @@ void GLForwardPass::execute(GLFrameContext& ctx) {
         ctx.colorDst->blitColorFrom(ctx.sceneRender);
         ctx.sceneRender.bindForwardPass(ctx.gl);
         ctx.colorDst->bindTexture(GLTarget::Attachment::Color, GLBindings::PostTextureSlots::SCENE_COLOR);
-        bindBucketUniforms(m_shader, ctx, Bucket::Transparent);
-        if (posed) bindBucketUniforms(m_skinnedShader, ctx, Bucket::Transparent);
+        forEachProgram(posed, [&](Vkm::GL::Shader& program) {
+            bindBucketUniforms(program, ctx, Bucket::Transparent);
+        });
 
         // Blended, depth-tested against the opaque scene but not written, so
         // transparent surfaces never occlude each other in the depth buffer.
@@ -156,15 +160,18 @@ void GLForwardPass::drawBatch(GLFrameContext& ctx, const GLInstanceBatcher& batc
     };
 
     for (const InstanceDraw& draw : batch.draws()) {
-        // Grouped batches sort skinned runs together, so this switches once; a
-        // sequential (transparent) batch may alternate, to keep its depth order.
-        Vkm::GL::Shader& program = draw.skinned ? m_skinnedShader : m_shader;
+        // Grouped batches sort skinned runs together; a sequential (transparent)
+        // batch may alternate, to keep its depth order.
+        const GLMaterial* material = glView.getMaterial(draw.material);
+        const bool plain = drawsPlain(material);
+        Vkm::GL::Shader& program = draw.skinned
+            ? (plain ? m_plainSkinnedShader : m_skinnedShader)
+            : (plain ? m_plainShader : m_shader);
         if (&program != boundProgram) {
             program.bind();
             boundProgram = &program;
         }
 
-        const GLMaterial* material = glView.getMaterial(draw.material);
         if (material && material != boundMaterial) {
             material->bind(GLBindings::UBOBindingPoints::MATERIAL);
             material->bindTextures(glView);
@@ -182,6 +189,10 @@ void GLForwardPass::drawBatch(GLFrameContext& ctx, const GLInstanceBatcher& batc
     ctx.gl.setFaceCulling(true);
 }
 
+bool GLForwardPass::drawsPlain(const GLMaterial* material) {
+    return material && material->plain();
+}
+
 void GLForwardPass::drawWireframe(GLFrameContext& ctx, bool posed) {
     ctx.gl.setDepthWrite(false);
     ctx.gl.setBlending(true);
@@ -192,23 +203,13 @@ void GLForwardPass::drawWireframe(GLFrameContext& ctx, bool posed) {
     // Toward the eye, which the reversed depth puts at the greater (gl_depth.h).
     VKM_GL_CHECK(glPolygonOffset(1.0f, 1.0f));
 
-    m_shader.bind();
-    m_shader.setUniform1i("u_wirePass", 1);
-    if (posed) {
-        m_skinnedShader.bind();
-        m_skinnedShader.setUniform1i("u_wirePass", 1);
-    }
+    forEachProgram(posed, [](Vkm::GL::Shader& program) { program.setUniform1i("u_wirePass", 1); });
 
     drawBatch(ctx, ctx.opaqueBatch);
     // Still the alpha-masked batch: the transparent one is built after this.
     if (!ctx.alphaMask.empty()) drawBatch(ctx, m_batcher);
 
-    m_shader.bind();
-    m_shader.setUniform1i("u_wirePass", 0);
-    if (posed) {
-        m_skinnedShader.bind();
-        m_skinnedShader.setUniform1i("u_wirePass", 0);
-    }
+    forEachProgram(posed, [](Vkm::GL::Shader& program) { program.setUniform1i("u_wirePass", 0); });
 
     VKM_GL_CHECK(glDisable(GL_POLYGON_OFFSET_LINE));
     VKM_GL_CHECK(glPolygonMode(GL_FRONT_AND_BACK, GL_FILL));
@@ -217,8 +218,6 @@ void GLForwardPass::drawWireframe(GLFrameContext& ctx, bool posed) {
 
 void GLForwardPass::bindFrameUniforms(Vkm::GL::Shader& shader, GLFrameContext& ctx) const {
     const RenderView& view = ctx.view;
-
-    shader.bind();
 
     // u_hasIBL gates the split-sum ambient in the shader; without a baked
     // environment it falls back to flat ambient.
@@ -234,7 +233,6 @@ void GLForwardPass::bindFrameUniforms(Vkm::GL::Shader& shader, GLFrameContext& c
 }
 
 void GLForwardPass::bindBucketUniforms(Vkm::GL::Shader& shader, GLFrameContext& ctx, Bucket bucket) const {
-    shader.bind();
     // GTAO saw only what the prepass drew.
     bindAO(ctx, shader, bucket == Bucket::Opaque);
     shader.setUniform1i("u_hasSceneColor", bucket == Bucket::Transparent ? 1 : 0);
