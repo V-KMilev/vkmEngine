@@ -420,7 +420,12 @@ Shadow rendering goes through `GLShadowPass`, which:
   shadows the point; the distance behind it, scaled by the source's size,
   is the penumbra; and a Vogel disk of hardware compares that wide filters
   it. A point far behind its blocker gets a wide, soft edge and a contact
-  stays sharp, which is what a light of that size does. The taps grow with
+  stays sharp, which is what a light of that size does. A point whose
+  every search tap found a blocker is in the umbra - the filter's disk lies
+  inside the searched one - and skips the filter (`SOFT_UMBRA`): in
+  a game scene that took 8% off the forward pass at High and Ultra, no golden
+  moving. The cascades' fallback search of the own tile, whose filter may
+  reach past it, does not skip. The taps grow with
   the disk - 12 for a narrow penumbra, up to 64 for the widest - so they stay
   `SOFT_TAP_SPACING` (1.25) texels apart and each tap's 2x2 compare overlaps
   its neighbours'. The disk is the same at every pixel: turned per pixel on
