@@ -2600,6 +2600,44 @@ void testAWeaponHeldIntoAWallIsNotCulled(int& failures) {
     }
 }
 
+// A pool of the ocean's water behind a wall: its box is the CPU cull's, reaching as far as the sea
+// moves a wave, so the occlusion cull hides it as it hides anything else.
+void testWaterBehindAWallIsCulled(int& failures) {
+    std::printf("A pool of moving water behind a wall, with the occlusion cull on:\n");
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend culled;
+    if (!culled.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery s;
+    base(s);
+    const MaterialHandle ground  = material(s, "golden:ground", {0.45f, 0.42f, 0.38f}, 0.9f, 0.0f);
+    const MaterialHandle plaster = material(s, "golden:plaster", {0.7f, 0.68f, 0.64f}, 0.9f, 0.0f);
+    MaterialAsset sea;
+    sea.albedo = glm::vec4(0.01f, 0.02f, 0.04f, 1.0f);
+    sea.waves  = true;
+    const MaterialHandle water = s.resources.add(std::move(sea), "golden:pool");
+    place(s, s.cube, ground, {0.0f, -0.5f, 0.0f}, {40.0f, 1.0f, 40.0f});
+    place(s, s.cube, water, {0.0f, 0.1f, -5.0f}, {3.0f, 0.2f, 3.0f});
+    place(s, s.cube, plaster, {0.0f, 3.0f, 0.0f}, {16.0f, 6.0f, 0.4f});
+    const EntityId oceanId = s.scene.createEntity();
+    s.scene.add(oceanId, Transform{});
+    Ocean ocean;
+    ocean.windSpeed = 2.0f;
+    s.scene.add(oceanId, ocean);
+    sunAndCamera(s, {0.0f, 1.5f, 6.0f}, {0.0f, 1.0f, -4.0f});
+
+    RenderSettings culling;
+    culling.occlusionCulling = true;
+    render(s, culled, nullptr, culling);
+    const uint32_t shown = culled.occlusionCull().countIn(GLOcclusionCull::Set::Shown);
+    std::printf("      %u shown\n", shown);
+    expect("the ground and the wall are shown, the water behind it not", shown == 2, failures);
+}
+
 // A box seen face-on, its face filling an orthographic frame, is tested against the depth it laid
 // itself: the box's nearest point and the depth buffer's rounding of the same face must not hide
 // it. Frame by frame, as the verdict alternating would show only some of them. Without the cull's
@@ -3289,6 +3327,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testWhatTheCullHidDrawsTheFrameItComesOut(failures);
     testAWeaponHeldIntoAWallIsNotCulled(failures);
     testAFaceFillingTheFrameIsNotCulledByItsOwnDepth(failures);
+    testWaterBehindAWallIsCulled(failures);
     testADriftingSunIsFollowedOverFrames(failures);
     testASplashFadesLinearlyOnTheGlass(failures);
     testAnOpenFloorIsNotOccluded(failures);

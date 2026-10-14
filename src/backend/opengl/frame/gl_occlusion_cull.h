@@ -19,7 +19,6 @@ namespace Vkm::Engine {
 
 class GLInstanceBatcher;
 class GLTarget;
-class ResourceManager;
 struct InstanceDraw;
 struct RenderObjects;
 
@@ -35,12 +34,11 @@ struct RenderObjects;
  * Rendering Pipelines*, 2015).
  *
  * A set is the batch's own commands with the instances the cull gives each, counted in by the GPU,
- * so the CPU builds and sorts the batch exactly as without it and reads nothing back; it writes a
- * mesh's local box per command, and the GPU reads each instance's object from the batch's own
- * list and its model matrix from the frame's. The instances arrive in any order within a run,
- * which an opaque draw does not mind. A viewmodel, a posed character and the ocean's moving water
- * are always shown: the first draws through another projection, the others move past their mesh's
- * box.
+ * so the CPU builds and sorts the batch exactly as without it and reads nothing back. The GPU reads
+ * each instance's object from the batch's own list and its world box from the frame's
+ * (GLObjectBuffer): the CPU cull's, posed for a posed character and reaching as far as the sea moves
+ * a wave. The instances arrive in any order within a run, which an opaque draw does not mind. A
+ * viewmodel is always shown: it draws through another projection.
  *
  * Saves the vertex work of what is hidden; the depth test already rejected its pixels. Run
  * prepare() after the batch is built, the phases from the depth prepass. When it pays:
@@ -70,20 +68,13 @@ class GLOcclusionCull {
 
     public:
         /**
-         * @brief Upload this frame's empty sets for @p batch, and its commands' meshes' boxes.
+         * @brief Upload this frame's empty sets for @p batch.
          *
-         * @param batch     The opaque batch, built and uploaded this frame.
-         * @param objects   What its instances index: their draws.
-         * @param resources Resolves each command's mesh, for its local box.
-         * @param stream    The frame's streaming memory (GLView::stream), for the boxes.
+         * @param batch   The opaque batch, built and uploaded this frame.
+         * @param objects What its instances index.
          * @return Whether there is anything to cull; false leaves the sets unusable this frame.
          */
-        bool prepare(
-            const GLInstanceBatcher& batch,
-            const RenderObjects& objects,
-            const ResourceManager& resources,
-            Vkm::GL::StreamRing& stream
-        );
+        bool prepare(const GLInstanceBatcher& batch, const RenderObjects& objects);
 
         /**
          * @brief Fill Set::Seen: the instances the last cull showed.
@@ -117,12 +108,6 @@ class GLOcclusionCull {
         uint32_t countIn(Set set) const;
 
     private:
-        /// A command's mesh's local box, as shaders/cull/instances reads it; lo past hi always shows.
-        struct CommandBounds {
-            glm::vec4 lo;
-            glm::vec4 hi;
-        };
-
         /**
          * @brief Size the pyramid for a scene of @p width by @p height.
          *
@@ -138,18 +123,17 @@ class GLOcclusionCull {
          */
         void buildPyramid(const GLTarget& scene);
 
-        /// Bind the boxes, the batch's instances, the verdicts and the sets for a cull dispatch.
+        /// Bind the batch's instances, the verdicts and the sets for a cull dispatch.
         void bindBuffers() const;
 
     private:
         Vkm::GL::ComputeShader m_pyramidProgram;  ///< Depth -> the farthest-depth pyramid.
         Vkm::GL::ComputeShader m_cullProgram;     ///< Records -> the sets.
 
-        std::vector<CommandBounds> m_bounds;  ///< This frame's, one per command of the batch.
         std::vector<DrawCommand> m_commands;  ///< The batch's commands, emptied, once per set.
 
-        Vkm::GL::BufferSpan                    m_boundsSpan;  ///< m_bounds, where prepare() wrote them.
-        Vkm::GL::BufferSpan                    m_source;      ///< The batch's instances, where it wrote them.
+        /// The batch's instances, where it wrote them.
+        Vkm::GL::BufferSpan                    m_source;
         std::unique_ptr<Vkm::GL::VertexBuffer> m_commandBuffer;   ///< Every set's commands, end to end.
         std::unique_ptr<Vkm::GL::VertexBuffer> m_instanceBuffer;  ///< Every set's instances, end to end.
         std::unique_ptr<Vkm::GL::VertexBuffer> m_visibleBuffer;   ///< Per object: the last cull's verdict.

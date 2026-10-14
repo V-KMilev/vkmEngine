@@ -3,18 +3,16 @@
  * (GLOcclusionCull).
  *
  * An invocation per instance of the batch: its object from the batch's own instance list, its
- * command found among the commands by where its instance falls, and its world box from its
- * command's mesh's local box and its object's model matrix (Arvo's), so the CPU writes nothing
- * per instance. A set is a copy of the batch's commands with no instances, and the instances it
- * is given are written into each command's own range, counted in as they come; their order within
- * a command does not matter to an opaque draw.
+ * command found among the commands by where its instance falls, and its world box the CPU cull's,
+ * six floats an object. A set is a copy of the batch's commands with no instances, and the
+ * instances it is given are written into each command's own range, counted in as they come; their
+ * order within a command does not matter to an opaque draw.
  *
  * Phase 0, before the prepass, gives set 0 every instance whose object the last cull saw: what
  * the prepass draws first, and builds the pyramid from. Phase 1 tests every instance's box against
  * the pyramid; what it shows goes to set 2, the forward pass's, and what it shows that the last
- * cull did not to set 1, which the prepass draws next. Then it records what it saw. A command
- * whose box is empty (lo past hi) is always shown - a posed character, whose pose leaves its bind
- * box, and the ocean's moving water - and so is a viewmodel.
+ * cull did not to set 1, which the prepass draws next. Then it records what it saw. A viewmodel is
+ * always shown: it draws through another projection.
  */
 
 layout(local_size_x = GROUP_CULL) in;
@@ -26,15 +24,6 @@ struct DrawCommand {
     int  baseVertex;
     uint baseInstance;
 };
-
-struct CommandBounds {
-    vec4 lo;  // its mesh's local box's least corner
-    vec4 hi;  // its greatest
-};
-
-layout(std430, binding = SSBO_CULL_BOUNDS) readonly buffer BoundsBlock {
-    CommandBounds bounds[];  // per command of the batch
-} u_bounds;
 
 layout(std430, binding = SSBO_CULL_SOURCE) readonly buffer SourceBlock {
     uint objects[];  // the batch's instances, in its commands' order
@@ -67,8 +56,9 @@ const float DEPTH_SLACK = 1.0e-5;
 #include "../../depth.glsl"   // nearerDepth, fartherDepth
 #include "../../camera.glsl"
 
-layout(std430, binding = SSBO_INSTANCE_MODELS) readonly buffer InstanceModels { mat4 b_models[]; };
 layout(std430, binding = SSBO_INSTANCE_FLAGS) readonly buffer InstanceFlags { uint b_flags[]; };
+// Six floats an object, its least corner then its greatest: Math::AABB as the CPU cull wrote it.
+layout(std430, binding = SSBO_INSTANCE_BOXES) readonly buffer InstanceBoxes { float b_boxes[]; };
 
 // The command whose instances include instance @p i: the last whose first is at or before it.
 uint commandOf(uint i) {
@@ -145,15 +135,11 @@ void main() {
         return;
     }
 
-    // The mesh's box about its centre, through the model matrix (Arvo).
-    const CommandBounds local  = u_bounds.bounds[command];
-    const bool          always = any(greaterThan(local.lo.xyz, local.hi.xyz))
-        || (b_flags[object] & INSTANCE_FLAG_VIEWMODEL) != 0u;
-    const mat4 model  = b_models[object];
-    const vec3 centre = (model * vec4((local.lo.xyz + local.hi.xyz) * 0.5, 1.0)).xyz;
-    const vec3 size   = (local.hi.xyz - local.lo.xyz) * 0.5;
-    const vec3 reach  = abs(model[0].xyz) * size.x + abs(model[1].xyz) * size.y + abs(model[2].xyz) * size.z;
-    const bool shown  = always || !occluded(centre - reach, centre + reach);
+    // The CPU cull's world box: six floats, its least corner then its greatest.
+    const uint at = object * 6u;
+    const vec3 lo = vec3(b_boxes[at], b_boxes[at + 1u], b_boxes[at + 2u]);
+    const vec3 hi = vec3(b_boxes[at + 3u], b_boxes[at + 4u], b_boxes[at + 5u]);
+    const bool shown = (b_flags[object] & INSTANCE_FLAG_VIEWMODEL) != 0u || !occluded(lo, hi);
     if (shown && !seen) emit(CULL_SET_REVEALED, command, object);
     if (shown) emit(CULL_SET_SHOWN, command, object);
     u_visible.seen[object] = shown ? 1u : 0u;

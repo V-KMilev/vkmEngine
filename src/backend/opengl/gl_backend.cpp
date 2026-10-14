@@ -470,10 +470,13 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         m_skinPalette.update(view.skinMatrices, m_view.stream());
     }
 
+    // The GPU occlusion cull runs from a camera alone, reading every object's world box.
+    const bool occlusionCulled = view.settings.occlusionCulling && view.hasCamera;
+
     // Every object's transform, once: an index list names objects in it.
     {
         PROFILE_SCOPE("Render/Objects");
-        m_objects.upload(*view.objects, m_skinPalette.count() > 0, m_view.stream());
+        m_objects.upload(*view.objects, m_skinPalette.count() > 0, occlusionCulled, m_view.stream());
     }
 
     // ...and batch the opaque bucket once too (see GLFrameContext::opaqueBatch).
@@ -510,9 +513,9 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
 
     ctx.sunDir = sunDir;
     ctx.sky    = sky ? &*sky : nullptr;
-    if (view.settings.occlusionCulling && view.hasCamera) {
+    if (occlusionCulled) {
         PROFILE_SCOPE("Render/OcclusionPrepare");
-        if (m_occlusion.prepare(m_opaqueBatcher, *view.objects, resources, m_view.stream())) {
+        if (m_occlusion.prepare(m_opaqueBatcher, *view.objects)) {
             ctx.occlusion = &m_occlusion;
         }
     }
