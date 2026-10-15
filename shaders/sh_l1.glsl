@@ -2,7 +2,7 @@
  * Real SH-L1 basis + cosine-convolution constants.
  *
  * These lock the projection <-> evaluation contract of the baked irradiance
- * volume: irradiance/project integrates radiance against Y0/Y1, and
+ * volume: irradiance/relight integrates radiance against Y0/Y1, and
  * sampleIrradianceVolume evaluates E = A0*Y0*sh0 + A1*Y1*(n.y*sh1 + n.z*sh2 +
  * n.x*sh3). The two sides must never drift apart, so both take them from here.
  */

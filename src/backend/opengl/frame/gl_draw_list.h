@@ -52,9 +52,14 @@ class GLDrawList {
 
         /// One object index per instance, in the order the commands read them.
         std::vector<uint32_t>& instances() { return m_instances; }
+        const std::vector<uint32_t>& instances() const { return m_instances; }
+
+        /// The instances as upload() sent them; null before the first.
+        const Vkm::GL::VertexBuffer* instanceBuffer() const { return m_instanceBuffer.get(); }
 
         /// One command per run of instances sharing a mesh.
         std::vector<DrawCommand>& commands() { return m_commands; }
+        const std::vector<DrawCommand>& commands() const { return m_commands; }
 
     private:
         std::vector<uint32_t>    m_instances;

@@ -50,7 +50,9 @@ void GLFogPass::execute(GLFrameContext& ctx) {
 
     ctx.fog.bindScatterImage(0, GL_WRITE_ONLY);
     m_inject.bind();
-    bindAmbient(ctx, m_inject);
+    // The sky and the volume alone (rendering.md, the fog).
+    const bool probes = false;
+    bindAmbient(ctx, m_inject, probes);
     m_inject.setUniform1f("u_density",        env.fog.density);
     m_inject.setUniform1f("u_height",         env.fog.height);
     m_inject.setUniform1f("u_heightFalloff",  env.fog.heightFalloff);

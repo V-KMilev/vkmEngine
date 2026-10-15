@@ -78,10 +78,10 @@ class GLPass {
         void bindFog(GLFrameContext& ctx, const Vkm::GL::Shader& shader, bool air = true) const;
 
         /**
-         * @brief Give the bound @p shader this frame's GTAO, or tell it there is none.
+         * @brief Give the bound @p shader this frame's GTAO and screen shadow, or tell it there are none.
          *
-         * Binds the AO target only when the GTAO pass filled it this frame, and sets u_hasAO to
-         * match.
+         * Binds the AO target only when the GTAO pass or the screen-shadow pass filled it this
+         * frame, and sets u_hasAO and u_hasScreenShadow to match.
          *
          * @param ctx     For the AO target and whether it is ready.
          * @param shader  The program that draws; it must be bound.
@@ -90,15 +90,19 @@ class GLPass {
         void bindAO(GLFrameContext& ctx, const Vkm::GL::Shader& shader, bool sampled = true) const;
 
         /**
-         * @brief Give the bound @p shader the sky's irradiance cube and the baked irradiance volume.
+         * @brief Give the bound @p shader the sky's irradiance cube, the reflection probes and the
+         *        baked irradiance volume.
          *
          * For a shader including shaders/ambient.glsl. Binds what the frame has and sets
-         * u_hasIBL, u_hasIrradianceVolume, the intensity and the volume's box to match.
+         * u_hasIBL, u_probeCount, u_hasIrradianceVolume, the intensity and the volume's box to
+         * match. The probes' boxes and arrays the backend binds once a frame.
          *
-         * @param ctx    For the baked environment and the volume.
+         * @param ctx    For the baked environment, the probes and the volume.
          * @param shader The program that draws or dispatches; it must be bound.
+         * @param probes False leaves the probes out, for a shader reading the environment too
+         *               often to loop over them.
          */
-        void bindAmbient(GLFrameContext& ctx, const Vkm::GL::ShaderBase& shader) const;
+        void bindAmbient(GLFrameContext& ctx, const Vkm::GL::ShaderBase& shader, bool probes = true) const;
 
         /**
          * @brief Let draws write the roughness beside the reflection weight, or not.

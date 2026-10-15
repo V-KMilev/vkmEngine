@@ -70,6 +70,45 @@ void GLCubeConvolver::prefilterBand(
     gl.enableScissor(false);
 }
 
+std::vector<GLCubeConvolver::Step> GLCubeConvolver::slices(int prefilterSize, int mips) {
+    using Kind = Step::Kind;
+    std::vector<Step> steps;
+    steps.push_back({Kind::Mirror, 0, 0, prefilterSize, mips, 0, 1});
+    for (int face = 0; face < 6; ++face) steps.push_back({Kind::Irradiance, face, 0, 0, mips, 0, 1});
+    for (int face = 0; face < 6; ++face) {
+        for (int mip = 1; mip < mips; ++mip) {
+            const int size  = prefilterSize >> mip;
+            const int parts = bands(size);
+            for (int part = 0; part < parts; ++part) {
+                steps.push_back({Kind::Prefilter, face, mip, size, mips, part, parts});
+            }
+        }
+    }
+    return steps;
+}
+
+void GLCubeConvolver::run(Vkm::GL::Context& gl, const Step& step, Target& target) {
+    // One reference each, so neither allocates.
+    const AttachFace    irradiance = [&target](int face) { target.attachIrradiance(face); };
+    const AttachMipFace prefilter  = [&target](int face, int mip) { target.attachPrefilter(face, mip); };
+    if (step.kind == Step::Kind::Mirror) target.makeSourceMips();
+    target.bindSource();
+    switch (step.kind) {
+        case Step::Kind::Mirror:
+            // Every face of it, whole: a mirror is one read a texel.
+            for (int face = 0; face < 6; ++face) {
+                prefilterBand(gl, face, 0, step.mips, step.size, 0, 1, prefilter);
+            }
+            break;
+        case Step::Kind::Irradiance:
+            irradianceFace(step.face, irradiance);
+            break;
+        case Step::Kind::Prefilter:
+            prefilterBand(gl, step.face, step.mip, step.mips, step.size, step.part, step.parts, prefilter);
+            break;
+    }
+}
+
 float GLCubeConvolver::roughnessOf(int mip, int mips) {
     return mips > 1 ? static_cast<float>(mip) / static_cast<float>(mips - 1) : 0.0f;
 }

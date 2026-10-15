@@ -26,6 +26,29 @@ namespace Vkm::Engine {
 
 namespace {
 
+/// A bake's convolution, from the back env cube into the back targets.
+class BackTarget final : public GLCubeConvolver::Target {
+    public:
+        BackTarget(Vkm::GL::Context& gl, GLIBL& ibl) : m_gl(gl), m_ibl(ibl) {}
+        ~BackTarget() override = default;
+
+        BackTarget(const BackTarget& other) = delete;
+        BackTarget& operator=(const BackTarget& other) = delete;
+
+        BackTarget(BackTarget && other) = delete;
+        BackTarget& operator=(BackTarget && other) = delete;
+
+    public:
+        void makeSourceMips() override { m_ibl.generateEnvMips(); }
+        void bindSource() override { m_ibl.bindBackEnvCube(GLBindings::BakeTextureSlots::SOURCE); }
+        void attachIrradiance(int face) override { m_ibl.attachIrradianceFace(m_gl, face); }
+        void attachPrefilter(int face, int mip) override { m_ibl.attachPrefilterFace(m_gl, face, mip); }
+
+    private:
+        Vkm::GL::Context& m_gl;
+        GLIBL&            m_ibl;
+};
+
 // Half floats with levels, since a source wider than the faces is minified and would alias;
 // wrapped in longitude, where the image's edges meet behind -X.
 Vkm::GL::Texture2DParams equirectParams(const HDRImage& image) {
@@ -70,22 +93,8 @@ GLIBLBaker::GLIBLBaker(GLCubeConvolver& convolver)
     , m_multiScattering("shaders/atmosphere/multiscatter")
     , m_brdf("shaders/ibl/brdf")
     , m_convolver(convolver)
-{
-    // The env cube first, as everything after reads its mips.
-    using Kind = Step::Kind;
-    m_steps.push_back({Kind::Capture, 0, 0, 0, 1});
-    m_steps.push_back({Kind::Mips, 0, 0, 0, 1});
-    for (int face = 0; face < 6; ++face) m_steps.push_back({Kind::Irradiance, face, 0, 0, 1});
-    for (int face = 0; face < 6; ++face) {
-        for (int mip = 1; mip < GLIBL::PREFILTER_MIPS; ++mip) {
-            const int bands = prefilterBands(mip);
-            for (int band = 0; band < bands; ++band) {
-                m_steps.push_back({Kind::Prefilter, face, mip, band, bands});
-            }
-        }
-    }
-    m_next = m_steps.size();
-}
+    , m_steps(GLCubeConvolver::slices(GLIBL::PREFILTER_SIZE, GLIBL::PREFILTER_MIPS))
+    , m_next(idle()) {}
 
 GLIBLBaker::~GLIBLBaker() = default;
 
@@ -150,7 +159,7 @@ void GLIBLBaker::bakeFrom(Vkm::GL::Context& gl, GLIBL& ibl, Vkm::GL::Shader& sou
 }
 
 void GLIBLBaker::bake(Vkm::GL::Context& gl, GLIBL& ibl, const std::string& path) {
-    m_next = m_steps.size();
+    m_next = idle();
 
     // Whatever the cubes held was another sky's, so a load that fails leaves none.
     ibl.markUnready();
@@ -188,7 +197,7 @@ void GLIBLBaker::bakeProcedural(
     const GLAtmosphere& atmosphere,
     const SkyParams& sky
 ) {
-    m_next   = m_steps.size();
+    m_next   = idle();
     m_target = sky;
 
     // The atmosphere into the env cube, then the HDR path's convolve, so ambient follows the sky.
@@ -206,54 +215,22 @@ void GLIBLBaker::beginProcedural(const SkyParams& sky) {
 bool GLIBLBaker::advance(Vkm::GL::Context& gl, GLIBL& ibl, const GLAtmosphere& atmosphere) {
     if (!baking()) return false;
 
-    const Step& step = m_steps[m_next++];
+    const int step = m_next++;
     ibl.createTargets();
     bakeState(gl);
     ibl.bindCaptureFbo();
-    if (step.kind == Step::Kind::Capture) bindSky(atmosphere, m_target);
-    runStep(gl, ibl, step);
+    if (step == 0) {
+        bindSky(atmosphere, m_target);
+        for (int face = 0; face < 6; ++face) captureFace(gl, ibl, m_sky, face);
+    } else {
+        BackTarget target(gl, ibl);
+        m_convolver.run(gl, m_steps[static_cast<size_t>(step - 1)], target);
+    }
     ibl.unbindCaptureFbo();
 
     if (baking()) return false;
     ibl.swap();
     return true;
-}
-
-void GLIBLBaker::runStep(Vkm::GL::Context& gl, GLIBL& ibl, const Step& step) {
-    using Kind = Step::Kind;
-    // Face @p face of the step's prefilter level, in the step's band.
-    const auto prefilter = [&](int face) {
-        m_convolver.prefilterBand(
-            gl,
-            face,
-            step.mip,
-            GLIBL::PREFILTER_MIPS,
-            GLIBL::PREFILTER_SIZE >> step.mip,
-            step.part,
-            step.parts,
-            [&](int attachFace, int mip) { ibl.attachPrefilterFace(gl, attachFace, mip); }
-        );
-    };
-
-    switch (step.kind) {
-        case Kind::Capture:
-            for (int face = 0; face < 6; ++face) captureFace(gl, ibl, m_sky, face);
-            break;
-        case Kind::Mips:
-            // The step's level is the mirror level, in one band: every face of it, whole.
-            ibl.generateEnvMips();
-            ibl.bindBackEnvCube(GLBindings::BakeTextureSlots::SOURCE);
-            for (int face = 0; face < 6; ++face) prefilter(face);
-            break;
-        case Kind::Irradiance:
-            ibl.bindBackEnvCube(GLBindings::BakeTextureSlots::SOURCE);
-            m_convolver.irradianceFace(step.face, [&](int face) { ibl.attachIrradianceFace(gl, face); });
-            break;
-        case Kind::Prefilter:
-            ibl.bindBackEnvCube(GLBindings::BakeTextureSlots::SOURCE);
-            prefilter(step.face);
-            break;
-    }
 }
 
 } // namespace Vkm::Engine

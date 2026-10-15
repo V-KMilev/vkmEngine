@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 
 #include "convention/gl_bindings.h"
+#include "offline/gl_capture_lighting.h"
 #include "offline/gl_capture_settle.h"
 
 namespace Vkm::GL {
@@ -27,7 +28,7 @@ class GLProbeArray;
 class GLSceneCapture;
 
 /**
- * @brief One probe in the ProbeBlock UBO, std140 - must match ProbeEntry in shaders/forward/pbr.
+ * @brief One probe in the ProbeBlock UBO, std140 - must match ProbeEntry in shaders/probes.glsl.
  */
 struct GpuProbe {
     glm::vec4 center;    ///< xyz world centre, w pad
@@ -36,7 +37,7 @@ struct GpuProbe {
 };
 
 /**
- * @brief The ProbeBlock UBO, std140 - must match ProbeBlock in shaders/forward/pbr.
+ * @brief The ProbeBlock UBO, std140 - must match ProbeBlock in shaders/probes.glsl.
  */
 struct ProbeBlock {
     GpuProbe probes[GLBindings::ProbeTextureSlots::MAX_PROBES];
@@ -81,10 +82,14 @@ class GLProbeManager {
 
         /**
          * @brief At frame end, bake again the probes that are new, bumped, or moved or resized
-         *        and holding still, or were captured under another bake of the irradiance volume.
+         *        and holding still, or were captured under another bake of the irradiance volume;
+         *        else refresh one captured under other light, a step a frame.
          *
-         * Capped per frame. Run after the passes: the baker rebinds the camera UBO and the
-         * lights SSBO.
+         * A bake is at once, one a frame. A refresh fills the staging layer and replaces the
+         * probe's after its last step (GLProbeBaker::advance), one probe at a time, the
+         * longest-waiting for its distance from the eye first; a bake in between ends it, to
+         * begin again in its turn. Run after the passes:
+         * the baker rebinds the camera UBO and the lights SSBO.
          *
          * @param gl        Live GL context the bake draws through.
          * @param view      Supplies the probes and the scene.
@@ -93,6 +98,8 @@ class GLProbeManager {
          * @param ibl       The global environment, the captures' backdrop.
          * @param volume    The baked irradiance volume, at the view's box, lighting what the
          *                  captures see of it; null for none.
+         * @param lighting  What lights the captures now. A probe captured under other light is
+         *                  refreshed.
          */
         void update(
             Vkm::GL::Context& gl,
@@ -100,26 +107,32 @@ class GLProbeManager {
             GLView& glView,
             const ResourceManager& resources,
             const GLIBL& ibl,
-            const GLIrradianceVolume* volume
+            const GLIrradianceVolume* volume,
+            const CaptureLighting& lighting
         );
 
         /**
          * @brief Forget every layer's bake state, forcing a re-bake.
          *
-         * The re-bake test compares only a probe's pose, box and bakeVersion, which replacing the
-         * scene leaves identical while changing everything the capture contains.
+         * Nothing the re-bake and refresh tests compare changes when the scene is replaced, while
+         * everything the capture contains does.
          */
         void invalidate();
 
     private:
+        /// Metres from the eye over which a probe waiting to be refreshed counts half as urgent.
+        static constexpr float REFRESH_NEAR = 10.0f;
+
         /// Where a probe stands and the box it reflects.
         struct Placement {
             glm::vec3 position{0.0f};
             glm::vec3 box{0.0f};
 
+            /// The same place: within a millimetre, so a probe settled to the bit is not moving.
             bool operator==(const Placement& other) const {
-                return position == other.position && box == other.box;
+                return glm::distance(position, other.position) <= 1e-3f && box == other.box;
             }
+            bool operator!=(const Placement& other) const { return !(*this == other); }
         };
 
         /**
@@ -129,11 +142,12 @@ class GLProbeManager {
             bool      owned      = false;            ///< A probe in the scene holds this layer.
             uint32_t  owner      = 0;                ///< That probe's entity slot.
             bool      baked      = false;
-            glm::vec3 position   = glm::vec3(0.0f);  ///< Position the layer was last baked at.
-            /// Half-extents it was baked for: the key light's map is fitted to them.
-            glm::vec3 box        = glm::vec3(0.0f);
+            /// Where the layer was last baked: the shadowed sun's map is fitted to its box.
+            Placement placed;
             uint32_t  version    = 0;                ///< bakeVersion the layer was last baked at.
             uint32_t  volumeBake = 0;                ///< The irradiance volume's bakeId it was lit by.
+            uint64_t  captured   = 0;                ///< The update() it was last captured in.
+            CaptureLighting lighting;                ///< What lit it when it was captured.
             /// Where the probe stands, so one being moved bakes once it settles, not every
             /// frame it moves.
             CaptureSettle<Placement> seen;
@@ -149,6 +163,27 @@ class GLProbeManager {
          * @param view Supplies the probes.
          */
         void assignLayers(const RenderView& view);
+
+        /**
+         * @brief Take a step of refreshing a probe captured under other light than @p lighting.
+         *
+         * @param gl        Live GL context the step draws through.
+         * @param view      Supplies the probes and the scene.
+         * @param glView    GPU mirror the captures draw from.
+         * @param resources Resolves what the captures draw.
+         * @param ibl       The global environment, the captures' backdrop.
+         * @param volume    The irradiance volume lighting what the captures see; null for none.
+         * @param lighting  What lights the captures now (see update()).
+         */
+        void refresh(
+            Vkm::GL::Context& gl,
+            const RenderView& view,
+            GLView& glView,
+            const ResourceManager& resources,
+            const GLIBL& ibl,
+            const GLIrradianceVolume* volume,
+            const CaptureLighting& lighting
+        );
 
     private:
         std::unique_ptr<GLProbeBaker>           m_baker;        ///< Bakes probes at frame end.
@@ -166,6 +201,10 @@ class GLProbeManager {
         std::unique_ptr<Vkm::GL::UniformBuffer> m_ubo;
         /// Last uploaded block, for gating the upload.
         ProbeBlock                              m_lastBlock{};
+
+        int             m_refreshLayer = -1;  ///< The layer a refresh under way replaces; -1 for none.
+        CaptureLighting m_refreshLighting;    ///< What lit the scene when it began.
+        uint64_t        m_frame        = 0;   ///< Counts update()s, for BakeState::captured.
 };
 
 } // namespace Vkm::Engine

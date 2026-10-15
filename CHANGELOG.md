@@ -7,7 +7,7 @@ Notable changes to vkmEngine, newest first. Each release is tagged `vX.Y.Z`.
 Fixes and frame time, before the renderer's new features in 1.0.7.
 
 - **Steadier frames on SMT CPUs.** The thread pool sizes itself by physical cores, not
-  hardware threads, so the main thread is stalled less often waking workers: Backstab at
+  hardware threads, so the main thread is stalled less often waking workers: a game at
   Ultra keeps 1% lows of 88-96 fps where it had 80-85, and 0.1% lows of 77-84 where it had
   44-69.
 - **A first launch compiles the engine's largest shader once, not twice**: the forward pass

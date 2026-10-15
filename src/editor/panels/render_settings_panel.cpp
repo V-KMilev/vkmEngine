@@ -214,6 +214,12 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
             &s.shadowResolution,
             "The largest shadow tile, the sun's near cascades' - usually the frame's main GPU cost lever"
         );
+        propCheckbox(
+            "Screen-Space",
+            &s.screenShadows,
+            "The sun's contacts its cascades are too coarse for, from the depth buffer: feet on "
+            "the floor, small stones, creases"
+        );
     }
     endComponentCard();
 
@@ -290,11 +296,18 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
             "%.1f px",
             "Entities smaller than this on screen are culled; 0 disables"
         );
+        propCheckbox(
+            "Occlusion (GPU)",
+            &s.occlusionCulling,
+            "Skips the GPU's vertex work on geometry other geometry hides: faster only where the "
+            "GPU bounds the frame and much of the scene is hidden, slower elsewhere"
+        );
         ImGui::PopID();
         if (ImGui::Button("Reset Culling", ImVec2(-1, 0))) {
             const RenderSettings defaults;
             s.cullMaxDistance  = defaults.cullMaxDistance;
             s.cullMinPixels    = defaults.cullMinPixels;
+            s.occlusionCulling = defaults.occlusionCulling;
         }
     }
     endComponentCard();

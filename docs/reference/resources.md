@@ -325,7 +325,7 @@ about a quarter off the error of stopping at the extremes on noisy blocks, and
 stays in integers, so its bytes are the same on every build. BC7 is
 basis_universal's scalar bc7e, maintained upstream, the one file of that submodule compiled,
 at its `basic` level, a row of blocks per `ThreadPool` task. Measured on
-project_alpha's 2048x2048 art with 8 threads (RGB PSNR):
+a shooter's 2048x2048 art with 8 threads (RGB PSNR):
 
 | Level      | Colour map        | Normal map        |
 |------------|-------------------|-------------------|
@@ -339,7 +339,7 @@ loses most; colour is past what an eye can tell at every level from veryfast.
 A full cook of a project pays this once - a texture re-bakes only when its
 recipe or its source moved. A normal map does not go through BC7 at all: it is
 stored as x and y and cooked to BC5, each level renormalised before it is
-stored, so the table's normal-map column is what BC7 would make of one. project_alpha's cooked
+stored, so the table's normal-map column is what BC7 would make of one. A shooter's cooked
 textures shrink from 1450 MB (level 0 alone) to 670 MB with every chain.
 
 ### MaterialAsset

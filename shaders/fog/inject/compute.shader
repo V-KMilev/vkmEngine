@@ -73,16 +73,10 @@ void main() {
         vec3  L;
         float atten = light.color.w * punctualAttenuation(light, falloff, worldP, L);
         if (atten <= 0.0) continue;
-        // spot.w is a directional's cascade base or a light's shadow slot; -1 scatters unshadowed.
-        // N = 0 skips the normal-offset bias: a volume has no surface to offset. Every shadowed
-        // light is shadowed here, or a lamp scatters through the wall in front of it.
-        int sslot = int(light.spot.w);
-        if (sslot >= 0) {
-            if      (type == LIGHT_DIRECTIONAL) atten *= sampleCSM(worldP, vec3(0.0), 1.0);
-            else if (type == LIGHT_SPOT)        atten *= sample2DSlot(sslot, worldP, vec3(0.0), 1.0);
-            else if (type == LIGHT_POINT)       atten *= sampleCubeHard(sslot, worldP);
-            if (atten <= 0.0) continue;
-        }
+        // spot.w is a directional's cascade base or a light's shadow slot. Every shadowed light is
+        // shadowed here, or a lamp scatters through the wall in front of it.
+        atten *= pointShadow(type, int(light.spot.w), worldP);
+        if (atten <= 0.0) continue;
         // Phase angle between the photon's travel (-L) and the scatter toward the eye (V), so
         // forward scattering peaks looking into the light.
         float cosT = -dot(V, L);

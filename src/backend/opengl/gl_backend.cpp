@@ -35,6 +35,7 @@
 #include "pass/gl_decal_pass.h"
 #include "pass/gl_particle_pass.h"
 #include "pass/gl_gtao_pass.h"
+#include "pass/gl_screen_shadow_pass.h"
 #include "pass/gl_forward_pass.h"
 #include "pass/gl_ocean_pass.h"
 #include "pass/gl_atmosphere_pass.h"
@@ -59,7 +60,68 @@
 
 namespace Vkm::Engine {
 
+namespace {
+
+static_assert(sizeof(LightData) == 108, "a field added to LightData goes in lightingDigest, or says why not");
+
+/**
+ * @brief A digest of what a capture reads of @p lights, field by field (no padding).
+ *
+ * Per type, what the irradiance relight and a probe capture read: a directional's slot and shadow
+ * too, since the lowest-slot caster is the shadowed sun; no other light casts in a capture, and a
+ * directional has no position, so a sun parented to a mover lights nothing anew. shadowDistance and
+ * shadowPriority are left out, as a capture fits and keeps its own map.
+ *
+ * @param lights The frame's lights.
+ * @return Their digest; equal digests light a capture alike.
+ */
+uint64_t lightingDigest(const std::vector<LightData>& lights) {
+    uint64_t digest = FNV1A_OFFSET_BASIS;
+    const auto mix = [&digest](const auto& field) { digest = fnv1a64Bytes(&field, sizeof(field), digest); };
+    for (const LightData& light : lights) {
+        mix(light.type);
+        mix(light.color);
+        mix(light.intensity);
+        mix(light.sourceRadius);
+        switch (light.type) {
+            case LightType::Directional:
+                mix(light.entitySlot);
+                mix(light.direction);
+                mix(light.castShadows);
+                mix(light.shadowBias);
+                mix(light.shadowNormalBias);
+                break;
+            case LightType::Point:
+                mix(light.position);
+                mix(light.radius);
+                break;
+            case LightType::Spot:
+                mix(light.position);
+                mix(light.radius);
+                mix(light.direction);
+                mix(light.innerConeAngle);
+                mix(light.outerConeAngle);
+                break;
+            case LightType::Rect:
+            case LightType::Disk:
+                mix(light.position);
+                mix(light.direction);
+                mix(light.radius);
+                mix(light.axisU);
+                mix(light.axisV);
+                mix(light.twoSided);
+                break;
+            case LightType::Count:
+                break;
+        }
+    }
+    return digest;
+}
+
+} // namespace
+
 std::string GLBackend::shaderConstants() {
+    using CullSet = GLOcclusionCull::Set;
     std::ostringstream out;
 
     out << "const int   MAX_LIGHTS              = " << Config::MAX_LIGHTS              << ";\n"
@@ -87,6 +149,9 @@ std::string GLBackend::shaderConstants() {
         << "const float MAX_PROBE_LOD           = " << (GLProbeArray::PREFILTER_MIPS - 1) << ".0;\n"
         << "const float UI_TEXT_MARK            = " << std::to_string(UI_TEXT_MARK) << ";\n"
         << "const uint  INSTANCE_FLAG_VIEWMODEL = " << INSTANCE_FLAG_VIEWMODEL << "u;\n"
+        << "const int   CULL_SET_SEEN           = " << static_cast<int>(CullSet::Seen) << ";\n"
+        << "const int   CULL_SET_REVEALED       = " << static_cast<int>(CullSet::Revealed) << ";\n"
+        << "const int   CULL_SET_SHOWN          = " << static_cast<int>(CullSet::Shown) << ";\n"
         << "const float VIEWMODEL_DEPTH_SHARE   = " << std::to_string(VIEWMODEL_DEPTH_SHARE) << ";\n"
         << "const vec2  TRANSMITTANCE_LUT_SIZE  = vec2("
         << GLAtmosphere::TRANSMITTANCE_WIDTH << ".0, " << GLAtmosphere::TRANSMITTANCE_HEIGHT << ".0);\n"
@@ -192,11 +257,14 @@ bool GLBackend::init(WindowManager& window) {
 
     // Every unit gl_bindings.h numbers must exist in each stage that samples
     // one, or a sampler past the last binds to nothing and reads black.
+    // A vertex stage samples too (shaders/particle/vertex.shader).
     GLint fragmentUnits = 0;
     GLint computeUnits  = 0;
+    GLint vertexUnits   = 0;
     VKM_GL_CHECK(glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &fragmentUnits));
     VKM_GL_CHECK(glGetIntegerv(GL_MAX_COMPUTE_TEXTURE_IMAGE_UNITS, &computeUnits));
-    const GLint units = std::min(fragmentUnits, computeUnits);
+    VKM_GL_CHECK(glGetIntegerv(GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS, &vertexUnits));
+    const GLint units = std::min({fragmentUnits, computeUnits, vertexUnits});
     if (units <= static_cast<GLint>(GLBindings::MAX_TEXTURE_UNIT)) {
         LOG_ERROR(
             "This GPU samples %d texture units a stage; the renderer binds up to %u",
@@ -221,6 +289,7 @@ bool GLBackend::init(WindowManager& window) {
     m_passes.push_back({"DepthPrepass",   std::make_unique<GLDepthPrepass>()});
     m_passes.push_back({"ResolveDepth",   std::make_unique<GLResolvePass>(GLResolvePass::Scope::Geometry)});
     m_passes.push_back({"GTAO",           std::make_unique<GLGTAOPass>()});
+    m_passes.push_back({"ScreenShadows",  std::make_unique<GLScreenShadowPass>()});
     m_passes.push_back({"ClusterCull",    std::make_unique<GLClusterPass>()});
     m_passes.push_back({"FogCompute",     std::make_unique<GLFogPass>()});
     m_passes.push_back({"Atmosphere",     std::make_unique<GLAtmospherePass>()});
@@ -403,6 +472,10 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
 
     ctx.sunDir = sunDir;
     ctx.sky    = sky ? &*sky : nullptr;
+    if (view.settings.occlusionCulling && view.hasCamera) {
+        PROFILE_SCOPE("Render/OcclusionPrepare");
+        if (m_occlusion.prepare(m_opaqueBatcher, *view.objects, resources)) ctx.occlusion = &m_occlusion;
+    }
     m_oceanFields.beginFrame();
 
     // Post colour chain: the scene starts on the geometry target; the first
@@ -457,33 +530,27 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
 }
 
 void GLBackend::bakeCaptures(const RenderView& view, const ResourceManager& resources) {
-    // Re-bake the irradiance volume when its box, grid or version changed. The bake binds its
-    // own camera, light and shadow blocks (see GLSceneCapture).
-    if (view.hasIrradianceVolume) {
-        const IrradianceVolumeData& iv = view.irradianceVolume;
-        const IrradianceSignature want{
-            iv.center,
-            iv.halfExtents,
-            iv.resolutionX,
-            iv.resolutionY,
-            iv.resolutionZ,
-            iv.bakeVersion
-        };
-        // A box being dragged changes every frame: until it holds still, the last bake stands. A
-        // new bake version is a request to bake now.
-        const bool asked = want.bakeVersion != m_irradianceAsked.last().bakeVersion;
-        m_irradianceAsked.see(want);
-        const bool settled = asked || m_irradianceAsked.settled() || !m_bakedIrradiance.baked();
-        if (settled && m_bakedIrradiance.changed(want)) {
-            m_irradiance.resize(iv.resolutionX, iv.resolutionY, iv.resolutionZ);
-            m_irradianceBaker.bake(m_context, m_irradiance, iv, view, m_view, resources, m_ibl);
-        }
-    }
+    const uint64_t lights = lightingDigest(view.lights);
+
+    // The lights or the sky changing light the volume's surfels again, its geometry kept.
+    const CaptureLighting volumeLighting{lights, m_ibl.version(), m_ibl.isReady()};
+    m_irradianceBaker.update(m_context, m_irradiance, view, m_view, resources, m_ibl, volumeLighting);
 
     // Re-bake probes that are new, version-bumped, moved or resized and holding still, or lit by
-    // an older volume, after the volume, which lights what they capture of it.
-    const bool lit = view.hasIrradianceVolume && m_irradiance.isReady();
-    m_probes.update(m_context, view, m_view, resources, m_ibl, lit ? &m_irradiance : nullptr);
+    // an older volume, after the volume, which lights what they capture of it; refresh those
+    // under other light. Probes turned off are neither: nothing reads them, and the ones gone
+    // stale meanwhile refresh in turn once they are back.
+    if (!view.settings.probes) return;
+    const bool                lit    = view.hasIrradianceVolume && m_irradiance.isReady();
+    const GLIrradianceVolume* volume = lit ? &m_irradiance : nullptr;
+    const CaptureLighting probeLighting{
+        lights,
+        m_ibl.version(),
+        m_ibl.isReady(),
+        volume ? volume->lightId() : 0u,
+        volume ? view.irradianceVolume.intensity : 0.0f
+    };
+    m_probes.update(m_context, view, m_view, resources, m_ibl, volume, probeLighting);
 }
 
 void GLBackend::bakeEnvironment(const std::string& path) {
@@ -556,7 +623,7 @@ void GLBackend::onWorldReplaced(const RenderView& view, const ResourceManager& r
     if (worldEpoch != m_worldEpoch) {
         m_worldEpoch = worldEpoch;
         m_probes.invalidate();    // cube captures: same probe pose, different scene
-        m_bakedIrradiance.invalidate();  // SH volume: same box and grid, different scene
+        m_irradianceBaker.invalidate();  // SH volume: same box and grid, different scene
         LOG_INFO("Scene replaced; baked captures of it dropped");
     }
     // Held shadow tiles: pictures of both the world and the meshes it is made of.

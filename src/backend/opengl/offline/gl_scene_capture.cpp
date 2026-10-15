@@ -32,12 +32,15 @@ namespace {
 
 constexpr float CAPTURE_NEAR = 0.05f;
 
-// The key light's map over a capture region: a room's worth of it at a few
+// The sun's map over a capture region: a room's worth of it at a few
 // centimetres a texel, which the 3x3 kernel softens.
 constexpr uint32_t SHADOW_RES = 2048;
 
 /// Kept clear of the region's edge on every side, in the map's own world units.
 constexpr float SHADOW_MARGIN = 0.5f;
+
+/// A sun's direction is told apart in steps of 1/this a component (shadowKey).
+constexpr float SHADOW_DIRECTION_STEPS = 256.0f;
 
 /// The values in a uniform of GL type @p type; 0 for one GLSceneCapture::resetPbr() leaves.
 uint32_t floatsIn(GLenum type) {
@@ -69,7 +72,7 @@ uint32_t floatsIn(GLenum type) {
 GLSceneCapture::GLSceneCapture(const GLMesh& cube, const GLObjectBuffer& objects)
     : m_pbr("shaders/forward/pbr")
     , m_skybox("shaders/skybox")
-    , m_backface("shaders/irradiance/backface")
+    , m_surfels("shaders/irradiance/surfels")
     , m_shadowDepth("shaders/shadow/depth")
     , m_shadowMasked("shaders/shadow/depth_masked")
     , m_cube(cube)
@@ -89,31 +92,11 @@ void GLSceneCapture::begin(
     m_glView = &glView;
     m_ibl    = &ibl;
 
-    // The whole scene, not the camera's: a capture looks every way. GLView::sync leaves most
-    // scene-list materials out, so they are synced here on the frames a capture runs.
-    const RenderObjects& objects = *view.objects;
-    const size_t casterCount = std::min<size_t>(objects.casterCount, objects.scene.size());
-    m_opaque.clear();
-    m_casters.clear();
-    MaterialHandle lastMaterial;
-    for (size_t i = 0; i < objects.scene.size(); ++i) {
-        const uint32_t        object = objects.scene[i];
-        const MaterialHandle& handle = objects.draws[object].material;
-        if (handle != lastMaterial) {
-            lastMaterial = handle;
-            glView.ensureMaterial(handle, resources);
-        }
-        const GLMaterial* material = glView.getMaterial(handle);
-        if (!material) continue;
-        // Casters lead the scene list, and the key light's map draws each as the live map does,
-        // a transparent one by its alpha; the faces draw only what is opaque.
-        if (i < casterCount) m_casters.push_back(object);
-        if (material->getType() != MaterialType::Transparent) m_opaque.push_back(object);
-    }
+    gatherScene(view, glView, resources);
 
     // Grouped once for every face of every cube after this. No palette: the capture draws
     // shaders/forward/pbr only, so a character bakes into GI in bind pose.
-    m_batcher.buildGrouped(m_opaque, objects, glView, 0);
+    m_batcher.buildGrouped(m_opaque, *view.objects, glView, 0);
 
     prepareShadow(gl, view, region);
 
@@ -141,40 +124,129 @@ void GLSceneCapture::resetPbr() {
             const GLint location = glGetUniformLocation(program, name);
             if (location >= 0 && floatsIn(type) > 0) m_pbrUniforms.push_back({location, count, type});
         }
+        // Zeros enough for the largest, kept, so a reset allocates nothing.
+        size_t most = 0;
+        for (const PlainUniform& u : m_pbrUniforms) most = std::max<size_t>(most, u.count * floatsIn(u.type));
+        m_pbrZeros.assign(most, 0.0f);
+        m_pbrIntZeros.assign(most, 0);
+        m_pbrUintZeros.assign(most, 0u);
     }
 
-    size_t most = 0;
-    for (const PlainUniform& u : m_pbrUniforms) most = std::max<size_t>(most, u.count * floatsIn(u.type));
-    const std::vector<GLfloat> zeros(most, 0.0f);
-    const std::vector<GLint>   ints(most, 0);
-    const std::vector<GLuint>  uints(most, 0u);
+    const GLfloat* zeros = m_pbrZeros.data();
+    const GLint*   ints  = m_pbrIntZeros.data();
+    const GLuint*  uints = m_pbrUintZeros.data();
     for (const PlainUniform& u : m_pbrUniforms) {
         const GLsizei n = u.count;
         switch (u.type) {
-            case GL_FLOAT:             glProgramUniform1fv(program, u.location, n, zeros.data()); break;
-            case GL_FLOAT_VEC2:        glProgramUniform2fv(program, u.location, n, zeros.data()); break;
-            case GL_FLOAT_VEC3:        glProgramUniform3fv(program, u.location, n, zeros.data()); break;
-            case GL_FLOAT_VEC4:        glProgramUniform4fv(program, u.location, n, zeros.data()); break;
+            case GL_FLOAT:             glProgramUniform1fv(program, u.location, n, zeros); break;
+            case GL_FLOAT_VEC2:        glProgramUniform2fv(program, u.location, n, zeros); break;
+            case GL_FLOAT_VEC3:        glProgramUniform3fv(program, u.location, n, zeros); break;
+            case GL_FLOAT_VEC4:        glProgramUniform4fv(program, u.location, n, zeros); break;
             case GL_FLOAT_MAT3:
-                glProgramUniformMatrix3fv(program, u.location, n, GL_FALSE, zeros.data());
+                glProgramUniformMatrix3fv(program, u.location, n, GL_FALSE, zeros);
                 break;
             case GL_FLOAT_MAT4:
-                glProgramUniformMatrix4fv(program, u.location, n, GL_FALSE, zeros.data());
+                glProgramUniformMatrix4fv(program, u.location, n, GL_FALSE, zeros);
                 break;
             case GL_INT:
-            case GL_BOOL:              glProgramUniform1iv(program, u.location, n, ints.data()); break;
+            case GL_BOOL:              glProgramUniform1iv(program, u.location, n, ints); break;
             case GL_INT_VEC2:
-            case GL_BOOL_VEC2:         glProgramUniform2iv(program, u.location, n, ints.data()); break;
+            case GL_BOOL_VEC2:         glProgramUniform2iv(program, u.location, n, ints); break;
             case GL_INT_VEC3:
-            case GL_BOOL_VEC3:         glProgramUniform3iv(program, u.location, n, ints.data()); break;
+            case GL_BOOL_VEC3:         glProgramUniform3iv(program, u.location, n, ints); break;
             case GL_INT_VEC4:
-            case GL_BOOL_VEC4:         glProgramUniform4iv(program, u.location, n, ints.data()); break;
-            case GL_UNSIGNED_INT:      glProgramUniform1uiv(program, u.location, n, uints.data()); break;
-            case GL_UNSIGNED_INT_VEC2: glProgramUniform2uiv(program, u.location, n, uints.data()); break;
-            case GL_UNSIGNED_INT_VEC3: glProgramUniform3uiv(program, u.location, n, uints.data()); break;
-            case GL_UNSIGNED_INT_VEC4: glProgramUniform4uiv(program, u.location, n, uints.data()); break;
+            case GL_BOOL_VEC4:         glProgramUniform4iv(program, u.location, n, ints); break;
+            case GL_UNSIGNED_INT:      glProgramUniform1uiv(program, u.location, n, uints); break;
+            case GL_UNSIGNED_INT_VEC2: glProgramUniform2uiv(program, u.location, n, uints); break;
+            case GL_UNSIGNED_INT_VEC3: glProgramUniform3uiv(program, u.location, n, uints); break;
+            case GL_UNSIGNED_INT_VEC4: glProgramUniform4uiv(program, u.location, n, uints); break;
         }
     }
+}
+
+void GLSceneCapture::beginLighting(
+    Vkm::GL::Context& gl,
+    const RenderView& view,
+    GLView& glView,
+    const ResourceManager& resources,
+    const Math::AABB& region
+) {
+    m_glView = &glView;
+    const ShadowKey key = shadowKey(view, region);
+    for (int slot = 0; slot < SHADOW_SLOTS; ++slot) {
+        if (m_shadows[slot].key && *m_shadows[slot].key == key) {
+            useShadow(slot, view);
+            return;
+        }
+    }
+    const bool castersOnly = true;
+    gatherScene(view, glView, resources, castersOnly);
+    prepareShadow(gl, view, region);
+}
+
+void GLSceneCapture::gatherScene(
+    const RenderView& view,
+    GLView& glView,
+    const ResourceManager& resources,
+    bool castersOnly
+) {
+    // The whole scene, not the camera's: a capture looks every way. GLView::sync leaves most
+    // scene-list materials out, so they are synced here on the frames a capture runs.
+    const RenderObjects& objects = *view.objects;
+    const size_t casterCount = std::min<size_t>(objects.casterCount, objects.scene.size());
+    m_opaque.clear();
+    m_casters.clear();
+    MaterialHandle lastMaterial;
+    for (size_t i = 0; i < (castersOnly ? casterCount : objects.scene.size()); ++i) {
+        const uint32_t        object = objects.scene[i];
+        const MaterialHandle& handle = objects.draws[object].material;
+        if (handle != lastMaterial) {
+            lastMaterial = handle;
+            glView.ensureMaterial(handle, resources);
+        }
+        const GLMaterial* material = glView.getMaterial(handle);
+        if (!material) continue;
+        // Casters lead the scene list, and the sun's map draws each as the live map does,
+        // a transparent one by its alpha; the faces draw only what is opaque.
+        if (i < casterCount) m_casters.push_back(object);
+        if (material->getType() != MaterialType::Transparent) m_opaque.push_back(object);
+    }
+}
+
+GLSceneCapture::ShadowKey GLSceneCapture::shadowKey(const RenderView& view, const Math::AABB& region) {
+    ShadowKey key;
+    key.region = region;
+    if (const LightData* light = lowestSlotDirectionalCaster(view.lights)) {
+        key.casts      = true;
+        key.light      = light->entitySlot;
+        // Steps of about a fifth of a degree: a sun crossing the sky draws its map when it has moved
+        // that far, not on every frame it moves.
+        const glm::vec3 steps = glm::round(glm::normalize(light->direction) * SHADOW_DIRECTION_STEPS);
+        key.direction  = steps / SHADOW_DIRECTION_STEPS;
+        key.bias       = light->shadowBias;
+        key.normalBias = light->shadowNormalBias;
+    }
+    return key;
+}
+
+void GLSceneCapture::useShadow(int slot, const RenderView& view) {
+    ShadowSlot& shadow = m_shadows[slot];
+    shadow.used = ++m_shadowClock;
+
+    // The lights, the shadowed sun on the map's slot while it casts.
+    const size_t lightCount = std::min<size_t>(view.lights.size(), Config::MAX_LIGHTS);
+    m_lightSlots.assign(lightCount, -1);
+    const LightData* sun = lowestSlotDirectionalCaster(view.lights);
+    if (sun && shadow.casts) {
+        const auto index = static_cast<size_t>(sun - view.lights.data());
+        if (index < lightCount) m_lightSlots[index] = 0;
+    }
+    m_lights.update(view.lights, {m_lightSlots.data(), static_cast<uint32_t>(lightCount)});
+    if (!shadow.casts) return;
+
+    shadow.ubo->bindBase(GLBindings::UBOBindingPoints::SHADOW);
+    shadow.map->bindSlot(GLBindings::ShadowTextureSlots::ATLAS_2D);
+    m_shadowSampler->bindSlot(GLBindings::ShadowTextureSlots::ATLAS_2D);
 }
 
 void GLSceneCapture::setAmbientVolume(const GLIrradianceVolume* volume, const IrradianceVolumeData& box) {
@@ -185,18 +257,26 @@ void GLSceneCapture::setAmbientVolume(const GLIrradianceVolume* volume, const Ir
 }
 
 void GLSceneCapture::prepareShadow(Vkm::GL::Context& gl, const RenderView& view, const Math::AABB& region) {
-    const size_t lightCount = std::min<size_t>(view.lights.size(), Config::MAX_LIGHTS);
-    m_lightSlots.assign(lightCount, -1);
-
-    // The key light (see lowestSlotDirectional).
-    const LightData* key = lowestSlotDirectional(view.lights);
-    const bool casts = key && key->castShadows && !m_casters.empty();
-    if (casts) {
-        const auto index = static_cast<size_t>(key - view.lights.data());
-        if (index < lightCount) m_lightSlots[index] = 0;
+    // Into the slot drawn for this before, or else the one bound longest ago.
+    const ShadowKey shadowFor = shadowKey(view, region);
+    int slot = 0;
+    for (int i = 0; i < SHADOW_SLOTS; ++i) {
+        if (m_shadows[i].key && *m_shadows[i].key == shadowFor) {
+            slot = i;
+            break;
+        }
+        if (m_shadows[i].used < m_shadows[slot].used) slot = i;
     }
-    m_lights.update(view.lights, {m_lightSlots.data(), static_cast<uint32_t>(lightCount)});
-    if (!casts) return;
+    ShadowSlot& shadow = m_shadows[slot];
+
+    // The sun the frame shadows (see lowestSlotDirectionalCaster).
+    const LightData* key = lowestSlotDirectionalCaster(view.lights);
+    shadow.key   = shadowFor;
+    shadow.casts = key && !m_casters.empty();
+    if (!shadow.casts) {
+        useShadow(slot, view);
+        return;
+    }
 
     // Across the light, the region; along it, every caster over the region's footprint, since a
     // roof well above a volume still shades it.
@@ -208,11 +288,14 @@ void GLSceneCapture::prepareShadow(Vkm::GL::Context& gl, const RenderView& view,
     glm::vec3 lo = across.min - glm::vec3(SHADOW_MARGIN);
     glm::vec3 hi = across.max + glm::vec3(SHADOW_MARGIN);
 
+    // Only those over the region's footprint draw: the map shows nothing else.
+    m_overRegion.clear();
     for (const uint32_t object : m_casters) {
         const Math::AABB c = Math::transform(lightView, objects.bounds[object]);
         if (c.max.x < lo.x || c.min.x > hi.x || c.max.y < lo.y || c.min.y > hi.y) continue;
         lo.z = std::min(lo.z, c.min.z);
         hi.z = std::max(hi.z, c.max.z);
+        m_overRegion.push_back(object);
     }
 
     // The view looks down -z, so what lies nearest the light has the largest z.
@@ -220,7 +303,7 @@ void GLSceneCapture::prepareShadow(Vkm::GL::Context& gl, const RenderView& view,
     const float     zFar    = -lo.z + SHADOW_MARGIN;
     const glm::mat4 lightVP = glm::ortho(lo.x, hi.x, lo.y, hi.y, zNear, zFar) * lightView;
 
-    if (!m_shadowMap) {
+    if (!shadow.map) {
         Vkm::GL::Texture2DParams params;
         params.width           = SHADOW_RES;
         params.height          = SHADOW_RES;
@@ -232,8 +315,9 @@ void GLSceneCapture::prepareShadow(Vkm::GL::Context& gl, const RenderView& view,
         params.wrapS           = Vkm::GL::TextureWrap::ClampToEdge;
         params.wrapT           = Vkm::GL::TextureWrap::ClampToEdge;
         params.generateMipmaps = false;
-        m_shadowMap = std::make_unique<Vkm::GL::Texture2D>("capture_shadow", params);
-
+        shadow.map = std::make_unique<Vkm::GL::Texture2D>("capture_shadow", params);
+    }
+    if (!m_shadowSampler) {
         Vkm::GL::Sampler::Params compare;
         compare.minFilter = Vkm::GL::TextureMinFilter::Linear;
         compare.magFilter = Vkm::GL::TextureMagFilter::Linear;
@@ -241,16 +325,14 @@ void GLSceneCapture::prepareShadow(Vkm::GL::Context& gl, const RenderView& view,
         compare.wrapT     = Vkm::GL::TextureWrap::ClampToEdge;
         compare.compare   = Vkm::GL::TextureCompare::LessEqual;
         m_shadowSampler = std::make_unique<Vkm::GL::Sampler>(compare);
-
-        m_shadowFbo.bind();
-        m_shadowFbo.attachTexture2D(GL_DEPTH_ATTACHMENT, m_shadowMap->getID());
-        m_shadowFbo.setDrawBuffer(GL_NONE);
-        m_shadowFbo.setReadBuffer(GL_NONE);
     }
 
     // Casters through the static depth programs (bind pose, as the capture draws a character),
     // a cutout through the one its material cuts.
     m_shadowFbo.bind();
+    m_shadowFbo.attachTexture2D(GL_DEPTH_ATTACHMENT, shadow.map->getID());
+    m_shadowFbo.setDrawBuffer(GL_NONE);
+    m_shadowFbo.setReadBuffer(GL_NONE);
     gl.setViewport(0, 0, static_cast<int32_t>(SHADOW_RES), static_cast<int32_t>(SHADOW_RES));
     gl.setDepthTest(true);
     gl.setDepthWrite(true);
@@ -259,7 +341,7 @@ void GLSceneCapture::prepareShadow(Vkm::GL::Context& gl, const RenderView& view,
     gl.setFaceCulling(false);
     gl.clear(false, true, false);
 
-    m_casterBatcher.buildGrouped(m_casters, objects, *m_glView, 0);
+    m_casterBatcher.buildGrouped(m_overRegion, objects, *m_glView, 0);
     m_shadowMasked.bind();
     m_shadowMasked.setUniformMatrix4fv("u_lightVP", lightVP);
     m_shadowMasked.setUniform2f("u_ditherShift", 0.0f, 0.0f);
@@ -294,11 +376,8 @@ void GLSceneCapture::prepareShadow(Vkm::GL::Context& gl, const RenderView& view,
     const float worldTexel = std::max(hi.x - lo.x, hi.y - lo.y) / static_cast<float>(SHADOW_RES);
     map.params  = glm::vec4(key->shadowBias, worldTexel, zFar - zNear, 0.0f);  // w = 0: the hard kernel
     map.shape   = glm::vec4(key->shadowNormalBias, 0.0f, 0.0f, 0.0f);
-    Vkm::GL::uploadIfChanged(m_shadowUbo, m_shadowLast, data);
-    m_shadowUbo->bindBase(GLBindings::UBOBindingPoints::SHADOW);
-
-    m_shadowMap->bindSlot(GLBindings::ShadowTextureSlots::ATLAS_2D);
-    m_shadowSampler->bindSlot(GLBindings::ShadowTextureSlots::ATLAS_2D);
+    Vkm::GL::uploadIfChanged(shadow.ubo, shadow.last, data);
+    useShadow(slot, view);
 }
 
 void GLSceneCapture::beginFace(
@@ -351,12 +430,19 @@ void GLSceneCapture::captureCube(
     float farPlane,
     const AttachFace& attach
 ) {
-    const glm::mat4 proj   = glm::perspective(glm::radians(90.0f), 1.0f, CAPTURE_NEAR, farPlane);
-    const bool      hasIBL = m_ibl->isReady();
+    for (int face = 0; face < 6; ++face) captureFace(gl, face, position, farPlane, attach);
+}
 
-    const std::vector<InstanceDraw>& draws = m_batcher.draws();
+void GLSceneCapture::captureFace(
+    Vkm::GL::Context& gl,
+    int face,
+    const glm::vec3& position,
+    float farPlane,
+    const AttachFace& attach
+) {
+    const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, CAPTURE_NEAR, farPlane);
 
-    // Uniforms persist on m_pbr through the skybox draws below.
+    // Uniforms persist on m_pbr through the skybox draw below.
     m_pbr.bind();
     if (m_volume) {
         m_volume->bindForShading(m_pbr, m_volumeBox);
@@ -364,34 +450,32 @@ void GLSceneCapture::captureCube(
         m_pbr.setUniform1i("u_hasIrradianceVolume", 0);
     }
 
-    for (int face = 0; face < 6; ++face) {
-        beginFace(gl, face, position, proj, attach);
+    beginFace(gl, face, position, proj, attach);
 
-        // The global sky, so directions that miss geometry carry sky radiance, not black.
-        if (hasIBL) drawSky(gl, *m_ibl, proj);
+    // The global sky, so directions that miss geometry carry sky radiance, not black.
+    if (m_ibl->isReady()) drawSky(gl, *m_ibl, proj);
 
-        // The skybox draw rebound the program; begin()'s uniforms and IBL binds persist on m_pbr.
-        gl.setFaceCulling(true);
-        gl.setCullFace(GL_BACK);
-        m_pbr.bind();
-        m_objects.bind();
+    // The skybox draw rebound the program; begin()'s uniforms and IBL binds persist on m_pbr.
+    gl.setFaceCulling(true);
+    gl.setCullFace(GL_BACK);
+    m_pbr.bind();
+    m_objects.bind();
 
-        const GLMaterial* boundMaterial = nullptr;
-        for (const InstanceDraw& draw : draws) {
-            const GLMaterial* material = m_glView->getMaterial(draw.material);
-            if (material && material != boundMaterial) {
-                material->bind(GLBindings::UBOBindingPoints::MATERIAL);
-                material->bindTextures(*m_glView);
-                boundMaterial = material;
-                gl.setFaceCulling(!material->doubleSided());
-            }
-            m_batcher.draw(gl, draw);
+    const GLMaterial* boundMaterial = nullptr;
+    for (const InstanceDraw& draw : m_batcher.draws()) {
+        const GLMaterial* material = m_glView->getMaterial(draw.material);
+        if (material && material != boundMaterial) {
+            material->bind(GLBindings::UBOBindingPoints::MATERIAL);
+            material->bindTextures(*m_glView);
+            boundMaterial = material;
+            gl.setFaceCulling(!material->doubleSided());
         }
+        m_batcher.draw(gl, draw);
     }
     gl.setFaceCulling(true);
 }
 
-void GLSceneCapture::captureBackfaceCube(
+void GLSceneCapture::captureSurfels(
     Vkm::GL::Context& gl,
     const glm::vec3& position,
     float farPlane,
@@ -399,30 +483,36 @@ void GLSceneCapture::captureBackfaceCube(
 ) {
     const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, CAPTURE_NEAR, farPlane);
 
+    gl.setDepthTest(true);
+    gl.setDepthWrite(true);
+    gl.setDepthFunc(GL_LESS);
+    gl.setBlending(false);
+    // Off whatever the material: a back face is how a probe learns it is inside a solid.
+    gl.setFaceCulling(false);
+    m_surfels.bind();
+    m_objects.bind();
+
     const std::vector<InstanceDraw>& draws = m_batcher.draws();
-
     for (int face = 0; face < 6; ++face) {
-        beginFace(gl, face, position, proj, attach);
+        attach(face);
+        m_camera.update(
+            CameraData::from(GLCubemap::faceView(face, position), proj, position),
+            glm::vec2(m_faceSize)
+        );
 
-        // Culling off is the whole point: a surface enclosing the probe reaches
-        // this pass only as the back face captureCube() throws away.
-        gl.setFaceCulling(false);
-        m_backface.bind();
-        m_objects.bind();
-
-        // The answer is a property of the winding, except on a double-sided material, whose
-        // back is a surface too. An alpha-masked material counts as solid here - a probe
-        // behind a leaf card reads as enclosed.
         const GLMaterial* boundMaterial = nullptr;
         for (const InstanceDraw& draw : draws) {
             const GLMaterial* material = m_glView->getMaterial(draw.material);
             if (material && material != boundMaterial) {
-                m_backface.setUniform1i("u_doubleSided", material->doubleSided() ? 1 : 0);
+                material->bind(GLBindings::UBOBindingPoints::MATERIAL);
+                material->bindTextures(*m_glView);
+                m_surfels.setUniform1i("u_doubleSided", material->doubleSided() ? 1 : 0);
                 boundMaterial = material;
             }
             m_batcher.draw(gl, draw);
         }
     }
+    gl.setFaceCulling(true);
 }
 
 void bindOfflinePbrUniforms(Vkm::GL::Shader& pbr, const GLIBL& ibl) {
@@ -437,6 +527,7 @@ void bindOfflinePbrUniforms(Vkm::GL::Shader& pbr, const GLIBL& ibl) {
     }
     ibl.bindBrdf(GLBindings::IBLTextureSlots::BRDF_LUT);
     pbr.setUniform1i("u_hasAO", 0);
+    pbr.setUniform1i("u_hasScreenShadow", 0);
     pbr.setUniform1i("u_hasSceneColor", 0);
     pbr.setUniform1i("u_probeCount", 0);
     pbr.setUniform1i("u_useClusters", 0);

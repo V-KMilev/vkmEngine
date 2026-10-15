@@ -1897,7 +1897,8 @@ void InspectorPanel::drawParticleSection(EditorContext& ec, EntityId id) {
         changed |= propCheckbox(
             "Additive",
             &e.additive,
-            "Additive blend suits sparks/fire; alpha blend suits smoke"
+            "Additive: the particle gives off its colour, for sparks and fire. Alpha: its colour is lit by "
+            "the scene's lights and shadows, for smoke and dust"
         );
 
         ImGui::Spacing();
@@ -2148,10 +2149,9 @@ void InspectorPanel::drawIrradianceVolumeSection(EditorContext& ec, EntityId id)
 
         changed |= propDrag3("Box Size", glm::value_ptr(v.halfExtents), 0.1f, 0.1f, 1000.0f, "%.1f");
 
-        constexpr uint32_t MAX_PROBES = IrradianceVolume::MAX_RESOLUTION;
-        changed |= propDragU32("Probes X", &v.resolutionX, 0.1f, 1u, MAX_PROBES);
-        changed |= propDragU32("Probes Y", &v.resolutionY, 0.1f, 1u, MAX_PROBES);
-        changed |= propDragU32("Probes Z", &v.resolutionZ, 0.1f, 1u, MAX_PROBES);
+        changed |= propDragU32("Probes X", &v.resolutionX, 0.1f, 1u, IrradianceVolume::MAX_RESOLUTION);
+        changed |= propDragU32("Probes Y", &v.resolutionY, 0.1f, 1u, IrradianceVolume::MAX_RESOLUTION);
+        changed |= propDragU32("Probes Z", &v.resolutionZ, 0.1f, 1u, IrradianceVolume::MAX_RESOLUTION);
 
         changed |= propDrag("Intensity", &v.intensity, 0.02f, 0.0f, 8.0f, "%.2f");
         changed |= propDrag(
@@ -2168,15 +2168,26 @@ void InspectorPanel::drawIrradianceVolumeSection(EditorContext& ec, EntityId id)
         changed |= rebakeButton(v.bakeVersion);
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip(
-                "Every probe is twelve scene captures, and the bake runs\n"
+                "Every probe is six scene captures, and the bake runs\n"
                 "inside one frame - the editor stops until it finishes.\n"
-                "The grid is a product, so this is cubic in the sliders."
+                "The grid is a product, so this is cubic in the sliders.\n"
+                "A change of the lights or the sky needs no bake."
             );
-        // Twelve captures a probe: GLIrradianceBaker takes a radiance and a backface cube. The
-        // clamped grid is what is baked and allocated; the raw fields are the file's.
+        // Six captures a probe: the backend's bake takes one cube of surfels. The clamped grid is
+        // what is baked and allocated; the raw fields are the file's.
         const glm::uvec3 grid = IrradianceVolume::clampedResolution(v);
         const uint32_t probeCount = grid.x * grid.y * grid.z;
-        ImGui::TextDisabled("%u probes, %u scene captures.", probeCount, probeCount * 12u);
+        ImGui::TextDisabled("%u probes, %u scene captures.", probeCount, probeCount * 6u);
+        if (grid != glm::uvec3(v.resolutionX, v.resolutionY, v.resolutionZ)) {
+            ImGui::TextDisabled(
+                "Baked as %u x %u x %u: at most %u a side and %u probes.",
+                grid.x,
+                grid.y,
+                grid.z,
+                IrradianceVolume::MAX_RESOLUTION,
+                IrradianceVolume::MAX_PROBES
+            );
+        }
 
         // A scene lights from one volume; a second bakes nothing and looks merely out of range.
         // findIrradianceVolume names the one the frame reads.

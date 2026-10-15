@@ -121,6 +121,9 @@ class GLInstanceBatcher {
          */
         const std::vector<InstanceDraw>& draws() const { return m_draws; }
 
+        /// The instances and commands the draws slice, from the most recent build*().
+        const GLDrawList& list() const { return m_list; }
+
     private:
         /**
          * @brief One object's place in the sort: its key, and its index.

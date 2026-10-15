@@ -75,4 +75,21 @@ inline const LightData* lowestSlotDirectional(const std::vector<LightData>& ligh
     return key;
 }
 
+/**
+ * @brief The lowest-slot directional light that casts shadows: the sun a shadow is drawn for.
+ *
+ * Not always the key light: a key light that casts none leaves the sun's shadow to the next.
+ *
+ * @param lights The frame's lights.
+ * @return That light, or null when no directional light casts.
+ */
+inline const LightData* lowestSlotDirectionalCaster(const std::vector<LightData>& lights) {
+    const LightData* sun = nullptr;
+    for (const LightData& light : lights) {
+        if (light.type != LightType::Directional || !light.castShadows) continue;
+        if (!sun || light.entitySlot < sun->entitySlot) sun = &light;
+    }
+    return sun;
+}
+
 } // namespace Vkm::Engine

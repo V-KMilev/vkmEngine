@@ -126,13 +126,16 @@ class GLMeshPool {
          * @param commands  DrawCommand records, bound as the indirect buffer.
          * @param first     First command to draw.
          * @param count     Commands to draw.
+         * @param skip      Object indices at the front of @p instances that baseInstance counts
+         *                  from past, for a buffer holding several lists end to end.
          */
         void drawIndirect(
             VertexLayout layout,
             const Vkm::GL::VertexBuffer& instances,
             const Vkm::GL::VertexBuffer& commands,
             uint32_t first,
-            uint32_t count
+            uint32_t count,
+            uint32_t skip = 0
         ) const;
 
     private:
@@ -144,8 +147,9 @@ class GLMeshPool {
          *
          * @param layout    Which vertex array: static, or skinned with its second stream.
          * @param instances The object indices the draw reads, one per instance.
+         * @param skip      Indices at the front of @p instances the draw starts past.
          */
-        void bind(VertexLayout layout, const Vkm::GL::VertexBuffer& instances) const;
+        void bind(VertexLayout layout, const Vkm::GL::VertexBuffer& instances, uint32_t skip = 0) const;
 
         /**
          * @brief Point the vertex arrays at the current buffers.

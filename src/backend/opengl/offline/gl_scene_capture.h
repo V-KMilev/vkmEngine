@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -41,19 +42,23 @@ struct RenderView;
  * Full forward PBR and the global sky, lit by direct lights, the global IBL and, where one is
  * lent (setAmbientVolume), an irradiance volume: probes, clusters and screen-space inputs off,
  * which is also the recursion guard. The destination arrives as a face-attach callback, as
- * GLCubeConvolver takes its own. The key light casts through a map of the capture's own, since
+ * GLCubeConvolver takes its own. The shadowed sun (lowestSlotDirectionalCaster) casts through a
+ * map of the capture's own, since
  * the frame's atlas fits the camera and without one the sun lights a room's floor through its
  * roof; other lights capture unshadowed.
  *
  * begin() prepares what every face of every position shares, and captureCube() draws one cube
- * per call, so a probe grid batches the scene once; the caller owns the FBO and the state around
- * the loop. Lent to every consumer (see GLBackend): the PBR ubershader is the engine's most
- * expensive program. It binds its own camera, lights and shadow blocks and the 2D shadow slot,
- * so capture at the end of a frame.
+ * per call - or captureFace() one face, captureSurfels() what an irradiance probe sees as
+ * surfaces - so a probe grid batches the scene once; the caller owns the FBO and the state around
+ * the loop. beginLighting() prepares the lights and the sun's map alone, for a relight of
+ * what was captured. Lent to every consumer (see GLBackend): the PBR ubershader is the engine's
+ * most expensive program. It binds its own camera, lights and shadow blocks and the 2D shadow
+ * slot, so capture at the end of a frame.
  */
 class GLSceneCapture {
     public:
-        using AttachFace = std::function<void(int face)>;  ///< Attaches the destination face as colour 0.
+        /// Points the draws at a face of the destination: attaches it, or sets its viewport.
+        using AttachFace = std::function<void(int face)>;
 
         /**
          * @brief Compile the capture programs, drawing the sky with @p cube.
@@ -73,10 +78,10 @@ class GLSceneCapture {
 
     public:
         /**
-         * @brief Prepare the scene every following captureCube() draws.
+         * @brief Prepare the scene the captures after it draw.
          *
          * Takes the view's scene-wide objects, not the camera's, syncing their materials into
-         * @p glView (GLView::sync skips most), and draws the key light's map fitted to @p region.
+         * @p glView (GLView::sync skips most), and draws the sun's map fitted to @p region.
          * The captured surfaces take their ambient from the sky until setAmbientVolume().
          *
          * @param gl        Live GL context the shadow map is drawn on.
@@ -86,7 +91,7 @@ class GLSceneCapture {
          * @param ibl       Global IBL: the ambient term while capturing, and the background.
          * @param faceSize  Face resolution, every face camera's viewport.
          * @param region    World box the captures describe (a probe's influence box, an irradiance
-         *                  volume), which the key light's shadow covers; outside is unshadowed.
+         *                  volume), which the sun's shadow covers; outside is unshadowed.
          */
         void begin(
             Vkm::GL::Context& gl,
@@ -95,6 +100,31 @@ class GLSceneCapture {
             const ResourceManager& resources,
             const GLIBL& ibl,
             float faceSize,
+            const Math::AABB& region
+        );
+
+        /**
+         * @brief Prepare what lights the scene - the lights, and the sun's map fitted to @p region -
+         *        and none of what a capture draws.
+         *
+         * For a pass that lights what was captured before (GLIrradianceBaker::relight). The map
+         * is drawn again only when its ShadowKey changes - the sun, its direction rounded to steps
+         * of about a fifth of a degree, its biases, @p region - or a capture elsewhere took its
+         * slot (SHADOW_SLOTS), so a scene whose small lights move every frame does not draw its
+         * casters every frame; a caster moving under a still sun keeps the shadow it cast, as the
+         * captured surfaces keep their place.
+         *
+         * @param gl        Live GL context the shadow map is drawn on.
+         * @param view      Supplies the lights and the casters.
+         * @param glView    GPU resource mirror the casters draw through.
+         * @param resources Resolves the materials the frame has not synced.
+         * @param region    World box the sun's shadow covers.
+         */
+        void beginLighting(
+            Vkm::GL::Context& gl,
+            const RenderView& view,
+            GLView& glView,
+            const ResourceManager& resources,
             const Math::AABB& region
         );
 
@@ -128,19 +158,39 @@ class GLSceneCapture {
         );
 
         /**
-         * @brief Draw the same six faces as a backface mask: 1 where the nearest surface faces away.
+         * @brief Draw face @p face of the cube captureCube() draws, alone.
          *
-         * captureCube() culls back faces, so from inside a solid it sees through the walls. This
-         * draws with culling off, so a probe enclosed by geometry has a mask of mostly 1. No sky:
-         * a direction reaching it keeps the cleared 0. Position-only, so it costs a fraction of
-         * the radiance capture.
+         * For a capture spread over frames; begin() must have run in the same frame, since the
+         * frame between rebinds the camera, lights and shadow blocks.
+         *
+         * @param gl       Live GL context the capture draws on.
+         * @param face     Cube face index (0..5).
+         * @param position World-space centre the face looks out from.
+         * @param farPlane Capture far plane; geometry beyond it misses the cube.
+         * @param attach   Attaches the destination face + its viewport.
+         */
+        void captureFace(
+            Vkm::GL::Context& gl,
+            int face,
+            const glm::vec3& position,
+            float farPlane,
+            const AttachFace& attach
+        );
+
+        /**
+         * @brief Draw what the six faces around @p position see as surfels, to be lit later.
+         *
+         * The nearest surface through each texel, packed as shaders/irradiance/surfel.glsl says,
+         * into the RGBA32UI target the caller attached. Culling off: a probe inside a solid sees
+         * the back of what encloses it, and the surfel says so. No sky, and no clear: a probe's
+         * faces are tiles of one atlas, cleared once by the caller to zero, which reads as sky.
          *
          * @param gl       Live GL context the capture draws on.
          * @param position World-space centre the six faces look out from.
-         * @param farPlane Capture far plane; must match captureCube()'s to see the same geometry.
-         * @param attach   Attaches the destination face + its viewport, once per face.
+         * @param farPlane Capture far plane; geometry beyond it misses the cube.
+         * @param attach   Sets the face's viewport, once per face.
          */
-        void captureBackfaceCube(
+        void captureSurfels(
             Vkm::GL::Context& gl,
             const glm::vec3& position,
             float farPlane,
@@ -170,13 +220,43 @@ class GLSceneCapture {
          *
          * Its uniforms are the last caller's: begin() puts every one back as linked before
          * setting its own, so a borrower sets each it reads before drawing, and never draws
-         * between a begin() and its captureCube()s.
+         * between a begin() and the captures after it.
          *
          * @return The capture's forward PBR program.
          */
         Vkm::GL::Shader& pbrProgram() { return m_pbr; }
 
     private:
+        /// What the sun's map was drawn for; drawn again when any of it changes.
+        struct ShadowKey {
+            Math::AABB region{};
+            bool       casts      = false;
+            uint32_t   light      = 0;  ///< The sun's entity slot.
+            glm::vec3  direction{0.0f};
+            float      bias       = 0.0f;
+            float      normalBias = 0.0f;
+
+            bool operator==(const ShadowKey& other) const {
+                return region.min == other.region.min && region.max == other.region.max
+                    && casts == other.casts && light == other.light && direction == other.direction
+                    && bias == other.bias && normalBias == other.normalBias;
+            }
+        };
+
+        /// The sun's depth over one region, and the ShadowBlock that reads it.
+        struct ShadowSlot {
+            std::optional<ShadowKey>                key;    ///< What it was drawn for; none yet.
+            bool                                    casts = false;
+            std::unique_ptr<Vkm::GL::Texture2D>     map;    ///< Made on first use.
+            std::unique_ptr<Vkm::GL::UniformBuffer> ubo;
+            ShadowUBOData                           last{};   ///< What ubo holds.
+            uint64_t                                used = 0;  ///< When it was last bound.
+        };
+
+        /// Maps kept: one for the irradiance volume a relight lights and one for the probe being
+        /// captured, so neither draws the other's away every frame both run.
+        static constexpr int SHADOW_SLOTS = 2;
+
         /// A uniform of m_pbr's outside a block and not a sampler, which resetPbr() zeroes.
         struct PlainUniform {
             int32_t  location = -1;
@@ -193,9 +273,40 @@ class GLSceneCapture {
         void resetPbr();
 
         /**
-         * @brief Attach face @p face, clear it, and put the camera on it.
+         * @brief What @p view's sun and @p region would draw the map for.
          *
-         * Shared by both capture passes, so one framing is kept in step with GLCubemap::faceView.
+         * @param view   Supplies the lights.
+         * @param region World box the map covers.
+         * @return The key.
+         */
+        static ShadowKey shadowKey(const RenderView& view, const Math::AABB& region);
+
+        /**
+         * @brief Gather the scene-wide objects a capture draws and the sun's map casts.
+         *
+         * @param view        Supplies the objects.
+         * @param glView      GPU resource mirror whose materials are synced.
+         * @param resources   Resolves the materials the frame has not synced.
+         * @param castersOnly Gather the casters alone, the scene list's lead, for a map and no
+         *                    capture.
+         */
+        void gatherScene(
+            const RenderView& view,
+            GLView& glView,
+            const ResourceManager& resources,
+            bool castersOnly = false
+        );
+
+        /**
+         * @brief Bind the lights, and shadow slot @p slot's map and ShadowBlock while it casts.
+         *
+         * @param slot Which of m_shadows.
+         * @param view Supplies the lights.
+         */
+        void useShadow(int slot, const RenderView& view);
+
+        /**
+         * @brief Attach face @p face, clear it, and put the camera on it.
          *
          * @param gl       Live GL context.
          * @param face     Cube face index (0..5).
@@ -212,10 +323,11 @@ class GLSceneCapture {
         );
 
         /**
-         * @brief Draw and bind the key light's shadow over @p region, or none when it casts none.
+         * @brief Draw and bind the sun's shadow over @p region, or none when no sun casts.
          *
-         * Binds the lights with their slots and a one-"cascade" ShadowBlock over the frame's.
-         * Reads the casters begin() gathered.
+         * Into the slot last drawn for the same sun and region, or else the one bound
+         * longest ago. Binds the lights with their slots and a one-"cascade" ShadowBlock over the
+         * frame's. Reads the casters gatherScene() gathered.
          *
          * @param gl     Live GL context.
          * @param view   Supplies the lights and the casters' bounds.
@@ -226,8 +338,8 @@ class GLSceneCapture {
     private:
         Vkm::GL::Shader m_pbr;           ///< Capture geometry (full forward PBR).
         Vkm::GL::Shader m_skybox;        ///< Capture background.
-        Vkm::GL::Shader m_backface;      ///< Capture which surfaces face away.
-        Vkm::GL::Shader m_shadowDepth;   ///< The key light's depth; the shadow pass's program.
+        Vkm::GL::Shader m_surfels;       ///< Capture what a probe sees, as surfels.
+        Vkm::GL::Shader m_shadowDepth;   ///< The sun's depth; the shadow pass's program.
         Vkm::GL::Shader m_shadowMasked;  ///< The same, cut by an alpha-masked caster's material.
 
         const GLMesh&         m_cube;     ///< Unit cube the skybox draws; the backend's.
@@ -235,25 +347,27 @@ class GLSceneCapture {
 
         GLCamera          m_camera;         ///< Per-face camera UBO.
         GLOcean           m_ocean;          ///< No sea: a `waves` surface is an ordinary one here.
-        GLLights          m_lights;         ///< The frame's lights, the key light alone shadowed.
+        GLLights          m_lights;         ///< The frame's lights, the sun alone shadowed.
         GLInstanceBatcher m_batcher;        ///< Instanced capture draws.
-        GLInstanceBatcher m_casterBatcher;  ///< Its casters, for the key light's map.
+        GLInstanceBatcher m_casterBatcher;  ///< Its casters, for the sun's map.
 
         std::vector<uint32_t> m_opaque;      ///< begin()'s opaque scene-wide objects.
         std::vector<uint32_t> m_casters;     ///< The opaque objects that cast, a prefix of m_opaque.
-        std::vector<int>      m_lightSlots;  ///< Per light: 0 for the key light while it casts, else -1.
+        std::vector<uint32_t> m_overRegion;  ///< The casters over the map's region, which it draws.
+        std::vector<int>      m_lightSlots;  ///< Per light: 0 for the sun while it casts, else -1.
 
-        Vkm::GL::FrameBuffer                    m_shadowFbo;
-        /// The key light's depth over the region, made on first use.
-        std::unique_ptr<Vkm::GL::Texture2D>     m_shadowMap;
-        std::unique_ptr<Vkm::GL::Sampler>       m_shadowSampler;  ///< Compares, as the atlas's does.
-        std::unique_ptr<Vkm::GL::UniformBuffer> m_shadowUbo;      ///< The ShadowBlock the captures read.
-        ShadowUBOData                           m_shadowLast{};   ///< What m_shadowUbo holds.
+        Vkm::GL::FrameBuffer              m_shadowFbo;
+        ShadowSlot                        m_shadows[SHADOW_SLOTS];
+        std::unique_ptr<Vkm::GL::Sampler> m_shadowSampler;    ///< Compares, as the atlas's does.
+        uint64_t                          m_shadowClock = 0;  ///< Counts binds, for ShadowSlot::used.
 
         std::vector<PlainUniform> m_pbrUniforms;     ///< m_pbr's plain uniforms, listed once a link.
         uint32_t                  m_pbrListed = 0;   ///< The program m_pbrUniforms lists, 0 for none.
+        std::vector<GLfloat>      m_pbrZeros;        ///< Zeros enough for the largest of them.
+        std::vector<GLint>        m_pbrIntZeros;     ///< The same, as ints.
+        std::vector<GLuint>       m_pbrUintZeros;    ///< The same, as unsigned ints.
 
-        const GLView* m_glView   = nullptr;  ///< begin()'s scene, drawn by every captureCube().
+        const GLView* m_glView   = nullptr;  ///< begin()'s scene, drawn by the captures after it.
         const GLIBL*  m_ibl      = nullptr;
         float         m_faceSize = 0.0f;     ///< begin()'s face resolution: every face camera's viewport.
 

@@ -5,9 +5,9 @@
 
 #include <GL/glew.h>
 
-#include "gl_texture.h"
-#include "gl_frame_buffer.h"
 #include "gl_context.h"
+#include "gl_frame_buffer.h"
+#include "gl_texture.h"
 #include "gl_texture_cube.h"
 #include "gl_texture_cube_array.h"
 
@@ -22,15 +22,16 @@ namespace Vkm::Engine {
  * layer - so the probe count is bounded by the layer count and the
  * per-fragment loop, not by texture units. A single transient env cube (and its
  * depth) is reused per bake: GLProbeBaker renders the scene into it, then
- * convolves into the target layer of each array.
+ * convolves into the target layer of each array. One layer past the capacity is
+ * no probe's: a bake spread over frames fills it, and copyLayer() moves it into
+ * the probe's whole, so no frame samples half a bake.
  */
 class GLProbeArray {
     public:
         static constexpr int PREFILTER_MIPS = 5;  ///< Roughness mips per cube.
 
         // Requested capture resolution bounds (the env cube face size). The
-        // prefilter/irradiance faces derive from it (res/2, res/8). Clamped to
-        // a power of two in range.
+        // prefilter/irradiance faces derive from it. Clamped to a power of two in range.
         static constexpr int MIN_RESOLUTION     = 128;
         static constexpr int MAX_RESOLUTION     = 1024;
         static constexpr int DEFAULT_RESOLUTION = 256;
@@ -53,13 +54,16 @@ class GLProbeArray {
          */
         static int clampResolution(int resolution);
 
+        /// The prefilter's mirror-level face size for a capture of @p resolution: half of it.
+        static constexpr int prefilterOf(int resolution) { return resolution / 2; }
+
         /**
          * @brief Allocate the arrays, the env cube, its depth and the FBO.
          *
          * Re-allocates when either argument changes; a no-op when both match
          * the current build.
          *
-         * @param capacity   Probe-array layer count (probe slots).
+         * @param capacity   Probe slots; the arrays hold one layer more, stagingLayer().
          * @param resolution Capture face size; prefilter/irradiance derive from it.
          */
         void createTargets(int capacity, int resolution);
@@ -89,7 +93,7 @@ class GLProbeArray {
          * @brief Attach one face of irradiance-array @p layer as colour 0.
          *
          * @param gl    Live GL context whose viewport is set to the irradiance size.
-         * @param layer Cube-array layer (the probe slot) being baked.
+         * @param layer Cube-array layer being baked: a probe's slot, or stagingLayer().
          * @param face  Cube face index (0..5) attached as the colour-0 target.
          */
         void attachIrradianceFace(const Vkm::GL::Context& gl, int layer, int face) const {
@@ -101,7 +105,7 @@ class GLProbeArray {
          * @brief Attach one face/mip of prefilter-array @p layer as colour 0.
          *
          * @param gl    Live GL context whose viewport is set to the mip's size.
-         * @param layer Cube-array layer (the probe slot) being baked.
+         * @param layer Cube-array layer being baked: a probe's slot, or stagingLayer().
          * @param face  Cube face index (0..5) attached as the colour-0 target.
          * @param mip   Roughness mip level being baked; halves the viewport per level.
          */
@@ -117,12 +121,22 @@ class GLProbeArray {
         void bindPrefilter(uint32_t slot)  const { m_prefilter.bindSlot(slot); }
         void bindEnvCube(uint32_t slot)    const { m_env.bindSlot(slot); }
 
+        /**
+         * @brief Copy layer @p from of both arrays, every level, into layer @p to.
+         *
+         * @param from The layer copied, the staging layer for a bake spread over frames.
+         * @param to   The layer it replaces.
+         */
+        void copyLayer(int from, int to) const;
+
+        /// The layer no probe holds, which a bake spread over frames fills.
+        int stagingLayer() const { return m_capacity; }
+
         int capacity() const   { return m_capacity; }
         int resolution() const { return m_resolution; }
 
-    private:
         // The convolved faces, from the capture's: MIN_RESOLUTION keeps both above a texel.
-        int prefilterSize() const  { return m_resolution / 2; }
+        int prefilterSize() const  { return prefilterOf(m_resolution); }
         int irradianceSize() const { return m_resolution / 8; }
 
     private:

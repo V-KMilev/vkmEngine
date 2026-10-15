@@ -85,17 +85,7 @@ vec2 oceanShoreAt(vec2 point) {
     return vec2(texture(u_oceanShoreMap, uv).r, say);
 }
 
-layout(binding = MATERIAL_SLOT_ALBEDO) uniform sampler2D u_albedoTexture;
-layout(binding = MATERIAL_SLOT_NORMAL) uniform sampler2D u_normalTexture;
-layout(binding = MATERIAL_SLOT_METALLIC_ROUGHNESS) uniform sampler2D u_metallicRoughnessTexture;
-layout(binding = MATERIAL_SLOT_AO) uniform sampler2D u_aoTexture;
-layout(binding = MATERIAL_SLOT_EMISSION) uniform sampler2D u_emissionTexture;
-layout(binding = MATERIAL_SLOT_HEIGHT) uniform sampler2D u_heightTexture;
-layout(binding = MATERIAL_SLOT_CLEARCOAT) uniform sampler2D u_clearcoatTexture;
-layout(binding = MATERIAL_SLOT_TRANSMISSION) uniform sampler2D u_transmissionTexture;
-layout(binding = MATERIAL_SLOT_METALLIC) uniform sampler2D u_metallicTexture;
-layout(binding = MATERIAL_SLOT_ROUGHNESS) uniform sampler2D u_roughnessTexture;
-layout(binding = MATERIAL_SLOT_AO_METALLIC_ROUGHNESS) uniform sampler2D u_aoMetallicRoughnessTexture;
+#include "../../surface.glsl"
 
 // Split-sum IBL, gated by u_hasIBL (ambient.glsl) so an unbaked frame falls
 // back to flat ambient.
@@ -113,48 +103,13 @@ uniform int u_hasSceneColor;
 uniform int u_useClusters;      // 1 = per-cluster light list, 0 = full list (GLSceneCapture)
 uniform int u_alphaToCoverage;  // 1 while alpha-to-coverage is on for a cutout
 
-// GTAO, for the indirect term. u_hasAO is set for the opaque bucket alone:
-// GTAO saw only what the prepass drew.
+// GTAO for the indirect term (rgb), the cascaded sun's screen shadow (a). Each flag is set for the
+// opaque bucket alone: both saw only what the prepass drew.
 layout(binding = POST_SLOT_AO) uniform sampler2D u_ao;
 uniform int u_hasAO;
+uniform int u_hasScreenShadow;
 
 #include "../../ambient.glsl"
-
-// Local reflection probes, a cube-array layer each. Blended over the IBL, smallest box
-// first, for the reflection, and for the diffuse only where no irradiance volume covers.
-layout(binding = PROBE_SLOT_IRRADIANCE) uniform samplerCubeArray u_probeIrr;
-layout(binding = PROBE_SLOT_PREFILTER)  uniform samplerCubeArray u_probePref;
-uniform int u_probeCount;
-
-struct ProbeEntry {
-    vec4 center;    // xyz world centre, w pad
-    vec4 extents;   // xyz half-extents, w pad
-    vec4 params;    // x falloff, y intensity, z layer, w pad
-};
-layout(std140, binding = UBO_PROBES) uniform ProbeBlock {
-    ProbeEntry probes[MAX_PROBES];
-} u_probes;
-
-// Parallax box correction: the direction from the box centre to where R leaves
-// the box, so a cube captured at one point does not reflect as if at infinity.
-vec3 probeParallax(vec3 R, vec3 worldPos, vec3 center, vec3 extents) {
-    vec3  boxMin = center - extents;
-    vec3  boxMax = center + extents;
-    vec3  invR   = 1.0 / R;
-    vec3  t1     = (boxMin - worldPos) * invR;
-    vec3  t2     = (boxMax - worldPos) * invR;
-    vec3  tFar   = max(t1, t2);
-    float t      = min(min(tFar.x, tFar.y), tFar.z);
-    return (worldPos + R * t) - center;
-}
-
-// 1 deep inside, fading to 0 at the face over falloff. Falloff 0 is held a thousandth wide:
-// smoothstep's edges must differ.
-float probeWeight(vec3 worldPos, vec3 center, vec3 extents, float falloff) {
-    vec3  d = abs(worldPos - center) / max(extents, vec3(1e-3));
-    float m = max(max(d.x, d.y), d.z);
-    return 1.0 - smoothstep(1.0 - max(falloff, 1e-3), 1.0, m);
-}
 
 // Depth below the top of the height field at uv, 0..1 (height maps are white
 // where high). Explicit derivatives: the marches leave their loops per pixel,
@@ -225,68 +180,6 @@ float parallaxShadow(vec2 uv, vec3 lightDirTS, vec2 uvDx, vec2 uvDy) {
     return clamp(1.0 - maxBlocker * 8.0, 0.0, 1.0);
 }
 
-struct Surface {
-    vec3  albedo;
-    float opacity;
-    float metallic;
-    float roughness;
-    float ao;
-    vec3  emission;
-    // Lobe masks, sampled once per fragment for the per-light lobes.
-    float clearcoat;
-    float transmission;
-    float clearcoatRoughness;  // clamped and specular-antialiased like the base's
-};
-
-Surface sampleSurface(vec2 uv) {
-    Surface s;
-
-    s.albedo  = u_material.albedo.rgb;
-    s.opacity = u_material.albedo.a;
-    if (hasTex(MATERIAL_SLOT_ALBEDO)) {
-        vec4 tex = texture(u_albedoTexture, uv);
-        s.albedo  *= tex.rgb;
-        s.opacity *= tex.a;
-    }
-
-    s.metallic  = u_material.metallic;
-    s.roughness = u_material.roughness;
-    s.ao        = u_material.ao;
-    s.emission  = u_material.emission.rgb * u_material.emission.a;
-
-    // Combined maps win over separate ones when both are present.
-    if (hasTex(MATERIAL_SLOT_AO_METALLIC_ROUGHNESS)) {
-        vec3 amr = texture(u_aoMetallicRoughnessTexture, uv).rgb;
-        s.ao        *= amr.r;
-        s.roughness *= amr.g;
-        s.metallic  *= amr.b;
-    } else if (hasTex(MATERIAL_SLOT_METALLIC_ROUGHNESS)) {
-        vec3 mr = texture(u_metallicRoughnessTexture, uv).rgb;
-        s.roughness *= mr.g;  // glTF: green = roughness
-        s.metallic  *= mr.b;  // glTF: blue  = metallic
-    } else {
-        if (hasTex(MATERIAL_SLOT_METALLIC))  s.metallic  *= texture(u_metallicTexture,  uv).r;
-        if (hasTex(MATERIAL_SLOT_ROUGHNESS)) s.roughness *= texture(u_roughnessTexture, uv).r;
-    }
-
-    if (hasTex(MATERIAL_SLOT_AO) && !hasTex(MATERIAL_SLOT_AO_METALLIC_ROUGHNESS)) {
-        s.ao *= texture(u_aoTexture, uv).r;
-    }
-    if (hasTex(MATERIAL_SLOT_EMISSION)) {
-        s.emission *= texture(u_emissionTexture, uv).rgb;
-    }
-
-    s.clearcoat = u_material.clearcoat;
-    if (hasTex(MATERIAL_SLOT_CLEARCOAT)) s.clearcoat *= texture(u_clearcoatTexture, uv).r;
-
-    s.transmission = u_material.transmission;
-    if (hasTex(MATERIAL_SLOT_TRANSMISSION)) s.transmission *= texture(u_transmissionTexture, uv).r;
-
-    s.roughness          = clamp(s.roughness, MIN_ROUGHNESS, 1.0);
-    s.clearcoatRoughness = clamp(u_material.clearcoatRoughness, MIN_ROUGHNESS, 1.0);
-    return s;
-}
-
 // The geometric normal, or the normal map through the TBN. Maps hold x and y
 // alone (BC5 or RG8), so z is rebuilt.
 vec3 getNormal(vec2 uv, vec3 Ng, mat3 tbn) {
@@ -314,16 +207,42 @@ float specularAA(vec3 N, float roughness) {
     return sqrt(sqrt(a2));   // back to perceptual roughness
 }
 
-// Charlie sheen distribution + Ashikhmin visibility (KHR_materials_sheen).
-float distributionCharlie(float NdotH, float roughness) {
-    float invR = 1.0 / max(roughness, 0.07);
-    float cos2 = NdotH * NdotH;
-    float sin2 = max(1.0 - cos2, 0.0);
-    return (2.0 + invR) * pow(sin2, invR * 0.5) / (2.0 * PI);
+// The anisotropy's direction in the shading plane: the authored one in tangent space, else T, as
+// a zeroed or N-parallel one would normalize to NaN.
+vec3 anisotropyTangent(vec3 T, vec3 B, vec3 N) {
+    vec3 authored = u_material.anisotropyDirection.xyz;
+    vec3 aT = T * authored.x + B * authored.y + N * authored.z;
+    aT -= N * dot(aT, N);
+    float aTLen = length(aT);
+    return (aTLen > 1e-4) ? aT / aTLen : T;
 }
 
-float visAshikhmin(float NdotV, float NdotL) {
-    return clamp(1.0 / (4.0 * (NdotL + NdotV - NdotL * NdotV)), 0.0, 1.0);
+// The sheen lobe's directional albedo at this angle to the normal, from the BRDF LUT's third
+// channel.
+float sheenAlbedo(float NdotX) {
+    return texture(u_brdfLUT, vec2(NdotX, u_material.sheenColor.a)).b;
+}
+
+// The sheen colour's strongest channel, 0 for no sheen.
+float sheenStrength() {
+    vec3 sheenColor = u_material.sheenColor.rgb;
+    return max(sheenColor.r, max(sheenColor.g, sheenColor.b));
+}
+
+// How much of the light a sheen takes at this angle, its albedo times its strength: the layer
+// under it keeps the rest (KHR_materials_sheen's albedo scaling).
+float sheenTaken(float NdotX) {
+    return sheenStrength() * sheenAlbedo(NdotX);
+}
+
+bool hasSheen() {
+    return sheenStrength() > 0.0;
+}
+
+// The GGX alpha along an anisotropic material's direction, from @p a across it
+// (KHR_materials_anisotropy): rougher along it, as rough as authored across.
+float anisotropicAlpha(float a) {
+    return mix(a, 1.0, u_material.anisotropy * u_material.anisotropy);
 }
 
 // Anisotropic GGX (Burley / Filament): at, ab are tangent/bitangent alphas.
@@ -456,16 +375,10 @@ vec3 evaluateLight(
     float D, Vis;
     float specNoL = NdotL;
     if (u_material.anisotropy > 0.001) {
-        // The authored direction in the shading plane, else T: a zeroed or
-        // N-parallel one would normalize to NaN.
-        vec3 authored = u_material.anisotropyDirection.xyz;
-        vec3 aT = T * authored.x + B * authored.y + N * authored.z;
-        aT -= N * dot(aT, N);
-        float aTLen = length(aT);
-        aT = (aTLen > 1e-4) ? aT / aTLen : T;
+        vec3 aT = anisotropyTangent(T, B, N);
         vec3 aB = cross(N, aT);   // unit: N and aT are unit and perpendicular
-        float at = max(a * (1.0 + u_material.anisotropy), 1e-3);
-        float ab = max(a * (1.0 - u_material.anisotropy), 1e-3);
+        float at = max(anisotropicAlpha(a), 1e-3);
+        float ab = max(a, 1e-3);
         D   = distributionGGXAniso(NdotH, dot(aT, H), dot(aB, H), at, ab);
         Vis = visSmithAniso(at, ab, dot(aT, V), dot(aB, V), NdotV, dot(aT, L), dot(aB, L), NdotL);
     } else {
@@ -537,18 +450,20 @@ vec3 evaluateLight(
         ccContrib = vec3(ccD * ccV * ccF) * cNoL;
     }
 
-    // Off when sheenColor is black.
-    vec3 sheen = vec3(0.0);
-    vec3 sheenColor = u_material.sheenColor.rgb;
-    if (max(sheenColor.r, max(sheenColor.g, sheenColor.b)) > 0.0) {
+    // A sheen over the base and under the coat, off when its colour is black. What it takes of the
+    // light going in or coming out the base below does not get (KHR_materials_sheen).
+    vec3  sheen      = vec3(0.0);
+    float underSheen = 1.0;
+    if (hasSheen()) {
         float sheenAlpha = u_material.sheenColor.a * u_material.sheenColor.a;
         float sheenD     = distributionCharlie(NdotH, sheenAlpha);
-        float sheenV     = visAshikhmin(NdotV, NdotL);
-        sheen = sheenColor * (sheenD * sheenV * NdotL);
+        float sheenV     = visCharlie(NdotV, NdotL, sheenAlpha);
+        sheen      = u_material.sheenColor.rgb * (sheenD * sheenV * NdotL) * underCoat;
+        underSheen = 1.0 - max(sheenTaken(NdotV), sheenTaken(NdotL));
     }
 
-    g_directSpecular += (specular * specNoL * underCoat + ccContrib) * radiance;
-    return (baseLit + ccContrib + transmitted + sss + sheen) * radiance;
+    g_directSpecular += (specular * specNoL * underCoat * underSheen + ccContrib) * radiance;
+    return ((baseLit + transmitted + sss) * underSheen + ccContrib + sheen) * radiance;
 }
 
 // Specular occlusion (Lagarde): AO weighted by view angle and roughness, since
@@ -713,6 +628,10 @@ void main() {
 
     vec3 Lo = vec3(0.0);
 
+    // The contacts the cascades are too coarse for, the cascaded sun's alone.
+    float screenShadow = 1.0;
+    if (u_hasScreenShadow == 1) screenShadow = texture(u_ao, gl_FragCoord.xy / u_camera.viewport).a;
+
     uint count;
     int  ci = 0;
     if (u_useClusters == 1) {
@@ -756,35 +675,8 @@ void main() {
             float window   = distanceWindow(dist, radius);
             if (window <= 0.0) continue;
 
-            // Seen from the lit side, the corners (bl -> tl -> tr -> br) wind
-            // counter-clockwise about N at local +Z, as the edge sum counts positive.
-            mat3 toLocal = ltcTangentFrame(N);
-            vec3 F = vec3(0.0);
             float area;
-            if (type == LIGHT_RECT) {
-                vec3 p0 = normalize(toLocal * ((lightPos - U - Vv) - vWorldPos));
-                vec3 p1 = normalize(toLocal * ((lightPos - U + Vv) - vWorldPos));
-                vec3 p2 = normalize(toLocal * ((lightPos + U + Vv) - vWorldPos));
-                vec3 p3 = normalize(toLocal * ((lightPos + U - Vv) - vWorldPos));
-                F = ltcEdgeIntegral(p0, p1) + ltcEdgeIntegral(p1, p2)
-                    + ltcEdgeIntegral(p2, p3) + ltcEdgeIntegral(p3, p0);
-                area = 4.0 * length(U) * length(Vv);
-            } else {
-                // 12 vertices read as circular; a 4-vertex diamond loses ~36% of the area.
-                const int N_DISK = 12;
-                vec3 verts[N_DISK];
-                for (int dv = 0; dv < N_DISK; ++dv) {
-                    float t = -float(dv) / float(N_DISK) * 2.0 * PI;  // CW order
-                    vec3 worldP = lightPos + cos(t) * U + sin(t) * Vv;
-                    verts[dv] = normalize(toLocal * (worldP - vWorldPos));
-                }
-                for (int de = 0; de < N_DISK; ++de) {
-                    F += ltcEdgeIntegral(verts[de], verts[(de + 1) % N_DISK]);
-                }
-                area = PI * dot(U, U);
-            }
-            if (facing < 0.0) F = -F;
-            float formFactor = horizonClippedFormFactor(F);
+            float formFactor = areaFormFactor(type, lightPos, U, Vv, vWorldPos, N, facing, area);
 
             // Fresnel at the centre sets the split: the polygon has no single H.
             vec3 Lc = toCenter / max(dist, 1e-4);
@@ -831,13 +723,7 @@ void main() {
         // The bias follows the geometric surface, not the normal map.
         float visibility = 1.0;
 
-        int sslot = int(light.spot.w);
-        if (sslot >= 0) {
-            float ndotl = dot(Ng, L);
-            if      (type == LIGHT_DIRECTIONAL) visibility *= sampleCSMSoft(vWorldPos, Ng, ndotl);
-            else if (type == LIGHT_SPOT)        visibility *= sample2DSlotSoft(sslot, vWorldPos, Ng, ndotl);
-            else if (type == LIGHT_POINT)       visibility *= sampleCube(sslot, vWorldPos, Ng, ndotl);
-        }
+        visibility *= surfaceShadow(type, int(light.spot.w), vWorldPos, Ng, dot(Ng, L), screenShadow);
 
         // POM self-shadowing for the sun alone, bounding the trace cost.
         if (type == LIGHT_DIRECTIONAL
@@ -910,7 +796,18 @@ void main() {
     // Both measure the same occlusion, so the stronger wins, not the product.
     float ao = min(s.ao, gtao);
 
-    vec3 R = reflect(-V, N);
+    // An anisotropic lobe reflects about a normal bent toward its stretch, the more the rougher
+    // across it (the glTF sample viewer's): the bend across the surface draws the stretch. The
+    // trace, which reflects about the G-buffer's normal, is handed it as wide as its widest axis,
+    // so a strong one keeps this reflection rather than one about the wrong normal.
+    vec3  R             = reflect(-V, N);
+    float lobeRoughness = sqrt(anisotropicAlpha(s.roughness * s.roughness));  // its widest axis
+    if (u_material.anisotropy > 0.001) {
+        vec3  aB     = cross(N, anisotropyTangent(T, B, N));
+        vec3  across = cross(cross(aB, V), aB);
+        float bend   = 1.0 - u_material.anisotropy * (1.0 - s.roughness);
+        R = reflect(-V, normalize(mix(across, N, bend * bend * bend * bend)));
+    }
 
     // What the environment's specular takes, and the diffuse what is left (Fdez-Aguera, section 4).
     vec3 FssEss;
@@ -934,14 +831,15 @@ void main() {
     // Not occluded: a trace that hits has found the occluder itself, so only the environment it
     // replaces (ReflectEnv) carries specOcc.
     vec3  reflectWeight = FssEss;
+    float underSheen    = hasSheen() ? 1.0 - sheenTaken(NdotV) : 1.0;
     bool  hasCoat       = s.clearcoat > 0.001;
     float coatNoV       = max(dot(Ng, V), 1e-4);
     float coatFresnel   = hasCoat ? fresnelSchlick(coatNoV, vec3(COAT_F0)).x * s.clearcoat : 0.0;
     vec3  Rc            = reflect(-V, Ng);  // the coat's, on its smooth top
     // The coat's top is never below its own horizon, so it takes no horizon term.
     float coatOcc       = specularOcclusion(coatNoV, ao, s.clearcoatRoughness * s.clearcoatRoughness);
-    reflectWeight *= 1.0 - coatFresnel;
-    ReflectWeight = vec4(reflectWeight, s.roughness);
+    reflectWeight *= (1.0 - coatFresnel) * underSheen;
+    ReflectWeight = vec4(reflectWeight, lobeRoughness);
 
     // Without a baked sky: no reflection and a flat floor, which probes and the
     // irradiance volume still replace where they cover.
@@ -955,21 +853,18 @@ void main() {
         sourceIrradiance = texture(u_irradiance, bentN).rgb;
     }
 
-    // Probes blended over the sky before shading, so one shading serves all. They arrive
-    // smallest box first, and each covers only what the ones before it left: a room's probe
-    // wins inside the room over the yard's around it, where an average gave each half.
-    // Coverage is the box's alone; intensity scales the contribution.
+    // Probes blended over the sky before shading, so one shading serves all (shaders/probes.glsl):
+    // the reflection as well as the irradiance, so the loop is this pass's own.
     if (u_probeCount > 0) {
         vec3  prefilteredSum = vec3(0.0);
         vec3  coatSum        = vec3(0.0);
         vec3  irradianceSum  = vec3(0.0);
         float covered        = 0.0;
         for (int p = 0; p < u_probeCount && p < MAX_PROBES && covered < 0.999; ++p) {
-            vec3  center   = u_probes.probes[p].center.xyz;
-            vec3  extents  = u_probes.probes[p].extents.xyz;
-            float falloff  = u_probes.probes[p].params.x;
-            float w        = probeWeight(vWorldPos, center, extents, falloff) * (1.0 - covered);
+            float w = probeShare(p, vWorldPos, covered);
             if (w <= 0.0) continue;
+            vec3  center  = u_probes.probes[p].center.xyz;
+            vec3  extents = u_probes.probes[p].extents.xyz;
             float scaled  = w * u_probes.probes[p].params.y;
             float layer   = u_probes.probes[p].params.z;
             vec3  Rp      = probeParallax(Rd, vWorldPos, center, extents);
@@ -979,8 +874,7 @@ void main() {
                 vec4 coatLayer = vec4(probeParallax(Rc, vWorldPos, center, extents), layer);
                 coatSum += textureLod(u_probePref, coatLayer, ccRough * MAX_PROBE_LOD).rgb * scaled;
             }
-            irradianceSum  += texture(u_probeIrr, vec4(bentN, layer)).rgb * scaled;
-            covered        += w;
+            irradianceSum += texture(u_probeIrr, vec4(bentN, layer)).rgb * scaled;
         }
         prefiltered      = prefilteredSum + prefiltered * (1.0 - covered);
         coat             = coatSum + coat * (1.0 - covered);
@@ -1017,6 +911,15 @@ void main() {
 
     vec3 ambient = diffuseIBL * multiBounceOcclusion(ao, s.albedo) + specularIBL * specOcc;
     vec3 ambientSpecular = specularIBL * specOcc;
+
+    // A sheen takes its share of the environment before the base does: its directional albedo of
+    // the irradiance, since a lobe as broad as cloth's gathers nearly what a diffuse one does
+    // (Filament reads the prefiltered sky at its roughness instead).
+    if (hasSheen()) {
+        vec3 sheenIBL = u_material.sheenColor.rgb * sheenAlbedo(NdotV) * irradiance * ao;
+        ambient         = ambient * underSheen + sheenIBL;
+        ambientSpecular = ambientSpecular * underSheen;
+    }
 
     // The coat layer dims everything beneath by its Fresnel (Filament's clear-coat IBL).
     if (hasCoat) {

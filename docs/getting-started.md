@@ -69,7 +69,7 @@ project.
 To start from one of the examples instead, copy it:
 
 ```sh
-vkm new lab -t physics_lab      # or potion_runner, stress_arena
+vkm new lab -t physics_lab      # or potion_runner, stress_arena, city_block
 ```
 
 The editor offers the same: its start screen lists your projects and, under

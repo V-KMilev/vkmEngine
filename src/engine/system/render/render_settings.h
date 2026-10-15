@@ -43,6 +43,7 @@ enum class TextureFiltering : uint8_t {
     X(Normals,          "Normals",              NORMALS,           false) \
     X(Depth,            "Depth",                DEPTH,             false) \
     X(AmbientOcclusion, "Ambient Occlusion",    AMBIENT_OCCLUSION, false) \
+    X(ScreenShadows,    "Screen Shadows",       SCREEN_SHADOWS,    false) \
     X(GiOnly,           "GI Only",              GI_ONLY,           true)  \
     X(DirectOnly,       "Direct Only",          DIRECT_ONLY,       true)  \
     X(Clusters,         "Light Clusters",       CLUSTERS,          true)  \
@@ -101,10 +102,11 @@ struct RenderSettings {
     RenderMode renderMode = RenderMode::Default;
 
     // Pass toggles
-    bool gtao       = true;
-    bool bloom      = true;
-    bool probes     = true;
-    bool ssr        = true;   ///< Screen-space reflections, over the probes and the sky.
+    bool gtao          = true;
+    bool bloom         = true;
+    bool probes        = true;
+    bool ssr           = true;   ///< Screen-space reflections, over the probes and the sky.
+    bool screenShadows = true;   ///< The cascaded sun's contacts its cascades are too coarse for.
 
     // GTAO
     float gtaoRadius    = 0.6f;   ///< World-space sample radius, MIN_GTAO_RADIUS..MAX_GTAO_RADIUS.
@@ -137,6 +139,13 @@ struct RenderSettings {
     // Culling
     float cullMaxDistance = 500.0f;  ///< World-space.
     float cullMinPixels   = 3.0f;    ///< Screen-pixel size; 0 disables.
+    /**
+     * @brief Cull the opaque geometry other geometry hides, on the GPU.
+     *
+     * Off by default: it pays only where the GPU bounds the frame and much of the scene is
+     * hidden (docs/reference/visibility.md).
+     */
+    bool occlusionCulling = false;
 
     // Anti-aliasing
     /// Scene-pass MSAA samples, one of MSAA_SAMPLE_COUNTS; post runs on the resolved buffer.
@@ -208,6 +217,7 @@ void visitShippedRenderFields(Settings& r, Fn&& f) {
     f("bloom",             r.bloom);
     f("probes",            r.probes);
     f("ssr",               r.ssr);
+    f("screenShadows",     r.screenShadows);
     f("gtaoRadius",        r.gtaoRadius);
     f("gtaoIntensity",     r.gtaoIntensity);
     f("gtaoPower",         r.gtaoPower);
@@ -221,6 +231,7 @@ void visitShippedRenderFields(Settings& r, Fn&& f) {
     f("exposure",          r.exposure);
     f("cullMaxDistance",   r.cullMaxDistance);
     f("cullMinPixels",     r.cullMinPixels);
+    f("occlusionCulling",  r.occlusionCulling);
     f("msaaSamples",       r.msaaSamples);
     f("textureFiltering",  r.textureFiltering);
     f("textureAnisotropy", r.textureAnisotropy);
@@ -258,15 +269,16 @@ inline RenderSettings withPreset(const RenderSettings& project, GraphicsPreset p
         uint32_t msaa;
         uint32_t shadows;
         bool     gtao;
+        bool     screenShadows;
         bool     ssr;
         bool     bloom;
         uint32_t anisotropy;
     };
     static constexpr Tier TIERS[] = {
-        {1, 1024, false, false, false, 4},   // Low
-        {2, 2048, true,  false, true,  8},   // Medium
-        {4, 4096, true,  true,  true,  16},  // High
-        {8, 4096, true,  true,  true,  16},  // Ultra
+        {1, 1024, false, false, false, false, 4},   // Low
+        {2, 2048, true,  true,  false, true,  8},   // Medium
+        {4, 4096, true,  true,  true,  true,  16},  // High
+        {8, 4096, true,  true,  true,  true,  16},  // Ultra
     };
     static_assert(std::size(TIERS) == static_cast<size_t>(GraphicsPreset::Count));
     const Tier&    tier = TIERS[std::min(static_cast<size_t>(preset), std::size(TIERS) - 1)];
@@ -274,6 +286,7 @@ inline RenderSettings withPreset(const RenderSettings& project, GraphicsPreset p
     r.msaaSamples       = tier.msaa;
     r.shadowResolution  = tier.shadows;
     r.gtao              = project.gtao && tier.gtao;
+    r.screenShadows     = project.screenShadows && tier.screenShadows;
     r.ssr               = project.ssr && tier.ssr;
     r.bloom             = project.bloom && tier.bloom;
     r.textureAnisotropy = tier.anisotropy;

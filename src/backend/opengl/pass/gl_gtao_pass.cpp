@@ -60,8 +60,8 @@ void GLGTAOPass::execute(GLFrameContext& ctx) {
     const RenderView& view = ctx.view;
     ensureDepthMips(view.viewportWidth, view.viewportHeight);
 
-    // Readers bind the AO target behind ctx.aoReady. Once allocated it stays: the toggle flips
-    // too often to thrash a full-viewport target.
+    // Readers bind the AO target behind ctx.aoReady or ctx.screenShadowReady. Once allocated it
+    // stays: the toggle flips too often to thrash a full-viewport target.
     ctx.ao.resize(view.viewportWidth, view.viewportHeight);
 
     // Level 0 linearises the scene depth, each later level folds the one before; a dispatch a

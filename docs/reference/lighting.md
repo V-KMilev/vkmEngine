@@ -91,6 +91,25 @@ The PBR fragment shader (`shaders/forward/pbr/`) implements:
   (Filament's split), so glass keeps its reflections and highlights. Subsurface is Unreal's two-sided foliage, a wrapped
   back-light through a broad lobe about the light's direction, so a leaf glows
   looking toward the sun and not with it behind.
+  Sheen and anisotropy follow their glTF extensions. A sheen is the Charlie
+  lobe with its own visibility (Estevez and Kulla, as the glTF sample viewer
+  has them), over the base and under a coat; what it reflects at an angle,
+  its directional albedo, is baked into the BRDF LUT's third channel beside
+  the split sum, and the base is dimmed by that much on the way in and out
+  (`KHR_materials_sheen`'s albedo scaling), so a white sheen over a white base
+  moves the light toward the rim without adding to it. In the environment it
+  takes that albedo of the irradiance - a lobe as broad as cloth's gathers
+  nearly what a diffuse one does - where Filament reads the prefiltered sky
+  at the sheen's roughness. An anisotropic lobe is rougher along its
+  direction, `mix(a, 1, strength^2)`, and as rough as authored across it
+  (`KHR_materials_anisotropy`); the environment reflects about a normal bent
+  toward the stretch, the glTF sample viewer's, and the trace, which reflects
+  about the G-buffer's normal, is handed the lobe as wide as its widest axis.
+  The import takes the strength and rotation, and the sheen's colour and
+  roughness; their textures have no unit of their own (`convention/gl_bindings.h`),
+  and the import says so when it leaves one behind. A direction needs a tangent
+  field that runs the way the material does: the built-in sphere is six
+  patches and shows their seams.
 - **Double-sided materials** (`MaterialAsset::doubleSided`, glTF's
   `doubleSided`): their runs draw with culling off in the depth prepass and the
   forward pass, and a back face is lit as its own - the shader turns the whole
@@ -191,43 +210,57 @@ The PBR fragment shader (`shaders/forward/pbr/`) implements:
 
 ### What a capture is lit by
 
-The irradiance volume and the reflection probes are captures of the scene
-(`GLSceneCapture`): the opaque scene and the sky drawn into a cube around each
-probe, which the volume projects to SH-L1 and a reflection probe convolves
-(how, in [rendering.md](rendering.md#the-passes-fixed-order)). Whatever lights the
-captured surfaces is what the probes pass on, so a wall lit by the open sky
-would light every probe in a sealed room through solid plaster. A captured
-surface takes its ambient from the volume wherever the volume covers it, and
-from the sky only outside its box:
+The irradiance volume and the reflection probes are pictures of the scene
+(`GLSceneCapture`): a reflection probe draws the opaque scene and the sky into a
+cube and convolves it; the volume keeps what each of its probes sees as surfaces and
+lights them in a compute pass that projects to SH-L1 (how, in
+[rendering.md](rendering.md#the-passes-fixed-order)). Whatever lights the captured
+surfaces is what the probes pass on, so a wall lit by the open sky would light every
+probe in a sealed room through solid plaster. A captured surface takes its ambient
+from the volume wherever the volume covers it, and from the sky only outside its box:
 
 - **The volume is gathered in bounces**, the recursion DDGI runs across frames
   (Majercik et al., *Dynamic Diffuse Global Illumination with Ray-Traced
   Irradiance Fields*: a ray's hit is shaded by the probes' previous
-  irradiance), run here to a fixed count at bake time. `GLIrradianceBaker`
-  gathers the grid `GLIrradianceBaker::BOUNCES` times. In the first, the
-  captured surfaces inside the box read a grid that is black, so a wall is
-  lit only by what reaches it - the lights, the key light through its shadow,
-  its own emission. Each later gather lights them from the grid the gather
-  before produced, kept in a second volume, and adds one bounce. A direction
-  that meets no geometry sees the sky itself, so the sky reaches a room
-  through its doorway and windows and nowhere else, and a sealed room under a
-  noon sky stores nothing. How many gathers, and what they cost:
-  [engine.md](../guides/engine.md#4-what-has-already-been-decided).
-- **Inside the box the volume is all there is**: a capture reads it with no
-  fade at the box's faces, so a wall on a face takes none of the sky, and the
-  gathers read it at unit intensity, since the frame scales the finished grid
-  by `intensity` and a gather lit at it would compound it once per bounce. A
-  captured glossy surface's reflection of the sky is normalised by the volume
-  as the frame's is (Lazarov, above), so in the first gather it reflects none.
-- **Only the first gather judges** which probes stand inside geometry; the
-  verdict depends on where a probe stands, not on the light, so the later
-  gathers skip those probes and the backface mask, and dilation repairs the
-  refused cells after every gather.
+  irradiance), run here to a fixed count. `GLIrradianceBaker` gathers the grid
+  `GLIrradianceBaker::BOUNCES` times. In the first, the surfels inside the box take
+  no ambient, so a wall is lit only by what reaches it - the lights, the key light
+  through its shadow, its own emission. Each later gather lights them from the grid
+  the gather before produced and adds one bounce. A direction that meets no geometry
+  sees the sky itself, so the sky reaches a room through its doorway and windows and
+  nowhere else, and a sealed room under a noon sky stores nothing. How many gathers,
+  and what they cost: [engine.md](../guides/engine.md#4-what-has-already-been-decided).
+- **A surfel is a diffuse surface**: its light times its bounce colour, the diffuse
+  albedo and what the specular reflects as one - `albedo * (1 - metallic) * (1 - f0)
+  + f0` - so a metal bounces its `f0`, and no share of the light waits on a view no
+  probe has.
+- **Inside the box the volume is all there is**: a gather reads it with no fade at the
+  box's faces, so a wall on a face takes none of the sky, and at unit intensity, since
+  the frame scales the finished grid by `intensity` and a gather lit at it would
+  compound it once per bounce. A probe capture's glossy reflection of the sky is
+  normalised by the volume as the frame's is (Lazarov, above).
+- **Only the bake judges** which probes stand inside geometry, from its first
+  gather; the verdict depends on where a probe stands, not on the light, so every
+  gather of every relight repairs the refused cells by the bake's blend.
+- **The volume's light follows its lights and its sky.** When the frame's lights
+  (`lightingDigest`) or the sky (`GLIBL::version`) differ from those it was lit by, the
+  bake's surfels are lit again with no new bake version, the geometry being the
+  bake's: a gather a frame into grids of the baker's own, the last traded in whole, so
+  the light trails a moving sun by `BOUNCES` frames and no frame shows a half-lit grid.
+  A change during a relight asks for another once it ends. Under still lights none
+  runs.
 - **The reflection probes are captured after the volume**, lit by it where it
   covers them, at its `intensity` and with no fade, so a room's probe reflects
   its walls as the frame lights them rather than lit by the sky. A probe
   remembers which bake of the volume lit it (`GLIrradianceVolume::bakeId`) and
-  is captured again when the volume is.
+  is captured again at once when the volume is baked again.
+- **A probe follows its light too.** It remembers the lights, the sky and the
+  volume's light it was captured under (`CaptureLighting`, which the volume's
+  relight compares too), and one captured under other light is refreshed a step a
+  frame into the arrays' staging layer (`GLProbeBaker::advance`), copied in whole
+  after the last step. A 1024-texel probe
+  is 43 steps of at most 0.7 ms. Under a sun that never stops one is always being
+  refreshed: the one that has waited longest for how near the eye it is.
 
 The frame does fade the volume in over `blendDistance` from each face of its
 box, toward the light outside it. A volume filling a room wants its box out to
@@ -477,6 +510,43 @@ so the far field loses density as `shadowDistance` grows: total coverage
 against texel density is a fixed budget, and the logarithmic split spends it
 evenly instead of concentrating the shortfall in the foreground.
 
+### Screen-space shadows
+
+What the cascades are too coarse for - a foot on the floor, a pebble, the crease
+under a ledge, a block pushed into a wall - `GLScreenShadowPass` finds in the
+depth buffer, for the cascaded sun alone - the lowest-slot directional light that
+casts (`GLShadowData::sunLight`). It is Bend Studio's method (Days
+Gone; SIGGRAPH 2023), ported in `shaders/screen_shadow` under its Apache-2.0
+notice: the screen is cut into wavefronts of 64 pixels in lines toward the
+light's place on it, at most four compute dispatches with the sun off the
+screen and up to eight with it on, and each wavefront puts its depths in shared memory
+divided by their screen distance to the light, where every ray toward it is
+parallel. Each pixel then compares the next 60 along its ray to its own. There
+is no noise and no history, so a still frame shades the same every time - which
+is what the settled decision against contact shadows asked of one
+([engine.md](../guides/engine.md#4-what-has-already-been-decided)).
+
+A sample shadows a ray when it lies in front of it by up to twice
+`SURFACE_THICKNESS`, 2% of its depth's distance to the far plane, which is
+about 4% of the view distance: the depth buffer holds one surface, not how
+thick the thing behind it is. Any thinner, and a solid foot's shadow is only
+its rim (Bend's own value, 0.5%, is); the cascades carry everything larger. A pixel at a
+depth edge casts nothing, or a flat floor seen at a grazing angle under a low
+sun would stripe itself (the open-floor test). The reach is 60 pixels whatever
+the resolution - a third of a metre at 5 m on a 1080-row screen - so it is a
+contact shadow, not a replacement for the cascades. An orthographic camera's
+depth is linear, so its thickness is a 60 degree camera's at the distance that
+shows the same height. The viewmodel's depth band casts and takes nothing; an
+`EyeOnly` mesh, which the shadow maps never see, does cast here, since the pass
+reads what the eye sees.
+
+The result goes into the AO target's free alpha - every texture unit is spoken
+for - which the pass clears to unoccluded first when GTAO is off. The forward
+pass multiplies the cascaded sun's visibility by it, for the opaque bucket alone
+(the prepass drew nothing else), and a decal multiplies the sun on the surface
+under it. It costs 0.17 ms of GPU in physics_lab at 1920x1053 on an RTX A4000,
+about a third of GTAO there; `screenShadows` turns it off, and the Low tier does.
+
 ## Image-based lighting (IBL)
 
 A persistent `GLIBLBaker` keeps the IBL product set showing the scene's sky (a
@@ -489,10 +559,10 @@ is not a bake a frame - and while the sun only drifts, a step a frame (see
 "Following the sun" below). A scene that names
 neither, and an HDR that fails to load, leave no environment baked: the ambient
 term and the skybox then draw what a scene with no sky draws, rather than the
-last scene's sky. The reflection probes and the irradiance volume are captures
-of the scene under the sky they were baked with, and a sky change does not bake
-them again; bumping their `bakeVersion` does - the volume's takes the probes
-with it, since they are lit by it. It produces:
+last scene's sky. The irradiance volume and the reflection probes follow the sky
+without a bake ([What a capture is lit by](#what-a-capture-is-lit-by)); bumping the
+volume's `bakeVersion` bakes the probes again with it, since they are lit by it. It
+produces:
 
 - The **environment cube**: what an HDR sky's skybox and every capture's sky
   draw, and what the other two cubes are convolved from. Shading never reads it:
@@ -583,7 +653,7 @@ time-lapse's light keeps pace),
 as Unreal time-slices its real-time sky capture: the env cube's six faces, then
 its mips with the prefilter's mirror level, then each irradiance face, then
 each prefilter level a face at a time, the largest in bands of
-`GLIBLBaker::BAND_TEXELS` texels - `GLIBLBaker::slicedSteps` steps in all.
+`GLCubeConvolver::BAND_TEXELS` texels - `GLIBLBaker::slicedSteps` steps in all.
 `GLIBL` holds two sets of the three cubes: shading reads one while a bake fills
 the other, which is swapped in once complete, so no frame reads a half-made set,
 and the next bake starts from wherever the sun is then. The ambient light and

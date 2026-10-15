@@ -81,13 +81,17 @@ void main() {
         float phi  = (float(s) + noise) * (PI / float(SLICES));
         vec3  dir3 = across1 * cos(phi) + across2 * sin(phi);
 
-        // The slice's screen line: where the radius across V lands, capped in pixels - a quarter
-        // of the frame's height whichever way it runs - so a surface at the lens does not sample
-        // the whole screen.
-        vec2  radiusUV = viewToUV(P + dir3 * u_radius, proj00, proj11, perspective) - vUV;
-        float reach    = length(radiusUV * u_camera.viewport);
-        if (reach < 1e-3) continue;
-        radiusUV *= min(1.0, 0.25 * u_camera.viewport.y / reach);
+        // The slice's screen line: where the radius across V lands, capped at a quarter of the
+        // frame's height. A radius reaching past the eye's plane projects back the wrong way, so the
+        // line then runs the way a short step does, at the cap.
+        const float cap      = 0.25 * u_camera.viewport.y;
+        const vec3  reached  = P + dir3 * u_radius;
+        const bool  pastEye  = perspective && reached.z > -1e-5;
+        const vec3  aim      = pastEye ? P + dir3 * (0.01 * -P.z) : reached;
+        vec2        radiusUV = viewToUV(aim, proj00, proj11, perspective) - vUV;
+        const float reach    = length(radiusUV * u_camera.viewport);
+        if (reach < 1e-6 || (!pastEye && reach < 1e-3)) continue;
+        radiusUV *= pastEye ? cap / reach : min(1.0, cap / reach);
 
         // Slice plane = span(V, dir3); n is the projected normal's signed angle from V.
         vec3 sliceN = normalize(cross(dir3, V));

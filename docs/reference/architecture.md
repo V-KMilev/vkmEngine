@@ -32,10 +32,10 @@ Three roots keep the halves apart: `engineRoot()` for what ships with the engine
 (shaders, default font, icons; read-only to a game), `projectRoot()` for what the
 game owns, and `userRoot()` for how one person likes their tools - the editor's
 recent-projects list and window layout, which follow the user rather than either
-of the other two. `examples/potion_runner`, `examples/physics_lab` and
-`examples/stress_arena` are complete worked examples - the first and the last
-build their worlds in code, and the middle one is the only one that authors and
-saves a scene, which is also what makes it the multiplayer sample. See [io.md](io.md#projects-and-the-three-roots).
+of the other two. `examples/potion_runner`, `examples/physics_lab`,
+`examples/stress_arena` and `examples/city_block` are complete worked examples -
+all but physics_lab build their worlds in code, and physics_lab is the only one that
+authors and saves a scene, which is also what makes it the multiplayer sample. See [io.md](io.md#projects-and-the-three-roots).
 
 ## Overview
 
@@ -323,13 +323,13 @@ that list is the record, ending in the splash. There is
 no render-graph abstraction and no shader variant cache.
 
 Real features: five light types including LTC area lights, Forward+ clustered
-lighting, CSM + spot + point-cube shadows, IBL (an HDR or a physically based
+lighting, CSM + spot + point-cube shadows with screen-space shadows for the sun, IBL (an HDR or a physically based
 procedural sky, with aerial perspective), GTAO with bent normals, froxel
 volumetric fog, a baked SH irradiance volume, reflection probes, screen-space
 reflections (a pass on this frame's lit colour), projected decals, CPU billboard
 particles, MSAA, DoF, bloom, and a screen-space in-game UI (SDF text, wrapping,
 clipping, scrolling, buttons). Not present: TAA, FXAA, motion blur, lens flare,
-auto-exposure, contact shadows.
+auto-exposure.
 
 Engine code never includes a `gl_*` header; `MaterialAsset` is the renderer
 contract. See [rendering.md](rendering.md) and

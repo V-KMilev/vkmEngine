@@ -3,10 +3,10 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include <GL/glew.h>
-
-#include "system/render/irradiance_dilation.h"
+#include <glm/glm.hpp>
 
 namespace Vkm::GL {
     class ShaderBase;
@@ -18,12 +18,30 @@ namespace Vkm::Engine {
 struct IrradianceVolumeData;
 
 /**
+ * @brief The four SH-L1 coefficient grids of one baked irradiance volume, as read back.
+ *
+ * One array per coefficient, `x * y * z` cells, X fastest. `sh[0][cell].w` is the relight's
+ * verdict on a probe: 1 trusted, 0 found inside geometry. The other alphas are padding.
+ */
+using ProbeGridSH = std::array<std::vector<glm::vec4>, 4>;
+
+/**
+ * @brief Whether the relight trusted a probe, read from its first coefficient.
+ *
+ * @param sh0 The probe's cell in `sh[0]`, as the bake reads it back.
+ * @return True for a verdict of 1; a half survives rounding in the transfer.
+ */
+inline bool probeTrusted(const glm::vec4& sh0) {
+    return sh0.w >= 0.5f;
+}
+
+/**
  * @brief GPU storage for one baked irradiance volume: SH-L1 on a probe grid.
  *
  * An RGBA16F 3D texture per coefficient, not packed along Z, so hardware trilinear blends
  * between probes rather than smearing one coefficient into the next. GLIrradianceBaker writes
- * them, GLPass::bindAmbient samples them; download()/upload() serve the CPU step between, where
- * the bake repairs the probes it refused.
+ * them, GLPass::bindAmbient samples them; download() serves the bake's read of its probes'
+ * verdicts.
  */
 class GLIrradianceVolume {
     public:
@@ -51,12 +69,15 @@ class GLIrradianceVolume {
          */
         void resize(uint32_t x, uint32_t y, uint32_t z);
 
+        /// Free the four volumes, leaving it not ready, as for a scene with no volume left.
+        void release();
+
         /**
          * @brief Bind one SH coefficient volume as a compute image.
          *
          * @param i      Coefficient index (0..SH_COEFFS-1).
          * @param unit   Image unit to bind on.
-         * @param access GL access flag (write for the projection compute).
+         * @param access GL access flag (write for the relight, read and write for the fill).
          */
         void bindImage(int i, uint32_t unit, GLenum access) const;
 
@@ -83,20 +104,11 @@ class GLIrradianceVolume {
         /**
          * @brief Read every coefficient grid back into @p sh, sized to the grid.
          *
-         * A synchronising read, for the bake's dilation; @p sh comes back empty with no storage.
+         * A synchronising read, for the bake's verdicts; @p sh comes back empty with no storage.
          *
          * @param sh Destination, resized to this volume's cell count.
          */
         void download(ProbeGridSH& sh) const;
-
-        /**
-         * @brief Replace every coefficient grid from @p sh.
-         *
-         * Ignores a @p sh not sized to this grid, so a caller cannot half-write one.
-         *
-         * @param sh Source, one array per coefficient, cell count each.
-         */
-        void upload(const ProbeGridSH& sh) const;
 
         /**
          * @brief Record whether the grid holds a finished bake of the current volume.
@@ -109,6 +121,16 @@ class GLIrradianceVolume {
          */
         void setBaked(bool baked);
 
+        /**
+         * @brief Trade grids with @p other: this shows what it held, and it what this did.
+         *
+         * Readiness and bakeId() stay with each, so a relight lit beside the frame's grid takes
+         * its place whole; this takes a new lightId(). Both should hold the same grid size.
+         *
+         * @param other The grid traded with.
+         */
+        void swapGrid(GLIrradianceVolume& other);
+
         /// Probes in the grid, as the last resize() allocated it.
         uint32_t cellCount() const;
 
@@ -117,10 +139,14 @@ class GLIrradianceVolume {
         /// Which finished bake the grid holds: a new value with every one, 0 before the first.
         uint32_t bakeId() const { return m_bakeId; }
 
+        /// Which light the grid holds: a new value with every grid swapGrid() trades in.
+        uint32_t lightId() const { return m_lightId; }
+
     private:
         std::unique_ptr<Vkm::GL::Texture3D> m_sh[SH_COEFFS];
-        bool     m_ready  = false;
-        uint32_t m_bakeId = 0;
+        bool     m_ready   = false;
+        uint32_t m_bakeId  = 0;
+        uint32_t m_lightId = 0;
 };
 
 } // namespace Vkm::Engine

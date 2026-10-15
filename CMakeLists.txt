@@ -231,6 +231,7 @@ if(NOT VKM_SHIPPING)
     add_subdirectory(examples/potion_runner)
     add_subdirectory(examples/stress_arena)
     add_subdirectory(examples/physics_lab)
+    add_subdirectory(examples/city_block)
 endif()
 
 # Thin executables, each linking the engine libs itself. What each host is and

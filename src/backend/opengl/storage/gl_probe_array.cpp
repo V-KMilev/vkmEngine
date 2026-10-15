@@ -6,6 +6,8 @@
 
 #include "logger.h"
 
+#include "gl_error_handle.h"
+
 #include "storage/gl_ibl.h"
 
 namespace Vkm::Engine {
@@ -28,8 +30,8 @@ void GLProbeArray::createTargets(int capacity, int resolution) {
     // RGBA16F is the guaranteed colour-renderable HDR format (RGB16F render
     // support is optional), for the capture cube too. create() releases any
     // prior allocation, so this doubles as a rebuild.
-    m_irradiance.create(irradianceSize(), 1, m_capacity, GL_RGBA16F);
-    m_prefilter.create(prefilterSize(), PREFILTER_MIPS, m_capacity, GL_RGBA16F);
+    m_irradiance.create(irradianceSize(), 1, m_capacity + 1, GL_RGBA16F);
+    m_prefilter.create(prefilterSize(), PREFILTER_MIPS, m_capacity + 1, GL_RGBA16F);
     m_env.create(m_resolution, fullMipChain(m_resolution), GL_RGBA16F, GL_RGBA, GL_FLOAT, true);
 
     // Shared capture depth for the six geometry captures (convolution runs
@@ -55,13 +57,41 @@ void GLProbeArray::createTargets(int capacity, int resolution) {
     m_fbo->unbind();
 
     LOG_INFO(
-        "Probe array allocated: %d layers @ res %d (prefilter %d/%d mips, irradiance %d)",
+        "Probe array allocated: %d layers and one staging @ res %d (prefilter %d/%d mips, irradiance %d)",
         capacity,
         m_resolution,
         prefilterSize(),
         PREFILTER_MIPS,
         irradianceSize()
     );
+}
+
+void GLProbeArray::copyLayer(int from, int to) const {
+    // A layer is its cube's six faces, from layer * 6.
+    const auto copy = [&](const Vkm::GL::TextureCubeArray& array, int mip) {
+        const int size = array.size() >> mip;
+        VKM_GL_CHECK(
+            glCopyImageSubData(
+                array.getID(),
+                GL_TEXTURE_CUBE_MAP_ARRAY,
+                mip,
+                0,
+                0,
+                from * 6,
+                array.getID(),
+                GL_TEXTURE_CUBE_MAP_ARRAY,
+                mip,
+                0,
+                0,
+                to * 6,
+                size,
+                size,
+                6
+            )
+        );
+    };
+    copy(m_irradiance, 0);
+    for (int mip = 0; mip < PREFILTER_MIPS; ++mip) copy(m_prefilter, mip);
 }
 
 } // namespace Vkm::Engine

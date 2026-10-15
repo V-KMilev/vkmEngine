@@ -16,6 +16,8 @@
 #include "gl_view.h"
 #include "convention/gl_bindings.h"
 #include "gl_screen_triangle.h"
+#include "storage/gl_shadow_atlas.h"
+#include "storage/gl_cluster_grid.h"
 #include "frame/gl_stream_upload.h"
 #include "debug/profiler.h"
 #include "system/render/render_view.h"
@@ -110,6 +112,14 @@ void GLParticlePass::execute(GLFrameContext& ctx) {
 
     m_shader.bind();
     bindFog(ctx, m_shader);
+
+    // An alpha-blended particle is lit as it draws: the lights by its cluster, through their
+    // shadows' hard lookups, which compare and never read the raw depth, and the environment
+    // (shaders/particle/vertex.shader).
+    ctx.clusters.bind();
+    ctx.shadowAtlas.bind2D(GLBindings::ShadowTextureSlots::ATLAS_2D);
+    ctx.shadowAtlas.bindCubes(GLBindings::ShadowTextureSlots::CUBE);
+    bindAmbient(ctx, m_shader);
 
     // Additive first (its blend is commutative), then alpha far to near. u_additive also tells
     // the shader how to fog each half.

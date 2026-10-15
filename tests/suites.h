@@ -23,7 +23,7 @@
     X("async",       runAsyncTests,          "the async load queue: what lands, what is dropped") \
     X("cook",        runCookTests,           "the cooked-asset format and what a cook re-bakes") \
     X("import",      runImportTests,         "what a model file imports as: its unit, its V, its tangents") \
-    X("authoring",   runAuthoringTests,      "probe dilation, gizmo snap, picking, the default layout's tabs") \
+    X("authoring",   runAuthoringTests,      "probe fill, gizmo snap, picking, the default layout's tabs") \
     X("prefab",      runPrefabTests,         "the prefab file: what it round-trips, what it refuses") \
     X("scene",       runSceneTests,          "scene")                                      \
     X("play",        runPlayTests,           "the editor play/stop snapshot, and who has the input") \

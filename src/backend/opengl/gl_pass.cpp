@@ -56,18 +56,23 @@ void GLPass::bindFog(GLFrameContext& ctx, const Vkm::GL::Shader& shader, bool ai
 }
 
 void GLPass::bindAO(GLFrameContext& ctx, const Vkm::GL::Shader& shader, bool sampled) const {
-    const bool hasAO = sampled && ctx.aoReady;
-    if (hasAO) ctx.ao.bindTexture(GLTarget::Attachment::Color, GLBindings::PostTextureSlots::AO);
+    const bool hasAO           = sampled && ctx.aoReady;
+    const bool hasScreenShadow = sampled && ctx.screenShadowReady;
+    if (hasAO || hasScreenShadow) {
+        ctx.ao.bindTexture(GLTarget::Attachment::Color, GLBindings::PostTextureSlots::AO);
+    }
     shader.setUniform1i("u_hasAO", hasAO ? 1 : 0);
+    shader.setUniform1i("u_hasScreenShadow", hasScreenShadow ? 1 : 0);
 }
 
-void GLPass::bindAmbient(GLFrameContext& ctx, const Vkm::GL::ShaderBase& shader) const {
+void GLPass::bindAmbient(GLFrameContext& ctx, const Vkm::GL::ShaderBase& shader, bool probes) const {
     const RenderView& view = ctx.view;
 
     const bool hasIBL = ctx.ibl.isReady();
     if (hasIBL) ctx.ibl.bindIrradiance(GLBindings::IBLTextureSlots::IRRADIANCE);
     shader.setUniform1i("u_hasIBL", hasIBL ? 1 : 0);
     shader.setUniform1f("u_iblIntensity", view.environment.sky.intensity);
+    shader.setUniform1i("u_probeCount", (probes && view.settings.probes) ? ctx.probeCount : 0);
 
     // The baked SH volume, and the box that places a point in its grid.
     if (ctx.irradiance.isReady() && view.hasIrradianceVolume) {

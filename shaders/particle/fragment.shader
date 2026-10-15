@@ -2,7 +2,8 @@
  * Billboard particle - fragment stage.
  *
  * A procedural soft round sprite, or a frame of the emitter's texture tinted by the particle's
- * colour, in linear radiance, fogged at its own depth.
+ * colour - an albedo lit by the vertex stage for an alpha-blended particle, radiance for an
+ * additive one - fogged at its own depth.
  * Soft (Lorach 2007): it fades over its authored size (half its width) where the scene behind
  * comes near, so smoke meets a wall or the floor without a line, and over half a metre from the
  * near plane, so a sprite the camera passes through does not pop.
@@ -22,6 +23,7 @@ in vec2  vCorner;
 in vec2  vUV;
 flat in vec4 vFrame;
 in vec4  vColor;
+in vec3  vLight;
 in float vSoftness;
 in float vSize;
 flat in int vViewmodel;
@@ -33,7 +35,7 @@ layout(location = OUT_REFLECT_ENV)    out vec4 ReflectEnv;
 uniform int u_additive;  // 1 while the additive half draws: it adds light, so the fog only takes from it
 
 void main() {
-    vec4  color   = vColor;
+    vec4  color   = vec4(vColor.rgb * vLight, vColor.a);
     float falloff = 1.0;
     if (u_textured == 1) {
         // Held half a texel of the coarser level read inside the frame, so a filtered read takes

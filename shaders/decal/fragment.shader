@@ -4,14 +4,17 @@
  * Each covered pixel's world position, rebuilt from depth, is discarded outside the decal's unit
  * box, whose XY is the UV. It fades where the G-buffer normal turns from the projector and over the
  * last fifth of each half of the box's depth, so one crossing a corner ends softly, and is lit
- * diffusely as the surface under it: the sun through its cascades, the environment through GTAO.
+ * diffusely as the surface under it: every light of its cluster through its shadow, the
+ * environment - probes and volume - through GTAO.
  */
 
 #include "../constants.glsl"
 #include "../normal_codec.glsl"
 #include "../depth.glsl"
 #include "../camera.glsl"
-#include "../shadows.glsl"       // sampleCSMSoft
+#include "../lights.glsl"        // the cluster's lights
+#include "../ltc.glsl"           // areaFormFactor
+#include "../shadows.glsl"       // each light's shadow
 #include "../fog.glsl"           // fogAt
 #include "../ambient.glsl"       // environmentIrradiance
 #include "../material.glsl"      // the decal's albedo factor and maps
@@ -22,15 +25,13 @@ out vec4 FragColor;
 layout(binding = MATERIAL_SLOT_ALBEDO)    uniform sampler2D u_decalAlbedo;
 layout(binding = POST_SLOT_SCENE_DEPTH)   uniform sampler2D u_sceneDepth;
 layout(binding = POST_SLOT_SCENE_GBUFFER) uniform sampler2D u_sceneGBuffer;  // oct view-normal in rg
-layout(binding = POST_SLOT_AO)            uniform sampler2D u_ao;            // GTAO factor in r
-uniform int u_hasAO;  // 0 when the GTAO pass did not run this frame
+layout(binding = POST_SLOT_AO)            uniform sampler2D u_ao;  // GTAO factor in r, screen shadow in a
+uniform int u_hasAO;            // 0 when the GTAO pass did not run this frame
+uniform int u_hasScreenShadow;  // 0 when the screen-shadow pass did not
 
 uniform mat4 u_invModel;  // world -> decal local
 
 uniform vec3  u_projDir;      // direction the decal projects along (world): its forward
-uniform vec3  u_sunDir;       // direction TO the sun (world)
-uniform vec3  u_sunColor;     // sun colour * intensity
-uniform int   u_sunShadowed;  // 1 when the sun is the light the cascades were fitted for
 uniform float u_angleFade;
 uniform float u_opacity;
 
@@ -52,11 +53,38 @@ void main() {
     float fade   = smoothstep(0.0, max(u_angleFade, 1e-3), facing) * ends;
     if (fade <= 0.0) discard;
 
-    // Shadowed by the geometric normal the G-buffer holds, as the forward pass shadows the surface.
-    float ndotl = dot(worldN, u_sunDir);
-    float sun   = max(ndotl, 0.0);
-    if (u_sunShadowed == 1 && sun > 0.0) {
-        sun *= sampleCSMSoft(worldPos, worldN, ndotl);
+    // Each light of its cluster, diffusely, as the forward pass lights the surface beneath: shadowed
+    // by the geometric normal the G-buffer holds, an area light by its form factor.
+    float viewDepth    = linearizeViewDepth(d, u_camera.invProjection);
+    float screenShadow = (u_hasScreenShadow == 1) ? texture(u_ao, uv).a : 1.0;
+    int   ci           = clusterIndex(uv, viewDepth, u_camera.zNear, u_camera.zFar);
+    vec3  direct       = vec3(0.0);
+    uint  count        = u_clusters.clusters[ci].count;
+    for (uint k = 0u; k < count; ++k) {
+        Light light    = u_lights.lights[u_clusters.clusters[ci].indices[k]];
+        vec3  lightCol = light.color.xyz * light.color.w;
+        int   type     = int(light.position.w);
+
+        if (type == LIGHT_RECT || type == LIGHT_DISK) {
+            vec3  U      = light.axisU.xyz;
+            vec3  V      = light.axisV.xyz;
+            float side   = dot(worldPos - light.position.xyz, cross(U, V));
+            if (side <= 0.0 && light.axisU.w <= 0.5) continue;
+            float window = distanceWindow(length(light.position.xyz - worldPos), light.direction.w);
+            if (window <= 0.0) continue;
+            float area;
+            float formFactor = areaFormFactor(type, light.position.xyz, U, V, worldPos, worldN, side, area);
+            // Radiance is intensity over area; a Lambertian surface returns albedo times form factor.
+            direct += lightCol * window * formFactor / max(area, 1e-4);
+            continue;
+        }
+
+        vec3  L;
+        float atten = punctualAttenuation(light, type, worldPos, L);
+        float ndotl = dot(worldN, L);
+        if (atten <= 0.0 || ndotl <= 0.0) continue;
+        atten *= surfaceShadow(type, int(light.spot.w), worldPos, worldN, ndotl, screenShadow);
+        direct += lightCol * atten * ndotl / PI;
     }
 
     // Lambertian, as the forward pass shades the surface beneath; irradiance is stored over PI.
@@ -66,9 +94,9 @@ void main() {
     // Read where irradianceVolumeLookup puts the surface; the G-buffer normal is the geometric one.
     vec3  lookup  = irradianceVolumeLookup(worldPos, worldN);
     vec3  ambient = environmentIrradiance(lookup, worldN) * multiBounceOcclusion(ao, decal.rgb);
-    vec3  lit     = decal.rgb * (u_sunColor * sun / PI + ambient);
+    vec3  lit     = decal.rgb * (direct + ambient);
 
     // Carries the fog the forward pass gave the surface beneath, at the same depth.
-    vec4 fog = fogAt(uv, linearizeViewDepth(d, u_camera.invProjection));
+    vec4 fog = fogAt(uv, viewDepth);
     FragColor = vec4(lit * fog.a + fog.rgb, decal.a * fade * u_opacity);
 }

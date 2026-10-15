@@ -4,6 +4,7 @@
 
 #include "gl_pass.h"
 #include "frame/gl_instance_batcher.h"
+#include "frame/gl_occlusion_cull.h"
 
 namespace Vkm::Engine {
 
@@ -12,8 +13,10 @@ namespace Vkm::Engine {
  *
  * Primes depth for the opaque/unlit batch so GLForwardPass runs LEQUAL with depth writes off,
  * writes the G-buffer (the view normal) to colour attachment 1, and owns the scene target's
- * clear, so it is unconditional. Alpha-masked geometry is not in this batch. It binds no
- * material: nothing it writes depends on one.
+ * clear, so it is unconditional. Alpha-masked geometry is not in this batch. It binds a
+ * material's block, for a `waves` surface's vertices, and none of its maps.
+ *
+ * With the GPU occlusion cull on it draws twice, each after a phase of the cull (GLOcclusionCull).
  *
  * Skinned runs sort after static ones, so the two programs switch once. Both must compute
  * gl_Position as the forward programs do, or the primed depth is unusable under LEQUAL.
@@ -31,6 +34,15 @@ class GLDepthPrepass : public GLPass {
 
     public:
         void execute(GLFrameContext& ctx) override;
+
+    private:
+        /**
+         * @brief Bind each of the opaque batch's draws' program and material, and submit it.
+         *
+         * @param ctx The frame.
+         * @param set Which of the cull's lists, while one runs (GLFrameContext::drawOpaque).
+         */
+        void drawBatch(GLFrameContext& ctx, GLOcclusionCull::Set set);
 
     private:
         Vkm::GL::Shader m_shader;         ///< Static geometry.

@@ -371,11 +371,26 @@ class GltfReader {
                     TextureUsage::Data
                 );
             }
+            // MaterialAsset has no sheen or anisotropy texture: their factors, and the anisotropy's
+            // rotation, come across.
+            // The direction turns from the tangent toward the bitangent by that rotation.
+            const char* named = material->name ? material->name : "a material";
             if (material->has_sheen) {
                 v.sheenColor     = glm::make_vec3(material->sheen.sheen_color_factor);
                 v.sheenRoughness = material->sheen.sheen_roughness_factor;
+                const cgltf_sheen& sheen = material->sheen;
+                if (sheen.sheen_color_texture.texture || sheen.sheen_roughness_texture.texture) {
+                    LOG_WARNING("%s: its sheen textures are not imported, its sheen factors are", named);
+                }
             }
-            if (material->has_anisotropy) v.anisotropy = material->anisotropy.anisotropy_strength;
+            if (material->has_anisotropy) {
+                const float turn      = material->anisotropy.anisotropy_rotation;
+                v.anisotropy          = material->anisotropy.anisotropy_strength;
+                v.anisotropyDirection = {std::cos(turn), std::sin(turn), 0.0f};
+                if (material->anisotropy.anisotropy_texture.texture) {
+                    LOG_WARNING("%s: its anisotropy texture is not imported, its strength is", named);
+                }
+            }
 
             v.doubleSided = material->double_sided != 0;
 

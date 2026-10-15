@@ -5,6 +5,7 @@
 
 #include "gl_shader.h"
 #include "gl_screen_triangle.h"
+#include "offline/gl_cube_convolver.h"
 #include "storage/gl_atmosphere.h"
 #include "storage/gl_ibl.h"
 #include "system/sky/atmosphere.h"
@@ -15,8 +16,6 @@ namespace Vkm::GL {
 
 namespace Vkm::Engine {
 
-class GLCubeConvolver;
-
 /**
  * @brief Baker for the IBL product set (split-sum), and for the atmosphere's two air tables.
  *
@@ -25,15 +24,12 @@ class GLCubeConvolver;
  * recompile its programs each time. Every bake fills GLIBL's back set and swaps it in once
  * complete. bake() and bakeProcedural() do it at once: the source into the env cube, then
  * irradiance and GGX-prefiltered specular. beginProcedural() and advance() do it a step at a time
- * (Unreal's time-sliced sky capture) - the env cube, an irradiance face, a band of a
- * prefilter level - so a sun moving across the sky costs no frame the whole bake.
+ * (Unreal's time-sliced sky capture) - the env cube, then GLCubeConvolver::slices's steps - so a
+ * sun moving across the sky costs no frame the whole bake.
  * integrateBrdf() fills the BRDF LUT once at start.
  */
 class GLIBLBaker {
     public:
-        /// The most texels of a prefilter level's face one step draws; a larger face takes bands.
-        static constexpr int BAND_TEXELS = 128 * 256;
-
         /// A sky shown this many degrees behind the one asked for takes a step more a frame.
         static constexpr float CATCH_UP_DEGREES = 1.5f;
         /// The most steps a frame takes (why this many: engine.md, the sky's lighting row).
@@ -55,26 +51,12 @@ class GLIBLBaker {
 
     public:
         /**
-         * @brief How many bands a prefilter level's face is drawn in.
-         *
-         * @param mip The level.
-         * @return One, or as many as keep a band within BAND_TEXELS.
-         */
-        static constexpr int prefilterBands(int mip) {
-            const int size = GLIBL::PREFILTER_SIZE >> mip;
-            return size * size > BAND_TEXELS ? size * size / BAND_TEXELS : 1;
-        }
-
-        /**
          * @brief The steps, and so the frames, of a bake spread over frames.
          *
-         * @return The env cube, its mips with the mirror level, every irradiance face and every
-         *         prefilter band past the mirror level.
+         * @return The env cube, then the convolution's steps (GLCubeConvolver::slices).
          */
         static constexpr int slicedSteps() {
-            int prefilter = 0;
-            for (int mip = 1; mip < GLIBL::PREFILTER_MIPS; ++mip) prefilter += prefilterBands(mip);
-            return 1 + 1 + 6 + 6 * prefilter;
+            return 1 + GLCubeConvolver::sliceCount(GLIBL::PREFILTER_SIZE, GLIBL::PREFILTER_MIPS);
         }
 
         /**
@@ -150,7 +132,7 @@ class GLIBLBaker {
         /**
          * @brief Whether a bake spread over frames has steps left.
          */
-        bool baking() const { return m_next < m_steps.size(); }
+        bool baking() const { return m_next < idle(); }
 
         /**
          * @brief The sky the bake spread over frames is making, or last made.
@@ -168,23 +150,9 @@ class GLIBLBaker {
         void integrateBrdf(Vkm::GL::Context& gl, GLIBL& ibl);
 
     private:
-        /// One frame's share of a bake spread over frames.
-        struct Step {
-            enum class Kind {
-                Capture,     ///< The env cube's six faces from the sky.
-                Mips,        ///< The env mips, and the prefilter's mirror level from them.
-                Irradiance,  ///< An irradiance face.
-                Prefilter    ///< A band of rows of a prefilter level's face.
-            };
+        /// m_next past the last step: the env cube's, then m_steps.
+        int idle() const { return 1 + static_cast<int>(m_steps.size()); }
 
-            Kind kind  = Kind::Capture;
-            int  face  = 0;
-            int  mip   = 0;
-            int  part  = 0;  ///< A prefilter step's band.
-            int  parts = 1;  ///< Bands in the face.
-        };
-
-    private:
         /**
          * @brief Bind the sky program with @p sky's uniforms and the air tables it reads.
          *
@@ -215,15 +183,6 @@ class GLIBLBaker {
          */
         void bakeFrom(Vkm::GL::Context& gl, GLIBL& ibl, Vkm::GL::Shader& source);
 
-        /**
-         * @brief Take one step of a bake spread over frames.
-         *
-         * @param gl   Live GL context the step draws through.
-         * @param ibl  The product set baked into.
-         * @param step The step.
-         */
-        void runStep(Vkm::GL::Context& gl, GLIBL& ibl, const Step& step);
-
     private:
         Vkm::GL::Shader m_equirect;
         Vkm::GL::Shader m_sky;
@@ -234,9 +193,11 @@ class GLIBLBaker {
         GLCubeConvolver& m_convolver;  ///< Irradiance + prefilter convolution, and the unit cube.
         ScreenTriangle   m_lutTri;     ///< For the LUTs.
 
-        std::vector<Step> m_steps;     ///< A bake spread over frames, in order.
-        size_t            m_next = 0;  ///< The next of m_steps; past the end when none is under way.
-        SkyParams         m_target;    ///< What the bake spread over frames makes.
+        /// The convolution's share of a bake spread over frames, after the env cube's step.
+        std::vector<GLCubeConvolver::Step> m_steps;
+
+        int       m_next = 0;  ///< The next step, 0 the env cube's; idle() when none is under way.
+        SkyParams m_target;    ///< What the bake spread over frames makes.
 };
 
 } // namespace Vkm::Engine

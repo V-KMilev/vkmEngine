@@ -91,7 +91,7 @@ the `VisibilitySystem` output, reusing the vectors' capacity across frames.
 | `particlesAdditive` / `particlesAlpha` | `vector<ParticleData>` | Billboards, split by blend and unsorted: the additive half is order-independent, and `GLParticlePass` sorts the alpha half back-to-front |
 | `particleTextures` | `vector<TextureHandle>` | What the particles show, each once; a particle names its own by `params.z`, 1 + its place here, 0 for the soft disc. `GLParticlePass` draws a run of particles a texture |
 | `ocean` | `OceanData` | `OceanSystem`'s sea at the frame's moment (`present` when the scene has one, and a camera draws it): its waves, its foam and the drift of a `waves` material's maps - see "The ocean" below |
-| `irradianceVolume` / `hasIrradianceVolume` | `IrradianceVolumeData` + `bool` | The scene's one baked-GI volume, chosen by `findIrradianceVolume` and with its grid clamped to `IrradianceVolume::MAX_RESOLUTION` on the way here. A value and a flag rather than a list, the way `Visibility` carries its camera - see "A scene has one irradiance volume" below |
+| `irradianceVolume` / `hasIrradianceVolume` | `IrradianceVolumeData` + `bool` | The scene's one baked-GI volume, chosen by `findIrradianceVolume` and with its grid clamped by `IrradianceVolume::clampedResolution` on the way here. A value and a flag rather than a list, the way `Visibility` carries its camera - see "A scene has one irradiance volume" below |
 | `settings` | `RenderSettings` | Pass toggles + per-effect params, copied each frame |
 | `environment` | `Environment` | The scene's sky (HDR or procedural), night sky and fog, copied whole |
 | `ui` | `const UIDrawData*` | The UISystem's screen-space draw list, borrowed; independent of the camera, so it survives the no-camera path. Null when the UISystem has not run |
@@ -117,7 +117,7 @@ carried on `FrameContext::render`: mutated by the editor's Render Settings panel
 or a game's settings screen, read by the visibility pass, and copied into the
 view each frame.
 
-- **Toggles:** `gtao`, `bloom`, `probes`, `ssr`, and the editor grid's axes
+- **Toggles:** `gtao`, `screenShadows`, `bloom`, `probes`, `ssr`, and the editor grid's axes
   (`gridAxisX/Y/Z`): a line for each axis on and the plane of every two, X and Z
   the ground; it draws while any is on, `gridShown()`.
 - **Per-effect params:** GTAO (radius/intensity/power), screen-space
@@ -168,12 +168,16 @@ view each frame.
   in `project.json` like the rest of this struct, and `VisibilitySystem` reads
   them off the same `FrameContext::render` the renderer does, so the editor's
   Culling card edits the one copy there is.
+- **`occlusionCulling`:** the GPU occlusion cull of the opaque batch, which the
+  depth prepass runs (`GLOcclusionCull`,
+  [visibility.md](visibility.md#occlusion-culling-on-the-gpu-as-an-option)). Off
+  by default, and a project's choice: the tiers leave it as the project sets it.
 - **`renderMode`:** composite output selector - `Default` (final image) or a debug
   view: `Wireframe` (the opaque and alpha-masked draws again as lines, over the
   shaded frame), `LightingOnly` (every surface a white dielectric), the material
   views `Albedo`, `Roughness` and `Metalness` (the surface as the forward pass
   samples it, written raw, the sky black), `Normals`, `Depth`, `AmbientOcclusion`,
-  `GiOnly`, `DirectOnly`, `Clusters` (Forward+ light-count heatmap), `Bloom`,
+  `ScreenShadows` (the key light's screen-space shadow, white where lit), `GiOnly`, `DirectOnly`, `Clusters` (Forward+ light-count heatmap), `Bloom`,
   `ShadowAtlas` and `Fog`. The `MODE_*` constants the composite shader
   switches on are written out of this enum by `GLBackend::shaderConstants` into
   the prelude every stage is compiled with - there is no generated file and
@@ -183,7 +187,7 @@ view each frame.
 `withPreset(project, GraphicsPreset::Low / Medium / High / Ultra)`: the
 project's settings with what costs frame time - `msaaSamples`,
 `shadowResolution` and `textureAnisotropy` - from a table beside it, each tier
-at least the one under it, and `gtao`, `ssr` and `bloom` on only where both the
+at least the one under it, and `gtao`, `screenShadows`, `ssr` and `bloom` on only where both the
 project and the tier have them. The look (an effect the project turned off, the
 tonemap, the exposure, each effect's tuning, the culling) stays the project's,
 and since each tier is built from the project's settings, choosing High after
@@ -269,25 +273,26 @@ From `gl_backend.cpp` - a hardcoded `m_passes` list, run top to bottom:
 | # | Pass | Does |
 |---|------|------|
 | 1 | Shadow | Renders directional CSM + spot + point-cube depth maps into the atlas. A spot's tile or a point light's face is redrawn only when what it holds changed - its matrix, or a caster in it moved, was re-uploaded or is posed - and the sun's cascades, which follow the camera, every frame, with their depth clamped so a caster nearer the sun than a cascade's near plane still shadows. Culling and grouping are **not** done here - `GLShadowData::build` does both on the thread pool. The pass uploads the drawn tiles' lists of objects, and a draw command per run of casters sharing a mesh, into one `GLDrawList` - the transforms are the frame's object buffer - then draws each tile as one multi-draw per program and vertex layout - its runs are keyed static meshes first, then skinned ones drawn as stored, then posed ones (`ShadowRun::key`), so neither alternates - skinned casters included, through programs a frame that posed nothing never binds (see [animation.md](animation.md#the-gpu-path)), and alpha-masked and see-through transparent ones, per material, through programs that cut the shadow by it ([lighting.md](lighting.md#shadow-atlas)). A tile with no casters is still cleared |
-| 2 | DepthPrepass | Clears the scene target; early-Z for opaque geometry + writes the G-buffer (an oct view-normal, two channels, which GTAO, the decals, the Normals view and the reflection trace and resolve read). Draws `ctx.opaqueBatch`, the shared batch the forward pass reuses, one multi-draw per material run, binding each run's material (a `waves` one moves its vertices by the ocean) and leaving culling off for a double-sided material's runs. Two programs (`prepass` / `prepass_skinned`), switched once at the skinned boundary |
+| 2 | DepthPrepass | Clears the scene target; early-Z for opaque geometry + writes the G-buffer (an oct view-normal, two channels, which GTAO, the decals, the Normals view and the reflection trace and resolve read). Draws `ctx.opaqueBatch`, the shared batch the forward pass reuses, one multi-draw per material run, binding each run's material (a `waves` one moves its vertices by the ocean) and leaving culling off for a double-sided material's runs. Two programs (`prepass` / `prepass_skinned`), switched once at the skinned boundary. With `RenderSettings::occlusionCulling` on it runs the GPU occlusion cull (`GLOcclusionCull`): it draws what the last cull showed, reduces that depth into a farthest-depth pyramid (`shaders/cull/pyramid`), tests every instance against it (`shaders/cull/instances`) and draws what was hidden before and is shown now; the forward pass then draws what was shown (`GLFrameContext::drawOpaque`) |
 | 3 | ResolveDepth | MSAA only: one draw resolving depth and the G-buffer into `m_sceneHDR`, sample 0 of each |
 | 4 | GTAO | Full-res ground-truth AO + bent normal into `m_ao`. First folds the scene depth into a linear-depth mip chain of its own (`shaders/gtao/prefilter`); the horizon search then reads each step from the level its pixel length picks, which is what keeps a wide radius in cache. The search writes a target of the pass's own, and one compute dispatch (`shaders/gtao/denoise`) averages its visibility over a 5x5 neighbourhood on each pixel's own plane into `m_ao` - edge-aware and spatial only, with no history - and only then shapes it by intensity and power |
-| 5 | ClusterCull | Compute: culls lights into the Forward+ cluster grid SSBO |
-| 6 | FogCompute | Compute: froxel light inject + front-to-back integration (allocates the volumes on the first fog frame). Before anything is lit, because everything lit fogs itself through it - see [Fog](#fog) |
-| 7 | Atmosphere | Compute, under the procedural sky: the sky-view table the skybox draws the sky from and the aerial-perspective volume every lit pass lays over what it draws, both from the atmosphere's air tables, every frame ([lighting.md](lighting.md#image-based-lighting-ibl)). Each half is skipped when nothing reads it - the skybox hidden, `aerialPerspective` at 0 |
-| 8 | Skybox | Fills the background before geometry so transparents blend over it: the procedural sky from this frame's sky-view table, with its sun, moon and stars, or an HDR sky's env cube. Only the froxel fog lies over it, at the far plane. With fog on and no sky to show it still draws, black, so the fog lies in front of the background too |
-| 9 | Ocean | Under a scene's ocean: draws its ripples into the three repeating fields a `waves` surface's pixels read (`GLOceanFields::drawRipples`, `shaders/ocean_ripples.glsl`), and their levels; and captures its shore, how far the sea ahead of the eye is from anything breaking it (`GLOceanFields::captureShore`). After the sky and GTAO, whose texture units the forward pass reads them on ([The ocean](#the-ocean)) |
-| 10 | Forward | The PBR ubershader: opaque (depth-primed), alpha-mask (writes depth, alpha-to-coverage under MSAA), then back-to-front transparents sampling an opaque snapshot for refraction; one multi-draw per material in each, since its textures are bound per material. Every surface takes the sky's air and the fog in the shader, at its own depth. Beside the colour, while `ssr` is on, it writes each pixel's reflection inputs - the environment reflection's weight and roughness, and the reflection itself as it was added (weight times radiance), both dimmed by the fog as the colour is - into colour attachments 2 and 3 of the scene target, which the Reflections pass reads, and which the target does not carry at all with `ssr` off; a transparent surface dims both under it by its own opacity ([lighting.md](lighting.md)). Two programs (`pbr` / `pbr_skinned`) sharing one fragment file and one per-frame uniform set |
-| 11 | Particles | CPU billboard particles into the scene target, depth-tested, never depth-writing, each fogged in the shader at its own depth, and soft: faded over its authored size (half its width) where the scene behind comes near and over half a metre from the near plane, against a copy of the scene's depth the pass blits first (the target's own is attached as it draws). Alpha ones sorted far to near by view depth. Into the reflection inputs too, as zero at the particle's opacity, so smoke dims the reflection behind it as a transparent surface does |
-| 12 | ResolveColor | MSAA only: one draw resolving colour and the reflection inputs, all tonemap-weighted alike, into `m_sceneHDR`, and depth again when alpha-mask drew |
-| 13 | Reflections | Screen-space reflections on the resolved frame. Copies the lit colour into a mip chain and filters it down; traces each pixel smoother than `ssrMaxRoughness` along its G-buffer normal's reflection through this frame's depth, rejecting surfaces seen from behind; then, through the reflection weight and the environment reflection the forward pass wrote beside the colour, replaces the probe / sky reflection with the traced colour - a glossy pixel averaging its neighbours' rays on the same surface (chain: src -> dst) |
-| 14 | Decals | Projected decal boxes blended into the post colour chain, sampling depth + G-buffer, faded where the surface turns from the projector and over the last fifth of each half of the box's depth, lit as the surface they land on is lit diffusely - by the key light through its cascades, and by the irradiance volume or the sky under GTAO (`shaders/ambient.glsl`, which the fog reads too) - and fogged at its depth. After the reflections, so a glossy floor's reflection does not paint over what is stuck to it. With the reflections on, the chain is already off the geometry target and the decals blend in place; with them off, the pass first copies the frame into the chain (`GLPass::promoteColorChain`) |
-| 15 | DoF | Circle-of-confusion disk blur driven by the camera's focus distance / amount, with a radius of at most `Camera::dofMaxBlur` of the viewport's height, so it looks the same at any resolution (chain: src -> dst) |
-| 16 | Bloom | Compute, one dispatch per level (a framebuffer bind and a draw cost the CPU about three times as much). Bright-pass + mip-chain down/upsample off the chain, the first level capped and cleared of NaNs; composite adds it |
-| 17 | Composite | The bloom added at `bloomStrength` - it holds only the light past the threshold, so nothing else is dimmed - then the `exposure`, then the `tonemap` curve and the exact sRGB encode (`shaders/color.glsl`, which the UI pass shares) to the backbuffer viewport, dithered by a step of triangular noise after the encode (or a debug buffer per `renderMode`) |
-| 18 | Grid | The editor's world grid: grids on the XZ, XY and ZY planes and the three axis lines, one fullscreen draw blended into the backbuffer viewport. After the tonemap, so the axes keep `Math::AXIS_COLORS` as the gizmos show them. Each pixel's ray finds its point on each plane and its nearest point on each axis, each tested against the scene's depth in the shader, and they blend far to near |
-| 19 | UI | Screen-space in-game UI overlay drawn flat on top (no-op when empty). See [ui.md](ui.md) |
-| 20 | Splash | The startup logo over black, covering the whole surface, and its caption's line small at the foot. A no-op once the sequence is over |
+| 5 | ScreenShadows | Compute: the key light's screen-space shadows into the AO target's alpha, from the scene depth - wavefronts of pixels in lines toward the sun, each marching a contact's length along its ray ([lighting.md](lighting.md#screen-space-shadows)). Clears the target to unoccluded first when GTAO did not run; nothing without a key light that casts |
+| 6 | ClusterCull | Compute: culls lights into the Forward+ cluster grid SSBO |
+| 7 | FogCompute | Compute: froxel light inject + front-to-back integration (allocates the volumes on the first fog frame). Before anything is lit, because everything lit fogs itself through it - see [Fog](#fog) |
+| 8 | Atmosphere | Compute, under the procedural sky: the sky-view table the skybox draws the sky from and the aerial-perspective volume every lit pass lays over what it draws, both from the atmosphere's air tables, every frame ([lighting.md](lighting.md#image-based-lighting-ibl)). Each half is skipped when nothing reads it - the skybox hidden, `aerialPerspective` at 0 |
+| 9 | Skybox | Fills the background before geometry so transparents blend over it: the procedural sky from this frame's sky-view table, with its sun, moon and stars, or an HDR sky's env cube. Only the froxel fog lies over it, at the far plane. With fog on and no sky to show it still draws, black, so the fog lies in front of the background too |
+| 10 | Ocean | Under a scene's ocean: draws its ripples into the three repeating fields a `waves` surface's pixels read (`GLOceanFields::drawRipples`, `shaders/ocean_ripples.glsl`), and their levels; and captures its shore, how far the sea ahead of the eye is from anything breaking it (`GLOceanFields::captureShore`). After the sky and GTAO, whose texture units the forward pass reads them on ([The ocean](#the-ocean)) |
+| 11 | Forward | The PBR ubershader: opaque (depth-primed), alpha-mask (writes depth, alpha-to-coverage under MSAA), then back-to-front transparents sampling an opaque snapshot for refraction; one multi-draw per material in each, since its textures are bound per material. Every surface takes the sky's air and the fog in the shader, at its own depth. Beside the colour, while `ssr` is on, it writes each pixel's reflection inputs - the environment reflection's weight and roughness, and the reflection itself as it was added (weight times radiance), both dimmed by the fog as the colour is - into colour attachments 2 and 3 of the scene target, which the Reflections pass reads, and which the target does not carry at all with `ssr` off; a transparent surface dims both under it by its own opacity ([lighting.md](lighting.md)). Two programs (`pbr` / `pbr_skinned`) sharing one fragment file and one per-frame uniform set |
+| 12 | Particles | CPU billboard particles into the scene target, depth-tested, never depth-writing, the alpha-blended ones lit at their centres ([Particles](#particles)), each fogged in the shader at its own depth, and soft: faded over its authored size (half its width) where the scene behind comes near and over half a metre from the near plane, against a copy of the scene's depth the pass blits first (the target's own is attached as it draws). Alpha ones sorted far to near by view depth. Into the reflection inputs too, as zero at the particle's opacity, so smoke dims the reflection behind it as a transparent surface does |
+| 13 | ResolveColor | MSAA only: one draw resolving colour and the reflection inputs, all tonemap-weighted alike, into `m_sceneHDR`, and depth again when alpha-mask drew |
+| 14 | Reflections | Screen-space reflections on the resolved frame. Copies the lit colour into a mip chain and filters it down; traces each pixel smoother than `ssrMaxRoughness` along its G-buffer normal's reflection through this frame's depth, rejecting surfaces seen from behind; then, through the reflection weight and the environment reflection the forward pass wrote beside the colour, replaces the probe / sky reflection with the traced colour - a glossy pixel averaging its neighbours' rays on the same surface (chain: src -> dst) |
+| 15 | Decals | Projected decal boxes blended into the post colour chain, sampling depth + G-buffer, faded where the surface turns from the projector and over the last fifth of each half of the box's depth, lit as the surface they land on is lit diffusely - by every light of the pixel's cluster through its shadow (an area light by its form factor, `areaFormFactor` in `shaders/ltc.glsl`, which the forward pass shares), and by the irradiance volume, the reflection probes or the sky under GTAO (`shaders/ambient.glsl`, which the fog reads too, without the probes) - and fogged at its depth. After the reflections, so a glossy floor's reflection does not paint over what is stuck to it. With the reflections on, the chain is already off the geometry target and the decals blend in place; with them off, the pass first copies the frame into the chain (`GLPass::promoteColorChain`) |
+| 16 | DoF | Circle-of-confusion disk blur driven by the camera's focus distance / amount, with a radius of at most `Camera::dofMaxBlur` of the viewport's height, so it looks the same at any resolution (chain: src -> dst) |
+| 17 | Bloom | Compute, one dispatch per level (a framebuffer bind and a draw cost the CPU about three times as much). Bright-pass + mip-chain down/upsample off the chain, the first level capped and cleared of NaNs; composite adds it |
+| 18 | Composite | The bloom added at `bloomStrength` - it holds only the light past the threshold, so nothing else is dimmed - then the `exposure`, then the `tonemap` curve and the exact sRGB encode (`shaders/color.glsl`, which the UI pass shares) to the backbuffer viewport, dithered by a step of triangular noise after the encode (or a debug buffer per `renderMode`) |
+| 19 | Grid | The editor's world grid: grids on the XZ, XY and ZY planes and the three axis lines, one fullscreen draw blended into the backbuffer viewport. After the tonemap, so the axes keep `Math::AXIS_COLORS` as the gizmos show them. Each pixel's ray finds its point on each plane and its nearest point on each axis, each tested against the scene's depth in the shader, and they blend far to near |
+| 20 | UI | Screen-space in-game UI overlay drawn flat on top (no-op when empty). See [ui.md](ui.md) |
+| 21 | Splash | The startup logo over black, covering the whole surface, and its caption's line small at the foot. A no-op once the sequence is over |
 
 The Splash pass is last because a splash is not drawn on top of the frame -
 it is what is on screen instead of one. It covers the whole surface rather
@@ -315,10 +320,15 @@ bake as its box follows it - and the baked ones are bound per frame into a probe
 irradiance volume re-bakes, before the probes, at once when its bake version
 changes, or once a changed box or grid has held still for as long, and a probe
 also re-bakes when the volume it was lit by does
-([lighting.md](lighting.md#what-a-capture-is-lit-by)). Neither re-bakes when the
-sky changes: each is a capture of the scene under the sky it was baked with, and
-its `bakeVersion` is how an author takes it again. A frame with no camera bakes
-neither and keeps both.
+([lighting.md](lighting.md#what-a-capture-is-lit-by)). Both follow the lights and the
+sky with no bake: when either changes, the volume's surfels are lit again (below), and a
+probe captured under other light is refreshed a step a frame - a face of the capture,
+then a share of the convolution (`GLCubeConvolver::slices`) - into a layer of the arrays
+no probe holds, copied into the probe's after the last step, so no frame samples half a
+probe. One probe refreshes at a time: the one that has waited longest for how near the eye
+it is (`GLProbeManager::REFRESH_NEAR`), and never one away from where it was captured, which
+keeps its last capture as its box follows it. A bake in between ends the refresh, which begins
+again in its turn. A frame with no camera bakes neither and keeps both.
 
 **A scene has one irradiance volume**, and which one is `findIrradianceVolume` -
 the lowest-slot entity carrying an `IrradianceVolume` and a `Transform`, the
@@ -329,41 +339,57 @@ reads, which is why the Inspector's card says so on the ones it did not pick.
 `RenderView` therefore carries `irradianceVolume` and `hasIrradianceVolume`
 rather than a list, the way `Visibility` carries its camera.
 
-**A probe inside a wall is refused, not shipped.** The radiance capture culls
-back faces, so from inside a solid it sees straight through the walls and
-records the room on the far side - light a trilinear fetch would then blend into
-the near one. So each probe is captured twice: once for radiance, once as a
-backface mask (`shaders/irradiance/backface`, culling off, one bit per
-direction). The SH projection reads both - every texel of each 32-texel cube,
-weighted by the solid angle it covers, one workgroup a probe, so a small
-bright patch reaches every probe that sees it - and a probe whose nearest
-surface faces away over more than a quarter of the sphere is marked refused in the
-alpha of its first coefficient. `dilateProbeGrid`
-(`system/render/irradiance_dilation.h`) then reads the grid back and replaces
-every refused probe with a blend of its trusted neighbours, spreading one cell
-per round, before the grid is uploaded again. The repair is offline because the
-forward pass samples the volume with hardware trilinear filtering and so cannot
-skip a probe. A volume where *no* probe
-was trusted is not marked ready at all, so the frame falls back to the global
-IBL rather than to a grid of guesses.
+**What an irradiance probe sees is kept as surfaces, and lit apart.** The bake draws
+one small cube around each probe - `GLIrradianceBaker::FACE_SIZE` texels a face,
+`shaders/irradiance/surfels` - into the probe's tile of an atlas that stays on the
+GPU: through every texel, the nearest surface's bounce colour, normal, distance and
+emission (`shaders/irradiance/surfel.glsl`), or nothing, the sky. Lighting it is a
+compute pass, `shaders/irradiance/relight`, one workgroup a probe: every surfel lit
+as a diffuse surface, then every texel integrated against SH-L1, weighted by the
+solid angle it covers, so a small bright patch reaches every probe that sees it.
+The bake's gathers ([lighting.md](lighting.md#what-a-capture-is-lit-by)) are that pass
+run again, and so is a relight when the lights or the sky change: the scene is never
+drawn round the probes again for a change of light alone. A surfel reads the
+directional lights and those listed for its probe cell - the lights whose reach meets
+the cell, listed on the CPU each gather (`GLIrradianceBaker::listLights`) - or, outside
+the box, those reaching out of it: never every light, which in a scene of a few hundred
+small lamps would be most of a gather.
+
+**A probe inside a wall is refused, not shipped.** The surfel cube is drawn with
+culling off, so a probe inside a solid sees the backs of the faces enclosing it; one
+seeing backs over more than a quarter of its sphere is marked refused in the alpha of
+its first coefficient, since what it sees is the room on the far side - light a
+trilinear fetch would blend into the near one. The verdicts depend on where probes
+stand, not on the light, so the bake reads the first gather's back once, and
+`probeFillWeights` (`system/render/irradiance_dilation.h`) turns them into a fixed
+blend of trusted neighbours for each refused probe, spreading one cell per round;
+`shaders/irradiance/fill` applies it after every gather of every bake and relight,
+with nothing read back. The repair comes before anything samples the grid because
+the forward pass samples it with hardware trilinear filtering and so cannot skip a
+probe. A volume where *no* probe was trusted is not marked ready at all, so the frame
+falls back to the global IBL rather than to a grid of guesses.
 
 **A capture is shadowed by the key light.** The frame's cascades are fitted to
-the camera, so a probe or irradiance capture draws a map of its own: the key
+the camera, so a probe capture or an irradiance gather draws a map of its own: the key
 light's depth over the region the bake describes - a probe's influence box, the
 volume's box - across the light, and along it every caster standing over that
 region, since a roof well above a room still shades its floor. Without it the
 sun would light indoor floors through their ceilings in the only indirect
 diffuse there is. The other lights capture unshadowed. The map is 2048 texels
 across the region and read through the ordinary hard kernel, installed as a
-one-cascade ShadowBlock the next frame's own upload replaces.
+one-cascade ShadowBlock the next frame's own upload replaces. Two are kept, each for
+the key light and region it was drawn for: a probe capture draws its own, while a
+relight reuses the volume's until the key light or the box changes, so a probe being
+refreshed and the volume being relit in the same frames do not draw each other's away.
 
 **A bake is frame time.** All three run inside `render()`, so the frame that
 notices the change is the frame that pays - but for the procedural sky's IBL
-following a drifting sun, spread a step a frame: an irradiance grid is twelve
-cube faces per probe for its first gather and six per trusted probe for each
-after it. That is why `IrradianceVolume::MAX_RESOLUTION` exists and why
-`RenderView` clamps every axis to it - the grid is a product, so the cost is
-cubic in a number a scene file can hold anything in.
+following a drifting sun, spread a step a frame, and the irradiance volume's relight,
+spread a gather a frame: an irradiance bake draws six cube faces per probe once and
+runs its gathers at once, a relight runs the gathers alone. That is why
+`IrradianceVolume::MAX_RESOLUTION` and `MAX_PROBES` exist and why `RenderView` clamps
+the grid to them - the grid is a product, so its bake and its atlas are cubic in
+numbers a scene file can hold anything in.
 
 ### Fog
 
@@ -382,7 +408,8 @@ Henyey-Greenstein lobe with a share scattered back (`BACK_SHARE` at `BACK_G` in
 `shaders/fog/inject`), so sunlit fog keeps its light with the sun behind the
 eye, which a single forward lobe all but empties. And the environment's own
 light: the sky's irradiance, or the irradiance volume's where one covers the
-froxel (`shaders/ambient.glsl`, as the decals read it), facing away from the eye
+froxel (`shaders/ambient.glsl`, as the decals read it but without the reflection
+probes: the inject reads it three times a froxel), facing away from the eye
 for a forward phase and blended to the mean of up and down as the phase's mean
 cosine (the authored lobe with its back share) nears zero, so fog in shade or
 indoors is lit as the walls there are rather than black. No pass applies it to
@@ -541,7 +568,7 @@ CPU-side: the counts an FPS needs - muzzle flashes, impacts, sparks - are small,
 and it keeps an emitter authorable as plain component data rather than as a
 compute program.
 
-Four things about it are load-bearing and easy to get wrong:
+Five things about it are load-bearing and easy to get wrong:
 
 - **Particles are world-space and are never re-based.** A particle records the
   emitter's *resolved world position* at the instant it spawned and then moves on
@@ -561,6 +588,18 @@ Four things about it are load-bearing and easy to get wrong:
 - **`additive` splits the draw, not just the blend.** The additive half is
   order-independent and goes out unsorted; the alpha half is sorted back-to-front
   by `GLParticlePass`. That is why the two lists on `RenderView` are separate.
+- **`additive` also says what the colour is.** An additive particle emits -
+  fire, sparks, a muzzle flash - so its colour is the radiance it adds. An
+  alpha-blended one scatters the light reaching it - smoke, dust, steam - so its
+  colour is an albedo, lit at its centre in the vertex stage: by each light of
+  its cluster as a diffuse card facing that light, an area light as the small
+  source it is from a distance, through the light's shadow - the hard lookups,
+  for a point with no surface (`pointShadow`) - and by the environment's mean
+  radiance, the irradiance averaged over the six axes, since a puff has no
+  normal. Smoke in a building's shadow is dark, and smoke beside a lamp - a
+  fire's `Light`, not its additive flames, which light nothing - takes its light.
+  At its centre, not its corners: a corner lies off the puff, past a wall or in a
+  lamp's reach the puff is not, and turns with the view and the puff's spin.
 
 A one-off puff - a spark shower, an impact - is an emitter with `emitting` off,
 a `burst` and `destroyWhenSpent`: the next update spawns the burst whole, as far
@@ -635,15 +674,17 @@ plane, and each reader is answered:
 - **The reflection trace** skips the band: a ray from the near plane would start
   in the wrong place, so a weapon keeps the probe or sky reflection the forward
   pass gave it.
+- **Screen-space shadows** read the band as far: a weapon neither casts on the
+  world nor takes the world's.
 - **The light clusters**: the forward fragment finds a viewmodel pixel's cluster
   from its world position through the world's projection, not from where its
   own projection drew it, so a lamp beside the weapon lights it.
 
-GTAO, depth of field and the reflection trace find the band by
-`inViewmodelBand` (`shaders/camera.glsl`). An orthographic camera has none: depth
-there is linear, so the band would be the nearest `VIEWMODEL_DEPTH_SHARE` of the whole
-scene, and everything in it would lose its occlusion, its depth of field and its
-reflections. So `intoViewmodelBand`, which both `eyeClip` and a viewmodel
+GTAO, depth of field, the reflection trace and the screen-space shadows find the
+band by `inViewmodelBand` (`shaders/camera.glsl`). An orthographic camera has none:
+depth there is linear, so the band would be the nearest `VIEWMODEL_DEPTH_SHARE` of
+the whole scene, and everything in it would lose its occlusion, its depth of field and
+its reflections. So `intoViewmodelBand`, which both `eyeClip` and a viewmodel
 particle squash through, leaves a viewmodel at its own depth there, as the readers
 take it.
 

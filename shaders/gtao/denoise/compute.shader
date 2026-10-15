@@ -7,6 +7,8 @@
  * lies on the pixel's plane, sloped from the flatter side of each axis so an
  * adjacent edge does not tilt it (XeGTAO's edge-aware weighting). So occlusion
  * never bleeds across a silhouette.
+ *
+ * Every pixel's alpha is written 1, unoccluded: GLScreenShadowPass darkens it where it shades.
  */
 layout(local_size_x = GROUP_IMAGE, local_size_y = GROUP_IMAGE) in;
 
