@@ -1,6 +1,6 @@
 {
   "description": "A city walked at street level: most of it hidden behind the block in front, which the GPU occlusion cull skips.",
-  "engineVersion": "1.0.9",
+  "engineVersion": "1.0.10",
   "entryScene": "",
   "name": "City Block",
   "render": {

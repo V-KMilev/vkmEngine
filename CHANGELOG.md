@@ -2,6 +2,18 @@
 
 Notable changes to vkmEngine, newest first. Each release is tagged `vX.Y.Z`.
 
+## 1.0.10
+
+The shaders and the manual, each said once.
+
+- **One copy of each shader helper**: area lights, the frame across a direction, the
+  atmosphere, the near-plane ray, f0 and the B-spline combine are shared, and the forward
+  shader's main reads as named steps.
+- **The capture's sun map is a class of its own**, `GLCaptureShadow`.
+- **The manual says what a thing is, how to use it and what it promises.** Measurements,
+  hardware, history and restated headers are out, and every page was read against the code;
+  `engine.md`'s settled decisions say what would reopen each.
+
 ## 1.0.9
 
 Frame time, and quality tiers built over a project's settings.
