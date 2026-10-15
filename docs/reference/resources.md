@@ -215,10 +215,10 @@ them, and what a host without them reads, is
   and the cooker in `cook/`, plus `registerRecipeAssetFactories`.
 
 The procedural generators (`src/engine/resource/generate/`) are engine code,
-because the engine builds with them - a default scene, a fallback texture.
-`createGeneratedMesh` and `createGeneratedTexture` rebuild an asset from the
-JSON descriptor its generator stamped - `{"kind": "generator", "type": "cube"}`,
-or a `solid` colour.
+because the engine builds with them - a default scene, the solid colours a
+recipe names. `createGeneratedMesh` and `createGeneratedTexture` rebuild an
+asset from the JSON descriptor its generator stamped - `{"kind": "generator",
+"type": "cube"}`, or a `solid` colour.
 
 ### Importing a model
 

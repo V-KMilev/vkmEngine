@@ -150,9 +150,8 @@ type warns and keeps its own - unlike a scene file, where that fails the load.
 - `assets`: name-only references to every asset the scene names - through its
   components and every `AssetRef` field on a behavior - plus the textures those
   materials use. The asset *data* lives in the library, not here, and a name
-  this block does not list is one the loader never recreates. Assets marked
-  `hidden = true` are skipped (editor previews, fallback textures, bundled
-  primitives).
+  this block does not list is one the loader never recreates. Assets added with
+  `ResourceManager::addPrivate` are skipped.
 - `entities`: one record per entity, its `id` the entity's slot, each component
   keyed by its short name ([ComponentSerializer](#componentserializer)).
 - `environment` and `physics`: the scene's `Environment` and `PhysicsSettings`,
@@ -284,7 +283,7 @@ A model file's parts are named by the file and the part
 |------------------------|------------------|-----------------------------------------------------|
 | `generator` / `decimate` | editor, cooker | Procedural / LOD meshes                             |
 | `file` / `model` / `model-image` | editor, cooker | stb texture import and sound decode; cgltf / ufbx mesh, rig and clip import (a clip recipe also carries its authored `markers`) |
-| `solid`                | editor, cooker   | Single-colour textures, the engine's defaults among them |
+| `solid`                | editor, cooker   | Single-colour textures                              |
 
 A material's recipe has no `kind`: it is the material's values and its texture
 refs by name, read by every host whatever it was imported from.

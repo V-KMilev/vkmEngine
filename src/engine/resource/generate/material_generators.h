@@ -10,11 +10,11 @@ class ResourceManager;
 /**
  * @brief The graph's default PBR material, created on first ask.
  *
- * Neutral white dielectric with the 1x1 built-in textures bound. One per graph,
+ * MaterialAsset's defaults, with no maps: a white dielectric. One per graph,
  * keyed on "material:default"; copy it rather than renaming it, since the name
  * is what everything resolves by.
  *
- * @param resourceManager Where it and its textures are found or created.
+ * @param resourceManager Where it is found or created.
  * @return Handle to the graph's default material.
  */
 MaterialHandle generateDefaultMaterial(ResourceManager& resourceManager);
