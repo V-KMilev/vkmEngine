@@ -55,13 +55,6 @@ std::vector<int32_t> firstChildren(const SkeletonAsset& rig) {
     return child;
 }
 
-// Drops a rig's bone namespace (Mixamo's "mixamorig:"), which is noise in an entity's label.
-const char* displayBoneName(const std::string& name) {
-    const size_t colon = name.rfind(':');
-    if (colon == std::string::npos || colon + 1 >= name.size()) return name.c_str();
-    return name.c_str() + colon + 1;
-}
-
 } // namespace
 
 void clearRagdoll(Scene& scene, EntityId rigEntity) {
@@ -120,7 +113,8 @@ uint32_t buildRagdoll(
         const float halfHeight = glm::max(length * 0.5f - radius, Physics::MIN_HALF_EXTENT);
 
         const EntityId body = scene.createEntity();
-        scene.add(body, makeName(displayBoneName(rig.bones[i].name)));
+        // The rig's namespace (Mixamo's "mixamorig:") is noise in an entity's label.
+        scene.add(body, makeName(std::string(unqualifiedBoneName(rig.bones[i].name)).c_str()));
 
         // A capsule stands along local +Y.
         const glm::quat aim = glm::rotation(glm::vec3(0.0f, 1.0f, 0.0f), along / length);

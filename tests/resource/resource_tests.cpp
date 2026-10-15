@@ -10,6 +10,7 @@
 #include "resource/asset_source_kind.h"
 #include "resource/texture_format.h"
 #include "resource/asset/mesh_asset.h"
+#include "resource/asset/skeleton_asset.h"
 #include "resource/asset/texture_asset.h"
 #include "resource/generate/mesh_generators.h"
 #include "resource/generate/texture_generators.h"
@@ -407,6 +408,23 @@ void testFontsStayWhenTheGraphIsTraded() {
     check("  and keeps the font, as a swap does", bool(live.findByName<FontAsset>("ui:test")));
 }
 
+void testABoneIsFoundWhateverItsRigsNamespace() {
+    std::printf("A bone looked up without its rig's namespace:\n");
+
+    SkeletonAsset rig;
+    rig.bones = {{"mixamorig:Hips", -1}, {"mixamorig:Spine", 0}, {"Spine", 1}, {"tip:", 2}};
+
+    check("the namespace is dropped from a name", unqualifiedBoneName("mixamorig:Hips") == "Hips");
+    check("  a name with none is itself", unqualifiedBoneName("Hips") == "Hips");
+    check("  and one ending in a colon is kept whole", unqualifiedBoneName("tip:") == "tip:");
+
+    check("indexOf wants the namespace", rig.indexOf("Hips") == -1);
+    check("indexOfUnqualified finds the bone without it", rig.indexOfUnqualified("Hips") == 0);
+    check("  a bone named exactly that wins over a namespaced one", rig.indexOfUnqualified("Spine") == 2);
+    check("  a full name still finds its own bone", rig.indexOfUnqualified("mixamorig:Spine") == 1);
+    check("  and a bone the rig lacks is -1", rig.indexOfUnqualified("Head") == -1);
+}
+
 } // namespace
 
 void runResourceTests() {
@@ -421,4 +439,5 @@ void runResourceTests() {
     testGeneratedMeshesFaceAndMapTheWayTheirVerticesSay();
     testEveryImageDecodesToFormatsThatAgree();
     testFontsStayWhenTheGraphIsTraded();
+    testABoneIsFoundWhateverItsRigsNamespace();
 }

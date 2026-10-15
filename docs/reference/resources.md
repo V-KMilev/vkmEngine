@@ -172,6 +172,9 @@ A rig as a flat array of bones (name, parent index) with parallel
   same for a clip. It makes posing one forward loop and a cycle unrepresentable.
 - `bindPose` is stored rather than derived from `inverseBind`, because that
   recovery is lossy once a bone carries scale.
+- **Code finds a bone by its name**: `indexOf` finds it as the rig spells it,
+  and `indexOfUnqualified` without the namespace an exporter prefixes (Mixamo's
+  `mixamorig:`), for code that names a joint the same on every rig.
 
 ### AnimationClipAsset
 
