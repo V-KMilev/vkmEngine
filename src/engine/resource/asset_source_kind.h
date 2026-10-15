@@ -35,6 +35,8 @@ namespace AssetSourceKind {
  * A key spelled two ways reads as absent. The strings are the file format.
  */
 namespace AssetSourceKey {
+    /// Which import rebuilds the asset, an AssetSourceKind string.
+    inline constexpr const char* KIND             = "kind";
     /// What a texture's texels mean, a TextureUsage name.
     inline constexpr const char* USAGE            = "usage";
     /// The source file an import reads, project-relative.
@@ -57,8 +59,8 @@ namespace AssetSourceKey {
     inline constexpr const char* WRAP             = "wrap";
     /// A texture's filter override, when it has one (textureFilterFromRecipe).
     inline constexpr const char* FILTER           = "filter";
-    /// On a metallic-roughness map: its material's normal map, by name, whose detail the cook
-    /// folds into the roughness its mips keep (AssetCooker::bakeTexture).
+    /// On a metallic-roughness map: its material's normal map's source file, project-relative,
+    /// whose detail the cook folds into the roughness its mips keep (AssetCooker::bakeTexture).
     inline constexpr const char* ROUGHNESS_NORMAL = "roughnessNormal";
 } // namespace AssetSourceKey
 

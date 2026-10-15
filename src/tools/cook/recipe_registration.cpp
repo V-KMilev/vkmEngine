@@ -31,12 +31,13 @@ namespace {
 // A recipe of a kind no import of its asset type reads.
 template<typename Asset>
 Handle<Asset> refuseKind(const char* what, const nlohmann::json& source) {
-    LOG_ERROR("No %s import for recipe kind '%s'", what, source.value("kind", std::string{}).c_str());
+    const std::string kind = source.value(AssetSourceKey::KIND, std::string{});
+    LOG_ERROR("No %s import for recipe kind '%s'", what, kind.c_str());
     return {};
 }
 
 MeshHandle createRecipeMesh(const nlohmann::json& source, ResourceManager& resources) {
-    const std::string kind = source.value("kind", std::string{});
+    const std::string kind = source.value(AssetSourceKey::KIND, std::string{});
 
     // Synchronous: generators are cheap, no benefit to async.
     if (kind == AssetSourceKind::GENERATOR) return createGeneratedMesh(source, resources);
@@ -86,7 +87,7 @@ bool decodeTextureFile(const std::string& ref, TextureUsage usage, TextureAsset&
 }
 
 TextureHandle createRecipeTexture(const nlohmann::json& source, ResourceManager& resources) {
-    const std::string kind = source.value("kind", std::string{});
+    const std::string kind = source.value(AssetSourceKey::KIND, std::string{});
 
     if (kind == AssetSourceKind::FILE) {
         const std::string path = source.value(AssetSourceKey::PATH, std::string{});
@@ -125,7 +126,7 @@ TextureHandle createRecipeTexture(const nlohmann::json& source, ResourceManager&
 }
 
 SkeletonHandle createRecipeSkeleton(const nlohmann::json& source, ResourceManager& resources) {
-    if (source.value("kind", std::string{}) == AssetSourceKind::MODEL) {
+    if (source.value(AssetSourceKey::KIND, std::string{}) == AssetSourceKind::MODEL) {
         return loadModelSkeleton(source.value(AssetSourceKey::PATH, std::string{}), resources);
     }
     return refuseKind<SkeletonAsset>("skeleton", source);
@@ -147,7 +148,7 @@ std::vector<ClipMarker> recipeMarkers(const nlohmann::json& source) {
 }
 
 AnimationClipHandle createRecipeAnimationClip(const nlohmann::json& source, ResourceManager& resources) {
-    if (source.value("kind", std::string{}) == AssetSourceKind::MODEL) {
+    if (source.value(AssetSourceKey::KIND, std::string{}) == AssetSourceKind::MODEL) {
         return loadModelAnimationClip(
             source.value(AssetSourceKey::PATH, std::string{}),
             source.value(AssetSourceKey::CLIP, -1),
@@ -160,7 +161,7 @@ AnimationClipHandle createRecipeAnimationClip(const nlohmann::json& source, Reso
 }
 
 AudioClipHandle createRecipeAudioClip(const nlohmann::json& source, ResourceManager& resources) {
-    if (source.value("kind", std::string{}) == AssetSourceKind::FILE) {
+    if (source.value(AssetSourceKey::KIND, std::string{}) == AssetSourceKind::FILE) {
         return loadAudioClip(source.value(AssetSourceKey::PATH, std::string{}), resources);
     }
     return refuseKind<AudioClipAsset>("sound", source);

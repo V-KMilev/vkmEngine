@@ -122,7 +122,7 @@ nlohmann::json fileTextureRecipe(
     TextureWrapMode wrap
 ) {
     nlohmann::json source = {
-        {"kind",                           AssetSourceKind::FILE},
+        {AssetSourceKey::KIND,             AssetSourceKind::FILE},
         {AssetSourceKey::PATH,             ref},
         {AssetSourceKey::USAGE,            Reflect::enumName(usage)},
         {AssetSourceKey::GENERATE_MIPMAPS, generateMipmaps},

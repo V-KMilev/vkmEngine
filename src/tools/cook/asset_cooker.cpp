@@ -43,7 +43,7 @@ namespace {
 
 // A decimated level is baked from its base mesh's output, not from a file.
 bool isDecimated(const nlohmann::json& recipe) {
-    return recipe.value("kind", std::string{}) == AssetSourceKind::DECIMATE;
+    return recipe.value(AssetSourceKey::KIND, std::string{}) == AssetSourceKind::DECIMATE;
 }
 
 // The asset a recipe is derived from: a decimated level's base, or a clip's rig from another
@@ -126,7 +126,7 @@ RecipeKey sessionKey(const Resource& asset, const nlohmann::json& recipe) {
 // The loader's stand-in source for a cooked-cache asset: cooking it would overwrite the library's
 // version-controlled recipe with a self-reference.
 bool isCookedPlaceholder(const nlohmann::json& source) {
-    return source.value("kind", std::string{}) == AssetSourceKind::COOKED;
+    return source.value(AssetSourceKey::KIND, std::string{}) == AssetSourceKind::COOKED;
 }
 
 // An uncookable asset the library lacks is saved as a name the next load cannot resolve; say so

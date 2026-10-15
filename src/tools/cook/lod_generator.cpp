@@ -106,7 +106,7 @@ LOD generateLOD(ResourceManager& resources, MeshHandle source, uint32_t extraLev
 
 nlohmann::json decimateRecipe(const std::string& baseName, float ratio) {
     return {
-        {"kind",                AssetSourceKind::DECIMATE},
+        {AssetSourceKey::KIND,  AssetSourceKind::DECIMATE},
         {AssetSourceKey::BASE,  baseName},
         {AssetSourceKey::RATIO, ratio},
     };

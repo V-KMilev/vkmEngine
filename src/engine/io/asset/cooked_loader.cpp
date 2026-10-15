@@ -29,7 +29,7 @@ std::filesystem::path currentCookedFile(const std::string& name) {
 
 // What a cache-served asset carries for a source: the cooker reads it as "nothing to re-cook".
 nlohmann::json cookedSource() {
-    return {{"kind", AssetSourceKind::COOKED}};
+    return {{AssetSourceKey::KIND, AssetSourceKind::COOKED}};
 }
 
 // A loading stub under @p name, whose cooked file @p read decodes on the ThreadPool.

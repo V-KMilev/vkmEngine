@@ -178,7 +178,7 @@ void testEveryGeneratedMeshCarriesItsRecipe() {
             continue;
         }
         const nlohmann::json& recipe = one.mesh.sourceJson();
-        if (recipe.value("kind", std::string{}) != "generator"
+        if (recipe.value(AssetSourceKey::KIND, std::string{}) != AssetSourceKind::GENERATOR
             || recipe.value("type", std::string{}) != one.type) {
             mislabelled.emplace_back(one.type);
         }

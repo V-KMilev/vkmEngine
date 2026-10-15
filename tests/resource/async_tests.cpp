@@ -4,6 +4,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "resource/asset_source_kind.h"
 #include "resource/texture_format.h"
 #include "system/async/async_load_queue.h"
 #include "system/async/async_loader_system.h"
@@ -147,7 +148,7 @@ void testAMeshCompletionCarriesEveryFieldItTook() {
     ResourceManager resources;
     MeshAsset stub;
     stub.loading      = true;
-    stub.sourceJson() = {{"kind", "model"}};
+    stub.sourceJson() = {{AssetSourceKey::KIND, AssetSourceKind::MODEL}};
     const MeshHandle handle = resources.add(std::move(stub), "async:mesh");
 
     MeshAsset decoded;
@@ -171,7 +172,8 @@ void testAMeshCompletionCarriesEveryFieldItTook() {
     check("  and it is no longer loading", !asset.loading);
     check(
         "the slot keeps its name and the source it was requested with",
-        asset.name() == "async:mesh" && asset.hasSource() && asset.sourceJson().value("kind", "") == "model"
+        asset.name() == "async:mesh" && asset.hasSource()
+            && asset.sourceJson().value(AssetSourceKey::KIND, "") == AssetSourceKind::MODEL
     );
 }
 

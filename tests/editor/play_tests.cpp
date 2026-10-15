@@ -197,7 +197,10 @@ void testStopRebuildsMaterialsAndKeepsTheRest() {
     // Recorded and on disk, as Play's cook leaves them. The texture has no cooked
     // file, so its name resolves to the recipe and reaches the importer.
     const nlohmann::json paint = {{"roughness", 0.25f}};
-    const nlohmann::json art   = {{"kind", AssetSourceKind::FILE}, {"path", "art.png"}};
+    const nlohmann::json art   = {
+        {AssetSourceKey::KIND, AssetSourceKind::FILE},
+        {AssetSourceKey::PATH, "art.png"}
+    };
     check(
         "the material's recipe writes",
         AssetLibrary::writeRecipe(AssetType::Material, "play:paint", paint)

@@ -30,7 +30,7 @@ namespace {
  */
 nlohmann::json meshGeneratorSource(const char* type, nlohmann::json params = nlohmann::json::object()) {
     nlohmann::json j;
-    j["kind"] = AssetSourceKind::GENERATOR;
+    j[AssetSourceKey::KIND] = AssetSourceKind::GENERATOR;
     j["type"] = type;
     if (!params.empty()) j["params"] = std::move(params);
     return j;

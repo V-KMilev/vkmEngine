@@ -416,7 +416,9 @@ Mesh* selectedMeshDrawing(EditorContext& ec, MaterialHandle material) {
 std::string slotDetail(const ResourceManager& resources, const TextureHandle& slot) {
     if (!slot) return "(none)";
     const TextureAsset& texture = resources.get(slot);
-    const std::string kind = texture.hasSource() ? texture.sourceJson().value("kind", std::string{}) : "";
+    const std::string kind = texture.hasSource()
+        ? texture.sourceJson().value(AssetSourceKey::KIND, std::string{})
+        : std::string{};
     if (kind == AssetSourceKind::SOLID) return "(generated)";
     // An imported texture is named by its file.
     const std::string file = std::filesystem::path(texture.name()).filename().string();
