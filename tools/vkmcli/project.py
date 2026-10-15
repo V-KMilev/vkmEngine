@@ -40,6 +40,7 @@ def read_project(d: Path) -> dict:
 
 
 def project_name(d: Path) -> str:
+    """project.json's name, else the folder's: loadProject's rule (docs/reference/io.md)."""
     return read_project(d).get("name") or d.name
 
 

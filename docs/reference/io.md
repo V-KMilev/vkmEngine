@@ -12,6 +12,9 @@ A directory is a project when it holds a `project.json`. `Project`
 (`src/engine/io/project.h`) is everything it says, one commented field per key.
 What the fields do not say on their own:
 
+- `name` is `project.json`'s, else the name of the project's folder: one rule,
+  which `loadProject` applies for the engine and `project_name`
+  (`tools/vkmcli/project.py`) for vkm.
 - `tickRate` is the project's, not the engine's, because a networked game's wire
   is clocked by it.
 - `maxPlayers` of zero is kept and means it: the session refuses to host.
@@ -24,9 +27,9 @@ What the fields do not say on their own:
 - `splash` (logos the runtime shows after the engine's) and `fonts` (a
   `UIText` names one by its `name`) are usually empty.
 
-A missing or malformed `project.json` is **not** fatal: the defaults stand and an
-unnamed project opens. A `render` setting of the wrong type keeps its value and
-warns.
+A missing or malformed `project.json` is **not** fatal: the defaults stand and the
+project opens under its folder's name. A `render` setting of the wrong type keeps
+its value and warns.
 
 `saveProject` overwrites the fields the struct describes and leaves every other
 top-level key as it was - the file is hand-authored as often as tool-written.

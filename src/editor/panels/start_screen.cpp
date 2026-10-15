@@ -101,18 +101,14 @@ std::string pathKey(const fs::path& root) {
 }
 
 /**
- * @brief What a project's project.json says about it, named after its directory when it says nothing.
+ * @brief What a project's project.json says about it.
  *
  * @param root Project directory.
- * @return The project as read; only its name is filled when the file will not read.
+ * @return The project as read; its defaults and its name when the file will not read.
  */
 Project describe(const fs::path& root) {
     Project project;
-    if (loadProject(root, project) && !project.name.empty()) return project;
-
-    // A trailing separator leaves an empty filename; "(unnamed)" would say less than the path.
-    const std::string leaf = root.lexically_normal().filename().string();
-    project.name = leaf.empty() ? root.string() : leaf;
+    loadProject(root, project);
     return project;
 }
 

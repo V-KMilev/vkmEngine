@@ -709,6 +709,39 @@ void testWhatIsAndIsNotAProject() {
     std::filesystem::remove_all(root, ec);
 }
 
+// A project is called what project.json names it, else what its folder is called - also when
+// the path it is opened by ends in a separator, whose last component is empty.
+void testAProjectIsNamedByItsFileOrItsFolder() {
+    std::printf("What a project is called:\n");
+
+    const std::filesystem::path root = runScratch() / "vkm_project_named";
+    std::error_code ec;
+    std::filesystem::remove_all(root, ec);
+    std::filesystem::create_directories(root, ec);
+
+    Project bare;
+    loadProject(root, bare);
+    check("a directory with no project.json takes its folder's name", bare.name == "vkm_project_named");
+
+    {
+        std::ofstream out(root / "project.json");
+        out << R"({"name":""})";
+    }
+    Project nameless;
+    check("a project.json naming nothing reads", loadProject(root / "", nameless));
+    check("  and takes its folder's name, past a trailing separator", nameless.name == "vkm_project_named");
+
+    {
+        std::ofstream out(root / "project.json");
+        out << R"({"name":"Probe"})";
+    }
+    Project named;
+    loadProject(root, named);
+    check("one naming itself keeps its name", named.name == "Probe");
+
+    std::filesystem::remove_all(root, ec);
+}
+
 void testTheSceneOfRecordStillOpens() {
     std::printf("The scene the engine keeps as its record of the format:\n");
 
@@ -1070,6 +1103,7 @@ void runSceneTests() {
     testAMistypedRenderSettingCostsOneSetting();
     testAuthoredValuesTheRendererDividesByAreBounded();
     testWhatIsAndIsNotAProject();
+    testAProjectIsNamedByItsFileOrItsFolder();
     testTheSceneOfRecordStillOpens();
     testAssetHandlesSurviveARoundTrip();
     testAnUnresolvedArrayElementIsNotKept();

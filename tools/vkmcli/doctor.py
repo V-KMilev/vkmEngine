@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from .engine import MODULE, development, in_engine_tree, sdk_root, shipping
-from .project import find_project, read_project
+from .project import find_project, project_name, read_project
 from .shell import program
 from .toolchain import build_tools
 
@@ -89,7 +89,7 @@ def cmd_doctor(args) -> int:
         return 1 if problems else 0
 
     meta = read_project(d)
-    print(f"project {meta.get('name') or d.name}")
+    print(f"project {project_name(d)}")
     report("ok", "directory", str(d))
 
     made_with = meta.get("engineVersion", "")
