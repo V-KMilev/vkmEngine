@@ -2,6 +2,18 @@
 
 Notable changes to vkmEngine, newest first. Each release is tagged `vX.Y.Z`.
 
+## 1.0.12
+
+A settings row and voice priorities.
+
+- **`UIChoice`**, a setting's "< High >" row: two buttons step an index through its options,
+  wrapping, a `UIValueEvent` carries the index, and the option is written into a `UIText`.
+  The look stays the project's.
+- **Voice priorities at the cap.** At `MAX_ACTIVE_VOICES` a new sound takes the place of a
+  voice it outranks - one of lower priority, or of its own and quieter as heard - so music
+  set above the rest is never cut. `AudioSource` and `PlaySoundEvent` carry the priority; a
+  scene saved without it reads its sources at 0.
+
 ## 1.0.11
 
 Auto-exposure, as an option.
