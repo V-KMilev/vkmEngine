@@ -146,8 +146,13 @@ mid-solve. Behaviors can use `onCollisionEnter` / `Stay` / `Exit` and
 
 `raycast` and `spherecast` (`query/query.h`) return the nearest body a ray or a
 swept sphere strikes, as a `RayHit`, filtered by a `QueryFilter`. They read the
-scene directly, so they answer where bodies are now. A
-`Collider` without a `Rigidbody` is in no query.
+scene directly, so they answer where bodies are now, walking every body per
+call. A `Collider` without a `Rigidbody` is in no query.
+
+Many rays in one moment go through `QueryParts`: `gather` places the parts a
+filter sees around where the rays will run, once, and its `raycast` answers each
+ray as `raycast` would, testing a part's world bound before its shape. It
+answers as of `gather`: no `Collider` may change before the last cast.
 
 ## Ragdolls
 
@@ -260,10 +265,12 @@ Under `src/engine/system/physics/`:
 - `inertia.h` - box / capsule inertia
 - `tolerance.h` - the thresholds collision is decided by
 - `collision/` - `contact.h`, `narrowphase.h/.cpp`, `support.h/.cpp`,
-  `gjk.h/.cpp`, `mesh_bvh.h/.cpp`, `triangle.h/.cpp` (`rayTriangle`)
+  `gjk.h/.cpp`, `mesh_bvh.h/.cpp`, `triangle.h/.cpp` (`rayTriangle`),
+  `part_bounds.h` (`partLocalBounds`)
 - `solver/` - `solver.h/.cpp` (`PhysicsBody`, `SolverParams`, `solveStep`),
   `solver_math.h`, `joint_solver.h/.cpp`, `contact_cache.h/.cpp`
-- `query/query.h/.cpp` - `raycast`, `spherecast`, `RayHit`, `QueryFilter`
+- `query/query.h/.cpp` - `raycast`, `spherecast`, `QueryParts`, `RayHit`,
+  `QueryFilter`
 - `character/character_controller_system.h/.cpp` - `CharacterControllerSystem`
 - `authoring/` - `collider_fit.h/.cpp` (`fitBoxesToMesh`),
   `mesh_collider.h/.cpp` (`addMeshCollider`, `syncMeshCollider`),

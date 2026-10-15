@@ -1,5 +1,6 @@
 #include "physics/physics_support.h"
 
+#include "core/math/random.h"
 #include "system/physics/query/query.h"
 
 namespace {
@@ -291,6 +292,59 @@ void testAGrazingCastFindsTheGround() {
     check("  on its top face", hit.normal.y > 0.99f);
 }
 
+// Gathered once, the parts answer every ray as raycast does: the same body, distance and
+// normal over boxes, turned boxes, capsules and a mesh; a part off the gathered region is not
+// there.
+void testGatheredPartsAnswerAsRaycastDoes() {
+    std::printf("Rays against parts gathered once:\n");
+
+    Scene scene;
+    addMeshBody(scene, makeGridMesh(8, 16.0f));
+    const glm::quat spin = glm::angleAxis(glm::radians(30.0f), glm::normalize(glm::vec3(0.3f, 1.0f, 0.0f)));
+    for (int i = 0; i < 6; ++i) {
+        const float x = -5.0f + 2.0f * static_cast<float>(i);
+        addBody(scene, {x, 1.0f, 0.0f}, i % 2 == 0 ? ColliderShape::Box : ColliderShape::Capsule, spin);
+        addBody(scene, {x, 1.0f, 3.0f}, ColliderShape::Box);
+    }
+
+    const QueryFilter filter;
+    QueryParts parts;
+    parts.gather(scene, filter, {glm::vec3(-50.0f), glm::vec3(50.0f)});
+
+    Math::Rng rng(11);
+    int agreed = 0;
+    int struck = 0;
+    const int RAYS = 400;
+    for (int i = 0; i < RAYS; ++i) {
+        const float x = rng.nextFloat(-8.0f, 8.0f);
+        const float y = rng.nextFloat(0.5f, 4.0f);
+        const float z = rng.nextFloat(-4.0f, 6.0f);
+        const glm::vec3 from(x, y, z);
+        const float dx = rng.nextFloat(-1.0f, 1.0f);
+        const float dy = rng.nextFloat(-1.0f, 0.2f);
+        const float dz = rng.nextFloat(-1.0f, 1.0f);
+        const glm::vec3 toward(dx, dy, dz);
+        RayHit direct;
+        RayHit gathered;
+        const bool a = raycast(scene, from, toward, 12.0f, direct, filter);
+        const bool b = parts.raycast(from, toward, 12.0f, gathered);
+        const bool sameHit = direct.entity == gathered.entity && direct.distance == gathered.distance
+            && direct.normal == gathered.normal;
+        const bool same = a == b && (!a || sameHit);
+        agreed += same ? 1 : 0;
+        struck += a ? 1 : 0;
+    }
+    std::printf("      %d of %d rays agree; %d struck something\n", agreed, RAYS, struck);
+    check("every ray strikes what raycast strikes", agreed == RAYS && struck > RAYS / 2);
+
+    parts.gather(scene, filter, {glm::vec3(4.0f, 0.5f, -1.0f), glm::vec3(6.0f, 2.0f, 1.0f)});
+    RayHit hit;
+    check("a part gathered near is struck", parts.raycast({5.0f, 5.0f, 0.0f}, {0, -1, 0}, 10.0f, hit));
+    const glm::vec3 away(-5.0f, 5.0f, 0.0f);
+    const bool there = raycast(scene, away, {0, -1, 0}, 10.0f, hit, filter);
+    check("  and one far from it is not there", there && !parts.raycast(away, {0, -1, 0}, 10.0f, hit));
+}
+
 } // namespace
 
 void runPhysicsQueryTests() {
@@ -301,4 +355,5 @@ void runPhysicsQueryTests() {
     testSpherecast();
     testQueryAgainstMeshes();
     testAGrazingCastFindsTheGround();
+    testGatheredPartsAnswerAsRaycastDoes();
 }
