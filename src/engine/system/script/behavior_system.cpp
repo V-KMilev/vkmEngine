@@ -262,7 +262,8 @@ void BehaviorSystem::init(FrameContext& ctx) {
 }
 
 void BehaviorSystem::onEntityDestroyed(EntityId entity) {
-    if (m_context.scene) destroyEntityBehaviors(*m_context.scene, entity);
+    if (!m_context.scene) return;
+    forEachBehaviorOf(*m_context.scene, entity, [](Behavior& behavior) { fireDestroy(behavior); });
 }
 
 void BehaviorSystem::update(FrameContext& ctx) {
@@ -348,10 +349,6 @@ void BehaviorSystem::endSession(Scene& scene) {
     // Last, so a request an onDestroy made goes with the rest.
     m_pendingDestroy.clear();
     m_pendingSceneLoad.clear();
-}
-
-void BehaviorSystem::destroyEntityBehaviors(Scene& scene, EntityId entity) {
-    forEachBehaviorOf(scene, entity, [](Behavior& behavior) { fireDestroy(behavior); });
 }
 
 } // namespace Vkm::Engine

@@ -73,14 +73,6 @@ class BehaviorSystem : public System, public ISceneObserver {
          */
         void endSession(Scene& scene);
 
-        /**
-         * @brief Fire onDestroy on @p entity's started behaviors, before its ScriptComponent goes.
-         *
-         * @param scene Scene holding the entity.
-         * @param entity Entity whose behaviors are told.
-         */
-        static void destroyEntityBehaviors(Scene& scene, EntityId entity);
-
     private:
         /**
          * @brief Run @p behavior's onStart if it has not run yet.
