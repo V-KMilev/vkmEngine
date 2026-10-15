@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/reflect.h"
 #include "platform/window/frame_limiter.h"
 #include "platform/input/input_handle.h"
 #include "platform/window/window_surface.h"
@@ -23,8 +24,9 @@ inline constexpr int DEFAULT_WINDOW_HEIGHT = 1080;
  * @brief Enumerates supported window modes for the application window.
  */
 enum class WindowMode {
-    Fullscreen = 1,
-    Windowed   = 2
+    Fullscreen,
+    Windowed,
+    Count  ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
 };
 
 /**
@@ -57,20 +59,6 @@ enum class CursorMode {
     Disabled = 2,    ///< Hidden and confined, as an FPS camera wants.
     Captured = 3     ///< Visible but confined.
 };
-
-/**
- * @brief Convert a WindowMode enum value to its string representation.
- *
- * @param type The mode to name.
- * @return Its name, or "UNKNOWN".
- */
-constexpr const char* toString(WindowMode type) {
-    switch (type) {
-        case WindowMode::Fullscreen: return "Fullscreen";
-        case WindowMode::Windowed:   return "Windowed";
-        default: return "UNKNOWN";
-    }
-}
 
 /**
  * @brief Owns the application's window, its WindowSurface, input, and frame limiting.
@@ -341,3 +329,5 @@ class WindowManager {
 };
 
 } // namespace Vkm::Engine
+
+VKM_ENUM_NAMES(::Vkm::Engine::WindowMode, "Fullscreen", "Windowed")
