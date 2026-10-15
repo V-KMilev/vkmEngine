@@ -15,6 +15,7 @@
 #include "core/math/axes.h"
 #include "core/math/easing.h"
 #include "core/math/rotation.h"
+#include "core/reflect.h"
 #include "ecs/scene.h"
 #include "io/asset/asset_library.h"
 #include "io/asset/cooked_loader.h"
@@ -41,6 +42,7 @@
 #include "resource/generate/mesh_generators.h"
 #include "resource/asset/texture_asset.h"
 #include "resource/resource_manager.h"
+#include "resource/texture_format.h"
 
 namespace Arena {
 
@@ -923,11 +925,15 @@ void StressArena::buildModels() {
     // Every kind costs a cooked read at startup.
     const size_t kinds = std::min(usable.size(), static_cast<size_t>(std::max(1, modelKinds)));
 
+    // A model's embedded colour image is an albedo map (ModelPartNames::embeddedName).
+    const std::string colorSuffix = std::string("#") + Reflect::enumName(TextureUsage::Color);
     std::vector<MaterialHandle> materials;
     for (size_t i = 0; i < textureNames.size() && materials.size() < 8; ++i) {
-        // "#s" marks an sRGB-cooked texture, i.e. an albedo map; linear ones are normal/ORM.
         const std::string& texture = textureNames[i];
-        if (texture.size() < 2 || texture.compare(texture.size() - 2, 2, "#s") != 0) continue;
+        if (texture.size() < colorSuffix.size()
+            || texture.compare(texture.size() - colorSuffix.size(), colorSuffix.size(), colorSuffix) != 0) {
+            continue;
+        }
 
         MaterialAsset m;
         m.albedo        = {1.0f, 1.0f, 1.0f, 1.0f};

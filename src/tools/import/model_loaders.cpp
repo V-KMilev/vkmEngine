@@ -67,14 +67,8 @@ nlohmann::json modelImageRecipe(const std::string& modelPath, const std::string&
 }
 
 // One embedded image imported for two usages is two assets: the pixels differ.
-const char* usageSuffix(TextureUsage usage) {
-    switch (usage) {
-        case TextureUsage::Color:  return "#s";
-        case TextureUsage::Normal: return "#n";
-        case TextureUsage::Data:
-        case TextureUsage::Count:  break;
-    }
-    return "#l";
+std::string usageSuffix(TextureUsage usage) {
+    return std::string("#") + Reflect::enumName(usage);
 }
 
 // The parsed file a project reference names, from the main thread.

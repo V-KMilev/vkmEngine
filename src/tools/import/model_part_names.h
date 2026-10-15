@@ -58,7 +58,7 @@ inline std::string clipName(const std::string& ref, int idx) {
  * @brief The name of an image a model file carries inside it.
  *
  * @param ref Project-relative reference to the model file.
- * @param key The image's reference within the file, with its usage suffix.
+ * @param key The image's reference within the file, with its usage's name after a '#' ("#Color").
  * @return `<ref>:emb:<key>`.
  */
 inline std::string embeddedName(const std::string& ref, const std::string& key) {

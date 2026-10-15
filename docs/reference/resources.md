@@ -235,7 +235,8 @@ A mesh without authored tangents gets MikkTSpace's.
 
 Asset names are deterministic so a re-import relinks: the file's project
 reference and the part - `<ref>:mesh<i>`, `<ref>:mat<i>`, `<ref>:skeleton` (one
-rig per file), `<ref>:clip<i>` and `<ref>:emb:<image>` - so
+rig per file), `<ref>:clip<i>` and `<ref>:emb:<image>#<usage>` (`#Color`,
+`#Data` or `#Normal`: one image read two ways is two textures) - so
 `assets/props/crate.glb:mesh0`. The indices are the file's own order, which
 makes that order part of the format:
 
