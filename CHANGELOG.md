@@ -2,6 +2,17 @@
 
 Notable changes to vkmEngine, newest first. Each release is tagged `vX.Y.Z`.
 
+## 1.0.11
+
+Auto-exposure, as an option.
+
+- **Auto-exposure**, off by default: the scene's HDR colour is counted into a histogram on
+  the GPU and read back without the frame waiting, and the exposure moves toward the lit
+  middle of the frame. `RenderSettings::exposure` adds on top. A `project.json` without the
+  new keys reads with it off.
+- **Declined, with their reasons in `engine.md`:** LTC area-light specular, and a
+  nearest-depth shortcut for the soft shadow's blocker search.
+
 ## 1.0.10
 
 The shaders and the manual, each said once.
