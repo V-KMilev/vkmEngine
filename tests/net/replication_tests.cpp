@@ -203,10 +203,14 @@ void testAnEntityThatLeavesTheWorldLeavesEveryClient() {
     const NetSnapshotStats retold = writeSnapshotTo(server, schema, 3, budget, baseline, body);
     check("and keeps reporting it until the client confirms", retold.entitiesLost == 1);
 
-    readSnapshotFrom(client, schema, body, clientNames);
+    // Named to the caller, so what it keeps per entity (the smoothing's track) can go too.
+    const EntityId clientCrate = clientNames.find(client, goneSlot);
+    std::vector<EntityId> lost;
+    readSnapshotFrom(client, schema, body, clientNames, &lost);
     baseline.confirm(3);
     check("the client destroyed it", client.entityCount() == 5);
     check("and it was the right one", !client.isAliveAtIndex(goneSlot));
+    check("  and named it as gone", lost.size() == 1 && lost[0] == clientCrate);
 
     const NetSnapshotStats quiet = writeSnapshotTo(server, schema, 4, budget, baseline, body);
     check("only then does the server stop mentioning it", quiet.entitiesLost == 0);

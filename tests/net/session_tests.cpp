@@ -136,6 +136,62 @@ void testTwoSessionsPlayTheSameGame() {
     server.close();
 }
 
+// How many entities a client says it is smoothing, read off its describe() line.
+size_t smoothedCount(const NetSession& client) {
+    const std::string line  = client.describe();
+    const std::string token = "smoothing ";
+    const size_t at = line.find(token);
+    return at == std::string::npos ? 0 : std::stoul(line.substr(at + token.size()));
+}
+
+// An entity the server destroys leaves the client's smoothing with it, rather than a
+// track lingering for a body that is gone.
+void testAClientForgetsWhatTheServerDestroyed() {
+    std::printf("A crate the server destroys, on the client:\n");
+
+    const ScopedEngineSchema wire;
+    ResourceManager resources;
+    Scene serverWorld, clientWorld;
+    const std::vector<EntityId> crates = buildCrates(serverWorld, 3);
+
+    NetSession server;
+    server.onSpawn(
+        [](Scene& scene, ResourceManager&, PlayerId) { return scene.createEntity(); },
+        [](Scene& scene, ResourceManager&, PlayerId, EntityId e) { scene.destroyEntity(e); }
+    );
+    check("the server binds a port", server.host(0, 2, TEST_TICK_RATE));
+    NetSession client;
+    client.setWorld(0, clientWorld);
+    client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
+
+    uint32_t tick = 0;
+    const auto frame = [&]() {
+        server.receive(serverWorld, resources);
+        client.receive(clientWorld, resources);
+        client.interpolate(clientWorld, 0.016f);
+        ++tick;
+        server.beginTick(tick, InputCommand{}, 1, TEST_ACTION_NAMES);
+        client.beginTick(tick, InputCommand{}, 1, TEST_ACTION_NAMES);
+        server.send(serverWorld, tick);
+        client.send(clientWorld, tick);
+        server.advance(0.016f);
+        client.advance(0.016f);
+    };
+    check("the client is welcomed", pumpUntil(frame, [&]() { return client.isPlaying(); }));
+    check(
+        "  and smooths the three crates",
+        pumpUntil(frame, [&]() { return smoothedCount(client) == 3; }, 80)
+    );
+
+    const EntityId mirror = clientWorld.entityAt(crates[1].slot());
+    serverWorld.destroyEntity(crates[1]);
+    check("the crate leaves the client", pumpUntil(frame, [&]() { return !clientWorld.isAlive(mirror); }));
+    check("  and its track goes with it", smoothedCount(client) == 2);
+
+    client.close();
+    server.close();
+}
+
 // What a player says that must arrive - a move, a name - reaches the server's behaviors once each,
 // in order, with who said it; offline and before the welcome there is nobody to say it to.
 void testAPlayersMessagesReachTheServerOnceInOrder() {
@@ -1982,5 +2038,6 @@ void runNetSessionTests() {
     testAWorldConvergesThroughALossyLink();
     testAPlayersMessagesReachTheServerOnceInOrder();
     testAClientDrawsByTheServersTime();
+    testAClientForgetsWhatTheServerDestroyed();
     testATickIsAtItsOwnTime();
 }

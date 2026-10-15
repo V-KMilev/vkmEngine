@@ -327,6 +327,7 @@ class NetClient {
 
         NetInterpolation      m_interpolation;
         std::vector<EntityId> m_touched;
+        std::vector<EntityId> m_lost;
         NetNames              m_names;   ///< What the server's slots name here.
         NetOutbox             m_outbox;  ///< Messages the server has not said it has.
 };
