@@ -6,4 +6,3 @@
 /logs/
 /dist/
 /editor_settings.json
-__pycache__/

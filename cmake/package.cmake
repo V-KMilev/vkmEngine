@@ -28,13 +28,17 @@ else()
     set(CPACK_GENERATOR TXZ)
 endif()
 
-# `package_source`: the tree less what the tools write into it.
+# `package_source`: the tree less what the tools write into it - into the engine's
+# tree, and into each template and example as tools/generated.txt names it.
 set(CPACK_SOURCE_GENERATOR TXZ)
 set(CPACK_SOURCE_IGNORE_FILES
     "/\\\\.git"
     "/build[^/]*/"
-    "/examples/[^/]+/(bin|cooked|logs|dist)/"
     "/__pycache__/"
 )
+foreach(_vkm_name ${_vkm_generated})
+    string(REPLACE "." "\\\\." _vkm_name "${_vkm_name}")
+    list(APPEND CPACK_SOURCE_IGNORE_FILES "/(templates|examples)/[^/]+/${_vkm_name}(/|$)")
+endforeach()
 
 include(CPack)

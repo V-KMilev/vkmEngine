@@ -44,7 +44,7 @@ def project_name(d: Path) -> str:
 
 
 # What the tools write into a project, in .gitignore's syntax: a new project's .gitignore,
-# and, by name, what a copy of a project leaves out. install.cmake reads it too.
+# and, by name, what a copy of a project leaves out.
 GENERATED_FILE = TOOL_DIR / "generated.txt"
 
 
