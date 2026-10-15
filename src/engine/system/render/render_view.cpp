@@ -248,6 +248,7 @@ void RenderView::build(
             vpH,
             surfaceW,
             surfaceH,
+            seconds,
             cameraData,
             cameraPresent,
             objectLists,

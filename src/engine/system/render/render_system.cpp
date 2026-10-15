@@ -32,6 +32,7 @@ void RenderSystem::update(FrameContext& ctx) {
     m_view.surfaceWidth   = static_cast<uint32_t>(ctx.window.getWidth());
     m_view.surfaceHeight  = static_cast<uint32_t>(ctx.window.getHeight());
     m_view.settings       = ctx.render;
+    m_view.frameSeconds   = ctx.clock.getDeltaTime();
 
     m_view.build(ctx.scene, *ctx.visibility, ctx.ui, ctx.splash, ctx.poses, ctx.particles, ctx.ocean);
     m_backend->render(m_view, ctx.resources);

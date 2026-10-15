@@ -141,6 +141,10 @@ struct GLFrameContext {
      */
     glm::vec3 sunDir{0.0f, 1.0f, 0.0f};
 
+    /// The stops the frame is exposed by (GLExposure::stops): a pass that scales by the exposure
+    /// reads this, never RenderSettings::exposure.
+    float exposure = 0.0f;
+
     /**
      * @brief The procedural sky this frame shows, lit by its sun.
      *

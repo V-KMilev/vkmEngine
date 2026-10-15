@@ -29,7 +29,9 @@
 #include "platform/process/child_process.h"
 #include "platform/threading/thread_pool.h"
 #include "platform/window/frame_limiter.h"
+#include "system/render/exposure.h"
 #include "system/render/render_backend.h"
+#include "system/render/render_settings.h"
 #include "system/render/render_system.h"
 #include "system/visibility/visibility.h"
 
@@ -188,6 +190,83 @@ void testARayFindsTheLevelItPointsAt() {
     const float twice = 1.0f - (1.0f - damp(4.0f, 0.05f)) * (1.0f - damp(4.0f, 0.05f));
     check("damp closes as far in two short frames as in one long one", std::abs(once - twice) < 1e-5f);
     check("  and none of the way in no time", damp(4.0f, 0.0f) == 0.0f);
+}
+
+// Auto-exposure's histogram, read: the stops that bring what is lit to the key, the shade and
+// the sun left out, within the settings' range; then the adaptation toward them across frames.
+void testAutoExposureAimsTheLitAtTheKey() {
+    std::printf("Auto-exposure from a histogram of log2 luminance:\n");
+    using namespace Exposure;
+    RenderSettings settings;
+
+    const bool even = binOf(MIN_LOG + 0.5f * BIN_STEP) == 1 && binOf(MAX_LOG - 0.01f) == BINS - 1;
+    check("the bins split the range in log2", even);
+    check("  the first taking the dark, the last the bright", binOf(-40.0f) == 0 && binOf(40.0f) == BINS - 1);
+    check("  each centred where its centre says", binOf(binCentre(binOf(-3.0f))) == binOf(-3.0f));
+
+    const int mid = binOf(-3.0f);
+    std::vector<uint32_t> bins(BINS, 0u);
+    bins[mid] = 1000;
+    const float lit = std::log2(KEY) - binCentre(mid);
+    const std::optional<float> one = targetStops(bins.data(), settings);
+    check("a frame lit alike is brought to the key", one && std::abs(*one - lit) < 1e-4f);
+
+    bins[binOf(6.0f)] = 40;
+    bins[0]           = 100000;
+    const std::optional<float> withSun = targetStops(bins.data(), settings);
+    const bool unmoved = withSun && std::abs(*withSun - lit) < 1e-4f;
+    check("  a sun under a twentieth of the frame and a black sky do not move it", unmoved);
+
+    // Shade under LOW_SHARE of the lit: left out whole.
+    bins[binOf(-9.0f)] = 600;
+    const std::optional<float> shaded = targetStops(bins.data(), settings);
+    check("  nor shade under the low share", shaded && std::abs(*shaded - lit) < 1e-4f);
+
+    // Half shade, half lit: the low share's edge falls inside the shade's bin, so the part of it
+    // above the edge counts.
+    std::vector<uint32_t> split(BINS, 0u);
+    split[binOf(-9.0f)] = 500;
+    split[mid]          = 500;
+    const float splitMean = (0.1f * binCentre(binOf(-9.0f)) + 0.45f * binCentre(mid)) / 0.55f;
+    const std::optional<float> clipped = targetStops(split.data(), settings);
+    const bool partInside = clipped && std::abs(*clipped - (std::log2(KEY) - splitMean)) < 1e-3f;
+    check("  a bin the share splits counts its part inside", partInside);
+
+    std::vector<uint32_t> dark(BINS, 0u);
+    dark[0] = 5000;
+    check("  a frame with nothing lit asks for nothing", !targetStops(dark.data(), settings));
+
+    std::vector<uint32_t> night(BINS, 0u);
+    night[binOf(-13.0f)] = 1000;
+    const std::optional<float> held = targetStops(night.data(), settings);
+    check("  a night past the range is brightened no further", held && *held == settings.exposureMaximum);
+
+    const float darker   = adaptStops(2.0f, 0.0f, 0.1f, settings);
+    const float brighter = adaptStops(0.0f, 2.0f, 0.1f, settings);
+    check("the stops move toward the target", darker < 2.0f && darker > 0.0f && brighter > 0.0f);
+    check("  darkening faster than brightening, by default", 2.0f - darker > brighter);
+    const float closed = 2.0f * std::exp(-settings.adaptDarker * 0.1f);
+    check("  closing the share a rate gives", std::abs(darker - closed) < 1e-5f);
+    check("  and standing still for no time", adaptStops(1.0f, 3.0f, 0.0f, settings) == 1.0f);
+
+    RenderSettings on;
+    on.autoExposure = true;
+    Adaptation eye;
+    check("adapting, the authored exposure until a read", eye.update(nullptr, 0.1f, on) == on.exposure);
+    const float day = *targetStops(bins.data(), on) + on.exposure;
+    check("  the first read taken whole", std::abs(eye.update(bins.data(), 0.1f, on) - day) < 1e-5f);
+    const float kept = eye.update(dark.data(), 0.1f, on);
+    check("  a frame with nothing lit keeping it", std::abs(kept - day) < 1e-5f);
+    const float nightStops = *targetStops(night.data(), on) + on.exposure;
+    const float midway     = eye.update(night.data(), 0.1f, on);
+    eye.forget();
+    const bool  stayed     = std::abs(eye.update(nullptr, 0.1f, on) - midway) < 1e-5f;
+    check("  forgotten midway, held until the next read", midway > kept && midway < nightStops && stayed);
+    check("  which is taken whole", std::abs(eye.update(night.data(), 0.1f, on) - nightStops) < 1e-5f);
+    const float later = eye.update(bins.data(), 0.1f, on);
+    check("  and after it, adapted toward", later < nightStops && later > day);
+    check("off, the authored exposure", eye.update(bins.data(), 0.1f, settings) == settings.exposure);
+    check("  back on, the next read taken whole", std::abs(eye.update(bins.data(), 0.1f, on) - day) < 1e-5f);
 }
 
 // A project's tick rate is fixedUpdate's cadence and, networked, the wire's clock.
@@ -1301,6 +1380,7 @@ void runCoreTests() {
     testARayFindsTheLevelItPointsAt();
     testARotationReadFromAMatrixHasOneAnswer();
     testTickRate();
+    testAutoExposureAimsTheLitAtTheKey();
     testAStillWorldIsStillWhicheverWayItWasStopped();
     testACommandedStepIsDeliveredWhole();
     testPacingBendsHowOftenATickIsOwedNotItsLength();

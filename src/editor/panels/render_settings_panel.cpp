@@ -89,9 +89,21 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
             "PBR Neutral holds an object's authored albedo as it brightens";
         propEnumCombo("Tonemap", s.tonemap, tonemapTooltip);
         const char* exposureTooltip =
-            "A fixed exposure in stops, applied before the tonemap: +1 doubles the light "
-            "the curve sees, -1 halves it. Authored, never adapted";
+            "The exposure in stops, applied before the tonemap: +1 doubles the light the curve "
+            "sees, -1 halves it. With Auto Exposure, added to the adapted stops";
         propSlider("Exposure", &s.exposure, -8.0f, 8.0f, "%+.1f EV", exposureTooltip);
+        const char* autoTooltip = "Adapt the exposure to the frame's brightness, as an eye does";
+        propCheckbox("Auto Exposure", &s.autoExposure, autoTooltip);
+        ImGui::BeginDisabled(!s.autoExposure);
+        const char* darkest   = "The adapted stops' floor, before Exposure is added";
+        const char* brightest = "The adapted stops' ceiling, before Exposure is added";
+        propSlider("Darkest", &s.exposureMinimum, -12.0f, 4.0f, "%+.1f EV", darkest);
+        propSlider("Brightest", &s.exposureMaximum, -4.0f, 12.0f, "%+.1f EV", brightest);
+        const char* brighter = "How fast it brightens a frame grown dark";
+        const char* darker   = "How fast it darkens a frame grown bright";
+        propSlider("Adapt Brighter", &s.adaptBrighter, 0.1f, 10.0f, "%.1f", brighter);
+        propSlider("Adapt Darker", &s.adaptDarker, 0.1f, 10.0f, "%.1f", darker);
+        ImGui::EndDisabled();
 
         gridRow(s);
 

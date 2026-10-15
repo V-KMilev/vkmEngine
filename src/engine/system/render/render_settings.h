@@ -133,12 +133,23 @@ struct RenderSettings {
     Tonemap tonemap = Tonemap::ACES;
 
     /**
-     * @brief A fixed exposure in stops: the frame is scaled by 2^exposure before the tonemap.
+     * @brief The exposure in stops: the frame is scaled by 2^exposure before the tonemap.
      *
-     * Authored, never adapted; 0 is as lit. One stop up by default, for the daylight balance
-     * the procedural sky gives (docs/guides/engine.md section 4).
+     * 0 is as lit. One stop up by default, the daylight balance the procedural sky is built for.
+     * With autoExposure it is added to the adapted stops.
      */
     float exposure = 1.0f;
+
+    /// Adapt the exposure to the frame's brightness, as an eye does (system/render/exposure.h).
+    bool  autoExposure    = false;
+    /// The adapted stops' range, before exposure is added: how far it darkens a bright frame
+    /// and brightens a dark one.
+    float exposureMinimum = -4.0f;
+    float exposureMaximum = 8.0f;
+    /// How fast it brightens a frame grown dark, and darkens one grown bright: the share of the
+    /// gap closed in a second is 1 - e^-rate. By default it brightens slower, as an eye does.
+    float adaptBrighter   = 1.0f;
+    float adaptDarker     = 3.0f;
 
     // Culling
     float cullMaxDistance = 500.0f;  ///< World-space.
@@ -284,6 +295,11 @@ void visitShippedRenderFields(Settings& r, Fn&& f) {
     f("bloomRadius",       r.bloomRadius);
     f("tonemap",           r.tonemap);
     f("exposure",          r.exposure);
+    f("autoExposure",      r.autoExposure);
+    f("exposureMinimum",   r.exposureMinimum);
+    f("exposureMaximum",   r.exposureMaximum);
+    f("adaptBrighter",     r.adaptBrighter);
+    f("adaptDarker",       r.adaptDarker);
     f("cullMaxDistance",   r.cullMaxDistance);
     f("cullMinPixels",     r.cullMinPixels);
     f("occlusionCulling",  r.occlusionCulling);

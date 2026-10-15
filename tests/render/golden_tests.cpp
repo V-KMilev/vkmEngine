@@ -79,6 +79,9 @@ constexpr int HEIGHT = 180;
 
 // Enough frames for the bakes a first frame starts to be in the picture.
 constexpr int FRAMES = 4;
+// What each frame advances the clock by, for what adapts over time: a tenth of a second, so an
+// adaptation shows within tens of frames.
+constexpr float FRAME_SECONDS = 0.1f;
 
 // The resolution buildProbe's probe asks for, which the arrays raise to GLProbeArray::MIN_RESOLUTION.
 constexpr uint32_t PROBE_RESOLUTION = 64;
@@ -986,6 +989,7 @@ std::vector<unsigned char> render(
     view.surfaceWidth   = WIDTH;
     view.surfaceHeight  = HEIGHT;
     view.settings       = tuning;
+    view.frameSeconds   = FRAME_SECONDS;
 
     for (int frame = 0; frame < frames; ++frame) {
         sky.update(ctx);
@@ -2772,6 +2776,100 @@ void testAWallBesideTheEyeIsOpen(int& failures) {
     expect("an open wall beside the eye is not occluded", darkness <= 2.0f, failures);
 }
 
+// A courtyard by day and by night, under a lamp: as lit, day is many times the brighter on the
+// screen; with auto-exposure each is brought toward the same brightness, as an eye adapts, and
+// a view adapted to the day comes to the night's brightness over seconds, not at once.
+void testAutoExposureBringsDayAndNightTogether(int& failures) {
+    std::printf("A courtyard by day and by night, exposed as lit and adapted:\n");
+    // The sun at day or night, its light posed from it.
+    const auto sunAt = [](Scenery& s, bool day) {
+        s.scene.environment().sky.sunElevation = day ? 40.0f : -30.0f;
+        const glm::vec3 toSun = s.scene.environment().sunDirection();
+        s.scene.forEach<Light>([&](EntityId id, Light& light) {
+            if (light.type != LightType::Directional) return;
+            s.scene.get<Transform>(id).rotation = glm::quatLookAt(-toSun, glm::vec3(0.0f, 1.0f, 0.0f));
+        });
+    };
+    const auto courtyard = [&](Scenery& s, bool day) {
+        base(s);
+        const MaterialHandle stone = material(s, "golden:court_stone", {0.6f, 0.58f, 0.55f}, 0.8f, 0.0f);
+        place(s, s.cube, stone, {0.0f, -0.5f, 0.0f}, {20.0f, 1.0f, 20.0f});
+        place(s, s.cube, stone, {0.0f, 1.5f, -3.0f}, {8.0f, 3.0f, 0.5f});
+        place(s, s.cube, stone, {0.0f, 0.5f, 0.0f}, glm::vec3(1.0f));
+        const EntityId lamp = s.scene.createEntity();
+        Transform pose;
+        pose.position = {1.5f, 2.0f, 1.0f};
+        s.scene.add(lamp, std::move(pose));
+        Light light;
+        light.type      = LightType::Point;
+        light.intensity = 3.0f;
+        light.radius    = 8.0f;
+        s.scene.add(lamp, std::move(light));
+        sunAndCamera(s, {0.0f, 2.5f, 6.0f}, {0.0f, 0.5f, 0.0f});
+        sunAt(s, day);
+    };
+    // A frame's mean luma, 0..255.
+    const auto meanLuma = [](const std::vector<unsigned char>& frame) {
+        double sum = 0.0;
+        for (int y = 0; y < HEIGHT; ++y) {
+            for (int x = 0; x < WIDTH; ++x) {
+                const glm::ivec3 c = pixel(frame, x, y);
+                sum += 0.2126 * c.x + 0.7152 * c.y + 0.0722 * c.z;
+            }
+        }
+        return static_cast<float>(sum / (static_cast<double>(WIDTH) * HEIGHT));
+    };
+    const auto settingsFor = [](bool adapted) {
+        RenderSettings settings;
+        settings.msaaSamples  = 1;
+        settings.autoExposure = adapted;
+        return settings;
+    };
+    const auto exposed = [&](bool day, bool adapted) {
+        restoreContextDefaults();
+        WindowManager window;
+        GLBackend backend;
+        if (!backend.init(window)) return -1.0f;
+        Scenery s;
+        courtyard(s, day);
+        return meanLuma(render(s, backend, nullptr, settingsFor(adapted), nullptr, 2 * FRAMES));
+    };
+    const float dayLit       = exposed(true, false);
+    const float nightLit     = exposed(false, false);
+    const float dayAdapted   = exposed(true, true);
+    const float nightAdapted = exposed(false, true);
+    std::printf(
+        "      as lit day %.1f, night %.1f; adapted day %.1f, night %.1f\n",
+        dayLit,
+        nightLit,
+        dayAdapted,
+        nightAdapted
+    );
+    expect("as lit, the day is many times the brighter", dayLit > 4.0f * nightLit, failures);
+    const float dimmer = std::max(std::min(dayAdapted, nightAdapted), 1.0f);
+    const float apart  = std::max(dayAdapted, nightAdapted) / dimmer;
+    expect("  adapted, the two land near one brightness", apart < 2.0f, failures);
+    expect("  and the night is brought up where it was dark", nightAdapted > 2.0f * nightLit, failures);
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery s;
+    courtyard(s, true);
+    render(s, backend, nullptr, settingsFor(true), nullptr, 2 * FRAMES);
+    sunAt(s, false);
+    const float fallen  = meanLuma(render(s, backend, nullptr, settingsFor(true), nullptr, 2));
+    const float settled = meanLuma(render(s, backend, nullptr, settingsFor(true), nullptr, 60));
+    std::printf("      night falling on the day's eye %.1f, seconds on %.1f\n", fallen, settled);
+    expect("night on a view adapted to the day is dark at first", fallen < 0.6f * nightAdapted, failures);
+    const bool settledNear = std::abs(settled - nightAdapted) < 0.15f * nightAdapted;
+    expect("  and comes to the night's brightness in seconds", settledNear, failures);
+}
+
 // A box on a floor through an orthographic camera, in the AO view: the crease where they meet is
 // occluded. An orthographic camera's depth is linear, so read as the viewmodel's band, the nearest
 // VIEWMODEL_DEPTH_SHARE of its range would be taken for sky and occlude nothing.
@@ -3338,6 +3436,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testAScreenShadowFacingTheSunFallsTowardTheEye(failures);
     testGTAOReachesAsFarEveryWay(failures);
     testAWallBesideTheEyeIsOpen(failures);
+    testAutoExposureBringsDayAndNightTogether(failures);
     testAnOrthographicViewTracesItsReflections(failures);
     testSmokeIsShadowedAndSparksAreNot(failures);
     testADecalIsLitAsTheFloorUnderIt(failures);
