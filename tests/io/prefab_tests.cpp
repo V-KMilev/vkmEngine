@@ -2,8 +2,8 @@
 
 #include <nlohmann/json.hpp>
 
-#include "command/prefab_overrides.h"
 #include "io/scene/prefab.h"
+#include "ecs/component/physics/collider.h"
 #include "ecs/component/prefab/prefab_entity.h"
 #include "ecs/component/prefab/prefab_instance.h"
 #include "ecs/component/render/light.h"
@@ -473,7 +473,6 @@ void testEveryReaderAgreesWhatAnInstanceHolds() {
     );
     check("  and keeps the root", !Prefab::isInsideInstance(scene, root));
 
-    check("the editor's overrides resolve the same root", PrefabOverrides::instanceRoot(scene, leaf) == root);
     check(
         "the wire keeps the descendants off it",
         netSilence(scene, leaf) == NetSilence::InsidePrefabInstance

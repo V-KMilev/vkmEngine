@@ -10,6 +10,7 @@
 #include "ecs/entity.h"
 #include "ecs/component/prefab/prefab_instance.h"
 #include "io/scene/component_serializer.h"
+#include "io/scene/prefab.h"
 
 #include "command/command.h"
 
@@ -33,16 +34,6 @@ class CommandHost;
  * serializer writes produces an override the prefab can never resolve.
  */
 namespace PrefabOverrides {
-
-    /**
-     * @brief The instance root @p id belongs to - itself, or an ancestor.
-     *
-     * @param scene Scene holding the entity.
-     * @param id    Entity to resolve.
-     * @return The instance root, or a default (invalid) EntityId when @p id is
-     *         not part of an instance.
-     */
-    EntityId instanceRoot(const Scene& scene, EntityId id);
 
     /**
      * @brief The fields of @p component this instance overrides on @p id.
@@ -244,7 +235,7 @@ namespace PrefabOverrides {
         );
         // Asked before either side is serialized: a drag comes through here
         // each frame, and outside an instance there is nothing to record.
-        if (!instanceRoot(scene, id)) return nullptr;
+        if (!Prefab::instanceRootOf(scene, id)) return nullptr;
         return recordFields(
             scene,
             resources,

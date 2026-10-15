@@ -80,14 +80,10 @@ bool namesAnEntity(const char* component, const std::string& field) {
 
 } // namespace
 
-EntityId instanceRoot(const Scene& scene, EntityId id) {
-    return Prefab::instanceRootOf(scene, id);
-}
-
 std::vector<std::string> overriddenFields(const Scene& scene, EntityId id, const char* component) {
     std::vector<std::string> fields;
 
-    const EntityId root = instanceRoot(scene, id);
+    const EntityId root = Prefab::instanceRootOf(scene, id);
     const PrefabEntity* stamped = root ? scene.tryGet<PrefabEntity>(id) : nullptr;
     if (!stamped) return fields;
 
@@ -139,7 +135,7 @@ std::unique_ptr<Command> recordFields(
     const json& after,
     const char* label
 ) {
-    const EntityId      root    = instanceRoot(scene, id);
+    const EntityId      root    = Prefab::instanceRootOf(scene, id);
     const PrefabEntity* stamped = root ? scene.tryGet<PrefabEntity>(id) : nullptr;
     if (!stamped) return nullptr;
 
@@ -192,7 +188,7 @@ void warnComponentIsPrefabs(
     const char* component,
     const char* fate
 ) {
-    if (!instanceRoot(scene, id)) return;
+    if (!Prefab::instanceRootOf(scene, id)) return;
     const std::string message = std::string("'") + component + "' " + fate
         + " - Save as Prefab to put it in the prefab";
     host.pushToast(ToastKind::Warning, message);
@@ -206,7 +202,7 @@ void revert(
     const char* component,
     const std::string& field
 ) {
-    const EntityId      root    = instanceRoot(scene, id);
+    const EntityId      root    = Prefab::instanceRootOf(scene, id);
     const PrefabEntity* stamped = root ? scene.tryGet<PrefabEntity>(id) : nullptr;
     if (!stamped) return;
 
