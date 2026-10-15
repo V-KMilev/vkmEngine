@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ecs/entity.h"
+#include "ecs/component/physics/ragdoll.h"
 #include "resource/asset/skeleton_asset.h"
 
 namespace Vkm::Engine {
@@ -39,7 +40,7 @@ struct RagdollSettings {
      * push each other, and out of the bones' own mask, since overlapping limbs would spend the first tick
      * resolving their authored interpenetration. Everything else hits them, as hit boxes while inactive.
      */
-    int boneLayer = 1 << 1;
+    int boneLayer = Ragdoll::DEFAULT_BONE_LAYER;
 };
 
 /**

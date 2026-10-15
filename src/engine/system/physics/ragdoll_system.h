@@ -11,6 +11,7 @@
 namespace Vkm::Engine {
 
 class Scene;
+struct Ragdoll;
 
 /**
  * @brief Which ragdoll a body belongs to, and which bone it is.
@@ -24,6 +25,17 @@ class Scene;
  * @return The entity carrying the Ragdoll, or an invalid id.
  */
 EntityId ragdollOwnerOf(const Scene& scene, EntityId body, int32_t* outBone = nullptr);
+
+/**
+ * @brief Destroy a ragdoll's bone bodies, then the node they are grouped under.
+ *
+ * The bones go one by one first, since a scene may have moved one out from under the node, and the
+ * node goes whole, since a plain destroyEntity leaves its children. The Ragdoll itself is the caller's.
+ *
+ * @param scene   Scene holding them.
+ * @param ragdoll The ragdoll whose bodies go; its own entity is untouched.
+ */
+void destroyRagdollBodies(Scene& scene, const Ragdoll& ragdoll);
 
 /**
  * @brief Keeps a ragdoll's bodies in step with whichever is in charge.

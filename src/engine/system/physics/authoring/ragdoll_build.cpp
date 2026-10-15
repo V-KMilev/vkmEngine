@@ -24,6 +24,7 @@
 #include "ecs/component/physics/rigidbody.h"
 #include "ecs/hierarchy_operations.h"
 #include "ecs/physics_settings.h"
+#include "system/physics/ragdoll_system.h"
 #include "system/physics/tolerance.h"
 
 namespace Vkm::Engine {
@@ -68,13 +69,7 @@ void clearRagdoll(Scene& scene, EntityId rigEntity) {
     if (!held) return;
 
     const Ragdoll& ragdoll = *held;
-    // The bones first, by hand: a scene may have moved one out from under the node below.
-    for (const RagdollBone& bone : ragdoll.bones) {
-        if (bone.body && scene.isAlive(bone.body)) scene.destroyEntity(bone.body);
-    }
-    if (ragdoll.root && scene.isAlive(ragdoll.root)) {
-        HierarchyOperations::destroyHierarchy(scene, ragdoll.root);
-    }
+    destroyRagdollBodies(scene, ragdoll);
 
     // The bit goes back: the owner's mask is serialized, and left cleared it ignores a whole layer.
     if (Rigidbody* owner = scene.tryGet<Rigidbody>(rigEntity)) {
@@ -202,7 +197,7 @@ uint32_t buildRagdoll(
             carriedMoment[bone] += mass * at;
         }
     }
-    const float gravity = glm::length(PhysicsSettings{}.gravity);
+    const float gravity = glm::length(scene.physics().gravity);
 
     for (const RagdollBone& entry : ragdoll.bones) {
         const int32_t ancestor = bodiedAncestor(entry.bone);
