@@ -134,26 +134,6 @@ class InputMap {
         void loadBindings(const nlohmann::json& saved);
 
         /**
-         * @brief Add one binding to an action, defining it if new.
-         *
-         * A change the player made, as rebind() is: saveBindings() writes the action's bindings
-         * from then on. A game's own defaults belong in define().
-         *
-         * @param action  Action name.
-         * @param binding Control added alongside the existing ones.
-         */
-        void addBinding(std::string_view action, InputBinding binding);
-
-        /**
-         * @brief Drop every binding for @p action, keeping the action defined.
-         *
-         * A change the player made, as rebind() is: saveBindings() writes the action unbound.
-         *
-         * @param action Action name; an undefined one is a no-op.
-         */
-        void clearBindings(std::string_view action);
-
-        /**
          * @brief Bindings currently feeding @p action.
          *
          * @param action Action name.

@@ -474,7 +474,7 @@ void testInputCommand() {
     check("  and the next one the next slot", map.indexOf("Jump") == 2);
 
     // Stable for the session: a replayed command must mean what it meant when recorded.
-    map.addBinding("Move/Forward", InputBinding{InputSource::Key, 265, 1.0f});
+    map.rebind("Move/Forward", { InputBinding{InputSource::Key, 265, 1.0f} });
     map.define("Move/Forward", { InputBinding{InputSource::Key, 87, 1.0f} });
     check("  and redefining an action keeps it", map.indexOf("Move/Forward") == 1);
 
@@ -933,10 +933,16 @@ void testARebindingIsSavedAndComesBack() {
     InputMap edited;
     edited.define("Jump", {InputBinding{InputSource::Key, 32, 1.0f}});
     edited.define("Dash", {InputBinding{InputSource::Key, 340, 1.0f}});
-    edited.addBinding("Jump", InputBinding{InputSource::Key, 87, 1.0f});
-    edited.clearBindings("Dash");
+    edited.rebind(
+        "Jump",
+        { InputBinding{InputSource::Key, 32, 1.0f}, InputBinding{InputSource::Key, 87, 1.0f} }
+    );
+    edited.rebind("Dash", {});
     const nlohmann::json kept = edited.saveBindings();
-    check("a binding added or cleared is saved", kept.contains("Jump") && kept.contains("Dash"));
+    check(
+        "a binding added or cleared is saved",
+        kept.contains("Jump") && kept.contains("Dash") && kept["Dash"].empty()
+    );
 }
 
 // A tick asks a command for an action by name as a frame does, instead of reaching
