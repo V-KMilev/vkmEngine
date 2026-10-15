@@ -2,6 +2,20 @@
 
 Notable changes to vkmEngine, newest first. Each release is tagged `vX.Y.Z`.
 
+## 1.0.8
+
+OpenGL 4.5, and an engine that names no graphics API.
+
+- **The engine names no graphics API.** The window takes a `WindowSurface` from the host,
+  which the OpenGL backend implements, and the editor draws through `EditorRenderHooks`;
+  `vkm_core` links no GL.
+- **Reversed 32-bit float depth.** Clip z runs 0 to w, and the eye's depth is reversed into
+  a float buffer, so two walls a centimetre apart a kilometre away no longer fight.
+- **Direct state access, and per-frame data through a ring.** The backend edits GL objects
+  by name, and draw lists, matrices, palettes and particles stream through one persistently
+  mapped, fenced ring.
+- **OpenGL 4.5 is the floor**, and the engine pins vkmGL 1.0.0.
+
 ## 1.0.7
 
 The OpenGL renderer taken as far as it goes without a temporal filter.
