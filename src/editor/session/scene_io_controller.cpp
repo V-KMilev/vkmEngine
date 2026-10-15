@@ -192,6 +192,7 @@ void SceneIOController::save(FrameContext& ctx, EditorState& state) {
 }
 
 void SceneIOController::loadPath(FrameContext& ctx, EditorState& state, const std::string& path) {
+    if (path.empty()) return;  // names no scene: nothing to load
     rememberView(state);
     std::string previous = m_currentScenePath;
     m_currentScenePath = path;
@@ -248,10 +249,6 @@ bool SceneIOController::isSaveDialogActive() const {
 }
 
 bool SceneIOController::load(FrameContext& ctx, EditorState& state) {
-    if (m_currentScenePath.empty()) {
-        m_currentScenePath = (ProjectPaths::scenes() / "scene.json").string();
-    }
-
     const std::string priorSelection = selectedName(ctx.scene, state);
 
     // If a play session is somehow active, tear its behaviors down (onDestroy)
