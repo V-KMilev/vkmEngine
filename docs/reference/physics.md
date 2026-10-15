@@ -156,7 +156,9 @@ their own collision layer, each joint holding its angle (`RagdollSettings::muscl
 While a clip drives the rig, `RagdollSystem` poses the bones as kinematic
 **hitboxes** that make no contacts - the character's capsule meets the world -
 but queries find them. Gone live, the bodies drive the pose
-([animation.md](animation.md)).
+([animation.md](animation.md)). Either way, a query ignoring the ragdoll's owner
+(`QueryFilter::ignore`) skips its bones, so a character casting from its own eye
+sees past them.
 
 ## Editor
 

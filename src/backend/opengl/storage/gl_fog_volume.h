@@ -37,8 +37,8 @@ class GLFogVolume {
          * @brief Allocate, or reallocate, the two froxel 3D textures.
          *
          * A no-op when the dimensions already match, so the fog pass may call
-         * it every frame; reallocates when the fog quality changes. A live GL
-         * context must exist.
+         * it every frame; reallocates when FogSettings::froxelGrid changes. A
+         * live GL context must exist.
          *
          * @param x Froxels across the screen.
          * @param y Froxels down it.

@@ -59,16 +59,19 @@ inline RawSocket rawSocketUdp() {
  * @param scene  World the snapshot is applied to.
  * @param schema Wire order the body was written in.
  * @param body   The snapshot body, header excluded.
+ * @param names  What the server's slots name on this end.
+ * @param lost   Filled, when given, with the entities the body reported gone.
  * @return False when readSnapshot found the body malformed.
  */
 inline bool readSnapshotFrom(
     Scene& scene,
     const NetSchema& schema,
     const std::vector<uint8_t>& body,
-    NetNames& names
+    NetNames& names,
+    std::vector<EntityId>* lost = nullptr
 ) {
     BitReader reader(body.data(), body.size());
-    return readSnapshot(scene, schema, reader, names);
+    return readSnapshot(scene, schema, reader, names, nullptr, lost);
 }
 
 /**
@@ -175,6 +178,9 @@ inline InputCommand walkCommand(uint32_t sequence, uint32_t tick, float forward,
 }
 
 constexpr uint32_t TEST_ACTIONS = 6;
+
+/// Which action holds which slot, as both ends of a test agree: any fingerprint will do.
+constexpr uint64_t TEST_ACTION_NAMES = 0x5E55105E55105ULL;
 
 constexpr uint32_t TEST_TICK_RATE = 60;
 

@@ -252,6 +252,22 @@ void addScriptFromJson(Scene& scene, EntityId id, const std::string& json) {
     scene.add(id, std::move(sc));
 }
 
+// Every entity @p id's component of type T names, mapped through @p restamp: the component goes
+// through its own scene serializer, which knows its entity fields, and comes back re-pointed.
+template <typename T, typename Restamp>
+void restampComponent(Scene& scene, EntityId id, const Restamp& restamp) {
+    T* component = scene.tryGet<T>(id);
+    if (!component) return;
+    std::vector<EntityId> named;
+    auto keep = [&](EntityId ref) {
+        named.push_back(ref);
+        return static_cast<uint32_t>(named.size());
+    };
+    auto back = [&](uint32_t index) { return index != 0 ? restamp(named[index - 1]) : EntityId{}; };
+    const nlohmann::json saved = ComponentSerializer::save(*component, EntityNamer(keep));
+    ComponentSerializer::load(saved, *component, EntityResolver(back));
+}
+
 } // namespace
 
 std::string ScriptEditCommand::capture(const Scene& scene, EntityId id) {
@@ -400,7 +416,7 @@ EntityId SubtreeSnapshot::apply(Scene& scene, SnapshotSlots slots) const {
     }
 
     // Pass 1b: re-stamp entity references. Every entity came back with a new
-    // generation, so a Joint restored verbatim is silently dropped by the solver.
+    // generation, so a reference restored verbatim - a Joint's, a slider's knob - points at none.
     auto restamp = [&](EntityId stored) {
         if (!stored) return EntityId{};
         // Snapshot first: in the fresh case the originals are still alive, so
@@ -416,14 +432,11 @@ EntityId SubtreeSnapshot::apply(Scene& scene, SnapshotSlots slots) const {
         const EntityId e = live[i];
         if (!e) continue;
 
-        if (Joint* joint = scene.tryGet<Joint>(e)) {
-            joint->connected = restamp(joint->connected);
-        }
-        if (Ragdoll* held = scene.tryGet<Ragdoll>(e)) {
-            Ragdoll& ragdoll = *held;
-            ragdoll.root = restamp(ragdoll.root);
-            for (RagdollBone& bone : ragdoll.bones) bone.body = restamp(bone.body);
-        }
+#define VKM_RESTAMP_NONE(Type, Key)
+#define VKM_RESTAMP(Type, Key) restampComponent<Type>(scene, e, restamp);
+        VKM_SCENE_COMPONENTS(VKM_RESTAMP_NONE, VKM_RESTAMP_NONE, VKM_RESTAMP)
+#undef VKM_RESTAMP
+#undef VKM_RESTAMP_NONE
     }
     // In captured order: setParent appends, so children come back in order.
     for (size_t i = 0; i < nodes.size(); ++i) {

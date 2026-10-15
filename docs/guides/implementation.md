@@ -14,7 +14,7 @@ holds the mechanics.
 - **Delete rot.** Never comment it out, never keep it "just in case"; git is the
   just-in-case. What counts as rot is section 6.
 - **Never leave a refactor half-done.** Rename everywhere or nowhere; move a file
-  and its callers together.
+  and its callers together - section 7.
 - **No `thread_local` in an engine header** - section 3. The build enforces it
   (`testNoEngineHeaderCarriesAThreadLocal`).
 
@@ -176,7 +176,25 @@ surface, **even with no caller yet.** The question is never "is this called?" bu
 
 ---
 
-## 7. Names and shape
+## 7. Changing a shape its users rely on
+
+The engine is designed for itself
+([design.md](design.md#12-the-engine-is-designed-for-itself)), so a change of
+shape carries its users with it, in one pass:
+
+1. **Change the engine** to the shape it should have. Delete the old one; keep
+   no alias, overload, fallback or second spelling for anyone.
+2. **Find every user**: `src/`, `app/`, `tests/`, `templates/`, `examples/` and
+   the docs - their code and their saved scenes, prefabs and recipes.
+3. **Port each one.** Code moves to the new shape. A saved file is re-saved in
+   the new format, by the editor or a one-off script that is not committed; the
+   engine gains no reader for the old one
+   ([engine.md](engine.md#51-what-each-formats-version-gate-actually-does)).
+4. **Build and run each project** you touched.
+
+---
+
+## 8. Names and shape
 
 A name carries the comment you did not write: `entity`, not `id`;
 `worldMatrix`, not `m`. A function is one sentence without an "and"; one
@@ -189,7 +207,7 @@ sequence or a draw loop, which are long because the work is
 
 ---
 
-## 8. A long comment is a diagnosis
+## 9. A long comment is a diagnosis
 
 What a comment may say, and how long it may run, is
 [code-style.md](code-style.md#6-documentation-and-comments). A long declaration
@@ -206,7 +224,7 @@ means one of three things:
 
 ---
 
-## 9. Checks with an answer
+## 10. Checks with an answer
 
 Run these on your own change.
 

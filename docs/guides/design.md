@@ -47,6 +47,16 @@ path: clear the buffer at the top of `update`, then work
 (`system/visibility/visibility_system.cpp`). Bailing out without publishing
 leaves consumers last frame's answer.
 
+### 1.2 The engine is designed for itself
+
+A shape is right because of what the engine is, never because of who uses it
+([engine.md](engine.md#4-what-has-already-been-decided), "The engine and its
+users"). A game's need is a requirement the engine meets with a feature of its
+own; once met, the game uses that feature and keeps no copy of it. A second way
+kept for a game, an example or an old file is two designs, and the engine pays
+for both; a change carries its users with it
+([implementation.md](implementation.md#7-changing-a-shape-its-users-rely-on)).
+
 ---
 
 ## 2. Three questions before you touch a file

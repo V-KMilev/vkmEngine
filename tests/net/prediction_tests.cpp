@@ -647,8 +647,8 @@ void testAPredictionThatWasWrongIsRunAgainRatherThanArguedWith() {
         walking.sequence = tick;
         walking.tick     = tick;
         walking.axis[0]  = pushing ? 1.0f : 0.0f;
-        server.beginTick(tick, InputCommand{}, 3);
-        client.beginTick(tick, walking, 3);
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        client.beginTick(tick, walking, 3, TEST_ACTION_NAMES);
 
         // The wall: whatever the client sends, the server does not move it.
         if (serverWorld.isAlive(walker)) serverWorld.get<Transform>(walker).position.x = 0.0f;
@@ -752,9 +752,9 @@ void testAShotIsJudgedAgainstWhatTheShooterCouldSee() {
             const EntityId seen = shooterWorld.entityAt(seats[1].slot());
             if (const Transform* at = shooterWorld.tryGet<Transform>(seen)) aimedAt[tick] = at->position.x;
         }
-        server.beginTick(tick, InputCommand{}, 3);
-        shooterClient.beginTick(tick, walkCommand(tick, tick, 0.0f, false), 3);
-        runnerClient.beginTick(tick, InputCommand{}, 3);
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        shooterClient.beginTick(tick, walkCommand(tick, tick, 0.0f, false), 3, TEST_ACTION_NAMES);
+        runnerClient.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
 
         // The runner moves a metre a tick, so where it was N ticks ago is exact.
         if (handedOut > 1) {
@@ -913,8 +913,8 @@ void testAPlayerIsNotDraggedBackwardsByTheirOwnConnection() {
         walking.sequence = tick;
         walking.tick     = tick;
         walking.axis[0]  = 1.0f;      // held forward, every tick
-        server.beginTick(tick, InputCommand{}, 3);
-        client.beginTick(tick, walking, 3);
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        client.beginTick(tick, walking, 3, TEST_ACTION_NAMES);
 
         step(serverWorld, server, walker);
         step(clientWorld, client, clientWalker);

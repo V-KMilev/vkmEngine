@@ -32,7 +32,6 @@
     "emissiveStrength": 1.0,
     "heightScale": 0.0,
     "ior": 1.5,
-    "kind": "inline",
     "metallic": 0.0,
     "normalScale": 1.0,
     "roughness": 0.699999988079071,

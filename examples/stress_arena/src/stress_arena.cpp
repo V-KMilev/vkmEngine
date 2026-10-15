@@ -15,6 +15,7 @@
 #include "core/math/axes.h"
 #include "core/math/easing.h"
 #include "core/math/rotation.h"
+#include "core/reflect.h"
 #include "ecs/scene.h"
 #include "io/asset/asset_library.h"
 #include "io/asset/cooked_loader.h"
@@ -41,6 +42,7 @@
 #include "resource/generate/mesh_generators.h"
 #include "resource/asset/texture_asset.h"
 #include "resource/resource_manager.h"
+#include "resource/texture_format.h"
 
 namespace Arena {
 
@@ -402,7 +404,7 @@ MaterialHandle StressArena::makeMaterial(const MaterialAsset& source, const char
 
 void StressArena::buildMaterials() {
     m_cube       = resources().add(generateCube(), "stress:cube");
-    m_sphere     = resources().add(generateSphere(24, 12), "stress:sphere");
+    m_sphere     = resources().add(generateSphere(12), "stress:sphere");
     m_cylinder   = resources().add(generateCylinder(0.5f, 1.0f, 20), "stress:cylinder");
 
     // One mesh per ground slab shape, so the paving keeps the same world scale
@@ -416,8 +418,8 @@ void StressArena::buildMaterials() {
         "stress:ground_side"
     );
 
-    m_sphereMid = resources().add(generateSphere(12, 6), "stress:sphere_mid");
-    m_sphereLow = resources().add(generateSphere(6, 4),  "stress:sphere_low");
+    m_sphereMid = resources().add(generateSphere(6), "stress:sphere_mid");
+    m_sphereLow = resources().add(generateSphere(3), "stress:sphere_low");
     m_cylMid    = resources().add(generateCylinder(0.5f, 1.0f, 10),  "stress:cyl_mid");
     m_cylLow    = resources().add(generateCylinder(0.5f, 1.0f, 6),   "stress:cyl_low");
 
@@ -923,11 +925,15 @@ void StressArena::buildModels() {
     // Every kind costs a cooked read at startup.
     const size_t kinds = std::min(usable.size(), static_cast<size_t>(std::max(1, modelKinds)));
 
+    // A model's embedded colour image is an albedo map (ModelPartNames::embeddedName).
+    const std::string colorSuffix = std::string("#") + Reflect::enumName(TextureUsage::Color);
     std::vector<MaterialHandle> materials;
     for (size_t i = 0; i < textureNames.size() && materials.size() < 8; ++i) {
-        // "#s" marks an sRGB-cooked texture, i.e. an albedo map; linear ones are normal/ORM.
         const std::string& texture = textureNames[i];
-        if (texture.size() < 2 || texture.compare(texture.size() - 2, 2, "#s") != 0) continue;
+        if (texture.size() < colorSuffix.size()
+            || texture.compare(texture.size() - colorSuffix.size(), colorSuffix.size(), colorSuffix) != 0) {
+            continue;
+        }
 
         MaterialAsset m;
         m.albedo        = {1.0f, 1.0f, 1.0f, 1.0f};

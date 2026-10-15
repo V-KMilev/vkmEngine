@@ -1,5 +1,7 @@
 #include "support.h"
 
+#include <algorithm>
+
 #include <nlohmann/json.hpp>
 
 #include "command/command_host.h"
@@ -14,6 +16,8 @@
 #include "ecs/component/prefab/prefab_instance.h"
 #include "ecs/component/render/camera.h"
 #include "ecs/component/render/light.h"
+#include "ecs/component/ui/ui_choice.h"
+#include "ecs/component/ui/ui_slider.h"
 #include "ecs/hierarchy_operations.h"
 #include "io/scene/scene_serializer.h"
 
@@ -368,6 +372,33 @@ void testUndoingADeleteDoesNotAdoptWhoeverTookTheSlot() {
         "  so the root comes back with no child rather than a stranger's",
         rootNode == nullptr || !rootNode->firstChild
     );
+}
+
+// Every entity a restored component names comes back re-pointed at what was restored, whichever
+// component names it: the scene serializer is what knows a component's entity fields.
+void testARestoredSliderStillMovesItsOwnKnob() {
+    std::printf("A deleted slider put back:\n");
+
+    Scene scene;
+    const EntityId track = oneEntityAt(scene, {0.0f, 0.0f, 0.0f});
+    const EntityId fill  = oneEntityAt(scene, {0.0f, 0.0f, 0.0f});
+    const EntityId knob  = oneEntityAt(scene, {0.0f, 0.0f, 0.0f});
+    HierarchyOperations::setParent(scene, fill, track);
+    HierarchyOperations::setParent(scene, knob, track);
+    UISlider slider;
+    slider.fill = fill;
+    slider.knob = knob;
+    scene.add(track, slider);
+
+    const SubtreeSnapshot snapshot = SubtreeSnapshot::capture(scene, track);
+    HierarchyOperations::destroyHierarchy(scene, track);
+    snapshot.apply(scene);
+
+    const EntityId back = scene.entityAt(track.slot());
+    const UISlider& restored = scene.get<UISlider>(back);
+    check("its fill is the fill that came back", restored.fill == scene.entityAt(fill.slot()));
+    check("  and its knob the knob", restored.knob == scene.entityAt(knob.slot()));
+    check("  both alive", scene.isAlive(restored.fill) && scene.isAlive(restored.knob));
 }
 
 // @p parent's children's names, in hierarchy order.
@@ -763,6 +794,71 @@ void testTheEditsAnInstanceDoesNotRecordAsOverrides() {
     );
 }
 
+// An entity field is never an override, and which fields name entities is the serializer's
+// answer, not a list beside it: the ones a second naming of every entity writes differently.
+void testTheFieldsNamingEntitiesAreTheSerializersAnswer() {
+    std::printf("The fields of a component that name entities:\n");
+
+    Scene scene;
+    UIChoice choice;
+    choice.back    = scene.createEntity();
+    choice.next    = scene.createEntity();
+    choice.text    = scene.createEntity();
+    choice.options = {"Low", "High"};
+    std::vector<std::string> fields = PrefabOverrides::entityFields(choice);
+    std::sort(fields.begin(), fields.end());
+    const std::vector<std::string> named = {"back", "next", "text"};
+    check("a choice names its arrows and its text", fields == named);
+
+    UIChoice unset;
+    check("  one naming none has none", PrefabOverrides::entityFields(unset).empty());
+    const Light lamp;
+    check("  and a light, whose row names no entities, none", PrefabOverrides::entityFields(lamp).empty());
+}
+
+// Inside an instance a choice's index is an override, and its arrows are not: the
+// prefab owns which entities they are, so an edit naming others records no entry.
+void testAChoiceInsideAnInstanceOverridesItsIndexAlone() {
+    std::printf("A choice edited inside a prefab instance:\n");
+
+    ScratchProject  dir{"vkm_undo_tests"};
+    ResourceManager resources;
+    const std::string path = "prefabs/choice.json";
+    {
+        Scene authored;
+        const EntityId row = authored.createEntity();
+        UIChoice choice;
+        choice.options = {"Low", "High"};
+        choice.back    = authored.createEntity();
+        choice.next    = authored.createEntity();
+        choice.text    = authored.createEntity();
+        for (EntityId part : {choice.back, choice.next, choice.text}) {
+            HierarchyOperations::setParent(authored, part, row);
+        }
+        authored.add(row, std::move(choice));
+        Prefab::save(authored, row, path, resources);
+    }
+
+    Scene scene;
+    RecordingHost host;
+    const EntityId row = Prefab::instantiate(scene, resources, path);
+    check("the instance built", row && scene.tryGet<UIChoice>(row));
+    if (!row || !scene.tryGet<UIChoice>(row)) return;
+
+    const UIChoice was = scene.get<UIChoice>(row);
+    UIChoice& choice = scene.get<UIChoice>(row);
+    choice.index = 1;
+    choice.back  = was.next;
+    pushEdit<UIChoice>(scene, resources, host, row, was, choice, "Choice");
+
+    std::vector<std::string> fields;
+    for (const PrefabOverride& entry : scene.get<PrefabInstance>(row).overrides) {
+        fields.push_back(entry.field);
+    }
+    check("the index is stored as an override", std::count(fields.begin(), fields.end(), "index") == 1);
+    check("  and the arrow pointed elsewhere is not", std::count(fields.begin(), fields.end(), "back") == 0);
+}
+
 // Dropping an override re-reads the prefab's definition, not an undo - and is refused
 // when the prefab has since lost the component.
 void testRevertingAnOverrideGivesTheFieldBackOrRefusesTo() {
@@ -1069,6 +1165,7 @@ void runUndoTests() {
     testStepsAddressingAGoneEntityAreForgotten();
     testUndoingADeleteDoesNotAdoptWhoeverTookTheSlot();
     testADeletedSubtreeComesBackInOrder();
+    testARestoredSliderStillMovesItsOwnKnob();
     testDeleteIsOneStepThatTakesTheSelectionWithIt();
     testACopyStandsBesideTheOriginalRatherThanOnIt();
     testADuplicateIsOneStepThatTakesTheWholeCopyBack();
@@ -1076,6 +1173,8 @@ void runUndoTests() {
     testACreateAfterADeleteUndoesInOrder();
     testAnEditInsideAnInstanceIsRecordedAsAnOverride();
     testTheEditsAnInstanceDoesNotRecordAsOverrides();
+    testTheFieldsNamingEntitiesAreTheSerializersAnswer();
+    testAChoiceInsideAnInstanceOverridesItsIndexAlone();
     testRevertingAnOverrideGivesTheFieldBackOrRefusesTo();
     testStopPutsAnInstanceBackInTheSlotsItHeld();
     testStopSaysWhenAPrefabCameBackDifferent();

@@ -858,7 +858,7 @@ void testRegistryKeysOffTheTypeName() {
     std::printf("What the registry recreates:\n");
 
     BehaviorRegistry& registry = BehaviorRegistry::get();
-    registry.registerBehavior<Recorder>();
+    registry.registerBehaviors<Recorder>();
 
     const std::unique_ptr<Behavior> made = registry.create(Reflect::Traits<Recorder>::NAME);
     check("a registered type is created by name", made != nullptr);
@@ -877,7 +877,7 @@ void testVectorFieldsRoundTrip() {
     std::printf("A behavior's vector fields through a save and a load:\n");
 
     BehaviorRegistry& registry = BehaviorRegistry::get();
-    registry.registerBehavior<Shaped>();
+    registry.registerBehaviors<Shaped>();
 
     ScriptComponent saved;
     auto made = std::make_unique<Shaped>();
@@ -904,7 +904,7 @@ void testAMistypedFieldCostsOneValueNotTheScene() {
     std::printf("A behavior field holding the wrong type:\n");
 
     BehaviorRegistry& registry = BehaviorRegistry::get();
-    registry.registerBehavior<Tuned>();
+    registry.registerBehaviors<Tuned>();
 
     const auto loaded = [](const nlohmann::json& properties, bool& threw) {
         const nlohmann::json behavior = {{"type", Reflect::Traits<Tuned>::NAME}, {"properties", properties}};

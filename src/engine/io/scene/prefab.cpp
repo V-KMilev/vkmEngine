@@ -56,21 +56,21 @@ uint32_t numberOr(const json& from, const char* key, uint32_t fallback) {
  *
  * Index 0 is the root by contract; a file that disagrees is repaired.
  *
- * @param entities The prefab document's entities array.
+ * @param entities The prefab document's entities array, accepted by readPrefab.
  * @param index    Position of the entry in it.
- * @return The entry's uid; PrefabEntity::ROOT at index 0, the index itself when
- *         the entry carries no usable uid.
+ * @return The entry's uid; PrefabEntity::ROOT at index 0.
  */
 uint32_t uidAt(const json& entities, size_t index) {
     if (index == 0) return PrefabEntity::ROOT;
-    return numberOr(entities[index], "uid", static_cast<uint32_t>(index));
+    return entities[index]["uid"].get<uint32_t>();
 }
 
 /**
  * @brief Read @p path and check it is a prefab this build can build from.
  *
- * Past here, each entry and its component block are objects, uids are unique,
- * and a child's parent is an earlier entry; a file that disagrees is refused whole.
+ * Past here, each entry and its component block are objects, every entry past
+ * the root carries a uid, uids are unique, and a child's parent is an earlier
+ * entry; a file that disagrees is refused whole.
  *
  * @param path Prefab reference, project-relative or absolute.
  * @param doc Receives the document on success.
@@ -105,6 +105,11 @@ bool readPrefab(const std::string& path, json& doc) {
         const auto components = entities[i].find("components");
         if (!entities[i].is_object() || (components != entities[i].end() && !components->is_object())) {
             LOG_ERROR("Prefab '%s' entry %zu does not describe an entity", path.c_str(), i);
+            return false;
+        }
+        const auto stored = entities[i].find("uid");
+        if (i > 0 && (stored == entities[i].end() || !stored->is_number_unsigned())) {
+            LOG_ERROR("Prefab '%s' entry %zu carries no uid", path.c_str(), i);
             return false;
         }
         // An override addresses a uid: with a duplicate, applying it patches both

@@ -15,7 +15,6 @@
 #include "io/project_paths.h"
 #include "resource/resource_manager.h"
 #include "import/texture_loaders.h"
-#include "resource/generate/texture_generators.h"
 
 namespace Vkm::Engine {
 
@@ -96,30 +95,23 @@ std::optional<std::string> findTexture(
     return std::nullopt;
 }
 
-TextureHandle loadOrFallback(
+TextureHandle loadMap(
     const std::string& texturePath,
     ResourceManager& resourceManager,
     TextureUsage usage,
-    bool generateMipmaps,
-    TextureHandle fallback
+    bool generateMipmaps
 ) {
-    if (texturePath.empty()) {
-        return fallback;
-    }
+    if (texturePath.empty()) return TextureHandle{};
 
     std::error_code ec;
     if (!std::filesystem::exists(ProjectPaths::resolveProjectPath(texturePath), ec)) {
-        LOG_WARNING("Texture file not found: '%s', using fallback", texturePath.c_str());
-        return fallback;
+        LOG_WARNING("Texture file not found: '%s'; the map is left out", texturePath.c_str());
+        return TextureHandle{};
     }
 
     // Requested, not loaded, so a folder of maps does not block once per map.
-    auto handle = requestTextureAsync(texturePath, resourceManager, usage, generateMipmaps);
-    if (!handle) {
-        LOG_WARNING("Failed to request texture: '%s', using fallback", texturePath.c_str());
-        return fallback;
-    }
-
+    const TextureHandle handle = requestTextureAsync(texturePath, resourceManager, usage, generateMipmaps);
+    if (!handle) LOG_WARNING("Failed to request texture: '%s'; the map is left out", texturePath.c_str());
     return handle;
 }
 
@@ -164,104 +156,57 @@ MaterialHandle buildFolderMaterial(const std::string& folderRef, ResourceManager
         {"height", "displacement", "disp", "parallax"}
     ).value_or("");
 
-    // The shader multiplies each factor by its map, and a folder material always binds one (or a
-    // fallback carrying the default), so anything under 1 scales it down.
+    // The shader multiplies each factor by its map where one is bound, so a found map's factor is
+    // 1; a missing map leaves its slot empty and the factor as the material reads unmapped - no
+    // metal, fully rough.
     MaterialAsset material;
-    material.metallic  = 1.0f;
     material.roughness = 1.0f;
 
     const bool generateMipmaps = true;
-    const TextureHandle whiteTex  = generateWhiteTexture(resourceManager);
-    const TextureHandle blackTex  = generateBlackTexture(resourceManager);
-    const TextureHandle normalTex = generateNormalTexture(resourceManager);
+    material.albedoTexture = loadMap(albedoPath, resourceManager, TextureUsage::Color, generateMipmaps);
+    material.normalTexture = loadMap(normalPath, resourceManager, TextureUsage::Normal, generateMipmaps);
 
-    material.albedoTexture = loadOrFallback(
-        albedoPath,
-        resourceManager,
-        TextureUsage::Color,
-        generateMipmaps,
-        whiteTex
-    );
-
-    material.normalTexture = loadOrFallback(
-        normalPath,
-        resourceManager,
-        TextureUsage::Normal,
-        generateMipmaps,
-        normalTex
-    );
-
-    // No fallback: with metallic and roughness at 1, a failed packed map must fall through to the
-    // separate maps, not leave raw metal.
-    const TextureHandle ormTex = ormPath.empty()
+    // A packed map that fails falls through to the separate maps.
+    const TextureHandle ormTex = loadMap(ormPath, resourceManager, TextureUsage::Data, true);
+    const TextureHandle mrTex  = ormTex
         ? TextureHandle{}
-        : loadOrFallback(ormPath, resourceManager, TextureUsage::Data, true, TextureHandle{});
-    const TextureHandle mrTex = (ormTex || metallicRoughnessPath.empty())
-        ? TextureHandle{}
-        : loadOrFallback(metallicRoughnessPath, resourceManager, TextureUsage::Data, true, TextureHandle{});
+        : loadMap(metallicRoughnessPath, resourceManager, TextureUsage::Data, true);
 
     if (ormTex) {
         // R = occlusion, G = roughness, B = metallic; the separate AO map is left off below.
         material.aoMetallicRoughnessTexture = ormTex;
+        material.metallic = 1.0f;
     } else if (mrTex) {
         // G = roughness, B = metallic: the separate slots read everything from .r.
         material.metallicRoughnessTexture = mrTex;
+        material.metallic = 1.0f;
     } else {
-        material.metallicTexture = loadOrFallback(
-            metallicPath,
-            resourceManager,
-            TextureUsage::Data,
-            generateMipmaps,
-            blackTex
-        );
-        material.roughnessTexture = loadOrFallback(
-            roughnessPath,
-            resourceManager,
-            TextureUsage::Data,
-            generateMipmaps,
-            whiteTex
-        );
+        const TextureUsage data = TextureUsage::Data;
+        material.metallicTexture  = loadMap(metallicPath, resourceManager, data, generateMipmaps);
+        material.roughnessTexture = loadMap(roughnessPath, resourceManager, data, generateMipmaps);
+        if (material.metallicTexture) material.metallic = 1.0f;
     }
 
-    if (!ormTex) {
-        material.aoTexture = loadOrFallback(
-            aoPath,
-            resourceManager,
-            TextureUsage::Data,
-            generateMipmaps,
-            whiteTex
-        );
-    }
+    if (!ormTex) material.aoTexture = loadMap(aoPath, resourceManager, TextureUsage::Data, generateMipmaps);
 
-    material.emissionTexture = loadOrFallback(
-        emissionPath,
-        resourceManager,
-        TextureUsage::Color,
-        generateMipmaps,
-        blackTex
-    );
+    material.emissionTexture = loadMap(emissionPath, resourceManager, TextureUsage::Color, generateMipmaps);
+    if (material.emissionTexture) material.emission = glm::vec3(1.0f);
 
-    material.heightTexture = loadOrFallback(
-        heightPath,
-        resourceManager,
-        TextureUsage::Data,
-        generateMipmaps,
-        blackTex
-    );
+    material.heightTexture = loadMap(heightPath, resourceManager, TextureUsage::Data, generateMipmaps);
 
-    // Names the metal/rough shape taken, or a packed map reads as "metallic = fallback".
+    // Names the metal/rough shape taken, or a packed map reads as "metallic = none".
     const char* metalRough = ormTex ? "orm"
         : mrTex ? "packed"
         : (!metallicPath.empty() || !roughnessPath.empty()) ? "separate"
-        : "fallback";
+        : "none";
     LOG_VERBOSE(
         "Material created: albedo=%s, normal=%s, metal/rough=%s, ao=%s, emission=%s, height=%s",
-        !albedoPath.empty() ? "custom" : "fallback",
-        !normalPath.empty() ? "custom" : "fallback",
+        !albedoPath.empty() ? "custom" : "none",
+        !normalPath.empty() ? "custom" : "none",
         metalRough,
-        ormTex ? "orm" : !aoPath.empty() ? "custom" : "fallback",
-        !emissionPath.empty() ? "custom" : "fallback",
-        !heightPath.empty() ? "custom" : "fallback"
+        ormTex ? "orm" : !aoPath.empty() ? "custom" : "none",
+        !emissionPath.empty() ? "custom" : "none",
+        !heightPath.empty() ? "custom" : "none"
     );
 
     return resourceManager.add(std::move(material));
@@ -283,8 +228,8 @@ MaterialHandle loadMaterialFromFolder(const std::string& folderPath, ResourceMan
     LOG_INFO("Loading material from folder: '%s'", ref.c_str());
 
     MaterialHandle handle = buildFolderMaterial(ref, resourceManager);
-    // Named by the folder reference; a later load rebuilds from the cooked inline form, so no
-    // folder recipe is kept.
+    // Named by the folder reference; a later load rebuilds it from its recipe, so no folder
+    // recipe is kept.
     if (handle) resourceManager.rename(handle, ref);
     return handle;
 }

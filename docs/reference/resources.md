@@ -215,10 +215,10 @@ them, and what a host without them reads, is
   and the cooker in `cook/`, plus `registerRecipeAssetFactories`.
 
 The procedural generators (`src/engine/resource/generate/`) are engine code,
-because the engine builds with them - a default scene, a fallback texture.
-`createGeneratedMesh` and `createGeneratedTexture` rebuild an asset from the
-JSON descriptor its generator stamped - `{"kind": "generator", "type": "cube"}`,
-or a `solid` colour.
+because the engine builds with them - a default scene, the solid colours a
+recipe names. `createGeneratedMesh` and `createGeneratedTexture` rebuild an
+asset from the JSON descriptor its generator stamped - `{"kind": "generator",
+"type": "cube"}`, or a `solid` colour.
 
 ### Importing a model
 
@@ -235,7 +235,8 @@ A mesh without authored tangents gets MikkTSpace's.
 
 Asset names are deterministic so a re-import relinks: the file's project
 reference and the part - `<ref>:mesh<i>`, `<ref>:mat<i>`, `<ref>:skeleton` (one
-rig per file), `<ref>:clip<i>` and `<ref>:emb:<image>` - so
+rig per file), `<ref>:clip<i>` and `<ref>:emb:<image>#<usage>` (`#Color`,
+`#Data` or `#Normal`: one image read two ways is two textures) - so
 `assets/props/crate.glb:mesh0`. The indices are the file's own order, which
 makes that order part of the format:
 

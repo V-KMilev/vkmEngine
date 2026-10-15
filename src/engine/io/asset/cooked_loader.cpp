@@ -28,8 +28,8 @@ std::filesystem::path currentCookedFile(const std::string& name) {
 }
 
 // What a cache-served asset carries for a source: the cooker reads it as "nothing to re-cook".
-nlohmann::json cookedSource(const std::string& name) {
-    return {{"kind", AssetSourceKind::COOKED}, {"name", name}};
+nlohmann::json cookedSource() {
+    return {{AssetSourceKey::KIND, AssetSourceKind::COOKED}};
 }
 
 // A loading stub under @p name, whose cooked file @p read decodes on the ThreadPool.
@@ -41,7 +41,7 @@ Handle<Asset> loadAsync(const std::string& name, ResourceManager& resources, Rea
 
     Asset stub;
     stub.loading      = true;
-    stub.sourceJson() = cookedSource(name);
+    stub.sourceJson() = cookedSource();
     const Handle<Asset> handle = resources.add(std::move(stub), name);
     const uint64_t      uid    = resources.get(handle).uid();
     ThreadPool::get().addTask([handle, uid, path = std::move(path), read]() { read(handle, uid, path); });
@@ -61,7 +61,7 @@ Handle<Asset> loadNow(
 
     Asset decoded;
     if (!read(path, decoded)) return {};
-    decoded.sourceJson() = cookedSource(name);
+    decoded.sourceJson() = cookedSource();
     return resources.add(std::move(decoded), name);
 }
 

@@ -66,8 +66,8 @@ struct NetCore {
 
     uint32_t actionCount = 0;
 
-    /// Which action has which slot: this end's own, or on a server whose behaviors
-    /// have defined none yet, its first player's.
+    /// Which action has which slot: this end's own, or, on a server that has not
+    /// ticked yet, its first player's.
     uint64_t actionNames = 0;
     bool     ticked      = false;  ///< A tick has run, so the count is real.
 
@@ -453,14 +453,13 @@ class NetSession {
          * @param tick        The tick about to run.
          * @param command     What the local player did on it.
          * @param actionCount Action slots the project defines.
-         * @param actionNames InputMap::actionFingerprint, or zero to be compared
-         *                    against nothing.
+         * @param actionNames InputMap::actionFingerprint.
          */
         void beginTick(
             uint32_t tick,
             const InputCommand& command,
             uint32_t actionCount,
-            uint64_t actionNames = 0
+            uint64_t actionNames
         );
 
         /// Send what this frame produced. Called once a frame, after the ticks.

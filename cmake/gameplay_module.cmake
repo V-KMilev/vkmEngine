@@ -1,11 +1,11 @@
-# vkm_add_gameplay_module(<name> [SOURCES <files>])
+# vkm_add_gameplay_module(<name>)
 #
 # The recipe for the one library a project loads, shared by user projects and the
 # engine's examples, so it names only vkmEngine:: targets.
 #
-# The project is the calling directory; without SOURCES the module is every .cpp
-# under its src/, which is also its include root. It is always named
-# `game`, the name a host loads, and lands in bin/ or VKM_MODULE_DIR.
+# The project is the calling directory; the module is every .cpp under its src/,
+# which is also its include root. It is always named `game`, the name a host
+# loads, and lands in bin/ or VKM_MODULE_DIR.
 
 # vkm_gameplay_module_options(<target>)
 #
@@ -53,11 +53,11 @@ function(vkm_check_engine_version PROJECT_DIR)
 endfunction()
 
 function(vkm_add_gameplay_module TARGET)
-    cmake_parse_arguments(VKM "" "" "SOURCES" ${ARGN})
-    set(VKM_PROJECT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-    if(NOT VKM_SOURCES)
-        file(GLOB_RECURSE VKM_SOURCES CONFIGURE_DEPENDS ${VKM_PROJECT_DIR}/src/*.cpp)
+    if(ARGN)
+        message(FATAL_ERROR "vkm_add_gameplay_module(${TARGET}): takes a name alone, not '${ARGN}'")
     endif()
+    set(VKM_PROJECT_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+    file(GLOB_RECURSE VKM_SOURCES CONFIGURE_DEPENDS ${VKM_PROJECT_DIR}/src/*.cpp)
     if(NOT VKM_SOURCES)
         message(FATAL_ERROR "vkm_add_gameplay_module(${TARGET}): no .cpp under ${VKM_PROJECT_DIR}/src")
     endif()

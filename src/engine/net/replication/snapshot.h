@@ -206,6 +206,7 @@ NetSnapshotStats writeSnapshot(
  * @param in      The packet, at the start of the body.
  * @param names   What the server's slots name on this end.
  * @param touched Filled, when given, with the entities this snapshot said anything about.
+ * @param lost    Filled, when given, with the entities it reported gone, before they were destroyed.
  * @return False when the body is malformed. What was applied before the fault
  *         stays: nothing refused is confirmed, so the next snapshot says it again.
  */
@@ -214,7 +215,8 @@ bool readSnapshot(
     const NetSchema& schema,
     BitReader& in,
     NetNames& names,
-    std::vector<EntityId>* touched = nullptr
+    std::vector<EntityId>* touched = nullptr,
+    std::vector<EntityId>* lost = nullptr
 );
 
 } // namespace Vkm::Engine

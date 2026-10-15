@@ -2,8 +2,8 @@
 
 #include <nlohmann/json.hpp>
 
-#include "command/prefab_overrides.h"
 #include "io/scene/prefab.h"
+#include "ecs/component/physics/collider.h"
 #include "ecs/component/prefab/prefab_entity.h"
 #include "ecs/component/prefab/prefab_instance.h"
 #include "ecs/component/render/light.h"
@@ -225,6 +225,14 @@ void testAPrefabThatDescribesNothingIsRefusedWhole() {
     check(
         "  and two entities wearing one uid",
         !Prefab::instantiate(target, resources, writeAs("twins.json", twins))
+    );
+
+    // An entry past the root without a uid: no override could address it.
+    nlohmann::json nameless = good;
+    nameless["entities"][1].erase("uid");
+    check(
+        "  and an entity with no uid",
+        !Prefab::instantiate(target, resources, writeAs("nameless.json", nameless))
     );
 
     // Refused whole: nothing of a rejected file reaches the scene.
@@ -473,7 +481,6 @@ void testEveryReaderAgreesWhatAnInstanceHolds() {
     );
     check("  and keeps the root", !Prefab::isInsideInstance(scene, root));
 
-    check("the editor's overrides resolve the same root", PrefabOverrides::instanceRoot(scene, leaf) == root);
     check(
         "the wire keeps the descendants off it",
         netSilence(scene, leaf) == NetSilence::InsidePrefabInstance

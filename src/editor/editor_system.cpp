@@ -854,7 +854,6 @@ void EditorSystem::drawPanels(EditorContext& ec) {
         if (beginPanel(ERRORS_WINDOW, panelPad)) drawErrorsPanel(ec.errorLog);
         ImGui::End();
 
-        dockNextBeside(ERRORS_WINDOW);
         if (revealBuild) ImGui::SetNextWindowFocus();
         if (beginPanel(BUILD_WINDOW, panelPad)) m_build.draw(m_state);
         ImGui::End();

@@ -24,10 +24,11 @@ struct RayHit {
 /**
  * @brief Which bodies a query is allowed to see.
  *
- * `ignore` is for the common query a body casts from inside itself.
+ * `ignore` is for the common query a body casts from inside itself. The bones of its Ragdoll are
+ * ignored with it, so a character's eye inside its own head capsule sees past it.
  */
 struct QueryFilter {
-    EntityId ignore      = {};     ///< Never hit; the caster, usually
+    EntityId ignore      = {};     ///< Never hit, nor its Ragdoll's bones; the caster, usually
     bool     hitTriggers = false;  ///< Include colliders marked isTrigger
     bool     hitStatic   = true;   ///< Include Static and Kinematic bodies, by their authored motion
     bool     hitDynamic  = true;   ///< Include Dynamic bodies, a ragdoll's posed bones among them

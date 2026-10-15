@@ -70,6 +70,7 @@
 #include "cook/lod_generator.h"
 #include "io/asset/asset_library.h"
 #include "io/project_paths.h"
+#include "io/scene/prefab.h"
 #include "io/scene/scene_serializer.h"
 #include "session/scene_io_controller.h"
 #include "resource/resource_manager.h"
@@ -546,7 +547,7 @@ bool propEntity(Scene& scene, EntityId self, const char* label, EntityId& target
     // Every entity, named or not; the scene is walked only while the list is open.
     char preview[96] = "None";
     if (scene.isAlive(target)) getEntityDisplayName(scene, target, preview, sizeof(preview));
-    const bool prefabOwned = static_cast<bool>(PrefabOverrides::instanceRoot(scene, self));
+    const bool prefabOwned = static_cast<bool>(Prefab::instanceRootOf(scene, self));
     ImGui::BeginDisabled(prefabOwned);
     const bool changed = propRow(label, tooltip, [&] {
         if (!beginCombo("##v", preview)) return false;
@@ -1112,7 +1113,7 @@ void InspectorPanel::drawUIScrollSection(EditorContext& ec, EntityId id) {
 void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, EntityId id) {
     // Inside an instance a component lives only in the prefab; the button stays, as saving the
     // prefab back authors one (see PrefabOverrides::warnComponentIsPrefabs).
-    const bool inInstance = PrefabOverrides::instanceRoot(scene, id) != EntityId{};
+    const bool inInstance = Prefab::instanceRootOf(scene, id) != EntityId{};
     if (inInstance) {
         ImGui::TextWrapped(
             "Components on an instance belong to the prefab. Save as Prefab "
@@ -1237,7 +1238,7 @@ void InspectorPanel::drawPrefabSection(EditorContext& ec, EntityId id) {
     Scene& scene = ec.frame.scene;
     EditorState& state = ec.state;
 
-    const EntityId root = PrefabOverrides::instanceRoot(scene, id);
+    const EntityId root = Prefab::instanceRootOf(scene, id);
     if (!root) return;
 
     const bool open = beginComponentCard("Prefab Instance", EditorStyle::Accent::PREFAB, true);
@@ -1998,10 +1999,12 @@ void InspectorPanel::drawParticleSection(EditorContext& ec, EntityId id) {
             const char* rotationTooltip = "Each particle starts at an angle of its own";
             changed |= propCheckbox("Random Rotation", &e.randomRotation, rotationTooltip);
         }
-        const char* viewmodelTooltip =
-            "Drawn as a Viewmodel mesh is - a muzzle flash on the weapon in hand lines up with it "
-            "and shows in front of it";
-        changed |= propCheckbox("Viewmodel", &e.viewmodel, viewmodelTooltip);
+        const char* seenByTooltip =
+            "Who draws its particles, through a scene camera, as for a Mesh. Particles cast no shadow "
+            "and are in no capture, so All But Eye draws none and Eye Only draws as All; Viewmodel - "
+            "at the camera's Viewmodel FOV, a muzzle flash lined up with the weapon and in front of it. "
+            "The editor's own view draws everything";
+        changed |= propEnumCombo("Seen By", e.seenBy, seenByTooltip);
 
         const std::vector<Particle>* live = ec.frame.particles ? ec.frame.particles->of(id) : nullptr;
         ImGui::TextDisabled("Live: %d particle(s).", live ? static_cast<int>(live->size()) : 0);
@@ -3204,7 +3207,7 @@ void InspectorPanel::drawScriptSection(EditorContext& ec, EntityId id) {
         auto& sc = scene.get<ScriptComponent>(id);
 
         // ScriptComponent serializes as one value, so an instance cannot hold field overrides.
-        if (PrefabOverrides::instanceRoot(scene, id)) {
+        if (Prefab::instanceRootOf(scene, id)) {
             ImGui::TextWrapped(
                 "Script values on an instance belong to the prefab. Save as "
                 "Prefab keeps what you change here; saving the scene does not."

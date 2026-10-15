@@ -12,6 +12,9 @@ A directory is a project when it holds a `project.json`. `Project`
 (`src/engine/io/project.h`) is everything it says, one commented field per key.
 What the fields do not say on their own:
 
+- `name` is `project.json`'s, else the name of the project's folder: one rule,
+  which `loadProject` applies for the engine and `project_name`
+  (`tools/vkmcli/project.py`) for vkm.
 - `tickRate` is the project's, not the engine's, because a networked game's wire
   is clocked by it.
 - `maxPlayers` of zero is kept and means it: the session refuses to host.
@@ -24,9 +27,9 @@ What the fields do not say on their own:
 - `splash` (logos the runtime shows after the engine's) and `fonts` (a
   `UIText` names one by its `name`) are usually empty.
 
-A missing or malformed `project.json` is **not** fatal: the defaults stand and an
-unnamed project opens. A `render` setting of the wrong type keeps its value and
-warns.
+A missing or malformed `project.json` is **not** fatal: the defaults stand and the
+project opens under its folder's name. A `render` setting of the wrong type keeps
+its value and warns.
 
 `saveProject` overwrites the fields the struct describes and leaves every other
 top-level key as it was - the file is hand-authored as often as tool-written.
@@ -47,7 +50,7 @@ owns them:
 | Root | Owns | Helpers |
 |------|------|---------|
 | `engineRoot()` | What ships with the engine, read-only to a game. One copy serves every project | `engineShaders()`, `engineAssets()`, `engineFonts()` |
-| `projectRoot()` | The game being made: its content, its code, its asset database | `assets()`, `scenes()`, `prefabs()`, `envs()`, `screenshots()`, `library()`, `cooked()`, `projectBin()` |
+| `projectRoot()` | The game being made: its content, its code, its asset database | `assets()`, `scenes()`, `prefabs()`, `envs()`, `library()`, `cooked()`, `projectBin()` |
 | `userRoot()` | How one person likes their tools, across every project and every engine install | `userLogs()`, a sibling under the platform's *state* directory rather than a child of this root |
 | `playerRoot(game)` | What a game writes for its player - settings, a profile, saves - in a folder of the game's own name beside the engine's own user folder | |
 
@@ -147,9 +150,8 @@ type warns and keeps its own - unlike a scene file, where that fails the load.
 - `assets`: name-only references to every asset the scene names - through its
   components and every `AssetRef` field on a behavior - plus the textures those
   materials use. The asset *data* lives in the library, not here, and a name
-  this block does not list is one the loader never recreates. Assets marked
-  `hidden = true` are skipped (editor previews, fallback textures, bundled
-  primitives).
+  this block does not list is one the loader never recreates. Assets added with
+  `ResourceManager::addPrivate` are skipped.
 - `entities`: one record per entity, its `id` the entity's slot, each component
   keyed by its short name ([ComponentSerializer](#componentserializer)).
 - `environment` and `physics`: the scene's `Environment` and `PhysicsSettings`,
@@ -195,9 +197,9 @@ trimmed, because an undo can empty a filled field again;
 `SceneSerializer::unresolvedRefs` returns the entries whose field is still
 empty, which is what the Inspector's banner and the assets block read.
 
-Only a name stored under a component's own key is kept. A name inside a list -
-an LOD level's mesh, a collider part's mesh - has no key to go back under: its
-miss is reported, and a save writes it as `""`.
+A name inside a list - an LOD level's mesh, a collider part's mesh - is kept
+under its element's path (`levels.2.mesh`, `ReflectJson::childPath`) and goes
+back the same way while that element is still there.
 
 ## Prefabs
 
@@ -228,8 +230,8 @@ per-entity component shape a scene uses:
   overrides in. Nesting is refused both ways - a subtree containing an
   instance, and a root inside one.
 - `readPrefab` checks the file's shape once and every entry point reports what
-  it cannot use rather than throwing. A duplicate uid is refused, since it makes
-  an override's address ambiguous.
+  it cannot use rather than throwing. A missing or duplicate uid is refused, since
+  either makes an override's address ambiguous.
 
 ### Per-instance overrides
 
@@ -256,9 +258,9 @@ back to the prefab.
 
 ## Assets: recipes and the cooked cache
 
-An asset's **recipe** - the `source` descriptor its import or generator wrote,
-with a `kind` - is the editable source of truth. Its **cooked** file is a binary
-cache derived from it. Each asset is its own file:
+An asset's **recipe** - the `source` descriptor its import or generator wrote -
+is the editable source of truth. Its **cooked** file is a binary cache derived
+from it. Each asset is its own file:
 
 - `library/<type>/<uid>.json` - the recipe; for a material, its runtime form.
   Version-controlled.
@@ -279,10 +281,12 @@ A model file's parts are named by the file and the part
 
 | `kind`                 | Read by          | Resolves to                                         |
 |------------------------|------------------|-----------------------------------------------------|
-| `inline`               | every host       | A `MaterialAsset` from PBR scalars + texture refs - every material's recipe, whatever it was imported from |
 | `generator` / `decimate` | editor, cooker | Procedural / LOD meshes                             |
 | `file` / `model` / `model-image` | editor, cooker | stb texture import and sound decode; cgltf / ufbx mesh, rig and clip import (a clip recipe also carries its authored `markers`) |
-| `solid`                | editor, cooker   | Single-colour textures, the engine's defaults among them |
+| `solid`                | editor, cooker   | Single-colour textures                              |
+
+A material's recipe has no `kind`: it is the material's values and its texture
+refs by name, read by every host whatever it was imported from.
 
 A `decimate` recipe is an LOD level kept as the instruction that makes it,
 `{"kind": "decimate", "base": "<mesh>", "ratio": 0.5}`; `decimateRecipe` and
@@ -346,9 +350,9 @@ texture on the `ThreadPool`, the rest at once.
 On a miss the recipe is imported through the `AssetFactory` seam
 (`io/asset/asset_factory.h`), one import per kind, which the editor and
 `vkm_cook` install (`registerRecipeAssetFactories`) and the runtime and server
-leave null. A material has no cooked file: `AssetSerializer::applyInline`
-applies its recipe. A name with no manifest row still loads from a recipe on
-disk, so a lost manifest costs a re-cook.
+leave null. A material has no cooked file: `AssetSerializer::materialFromRecipe`
+builds it from its recipe. A name with no manifest row still loads from a recipe
+on disk, so a lost manifest costs a re-cook.
 
 `finalizeAsyncLoads` / `awaitAsyncLoads` (`system/async/async_loader_system.h`)
 land async decodes without a frame - drain once, and drain until quiet. The

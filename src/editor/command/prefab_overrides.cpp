@@ -68,26 +68,12 @@ EntityId entityWithUid(const Scene& scene, EntityId root, uint32_t uid) {
     });
 }
 
-// Whether a field references an entity, which cannot be an override: an override
-// is read back in the prefab's namespace, an edit names the entity in the scene's.
-// Such a field is skipped, so an edit changing nothing else records no override
-// and stays a plain edit the scene never stores.
-bool namesAnEntity(const char* component, const std::string& field) {
-    if (std::strcmp(component, "Joint") == 0)   return field == "connected";
-    if (std::strcmp(component, "Ragdoll") == 0) return field == "bones" || field == "root";
-    return false;
-}
-
 } // namespace
-
-EntityId instanceRoot(const Scene& scene, EntityId id) {
-    return Prefab::instanceRootOf(scene, id);
-}
 
 std::vector<std::string> overriddenFields(const Scene& scene, EntityId id, const char* component) {
     std::vector<std::string> fields;
 
-    const EntityId root = instanceRoot(scene, id);
+    const EntityId root = Prefab::instanceRootOf(scene, id);
     const PrefabEntity* stamped = root ? scene.tryGet<PrefabEntity>(id) : nullptr;
     if (!stamped) return fields;
 
@@ -137,9 +123,10 @@ std::unique_ptr<Command> recordFields(
     const char* component,
     const json& before,
     const json& after,
+    const std::vector<std::string>& entities,
     const char* label
 ) {
-    const EntityId      root    = instanceRoot(scene, id);
+    const EntityId      root    = Prefab::instanceRootOf(scene, id);
     const PrefabEntity* stamped = root ? scene.tryGet<PrefabEntity>(id) : nullptr;
     if (!stamped) return nullptr;
 
@@ -164,7 +151,9 @@ std::unique_ptr<Command> recordFields(
     for (auto field = after.begin(); field != after.end(); ++field) {
         const auto was = before.find(field.key());
         if (was != before.end() && *was == field.value()) continue;
-        if (namesAnEntity(component, field.key())) continue;
+        // An entity field is skipped, so an edit changing nothing else records no override
+        // and stays a plain edit the scene never stores.
+        if (std::find(entities.begin(), entities.end(), field.key()) != entities.end()) continue;
         setEntry(entries, uid, component, field.key(), field.value().dump());
         changed = true;
     }
@@ -192,7 +181,7 @@ void warnComponentIsPrefabs(
     const char* component,
     const char* fate
 ) {
-    if (!instanceRoot(scene, id)) return;
+    if (!Prefab::instanceRootOf(scene, id)) return;
     const std::string message = std::string("'") + component + "' " + fate
         + " - Save as Prefab to put it in the prefab";
     host.pushToast(ToastKind::Warning, message);
@@ -206,7 +195,7 @@ void revert(
     const char* component,
     const std::string& field
 ) {
-    const EntityId      root    = instanceRoot(scene, id);
+    const EntityId      root    = Prefab::instanceRootOf(scene, id);
     const PrefabEntity* stamped = root ? scene.tryGet<PrefabEntity>(id) : nullptr;
     if (!stamped) return;
 

@@ -163,6 +163,31 @@ void base(Scenery& s) {
     s.sphere = s.resources.add(generateSphere(), "golden:sphere");
 }
 
+// An emitter at the origin, with the pool ParticleSystem would keep for it: the particles it
+// returns are what the frame draws.
+std::vector<Particle>& addEmitter(Scenery& s, ParticleEmitter emitter) {
+    const EntityId id = s.scene.createEntity();
+    s.scene.add(id, Transform{});
+    s.scene.add(id, std::move(emitter));
+    LiveParticles::Pool& pool = s.particles.pools[id.slot()];
+    pool.emitter = id;
+    return pool.particles;
+}
+
+// A point lamp at @p at, returned for what else a scene sets on it.
+Light& addLamp(Scenery& s, glm::vec3 at, float intensity, float radius, bool castShadows) {
+    const EntityId lamp = s.scene.createEntity();
+    Transform pose;
+    pose.position = at;
+    s.scene.add(lamp, std::move(pose));
+    Light light;
+    light.type        = LightType::Point;
+    light.intensity   = intensity;
+    light.radius      = radius;
+    light.castShadows = castShadows;
+    return s.scene.add(lamp, std::move(light));
+}
+
 // Metals and dielectrics across roughness on a matte floor, under the sun: direct
 // lobes, environment, shadows, GTAO under the spheres.
 void buildMaterials(Scenery& s) {
@@ -284,21 +309,16 @@ void buildSmoke(Scenery& s) {
         {3.0f, 2.0f, 0.6f}
     );
 
-    const EntityId smoke = s.scene.createEntity();
-    s.scene.add(smoke, Transform{});
     ParticleEmitter emitter;
     emitter.additive   = false;
     emitter.startColor = glm::vec4(0.35f, 0.35f, 0.37f, 0.8f);
     emitter.startSize  = 0.7f;
     emitter.softness   = 0.6f;
-    s.scene.add(smoke, std::move(emitter));
-
-    LiveParticles::Pool& pool = s.particles.pools[smoke.slot()];
-    pool.emitter = smoke;
+    std::vector<Particle>& smoke = addEmitter(s, std::move(emitter));
     for (int i = 0; i < 7; ++i) {
         Particle p;
         p.position = {-2.4f + 0.8f * static_cast<float>(i), 0.25f, -0.6f};
-        pool.particles.push_back(p);
+        smoke.push_back(p);
     }
     sunAndCamera(s, {0.0f, 1.2f, 3.5f}, {0.0f, 0.0f, -1.5f});
 }
@@ -339,15 +359,6 @@ void buildSprites(Scenery& s) {
     }
     const TextureHandle frames = s.resources.add(std::move(sheet), "golden:sheet");
 
-    const auto emitter = [&](ParticleEmitter e) {
-        const EntityId id = s.scene.createEntity();
-        s.scene.add(id, Transform{});
-        s.scene.add(id, std::move(e));
-        LiveParticles::Pool& pool = s.particles.pools[id.slot()];
-        pool.emitter = id;
-        return &pool.particles;
-    };
-
     ParticleEmitter cards;
     cards.additive     = false;
     cards.texture      = frames;
@@ -358,14 +369,14 @@ void buildSprites(Scenery& s) {
     cards.startSize    = 0.3f;
     cards.endSize      = 0.3f;
     cards.lifetime     = 4.0f;
-    std::vector<Particle>* card = emitter(cards);
+    std::vector<Particle>& card = addEmitter(s, cards);
     for (int i = 0; i < 5; ++i) {
         Particle p;
         p.position = {-2.6f + 0.75f * static_cast<float>(i), 1.0f, 0.0f};
         p.lifetime = 4.0f;
         p.age      = i < 4 ? 0.5f + static_cast<float>(i) : 0.5f;
         p.angle    = i < 4 ? 0.0f : glm::quarter_pi<float>();
-        card->push_back(p);
+        card.push_back(p);
     }
 
     ParticleEmitter puff;
@@ -376,7 +387,7 @@ void buildSprites(Scenery& s) {
     puff.endSize    = 0.25f;
     Particle disc;
     disc.position = {-1.5f, 0.45f, 0.3f};
-    emitter(puff)->push_back(disc);
+    addEmitter(s, puff).push_back(disc);
 
     ParticleEmitter sparks;
     sparks.startColor = glm::vec4(3.0f, 1.6f, 0.4f, 1.0f);
@@ -385,13 +396,13 @@ void buildSprites(Scenery& s) {
     sparks.endSize    = 0.05f;
     sparks.softness   = 0.3f;
     sparks.stretch    = 0.1f;
-    std::vector<Particle>* spark = emitter(sparks);
+    std::vector<Particle>& spark = addEmitter(s, sparks);
     const glm::vec3 headings[3] = {{8.0f, 0.0f, 0.0f}, {0.0f, 8.0f, 0.0f}, {0.0f, 0.0f, 8.0f}};
     for (int i = 0; i < 3; ++i) {
         Particle p;
         p.position = {1.8f + 0.8f * static_cast<float>(i), 1.0f, 0.0f};
         p.velocity = headings[i];
-        spark->push_back(p);
+        spark.push_back(p);
     }
     sunAndCamera(s, {0.0f, 1.3f, 4.0f}, {0.0f, 1.0f, 0.0f});
 }
@@ -427,17 +438,8 @@ void buildHeld(Scenery& s, SeenBy seenBy, float depth, glm::vec3 glow = glm::vec
 
     // Its light is found where it is: drawn through its own lens, at the depth of the near plane, it
     // lands in clusters this lamp - a hand's breadth over its tip, reaching 20 cm - never touches.
-    const EntityId lamp = s.scene.createEntity();
-    Transform lampAt;
-    lampAt.position = eye + glm::vec3(0.22f, -0.08f, -0.37f);
-    s.scene.add(lamp, std::move(lampAt));
-    Light bulb;
-    bulb.type        = LightType::Point;
-    bulb.color       = {1.0f, 0.55f, 0.2f};
-    bulb.intensity   = 0.15f;
-    bulb.radius      = 0.2f;
-    bulb.castShadows = false;
-    s.scene.add(lamp, std::move(bulb));
+    Light& bulb = addLamp(s, eye + glm::vec3(0.22f, -0.08f, -0.37f), 0.15f, 0.2f, false);
+    bulb.color = {1.0f, 0.55f, 0.2f};
 
     sunAndCamera(s, eye, eye + glm::vec3(0.0f, 0.0f, -1.0f));
     s.scene.forEach<Camera>([](EntityId, Camera& lens) {
@@ -452,21 +454,16 @@ void buildHeld(Scenery& s, SeenBy seenBy, float depth, glm::vec3 glow = glm::vec
 void buildViewmodel(Scenery& s) {
     buildHeld(s, SeenBy::Viewmodel, -0.55f);
 
-    const EntityId muzzle = s.scene.createEntity();
-    s.scene.add(muzzle, Transform{});
     ParticleEmitter flash;
-    flash.viewmodel  = true;
+    flash.seenBy     = SeenBy::Viewmodel;
     flash.startColor = glm::vec4(4.0f, 2.4f, 0.8f, 1.0f);
     flash.endColor   = flash.startColor;
     flash.startSize  = 0.05f;
     flash.endSize    = 0.05f;
     flash.softness   = 0.5f;
-    s.scene.add(muzzle, std::move(flash));
-    LiveParticles::Pool& pool = s.particles.pools[muzzle.slot()];
-    pool.emitter = muzzle;
     Particle spark;
     spark.position = glm::vec3(0.22f, 1.45f, -0.9f);
-    pool.particles.push_back(spark);
+    addEmitter(s, std::move(flash)).push_back(spark);
 }
 
 // A card cut by its albedo alpha, in the sun on a glossy floor: its shadow is the cut
@@ -705,17 +702,9 @@ void buildPoint(Scenery& s) {
     place(s, s.cube, cloth, {-0.4f, 2.0f, -2.73f}, {1.2f, 2.4f, 0.02f});
     for (float x : {-2.4f, 1.6f}) place(s, pillar, stone, {x, 1.8f, -0.8f}, {0.6f, 3.6f, 0.6f});
 
-    const EntityId bulb = s.scene.createEntity();
-    Transform pose;
-    pose.position = {1.4f, 2.0f, 0.9f};
-    s.scene.add(bulb, std::move(pose));
-    Light light;
-    light.type         = LightType::Point;
-    light.intensity    = 40.0f;
-    light.radius       = 15.0f;
-    light.color        = {1.0f, 0.78f, 0.55f};
-    light.sourceRadius = 0.12f;
-    s.scene.add(bulb, std::move(light));
+    Light& bulb = addLamp(s, {1.4f, 2.0f, 0.9f}, 40.0f, 15.0f, true);
+    bulb.color        = {1.0f, 0.78f, 0.55f};
+    bulb.sourceRadius = 0.12f;
     camera(s, {-0.6f, 1.9f, 3.6f}, {-0.2f, 1.4f, -2.0f});
 }
 
@@ -909,6 +898,17 @@ void buildRoomShell(Scenery& s, bool openings) {
     s.scene.add(volume, std::move(grid));
 }
 
+// The sun, and the eye beside buildRoomShell's doorway looking toward the far corner.
+void sunAndRoomCamera(Scenery& s) {
+    sunAndCamera(s, {3.0f, 1.7f, 3.0f}, {-2.5f, 1.2f, -3.0f});
+}
+
+// buildRoomShell's room, with or without its @p openings, seen by sunAndRoomCamera's eye.
+void buildRoomInView(Scenery& s, bool openings) {
+    buildRoomShell(s, openings);
+    sunAndRoomCamera(s);
+}
+
 // A chrome ball in the room with its openings, in a reflection probe filling the room.
 void buildRoomBall(Scenery& s) {
     buildRoomShell(s, true);
@@ -935,7 +935,7 @@ void buildRoomBall(Scenery& s) {
 // not by the sky through the walls.
 void buildRoom(Scenery& s) {
     buildRoomBall(s);
-    sunAndCamera(s, {3.0f, 1.7f, 3.0f}, {-2.5f, 1.2f, -3.0f});
+    sunAndRoomCamera(s);
 }
 
 // Blocks 200 m, 1 km and 3 km off under the default sky, the ground running out to the horizon:
@@ -1050,6 +1050,13 @@ float differingShare(const std::vector<unsigned char>& frame, const unsigned cha
     return static_cast<float>(differing) / static_cast<float>(WIDTH * rows);
 }
 
+// How far two frames' channels are apart on average, in levels of 255.
+double meanLevelsApart(const std::vector<unsigned char>& a, const std::vector<unsigned char>& b) {
+    double sum = 0.0;
+    for (size_t at = 0; at < a.size(); ++at) sum += std::abs(int(a[at]) - int(b[at]));
+    return sum / static_cast<double>(a.size());
+}
+
 // @p culled draws with the GPU occlusion cull on, against the same golden: it may change no frame.
 void compare(
     const char* name,
@@ -1156,6 +1163,26 @@ void buildProbe(Scenery& s) {
     sunAndCamera(s, {0.0f, 1.5f, 4.0f}, {0.0f, 1.0f, 0.0f});
 }
 
+// The frame a backend of its own draws of @p build's scene with @p settings, over @p frames frames;
+// empty, the failure counted, when the backend does not start.
+std::vector<unsigned char> freshFrame(
+    const std::function<void(Scenery&)>& build,
+    const RenderSettings& settings,
+    int& failures,
+    int frames = FRAMES
+) {
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return {};
+    }
+    Scenery s;
+    build(s);
+    return render(s, backend, nullptr, settings, nullptr, frames);
+}
+
 // A backend keeps what it baked of a scene - the sky, a probe's capture - and must drop
 // each once the scene stops asking, so a frame after a change matches a fresh backend's.
 void sameAsAFreshBackend(
@@ -1182,16 +1209,12 @@ void sameAsAFreshBackend(
     render(changed, lived);
     const std::vector<unsigned char> seen = render(changed, lived);
 
-    restoreContextDefaults();
-    GLBackend fresh;
-    if (!fresh.init(window)) {
-        expect(what, false, failures);
-        return;
-    }
-    Scenery only;
-    build(only);
-    after(only);
-    const std::vector<unsigned char> want = render(only, fresh);
+    const auto only = [&](Scenery& s) {
+        build(s);
+        after(s);
+    };
+    const std::vector<unsigned char> want = freshFrame(only, RenderSettings{}, failures);
+    if (want.empty()) return;
 
     const float share = differingShare(seen, want.data());
     std::printf("      %.2f%% of pixels differ\n", share * 100.0f);
@@ -1268,15 +1291,8 @@ void testADriftingSunIsFollowedOverFrames(int& failures) {
         seen = render(drifting, followed);
     }
 
-    restoreContextDefaults();
-    GLBackend fresh;
-    if (!fresh.init(window)) {
-        expect("the backend starts", false, failures);
-        return;
-    }
-    Scenery set;
-    buildSunset(set);
-    const std::vector<unsigned char> want = render(set, fresh);
+    const std::vector<unsigned char> want = freshFrame(buildSunset, RenderSettings{}, failures);
+    if (want.empty()) return;
 
     // The top rows are sky.
     const float sky = differingShare(early, want.data(), HEIGHT / 4);
@@ -1319,16 +1335,12 @@ void testAProbeFollowsItsLight(int& failures) {
     std::printf("      %.2f%% of pixels differ partway through\n", kept * 100.0f);
     expect("until it is refreshed, the probe shows the capture it had", kept <= PIXEL_TOLERANCE, failures);
 
-    restoreContextDefaults();
-    GLBackend fresh;
-    if (!fresh.init(window)) {
-        expect("the backend starts", false, failures);
-        return;
-    }
-    Scenery set;
-    buildProbe(set);
-    set.scene.environment().sky.sunElevation = 4.0f;
-    const std::vector<unsigned char> want = render(set, fresh);
+    const auto set = [&](Scenery& s) {
+        buildProbe(s);
+        s.scene.environment().sky.sunElevation = 4.0f;
+    };
+    const std::vector<unsigned char> want = freshFrame(set, RenderSettings{}, failures);
+    if (want.empty()) return;
 
     const float share = differingShare(seen, want.data());
     std::printf("      %.2f%% of pixels differ\n", share * 100.0f);
@@ -1400,21 +1412,14 @@ glm::ivec3 pixel(const std::vector<unsigned char>& frame, int x, int y) {
     return {frame[at], frame[at + 1], frame[at + 2]};
 }
 
-// A bare floor at a grazing angle: nothing occludes it. Each GTAO slice integrates an
-// oblique open surface to more than one and its neighbours to less, so it is only right
-// once averaged - clamped to one first, the average darkens an empty floor.
-void testAnOpenFloorIsNotOccluded(int& failures) {
-    std::printf("Ambient occlusion over an open floor:\n");
+// The frame's centre pixel as a grey: its channels' mean, 0..255.
+float centreGrey(const std::vector<unsigned char>& frame) {
+    const glm::ivec3 c = pixel(frame, WIDTH / 2, HEIGHT / 2);
+    return static_cast<float>(c.x + c.y + c.z) / 3.0f;
+}
 
-    restoreContextDefaults();
-    WindowManager window;
-    GLBackend backend;
-    if (!backend.init(window)) {
-        expect("the backend starts", false, failures);
-        return;
-    }
-
-    Scenery s;
+// A floor running out past the frame, under the sun, looked across at a grazing angle.
+void buildOpenFloor(Scenery& s) {
     base(s);
     place(
         s,
@@ -1424,13 +1429,21 @@ void testAnOpenFloorIsNotOccluded(int& failures) {
         {200.0f, 1.0f, 200.0f}
     );
     sunAndCamera(s, {0.0f, 1.5f, 0.0f}, {0.0f, 0.0f, -6.0f});
+}
+
+// A bare floor at a grazing angle: nothing occludes it. Each GTAO slice integrates an
+// oblique open surface to more than one and its neighbours to less, so it is only right
+// once averaged - clamped to one first, the average darkens an empty floor.
+void testAnOpenFloorIsNotOccluded(int& failures) {
+    std::printf("Ambient occlusion over an open floor:\n");
 
     RenderSettings settings;
     settings.renderMode    = RenderMode::AmbientOcclusion;
     settings.msaaSamples   = 1;
     settings.gtaoIntensity = 3.0f;  // strong, so a bias shows
     settings.gtaoPower     = 4.0f;
-    const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+    const std::vector<unsigned char> frame = freshFrame(buildOpenFloor, settings, failures);
+    if (frame.empty()) return;
 
     // The floor fills the lower half of the frame.
     long sum   = 0;
@@ -1462,27 +1475,21 @@ void orthographic(Scenery& s, float halfHeight) {
 // VIEWMODEL_DEPTH_SHARE of the whole scene, and read as the viewmodel's, nothing in it would trace.
 void testAnOrthographicViewTracesItsReflections(int& failures) {
     std::printf("Screen-space reflections through an orthographic camera:\n");
-    std::vector<unsigned char> frames[2];
-    for (const bool ssr : {false, true}) {
-        restoreContextDefaults();
-        WindowManager window;
-        GLBackend backend;
-        if (!backend.init(window)) {
-            expect("the backend starts", false, failures);
-            return;
-        }
-        Scenery s;
+    const auto build = [](Scenery& s) {
         buildMirror(s);
         orthographic(s, 2.5f);
+    };
+    std::vector<unsigned char> frames[2];
+    for (const bool ssr : {false, true}) {
         RenderSettings settings;
         settings.ssr = ssr;
-        frames[ssr ? 1 : 0] = render(s, backend, nullptr, settings);
+        std::vector<unsigned char>& frame = frames[ssr ? 1 : 0];
+        frame = freshFrame(build, settings, failures);
+        if (frame.empty()) return;
     }
-    long sum = 0;
-    for (size_t i = 0; i < frames[0].size(); ++i) sum += std::abs(frames[1][i] - frames[0][i]);
-    const float mean = static_cast<float>(sum) / static_cast<float>(frames[0].size());
+    const double mean = meanLevelsApart(frames[1], frames[0]);
     std::printf("      the traced frame differs by %.2f a channel on average\n", mean);
-    expect("an orthographic view traces its reflections", mean > 0.05f, failures);
+    expect("an orthographic view traces its reflections", mean > 0.05, failures);
 }
 
 // A reflection probe dragged to a new place keeps its last bake while it moves and bakes once it
@@ -1506,16 +1513,10 @@ void testAMovedProbeBakesOnceItSettles(int& failures) {
         });
     };
 
-    restoreContextDefaults();
     WindowManager window;
-    GLBackend fresh;
-    if (!fresh.init(window)) {
-        expect("the backend starts", false, failures);
-        return;
-    }
-    Scenery there;
-    build(there, to);
-    const std::vector<unsigned char> want = render(there, fresh);
+    const auto there = [&](Scenery& s) { build(s, to); };
+    const std::vector<unsigned char> want = freshFrame(there, RenderSettings{}, failures);
+    if (want.empty()) return;
 
     restoreContextDefaults();
     GLBackend dragged;
@@ -1546,29 +1547,24 @@ void testAMovedProbeBakesOnceItSettles(int& failures) {
 // off-centre pixel's view ray and darken the wall toward the edges.
 void testAnOpenWallIsOpenToTheFramesEdge(int& failures) {
     std::printf("Ambient occlusion across an open wall:\n");
-    restoreContextDefaults();
-    WindowManager window;
-    GLBackend backend;
-    if (!backend.init(window)) {
-        expect("the backend starts", false, failures);
-        return;
-    }
-    Scenery s;
-    base(s);
-    place(
-        s,
-        s.cube,
-        material(s, "golden:grey", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f),
-        {0.0f, 1.5f, -0.5f},
-        {40.0f, 30.0f, 1.0f}
-    );
-    sunAndCamera(s, {0.0f, 1.5f, 3.0f}, {0.0f, 1.5f, 0.0f});
+    const auto build = [](Scenery& s) {
+        base(s);
+        place(
+            s,
+            s.cube,
+            material(s, "golden:grey", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f),
+            {0.0f, 1.5f, -0.5f},
+            {40.0f, 30.0f, 1.0f}
+        );
+        sunAndCamera(s, {0.0f, 1.5f, 3.0f}, {0.0f, 1.5f, 0.0f});
+    };
 
     RenderSettings settings;
     settings.renderMode    = RenderMode::AmbientOcclusion;
     settings.msaaSamples   = 1;
     settings.gtaoIntensity = 3.0f;  // strong, so a bias shows
-    const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+    const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+    if (frame.empty()) return;
 
     const auto meanOver = [&](int from, int to) {
         long sum = 0;
@@ -1604,17 +1600,10 @@ void testASealedRoomHoldsNoSkyLight(int& failures) {
     settings.renderMode = RenderMode::GiOnly;
     float means[2] = {};
     for (const bool openings : {false, true}) {
-        restoreContextDefaults();
-        WindowManager window;
-        GLBackend backend;
-        if (!backend.init(window)) {
-            expect("the backend starts", false, failures);
-            return;
-        }
-        Scenery s;
-        buildRoomShell(s, openings);
-        sunAndCamera(s, {3.0f, 1.7f, 3.0f}, {-2.5f, 1.2f, -3.0f});
-        means[openings ? 1 : 0] = meanValue(render(s, backend, nullptr, settings));
+        const auto room = [openings](Scenery& s) { buildRoomInView(s, openings); };
+        const std::vector<unsigned char> frame = freshFrame(room, settings, failures);
+        if (frame.empty()) return;
+        means[openings ? 1 : 0] = meanValue(frame);
     }
     std::printf("      mean %.2f sealed, %.2f with a doorway and a window\n", means[0], means[1]);
     expect("a sealed room is dark inside", means[0] < 1.0f, failures);
@@ -1623,16 +1612,7 @@ void testASealedRoomHoldsNoSkyLight(int& failures) {
 
 // A point lamp under buildRoomShell's ceiling, casting no shadow.
 void switchOnTheLamp(Scenery& s) {
-    const EntityId lamp = s.scene.createEntity();
-    Transform at;
-    at.position = {-2.0f, 3.2f, -2.0f};
-    s.scene.add(lamp, std::move(at));
-    Light bulb;
-    bulb.type        = LightType::Point;
-    bulb.intensity   = 60.0f;
-    bulb.radius      = 12.0f;
-    bulb.castShadows = false;
-    s.scene.add(lamp, std::move(bulb));
+    addLamp(s, {-2.0f, 3.2f, -2.0f}, 60.0f, 12.0f, false);
 }
 
 // A volume's light follows its lights and its sky without a new bake version: its surfels are lit
@@ -1644,10 +1624,7 @@ void testAnIrradianceVolumeFollowsItsLight(int& failures) {
 
     sameAsAFreshBackend(
         "a room whose sun moves is lit again as a fresh bake lights it",
-        [](Scenery& s) {
-            buildRoomShell(s, true);
-            sunAndCamera(s, {3.0f, 1.7f, 3.0f}, {-2.5f, 1.2f, -3.0f});
-        },
+        [](Scenery& s) { buildRoomInView(s, true); },
         [](Scenery&) {},
         [](Scenery& s) {
             s.scene.environment().sky.sunElevation = 20.0f;
@@ -1660,10 +1637,7 @@ void testAnIrradianceVolumeFollowsItsLight(int& failures) {
     // baked in the dark would not hold.
     sameAsAFreshBackend(
         "a lamp switched on in a sealed room lights its bounce",
-        [](Scenery& s) {
-            buildRoomShell(s, false);
-            sunAndCamera(s, {3.0f, 1.7f, 3.0f}, {-2.5f, 1.2f, -3.0f});
-        },
+        [](Scenery& s) { buildRoomInView(s, false); },
         [](Scenery&) {},
         switchOnTheLamp,
         failures
@@ -1689,8 +1663,7 @@ void testACutShortRelightIsAskedForAgain(int& failures) {
         return;
     }
     Scenery room;
-    buildRoomShell(room, false);
-    sunAndCamera(room, {3.0f, 1.7f, 3.0f}, {-2.5f, 1.2f, -3.0f});
+    buildRoomInView(room, false);
     render(room, lived);
     switchOnTheLamp(room);
     render(room, lived, nullptr, RenderSettings{}, nullptr, 1);
@@ -1701,17 +1674,12 @@ void testACutShortRelightIsAskedForAgain(int& failures) {
     render(room, lived);
     const std::vector<unsigned char> seen = render(room, lived);
 
-    restoreContextDefaults();
-    GLBackend fresh;
-    if (!fresh.init(window)) {
-        expect("the backend starts", false, failures);
-        return;
-    }
-    Scenery lit;
-    buildRoomShell(lit, false);
-    sunAndCamera(lit, {3.0f, 1.7f, 3.0f}, {-2.5f, 1.2f, -3.0f});
-    switchOnTheLamp(lit);
-    const std::vector<unsigned char> want = render(lit, fresh);
+    const auto lit = [&](Scenery& s) {
+        buildRoomInView(s, false);
+        switchOnTheLamp(s);
+    };
+    const std::vector<unsigned char> want = freshFrame(lit, RenderSettings{}, failures);
+    if (want.empty()) return;
 
     const float share = differingShare(seen, want.data());
     std::printf("      %.2f%% of pixels differ from a fresh bake\n", share * 100.0f);
@@ -1731,8 +1699,7 @@ void testAVolumeShowsItsGridUntilItsRelightIsThrough(int& failures) {
         return;
     }
     Scenery room;
-    buildRoomShell(room, false);
-    sunAndCamera(room, {3.0f, 1.7f, 3.0f}, {-2.5f, 1.2f, -3.0f});
+    buildRoomInView(room, false);
     RenderSettings gi;
     gi.renderMode = RenderMode::GiOnly;
     gi.ssr        = false;
@@ -1759,25 +1726,19 @@ void testAVolumeShowsItsGridUntilItsRelightIsThrough(int& failures) {
 void testAViewmodelShadesNothingBehindIt(int& failures) {
     std::printf("A weapon held into a wall, and the wall round it:\n");
 
+    // No bloom: the marked block's glow would spread over the wall measured.
+    RenderSettings noBloom;
+    noBloom.bloom = false;
     const auto frameWith = [&](SeenBy seenBy, glm::vec3 glow) {
-        restoreContextDefaults();
-        WindowManager window;
-        GLBackend backend;
-        if (!backend.init(window)) return std::vector<unsigned char>{};
-        Scenery s;
-        buildHeld(s, seenBy, -0.75f, glow);
-        // No bloom: the marked block's glow would spread over the wall measured.
-        s.settings.bloom = false;
-        return render(s, backend, nullptr, s.settings);
+        return freshFrame([&](Scenery& s) { buildHeld(s, seenBy, -0.75f, glow); }, noBloom, failures);
     };
-    const std::vector<unsigned char> held   = frameWith(SeenBy::Viewmodel, glm::vec3(0.0f));
+    const std::vector<unsigned char> held = frameWith(SeenBy::Viewmodel, glm::vec3(0.0f));
+    if (held.empty()) return;
     const std::vector<unsigned char> hidden = frameWith(SeenBy::EyeOnly, glm::vec3(0.0f));
+    if (hidden.empty()) return;
     // The block glowing green: where it is drawn, however like the wall its own shade.
     const std::vector<unsigned char> marked = frameWith(SeenBy::Viewmodel, glm::vec3(0.0f, 0.5f, 0.0f));
-    if (held.empty() || hidden.empty() || marked.empty()) {
-        expect("the backend starts", false, failures);
-        return;
-    }
+    if (marked.empty()) return;
 
     const auto shade = [&](const std::vector<unsigned char>& f, int x, int y) {
         const glm::ivec3 p = pixel(f, x, y);
@@ -1820,20 +1781,14 @@ void testSoftShadowsOffDrawTheHardPath(int& failures) {
     RenderSettings soft;
     soft.msaaSamples = 1;
 
-    restoreContextDefaults();
-    WindowManager window;
     std::vector<unsigned char> frames[3];
     for (int i = 0; i < 3; ++i) {
-        restoreContextDefaults();
-        GLBackend backend;
-        if (!backend.init(window)) {
-            expect("the backend starts", false, failures);
-            return;
-        }
-        Scenery s;
-        buildPenumbra(s);
-        if (i == 2) s.scene.forEach<Light>([](EntityId, Light& light) { light.sourceRadius = 0.0f; });
-        frames[i] = render(s, backend, nullptr, i == 0 ? hard : soft);
+        const auto build = [i](Scenery& s) {
+            buildPenumbra(s);
+            if (i == 2) s.scene.forEach<Light>([](EntityId, Light& light) { light.sourceRadius = 0.0f; });
+        };
+        frames[i] = freshFrame(build, i == 0 ? hard : soft, failures);
+        if (frames[i].empty()) return;
     }
     const float off = differingShare(frames[0], frames[2].data());
     const float on  = differingShare(frames[1], frames[2].data());
@@ -1856,26 +1811,24 @@ void testAHalfScaleSceneFillsTheFrame(int& failures) {
     solidQuad(ui, {0.0f, 0.0f}, {float(WIDTH), float(HEIGHT)}, glm::vec4(1.0f));
     ui.commands.push_back(UIDrawCmd{0, 6, UIRect{{10.5f, 20.5f}, {30.2f, 40.2f}}, {}});
 
+    const std::vector<unsigned char> atFull = freshFrame(buildPenumbra, full, failures);
+    if (atFull.empty()) return;
+
+    // The half-scale scene keeps its backend: the clip is drawn over the frames after it.
     restoreContextDefaults();
     WindowManager window;
-    std::vector<unsigned char> frames[2];
-    std::vector<unsigned char> clipped;
-    for (int i = 0; i < 2; ++i) {
-        restoreContextDefaults();
-        GLBackend backend;
-        if (!backend.init(window)) {
-            expect("the backend starts", false, failures);
-            return;
-        }
-        Scenery s;
-        buildPenumbra(s);
-        frames[i] = render(s, backend, nullptr, i == 0 ? full : half);
-        if (i == 1) clipped = render(s, backend, &ui, half);
+    GLBackend backend;
+    if (!backend.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
     }
-    double sum = 0.0;
-    for (size_t at = 0; at < frames[0].size(); ++at) sum += std::abs(int(frames[0][at]) - int(frames[1][at]));
-    const double mean = sum / static_cast<double>(frames[0].size());
-    const float differing = differingShare(frames[1], frames[0].data());
+    Scenery s;
+    buildPenumbra(s);
+    const std::vector<unsigned char> atHalf  = render(s, backend, nullptr, half);
+    const std::vector<unsigned char> clipped = render(s, backend, &ui, half);
+
+    const double mean = meanLevelsApart(atFull, atHalf);
+    const float differing = differingShare(atHalf, atFull.data());
     std::printf("      %.2f levels apart on average, %.2f%% of pixels differ\n", mean, 100.0f * differing);
     expect("it fills the frame, close to the full-resolution one", mean < 4.0, failures);
     expect("  and is the scene at fewer pixels, not that one", mean > 0.0, failures);
@@ -1894,35 +1847,29 @@ void testAHalfScaleSceneFillsTheFrame(int& failures) {
 // (convention/gl_depth.h). Made in both orders, so neither wins by being drawn last.
 void testTwoWallsACentimetreApartAKilometreOutDoNotFight(int& failures) {
     std::printf("Two walls a centimetre apart, a kilometre out:\n");
-    restoreContextDefaults();
-    WindowManager window;
     RenderSettings plain;
     plain.msaaSamples     = 1;
     plain.cullMaxDistance = 0.0f;  // drawn however far
 
     int farther = 0;
     for (const bool nearFirst : {true, false}) {
-        restoreContextDefaults();
-        GLBackend backend;
-        if (!backend.init(window)) {
-            expect("the backend starts", false, failures);
-            return;
-        }
-        Scenery s;
-        base(s);
-        const auto wall = [&](const char* name, glm::vec3 emission, float z) {
-            const MaterialHandle lit = material(s, name, glm::vec3(0.0f), 1.0f, 0.0f, emission);
-            place(s, s.cube, lit, {0.0f, 0.0f, z}, {4000.0f, 3000.0f, 0.001f});
+        const auto build = [nearFirst](Scenery& s) {
+            base(s);
+            const auto wall = [&](const char* name, glm::vec3 emission, float z) {
+                const MaterialHandle lit = material(s, name, glm::vec3(0.0f), 1.0f, 0.0f, emission);
+                place(s, s.cube, lit, {0.0f, 0.0f, z}, {4000.0f, 3000.0f, 0.001f});
+            };
+            if (nearFirst) wall("golden:near_wall", {0.0f, 4.0f, 0.0f}, -999.99f);
+            wall("golden:far_wall", {4.0f, 0.0f, 0.0f}, -1000.0f);
+            if (!nearFirst) wall("golden:near_wall", {0.0f, 4.0f, 0.0f}, -999.99f);
+            camera(s, glm::vec3(0.0f), {0.0f, 0.0f, -1.0f});
+            s.scene.forEach<Camera>([](EntityId, Camera& lens) {
+                lens.zNear = 0.1f;
+                lens.zFar  = 2000.0f;
+            });
         };
-        if (nearFirst) wall("golden:near_wall", {0.0f, 4.0f, 0.0f}, -999.99f);
-        wall("golden:far_wall", {4.0f, 0.0f, 0.0f}, -1000.0f);
-        if (!nearFirst) wall("golden:near_wall", {0.0f, 4.0f, 0.0f}, -999.99f);
-        camera(s, glm::vec3(0.0f), {0.0f, 0.0f, -1.0f});
-        s.scene.forEach<Camera>([](EntityId, Camera& lens) {
-            lens.zNear = 0.1f;
-            lens.zFar  = 2000.0f;
-        });
-        const std::vector<unsigned char> frame = render(s, backend, nullptr, plain);
+        const std::vector<unsigned char> frame = freshFrame(build, plain, failures);
+        if (frame.empty()) return;
         for (int y = 0; y < HEIGHT; ++y) {
             for (int x = 0; x < WIDTH; ++x) {
                 const glm::ivec3 p = pixel(frame, x, y);
@@ -1944,23 +1891,12 @@ void testHalfResolutionReflectionsAreCloseToFull(int& failures) {
     RenderSettings half = full;
     half.ssrHalfResolution = true;
 
-    restoreContextDefaults();
-    WindowManager window;
     std::vector<unsigned char> frames[2];
     for (int i = 0; i < 2; ++i) {
-        restoreContextDefaults();
-        GLBackend backend;
-        if (!backend.init(window)) {
-            expect("the backend starts", false, failures);
-            return;
-        }
-        Scenery s;
-        buildReflections(s);
-        frames[i] = render(s, backend, nullptr, i == 0 ? full : half);
+        frames[i] = freshFrame(buildReflections, i == 0 ? full : half, failures);
+        if (frames[i].empty()) return;
     }
-    double sum = 0.0;
-    for (size_t at = 0; at < frames[0].size(); ++at) sum += std::abs(int(frames[0][at]) - int(frames[1][at]));
-    const double mean = sum / static_cast<double>(frames[0].size());
+    const double mean = meanLevelsApart(frames[0], frames[1]);
     const float differing = differingShare(frames[1], frames[0].data());
     std::printf("      %.2f levels apart on average, %.2f%% of pixels differ\n", mean, 100.0f * differing);
     expect("they are close to the full-resolution ones", mean < 1.0 && differing < 0.02f, failures);
@@ -1977,28 +1913,20 @@ void testAPlainMaterialDrawsAsTheWholeProgramWould(int& failures) {
     RenderSettings settings;
     settings.msaaSamples = 1;
 
-    restoreContextDefaults();
-    WindowManager window;
     std::vector<unsigned char> frames[2];
     for (int i = 0; i < 2; ++i) {
-        restoreContextDefaults();
-        GLBackend backend;
-        if (!backend.init(window)) {
-            expect("the backend starts", false, failures);
-            return;
-        }
-        Scenery s;
-        buildMaterials(s);
-        if (i == 1) {
-            s.scene.forEach<Mesh>([&](EntityId, Mesh& mesh) {
-                s.resources.edit(mesh.material).clearcoat = 1e-6f;
-            });
-        }
-        frames[i] = render(s, backend, nullptr, settings);
+        const auto build = [i](Scenery& s) {
+            buildMaterials(s);
+            if (i == 1) {
+                s.scene.forEach<Mesh>([&](EntityId, Mesh& mesh) {
+                    s.resources.edit(mesh.material).clearcoat = 1e-6f;
+                });
+            }
+        };
+        frames[i] = freshFrame(build, settings, failures);
+        if (frames[i].empty()) return;
     }
-    double sum = 0.0;
-    for (size_t at = 0; at < frames[0].size(); ++at) sum += std::abs(int(frames[0][at]) - int(frames[1][at]));
-    const double mean = sum / static_cast<double>(frames[0].size());
+    const double mean = meanLevelsApart(frames[0], frames[1]);
     const float differing = differingShare(frames[1], frames[0].data());
     std::printf("      %.3f levels apart on average, %.3f%% of pixels differ\n", mean, 100.0f * differing);
     expect("the frames are the same", mean < 0.01 && differing < 0.0005f, failures);
@@ -2045,36 +1973,35 @@ void testEveryOptionalFeatureTakesTheWholeProgram(int& failures) {
     expect("  one with a scale and no map is", plain(parallax), failures);
 }
 
+// A floor and a row of five cubes in one stone, every mesh so far marked as never moving.
+void buildFixedRow(Scenery& s) {
+    base(s);
+    const MaterialHandle stone = material(s, "golden:fixed_stone", {0.6f, 0.6f, 0.6f}, 0.8f, 0.0f);
+    place(s, s.cube, stone, {0.0f, -0.5f, 0.0f}, {12.0f, 1.0f, 12.0f});
+    for (int i = -2; i <= 2; ++i) {
+        place(s, s.cube, stone, {static_cast<float>(i) * 1.5f, 0.5f, -2.0f}, glm::vec3(1.0f));
+    }
+    s.scene.forEach<Mesh>([](EntityId, Mesh& mesh) { mesh.movable = false; });
+}
+
 // Meshes that never move beside one that does, which moves mid-session: the backend refreshes the
 // moved object's copy alone (RenderObjects::changed), and the frame must be the one a fresh backend
 // draws of the moved scene.
 void testAMovedObjectIsDrawnWhereItWent(int& failures) {
     std::printf("A mesh moved among fixed ones, mid-session:\n");
     const auto build = [](Scenery& s, float moverX) {
-        base(s);
-        const MaterialHandle stone = material(s, "golden:fixed_stone", {0.6f, 0.6f, 0.6f}, 0.8f, 0.0f);
-        const MaterialHandle red   = material(s, "golden:mover_red", {0.8f, 0.1f, 0.1f}, 0.5f, 0.0f);
-        place(s, s.cube, stone, {0.0f, -0.5f, 0.0f}, {12.0f, 1.0f, 12.0f});
-        for (int i = -2; i <= 2; ++i) {
-            place(s, s.cube, stone, {static_cast<float>(i) * 1.5f, 0.5f, -2.0f}, glm::vec3(1.0f));
-        }
-        s.scene.forEach<Mesh>([](EntityId, Mesh& mesh) { mesh.movable = false; });
+        buildFixedRow(s);
+        const MaterialHandle red = material(s, "golden:mover_red", {0.8f, 0.1f, 0.1f}, 0.5f, 0.0f);
         place(s, s.sphere, red, {moverX, 0.5f, 1.0f}, glm::vec3(1.0f));
         sunAndCamera(s, {0.0f, 4.0f, 8.0f}, {0.0f, 0.0f, 0.0f});
     };
     RenderSettings plain;
     plain.msaaSamples = 1;
 
-    restoreContextDefaults();
     WindowManager window;
-    GLBackend fresh;
-    if (!fresh.init(window)) {
-        expect("the backend starts", false, failures);
-        return;
-    }
-    Scenery there;
-    build(there, 2.0f);
-    const std::vector<unsigned char> want = render(there, fresh, nullptr, plain);
+    const auto there = [&](Scenery& s) { build(s, 2.0f); };
+    const std::vector<unsigned char> want = freshFrame(there, plain, failures);
+    if (want.empty()) return;
 
     restoreContextDefaults();
     GLBackend moved;
@@ -2117,14 +2044,8 @@ void testAMovedObjectIsDrawnWhereItWent(int& failures) {
 void testASpawnAndARemovalAreDrawnAsTheyEnd(int& failures) {
     std::printf("A fixed mesh destroyed and two spawned, mid-session:\n");
     const auto build = [](Scenery& s) {
-        base(s);
-        const MaterialHandle stone = material(s, "golden:fixed_stone", {0.6f, 0.6f, 0.6f}, 0.8f, 0.0f);
+        buildFixedRow(s);
         material(s, "golden:spawned_red", {0.8f, 0.1f, 0.1f}, 0.5f, 0.0f);
-        place(s, s.cube, stone, {0.0f, -0.5f, 0.0f}, {12.0f, 1.0f, 12.0f});
-        for (int i = -2; i <= 2; ++i) {
-            place(s, s.cube, stone, {static_cast<float>(i) * 1.5f, 0.5f, -2.0f}, glm::vec3(1.0f));
-        }
-        s.scene.forEach<Mesh>([](EntityId, Mesh& mesh) { mesh.movable = false; });
         sunAndCamera(s, {0.0f, 4.0f, 8.0f}, {0.0f, 0.0f, 0.0f});
     };
     // The leftmost cube goes, so the last in the storage moves into its place; two spheres come.
@@ -2144,17 +2065,13 @@ void testASpawnAndARemovalAreDrawnAsTheyEnd(int& failures) {
         settings.msaaSamples      = 1;
         settings.occlusionCulling = culled;
 
-        restoreContextDefaults();
         WindowManager window;
-        GLBackend fresh;
-        if (!fresh.init(window)) {
-            expect("the backend starts", false, failures);
-            return;
-        }
-        Scenery ended;
-        build(ended);
-        change(ended);
-        const std::vector<unsigned char> want = render(ended, fresh, nullptr, settings);
+        const auto ended = [&](Scenery& s) {
+            build(s);
+            change(s);
+        };
+        const std::vector<unsigned char> want = freshFrame(ended, settings, failures);
+        if (want.empty()) return;
 
         restoreContextDefaults();
         GLBackend changed;
@@ -2219,31 +2136,16 @@ void testAMoverOverFixedScenery(int& failures) {
         spot.castShadows    = true;
         s.scene.add(lamp, std::move(spot));
 
-        const EntityId bulb = s.scene.createEntity();
-        Transform bulbPose;
-        bulbPose.position = {1.5f, 1.4f, 1.6f};
-        s.scene.add(bulb, std::move(bulbPose));
-        Light point;
-        point.type        = LightType::Point;
-        point.intensity   = 20.0f;
-        point.radius      = 8.0f;
-        point.castShadows = true;
-        s.scene.add(bulb, std::move(point));
+        addLamp(s, {1.5f, 1.4f, 1.6f}, 20.0f, 8.0f, true);
         sunAndCamera(s, {0.0f, 4.0f, 7.0f}, {0.0f, 0.5f, 0.0f});
     };
     RenderSettings plain;
     plain.msaaSamples = 1;
 
-    restoreContextDefaults();
     WindowManager window;
-    GLBackend fresh;
-    if (!fresh.init(window)) {
-        expect("the backend starts", false, failures);
-        return;
-    }
-    Scenery ended;
-    build(ended, START + STEP * static_cast<float>(MOVES));
-    const std::vector<unsigned char> want = render(ended, fresh, nullptr, plain);
+    const auto ended = [&](Scenery& s) { build(s, START + STEP * static_cast<float>(MOVES)); };
+    const std::vector<unsigned char> want = freshFrame(ended, plain, failures);
+    if (want.empty()) return;
 
     restoreContextDefaults();
     GLBackend lived;
@@ -2372,37 +2274,30 @@ void testASplashFadesLinearlyOnTheGlass(int& failures) {
 void testATransparentPanesShadowIsAsDeepAsItIsOpaque(int& failures) {
     std::printf("Shadows of transparent panes:\n");
 
-    restoreContextDefaults();
-    WindowManager window;
-    GLBackend backend;
-    if (!backend.init(window)) {
-        expect("the backend starts", false, failures);
-        return;
-    }
-
-    Scenery s;
-    base(s);
-    const MaterialHandle ground = material(s, "golden:ground", {0.3f, 0.3f, 0.3f}, 0.9f, 0.0f);
-    place(s, s.cube, ground, {0.0f, -0.5f, 0.0f}, {80.0f, 1.0f, 80.0f});
-    const auto pane = [&](const char* name, float opacity) {
-        MaterialAsset m;
-        m.type      = MaterialType::Transparent;
-        m.albedo    = glm::vec4(0.8f, 0.8f, 0.8f, opacity);
-        m.roughness = 0.5f;
-        return s.resources.add(std::move(m), name);
-    };
-    // The sun 45 degrees up from +X: a pane 4 m up shades the floor 4 m toward -X of itself.
-    s.scene.environment().sky.sunElevation = 45.0f;
-    s.scene.environment().sky.sunAzimuth   = 90.0f;
-    const glm::vec3 slab = {3.0f, 0.1f, 3.0f};
-    place(s, s.cube, pane("golden:opaque", 1.0f), {6.0f, 4.0f, -5.0f}, slab);
-    place(s, s.cube, pane("golden:half", 0.5f), {6.0f, 4.0f, 0.0f}, slab);
-    place(s, s.cube, pane("golden:lower", 0.5f), {6.0f, 4.0f, 5.0f}, slab);
-    place(s, s.cube, pane("golden:upper", 0.5f), {6.0f, 4.05f, 5.0f}, slab);
     // Looking down at a slant, so no pane stands between the eye and a shadow it is read at.
     const glm::vec3 eye    = {0.0f, 16.0f, 12.0f};
     const glm::vec3 target = {1.0f, 0.0f, 0.0f};
-    sunAndCamera(s, eye, target);
+    const auto build = [&](Scenery& s) {
+        base(s);
+        const MaterialHandle ground = material(s, "golden:ground", {0.3f, 0.3f, 0.3f}, 0.9f, 0.0f);
+        place(s, s.cube, ground, {0.0f, -0.5f, 0.0f}, {80.0f, 1.0f, 80.0f});
+        const auto pane = [&](const char* name, float opacity) {
+            MaterialAsset m;
+            m.type      = MaterialType::Transparent;
+            m.albedo    = glm::vec4(0.8f, 0.8f, 0.8f, opacity);
+            m.roughness = 0.5f;
+            return s.resources.add(std::move(m), name);
+        };
+        // The sun 45 degrees up from +X: a pane 4 m up shades the floor 4 m toward -X of itself.
+        s.scene.environment().sky.sunElevation = 45.0f;
+        s.scene.environment().sky.sunAzimuth   = 90.0f;
+        const glm::vec3 slab = {3.0f, 0.1f, 3.0f};
+        place(s, s.cube, pane("golden:opaque", 1.0f), {6.0f, 4.0f, -5.0f}, slab);
+        place(s, s.cube, pane("golden:half", 0.5f), {6.0f, 4.0f, 0.0f}, slab);
+        place(s, s.cube, pane("golden:lower", 0.5f), {6.0f, 4.0f, 5.0f}, slab);
+        place(s, s.cube, pane("golden:upper", 0.5f), {6.0f, 4.05f, 5.0f}, slab);
+        sunAndCamera(s, eye, target);
+    };
 
     RenderSettings settings;
     settings.renderMode  = RenderMode::DirectOnly;
@@ -2411,7 +2306,8 @@ void testATransparentPanesShadowIsAsDeepAsItIsOpaque(int& failures) {
     settings.bloom       = false;
     settings.ssr         = false;
     settings.gtao        = false;
-    const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+    const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+    if (frame.empty()) return;
 
     // Linear light under a floor point, as the frame drew it: a 5x5 mean, the curves undone.
     Camera lens;
@@ -2455,42 +2351,36 @@ void testATransparentPanesShadowIsAsDeepAsItIsOpaque(int& failures) {
 void testTheShoreRingsWhatBreaksTheWater(int& failures) {
     std::printf("The ocean's waterline foam:\n");
 
-    restoreContextDefaults();
-    WindowManager window;
-    GLBackend backend;
-    if (!backend.init(window)) {
-        expect("the backend starts", false, failures);
-        return;
-    }
+    const auto build = [](Scenery& s) {
+        base(s);
+        MaterialAsset sea;
+        sea.albedo    = glm::vec4(0.01f, 0.02f, 0.04f, 1.0f);
+        sea.roughness = 0.3f;
+        sea.waves     = true;
+        const MaterialHandle water = s.resources.add(std::move(sea), "golden:sea");
+        place(s, s.cube, water, {0.0f, -0.5f, 0.0f}, {200.0f, 1.0f, 200.0f});
 
-    Scenery s;
-    base(s);
-    MaterialAsset sea;
-    sea.albedo    = glm::vec4(0.01f, 0.02f, 0.04f, 1.0f);
-    sea.roughness = 0.3f;
-    sea.waves     = true;
-    const MaterialHandle water = s.resources.add(std::move(sea), "golden:sea");
-    place(s, s.cube, water, {0.0f, -0.5f, 0.0f}, {200.0f, 1.0f, 200.0f});
+        const EntityId oceanId = s.scene.createEntity();
+        s.scene.add(oceanId, Transform{});
+        Ocean ocean;
+        ocean.windSpeed     = 2.0f;
+        ocean.foam          = 0.0f;
+        ocean.waterlineFoam = 1.0f;
+        ocean.foamColor     = glm::vec3(0.0f, 1.0f, 0.0f);
+        s.scene.add(oceanId, ocean);
 
-    const EntityId oceanId = s.scene.createEntity();
-    s.scene.add(oceanId, Transform{});
-    Ocean ocean;
-    ocean.windSpeed     = 2.0f;
-    ocean.foam          = 0.0f;
-    ocean.waterlineFoam = 1.0f;
-    ocean.foamColor     = glm::vec3(0.0f, 1.0f, 0.0f);
-    s.scene.add(oceanId, ocean);
+        // Looking down from six metres the frame spans seven and a half either way across: the
+        // post stands just past its right edge, its top too low to show, and the block hovers
+        // clear of the water on the left.
+        const MaterialHandle grey = material(s, "golden:post", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
+        place(s, s.cube, grey, {8.0f, -0.6f, 0.0f}, {0.5f, 1.8f, 0.5f});
+        place(s, s.cube, grey, {8.0f, -1.5f, 0.0f}, {6.0f, 1.0f, 6.0f});
+        place(s, s.cube, grey, {-3.5f, 1.0f, 0.0f}, {1.0f, 0.6f, 1.0f});
+        sunAndCamera(s, {0.0f, 6.0f, 0.01f}, {0.0f, 0.0f, 0.0f});
+    };
 
-    // Looking down from six metres the frame spans seven and a half either way across: the post
-    // stands just past its right edge, its top too low to show, and the block hovers clear of
-    // the water on the left.
-    const MaterialHandle grey = material(s, "golden:post", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
-    place(s, s.cube, grey, {8.0f, -0.6f, 0.0f}, {0.5f, 1.8f, 0.5f});
-    place(s, s.cube, grey, {8.0f, -1.5f, 0.0f}, {6.0f, 1.0f, 6.0f});
-    place(s, s.cube, grey, {-3.5f, 1.0f, 0.0f}, {1.0f, 0.6f, 1.0f});
-    sunAndCamera(s, {0.0f, 6.0f, 0.01f}, {0.0f, 0.0f, 0.0f});
-
-    const std::vector<unsigned char> frame = render(s, backend);
+    const std::vector<unsigned char> frame = freshFrame(build, RenderSettings{}, failures);
+    if (frame.empty()) return;
     const auto foamIn = [&](glm::ivec2 from, glm::ivec2 to) {
         int foam = 0;
         for (int y = from.y; y < to.y; ++y) {
@@ -2581,21 +2471,16 @@ void testWhatTheCullHidDrawsTheFrameItComesOut(int& failures) {
 // depth says - at four samples and at the one the Low tier renders with.
 void testAWeaponHeldIntoAWallIsNotCulled(int& failures) {
     std::printf("A weapon held into a wall, with the occlusion cull on:\n");
+    const auto held = [](Scenery& s) { buildHeld(s, SeenBy::Viewmodel, -0.75f); };
     for (const uint32_t samples : {4u, 1u}) {
         std::vector<unsigned char> frames[2];
         for (const bool culled : {false, true}) {
-            restoreContextDefaults();
-            WindowManager window;
-            GLBackend backend;
-            if (!backend.init(window)) {
-                expect("the backend starts", false, failures);
-                return;
-            }
-            Scenery s;
-            buildHeld(s, SeenBy::Viewmodel, -0.75f);
-            s.settings.msaaSamples      = samples;
-            s.settings.occlusionCulling = culled;
-            frames[culled ? 1 : 0] = render(s, backend, nullptr, s.settings);
+            RenderSettings settings;
+            settings.msaaSamples      = samples;
+            settings.occlusionCulling = culled;
+            std::vector<unsigned char>& frame = frames[culled ? 1 : 0];
+            frame = freshFrame(held, settings, failures);
+            if (frame.empty()) return;
         }
         const float share = differingShare(frames[1], frames[0].data());
         std::printf("      %u sample(s): %.2f%% of pixels differ, culled\n", samples, share * 100.0f);
@@ -2696,34 +2581,28 @@ void testAFaceFillingTheFrameIsNotCulledByItsOwnDepth(int& failures) {
 // which way it ran. Over the frame's central square, which the roll turns onto itself.
 void testGTAOReachesAsFarEveryWay(int& failures) {
     std::printf("Ambient occlusion up close, level and rolled:\n");
+    RenderSettings settings;
+    settings.renderMode    = RenderMode::AmbientOcclusion;
+    settings.msaaSamples   = 1;
+    settings.gtaoIntensity = 3.0f;
     float darkness[2] = {};
     for (const bool rolled : {false, true}) {
-        restoreContextDefaults();
-        WindowManager window;
-        GLBackend backend;
-        if (!backend.init(window)) {
-            expect("the backend starts", false, failures);
-            return;
-        }
-        Scenery s;
-        base(s);
-        const MaterialHandle grey = material(s, "golden:grey", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
-        place(s, s.cube, grey, {0.0f, -0.5f, 0.0f}, {20.0f, 1.0f, 20.0f});
-        place(s, s.cube, grey, {0.0f, 2.0f, -0.5f}, {20.0f, 4.0f, 1.0f});
-        sunAndCamera(s, {0.0f, 0.25f, 0.25f}, {0.0f, 0.0f, 0.0f});
-        if (rolled) {
-            s.scene.forEach<Camera>([&](EntityId id, Camera&) {
-                Transform& eye = s.scene.get<Transform>(id);
-                const glm::quat roll = glm::angleAxis(glm::half_pi<float>(), glm::vec3(0.0f, 0.0f, 1.0f));
-                eye.rotation         = eye.rotation * roll;
-            });
-        }
-
-        RenderSettings settings;
-        settings.renderMode    = RenderMode::AmbientOcclusion;
-        settings.msaaSamples   = 1;
-        settings.gtaoIntensity = 3.0f;
-        const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+        const auto build = [rolled](Scenery& s) {
+            base(s);
+            const MaterialHandle grey = material(s, "golden:grey", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
+            place(s, s.cube, grey, {0.0f, -0.5f, 0.0f}, {20.0f, 1.0f, 20.0f});
+            place(s, s.cube, grey, {0.0f, 2.0f, -0.5f}, {20.0f, 4.0f, 1.0f});
+            sunAndCamera(s, {0.0f, 0.25f, 0.25f}, {0.0f, 0.0f, 0.0f});
+            if (rolled) {
+                s.scene.forEach<Camera>([&](EntityId id, Camera&) {
+                    Transform& eye = s.scene.get<Transform>(id);
+                    const glm::quat roll = glm::angleAxis(glm::half_pi<float>(), glm::vec3(0.0f, 0.0f, 1.0f));
+                    eye.rotation         = eye.rotation * roll;
+                });
+            }
+        };
+        const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+        if (frame.empty()) return;
         long sum = 0;
         for (int y = 0; y < HEIGHT; ++y) {
             for (int x = (WIDTH - HEIGHT) / 2; x < (WIDTH + HEIGHT) / 2; ++x) {
@@ -2743,25 +2622,20 @@ void testGTAOReachesAsFarEveryWay(int& failures) {
 // darken it.
 void testAWallBesideTheEyeIsOpen(int& failures) {
     std::printf("Ambient occlusion of an open wall beside the eye:\n");
-    restoreContextDefaults();
-    WindowManager window;
-    GLBackend backend;
-    if (!backend.init(window)) {
-        expect("the backend starts", false, failures);
-        return;
-    }
-    Scenery s;
-    base(s);
-    const MaterialHandle grey = material(s, "golden:grey", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
-    place(s, s.cube, grey, {0.3f, 1.0f, -10.0f}, {0.2f, 6.0f, 22.0f});
-    sunAndCamera(s, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, -1.0f});
-    s.scene.forEach<Camera>([](EntityId, Camera& lens) { lens.fovY = glm::radians(100.0f); });
+    const auto build = [](Scenery& s) {
+        base(s);
+        const MaterialHandle grey = material(s, "golden:grey", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
+        place(s, s.cube, grey, {0.3f, 1.0f, -10.0f}, {0.2f, 6.0f, 22.0f});
+        sunAndCamera(s, {0.0f, 1.0f, 0.0f}, {0.0f, 1.0f, -1.0f});
+        s.scene.forEach<Camera>([](EntityId, Camera& lens) { lens.fovY = glm::radians(100.0f); });
+    };
 
     RenderSettings settings;
     settings.renderMode    = RenderMode::AmbientOcclusion;
     settings.msaaSamples   = 1;
     settings.gtaoIntensity = 3.0f;
-    const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+    const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+    if (frame.empty()) return;
     // The right fifth of the frame is the wall, from a metre off down to the lens.
     long sum = 0;
     int  count = 0;
@@ -2796,15 +2670,7 @@ void testAutoExposureBringsDayAndNightTogether(int& failures) {
         place(s, s.cube, stone, {0.0f, -0.5f, 0.0f}, {20.0f, 1.0f, 20.0f});
         place(s, s.cube, stone, {0.0f, 1.5f, -3.0f}, {8.0f, 3.0f, 0.5f});
         place(s, s.cube, stone, {0.0f, 0.5f, 0.0f}, glm::vec3(1.0f));
-        const EntityId lamp = s.scene.createEntity();
-        Transform pose;
-        pose.position = {1.5f, 2.0f, 1.0f};
-        s.scene.add(lamp, std::move(pose));
-        Light light;
-        light.type      = LightType::Point;
-        light.intensity = 3.0f;
-        light.radius    = 8.0f;
-        s.scene.add(lamp, std::move(light));
+        addLamp(s, {1.5f, 2.0f, 1.0f}, 3.0f, 8.0f, true);
         sunAndCamera(s, {0.0f, 2.5f, 6.0f}, {0.0f, 0.5f, 0.0f});
         sunAt(s, day);
     };
@@ -2826,13 +2692,9 @@ void testAutoExposureBringsDayAndNightTogether(int& failures) {
         return settings;
     };
     const auto exposed = [&](bool day, bool adapted) {
-        restoreContextDefaults();
-        WindowManager window;
-        GLBackend backend;
-        if (!backend.init(window)) return -1.0f;
-        Scenery s;
-        courtyard(s, day);
-        return meanLuma(render(s, backend, nullptr, settingsFor(adapted), nullptr, 2 * FRAMES));
+        const auto build = [&](Scenery& s) { courtyard(s, day); };
+        const std::vector<unsigned char> seen = freshFrame(build, settingsFor(adapted), failures, 2 * FRAMES);
+        return seen.empty() ? -1.0f : meanLuma(seen);
     };
     const float dayLit       = exposed(true, false);
     const float nightLit     = exposed(false, false);
@@ -2875,26 +2737,21 @@ void testAutoExposureBringsDayAndNightTogether(int& failures) {
 // VIEWMODEL_DEPTH_SHARE of its range would be taken for sky and occlude nothing.
 void testAnOrthographicViewIsOccluded(int& failures) {
     std::printf("Ambient occlusion through an orthographic camera:\n");
-    restoreContextDefaults();
-    WindowManager window;
-    GLBackend backend;
-    if (!backend.init(window)) {
-        expect("the backend starts", false, failures);
-        return;
-    }
-    Scenery s;
-    base(s);
-    const MaterialHandle grey = material(s, "golden:grey", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
-    place(s, s.cube, grey, {0.0f, -0.5f, 0.0f}, {20.0f, 1.0f, 20.0f});
-    place(s, s.cube, grey, {0.0f, 0.5f, 0.0f}, glm::vec3(1.0f));
-    sunAndCamera(s, {0.0f, 3.0f, 5.0f}, {0.0f, 0.0f, 0.0f});
-    orthographic(s, 2.0f);
+    const auto build = [](Scenery& s) {
+        base(s);
+        const MaterialHandle grey = material(s, "golden:grey", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
+        place(s, s.cube, grey, {0.0f, -0.5f, 0.0f}, {20.0f, 1.0f, 20.0f});
+        place(s, s.cube, grey, {0.0f, 0.5f, 0.0f}, glm::vec3(1.0f));
+        sunAndCamera(s, {0.0f, 3.0f, 5.0f}, {0.0f, 0.0f, 0.0f});
+        orthographic(s, 2.0f);
+    };
 
     RenderSettings settings;
     settings.renderMode    = RenderMode::AmbientOcclusion;
     settings.msaaSamples   = 1;
     settings.gtaoIntensity = 3.0f;
-    const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+    const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+    if (frame.empty()) return;
     int darkest = 255;
     for (int y = 0; y < HEIGHT; ++y) {
         for (int x = 0; x < WIDTH; ++x) darkest = std::min(darkest, pixel(frame, x, y).x);
@@ -2923,15 +2780,8 @@ void testAProbeBakedUnderADebugViewHoldsTheScene(int& failures) {
     render(debugged, viewed, nullptr, albedo);
     const std::vector<unsigned char> seen = render(debugged, viewed);
 
-    restoreContextDefaults();
-    GLBackend fresh;
-    if (!fresh.init(window)) {
-        expect("the backend starts", false, failures);
-        return;
-    }
-    Scenery plain;
-    buildProbe(plain);
-    const std::vector<unsigned char> want = render(plain, fresh);
+    const std::vector<unsigned char> want = freshFrame(buildProbe, RenderSettings{}, failures);
+    if (want.empty()) return;
 
     const float share = differingShare(seen, want.data());
     std::printf("      %.2f%% of pixels differ\n", share * 100.0f);
@@ -2956,33 +2806,19 @@ void testAnOpenFloorCastsNoScreenShadow(int& failures) {
         float elevation;
         bool  orthographic;
     };
+    RenderSettings settings;
+    settings.renderMode  = RenderMode::ScreenShadows;
+    settings.msaaSamples = 1;
     for (const Case c : {Case{50.0f, false}, Case{12.0f, false}, Case{12.0f, true}}) {
-        restoreContextDefaults();
-        WindowManager window;
-        GLBackend backend;
-        if (!backend.init(window)) {
-            expect("the backend starts", false, failures);
-            return;
-        }
-        Scenery s;
-        base(s);
-        s.scene.environment().sky.procedural   = false;
-        s.scene.environment().sky.sunElevation = c.elevation;
-        s.scene.environment().sky.sunAzimuth   = 30.0f;
-        place(
-            s,
-            s.cube,
-            material(s, "golden:open", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f),
-            {0.0f, -0.5f, 0.0f},
-            {200.0f, 1.0f, 200.0f}
-        );
-        sunAndCamera(s, {0.0f, 1.5f, 0.0f}, {0.0f, 0.0f, -6.0f});
-        if (c.orthographic) orthographic(s, 3.0f);
-
-        RenderSettings settings;
-        settings.renderMode  = RenderMode::ScreenShadows;
-        settings.msaaSamples = 1;
-        const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+        const auto build = [c](Scenery& s) {
+            s.scene.environment().sky.procedural   = false;
+            s.scene.environment().sky.sunElevation = c.elevation;
+            s.scene.environment().sky.sunAzimuth   = 30.0f;
+            buildOpenFloor(s);
+            if (c.orthographic) orthographic(s, 3.0f);
+        };
+        const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+        if (frame.empty()) return;
         const float dark = shareDarker(frame, 250);
         std::printf(
             "      sun at %.0f degrees%s: %.3f%% of the frame shadowed\n",
@@ -2992,6 +2828,18 @@ void testAnOpenFloorCastsNoScreenShadow(int& failures) {
         );
         expect("an open floor is not shadowed", dark == 0.0f, failures);
     }
+}
+
+// A 6 cm pebble on a floor, under a low sun standing toward +X and no sky; the eye is the caller's.
+void buildPebble(Scenery& s) {
+    base(s);
+    s.scene.environment().sky.procedural   = false;
+    s.scene.environment().sky.sunElevation = 20.0f;
+    s.scene.environment().sky.sunAzimuth   = 90.0f;
+    const MaterialHandle open   = material(s, "golden:open", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
+    const MaterialHandle pebble = material(s, "golden:pebble", {0.4f, 0.4f, 0.4f}, 0.8f, 0.0f);
+    place(s, s.cube, open, {0.0f, -0.5f, 0.0f}, {20.0f, 1.0f, 20.0f});
+    place(s, s.cube, pebble, {0.0f, 0.03f, 0.0f}, glm::vec3(0.06f));
 }
 
 // A pebble on the floor under a low sun: a shadow a few centimetres long, which the screen-space
@@ -3012,41 +2860,19 @@ void testAPebbleCastsAScreenShadow(int& failures) {
         {true,  false, false, "  and casts none with the pass off"},
     };
     for (const Case& c : cases) {
-        restoreContextDefaults();
-        WindowManager window;
-        GLBackend backend;
-        if (!backend.init(window)) {
-            expect("the backend starts", false, failures);
-            return;
-        }
-        Scenery s;
-        base(s);
-        s.scene.environment().sky.procedural   = false;
-        s.scene.environment().sky.sunElevation = 20.0f;
-        s.scene.environment().sky.sunAzimuth   = 90.0f;
-        place(
-            s,
-            s.cube,
-            material(s, "golden:open", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f),
-            {0.0f, -0.5f, 0.0f},
-            {20.0f, 1.0f, 20.0f}
-        );
-        place(
-            s,
-            s.cube,
-            material(s, "golden:pebble", {0.4f, 0.4f, 0.4f}, 0.8f, 0.0f),
-            {0.0f, 0.03f, 0.0f},
-            glm::vec3(0.06f)
-        );
-        sunAndCamera(s, {0.0f, 0.5f, 0.6f}, {0.0f, 0.0f, 0.0f});
-        if (c.orthographic) orthographic(s, 0.2f);
+        const auto build = [&c](Scenery& s) {
+            buildPebble(s);
+            sunAndCamera(s, {0.0f, 0.5f, 0.6f}, {0.0f, 0.0f, 0.0f});
+            if (c.orthographic) orthographic(s, 0.2f);
+        };
 
         RenderSettings settings;
         settings.renderMode    = RenderMode::ScreenShadows;
         settings.msaaSamples   = 1;
         settings.gtao          = c.gtao;
         settings.screenShadows = c.screenShadows;
-        const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+        const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+        if (frame.empty()) return;
         const float dark = shareDarker(frame, 128);
         // The sun stands toward +X, the camera's right, so the shadow falls to the pebble's left.
         int left  = 0;
@@ -3067,30 +2893,18 @@ void testAPebbleCastsAScreenShadow(int& failures) {
 // below the pebble in the frame, never above it toward the sun.
 void testAScreenShadowFacingTheSunFallsTowardTheEye(int& failures) {
     std::printf("Screen-space shadows facing the sun:\n");
-    restoreContextDefaults();
-    WindowManager window;
-    GLBackend backend;
-    if (!backend.init(window)) {
-        expect("the backend starts", false, failures);
-        return;
-    }
-    Scenery s;
-    base(s);
-    s.scene.environment().sky.procedural   = false;
-    s.scene.environment().sky.sunElevation = 20.0f;
-    s.scene.environment().sky.sunAzimuth   = 90.0f;
-    const MaterialHandle open   = material(s, "golden:open", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
-    const MaterialHandle pebble = material(s, "golden:pebble", {0.4f, 0.4f, 0.4f}, 0.8f, 0.0f);
-    place(s, s.cube, open, {0.0f, -0.5f, 0.0f}, {20.0f, 1.0f, 20.0f});
-    place(s, s.cube, pebble, {0.0f, 0.03f, 0.0f}, glm::vec3(0.06f));
-    // Toward +X, as the sun stands, close and low enough that the sun is in the frame: the pebble
-    // fills the rows within 10 of the middle, its shadow those 10 to 21 below.
-    sunAndCamera(s, {-0.5f, 0.07f, 0.0f}, {0.0f, 0.03f, 0.0f});
+    const auto build = [](Scenery& s) {
+        buildPebble(s);
+        // Toward +X, as the sun stands, close and low enough that the sun is in the frame: the
+        // pebble fills the rows within 10 of the middle, its shadow those 10 to 21 below.
+        sunAndCamera(s, {-0.5f, 0.07f, 0.0f}, {0.0f, 0.03f, 0.0f});
+    };
 
     RenderSettings settings;
     settings.renderMode  = RenderMode::ScreenShadows;
     settings.msaaSamples = 1;
-    const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+    const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+    if (frame.empty()) return;
     // Rows clear of the pebble itself, which faces the eye from its own shade.
     int towardEye = 0;
     int towardSun = 0;
@@ -3113,54 +2927,43 @@ void testAScreenShadowFacingTheSunFallsTowardTheEye(int& failures) {
 // it; an additive one emits, so the roof leaves it as it was.
 void testSmokeIsShadowedAndSparksAreNot(int& failures) {
     std::printf("Particles under a roof:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
     float centre[2][2] = {};
     for (const bool additive : {false, true}) {
         for (const bool roof : {false, true}) {
-            restoreContextDefaults();
-            WindowManager window;
-            GLBackend backend;
-            if (!backend.init(window)) {
-                expect("the backend starts", false, failures);
-                return;
-            }
-            Scenery s;
-            base(s);
-            s.scene.environment().sky.sunElevation = 89.0f;
-            place(
-                s,
-                s.cube,
-                material(s, "golden:floor", {0.3f, 0.3f, 0.3f}, 0.8f, 0.0f),
-                {0.0f, -0.5f, 0.0f},
-                {40.0f, 1.0f, 40.0f}
-            );
-            if (roof) {
+            const auto build = [additive, roof](Scenery& s) {
+                base(s);
+                s.scene.environment().sky.sunElevation = 89.0f;
                 place(
                     s,
                     s.cube,
-                    material(s, "golden:roof", {0.3f, 0.3f, 0.3f}, 0.8f, 0.0f),
-                    {0.0f, 6.0f, 0.0f},
-                    {30.0f, 0.5f, 30.0f}
+                    material(s, "golden:floor", {0.3f, 0.3f, 0.3f}, 0.8f, 0.0f),
+                    {0.0f, -0.5f, 0.0f},
+                    {40.0f, 1.0f, 40.0f}
                 );
-            }
-            const EntityId puff = s.scene.createEntity();
-            s.scene.add(puff, Transform{});
-            ParticleEmitter emitter;
-            emitter.additive   = additive;
-            emitter.startColor = glm::vec4(0.6f, 0.6f, 0.6f, 1.0f);
-            emitter.startSize  = 0.5f;
-            emitter.softness   = 0.2f;
-            s.scene.add(puff, std::move(emitter));
-            LiveParticles::Pool& pool = s.particles.pools[puff.slot()];
-            pool.emitter = puff;
-            Particle p;
-            p.position = {0.0f, 1.0f, 0.0f};
-            pool.particles.push_back(p);
-            sunAndCamera(s, {0.0f, 1.0f, 3.0f}, {0.0f, 1.0f, 0.0f});
-
-            RenderSettings settings;
-            settings.msaaSamples = 1;
-            const glm::ivec3 c = pixel(render(s, backend, nullptr, settings), WIDTH / 2, HEIGHT / 2);
-            centre[additive ? 1 : 0][roof ? 1 : 0] = static_cast<float>(c.x + c.y + c.z) / 3.0f;
+                if (roof) {
+                    place(
+                        s,
+                        s.cube,
+                        material(s, "golden:roof", {0.3f, 0.3f, 0.3f}, 0.8f, 0.0f),
+                        {0.0f, 6.0f, 0.0f},
+                        {30.0f, 0.5f, 30.0f}
+                    );
+                }
+                ParticleEmitter emitter;
+                emitter.additive   = additive;
+                emitter.startColor = glm::vec4(0.6f, 0.6f, 0.6f, 1.0f);
+                emitter.startSize  = 0.5f;
+                emitter.softness   = 0.2f;
+                Particle p;
+                p.position = {0.0f, 1.0f, 0.0f};
+                addEmitter(s, std::move(emitter)).push_back(p);
+                sunAndCamera(s, {0.0f, 1.0f, 3.0f}, {0.0f, 1.0f, 0.0f});
+            };
+            const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+            if (frame.empty()) return;
+            centre[additive ? 1 : 0][roof ? 1 : 0] = centreGrey(frame);
         }
     }
     std::printf(
@@ -3178,53 +2981,39 @@ void testSmokeIsShadowedAndSparksAreNot(int& failures) {
 // it is all but invisible. Lit by the sun and the environment alone, it would be a dark patch.
 void testADecalIsLitAsTheFloorUnderIt(int& failures) {
     std::printf("A decal under a lamp:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
     float centre[2] = {};
     for (const bool painted : {false, true}) {
-        restoreContextDefaults();
-        WindowManager window;
-        GLBackend backend;
-        if (!backend.init(window)) {
-            expect("the backend starts", false, failures);
-            return;
-        }
-        Scenery s;
-        base(s);
-        s.scene.environment().sky.procedural = false;
-        place(
-            s,
-            s.cube,
-            material(s, "golden:floor", {0.5f, 0.5f, 0.5f}, 1.0f, 0.0f),
-            {0.0f, -0.5f, 0.0f},
-            {20.0f, 1.0f, 20.0f}
-        );
-        if (painted) {
-            MaterialAsset grey;
-            grey.type   = MaterialType::Transparent;
-            grey.albedo = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f);
-            const EntityId id = s.scene.createEntity();
-            Transform pose;
-            pose.rotation = glm::quatLookAt(glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f));
-            pose.scale    = {1.0f, 1.0f, 1.0f};
-            s.scene.add(id, std::move(pose));
-            Decal projector;
-            projector.material = s.resources.add(std::move(grey), "golden:grey");
-            s.scene.add(id, std::move(projector));
-        }
-        const EntityId lamp = s.scene.createEntity();
-        Transform lampAt;
-        lampAt.position = {0.0f, 1.5f, 0.0f};
-        s.scene.add(lamp, std::move(lampAt));
-        Light bulb;
-        bulb.type      = LightType::Point;
-        bulb.intensity = 6.0f;
-        bulb.radius    = 6.0f;
-        s.scene.add(lamp, std::move(bulb));
-        camera(s, {0.0f, 4.0f, 3.0f}, {0.0f, 0.0f, 0.0f});
-
-        RenderSettings settings;
-        settings.msaaSamples = 1;
-        const glm::ivec3 c = pixel(render(s, backend, nullptr, settings), WIDTH / 2, HEIGHT / 2);
-        centre[painted ? 1 : 0] = static_cast<float>(c.x + c.y + c.z) / 3.0f;
+        const auto build = [painted](Scenery& s) {
+            base(s);
+            s.scene.environment().sky.procedural = false;
+            place(
+                s,
+                s.cube,
+                material(s, "golden:floor", {0.5f, 0.5f, 0.5f}, 1.0f, 0.0f),
+                {0.0f, -0.5f, 0.0f},
+                {20.0f, 1.0f, 20.0f}
+            );
+            if (painted) {
+                MaterialAsset grey;
+                grey.type   = MaterialType::Transparent;
+                grey.albedo = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f);
+                const EntityId id = s.scene.createEntity();
+                Transform pose;
+                pose.rotation = glm::quatLookAt(glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f));
+                pose.scale    = {1.0f, 1.0f, 1.0f};
+                s.scene.add(id, std::move(pose));
+                Decal projector;
+                projector.material = s.resources.add(std::move(grey), "golden:grey");
+                s.scene.add(id, std::move(projector));
+            }
+            addLamp(s, {0.0f, 1.5f, 0.0f}, 6.0f, 6.0f, true);
+            camera(s, {0.0f, 4.0f, 3.0f}, {0.0f, 0.0f, 0.0f});
+        };
+        const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+        if (frame.empty()) return;
+        centre[painted ? 1 : 0] = centreGrey(frame);
     }
     std::printf("      the floor %.0f, the decal on it %.0f\n", centre[0], centre[1]);
     expect(
@@ -3239,51 +3028,31 @@ void testADecalIsLitAsTheFloorUnderIt(int& failures) {
 // light at a point it does not fill, a light turning with the view and the puff's spin.
 void testSmokeIsLitWhereItIs(int& failures) {
     std::printf("A puff of smoke just past a lamp's reach:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
     float centre[2] = {};
     for (const bool lamp : {false, true}) {
-        restoreContextDefaults();
-        WindowManager window;
-        GLBackend backend;
-        if (!backend.init(window)) {
-            expect("the backend starts", false, failures);
-            return;
-        }
-        Scenery s;
-        base(s);
-        s.scene.environment().sky.sunElevation = -30.0f;
-        const glm::vec3 at(0.0f, 2.0f, 0.0f);
-        if (lamp) {
-            // 1.41 m from the centre, 0.42 m from the quad's upper right corner (the camera's right
-            // is +X).
-            const EntityId bulb = s.scene.createEntity();
-            Transform pose;
-            pose.position = at + glm::vec3(1.0f, 1.0f, 0.0f);
-            s.scene.add(bulb, std::move(pose));
-            Light light;
-            light.type        = LightType::Point;
-            light.intensity   = 20.0f;
-            light.radius      = 1.1f;
-            light.castShadows = false;
-            s.scene.add(bulb, std::move(light));
-        }
-        const EntityId puff = s.scene.createEntity();
-        s.scene.add(puff, Transform{});
-        ParticleEmitter emitter;
-        emitter.additive   = false;
-        emitter.startColor = glm::vec4(0.6f, 0.6f, 0.6f, 1.0f);
-        emitter.startSize  = 0.7f;
-        s.scene.add(puff, std::move(emitter));
-        LiveParticles::Pool& pool = s.particles.pools[puff.slot()];
-        pool.emitter = puff;
-        Particle p;
-        p.position = at;
-        pool.particles.push_back(p);
-        sunAndCamera(s, at + glm::vec3(0.0f, 0.0f, 3.0f), at);
-
-        RenderSettings settings;
-        settings.msaaSamples = 1;
-        const glm::ivec3 c = pixel(render(s, backend, nullptr, settings), WIDTH / 2, HEIGHT / 2);
-        centre[lamp ? 1 : 0] = static_cast<float>(c.x + c.y + c.z) / 3.0f;
+        const auto build = [lamp](Scenery& s) {
+            base(s);
+            s.scene.environment().sky.sunElevation = -30.0f;
+            const glm::vec3 at(0.0f, 2.0f, 0.0f);
+            if (lamp) {
+                // 1.41 m from the centre, 0.42 m from the quad's upper right corner (the camera's
+                // right is +X).
+                addLamp(s, at + glm::vec3(1.0f, 1.0f, 0.0f), 20.0f, 1.1f, false);
+            }
+            ParticleEmitter emitter;
+            emitter.additive   = false;
+            emitter.startColor = glm::vec4(0.6f, 0.6f, 0.6f, 1.0f);
+            emitter.startSize  = 0.7f;
+            Particle p;
+            p.position = at;
+            addEmitter(s, std::move(emitter)).push_back(p);
+            sunAndCamera(s, at + glm::vec3(0.0f, 0.0f, 3.0f), at);
+        };
+        const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+        if (frame.empty()) return;
+        centre[lamp ? 1 : 0] = centreGrey(frame);
     }
     std::printf("      %.0f without the lamp, %.0f with it\n", centre[0], centre[1]);
     expect("a lamp that does not reach a puff lights none of it", centre[1] <= centre[0] + 2.0f, failures);
@@ -3333,34 +3102,28 @@ void buildCloth(Scenery& s) {
 // scaling), so it moves the light round the sphere, toward its rim, without adding to it.
 void testASheenAddsNoLight(int& failures) {
     std::printf("A white sheen over a white base:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    settings.tonemap     = Tonemap::Reinhard;
+    settings.exposure    = -2.0f;
     float mean[2] = {};
     for (const bool sheen : {false, true}) {
-        restoreContextDefaults();
-        WindowManager window;
-        GLBackend backend;
-        if (!backend.init(window)) {
-            expect("the backend starts", false, failures);
-            return;
-        }
-        Scenery s;
-        base(s);
-        s.scene.environment().sky.procedural = false;
-        MaterialAsset white;
-        white.albedo    = glm::vec4(1.0f);
-        white.roughness = 1.0f;
-        if (sheen) {
-            white.sheenColor     = glm::vec3(1.0f);
-            white.sheenRoughness = 0.5f;
-        }
-        const MaterialHandle paint = s.resources.add(std::move(white), "golden:white");
-        place(s, s.sphere, paint, {0.0f, 0.0f, 0.0f}, glm::vec3(2.0f));
-        sunAndCamera(s, s.scene.environment().sunDirection() * 4.0f, {0.0f, 0.0f, 0.0f});
-
-        RenderSettings settings;
-        settings.msaaSamples = 1;
-        settings.tonemap     = Tonemap::Reinhard;
-        settings.exposure    = -2.0f;
-        const std::vector<unsigned char> frame = render(s, backend, nullptr, settings);
+        const auto build = [sheen](Scenery& s) {
+            base(s);
+            s.scene.environment().sky.procedural = false;
+            MaterialAsset white;
+            white.albedo    = glm::vec4(1.0f);
+            white.roughness = 1.0f;
+            if (sheen) {
+                white.sheenColor     = glm::vec3(1.0f);
+                white.sheenRoughness = 0.5f;
+            }
+            const MaterialHandle paint = s.resources.add(std::move(white), "golden:white");
+            place(s, s.sphere, paint, {0.0f, 0.0f, 0.0f}, glm::vec3(2.0f));
+            sunAndCamera(s, s.scene.environment().sunDirection() * 4.0f, {0.0f, 0.0f, 0.0f});
+        };
+        const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+        if (frame.empty()) return;
         long sum = 0;
         for (int y = HEIGHT / 4; y < HEIGHT * 3 / 4; ++y) {
             for (int x = WIDTH / 2 - HEIGHT / 4; x < WIDTH / 2 + HEIGHT / 4; ++x) sum += pixel(frame, x, y).x;

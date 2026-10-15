@@ -29,6 +29,7 @@
 #include "cook/mesh_processing.h"
 #include "cook/texture_bake.h"
 #include "import/model_source.h"
+#include "import/texture_loaders.h"
 #include "io/asset/asset_cook.h"
 #include "io/asset/asset_factory.h"
 #include "io/asset/asset_library.h"
@@ -819,12 +820,13 @@ void testTheCookWritesTheBakedTexture() {
     ResourceManager editor;
     TextureAsset albedo = aDecodedTexture(32, 32, TextureInternalFormat::SRGBA8);
     albedo.params.generateMipmaps = true;
-    albedo.sourceJson() = {
-        {"kind", AssetSourceKind::FILE},
-        {"path", "assets/albedo.png"},
-        {"usage", "Color"},
-        {"generateMipmaps", true}
-    };
+    albedo.sourceJson() = fileTextureRecipe(
+        "assets/albedo.png",
+        TextureUsage::Color,
+        true,
+        TextureFilterOverride::None,
+        TextureWrapMode::ClampToEdge
+    );
     const TextureHandle handle = editor.add(std::move(albedo), name);
     check("the cook succeeds", AssetCooker::cookAllAssets(editor));
     std::error_code manifestError;
@@ -868,12 +870,13 @@ void testASaveRecordsNowAndBakesInTheBackground() {
     ResourceManager editor;
     TextureAsset albedo = aDecodedTexture(1024, 1024, TextureInternalFormat::SRGBA8);
     albedo.params.generateMipmaps = true;
-    albedo.sourceJson() = {
-        {"kind", AssetSourceKind::FILE},
-        {"path", "assets/background.png"},
-        {"usage", "Color"},
-        {"generateMipmaps", true}
-    };
+    albedo.sourceJson() = fileTextureRecipe(
+        "assets/background.png",
+        TextureUsage::Color,
+        true,
+        TextureFilterOverride::None,
+        TextureWrapMode::ClampToEdge
+    );
     editor.add(std::move(albedo), name);
 
     const auto started = std::chrono::steady_clock::now();
@@ -1238,7 +1241,10 @@ void testACookRefusesARecipeWithNothingInIt() {
     std::printf("Cooking an asset whose source did not load:\n");
 
     const ScratchProject project("vkm_cook_empty");
-    const nlohmann::json recipe = {{"kind", AssetSourceKind::MODEL}, {"path", "gone.glb"}};
+    const nlohmann::json recipe = {
+        {AssetSourceKey::KIND, AssetSourceKind::MODEL},
+        {AssetSourceKey::PATH, "gone.glb"}
+    };
     const auto refused = [&](auto asset, const char* name) {
         asset.sourceJson() = recipe;
         ResourceManager resources;
@@ -1300,7 +1306,7 @@ void testAManifestThatDoesNotReadStartsTheLibraryEmpty() {
     check("nor a document that is not an object at all", loadFrom("[1, 2, 3]"));
 
     // A good one reads, so the refusals above are about the types and not the file.
-    const nlohmann::json recipe = {{"kind", AssetSourceKind::GENERATOR}, {"type", "cube"}};
+    const nlohmann::json recipe = {{AssetSourceKey::KIND, AssetSourceKind::GENERATOR}, {"type", "cube"}};
     check("a recipe for it is on disk", AssetLibrary::writeRecipe(AssetType::Mesh, "crate", recipe));
     const bool loaded = loadFrom(
         R"({"manifestVersion": 2, "assets": [)"
@@ -1491,7 +1497,7 @@ void testTheCookBakesAMeshInDrawOrder() {
 
     ResourceManager resources;
     MeshAsset live = aScrambledSkinnedSphere();
-    live.sourceJson() = {{"kind", AssetSourceKind::GENERATOR}, {"type", "sphere"}};
+    live.sourceJson() = {{AssetSourceKey::KIND, AssetSourceKind::GENERATOR}, {"type", "sphere"}};
     const MeshHandle handle = resources.add(std::move(live), "ball");
     check("it cooks", AssetCooker::cookAllAssets(resources));
 
@@ -1566,7 +1572,11 @@ void testEveryFileAModelReadsIsInItsKey() {
         MeshAsset mesh = aSkinnedMesh();
         mesh.skin.clear();
         mesh.skeleton.clear();
-        mesh.sourceJson() = {{"kind", AssetSourceKind::MODEL}, {"path", "assets/hero.gltf"}, {"mesh", 0}};
+        mesh.sourceJson() = {
+            {AssetSourceKey::KIND, AssetSourceKind::MODEL},
+            {AssetSourceKey::PATH, "assets/hero.gltf"},
+            {AssetSourceKey::MESH, 0}
+        };
         resources.add(std::move(mesh), "hero:mesh0");
     };
     ResourceManager firstImport;
@@ -1599,12 +1609,13 @@ void testASaveDoesNotReadTheArtAgain() {
 
     ResourceManager editor;
     TextureAsset art = aDecodedTexture(4, 4, TextureInternalFormat::RGBA8);
-    art.sourceJson() = {
-        {"kind", AssetSourceKind::FILE},
-        {"path", "assets/art.png"},
-        {"usage", "Data"},
-        {"generateMipmaps", false}
-    };
+    art.sourceJson() = fileTextureRecipe(
+        "assets/art.png",
+        TextureUsage::Data,
+        false,
+        TextureFilterOverride::None,
+        TextureWrapMode::ClampToEdge
+    );
     editor.add(std::move(art), "tex:art");
     check("the first save cooks it", AssetCooker::cookAllAssets(editor));
     const AssetRecord* record = AssetLibrary::get().find(AssetType::Texture, "tex:art");
@@ -1631,12 +1642,13 @@ void testTheExplicitCookLeavesOnlyWhatARecordNames() {
     const ScratchProject project("vkm_cook_orphans");
     ResourceManager resources;
     TextureAsset kept = aDecodedTexture(4, 4, TextureInternalFormat::RGBA8);
-    kept.sourceJson() = {
-        {"kind", AssetSourceKind::FILE},
-        {"path", "assets/kept.png"},
-        {"usage", "Data"},
-        {"generateMipmaps", false}
-    };
+    kept.sourceJson() = fileTextureRecipe(
+        "assets/kept.png",
+        TextureUsage::Data,
+        false,
+        TextureFilterOverride::None,
+        TextureWrapMode::ClampToEdge
+    );
     resources.add(std::move(kept), "tex:kept");
     check("a texture cooks", AssetCooker::cookAllAssets(resources));
     const AssetRecord* record = AssetLibrary::get().find(AssetType::Texture, "tex:kept");
@@ -1669,7 +1681,7 @@ void testRegeneratingLevelsReplacesThem() {
     std::printf("Generating a mesh's levels a second time:\n");
 
     ResourceManager resources;
-    const MeshHandle base = resources.add(generateSphere(32, 16), "lod:base");
+    const MeshHandle base = resources.add(generateSphere(16), "lod:base");
     const LOD first = generateLOD(resources, base, 2);
     const size_t meshes = resources.countOfType<MeshAsset>();
     std::vector<uint64_t> versions;
@@ -1722,7 +1734,10 @@ void testTheExplicitCookRebakesWhatChangedUnderTheCache() {
     assetFactory().createSkeleton = &importOneBonePerByte;
 
     const std::string name = "rig:hero";
-    const nlohmann::json recipe = {{"kind", AssetSourceKind::MODEL}, {"path", "assets/rig.bin"}};
+    const nlohmann::json recipe = {
+        {AssetSourceKey::KIND, AssetSourceKind::MODEL},
+        {AssetSourceKey::PATH, "assets/rig.bin"}
+    };
     const auto bonesServed = [&] {
         ResourceManager player;
         const SkeletonHandle rig = loadCookedSkeleton(name, player);
@@ -1769,7 +1784,7 @@ void testANameTheManifestLostStillLoadsFromItsRecipe() {
     std::printf("An asset the manifest has no row for:\n");
 
     const ScratchProject project("vkm_manifest_lost");
-    const nlohmann::json recipe = {{"kind", AssetSourceKind::INLINE}, {"roughness", 0.25f}};
+    const nlohmann::json recipe = {{"roughness", 0.25f}};
     check("its recipe is on disk", AssetLibrary::writeRecipe(AssetType::Material, "mat:kept", recipe));
     check("  and the manifest has no row for it", !AssetLibrary::get().find(AssetType::Material, "mat:kept"));
 
@@ -1801,8 +1816,8 @@ void testAMistypedRecipeCostsItsAssetNotTheScene() {
     std::printf("A recipe holding a value of the wrong type:\n");
 
     const ScratchProject project("vkm_recipe_mistyped");
-    const nlohmann::json fine = {{"kind", AssetSourceKind::INLINE}, {"roughness", 0.25f}};
-    const nlohmann::json typo = {{"kind", AssetSourceKind::INLINE}, {"metallic", "0.5"}};
+    const nlohmann::json fine = {{"roughness", 0.25f}};
+    const nlohmann::json typo = {{"metallic", "0.5"}};
     check(
         "the recipes are on disk",
         AssetLibrary::writeRecipe(AssetType::Material, "mat:fine", fine)
@@ -1858,7 +1873,10 @@ void testALoadNeverRenamesAnAssetThatWasAlreadyThere() {
     const auto previousFactory = assetFactory().createTexture;
     assetFactory().createTexture = &importTheOneAlreadyLoaded;
 
-    const nlohmann::json recipe = {{"kind", AssetSourceKind::FILE}, {"path", "art.png"}};
+    const nlohmann::json recipe = {
+        {AssetSourceKey::KIND, AssetSourceKind::FILE},
+        {AssetSourceKey::PATH, "art.png"}
+    };
     check(
         "the second entry's recipe writes",
         AssetLibrary::writeRecipe(AssetType::Texture, "hero:albedo", recipe)
@@ -2077,7 +2095,7 @@ void testALevelHandsOverWhereItsErrorStopsShowing() {
     std::printf("Where one level hands over to the next:\n");
 
     ResourceManager resources;
-    MeshAsset pebble = generateSphere(48, 24);
+    MeshAsset pebble = generateSphere(24);
     MeshAsset rock   = pebble;
     for (Vertex& vertex : rock.vertices) vertex.position *= 10.0f;
     rock.computeAndSetBounds();
@@ -2159,7 +2177,8 @@ void testDecimationKeepsTheShape() {
 }
 
 // The decimate recipe reads back what it writes, and a recipe that does not say - no
-// ratio, an unknown `grid`, a non-numeric ratio - gets the default rather than failing.
+// ratio, an unknown `grid`, a non-numeric ratio - gets the default rather than failing;
+// the non-numeric ratio is reported.
 void testTheDecimateRecipeReadsWhatItWrites() {
     std::printf("The recipe a decimated level is rebuilt from:\n");
 
@@ -2167,7 +2186,10 @@ void testTheDecimateRecipeReadsWhatItWrites() {
     check("it names its base", recipe.value(AssetSourceKey::BASE, std::string{}) == "crate");
     check("  and the ratio comes back as written", nearly(decimateRatioFromRecipe(recipe), 0.125f));
 
-    const nlohmann::json bare = {{"kind", AssetSourceKind::DECIMATE}, {AssetSourceKey::BASE, "crate"}};
+    const nlohmann::json bare = {
+        {AssetSourceKey::KIND, AssetSourceKind::DECIMATE},
+        {AssetSourceKey::BASE, "crate"}
+    };
     const float fallback = decimateRatioFromRecipe(bare);
     check("a recipe with no ratio asks for a real reduction", fallback > 0.0f && fallback < 1.0f);
 
@@ -2180,10 +2202,41 @@ void testTheDecimateRecipeReadsWhatItWrites() {
 
     nlohmann::json mistyped = bare;
     mistyped[AssetSourceKey::RATIO] = "half";
-    check(
-        "a ratio that is not a number is the default, not an exception",
-        nearly(decimateRatioFromRecipe(mistyped), fallback)
+    EngineErrorLog errors;
+    setErrorSink(&errors);
+    const float mistypedRatio = decimateRatioFromRecipe(mistyped);
+    setErrorSink(nullptr);
+    check("a ratio that is not a number is the default, not an exception", nearly(mistypedRatio, fallback));
+    check("  and is reported", errors.totalPushed() == 1);
+}
+
+// A texture's wrap and filter read back as written; a value the recipe misspells or mistypes
+// reads as the default and is reported, never thrown.
+void testATexturesWrapAndFilterReadWhatTheyWrite() {
+    std::printf("A texture recipe's wrap and filter:\n");
+
+    const nlohmann::json recipe = fileTextureRecipe(
+        "assets/rock.png",
+        TextureUsage::Color,
+        true,
+        TextureFilterOverride::Nearest,
+        TextureWrapMode::MirroredRepeat
     );
+    check("its wrap comes back as written", textureWrapFromRecipe(recipe) == TextureWrapMode::MirroredRepeat);
+    check("  and so does its filter", textureFilterFromRecipe(recipe) == TextureFilterOverride::Nearest);
+
+    EngineErrorLog errors;
+    setErrorSink(&errors);
+    const nlohmann::json misspelt = {{AssetSourceKey::WRAP, "mirrored"}, {AssetSourceKey::FILTER, "point"}};
+    const nlohmann::json mistyped = {{AssetSourceKey::WRAP, 2}, {AssetSourceKey::FILTER, true}};
+    const bool clamps = textureWrapFromRecipe(misspelt) == TextureWrapMode::ClampToEdge
+        && textureWrapFromRecipe(mistyped) == TextureWrapMode::ClampToEdge;
+    const bool unfiltered = textureFilterFromRecipe(misspelt) == TextureFilterOverride::None
+        && textureFilterFromRecipe(mistyped) == TextureFilterOverride::None;
+    setErrorSink(nullptr);
+    check("a wrap it does not know clamps", clamps);
+    check("  and a filter it does not know overrides nothing", unfiltered);
+    check("  and each is reported", errors.totalPushed() == 4);
 }
 
 } // namespace
@@ -2227,4 +2280,5 @@ void runCookTests() {
     testALevelHandsOverWhereItsErrorStopsShowing();
     testDecimationKeepsTheShape();
     testTheDecimateRecipeReadsWhatItWrites();
+    testATexturesWrapAndFilterReadWhatTheyWrite();
 }

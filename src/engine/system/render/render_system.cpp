@@ -43,10 +43,7 @@ void RenderSystem::update(FrameContext& ctx) {
 void RenderSystem::writeScreenshot(const std::string& path) {
     std::vector<uint8_t> frame;
     if (!m_backend->readFrame(m_view, frame)) {
-        LOG_WARNING(
-            "Screenshot not written to %s: the render backend cannot read its frame back",
-            path.c_str()
-        );
+        LOG_WARNING("Screenshot not written to %s: the viewport is empty", path.c_str());
         return;
     }
     if (writeScreenshotPng(path, m_view.viewportWidth, m_view.viewportHeight, frame)) {

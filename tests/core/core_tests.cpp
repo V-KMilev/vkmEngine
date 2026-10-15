@@ -474,7 +474,7 @@ void testInputCommand() {
     check("  and the next one the next slot", map.indexOf("Jump") == 2);
 
     // Stable for the session: a replayed command must mean what it meant when recorded.
-    map.addBinding("Move/Forward", InputBinding{InputSource::Key, 265, 1.0f});
+    map.rebind("Move/Forward", { InputBinding{InputSource::Key, 265, 1.0f} });
     map.define("Move/Forward", { InputBinding{InputSource::Key, 87, 1.0f} });
     check("  and redefining an action keeps it", map.indexOf("Move/Forward") == 1);
 
@@ -933,10 +933,16 @@ void testARebindingIsSavedAndComesBack() {
     InputMap edited;
     edited.define("Jump", {InputBinding{InputSource::Key, 32, 1.0f}});
     edited.define("Dash", {InputBinding{InputSource::Key, 340, 1.0f}});
-    edited.addBinding("Jump", InputBinding{InputSource::Key, 87, 1.0f});
-    edited.clearBindings("Dash");
+    edited.rebind(
+        "Jump",
+        { InputBinding{InputSource::Key, 32, 1.0f}, InputBinding{InputSource::Key, 87, 1.0f} }
+    );
+    edited.rebind("Dash", {});
     const nlohmann::json kept = edited.saveBindings();
-    check("a binding added or cleared is saved", kept.contains("Jump") && kept.contains("Dash"));
+    check(
+        "a binding added or cleared is saved",
+        kept.contains("Jump") && kept.contains("Dash") && kept["Dash"].empty()
+    );
 }
 
 // A tick asks a command for an action by name as a frame does, instead of reaching
@@ -1145,12 +1151,24 @@ void testTheCallerRunsWhatNoWorkerHasTaken() {
     check("  and the call finishes while the workers are still busy", finishedFirst);
 }
 
-// A backend that draws nothing and reads back a made-up frame - a red top row over
-// blue - all the screenshot path asks.
-struct ReadBackBackend : RenderBackend {
+// A backend that draws nothing, reads back nothing and offers nothing.
+struct NullBackend : RenderBackend {
     bool init(WindowManager& window) override { return true; }
     void render(const RenderView& view, const ResourceManager& resources) override {}
 
+    bool readFrame(const RenderView& view, std::vector<uint8_t>& pixels) override {
+        pixels.clear();
+        return false;
+    }
+    uint32_t reloadChangedShaders() override { return 0; }
+    uint32_t maxAnisotropy() const override { return 1; }
+    bool holdsPixels(const Handle<TextureAsset>& texture, uint64_t version) const override { return false; }
+    EditorRenderHooks* editorHooks() override { return nullptr; }
+};
+
+// A backend that reads back a made-up frame - a red top row over blue - all the
+// screenshot path asks.
+struct ReadBackBackend : NullBackend {
     bool readFrame(const RenderView& view, std::vector<uint8_t>& pixels) override {
         pixels.assign(static_cast<size_t>(view.viewportWidth) * view.viewportHeight * 3, 0);
         for (size_t texel = 0; texel < pixels.size() / 3; ++texel) {
@@ -1208,9 +1226,8 @@ void testAScreenshotIsTheFrameTheBackendDrew() {
 }
 
 // A backend the device cannot run.
-struct RefusingBackend : RenderBackend {
+struct RefusingBackend : NullBackend {
     bool init(WindowManager& window) override { return false; }
-    void render(const RenderView& view, const ResourceManager& resources) override {}
 };
 
 // A backend that fails to init stops the host: kept, the window would run black.

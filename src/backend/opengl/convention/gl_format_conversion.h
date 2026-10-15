@@ -11,7 +11,8 @@
 namespace Vkm::Engine {
 
 // The engine's texture enums in GL terms. Each switch names every enumerator, so a new one warns
-// under -Wswitch; the return after it answers a value none holds, as a damaged cooked byte would.
+// under -Wswitch; the return after it is for the compiler, as AssetCook::readTexture refuses a byte
+// that names no enumerator.
 
 inline GLenum toGLenum(TextureInternalFormat fmt) {
     switch (fmt) {

@@ -30,7 +30,6 @@
 #include "system/script/behavior_field_visitor.h"
 #include "system/script/script_component.h"
 #include "core/reflect.h"
-#include "resource/asset_source_kind.h"
 
 namespace Vkm::Engine::AssetSerializer {
 
@@ -58,9 +57,8 @@ using ::Vkm::Engine::detail::jsonToVec4;
 
 } // namespace
 
-nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& resources) {
+nlohmann::json materialToRecipe(const MaterialAsset& m, const ResourceManager& resources) {
     nlohmann::json src;
-    src["kind"] = AssetSourceKind::INLINE;
 
     // Reflection drives scalar / vector / enum fields, so a new MaterialAsset field cannot fall out of the
     // round trip. Texture refs resolve by name, below.
@@ -97,9 +95,10 @@ nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& r
     return src;
 }
 
-void applyInline(const nlohmann::json& src, MaterialAsset& m, const ResourceManager& resources) {
-    // Mirror of materialToInline. A missing key, or an enum name this build lacks, keeps the current value
-    // rather than becoming enumerator zero.
+MaterialAsset materialFromRecipe(const nlohmann::json& src, const ResourceManager& resources) {
+    // Mirror of materialToRecipe. A missing key, or an enum name this build lacks, reads as the default
+    // rather than as enumerator zero.
+    MaterialAsset m;
     Reflect::forEachField(m, [&](std::string_view name, auto& val) {
         using V = std::decay_t<decltype(val)>;
         const std::string key(name);
@@ -107,9 +106,9 @@ void applyInline(const nlohmann::json& src, MaterialAsset& m, const ResourceMana
             const std::string typeName = src.value(key, std::string{});
             if (!typeName.empty() && !Reflect::enumFromNameChecked(typeName, val)) {
                 LOG_WARNING(
-                    "Material '%s': no material type called '%s' in this build; leaving it as it was",
-                    m.name().c_str(),
-                    typeName.c_str()
+                    "Material: no material type called '%s' in this build; it reads as %s",
+                    typeName.c_str(),
+                    Reflect::enumName(val)
                 );
             }
         } else if constexpr (std::is_same_v<V, glm::vec3>) {
@@ -128,10 +127,8 @@ void applyInline(const nlohmann::json& src, MaterialAsset& m, const ResourceMana
             if (texName.empty()) continue;
             const TextureHandle h = resources.findByName<TextureAsset>(texName);
             if (!h) {
-                // Keep the slot rather than zeroing it: the name may be a typo or not loaded yet, and a
-                // null slot draws as transparent black.
                 LOG_WARNING(
-                    "Material texture ref '%s' ('%s') unresolved; keeping previous slot value",
+                    "Material texture ref '%s' ('%s') unresolved; the map is left empty",
                     f.key,
                     texName.c_str()
                 );
@@ -140,6 +137,7 @@ void applyInline(const nlohmann::json& src, MaterialAsset& m, const ResourceMana
             m.*f.member = h;
         }
     }
+    return m;
 }
 
 namespace {
@@ -430,9 +428,7 @@ Handle<Asset> loadFromLibrary(const std::string& name, ResourceManager& resource
     nlohmann::json recipe;
     if constexpr (std::is_same_v<Asset, MaterialAsset>) {
         if (!AssetLibrary::readRecipe(TYPE, name, recipe)) return {};
-        MaterialAsset material;
-        applyInline(recipe, material, resources);
-        return resources.add(std::move(material));
+        return resources.add(materialFromRecipe(recipe, resources));
     } else {
         if (const Handle<Asset> cooked = loadCooked<Asset>(name, resources)) return cooked;
 

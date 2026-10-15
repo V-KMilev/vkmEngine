@@ -15,10 +15,10 @@ parallelFor(entities.size(), [&](size_t i) {
 });
 ```
 
-The callback takes the index or nothing. An overload
-`parallelFor(count, grain, function)` sets the chunk size; without it, a range
-below `MIN_PARALLEL` items runs serially on the caller, and a larger one is cut
-into several chunks per thread so a preempted thread's share goes to the others.
+The callback takes the index. An overload `parallelFor(count, grain, function)`
+sets the chunk size; without it, a range below `MIN_PARALLEL` items runs
+serially on the caller, and a larger one is cut into several chunks per thread
+so a preempted thread's share goes to the others.
 
 - **The caller works too.** It runs a chunk inline, then any chunk no worker has
   claimed, and only then sleeps on its own batch.

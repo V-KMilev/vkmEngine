@@ -102,7 +102,7 @@ Only the topmost blocker hovers or presses. A press and release over the same
 button **enqueues a `UIClickEvent`** on the frame's `EventBus`:
 
 ```cpp
-subscribe<UIClickEvent>([this](const UIClickEvent& e) {
+subscribe([this](const UIClickEvent& e) {
     if (e.eventId == "play") startGame();
 });
 ```
@@ -148,7 +148,7 @@ look is images and text the project parents as usual.
   the choice itself or its child.
 
 ```cpp
-subscribe<UIValueEvent>([this](const UIValueEvent& e) {
+subscribe([this](const UIValueEvent& e) {
     if (e.eventId == "volume") setVolume(e.value);
     if (e.eventId == "vsync")  setVSync(e.value > 0.5f);
 });

@@ -31,8 +31,8 @@ struct NetArgs {
 /**
  * @brief Read --connect out of the command line.
  *
- * `--connect host[:port]` joins a game. There is no --host: hosting is
- * vkm_server. An unrecognised argument is refused, not skipped.
+ * `--connect host[:port]` joins a game; hosting is vkm_server. An
+ * unrecognised argument is refused, not skipped.
  *
  * @param argc Argument count as main received it.
  * @param argv Arguments as main received them; flags start at firstFlagIndex.
@@ -53,12 +53,6 @@ bool readNetArgs(int argc, char** argv, NetArgs& args) {
                 LOG_ERROR("--connect needs an address to join, like --connect 10.0.0.4");
                 return false;
             }
-        } else if (arg == "--host") {
-            LOG_ERROR("There is no --host: hosting a game is vkm_server, a host of its own");
-            LOG_ERROR("To host and play, serve the project and join it:");
-            LOG_ERROR("    vkm_server <project> &");
-            LOG_ERROR("    vkm_runtime <project> --connect 127.0.0.1");
-            return false;
         } else {
             LOG_ERROR("Unrecognised argument '%s'", arg.c_str());
             LOG_ERROR("Usage: vkm_runtime [project] [--connect host[:port]]");

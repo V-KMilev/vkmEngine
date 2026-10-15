@@ -4,6 +4,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
+#include "core/reflect.h"
 #include "core/math/bounds.h"
 #include "overlays/gizmo_snap.h"
 #include "ui/editor_style.h"
@@ -20,7 +21,11 @@ enum class GizmoOperation { Translate, Rotate, Scale };
 /**
  * @brief Gizmo coordinate space.
  */
-enum class GizmoMode { Local, World };
+enum class GizmoMode {
+    Local,
+    World,
+    Count  ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
+};
 
 /**
  * @brief Which axis/element is hovered or active during interaction.
@@ -299,3 +304,5 @@ class TransformGizmo {
 };
 
 } // namespace Vkm::Engine
+
+VKM_ENUM_NAMES(::Vkm::Engine::GizmoMode, "Local", "World")

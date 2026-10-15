@@ -172,10 +172,10 @@ nlohmann::json save(const Ragdoll& r, const EntityNamer& name) {
         nlohmann::json entry;
         entry["bone"] = bone.bone;
         entry["body"] = name(bone.body);
-        nlohmann::json offset = nlohmann::json::array();
+        nlohmann::json bodyFromBone = nlohmann::json::array();
         const float* m = glm::value_ptr(bone.bodyFromBone);
-        for (int i = 0; i < 16; ++i) offset.push_back(m[i]);
-        entry["offset"] = std::move(offset);
+        for (int i = 0; i < 16; ++i) bodyFromBone.push_back(m[i]);
+        entry["bodyFromBone"] = std::move(bodyFromBone);
         bones.push_back(std::move(entry));
     }
     out["bones"] = std::move(bones);
@@ -197,10 +197,10 @@ void load(const nlohmann::json& j, Ragdoll& r, const EntityResolver& resolve) {
         RagdollBone bone;
         bone.bone = entry.value("bone", -1);
         bone.body = resolve(entry.value("body", 0u));
-        const auto offset = entry.find("offset");
-        if (offset != entry.end() && offset->is_array() && offset->size() == 16) {
+        const auto bodyFromBone = entry.find("bodyFromBone");
+        if (bodyFromBone != entry.end() && bodyFromBone->is_array() && bodyFromBone->size() == 16) {
             float* m = glm::value_ptr(bone.bodyFromBone);
-            for (int i = 0; i < 16; ++i) m[i] = (*offset)[i].get<float>();
+            for (int i = 0; i < 16; ++i) m[i] = (*bodyFromBone)[i].get<float>();
         }
         r.bones.push_back(bone);
     }
@@ -213,8 +213,7 @@ std::vector<UnresolvedRef> g_unresolved;
 
 // Resolve a saved asset name to a handle. An unresolved name leaves the slot
 // empty and goes through reportError, so a host's error sink shows it. It is kept
-// under its field for a later save to write back, unless the field is null (a
-// name read out of an array).
+// under its field's path for a later save to write back.
 template<typename Asset>
 Handle<Asset> resolveAssetRef(
     const ResourceManager& r,
@@ -230,7 +229,7 @@ Handle<Asset> resolveAssetRef(
             std::string(what) + " '" + name + "'",
             "reference left unresolved - the asset is not loaded, so the slot is empty"
         );
-        if (field) g_unresolved.push_back({field, name, ASSET_TYPE<Asset>});
+        g_unresolved.push_back({field, name, ASSET_TYPE<Asset>});
     }
     return h;
 }

@@ -12,6 +12,7 @@
 #include "logger.h"
 
 #include "cook/mesh_processing.h"
+#include "debug/engine_error_log.h"
 #include "resource/resource_manager.h"
 #include "resource/asset_source_kind.h"
 
@@ -105,7 +106,7 @@ LOD generateLOD(ResourceManager& resources, MeshHandle source, uint32_t extraLev
 
 nlohmann::json decimateRecipe(const std::string& baseName, float ratio) {
     return {
-        {"kind",                AssetSourceKind::DECIMATE},
+        {AssetSourceKey::KIND,  AssetSourceKind::DECIMATE},
         {AssetSourceKey::BASE,  baseName},
         {AssetSourceKey::RATIO, ratio},
     };
@@ -113,7 +114,15 @@ nlohmann::json decimateRecipe(const std::string& baseName, float ratio) {
 
 float decimateRatioFromRecipe(const nlohmann::json& source) {
     const auto it = source.find(AssetSourceKey::RATIO);
-    if (it == source.end() || !it->is_number()) return FIRST_RATIO;
+    if (it == source.end()) return FIRST_RATIO;
+    if (!it->is_number()) {
+        reportError(
+            "Asset",
+            "decimate recipe for '" + source.value(AssetSourceKey::BASE, std::string{}) + "'",
+            "names ratio " + it->dump() + ", which is not a number; read as the first level's"
+        );
+        return FIRST_RATIO;
+    }
     return it->get<float>();
 }
 

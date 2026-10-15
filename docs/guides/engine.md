@@ -121,6 +121,7 @@ measurement for a law. A row is one of two kinds:
 
 | Decided | Outcome and reason |
 |---|---|
+| The engine and its users | *Position.* The engine is designed for itself: nothing stays because a game, an example or an old file uses it, and a better shape replaces the old one with its users ported ([implementation.md](implementation.md#7-changing-a-shape-its-users-rely-on)). |
 | Temporal AA | *Position.* Rejected permanently. AA is MSAA plus `specularAA()` in the forward shader. |
 | Screen-space shadows | Adopted, as Bend Studio's: no noise and no history, so a still frame shades the same every time. GTAO, which is ambient occlusion, cannot cast the sun's shadow ([lighting.md](../reference/lighting.md#screen-space-shadows)). Revisit if the pass's cost shows in a capture of a GPU-bound frame. |
 | Screen-space reflections | Adopted, without a temporal filter: probes cannot show what moves or what lies between them. Coherent rays and a neighbour-averaged resolve stand in for TAA ([rendering.md](../reference/rendering.md)). Revisit if a project's glossy surfaces show the trace's noise, or its cost shows in a capture. |
@@ -242,10 +243,11 @@ A mistake in one of these is never local:
   seam is deliberate: `EditorRenderHooks` (`system/render/editor_render_hooks.h`)
   is offscreen rendering for authoring tools - thumbnails, material previews -
   that a shipped game never asks for, and the renderer of the editor's own ImGui.
-  `GLBackend` implements both and opts in by overriding
-  `RenderBackend::editorHooks()`; the editor will not start without them. It lives
-  in `system/render` because the backend must implement it and cannot see editor
-  code. An authoring-side GPU need extends this seam rather than inventing a third.
+  `GLBackend` implements both and offers them by returning itself from
+  `RenderBackend::editorHooks()` (null offers none); the editor will not start
+  without them. It lives in `system/render` because the backend must implement
+  it and cannot see editor code. An authoring-side GPU need extends this seam
+  rather than inventing a third.
 - **`WindowSurface`** (`platform/window/window_surface.h`) - what a backend asks of
   the window: the hints before it exists, attaching to it, presenting, the swap
   interval. A host hands one to `setupEngineApp` beside its backend
@@ -288,8 +290,8 @@ what the gate does and belongs with the owner.
 
 Round-trip any format change against what ships:
 `examples/physics_lab/scenes/obstacle_course.json` is the saved scene of record.
-A format change that scene cannot survive is a format change that did not
-happen.
+It is ported with the change, and must load and save back unchanged
+([implementation.md](implementation.md#7-changing-a-shape-its-users-rely-on)).
 
 ---
 

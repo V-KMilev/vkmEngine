@@ -143,20 +143,39 @@ void writeComponents(
 #undef VKM_SCENE_SAVE_E
 
 /**
- * @brief Whether @p ref's field came out of writeComponents as an empty string.
+ * @brief @p ref's field, when it came out of writeComponents as an empty string.
  *
- * Only then does a kept name go back; a slot filled since keeps its value.
+ * Only then does a kept name go back; a slot filled since keeps its value, and a
+ * list grown shorter has no element left to take it.
  *
  * @param c An entity's components, as writeComponents wrote them.
  * @param ref A reference the load could not resolve.
- * @return true if that field is present, a string, and empty.
+ * @return The field, or null when it is absent, not a string, or not empty.
  */
-bool fieldLeftEmpty(const json& c, const MissingAssetRef& ref) {
+json* fieldLeftEmpty(json& c, const MissingAssetRef& ref) {
     const auto component = c.find(ref.component);
-    if (component == c.end()) return false;
-    const auto field = component->find(ref.field);
-    if (field == component->end()) return false;
-    return field->is_string() && field->get<std::string>().empty();
+    if (component == c.end()) return nullptr;
+
+    json* at = &*component;
+    size_t start = 0;
+    while (at) {
+        const size_t      dot  = ref.field.find('.', start);
+        const std::string step = ref.field.substr(start, dot - start);
+        if (at->is_object()) {
+            const auto it = at->find(step);
+            at = it == at->end() ? nullptr : &*it;
+        } else if (at->is_array()) {
+            size_t index = 0;
+            const auto [end, error] = std::from_chars(step.data(), step.data() + step.size(), index);
+            const bool whole = error == std::errc{} && end == step.data() + step.size();
+            at = (whole && index < at->size()) ? &(*at)[index] : nullptr;
+        } else {
+            at = nullptr;
+        }
+        if (dot == std::string::npos) break;
+        start = dot + 1;
+    }
+    return (at && at->is_string() && at->get_ref<const std::string&>().empty()) ? at : nullptr;
 }
 
 } // namespace
@@ -168,7 +187,7 @@ void saveComponents(const Scene& s, EntityId id, json& c, const ResourceManager&
     const MissingAssets* missing = s.tryGet<MissingAssets>(id);
     if (!missing) return;
     for (const MissingAssetRef& ref : missing->refs) {
-        if (fieldLeftEmpty(c, ref)) c[ref.component][ref.field] = ref.name;
+        if (json* field = fieldLeftEmpty(c, ref)) *field = ref.name;
     }
 }
 

@@ -528,7 +528,13 @@ void NetClient::onSnapshot(Scene& scene, BitReader& reader) {
     m_interpolation.restoreConfirmed(scene);
 
     m_touched.clear();
-    if (!readSnapshot(scene, NetSchema::get(), reader, m_names, &m_touched)) {
+    m_lost.clear();
+    const bool read = readSnapshot(scene, NetSchema::get(), reader, m_names, &m_touched, &m_lost);
+
+    // Gone even from a body that faulted later: the losses come first.
+    for (const EntityId entity : m_lost) m_interpolation.forget(entity);
+
+    if (!read) {
         // Un-acknowledged too: the sender never re-describes what it believes
         // this end holds, so a standing claim would freeze those bodies.
         m_connection->refuse();

@@ -110,8 +110,8 @@ left goes with their seat.
   it.
 - Messages go up only. The server answers in replicated components; there is no
   channel to tell one player something no component holds.
-- Input held from tick to tick beside the actions (where a player is looking at
-  a board) is not a message but the command's payload
+- Input held from tick to tick beside the actions (which item a player's cursor
+  is over) is not a message but the command's payload
   ([input.md](input.md#game-state-in-the-command)).
 
 ### What replicates
@@ -447,12 +447,12 @@ action-slot fingerprint (`InputMap::actionFingerprint`), the entry scene's
 fingerprint (`setWorld`) and the `tickRate`. Commands carry actions by slot and
 entities are named by slot, so any difference is refused with
 `NetRefusal::Mismatch`, both ends printing what they hold; a fingerprint of zero
-(a generated world, no actions yet) is compared against nothing. A different
-tick rate is `NetRefusal::TickRate`. A full server (`Full`) and a game that
-declined (`Declined`) are refused the same way, with a reason a player can be
-shown. A message's header, the kinds `Hello` and `Refuse` and the refusal reasons
-are fixed across protocol versions, so another build's `Hello` gets `Mismatch`
-and anything else from it is dropped unread.
+(a generated world, or an end that has not ticked yet) is compared against
+nothing. A different tick rate is `NetRefusal::TickRate`. A full server (`Full`)
+and a game that declined (`Declined`) are refused the same way, with a reason a
+player can be shown. A message's header, the kinds `Hello` and `Refuse` and the
+refusal reasons are fixed across protocol versions, so another build's `Hello`
+gets `Mismatch` and anything else from it is dropped unread.
 
 The client says hello from the frame loop, not `connect()`, because actions are
 defined in a behavior's `onStart`, inside the first tick; it repeats at the

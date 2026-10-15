@@ -81,7 +81,7 @@ endif()
 # build_info.h, whose macros vkm_core keeps private, so no consumer compiles it.
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/src/engine/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp"
+    FILES_MATCHING PATTERN "*.h"
     PATTERN "build_info.h" EXCLUDE
 )
 
@@ -127,6 +127,12 @@ install(FILES ${VKM_COMPILER_RUNTIME} DESTINATION ${CMAKE_INSTALL_BINDIR})
 set(VKM_PYTHON "" CACHE PATH "The pinned Python an SDK carries, unpacked")
 vkm_install_source_dir(VKM_PYTHON)
 
+# The names in tools/generated.txt, which vkm reads too: what the tools write into a project.
+set(_vkm_generated_file ${CMAKE_SOURCE_DIR}/tools/generated.txt)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_vkm_generated_file})
+file(STRINGS ${_vkm_generated_file} _vkm_generated REGEX "^[^#]")
+list(TRANSFORM _vkm_generated REPLACE "^/|/$" "")
+
 # A shipping engine installs only into an SDK's shipping/, whose root holds the
 # data and the tool below: `vkm package` takes both from the root.
 if(NOT VKM_SHIPPING)
@@ -144,14 +150,9 @@ if(NOT VKM_SHIPPING)
         PATTERN "source_split" EXCLUDE
     )
 
-    # What `vkm new` copies to make a project, less what running one wrote: the names in
-    # tools/generated.txt, which vkm reads too.
-    set(_vkm_generated_file ${CMAKE_SOURCE_DIR}/tools/generated.txt)
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_vkm_generated_file})
-    file(STRINGS ${_vkm_generated_file} _vkm_generated REGEX "^[^#]")
+    # What `vkm new` copies to make a project, less what running one wrote.
     set(_vkm_skip "")
-    foreach(_vkm_pattern ${_vkm_generated})
-        string(REGEX REPLACE "^/|/$" "" _vkm_name "${_vkm_pattern}")
+    foreach(_vkm_name ${_vkm_generated})
         list(APPEND _vkm_skip PATTERN "${_vkm_name}" EXCLUDE)
     endforeach()
     install(DIRECTORY ${CMAKE_SOURCE_DIR}/templates ${CMAKE_SOURCE_DIR}/examples DESTINATION . ${_vkm_skip})

@@ -60,8 +60,8 @@ void testTwoSessionsPlayTheSameGame() {
         server.receive(serverWorld, resources);
         client.receive(clientWorld, resources);
         ++tick;
-        server.beginTick(tick, InputCommand{}, ACTIONS);
-        client.beginTick(tick, InputCommand{}, ACTIONS);
+        server.beginTick(tick, InputCommand{}, ACTIONS, TEST_ACTION_NAMES);
+        client.beginTick(tick, InputCommand{}, ACTIONS, TEST_ACTION_NAMES);
         server.send(serverWorld, tick);
         client.send(clientWorld, tick);
         server.advance(0.016f);
@@ -114,10 +114,10 @@ void testTwoSessionsPlayTheSameGame() {
     walking.tick     = inputTick;
     walking.axis[0]  = 1.0f;    // move_forward, held
     walking.pressed  = 1u << 2; // jump, this tick only
-    client.beginTick(inputTick, walking, ACTIONS);
+    client.beginTick(inputTick, walking, ACTIONS, TEST_ACTION_NAMES);
     client.send(clientWorld, inputTick);
     server.receive(serverWorld, resources);
-    server.beginTick(inputTick, InputCommand{}, ACTIONS);
+    server.beginTick(inputTick, InputCommand{}, ACTIONS, TEST_ACTION_NAMES);
 
     check("the server spawned the player it is refereeing", bool(playerOnServer));
     const InputCommand& ran = server.commandFor(playerOnServer);
@@ -133,6 +133,62 @@ void testTwoSessionsPlayTheSameGame() {
     server.receive(serverWorld, resources);
     check("the seat is freed by the message, long before any timeout", server.playerCount() == 0);
 
+    server.close();
+}
+
+// How many entities a client says it is smoothing, read off its describe() line.
+size_t smoothedCount(const NetSession& client) {
+    const std::string line  = client.describe();
+    const std::string token = "smoothing ";
+    const size_t at = line.find(token);
+    return at == std::string::npos ? 0 : std::stoul(line.substr(at + token.size()));
+}
+
+// An entity the server destroys leaves the client's smoothing with it, rather than a
+// track lingering for a body that is gone.
+void testAClientForgetsWhatTheServerDestroyed() {
+    std::printf("A crate the server destroys, on the client:\n");
+
+    const ScopedEngineSchema wire;
+    ResourceManager resources;
+    Scene serverWorld, clientWorld;
+    const std::vector<EntityId> crates = buildCrates(serverWorld, 3);
+
+    NetSession server;
+    server.onSpawn(
+        [](Scene& scene, ResourceManager&, PlayerId) { return scene.createEntity(); },
+        [](Scene& scene, ResourceManager&, PlayerId, EntityId e) { scene.destroyEntity(e); }
+    );
+    check("the server binds a port", server.host(0, 2, TEST_TICK_RATE));
+    NetSession client;
+    client.setWorld(0, clientWorld);
+    client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
+
+    uint32_t tick = 0;
+    const auto frame = [&]() {
+        server.receive(serverWorld, resources);
+        client.receive(clientWorld, resources);
+        client.interpolate(clientWorld, 0.016f);
+        ++tick;
+        server.beginTick(tick, InputCommand{}, 1, TEST_ACTION_NAMES);
+        client.beginTick(tick, InputCommand{}, 1, TEST_ACTION_NAMES);
+        server.send(serverWorld, tick);
+        client.send(clientWorld, tick);
+        server.advance(0.016f);
+        client.advance(0.016f);
+    };
+    check("the client is welcomed", pumpUntil(frame, [&]() { return client.isPlaying(); }));
+    check(
+        "  and smooths the three crates",
+        pumpUntil(frame, [&]() { return smoothedCount(client) == 3; }, 80)
+    );
+
+    const EntityId mirror = clientWorld.entityAt(crates[1].slot());
+    serverWorld.destroyEntity(crates[1]);
+    check("the crate leaves the client", pumpUntil(frame, [&]() { return !clientWorld.isAlive(mirror); }));
+    check("  and its track goes with it", smoothedCount(client) == 2);
+
+    client.close();
     server.close();
 }
 
@@ -176,8 +232,8 @@ void testAPlayersMessagesReachTheServerOnceInOrder() {
         bus.flush();
         client.receive(clientWorld, resources);
         ++tick;
-        server.beginTick(tick, InputCommand{}, 1);
-        client.beginTick(tick, InputCommand{}, 1);
+        server.beginTick(tick, InputCommand{}, 1, TEST_ACTION_NAMES);
+        client.beginTick(tick, InputCommand{}, 1, TEST_ACTION_NAMES);
         server.send(serverWorld, tick);
         client.send(clientWorld, tick);
         server.advance(0.016f);
@@ -235,7 +291,7 @@ void testATickIsAtItsOwnTime() {
     Scene scene;
     NetSession offline;
     const double step = static_cast<double>(clock.getFixedStep());
-    offline.beginTick(clock.getTick(), InputCommand{}, 0);
+    offline.beginTick(clock.getTick(), InputCommand{}, 0, TEST_ACTION_NAMES);
     const double inTick = offline.worldTime(clock);
     offline.endTick(scene, clock.getTick());
     const double between = offline.worldTime(clock);
@@ -277,8 +333,8 @@ void testAClientDrawsByTheServersTime() {
         clientClock.requestStep();
         serverClock.consumeFixedStep();
         clientClock.consumeFixedStep();
-        server.beginTick(serverClock.getTick(), InputCommand{}, 1);
-        client.beginTick(clientClock.getTick(), InputCommand{}, 1);
+        server.beginTick(serverClock.getTick(), InputCommand{}, 1, TEST_ACTION_NAMES);
+        client.beginTick(clientClock.getTick(), InputCommand{}, 1, TEST_ACTION_NAMES);
         server.send(serverWorld, serverClock.getTick());
         client.send(clientWorld, clientClock.getTick());
         server.advance(0.016f);
@@ -325,7 +381,7 @@ void testAClientBuiltFromDifferentSourceIsTurnedAway() {
 
     // The hello carries a fingerprint of what this build replicates and is sent before
     // the list changes, so the server reads what is, in effect, another build.
-    client.beginTick(1, InputCommand{}, 3);
+    client.beginTick(1, InputCommand{}, 3, TEST_ACTION_NAMES);
     client.send(clientWorld, 1);
 
     NetSchema::get().replicate<Transform>("Health");
@@ -426,8 +482,8 @@ void testAClientAtAnotherTickRateIsTurnedAway() {
         server.receive(serverWorld, resources);
         client.receive(clientWorld, resources);
         ++tick;
-        server.beginTick(tick, InputCommand{}, 3);
-        client.beginTick(tick, InputCommand{}, 3);
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        client.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
         server.send(serverWorld, tick);
         client.send(clientWorld, tick);
         server.advance(1.0f / 60.0f);
@@ -516,7 +572,7 @@ void testAnotherBuildIsToldRatherThanIgnored() {
     NetSession client;
     client.setWorld(0, clientWorld);
     client.connect(NetAddress{0x7F000001u, otherServer.localAddress().port}, TEST_TICK_RATE);
-    client.beginTick(1, InputCommand{}, 3);
+    client.beginTick(1, InputCommand{}, 3, TEST_ACTION_NAMES);
     client.send(clientWorld, 1);
 
     NetAddress joiner;
@@ -582,8 +638,8 @@ void testBothEndsHoldTheScaleTheWireCarries() {
         server.receive(serverWorld, resources);
         client.receive(clientWorld, resources);
         ++tick;
-        server.beginTick(tick, InputCommand{}, 3);
-        client.beginTick(tick, InputCommand{}, 3);
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        client.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
         server.send(serverWorld, tick);
         client.send(clientWorld, tick);
         server.advance(1.0f / 60.0f);
@@ -663,9 +719,9 @@ void testAFullServerSaysSoRatherThanIgnoring() {
         first.receive(firstWorld, resources);
         second.receive(secondWorld, resources);
         ++tick;
-        server.beginTick(tick, InputCommand{}, 3);
-        first.beginTick(tick, InputCommand{}, 3);
-        second.beginTick(tick, InputCommand{}, 3);
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        first.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        second.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
         server.send(serverWorld, tick);
         first.send(firstWorld, tick);
         second.send(secondWorld, tick);
@@ -724,9 +780,9 @@ void testADeclinedJoinSpendsNoPlayerNumber() {
         first.receive(firstWorld, resources);
         second.receive(secondWorld, resources);
         ++tick;
-        server.beginTick(tick, InputCommand{}, 3);
-        first.beginTick(tick, InputCommand{}, 3);
-        second.beginTick(tick, InputCommand{}, 3);
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        first.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        second.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
         server.send(serverWorld, tick);
         first.send(firstWorld, tick);
         second.send(secondWorld, tick);
@@ -775,8 +831,8 @@ void testAClientThatLosesItsServerDoesNotInheritTheWorld() {
         server.receive(serverWorld, resources);
         client.receive(clientWorld, resources);
         ++tick;
-        server.beginTick(tick, InputCommand{}, 0);
-        client.beginTick(tick, InputCommand{}, 0);
+        server.beginTick(tick, InputCommand{}, 0, TEST_ACTION_NAMES);
+        client.beginTick(tick, InputCommand{}, 0, TEST_ACTION_NAMES);
         server.send(serverWorld, tick);
         client.send(clientWorld, tick);
         server.advance(1.0f / 60.0f);
@@ -922,8 +978,8 @@ void testALongRoundTripKeepsInputOneTripOld() {
         walking.sequence = tick;
         walking.tick     = tick;
         walking.axis[0]  = 1.0f;
-        server.beginTick(tick, InputCommand{}, 3);
-        client.beginTick(tick, walking, 3);
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        client.beginTick(tick, walking, 3, TEST_ACTION_NAMES);
 
         // A command the server had not run, or the last one repeated for lack of new.
         const uint32_t ran = server.commandFor(walker).sequence;
@@ -1005,12 +1061,13 @@ void testTheServersQueueSetsTheClientsPace() {
             client.receive(clientWorld, resources);
             for (int i = 0; i < (starved ? 2 : 1); ++i) {
                 ++serverTick;
-                server.beginTick(serverTick, InputCommand{}, 3);
+                server.beginTick(serverTick, InputCommand{}, 3, TEST_ACTION_NAMES);
                 server.endTick(serverWorld, serverTick);
             }
             for (int i = 0; i < (starved ? 1 : 2); ++i) {
                 ++clientTick;
-                client.beginTick(clientTick, walkCommand(clientTick, clientTick, 1.0f, false), 3);
+                const InputCommand walking = walkCommand(clientTick, clientTick, 1.0f, false);
+                client.beginTick(clientTick, walking, 3, TEST_ACTION_NAMES);
                 client.endTick(clientWorld, clientTick);
             }
             server.send(serverWorld, serverTick);
@@ -1078,8 +1135,8 @@ void testAForgedPacketCannotTalkOverAPlayer() {
         server.receive(serverWorld, resources);
         client.receive(clientWorld, resources);
         ++tick;
-        server.beginTick(tick, InputCommand{}, 3);
-        client.beginTick(tick, walkCommand(tick, tick, 1.0f, false), 3);
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        client.beginTick(tick, walkCommand(tick, tick, 1.0f, false), 3, TEST_ACTION_NAMES);
         server.send(serverWorld, tick);
         client.send(clientWorld, tick);
         link.pump();
@@ -1138,7 +1195,7 @@ void testAHelloThatNeverAnswersTakesNoSeat() {
     Scene ghostWorld;
     NetSession ghost;
     ghost.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
-    ghost.beginTick(1, InputCommand{}, 3);
+    ghost.beginTick(1, InputCommand{}, 3, TEST_ACTION_NAMES);
     ghost.send(ghostWorld, 1);
 
     for (int i = 0; i < 5; ++i) {
@@ -1157,8 +1214,8 @@ void testAHelloThatNeverAnswersTakesNoSeat() {
         server.receive(serverWorld, resources);
         client.receive(clientWorld, resources);
         ++tick;
-        server.beginTick(tick, InputCommand{}, 3);
-        client.beginTick(tick, InputCommand{}, 3);
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        client.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
         server.send(serverWorld, tick);
         client.send(clientWorld, tick);
         server.advance(1.0f / 60.0f);
@@ -1208,13 +1265,13 @@ void testAFloodOfHellosCrowdsOutNoRealJoin() {
         server.receive(serverWorld, resources);
         client.receive(clientWorld, resources);
         ++tick;
-        server.beginTick(tick, InputCommand{}, 3);
-        client.beginTick(tick, InputCommand{}, 3);
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        client.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
         server.send(serverWorld, tick);
         // Between Challenge and answer, every frame: where a bounded wait list would be
         // weakest.
         for (int i = 0; i < FLOOD; ++i) {
-            ghosts[i]->beginTick(tick, InputCommand{}, 3);
+            ghosts[i]->beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
             ghosts[i]->send(ghostWorlds[i], tick);
             ghosts[i]->advance(1.0f / 60.0f);
         }
@@ -1257,7 +1314,7 @@ void testAJoinAcrossAWindowsTurnIsStillSeated() {
     NetSession client;
     client.setWorld(0, clientWorld);
     client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
-    client.beginTick(1, InputCommand{}, 3);
+    client.beginTick(1, InputCommand{}, 3, TEST_ACTION_NAMES);
     const auto say = [&]() {
         client.advance(1.0f / 60.0f);
         client.send(clientWorld, 1);
@@ -1282,8 +1339,8 @@ void testAJoinAcrossAWindowsTurnIsStillSeated() {
         server.receive(serverWorld, resources);
         client.receive(clientWorld, resources);
         ++tick;
-        server.beginTick(tick, InputCommand{}, 3);
-        client.beginTick(tick, InputCommand{}, 3);
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        client.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
         server.send(serverWorld, tick);
         client.send(clientWorld, tick);
         server.advance(1.0f / 60.0f);
@@ -1334,8 +1391,8 @@ void testASnapshotCutShortIsNotBelieved() {
         server.receive(serverWorld, resources);
         client.receive(clientWorld, resources);
         ++tick;
-        server.beginTick(tick, InputCommand{}, 3);
-        client.beginTick(tick, InputCommand{}, 3);
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        client.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
         server.endTick(serverWorld, tick);
         server.send(serverWorld, tick);
         client.send(clientWorld, tick);
@@ -1426,8 +1483,8 @@ void testAServerThatHasBeenUpAWhileStillTakesAJoin() {
         client.receive(clientWorld, resources);
         ++serverTick;
         ++clientTick;
-        server.beginTick(serverTick, InputCommand{}, 0);
-        client.beginTick(clientTick, InputCommand{}, 0);
+        server.beginTick(serverTick, InputCommand{}, 0, TEST_ACTION_NAMES);
+        client.beginTick(clientTick, InputCommand{}, 0, TEST_ACTION_NAMES);
         server.endTick(serverWorld, serverTick);
         client.endTick(clientWorld, clientTick);
         server.send(serverWorld, serverTick);
@@ -1526,8 +1583,8 @@ void testStandingIsToldRatherThanGuessed() {
         server.receive(serverWorld, resources);
         client.receive(clientWorld, resources);
         ++tick;
-        server.beginTick(tick, InputCommand{}, 0);
-        client.beginTick(tick, InputCommand{}, 0);
+        server.beginTick(tick, InputCommand{}, 0, TEST_ACTION_NAMES);
+        client.beginTick(tick, InputCommand{}, 0, TEST_ACTION_NAMES);
         serverWalk.fixedUpdate(serverCtx);
         clientWalk.fixedUpdate(clientCtx);
         serverPhysics.fixedUpdate(serverCtx);
@@ -1626,8 +1683,8 @@ void testAClientDoesNotMoveWhatItDoesNotOwn() {
         server.receive(serverWorld, resources);
         client.receive(clientWorld, resources);
         ++tick;
-        server.beginTick(tick, InputCommand{}, 0);
-        client.beginTick(tick, InputCommand{}, 0);
+        server.beginTick(tick, InputCommand{}, 0, TEST_ACTION_NAMES);
+        client.beginTick(tick, InputCommand{}, 0, TEST_ACTION_NAMES);
         serverPhysics.fixedUpdate(serverCtx);
         clientPhysics.fixedUpdate(clientCtx);
         server.send(serverWorld, tick);
@@ -1673,7 +1730,7 @@ void testAClientDoesNotMoveWhatItDoesNotOwn() {
     const float before = clientWorld.get<Transform>(mirror).position.y;
     for (int i = 0; i < 60; ++i) {
         ++tick;
-        client.beginTick(tick, InputCommand{}, 0);
+        client.beginTick(tick, InputCommand{}, 0, TEST_ACTION_NAMES);
         clientPhysics.fixedUpdate(clientCtx);
     }
     check(
@@ -1758,8 +1815,8 @@ void testAClientPredictsWhatItIsPushing() {
         server.receive(serverWorld, resources);
         client.receive(clientWorld, resources);
         ++tick;
-        server.beginTick(tick, InputCommand{}, 3);
-        client.beginTick(tick, InputCommand{}, 3);
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        client.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
         serverPhysics.fixedUpdate(serverCtx);
         clientPhysics.fixedUpdate(clientCtx);
         client.endTick(clientWorld, tick);
@@ -1982,5 +2039,6 @@ void runNetSessionTests() {
     testAWorldConvergesThroughALossyLink();
     testAPlayersMessagesReachTheServerOnceInOrder();
     testAClientDrawsByTheServersTime();
+    testAClientForgetsWhatTheServerDestroyed();
     testATickIsAtItsOwnTime();
 }

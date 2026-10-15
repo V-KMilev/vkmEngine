@@ -131,11 +131,12 @@ void buildDecals(RenderView& view, const Scene& scene) {
 /**
  * @brief Flatten every emitter's live particles into billboard instances, split by blend, unsorted.
  *
- * @param view      The view being refilled.
- * @param scene     Scene whose ParticleEmitter components are gathered.
- * @param particles The live particles of each, or null.
+ * @param view         The view being refilled.
+ * @param scene        Scene whose ParticleEmitter components are gathered.
+ * @param particles    The live particles of each, or null.
+ * @param throughAnEye Whether a scene camera sees the frame, the one ParticleEmitter::seenBy names.
  */
-void buildParticles(RenderView& view, const Scene& scene, const LiveParticles* particles) {
+void buildParticles(RenderView& view, const Scene& scene, const LiveParticles* particles, bool throughAnEye) {
     PROFILE_SCOPE("RenderView::buildParticles");
     view.particlesAdditive.clear();
     view.particlesAlpha.clear();
@@ -143,8 +144,9 @@ void buildParticles(RenderView& view, const Scene& scene, const LiveParticles* p
 
     scene.forEach<ParticleEmitter>([&](EntityId id, const ParticleEmitter& emitter) {
         const std::vector<Particle>* live = particles ? particles->of(id) : nullptr;
-        if (!live) return;
+        if (!live || (throughAnEye && emitter.seenBy == SeenBy::AllButEye)) return;
         auto& out = emitter.additive ? view.particlesAdditive : view.particlesAlpha;
+        const float viewmodel = throughAnEye && emitter.seenBy == SeenBy::Viewmodel ? 1.0f : 0.0f;
 
         // A few emitters a frame, so a walk finds a texture's place.
         float texture = 0.0f;
@@ -174,7 +176,7 @@ void buildParticles(RenderView& view, const Scene& scene, const LiveParticles* p
             out.push_back({
                 glm::vec4(p.position, glm::mix(emitter.startSize, emitter.endSize, t)),
                 glm::mix(emitter.startColor, emitter.endColor, t),
-                glm::vec4(emitter.softness, angle(p), texture, emitter.viewmodel ? 1.0f : 0.0f),
+                glm::vec4(emitter.softness, angle(p), texture, viewmodel),
                 glm::vec4(corner, frameSize),
                 glm::vec4(-p.velocity * std::max(emitter.stretch, 0.0f), 0.0f),
             });
@@ -287,7 +289,7 @@ void RenderView::build(
     buildLights(*this, scene);
     buildProbes(*this, scene);
     buildDecals(*this, scene);
-    buildParticles(*this, scene, particles);
+    buildParticles(*this, scene, particles, static_cast<bool>(visibility.cameraEntity));
     buildIrradianceVolume(*this, scene);
     ocean = sea ? *sea : OceanData{};
 

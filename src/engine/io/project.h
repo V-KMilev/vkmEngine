@@ -35,7 +35,7 @@ struct FontEntry {
  * compared against the running engine so a mismatch is reported up front.
  */
 struct Project {
-    std::string name         = "Untitled";  ///< Display name; titles the window.
+    std::string name;                       ///< Display name; titles the window. See loadProject.
     std::string description;                ///< One line on what it is, for the editor's start screen.
     std::string version;                    ///< The game's own, which its packages are named by.
     std::string engineVersion;              ///< Engine version this was authored against.
@@ -76,7 +76,8 @@ struct Project {
  * @brief Read the project.json at @p projectRoot.
  *
  * A missing or malformed file is not fatal: @p out keeps its defaults and only
- * the reason is logged.
+ * the reason is logged. Either way the name is project.json's "name", else the
+ * name of the project's folder.
  *
  * @param projectRoot Directory expected to contain project.json.
  * @param out         Filled on success; untouched fields keep their defaults.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/system.h"
+#include "debug/fault_latch.h"
 
 namespace Vkm::Engine {
 
@@ -33,9 +34,8 @@ class CharacterControllerSystem : public System {
         bool isReplayed() const override { return true; }
 
     private:
-        // Edge latches: each fault is named once per gap, not once a tick.
-        bool m_noCapsuleLogged = false;
-        bool m_spinnableLogged = false;
+        FaultLatch m_noCapsule;  ///< A controller with no enabled capsule Collider.
+        FaultLatch m_spinnable;  ///< A controller's Rigidbody with freezeRotation off.
 };
 
 } // namespace Vkm::Engine

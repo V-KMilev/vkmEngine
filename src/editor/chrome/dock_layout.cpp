@@ -67,9 +67,4 @@ void setViewportWindowClass() {
     ImGui::SetNextWindowClass(&viewport);
 }
 
-void dockNextBeside(const char* beside) {
-    const ImGuiWindow* neighbour = ImGui::FindWindowByName(beside);
-    if (neighbour && neighbour->DockId) ImGui::SetNextWindowDockID(neighbour->DockId, ImGuiCond_FirstUseEver);
-}
-
 } // namespace Vkm::Engine

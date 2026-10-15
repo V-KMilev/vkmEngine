@@ -58,6 +58,15 @@ EntityId ragdollOwnerOf(const Scene& scene, EntityId body, int32_t* outBone) {
     return {};
 }
 
+void destroyRagdollBodies(Scene& scene, const Ragdoll& ragdoll) {
+    for (const RagdollBone& bone : ragdoll.bones) {
+        if (bone.body && scene.isAlive(bone.body)) scene.destroyEntity(bone.body);
+    }
+    if (ragdoll.root && scene.isAlive(ragdoll.root)) {
+        HierarchyOperations::destroyHierarchy(scene, ragdoll.root);
+    }
+}
+
 void RagdollSystem::init(FrameContext& ctx) {
     m_scene = &ctx.scene;
     ctx.scene.addObserver(this);
@@ -76,16 +85,7 @@ void RagdollSystem::onEntityDestroyed(EntityId id) {
     const Ragdoll* held = m_scene->tryGet<Ragdoll>(id);
     if (!held) return;
 
-    const Ragdoll& ragdoll = *held;
-    for (const RagdollBone& bone : ragdoll.bones) {
-        if (!bone.body || !m_scene->isAlive(bone.body)) continue;
-        m_scene->destroyEntity(bone.body);
-    }
-
-    // The group node goes too: a plain destroyEntity would leave it outliving its character.
-    if (ragdoll.root && m_scene->isAlive(ragdoll.root)) {
-        HierarchyOperations::destroyHierarchy(*m_scene, ragdoll.root);
-    }
+    destroyRagdollBodies(*m_scene, *held);
 }
 
 void RagdollSystem::fixedUpdate(FrameContext& ctx) {

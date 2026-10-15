@@ -47,6 +47,9 @@ struct RagdollBone {
  * solver's back.
  */
 struct Ragdoll {
+    /// The layer bit the bones go on unless the build names another (RagdollSettings::boneLayer).
+    static constexpr int DEFAULT_BONE_LAYER = 1 << 1;
+
     bool     active = false;  ///< Physics drives the rig when true
     EntityId root{};          ///< Node the bones are grouped under
 
@@ -55,7 +58,7 @@ struct Ragdoll {
      *
      * The build takes it out of the owner's collidesWith; this is what puts it back when the ragdoll goes.
      */
-    int boneLayer = 1 << 1;
+    int boneLayer = DEFAULT_BONE_LAYER;
 
     /**
      * @brief The rig's world scale when the bones were built.

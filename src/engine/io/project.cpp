@@ -20,14 +20,26 @@ namespace {
 
 constexpr const char* PROJECT_FILE = "project.json";
 
+// A directory as one absolute, normal path ending in its own name. "proj/" ends in an empty
+// element and "proj/." in a dot; both compose away, so "logs/<project>/" built on one would lose
+// its <project>, and a project would take no name from its folder.
+fs::path normalDirectory(const fs::path& dir) {
+    std::error_code ec;
+    fs::path normal = fs::absolute(dir, ec).lexically_normal();
+    if (ec) normal = dir.lexically_normal();
+    if (!normal.has_filename()) normal = normal.parent_path();
+    return normal;
+}
+
 } // namespace
 
 bool loadProject(const fs::path& projectRoot, Project& out) {
     const fs::path file = projectRoot / PROJECT_FILE;
+    out.name = normalDirectory(projectRoot).filename().string();  // unless the file names it
 
     std::error_code ec;
     if (!fs::exists(file, ec)) {
-        LOG_INFO("No %s in '%s'; running an unnamed project", PROJECT_FILE, projectRoot.string().c_str());
+        LOG_INFO("No %s in '%s'; running it on the defaults", PROJECT_FILE, projectRoot.string().c_str());
         return false;
     }
 
@@ -42,11 +54,12 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
     nlohmann::json doc;
     try {
         in >> doc;
-        out.name          = doc.value("name",          out.name);
         out.description   = doc.value("description",   out.description);
         out.version       = doc.value("version",       out.version);
         out.engineVersion = doc.value("engineVersion", out.engineVersion);
         out.entryScene    = doc.value("entryScene",    out.entryScene);
+        const std::string named = doc.value("name", std::string{});
+        if (!named.empty()) out.name = named;
         // Clamped here, not at each reader: the clock would not honour an unclamped value.
         const uint32_t askedTick = doc.value("tickRate", out.tickRate);
         out.tickRate = Config::clampTickRate(askedTick);
@@ -67,8 +80,8 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
             visitShippedRenderFields(out.render, [&](const char* key, auto& field) {
                 using Field = std::decay_t<decltype(field)>;
                 if (!render.contains(key)) return;
-                // An enum with a name table travels as its name, one without as its value.
-                if constexpr (std::is_enum_v<Field> && Reflect::HAS_ENUM_NAMES<Field>) {
+                if constexpr (std::is_enum_v<Field>) {
+                    static_assert(Reflect::HAS_ENUM_NAMES<Field>, "a shipped enum travels as its name");
                     if (!render[key].is_string()) {
                         LOG_WARNING(
                             "project.json render.%s wants the setting's name as a string; keeping '%s'",
@@ -89,11 +102,7 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
                     // Per field: a mistyped value keeps its current one without
                     // abandoning the rest of the file.
                     try {
-                        if constexpr (std::is_enum_v<Field>) {
-                            field = static_cast<Field>(render[key].get<std::underlying_type_t<Field>>());
-                        } else {
-                            field = render[key].get<Field>();
-                        }
+                        field = render[key].get<Field>();
                     } catch (const nlohmann::json::exception&) {
                         LOG_WARNING(
                             "project.json render.%s is '%s', which is not a value of its type; "
@@ -208,10 +217,9 @@ bool saveProject(const fs::path& projectRoot, const Project& project) {
     nlohmann::json render = nlohmann::json::object();
     visitShippedRenderFields(project.render, [&](const char* key, auto& field) {
         using Field = std::decay_t<decltype(field)>;
-        if constexpr (std::is_enum_v<Field> && Reflect::HAS_ENUM_NAMES<Field>) {
+        if constexpr (std::is_enum_v<Field>) {
+            static_assert(Reflect::HAS_ENUM_NAMES<Field>, "a shipped enum travels as its name");
             render[key] = Reflect::enumName(field);
-        } else if constexpr (std::is_enum_v<Field>) {
-            render[key] = static_cast<std::underlying_type_t<Field>>(field);
         } else {
             render[key] = field;
         }
@@ -234,14 +242,7 @@ bool compatibleEngine(const std::string& engineVersion) {
 fs::path findProjectRoot(const fs::path& start) {
     std::error_code ec;
 
-    fs::path dir = fs::is_directory(start, ec) ? start : start.parent_path();
-
-    // "proj/" ends in an empty element and "proj/." in a dot; both compose away,
-    // so "logs/<project>/" built on one would lose its <project>.
-    dir = fs::absolute(dir, ec).lexically_normal();
-    // Only the path handed in can end that way; the loop reaches every other
-    // directory through parent_path().
-    if (!dir.has_filename()) dir = dir.parent_path();
+    fs::path dir = normalDirectory(fs::is_directory(start, ec) ? start : start.parent_path());
 
     while (!dir.empty()) {
         if (fs::exists(dir / PROJECT_FILE, ec)) return dir;

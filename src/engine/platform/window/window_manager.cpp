@@ -303,7 +303,7 @@ void WindowManager::updateMode(WindowMode windowMode) {
             break;
         }
         default:
-            LOG_ERROR("Invalid window mode: %s", toString(windowMode));
+            LOG_ERROR("Invalid window mode: %d", static_cast<int>(windowMode));
             return;
     }
 
@@ -311,7 +311,7 @@ void WindowManager::updateMode(WindowMode windowMode) {
 
     m_windowMode = windowMode;
 
-    LOG_INFO("Mode -> %s (%dx%d @ %dHz)", toString(windowMode), targetW, targetH, targetRefresh);
+    LOG_INFO("Mode -> %s (%dx%d @ %dHz)", Reflect::enumName(windowMode), targetW, targetH, targetRefresh);
 }
 
 std::vector<WindowSize> WindowManager::renderResolutions() const {

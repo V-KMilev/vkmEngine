@@ -104,7 +104,18 @@ struct OwnFile : PlainData {
 template<typename T, typename Ctx>
 nlohmann::json saveFields(const T& obj, const Ctx& ctx);
 template<typename T, typename Ctx>
-void loadFields(const nlohmann::json& j, T& obj, const Ctx& ctx, bool inArray = false);
+void loadFields(const nlohmann::json& j, T& obj, const Ctx& ctx, const char* path = nullptr);
+
+/**
+ * @brief Where @p step stands below @p parent, the steps joined by dots: "levels.2.mesh".
+ *
+ * @param parent Path of the enclosing value; null or empty at the top.
+ * @param step   A field's key, or an element's index.
+ * @return The joined path.
+ */
+inline std::string childPath(const char* parent, const std::string& step) {
+    return (parent && *parent) ? std::string(parent) + "." + step : step;
+}
 
 /**
  * @brief One value to JSON, whatever kind of value it is: a handle its name, a vector an array,
@@ -129,8 +140,8 @@ nlohmann::json valueToJson(const V& val, const Ctx& ctx) {
 /**
  * @brief The same in the other direction.
  *
- * @param field Key the value is stored under, which a handle's context may keep an unresolved
- *              name under; null inside an array, where there is no key.
+ * @param field Where the value is stored, as childPath joins it, which a handle's context may
+ *              keep an unresolved name under.
  */
 template<typename V, typename Ctx>
 void valueFromJson(const nlohmann::json& j, V& val, const Ctx& ctx, const char* field) {
@@ -156,14 +167,13 @@ void valueFromJson(const nlohmann::json& j, V& val, const Ctx& ctx, const char* 
         const nlohmann::json::array_t& elements = j.get_ref<const nlohmann::json::array_t&>();
         val.clear();
         val.reserve(elements.size());
-        for (const nlohmann::json& element : elements) {
+        for (size_t i = 0; i < elements.size(); ++i) {
             typename V::value_type item{};
-            valueFromJson(element, item, ctx, nullptr);
+            valueFromJson(elements[i], item, ctx, childPath(field, std::to_string(i)).c_str());
             val.push_back(std::move(item));
         }
     } else if constexpr (Reflect::IS_REFLECTED<V>) {
-        // A struct inside an array stays inside it: its keys address the element.
-        loadFields(j, val, ctx, field == nullptr);
+        loadFields(j, val, ctx, field);
     } else {
         leafFromJson(j, val);
     }
@@ -179,7 +189,7 @@ nlohmann::json saveFields(const T& obj, const Ctx& ctx) {
 }
 
 template<typename T, typename Ctx>
-void loadFields(const nlohmann::json& j, T& obj, const Ctx& ctx, bool inArray) {
+void loadFields(const nlohmann::json& j, T& obj, const Ctx& ctx, const char* path) {
     if (!j.is_object()) {
         // Wrong as any field of the wrong type is: kept in a project's own file, refused anywhere else.
         if constexpr (Ctx::KEEPS_WRONG_FIELDS) {
@@ -193,9 +203,10 @@ void loadFields(const nlohmann::json& j, T& obj, const Ctx& ctx, bool inArray) {
         const std::string key(name);
         const auto        it = j.find(key);
         if (it == j.end()) return;
+        const std::string field = childPath(path, key);
         if constexpr (Ctx::KEEPS_WRONG_FIELDS) {
             try {
-                valueFromJson(*it, val, ctx, inArray ? nullptr : key.c_str());
+                valueFromJson(*it, val, ctx, field.c_str());
             } catch (const nlohmann::json::exception&) {
                 LOG_WARNING_C(
                     "IO",
@@ -204,7 +215,7 @@ void loadFields(const nlohmann::json& j, T& obj, const Ctx& ctx, bool inArray) {
                 );
             }
         } else {
-            valueFromJson(*it, val, ctx, inArray ? nullptr : key.c_str());
+            valueFromJson(*it, val, ctx, field.c_str());
         }
     });
 }

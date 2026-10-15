@@ -208,6 +208,16 @@ void testASheetPlaysOnceOverALifeOrAtItsRate() {
     check("a sheet of no columns is one column", sheetFrames(e) == 2);
 }
 
+// An emitter holding @p p, in the pool ParticleSystem would keep for it.
+EntityId addEmitter(Scene& scene, LiveParticles& live, const ParticleEmitter& e, const Particle& p) {
+    const EntityId id = scene.createEntity();
+    scene.add(id, e);
+    LiveParticles::Pool& pool = live.pools[id.slot()];
+    pool.emitter = id;
+    pool.particles.push_back(p);
+    return id;
+}
+
 // What the renderer is handed for a particle: its frame's rect, the top row first, its angle,
 // its trail behind it, and its texture once however many show it.
 void testAParticleIsHandedOnAsItsFrameTurnedOrStreaked() {
@@ -217,13 +227,6 @@ void testAParticleIsHandedOnAsItsFrameTurnedOrStreaked() {
     ResourceManager resources;
     const TextureHandle sheet = resources.add(TextureAsset{}, "particle:sheet");
     LiveParticles live;
-    const auto emitter = [&](const ParticleEmitter& e, const Particle& p) {
-        const EntityId id = scene.createEntity();
-        scene.add(id, e);
-        LiveParticles::Pool& pool = live.pools[id.slot()];
-        pool.emitter = id;
-        pool.particles.push_back(p);
-    };
     ParticleEmitter cards;
     cards.additive     = false;
     cards.texture      = sheet;
@@ -234,13 +237,13 @@ void testAParticleIsHandedOnAsItsFrameTurnedOrStreaked() {
     turned.lifetime = 8.0f;
     turned.age      = 5.5f;
     turned.angle    = 0.5f;
-    emitter(cards, turned);
-    emitter(cards, turned);
+    addEmitter(scene, live, cards, turned);
+    addEmitter(scene, live, cards, turned);
     ParticleEmitter sparks;
     sparks.stretch = 0.1f;
     Particle fast;
     fast.velocity = {4.0f, 0.0f, -2.0f};
-    emitter(sparks, fast);
+    addEmitter(scene, live, sparks, fast);
 
     Visibility seen;
     seen.hasCamera = true;
@@ -258,6 +261,39 @@ void testAParticleIsHandedOnAsItsFrameTurnedOrStreaked() {
     check("  turned by where it began and how long it spun", card.params.y == 0.5f + 2.0f * 5.5f);
     check("a spark streaks behind it by its stretch", spark.trail == glm::vec4(-0.4f, 0.0f, 0.2f, 0.0f));
     check("  and a card not at all", card.trail == glm::vec4(0.0f));
+}
+
+// An emitter's seenBy reads as a mesh's, through a scene camera alone; particles are drawn by the
+// eye and nothing else, so one seen by all but the eye is drawn nowhere.
+void testAnEmitterIsSeenByAsAMeshIs() {
+    std::printf("Who sees an emitter's particles:\n");
+
+    Scene scene;
+    LiveParticles live;
+    for (const SeenBy seenBy : {SeenBy::All, SeenBy::AllButEye, SeenBy::Viewmodel}) {
+        ParticleEmitter emitter;
+        emitter.seenBy = seenBy;
+        addEmitter(scene, live, emitter, Particle{});
+    }
+    const auto viewmodels = [](const RenderView& view) {
+        size_t count = 0;
+        for (const ParticleData& p : view.particlesAdditive) count += p.params.w == 1.0f ? 1 : 0;
+        return count;
+    };
+
+    Visibility eye;
+    eye.hasCamera    = true;
+    eye.cameraEntity = scene.createEntity();
+    RenderView view;
+    view.build(scene, eye, nullptr, nullptr, nullptr, &live, nullptr);
+    check("a scene camera draws nothing of one seen by all but the eye", view.particlesAdditive.size() == 2);
+    check("  and the viewmodel's take its projection", viewmodels(view) == 1);
+
+    Visibility freeView;
+    freeView.hasCamera = true;
+    view.build(scene, freeView, nullptr, nullptr, nullptr, &live, nullptr);
+    check("a host's free view draws them all", view.particlesAdditive.size() == 3);
+    check("  where they are", viewmodels(view) == 0);
 }
 
 // Asked for, each particle is born on a frame and at an angle of its own.
@@ -295,5 +331,6 @@ void runParticleTests() {
     testAWorldLoadedAgainDrawsTheSameSpread();
     testASheetPlaysOnceOverALifeOrAtItsRate();
     testAParticleIsHandedOnAsItsFrameTurnedOrStreaked();
+    testAnEmitterIsSeenByAsAMeshIs();
     testParticlesAreBornOnFramesAndAnglesOfTheirOwn();
 }

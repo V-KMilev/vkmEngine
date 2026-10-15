@@ -64,7 +64,7 @@ VKM_REFLECT_END()
 A field the block does not list is runtime state: not saved, not shown, not
 copied. A behavior with nothing to tune still writes the block, empty. The
 inspector labels `pushStrength` "Push Strength", and edits a `glm::vec3` or
-`glm::vec4` whose name ends in `color` or `colour` with a colour picker.
+`glm::vec4` whose name ends in `color` with a colour picker.
 
 **Registering it.** The module names its behaviors once, in `src/module.cpp`:
 
@@ -431,9 +431,9 @@ needs):
   project's log beside the engine's.
 
 `BehaviorRegistry` is the process-wide name -> factory map scenes recreate
-behaviors through: `registerBehavior<T>()` keys on `Reflect::Traits<T>::NAME`,
-`registerBehaviors<A, B, C>()` registers each, `create("Crate")` makes one, and
-`names()` is what Add Behavior lists.
+behaviors through: `registerBehaviors<A, B, C>()` keys each type `T` on
+`Reflect::Traits<T>::NAME`, `create("Crate")` makes one, and `names()` is what
+Add Behavior lists.
 
 ### Hot reload
 

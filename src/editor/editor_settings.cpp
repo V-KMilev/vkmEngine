@@ -12,6 +12,7 @@
 
 #include "logger.h"
 
+#include "core/reflect.h"
 #include "editor_state.h"
 #include "system/render/render_settings.h"
 #include "io/json_file.h"
@@ -24,8 +25,8 @@ using nlohmann::json;
 
 // Bumped when a change makes an older file mean something else; a file of
 // another version is refused whole (readVersioned).
-constexpr int FILE_VERSION      = 5;  ///< editor_settings.json, the project's.
-constexpr int USER_FILE_VERSION = 1;  ///< editor_user.json, the person's.
+constexpr int FILE_VERSION      = 6;  ///< editor_settings.json, the project's.
+constexpr int USER_FILE_VERSION = 2;  ///< editor_user.json, the person's.
 
 /**
  * @brief Write a bind as ImGui's name for the key, not as its enum value.
@@ -136,30 +137,36 @@ void visitRenderFields(Fn&& f) {
 /**
  * @brief Read one persisted field, the way every visited field is read.
  *
- * An absent key or a value of the wrong type leaves the default, rather than
- * costing the rest of the file.
+ * An absent key, a value of the wrong type or a name this build has no
+ * enumerator for leaves the default, rather than costing the rest of the file.
  *
- * @tparam M The field's type; an enum is read as int.
+ * @tparam M The field's type; an enum is read by name, as project.json reads
+ *           one.
  * @param j Object holding the field.
  * @param key Its key.
  * @param member Field to fill.
  */
 template <typename M>
 void readField(const json& j, const char* key, M& member) {
-    try {
-        if constexpr (std::is_enum_v<M>)
-            member = static_cast<M>(j.value(key, static_cast<int>(member)));
-        else
+    if constexpr (std::is_enum_v<M>) {
+        const auto found = j.find(key);
+        if (found == j.end()) return;
+        if (!found->is_string() || !Reflect::enumFromNameChecked(found->get<std::string>(), member)) {
+            LOG_WARNING("Editor settings: '%s' names no setting this build has; keeping its default", key);
+        }
+    } else {
+        try {
             member = j.value(key, member);
-    } catch (const json::type_error&) {
-        LOG_WARNING("Editor settings: '%s' has the wrong type; keeping its default", key);
+        } catch (const json::type_error&) {
+            LOG_WARNING("Editor settings: '%s' has the wrong type; keeping its default", key);
+        }
     }
 }
 
 /**
  * @brief Write one persisted field, the inverse of readField.
  *
- * @tparam M The field's type; an enum is written as int.
+ * @tparam M The field's type; an enum is written by name.
  * @param j Object receiving the field.
  * @param key Its key.
  * @param member Field to write.
@@ -167,7 +174,7 @@ void readField(const json& j, const char* key, M& member) {
 template <typename M>
 void writeField(json& j, const char* key, const M& member) {
     if constexpr (std::is_enum_v<M>)
-        j[key] = static_cast<int>(member);
+        j[key] = Reflect::enumName(member);
     else
         j[key] = member;
 }

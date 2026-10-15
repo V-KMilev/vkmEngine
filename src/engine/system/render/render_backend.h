@@ -79,12 +79,9 @@ class RenderBackend {
          *
          * @param view   The view render() was handed; its viewport is the rect read.
          * @param pixels Replaced with tightly packed 8-bit RGB, top row first.
-         * @return False, with @p pixels empty, when this backend cannot read back.
+         * @return False, with @p pixels empty, when the viewport is empty.
          */
-        virtual bool readFrame(const RenderView& view, std::vector<uint8_t>& pixels) {
-            pixels.clear();
-            return false;
-        }
+        virtual bool readFrame(const RenderView& view, std::vector<uint8_t>& pixels) = 0;
 
         /**
          * @brief Recompile shaders whose source changed on disk - a dev hook.
@@ -94,7 +91,7 @@ class RenderBackend {
          *
          * @return Number of shaders recompiled.
          */
-        virtual uint32_t reloadChangedShaders() { return 0; }
+        virtual uint32_t reloadChangedShaders() = 0;
 
         /**
          * @brief The highest anisotropic-filtering degree this backend can honour.
@@ -103,7 +100,7 @@ class RenderBackend {
          *
          * @return Maximum degree; 1 means none.
          */
-        virtual uint32_t maxAnisotropy() const { return 1; }
+        virtual uint32_t maxAnisotropy() const = 0;
 
         /**
          * @brief Whether the backend holds its own copy of a texture's pixels.
@@ -114,17 +111,14 @@ class RenderBackend {
          * @param version Its asset's current Resource::version.
          * @return True only when the backend's copy is of that version.
          */
-        virtual bool holdsPixels(
-            const Handle<TextureAsset>& texture,
-            uint64_t version
-        ) const { return false; }
+        virtual bool holdsPixels(const Handle<TextureAsset>& texture, uint64_t version) const = 0;
 
         /**
          * @brief The backend's authoring-only hooks, or null when it offers none.
          *
          * @return Hooks the editor may use, or null.
          */
-        virtual EditorRenderHooks* editorHooks() { return nullptr; }
+        virtual EditorRenderHooks* editorHooks() = 0;
 
     public:
         BackendInfo info() const { return m_info; }

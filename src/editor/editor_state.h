@@ -11,6 +11,7 @@
 #include "ecs/scene.h"
 #include "command/command_host.h"
 #include "command/command_stack.h"
+#include "core/reflect.h"
 #include "io/project.h"
 #include "input/camera_controller_system.h"
 #include "input/editor_keybinds.h"
@@ -25,7 +26,13 @@ namespace Vkm::Engine {
  *
  * Select draws no gizmo, which is why it is a tool rather than a fourth GizmoOperation.
  */
-enum class EditorTool { Select, Translate, Rotate, Scale };
+enum class EditorTool {
+    Select,
+    Translate,
+    Rotate,
+    Scale,
+    Count  ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
+};
 
 /**
  * @brief The gizmo operation a tool asks the gizmo for.
@@ -38,7 +45,8 @@ inline GizmoOperation operationFor(EditorTool tool) {
         case EditorTool::Rotate: return GizmoOperation::Rotate;
         case EditorTool::Scale:  return GizmoOperation::Scale;
         case EditorTool::Select:
-        case EditorTool::Translate: break;
+        case EditorTool::Translate:
+        case EditorTool::Count: break;
     }
     return GizmoOperation::Translate;
 }
@@ -408,3 +416,5 @@ inline void pushRecentPath(std::vector<std::string>& mru, const std::string& val
 }
 
 } // namespace Vkm::Engine
+
+VKM_ENUM_NAMES(::Vkm::Engine::EditorTool, "Select", "Translate", "Rotate", "Scale")

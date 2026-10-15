@@ -94,7 +94,7 @@ TextureHandle createSolidColorTexture(glm::vec4 color, ResourceManager& rm, Text
 
     TextureAsset tex = makeSolidColorAsset(color, usage);
     nlohmann::json src;
-    src["kind"]  = AssetSourceKind::SOLID;
+    src[AssetSourceKey::KIND] = AssetSourceKind::SOLID;
     src["color"] = {color.r, color.g, color.b, color.a};
     src[AssetSourceKey::USAGE] = Reflect::enumName(usage);
     tex.sourceJson() = std::move(src);
@@ -102,7 +102,7 @@ TextureHandle createSolidColorTexture(glm::vec4 color, ResourceManager& rm, Text
 }
 
 TextureHandle createGeneratedTexture(const nlohmann::json& source, ResourceManager& rm) {
-    if (source.value("kind", std::string{}) != AssetSourceKind::SOLID) return {};
+    if (source.value(AssetSourceKey::KIND, std::string{}) != AssetSourceKind::SOLID) return {};
 
     glm::vec4 color(1.0f);
     if (source.contains("color") && source["color"].is_array() && source["color"].size() >= 4) {

@@ -30,7 +30,7 @@ namespace {
  */
 nlohmann::json meshGeneratorSource(const char* type, nlohmann::json params = nlohmann::json::object()) {
     nlohmann::json j;
-    j["kind"] = AssetSourceKind::GENERATOR;
+    j[AssetSourceKey::KIND] = AssetSourceKind::GENERATOR;
     j["type"] = type;
     if (!params.empty()) j["params"] = std::move(params);
     return j;
@@ -85,7 +85,7 @@ MeshHandle createGeneratedMesh(const nlohmann::json& source, ResourceManager& re
     if (type == "cube") {
         mesh = generateCube();
     } else if (type == "sphere") {
-        mesh = generateSphere(p.value("xSegments", 32u), p.value("ySegments", 16u));
+        mesh = generateSphere(p.value("resolution", 16u));
     } else if (type == "cone") {
         mesh = generateCone(p.value("radius", 0.5f), p.value("height", 1.0f), p.value("segments", 16u));
     } else if (type == "cylinder") {
@@ -101,9 +101,9 @@ MeshHandle createGeneratedMesh(const nlohmann::json& source, ResourceManager& re
     } else if (type == "plane") {
         mesh = generatePlane(
             p.value("width", 1.0f),
-            p.value("height", 1.0f),
+            p.value("depth", 1.0f),
             p.value("widthSegments", 1u),
-            p.value("heightSegments", 1u)
+            p.value("depthSegments", 1u)
         );
     } else if (type == "triangle") {
         mesh = generateTriangle(p.value("size", 1.0f));
@@ -138,7 +138,7 @@ MeshAsset generateTriangle(float size) {
     return mesh;
 }
 
-MeshAsset generatePlane(float width, float height, uint32_t widthSegments, uint32_t heightSegments) {
+MeshAsset generatePlane(float width, float depth, uint32_t widthSegments, uint32_t depthSegments) {
     MeshAsset mesh;
 
     const glm::vec3 normal(0.0f, 1.0f, 0.0f);
@@ -146,15 +146,15 @@ MeshAsset generatePlane(float width, float height, uint32_t widthSegments, uint3
     const glm::vec4 tangent(1.0f, 0.0f, 0.0f, -1.0f);
 
     // u along x, v along z; each cell CCW seen from +Y, the normal side.
-    const uint32_t nx = widthSegments  > 0 ? widthSegments  : 1;
-    const uint32_t nz = heightSegments > 0 ? heightSegments : 1;
-    const float halfW = width  * 0.5f;
-    const float halfH = height * 0.5f;
+    const uint32_t nx = widthSegments > 0 ? widthSegments : 1;
+    const uint32_t nz = depthSegments > 0 ? depthSegments : 1;
+    const float halfW = width * 0.5f;
+    const float halfD = depth * 0.5f;
 
     mesh.vertices.reserve((nx + 1) * (nz + 1));
     for (uint32_t j = 0; j <= nz; ++j) {
         const float v = static_cast<float>(j) / static_cast<float>(nz);
-        const float z = -halfH + v * height;
+        const float z = -halfD + v * depth;
         for (uint32_t i = 0; i <= nx; ++i) {
             const float u = static_cast<float>(i) / static_cast<float>(nx);
             const float x = -halfW + u * width;
@@ -182,9 +182,9 @@ MeshAsset generatePlane(float width, float height, uint32_t widthSegments, uint3
     mesh.computeAndSetBounds();
     const nlohmann::json params = {
         {"width", width},
-        {"height", height},
+        {"depth", depth},
         {"widthSegments", widthSegments},
-        {"heightSegments", heightSegments}
+        {"depthSegments", depthSegments}
     };
     stampGenerated(mesh, "plane", params);
     return mesh;
@@ -260,12 +260,12 @@ MeshAsset generateCube() {
     return mesh;
 }
 
-MeshAsset generateSphere(uint32_t xSegments, uint32_t ySegments) {
+MeshAsset generateSphere(uint32_t resolution) {
     MeshAsset mesh;
     const float radius = 0.5f;
 
     // Each cube face maps its own [0,1] UVs.
-    const uint32_t res = std::max(2u, std::max(xSegments, ySegments) / 2u);  // per-face grid
+    const uint32_t res = std::max(2u, resolution);
 
     // Flip a triangle whose geometric normal points inward, so winding holds
     // whatever the handedness of each face basis.
@@ -329,7 +329,7 @@ MeshAsset generateSphere(uint32_t xSegments, uint32_t ySegments) {
     }
 
     mesh.computeAndSetBounds();
-    stampGenerated(mesh, "sphere", {{"xSegments", xSegments}, {"ySegments", ySegments}});
+    stampGenerated(mesh, "sphere", {{"resolution", resolution}});
     return mesh;
 }
 

@@ -18,8 +18,8 @@ class GLMaterial;
  *
  * Three buckets in order: Opaque/Unlit against GLDepthPrepass's depth (GLDepth::EYE_TEST_EQUAL,
  * writes off), AlphaMask priming its own, then Transparent back-to-front. Never clears; back faces
- * are culled (materials are single-sided). Each surface fogs at its own depth (see
- * GLPass::bindFog).
+ * are culled, except for a MaterialAsset::doubleSided material: an opaque one draws unculled, a
+ * transparent one twice, back faces first. Each surface fogs at its own depth (see GLPass::bindFog).
  *
  * Four programs: static and skinned, each whole and plain - compiled without the optional
  * features a GLMaterial::plain material never reads (shaders/forward/pbr_plain). Skinned runs

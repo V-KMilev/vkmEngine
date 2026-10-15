@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string>
+
 #include <nlohmann/json_fwd.hpp>
 
 #include "resource/texture_format.h"
@@ -9,8 +11,9 @@ namespace Vkm::Engine {
 /**
  * @brief The `kind` field of an asset's source descriptor.
  *
- * The `kind` picks the import that rebuilds an asset from its recipe. The strings are
- * the file format: changing one changes what existing assets say.
+ * The `kind` picks the import that rebuilds an asset from its recipe; a material's
+ * recipe carries none, being its values themselves. The strings are the file format:
+ * changing one changes what existing assets say.
  */
 namespace AssetSourceKind {
     /// What an asset read from its cooked file carries instead of its recipe.
@@ -19,8 +22,6 @@ namespace AssetSourceKind {
     inline constexpr const char* DECIMATE  = "decimate";
     inline constexpr const char* FILE      = "file";       ///< One file on disk, decoded as-is.
     inline constexpr const char* GENERATOR = "generator";  ///< A primitive built by the mesh generators.
-    /// A material whose values live in the descriptor itself.
-    inline constexpr const char* INLINE    = "inline";
     inline constexpr const char* MODEL     = "model";      ///< One index into a glTF, FBX or OBJ file.
     /// A texture embedded in, or referenced beside, a model file.
     inline constexpr const char* MODEL_IMAGE = "model-image";
@@ -34,6 +35,8 @@ namespace AssetSourceKind {
  * A key spelled two ways reads as absent. The strings are the file format.
  */
 namespace AssetSourceKey {
+    /// Which import rebuilds the asset, an AssetSourceKind string.
+    inline constexpr const char* KIND             = "kind";
     /// What a texture's texels mean, a TextureUsage name.
     inline constexpr const char* USAGE            = "usage";
     /// The source file an import reads, project-relative.
@@ -52,8 +55,12 @@ namespace AssetSourceKey {
     inline constexpr const char* RATIO            = "ratio";
     /// Whether a texture builds a mip chain.
     inline constexpr const char* GENERATE_MIPMAPS = "generateMipmaps";
-    /// On a metallic-roughness map: its material's normal map, by name, whose detail the cook
-    /// folds into the roughness its mips keep (AssetCooker::bakeTexture).
+    /// A texture's wrap mode, when it does not clamp (textureWrapFromRecipe).
+    inline constexpr const char* WRAP             = "wrap";
+    /// A texture's filter override, when it has one (textureFilterFromRecipe).
+    inline constexpr const char* FILTER           = "filter";
+    /// On a metallic-roughness map: its material's normal map's source file, project-relative,
+    /// whose detail the cook folds into the roughness its mips keep (AssetCooker::bakeTexture).
     inline constexpr const char* ROUGHNESS_NORMAL = "roughnessNormal";
 } // namespace AssetSourceKey
 
@@ -67,5 +74,22 @@ namespace AssetSourceKey {
  * @return The usage the key names, or TextureUsage::Data.
  */
 TextureUsage textureUsageFromRecipe(const nlohmann::json& source);
+
+/**
+ * @brief Report a texture recipe's value under @p key that none of its spellings match.
+ *
+ * Names the recipe by its path: a misspelt value shows only as a wrong look.
+ *
+ * @param source The texture's source descriptor.
+ * @param key    The key whose value is unknown.
+ * @param known  The spellings @p key takes, comma-separated.
+ * @param readAs What the value reads as instead.
+ */
+void reportUnknownTextureValue(
+    const nlohmann::json& source,
+    const char* key,
+    const std::string& known,
+    const char* readAs
+);
 
 } // namespace Vkm::Engine

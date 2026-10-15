@@ -455,7 +455,8 @@ bool readSnapshot(
     const NetSchema& schema,
     BitReader& reader,
     NetNames& names,
-    std::vector<EntityId>* touched
+    std::vector<EntityId>* touched,
+    std::vector<EntityId>* lost
 ) {
     PROFILE_SCOPE("readSnapshot");
     const uint32_t typeCount = static_cast<uint32_t>(schema.size());
@@ -464,6 +465,7 @@ bool readSnapshot(
     for (uint32_t i = 0; i < lostCount; ++i) {
         const uint32_t slot = reader.bits(LARGE_GAP_BITS);
         if (reader.failed()) return false;
+        if (const EntityId named = names.find(scene, slot); named && lost) lost->push_back(named);
         names.forget(scene, slot);
     }
 

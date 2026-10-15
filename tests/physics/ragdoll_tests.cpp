@@ -510,6 +510,16 @@ void testRagdollAsHitboxes() {
         foundSomething && !ragdollOwnerOf(scene, other.entity, nullptr)
     );
     check("    which is a different entity from the limb", other.entity != hit.entity);
+
+    // Cast from inside the limb, as an eye inside its own head: ignoring the character skips its
+    // bones too, which would otherwise answer at range zero.
+    const EntityId wall = addBox(scene, {-3.0f, 1.3f, 0.0f}, {0.2f, 2.0f, 2.0f});
+    QueryFilter self;
+    self.ignore = character;
+    RayHit past;
+    const glm::vec3 inside = hit.point + glm::vec3(-0.01f, 0.0f, 0.0f);
+    const bool sawPast = raycast(scene, inside, {-1,0,0}, 20.0f, past, self);
+    check("a ray ignoring the character passes its bones", sawPast && past.entity == wall);
 }
 
 // A walking character's inactive ragdoll bones, kinematic and animated, overlap a

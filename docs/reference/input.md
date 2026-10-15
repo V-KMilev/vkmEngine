@@ -38,10 +38,11 @@ undefined action reads as inactive**, not as an error.
 ### Rebinding
 
 `define` states the defaults. A controls screen changes what feeds an action
-with `rebind`, `addBinding` or `clearBindings`, and reads with `bindings(action)`
-and `actions()`. While waiting for the player's choice it asks `struck()` - the
-key or button that went down this frame, bound or not, as an `InputBinding` -
-and shows one with `bindingName(binding)` ("Left Shift", "Right mouse").
+with `rebind` - the whole list, empty to unbind it - and reads with
+`bindings(action)` and `actions()`. While waiting for the player's choice it
+asks `struck()` - the key or button that went down this frame, bound or not, as
+an `InputBinding` - and shows one with `bindingName(binding)` ("Left Shift",
+"Right mouse").
 
 `saveBindings()` returns the player's rebindings as JSON - only those differing
 from the defaults, so an untouched key follows a later default - for a settings

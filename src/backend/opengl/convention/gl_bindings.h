@@ -73,7 +73,7 @@ namespace Vkm::Engine {
     X(ReflectionTextureSlots, CHAIN,                 3,  REFLECT_SLOT_CHAIN,                  The lit scene as a filtered mip chain that a hit reads)              \
     X(PostTextureSlots,       SCENE_COLOR,           18, POST_SLOT_SCENE_COLOR,               Scene colour: refraction backdrop and a post pass source)            \
     X(PostTextureSlots,       SCENE_DEPTH,           19, POST_SLOT_SCENE_DEPTH,               Scene depth texture)                                                 \
-    X(PostTextureSlots,       SCENE_GBUFFER,         20, POST_SLOT_SCENE_GBUFFER,             Scene G-buffer: oct view-normal + roughness + metalness)             \
+    X(PostTextureSlots,       SCENE_GBUFFER,         20, POST_SLOT_SCENE_GBUFFER,             Scene G-buffer: the oct view-normal)                                 \
     X(PostTextureSlots,       AO,                    21, POST_SLOT_AO,                        GTAO factor + bent normal; the cascaded sun screen shadow in alpha)  \
     X(ProbeTextureSlots,      IRRADIANCE,            22, PROBE_SLOT_IRRADIANCE,               samplerCubeArray of every probe irradiance)                          \
     X(ProbeTextureSlots,      PREFILTER,             23, PROBE_SLOT_PREFILTER,                samplerCubeArray of every probe prefilter)                           \
@@ -104,7 +104,7 @@ namespace Vkm::Engine {
     X(VertexAttributes,       BONES,                 8,  ATTR_BONES,                          Mesh-pool skin stream)                                               \
     X(VertexAttributes,       WEIGHTS,               9,  ATTR_WEIGHTS,                        Mesh-pool skin stream)                                               \
     X(FragmentOutputs,        COLOR,                 0,  OUT_COLOR,                           The lit HDR colour)                                                  \
-    X(FragmentOutputs,        GBUFFER,               1,  OUT_GBUFFER,                         Oct view normal + authored roughness + metalness)                    \
+    X(FragmentOutputs,        GBUFFER,               1,  OUT_GBUFFER,                         Oct view normal)                                                     \
     X(FragmentOutputs,        REFLECT_WEIGHT,        2,  OUT_REFLECT_WEIGHT,                  The environment reflection weight (rgb) + roughness (a))             \
     X(FragmentOutputs,        REFLECT_ENV,           3,  OUT_REFLECT_ENV,                     That weight times the probe / sky radiance)                          \
     X(ComputeGroups,          IMAGE,                 8,  GROUP_IMAGE,                         Edge of a square group over a 2D image or a froxel slice)            \

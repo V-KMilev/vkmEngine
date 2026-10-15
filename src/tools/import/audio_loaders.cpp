@@ -173,7 +173,7 @@ AudioClipHandle loadAudioClip(const std::string& filePath, ResourceManager& reso
         clip.sampleRate
     );
 
-    clip.sourceJson() = {{"kind", AssetSourceKind::FILE}, {AssetSourceKey::PATH, ref}};
+    clip.sourceJson() = {{AssetSourceKey::KIND, AssetSourceKind::FILE}, {AssetSourceKey::PATH, ref}};
     return resources.add(std::move(clip), ref);
 }
 

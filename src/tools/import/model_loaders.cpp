@@ -55,11 +55,15 @@ std::string stemOf(const std::string& path) {
 // One writer each: the finished asset and its async stub must carry the same descriptor, or the
 // cook hashes two for one asset.
 nlohmann::json modelMeshRecipe(const std::string& path, int meshIdx) {
-    return {{"kind", AssetSourceKind::MODEL}, {AssetSourceKey::PATH, path}, {AssetSourceKey::MESH, meshIdx}};
+    return {
+        {AssetSourceKey::KIND, AssetSourceKind::MODEL},
+        {AssetSourceKey::PATH, path},
+        {AssetSourceKey::MESH, meshIdx}
+    };
 }
 nlohmann::json modelImageRecipe(const std::string& modelPath, const std::string& ref, TextureUsage usage) {
     return {
-        {"kind", AssetSourceKind::MODEL_IMAGE},
+        {AssetSourceKey::KIND, AssetSourceKind::MODEL_IMAGE},
         {AssetSourceKey::PATH, modelPath},
         {AssetSourceKey::REF, ref},
         {AssetSourceKey::USAGE, Reflect::enumName(usage)}
@@ -67,14 +71,8 @@ nlohmann::json modelImageRecipe(const std::string& modelPath, const std::string&
 }
 
 // One embedded image imported for two usages is two assets: the pixels differ.
-const char* usageSuffix(TextureUsage usage) {
-    switch (usage) {
-        case TextureUsage::Color:  return "#s";
-        case TextureUsage::Normal: return "#n";
-        case TextureUsage::Data:
-        case TextureUsage::Count:  break;
-    }
-    return "#l";
+std::string usageSuffix(TextureUsage usage) {
+    return std::string("#") + Reflect::enumName(usage);
 }
 
 // The parsed file a project reference names, from the main thread.
@@ -184,7 +182,7 @@ Rig buildRig(const SourceModel& model, const std::string& path) {
         );
         return {};
     }
-    skeleton.sourceJson() = {{"kind", AssetSourceKind::MODEL}, {AssetSourceKey::PATH, path}};
+    skeleton.sourceJson() = {{AssetSourceKey::KIND, AssetSourceKind::MODEL}, {AssetSourceKey::PATH, path}};
     out.rootNode = static_cast<int32_t>(rigRoot);
     return out;
 }
@@ -311,7 +309,7 @@ AnimationClipAsset buildClip(
 
     // The recipe is regenerated from this on every cook, so accepted markers go back into it.
     out.sourceJson() = {
-        {"kind", AssetSourceKind::MODEL},
+        {AssetSourceKey::KIND, AssetSourceKind::MODEL},
         {AssetSourceKey::PATH, path},
         {AssetSourceKey::CLIP, clipIdx}
     };
@@ -483,15 +481,15 @@ MaterialHandle buildMaterial(
         out.*map.slot = textureFor(model.images[map.image], map.usage, path, res, cache);
     }
     // A metallic-roughness map names its normal map, so the cook folds the bumps its mips lose
-    // into roughness. Only a normal map in its own file pairs, as the cook decodes it by name.
+    // into roughness. Only a normal map in its own file pairs, as the cook decodes that file.
     // The first material to pair a map decides: shared under different normal maps, it keeps
     // that first pairing.
     if (out.metallicRoughnessTexture && out.normalTexture) {
-        const TextureAsset& normal = res.get(out.normalTexture);
-        nlohmann::json& recipe     = res.edit(out.metallicRoughnessTexture).sourceJson();
-        if (normal.sourceJson().value("kind", std::string{}) == AssetSourceKind::FILE
+        const nlohmann::json& normal = res.get(out.normalTexture).sourceJson();
+        nlohmann::json& recipe       = res.edit(out.metallicRoughnessTexture).sourceJson();
+        if (normal.value(AssetSourceKey::KIND, std::string{}) == AssetSourceKind::FILE
             && !recipe.contains(AssetSourceKey::ROUGHNESS_NORMAL)) {
-            recipe[AssetSourceKey::ROUGHNESS_NORMAL] = normal.name();
+            recipe[AssetSourceKey::ROUGHNESS_NORMAL] = normal.value(AssetSourceKey::PATH, std::string{});
         }
     }
     return res.add(std::move(out), nm);

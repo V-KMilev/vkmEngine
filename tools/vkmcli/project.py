@@ -40,11 +40,12 @@ def read_project(d: Path) -> dict:
 
 
 def project_name(d: Path) -> str:
+    """project.json's name, else the folder's: loadProject's rule (docs/reference/io.md)."""
     return read_project(d).get("name") or d.name
 
 
 # What the tools write into a project, in .gitignore's syntax: a new project's .gitignore,
-# and, by name, what a copy of a project leaves out. install.cmake reads it too.
+# and, by name, what a copy of a project leaves out.
 GENERATED_FILE = TOOL_DIR / "generated.txt"
 
 

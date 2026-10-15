@@ -17,8 +17,9 @@ class ResourceManager;
  * @brief Read the filter override a texture recipe's optional `filter` key names.
  *
  * fileTextureRecipe writes the key only for a texture that has an opinion about
- * its own sampling, so an absent or unrecognised value reads as None and the
- * texture follows the scene's filtering setting.
+ * its own sampling, so an absent value reads as None and the texture follows the
+ * scene's filtering setting. An unknown one reads as None too, through
+ * reportUnknownTextureValue.
  *
  * @param source JSON source descriptor for a texture.
  * @return TextureFilterOverride::Nearest for "nearest", None otherwise.
@@ -29,7 +30,8 @@ TextureFilterOverride textureFilterFromRecipe(const nlohmann::json& source);
  * @brief Read the wrap mode a texture recipe's optional `wrap` key names.
  *
  * fileTextureRecipe writes the key only for a texture that does not clamp, so
- * an absent or unrecognised value reads as ClampToEdge.
+ * an absent value reads as ClampToEdge. An unknown one reads as ClampToEdge too,
+ * through reportUnknownTextureValue.
  *
  * @param source JSON source descriptor for a texture.
  * @return The mode the key names, or TextureWrapMode::ClampToEdge.

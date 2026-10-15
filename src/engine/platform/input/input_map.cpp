@@ -203,13 +203,6 @@ void InputMap::loadBindings(const nlohmann::json& saved) {
     }
 }
 
-void InputMap::addBinding(std::string_view action, InputBinding binding) {
-    Action& entry = mutableAction(action);
-    entry.bindings.push_back(binding);
-    m_saved[std::string(action)] = entry.bindings;
-    assignSlot(entry, action);
-}
-
 InputMap::Action& InputMap::mutableAction(std::string_view action) {
     auto it = m_actions.find(action);
     if (it == m_actions.end()) it = m_actions.emplace(std::string(action), Action{}).first;
@@ -217,8 +210,6 @@ InputMap::Action& InputMap::mutableAction(std::string_view action) {
 }
 
 uint64_t InputMap::actionFingerprint() const {
-    if (m_nextSlot == 0) return 0;
-
     std::vector<std::string_view> bySlot(m_nextSlot);
     for (const auto& [name, action] : m_actions) {
         if (action.slot >= 0) bySlot[static_cast<size_t>(action.slot)] = name;
@@ -237,13 +228,6 @@ uint64_t InputMap::actionFingerprint() const {
 int InputMap::indexOf(std::string_view action) const {
     const Action* entry = find(action);
     return entry ? entry->slot : -1;
-}
-
-void InputMap::clearBindings(std::string_view action) {
-    auto it = m_actions.find(action);
-    if (it == m_actions.end()) return;
-    it->second.bindings.clear();
-    m_saved[std::string(action)] = {};
 }
 
 const std::vector<InputBinding>& InputMap::bindings(std::string_view action) const {

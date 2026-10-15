@@ -13,7 +13,7 @@ class ResourceManager;
  * @brief Put a generated mesh into @p resources, reusing the one already there
  *        under its name.
  *
- * The name comes from the stamped descriptor ("mesh:generator:sphere:32:16"),
+ * The name comes from the stamped descriptor ("mesh:generator:sphere:16"),
  * so identical calls share one asset. A plain add() would replace it: a fresh
  * uid dropping in-flight decodes and a needless re-upload. Nothing edits a
  * generated mesh; a variant is different parameters, so a different name.
@@ -46,16 +46,16 @@ MeshAsset generateTriangle(float size = 1.0f);
 /**
  * @brief Generate a plane mesh (quad), tessellated into a segment grid.
  * @param width Full width along x.
- * @param height Full depth along z.
+ * @param depth Full depth along z.
  * @param widthSegments Quads along width.
- * @param heightSegments Quads along depth.
+ * @param depthSegments Quads along depth.
  * @return The plane.
  */
 MeshAsset generatePlane(
     float width = 1.0f,
-    float height = 1.0f,
+    float depth = 1.0f,
     uint32_t widthSegments = 1,
-    uint32_t heightSegments = 1
+    uint32_t depthSegments = 1
 );
 
 /**
@@ -67,14 +67,12 @@ MeshAsset generateCube();
 /**
  * @brief Generate a unit sphere mesh (radius 0.5), built as a cube-sphere.
  *
- * No poles, so no pinching or degenerate tangents. Per-face grid resolution is
- * max(2, max(xSegments, ySegments) / 2); the counts are not separate axes.
+ * No poles, so no pinching or degenerate tangents.
  *
- * @param xSegments Tessellation hint.
- * @param ySegments Tessellation hint.
+ * @param resolution Quads along each edge of every cube face; clamped up to 2.
  * @return The sphere.
  */
-MeshAsset generateSphere(uint32_t xSegments = 32, uint32_t ySegments = 16);
+MeshAsset generateSphere(uint32_t resolution = 16);
 
 /**
  * @brief Generate a pyramid mesh (square base on y=0, apex at +height).

@@ -32,6 +32,7 @@ and started depending on someone remembering it.**
 | A class holding unrelated state     | A container that grew instead of a design |
 | The same file fixed again and again | The design is telling you something       |
 | A comment that argues               | A decision defended instead of expressed  |
+| Something kept for a user           | A shape the engine would not choose today |
 
 ### 1.1 An invariant living in a comment
 
@@ -97,6 +98,15 @@ A comment defending a decision is doing a commit message's job, and usually
 sits where the author knew the design was questionable. Treat it as a pointer to
 the thing being justified
 ([code-style.md](code-style.md#61-what-bounds-a-comment)).
+
+### 1.9 Something kept for a user
+
+An alias, an overload, a fallback, a tolerated old spelling or a comment saying
+"for X" that exists because a game, an example or an old file relies on it. The
+engine would not have it if it were designed today
+([design.md](design.md#12-the-engine-is-designed-for-itself)).
+Report it with its users; the fix is to delete it and port them
+([implementation.md](implementation.md#7-changing-a-shape-its-users-rely-on)).
 
 ---
 

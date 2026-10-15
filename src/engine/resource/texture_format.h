@@ -7,9 +7,8 @@
 
 namespace Vkm::Engine {
 
-// Every enum TextureParams holds is persisted by value in cooked textures: append only. A reorder
-// silently re-reads cooked textures as another format; writeTexture in io/asset/asset_cook.cpp pins
-// every enumerator.
+// Every enum TextureParams holds is persisted by value in cooked textures: a reorder or an addition
+// bumps COOKER_VERSION and updates the pins in writeTexture (io/asset/asset_cook.cpp).
 
 /**
  * @brief GPU-side storage format (channels + bit depth + color space).
@@ -208,8 +207,6 @@ inline bool isCompressedFormat(TextureInternalFormat format) {
 /**
  * @brief How many channels @p format lays out per texel.
  *
- * An out-of-range value off disk reads as RGBA, matching the backend (gl_format_conversion.h).
- *
  * @param format Channel layout of the pixel data.
  * @return 1 to 4.
  */
@@ -218,15 +215,13 @@ inline uint32_t channelCount(TexturePixelFormat format) {
         case TexturePixelFormat::R:    return 1;
         case TexturePixelFormat::RG:   return 2;
         case TexturePixelFormat::RGB:  return 3;
-        case TexturePixelFormat::RGBA: return 4;
+        case TexturePixelFormat::RGBA: break;
     }
     return 4;
 }
 
 /**
  * @brief Bytes one texel of uncompressed pixel data occupies.
- *
- * Out-of-range values read as RGBA / unsigned byte, matching the backend (gl_format_conversion.h).
  *
  * @param format Channel layout of the pixel data.
  * @param type   Component type of the pixel data.

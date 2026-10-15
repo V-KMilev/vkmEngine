@@ -91,10 +91,9 @@ build tree or an installed SDK, as a project made by `vkm new` does. Added by
 the engine's own `CMakeLists.txt`, it skips `project()` and `find_package`.
 
 Both call `vkm_add_gameplay_module()` (`cmake/gameplay_module.cmake`, shipped in
-the SDK). Given no `SOURCES` it compiles every `.cpp` under the project's `src/`,
-which is also its include root, and refuses at configure an engine of another
-minor release than `engineVersion` in `project.json`
-(`vkm_check_engine_version`).
+the SDK). It compiles every `.cpp` under the project's `src/`, which is also its
+include root, and refuses at configure an engine of another minor release than
+`engineVersion` in `project.json` (`vkm_check_engine_version`).
 
 ## Tests
 

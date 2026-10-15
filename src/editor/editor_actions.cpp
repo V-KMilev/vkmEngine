@@ -68,14 +68,14 @@ void reparentKeepingWorld(
 
     // An instance's interior belongs to its prefab, so neither move survives a
     // load; see docs/reference/editor.md, "What an instance will not let you do".
-    if (PrefabOverrides::instanceRoot(scene, newParent)) {
+    if (Prefab::instanceRootOf(scene, newParent)) {
         const char* message =
             "A prefab instance is built from its prefab - an entity "
             "moved into one is not saved with the scene";
         state.pushToast(ToastKind::Warning, message);
         return;
     }
-    const EntityId owningInstance = PrefabOverrides::instanceRoot(scene, child);
+    const EntityId owningInstance = Prefab::instanceRootOf(scene, child);
     if (owningInstance && owningInstance != child) {
         const char* message =
             "This entity belongs to a prefab - move the instance root, or change the prefab and save it";
@@ -309,7 +309,7 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
         && (scene.has<UICanvas>(state.selectedEntity) || scene.has<UIElement>(state.selectedEntity))) {
         // Unless that belongs to a prefab instance, whose interior is never
         // written: the element would be gone after the next load.
-        if (PrefabOverrides::instanceRoot(scene, state.selectedEntity)) {
+        if (Prefab::instanceRootOf(scene, state.selectedEntity)) {
             const char* message =
                 "A prefab instance is built from its prefab - the new element is "
                 "left outside it, and needs a canvas the scene owns";
@@ -537,7 +537,7 @@ bool saveAsPrefab(Scene& scene, const ResourceManager& resources, EditorState& s
     if (!scene.isAlive(entity)) return false;
 
     // Prefab::save refuses this too; here the instance root can be named.
-    const EntityId owner = PrefabOverrides::instanceRoot(scene, entity);
+    const EntityId owner = Prefab::instanceRootOf(scene, entity);
     if (owner && owner != entity) {
         char rootName[64];
         getEntityDisplayName(scene, owner, rootName, sizeof(rootName));

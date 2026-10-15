@@ -15,7 +15,7 @@ layout(local_size_x = GROUP_IMAGE, local_size_y = GROUP_IMAGE, local_size_z = 1)
 layout(binding = 0, rgba16f) uniform readonly  image3D u_scatter;     // rgb scatter, a = extinction
 layout(binding = 1, rgba16f) uniform writeonly image3D u_integrated;  // rgb accum, a = transmittance
 
-uniform ivec3 u_froxelDims;  // froxel grid resolution (runtime; fog quality)
+uniform ivec3 u_froxelDims;  // froxel grid resolution: FogSettings::froxelGrid
 uniform float u_fogDepth;    // view depth the slices reach
 
 void main() {
