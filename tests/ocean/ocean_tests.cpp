@@ -327,7 +327,7 @@ void testTheOceanSystemBuildsTheOneSea() {
     frame.clock.requestStep(7);
     while (frame.clock.consumeFixedStep()) {}
 
-    frame.ctx.net.beginTick(frame.clock.getTick(), InputCommand{}, 0);
+    frame.ctx.net.beginTick(frame.clock.getTick(), InputCommand{}, 0, frame.ctx.input.actionFingerprint());
     system.fixedUpdate(frame.ctx);
     frame.ctx.net.endTick(scene, frame.clock.getTick());
     const double       tick  = 7.0 * static_cast<double>(frame.clock.getFixedStep());

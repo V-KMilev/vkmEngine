@@ -179,6 +179,9 @@ inline InputCommand walkCommand(uint32_t sequence, uint32_t tick, float forward,
 
 constexpr uint32_t TEST_ACTIONS = 6;
 
+/// Which action holds which slot, as both ends of a test agree: any fingerprint will do.
+constexpr uint64_t TEST_ACTION_NAMES = 0x5E55105E55105ULL;
+
 constexpr uint32_t TEST_TICK_RATE = 60;
 
 /**

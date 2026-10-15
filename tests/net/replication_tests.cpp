@@ -719,8 +719,8 @@ class SpawnMatch {
             m_server.receive(m_serverWorld, m_resources);
             m_client.receive(m_clientWorld, m_resources);
             ++m_tick;
-            m_server.beginTick(m_tick, InputCommand{}, 3);
-            m_client.beginTick(m_tick, InputCommand{}, 3);
+            m_server.beginTick(m_tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+            m_client.beginTick(m_tick, InputCommand{}, 3, TEST_ACTION_NAMES);
             m_server.send(m_serverWorld, m_tick);
             m_client.send(m_clientWorld, m_tick);
             m_server.advance(1.0f / 60.0f);

@@ -192,7 +192,7 @@ void NetSession::beginTick(
     if (m_role != NetRole::Server) m_core.actionCount = actionCount;
 
     // Every role: a server resolves commands through its own map too.
-    if (actionNames != 0) m_core.actionNames = actionNames;
+    m_core.actionNames = actionNames;
 
     if (m_role == NetRole::Client)      m_client.beginTick(command);
     else if (m_role == NetRole::Server) m_server.beginTick(tick);

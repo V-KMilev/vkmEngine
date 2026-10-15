@@ -498,8 +498,8 @@ void testDamagedSnapshotsNeverStopAClient() {
         server.receive(serverWorld, resources);
         client.receive(clientWorld, resources);
         ++tick;
-        server.beginTick(tick, InputCommand{}, 3);
-        client.beginTick(tick, InputCommand{}, 3);
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        client.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
         server.endTick(serverWorld, tick);
         client.endTick(clientWorld, tick);
         server.send(serverWorld, tick);

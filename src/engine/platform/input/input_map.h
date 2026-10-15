@@ -238,8 +238,7 @@ class InputMap {
          * Two ends defining the same actions in a different order agree on actionCount() but
          * misread each other's commands; this tells them apart.
          *
-         * @return A hash of the slotted names in slot order, or zero when no
-         *         action has a slot.
+         * @return A hash of the slotted names in slot order.
          */
         uint64_t actionFingerprint() const;
 

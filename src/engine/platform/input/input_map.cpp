@@ -210,8 +210,6 @@ InputMap::Action& InputMap::mutableAction(std::string_view action) {
 }
 
 uint64_t InputMap::actionFingerprint() const {
-    if (m_nextSlot == 0) return 0;
-
     std::vector<std::string_view> bySlot(m_nextSlot);
     for (const auto& [name, action] : m_actions) {
         if (action.slot >= 0) bySlot[static_cast<size_t>(action.slot)] = name;
