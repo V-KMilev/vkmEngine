@@ -17,6 +17,7 @@
 #include "ecs/component/render/camera.h"
 #include "ecs/component/render/light.h"
 #include "ecs/component/ui/ui_choice.h"
+#include "ecs/component/ui/ui_slider.h"
 #include "ecs/hierarchy_operations.h"
 #include "io/scene/scene_serializer.h"
 
@@ -371,6 +372,33 @@ void testUndoingADeleteDoesNotAdoptWhoeverTookTheSlot() {
         "  so the root comes back with no child rather than a stranger's",
         rootNode == nullptr || !rootNode->firstChild
     );
+}
+
+// Every entity a restored component names comes back re-pointed at what was restored, whichever
+// component names it: the scene serializer is what knows a component's entity fields.
+void testARestoredSliderStillMovesItsOwnKnob() {
+    std::printf("A deleted slider put back:\n");
+
+    Scene scene;
+    const EntityId track = oneEntityAt(scene, {0.0f, 0.0f, 0.0f});
+    const EntityId fill  = oneEntityAt(scene, {0.0f, 0.0f, 0.0f});
+    const EntityId knob  = oneEntityAt(scene, {0.0f, 0.0f, 0.0f});
+    HierarchyOperations::setParent(scene, fill, track);
+    HierarchyOperations::setParent(scene, knob, track);
+    UISlider slider;
+    slider.fill = fill;
+    slider.knob = knob;
+    scene.add(track, slider);
+
+    const SubtreeSnapshot snapshot = SubtreeSnapshot::capture(scene, track);
+    HierarchyOperations::destroyHierarchy(scene, track);
+    snapshot.apply(scene);
+
+    const EntityId back = scene.entityAt(track.slot());
+    const UISlider& restored = scene.get<UISlider>(back);
+    check("its fill is the fill that came back", restored.fill == scene.entityAt(fill.slot()));
+    check("  and its knob the knob", restored.knob == scene.entityAt(knob.slot()));
+    check("  both alive", scene.isAlive(restored.fill) && scene.isAlive(restored.knob));
 }
 
 // @p parent's children's names, in hierarchy order.
@@ -1137,6 +1165,7 @@ void runUndoTests() {
     testStepsAddressingAGoneEntityAreForgotten();
     testUndoingADeleteDoesNotAdoptWhoeverTookTheSlot();
     testADeletedSubtreeComesBackInOrder();
+    testARestoredSliderStillMovesItsOwnKnob();
     testDeleteIsOneStepThatTakesTheSelectionWithIt();
     testACopyStandsBesideTheOriginalRatherThanOnIt();
     testADuplicateIsOneStepThatTakesTheWholeCopyBack();
