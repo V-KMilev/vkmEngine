@@ -377,8 +377,9 @@ saved. The editor makes each gesture mean what it looks like, or refuses it:
   (`EditorActions::reparentKeepingWorld`); the root itself moves anywhere.
 - **Add Component** inside an instance works and warns: saving the instance over
   its file is how a component is added to a prefab.
-- **A Joint's Connected picker** is disabled inside an instance: an override is
-  read back in the prefab's namespace, a pick names an entity in the scene's.
+- **An entity picker** - a Joint's Connected, a slider's Knob - is disabled
+  inside an instance: an override is read back in the prefab's namespace, a pick
+  names an entity in the scene's.
 - **Revert to prefab** on a component the prefab no longer defines is refused
   and the entry kept.
 - **Save as Prefab** inside an instance is refused; save the instance root.

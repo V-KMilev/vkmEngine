@@ -87,6 +87,8 @@ namespace PrefabOverrides {
      * @param component Component key, as SceneSerializer writes it.
      * @param before    The component's serialized value before the edit.
      * @param after     The component's serialized value after it.
+     * @param entities  The fields that name entities (entityFields), which are never overrides:
+     *                  an override is read in the prefab's numbering, an edit names the scene's.
      * @param label     History entry text.
      * @return The undo step for the recorded override, or null when the edit is
      *         not an override at all - not part of an instance, the root's own
@@ -100,6 +102,7 @@ namespace PrefabOverrides {
         const char* component,
         const nlohmann::json& before,
         const nlohmann::json& after,
+        const std::vector<std::string>& entities,
         const char* label
     );
 
@@ -204,6 +207,29 @@ namespace PrefabOverrides {
     }
 
     /**
+     * @brief The fields of @p component that name entities: those a second naming of every
+     *        entity writes differently.
+     *
+     * @tparam T Component type.
+     * @param component Value whose fields are asked.
+     * @return The field keys; none for a component whose row names no entities.
+     */
+    template <typename T>
+    std::vector<std::string> entityFields(const T& component) {
+        std::vector<std::string> fields;
+        if constexpr (REFERENCES_ENTITIES<T>) {
+            auto bySlot  = [](EntityId e) { return e.slot(); };
+            auto shifted = [](EntityId e) { return e.slot() + 1u; };
+            const nlohmann::json one = ComponentSerializer::save(component, EntityNamer(bySlot));
+            const nlohmann::json two = ComponentSerializer::save(component, EntityNamer(shifted));
+            for (auto field = one.begin(); field != one.end(); ++field) {
+                if (two.value(field.key(), nlohmann::json()) != field.value()) fields.push_back(field.key());
+            }
+        }
+        return fields;
+    }
+
+    /**
      * @brief Record a typed component edit, serializing both sides for
      *        recordFields.
      *
@@ -236,6 +262,9 @@ namespace PrefabOverrides {
         // Asked before either side is serialized: a drag comes through here
         // each frame, and outside an instance there is nothing to record.
         if (!Prefab::instanceRootOf(scene, id)) return nullptr;
+        // Either side may name an entity the other does not.
+        std::vector<std::string> entities = entityFields(before);
+        for (std::string& field : entityFields(after)) entities.push_back(std::move(field));
         return recordFields(
             scene,
             resources,
@@ -243,6 +272,7 @@ namespace PrefabOverrides {
             COMPONENT_KEY<T>,
             serialize(before, resources),
             serialize(after, resources),
+            entities,
             label
         );
     }
