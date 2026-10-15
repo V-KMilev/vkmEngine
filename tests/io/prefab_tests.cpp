@@ -227,6 +227,14 @@ void testAPrefabThatDescribesNothingIsRefusedWhole() {
         !Prefab::instantiate(target, resources, writeAs("twins.json", twins))
     );
 
+    // An entry past the root without a uid: no override could address it.
+    nlohmann::json nameless = good;
+    nameless["entities"][1].erase("uid");
+    check(
+        "  and an entity with no uid",
+        !Prefab::instantiate(target, resources, writeAs("nameless.json", nameless))
+    );
+
     // Refused whole: nothing of a rejected file reaches the scene.
     size_t roots = 0;
     target.forEachEntity([&](EntityId id) {

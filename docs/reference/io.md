@@ -231,8 +231,8 @@ per-entity component shape a scene uses:
   overrides in. Nesting is refused both ways - a subtree containing an
   instance, and a root inside one.
 - `readPrefab` checks the file's shape once and every entry point reports what
-  it cannot use rather than throwing. A duplicate uid is refused, since it makes
-  an override's address ambiguous.
+  it cannot use rather than throwing. A missing or duplicate uid is refused, since
+  either makes an override's address ambiguous.
 
 ### Per-instance overrides
 
