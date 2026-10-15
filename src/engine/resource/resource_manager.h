@@ -34,7 +34,7 @@ template<typename T>
 inline constexpr bool IS_ENGINE_ASSET = ASSET_TYPE<T> != AssetType::Count || std::is_same_v<T, FontAsset>;
 
 /**
- * @brief Open type-erased resource registry with typed handles and generational lifetimes.
+ * @brief Type-erased resource registry with typed handles and generational lifetimes.
  *
  * Per type, as in Scene: a SlotAllocator, a SparseSet<T> and a name index.
  *
@@ -182,8 +182,7 @@ class ResourceManager {
         template<typename HandleType>
         bool isAlive(const HandleType& handle) const {
             using T = typename HandleType::resource_t;
-            const TypedSlot* slot = trySlot<T>();
-            return slot && slot->allocator.has(handle.key);
+            return getSlotConst<T>().allocator.has(handle.key);
         }
 
         /**
@@ -214,9 +213,9 @@ class ResourceManager {
         template<typename HandleType>
         const auto* tryGet(const HandleType& handle) const {
             using T = typename HandleType::resource_t;
-            const TypedSlot* slot = trySlot<T>();
-            if (!slot || !slot->allocator.has(handle.key)) return static_cast<const T*>(nullptr);
-            return &storageOfConst<T>(*slot).get(handle.key.index);
+            const TypedSlot& slot = getSlotConst<T>();
+            if (!slot.allocator.has(handle.key)) return static_cast<const T*>(nullptr);
+            return &storageOfConst<T>(slot).get(handle.key.index);
         }
 
         /**
@@ -231,9 +230,9 @@ class ResourceManager {
         template<typename HandleType>
         auto* tryEdit(const HandleType& handle) {
             using T = typename HandleType::resource_t;
-            TypedSlot* slot = m_slots.find<T>();
-            if (!slot || !slot->allocator.has(handle.key)) return static_cast<T*>(nullptr);
-            return &storageOf<T>(*slot).get(handle.key.index);
+            TypedSlot& slot = getSlot<T>();
+            if (!slot.allocator.has(handle.key)) return static_cast<T*>(nullptr);
+            return &storageOf<T>(slot).get(handle.key.index);
         }
 
         /**
@@ -336,16 +335,14 @@ class ResourceManager {
          *
          * @tparam T The resource type.
          * @param name The name to look up.
-         * @return The handle, or an invalid one when the type is unregistered or nothing matches.
+         * @return The handle, or an invalid one when nothing matches.
          */
         template<typename T>
         Handle<T> findByName(const std::string& name) const {
-            const TypedSlot* slot = trySlot<T>();
-            if (!slot) return {};
-
-            auto it = slot->nameIndex.find(name);
-            if (it == slot->nameIndex.end()) return {};
-            return Handle<T>{slot->allocator.handleAt(it->second)};
+            const TypedSlot& slot = getSlotConst<T>();
+            auto it = slot.nameIndex.find(name);
+            if (it == slot.nameIndex.end()) return {};
+            return Handle<T>{slot.allocator.handleAt(it->second)};
         }
 
         /**
@@ -367,30 +364,26 @@ class ResourceManager {
         /**
          * @brief Visit every live resource of type T; a linear scan for tooling, not hot paths.
          *
-         * A no-op when the type is unregistered.
-         *
          * @tparam T  The resource type.
          * @tparam Fn Callable taking (Handle<T>, const T&).
          * @param fn Called per resource in storage order; must not add or remove a T.
          */
         template<typename T, typename Fn>
         void forEachOfType(Fn&& fn) const {
-            const TypedSlot* slot = trySlot<T>();
-            if (!slot) return;
-            storageOfConst<T>(*slot).forEach([&](uint32_t index, const T& res) {
-                fn(Handle<T>{slot->allocator.handleAt(index)}, res);
+            const TypedSlot& slot = getSlotConst<T>();
+            storageOfConst<T>(slot).forEach([&](uint32_t index, const T& res) {
+                fn(Handle<T>{slot.allocator.handleAt(index)}, res);
             });
         }
 
         /**
          * @brief How many resources of type T the graph holds.
          *
-         * @return The count; 0 when the type is unregistered.
+         * @return The count.
          */
         template<typename T>
         size_t countOfType() const {
-            const TypedSlot* slot = trySlot<T>();
-            return slot ? storageOfConst<T>(*slot).size() : 0;
+            return storageOfConst<T>(getSlotConst<T>()).size();
         }
 
         /**
@@ -442,12 +435,11 @@ class ResourceManager {
          * A swap of the graph brings the other graph's count, so compare epoch() too.
          *
          * @tparam T The asset type.
-         * @return The count of such changes so far; 0 for a type never registered.
+         * @return The count of such changes so far.
          */
         template<typename T>
         uint64_t revisionOf() const {
-            const TypedSlot* slot = trySlot<T>();
-            return slot ? slot->revision : 0;
+            return getSlotConst<T>().revision;
         }
 
     private:
@@ -485,22 +477,11 @@ class ResourceManager {
             });
         }
 
-        /**
-         * @brief The slot for @p T, or nullptr if the type was never registered.
-         *
-         * @tparam T The resource type.
-         * @return The slot, or nullptr.
-         */
-        template<typename T>
-        const TypedSlot* trySlot() const {
-            return m_slots.find<T>();
-        }
-
+        /// getSlot() for a const caller: the slot was made with the manager, by makeEngineSlots().
         template<typename T>
         const TypedSlot& getSlotConst() const {
-            const TypedSlot* slot = trySlot<T>();
-            VKM_ASSERT(slot, "ResourceManager: type not registered");
-            return *slot;
+            static_assert(IS_ENGINE_ASSET<T>, "ResourceManager stores the engine's asset types only.");
+            return *m_slots.find<T>();
         }
 
         template<typename T>
