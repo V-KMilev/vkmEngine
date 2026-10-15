@@ -8,7 +8,6 @@
 #include <functional>
 #include <mutex>
 #include <thread>
-#include <type_traits>
 #include <vector>
 
 namespace Vkm::Engine {
@@ -195,7 +194,7 @@ class ThreadPool {
  * Serial on a worker thread. Blocks until done, then rethrows the caller's chunk's exception,
  * else the first a queued chunk threw.
  *
- * @tparam Function Callable taking a size_t index, or no arguments.
+ * @tparam Function Callable taking a size_t index.
  * @param count    Number of indices, counted from 0.
  * @param grain    Indices per chunk; 0 is taken as 1.
  * @param function Called once per index, on whichever thread runs its chunk.
@@ -208,16 +207,8 @@ void parallelFor(size_t count, size_t grain, Function&& function) {
 
     grain = std::max(grain, size_t(1));
 
-    auto invokeAt = [&](size_t i) {
-        if constexpr (std::is_invocable_v<Function, size_t>) {
-            function(i);
-        } else {
-            function();
-        }
-    };
-
     if (ThreadPool::isWorkerThread()) {
-        for (size_t i = 0; i < count; ++i) invokeAt(i);
+        for (size_t i = 0; i < count; ++i) function(i);
         return;
     }
 
@@ -225,7 +216,7 @@ void parallelFor(size_t count, size_t grain, Function&& function) {
 
     // No workers after shutdown (or with no cores reported): a submission would never retire.
     if (pool.threadCount() == 0) {
-        for (size_t i = 0; i < count; ++i) invokeAt(i);
+        for (size_t i = 0; i < count; ++i) function(i);
         return;
     }
 
@@ -233,7 +224,7 @@ void parallelFor(size_t count, size_t grain, Function&& function) {
     const size_t chunks = (count - 1) / grain + 1;
     const auto runChunk = [&](size_t chunk) {
         const size_t end = std::min(count, (chunk + 1) * grain);
-        for (size_t index = chunk * grain; index < end; ++index) invokeAt(index);
+        for (size_t index = chunk * grain; index < end; ++index) function(index);
     };
     const auto runQueued = [&](size_t task) { runChunk(task + 1); };
     ThreadPool::Batch batch(chunks - 1, runQueued);
@@ -261,7 +252,7 @@ void parallelFor(size_t count, size_t grain, Function&& function) {
  * thread the OS preempts or a slower core leaves its share to the others rather than stretching
  * the join.
  *
- * @tparam Function Callable taking a size_t index, or no arguments.
+ * @tparam Function Callable taking a size_t index.
  * @param count    Number of indices, counted from 0.
  * @param function Called once per index, on whichever thread runs its chunk.
  */
