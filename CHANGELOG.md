@@ -2,6 +2,39 @@
 
 Notable changes to vkmEngine, newest first. Each release is tagged `vX.Y.Z`.
 
+## 1.0.7
+
+The OpenGL renderer taken as far as it goes without a temporal filter.
+
+- **Screen-space shadows.** The key light's contacts the cascades are too coarse for - a
+  foot on the floor, a pebble, a crease - found in the depth buffer by Bend Studio's method
+  (Days Gone), with no noise and no history, so a still frame shades the same every time.
+  `screenShadows` turns it off and the Screen Shadows view shows it. Its shader keeps Bend's
+  Apache-2.0 notice.
+- **Smoke takes the light.** An alpha-blended particle's colour is an albedo, lit at its
+  centre by every light through its shadow and by the environment, so smoke in shade is dark
+  and smoke over a fire glows; an additive particle still gives off its colour. Re-check the
+  colour of an alpha emitter authored to glow.
+- **Decals are lit as the surface under them**: by every light through its shadow and by
+  the reflection probes, where they took the sun and the sky alone.
+- **Sheen and anisotropy follow their glTF extensions.** A sheen dims the layer under it by
+  what it reflects and catches the sky's light as well as the lamps'; brushed metal reflects
+  the sky stretched along its brushing, and the import keeps the brushing's rotation.
+- **The irradiance volume follows its lights and its sky.** The bake keeps what each probe
+  sees as surfaces, and a moved sun, a lamp switched on or a new sky lights them again, a
+  gather a frame. Light bounces six times, not three. A grid holds at most
+  `IrradianceVolume::MAX_PROBES` probes; a larger one is scaled down, and the Inspector says
+  so.
+- **Reflection probes follow their light too**, captured again a step a frame into a spare
+  layer and swapped in whole, so no frame shows half a probe.
+- **GPU occlusion culling, as an option.** `occlusionCulling` (the Culling card, or a
+  project's `render` block) skips the vertex work of what other geometry hides. It pays where
+  much of the scene is hidden, so it is off by default: `examples/city_block`, 63,000 meshes
+  walked at street level, is the scene it is for.
+- **Fixed:** GTAO darkened an open wall beside the lens, where a slice ran the wrong way.
+- **Removed:** `dilateProbeGrid`, the CPU repair of a probe grid. The bake repairs refused
+  probes on the GPU; `probeFillWeights` gives the blend.
+
 ## 1.0.6
 
 Fixes and frame time, before the renderer's new features in 1.0.7.
