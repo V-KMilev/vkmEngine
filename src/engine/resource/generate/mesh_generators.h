@@ -46,16 +46,16 @@ MeshAsset generateTriangle(float size = 1.0f);
 /**
  * @brief Generate a plane mesh (quad), tessellated into a segment grid.
  * @param width Full width along x.
- * @param height Full depth along z.
+ * @param depth Full depth along z.
  * @param widthSegments Quads along width.
- * @param heightSegments Quads along depth.
+ * @param depthSegments Quads along depth.
  * @return The plane.
  */
 MeshAsset generatePlane(
     float width = 1.0f,
-    float height = 1.0f,
+    float depth = 1.0f,
     uint32_t widthSegments = 1,
-    uint32_t heightSegments = 1
+    uint32_t depthSegments = 1
 );
 
 /**
