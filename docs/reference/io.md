@@ -259,9 +259,9 @@ back to the prefab.
 
 ## Assets: recipes and the cooked cache
 
-An asset's **recipe** - the `source` descriptor its import or generator wrote,
-with a `kind` - is the editable source of truth. Its **cooked** file is a binary
-cache derived from it. Each asset is its own file:
+An asset's **recipe** - the `source` descriptor its import or generator wrote -
+is the editable source of truth. Its **cooked** file is a binary cache derived
+from it. Each asset is its own file:
 
 - `library/<type>/<uid>.json` - the recipe; for a material, its runtime form.
   Version-controlled.
@@ -351,9 +351,9 @@ texture on the `ThreadPool`, the rest at once.
 On a miss the recipe is imported through the `AssetFactory` seam
 (`io/asset/asset_factory.h`), one import per kind, which the editor and
 `vkm_cook` install (`registerRecipeAssetFactories`) and the runtime and server
-leave null. A material has no cooked file: `AssetSerializer::applyInline`
-applies its recipe. A name with no manifest row still loads from a recipe on
-disk, so a lost manifest costs a re-cook.
+leave null. A material has no cooked file: `AssetSerializer::materialFromRecipe`
+builds it from its recipe. A name with no manifest row still loads from a recipe
+on disk, so a lost manifest costs a re-cook.
 
 `finalizeAsyncLoads` / `awaitAsyncLoads` (`system/async/async_loader_system.h`)
 land async decodes without a frame - drain once, and drain until quiet. The

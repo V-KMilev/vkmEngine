@@ -343,7 +343,7 @@ bool cookThrough(const Asset& asset, const nlohmann::json& recipe, Bake bake) {
 template<typename Asset>
 bool cookAsset(const Asset& asset, const ResourceManager& resources, Bake bake) {
     if constexpr (!WRITES_BINARY<Asset>) {
-        return cookThrough(asset, AssetSerializer::materialToInline(asset, resources), bake);
+        return cookThrough(asset, AssetSerializer::materialToRecipe(asset, resources), bake);
     } else {
         constexpr AssetType TYPE = ASSET_TYPE<Asset>;
         if (!asset.hasSource() || isCookedPlaceholder(asset.sourceJson())) {

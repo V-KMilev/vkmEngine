@@ -145,26 +145,27 @@ namespace AssetSerializer {
     size_t dropAssetsNotIn(const nlohmann::json& assetsJson, ResourceManager& resources);
 
     /**
-     * @brief Apply a material's recipe to a freshly constructed MaterialAsset.
+     * @brief Build a material from its recipe.
      *
-     * A missing key keeps the field's value; a wrong-typed value throws, reported against the material.
+     * A missing key reads as the field's default; a wrong-typed value throws, for the caller to
+     * report against the material.
      *
-     * @param source    The descriptor, as materialToInline writes it.
-     * @param target    The material to fill.
-     * @param resources Resolves texture names; one it does not hold leaves its slot as it was.
+     * @param source    The recipe, as materialToRecipe writes it.
+     * @param resources Resolves texture names; a name it does not hold leaves that map empty, logged.
+     * @return The material, unnamed.
      */
-    void applyInline(const nlohmann::json& source, MaterialAsset& target, const ResourceManager& resources);
+    MaterialAsset materialFromRecipe(const nlohmann::json& source, const ResourceManager& resources);
 
     /**
      * @brief Build a material's recipe: its PBR scalars plus texture refs by name.
      *
-     * The material's editable source of truth, its runtime form, and what its recipe file holds.
+     * The material's editable source of truth: what its recipe file holds.
      *
      * @param material  The material to describe.
      * @param resources Resolves its texture handles to the names written.
-     * @return The descriptor.
+     * @return The recipe.
      */
-    nlohmann::json materialToInline(const MaterialAsset& material, const ResourceManager& resources);
+    nlohmann::json materialToRecipe(const MaterialAsset& material, const ResourceManager& resources);
 
 } // namespace AssetSerializer
 

@@ -283,8 +283,8 @@ MaterialHandle loadMaterialFromFolder(const std::string& folderPath, ResourceMan
     LOG_INFO("Loading material from folder: '%s'", ref.c_str());
 
     MaterialHandle handle = buildFolderMaterial(ref, resourceManager);
-    // Named by the folder reference; a later load rebuilds from the cooked inline form, so no
-    // folder recipe is kept.
+    // Named by the folder reference; a later load rebuilds it from its recipe, so no folder
+    // recipe is kept.
     if (handle) resourceManager.rename(handle, ref);
     return handle;
 }

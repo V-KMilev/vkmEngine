@@ -207,8 +207,7 @@ void testStopRebuildsMaterialsAndKeepsTheRest() {
     AssetLibrary::get().upsert({AssetType::Texture, "play:art", 2u, {}});
 
     ResourceManager resources;
-    MaterialAsset painted;
-    AssetSerializer::applyInline(paint, painted, resources);
+    MaterialAsset painted = AssetSerializer::materialFromRecipe(paint, resources);
     const MaterialHandle material = resources.add(std::move(painted), "play:paint");
     TextureAsset loaded;
     loaded.pixelData = {1, 2, 3, 4};
