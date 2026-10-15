@@ -714,6 +714,10 @@ void testShadowsGoToTheNearestAndThePrioritised() {
     plan.finishCull();
     check("with tiles for all, the lowest slot takes the first", plan.lightSlots()[0] == 0);
 
+    // A spot of no reach lights nothing, so it casts nothing either.
+    view.lights[0].radius = 0.0f;
+    check("a spot of radius 0 casts no shadow", !shadowed(0) && shadowed(1));
+
     // A sun's priority is unread: the lowest-slot sun casts, as it keys the sky.
     LightData sun{};
     sun.type           = LightType::Directional;

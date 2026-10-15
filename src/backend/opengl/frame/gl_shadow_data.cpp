@@ -42,9 +42,6 @@ GLShadowData::~GLShadowData() {
 
 namespace {
 
-// Range to use for a light that carries no radius.
-constexpr float DEFAULT_LIGHT_RANGE = 50.0f;
-
 // ShadowRun::key's high digit: whether fixed, vertex layout, and for a skinned caster whether posed.
 // In draw order, so a tile's fixed casters lead its runs and are signed by them (cullInto), each
 // layout is one stretch of them and each program one of a layout's.
@@ -72,11 +69,6 @@ constexpr float SPOT_TEXELS_PER_PIXEL = 1.27324f;
 
 // A spot's tile halves only once its cone needs under this share of it: past half, by a margin.
 constexpr float SPOT_SHRINK_BELOW = 0.4f;
-
-// A light's range: its radius, or DEFAULT_LIGHT_RANGE when it carries none.
-float lightRange(const LightData& light) {
-    return light.radius > 0.0f ? light.radius : DEFAULT_LIGHT_RANGE;
-}
 
 uint32_t ceilPowerOfTwo(float v) {
     uint32_t p = 1;
@@ -144,14 +136,15 @@ void GLShadowData::build(const RenderView& view, const GLView& glView, uint32_t 
     // destroyed.
     m_refused = 0;
     m_shadowOrder.clear();
-    // A spot or point whose reach misses the view lights nothing seen: no slot, so one that is
-    // seen can have it.
+    // A spot or point with no reach, or whose reach misses the view, lights nothing seen: no slot,
+    // so one that is seen can have it.
     const Math::Frustum seen = Math::extractFrustum(view.camera.viewProjection);
     for (uint32_t i = 0; i < m_lightCount; ++i) {
         const LightData& light = view.lights[i];
         if (!light.castShadows) continue;
         if (light.type == LightType::Spot || light.type == LightType::Point) {
-            const glm::vec3 extent(lightRange(light));
+            if (light.radius <= 0.0f) continue;
+            const glm::vec3 extent(light.radius);
             if (!Math::frustumIntersectsAABB(seen, {light.position - extent, light.position + extent})) {
                 continue;
             }
@@ -648,7 +641,7 @@ void GLShadowData::fitSpot(const LightData& light, uint32_t lightIndex, uint32_t
 
     // Neither may be degenerate: a range at or below near gives far <= near, and a zero cone
     // divides by tan(0), writing infinities that NaN whatever samples the matrix.
-    const float range = std::max(lightRange(light), Config::SHADOW_NEAR * 2.0f);
+    const float range = std::max(light.radius, Config::SHADOW_NEAR * 2.0f);
     const float fov = glm::clamp(
         2.0f * light.outerConeAngle * 1.1f,
         glm::radians(1.0f),
@@ -762,7 +755,7 @@ void GLShadowData::fitPoint(const LightData& light, uint32_t lightIndex, uint32_
 
     // Held off the near plane for the same reason fitSpot holds its own: a cube
     // face whose far plane is its near plane has no projection.
-    const float range = std::max(lightRange(light), Config::SHADOW_NEAR * 2.0f);
+    const float range = std::max(light.radius, Config::SHADOW_NEAR * 2.0f);
     const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, Config::SHADOW_NEAR, range);
 
     ShadowCubeJob job;
