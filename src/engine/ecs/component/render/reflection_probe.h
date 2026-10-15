@@ -27,7 +27,7 @@ struct ReflectionProbe {
     /**
      * @brief Bump to force a re-bake.
      *
-     * For changes the params miss (sun moved, geometry edited); moving or resizing re-bakes alone.
+     * For changes the params miss (geometry edited); moving or resizing re-bakes alone.
      */
     uint32_t bakeVersion = 0;
 };
