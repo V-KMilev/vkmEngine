@@ -80,8 +80,8 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
             visitShippedRenderFields(out.render, [&](const char* key, auto& field) {
                 using Field = std::decay_t<decltype(field)>;
                 if (!render.contains(key)) return;
-                // An enum with a name table travels as its name, one without as its value.
-                if constexpr (std::is_enum_v<Field> && Reflect::HAS_ENUM_NAMES<Field>) {
+                if constexpr (std::is_enum_v<Field>) {
+                    static_assert(Reflect::HAS_ENUM_NAMES<Field>, "a shipped enum travels as its name");
                     if (!render[key].is_string()) {
                         LOG_WARNING(
                             "project.json render.%s wants the setting's name as a string; keeping '%s'",
@@ -102,11 +102,7 @@ bool loadProject(const fs::path& projectRoot, Project& out) {
                     // Per field: a mistyped value keeps its current one without
                     // abandoning the rest of the file.
                     try {
-                        if constexpr (std::is_enum_v<Field>) {
-                            field = static_cast<Field>(render[key].get<std::underlying_type_t<Field>>());
-                        } else {
-                            field = render[key].get<Field>();
-                        }
+                        field = render[key].get<Field>();
                     } catch (const nlohmann::json::exception&) {
                         LOG_WARNING(
                             "project.json render.%s is '%s', which is not a value of its type; "
@@ -221,10 +217,9 @@ bool saveProject(const fs::path& projectRoot, const Project& project) {
     nlohmann::json render = nlohmann::json::object();
     visitShippedRenderFields(project.render, [&](const char* key, auto& field) {
         using Field = std::decay_t<decltype(field)>;
-        if constexpr (std::is_enum_v<Field> && Reflect::HAS_ENUM_NAMES<Field>) {
+        if constexpr (std::is_enum_v<Field>) {
+            static_assert(Reflect::HAS_ENUM_NAMES<Field>, "a shipped enum travels as its name");
             render[key] = Reflect::enumName(field);
-        } else if constexpr (std::is_enum_v<Field>) {
-            render[key] = static_cast<std::underlying_type_t<Field>>(field);
         } else {
             render[key] = field;
         }
