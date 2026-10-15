@@ -49,8 +49,8 @@ struct InputCommand {
      */
     glm::quat view{1.0f, 0.0f, 0.0f, 0.0f};
 
-    /// What the game holds beside the actions, for its own rules on the server to read: where a
-    /// player is looking at a board, say. A one-off - a move - is a message (NetSession::sendMessage).
+    /// What the game holds beside the actions, for its own rules on the server to read: which
+    /// item a player's cursor is over, say. A one-off - a move - is a message (NetSession::sendMessage).
     /// The engine gives the bytes no meaning; payloadSize of them travel.
     std::array<uint8_t, MAX_COMMAND_PAYLOAD> payload{};
     uint8_t payloadSize = 0;

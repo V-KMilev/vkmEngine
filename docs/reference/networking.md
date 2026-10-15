@@ -110,8 +110,8 @@ left goes with their seat.
   it.
 - Messages go up only. The server answers in replicated components; there is no
   channel to tell one player something no component holds.
-- Input held from tick to tick beside the actions (where a player is looking at
-  a board) is not a message but the command's payload
+- Input held from tick to tick beside the actions (which item a player's cursor
+  is over) is not a message but the command's payload
   ([input.md](input.md#game-state-in-the-command)).
 
 ### What replicates

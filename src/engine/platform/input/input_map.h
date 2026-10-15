@@ -212,7 +212,7 @@ class InputMap {
          * @brief Say what the game sends beside the actions, for the commands that follow.
          *
          * Held, as the view is: every command carries it until it changes - state beside the
-         * actions, such as where a player is looking. What must arrive once is a message
+         * actions, such as which item a player's cursor is over. What must arrive once is a message
          * (NetSession::sendMessage). Read back off InputCommand::payload; zero bytes clears it.
          *
          * @param bytes What to send.
