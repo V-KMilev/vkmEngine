@@ -81,7 +81,7 @@ class EngineBuild:
         return self.switch("VKMENGINE_PROFILER")
 
     def pinned(self) -> bool:
-        """Whether this build was made with the pinned GCC, which a module must then use too."""
+        """Whether this build was made with the pinned compiler, which a module must then use too."""
         return self.switch("VKMENGINE_PINNED_TOOLCHAIN")
 
     def asserts(self) -> bool:
