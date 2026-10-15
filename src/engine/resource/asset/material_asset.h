@@ -51,10 +51,10 @@ inline constexpr std::size_t MATERIAL_MAP_COUNT = 0 VKM_MATERIAL_MAPS(VKM_MATERI
  * bucket; Unlit skips the BRDF and outputs albedo + emission.
  */
 enum class MaterialType : uint8_t {
-    Opaque      = 0,
-    Transparent = 1,
-    Unlit       = 2,
-    AlphaMask   = 3,
+    Opaque,
+    Transparent,
+    Unlit,
+    AlphaMask,
     Count
 };
 
