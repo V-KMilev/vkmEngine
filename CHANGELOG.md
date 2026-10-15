@@ -2,6 +2,39 @@
 
 Notable changes to vkmEngine, newest first. Each release is tagged `vX.Y.Z`.
 
+## 1.0.13
+
+The engine designed for itself: every second way to say one thing removed, and its users
+ported. Saved files and code written against a removed shape need porting; nothing reads the
+old one.
+
+- **The guides say it once**: nothing stays because a game, an example or an old file uses
+  it, and a change carries its users with it (`docs/guides/implementation.md`, section 7).
+- **Removed**, each for the one way that stays:
+  - `RenderBackend`'s default answers; every backend states its own.
+  - `vkm help` (`-h` stays), `--host`, `SOURCES` in `vkm_add_gameplay_module` and the
+    toolchain-check switch: a mismatched compiler is always an error.
+  - `addBinding` and `clearBindings`: `rebind` writes a player's bindings.
+  - `registerBehavior<T>()`: `registerBehaviors<A, B, C>()` registers.
+  - `instanceRoot`, `dockNextBeside`, `screenshots()` and the "Untitled" project name: a
+    project is named by `project.json`, else its folder.
+  - `kind` on a material recipe, `applyInline`, the cooked asset's spare source keys and
+    stand-in maps on the default material.
+  - Two-resolution spheres (`generateSphere(resolution)`), a plane's height (its second
+    extent is its depth), nullable slot lookups and `parallelFor`'s index-free callable.
+- **Formats that changed**: render enums in `project.json` and the editor's settings by name,
+  a ragdoll bone's `bodyFromBone`, an embedded image's `#Color`/`#Data`/`#Normal` suffix, and
+  a prefab entry's required uid. An older file is refused or re-saved, not read.
+- **Fixed**:
+  - A deleted subtree put back re-points every entity field, a slider's knob included.
+  - An override never holds an entity field of any component.
+  - A light with no reach casts no shadow.
+  - A query ignoring an entity skips its ragdoll's bones.
+  - A client forgets the track of an entity the server lost.
+  - A name inside a list survives an unresolved load.
+  - A damaged cooked texture's enum bytes are refused, not read as RGBA.
+  - An unknown or mistyped texture wrap, filter or decimate ratio is reported, not thrown.
+
 ## 1.0.12
 
 A settings row and voice priorities.
