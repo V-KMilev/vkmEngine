@@ -81,7 +81,7 @@ endif()
 # build_info.h, whose macros vkm_core keeps private, so no consumer compiles it.
 install(DIRECTORY ${CMAKE_SOURCE_DIR}/src/engine/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp"
+    FILES_MATCHING PATTERN "*.h"
     PATTERN "build_info.h" EXCLUDE
 )
 
