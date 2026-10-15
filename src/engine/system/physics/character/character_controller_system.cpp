@@ -258,9 +258,6 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
     Scene& scene = ctx.scene;
     const float dt = ctx.clock.getFixedStep();
 
-    bool sawNoCapsule = false;
-    bool sawSpinnable = false;
-
     scene.forEach<CharacterController, Rigidbody>([&](EntityId id, CharacterController& cc, Rigidbody& rb) {
         // Left where the authority put it, grounded and crouched included (see netEncode for
         // CharacterController); its capsule follows what it was told.
@@ -297,8 +294,18 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
         glm::vec3 offset(0.0f);
         const bool standsOnCapsule = shape && shape->enabled && capsuleOf(*shape, radius, halfHeight, offset);
 
-        if (!standsOnCapsule) sawNoCapsule = true;
-        if (!rb.freezeRotation) sawSpinnable = true;
+        if (!standsOnCapsule && m_noCapsule.report()) {
+            LOG_WARNING(
+                "CharacterController: an entity has no enabled capsule Collider - "
+                "it will not climb steps"
+            );
+        }
+        if (!rb.freezeRotation && m_spinnable.report()) {
+            LOG_WARNING(
+                "CharacterController: an entity's Rigidbody has freezeRotation off - "
+                "contacts will topple it"
+            );
+        }
 
         // PhysicsSystem::writeback zeroes a sleeping body's velocity, so a request to move wakes it.
         const float asked = glm::dot(cc.moveInput, cc.moveInput);
@@ -469,20 +476,8 @@ void CharacterControllerSystem::fixedUpdate(FrameContext& ctx) {
         rb.linearVelocity = velocity + cc.groundVelocity;
     });
 
-    if (sawNoCapsule && !m_noCapsuleLogged) {
-        LOG_WARNING(
-            "CharacterController: an entity has no enabled capsule Collider - "
-            "it will not climb steps"
-        );
-    }
-    if (sawSpinnable && !m_spinnableLogged) {
-        LOG_WARNING(
-            "CharacterController: an entity's Rigidbody has freezeRotation off - "
-            "contacts will topple it"
-        );
-    }
-    m_noCapsuleLogged = sawNoCapsule;
-    m_spinnableLogged = sawSpinnable;
+    m_noCapsule.endPass();
+    m_spinnable.endPass();
 }
 
 } // namespace Vkm::Engine
