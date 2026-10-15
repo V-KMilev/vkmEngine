@@ -280,6 +280,75 @@ bool openCookedRead(
     return true;
 }
 
+// Whether a byte read off disk names an enumerator. Each switch names every one with no default,
+// so an enumerator added to an enum is flagged here by -Wswitch.
+
+bool isEnumerator(TextureInternalFormat value) {
+    switch (value) {
+        case TextureInternalFormat::R8:
+        case TextureInternalFormat::RG8:
+        case TextureInternalFormat::RGB8:
+        case TextureInternalFormat::RGBA8:
+        case TextureInternalFormat::SRGB8:
+        case TextureInternalFormat::SRGBA8:
+        case TextureInternalFormat::RGBA16F:
+        case TextureInternalFormat::RGBA32F:
+        case TextureInternalFormat::BC4R:
+        case TextureInternalFormat::BC5RG:
+        case TextureInternalFormat::BC7RGBA:
+        case TextureInternalFormat::BC7SRGBA: return true;
+    }
+    return false;
+}
+
+bool isEnumerator(TexturePixelFormat value) {
+    switch (value) {
+        case TexturePixelFormat::R:
+        case TexturePixelFormat::RG:
+        case TexturePixelFormat::RGB:
+        case TexturePixelFormat::RGBA: return true;
+    }
+    return false;
+}
+
+bool isEnumerator(TexturePixelType value) {
+    switch (value) {
+        case TexturePixelType::UnsignedByte:
+        case TexturePixelType::Float:
+        case TexturePixelType::HalfFloat: return true;
+    }
+    return false;
+}
+
+bool isEnumerator(TextureWrapMode value) {
+    switch (value) {
+        case TextureWrapMode::Repeat:
+        case TextureWrapMode::MirroredRepeat:
+        case TextureWrapMode::ClampToEdge:
+        case TextureWrapMode::ClampToBorder: return true;
+    }
+    return false;
+}
+
+bool isEnumerator(TextureFilterOverride value) {
+    switch (value) {
+        case TextureFilterOverride::None:
+        case TextureFilterOverride::Nearest: return true;
+    }
+    return false;
+}
+
+/**
+ * @brief Whether every enum byte of a texture read off disk names an enumerator.
+ *
+ * @param params The texture's description as read.
+ * @return False when any byte names none.
+ */
+bool namesEnumerators(const TextureParams& params) {
+    return isEnumerator(params.internalFormat) && isEnumerator(params.format) && isEnumerator(params.type)
+        && isEnumerator(params.wrapS) && isEnumerator(params.wrapT) && isEnumerator(params.filterOverride);
+}
+
 } // namespace
 
 bool writeMesh(const std::filesystem::path& path, const MeshAsset& mesh) {
@@ -563,6 +632,11 @@ bool readTexture(const std::filesystem::path& path, TextureAsset& out) {
         return false;
     }
     tp.generateMipmaps = (generateMipmaps != 0);
+
+    if (!namesEnumerators(tp)) {
+        LOG_ERROR("Cooked texture '%s': a format byte names no enumerator", p.c_str());
+        return false;
+    }
 
     if (pixelBytes != payloadBytes - TEXTURE_FIXED_BYTES) {
         LOG_ERROR("Cooked texture '%s': pixel size inconsistent with payload", p.c_str());

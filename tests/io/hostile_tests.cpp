@@ -112,11 +112,21 @@ size_t acceptedButUnsound(
     return unsound;
 }
 
-// Whether a texture holds exactly the bytes its upload reads, level by level. Worked
-// out independently of the engine's size helpers, so their mistakes are not the judge's.
+// Whether a texture names an enumerator in every enum byte and holds exactly the bytes its
+// upload reads, level by level. Worked out independently of the engine's checks and size
+// helpers, so their mistakes are not the judge's.
 bool holdsWhatItsLevelsRead(const TextureAsset& texture) {
     const TextureParams& params = texture.params;
     if (params.width == 0 || params.height == 0 || texture.pixelData.empty()) return false;
+    auto byte = [](auto value) { return static_cast<unsigned>(value); };
+    if (byte(params.internalFormat) > byte(TextureInternalFormat::BC7SRGBA)
+        || byte(params.format) > byte(TexturePixelFormat::RGBA)
+        || byte(params.type) > byte(TexturePixelType::HalfFloat)
+        || byte(params.wrapS) > byte(TextureWrapMode::ClampToBorder)
+        || byte(params.wrapT) > byte(TextureWrapMode::ClampToBorder)
+        || byte(params.filterOverride) > byte(TextureFilterOverride::Nearest)) {
+        return false;
+    }
 
     uint32_t chain = 1;
     for (uint32_t extent = std::max(params.width, params.height); extent > 1; extent >>= 1) ++chain;
