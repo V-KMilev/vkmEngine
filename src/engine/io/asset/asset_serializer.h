@@ -145,8 +145,7 @@ namespace AssetSerializer {
     size_t dropAssetsNotIn(const nlohmann::json& assetsJson, ResourceManager& resources);
 
     /**
-     * @brief Apply an "inline" material descriptor (kind=="inline") to a
-     *        freshly constructed MaterialAsset.
+     * @brief Apply a material's recipe to a freshly constructed MaterialAsset.
      *
      * A missing key keeps the field's value; a wrong-typed value throws, reported against the material.
      *
@@ -157,8 +156,7 @@ namespace AssetSerializer {
     void applyInline(const nlohmann::json& source, MaterialAsset& target, const ResourceManager& resources);
 
     /**
-     * @brief Build a material's canonical "inline" source descriptor: PBR scalars
-     *        plus texture refs by name.
+     * @brief Build a material's recipe: its PBR scalars plus texture refs by name.
      *
      * The material's editable source of truth, its runtime form, and what its recipe file holds.
      *

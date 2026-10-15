@@ -26,7 +26,7 @@ enum class Bake {
 /**
  * @brief Cook every non-hidden loaded asset into the library and cooked cache, then write the manifest.
  *
- * Materials get their inline descriptor as the library file; the other kinds a binary `.vkmc`.
+ * Materials get their values as the library file; the other kinds a binary `.vkmc`.
  * An asset whose output is current is skipped. Manifest records of unloaded assets are kept.
  * Call before saving a scene, which then names these assets only. Waits for in-flight imports.
  *

@@ -30,7 +30,6 @@
 #include "system/script/behavior_field_visitor.h"
 #include "system/script/script_component.h"
 #include "core/reflect.h"
-#include "resource/asset_source_kind.h"
 
 namespace Vkm::Engine::AssetSerializer {
 
@@ -60,7 +59,6 @@ using ::Vkm::Engine::detail::jsonToVec4;
 
 nlohmann::json materialToInline(const MaterialAsset& m, const ResourceManager& resources) {
     nlohmann::json src;
-    src["kind"] = AssetSourceKind::INLINE;
 
     // Reflection drives scalar / vector / enum fields, so a new MaterialAsset field cannot fall out of the
     // round trip. Texture refs resolve by name, below.

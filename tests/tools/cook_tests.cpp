@@ -1769,7 +1769,7 @@ void testANameTheManifestLostStillLoadsFromItsRecipe() {
     std::printf("An asset the manifest has no row for:\n");
 
     const ScratchProject project("vkm_manifest_lost");
-    const nlohmann::json recipe = {{"kind", AssetSourceKind::INLINE}, {"roughness", 0.25f}};
+    const nlohmann::json recipe = {{"roughness", 0.25f}};
     check("its recipe is on disk", AssetLibrary::writeRecipe(AssetType::Material, "mat:kept", recipe));
     check("  and the manifest has no row for it", !AssetLibrary::get().find(AssetType::Material, "mat:kept"));
 
@@ -1801,8 +1801,8 @@ void testAMistypedRecipeCostsItsAssetNotTheScene() {
     std::printf("A recipe holding a value of the wrong type:\n");
 
     const ScratchProject project("vkm_recipe_mistyped");
-    const nlohmann::json fine = {{"kind", AssetSourceKind::INLINE}, {"roughness", 0.25f}};
-    const nlohmann::json typo = {{"kind", AssetSourceKind::INLINE}, {"metallic", "0.5"}};
+    const nlohmann::json fine = {{"roughness", 0.25f}};
+    const nlohmann::json typo = {{"metallic", "0.5"}};
     check(
         "the recipes are on disk",
         AssetLibrary::writeRecipe(AssetType::Material, "mat:fine", fine)

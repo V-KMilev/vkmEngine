@@ -9,8 +9,9 @@ namespace Vkm::Engine {
 /**
  * @brief The `kind` field of an asset's source descriptor.
  *
- * The `kind` picks the import that rebuilds an asset from its recipe. The strings are
- * the file format: changing one changes what existing assets say.
+ * The `kind` picks the import that rebuilds an asset from its recipe; a material's
+ * recipe carries none, being its values themselves. The strings are the file format:
+ * changing one changes what existing assets say.
  */
 namespace AssetSourceKind {
     /// What an asset read from its cooked file carries instead of its recipe.
@@ -19,8 +20,6 @@ namespace AssetSourceKind {
     inline constexpr const char* DECIMATE  = "decimate";
     inline constexpr const char* FILE      = "file";       ///< One file on disk, decoded as-is.
     inline constexpr const char* GENERATOR = "generator";  ///< A primitive built by the mesh generators.
-    /// A material whose values live in the descriptor itself.
-    inline constexpr const char* INLINE    = "inline";
     inline constexpr const char* MODEL     = "model";      ///< One index into a glTF, FBX or OBJ file.
     /// A texture embedded in, or referenced beside, a model file.
     inline constexpr const char* MODEL_IMAGE = "model-image";

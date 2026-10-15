@@ -282,10 +282,12 @@ A model file's parts are named by the file and the part
 
 | `kind`                 | Read by          | Resolves to                                         |
 |------------------------|------------------|-----------------------------------------------------|
-| `inline`               | every host       | A `MaterialAsset` from PBR scalars + texture refs - every material's recipe, whatever it was imported from |
 | `generator` / `decimate` | editor, cooker | Procedural / LOD meshes                             |
 | `file` / `model` / `model-image` | editor, cooker | stb texture import and sound decode; cgltf / ufbx mesh, rig and clip import (a clip recipe also carries its authored `markers`) |
 | `solid`                | editor, cooker   | Single-colour textures, the engine's defaults among them |
+
+A material's recipe has no `kind`: it is the material's values and its texture
+refs by name, read by every host whatever it was imported from.
 
 A `decimate` recipe is an LOD level kept as the instruction that makes it,
 `{"kind": "decimate", "base": "<mesh>", "ratio": 0.5}`; `decimateRecipe` and
