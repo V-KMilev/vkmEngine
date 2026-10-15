@@ -379,7 +379,7 @@ whose name and signature say everything takes no doc block.
 
 **Inside a function, a comment is bounded by lines**: `//` runs 1-3 lines, and
 `///` on a plain member is one. Past three lines it is usually a diagnosis
-([implementation.md](implementation.md#8-a-long-comment-is-a-diagnosis)); the
+([implementation.md](implementation.md#9-a-long-comment-is-a-diagnosis)); the
 exception is a correctness argument the code cannot state, at the one place a
 reader would otherwise reconstruct it. A body comment that needs a second
 paragraph may have become a document, which belongs under `docs/reference/`

@@ -121,6 +121,7 @@ measurement for a law. A row is one of two kinds:
 
 | Decided | Outcome and reason |
 |---|---|
+| The engine and its users | *Position.* The engine is designed for itself: nothing stays because a game, an example or an old file uses it, and a better shape replaces the old one with its users ported ([implementation.md](implementation.md#7-changing-a-shape-its-users-rely-on)). |
 | Temporal AA | *Position.* Rejected permanently. AA is MSAA plus `specularAA()` in the forward shader. |
 | Screen-space shadows | Adopted, as Bend Studio's: no noise and no history, so a still frame shades the same every time. GTAO, which is ambient occlusion, cannot cast the sun's shadow ([lighting.md](../reference/lighting.md#screen-space-shadows)). Revisit if the pass's cost shows in a capture of a GPU-bound frame. |
 | Screen-space reflections | Adopted, without a temporal filter: probes cannot show what moves or what lies between them. Coherent rays and a neighbour-averaged resolve stand in for TAA ([rendering.md](../reference/rendering.md)). Revisit if a project's glossy surfaces show the trace's noise, or its cost shows in a capture. |
@@ -288,8 +289,8 @@ what the gate does and belongs with the owner.
 
 Round-trip any format change against what ships:
 `examples/physics_lab/scenes/obstacle_course.json` is the saved scene of record.
-A format change that scene cannot survive is a format change that did not
-happen.
+It is ported with the change, and must load and save back unchanged
+([implementation.md](implementation.md#7-changing-a-shape-its-users-rely-on)).
 
 ---
 
