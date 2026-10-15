@@ -119,7 +119,7 @@ SceneBootResult bootProjectWorld(
         LOG_INFO("Project '%s' supplies no scene of its own; opened the default scene", project.name.c_str());
     }
 
-    // Zero, which agrees with nothing, unless an authored file stands behind the world.
+    // Zero, compared against nothing, unless an authored file stands behind the world.
     net.setWorld(fingerprintScene(boot.path), scene);
     return boot;
 }
