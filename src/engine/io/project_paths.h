@@ -40,8 +40,8 @@ void setProjectRoot(const std::filesystem::path& path);
 /**
  * @brief Directory holding the project currently open.
  *
- * The path set by setProjectRoot(), else the engine root (a checkout is its own
- * project; a packaged game keeps its data beside the executable).
+ * The path set by setProjectRoot(), else the engine root, where a packaged game
+ * keeps its data beside the executable.
  *
  * @return Absolute path to the project root.
  */
@@ -118,11 +118,10 @@ inline std::filesystem::path engineFonts()   { return engineAssets() / "fonts"; 
 inline std::filesystem::path projectBin() { return projectRoot() / "bin"; }
 
 // Project-owned: the game's own content.
-inline std::filesystem::path assets()      { return projectRoot() / "assets"; }
-inline std::filesystem::path scenes()      { return projectRoot() / "scenes"; }
-inline std::filesystem::path prefabs()     { return projectRoot() / "prefabs"; }
-inline std::filesystem::path screenshots() { return projectRoot() / "screenshots"; }
-inline std::filesystem::path envs()        { return assets() / "envs"; }
+inline std::filesystem::path assets()  { return projectRoot() / "assets"; }
+inline std::filesystem::path scenes()  { return projectRoot() / "scenes"; }
+inline std::filesystem::path prefabs() { return projectRoot() / "prefabs"; }
+inline std::filesystem::path envs()    { return assets() / "envs"; }
 
 // `library` holds the per-asset recipes (source of truth, version-controlled);
 // `cooked` holds what the cook derives (AssetCook::cacheKey binaries plus manifest).
