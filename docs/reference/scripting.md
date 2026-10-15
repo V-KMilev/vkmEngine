@@ -431,9 +431,9 @@ needs):
   project's log beside the engine's.
 
 `BehaviorRegistry` is the process-wide name -> factory map scenes recreate
-behaviors through: `registerBehavior<T>()` keys on `Reflect::Traits<T>::NAME`,
-`registerBehaviors<A, B, C>()` registers each, `create("Crate")` makes one, and
-`names()` is what Add Behavior lists.
+behaviors through: `registerBehaviors<A, B, C>()` keys each type `T` on
+`Reflect::Traits<T>::NAME`, `create("Crate")` makes one, and `names()` is what
+Add Behavior lists.
 
 ### Hot reload
 

@@ -34,39 +34,20 @@ class BehaviorRegistry {
         static BehaviorRegistry& get();
 
         /**
-         * @brief Register @p name -> @p factory.
+         * @brief Register every type in @p Ts, in order, each under the name its reflect block records.
          *
-         * A duplicate name logs a warning and overwrites the existing factory.
-         *
-         * @param name    Key the type is registered and created under.
-         * @param factory Constructs a fresh instance.
-         */
-        void registerBehavior(std::string name, Factory factory);
-
-        /**
-         * @brief Register T under the name its reflect block records.
-         *
-         * The same string typeName() returns, so the save and load keys cannot differ.
-         *
-         * @tparam T Behavior subclass with a VKM_REFLECT block, default-constructible.
-         */
-        template<typename T>
-        void registerBehavior() {
-            registerBehavior(Reflect::Traits<T>::NAME, [] { return std::make_unique<T>(); });
-        }
-
-        /**
-         * @brief Register every type in @p Ts, in order, as registerBehavior<T>() does.
+         * The same string typeName() returns, so the save and load keys cannot differ. A
+         * duplicate name logs a warning and overwrites the existing factory.
          *
          * @code
          * BehaviorRegistry::get().registerBehaviors<Spinner, Health, Door>();
          * @endcode
          *
-         * @tparam Ts Behavior subclasses with VKM_REFLECT blocks.
+         * @tparam Ts Behavior subclasses with VKM_REFLECT blocks, default-constructible.
          */
         template<typename... Ts>
         void registerBehaviors() {
-            (registerBehavior<Ts>(), ...);
+            (registerBehavior(Reflect::Traits<Ts>::NAME, [] { return std::make_unique<Ts>(); }), ...);
         }
 
         /**
@@ -99,6 +80,14 @@ class BehaviorRegistry {
 
     private:
         BehaviorRegistry() = default;
+
+        /**
+         * @brief Register @p name -> @p factory, overwriting with a warning.
+         *
+         * @param name    Key the type is registered and created under.
+         * @param factory Constructs a fresh instance.
+         */
+        void registerBehavior(std::string name, Factory factory);
 
     private:
         std::unordered_map<std::string, Factory> m_factories;

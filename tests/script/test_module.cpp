@@ -60,7 +60,7 @@ const char* vkmModuleEngineVersion() { return VKM_ENGINE_VERSION; }
 
 VKM_MODULE_ENTRY
 void vkmRegisterBehaviors() {
-    Vkm::Engine::BehaviorRegistry::get().registerBehavior<TestModule::Ticker>();
+    Vkm::Engine::BehaviorRegistry::get().registerBehaviors<TestModule::Ticker>();
 }
 
 VKM_MODULE_ENTRY
