@@ -129,8 +129,7 @@ its earliest cue point.
 ## Not built
 
 No streaming, no buses or groups, no reverb, filters, occlusion, Doppler or
-cones, no voice stealing ([the voice budget](#the-voice-budget)) and no
-downmixing ([above](#a-positioned-source-wants-a-mono-clip)).
+cones.
 
 ---
 
@@ -165,10 +164,14 @@ means forking the backend, and no engine-owned state races.
 
 #### The voice budget
 
-`MAX_ACTIVE_VOICES` caps live voices; past it `play()` refuses rather than steal
-([engine.md](../guides/engine.md#4-what-has-already-been-decided)) and logs once
-per saturation. It is a runaway guard, not a mix budget, and it does not
-prevent clipping: gain staging is the game's. A spatial `PlaySoundEvent` beyond
+`MAX_ACTIVE_VOICES` caps live voices. At it, `play()` stops a voice the new
+sound outranks: one of a lower `priority`, or of its own and quieter than it as
+heard - the lowest priority first, the quietest of those, then the oldest - and
+plays the new one; with no such voice it refuses. A voice a pause holds is kept
+for its resume. So music raised above the rest is never cut, a gunshot takes a
+distant footstep's place, and a sound no louder than the voices of its own
+priority cuts none of them. It logs once per saturation, and it does not prevent
+clipping: gain staging is the game's. A spatial `PlaySoundEvent` beyond
 its own `maxDistance` is dropped rather than hold a voice it could never make
 audible; an `AudioSource` that starts out of range still starts, because it can
 move.

@@ -9,6 +9,7 @@
 
 #include "debug/engine_error_log.h"
 #include "ecs/component/ui/ui_canvas.h"
+#include "ecs/component/ui/ui_choice.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
 #include "ecs/component/ui/ui_scroll.h"
@@ -882,6 +883,73 @@ void testAToggleFlipsOnItsClick() {
     );
 }
 
+// A choice's arrows step its index either way, wrapping at the ends, and its text shows the option.
+void testAChoiceStepsThroughItsOptions() {
+    std::printf("A choice:\n");
+
+    Scene scene;
+    const EntityId canvas = addCanvas(scene);
+    const EntityId row    = addBox(scene, canvas, {0.0f, 0.0f}, {200.0f, 30.0f});
+    const EntityId back   = addBox(scene, row, {0.0f, 0.0f}, {30.0f, 30.0f});
+    const EntityId next   = addBox(scene, row, {170.0f, 0.0f}, {30.0f, 30.0f});
+    const EntityId shown  = addBox(scene, row, {30.0f, 0.0f}, {140.0f, 30.0f});
+    for (const EntityId arrow : {back, next}) {
+        UIButton press;
+        press.eventId = "quality";
+        scene.add(arrow, std::move(press));
+    }
+    scene.add(shown, UIText{});
+    UIChoice choice;
+    choice.options = {"Low", "Medium", "High"};
+    choice.index   = 1;
+    choice.back    = back;
+    choice.next    = next;
+    choice.text    = shown;
+    scene.add(row, std::move(choice));
+
+    UIFrame ui(scene);
+    ui.frame.input.reset();
+    float       said = -1.0f;
+    std::string saidBy;
+    EntityId    saidOf{};
+    ui.frame.events.subscribe<UIValueEvent>([&](const UIValueEvent& e) {
+        said   = e.value;
+        saidBy = e.eventId;
+        saidOf = e.entity;
+    });
+    const auto click = [&](glm::vec2 at) {
+        pointAt(ui, at, 0.0f, PRESSED);
+        ui.run();
+        pointAt(ui, at, 0.0f, RELEASED);
+        ui.run();
+        ui.frame.events.flush();
+    };
+
+    pointAt(ui, {400.0f, 400.0f});
+    ui.run();
+    check("its text shows the option at its index", scene.get<UIText>(shown).text == "Medium");
+
+    click({185.0f, 15.0f});
+    check("next steps it on", scene.get<UIChoice>(row).index == 2);
+    check("  its text showing the option the same frame", scene.get<UIText>(shown).text == "High");
+    const bool told = nearly(said, 2.0f) && saidBy == "quality" && saidOf == row;
+    check("  saying so: the index, the arrow's event, the choice", told);
+    click({185.0f, 15.0f});
+    check("  and wrapping past the last to the first", scene.get<UIChoice>(row).index == 0);
+    click({15.0f, 15.0f});
+    check("back wraps past the first to the last", scene.get<UIChoice>(row).index == 2);
+
+    scene.get<UIChoice>(row).index = 7;
+    pointAt(ui, {400.0f, 400.0f});
+    ui.run();
+    check("an index out of range shows nothing", scene.get<UIText>(shown).text.empty());
+    click({185.0f, 15.0f});
+    check("  and next steps it onto the first", scene.get<UIChoice>(row).index == 0);
+    scene.get<UIChoice>(row).index = -1;
+    click({15.0f, 15.0f});
+    check("  as back does onto the last", scene.get<UIChoice>(row).index == 2);
+}
+
 // With the cursor disabled for mouse-look, GLFW reports a virtual position that drifts
 // as the view turns; a HUD panel it crossed would take the gun's click.
 void testALockedCursorPointsAtNothing() {
@@ -1516,6 +1584,22 @@ void testUIComponentsRoundTrip() {
     toggle.knob    = knob;
     scene.add(view, std::move(toggle));
 
+    // A choice names three parts.
+    const EntityId row   = addBox(scene, canvas, {0.0f, 140.0f}, {100.0f, 20.0f});
+    const EntityId left  = addBox(scene, row, {0.0f, 0.0f}, {20.0f, 20.0f});
+    const EntityId right = addBox(scene, row, {80.0f, 0.0f}, {20.0f, 20.0f});
+    const EntityId shown = addBox(scene, row, {20.0f, 0.0f}, {60.0f, 20.0f});
+    scene.add(left, makeName("Back"));
+    scene.add(right, makeName("Next"));
+    scene.add(shown, makeName("Shown"));
+    UIChoice choice;
+    choice.options = {"Off", "On"};
+    choice.index   = 1;
+    choice.back    = left;
+    choice.next    = right;
+    choice.text    = shown;
+    scene.add(row, std::move(choice));
+
     const std::filesystem::path path = runScratch() / "vkm_ui_roundtrip.json";
     check("the scene saves", SceneSerializer::save(scene, resources, path.string()));
 
@@ -1569,6 +1653,17 @@ void testUIComponentsRoundTrip() {
         check("  its knob the same entity", back.knob == named("Knob") && back.knob);
     } else {
         check("the toggle came back", false);
+    }
+    EntityId chose{};
+    loaded.forEach<UIChoice>([&](EntityId id, UIChoice&) { chose = id; });
+    check("the choice came back", chose != EntityId{});
+    if (chose) {
+        const UIChoice& got = loaded.get<UIChoice>(chose);
+        const std::vector<std::string> options = {"Off", "On"};
+        check("  with its options and index", got.options == options && got.index == 1);
+        const bool parts =
+            got.back == named("Back") && got.next == named("Next") && got.text == named("Shown");
+        check("  its arrows and text the same entities", parts && got.back);
     }
     std::filesystem::remove(path);
 }
@@ -1711,6 +1806,7 @@ void runUITests() {
     testAHeldButtonFollowsTheDrag();
     testASliderFollowsTheDrag();
     testAToggleFlipsOnItsClick();
+    testAChoiceStepsThroughItsOptions();
     testALockedCursorPointsAtNothing();
     testAButtonKeepsItsFadeInEveryState();
     testTheWheelGoesWhereTheClickGoes();

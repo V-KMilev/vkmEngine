@@ -21,6 +21,7 @@ Each header in `ecs/component/ui/` documents its fields.
 | `UIScroll` | Makes the element a window onto its children. Always clips. |
 | `UISlider` | Rides a `UIButton`, its track. |
 | `UIToggle` | Rides a `UIButton` and flips on its click. |
+| `UIChoice` | Steps through its options on two `UIButton`s' clicks. |
 
 Resolved fields are recomputed every frame and do not serialize.
 
@@ -122,10 +123,10 @@ wherever the pointer goes; `pointer` is the pointer in the element's reference
 pixels from its top left, and `resolvedSize` its laid-out size. `UISlider` is
 built on this, and a scrollbar thumb is the same along y.
 
-### Sliders and toggles
+### Sliders, toggles and choices
 
-Both are components on a `UIButton`; their look is images the project parents
-as usual.
+Sliders and toggles are components on a `UIButton`, a choice names two; their
+look is images and text the project parents as usual.
 
 - **`UISlider`** makes its button the track. While a press on it is held,
   `value` follows the pointer between `minValue` and `maxValue`, snapped to
@@ -138,6 +139,13 @@ as usual.
   `on` has flipped by either. Its `knob` sits left when off and right when on
   (owns its `anchor.x` and `pivot.x`), and while on the button rests in
   `onColor` instead of `normalColor` unless `onColor` is clear.
+- **`UIChoice`** is one of its `options`, a setting's "< High >" row: a click on
+  its `back` or `next` button steps `index` that way, wrapping at the ends, and
+  enqueues a `UIValueEvent` carrying the new index and the clicked button's
+  `eventId`. It writes the option into its `text` entity's `UIText` each frame it
+  is laid out (so the choice is itself a `UIElement` under a canvas), and a
+  project that rewrites `options` or `index` is shown at once - when the text is
+  the choice itself or its child.
 
 ```cpp
 subscribe<UIValueEvent>([this](const UIValueEvent& e) {
@@ -214,7 +222,7 @@ toast.
 
 Layout containers (rows / stacks), 9-slice sprites, atlas regions on `UIImage`,
 a scrollbar (build one from a held `UIButton` and `UIScroll`'s sizes), controls
-beyond slider and toggle, keyboard focus and navigation, UI animation,
+beyond slider, toggle and choice, keyboard focus and navigation, UI animation,
 world-space UI (pin a label each frame with `ScreenView::toCanvas`), and a
 visual 2D edit mode.
 
@@ -232,13 +240,13 @@ UISystem::update(FrameContext)
   |-- collect visible UICanvases, sort by sortOrder
   |-- per canvas: walk its hierarchy parent-before-child, carrying the clip rect
   |     and inherited opacity:
-  |       resolve UIElement.screenRect; place slider/toggle parts by value
+  |       resolve UIElement.screenRect; place slider/toggle/choice parts by value
   |       emit quads (UIImage, UIButton) and glyphs (UIText), each tagged with its clip
   |       record hit candidates and blockers still in sight
   |       narrow the clip / offset for scroll / measure content for the children
   |-- resolveInteraction(): topmost blocker wins; button states, UIClickEvent,
-  |     toggle/slider changes with UIValueEvent, wheel to a scroll view
-  |-- a toggle or slider changed: walk the canvases again so its parts show it
+  |     toggle/slider/choice changes with UIValueEvent, wheel to a scroll view
+  |-- a toggle, slider or choice changed: walk the canvases again so its parts show it
   |-- publish UIDrawData on ctx.ui
 
 RenderSystem::update

@@ -390,6 +390,20 @@ void load(const nlohmann::json& j, UIToggle& toggle, const EntityResolver& resol
     toggle.knob = resolve(j.value("knob", 0u));
 }
 
+nlohmann::json save(const UIChoice& choice, const EntityNamer& name) {
+    nlohmann::json out = saveReflected(choice);
+    out["back"] = name(choice.back);
+    out["next"] = name(choice.next);
+    out["text"] = name(choice.text);
+    return out;
+}
+void load(const nlohmann::json& j, UIChoice& choice, const EntityResolver& resolve) {
+    loadReflected(j, choice);
+    choice.back = resolve(j.value("back", 0u));
+    choice.next = resolve(j.value("next", 0u));
+    choice.text = resolve(j.value("text", 0u));
+}
+
 nlohmann::json save(const Hierarchy& h) {
     return nlohmann::json{{"parent", h.parent.slot()}};
 }

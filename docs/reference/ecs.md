@@ -81,6 +81,7 @@ Each header documents its fields.
 | `UIScroll`            | `component/ui/ui_scroll.h`                 | Scrolls its content by `offset`                                                                       |
 | `UISlider`            | `component/ui/ui_slider.h`                 | A value between `minValue` and `maxValue`, laid out on its `fill` and `knob` entities                 |
 | `UIToggle`            | `component/ui/ui_toggle.h`                 | An on/off switch that slides its `knob` entity                                                        |
+| `UIChoice`            | `component/ui/ui_choice.h`                 | One of its `options`, stepped by its `back` and `next` buttons and shown in its `text`                |
 
 Notes the table cannot hold:
 

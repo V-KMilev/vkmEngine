@@ -182,11 +182,12 @@ class UISystem : public System {
          * @brief Settle this frame's pointer interaction across all buttons, and route the wheel.
          *
          * Only the topmost blocker can hover or press; a release over the button the press began
-         * on fires a UIClickEvent, and flips a UIToggle on it. A UISlider follows the pointer
-         * while its press lasts. Either enqueues a UIValueEvent when its value changes.
+         * on fires a UIClickEvent, flips a UIToggle on it and steps a UIChoice it is an arrow of. A
+         * UISlider follows the pointer while its press lasts. Each enqueues a UIValueEvent when its
+         * value changes.
          *
          * @param ctx Frame context supplying the scene, the input map and the bus.
-         * @return Whether a toggle or a slider changed, so its parts have moved.
+         * @return Whether a toggle, a slider or a choice changed, so its parts have moved.
          */
         bool resolveInteraction(FrameContext& ctx);
 

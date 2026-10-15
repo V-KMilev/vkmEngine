@@ -22,14 +22,15 @@ struct UIClickEvent {
 };
 
 /**
- * @brief Fired when a UISlider is dragged to a new value or a UIToggle is flipped.
+ * @brief Fired when a UISlider is dragged to a new value, a UIToggle is flipped or a UIChoice is
+ *        stepped.
  *
- * Enqueued by the UISystem like UIClickEvent, which a toggle's click fires as well.
+ * Enqueued by the UISystem like UIClickEvent, which a toggle's or a choice's click fires as well.
  */
 struct UIValueEvent {
-    EntityId    entity;   ///< The slider's or toggle's entity.
-    std::string eventId;  ///< Its UIButton's `eventId`.
-    float       value;    ///< The slider's value; a toggle's 1 on, 0 off.
+    EntityId    entity;   ///< The slider's, toggle's or choice's entity.
+    std::string eventId;  ///< Its UIButton's `eventId`; for a choice, the clicked arrow's.
+    float       value;    ///< The slider's value; a toggle's 1 on, 0 off; a choice's index.
 };
 
 } // namespace Vkm::Engine

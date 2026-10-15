@@ -60,6 +60,7 @@ ImWchar iconCodepoint(EditorIcon icon) {
         case EditorIcon::UIScroll:   return 0xe2ed;  // scroll
         case EditorIcon::UISlider:   return 0xe29a;  // sliders-horizontal
         case EditorIcon::UIToggle:   return 0xe18c;  // toggle-right
+        case EditorIcon::UIChoice:   return 0xe293;  // chevrons-left-right
         case EditorIcon::UIButton:   return 0xe202;  // square-mouse-pointer
         case EditorIcon::LightRect:  return 0xe376;  // rectangle-horizontal
         case EditorIcon::LightDisk:  return 0xe0af;  // disc

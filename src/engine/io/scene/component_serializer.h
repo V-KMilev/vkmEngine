@@ -32,6 +32,7 @@
 #include "ecs/component/render/reflection_probe.h"
 #include "ecs/component/ui/ui_button.h"
 #include "ecs/component/ui/ui_canvas.h"
+#include "ecs/component/ui/ui_choice.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
 #include "ecs/component/core/net_local.h"
@@ -89,6 +90,7 @@ class ResourceManager;
     P(UIScroll,            "UIScroll")            \
     E(UISlider,            "UISlider")            \
     E(UIToggle,            "UIToggle")            \
+    E(UIChoice,            "UIChoice")            \
     P(NetLocal,            "NetLocal")
 
 /**
@@ -241,6 +243,9 @@ namespace ComponentSerializer {
 
     nlohmann::json save(const UIToggle&, const EntityNamer&);
     void load(const nlohmann::json&, UIToggle&, const EntityResolver&);
+
+    nlohmann::json save(const UIChoice&, const EntityNamer&);
+    void load(const nlohmann::json&, UIChoice&, const EntityResolver&);
 
     /**
      * @brief Hierarchy: only `parent` is serialized, as the parent's slot.

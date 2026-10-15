@@ -37,6 +37,7 @@
 #include "ecs/component/render/reflection_probe.h"
 #include "ecs/component/ui/ui_button.h"
 #include "ecs/component/ui/ui_canvas.h"
+#include "ecs/component/ui/ui_choice.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_image.h"
 #include "ecs/component/core/net_local.h"
@@ -338,6 +339,7 @@ class ScriptEditCommand : public Command {
     X(UIScroll,            uiScroll)            \
     X(UISlider,            uiSlider)            \
     X(UIToggle,            uiToggle)            \
+    X(UIChoice,            uiChoice)            \
     X(NetLocal,            netLocal)            \
     S(PrefabEntity,        prefabEntity)        \
     S(PrefabInstance,      prefabInstance)
