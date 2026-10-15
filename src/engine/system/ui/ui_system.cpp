@@ -503,8 +503,7 @@ glm::vec2 UISystem::emitText(
 
     // The block spans ascent above the first baseline to descent (negative) below the
     // last; vertical alignment offsets it by the unused height.
-    const float lineHeight  = font.lineHeight > 0.0f ? font.lineHeight : font.ascent - font.descent;
-    const float lineStep    = lineHeight * renderScale;
+    const float lineStep    = font.lineHeight * renderScale;
     const float blockHeight = (font.ascent - font.descent) * renderScale
         + static_cast<float>(m_lines.size() - 1) * lineStep;
 
