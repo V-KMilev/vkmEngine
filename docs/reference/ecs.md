@@ -66,6 +66,7 @@ Each header documents its fields.
 | `IrradianceVolume`    | `component/render/irradiance_volume.h`     | The baked SH-L1 grid indirect diffuse comes from                                                      |
 | `Ocean`               | `component/render/ocean.h`                 | The spectrum a `waves` material's surface moves by. One a scene (`findOcean`); see [rendering.md](rendering.md#the-ocean) |
 | `ParticleEmitter`     | `component/render/particle_emitter.h`      | How particles are emitted; the live particles are `ParticleSystem`'s                                  |
+| `ParticleTrigger`     | `component/render/particle_emitter.h`      | Makes a child's emitter spawn on its parent's particles' births, deaths or strikes                    |
 | `Joint`               | `component/physics/joint.h`                | A `JointType` constraint to the `connected` entity                                                    |
 | `Ragdoll`             | `component/physics/ragdoll.h`              | One `RagdollBone` per simulated bone, each naming the body entity that simulates it                   |
 | `ScriptComponent`     | `system/script/script_component.h`         | The behaviors attached to this entity, owned as `unique_ptr<Behavior>`; see [Scripting](scripting.md) |

@@ -135,12 +135,12 @@ Engine code, single include root `src/engine/`:
 | Path                       | Contents                                                                 |
 |----------------------------|--------------------------------------------------------------------------|
 | `core/`                    | `Engine`, `System`, `FrameContext`, `SystemStage`, `Clock`, `HostChrome`, `engine_config`, `reflect`, `fnv1a` |
-| `core/math/`               | math helpers (rotation, axes, bounds, frustum, random, easing)           |
+| `core/math/`               | math helpers (rotation, axes, bounds, frustum, random, easing, curve)    |
 | `core/memory/`             | `TypeId`, `SparseSet`, `SlotAllocator`, `StorageIndex`, `TypeRegistry`   |
 | `core/event/`              | `EventBus` (typed pub/sub) and the `EventSender` view behaviors get |
 | `ecs/`                     | `Scene`, `EntityId`, `Environment`, `PhysicsSettings`, `EntityResolver` and `EntityNamer` (in `entity_mapping.h`), `HierarchyOperations` (free functions) |
 | `ecs/component/core/`      | `Transform`, `WorldTransform`, `Hierarchy`, `Name`                       |
-| `ecs/component/render/`    | `Mesh`, `Light`, `Camera`, `Decal`, `LOD`, `ParticleEmitter`, `ReflectionProbe`, `IrradianceVolume`, `Ocean` |
+| `ecs/component/render/`    | `Mesh`, `Light`, `Camera`, `Decal`, `LOD`, `ParticleEmitter`, `ParticleTrigger`, `ReflectionProbe`, `IrradianceVolume`, `Ocean` |
 | `ecs/component/animation/` | `Animation`, `Animator`, `BoneSocket`, `AnimationTrack`                  |
 | `ecs/component/audio/`     | `AudioSource`, `AudioListener`                                           |
 | `ecs/component/physics/`   | `Rigidbody`, `Collider`, `CharacterController`, `Joint`, `Ragdoll`       |

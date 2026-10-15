@@ -73,6 +73,7 @@ class ResourceManager;
     R(LOD,                 "LOD")                 \
     R(Decal,               "Decal")               \
     R(ParticleEmitter,     "ParticleEmitter")     \
+    P(ParticleTrigger,     "ParticleTrigger")     \
     R(AudioSource,         "AudioSource")         \
     P(AudioListener,       "AudioListener")       \
     P(IrradianceVolume,    "IrradianceVolume")    \
@@ -195,6 +196,9 @@ namespace ComponentSerializer {
 
     nlohmann::json save(const ParticleEmitter&, const ResourceManager&);
     void load(const nlohmann::json&, ParticleEmitter&, const ResourceManager&);
+
+    nlohmann::json save(const ParticleTrigger&);
+    void load(const nlohmann::json&, ParticleTrigger&);
 
     /**
      * @brief AudioSource: the clip it names and how it should be heard.

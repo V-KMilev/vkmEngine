@@ -307,6 +307,9 @@ void emitAssetRefs(const Decal& d, AssetRefs& refs) {
     if (d.material) refs.materials.push_back(d.material);
 }
 
+nlohmann::json save(const ParticleTrigger& t)          { return saveReflected(t); }
+void load(const nlohmann::json& j, ParticleTrigger& t) { loadReflected(j, t); }
+
 nlohmann::json save(const ParticleEmitter& e, const ResourceManager& resources) {
     return saveReflected(e, resources);
 }
