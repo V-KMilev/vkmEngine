@@ -11,6 +11,7 @@
 
 #include "ecs/entity.h"
 #include "core/reflect.h"
+#include "core/math/curve.h"
 #include "system/render/editor_render_hooks.h"
 #include "ui/editor_style.h"
 #include "ui/editor_icons.h"
@@ -350,6 +351,48 @@ inline bool propAngleSlider(
     float deg = glm::degrees(*radians);
     const bool changed = propSlider(label, &deg, loDeg, hiDeg, "%.0f deg", tooltip);
     if (changed) *radians = glm::radians(deg);
+    return changed;
+}
+
+/**
+ * @brief Property row: a range, its least and greatest value side by side.
+ *
+ * @param label   The row's label and id scope.
+ * @param range   The range; min never passes max.
+ * @param speed   Drag speed.
+ * @param lo      Lowest either end may be; lo == hi == 0 leaves it unbounded.
+ * @param hi      Highest either end may be.
+ * @param fmt     printf format for both ends.
+ * @param tooltip Shown on hover, or null.
+ * @return Whether it was edited this frame.
+ */
+inline bool propRange(
+    const char* label,
+    Math::FloatRange& range,
+    float speed,
+    float lo,
+    float hi,
+    const char* fmt = "%.2f",
+    const char* tooltip = nullptr
+) {
+    return propRow(label, tooltip, [&] {
+        return ImGui::DragFloatRange2("##v", &range.min, &range.max, speed, lo, hi, fmt, fmt, PROP_CLAMP);
+    });
+}
+
+/// Property row: a range of angles in degrees, staged over a radians-stored range.
+inline bool propAngleRange(
+    const char* label,
+    Math::FloatRange& range,
+    float speed,
+    float loDeg,
+    float hiDeg,
+    const char* fmt = "%.0f deg",
+    const char* tooltip = nullptr
+) {
+    Math::FloatRange degrees{glm::degrees(range.min), glm::degrees(range.max)};
+    const bool changed = propRange(label, degrees, speed, loDeg, hiDeg, fmt, tooltip);
+    if (changed) range = {glm::radians(degrees.min), glm::radians(degrees.max)};
     return changed;
 }
 

@@ -44,6 +44,7 @@ class SceneIOController;
     X(ReflectionProbe,     drawReflectionProbeSection,     "Reflection Probe",    PROBE)     \
     X(Decal,               drawDecalSection,               "Decal",               MESH)      \
     X(ParticleEmitter,     drawParticleSection,            "Particle Emitter",    LIGHT)     \
+    X(ParticleTrigger,     drawParticleTriggerSection,     "Particle Trigger",    LIGHT)     \
     X(AudioSource,         drawAudioSourceSection,         "Audio Source",        AUDIO)     \
     X(AudioListener,       drawAudioListenerSection,       "Audio Listener",      AUDIO)     \
     X(IrradianceVolume,    drawIrradianceVolumeSection,    "Irradiance Volume",   PROBE)     \

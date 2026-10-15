@@ -481,15 +481,19 @@ void GizmoOverlay::drawEffectGizmos(EditorContext& ec) {
         const bool  selected = (ec.state.isSelected(id));
         const ImU32 col = selected ? EditorStyle::HIGHLIGHT_U32 : EMITTER_COL;
 
-        const glm::vec3 pos = resolvedWorldPosition(ec.frame.scene, id, tf);
+        const glm::mat4 model = resolvedWorldMatrix(ec.frame.scene, id, tf);
+        const glm::vec3 pos(model[3]);
         ImVec2 sp;
         if (!scope.project(pos, sp)) return;
 
-        // Under the marker, so the glyph sits on the line's start.
-        const float speed = glm::length(e.velocity);
-        if (speed > 1e-4f) {
+        // The way a cone, a box or a hemisphere sends its particles, its +Y; under the marker, so
+        // the glyph sits on the line's start.
+        const glm::vec3 up(model[1]);
+        const bool      aimed = e.shape == EmitShape::Cone || e.shape == EmitShape::Box
+            || e.shape == EmitShape::Hemisphere;
+        if (aimed && glm::length(up) > 1e-4f) {
             ImVec2 tip;
-            if (scope.project(pos + (e.velocity / speed) * 0.75f, tip))
+            if (scope.project(pos + glm::normalize(up) * 0.75f, tip))
                 dl->AddLine(sp, tip, col, EditorStyle::px(selected ? 2.0f : 1.5f));
         }
         markEntity(dl, EditorIcon::Particle, id, sp, pos, col);

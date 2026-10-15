@@ -329,6 +329,7 @@ class ScriptEditCommand : public Command {
     X(Ocean,               ocean)               \
     X(Decal,               decal)               \
     X(ParticleEmitter,     particleEmitter)     \
+    X(ParticleTrigger,     particleTrigger)     \
     X(AudioSource,         audioSource)         \
     X(AudioListener,       audioListener)       \
     X(UICanvas,            uiCanvas)            \
