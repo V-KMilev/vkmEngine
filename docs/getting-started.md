@@ -279,7 +279,7 @@ stop it earlier:
   and says so in a sentence.
 
 `vkm build --compiler <path>` names another compiler, which the first guard then
-judges; `-DVKMENGINE_SKIP_TOOLCHAIN_CHECK=ON` overrides it (you are on your own).
+judges.
 
 ## The one convention that will catch you
 

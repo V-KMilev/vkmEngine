@@ -7,8 +7,8 @@ include(CMakeFindDependencyMacro)
 find_dependency(Threads)
 
 # A module must be built with a toolchain compatible with the engine's: a mismatch
-# links, then crashes at run time. `vkm build` gives a project the pinned GCC when
-# VKMENGINE_PINNED_TOOLCHAIN says the engine was built with it, else this path.
+# links, then crashes at run time. `vkm build` gives a project the pinned compiler
+# when VKMENGINE_PINNED_TOOLCHAIN says the engine was built with it, else this path.
 set(VKMENGINE_BUILD_CXX_COMPILER         "@CMAKE_CXX_COMPILER@")
 set(VKMENGINE_BUILD_CXX_COMPILER_ID      "@CMAKE_CXX_COMPILER_ID@")
 set(VKMENGINE_BUILD_CXX_COMPILER_VERSION "@CMAKE_CXX_COMPILER_VERSION@")
@@ -19,36 +19,31 @@ set(VKMENGINE_BUILD_TYPE "@CMAKE_BUILD_TYPE@")
 set(VKMENGINE_PROFILER   "@VKM_PROFILER@")
 set(VKMENGINE_ASSERTS    "@VKM_ASSERTS@")
 
-if(NOT VKMENGINE_SKIP_TOOLCHAIN_CHECK)
-    if(NOT CMAKE_CXX_COMPILER_ID STREQUAL VKMENGINE_BUILD_CXX_COMPILER_ID)
-        message(FATAL_ERROR
-            "vkmEngine was built with ${VKMENGINE_BUILD_CXX_COMPILER_ID} but you are "
-            "building with ${CMAKE_CXX_COMPILER_ID}.\n"
-            "The engine ships prebuilt libraries and is not ABI-stable across "
-            "compilers: a module built this way fails at run time, not at link "
-            "time. Use ${VKMENGINE_BUILD_CXX_COMPILER_ID} - `vkm build` does - "
-            "or rebuild the engine with your compiler.\n"
-            "To override anyway (you are on your own): "
-            "-DVKMENGINE_SKIP_TOOLCHAIN_CHECK=ON"
-        )
-    endif()
-
-    # The same major.minor: the engine ships its compiler's runtime libraries, and a
-    # newer compiler's module can need symbols they lack.
-    string(REGEX MATCH "^[0-9]+\\.[0-9]+" _vkm_want "${VKMENGINE_BUILD_CXX_COMPILER_VERSION}")
-    string(REGEX MATCH "^[0-9]+\\.[0-9]+" _vkm_have "${CMAKE_CXX_COMPILER_VERSION}")
-    if(NOT _vkm_have VERSION_EQUAL _vkm_want)
-        message(FATAL_ERROR
-            "vkmEngine was built with ${VKMENGINE_BUILD_CXX_COMPILER_ID} "
-            "${VKMENGINE_BUILD_CXX_COMPILER_VERSION} but you are building with "
-            "${CMAKE_CXX_COMPILER_VERSION}.\n"
-            "A module needs the same ${_vkm_want}.x release; `vkm build` uses it.\n"
-            "To override anyway: -DVKMENGINE_SKIP_TOOLCHAIN_CHECK=ON"
-        )
-    endif()
-    unset(_vkm_want)
-    unset(_vkm_have)
+if(NOT CMAKE_CXX_COMPILER_ID STREQUAL VKMENGINE_BUILD_CXX_COMPILER_ID)
+    message(FATAL_ERROR
+        "vkmEngine was built with ${VKMENGINE_BUILD_CXX_COMPILER_ID} but you are "
+        "building with ${CMAKE_CXX_COMPILER_ID}.\n"
+        "The engine ships prebuilt libraries and is not ABI-stable across "
+        "compilers: a module built this way fails at run time, not at link "
+        "time. Use ${VKMENGINE_BUILD_CXX_COMPILER_ID} - `vkm build` does - "
+        "or rebuild the engine with your compiler."
+    )
 endif()
+
+# The same major.minor: the engine ships its compiler's runtime libraries, and a
+# newer compiler's module can need symbols they lack.
+string(REGEX MATCH "^[0-9]+\\.[0-9]+" _vkm_want "${VKMENGINE_BUILD_CXX_COMPILER_VERSION}")
+string(REGEX MATCH "^[0-9]+\\.[0-9]+" _vkm_have "${CMAKE_CXX_COMPILER_VERSION}")
+if(NOT _vkm_have VERSION_EQUAL _vkm_want)
+    message(FATAL_ERROR
+        "vkmEngine was built with ${VKMENGINE_BUILD_CXX_COMPILER_ID} "
+        "${VKMENGINE_BUILD_CXX_COMPILER_VERSION} but you are building with "
+        "${CMAKE_CXX_COMPILER_VERSION}.\n"
+        "A module needs the same ${_vkm_want}.x release; `vkm build` uses it."
+    )
+endif()
+unset(_vkm_want)
+unset(_vkm_have)
 
 include("${CMAKE_CURRENT_LIST_DIR}/vkmEngineTargets.cmake")
 
