@@ -4,10 +4,6 @@
 layout(location = ATTR_POSITION) in vec3 aPos;
 layout(location = ATTR_NORMAL) in vec3 aNormal;
 #include "../../instancing.glsl"
-#ifdef SKINNED
-#include "../../skinning.glsl"
-#include "../../skinning_instanced.glsl"
-#endif
 #include "../../camera.glsl"
 #include "../../viewmodel.glsl"
 #include "../../material.glsl"
@@ -19,13 +15,11 @@ invariant gl_Position;
 
 void main() {
     const mat4 model = instanceModel();
+    vec4 worldPos = instanceWorldPosition();
 #ifdef SKINNED
-    const uint base = instanceSkinBase();
-    vec4 worldPos   = skinnedWorldPosition(model, base);
-    vec3 normal     = mat3(skinMatrix(base)) * aNormal;
+    vec3 normal = mat3(skinMatrix(instanceSkinBase())) * aNormal;
 #else
-    vec4 worldPos   = model * vec4(aPos, 1.0);
-    vec3 normal     = aNormal;
+    vec3 normal = aNormal;
 #endif
 
     // The fragment stage normalises.

@@ -21,12 +21,10 @@ const uint SAMPLE_COUNT = 1024u;
 void main() {
     vec3 N = normalize(vLocalPos);
 
-    vec3 up    = abs(N.y) < 0.999 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-    vec3 right = normalize(cross(up, N));
-    up = normalize(cross(N, right));
+    vec3 right, up;
+    basisAcross(N, right, up);
 
-    float envRes  = float(textureSize(u_envCube, 0).x);
-    float saTexel = 4.0 * PI / (6.0 * envRes * envRes);
+    const float envRes = float(textureSize(u_envCube, 0).x);
 
     vec3 irradiance = vec3(0.0);
     for (uint i = 0u; i < SAMPLE_COUNT; ++i) {
@@ -39,8 +37,7 @@ void main() {
         // pdf = cos / pi.
         float pdf      = max(cosTheta, 1e-4) / PI;
         float saSample = 1.0 / (float(SAMPLE_COUNT) * pdf);
-        float mip      = 0.5 * log2(saSample / saTexel);
-        irradiance += textureLod(u_envCube, L, max(mip, 0.0)).rgb;
+        irradiance += textureLod(u_envCube, L, cubeMipForSolidAngle(saSample, envRes)).rgb;
     }
 
     // The integral of L cos over the hemisphere is pi times the samples' mean; over pi, the mean.

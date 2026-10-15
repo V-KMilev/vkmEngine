@@ -3,10 +3,8 @@
 // so it casts a share of texels as large as it is opaque and its see-through parts none. How
 // smoothly that share reads as a shade is the filter's: wide where the shadow is soft, grain where
 // a hard edge's few taps meet it.
-#include "../../material.glsl"
+#include "../../surface.glsl"
 #include "../../noise.glsl"
-
-layout(binding = MATERIAL_SLOT_ALBEDO) uniform sampler2D u_albedoTexture;
 
 // From this tile's texels to the light's fixed grid (GLShadowPass), so a cascade snapping along
 // with the camera keeps each world texel's dither.
@@ -16,8 +14,7 @@ in vec2 vUV;
 flat in uint vCaster;
 
 void main() {
-    float a = u_material.albedo.a;
-    if (hasTex(MATERIAL_SLOT_ALBEDO)) a *= texture(u_albedoTexture, vUV).a;
+    const float a = sampledOpacity(vUV);
     // Each caster its own pattern, so two half-clear panes cast three quarters, not a half.
     vec2  layer  = fract(vec2(0.7548777, 0.5698403) * float(vCaster % 1024u)) * 64.0;
     float dither = effectNoise(gl_FragCoord.xy + u_ditherShift + layer, NOISE_SHADOW);

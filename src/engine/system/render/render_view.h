@@ -46,7 +46,7 @@ struct RenderView {
     uint32_t surfaceWidth   = 0;  ///< Full backbuffer width.
     uint32_t surfaceHeight  = 0;  ///< Full backbuffer height.
 
-    CameraData camera;
+    CameraData camera;  ///< The view Visibility culled for: the scene's camera or a host's.
     /**
      * @brief Whether a camera resolved this frame.
      *
@@ -62,9 +62,9 @@ struct RenderView {
      */
     const RenderObjects* objects = nullptr;
 
-    std::vector<LightData>            lights;
+    std::vector<LightData>            lights;  ///< The enabled ones, in world space.
     std::vector<ProbeData>            probes;
-    std::vector<DecalData>            decals;
+    std::vector<DecalData>            decals;  ///< Every enabled one in the scene: not culled to the camera.
     std::vector<ParticleData>         particlesAdditive;  ///< Order-independent.
     std::vector<ParticleData>         particlesAlpha;     ///< Unsorted; the backend orders them.
     std::vector<TextureHandle>        particleTextures;   ///< What they show, by ParticleData::params.z - 1.
@@ -89,9 +89,9 @@ struct RenderView {
     const std::vector<glm::mat4>* skinMatrices = nullptr;
 
     RenderSettings                settings;
-    Environment                   environment;
+    Environment                   environment;   ///< Sky, night sky and fog.
     const UIDrawData*             ui = nullptr;  ///< Borrowed; null when the UISystem has not run.
-    SplashFrame                   splash;
+    SplashFrame                   splash;        ///< The startup logo, or nothing once it is over.
 
     /**
      * @brief Scene::epoch() at build time: which world these items came from.

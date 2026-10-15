@@ -16,7 +16,6 @@ uniform float u_radius;    // world-space sample radius; sizes the fold's tolera
 
 #include "../../depth.glsl"
 #include "../../camera.glsl"
-#include "../depth_mips.glsl"
 
 float fetch(ivec2 texel) {
     return texelFetch(u_src, clamp(texel, ivec2(0), textureSize(u_src, 0) - 1), 0).r;

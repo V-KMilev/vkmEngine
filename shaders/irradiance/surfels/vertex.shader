@@ -11,10 +11,9 @@ out vec3 vNormal;
 out vec2 vUV;
 
 void main() {
-    const mat4 model    = instanceModel();
-    const vec4 worldPos = model * vec4(aPos, 1.0);
+    const vec4 worldPos = instanceWorldPosition();
     vWorldPos   = worldPos.xyz;
-    vNormal     = normalize(normalMatrix(model) * aNormal);
+    vNormal     = normalize(normalMatrix(instanceModel()) * aNormal);
     vUV         = aUV;
     gl_Position = u_camera.viewProjection * worldPos;
 }

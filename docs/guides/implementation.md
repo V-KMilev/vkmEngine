@@ -1,11 +1,9 @@
 # Implementation Guide
 
-The bar for the code inside a change. [design.md](design.md) decides where it
-goes and what shape it takes; [code-style.md](code-style.md) holds the
-mechanics. This guide is the judgment between them.
-
-In one sentence: **write the simplest thing that solves today's problem, in a
-shape that would still fit if the engine doubled.**
+The bar for the code inside a change: **the simplest thing that solves today's
+problem, in a shape that would still fit if the engine doubled.**
+[design.md](design.md) decides where it goes; [code-style.md](code-style.md)
+holds the mechanics.
 
 ---
 
@@ -16,8 +14,7 @@ shape that would still fit if the engine doubled.**
 - **Delete rot.** Never comment it out, never keep it "just in case"; git is the
   just-in-case. What counts as rot is section 6.
 - **Never leave a refactor half-done.** Rename everywhere or nowhere; move a file
-  and its callers together. Two conventions live at once are worse than the one
-  you started with.
+  and its callers together.
 - **No `thread_local` in an engine header** - section 3. The build enforces it
   (`testNoEngineHeaderCarriesAThreadLocal`).
 
@@ -25,36 +22,27 @@ shape that would still fit if the engine doubled.**
 
 ## 1. Concrete first
 
-Write the first one concretely. Extract on the second, when you can point at the
-duplication: an abstraction guessed from one case is wrong in exactly the way
-you did not imagine. A virtual with one implementation is an indirect call and
-another file to open. A flag with no caller is a branch nobody tests.
+Write the first one concretely; extract on the second, when you can point at the
+duplication. An abstraction guessed from one case is wrong in the way you did not
+imagine. A virtual with one implementation, a flag with no caller, a `Manager`
+or `Factory` with one user - each is overhead with a name.
 
-`RenderBackend`, `System`, `SparseSet<T>`, `Handle<T>` and `core/reflect.h`
-each served many callers before they were made generic, and each would absorb
-the next ten without changing shape. That is the bar. A `Manager`, `Factory` or
-`Helper` with one user is not generality; it is overhead with a name.
+Pick the construct that costs the reader least: an `if` over a hierarchy for two
+cases, three similar lines over a template, a free function over a singleton, a
+`struct` over a `class` when there is no invariant. Never cross a seam to save a
+few lines.
 
-Pick the construct that costs the reader least. An `if` beats a hierarchy for
-two cases; three similar lines beat a template for three; a free function beats
-a singleton; a `struct` beats a `class` when there is no invariant to protect.
-And never cross a seam to save a few lines - the plumbing *is* the design.
-
-Simple is not the same as small. When the explicit version is the one that stays
-correct as things lean on it, it wins over the compact one that reads well
-today. Fewer lines is evidence of a simpler design, never a substitute for one.
+Simple is not small: when the explicit version stays correct as things lean on
+it, it beats the compact one.
 
 ---
 
 ## 2. Know how often it runs
 
-Before the code, the numbers: how many of these are there, how often does this
-run, and who reads what it writes. The answer sorts every line into one of two
-kinds.
-
-**Hot** runs per frame times per entity, per draw, per tick times per body or
-contact, per peer per snapshot. **Cold** runs at boot, on load, in the cooker,
-or once per editor gesture.
+Before the code: how many of these are there, how often does this run, and who
+reads what it writes. **Hot** runs per frame times per entity, per draw, per
+tick times per body or contact, per peer per snapshot. **Cold** runs at boot, on
+load, in the cooker, or once per editor gesture.
 
 Hot code:
 
@@ -65,20 +53,23 @@ Hot code:
   inside a loop that could have walked the storage. Copy trivially-copyable bulk
   with `memcpy`.
 - **does not lock, throw or call through `std::function`** per element.
-- **touches each byte as few times as it can.** A matrix copied through four
-  intermediate structs on its way to the GPU costs four times what it had to -
-  pass an index, not a copy.
-- **on the GPU side, counts binds and draws.** On the driver this backend runs
-  on, each framebuffer bind and each draw after a state change is validated; a
-  pass costs that, not what its shader computes.
+- **touches each byte as few times as it can** - pass an index, not a copy.
+- **on the GPU side, counts binds and draws.** The driver validates each
+  framebuffer bind and each draw after a state change; that, not the shader, is
+  what a pass costs.
 
-Cold code is written for the reader. Do not bring hot-path idiom into a loader:
-a clear `std::vector` of strings in the cooker is right, and a hand-rolled arena
-there is a cost with no payer.
+Cold code is written for the reader: no hot-path idiom in a loader or the
+cooker.
 
 A claim that something is faster is a capture before and after, on the scenes it
 touches ([../reference/building.md](../reference/building.md#measuring-a-change)).
 Inside the run-to-run noise, the simpler code stays.
+
+**Tune for the machines a game runs on, not the one you measure on.** A
+measured constant - a chunk count, a sample budget - sits in the middle of the
+swept range that performs alike, not on a peak. What the hardware can report
+(thread count, texture limits, alignment) is asked, not assumed. A win on one
+driver alone is kept only if it costs nothing on the others.
 
 ---
 
@@ -92,26 +83,23 @@ with `parallelFor` and joins before it returns
   sized before the fork. Never a shared container, never a counter without an
   atomic.
 - **A parallel body never changes the component graph** - no create, destroy,
-  add or remove. `setParent` seeds `Hierarchy` and `WorldTransform` up front so
-  the parallel resolve never has to.
+  add or remove.
 - **GL is the main thread's.** Workers decode; the frame uploads.
 - **Background work returns through a queue.** An asset decode runs on the pool
   via `addTask` and hands its result to `AsyncLoadQueue`; `AsyncLoaderSystem`
   applies it on the main thread, and a result for an asset that was replaced in
   the meantime is recognised and dropped.
 - **`thread_local` scratch lives in a `.cpp`, in an anonymous namespace** - never
-  in an engine header. A gameplay module that instantiates one with a destructor
-  registers that destructor against itself, glibc will not unmap a library while
-  a thread holding such a registration lives, and the frame's thread lives the
-  session - so every script reload after that leaks the old module.
+  in an engine header. Instantiated in a gameplay module with a destructor, it
+  pins the module in memory for the frame thread's life, so every script reload
+  leaks the old module.
 
 ---
 
 ## 4. Determinism
 
-The simulation is deterministic, and networking and replay stand on it: a client
-re-runs ticks the server disagreed with and must arrive where the server did.
-Keep it that way:
+The simulation is deterministic: a client re-runs ticks the server disagreed
+with and must arrive where the server did.
 
 - **Simulation advances in `fixedUpdate`, by `ctx.clock.getFixedStep()`**, never
   by the frame delta and never by the wall clock.
@@ -126,7 +114,7 @@ Keep it that way:
   `ParticleSystem` does.
 
 A parallel loop is deterministic when each index writes only its own output
-(section 3). A merge that runs in index order after the join keeps it that way.
+(section 3) and any merge runs in index order after the join.
 
 ---
 
@@ -134,8 +122,8 @@ A parallel loop is deterministic when each index writes only its own output
 
 Ask of every function: what does this do when the asset is missing, the file will
 not parse, the handle is stale, the device will not open? "It cannot happen" is
-an answer only if something enforces it. **Silent wrong behaviour is the worst
-outcome available** - worse than a crash, because it costs somebody a day.
+an answer only if something enforces it. **Silent wrong behaviour is worse than a
+crash.**
 
 | Context                          | Mechanism                          |
 |----------------------------------|------------------------------------|
@@ -144,8 +132,8 @@ outcome available** - worse than a crash, because it costs somebody a day.
 | Runtime lookup not found         | return `nullptr` or `false`        |
 | Invalid handle                   | null sentinel (index 0)            |
 
-- `VKM_ASSERT` compiles to nothing in release, so its condition has no side
-  effects. It lives in the foundation types - `Scene`, `SparseSet`,
+- `VKM_ASSERT` compiles to nothing in a shipping build (or with `VKM_ASSERTS`
+  off), so its condition has no side effects. It lives in the foundation types - `Scene`, `SparseSet`,
   `SlotAllocator`, `ResourceManager`, the hierarchy operations - where a broken
   precondition corrupts shared state. A destructive operation **asserts and
   guards** the same condition: the assert is for the programmer who broke it,
@@ -159,8 +147,8 @@ outcome available** - worse than a crash, because it costs somebody a day.
   expands from `VKM_ASSET_KINDS` - and there is nothing left to compare.
 - **Anything read from outside the process is bounded before it is trusted** -
   a count divided before it is multiplied, a length checked before it is
-  allocated. A cooked file, a scene, a datagram: each reader refuses what it
-  cannot represent rather than clamping it into something wrong.
+  allocated. Each reader refuses what it cannot represent rather than clamping it
+  into something wrong.
 
 Three channels carry a failure; pick by **who caused it and who can act on it**:
 
@@ -179,17 +167,12 @@ Three channels carry a failure; pick by **who caused it and who can act on it**:
 
 ## 6. Delete rot, keep design
 
-These are different things, and confusing them has cost real work.
-
 **Rot goes:** an orphan nothing reaches, a path superseded by its replacement,
 state nobody reads, a doc describing something that no longer exists.
 
 **Design stays:** a natural accessor, or an API that completes a type's obvious
-surface, **even with no caller yet.** Deleting it only churns the type the day
-someone needs it.
-
-The question is never "is this called?" It is **"is this left over, or is it
-part of the shape?"**
+surface, **even with no caller yet.** The question is never "is this called?" but
+**"is this left over, or part of the shape?"**
 
 ---
 
@@ -209,37 +192,27 @@ sequence or a draw loop, which are long because the work is
 ## 8. A long comment is a diagnosis
 
 What a comment may say, and how long it may run, is
-[code-style.md](code-style.md#6-documentation-and-comments). This section is
-what to do when yours is too long.
+[code-style.md](code-style.md#6-documentation-and-comments). A long declaration
+block a caller needs is fine; the tenth line of `//` in the middle of a function
+means one of three things:
 
-A declaration block is not the problem - twenty lines a caller could not have
-inferred is the right answer there. But the tenth line of `//` in the middle of
-a function means one of three things:
-
-1. **The code is wrong.** The logic is hard to follow and the comment is
-   apologising for it. Fix the decomposition or the naming. Try this first; it is
-   the only one of the three that improves the engine.
-2. **The material is real and belongs somewhere a reader will find it.** A
-   threading contract, an upstream bug, why a format is shaped as it is. If a
-   caller needs it, it goes in the declaration's block, at whatever length that
-   takes; if it is about the subsystem, it goes in `docs/reference/` with a
-   one-line pointer left behind. Either way it moves. It is never deleted.
-3. **You are arguing, not explaining.** The reader needs the decision and the
-   constraint it protects, not the case for it. Two lines, then stop.
-
-An out-of-date essay is worse than none: it is confidently wrong, and it is
-believed.
+1. **The code is wrong.** The comment apologises for logic that is hard to
+   follow; fix the decomposition or the naming. Try this first.
+2. **The material is real and belongs elsewhere.** What a caller needs goes in
+   the declaration's block; what is about the subsystem goes in `docs/reference/`
+   with a one-line pointer left behind. It moves; it is never deleted.
+3. **You are arguing, not explaining.** State the decision and the constraint it
+   protects in two lines, then stop.
 
 ---
 
 ## 9. Checks with an answer
 
-Principles underdetermine; these do not. Run them on your own change.
+Run these on your own change.
 
 - **The derived-state test.** For every member: could it be computed from the
-  others? Stored state that could be derived is kept in sync by hand, and the day
-  someone forgets is a bug that reproduces only in sequence. Store it anyway only
-  when the computation is measurably hot.
+  others? Stored state that could be derived is kept in sync by hand. Store it
+  anyway only when the computation is measurably hot.
 - **The second-user test.** For every abstraction, name the second caller, today
   (section 1).
 - **The leftover-or-design test.** For every deletion candidate (section 6).
@@ -249,8 +222,7 @@ Principles underdetermine; these do not. Run them on your own change.
 - **The route-around test.** Would the next feature extend this, or work around
   it? ([review.md](review.md#4-suffocating-or-smoothing))
 - **The mutation test.** For every test that guards a fix: undo the fix, rebuild,
-  and watch the test fail. A test you have not seen fail may be testing nothing,
-  and passing for the wrong reason is the common case.
+  and watch the test fail. A test you have not seen fail may be testing nothing.
 - **The measurement test.** For every performance claim, the capture (section 2).
 - **The load test.** If a hundred things end up depending on this, is it still the
   right shape - or the thing everything works around?

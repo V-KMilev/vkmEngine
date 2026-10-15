@@ -32,7 +32,8 @@ constexpr std::array<ma_backend, 7> PLAYBACK_BACKENDS = {
     ma_backend_oss,
 };
 
-// How long a stopped voice takes to reach silence; measured in docs/reference/audio.md.
+// How long a stopped voice takes to reach silence: short enough to read as a stop, long enough not
+// to click.
 constexpr uint32_t STOP_FADE_MS = 5;
 
 /// Wait between attempts to reopen a lost device: opening blocks, and a host with no

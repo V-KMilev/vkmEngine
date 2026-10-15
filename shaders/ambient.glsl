@@ -31,12 +31,6 @@ vec3 multiBounceOcclusion(float visibility, vec3 albedo) {
 vec3 environmentIrradiance(vec3 worldPos, vec3 n) {
     vec3 irradiance = u_hasIBL == 1 ? texture(u_irradiance, n).rgb : vec3(FLAT_AMBIENT);
     if (u_probeCount > 0) irradiance = probeIrradiance(worldPos, n, irradiance);
-    if (u_hasIrradianceVolume == 1) {
-        float w = irradianceVolumeWeight(worldPos);
-        if (w > 0.0) {
-            vec3 volume = sampleIrradianceVolume(worldPos, n) / PI * u_ivIntensity;
-            irradiance = mix(irradiance, volume, w);
-        }
-    }
+    if (u_hasIrradianceVolume == 1) irradiance = blendIrradianceVolume(irradiance, worldPos, n, 1.0);
     return irradiance * u_iblIntensity;
 }

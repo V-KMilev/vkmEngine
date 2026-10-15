@@ -133,7 +133,8 @@ curl -fsSL https://github.com/V-KMilev/vkmEngine/releases/latest/download/instal
 irm https://github.com/V-KMilev/vkmEngine/releases/latest/download/install.ps1 | iex
 ```
 
-No administrator and nothing else to install: the engine brings its own Python, and its first
+No administrator, and nothing else to install but, on Linux, the C library's headers
+([what you need](docs/getting-started.md#what-you-need)): the engine brings its own Python, and its first
 build fetches the compiler, CMake and Ninja it was built with - GCC by default, or Clang with
 `VKM_COMPILER=clang` before the installer. The installer checks the download against the release's
 `SHA256SUMS` before it unpacks anything. Each release also carries the examples built as games,
@@ -161,10 +162,11 @@ cmake -B build -G Ninja && cmake --build build
 ```
 
 Four executables share one project directory: `vkm_editor` authors it, `vkm_runtime` plays it,
-`vkm_cook` bakes its assets, and `vkm_server` serves it to players. `examples/` holds three
+`vkm_cook` bakes its assets, and `vkm_server` serves it to players. `examples/` holds four
 complete projects: a physics sandbox that is also the multiplayer sample, an endless runner,
-and a stress arena. [Building](docs/reference/building.md) lists the prerequisites, the targets,
-and how CI and releases build both SDKs.
+a stress arena, and a city walked at street level for the GPU occlusion cull.
+[Building](docs/reference/building.md) lists the prerequisites, the targets, and how CI and
+releases build both SDKs.
 
 ## Documentation
 
@@ -179,7 +181,7 @@ The manual lives in [docs/](docs/README.md) and online at
 | [UI](docs/reference/ui.md) | [Visibility](docs/reference/visibility.md) | [Implementation](docs/guides/implementation.md) |
 | [Physics](docs/reference/physics.md) | [Hierarchy](docs/reference/hierarchy.md) | [Code style](docs/guides/code-style.md) |
 | [Audio](docs/reference/audio.md) | [Events](docs/reference/events.md) | [Review](docs/guides/review.md) |
-| [Animation](docs/reference/animation.md) | [Resources](docs/reference/resources.md) | [A worked judgment](docs/guides/worked-example.md) |
+| [Animation](docs/reference/animation.md) | [Resources](docs/reference/resources.md) |  |
 | [Networking](docs/reference/networking.md) | [Threading](docs/reference/threading.md) |  |
 | [IO & serialization](docs/reference/io.md) | [Building](docs/reference/building.md) |  |
 | [Editor](docs/reference/editor.md) |  |  |
@@ -195,8 +197,8 @@ src/
   backend/opengl/  OpenGL backend (flat gl_-prefixed includes)
   editor/          ImGui editor (command, session, chrome, panels, overlays, input, ui)
   tools/           Asset import, the cooker, the image/font loaders and the host prologue
-app/               The four executables + the bootstrap (setupEngineApp) they share
-examples/          Complete projects (Potion Runner, Physics Lab, Stress Arena) - gameplay lives here
+app/               The four executables, and the bootstrap (setupEngineApp) the three that build an Engine share
+examples/          Projects: Potion Runner, Physics Lab, Stress Arena, City Block - gameplay lives here
 modules/
   vkmGL            Submodule: GL object wrappers + shader loading (vendors GLEW)
   vkmLog           Submodule: logging + VKM_ASSERT

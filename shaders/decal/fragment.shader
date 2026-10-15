@@ -9,11 +9,11 @@
  */
 
 #include "../constants.glsl"
-#include "../normal_codec.glsl"
+#include "../scene_gbuffer.glsl"
+#include "../scene_ao.glsl"
 #include "../depth.glsl"
 #include "../camera.glsl"
-#include "../lights.glsl"        // the cluster's lights
-#include "../ltc.glsl"           // areaFormFactor
+#include "../area_light.glsl"    // the cluster's lights (lights.glsl)
 #include "../shadows.glsl"       // each light's shadow
 #include "../fog.glsl"           // fogAt
 #include "../ambient.glsl"       // environmentIrradiance
@@ -24,10 +24,6 @@ out vec4 FragColor;
 // The decal's albedo map (rgb + alpha), if any.
 layout(binding = MATERIAL_SLOT_ALBEDO)    uniform sampler2D u_decalAlbedo;
 layout(binding = POST_SLOT_SCENE_DEPTH)   uniform sampler2D u_sceneDepth;
-layout(binding = POST_SLOT_SCENE_GBUFFER) uniform sampler2D u_sceneGBuffer;  // oct view-normal in rg
-layout(binding = POST_SLOT_AO)            uniform sampler2D u_ao;  // GTAO factor in r, screen shadow in a
-uniform int u_hasAO;            // 0 when the GTAO pass did not run this frame
-uniform int u_hasScreenShadow;  // 0 when the screen-shadow pass did not
 
 uniform mat4 u_invModel;  // world -> decal local
 
@@ -45,7 +41,7 @@ void main() {
     vec3 local = (u_invModel * vec4(worldPos, 1.0)).xyz;
     if (any(greaterThan(abs(local), vec3(0.5)))) discard;
 
-    vec3 viewN  = octDecode(texture(u_sceneGBuffer, uv).rg);
+    vec3 viewN  = sceneNormalAt(uv);
     vec3 worldN = normalize(mat3(u_camera.invView) * viewN);
 
     float facing = dot(worldN, -u_projDir);
@@ -56,7 +52,7 @@ void main() {
     // Each light of its cluster, diffusely, as the forward pass lights the surface beneath: shadowed
     // by the geometric normal the G-buffer holds, an area light by its form factor.
     float viewDepth    = linearizeViewDepth(d, u_camera.invProjection);
-    float screenShadow = (u_hasScreenShadow == 1) ? texture(u_ao, uv).a : 1.0;
+    float screenShadow = screenShadowAt(uv);
     int   ci           = clusterIndex(uv, viewDepth, u_camera.zNear, u_camera.zFar);
     vec3  direct       = vec3(0.0);
     uint  count        = u_clusters.clusters[ci].count;
@@ -66,16 +62,7 @@ void main() {
         int   type     = int(light.position.w);
 
         if (type == LIGHT_RECT || type == LIGHT_DISK) {
-            vec3  U      = light.axisU.xyz;
-            vec3  V      = light.axisV.xyz;
-            float side   = dot(worldPos - light.position.xyz, cross(U, V));
-            if (side <= 0.0 && light.axisU.w <= 0.5) continue;
-            float window = distanceWindow(length(light.position.xyz - worldPos), light.direction.w);
-            if (window <= 0.0) continue;
-            float area;
-            float formFactor = areaFormFactor(type, light.position.xyz, U, V, worldPos, worldN, side, area);
-            // Radiance is intensity over area; a Lambertian surface returns albedo times form factor.
-            direct += lightCol * window * formFactor / max(area, 1e-4);
+            direct += lightCol * areaDiffuse(light, type, worldPos, worldN);
             continue;
         }
 
@@ -90,7 +77,7 @@ void main() {
     // Lambertian, as the forward pass shades the surface beneath; irradiance is stored over PI.
     vec4 decal = u_material.albedo;
     if (hasTex(MATERIAL_SLOT_ALBEDO)) decal *= texture(u_decalAlbedo, local.xy + 0.5);
-    float ao      = (u_hasAO == 1) ? texture(u_ao, uv).r : 1.0;
+    float ao      = aoAt(uv);
     // Read where irradianceVolumeLookup puts the surface; the G-buffer normal is the geometric one.
     vec3  lookup  = irradianceVolumeLookup(worldPos, worldN);
     vec3  ambient = environmentIrradiance(lookup, worldN) * multiBounceOcclusion(ao, decal.rgb);

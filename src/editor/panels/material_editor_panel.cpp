@@ -436,7 +436,7 @@ MaterialHandle MaterialEditorPanel::resolveTarget(EditorContext& ec) {
     }
 
     // A hand-picked material holds until another entity with one is selected; see
-    // docs/reference/editor.md, "Which material the tab edits".
+    // docs/reference/editor.md, "Which material it edits".
     if (state.materialEditorTarget && state.selectedEntity != state.materialPinnedAt
         && selMesh && selMesh->material) {
         state.materialEditorTarget = {};

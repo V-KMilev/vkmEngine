@@ -8,7 +8,6 @@
  * averages away over a texel this coarse, and in the SH-L1 the probe keeps.
  */
 
-#include "../../constants.glsl"
 #include "../../surface.glsl"
 #include "../../camera.glsl"
 #include "../surfel.glsl"
@@ -22,10 +21,7 @@ uniform int u_doubleSided;
 layout(location = OUT_COLOR) out uvec4 SurfelOut;
 
 void main() {
-    if (u_material.type == MAT_ALPHA_MASK) {
-        float aTex = hasTex(MATERIAL_SLOT_ALBEDO) ? texture(u_albedoTexture, vUV).a : 1.0;
-        if (u_material.albedo.a * aTex < u_material.alphaCutoff) discard;
-    }
+    if (u_material.type == MAT_ALPHA_MASK && sampledOpacity(vUV) < u_material.alphaCutoff) discard;
 
     Surfel surfel;
     surfel.distance = length(vWorldPos - u_camera.cameraPosition.xyz);
@@ -46,8 +42,7 @@ void main() {
         surfel.bounce   = vec3(0.0);
         surfel.emission = s.albedo + s.emission;
     } else {
-        float f0Dielectric = pow((u_material.ior - 1.0) / (u_material.ior + 1.0), 2.0);
-        vec3  f0           = mix(vec3(f0Dielectric), s.albedo, s.metallic);
+        vec3 f0 = surfaceF0(u_material.ior, s.albedo, s.metallic);
         surfel.bounce   = s.albedo * (1.0 - s.metallic) * (1.0 - f0) + f0;
         surfel.emission = s.emission;
     }

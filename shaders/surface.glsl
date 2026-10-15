@@ -1,6 +1,6 @@
 /*
  * A surface as its material describes it at a uv: the maps' samplers, and what sampleSurface()
- * reads from them and the material block. Needs material.glsl and brdf.glsl, which it includes.
+ * reads from them and the material block.
  */
 
 #include "material.glsl"
@@ -17,6 +17,11 @@ layout(binding = MATERIAL_SLOT_TRANSMISSION) uniform sampler2D u_transmissionTex
 layout(binding = MATERIAL_SLOT_METALLIC) uniform sampler2D u_metallicTexture;
 layout(binding = MATERIAL_SLOT_ROUGHNESS) uniform sampler2D u_roughnessTexture;
 layout(binding = MATERIAL_SLOT_AO_METALLIC_ROUGHNESS) uniform sampler2D u_aoMetallicRoughnessTexture;
+
+// The material's opacity at @p uv: its alpha times the albedo map's.
+float sampledOpacity(vec2 uv) {
+    return u_material.albedo.a * (hasTex(MATERIAL_SLOT_ALBEDO) ? texture(u_albedoTexture, uv).a : 1.0);
+}
 
 struct Surface {
     vec3  albedo;

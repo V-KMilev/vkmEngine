@@ -26,7 +26,7 @@ class ResourceManager;
  * @brief How often the world goes out, in packets a second, independent of frame rate.
  *
  * Decides how late another player looks: the interpolation delay is counted in
- * snapshots, two of them 31 ms here. Measurements are in docs/reference/networking.md.
+ * snapshots, two of them 31 ms at this rate.
  */
 constexpr float NET_SNAPSHOT_RATE = 64.0f;
 

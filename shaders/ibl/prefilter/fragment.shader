@@ -25,9 +25,7 @@ void main() {
         return;
     }
 
-    // Solid angle of one env-cube texel, for Karis mip selection.
-    float envRes = float(textureSize(u_envCube, 0).x);
-    float saTexel = 4.0 * PI / (6.0 * envRes * envRes);
+    const float envRes = float(textureSize(u_envCube, 0).x);
 
     // Each sample reads the level its share of the lobe covers, so a narrow lobe is smooth on
     // few; a wide one spreads its samples across the cube, and takes more to cover it evenly.
@@ -52,9 +50,8 @@ void main() {
             // pdf of L is D * NdotH / (4 * VdotH); V is N here, so it is D / 4.
             float pdf      = D * 0.25 + 1e-4;
             float saSample = 1.0 / (float(count) * pdf + 1e-4);
-            float mip      = 0.5 * log2(saSample / saTexel);
 
-            prefiltered += textureLod(u_envCube, L, max(mip, 0.0)).rgb * NdotL;
+            prefiltered += textureLod(u_envCube, L, cubeMipForSolidAngle(saSample, envRes)).rgb * NdotL;
             totalWeight += NdotL;
         }
     }

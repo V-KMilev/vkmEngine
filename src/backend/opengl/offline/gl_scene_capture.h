@@ -2,28 +2,22 @@
 
 #include <cstdint>
 #include <functional>
-#include <memory>
-#include <optional>
 #include <vector>
 
 #include <glm/glm.hpp>
 
-#include "gl_frame_buffer.h"
 #include "gl_shader.h"
 
 #include "core/math/bounds.h"
 #include "frame/gl_camera.h"
 #include "frame/gl_ocean.h"
 #include "frame/gl_lights.h"
-#include "frame/gl_shadow_data.h"
 #include "frame/gl_instance_batcher.h"
+#include "offline/gl_capture_shadow.h"
 #include "system/render/data/irradiance_volume_data.h"
 
 namespace Vkm::GL {
     class Context;
-    class Sampler;
-    class Texture2D;
-    class UniformBuffer;
 }
 
 namespace Vkm::Engine {
@@ -42,10 +36,7 @@ struct RenderView;
  * Full forward PBR and the global sky, lit by direct lights, the global IBL and, where one is
  * lent (setAmbientVolume), an irradiance volume: probes, clusters and screen-space inputs off,
  * which is also the recursion guard. The destination arrives as a face-attach callback, as
- * GLCubeConvolver takes its own. The shadowed sun (lowestSlotDirectionalCaster) casts through a
- * map of the capture's own, since
- * the frame's atlas fits the camera and without one the sun lights a room's floor through its
- * roof; other lights capture unshadowed.
+ * GLCubeConvolver takes its own. The shadowed sun casts through GLCaptureShadow's map.
  *
  * begin() prepares what every face of every position shares, and captureCube() draws one cube
  * per call - or captureFace() one face, captureSurfels() what an irradiance probe sees as
@@ -107,12 +98,8 @@ class GLSceneCapture {
          * @brief Prepare what lights the scene - the lights, and the sun's map fitted to @p region -
          *        and none of what a capture draws.
          *
-         * For a pass that lights what was captured before (GLIrradianceBaker::relight). The map
-         * is drawn again only when its ShadowKey changes - the sun, its direction rounded to steps
-         * of about a fifth of a degree, its biases, @p region - or a capture elsewhere took its
-         * slot (SHADOW_SLOTS), so a scene whose small lights move every frame does not draw its
-         * casters every frame; a caster moving under a still sun keeps the shadow it cast, as the
-         * captured surfaces keep their place.
+         * For a pass that lights what was captured before (GLIrradianceBaker::relight). A map
+         * kept for the same sun and region is bound, not drawn again (GLCaptureShadow).
          *
          * @param gl        Live GL context the shadow map is drawn on.
          * @param view      Supplies the lights and the casters.
@@ -227,36 +214,6 @@ class GLSceneCapture {
         Vkm::GL::Shader& pbrProgram() { return m_pbr; }
 
     private:
-        /// What the sun's map was drawn for; drawn again when any of it changes.
-        struct ShadowKey {
-            Math::AABB region{};
-            bool       casts      = false;
-            uint32_t   light      = 0;  ///< The sun's entity slot.
-            glm::vec3  direction{0.0f};
-            float      bias       = 0.0f;
-            float      normalBias = 0.0f;
-
-            bool operator==(const ShadowKey& other) const {
-                return region.min == other.region.min && region.max == other.region.max
-                    && casts == other.casts && light == other.light && direction == other.direction
-                    && bias == other.bias && normalBias == other.normalBias;
-            }
-        };
-
-        /// The sun's depth over one region, and the ShadowBlock that reads it.
-        struct ShadowSlot {
-            std::optional<ShadowKey>                key;    ///< What it was drawn for; none yet.
-            bool                                    casts = false;
-            std::unique_ptr<Vkm::GL::Texture2D>     map;    ///< Made on first use.
-            std::unique_ptr<Vkm::GL::UniformBuffer> ubo;
-            ShadowUBOData                           last{};   ///< What ubo holds.
-            uint64_t                                used = 0;  ///< When it was last bound.
-        };
-
-        /// Maps kept: one for the irradiance volume a relight lights and one for the probe being
-        /// captured, so neither draws the other's away every frame both run.
-        static constexpr int SHADOW_SLOTS = 2;
-
         /// A uniform of m_pbr's outside a block and not a sampler, which resetPbr() zeroes.
         struct PlainUniform {
             int32_t  location = -1;
@@ -271,15 +228,6 @@ class GLSceneCapture {
          * Whatever else drew with the program last left its own there (pbrProgram()).
          */
         void resetPbr();
-
-        /**
-         * @brief What @p view's sun and @p region would draw the map for.
-         *
-         * @param view   Supplies the lights.
-         * @param region World box the map covers.
-         * @return The key.
-         */
-        static ShadowKey shadowKey(const RenderView& view, const Math::AABB& region);
 
         /**
          * @brief Gather the scene-wide objects a capture draws and the sun's map casts.
@@ -298,14 +246,6 @@ class GLSceneCapture {
         );
 
         /**
-         * @brief Bind the lights, and shadow slot @p slot's map and ShadowBlock while it casts.
-         *
-         * @param slot Which of m_shadows.
-         * @param view Supplies the lights.
-         */
-        void useShadow(int slot, const RenderView& view);
-
-        /**
          * @brief Attach face @p face, clear it, and put the camera on it.
          *
          * @param gl       Live GL context.
@@ -322,25 +262,10 @@ class GLSceneCapture {
             const AttachFace& attach
         );
 
-        /**
-         * @brief Draw and bind the sun's shadow over @p region, or none when no sun casts.
-         *
-         * Into the slot last drawn for the same sun and region, or else the one bound
-         * longest ago. Binds the lights with their slots and a one-"cascade" ShadowBlock over the
-         * frame's. Reads the casters gatherScene() gathered.
-         *
-         * @param gl     Live GL context.
-         * @param view   Supplies the lights and the casters' bounds.
-         * @param region World box the map covers, across the light.
-         */
-        void prepareShadow(Vkm::GL::Context& gl, const RenderView& view, const Math::AABB& region);
-
     private:
         Vkm::GL::Shader m_pbr;           ///< Capture geometry (full forward PBR).
         Vkm::GL::Shader m_skybox;        ///< Capture background.
         Vkm::GL::Shader m_surfels;       ///< Capture what a probe sees, as surfels.
-        Vkm::GL::Shader m_shadowDepth;   ///< The sun's depth; the shadow pass's program.
-        Vkm::GL::Shader m_shadowMasked;  ///< The same, cut by an alpha-masked caster's material.
 
         const GLMesh&         m_cube;     ///< Unit cube the skybox draws; the backend's.
         const GLObjectBuffer& m_objects;  ///< The frame's transforms the batch indexes; the backend's.
@@ -349,17 +274,10 @@ class GLSceneCapture {
         GLOcean           m_ocean;          ///< No sea: a `waves` surface is an ordinary one here.
         GLLights          m_lights;         ///< The frame's lights, the sun alone shadowed.
         GLInstanceBatcher m_batcher;        ///< Instanced capture draws.
-        GLInstanceBatcher m_casterBatcher;  ///< Its casters, for the sun's map.
+        GLCaptureShadow   m_shadow;         ///< The sun's map over what is captured.
 
         std::vector<uint32_t> m_opaque;      ///< begin()'s opaque scene-wide objects.
-        std::vector<uint32_t> m_casters;     ///< The opaque objects that cast, a prefix of m_opaque.
-        std::vector<uint32_t> m_overRegion;  ///< The casters over the map's region, which it draws.
-        std::vector<int>      m_lightSlots;  ///< Per light: 0 for the sun while it casts, else -1.
-
-        Vkm::GL::FrameBuffer              m_shadowFbo;
-        ShadowSlot                        m_shadows[SHADOW_SLOTS];
-        std::unique_ptr<Vkm::GL::Sampler> m_shadowSampler;    ///< Compares, as the atlas's does.
-        uint64_t                          m_shadowClock = 0;  ///< Counts binds, for ShadowSlot::used.
+        std::vector<uint32_t> m_casters;     ///< The scene-wide casters, the sun's map's.
 
         std::vector<PlainUniform> m_pbrUniforms;     ///< m_pbr's plain uniforms, listed once a link.
         uint32_t                  m_pbrListed = 0;   ///< The program m_pbrUniforms lists, 0 for none.

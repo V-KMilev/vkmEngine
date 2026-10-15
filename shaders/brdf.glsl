@@ -1,5 +1,6 @@
 /*
- * The GGX lobe and its visibility term, shared by shading and the integral bake.
+ * The BRDF's lobes - GGX, anisotropic GGX and Charlie sheen - their visibility terms, Fresnel and
+ * the split-sum energy, shared by shading and the integral bake.
  *
  * distributionGGX takes the GGX ALPHA (perceptual roughness squared); passing
  * perceptual roughness is a silent mis-square, not an error.
@@ -60,4 +61,61 @@ float visCharlie(float NdotV, float NdotL, float alpha) {
     float a = max(alpha, 1e-6);
     float g = 1.0 + sheenLambda(NdotV, a) + sheenLambda(NdotL, a);
     return clamp(1.0 / (g * 4.0 * max(NdotV * NdotL, 1e-6)), 0.0, 1.0);
+}
+
+// Schlick's Fresnel at cosine @p u from normal-incidence reflectance @p f0.
+vec3 fresnelSchlick(float u, vec3 f0) {
+    float x  = clamp(1.0 - u, 0.0, 1.0);
+    float x2 = x * x;
+    float f  = x2 * x2 * x;
+    return f0 + (vec3(1.0) - f0) * f;
+}
+
+// Anisotropic GGX (Burley / Filament): at, ab are tangent/bitangent alphas.
+float distributionGGXAniso(float NdotH, float ToH, float BoH, float at, float ab) {
+    float a2 = at * ab;
+    vec3  v  = vec3(ab * ToH, at * BoH, a2 * NdotH);
+    float v2 = dot(v, v);
+    float w2 = a2 / max(v2, 1e-8);
+    return a2 * w2 * w2 * (1.0 / PI);
+}
+
+// The anisotropic lobe's height-correlated Smith visibility.
+float visSmithAniso(
+    float at,
+    float ab,
+    float ToV,
+    float BoV,
+    float NdotV,
+    float ToL,
+    float BoL,
+    float NdotL
+) {
+    float lambdaV = NdotL * length(vec3(at * ToV, ab * BoV, NdotV));
+    float lambdaL = NdotV * length(vec3(at * ToL, ab * BoL, NdotL));
+    return 0.5 / max(lambdaV + lambdaL, 1e-5);
+}
+
+// Specular occlusion (Lagarde): AO weighted by view angle and roughness, since
+// plain AO over-darkens rough specular and under-darkens smooth. Takes GGX alpha.
+float specularOcclusion(float NoV, float ao, float alpha) {
+    return clamp(pow(NoV + ao, exp2(-16.0 * alpha - 1.0)) - 1.0 + ao, 0.0, 1.0);
+}
+
+// Split-sum environment specular, single-scatter (FssEss, what a trace can replace) and the
+// multi-scatter energy single scattering drops (FmsEms, lit by the irradiance; Fdez-Aguera).
+// The LUT integrates Schlick's Fresnel over the lobe, A = int (1 - Fc) and B = int Fc, so the
+// single-scatter energy is f0 * A + B, read off the LUT's scale and bias @p dfg.
+void environmentEnergy(vec2 dfg, vec3 f0, out vec3 FssEss, out vec3 FmsEms) {
+    FssEss = f0 * dfg.x + dfg.y;
+    // Clamped: a bilinear tap at the LUT's edge can push dfg.x + dfg.y past one.
+    float Ems  = clamp(1.0 - (dfg.x + dfg.y), 0.0, 1.0);
+    vec3  Favg = f0 + (1.0 - f0) / 21.0;
+    FmsEms = FssEss * Favg / max(1.0 - Ems * Favg, vec3(1e-4)) * Ems;
+}
+
+// Normal-incidence reflectance: a dielectric's from its index of refraction, a metal's its albedo.
+vec3 surfaceF0(float ior, vec3 albedo, float metallic) {
+    float dielectric = pow((ior - 1.0) / (ior + 1.0), 2.0);
+    return mix(vec3(dielectric), albedo, metallic);
 }

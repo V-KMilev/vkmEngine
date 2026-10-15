@@ -1,3 +1,2 @@
-// Depth-only, exactly as the static variant: the depth attachment captures it
-// and there is nothing to write.
+// Skinning differs only in the vertex stage.
 #include "../depth/fragment.shader"

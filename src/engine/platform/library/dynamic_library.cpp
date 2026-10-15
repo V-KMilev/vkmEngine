@@ -44,7 +44,7 @@ void DynamicLibrary::unload() {
     ::FreeLibrary(static_cast<HMODULE>(m_handle));
 #else
     // Unmaps only a library with no STB_GNU_UNIQUE symbol, as built by
-    // vkm_gameplay_module_options, and never under Tracy (docs/reference/scripting.md).
+    // vkm_gameplay_module_options, and never under Tracy, which makes dlclose a no-op.
     // Nothing may keep a pointer into the old copy - see ScriptModule::releaseRegistrations.
     ::dlclose(m_handle);
 #endif

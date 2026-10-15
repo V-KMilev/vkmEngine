@@ -4,7 +4,7 @@
  */
 layout(local_size_x = 2) in;
 
-#include "../../../../shaders/ltc.glsl"
+#include "../../../../shaders/form_factor.glsl"
 
 layout(std430, binding = 0) buffer FormFactors {
     vec4  normal[2];      // in
@@ -20,13 +20,13 @@ void main() {
     const float a = u_case.halfSize;
     const float h = u_case.height;
 
-    // Counter-clockwise from below, as shaders/forward/pbr/fragment.shader winds a rect.
-    const mat3 toLocal = ltcTangentFrame(N);
+    // Counter-clockwise from below, as shaders/form_factor.glsl winds a rect.
+    const mat3 toLocal = normalFrame(N);
     const vec3 p0 = normalize(toLocal * vec3(-a, h, -a));
     const vec3 p1 = normalize(toLocal * vec3(-a, h,  a));
     const vec3 p2 = normalize(toLocal * vec3( a, h,  a));
     const vec3 p3 = normalize(toLocal * vec3( a, h, -a));
-    const vec3 F = ltcEdgeIntegral(p0, p1) + ltcEdgeIntegral(p1, p2)
-        + ltcEdgeIntegral(p2, p3) + ltcEdgeIntegral(p3, p0);
+    const vec3 F = edgeFormFactor(p0, p1) + edgeFormFactor(p1, p2)
+        + edgeFormFactor(p2, p3) + edgeFormFactor(p3, p0);
     u_case.formFactor[i] = horizonClippedFormFactor(F);
 }

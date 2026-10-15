@@ -467,7 +467,7 @@ void soundsInUse(const EntityRefs& refs, const Scene&, const ResourceManager& re
 }
 
 // A kind is a builder below plus its place in KINDS; an omitted field is null (no picture,
-// assign or rename). Rail order and hues: docs/reference/editor.md.
+// assign or rename). The rail runs in KINDS order, each in its accent.
 AssetKind materialKind() {
     AssetKind kind{};
     kind.type        = AssetType::Material;
@@ -715,7 +715,7 @@ void AssetBrowserPanel::drawRail(EditorContext& ec) {
 void AssetBrowserPanel::drawToolbar(EditorContext& ec) {
     const AssetKind& kind = kindOf(m_kind);
 
-    // The kind's primary action, always first; see docs/reference/editor.md, "One verb slot".
+    // The kind's primary action, always first; see docs/reference/editor.md, "Import".
     if (ImGui::Button(kind.verb)) {
         switch (kind.verbAction) {
             case Verb::NewMaterial:

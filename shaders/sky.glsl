@@ -12,9 +12,7 @@
  * How far into night the sun's elevation puts us: 0 in daylight, 1 once the sun
  * is well below the horizon.
  *
- * Cross-faded rather than switched. A hard cutover at exactly zero pops, and the
- * atmosphere is still doing real work either side of it - that band is twilight,
- * not a boundary.
+ * Cross-faded, not switched: either side of zero is twilight, and a cutover pops.
  */
 float skyNightFactor(vec3 sunDir) {
     return 1.0 - smoothstep(-SKY_TWILIGHT, SKY_TWILIGHT, sunDir.y);
@@ -51,18 +49,15 @@ vec3 skyHash33(vec3 c) {
  *
  * Direction space is diced into cells and a hash decides which hold a star and
  * where inside it, so @p density is a dial rather than an accident of the grid
- * spacing. Procedural rather than a texture, so the sky is identical on every
- * machine.
+ * spacing. Procedural, so every machine draws the same sky.
  *
  * Returns radiance to add, already varied in brightness so the field does not
  * read as a uniform stipple.
  */
 float skyStarField(vec3 dir, float density) {
     const float FILL  = 0.055;  // fraction of cells holding a star
-    // Gaussian falloff. Sized so a star covers roughly a pixel and a half at
-    // 1080p rather than a fraction of one: sub-pixel points are missed by
-    // sampling outright and shimmer as the camera turns, which reads as noise
-    // rather than as sky. Bloom widens what survives.
+    // Gaussian falloff, sized so a star spans more than a pixel: a sub-pixel point is missed by
+    // sampling and shimmers as the camera turns. Bloom widens what survives.
     const float SHARP = 100.0;
 
     vec3 p    = dir * density;

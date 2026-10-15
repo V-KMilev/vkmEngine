@@ -18,11 +18,12 @@ class EventBus;
 /**
  * @brief Drives the lifecycle of every entity's ScriptComponent behaviors.
  *
- * Runs before PhysicsSystem in Simulation, so physics integrates script state the same
- * frame. Destroy requests drain after each fixed tick and the frame pass; loadScene()
- * after the frame pass only. Contacts are dispatched after onStart and before the
- * destroy drain, so a handler may destroy its own entity. A throwing hook is reported
- * through reportError() and the behavior disabled.
+ * Runs before PhysicsSystem in Simulation: physics integrates what onFixedUpdate writes the
+ * same tick, and what onUpdate writes on the next frame's ticks. Destroy requests drain
+ * after each fixed tick and the frame pass; loadScene() after the frame pass only.
+ * Contacts are dispatched after onStart and before the destroy drain, so a handler may
+ * destroy its own entity. A throwing hook is reported through reportError() and the
+ * behavior disabled.
  */
 class BehaviorSystem : public System, public ISceneObserver {
     public:

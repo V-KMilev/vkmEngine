@@ -30,14 +30,8 @@ void main() {
     // runs straight down the axis.
     vec2  uv         = (vec2(froxel.xy) + 0.5) / vec2(size.xy);
     float viewDepth  = aerialSliceToViewDepth(float(froxel.z) + 0.5, float(size.z), u_airDepth);
-    vec3  viewDir    = vec3(0.0, 0.0, -1.0);
-    float pathLength = viewDepth;
-    if (cameraIsPerspective()) {
-        vec4 nearH = u_camera.invProjection * vec4(uv * 2.0 - 1.0, NEAR_DEPTH, 1.0);
-        vec3 ray   = nearH.xyz / nearH.w;
-        viewDir    = normalize(ray);
-        pathLength = viewDepth * length(ray) / abs(ray.z);
-    }
+    vec3  viewDir    = cameraIsPerspective() ? normalize(nearPlaneAt(uv)) : vec3(0.0, 0.0, -1.0);
+    float pathLength = viewDepth * rayPerViewDepth(uv);
     vec3 dir = normalize(mat3(u_camera.invView) * viewDir);
 
     vec3 throughput;

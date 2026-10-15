@@ -2,14 +2,16 @@
  * Shadow sampling: the ShadowBlock UBO, the atlas/cube samplers and the
  * per-light-type lookups, shared so a surface and the fog see the same shadows.
  *
- * Every lookup names its level: control flow varies per fragment, where implicit
- * derivatives are undefined, and the maps have level 0 alone.
+ * Every 2D lookup names its level: control flow varies per fragment, where implicit
+ * derivatives are undefined, and the maps have level 0 alone. The cube array's compare has no
+ * Lod form (sampleCube).
  * MAX_SHADOW_CASTERS_2D / _CUBE come from the shader prelude (lighting.md,
  * "Limits and the shader prelude").
  */
 
 #include "constants.glsl"
 #include "camera.glsl"
+#include "basis.glsl"
 
 struct Shadow2D {
     mat4 lightVP;   // world -> light clip space
@@ -70,6 +72,11 @@ float biasSlide(float depthTexels, float texel, float ndotl) {
 // The window depth a perspective map stores at a distance along its axis.
 float perspectiveDepth(float nearPlane, float farPlane, float axis) {
     return farPlane / (farPlane - nearPlane) * (1.0 - nearPlane / axis);
+}
+
+// The distance along a perspective map's axis its window depth @p depth stores.
+float perspectiveAxis(float nearPlane, float farPlane, float depth) {
+    return nearPlane * farPlane / (farPlane - depth * (farPlane - nearPlane));
 }
 
 // A tile's texel in metres at the point: a spot's scales from its size at the range
@@ -136,8 +143,8 @@ vec2 receiverSlope(Shadow2D sm, vec3 N) {
 // The same slope for a spot's perspective tile, whose window depth is affine in its own uv
 // over a plane too: two points of the plane a few texels off the receiver give it exactly.
 vec2 receiverSlopePerspective(Shadow2D sm, vec3 worldPos, vec3 N) {
-    vec3  T = normalize(cross(abs(N.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), N));
-    vec3  B = cross(N, T);
+    vec3  T, B;
+    basisAcross(N, T, B);
     float e = 4.0 * tileTexel(sm, worldPos);
     vec4  a = sm.lightVP * vec4(worldPos, 1.0);
     vec4  b = sm.lightVP * vec4(worldPos + T * e, 1.0);
@@ -179,9 +186,8 @@ float sample2DSlot(int slot, vec3 worldPos, vec3 N, float ndotl) {
     return lit / 9.0;
 }
 
-// One tap of a Vogel disk. Never turned by per-pixel noise: that grain needs a
-// temporal filter, which this engine lacks. A disk dense enough that its 2x2
-// compares overlap gives a smooth edge unturned.
+// One tap of a Vogel disk. Never turned by per-pixel noise, whose grain only a temporal filter
+// hides: a disk dense enough that its 2x2 compares overlap gives a smooth edge unturned.
 vec2 vogelTap(int i, int n) {
     float r     = sqrt((float(i) + 0.5) / float(n));
     float theta = float(i) * GOLDEN_ANGLE;
@@ -204,6 +210,13 @@ const float SOFT_SPOT_REACH  = 7.0;
 // and the filter, whose disk lies inside the searched one, is skipped. The taps sample the disk, so a
 // slit narrower than their spacing can pass for umbra.
 const float SOFT_UMBRA       = 0.999;
+
+// How many taps a filter disk of @p radius texels takes: SOFT_TAP_SPACING apart, within
+// SOFT_MIN_TAPS and SOFT_MAX_TAPS.
+int softTaps(float radius) {
+    float spacedTaps = PI * radius * radius / (SOFT_TAP_SPACING * SOFT_TAP_SPACING);
+    return clamp(int(ceil(spacedTaps)), SOFT_MIN_TAPS, SOFT_MAX_TAPS);
+}
 
 // The tile's size in its own texels.
 float tileTexels(Shadow2D sm) {
@@ -238,22 +251,14 @@ float searchBlockers(Shadow2D sm, vec2 uv, float ref, vec2 slope, float radius, 
 
 // PCF over a disk of radius texels, with taps SOFT_TAP_SPACING apart.
 float filterDisk(Shadow2D sm, vec2 uv, float ref, vec2 slope, float radius) {
-    vec2  texel      = 1.0 / vec2(textureSize(u_shadowAtlas, 0));
-    float spacedTaps = PI * radius * radius / (SOFT_TAP_SPACING * SOFT_TAP_SPACING);
-    int   taps       = clamp(int(ceil(spacedTaps)), SOFT_MIN_TAPS, SOFT_MAX_TAPS);
-    float lit        = 0.0;
+    vec2  texel = 1.0 / vec2(textureSize(u_shadowAtlas, 0));
+    int   taps  = softTaps(radius);
+    float lit   = 0.0;
     for (int i = 0; i < taps; ++i) {
         vec2 at = clampToTile(sm, uv + vogelTap(i, taps) * radius * texel, texel);
         lit += textureLod(u_shadowAtlas, vec3(at, ref + dot(slope, at - uv)), 0.0);
     }
     return lit / float(taps);
-}
-
-// A window depth of a perspective tile, as distance along the light's axis.
-float spotDistance(Shadow2D sm, float depth) {
-    float n = sm.shape.y;
-    float f = sm.params.z;
-    return n * f / (f - depth * (f - n));
 }
 
 // PCSS of a spot's tile. A blocker at distance b spreads the shadow at the
@@ -281,7 +286,7 @@ float sample2DSlotSoft(int slot, vec3 worldPos, vec3 N, float ndotl) {
     if (blocker < 0.0) return 1.0;
     if (covered >= SOFT_UMBRA) return 0.0;
 
-    float b        = spotDistance(sm, blocker);
+    float b        = perspectiveAxis(n, sm.params.z, blocker);
     float penumbra = sm.params.w * (r - b) / (b * r) * tile;
     return filterDisk(sm, uv, ref, slope, clamp(penumbra, SOFT_MIN_TEXELS, SOFT_SPOT_REACH));
 }
@@ -297,7 +302,7 @@ const float SHADOW_FADE = 0.2;
 // 1 where the sun's shadow is whole, falling to 0 at its last split.
 float shadowReach(vec3 worldPos) {
     float far = u_shadow.cascadeSplits[u_shadow.csmCount - 1];
-    float vd  = -(u_camera.view * vec4(worldPos, 1.0)).z;
+    float vd  = viewDepthOf(worldPos);
     return 1.0 - smoothstep(far * (1.0 - SHADOW_FADE), far, vd);
 }
 
@@ -306,7 +311,7 @@ float shadowReach(vec3 worldPos) {
 int cascadeOf(vec3 worldPos, out float toNext) {
     toNext = 0.0;
     if (u_shadow.csmBase < 0 || u_shadow.csmCount <= 0) return -1;
-    float vd = -(u_camera.view * vec4(worldPos, 1.0)).z;
+    float vd = viewDepthOf(worldPos);
     int   ci = u_shadow.csmCount - 1;
     for (int i = 0; i < u_shadow.csmCount; ++i) {
         if (vd <= u_shadow.cascadeSplits[i]) { ci = i; break; }
@@ -320,17 +325,27 @@ int cascadeOf(vec3 worldPos, out float toNext) {
     return ci;
 }
 
-// Hard sun shadow, blended across the cascade band and faded at its reach; lit with no sun
-// shadow.
-float sampleCSM(vec3 worldPos, vec3 N, float ndotl) {
-    float toNext;
-    int   ci = cascadeOf(worldPos, toNext);
-    if (ci < 0) return 1.0;
-    float reach = shadowReach(worldPos);
-    if (reach <= 0.0) return 1.0;
-    float lit = sample2DSlot(u_shadow.csmBase + ci, worldPos, N, ndotl);
-    if (toNext > 0.0) lit = mix(lit, sample2DSlot(u_shadow.csmBase + ci + 1, worldPos, N, ndotl), toNext);
-    return mix(1.0, lit, reach);
+// The finest cascade from @p ci whose texels hold @p metres within SOFT_REACH and whose tile holds
+// the point, stepping back to finer ones while it does not; -1 when none from @p ci does. @p uv and
+// @p ref are the point's in it, slid @p slide metres (projectToTileBiased).
+int cascadeHolding(
+    int ci,
+    float metres,
+    vec3 worldPos,
+    vec3 N,
+    float ndotl,
+    float slide,
+    out vec2 uv,
+    out float ref
+) {
+    int base = u_shadow.csmBase;
+    int last = u_shadow.csmCount - 1;
+    int fc   = ci;
+    while (fc < last && metres / u_shadow.s2d[base + fc].params.y > SOFT_REACH) ++fc;
+    while (!projectToTileBiased(u_shadow.s2d[base + fc], worldPos, N, ndotl, slide, uv, ref)) {
+        if (--fc < ci) return -1;
+    }
+    return fc;
 }
 
 // Soft sun shadow (PCSS) for a point in cascade @p ci: search and filter each
@@ -346,33 +361,26 @@ float sampleCSMSoftFrom(int ci, vec3 worldPos, vec3 N, float ndotl) {
     if (tanSource <= 0.0) return sample2DSlot(base + ci, worldPos, N, ndotl);
 
     float tile     = tileTexels(own);
-    int   last     = u_shadow.csmCount - 1;
     float biasDist = biasSlide(own.params.x, own.params.y, ndotl);
 
     // The search radius in metres, then the finest cascade it fits.
     float reach = 0.5 * own.params.y * tile * tanSource;
-    int   sc    = ci;
-    while (sc < last && reach / u_shadow.s2d[base + sc].params.y > SOFT_REACH) ++sc;
-    Shadow2D searched = u_shadow.s2d[base + sc];
     vec2  uv;
     float ref;
-    while (!projectToTileBiased(searched, worldPos, N, ndotl, biasDist, uv, ref)) {
-        if (--sc < ci) return 1.0;
-        searched = u_shadow.s2d[base + sc];
-    }
-    // widest is the radius searched, in metres: past its rim the point reads
-    // lit, so a wider filter would tear an edge into the penumbra.
-    float searchTexels = clamp(reach / searched.params.y, SOFT_MIN_TEXELS, SOFT_REACH);
     float covered;
+    int   sc = cascadeHolding(ci, reach, worldPos, N, ndotl, biasDist, uv, ref);
+    if (sc < 0) return 1.0;
+    Shadow2D searched  = u_shadow.s2d[base + sc];
+    float searchTexels = clamp(reach / searched.params.y, SOFT_MIN_TEXELS, SOFT_REACH);
     float blocker      = searchBlockers(searched, uv, ref, receiverSlope(searched, N), searchTexels, covered);
+    // The radius searched, in metres: past its rim the point reads lit, so the filter never
+    // reaches past it, or it would tear an edge into the penumbra.
     float widest       = searchTexels * searched.params.y;
-    // The filter never reaches past the searched disk here (widest).
     if (blocker >= 0.0 && covered >= SOFT_UMBRA) return 0.0;
     if (blocker < 0.0 && sc > ci) {
         // A caster too thin for the coarse tile: if one compare in the own tile
         // shows it, search there. That compare's edge is hard, so the filter
         // keeps its full width, faint enough there to hide it.
-        sc       = ci;
         searched = own;
         if (!projectToTile(own, worldPos, N, ndotl, uv, ref)) return 1.0;
         if (textureLod(u_shadowAtlas, vec3(uv, ref), 0.0) >= 1.0) return 1.0;
@@ -385,26 +393,35 @@ float sampleCSMSoftFrom(int ci, vec3 worldPos, vec3 N, float ndotl) {
     // Receiver-to-blocker metres (params.z) times the sun's tangent.
     float penumbra = min((ref - blocker) * searched.params.z * tanSource, widest);
 
-    int fc = ci;
-    while (fc < last && penumbra / u_shadow.s2d[base + fc].params.y > SOFT_REACH) ++fc;
+    int fc = cascadeHolding(ci, penumbra, worldPos, N, ndotl, biasDist, uv, ref);
+    if (fc < 0) return 1.0;
     Shadow2D filtered = u_shadow.s2d[base + fc];
-    while (!projectToTileBiased(filtered, worldPos, N, ndotl, biasDist, uv, ref)) {
-        if (--fc < ci) return 1.0;
-        filtered = u_shadow.s2d[base + fc];
-    }
     float filterTexels = clamp(penumbra / filtered.params.y, SOFT_MIN_TEXELS, SOFT_REACH);
     return filterDisk(filtered, uv, ref, receiverSlope(filtered, N), filterTexels);
 }
 
-// sampleCSMSoftFrom, blended and faded like the hard path.
-float sampleCSMSoft(vec3 worldPos, vec3 N, float ndotl) {
+// sampleCSM's filters: percentage-closer soft (sampleCSMSoftFrom), or 3x3 PCF.
+const bool CSM_SOFT = true;
+const bool CSM_HARD = false;
+
+// The sun's shadow, soft or hard, blended across the cascade band and faded at its reach; lit
+// with no sun shadow.
+float sampleCSM(vec3 worldPos, vec3 N, float ndotl, bool soft) {
     float toNext;
     int   ci = cascadeOf(worldPos, toNext);
     if (ci < 0) return 1.0;
     float reach = shadowReach(worldPos);
     if (reach <= 0.0) return 1.0;
-    float lit = sampleCSMSoftFrom(ci, worldPos, N, ndotl);
-    if (toNext > 0.0) lit = mix(lit, sampleCSMSoftFrom(ci + 1, worldPos, N, ndotl), toNext);
+    int   base = u_shadow.csmBase;
+    float lit  = soft
+        ? sampleCSMSoftFrom(ci, worldPos, N, ndotl)
+        : sample2DSlot(base + ci, worldPos, N, ndotl);
+    if (toNext > 0.0) {
+        float next = soft
+            ? sampleCSMSoftFrom(ci + 1, worldPos, N, ndotl)
+            : sample2DSlot(base + ci + 1, worldPos, N, ndotl);
+        lit = mix(lit, next, toNext);
+    }
     return mix(1.0, lit, reach);
 }
 
@@ -436,8 +453,7 @@ float cubeReference(vec3 dir, vec3 onPlane, vec3 N, float slide, float nearPlane
 // The radial distance of what a cube stores along @p dir: the face's depth back to its axis
 // distance, then along the ray.
 float cubeBlockerDistance(float depth, vec3 dir, float nearPlane, float farPlane) {
-    float axis = nearPlane * farPlane / (farPlane - depth * (farPlane - nearPlane));
-    return axis * length(dir) / majorAxis(dir);
+    return perspectiveAxis(nearPlane, farPlane, depth) * length(dir) / majorAxis(dir);
 }
 
 // PCF over a disk of @p radius metres across the light's ray, each tap compared against the
@@ -454,9 +470,8 @@ float filterCube(
     float nearPlane,
     float farPlane
 ) {
-    float spacedTaps = PI * (radius / texel) * (radius / texel) / (SOFT_TAP_SPACING * SOFT_TAP_SPACING);
-    int   taps       = clamp(int(ceil(spacedTaps)), SOFT_MIN_TAPS, SOFT_MAX_TAPS);
-    float lit        = 0.0;
+    int   taps = softTaps(radius / texel);
+    float lit  = 0.0;
     for (int i = 0; i < taps; ++i) {
         vec2  o   = vogelTap(i, taps) * radius;
         vec3  dir = rel + T * o.x + B * o.y;
@@ -497,8 +512,8 @@ float searchCubeBlockers(
     return count > 0.0 ? sum / count : -1.0;
 }
 
-// A point light's shadow in one compare, no offset and no filter, for a point with no surface to
-// bias from.
+// A point light's shadow in one compare, slid by its depth bias but with no normal offset and no
+// filter, for a point with no surface to offset from.
 float sampleCubeHard(int slot, vec3 worldPos) {
     ShadowCube sc = u_shadow.scube[slot];
     vec3 rel = worldPos - sc.posRange.xyz;
@@ -528,10 +543,8 @@ float sampleCube(int slot, vec3 worldPos, vec3 N, float ndotl) {
     float d     = max(length(rel), 1e-4);
 
     // Across the ray: the disk the taps are laid on.
-    vec3 l  = rel / d;
-    vec3 up = abs(l.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0);
-    vec3 T  = normalize(cross(up, l));
-    vec3 B  = cross(l, T);
+    vec3 T, B;
+    basisAcross(rel / d, T, B);
 
     float source = sc.params.w;
     if (source <= 0.0) {
@@ -566,7 +579,7 @@ float sampleCube(int slot, vec3 worldPos, vec3 N, float ndotl) {
 // no shadow slot. @p Ng is the geometric normal, which the biases follow.
 float surfaceShadow(int type, int slot, vec3 worldPos, vec3 Ng, float ndotl, float screenShadow) {
     if (slot < 0) return 1.0;
-    if (type == LIGHT_DIRECTIONAL) return sampleCSMSoft(worldPos, Ng, ndotl) * screenShadow;
+    if (type == LIGHT_DIRECTIONAL) return sampleCSM(worldPos, Ng, ndotl, CSM_SOFT) * screenShadow;
     if (type == LIGHT_SPOT)        return sample2DSlotSoft(slot, worldPos, Ng, ndotl);
     if (type == LIGHT_POINT)       return sampleCube(slot, worldPos, Ng, ndotl);
     return 1.0;
@@ -576,7 +589,7 @@ float surfaceShadow(int type, int slot, vec3 worldPos, vec3 Ng, float ndotl, flo
 // lit for a light with no shadow slot.
 float pointShadow(int type, int slot, vec3 worldPos) {
     if (slot < 0) return 1.0;
-    if (type == LIGHT_DIRECTIONAL) return sampleCSM(worldPos, vec3(0.0), 1.0);
+    if (type == LIGHT_DIRECTIONAL) return sampleCSM(worldPos, vec3(0.0), 1.0, CSM_HARD);
     if (type == LIGHT_SPOT)        return sample2DSlot(slot, worldPos, vec3(0.0), 1.0);
     if (type == LIGHT_POINT)       return sampleCubeHard(slot, worldPos);
     return 1.0;

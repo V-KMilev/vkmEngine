@@ -42,8 +42,7 @@ struct RenderView;
  * from the grid the gather before made, and the first from none: a wall is lit by what reaches
  * it, never by the open sky through it, and each gather adds a bounce. Outside the box surfels
  * take the sky's irradiance, and directions meeting no surface see the sky itself. The shadowed sun
- * (lowestSlotDirectionalCaster) casts through GLSceneCapture's map over the box; the other lights
- * are unshadowed.
+ * casts through GLCaptureShadow's map.
  *
  * A probe seeing the backs of surfaces over more of its sphere than BACKFACE_LIMIT
  * (shaders/irradiance/relight) is inside geometry, and what it sees is the room on the far side.

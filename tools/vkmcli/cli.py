@@ -144,7 +144,7 @@ def main() -> int:
     p.add_argument(
         "--development",
         action="store_true",
-        help="build it on the development engine: quicker, profiler in, for testing only"
+        help="build it on the development engine: quicker, asserts on, for testing only"
     )
     p.add_argument(
         "--debug-info",

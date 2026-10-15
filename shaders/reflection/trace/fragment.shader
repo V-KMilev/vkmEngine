@@ -7,14 +7,9 @@
  * Zero trust where the ray found nothing.
  */
 
-#include "../../depth.glsl"
-#include "../../camera.glsl"
-#include "../../normal_codec.glsl"
-
 out vec4 Hit;  // xy: hit uv; z: trust; w: chain level over the last (the target is unorm)
 
 layout(binding = POST_SLOT_SCENE_DEPTH)   uniform sampler2D u_sceneDepth;
-layout(binding = POST_SLOT_SCENE_GBUFFER) uniform sampler2D u_sceneGBuffer;
 layout(binding = REFLECT_SLOT_WEIGHT)     uniform sampler2D u_weight;
 
 uniform float u_maxRoughness;  // rougher pixels reflect only probes and sky
@@ -51,15 +46,13 @@ void main() {
     if (inViewmodelBand(depth)) return;
 
     const vec2 size  = vec2(textureSize(u_sceneDepth, 0));
-    const vec2 uv    = (vec2(texel) + 0.5) / size;
-    const vec4 clip  = u_camera.invProjection * vec4(uv * 2.0 - 1.0, depth, 1.0);
+    const vec3 at    = sceneViewPosAt(texel, size);
     const vec3 n     = sceneNormalAt(texel);
-    const vec3 toEye = cameraIsPerspective() ? normalize(-clip.xyz / clip.w) : vec3(0.0, 0.0, 1.0);
+    const vec3 toEye = cameraIsPerspective() ? normalize(-at) : vec3(0.0, 0.0, 1.0);
     const vec3 dir   = reflect(-toEye, n);
 
     // Lifted off its own surface by what the depth can resolve there.
-    vec3 p0 = clip.xyz / clip.w;
-    p0 += n * (0.01 + 0.002 * -p0.z);
+    vec3 p0 = at + n * (0.01 + 0.002 * -at.z);
 
     // Cut short of the near plane: a point behind the eye projects onto the
     // wrong side of the screen.

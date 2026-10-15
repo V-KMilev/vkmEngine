@@ -12,8 +12,6 @@
  * GLResolvePass for when the write lands).
  */
 
-#include "../../color.glsl"
-
 layout(binding = POST_SLOT_SCENE_COLOR) uniform sampler2DMS u_color;
 layout(binding = POST_SLOT_SCENE_DEPTH) uniform sampler2DMS u_depth;
 layout(binding = REFLECT_SLOT_WEIGHT)   uniform sampler2DMS u_weight;

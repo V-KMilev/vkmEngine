@@ -59,7 +59,7 @@ void Engine::run() {
         m_window.updateInput();
 
         // Before the ticks, so they see the arrived world. Wall clock: a paused
-        // editor still has to notice a peer that has gone.
+        // game still has to notice a peer that has gone.
         m_net.advance(m_clock.getDeltaTime());
         m_net.receive(m_scene, m_resources);
         m_net.deliver(m_events);

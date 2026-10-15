@@ -46,11 +46,11 @@ const float SHADOW_CONTRAST    = 4.0;
 
 const float Z_SIGN = -1.0;  // the far plane is the smaller depth
 
-#include "../depth.glsl"   // FAR_DEPTH, NEAR_DEPTH, isFarDepth
+#include "../depth.glsl"   // isFarDepth
 #include "../camera.glsl"  // inViewmodelBand
 
-layout(binding = POST_SLOT_SCENE_DEPTH) uniform sampler2D u_depth;
-// r = GTAO, gb = bent normal, kept; a = the result.
+layout(binding = POST_SLOT_SCENE_DEPTH) uniform sampler2D u_sceneDepth;
+// The AO target (scene_ao.glsl): its alpha is written, the rest kept.
 layout(binding = 0, rgba8) uniform image2D u_target;
 
 // From GLScreenShadowPass: the light's pixel (xy), its depth (z), and whether rays run toward it
@@ -66,10 +66,10 @@ shared uint  s_anyShaded;
 
 // The scene's depth, far off the screen and in the viewmodel's band: neither casts on the world.
 float fetchDepth(ivec2 texel) {
-    if (any(lessThan(texel, ivec2(0))) || any(greaterThanEqual(texel, textureSize(u_depth, 0)))) {
+    if (any(lessThan(texel, ivec2(0))) || any(greaterThanEqual(texel, textureSize(u_sceneDepth, 0)))) {
         return FAR_DEPTH;
     }
-    const float depth = texelFetch(u_depth, texel, 0).r;
+    const float depth = texelFetch(u_sceneDepth, texel, 0).r;
     return inViewmodelBand(depth) ? FAR_DEPTH : depth;
 }
 

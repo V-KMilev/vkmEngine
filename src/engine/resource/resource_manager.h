@@ -41,7 +41,7 @@ inline constexpr bool IS_ENGINE_ASSET = ASSET_TYPE<T> != AssetType::Count || std
  * Only the engine's asset types (IS_ENGINE_ASSET) are stored, each slot made in vkm_core at
  * construction. A SparseSet<T> carries the vtable of the binary that made it, so a slot a gameplay
  * module made would outlive the module past dlclose; any other type is a compile error. See
- * scripting.md, "Nothing may hold module code across the swap".
+ * scripting.md, "Unloading a module".
  */
 class ResourceManager {
     public:

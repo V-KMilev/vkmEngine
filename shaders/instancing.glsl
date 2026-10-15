@@ -1,13 +1,27 @@
 /*
  * Per-instance transforms, read through an object index into b_models. The index
  * is a divisor-1 attribute, so baseInstance offsets it per run with no per-draw
- * uniform.
+ * uniform. The including stage declares aPos first; SKINNED poses it by the bone palette.
  */
 layout(location = ATTR_INSTANCE) in uint aInstance;
 
-layout(std430, binding = SSBO_INSTANCE_MODELS) readonly buffer InstanceModels { mat4 b_models[]; };
+#include "objects.glsl"
+#ifdef SKINNED
+#include "skinning.glsl"
+#include "skinning_instanced.glsl"
+#endif
 
 mat4 instanceModel() { return b_models[aInstance]; }
+
+// Where the instance's vertex lies in the world: one expression, so the prepass and the forward
+// pass agree to the bit under GLDepth::EYE_TEST_EQUAL.
+vec4 instanceWorldPosition() {
+#ifdef SKINNED
+    return skinnedWorldPosition(instanceModel(), instanceSkinBase());
+#else
+    return instanceModel() * vec4(aPos, 1.0);
+#endif
+}
 
 /*
  * The cofactor of `model`'s upper 3x3: transpose(inverse()) scaled by the

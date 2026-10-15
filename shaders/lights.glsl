@@ -5,6 +5,9 @@
  *
  * Define CLUSTER_GRID_WRITE before including for a writeonly grid.
  */
+
+#include "depth.glsl"
+
 struct Light {
     vec4 position;   // xyz = world position, w = type
     vec4 color;      // xyz = rgb,            w = intensity
@@ -15,8 +18,6 @@ struct Light {
     vec4 axisU;      // xyz = half-right world axis (Rect/Disk), w = twoSided
     vec4 axisV;      // xyz = half-up    world axis (Rect/Disk), w = a point or spot's radius (m)
 };
-
-#include "depth.glsl"
 
 layout(std430, binding = SSBO_LIGHTS) readonly buffer LightsBlock {
     int   lightCount;

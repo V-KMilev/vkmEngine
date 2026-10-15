@@ -19,3 +19,9 @@ void bsplineReads(vec2 uv, vec2 size, out vec2 at0, out vec2 at1, out vec2 g0, o
     at0 = (cell - 0.5 + w1 / g0) / size;
     at1 = (cell + 1.5 + w3 / g1) / size;
 }
+
+// The B-spline's value from the four reads at at0/at1 along each axis (near: at0.y, far: at1.y),
+// weighted by g0 and g1.
+vec4 bsplineCombine(vec2 g0, vec2 g1, vec4 near0, vec4 near1, vec4 far0, vec4 far1) {
+    return g0.y * (g0.x * near0 + g1.x * near1) + g1.y * (g0.x * far0 + g1.x * far1);
+}

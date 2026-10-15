@@ -10,8 +10,6 @@ in vec2 vUV;
 
 out vec4 FragColor;  // r = encoded visibility, gb = octahedral bent normal (view space)
 
-// Oct view-normal, roughness, metalness.
-layout(binding = POST_SLOT_SCENE_GBUFFER) uniform sampler2D u_sceneGBuffer;
 // Linear view depth, as a mip chain.
 layout(binding = POST_SLOT_AO_DEPTH)      uniform sampler2D u_depthMips;
 
@@ -27,11 +25,12 @@ const int STEPS  = 4;
 const float HORIZON_BIAS = 0.03;
 
 #include "../constants.glsl"
-#include "depth_mips.glsl"
+#include "../basis.glsl"
+#include "../depth.glsl"
 #include "../noise.glsl"
 #include "../camera.glsl"
 
-#include "../normal_codec.glsl"
+#include "../scene_gbuffer.glsl"
 #include "visibility.glsl"
 
 // Closed-form cosine-weighted visibility between V and a horizon at signed
@@ -40,7 +39,14 @@ float arc(float h, float n) {
     return 0.25 * (-cos(2.0 * h - n) + cos(n) + 2.0 * h * sin(n));
 }
 
-// A view-space point's screen UV, for the symmetric projection viewPosFromLinearDepth inverts.
+// Screen UV + linear view depth -> view-space position, for a symmetric projection; p00 / p11 are
+// projection[0][0] / projection[1][1].
+vec3 viewPosFromLinearDepth(vec2 uv, float z, float p00, float p11, bool perspective) {
+    vec2 spread = perspective ? vec2(z / p00, z / p11) : vec2(1.0 / p00, 1.0 / p11);
+    return vec3((uv * 2.0 - 1.0) * spread, -z);
+}
+
+// A view-space point's screen UV: viewPosFromLinearDepth's inverse.
 vec2 viewToUV(vec3 p, float p00, float p11, bool perspective) {
     vec2 ndc = perspective ? vec2(p00, p11) * p.xy / max(-p.z, 1e-4) : vec2(p00, p11) * p.xy;
     return ndc * 0.5 + 0.5;
@@ -64,14 +70,14 @@ void main() {
     if (z >= SKY_DEPTH) { FragColor = vec4(encodeVisibility(1.0), 0.0, 0.0, 1.0); return; }
 
     vec3 P = viewPosFromLinearDepth(vUV, z, proj00, proj11, perspective);
-    vec3 N = octDecode(texture(u_sceneGBuffer, vUV).rg);
+    vec3 N = sceneNormalAt(vUV);
     vec3 V = perspective ? normalize(-P) : vec3(0.0, 0.0, 1.0);
 
     // Slices turn evenly about V itself, not about the screen's axis: off the centre of a
-    // perspective view, directions even on the screen bunch about V, and an open wall would
-    // average 92% at a 70 degree view's edge. Two vectors across V carry them.
-    vec3 across1 = normalize(cross(abs(V.y) < 0.99 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), V));
-    vec3 across2 = cross(V, across1);
+    // perspective view, directions even on the screen bunch about V, and an open wall at a wide
+    // view's edge would read occluded. Two vectors across V carry them.
+    vec3 across1, across2;
+    basisAcross(V, across1, across2);
 
     float noise      = effectNoise(gl_FragCoord.xy, NOISE_GTAO);
     float visibility = 0.0;

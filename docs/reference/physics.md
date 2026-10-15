@@ -1,767 +1,272 @@
 # Physics
 
-Fixed-step rigid-body dynamics over box, capsule and triangle-mesh colliders: integrate
-velocities, detect and resolve pairwise collisions with a sequential-impulse
-(PGS) solver, and write the resulting poses back to `Transform`.
+Fixed-step rigid-body dynamics over box, capsule and triangle-mesh colliders,
+solved with soft-constraint sequential impulses and written back to `Transform`.
+On top of it, a character controller that turns movement input into velocity.
 
-`PhysicsSystem` runs in `SystemStage::Simulation`, **after** `AnimationSystem`
-and **before** `HierarchySystem`, so physics-updated transforms propagate into
-`WorldTransform` the same frame. All work happens in `fixedUpdate()` against
-`ctx.clock.getFixedStep()`; `update()` is a no-op. It opts into `fixedUpdate`.
-
-`CharacterControllerSystem` runs in the same stage, **immediately after**
-`PhysicsSystem`, so it reads that tick's freshly written support outputs.
+`PhysicsSystem` runs in `SystemStage::Simulation`, after `AnimationSystem` and
+before `HierarchySystem`, all of it in `fixedUpdate()`.
+`CharacterControllerSystem` runs immediately after it, so it reads that tick's
+fresh contacts.
 
 ## Components
 
-All of them are plain data structs; see [ecs.md](ecs.md) for the field tables.
+Plain data; the headers in `src/engine/ecs/component/physics/` give every field
+and default, and [ecs.md](ecs.md) lists them all.
 
-- **`Rigidbody`** - dynamics state: `linearVelocity`, `angularVelocity`, its
-  `motion` (`RigidbodyMotion::Dynamic`, `Kinematic` or `Static`), `mass`,
-  `linearDamping` / `angularDamping`, `restitution`, `friction`, `gravityScale`,
-  the `layer` / `collidesWith` collision masks, and the `freezeRotation` /
-  `canSleep` / `sleeping` flags. A static or kinematic body has infinite mass:
-  forces never move it, but it is an immovable wall in collisions. Neither is
-  integrated from its velocities at all - position or orientation - so a
-  kinematic body's pose is the project's to write. The velocities still matter
-  to a contact, which is how a kinematic platform pushes what stands on it, so a
-  body that stops being driven should zero them. `mass` is read only on a
-  dynamic body and must be positive: the gather reports one that is not and
-  holds it still. `freezeRotation` zeroes the inverse inertia of a
-  dynamic body so contacts can never torque it - the character-controller case:
-  the body translates under the solver while its orientation stays script-owned.
-  The derived mass properties (inverse mass, body-local inverse inertia) are not
-  stored on the component: `PhysicsSystem` re-derives them from `mass` +
-  `Collider` into its per-tick `BodyFrame`, so editing either takes effect
-  without an "apply" step.
+- **`Rigidbody`** - mass, velocities, material, collision masks
+  (`layer` / `collidesWith`) and a `motion`: `Dynamic`, `Kinematic` or `Static`.
+  Static and kinematic bodies have infinite mass and are never integrated, so a
+  kinematic body's pose is the project's to write - but its velocities still
+  reach a contact, which is how a kinematic platform pushes what stands on it -
+  so a kinematic body that stops being driven should zero its velocities.
+  `freezeRotation` stops contacts torquing a dynamic body (the character case).
+  Mass properties are re-derived from `mass` and `Collider` every tick, so edits
+  need no "apply".
 
-  It also carries four **outputs**, written by `writeback` and never read by the
-  system that writes them: `supported` (a resolved, non-trigger contact reached
-  this body this tick), `supportNormal` (the most **upward** of those normals),
-  `supportBody` (the body whose surface gave it) and `blockNormal` (the most
-  **horizontal** of them). Both normals are the
-  surface's as it acts on *this* body, so the two bodies of one contact see
-  opposite directions.
-
-  Two reductions, because a character on flat ground pressed against a wall is
-  *held* by the floor and *blocked* by the wall, and one normal cannot say both.
-  Neither knows who asks: "am I standing on something, and how steep is it" is a
-  controller's, a footstep sound's or a landing animation's question; "what am I
-  pressed against, and which way does it push" is a wall slide's, a scrape
-  effect's or a ledge grab's. `PhysicsSystem` never learns what a character is.
-
-  A body that touched nothing reports world up for both. For `blockNormal` that
-  doubles as "nothing is in the way" without a second flag: world up has no
-  horizontal component, and a normal with no horizontal direction cannot deflect
-  anything, so the reader that projects against it is already the reader that
-  ignores it. Runtime-only, like `sleeping`: not serialized.
-- **`Collider`** - one or more `ColliderPart`s, evaluated in the entity's
-  `Transform` frame. Each part carries a `shape` tag (`ColliderShape::Box`,
-  `Capsule` or `Mesh`) and the fields for each: `center` + `halfExtents` for a
-  box, `center` + `radius` + `halfHeight` for a capsule, and `center` + `mesh` +
-  `meshScale` for a mesh part - the mesh by handle, saved by name, so a scene
-  file never holds the triangles. Those are built from the mesh as it is now
-  into the collider's `meshPoints` and the `meshNodes` tree over them, derived
-  session state that `syncMeshCollider` rebuilds on load, on an inspector edit
-  and on any tick the mesh's uid or version or the part's scale differs from
-  what they were built from (`meshBuiltFrom`). They live on the collider
-  because a query is handed the scene alone. One mesh part per collider: a
-  scene holding more has each of them collide as the first's triangles, placed
-  at its own centre, and the build says so in the log - merge them into one mesh.
-  `isTrigger` makes it generate events without an impulse response. `enabled = false` makes the collider inert -
-  it gets no broadphase entry, produces no contacts or events, and the editor's
-  collider overlay skips it (for pooled/phased objects that toggle collision
-  without component churn). The solver ignores `Transform` scale - "Fit to Mesh"
-  bakes scale into the box centres and half-extents.
-
-  A capsule's segment runs along the entity's local **+Y** for `halfHeight`
-  either side of `center`, swept by `radius`, so its total height is
-  `2 * (halfHeight + radius)`. `halfHeight == 0` is a sphere, and every routine
-  handles it without a special case. Capsules are what characters wear: a box
-  catches on every seam between two floor boxes, and a capsule's round side
-  slides over them.
-- **`CharacterController`** - `moveInput` (world-space desired horizontal
-  velocity, written by gameplay), `jumpRequested`, `climbing` and `climbNormal`
-  (written by gameplay while it is on a ladder, a rope or a wall), `crouching`
-  (held by gameplay while the key is down), the tuning
-  (`jumpSpeed`, `acceleration`, `airControl`, `maxSlopeAngle`, `knockbackDrag`,
-  `stepHeight`, `climbSpeed`, `crouchHeight`), the read-only
-  `grounded` / `groundNormal` / `walkSpeed` / `groundVelocity` / `groundSpin` /
-  `crouched`, and the state of a step climb in progress
-  (`stepping`, `stepTargetY`, `stepTime`) or a crouch (`standingHalfHeight`).
-  Only the tuning is serialized: the rest is per-tick traffic, and a scene row
-  holding a half-consumed jump request would replay it on load.
-- **Scene physics settings** - `gravity` and `solverIterations` live in the
-  scene-global `PhysicsSettings` (`ecs/physics_settings.h`), reached through
-  `Scene::physics()` and serialized with the scene in a block of its own. It sits
-  *beside* the `Environment` rather than inside it: what a world is lit by and
-  what it falls at are unrelated. `PhysicsSystem` reads them each tick, so
-  gravity persists with the scene and can differ per scene.
+  It also carries per-tick **outputs**, runtime only: `supported`,
+  `supportNormal` (the most upward contact normal), `supportBody`, and
+  `blockNormal` (the most horizontal one). Two normals because a character
+  pressed against a wall is *held* by the floor and *blocked* by the wall. A
+  body that touched nothing reports world up for both.
+- **`Collider`** - one or more `ColliderPart`s in the entity's `Transform` frame,
+  each a `Box`, `Capsule` or `Mesh`. The solver ignores `Transform` scale; "Fit to
+  Mesh" bakes it into the parts. A capsule runs along local **+Y**; capsules are
+  what characters wear, because a box catches on every seam between floor boxes.
+  A mesh part names its mesh by handle and `syncMeshCollider` builds the
+  triangles when needed; **one mesh part per collider** (extra ones collide as
+  the first, and the log says so). `isTrigger` reports without pushing;
+  `enabled = false` takes the collider out entirely, for pooled objects.
+- **`CharacterController`** - `moveInput` (world-space horizontal velocity),
+  `jumpRequested`, `climbing` and `crouching` in; tuning; `grounded`,
+  `groundNormal`, `groundVelocity`, `crouched` out. Only the tuning is
+  serialized.
+- **`Joint`** and **`Ragdoll`** - a joint ties two bodies and can hold its angle
+  as a muscle (`holdTorque`): a limb sags under a weight it cannot carry.
+  `buildRagdoll` makes capsule bodies per bone, jointed (see
+  [Ragdolls](#ragdolls)).
+- **`PhysicsSettings`** - gravity and solver iterations, per scene, reached
+  through `Scene::physics()` and saved with the scene.
 
 ## The character controller
 
-`CharacterControllerSystem` turns `moveInput` into velocity on the `Rigidbody`,
-once per fixed tick, after `PhysicsSystem`. Only the velocity it writes is a tick
-late, and a tick of steering lag is imperceptible; fresh contacts are the half
-that has to be exact, because landing, stepping off a ledge, refusing a slope and
-sliding along a wall all turn on them.
+Each tick, for each `Dynamic` controller this end simulates, the controller
+decides `grounded` (a support no steeper than `maxSlopeAngle` - touching a wall
+is not standing), steers the body's velocity toward `moveInput` at no more than
+`acceleration`, and jumps when asked while grounded. It writes velocity, **never
+position**: the solver owns the pose, so a character cannot be pushed through a
+wall and friction, sleeping and penetration recovery keep working underneath.
+The steps, and the knockback and air-control rules, are in
+`character_controller_system.cpp`.
 
-Per tick, per controller whose body this end simulates and is `Dynamic` - a kinematic
-body is placed by script, so there is nothing to steer:
+It logs two silent misconfigurations once each: no enabled capsule collider (it
+will not climb steps) and `freezeRotation` off (contacts will topple it). It is
+a System driving a component rather than a `Behavior`, so whatever writes
+`moveInput` can change without the controller changing.
 
-1. `grounded = rb.supported && dot(rb.supportNormal, up) >= cos(maxSlopeAngle)`,
-   and `groundNormal` mirrors the surface (world up when airborne). A wall is a
-   resolved contact too, so touching is not the same question as standing.
-   Derived only for a character this end simulates, like everything after it.
-   One the authority decides keeps the `grounded` the authority sent - the
-   `CharacterController` codec replicates it - so a character this end is only
-   told about still reports standing, and every game driving an animation off it
-   shows it walking rather than falling.
-2. Wake the body if there is input and it fell asleep - a sleeping body has its
-   velocity zeroed by writeback, so anything asking it to move must wake it.
-3. Unless a step climb is in progress, deflect the target along `blockNormal` if
-   that surface is steeper than `maxSlopeAngle`, so it runs along the obstacle
-   instead of into it (below).
-4. Steer toward the deflected target. Grounded, it is projected onto the ground
-   plane, so a ramp neither launches at the top nor drags back down; airborne,
-   only the horizontal is steered (at `airControl` of the rate) and the vertical
-   is gravity's alone. Either way the step is **capped** at `acceleration * dt`
-   rather than approached exponentially, so the number means m/s^2 at every
-   speed. With `knockbackDrag` above zero, a shove - horizontal speed beyond
-   both what `moveInput` asks for and what the controller's own steering left
-   the body at last tick (`walkSpeed`): a blast, a dash set straight on the body,
-   never the walk left over when the stick lets go - is carried instead: it
-   bleeds off at `knockbackDrag` m/s^2, and the character steers at `airControl`
-   of the rate while it lasts. At zero it is steered away like any other
-   difference - at `acceleration` on the ground, `airControl` of it in the air.
-5. `jumpRequested && grounded` sets `linearVelocity.y = jumpSpeed`, clears
-   `grounded` on the spot and ends any step climb, which would otherwise set the
-   vertical back to its own rate next tick; the request is consumed either way.
-
-A character `climbing` skips steps 3 to 5: nothing of walking applies to it. The
-part of `moveInput` pushing into the face - against `climbNormal`, taken level -
-climbs up at most `climbSpeed`, pulling away climbs down, and the part along the
-face slides it sideways at half its speed, all steered at `acceleration`. The
-gravity `PhysicsSystem` adds before the next move is taken off ahead, so a
-climber with no input hangs where it is. A jump leaps off, up at `jumpSpeed` and
-out along the normal at half of it, so gameplay lets go as it asks for one, or
-holds the leaper again the next tick. The controller clears `climbing` after every
-tick, so gameplay decides what is climbable and sets the flag each fixed tick it
-holds, and a character whose hold has gone - its ladder destroyed, its behavior
-gone with it - falls rather than hangs. The engine has no ladder component,
-because what counts as reaching one is the game's.
-
-It writes velocity, **never position**: the solver owns the pose, so a controller
-cannot teleport a character through a wall, and friction, restitution,
-penetration recovery and sleeping all keep working underneath it. Two silent
-misconfigurations are named once each - no enabled capsule collider (it will
-not climb steps) and `freezeRotation` off (contacts will topple it).
+**Climbing.** Gameplay sets `climbing` and `climbNormal` every tick it holds a
+ladder or ledge; pushing into the face climbs, a jump leaps off, and the flag
+clears after each tick so a character whose hold is gone falls. There is no
+ladder component: what counts as reaching one is the game's.
 
 ### Sliding along walls
 
-Step 3 is the one thing the controller deliberately does **not** leave to the
-solver. Aim a walk into a wall and the solver resolves it perfectly well: the
-normal impulse removes the motion into the face, and Coulomb friction decides
-what happens to the rest. That is the problem. Friction is capped at the
-combined friction (`combineFriction`, the geometric mean of the two bodies')
-times the normal impulse, so a character glides only while the combined
-friction is below `tan(incidence)`. Left to the solver, whether a character
-slides or snags would be decided by two material numbers nobody picked for that
-purpose. With the engine's defaults on both bodies (`sqrt(0.5*0.5) = 0.5`,
-against `tan 25 = 0.466`), the solver alone gives a walk 25 degrees off the wall
-normal **0.000 m/s** along the face. Not a slow slide: a dead stop.
-
-So the target is turned before it is steered toward. `deflectAlongBlock` removes
-whatever part of it pushes into `blockNormal`, and a character that no longer
-presses on the wall generates no normal force for friction to scale against.
-Measured at a 1.9 m/s walk, the solver alone against the deflected target, beside
-the speed the input actually commands along the face:
-
-| Incidence off the wall normal | 10 deg | 25 deg | 45 deg | 60 deg | 80 deg |
-|---|---|---|---|---|---|
-| Commanded along the face | 0.330 | 0.803 | 1.344 | 1.645 | 1.871 |
-| Slide, solver alone | 0.000 | 0.000 | 0.563 | 1.069 | 1.790 |
-| Slide, deflected    | 0.248 | 0.721 | 1.262 | 1.563 | 1.788 |
-
-The remaining shortfall is the *floor's* drag, which acts on any walk; at 80
-degrees, where friction is not the gate, the two agree. And with the deflection
-the **wall's** own `friction` across 0 -> 1 moves the slide by **0.00%**.
-Sliding is geometry, not materials.
-
-Two details carry the design:
-
-- **Only a surface steeper than `maxSlopeAngle` deflects.** A walkable one is
-  ground, and step 4 already follows it; deflecting against it as well would
-  strip the downhill component and leave the character unable to walk *down* a
-  ramp.
-- **The deflection is taken flat** - only the horizontal part of `blockNormal`
-  turns the target. A wall that deflected the target *upward* would be a ramp,
-  and the character would climb whatever it walked into, which is precisely what
-  `maxSlopeAngle` exists to forbid. Measured: a 70-degree slope is not climbed.
-
-The deflection is free where there is nothing to deflect against. A body on level
-floor gets `blockNormal` == world up, which is walkable at every slope limit, so
-the first line of the helper returns the target untouched - no contact test, no
-branch on `supported`.
+The controller removes the part of its target that pushes into `blockNormal`,
+so a character walking into a wall slides instead of snagging. Left to friction,
+slide or snag would be decided by material numbers nobody picked for that. Only
+a surface steeper than `maxSlopeAngle` deflects (a walkable one is ground), and
+only horizontally (deflecting upward would climb any wall).
 
 ### Steps
 
-A step is met by the capsule's bottom cap, and what happens is decided entirely
-by the contact normal that edge produces. The normal's upward component at a step
-of height `h` is `1 - h/radius`, so the capsule **rolls over** any step up to:
-
-```
-h <= radius * (1 - cos(maxSlopeAngle))      // 0.107 m at radius 0.30, 50 degrees
-```
-
-Below that limit the edge is a walkable surface: the character grounds on it and
-climbs it like the ramp it geometrically is. Above it the edge is a wall - and if
-it is lower than `stepHeight`, the controller mounts it instead of stopping (see
-step-up below).
-
-What a step must never do is strand the character. A step above the roll-over
-limit that the controller does not mount - taller than `stepHeight`, or any step
-while `stepHeight` is zero - is a wall. Riding its edge would lift the capsule
-off the floor, make `supportNormal` the edge's and hold `grounded` false for as
-long as forward is held. The wall deflection prevents it: the character stops
-pushing into the edge and settles back onto the floor, stopped by the step
-rather than hovering on it.
-
-Step-up is built on the sweep queries: `findStep` probes with two spherecasts - clearance at step height, then straight
-down for a walkable landing - through the body's own collision mask, so a
-character's ragdoll bones never block their own stairs. A climb ends by arriving
-at the measured height, by the character no longer asking, or by its deadline;
-never because the step stopped blocking, since rising is exactly what un-blocks
-a riser.
-
-**A System driving a component**, not a `Behavior`, because the thing that writes
-`moveInput` changes and the thing that reads it should not: gameplay writes it,
-so may any other driver, and an engine system cannot address a hot-reloadable
-game behavior.
-
-**Partial by design:** velocity-driven; the capsule changes size only to crouch.
+The capsule's round bottom rolls over a step up to
+`radius * (1 - cos(maxSlopeAngle))`. A taller edge is a wall; if it is under
+`stepHeight`, `findStep` probes with two spherecasts (clearance, then a walkable
+landing) and the controller mounts it. The probes use the body's own collision
+mask, so a character's ragdoll bones never block its own stairs.
 
 ### Crouching
 
-`crouching` held, the character is `crouched` at once: `fitCapsule` shortens its
-first capsule part to `crouchHeight` overall - never below its own width, two
-radii, nor above its standing height - lowering the part's `center` by
-what it takes off, so the feet stay where they were and the next tick's solve
-sees the short capsule. The standing `halfHeight` is kept in
-`standingHalfHeight` until it stands again. Let go, it stands only once
-`roomToStand` - its top cap swept up by what standing adds, a shade narrower
-than the capsule so a wall at its sides does not count - finds nothing over its
-head; under a low ceiling it stays `crouched`, which is what a game reads to
-pose it, slow it and lower the view. A character this end does not simulate
-takes `crouched` from the authority, which replicates it, and its capsule
-follows, so a client's traces meet the shape the server's do; one that does
-simulate fits its capsule to a `crouched` it was told before deciding, so
-standing up from it still asks for room. Two gaps are known: `Collider` is not
-replicated and `PhysicsSystem` runs before the controller, so the first tick of
-a replay solves with the capsule as it is now, which mispredicts a crouch
-begun or ended within a round trip until the next correction; and
-`NetRewind` rewinds pose alone, so a lag-compensated hit meets the crouch as it
-is now, not as it was when the shot was fired.
+Holding `crouching` shortens the first capsule part to `crouchHeight`, feet kept
+in place (`fitCapsule`). Released, the character stands only when `roomToStand`
+finds space overhead; otherwise it stays `crouched`, which is what a game reads
+to pose and slow it. `Collider` is not replicated, so in networked play a replay
+can mispredict a crouch changed within a round trip; a lag-compensated hit meets
+the current crouch ([networking.md](networking.md#lag-compensation)).
 
 ### Riding what it stands on
 
-`rb.supportBody` is the body whose surface gave `supportNormal`, written by
-`PhysicsSystem` with it. Grounded on a body that is not static, the character
-is carried at `groundVelocity`: the velocity of that body's surface at the feet,
-as the contact solver takes it - its velocity and its spin's tangent - so the
-two never pull a rider apart. Stepping along the tangent, a rider on a
-turntable drifts outward as anything on it does, about `r (w dt)^2 / 2` a tick:
-7 cm in 3 s at 3 m and 1 rad/s. Steering runs relative to it - the
-velocity read less the carry, the carry added back to what is written - so
-walking on a moving deck is walking, a stick let go stands still on it, and a
-lift going down holds its rider rather than falling away beneath it. A jump
-takes the carry with it. A kinematic platform carries by the velocities it is
-driven with, as its contacts already read them: one moved by its Transform
-alone carries nothing. `groundSpin` is how fast it turns about up; the
-character's facing is gameplay's, so a view that should turn with the deck adds
-it.
+Grounded on a body that is not static, the character is carried at
+`groundVelocity` - the velocity of that surface at its feet, spin included - and
+steers relative to it: walking on a moving deck is walking, a released stick
+stands still on it, a jump keeps the carry. A kinematic platform carries by the
+velocities it is driven with; one moved by its Transform alone carries nothing.
+`groundSpin` reports the deck's turn about up; turning the view with it is
+gameplay's call.
 
 ## Sleeping
 
-A body that rests for `SLEEP_DELAY` (0.5 s) goes to sleep and stops simulating -
-together with every dynamic body it touches or is jointed to, since an island
-sleeps whole or not at all, and only while something outside the island holds
-it: a contact with a body that is not in it, or a joint to one. That is the
-island's question rather than each body's, because a lamp hanging from a post
-touches nothing, and a ragdoll's hips are held off the floor by its legs.
+A body at rest for `SLEEP_DELAY` sleeps, together with its whole island (every
+dynamic body it touches or is jointed to) - and only while something outside
+the island holds it. Anything that could push it - an awake dynamic body, a
+driven kinematic one - wakes the whole island; a static one never does. Sleeping
+bodies still generate contacts, so stacks stay supported. Code that wakes a
+body calls `Rigidbody::wake`.
 
-It wakes whole, too. A sleeper is immovable to the solver, so an island wakes
-when anything that could push it touches any member: an awake dynamic body at
-any speed, or a kinematic one being driven. A static body never wakes what
-rests on it. A sleeping island that nothing outside holds any more wakes as
-well - whatever it rested on is gone - and falls on that same tick. Every
-member wakes on the same tick, before the forces and the solve: a ball landing on a sleeping
-tower moves the whole tower, where waking only what the ball touched would leave
-the box under it a wall for that tick. Sleeping dynamic bodies still generate
-contacts (they are not treated as permanently static), so stacks stay
-supported. `sleeping` / `sleepTimer` are runtime-only and not serialized, and a
-replayed tick adds nothing to `sleepTimer`: it was counted when it was lived. Code
-that wakes a body calls `Rigidbody::wake`, which clears both: a cleared flag over
-a timer that still reads a long rest falls asleep again at the end of the tick.
-
-A body rests while no point of it moves faster than
-`SLEEP_SPEED` (5 cm/s): the centre's speed plus the spin times the body's reach,
-the farthest its collider extends from its origin. One bound on the point speed
-rather than a linear and an angular threshold apart, because a tall box tipped
-just past balance starts to fall by turning slowly about an edge - each half
-would read as rest, and the box would sleep leaning fifteen degrees while its
-top edge moved at the speed the thresholds were meant to catch.
+"At rest" is one bound on the fastest point of the body (`SLEEP_SPEED`), not a
+linear and an angular threshold apart: a tall box tipping slowly about an edge
+would pass both.
 
 ## Events
 
 ```cpp
-enum class ContactPhase : uint8_t { Began, Stayed, Ended };
-
 struct CollisionEvent { EntityId a, b; ContactPhase phase; glm::vec3 point, normal; float speed; };  // normal a -> b
 struct TriggerEvent   { EntityId trigger, other; ContactPhase phase; };
 ```
 
-A contact is reported as it changes - Unity's enter / stay / exit, where Box2D
-and Godot report the two edges alone: **Began** on the first tick a pair
-touches, **Stayed** on each later tick it still does, **Ended** on the first
-tick it does not. A collision's `a` is the
-body with the lower entity slot, so one pair is named the same way round - and
-its normal runs the same way - on every tick it lasts. `point` and `normal` are
-the first contact found, on Began and Stayed, and `speed` is how fast the two
-bodies' points there closed along the normal as gathered, before the solve
-pushed them apart: on Began, how hard it struck - for a thud's loudness, a
-shove's strength - and about zero while it rests. An Ended contact touches
-nowhere and carries the pair alone. A trigger pair sends one `TriggerEvent` per trigger
-in it, so with two triggers each learns who entered it.
+A pair reports **Began** on its first touching tick, **Stayed** on each later
+one, **Ended** on the first tick it does not. A collision's `a` is the body with
+the lower entity slot, so a pair is named - and its normal points - the same way
+for its whole life. `speed` on Began is how hard it struck.
 
-- **Ended is sent however the contact ended**: the two separating, either one
-  destroyed, its collider disabled, its layer changed, its `isTrigger` flipped (a
-  pair whose trigger flags change is a different contact - the old one ends and
-  the new one begins). So on Ended either id may name an entity that is no
-  longer alive, and a new entity that takes a freed slot begins a contact of its
-  own. A behavior on the destroyed entity hears nothing - it has had
-  `onDestroy` - and the survivor hears it leave.
-- **A resting pair is silent but still touching.** While both bodies rest -
-  asleep, or static - the pair sends no Stayed: nothing about it can change until
-  something wakes it, and a settled pile would otherwise report every contact
-  in it every tick. It sends no Ended either, so waking it does not begin it
-  again. A kinematic body is driven, so it never rests.
-- **Only a live tick reports.** A tick a client replays reported its contacts
-  the first time it ran, so a replay neither sends events nor moves what the
-  next live tick is compared with - a contact the replay briefly lost is not
-  reported beginning again. A replaced world (`Scene::epoch`) drops what touched
-  in the old one unreported: its ids name the new world's entities now.
-- **The order is the world's**: by entity slot pair, then generation, so every
-  machine reports one tick's contacts in the same order wherever the bodies
-  stand.
+- **Ended is sent however the contact ended** - separation, destruction, a
+  disabled collider, a changed layer - so either id may be dead.
+- **A resting pair is silent but still touching**: no Stayed and no Ended while
+  both bodies are asleep or static.
+- **Only a live tick reports**; a client's replayed tick does not report again.
+- **The order is deterministic** (by entity slot pair), the same on every machine.
+- A trigger senses what moves, never a static body - or it would report the
+  floor for as long as the level lasted.
 
-Both are **enqueued** (not emitted), so listeners fire on the next `EventBus`
-flush, never mid-solve. Triggers are queried, not resolved, so they only produce
-events, and a trigger pair stops at its first contact. A trigger senses what
-moves - dynamic and kinematic bodies, another trigger that moves - and never a
-static body: paired with the level it sits in, it would report the floor under
-it as long as the level lasted. Gameplay reacts either by subscribing to the
-events directly or through the behavior hooks - `onCollisionEnter` /
-`onCollisionStay` / `onCollisionExit` and `onTriggerEnter` / `onTriggerStay` /
-`onTriggerExit` (`BehaviorSystem` subscribes and forwards them by phase; see
-[scripting.md](scripting.md)).
+Both are enqueued, so listeners run on the next `EventBus` flush, never
+mid-solve. Behaviors can use `onCollisionEnter` / `Stay` / `Exit` and
+`onTriggerEnter` / `Stay` / `Exit` instead ([scripting.md](scripting.md)).
 
-What touched is kept apart from the solver's `ContactCache`, as `TrackedPair`
-lists on `PhysicsSystem` - the pairs touching this live tick and the last. They
-answer a different question about different pairs: a trigger pair makes no
-manifold and is never cached, and a contact that ended because an entity was
-destroyed must still name it by its full id, where the cache's slot key would
-name whatever took the slot. They are event state, not simulation state, which
-is why a replay leaves them alone.
+## Queries
 
-## Editor integration
+`raycast` and `spherecast` (`query/query.h`) return the nearest body a ray or a
+swept sphere strikes, as a `RayHit`, filtered by a `QueryFilter`. They read the
+scene directly, so they answer where bodies are now. A
+`Collider` without a `Rigidbody` is in no query.
 
-- The World inspector's **Physics** card edits `PhysicsSettings`' gravity and
-  solver iterations (undoable like the other World cards).
-- The viewport's collider overlay draws each part as the shape it is: a wire
-  box, a wire capsule, or a mesh's own triangles (decimated past a cap - a
-  wireframe says where a surface is, not every edge), placed the way the solver
-  places it - world position + rotation, no scale. Joints draw under the same
-  toggle: both anchors, the line between, and the link glyph at the midpoint.
-- The inspector's Collider section offers **Fit to Mesh**, which calls
-  `fitBoxesToMesh` to approximate the entity's mesh with a grid of boxes
-  (`detail` clamped to `[1, COLLIDER_FIT_MAX_DETAIL]`; `detail == 1` is the
-  scaled bounds box). It never returns empty - a mesh with flat bounds, no
-  whole triangle, an index past its vertices or no inside span at all falls back
-  to a single bounds-sized box. Every part it produces is a box:
-  fitting capsules to a mesh is a medial-axis problem, not a scanline, and is not
-  attempted.
-- `Rigidbody`, `Collider`, `CharacterController`, `Joint` and `Ragdoll`
-  round-trip with the scene as components - authored fields only, since every
-  runtime output on them (`sleeping`, the two contact normals, `grounded`) is
-  rebuilt each tick. Entity references travel as slots and are recovered when
-  the scene is whole; a prefab rewrites them as local indices instead, so an
-  instance's joints tie to its own entities wherever it lands. The
-  scene-global `PhysicsSettings` round-trips beside them as the file's own
-  `physics` block rather than as a component on anything. See [io.md](io.md).
+## Ragdolls
+
+`buildRagdoll` / `clearRagdoll` make and remove capsule bodies per bone, on
+their own collision layer, each joint holding its angle (`RagdollSettings::muscle`).
+While a clip drives the rig, `RagdollSystem` poses the bones as kinematic
+**hitboxes** that make no contacts - the character's capsule meets the world -
+but queries find them. Gone live, the bodies drive the pose
+([animation.md](animation.md)).
+
+## Editor
+
+- The World inspector's **Physics** card edits `PhysicsSettings`.
+- The collider overlay draws each part where the solver places it (no scale),
+  and joints with it.
+- **Fit to Mesh** (`fitBoxesToMesh`) approximates the mesh with a grid of boxes;
+  `detail == 1` is the bounds box. It never fits capsules.
+- The inspector names a `Collider` with no `Rigidbody` (in no broadphase) and a
+  dynamic `Rigidbody` with no `Collider` (falls through everything) - see
+  [the editor](editor.md#a-card-names-what-its-component-is-waiting-for).
+- Entity references in joints travel as slots, as every entity reference does; a
+  prefab rewrites them as local indices ([io.md](io.md#componentserializer)).
 
 ---
 
 ## How it works inside
 
-Everything above is what a project writes. What follows is how the
-engine answers it, for whoever maintains that half.
+### The tick
 
-### Per-tick flow (`fixedUpdate`)
+`PhysicsSystem::fixedUpdate` works on a per-tick copy of the world, never the
+components directly:
 
-```
-PhysicsSystem::fixedUpdate(ctx)
-  1. Read the physics settings off the scene's PhysicsSettings.
-  2. Gather: snapshot every live Rigidbody + Transform into PhysicsBody solver
-     state; build a ColliderProxy (world AABB + parts span) per body with a Collider.
-     The walk starts from the Rigidbody storage, so the pairing is required in
-     both directions: a Collider without a Rigidbody is in no broadphase at all,
-     and a dynamic Rigidbody without a Collider integrates gravity with nothing
-     to land on. The inspector names each on its own card - see
-     [the editor](editor.md#a-card-names-what-its-component-is-waiting-for).
-     Re-derive the tick's inverse mass + local inverse inertia onto the BodyFrame.
-     Sleeping / immovable bodies enter the solver with invMass 0.
-  3. Gather joints: resolve each Joint to two body indices and world lever arms,
-     seeded with the impulses it held last tick, and resolve the angle a hold
-     keeps. Before the pairing, because a pair a joint holds together makes no
-     contact unless the joint says so.
-  4. Broadphase: sort-and-sweep on X; AABB-overlap surviving pairs (two immovable
-     non-triggers culled, and a trigger against a static body).
-  5. Narrowphase: one contact routine per part pair -> ContactManifolds (up to
-     MAX_CONTACTS_PER_MANIFOLD = 4 points each), the pairs collided in chunks
-     across the pool. Then, on the calling thread and in pair order: gather the
-     manifolds, reduce each body's normals into its BodyContacts (most upward,
-     most horizontal), and on a live tick track the touching pair.
-  6. Build the islands - the dynamic bodies this end decides, joined by the
-     tick's contacts and joints - and wake every sleeping island something
-     disturbs, or that nothing outside holds any more.
-  7. Integrate forces -> velocities: gravity * gravityScale, then damping
-     (skips every body the solver cannot move: sleeping, static, kinematic,
-     or not this end's to decide). After the islands, so what woke this tick
-     falls this tick.
-  8. Seed each contact with the impulse its pair carried last tick, then
-     solveStep: PGS iterations, each solving every joint and then every
-     contact - normal + friction impulses, carrying the restitution target and
-     the soft recovery terms - then the poses integrated, then relax passes
-     taking the recovery velocity back out. The contact and joint impulses are
-     recorded for next tick.
-  9. Write the solved pose back through the body's frame, publish the
-     BodyContacts onto the Rigidbody, then put to sleep every island that has
-     rested long enough, reading the islands step 6 built.
-     HierarchySystem re-resolves WorldTransform later in the same frame.
- 10. On a live tick, report contacts: sort the tracked pairs by slot pair,
-     walk them against the last live tick's, and enqueue Began / Stayed / Ended
-     CollisionEvent and TriggerEvent - after the sleep pass, because whether a
-     pair rests is what decides its Stayed. A tick that gathers no bodies at
-     all still reports, so the last body going ends what it touched.
- 11. On a client with a character of its own, lease the bodies it is touching
-     (leaseContacts): the island reached from it across this tick's contacts
-     and joints, never through an immovable body or another player.
-```
-
-A **hierarchy root**'s local `Transform` is already its world pose, so
-`gatherBodies` reads it straight. A **parented** body's world pose is resolved by
-`worldPoseOf`, which walks its chain of `Transform`s rather than reading
-`WorldTransform` - that is written by the Transform stage after physics, so it
-would be a frame stale, and absent on a body parented this tick. The parent's
-frame is recorded alongside, and writeback maps the solved world pose back
-through it into the local `Transform`. Either
-way, children parented *to* a body follow it, because HierarchySystem rebuilds
-the whole subtree in the Transform stage that follows.
+1. **Gather** every `Rigidbody` + `Transform` into `PhysicsBody` solver state,
+   with a `ColliderProxy` per body with a `Collider`, and the joints resolved to body indices.
+   A parented body's world pose comes from `worldPoseOf`, walking its
+   `Transform` chain - `WorldTransform` is written after physics.
+2. **Broadphase**: sort-and-sweep on X.
+3. **Narrowphase**: contact manifolds per pair, in parallel chunks.
+4. **Islands**: wake what was disturbed.
+5. **Integrate** gravity and damping into velocities, then **solve**
+   (`solveStep`).
+6. **Write back** poses through the parent's frame into the local `Transform`,
+   publish each body's contact outputs, put rested islands to sleep.
+7. **Report** contact events (after sleep, which decides Stayed), and on a
+   client lease the bodies its character touches.
 
 ### The solver
 
-`solveStep` works against `PhysicsBody` (per-tick state decoupled from the
-Scene, addressed by index from each manifold and joint), not the components
-directly. It is soft-constraint projected Gauss-Seidel, shaped like Box2D v3's
-soft step but taking the whole tick as one step where Box2D takes several
-substeps. It runs `SolverParams::iterations` passes, each solving every joint
-and then every contact, so a surface has the last word over a joint. Each
-contact's normal impulse carries two things at once: the restitution target, and
-a **soft penetration-recovery term**; each joint's impulse carries the same kind
-of term for its drift.
+Soft-constraint projected Gauss-Seidel in the shape of Box2D v3's soft step,
+taking the whole tick as one step: each pass solves every joint and then every
+contact, so a surface has the last word over a joint. Penetration is recovered
+by a stiff damped spring in the contact impulse; poses are integrated with that
+velocity and then relax passes take it back out, so recovery adds no energy.
+There is no position solver.
 
-A soft term treats the error as a stiff, damped spring. Three coefficients
-derived from (hertz, damping, `dt`) convert the error into a target velocity,
-soften the impulse that velocity asks for, and leak the accumulated impulse, so
-the correction settles at a rate the step can carry instead of overshooting.
-What keeps the recovery from adding kinetic energy is the order around it: the
-poses are integrated with the recovery velocity still on them, and then
-unbiased relax passes take it back out (below). So there
-is no position solver, no shadow velocity and no penetration slop.
+The spring stiffnesses and thresholds are file-local constants in `solver.cpp`
+and `joint_solver.cpp`, not settings: every end of a session must agree about
+the solve, and a contact stiffness set wrong looks like a physics bug.
+`SolverParams` carries only `iterations` and `dt`.
 
-`SolverParams` carries two fields and no more: `iterations` (PGS passes, from
-`PhysicsSettings::solverIterations`) and `dt`. Everything else the contact solve is
-tuned by is a file-local `constexpr` in `solver.cpp`, and deliberately not
-authorable - `RESTITUTION_THRESHOLD` (below this approach speed, ignore bounce),
-`CONTACT_HERTZ` (30, clamped to half the tick rate - stiffer than that and the
-damping and relax passes can no longer keep it from ringing; the 30 is Box2D's,
-the half-rate bound is this engine's own), `CONTACT_DAMPING`
-(10, well above 1 so a contact does not ring) and `MAX_RECOVERY_SPEED` (3 m/s,
-or a body spawned inside geometry resolves the overlap by launching). The joint
-solver keeps its own spring, `JOINT_HERTZ` and `JOINT_DAMPING` in
-`joint_solver.cpp`, and a softer one for a joint's hold, `HOLD_HERTZ` and
-`HOLD_DAMPING`.
+A stack needs three things, and loses any one by settling into a lean:
 
-They are constants rather than settings because the solve has to be
-deterministic and every end of a session has to agree about it; a per-scene
-contact stiffness is a knob whose wrong setting looks like a physics bug. Change
-one by editing it and rebuilding, not by authoring it.
+- **Warm starting.** `ContactCache` carries each pair's impulses (normal, and
+  friction as a world vector) to the next tick; joints do the same.
+- **Integrate between the phases.** `solveStep` runs solve, integrate, relax in
+  one call so no caller can reorder them.
+- **Friction on a fixed tangent basis**, clamped as a cone - one impulse along
+  the sliding direction would flip every pass and shake a tower apart.
 
 #### Determinism
 
-The same world run twice lands in the same place to the bit; replay and the wire
-both rest on it. Gauss-Seidel makes the solve order part of the answer, so every
-order the tick depends on is keyed on entity slot rather than on storage order:
-the sweep's ties, which body of a pair is A, the joint sort, the contact cache's
-keys, and which of two bodies a query names when it strikes both at one
-distance - the character controller's step-up reads that one's normal in a
-replayed tick. `vkm_core` is built with `-ffp-contract=off`, so a machine whose target has
-fused multiply-add rounds the same expression the same way as one without.
-`testTheSameWorldRunTwiceEndsBitIdentical` holds it, and prints a hash of every
-body's state: a change meant to leave the answer alone is checked by running it
-before and after. The narrowphase is the one phase that runs on several threads
-(below), and `testABusyPileStepsTheSameOnAnyThread` holds it the same way, on a
-pile with enough pairs to fork, against the same pile stepped from a pool task,
-where `parallelFor` sweeps serially.
-
-#### What holds a stack up
-
-Three things, and a stack needs all three. Take any one away and five boxes
-settle into one another by a centimetre or more, lean, and fall asleep like
-that - which is what an author sees as boxes clipped through each other.
-
-**The impulses carry over.** `ContactCache` stores what each contacting pair
-was holding when the tick ended, matched next tick by contact position in
-either body's own frame - so a pair on a moving or turning platform still finds
-itself, and so does a box sliding over a floor, whichever of the two was made
-first - and `solveStep` applies it before its first pass. Sequential impulses
-converge from wherever they start, and the bottom contact of a stack
-carries the weight of everything above it: found from zero, eight passes never
-quite arrive. Measured, seeding is worth about four times the iteration count.
-A pair neither of whose bodies can move this tick - two sleepers, or a sleeper
-on a static floor - is skipped by every pass, so what it held passes through the
-cache untouched while it sleeps and the stack wakes carrying its load. Solved,
-the spring's leak would take a tenth of it every tick, with nothing to push.
-
-Joints carry theirs the same way. `PhysicsSystem` keeps what each joint held
-when the tick ended, by the entity carrying the Joint, and `warmStartJoints`
-applies it after `prepareJoints` - kept whole for a point joint, flattened onto
-the line for a distance joint. Measured on a ten-link chain with a 50 kg lamp
-on the end, the chain hangs 6.4 cm long over its 3 m rather than 12.4 cm; what
-is left is the joint spring's own give. A joint neither of whose bodies can
-move - every link of a sleeping chain - is skipped like a sleeping pair, and
-what it held passes through untouched, so the chain wakes carrying its load.
-
-A joint can also **hold its angle** (`Joint::holdTorque`, newton-metres): a
-soft angular constraint, solved in the same pass just before the anchors, that
-turns the pair back toward the rotation between them when the joint last began
-to move them. While neither body can move the angle is let go, and the first
-tick one can it is taken again - so a ragdoll, kinematic until it goes live,
-holds the pose it went live in rather than the one it was built in. The
-accumulated angular impulse is clamped to the torque times the step, which is
-what makes it a muscle and not a weld: a load that needs more turns the joint,
-and a limb sags under a weight it cannot carry. It is warm-started and carried
-across ticks like the anchors' impulse. `buildRagdoll` sizes each joint's from
-`RagdollSettings::muscle` - that fraction of the torque that holds everything
-beyond the joint out level - so a felled character falls as one body and folds
-as it lands, where free joints would let it crumple where it stood.
-
-**The poses move between the two phases.** The biased passes hand an
-overlapping pair a velocity that separates it; `solveStep` integrates the poses
-with that velocity still on them, and only then runs its unbiased relax passes
-to take it back off - the three in one call, so no caller can order them
-otherwise. Relaxing before the integration cancels the recovery instead of
-spending it, and the overlap never closes. Both halves of the pose move there - position from the linear velocity, orientation
-from the angular - so a box resting a degree into the floor is turned out of it
-as well as lifted; writeback only maps the result back into each `Transform`.
-
-**Friction is a cone on a fixed basis.** Each contact builds two tangents from
-its normal and accumulates an impulse on each, clamped together against
-`friction * normalImpulse` rather than per axis. The alternative - one impulse
-along the direction the contact happens to be sliding - re-derives that
-direction every pass, so the accumulated scalar means something different each
-time it is read; in a stack, where the lateral velocities are near zero and the
-direction flips freely, that is a tower shaking itself apart.
-
-What it costs: three extra passes over the contacts and a sort of them, about a
-quarter of the contact solve. `solverIterations` at 6 rather than the default 8
-recovers it: with the impulses carrying over, six passes land within a
-centimetre of eight on an eight-box tower.
-
-`Contact` accumulates `normalImpulse` and the two tangent impulses across a
-tick's passes, and across ticks through the cache.
-
-Across ticks the friction travels as a **world vector**, not as the two scalars.
-A basis is built from the normal, so a contact whose normal has turned since last
-tick would otherwise be handed a pair of numbers measured on an axis it no longer
-has. `ContactCache::seed` flattens the remembered vector onto the new contact
-plane and leaves it on `Contact::warmFriction`; the solver's pre-solve loop
-resolves it onto `tangent1`/`tangent2` in the same pass that builds them. That
-placement is the point: the seed runs before the solve, so a seed that did the
-decomposition itself would project onto a basis that does not exist yet, and the
-friction half of every warm start would come out zero while the normal half
-carried.
+The same world run twice ends bit-identical; replay and the network rely on it.
+Every order the solve depends on is keyed on entity slot, not storage order, and
+`vkm_core` builds with `-ffp-contract=off` so fused multiply-add does not change
+rounding. `testTheSameWorldRunTwiceEndsBitIdentical` and
+`testABusyPileStepsTheSameOnAnyThread` hold it.
 
 ### The narrowphase
 
-Each proxy's parts are placed in world space once per body, at gather, and sorted
-into **two monomorphic arrays**, one of `BoxShape` and one of `CapsuleShape`, each
-part's world bound beside it. The pair loops are quadratic, so the shape test
-happens once per part rather than inside them. Four loops run: box-box, A's
-capsules against B's boxes, B's capsules against A's boxes, and capsule-capsule.
-A part is held against the other body's bound before any of its pairings, and
-each pairing against its own two bounds, so a compound collider pays only for
-the parts near the other body.
+Pairs run in parallel chunks (`NARROWPHASE_CHUNK_PAIRS`), each writing only its
+own `NarrowphaseChunk`, and are merged in pair order - so the result is the
+serial one to the bit on any core count.
 
-The pairs run in parallel, and the answer is still the serial one, to the bit.
-The broadphase's pairs are cut into chunks of `NARROWPHASE_CHUNK_PAIRS`
-(`physics_internal.h`), and `parallelFor` hands one chunk to each index; a tick with no more pairs than
-that is one chunk and never leaves the calling thread. `collidePair` reads only
-what the gather and the broadphase built and writes only its chunk's
-`NarrowphaseChunk` - the pair's manifolds, a `TouchingPair` naming it and its
-first contact, and the triangle scratch of a mesh walk - so nothing it touches
-is shared. Everything a pair means beyond its contacts waits for the merge,
-which walks the chunks in order and each chunk's pairs in order: the manifold
-list, the solver's Gauss-Seidel order, both `BodyContacts` reductions (a strict
-`>`, so the first of two equal normals keeps it) and the tracked pairs come out
-in pair order, as one thread sweeping every pair leaves them. The chunk size decides who
-computes a pair and never what it comes to, so two machines with different core
-counts agree.
-
-Every routine honours the same contract - **normal A -> B, positive penetration,
-at most `MAX_CONTACTS_PER_MANIFOLD` points** - so the solver, broadphase,
-the islands, sleeping, events and writeback are shape-blind. `ContactManifold`
-addresses bodies by tick-snapshot index and knows nothing about shapes at all.
-
-- `contactBoxes` - SAT over 15 axes, then a face clip or an edge-edge point. An
-  edge axis must beat the best face by a real margin (`EDGE_PREFERENCE_REL/ABS`):
-  two horizontal edges of resting boxes cross to the face normal's own direction,
-  and taken by float noise that duplicate would turn a four-point face manifold
-  into a single corner the position correction then rocked for ever.
-- `contactCapsuleBox` - runs in the box's local frame, where the box is
-  axis-aligned at the origin, so "closest point on the box" is a clamp and
-  clipping to a face is two interval intersections. A positive gap gives the
-  normal directly, and a segment that reaches inside leaves through the face
-  that frees the whole segment soonest (the same minimum translation the box
-  SAT settles on) - measured from the segment's ends, not from one closest
-  point, which for a capsule lying through a slab is where it entered. A capsule lying
-  **flat** on a face (`CAPSULE_FLAT_DOT`, about three degrees) gets **two**
-  points, clipped to the face - resolved from one point it would roll off it
-  forever.
-
-  `closestOnSegmentToBox` is **solved, not iterated**: the squared distance from
-  the segment to the box is a piecewise quadratic in `t`, its breakpoints are
-  where the segment crosses a slab plane - at most six - and each stretch has one
-  exact minimum. So the routine has no iteration count and no runaway guard, and
-  no input that makes it slow.
-- `contactCapsuleCapsule` - closest approach of the two segments, one point
-  midway between the two surfaces. Coincident axes fall back to a direction
-  perpendicular to the first capsule's own axis, never along it.
-
-Capsule-vs-box is **not symmetric**: when the capsule is body B the routine runs
-capsule-first and the caller negates the normals back to A -> B.
-
-A triangle-mesh part joins through the same contract: its hierarchy is culled to
-the triangles near the other body, and `contactTriangle` collides each one with
-whatever box or capsule the other part is, rather than a routine per pair. Two
-mesh parts never collide with each other - neither has a volume to push the
-other out of - so a mesh is level geometry, and a dynamic body wearing one
-falls through a mesh floor. The triangle
-is a three-point `SupportShape`, and `gjkOverlap` decides whether the two touch.
-The manifold comes from the feature of the shape that faces the triangle - a
-box's face, a capsule's segment when it lies flat, otherwise its deepest point -
-clipped to the triangle's three edges with the same `clipToPlane` /
-`reduceToManifold` the box pair uses, and kept where it lies below the
-triangle's plane. So a box resting on a mesh floor is held at its corners and a
-lying capsule at both ends. The winding decides which side is the front and the
-depth is measured along the face normal, never along the shallowest way out,
-which flips as a body's centre crosses a zero-thickness plane.
-
-That depth is only the right question for a shape over the triangle. One that
-reaches in past an edge less far than it reaches below the face is meeting the
-triangle from the side - a capsule brushing a ledge's riser touches the top face
-only across its edge, half a metre below it - and gets no contact from it: the
-way out is through the edge, and the riser's own triangles push it there.
+Every routine returns **normal A -> B, positive penetration, at most
+`MAX_CONTACTS_PER_MANIFOLD` points**, so everything downstream is shape-blind:
+`contactBoxes` (SAT, preferring a face over an edge unless the edge clearly
+wins, so resting boxes keep a four-point manifold), `contactCapsuleBox` (two
+points for a capsule lying flat, or it rolls forever), `contactCapsuleCapsule`.
+A mesh part is culled to nearby triangles and `contactTriangle` meets each with
+the other part's shape, using `gjkOverlap`. Two meshes never collide - a mesh is
+level geometry, and a dynamic body wearing one falls through a mesh floor.
 
 ### Inertia
 
-Inertia is approximated as a solid box of the collider's overall local extent -
-exact per-part inertia isn't worth it for gameplay (`inertia.h`). The one
-exception is a collider that is a **single capsule**, which gets
-`capsuleInertiaLocal` (a cylinder plus two hemispherical caps, volume-weighted).
-That is the shape the box approximation is worst about: an upright capsule spins
-about its own axis several times more freely than the box around it, and that
-difference is exactly what a graze against a character tests. Either way the
-tensor is parallel-axis-shifted from the collider centre to the entity origin,
-where the solver measures its contact arms.
+A solid box of the collider's extent (`inertia.h`), except a **single capsule**,
+which gets `capsuleInertiaLocal` - an upright capsule spins about its axis far
+more freely than its box, and a character grazing a wall shows it.
 
 ### Key files
 
-Grouped by the question each folder answers, under `src/engine/system/physics/`.
+Under `src/engine/system/physics/`:
 
-The system and the vocabulary it shares:
-
-- `physics_system.h/.cpp` - the system (gather, broadphase, narrowphase, solve, integrate)
+- `physics_system.h/.cpp` - the system and the tick
 - `physics_events.h` - `ContactPhase`, `CollisionEvent`, `TriggerEvent`
 - `physics_internal.h` - `ColliderProxy`, `BodyFrame`, `BodyContacts`, `BodyIslands`,
-  `NarrowphaseChunk`: the tick's own view; and `TrackedPair`, what the events
-  carry from one live tick to the next
-- `body_pose.h/.cpp` - `worldPoseOf`, the one conversion every entry point needs
-- `inertia.h` - box / capsule inertia + world-space rotation helpers
-- `tolerance.h` - the thresholds collision is decided by, with their units
+  `NarrowphaseChunk`, `TrackedPair`: the tick's own view
+- `body_pose.h/.cpp` - `worldPoseOf`
+- `inertia.h` - box / capsule inertia
+- `tolerance.h` - the thresholds collision is decided by
+- `collision/` - `contact.h`, `narrowphase.h/.cpp`, `support.h/.cpp`,
+  `gjk.h/.cpp`, `mesh_bvh.h/.cpp`, `triangle.h/.cpp` (`rayTriangle`)
+- `solver/` - `solver.h/.cpp` (`PhysicsBody`, `SolverParams`, `solveStep`),
+  `solver_math.h`, `joint_solver.h/.cpp`, `contact_cache.h/.cpp`
+- `query/query.h/.cpp` - `raycast`, `spherecast`, `RayHit`, `QueryFilter`
+- `character/character_controller_system.h/.cpp` - `CharacterControllerSystem`
+- `authoring/` - `collider_fit.h/.cpp` (`fitBoxesToMesh`),
+  `mesh_collider.h/.cpp` (`addMeshCollider`, `syncMeshCollider`),
+  `ragdoll_build.h/.cpp` (`buildRagdoll`, `clearRagdoll`)
+- `ragdoll_system.h/.cpp` - poses bones while a clip drives the rig
 
-`collision/` - does it touch, and where:
-
-- `contact.h` - `Contact`, `ContactManifold`, `MAX_CONTACTS_PER_MANIFOLD`
-- `narrowphase.h/.cpp` - `BoxShape`, `CapsuleShape`, the three primitive routines
-  and `contactTriangle`, which meets a mesh triangle with any of them
-- `support.h/.cpp` - `SupportShape`: any convex shape, as the one thing GJK asks of it
-- `gjk.h/.cpp` - `gjkOverlap`, which `contactTriangle` asks before it builds a
-  manifold
-- `mesh_bvh.h/.cpp` - build and query of the triangle-mesh hierarchy, by box and
-  along a segment; the node itself lives on the `Collider`. The median split is
-  a stable sort by centroid, so every standard library builds one mesh into one
-  tree - its order is the order contacts with the triangles are made in
-- `triangle.h/.cpp` - `rayTriangle`, the line-triangle crossing that queries and
-  Fit to Mesh share
-
-`solver/` - make it stop touching:
-
-- `solver.h/.cpp` - `PhysicsBody`, `SolverParams`, `solveStep`
-- `solver_math.h` - the velocity-at-a-lever-arm and effective-mass helpers both
-  solvers share
-- `joint_solver.h/.cpp` - `JointConstraint`, `prepareJoints`, `warmStartJoints`,
-  `solveJointPass`
-- `contact_cache.h/.cpp` - `ContactCache`, what each pair held last tick, matched
-  by position and seeded into the next
-
-`query/` - ask the world a question:
-
-- `query.h/.cpp` - `raycast`, `spherecast`, `RayHit`, `QueryFilter`
-
-`character/` - what walks on it:
-
-- `character_controller_system.h/.cpp` - `CharacterControllerSystem`
-
-`authoring/` - what makes a shape, at edit time or on load:
-
-- `collider_fit.h/.cpp` - `fitBoxesToMesh` ("Fit to Mesh")
-- `mesh_collider.h/.cpp` - `addMeshCollider`, one mesh part per collider, and
-  `syncMeshCollider`, which builds its triangles from the mesh it names - asked
-  by the load, the inspector card and every tick
-- `ragdoll_build.h/.cpp` - `buildRagdoll` / `clearRagdoll`: capsule bodies per
-  bone, grouped under a node inside the character, on their own collision layer,
-  each joint holding its angle with the build's `muscle`
-
-And beside the system: `ragdoll_system.h/.cpp` poses the bones while a clip
-drives the rig - moving at the pose's own speed, so a character felled
-mid-stride falls forward - and destroys them with their owner. A posed bone
-(`isPosedByAnimation`) is a hitbox: the gather moves it as kinematic whatever
-its authored `motion` says, and gives it no collider proxy, so it makes no
-contacts - a kinematic bone would shove a crate of any mass alike, and the
-character's capsule is what meets the world until the ragdoll goes live.
-Queries find it, and filter it by its authored motion.
-
-The components: `src/engine/ecs/component/physics/` - `rigidbody.h`, `collider.h`,
-`character_controller.h`, `joint.h`, `ragdoll.h`
+Components: `src/engine/ecs/component/physics/` - `rigidbody.h`, `collider.h`,
+`character_controller.h`, `joint.h`, `ragdoll.h`.

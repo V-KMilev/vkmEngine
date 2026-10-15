@@ -279,7 +279,7 @@ def shipping_engine_for(root: Path, args) -> EngineBuild:
     engine = shipping(root)
     if engine.exists():
         return engine
-    say("this SDK carries no shipping engine, so the game ships on the development one, profiler and all")
+    say("this SDK carries no shipping engine, so the game ships on the development one, asserts on")
     return development(root)
 
 
@@ -422,5 +422,5 @@ def cmd_package(args) -> int:
         print(f"  archived as  {quote(archive)}  ({megabytes(archive.stat().st_size)})")
     print(f"  play it      {quote(game_exe)}")
     if not engine.shipping:
-        print("  engine       the development one, profiler and all - for testing, not for players")
+        print("  engine       the development one, asserts on - for testing, not for players")
     return 0

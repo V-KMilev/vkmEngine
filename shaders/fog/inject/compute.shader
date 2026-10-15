@@ -4,14 +4,14 @@
  * One invocation per froxel: height-falloff density, with the froxel's cluster lights scattered
  * through it (Henyey-Greenstein). Writes in-scattered light (rgb) + extinction (a) for integration.
  *
- * The sun is shadowed by the geometry's CSM cascades, so light shafts fall out of the integration.
+ * Every shadowed light casts through its shadow, so light shafts fall out of the integration.
  * The environment scatters in too, so fog in shade or indoors is lit as a wall there is, not black.
  */
 
 #include "../../constants.glsl"
 #include "../../depth.glsl"
 #include "../../lights.glsl"
-#include "../../shadows.glsl"  // ShadowBlock + sampleCSM
+#include "../../shadows.glsl"  // pointShadow
 #include "../../camera.glsl"
 #include "../../ambient.glsl"  // environmentIrradiance
 
@@ -47,12 +47,7 @@ void main() {
     // Froxel centre -> view space -> world.
     vec2  uv    = (vec2(froxel.xy) + 0.5) / vec2(float(u_froxelDims.x), float(u_froxelDims.y));
     float depth = sliceToViewDepth(float(froxel.z) + 0.5, u_camera.zNear, u_fogDepth, float(u_froxelDims.z));
-    vec4  clip  = vec4(uv * 2.0 - 1.0, NEAR_DEPTH, 1.0);
-    vec4  nearH = u_camera.invProjection * clip;
-    vec3  ray   = nearH.xyz / nearH.w;  // near-plane point (the perspective divide matters)
-    vec3  viewP = cameraIsPerspective()
-        ? ray * (depth / u_camera.zNear)  // scaled to this slice's depth
-        : vec3(ray.xy, -depth);           // an orthographic ray does not spread
+    vec3  viewP  = viewPointOnRay(nearPlaneAt(uv), depth);
     vec3  worldP = (u_camera.invView * vec4(viewP, 1.0)).xyz;
 
     float density = u_density * exp(-max(worldP.y - u_height, 0.0) * u_heightFalloff);

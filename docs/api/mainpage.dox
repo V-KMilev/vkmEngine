@@ -39,6 +39,7 @@ not the manual. The manual is in `docs/`, and it is the better place to start:
 @section api_stability What is stable
 
 Everything under `Vkm::Engine` that a project can include is public surface.
-`Vkm::GL` is the platform layer and is versioned separately. Anything in a
+`Vkm::GL` is vkmGL, the OpenGL wrappers the backend is built on, and is
+versioned separately. Anything in a
 `detail` namespace is not public and will move without notice.
 */

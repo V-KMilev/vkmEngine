@@ -51,7 +51,7 @@ class ScriptModule {
          * The new build is checked before anything is torn down; a refused one leaves the
          * running module untouched. With none loaded, this is a plain load. @p scene must
          * hold no component set the outgoing module created (its vtable is module code);
-         * see docs/reference/scripting.md, "Nothing may hold module code across the swap".
+         * see docs/reference/scripting.md, "Unloading a module".
          *
          * @param scene     Scene whose behaviors are saved across the swap.
          * @param behaviors The system running them, whose session the swap ends.

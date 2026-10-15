@@ -7,11 +7,22 @@
  *
  * The waves move vertices (oceanAt). The ripples - the spectrum too short for any vertex - are
  * drawn once a frame into three repeating fields (ocean_ripples.glsl, GLOceanPass), and each pixel
- * reads them over the waves' frame for its own normal and foam (oceanShadeAt), so the light on
+ * reads them over the waves' frame for its own normal and foam (ocean_water.glsl), so the light on
  * the water is as fine as the screen whatever the mesh, for a few texture reads.
  */
 
 #include "constants.glsl"
+
+// A shore's square, as GLOceanFields lays it: xy its corner on the XZ plane (least X, most Z), z
+// its edge. Where @p point falls across it, 0..1 each way.
+vec2 shoreUV(vec2 point, vec4 square) {
+    return vec2(point.x - square.x, square.y - point.y) / square.z;
+}
+
+// The point on the XZ plane at @p uv across @p square: shoreUV's inverse.
+vec2 shorePoint(vec2 uv, vec4 square) {
+    return vec2(square.x + uv.x * square.z, square.y - uv.y * square.z);
+}
 
 layout(std140, binding = UBO_OCEAN) uniform OceanBlock {
     vec4 place;    // xy = the centre on the XZ plane, z = calm radius, w = still radius
@@ -34,41 +45,11 @@ layout(std140, binding = UBO_OCEAN) uniform OceanBlock {
                                         // width along its roll, half its length along its crest
 } u_ocean;
 
-// How rough foam is, where it covers the water.
-const float FOAM_ROUGHNESS = 0.7;
-// The squeeze over which foam's edge goes from none to covering.
-const float FOAM_EDGE = 0.06;
-// Past its edge, the squeeze over which foam thickens from thin lace to whole, and how much of
-// the water's colour thin foam hides: fresh foam is dense, and thins as it fades.
-const float FOAM_BODY = 0.45;
-const float FOAM_THIN = 0.35;
-// The most foam's edge widens to hide its steps: where the squeeze changes faster than a pixel,
-// unbounded, the widening would lay faint foam over water nowhere near any.
-const float FOAM_BLUR = 0.2;
 // What a crest's foam sheds a second once the crest has passed, in squeezes it rarely passes.
 const float FOAM_FADE = 0.12;
 // The moments oceanLingering looks back to: so many, so many seconds apart.
 const int   FOAM_LOOKS = 6;
 const float FOAM_LOOK  = 0.75;
-// How far the ripples' squeeze moves foam's edge, in squeezes it rarely passes: a crest foams in
-// torn patches, and its foam thins to lace as it fades.
-const float FOAM_TEAR  = 0.35;
-// A waterline's foam: how far into its body it stands at the contact, in oceanFroth's past; how
-// far the finer ripples tear it, in their squeeze's rare reach; and how much wider a crest a
-// significant height high makes it. Torn more than it is solid, it froths as suds rather than a
-// collar.
-const float WATERLINE_CORE  = 0.8;
-const float WATERLINE_TEAR  = 1.5;
-const float WATERLINE_SWELL = 0.6;
-// How far past its width, in widths, the suds still carry a waterline's foam.
-const float WATERLINE_FRAY  = 0.5;
-
-// The water's scattering (oceanScatter): through a backlit crest, toward the viewer, on the lit
-// side, and from the sky. Shares of the scattering colour, as albedo is of diffuse.
-const float SCATTER_THROUGH = 6.0;
-const float SCATTER_TOWARD  = 0.4;
-const float SCATTER_LIT     = 0.15;
-const float SCATTER_AMBIENT = 0.5;
 
 // The water resting at a point of the plane, once the waves have moved it.
 struct OceanPoint {
@@ -219,102 +200,6 @@ float oceanLingering(vec2 rest) {
         most = max(most, fade * squeeze / u_ocean.squeeze.x - FOAM_FADE * ago);
     }
     return most;
-}
-
-// How much the ripples squeeze the surface, for a crest's foam: the long ones whole and the middle
-// half; the shortest are left out, too fine to read as anything but grain.
-float oceanLace(vec4 fields[OCEAN_RIPPLE_FIELDS]) {
-    return fields[0].z + 0.5 * fields[1].z;
-}
-
-// How much the ripples move foam's edge: their lace, in the squeezes a crest rarely passes.
-float oceanTear(vec4 fields[OCEAN_RIPPLE_FIELDS]) {
-    return u_ocean.squeeze.w > 0.0 ? FOAM_TEAR * oceanLace(fields) / u_ocean.squeeze.w : 0.0;
-}
-
-// The light on the water at a pixel.
-struct OceanShade {
-    vec3  normal;    // world, unit: the waves' frame with the ripples on it
-    vec3  tangent;   // world, unit
-    float pressed;   // how squeezed the surface is, in squeezes its crests rarely pass: oceanFoam's
-    float variance;  // slope variance of the ripples the pixel spans: the shading's extra roughness
-};
-
-// The water at @p rest: the waves' tangents @p alongX and @p alongZ as the vertices interpolate
-// them, and the three ripple fields as the pixel's footprint filters them (ocean/ripples_columns:
-// slope in x and z, squeeze, and slope squared). Slope squared filters to the mean of the squares, so what
-// the pixel spans is its variance, not lost (LEAN mapping, Olano and Baker 2010), and a far sea
-// grows rough rather than noisy.
-OceanShade oceanShadeAt(vec2 rest, vec3 alongX, vec3 alongZ, vec4 fields[OCEAN_RIPPLE_FIELDS]) {
-    float fade    = oceanReach(rest);
-    vec4  ripples = (fields[0] + fields[1] + fields[2]) * fade;
-    float spanned = 0.0;
-    for (int f = 0; f < OCEAN_RIPPLE_FIELDS; ++f) spanned += fields[f].w - dot(fields[f].xy, fields[f].xy);
-
-    vec3 rippledX = alongX + vec3(0.0, ripples.x, 0.0);
-    vec3 rippledZ = alongZ + vec3(0.0, ripples.y, 0.0);
-
-    OceanShade shade;
-    shade.normal   = normalize(cross(rippledZ, rippledX));
-    shade.tangent  = normalize(rippledX);
-    shade.variance = 0.5 * fade * fade * max(spanned, 0.0);
-
-    float jacobian = alongX.x * alongZ.z - alongX.z * alongZ.x;
-    float squeezed = u_ocean.squeeze.x > 0.0 ? (1.0 - jacobian) / u_ocean.squeeze.x : 0.0;
-    shade.pressed  = squeezed;
-    return shade;
-}
-
-// The foam on water @p past its onset, 0..1: a sharp edge, then thin where barely past and dense
-// FOAM_BODY on. @p blur is how fast @p past changes across the pixel (its fwidth), which widens the
-// edge, up to FOAM_BLUR, so it never steps from texel to texel.
-float oceanFroth(float past, float blur) {
-    blur = min(blur, FOAM_BLUR);
-    float cover = smoothstep(-blur, FOAM_EDGE + blur, past);
-    float body  = smoothstep(0.0, FOAM_BODY, past);
-    return cover * mix(FOAM_THIN, 1.0, body);
-}
-
-// The foam on water squeezed @p pressed, whose fwidth is @p blur.
-float oceanFoam(float pressed, float blur) {
-    return u_ocean.foam.a > 0.0 ? oceanFroth(pressed - (1.0 - u_ocean.foam.a), blur) : 0.0;
-}
-
-// How far into the foam where something stands in the water a pixel is, for oceanFroth: @p apart
-// metres from the nearest thing standing in it, the most at the contact and none from the ocean's
-// waterline width out. The middle and short ripples (@p fields, as the pixel reads them) tear it
-// into suds, and a crest standing @p crest high (oceanCrest) widens it, so it washes out and back
-// as the waves pass. Past the width the suds alone carry it, for WATERLINE_FRAY of a width; and
-// that keeps inside @p reach, as far as the shore looks, past which it says nothing.
-float oceanWaterline(float apart, float reach, vec4 fields[OCEAN_RIPPLE_FIELDS], float crest) {
-    if (u_ocean.tiles.w <= 0.0 || apart >= reach) return -1.0;
-    float suds  = u_ocean.squeeze.w > 0.0 ? (fields[1].z + fields[2].z) / u_ocean.squeeze.w : 0.0;
-    float swell = u_ocean.tiles.w * max(1.0 + WATERLINE_SWELL * crest, 0.0);
-    float width = min(swell, reach / (1.0 + WATERLINE_FRAY));
-    float near  = 1.0 - apart / max(width, 1e-3);
-    // The suds tear it whole to the width's edge, and fray it out over WATERLINE_FRAY of a width
-    // past that; further, nothing foams however the suds stand.
-    float torn  = clamp(1.0 + near / WATERLINE_FRAY, 0.0, 1.0);
-    return WATERLINE_CORE * near + WATERLINE_TEAR * suds * torn;
-}
-
-// How high the water stands over its rest, in the waves' significant heights: what lifts a crest
-// thin enough to light through.
-float oceanCrest(float height) {
-    return u_ocean.squeeze.z > 0.0 ? height / u_ocean.squeeze.z : 0.0;
-}
-
-// The light the water scatters back out of light @p radiance arriving along @p L (after Atlas's
-// ocean, GDC 2019): through a crest standing @p crest high when looking toward the light, most
-// where the face turns from it; toward the viewer from a face turned to them; and a little
-// wherever the light falls. @p colour is the water's scattering; the caller weighs it by what the
-// surface lets in, one less its Fresnel.
-vec3 oceanScatter(vec3 colour, vec3 N, vec3 V, vec3 L, vec3 radiance, float crest) {
-    float through = max(crest, 0.0) * pow(clamp(dot(L, -V), 0.0, 1.0), 4.0) * pow(0.5 - 0.5 * dot(L, N), 3.0);
-    float toward  = pow(clamp(dot(V, N), 0.0, 1.0), 2.0);
-    float lit     = clamp(dot(N, L), 0.0, 1.0);
-    float share   = SCATTER_THROUGH * through + SCATTER_TOWARD * toward + SCATTER_LIT * lit;
-    return colour / PI * radiance * share;
 }
 
 // The maps' coordinates at a rest point: laid over the water, drifting with the wind.
