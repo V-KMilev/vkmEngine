@@ -198,9 +198,9 @@ trimmed, because an undo can empty a filled field again;
 `SceneSerializer::unresolvedRefs` returns the entries whose field is still
 empty, which is what the Inspector's banner and the assets block read.
 
-Only a name stored under a component's own key is kept. A name inside a list -
-an LOD level's mesh, a collider part's mesh - has no key to go back under: its
-miss is reported, and a save writes it as `""`.
+A name inside a list - an LOD level's mesh, a collider part's mesh - is kept
+under its element's path (`levels.2.mesh`, `ReflectJson::childPath`) and goes
+back the same way while that element is still there.
 
 ## Prefabs
 

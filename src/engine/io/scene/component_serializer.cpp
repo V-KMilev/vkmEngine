@@ -213,8 +213,7 @@ std::vector<UnresolvedRef> g_unresolved;
 
 // Resolve a saved asset name to a handle. An unresolved name leaves the slot
 // empty and goes through reportError, so a host's error sink shows it. It is kept
-// under its field for a later save to write back, unless the field is null (a
-// name read out of an array).
+// under its field's path for a later save to write back.
 template<typename Asset>
 Handle<Asset> resolveAssetRef(
     const ResourceManager& r,
@@ -230,7 +229,7 @@ Handle<Asset> resolveAssetRef(
             std::string(what) + " '" + name + "'",
             "reference left unresolved - the asset is not loaded, so the slot is empty"
         );
-        if (field) g_unresolved.push_back({field, name, ASSET_TYPE<Asset>});
+        g_unresolved.push_back({field, name, ASSET_TYPE<Asset>});
     }
     return h;
 }

@@ -315,7 +315,8 @@ namespace ComponentSerializer {
     /**
      * @brief An asset name a load failed to resolve, and the field it was read from.
      *
-     * The field is the scene format's key, so the caller can put the name back.
+     * The field is its path in the scene format (ReflectJson::childPath), so the caller can
+     * put the name back.
      */
     struct UnresolvedRef {
         std::string field;
@@ -330,7 +331,7 @@ namespace ComponentSerializer {
      * without it writes an empty string over it. Collected here because a loader
      * has no room for a second output; drained by a caller that knows the entity
      * and component (see SceneSerializer::loadComponents). Call it inside an
-     * UnresolvedScope. A reference read out of an array is not kept.
+     * UnresolvedScope.
      *
      * @return The unresolved references, oldest first; empty when all resolved.
      */

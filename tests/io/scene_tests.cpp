@@ -910,21 +910,10 @@ void testAssetHandlesSurviveARoundTrip() {
 }
 
 // An unresolved reference is kept so a later save writes the name back rather than
-// "" - but only where the save has a key for it. A LOD level is an array element and
-// the save writes the whole ramp from live handles, so keeping it would leave the
-// assets block naming an asset the scene does not.
-void testAnUnresolvedArrayElementIsNotKept() {
+// "" - inside a list as well, addressed by the element's index, or opening a scene
+// with its library missing and saving it would empty every LOD level.
+void testAnUnresolvedArrayElementIsKept() {
     std::printf("A missing asset named from inside an array:\n");
-
-    Scene scene;
-    ResourceManager resources;
-    resources.add(generateCube(), "keep:cube");
-
-    const EntityId prop = scene.createEntity();
-    scene.add<Transform>(prop, Transform{});
-    Mesh mesh;
-    mesh.mesh = resources.findByName<MeshAsset>("keep:cube");
-    scene.add<Mesh>(prop, std::move(mesh));
 
     // A named field and an array element, both naming a mesh nothing holds.
     const nlohmann::json level  = {{"mesh", "gone:in_array"}, {"maxDistance", 30.0f}};
@@ -949,11 +938,15 @@ void testAnUnresolvedArrayElementIsNotKept() {
     bool named = false;
     bool fromArray = false;
     for (const MissingAssetRef& ref : refs) {
-        if (ref.name == "gone:named")    named = true;
-        if (ref.name == "gone:in_array") fromArray = true;
+        if (ref.name == "gone:named")    named = ref.field == "mesh";
+        if (ref.name == "gone:in_array") fromArray = ref.component == "LOD" && ref.field == "levels.0.mesh";
     }
     check("  the one in a named field is kept, so a save can put it back", named);
-    check("  and the one from inside an array is not", !fromArray);
+    check("  and the one from inside an array, under its element", fromArray);
+
+    nlohmann::json saved = nlohmann::json::object();
+    SceneSerializer::saveComponents(into, loaded, saved, empty);
+    check("  which a save writes back there", saved["LOD"]["levels"][0]["mesh"] == "gone:in_array");
 }
 
 // The record of what did not load is never trimmed. Undoing a replacement pick
@@ -1106,7 +1099,7 @@ void runSceneTests() {
     testAProjectIsNamedByItsFileOrItsFolder();
     testTheSceneOfRecordStillOpens();
     testAssetHandlesSurviveARoundTrip();
-    testAnUnresolvedArrayElementIsNotKept();
+    testAnUnresolvedArrayElementIsKept();
     testAKeptNameSurvivesAFillThatIsTakenBack();
     testTheRenderTuningSurvivesASave();
     testAGraphicsPresetSetsWhatCostsAndKeepsTheLook();
