@@ -29,6 +29,7 @@
 #include "cook/mesh_processing.h"
 #include "cook/texture_bake.h"
 #include "import/model_source.h"
+#include "import/texture_loaders.h"
 #include "io/asset/asset_cook.h"
 #include "io/asset/asset_factory.h"
 #include "io/asset/asset_library.h"
@@ -2159,7 +2160,8 @@ void testDecimationKeepsTheShape() {
 }
 
 // The decimate recipe reads back what it writes, and a recipe that does not say - no
-// ratio, an unknown `grid`, a non-numeric ratio - gets the default rather than failing.
+// ratio, an unknown `grid`, a non-numeric ratio - gets the default rather than failing;
+// the non-numeric ratio is reported.
 void testTheDecimateRecipeReadsWhatItWrites() {
     std::printf("The recipe a decimated level is rebuilt from:\n");
 
@@ -2180,10 +2182,41 @@ void testTheDecimateRecipeReadsWhatItWrites() {
 
     nlohmann::json mistyped = bare;
     mistyped[AssetSourceKey::RATIO] = "half";
-    check(
-        "a ratio that is not a number is the default, not an exception",
-        nearly(decimateRatioFromRecipe(mistyped), fallback)
+    EngineErrorLog errors;
+    setErrorSink(&errors);
+    const float mistypedRatio = decimateRatioFromRecipe(mistyped);
+    setErrorSink(nullptr);
+    check("a ratio that is not a number is the default, not an exception", nearly(mistypedRatio, fallback));
+    check("  and is reported", errors.totalPushed() == 1);
+}
+
+// A texture's wrap and filter read back as written; a value the recipe misspells or mistypes
+// reads as the default and is reported, never thrown.
+void testATexturesWrapAndFilterReadWhatTheyWrite() {
+    std::printf("A texture recipe's wrap and filter:\n");
+
+    const nlohmann::json recipe = fileTextureRecipe(
+        "assets/rock.png",
+        TextureUsage::Color,
+        true,
+        TextureFilterOverride::Nearest,
+        TextureWrapMode::MirroredRepeat
     );
+    check("its wrap comes back as written", textureWrapFromRecipe(recipe) == TextureWrapMode::MirroredRepeat);
+    check("  and so does its filter", textureFilterFromRecipe(recipe) == TextureFilterOverride::Nearest);
+
+    EngineErrorLog errors;
+    setErrorSink(&errors);
+    const nlohmann::json misspelt = {{AssetSourceKey::WRAP, "mirrored"}, {AssetSourceKey::FILTER, "point"}};
+    const nlohmann::json mistyped = {{AssetSourceKey::WRAP, 2}, {AssetSourceKey::FILTER, true}};
+    const bool clamps = textureWrapFromRecipe(misspelt) == TextureWrapMode::ClampToEdge
+        && textureWrapFromRecipe(mistyped) == TextureWrapMode::ClampToEdge;
+    const bool unfiltered = textureFilterFromRecipe(misspelt) == TextureFilterOverride::None
+        && textureFilterFromRecipe(mistyped) == TextureFilterOverride::None;
+    setErrorSink(nullptr);
+    check("a wrap it does not know clamps", clamps);
+    check("  and a filter it does not know overrides nothing", unfiltered);
+    check("  and each is reported", errors.totalPushed() == 4);
 }
 
 } // namespace
@@ -2227,4 +2260,5 @@ void runCookTests() {
     testALevelHandsOverWhereItsErrorStopsShowing();
     testDecimationKeepsTheShape();
     testTheDecimateRecipeReadsWhatItWrites();
+    testATexturesWrapAndFilterReadWhatTheyWrite();
 }

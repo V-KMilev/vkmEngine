@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 #include <nlohmann/json.hpp>
 #include "stb_image.h"
@@ -22,15 +23,24 @@ namespace Vkm::Engine {
 
 namespace {
 
-// Recipe spellings. ClampToEdge is the default, never written, and the answer to an unknown name.
-const char* wrapName(TextureWrapMode wrap) {
-    switch (wrap) {
+// A wrap mode's recipe spelling, or null past the last mode; ClampToEdge's is never written. The
+// switch has no default label, so -Wswitch flags a mode added without one.
+const char* wrapName(TextureWrapMode mode) {
+    switch (mode) {
         case TextureWrapMode::Repeat:         return "repeat";
         case TextureWrapMode::MirroredRepeat: return "mirror";
         case TextureWrapMode::ClampToEdge:    return "clamp";
         case TextureWrapMode::ClampToBorder:  return "border";
     }
-    return "clamp";
+    return nullptr;
+}
+
+constexpr const char* FILTER_NEAREST = "nearest";
+
+// A recipe key's string, or empty when it holds something else - reported as unknown, not thrown.
+std::string recipeString(const nlohmann::json& source, const char* key) {
+    const auto found = source.find(key);
+    return found != source.end() && found->is_string() ? found->get<std::string>() : std::string{};
 }
 
 // Decode through stb by decodeChannels' rule. A normal map is decoded at three channels and
@@ -117,15 +127,17 @@ nlohmann::json fileTextureRecipe(
         {AssetSourceKey::USAGE,            Reflect::enumName(usage)},
         {AssetSourceKey::GENERATE_MIPMAPS, generateMipmaps},
     };
-    if (filterOverride == TextureFilterOverride::Nearest) source["filter"] = "nearest";
-    if (wrap != TextureWrapMode::ClampToEdge) source["wrap"] = wrapName(wrap);
+    if (filterOverride == TextureFilterOverride::Nearest) source[AssetSourceKey::FILTER] = FILTER_NEAREST;
+    if (wrap != TextureWrapMode::ClampToEdge) source[AssetSourceKey::WRAP] = wrapName(wrap);
     return source;
 }
 
 TextureFilterOverride textureFilterFromRecipe(const nlohmann::json& source) {
-    return source.value("filter", std::string{}) == "nearest"
-        ? TextureFilterOverride::Nearest
-        : TextureFilterOverride::None;
+    if (!source.contains(AssetSourceKey::FILTER)) return TextureFilterOverride::None;
+    const std::string filter = recipeString(source, AssetSourceKey::FILTER);
+    if (filter == FILTER_NEAREST) return TextureFilterOverride::Nearest;
+    reportUnknownTextureValue(source, AssetSourceKey::FILTER, FILTER_NEAREST, "none");
+    return TextureFilterOverride::None;
 }
 
 bool textureMipmapsFromRecipe(const nlohmann::json& source) {
@@ -133,10 +145,14 @@ bool textureMipmapsFromRecipe(const nlohmann::json& source) {
 }
 
 TextureWrapMode textureWrapFromRecipe(const nlohmann::json& source) {
-    const std::string wrap = source.value("wrap", std::string{});
-    if (wrap == "repeat") return TextureWrapMode::Repeat;
-    if (wrap == "mirror") return TextureWrapMode::MirroredRepeat;
-    if (wrap == "border") return TextureWrapMode::ClampToBorder;
+    if (!source.contains(AssetSourceKey::WRAP)) return TextureWrapMode::ClampToEdge;
+    const std::string wrap = recipeString(source, AssetSourceKey::WRAP);
+    std::string known;
+    for (uint8_t value = 0; const char* name = wrapName(static_cast<TextureWrapMode>(value)); ++value) {
+        if (wrap == name) return static_cast<TextureWrapMode>(value);
+        known += known.empty() ? name : std::string(", ") + name;
+    }
+    reportUnknownTextureValue(source, AssetSourceKey::WRAP, known, wrapName(TextureWrapMode::ClampToEdge));
     return TextureWrapMode::ClampToEdge;
 }
 

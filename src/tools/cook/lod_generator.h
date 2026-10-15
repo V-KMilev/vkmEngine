@@ -41,8 +41,8 @@ nlohmann::json decimateRecipe(const std::string& baseName, float ratio);
 /**
  * @brief The ratio a `decimate` recipe asks for.
  *
- * Without a numeric `ratio`, the first level generateLOD builds; a number outside (0, 1) is
- * passed through for decimateMesh to refuse.
+ * Without a `ratio`, the first level generateLOD builds; one that is not a number reads as that
+ * too, through reportError. A number outside (0, 1) is passed through for decimateMesh to refuse.
  *
  * @param source The `kind: decimate` source descriptor.
  * @return The share of the base's triangles the level aims for.

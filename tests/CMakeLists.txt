@@ -27,7 +27,8 @@ list(FILTER VKM_TEST_SOURCES EXCLUDE REGEX "/tests/render/[^/]+$")
 # generation and the texture bake come with it, and with them meshoptimizer,
 # the mip filter and the block encoders; so does the model parse, and with it
 # cgltf, ufbx and MikkTSpace - plain CPU code with no dependencies of its own,
-# so the binary still needs nothing installed.
+# so the binary still needs nothing installed. The texture loaders come for the
+# recipe readers, and with them the stb decode vkm_core already holds.
 add_executable(vkm_engine_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
     ${VKM_TEST_SOURCES}
@@ -44,6 +45,7 @@ add_executable(vkm_engine_tests
     ${CMAKE_SOURCE_DIR}/src/tools/cook/texture_bake.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/import/audio_loaders.cpp
     ${CMAKE_SOURCE_DIR}/src/tools/import/model_source.cpp
+    ${CMAKE_SOURCE_DIR}/src/tools/import/texture_loaders.cpp
 )
 
 # ImGui's headers only, for EditorState; nothing here calls into ImGui.
@@ -53,9 +55,12 @@ target_include_directories(vkm_engine_tests PRIVATE
     $<TARGET_PROPERTY:imgui,INTERFACE_INCLUDE_DIRECTORIES>
 )
 
-# miniaudio's declarations for the audio import, with the definitions vkm_core compiled it
-# with, as vkm_cook takes them (src/tools/CMakeLists.txt).
-target_include_directories(vkm_engine_tests SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/modules/miniaudio)
+# miniaudio's and stb_image's declarations for the audio and texture imports, and miniaudio's
+# definitions as vkm_core compiled it, as vkm_cook takes them (src/tools/CMakeLists.txt).
+target_include_directories(vkm_engine_tests SYSTEM PRIVATE
+    ${CMAKE_SOURCE_DIR}/modules/miniaudio
+    ${CMAKE_SOURCE_DIR}/modules/stb
+)
 target_compile_definitions(vkm_engine_tests PRIVATE
     $<TARGET_PROPERTY:miniaudio,INTERFACE_COMPILE_DEFINITIONS>
 )

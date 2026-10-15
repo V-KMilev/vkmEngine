@@ -14,11 +14,20 @@ TextureUsage textureUsageFromRecipe(const nlohmann::json& source) {
     if (named == source.end()) return usage;
     if (named->is_string() && Reflect::enumFromNameChecked(named->get<std::string>(), usage)) return usage;
 
-    // A misspelt usage would show only as a pale colour map, so name the recipe.
     std::string known;
     for (const char* name : Reflect::EnumNames<TextureUsage>::values) {
         known += known.empty() ? name : std::string(", ") + name;
     }
+    reportUnknownTextureValue(source, AssetSourceKey::USAGE, known, Reflect::enumName(TextureUsage::Data));
+    return TextureUsage::Data;
+}
+
+void reportUnknownTextureValue(
+    const nlohmann::json& source,
+    const char* key,
+    const std::string& known,
+    const char* readAs
+) {
     const auto path = source.find(AssetSourceKey::PATH);
     const std::string recipe = path != source.end() && path->is_string()
         ? "texture recipe for '" + path->get<std::string>() + "'"
@@ -26,9 +35,9 @@ TextureUsage textureUsageFromRecipe(const nlohmann::json& source) {
     reportError(
         "Asset",
         recipe,
-        "names usage " + named->dump() + ", which is not one of " + known + "; decoded as Data"
+        std::string("names ") + key + " " + source[key].dump() + ", which is not one of " + known
+            + "; read as " + readAs
     );
-    return TextureUsage::Data;
 }
 
 } // namespace Vkm::Engine
