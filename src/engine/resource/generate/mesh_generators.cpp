@@ -85,7 +85,7 @@ MeshHandle createGeneratedMesh(const nlohmann::json& source, ResourceManager& re
     if (type == "cube") {
         mesh = generateCube();
     } else if (type == "sphere") {
-        mesh = generateSphere(p.value("xSegments", 32u), p.value("ySegments", 16u));
+        mesh = generateSphere(p.value("resolution", 16u));
     } else if (type == "cone") {
         mesh = generateCone(p.value("radius", 0.5f), p.value("height", 1.0f), p.value("segments", 16u));
     } else if (type == "cylinder") {
@@ -260,12 +260,12 @@ MeshAsset generateCube() {
     return mesh;
 }
 
-MeshAsset generateSphere(uint32_t xSegments, uint32_t ySegments) {
+MeshAsset generateSphere(uint32_t resolution) {
     MeshAsset mesh;
     const float radius = 0.5f;
 
     // Each cube face maps its own [0,1] UVs.
-    const uint32_t res = std::max(2u, std::max(xSegments, ySegments) / 2u);  // per-face grid
+    const uint32_t res = std::max(2u, resolution);
 
     // Flip a triangle whose geometric normal points inward, so winding holds
     // whatever the handedness of each face basis.
@@ -329,7 +329,7 @@ MeshAsset generateSphere(uint32_t xSegments, uint32_t ySegments) {
     }
 
     mesh.computeAndSetBounds();
-    stampGenerated(mesh, "sphere", {{"xSegments", xSegments}, {"ySegments", ySegments}});
+    stampGenerated(mesh, "sphere", {{"resolution", resolution}});
     return mesh;
 }
 

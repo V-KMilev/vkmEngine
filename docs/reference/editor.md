@@ -357,7 +357,7 @@ hold it.
 ### What Create > Primitive puts in the asset graph
 
 A generated mesh has a deterministic name - `mesh:generator:cube`,
-`mesh:generator:sphere:32:16` - and `addGeneratedMesh` and
+`mesh:generator:sphere:16` - and `addGeneratedMesh` and
 `generateDefaultMaterial` reuse what the graph holds under it, so three cubes
 share one mesh and one `material:default`. A material of its own comes from
 **Duplicate** or **New**, which copy the default rather than rename it -

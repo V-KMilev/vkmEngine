@@ -1669,7 +1669,7 @@ void testRegeneratingLevelsReplacesThem() {
     std::printf("Generating a mesh's levels a second time:\n");
 
     ResourceManager resources;
-    const MeshHandle base = resources.add(generateSphere(32, 16), "lod:base");
+    const MeshHandle base = resources.add(generateSphere(16), "lod:base");
     const LOD first = generateLOD(resources, base, 2);
     const size_t meshes = resources.countOfType<MeshAsset>();
     std::vector<uint64_t> versions;
@@ -2077,7 +2077,7 @@ void testALevelHandsOverWhereItsErrorStopsShowing() {
     std::printf("Where one level hands over to the next:\n");
 
     ResourceManager resources;
-    MeshAsset pebble = generateSphere(48, 24);
+    MeshAsset pebble = generateSphere(24);
     MeshAsset rock   = pebble;
     for (Vertex& vertex : rock.vertices) vertex.position *= 10.0f;
     rock.computeAndSetBounds();

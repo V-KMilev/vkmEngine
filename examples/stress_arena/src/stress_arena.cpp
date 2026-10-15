@@ -402,7 +402,7 @@ MaterialHandle StressArena::makeMaterial(const MaterialAsset& source, const char
 
 void StressArena::buildMaterials() {
     m_cube       = resources().add(generateCube(), "stress:cube");
-    m_sphere     = resources().add(generateSphere(24, 12), "stress:sphere");
+    m_sphere     = resources().add(generateSphere(12), "stress:sphere");
     m_cylinder   = resources().add(generateCylinder(0.5f, 1.0f, 20), "stress:cylinder");
 
     // One mesh per ground slab shape, so the paving keeps the same world scale
@@ -416,8 +416,8 @@ void StressArena::buildMaterials() {
         "stress:ground_side"
     );
 
-    m_sphereMid = resources().add(generateSphere(12, 6), "stress:sphere_mid");
-    m_sphereLow = resources().add(generateSphere(6, 4),  "stress:sphere_low");
+    m_sphereMid = resources().add(generateSphere(6), "stress:sphere_mid");
+    m_sphereLow = resources().add(generateSphere(3), "stress:sphere_low");
     m_cylMid    = resources().add(generateCylinder(0.5f, 1.0f, 10),  "stress:cyl_mid");
     m_cylLow    = resources().add(generateCylinder(0.5f, 1.0f, 6),   "stress:cyl_low");
 

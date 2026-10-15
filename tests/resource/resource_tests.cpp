@@ -162,7 +162,7 @@ void testEveryGeneratedMeshCarriesItsRecipe() {
     made.push_back({"triangle", generateTriangle(2.0f)});
     made.push_back({"plane",    generatePlane(2.0f, 3.0f, 2, 3)});
     made.push_back({"cube",     generateCube()});
-    made.push_back({"sphere",   generateSphere(12, 6)});
+    made.push_back({"sphere",   generateSphere(6)});
     made.push_back({"pyramid",  generatePyramid(2.0f, 0.5f)});
     made.push_back({"cone",     generateCone(0.25f, 2.0f, 7)});
     made.push_back({"cylinder", generateCylinder(0.25f, 2.0f, 9)});

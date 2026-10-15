@@ -72,7 +72,7 @@ void CityBlock::onStart() {
     }
 
     m_cube     = resources().add(generateCube(), "city:cube");
-    m_sphere   = resources().add(generateSphere(24, 12), "city:sphere");
+    m_sphere   = resources().add(generateSphere(12), "city:sphere");
     m_cylinder = resources().add(generateCylinder(0.5f, 1.0f, 20), "city:cylinder");
 
     ResourceManager& res = resources();
