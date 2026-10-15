@@ -1050,6 +1050,13 @@ float differingShare(const std::vector<unsigned char>& frame, const unsigned cha
     return static_cast<float>(differing) / static_cast<float>(WIDTH * rows);
 }
 
+// How far two frames' channels are apart on average, in levels of 255.
+double meanLevelsApart(const std::vector<unsigned char>& a, const std::vector<unsigned char>& b) {
+    double sum = 0.0;
+    for (size_t at = 0; at < a.size(); ++at) sum += std::abs(int(a[at]) - int(b[at]));
+    return sum / static_cast<double>(a.size());
+}
+
 // @p culled draws with the GPU occlusion cull on, against the same golden: it may change no frame.
 void compare(
     const char* name,
@@ -1405,6 +1412,12 @@ glm::ivec3 pixel(const std::vector<unsigned char>& frame, int x, int y) {
     return {frame[at], frame[at + 1], frame[at + 2]};
 }
 
+// The frame's centre pixel as a grey: its channels' mean, 0..255.
+float centreGrey(const std::vector<unsigned char>& frame) {
+    const glm::ivec3 c = pixel(frame, WIDTH / 2, HEIGHT / 2);
+    return static_cast<float>(c.x + c.y + c.z) / 3.0f;
+}
+
 // A floor running out past the frame, under the sun, looked across at a grazing angle.
 void buildOpenFloor(Scenery& s) {
     base(s);
@@ -1474,9 +1487,7 @@ void testAnOrthographicViewTracesItsReflections(int& failures) {
         frame = freshFrame(build, settings, failures);
         if (frame.empty()) return;
     }
-    long sum = 0;
-    for (size_t i = 0; i < frames[0].size(); ++i) sum += std::abs(frames[1][i] - frames[0][i]);
-    const float mean = static_cast<float>(sum) / static_cast<float>(frames[0].size());
+    const double mean = meanLevelsApart(frames[1], frames[0]);
     std::printf("      the traced frame differs by %.2f a channel on average\n", mean);
     expect("an orthographic view traces its reflections", mean > 0.05, failures);
 }
@@ -1816,9 +1827,7 @@ void testAHalfScaleSceneFillsTheFrame(int& failures) {
     const std::vector<unsigned char> atHalf  = render(s, backend, nullptr, half);
     const std::vector<unsigned char> clipped = render(s, backend, &ui, half);
 
-    double sum = 0.0;
-    for (size_t at = 0; at < atFull.size(); ++at) sum += std::abs(int(atFull[at]) - int(atHalf[at]));
-    const double mean = sum / static_cast<double>(atFull.size());
+    const double mean = meanLevelsApart(atFull, atHalf);
     const float differing = differingShare(atHalf, atFull.data());
     std::printf("      %.2f levels apart on average, %.2f%% of pixels differ\n", mean, 100.0f * differing);
     expect("it fills the frame, close to the full-resolution one", mean < 4.0, failures);
@@ -1887,9 +1896,7 @@ void testHalfResolutionReflectionsAreCloseToFull(int& failures) {
         frames[i] = freshFrame(buildReflections, i == 0 ? full : half, failures);
         if (frames[i].empty()) return;
     }
-    double sum = 0.0;
-    for (size_t at = 0; at < frames[0].size(); ++at) sum += std::abs(int(frames[0][at]) - int(frames[1][at]));
-    const double mean = sum / static_cast<double>(frames[0].size());
+    const double mean = meanLevelsApart(frames[0], frames[1]);
     const float differing = differingShare(frames[1], frames[0].data());
     std::printf("      %.2f levels apart on average, %.2f%% of pixels differ\n", mean, 100.0f * differing);
     expect("they are close to the full-resolution ones", mean < 1.0 && differing < 0.02f, failures);
@@ -1919,9 +1926,7 @@ void testAPlainMaterialDrawsAsTheWholeProgramWould(int& failures) {
         frames[i] = freshFrame(build, settings, failures);
         if (frames[i].empty()) return;
     }
-    double sum = 0.0;
-    for (size_t at = 0; at < frames[0].size(); ++at) sum += std::abs(int(frames[0][at]) - int(frames[1][at]));
-    const double mean = sum / static_cast<double>(frames[0].size());
+    const double mean = meanLevelsApart(frames[0], frames[1]);
     const float differing = differingShare(frames[1], frames[0].data());
     std::printf("      %.3f levels apart on average, %.3f%% of pixels differ\n", mean, 100.0f * differing);
     expect("the frames are the same", mean < 0.01 && differing < 0.0005f, failures);
@@ -2958,8 +2963,7 @@ void testSmokeIsShadowedAndSparksAreNot(int& failures) {
             };
             const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
             if (frame.empty()) return;
-            const glm::ivec3 c = pixel(frame, WIDTH / 2, HEIGHT / 2);
-            centre[additive ? 1 : 0][roof ? 1 : 0] = static_cast<float>(c.x + c.y + c.z) / 3.0f;
+            centre[additive ? 1 : 0][roof ? 1 : 0] = centreGrey(frame);
         }
     }
     std::printf(
@@ -3009,8 +3013,7 @@ void testADecalIsLitAsTheFloorUnderIt(int& failures) {
         };
         const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
         if (frame.empty()) return;
-        const glm::ivec3 c = pixel(frame, WIDTH / 2, HEIGHT / 2);
-        centre[painted ? 1 : 0] = static_cast<float>(c.x + c.y + c.z) / 3.0f;
+        centre[painted ? 1 : 0] = centreGrey(frame);
     }
     std::printf("      the floor %.0f, the decal on it %.0f\n", centre[0], centre[1]);
     expect(
@@ -3049,8 +3052,7 @@ void testSmokeIsLitWhereItIs(int& failures) {
         };
         const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
         if (frame.empty()) return;
-        const glm::ivec3 c = pixel(frame, WIDTH / 2, HEIGHT / 2);
-        centre[lamp ? 1 : 0] = static_cast<float>(c.x + c.y + c.z) / 3.0f;
+        centre[lamp ? 1 : 0] = centreGrey(frame);
     }
     std::printf("      %.0f without the lamp, %.0f with it\n", centre[0], centre[1]);
     expect("a lamp that does not reach a puff lights none of it", centre[1] <= centre[0] + 2.0f, failures);
