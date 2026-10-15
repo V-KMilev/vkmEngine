@@ -50,8 +50,10 @@ which resolves the handles it names); a backend consumes exactly this.
 | `lights` | `vector<LightData>` | Enabled lights, world space, each with its entity slot |
 | `probes` | `vector<ProbeData>` | Reflection probes |
 | `decals` | `vector<DecalData>` | Scene-wide, not camera-culled |
-| `particlesAdditive` / `particlesAlpha` | `vector<ParticleData>` | Billboards split by blend, unsorted |
-| `particleTextures` | `vector<TextureHandle>` | Each particle texture once; a particle names its own by `params.z` (0 is the soft disc) |
+| `particlesAdditive` / `particlesAlpha` / `particlesDistortion` | `vector<ParticleData>` | Billboards and streaks split by blend, unsorted |
+| `stripPoints` | `vector<StripPoint>` | Every ribbon's and trail's points, each strip's run in turn |
+| `stripsAdditive` / `stripsAlpha` / `stripsDistortion` | `vector<ParticleStrip>` | Each strip's run of `stripPoints`, split by blend |
+| `particleTextures` | `vector<TextureHandle>` | Each particle texture once; a billboard names its own by `params.z`, a strip by `ParticleStrip::texture` (0 is the soft shape) |
 | `ocean` | `OceanData` | The sea at the frame's moment - [The ocean](#the-ocean) |
 | `irradianceVolume` / `hasIrradianceVolume` | `IrradianceVolumeData` + `bool` | The scene's one baked-GI volume (`findIrradianceVolume`) |
 | `settings` | `RenderSettings` | Copied each frame |
@@ -166,7 +168,7 @@ after everything it reads.
 | 9 | Skybox | The background, before geometry so transparents blend over it; with no sky, the fog over a black background |
 | 10 | Ocean | The sea's ripple fields and its shore capture ([The ocean](#the-ocean)) |
 | 11 | Forward | The PBR ubershader: opaque, alpha-mask (alpha-to-coverage under MSAA), then transparents. Writes the reflection inputs while `ssr` is on |
-| 12 | Particles | Billboards, depth-tested, never depth-writing, soft against scene depth ([Particles](#particles)) |
+| 12 | Particles | Billboards and strips, depth-tested, never depth-writing, soft against scene depth: additive, alpha, then distortion over a copy of the colour ([Particles](#particles)) |
 | 13 | ResolveColor | MSAA only: colour and reflection inputs, tonemap-weighted, and depth again now that alpha-masked geometry is in it |
 | 14 | Reflections | Screen-space reflections: replaces the probe / sky reflection where a trace hits (chain) |
 | 15 | Decals | Projected boxes into the colour chain, lit diffusely as the surface under them. After the reflections, so a glossy floor's reflection does not cover them |
@@ -281,18 +283,33 @@ water but not moved. Its mesh wants vertices closer than half `minWavelength`.
 
 `ParticleSystem` steps every `ParticleEmitter` on the CPU into pools of its own,
 published as `FrameContext::particles`; `RenderView::build` evaluates each
-particle's colour and size ramp and flattens them into the two lists the pass
-reads. The fields are documented in `ecs/component/render/particle_emitter.h`.
-What is easy to get wrong:
+particle's size curve and colour gradient at its age and flattens them into the
+lists the pass reads. The fields are documented in
+`ecs/component/render/particle_emitter.h`. What is easy to get wrong:
 
-- **Particles are world-space and never re-based.** A particle starts at the
-  emitter's resolved world position and moves on its own; moving the emitter
-  afterwards does not drag it. That is a trail.
-- **`additive` splits the draw and says what the colour is.** An additive
-  particle emits (fire, sparks): unsorted, its colour the radiance it adds, and
-  it lights nothing - a fire's light is a `Light`. An alpha one scatters (smoke,
-  dust): sorted back to front by `GLParticlePass`, its colour an albedo lit by
-  its cluster's lights through their shadows and by the environment.
+- **Particles are world-space and never re-based.** A particle starts on the
+  emitter's shape, in its resolved world frame, and moves on its own; moving the
+  emitter afterwards leaves its particles where they are.
+- **`blend` splits the draw and says what the colour is.** An additive particle
+  emits (fire, sparks): unsorted, its colour the radiance it adds, past 1 a
+  bloom, and it lights nothing - a fire's light is a `Light`. An alpha one
+  scatters (smoke, dust): its colour an albedo lit by its cluster's lights
+  through their shadows and by the environment, plus the share it gives off; a
+  card is lit as a ball, a strip as a card. A distortion one (heat haze) adds no
+  colour: it bends a copy of the frame drawn so far - the additive and alpha
+  particles, but no other haze - and leaves the reflection under it be. Alpha
+  and distortion draw back to front, their billboards and then their strips,
+  each sorted among themselves: a strip and a card of one blend do not
+  interleave.
+- **A ribbon or trail is a strip, not a card.** A ribbon runs through an
+  emitter's particles newest first; a trail runs behind each particle through
+  where it was. Each is widened square to the view along its length.
+- **Collision is a ray a step.** A colliding particle asks the physics world's
+  bodies along its step's travel, so a thin body is not passed through, and the
+  emitter's own entity is never struck.
+- **A sub-emitter is a child.** A child entity with a `ParticleEmitter` and a
+  `ParticleTrigger` spawns where its parent's particles are born, die or strike,
+  and never by its own rate or burst; no entity reference is saved.
 - **A one-off puff** is an emitter with `emitting` off, a `burst` and
   `destroyWhenSpent`: the burst spawns whole, and the entity is destroyed once
   the last particle dies. An emitter is spent only once it has fired.

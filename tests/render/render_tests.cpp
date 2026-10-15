@@ -1911,6 +1911,9 @@ void testTheSharedBlocksAgreeWithTheirStructs() {
     const auto strideOf = [](GLuint program, const char* name) {
         return programResource(program, GL_BUFFER_VARIABLE, name, GL_TOP_LEVEL_ARRAY_STRIDE);
     };
+    const auto bufferMemberAt = [](GLuint program, const char* name, size_t offset) {
+        return programResource(program, GL_BUFFER_VARIABLE, name, GL_OFFSET) == static_cast<GLint>(offset);
+    };
 
     check(
         "the shadow block is the size of ShadowUBOData",
@@ -2025,9 +2028,24 @@ void testTheSharedBlocksAgreeWithTheirStructs() {
             == static_cast<GLint>(sizeof(ParticleData))
     );
     check(
-        "  with its parameters where ParticleData has them",
-        programResource(billboards, GL_BUFFER_VARIABLE, "ParticleBlock.particles[0].params", GL_OFFSET)
-            == static_cast<GLint>(offsetof(ParticleData, params))
+        "  with each member where ParticleData has it",
+        bufferMemberAt(billboards, "ParticleBlock.particles[0].color", offsetof(ParticleData, color))
+            && bufferMemberAt(billboards, "ParticleBlock.particles[0].params", offsetof(ParticleData, params))
+            && bufferMemberAt(billboards, "ParticleBlock.particles[0].uvRect", offsetof(ParticleData, uvRect))
+            && bufferMemberAt(billboards, "ParticleBlock.particles[0].trail", offsetof(ParticleData, trail))
+    );
+
+    const Vkm::GL::Shader strip("shaders/particle_strip");
+    const GLuint strips = linkedProgram(strip);
+    check(
+        "a strip point is a StripPoint wide",
+        strideOf(strips, "StripBlock.points[0].positionWidth") == static_cast<GLint>(sizeof(StripPoint))
+    );
+    check(
+        "  with each member where StripPoint has it",
+        bufferMemberAt(strips, "StripBlock.points[0].color", offsetof(StripPoint, color))
+            && bufferMemberAt(strips, "StripBlock.points[0].params", offsetof(StripPoint, params))
+            && bufferMemberAt(strips, "StripBlock.points[0].look", offsetof(StripPoint, look))
     );
     check("with no GL error behind any of it", noGlError());
 }

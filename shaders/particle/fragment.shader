@@ -1,71 +1,73 @@
 /**
  * Billboard particle - fragment stage.
  *
- * A procedural soft round sprite, or a frame of the emitter's texture tinted by the particle's
- * colour - an albedo lit by the vertex stage for an alpha-blended particle, radiance for an
- * additive one - fogged at its own depth.
- * Soft (Lorach 2007): it fades over its authored size (half its width) where the scene behind
- * comes near, so smoke meets a wall or the floor without a line, and over half a metre from the
- * near plane, so a sprite the camera passes through does not pop.
- * It writes zero into the reflection inputs at its own opacity, so blending dims the reflection
- * behind exactly as it dims the surface, and the additive half adds nothing to either.
+ * A procedural soft round sprite, or a frame of the emitter's texture, tinted by the particle's
+ * colour. An additive particle gives off that colour. An alpha one is lit as a ball: a sphere's
+ * normal under the card turns toward or away from the light at its centre, with the ambient from
+ * all round, and it gives off the share of its colour its emission says. A distortion one bends
+ * the scene behind it - outward from its middle, or as its texture says, read as a normal map.
  */
 
-#include "../fog.glsl"
-#include "../depth.glsl"
-
-layout(binding = POST_SLOT_SCENE_DEPTH) uniform sampler2D u_sceneDepth;  // a copy of the scene's
-layout(binding = PARTICLE_SLOT_SPRITE)  uniform sampler2D u_sprite;      // read while u_textured
-
-uniform int u_textured;  // 1 while the run shows a texture, 0 for the soft disc
+#include "../camera.glsl"
+#include "shade.glsl"
 
 in vec2  vCorner;
+flat in vec2 vAxisX;
+flat in vec2 vAxisY;
 in vec2  vUV;
 flat in vec4 vFrame;
 in vec4  vColor;
-in vec3  vLight;
 in float vSoftness;
 in float vSize;
 flat in int vViewmodel;
-
-layout(location = OUT_COLOR)          out vec4 FragColor;
-layout(location = OUT_REFLECT_WEIGHT) out vec4 ReflectWeight;
-layout(location = OUT_REFLECT_ENV)    out vec4 ReflectEnv;
-
-uniform int u_additive;  // 1 while the additive half draws: it adds light, so the fog only takes from it
+flat in float vExtra;
+flat in vec3 vAmbient;
+flat in vec3 vLightColor;
+flat in vec3 vLightDir;
 
 void main() {
-    vec4  color   = vec4(vColor.rgb * vLight, vColor.a);
+    vec4  color   = vColor;
+    vec4  sprite  = vec4(1.0);
     float falloff = 1.0;
+    float r       = length(vCorner);
     if (u_textured == 1) {
         // Held half a texel of the coarser level read inside the frame, so a filtered read takes
         // nothing of the frame beside it - down to the level whose texels straddle two frames,
         // which hold both already.
         vec2 inset = 0.5 * exp2(ceil(textureQueryLod(u_sprite, vUV).x)) / vec2(textureSize(u_sprite, 0));
-        inset = min(inset, vFrame.zw * 0.5);
-        color *= texture(u_sprite, clamp(vUV, vFrame.xy + inset, vFrame.xy + vFrame.zw - inset));
+        inset  = min(inset, vFrame.zw * 0.5);
+        sprite = texture(u_sprite, clamp(vUV, vFrame.xy + inset, vFrame.xy + vFrame.zw - inset));
     } else {
-        float r = length(vCorner);
         if (r > 1.0) discard;
-        // Softness 1 fades over the whole disc, 0 keeps a thin anti-aliased rim.
-        float inner = 1.0 - max(vSoftness, 0.04);
-        falloff = 1.0 - smoothstep(inner, 1.0, r);
+        falloff = edgeFalloff(vSoftness, r);
+    }
+    falloff *= softFade(vSize, vViewmodel == 1);
+
+    // Where on the card this is, and the card's axes, in the view's right and up.
+    mat2 card   = mat2(vAxisX, vAxisY);
+    vec2 facing = card * vCorner;
+
+    if (u_blend == PARTICLE_DISTORTION) {
+        // A texture is a normal map; the disc bulges out from its middle, most halfway out.
+        vec2 lean = bendOf(sprite);
+        vec2 bend = u_textured == 1 ? card * lean : facing * (1.0 - r) * 2.0;
+        writeBent(lean, bend * vExtra * falloff * color.a, falloff * color.a);
+        return;
     }
 
-    float sceneDepth = texelFetch(u_sceneDepth, ivec2(gl_FragCoord.xy), 0).r;
-    float sceneView  = linearSceneDepth(sceneDepth, u_camera.invProjection);
-    float ownView    = linearSceneDepth(gl_FragCoord.z, u_camera.invProjection);
-    // Not on the viewmodel layer: there its depth and the weapon's are both the squashed band
-    // about the near plane, which would fade it to nothing.
-    if (vViewmodel == 0) {
-        falloff *= clamp((sceneView - ownView) / max(vSize, 1e-3), 0.0, 1.0);
-        falloff *= clamp((ownView - u_camera.zNear) / 0.5, 0.0, 1.0);
+    color *= u_textured == 1 ? sprite : vec4(1.0);
+    vec3 rgb = color.rgb;
+    if (u_blend == PARTICLE_ALPHA) {
+        // A sphere's normal under the card, in the world: across the view as the card lies, and
+        // toward the eye.
+        vec3  camRight = cameraRight();
+        vec3  camUp    = cameraUp();
+        vec3  camBack  = cameraBack();
+        float reach    = length(facing);
+        vec2  c        = reach > 1e-6 ? facing / reach * min(r, 1.0) : vec2(0.0);
+        vec3  n        = normalize(camRight * c.x + camUp * c.y + camBack * sqrt(max(1.0 - dot(c, c), 0.0)));
+        float wrap     = 0.5 + 0.5 * dot(n, vLightDir);
+        rgb = color.rgb * (vAmbient + vLightColor * wrap) + color.rgb * vExtra;
     }
-
-    vec4 fog = fragmentFog();
-    vec3 rgb = color.rgb * fog.a + (u_additive == 1 ? vec3(0.0) : fog.rgb);
-    FragColor = vec4(rgb, color.a * falloff);
-
-    ReflectWeight = vec4(0.0, 0.0, 0.0, FragColor.a);
-    ReflectEnv    = vec4(0.0, 0.0, 0.0, FragColor.a);
+    writeParticle(rgb, color.a * falloff);
 }

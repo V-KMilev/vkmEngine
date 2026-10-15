@@ -52,6 +52,7 @@
 #include "core/fnv1a.h"
 #include "ecs/environment.h"
 #include "ecs/component/render/light.h"
+#include "ecs/component/render/particle_emitter.h"
 #include "platform/window/window_manager.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/material_asset.h"
@@ -229,20 +230,27 @@ std::string GLBackend::shaderConstants() {
             << "const int   ATMOSPHERE_TRANSMITTANCE_STEPS = " << A::TRANSMITTANCE_STEPS << ";\n";
     }
 
-    // The light and material types the shaders switch on, from the enums.
-    out << "const int   LIGHT_DIRECTIONAL = " << static_cast<int>(LightType::Directional) << ";\n"
-        << "const int   LIGHT_POINT       = " << static_cast<int>(LightType::Point)       << ";\n"
-        << "const int   LIGHT_SPOT        = " << static_cast<int>(LightType::Spot)        << ";\n"
-        << "const int   LIGHT_RECT        = " << static_cast<int>(LightType::Rect)        << ";\n"
-        << "const int   LIGHT_DISK        = " << static_cast<int>(LightType::Disk)        << ";\n"
-        << "const int   MAT_OPAQUE        = " << static_cast<int>(MaterialType::Opaque)      << ";\n"
-        << "const int   MAT_TRANSPARENT   = " << static_cast<int>(MaterialType::Transparent) << ";\n"
-        << "const int   MAT_UNLIT         = " << static_cast<int>(MaterialType::Unlit)       << ";\n"
-        << "const int   MAT_ALPHA_MASK    = " << static_cast<int>(MaterialType::AlphaMask)   << ";\n";
+    // The light and material types and particle blends the shaders switch on, from the enums.
+    out << "const int   LIGHT_DIRECTIONAL   = " << static_cast<int>(LightType::Directional)    << ";\n"
+        << "const int   LIGHT_POINT         = " << static_cast<int>(LightType::Point)          << ";\n"
+        << "const int   LIGHT_SPOT          = " << static_cast<int>(LightType::Spot)           << ";\n"
+        << "const int   LIGHT_RECT          = " << static_cast<int>(LightType::Rect)           << ";\n"
+        << "const int   LIGHT_DISK          = " << static_cast<int>(LightType::Disk)           << ";\n"
+        << "const int   MAT_OPAQUE          = " << static_cast<int>(MaterialType::Opaque)      << ";\n"
+        << "const int   MAT_TRANSPARENT     = " << static_cast<int>(MaterialType::Transparent) << ";\n"
+        << "const int   MAT_UNLIT           = " << static_cast<int>(MaterialType::Unlit)       << ";\n"
+        << "const int   MAT_ALPHA_MASK      = " << static_cast<int>(MaterialType::AlphaMask)   << ";\n"
+        << "const int   PARTICLE_ADDITIVE   = " << static_cast<int>(ParticleBlend::Additive)   << ";\n"
+        << "const int   PARTICLE_ALPHA      = " << static_cast<int>(ParticleBlend::Alpha)      << ";\n"
+        << "const int   PARTICLE_DISTORTION = " << static_cast<int>(ParticleBlend::Distortion) << ";\n";
     static_assert(static_cast<int>(LightType::Count) == 5, "A light type the shaders are not told about");
     static_assert(
         static_cast<int>(MaterialType::Count) == 4,
         "A material type the shaders are not told about"
+    );
+    static_assert(
+        static_cast<int>(ParticleBlend::Count) == 3,
+        "A particle blend the shaders are not told about"
     );
 
     return out.str();
@@ -567,7 +575,9 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     PROFILE_PLOT("Render/SceneMeshes", static_cast<int64_t>(view.objects->scene.size()));
     PROFILE_PLOT(
         "Render/Particles",
-        static_cast<int64_t>(view.particlesAdditive.size() + view.particlesAlpha.size())
+        static_cast<int64_t>(
+            view.particlesAdditive.size() + view.particlesAlpha.size() + view.particlesDistortion.size()
+        )
     );
     PROFILE_PLOT("Render/Probes",      static_cast<int64_t>(ctx.probeCount));
     PROFILE_PLOT("Render/SkinBones",   static_cast<int64_t>(m_skinPalette.count()));

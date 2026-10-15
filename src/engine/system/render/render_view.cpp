@@ -129,7 +129,8 @@ void buildDecals(RenderView& view, const Scene& scene) {
 }
 
 /**
- * @brief Flatten every emitter's live particles into billboard instances, split by blend, unsorted.
+ * @brief Flatten every emitter's live particles into the frame's billboards and strips, each list
+ *        by its blend, unsorted.
  *
  * @param view         The view being refilled.
  * @param scene        Scene whose ParticleEmitter components are gathered.
@@ -140,13 +141,18 @@ void buildParticles(RenderView& view, const Scene& scene, const LiveParticles* p
     PROFILE_SCOPE("RenderView::buildParticles");
     view.particlesAdditive.clear();
     view.particlesAlpha.clear();
+    view.particlesDistortion.clear();
+    view.stripPoints.clear();
+    view.stripsAdditive.clear();
+    view.stripsAlpha.clear();
+    view.stripsDistortion.clear();
     view.particleTextures.clear();
 
     scene.forEach<ParticleEmitter>([&](EntityId id, const ParticleEmitter& emitter) {
-        const std::vector<Particle>* live = particles ? particles->of(id) : nullptr;
-        if (!live || (throughAnEye && emitter.seenBy == SeenBy::AllButEye)) return;
-        auto& out = emitter.additive ? view.particlesAdditive : view.particlesAlpha;
-        const float viewmodel = throughAnEye && emitter.seenBy == SeenBy::Viewmodel ? 1.0f : 0.0f;
+        const LiveParticles::Pool* pool = particles ? particles->poolOf(id) : nullptr;
+        const bool hidden = throughAnEye && emitter.seenBy == SeenBy::AllButEye;
+        if (!pool || pool->particles.empty() || hidden) return;
+        const bool viewmodel = throughAnEye && emitter.seenBy == SeenBy::Viewmodel;
 
         // A few emitters a frame, so a walk finds a texture's place.
         float texture = 0.0f;
@@ -156,29 +162,110 @@ void buildParticles(RenderView& view, const Scene& scene, const LiveParticles* p
             texture = static_cast<float>(found - textures.begin()) + 1.0f;
             if (found == textures.end()) textures.push_back(emitter.texture);
         }
-        const uint32_t columns = std::max(emitter.sheetColumns, 1u);
-        const uint32_t rows    = std::max(emitter.sheetRows, 1u);
-        const glm::vec2 frameSize(1.0f / static_cast<float>(columns), 1.0f / static_cast<float>(rows));
-        // A streak lies along its trail, turned by nothing, even where its trail is too short to.
-        const auto angle = [&](const Particle& p) {
-            return emitter.stretch > 0.0f ? 0.0f : p.angle + emitter.spin * p.age;
+        const float extra = emitter.blend == ParticleBlend::Alpha ? emitter.emission
+            : emitter.blend == ParticleBlend::Distortion           ? emitter.distortion
+            : 0.0f;
+
+        // What a particle looks like at its age: its size and its colour, intensity in the RGB.
+        const auto lifeOf = [](const Particle& p) { return p.lifetime > 0.0f ? p.age / p.lifetime : 1.0f; };
+        const auto sizeOf = [&](const Particle& p) { return p.size * emitter.sizeOverLife.at(lifeOf(p)); };
+        const auto colorOf = [&](const Particle& p) {
+            const glm::vec4 c = emitter.color.at(lifeOf(p));
+            return glm::vec4(glm::vec3(c) * std::max(emitter.intensity, 0.0f), c.a);
         };
 
-        for (const Particle& p : *live) {
-            // Age drives the size + colour ramp; the simulation already retired expired ones.
-            const float t = (p.lifetime > 0.0f) ? (p.age / p.lifetime) : 1.0f;
+        if (emitter.render == ParticleRender::Ribbon || emitter.render == ParticleRender::Trail) {
+            auto& strips = emitter.blend == ParticleBlend::Additive ? view.stripsAdditive
+                : emitter.blend == ParticleBlend::Alpha             ? view.stripsAlpha
+                : view.stripsDistortion;
+            const glm::vec4 look(emitter.softness, extra, viewmodel ? 1.0f : 0.0f, 0.0f);
+            const auto open = [&]() {
+                ParticleStrip strip;
+                strip.first   = static_cast<uint32_t>(view.stripPoints.size());
+                strip.texture = texture;
+                return strip;
+            };
+            // A point on the one before it has no direction to widen across: it is left out.
+            const auto add = [&](const ParticleStrip& strip, glm::vec4 point, glm::vec4 color, float along) {
+                auto& points = view.stripPoints;
+                const bool on = points.size() > strip.first
+                    && glm::length(glm::vec3(points.back().positionWidth) - glm::vec3(point)) < 1e-5f;
+                if (!on) points.push_back({point, color, glm::vec4(along, 0.0f, 0.0f, 0.0f), look});
+            };
+            // Each point is told its strip's run, which a strip of one point does not have.
+            const auto close = [&](ParticleStrip strip) {
+                strip.count = static_cast<uint32_t>(view.stripPoints.size()) - strip.first;
+                if (strip.count < 2) {
+                    view.stripPoints.resize(strip.first);
+                    return;
+                }
+                const float last = static_cast<float>(strip.first + strip.count - 1);
+                for (uint32_t i = strip.first; i < strip.first + strip.count; ++i) {
+                    view.stripPoints[i].params.y = static_cast<float>(strip.first);
+                    view.stripPoints[i].params.z = last;
+                }
+                strips.push_back(strip);
+            };
+
+            const std::vector<Particle>& live = pool->particles;
+            if (emitter.render == ParticleRender::Ribbon) {
+                // Newest first, so the strip's head is where the emitter is now.
+                ParticleStrip strip = open();
+                const float last = static_cast<float>(std::max<size_t>(live.size() - 1, 1));
+                for (size_t i = live.size(); i-- > 0;) {
+                    const Particle& p = live[i];
+                    const float along = static_cast<float>(live.size() - 1 - i) / last;
+                    add(strip, glm::vec4(p.position, sizeOf(p)), colorOf(p), along);
+                }
+                close(strip);
+                return;
+            }
+            // Each particle draws its own trail, narrowing and fading to where it was. A pool not
+            // yet stepped since it turned to trails holds none.
+            if (pool->trails.size() != live.size() * LiveParticles::TRAIL_POINTS) return;
+            for (size_t i = 0; i < live.size(); ++i) {
+                const Particle&  p      = live[i];
+                const glm::vec3* points = pool->trailOf(i);
+                const float      count  = static_cast<float>(p.trailCount);
+                const float      width  = sizeOf(p);
+                const glm::vec4  color  = colorOf(p);
+                ParticleStrip strip = open();
+                add(strip, glm::vec4(p.position, width), color, 0.0f);
+                for (uint32_t k = 0; k < p.trailCount; ++k) {
+                    const float along = (static_cast<float>(k) + 1.0f) / count;
+                    const float left  = 1.0f - along;
+                    add(strip, glm::vec4(points[k], width * left), {glm::vec3(color), color.a * left}, along);
+                }
+                close(strip);
+            }
+            return;
+        }
+
+        auto& out = emitter.blend == ParticleBlend::Additive ? view.particlesAdditive
+            : emitter.blend == ParticleBlend::Alpha          ? view.particlesAlpha
+            : view.particlesDistortion;
+        const uint32_t  columns   = std::max(emitter.sheetColumns, 1u);
+        const uint32_t  rows      = std::max(emitter.sheetRows, 1u);
+        const glm::vec2 frameSize(1.0f / static_cast<float>(columns), 1.0f / static_cast<float>(rows));
+        const bool      stretched = emitter.render == ParticleRender::Stretched;
+        const float     layer     = viewmodel ? 1.0f : 0.0f;
+
+        for (const Particle& p : pool->particles) {
             // The sheet's top row first; an image loads bottom row first (image_loaders.cpp).
             const uint32_t frame = sheetFrameAt(emitter, p.age, p.lifetime, p.frame);
             const glm::vec2 corner(
                 static_cast<float>(frame % columns) * frameSize.x,
                 1.0f - static_cast<float>(frame / columns + 1) * frameSize.y
             );
+            // A streak lies along its trail, turned by nothing.
+            const float     angle  = stretched ? 0.0f : p.angle + p.spin * p.age;
+            const glm::vec3 streak = stretched ? -p.velocity * std::max(emitter.stretch, 0.0f) : glm::vec3();
             out.push_back({
-                glm::vec4(p.position, glm::mix(emitter.startSize, emitter.endSize, t)),
-                glm::mix(emitter.startColor, emitter.endColor, t),
-                glm::vec4(emitter.softness, angle(p), texture, viewmodel),
+                glm::vec4(p.position, sizeOf(p)),
+                colorOf(p),
+                glm::vec4(emitter.softness, angle, texture, layer),
                 glm::vec4(corner, frameSize),
-                glm::vec4(-p.velocity * std::max(emitter.stretch, 0.0f), 0.0f),
+                glm::vec4(streak, extra),
             });
         }
     });
@@ -259,6 +346,11 @@ void RenderView::build(
             decalList,
             particlesAdd,
             particlesBlend,
+            particlesBend,
+            stripPointList,
+            stripsAdd,
+            stripsBlend,
+            stripsBend,
             particleTextureList,
             volume,
             volumePresent,
@@ -277,6 +369,11 @@ void RenderView::build(
         decalList.clear();
         particlesAdd.clear();
         particlesBlend.clear();
+        particlesBend.clear();
+        stripPointList.clear();
+        stripsAdd.clear();
+        stripsBlend.clear();
+        stripsBend.clear();
         particleTextureList.clear();
         volumePresent = false;
         seaState.present = false;

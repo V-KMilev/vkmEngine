@@ -43,6 +43,17 @@ vec3 toViewer(vec3 worldPos) {
                                  : normalize(u_camera.invView[2].xyz);
 }
 
+// The camera's right, up and back in world space: the view matrix's rows.
+vec3 cameraRight() {
+    return vec3(u_camera.view[0][0], u_camera.view[1][0], u_camera.view[2][0]);
+}
+vec3 cameraUp() {
+    return vec3(u_camera.view[0][1], u_camera.view[1][1], u_camera.view[2][1]);
+}
+vec3 cameraBack() {
+    return vec3(u_camera.view[0][2], u_camera.view[1][2], u_camera.view[2][2]);
+}
+
 // The view-space point on the near plane through screen fraction @p uv: in a perspective view, the
 // ray from the eye through it.
 vec3 nearPlaneAt(vec2 uv) {

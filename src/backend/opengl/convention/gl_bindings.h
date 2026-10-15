@@ -31,6 +31,7 @@ namespace Vkm::Engine {
     X(SSBOBindingPoints,      CLUSTER_GRID,          1,  SSBO_CLUSTER_GRID,                   Per-cluster light lists)                                             \
     X(SSBOBindingPoints,      PARTICLES,             2,  SSBO_PARTICLES,                      Billboard particle instances)                                        \
     X(SSBOBindingPoints,      IRRADIANCE_FILL,       3,  SSBO_IRRADIANCE_FILL,                How an irradiance bake repairs the probes it refused)                \
+    X(SSBOBindingPoints,      STRIP_POINTS,          4,  SSBO_STRIP_POINTS,                   Particle strip points: ribbons and trails)                           \
     X(SSBOBindingPoints,      SKIN_PALETTE,          5,  SSBO_SKIN_PALETTE,                   Every skinned item palette end to end)                               \
     X(SSBOBindingPoints,      INSTANCE_SKIN_BASE,    6,  SSBO_INSTANCE_SKIN_BASE,             Per object: its first bone in SKIN_PALETTE)                          \
     X(SSBOBindingPoints,      INSTANCE_FLAGS,        7,  SSBO_INSTANCE_FLAGS,                 Per object: how the eye draws it (shaders/viewmodel.glsl))           \

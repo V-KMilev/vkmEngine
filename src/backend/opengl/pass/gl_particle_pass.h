@@ -8,6 +8,7 @@
 #include "gl_pass.h"
 #include "gl_target.h"
 
+#include "ecs/component/render/particle_emitter.h"
 #include "system/render/data/particle_data.h"
 
 namespace Vkm::Engine {
@@ -15,12 +16,15 @@ namespace Vkm::Engine {
 struct RenderView;
 
 /**
- * @brief Draws the frame's particles as camera-facing billboards.
+ * @brief Draws the frame's particles: billboards and strips, each blend in turn.
  *
- * Runs after the forward pass, depth-tested without writing depth. Additive emitters draw first,
- * grouped by texture, then alpha ones, which arrive unsorted and are sorted back-to-front here;
- * each fogs at its own depth. Attribute-less: instances live in an SSBO, so a batch is one upload
- * and an instanced 4-vertex draw for each run of particles showing one texture.
+ * Runs after the forward pass, depth-tested without writing depth. Additive particles draw first,
+ * grouped by texture, then alpha ones, which arrive unsorted and are sorted back-to-front here,
+ * then distortion ones, sorted the same, over a copy of the scene they bend. Strips - ribbons and
+ * trails - follow the billboards of their blend: additive ones grouped by texture, the others
+ * sorted back-to-front by their heads. Attribute-less: billboards and strip points live in SSBOs,
+ * each uploaded once a blend and once a frame, drawn as an instanced draw for each run of one
+ * texture and a multi-draw for each run of strips.
  */
 class GLParticlePass : public GLPass {
     public:
@@ -38,38 +42,45 @@ class GLParticlePass : public GLPass {
 
     private:
         /**
-         * @brief One alpha particle's place in the far-to-near order.
+         * @brief One sorted particle's or strip's place in the far-to-near order.
          *
-         * Eight bytes with a distance measured once per particle; the sorted order is applied to
-         * the particles afterwards in one pass.
+         * Eight bytes with a depth measured once each; the sorted order is applied afterwards in
+         * one pass.
          */
-        struct ParticleOrder {
+        struct DepthOrder {
             float    depth;  ///< View depth, the sort key: the quads face the view plane.
-            uint32_t index;  ///< The particle's place in the unsorted list.
+            uint32_t index;  ///< Its place in the unsorted list.
         };
 
     private:
         /**
-         * @brief Order the view's alpha particles far-to-near into m_sorted.
+         * @brief Fill m_order with @p count indices, far to near from @p view's eye.
          *
-         * @param view The particles, and the eye they are sorted from.
+         * @tparam PositionOf Callable taking an index and returning a world position.
+         * @param view       The eye they are sorted from.
+         * @param count      How many there are to sort.
+         * @param positionOf Where the one at an index sits, in world space.
          */
-        void sortAlpha(const RenderView& view);
+        template <typename PositionOf>
+        void orderByDepth(const RenderView& view, uint32_t count, PositionOf&& positionOf);
 
         /**
-         * @brief Copy the view's additive particles into m_sorted, grouped by texture.
+         * @brief Order @p particles far-to-near into m_sorted, or by texture for an order-free blend.
          *
-         * @param view The particles.
+         * @param view      The eye they are sorted from.
+         * @param particles The billboards of one blend.
+         * @param byDepth   Far to near; otherwise grouped by texture, a draw a texture.
          */
-        void sortAdditive(const RenderView& view);
+        void sortBillboards(const RenderView& view, const std::vector<ParticleData>& particles, bool byDepth);
 
         /**
-         * @brief Bind what a run of particles shows, and tell the shader whether it is a texture.
+         * @brief Bind what a run shows to @p shader, and tell it whether that is a texture.
          *
          * @param ctx     The frame: its view's texture list, and the uploads.
-         * @param texture ParticleData::params.z: 0 for the soft disc, else 1 + its place in the list.
+         * @param shader  The program drawing the run.
+         * @param texture ParticleData::params.z: 0 for none, else 1 + its place in the list.
          */
-        void bindTexture(GLFrameContext& ctx, float texture);
+        void bindTexture(GLFrameContext& ctx, Vkm::GL::Shader& shader, float texture);
 
         /**
          * @brief Upload @p batch to the instance SSBO and draw it, an instanced quad call a run.
@@ -77,13 +88,43 @@ class GLParticlePass : public GLPass {
          * @param ctx   The frame: its attribute-less VAO, which the draws bind, and the textures.
          * @param batch The billboards to draw, each texture's in runs.
          */
-        void drawBatch(GLFrameContext& ctx, const std::vector<ParticleData>& batch);
+        void drawBillboards(GLFrameContext& ctx, const std::vector<ParticleData>& batch);
+
+        /**
+         * @brief Draw @p strips, a triangle strip each through the frame's strip points, a draw
+         *        call for each run of one texture.
+         *
+         * @param ctx     The frame: the view's points, uploaded once a frame, and the textures.
+         * @param strips  The strips of one blend.
+         * @param byDepth Far to near, by each strip's head; otherwise grouped by texture.
+         */
+        void drawStrips(GLFrameContext& ctx, const std::vector<ParticleStrip>& strips, bool byDepth);
+
+        /**
+         * @brief Draw one blend: its billboards, then its strips.
+         *
+         * @param ctx        The frame: its eye, its strip points, and the GL state the blend is set on.
+         * @param blend      Which blend: the blend function, the shaders' u_blend, and whether to sort
+         *                   by depth.
+         * @param billboards The view's billboards of @p blend, unsorted.
+         * @param strips     The view's strips of @p blend, unsorted.
+         */
+        void drawBlend(
+            GLFrameContext& ctx,
+            ParticleBlend blend,
+            const std::vector<ParticleData>& billboards,
+            const std::vector<ParticleStrip>& strips
+        );
 
     private:
-        Vkm::GL::Shader m_shader;
+        Vkm::GL::Shader m_shader;  ///< Billboards (shaders/particle).
+        Vkm::GL::Shader m_strip;   ///< Ribbons and trails (shaders/particle_strip).
 
-        std::vector<ParticleOrder> m_order;   ///< Sort keys; capacity kept across frames.
-        std::vector<ParticleData>  m_sorted;  ///< The batch drawing: by texture, or alpha far to near.
+        std::vector<DepthOrder>    m_order;   ///< Sort keys; capacity kept across frames.
+        std::vector<ParticleData>  m_sorted;  ///< The billboards drawing, in their order.
+        std::vector<ParticleStrip> m_strips;  ///< The strips drawing, in their order.
+        std::vector<int32_t>       m_firsts;  ///< A strip run's first vertices, for one multi-draw.
+        std::vector<int32_t>       m_counts;  ///< And its vertex counts.
 
         /// The scene's depth, copied: the particles test against it attached and fade on it here.
         GLTarget m_depthCopy{GLTarget::Layout::ColorDepth, GL_R8};

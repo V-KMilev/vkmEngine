@@ -69,9 +69,16 @@ struct RenderView {
     std::vector<LightData>            lights;  ///< The enabled ones, in world space.
     std::vector<ProbeData>            probes;
     std::vector<DecalData>            decals;  ///< Every enabled one in the scene: not culled to the camera.
-    std::vector<ParticleData>         particlesAdditive;  ///< Order-independent.
-    std::vector<ParticleData>         particlesAlpha;     ///< Unsorted; the backend orders them.
-    std::vector<TextureHandle>        particleTextures;   ///< What they show, by ParticleData::params.z - 1.
+    std::vector<ParticleData>         particlesAdditive;    ///< Order-independent.
+    std::vector<ParticleData>         particlesAlpha;       ///< Unsorted; the backend orders them.
+    std::vector<ParticleData>         particlesDistortion;  ///< Unsorted; the backend orders them.
+    std::vector<StripPoint>           stripPoints;          ///< Every strip's points, a strip's together.
+    std::vector<ParticleStrip>        stripsAdditive;       ///< Ribbons and trails, blended as particles.
+    std::vector<ParticleStrip>        stripsAlpha;          ///< Unsorted; the backend orders them.
+    std::vector<ParticleStrip>        stripsDistortion;     ///< Unsorted; the backend orders them.
+
+    /// What they show, by ParticleData::params.z or ParticleStrip::texture, less one.
+    std::vector<TextureHandle> particleTextures;
 
     /**
      * @brief The scene's baked-GI volume, meaningful while @ref hasIrradianceVolume.

@@ -307,7 +307,7 @@ shaders/
   exposure/     # histogram/, bins.glsl  (auto-exposure)
   ocean/        # ripples and shore fields
   gtao/  screen_shadow/  cluster/  fog/  reflection/
-  bloom/  dof/  decal/  particle/
+  bloom/  dof/  decal/  particle/  particle_strip/
   skybox/  grid/  composite/  ui/  splash/
 ```
 
