@@ -314,8 +314,8 @@ screen-space shadows skip that band (`inViewmodelBand`, `shaders/camera.glsl`).
 An orthographic camera has no band.
 
 A viewmodel casts no shadow, no capture sees it, and no decal lands on it. An
-emitter with `viewmodel` set is projected the same way, so a muzzle flash lines
-up with the barrel.
+emitter's `ParticleEmitter::seenBy` reads as a mesh's, so a `Viewmodel` muzzle
+flash is projected the same way and lines up with the barrel.
 
 ### GLView - GPU sync
 

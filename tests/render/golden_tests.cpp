@@ -455,7 +455,7 @@ void buildViewmodel(Scenery& s) {
     const EntityId muzzle = s.scene.createEntity();
     s.scene.add(muzzle, Transform{});
     ParticleEmitter flash;
-    flash.viewmodel  = true;
+    flash.seenBy     = SeenBy::Viewmodel;
     flash.startColor = glm::vec4(4.0f, 2.4f, 0.8f, 1.0f);
     flash.endColor   = flash.startColor;
     flash.startSize  = 0.05f;

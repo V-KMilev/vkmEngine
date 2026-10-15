@@ -7,6 +7,7 @@
 #include <glm/glm.hpp>
 
 #include "core/reflect.h"
+#include "ecs/component/render/mesh.h"
 #include "resource/asset/texture_asset.h"
 
 namespace Vkm::Engine {
@@ -67,9 +68,10 @@ struct ParticleEmitter {
     float spin           = 0.0f;   ///< Radians a second each turns, about the view. Unread when streaking.
     bool  randomRotation = false;  ///< Each particle starts turned at an angle of its own.
 
-    /// Drawn as Viewmodel meshes are (Mesh::seenBy): a muzzle flash on the weapon in hand lines up
-    /// with it and shows in front of it.
-    bool viewmodel = false;
+    /// Who draws its particles, as for a Mesh. Particles cast no shadow and are in no capture, so
+    /// through a scene camera AllButEye draws none and EyeOnly draws as All; Viewmodel lines a muzzle
+    /// flash up with the weapon in hand and shows it in front of it.
+    SeenBy seenBy = SeenBy::All;
 };
 
 /**
@@ -132,5 +134,5 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::ParticleEmitter)
     VKM_F(stretch)
     VKM_F(spin)
     VKM_F(randomRotation)
-    VKM_F(viewmodel)
+    VKM_F(seenBy)
 VKM_REFLECT_END()

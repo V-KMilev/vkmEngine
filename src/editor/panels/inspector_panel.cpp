@@ -1998,10 +1998,12 @@ void InspectorPanel::drawParticleSection(EditorContext& ec, EntityId id) {
             const char* rotationTooltip = "Each particle starts at an angle of its own";
             changed |= propCheckbox("Random Rotation", &e.randomRotation, rotationTooltip);
         }
-        const char* viewmodelTooltip =
-            "Drawn as a Viewmodel mesh is - a muzzle flash on the weapon in hand lines up with it "
-            "and shows in front of it";
-        changed |= propCheckbox("Viewmodel", &e.viewmodel, viewmodelTooltip);
+        const char* seenByTooltip =
+            "Who draws its particles, through a scene camera, as for a Mesh. Particles cast no shadow "
+            "and are in no capture, so All But Eye draws none and Eye Only draws as All; Viewmodel - "
+            "at the camera's Viewmodel FOV, a muzzle flash lined up with the weapon and in front of it. "
+            "The editor's own view draws everything";
+        changed |= propEnumCombo("Seen By", e.seenBy, seenByTooltip);
 
         const std::vector<Particle>* live = ec.frame.particles ? ec.frame.particles->of(id) : nullptr;
         ImGui::TextDisabled("Live: %d particle(s).", live ? static_cast<int>(live->size()) : 0);
