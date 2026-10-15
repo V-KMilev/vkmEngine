@@ -68,11 +68,6 @@ def main() -> int:
     if not argv or argv[0] in ("-h", "--help"):
         print(HELP, end="")
         return 0
-    if argv[0] == "help":
-        argv = argv[1:2] + ["-h"] if len(argv) > 1 else ["-h"]
-        if argv == ["-h"]:
-            print(HELP, end="")
-            return 0
     if argv[0] in ("-V", "--version"):
         root = sdk_root()
         print(f"vkm for vkmEngine {development(root).version() or '(unknown version)'} at {root}")
