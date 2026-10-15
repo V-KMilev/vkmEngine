@@ -12,7 +12,7 @@ namespace Vkm::Engine {
  * The UISystem enqueues this on the EventBus; it is delivered on the next
  * flush, so a Behavior handles it exactly like any other gameplay event:
  *
- *   subscribe<UIClickEvent>([](const UIClickEvent& e) {
+ *   subscribe([](const UIClickEvent& e) {
  *       if (e.eventId == "play") startGame();
  *   });
  */

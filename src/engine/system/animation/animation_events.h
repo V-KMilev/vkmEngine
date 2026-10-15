@@ -11,7 +11,7 @@ namespace Vkm::Engine {
  *
  * Enqueued on the EventBus by SkeletalAnimationSystem; a Behavior subscribes:
  *
- *   subscribe<AnimationEvent>([this](const AnimationEvent& e) {
+ *   subscribe([this](const AnimationEvent& e) {
  *       if (e.entity == m_player && e.marker == "footstep") playFootstep();
  *   });
  *
