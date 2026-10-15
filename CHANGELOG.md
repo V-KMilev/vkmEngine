@@ -2,6 +2,28 @@
 
 Notable changes to vkmEngine, newest first. Each release is tagged `vX.Y.Z`.
 
+## 1.0.9
+
+Frame time, and quality tiers built over a project's settings.
+
+- **Quality tiers.** A render scale (the scene at fewer pixels under a sharp UI) and a
+  switch for soft shadows step Medium and Low down. A tier is built over the project's own
+  settings (`projectRender()`), so picking High after Low keeps none of Low's offs. A
+  settings screen can offer the monitor's modes.
+- **Faster frames**, the same picture:
+  - `parallelFor` splits its range eight chunks a thread, so no thread waits on one the OS
+    held back.
+  - High traces reflections at half resolution, gathered back by the hits on each pixel's
+    own surface.
+  - A point in a soft shadow's umbra skips the filter.
+  - A mesh whose `movable` is off is worked out once; shadow tiles sign their fixed casters
+    at once, so a still view redraws no shadow.
+  - A material using none of the optional features draws with a plain forward program.
+  - Asset sync and the shadow prepare look a handle up once a run.
+- **The occlusion cull reads the CPU cull's world boxes**, so posed characters and water are
+  culled too.
+- A `project.json` or scene saved without the new keys reads them at their defaults.
+
 ## 1.0.8
 
 OpenGL 4.5, and an engine that names no graphics API.
