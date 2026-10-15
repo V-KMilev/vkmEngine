@@ -201,7 +201,7 @@ void testABehaviorFieldIsLabelledInWords() {
     check("  an underscore is a space", fieldLabel("jump_height") == "Jump Height");
 
     check("a name ending in color is a colour", namesAColor("tintColor") && namesAColor("color"));
-    check("  so is colour, in any case", namesAColor("glowColour") && namesAColor("COLOR"));
+    check("  and so is one in capitals", namesAColor("COLOR"));
     check("  and nothing else is", !namesAColor("colorful") && !namesAColor("velocity"));
 }
 

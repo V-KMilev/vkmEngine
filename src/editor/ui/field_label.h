@@ -49,18 +49,16 @@ inline std::string fieldLabel(std::string_view name) {
  * RGBA.
  *
  * @param name The field's name, as VKM_F records it.
- * @return True when the name ends in "color" or "colour", in any case.
+ * @return True when the name ends in "color", in any case.
  */
 inline bool namesAColor(std::string_view name) {
-    const auto endsWith = [&](std::string_view suffix) {
-        if (name.size() < suffix.size()) return false;
-        const std::string_view tail = name.substr(name.size() - suffix.size());
-        for (std::size_t i = 0; i < suffix.size(); ++i) {
-            if (std::tolower(static_cast<unsigned char>(tail[i])) != suffix[i]) return false;
-        }
-        return true;
-    };
-    return endsWith("color") || endsWith("colour");
+    constexpr std::string_view COLOR = "color";
+    if (name.size() < COLOR.size()) return false;
+    const std::string_view tail = name.substr(name.size() - COLOR.size());
+    for (std::size_t i = 0; i < COLOR.size(); ++i) {
+        if (std::tolower(static_cast<unsigned char>(tail[i])) != COLOR[i]) return false;
+    }
+    return true;
 }
 
 } // namespace Vkm::Engine

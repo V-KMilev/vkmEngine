@@ -64,7 +64,7 @@ VKM_REFLECT_END()
 A field the block does not list is runtime state: not saved, not shown, not
 copied. A behavior with nothing to tune still writes the block, empty. The
 inspector labels `pushStrength` "Push Strength", and edits a `glm::vec3` or
-`glm::vec4` whose name ends in `color` or `colour` with a colour picker.
+`glm::vec4` whose name ends in `color` with a colour picker.
 
 **Registering it.** The module names its behaviors once, in `src/module.cpp`:
 
