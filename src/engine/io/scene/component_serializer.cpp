@@ -172,10 +172,10 @@ nlohmann::json save(const Ragdoll& r, const EntityNamer& name) {
         nlohmann::json entry;
         entry["bone"] = bone.bone;
         entry["body"] = name(bone.body);
-        nlohmann::json offset = nlohmann::json::array();
+        nlohmann::json bodyFromBone = nlohmann::json::array();
         const float* m = glm::value_ptr(bone.bodyFromBone);
-        for (int i = 0; i < 16; ++i) offset.push_back(m[i]);
-        entry["offset"] = std::move(offset);
+        for (int i = 0; i < 16; ++i) bodyFromBone.push_back(m[i]);
+        entry["bodyFromBone"] = std::move(bodyFromBone);
         bones.push_back(std::move(entry));
     }
     out["bones"] = std::move(bones);
@@ -197,10 +197,10 @@ void load(const nlohmann::json& j, Ragdoll& r, const EntityResolver& resolve) {
         RagdollBone bone;
         bone.bone = entry.value("bone", -1);
         bone.body = resolve(entry.value("body", 0u));
-        const auto offset = entry.find("offset");
-        if (offset != entry.end() && offset->is_array() && offset->size() == 16) {
+        const auto bodyFromBone = entry.find("bodyFromBone");
+        if (bodyFromBone != entry.end() && bodyFromBone->is_array() && bodyFromBone->size() == 16) {
             float* m = glm::value_ptr(bone.bodyFromBone);
-            for (int i = 0; i < 16; ++i) m[i] = (*offset)[i].get<float>();
+            for (int i = 0; i < 16; ++i) m[i] = (*bodyFromBone)[i].get<float>();
         }
         r.bones.push_back(bone);
     }
