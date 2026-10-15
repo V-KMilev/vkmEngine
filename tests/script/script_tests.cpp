@@ -151,6 +151,15 @@ class Quitter : public ReflectedBehavior<Quitter> {
         int destroys = 0;
 };
 
+// A settings screen: a tier picked each update, built over the project's settings.
+class Tiers : public ReflectedBehavior<Tiers> {
+    public:
+        void onUpdate(float) override { render() = withPreset(projectRender(), preset); }
+
+    public:
+        GraphicsPreset preset = GraphicsPreset::Low;
+};
+
 // Takes another entity with it when it goes, through the deferred queue.
 class Partner : public ReflectedBehavior<Partner> {
     public:
@@ -299,6 +308,9 @@ VKM_REFLECT_END()
 VKM_REFLECT_BEGIN(Partner)
 VKM_REFLECT_END()
 
+VKM_REFLECT_BEGIN(Tiers)
+VKM_REFLECT_END()
+
 VKM_REFLECT_BEGIN(Thrower)
 VKM_REFLECT_END()
 
@@ -388,6 +400,25 @@ void testStartHappensOnSimulationTime() {
 
     run.tick();
     check("starting happens once, not once a frame", recorder.starts == 1);
+}
+
+// A tier is built over the project's settings, which the session's never overwrite: High after
+// Low brings back what Low turned off.
+void testATierIsBuiltOverTheProjectsSettings() {
+    std::printf("A settings screen picking a quality tier:\n");
+
+    Scene scene;
+    Tiers& tiers = attach<Tiers>(scene, scene.createEntity());
+    ScriptFrame run(scene);
+    run.frame.projectRender.bloom = true;
+    run.frame.render              = run.frame.projectRender;
+
+    run.tick();
+    check("Low turns bloom off", !run.frame.render.bloom);
+    tiers.preset = GraphicsPreset::High;
+    run.tick();
+    check("  and High after it brings it back", run.frame.render.bloom);
+    check("  the project's own left as it was", run.frame.projectRender.bloom);
 }
 
 void testEveryBehaviorStartsBeforeAnyHookRuns() {
@@ -1187,6 +1218,7 @@ void runScriptTests() {
     testAReloadedModuleStartsItsStaticsOver();
     testStartHappensOnSimulationTime();
     testEveryBehaviorStartsBeforeAnyHookRuns();
+    testATierIsBuiltOverTheProjectsSettings();
     testPauseSplitsTheTwoTimelines();
     testFixedUpdateRunsOnTheFixedStep();
     testSpawnAndDeferredDestroy();

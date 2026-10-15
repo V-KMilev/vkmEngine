@@ -103,6 +103,15 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
             &s.msaaSamples,
             "Scene-pass MSAA; the post chain runs on the resolved buffer"
         );
+        propSlider(
+            "Render Scale",
+            &s.renderScale,
+            RenderSettings::MIN_RENDER_SCALE,
+            RenderSettings::MAX_RENDER_SCALE,
+            "%.2f",
+            "The scene's resolution as a share of the viewport's on each axis, scaled up to it; "
+            "the UI stays sharp"
+        );
 
         // One list, two fields: past Bilinear each row is Trilinear plus an anisotropy degree.
         struct FilterEntry {
@@ -212,7 +221,13 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
             SHADOW_RES_LABELS,
             SHADOW_RES_VALUES,
             &s.shadowResolution,
-            "The largest shadow tile, the sun's near cascades' - usually the frame's main GPU cost lever"
+            "The largest shadow tile, the sun's near cascades'"
+        );
+        propCheckbox(
+            "Soft",
+            &s.softShadows,
+            "Penumbras as wide as each light's source makes them; off, every shadow takes the "
+            "hard filter. The soft one is the forward pass's dearest work"
         );
         propCheckbox(
             "Screen-Space",
@@ -248,6 +263,12 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
             "%.1f",
             "World-space length a reflection ray is traced before it gives up"
         );
+        propCheckbox(
+            "Half Resolution",
+            &s.ssrHalfResolution,
+            "A ray every two by two pixels, gathered back to each by the surfaces they lie on; "
+            "the reflected picture keeps its detail"
+        );
         ImGui::EndDisabled();
         ImGui::PopID();
     }
@@ -277,7 +298,7 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
     endComponentCard();
 
     if (beginComponentCard("Culling", EditorStyle::Accent::QUALITY, true)) {
-        // Stored on RenderSettings; applied before anything reaches the render pipeline.
+        // Stored on RenderSettings; distance and size cull before the render pipeline, occlusion inside it.
         ImGui::PushID("cull");
         propDrag(
             "Max Distance",

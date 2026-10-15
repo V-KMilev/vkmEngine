@@ -21,6 +21,7 @@ layout(binding = POST_SLOT_SCENE_DEPTH) uniform sampler2D u_sceneDepth;  // geom
 uniform vec3  u_axisColor[3];  // X, Y, Z as Math::AXIS_COLORS gives them, display values
 uniform ivec3 u_axisShown;
 uniform ivec3 u_planeShown;    // by the plane's normal: ZY, XZ, XY
+uniform float u_screenHeight;  // the viewport's pixels, which the grid draws at; the scene's may be fewer
 
 const float BASE_EXTENT  = 100.0;  // reach in world units, grown with the log of the distance
 const float MIN_CELL_PX  = 24.0;   // a level fades out as its cells shrink to this
@@ -56,7 +57,7 @@ float viewDepth(vec3 p) {
 // World units across one pixel at view depth `depth`.
 float worldPerPixel(float depth) {
     float scale = cameraIsPerspective() ? depth : 1.0;
-    return scale * 2.0 / (u_camera.projection[1][1] * u_camera.viewport.y);
+    return scale * 2.0 / (u_camera.projection[1][1] * u_screenHeight);
 }
 
 // Fades out toward the reach a camera `away` units from a plane or axis sees.

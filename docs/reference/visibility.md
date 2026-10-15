@@ -28,7 +28,9 @@ VisibilitySystem::update(ctx)
      state byte per index, and the columns of `Visibility.objects` and
      `Visibility.entities`. An object is a Mesh, and its index is the Mesh's
      storage index.
-  4. parallelFor over all Mesh entities (each worker writes disjoint indices):
+  4. parallelFor over all Mesh entities (each worker writes disjoint indices).
+     A fixed mesh kept from an earlier frame (see "Fixed meshes" below) takes
+     only the three culls on its kept box; the rest:
      - Skip if !visible, no mesh, no material, no Transform, or degenerate
        bounds. A mesh with nothing to shade it with is left out of every list
        here, so it neither draws nor casts - one decision, not one per reader.
@@ -40,6 +42,8 @@ VisibilitySystem::update(ctx)
        AABB (Arvo's method, 18 mults). A `waves` surface under the scene's
        ocean grows by as far as the sea carries water
        (`OceanSurface::farthestReach`, [rendering.md](rendering.md#the-ocean)).
+     - Compare the object's new columns with last frame's, which are still in
+       the arrays, and mark it changed when they differ.
      - Write the object's columns - model, world AABB, chosen mesh, material,
        its rig's bone range, entity - for EVERY valid mesh (not just
        camera-visible ones), so the serial scene-wide gather below reaches
@@ -60,9 +64,9 @@ VisibilitySystem::update(ctx)
        ([rendering.md](rendering.md#the-viewmodel)). A host's free view, the
        editor's, is no eye and sees each as any mesh.
   5. Serial gather: walk the state in Mesh order, appending each visible
-     index to `objects.visible` and each caster's to `objects.scene`, count
-     the casters into `casterCount`, then walk again appending the
-     non-casters' indices.
+     index to `objects.visible`, each caster's to `objects.scene` and each
+     changed one's to `objects.changed`, count the casters into
+     `casterCount`, then walk again appending the non-casters' indices.
   6. Set FrameContext.visibility to point at the persistent result.
 ```
 
@@ -109,6 +113,8 @@ struct ObjectDraw {
     MaterialHandle material;      // the Mesh component's, so the render path looks nothing up
     uint32_t       skinCount = 0; // bones in its rig's palette slice; 0 = drawn static
     bool           waves = false; // its surface is the scene's ocean
+    bool           viewmodel = false; // drawn through the camera's viewmodel projection
+    bool           fixed = false;     // Mesh::movable off: kept while fixedSerial holds
 };
 
 struct RenderObjects {                  // system/render/data/render_objects.h
@@ -119,6 +125,10 @@ struct RenderObjects {                  // system/render/data/render_objects.h
     std::vector<uint32_t>   visible;    // what the camera sees, in object order
     std::vector<uint32_t>   scene;      // every drawn object, casters first
     uint32_t                casterCount = 0;  // scene[0, casterCount) name casters
+    std::vector<uint32_t>   changed;    // objects whose columns differ from last frame's
+    bool                    allChanged = true;  // every object may differ; `changed` means nothing
+    uint64_t                serial = 0;         // frames the cull wrote; `changed` is against the last
+    uint64_t                fixedSerial = 0;    // moved whenever a fixed object changed
 };
 
 struct Visibility {
@@ -148,6 +158,40 @@ shadow casters first and counted, and `RenderView::build` lends the whole of
 caster prefix and never touches a mesh that casts nothing, and every pass draws
 an index list into the model matrices the backend uploads once. See
 [Rendering](rendering.md).
+
+## Fixed meshes
+
+A mesh with `Mesh::movable` off promises that it never moves, changes or hides
+while the world runs - scenery. Its columns are worked out once and kept: on
+later frames the cull reads only its kept box for the frustum, distance and size
+tests, and an LOD component still picks its level from the camera. On
+`examples/city_block`'s 63,000 props that took the cull from 2.06 to 0.64 ms a
+call and, with the backend reading the change list below, the frame from 5.7 to
+2.7 ms.
+
+What is kept goes only as far as what changed. Each object is keyed by its Mesh's
+stamp (`SparseSet::stampAt`), so spawning or destroying an entity reworks only
+the indices that now hold another Mesh. An entity gaining or losing a Transform,
+WorldTransform or LOD is checked against the meshes kept for it. Everything kept
+is worked out again when a source every object reads moves
+(`VisibilitySystem::ObjectSources`): a replaced world or asset graph, a mesh
+asset changed (`ResourceManager::revisionOf`), a material changed while an
+ocean moves water, or the view switching to or from a scene camera. A host that
+may edit the world (`HostChrome::setAuthoring`) keeps nothing.
+
+A promise broken anyway is caught: each frame one in `FIXED_CHECK_STRIDE` (64)
+kept meshes is worked out again and held to what was kept; a mismatch logs a
+warning once a world and rebuilds everything the next frame, so a moved fixed
+mesh is drawn where it went within about a second. A posed mesh, a `waves`
+surface under an ocean and a viewmodel are never kept, whatever the flag.
+
+Every object's new columns are compared with last frame's, fixed or not, and the
+differing ones listed in `RenderObjects::changed` (`allChanged` when the world or
+the asset graph was replaced, the frame before published none, or a fixed object
+moved). The backend keeps copies - the instance matrices in video memory, its
+assets, the shadow casters' keys - and refreshes from the list alone, while it
+saw the frame before (`RenderObjects::serial`); see
+[rendering.md](rendering.md#opengl-backend).
 
 ## Level of detail
 

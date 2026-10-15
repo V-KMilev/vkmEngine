@@ -118,6 +118,17 @@ class GLMaterial {
         /// Whether both faces draw: the passes leave culling off for its runs.
         bool doubleSided() const { return m_doubleSided; }
 
+        /**
+         * @brief Whether it uses none of the forward shader's optional features, so draws with the
+         *        program compiled without them (shaders/forward/pbr_plain).
+         *
+         * Anisotropy, subsurface, transmission, clearcoat, sheen and parallax: the shader's
+         * FEATURES gates (shaders/forward/pbr/fragment.shader), each tested here. Each must be off
+         * exactly, not below the shader's own threshold: a value the shader would skip anyway
+         * draws the same either way, so the two need not agree on where "off" begins.
+         */
+        bool plain() const { return m_plain; }
+
         const std::vector<TextureBinding>& getTextureBindings() const { return m_textureBindings; }
 
         /**
@@ -133,6 +144,7 @@ class GLMaterial {
         MaterialType                            m_type = MaterialType::Opaque;
         bool                                    m_doubleSided = false;
         bool                                    m_cutsShadow = false;  ///< See cutsItsShadow().
+        bool                                    m_plain = true;        ///< See plain().
         uint64_t                                m_uploadId = 0;
 };
 

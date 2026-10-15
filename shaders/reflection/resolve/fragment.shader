@@ -24,6 +24,7 @@ layout(binding = REFLECT_SLOT_CHAIN)      uniform sampler2D u_chain;
 
 uniform float u_maxRoughness;
 uniform float u_maxLod;  // the colour chain's last level; the trace stored hit levels over it
+uniform int   u_traceStep;  // pixels a hit stands for on each axis: 1, or 2 at half resolution
 
 #include "../reflection.glsl"
 
@@ -37,20 +38,24 @@ void main() {
     if (!tracesReflection(weight, u_maxRoughness)) return;
     if (!sceneHasNormal(texel)) return;
 
-    const vec2  size   = vec2(textureSize(u_hits, 0));
-    const ivec2 last   = ivec2(size) - 1;
+    const vec2  size   = vec2(textureSize(u_sceneDepth, 0));
+    const ivec2 last   = textureSize(u_hits, 0) - 1;
     const vec3  p      = sceneViewPosAt(texel, size);
     const vec3  n      = sceneNormalAt(texel);
     const float spread = roughness / u_maxRoughness;
-    const int   reach  = spread < 0.15 ? 0 : 1;
+    // Traced at half resolution, a mirror gathers too: the hits about it, from the pixels on its
+    // own surface, are its upsampling.
+    const int   reach  = spread < 0.15 && u_traceStep == 1 ? 0 : 1;
     const int   apart  = 1 + int(spread * 2.5);
+    const ivec2 own    = texel / u_traceStep;
 
     vec3  traced = vec3(0.0);
     float found  = 0.0;
     float total  = 0.0;
     for (int dy = -reach; dy <= reach; ++dy) {
         for (int dx = -reach; dx <= reach; ++dx) {
-            const ivec2 q = clamp(texel + ivec2(dx, dy) * apart, ivec2(0), last);
+            const ivec2 h = clamp(own + ivec2(dx, dy) * apart, ivec2(0), last);
+            const ivec2 q = h * u_traceStep;  // the pixel the hit was traced from
             float w = exp(-0.5 * float(dx * dx + dy * dy));
             if (q != texel) {
                 // Off this pixel's plane, or turned from it: another surface.
@@ -61,7 +66,7 @@ void main() {
             }
             total += w;
 
-            const vec4 hit = texelFetch(u_hits, q, 0);
+            const vec4 hit = texelFetch(u_hits, h, 0);
             if (hit.z <= 0.0) continue;
             traced += textureLod(u_chain, hit.xy, hit.w * max(u_maxLod, 1.0)).rgb * (w * hit.z);
             found  += w * hit.z;

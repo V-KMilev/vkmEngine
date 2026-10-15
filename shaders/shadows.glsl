@@ -200,6 +200,10 @@ const float SOFT_TAP_SPACING = 1.25;
 const float SOFT_REACH       = 5.5;
 // A spot's map has no coarser copy, so its disk spreads a little further.
 const float SOFT_SPOT_REACH  = 7.0;
+// The share of a blocker search's taps found blocked at which the point is taken as in the umbra
+// and the filter, whose disk lies inside the searched one, is skipped. The taps sample the disk, so a
+// slit narrower than their spacing can pass for umbra.
+const float SOFT_UMBRA       = 0.999;
 
 // The tile's size in its own texels.
 float tileTexels(Shadow2D sm) {
@@ -207,10 +211,11 @@ float tileTexels(Shadow2D sm) {
 }
 
 // Blocker search (Fernando 2005): average depth of what lies nearer the light
-// within radius texels of uv, or -1 for none. A gather reads four depths, not
-// their blend, for one read's price; weighted bilinearly, so the average, and
-// the penumbra drawn from it, does not step from texel to texel.
-float searchBlockers(Shadow2D sm, vec2 uv, float ref, vec2 slope, float radius) {
+// within radius texels of uv, or -1 for none; @p covered is the share of the
+// taps that found one. A gather reads four depths, not their blend, for one
+// read's price; weighted bilinearly, so the average, and the penumbra drawn
+// from it, does not step from texel to texel.
+float searchBlockers(Shadow2D sm, vec2 uv, float ref, vec2 slope, float radius, out float covered) {
     vec2  size  = vec2(textureSize(u_shadowAtlas, 0));
     vec2  texel = 1.0 / size;
     float sum   = 0.0;
@@ -227,6 +232,7 @@ float searchBlockers(Shadow2D sm, vec2 uv, float ref, vec2 slope, float radius) 
         sum   += dot(d, nearer);
         count += dot(nearer, vec4(1.0));
     }
+    covered = count / float(SOFT_SEARCH_TAPS + 1);
     return count > 0.0 ? sum / count : -1.0;
 }
 
@@ -270,8 +276,10 @@ float sample2DSlotSoft(int slot, vec3 worldPos, vec3 N, float ndotl) {
     // receiver's own plane there, as a cascade's does.
     vec2  slope   = receiverSlopePerspective(sm, worldPos, N);
     float search  = min(sm.params.w * (r - n) / (r * n) * tile, SOFT_SPOT_REACH);
-    float blocker = searchBlockers(sm, uv, ref, slope, max(search, SOFT_MIN_TEXELS));
+    float covered;
+    float blocker = searchBlockers(sm, uv, ref, slope, max(search, SOFT_MIN_TEXELS), covered);
     if (blocker < 0.0) return 1.0;
+    if (covered >= SOFT_UMBRA) return 0.0;
 
     float b        = spotDistance(sm, blocker);
     float penumbra = sm.params.w * (r - b) / (b * r) * tile;
@@ -355,8 +363,11 @@ float sampleCSMSoftFrom(int ci, vec3 worldPos, vec3 N, float ndotl) {
     // widest is the radius searched, in metres: past its rim the point reads
     // lit, so a wider filter would tear an edge into the penumbra.
     float searchTexels = clamp(reach / searched.params.y, SOFT_MIN_TEXELS, SOFT_REACH);
-    float blocker      = searchBlockers(searched, uv, ref, receiverSlope(searched, N), searchTexels);
+    float covered;
+    float blocker      = searchBlockers(searched, uv, ref, receiverSlope(searched, N), searchTexels, covered);
     float widest       = searchTexels * searched.params.y;
+    // The filter never reaches past the searched disk here (widest).
+    if (blocker >= 0.0 && covered >= SOFT_UMBRA) return 0.0;
     if (blocker < 0.0 && sc > ci) {
         // A caster too thin for the coarse tile: if one compare in the own tile
         // shows it, search there. That compare's edge is hard, so the filter
@@ -366,7 +377,7 @@ float sampleCSMSoftFrom(int ci, vec3 worldPos, vec3 N, float ndotl) {
         if (!projectToTile(own, worldPos, N, ndotl, uv, ref)) return 1.0;
         if (textureLod(u_shadowAtlas, vec3(uv, ref), 0.0) >= 1.0) return 1.0;
         float ownTexels = clamp(reach / own.params.y, SOFT_MIN_TEXELS, SOFT_REACH);
-        blocker = searchBlockers(own, uv, ref, receiverSlope(own, N), ownTexels);
+        blocker = searchBlockers(own, uv, ref, receiverSlope(own, N), ownTexels, covered);
         widest  = own.params.z * tanSource;
     }
     if (blocker < 0.0) return 1.0;
@@ -456,7 +467,8 @@ float filterCube(
 }
 
 // Blocker search across the ray (Fernando 2005): the mean distance from the light of what
-// lies nearer it than the receiver's plane, within @p radius metres, or -1 for none.
+// lies nearer it than the receiver's plane, within @p radius metres, or -1 for none;
+// @p covered is the share of the taps that found one.
 float searchCubeBlockers(
     vec3 rel,
     vec3 N,
@@ -466,7 +478,8 @@ float searchCubeBlockers(
     float radius,
     float slide,
     float nearPlane,
-    float farPlane
+    float farPlane,
+    out float covered
 ) {
     float sum   = 0.0;
     float count = 0.0;
@@ -480,6 +493,7 @@ float searchCubeBlockers(
             count += 1.0;
         }
     }
+    covered = count / float(SOFT_SEARCH_TAPS + 1);
     return count > 0.0 ? sum / count : -1.0;
 }
 
@@ -526,6 +540,7 @@ float sampleCube(int slot, vec3 worldPos, vec3 N, float ndotl) {
 
     // A blocker nearer the light casts over a wider region; capped as a spot's is.
     float search  = min(source * (d - nearPlane) / nearPlane, SOFT_SPOT_REACH * texel);
+    float covered;
     float blocker = searchCubeBlockers(
         rel,
         N,
@@ -535,9 +550,11 @@ float sampleCube(int slot, vec3 worldPos, vec3 N, float ndotl) {
         max(search, SOFT_MIN_TEXELS * texel),
         slide,
         nearPlane,
-        farPlane
+        farPlane,
+        covered
     );
     if (blocker < 0.0) return 1.0;
+    if (covered >= SOFT_UMBRA) return 0.0;
 
     float penumbra = source * (d - blocker) / max(blocker, nearPlane);
     float radius   = clamp(penumbra, SOFT_MIN_TEXELS * texel, SOFT_SPOT_REACH * texel);

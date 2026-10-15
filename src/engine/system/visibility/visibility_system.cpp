@@ -2,7 +2,8 @@
 
 #include "system/visibility/visibility_system.h"
 
-#include <cstring>
+#include <algorithm>
+#include <atomic>
 
 #include <glm/gtc/constants.hpp>
 
@@ -60,6 +61,10 @@ void poseLocalBounds(const MeshAsset& mesh, const PoseSlice* slice, glm::vec3& o
 constexpr uint8_t STATE_DRAWN   = 1u << 0;  ///< Goes into the scene-wide list.
 constexpr uint8_t STATE_VISIBLE = 1u << 1;  ///< The camera sees it.
 constexpr uint8_t STATE_CASTS   = 1u << 2;  ///< Goes into the scene list's caster prefix.
+constexpr uint8_t STATE_CHANGED = 1u << 3;  ///< Its columns or its lists differ from the last frame's.
+
+// The bits that put an object in the scene-wide list and its caster prefix.
+constexpr uint8_t STATE_LISTED = STATE_DRAWN | STATE_CASTS;
 
 /**
  * @brief Pick the geometry for this entity at this distance.
@@ -103,6 +108,134 @@ MeshHandle selectLOD(
     // Past the last threshold the coarsest level keeps drawing; culling is Culling::isNearEnough's call.
     const MeshHandle& last = lod.levels.back().mesh;
     return last ? last : mesh.mesh;
+}
+
+// What the cull keeps about a fixed mesh between frames (VisibilitySystem::m_fixed).
+constexpr uint8_t FIXED_KEPT       = 1u << 0;  ///< Its columns are kept; zero is "work it out".
+constexpr uint8_t FIXED_DRAWN      = 1u << 1;  ///< As STATE_DRAWN.
+constexpr uint8_t FIXED_CASTS      = 1u << 2;  ///< As STATE_CASTS.
+constexpr uint8_t FIXED_NOT_EYE    = 1u << 3;  ///< Seen by all but the eye: never visible.
+constexpr uint8_t FIXED_LOD_SELECT = 1u << 4;  ///< An LOD component picks its mesh each frame.
+constexpr uint8_t FIXED_WORLD      = 1u << 5;  ///< Its matrix is its WorldTransform's.
+
+/**
+ * @brief What working out one object reads, beyond its index.
+ */
+struct ObjectInputs {
+    const Scene&                     scene;
+    const ResourceManager&           resources;
+    const SparseSet<Mesh>&           meshes;
+    const SparseSet<Transform>&      transforms;
+    const SparseSet<WorldTransform>* worldTransforms;  ///< Null when no entity ever had one.
+    const SparseSet<LOD>*            lods;             ///< Null when no entity ever had one.
+    const PoseBuffer*                poses;            ///< Null when nothing is posed.
+    const VisibilityContext&         context;
+    bool                             sea;              ///< The scene has an ocean.
+    glm::vec2                        swell;            ///< How far it moves water, across and up.
+    bool                             throughAnEye;     ///< The frame is seen through a scene camera.
+};
+
+/**
+ * @brief One object's columns of RenderObjects, and what the cull records about it.
+ */
+struct ObjectColumns {
+    glm::mat4  model{1.0f};
+    Math::AABB bounds;
+    ObjectDraw draw;
+    uint32_t   skinFirst = 0;
+    EntityId   entity{};
+    uint8_t    state      = 0;      ///< STATE_DRAWN and STATE_CASTS.
+    bool       notTheEye  = false;  ///< Seen by all but the eye, and the frame is the eye's.
+    uint8_t    fixedState = 0;      ///< What m_fixed keeps for it; zero unless it is fixed.
+};
+
+/**
+ * @brief Work out object @p index's columns from its components and assets.
+ *
+ * @param in    What it is worked out from.
+ * @param index Its place in the Mesh storage.
+ * @param out   Filled when it draws.
+ * @return Whether it draws at all: shown, with a mesh and material, a Transform and a valid box.
+ */
+bool computeObject(const ObjectInputs& in, uint32_t index, ObjectColumns& out) {
+    const uint32_t entityIdx = in.meshes.keyAt(index);
+    const Mesh&    mesh      = in.meshes.dataAt(index);
+
+    if (!mesh.visible) return false;
+    // Nothing to shade it with draws and casts nothing, decided once for every list.
+    if (!mesh.mesh || !mesh.material) return false;
+    if (!in.transforms.contains(entityIdx)) return false;
+
+    const auto& meshAsset = in.resources.get(mesh.mesh);
+    if (!meshAsset.bounds().valid()) return false;
+
+    const bool hasWorld = in.worldTransforms && in.worldTransforms->contains(entityIdx);
+    out.model = hasWorld
+        ? in.worldTransforms->get(entityIdx).model
+        : Transform::computeModelMatrix(in.transforms.get(entityIdx));
+
+    // The pose sizes a skinned mesh's box; an unskinned one keeps its bind bounds.
+    const bool skinned = !meshAsset.skin.empty();
+    const EntityId   entity = in.scene.entityAt(entityIdx);
+    const PoseSlice* slice  = (in.poses && skinned) ? in.poses->sliceOf(entity) : nullptr;
+    glm::vec3 localMin, localMax;
+    poseLocalBounds(meshAsset, slice, localMin, localMax);
+
+    out.bounds = Math::transform(out.model, {localMin, localMax});
+    const MaterialAsset* surface = in.sea ? in.resources.tryGet(mesh.material) : nullptr;
+    const bool           waves   = in.sea && surface && surface->waves;
+    if (waves) {
+        out.bounds.min -= glm::vec3(in.swell.x, in.swell.y, in.swell.x);
+        out.bounds.max += glm::vec3(in.swell.x, in.swell.y, in.swell.x);
+    }
+
+    const bool viewmodel = in.throughAnEye && mesh.seenBy == SeenBy::Viewmodel;
+    // Kept between frames: what does not move, is not skinned, rides no sea and is no held weapon.
+    const bool fixed = !mesh.movable && !skinned && !waves && !viewmodel;
+    out.draw = ObjectDraw{
+        selectLOD(mesh, in.lods, entityIdx, out.bounds.min, out.bounds.max, in.context),
+        mesh.material,
+        slice ? slice->count : 0u,
+        waves,
+        viewmodel,
+        fixed
+    };
+    out.skinFirst = slice ? slice->first : 0u;
+    out.entity    = entity;
+
+    const bool eyeOnly = viewmodel || (in.throughAnEye && mesh.seenBy == SeenBy::EyeOnly);
+    out.notTheEye = in.throughAnEye && mesh.seenBy == SeenBy::AllButEye;
+    out.state     = eyeOnly ? 0 : STATE_DRAWN;
+    if (mesh.castShadows && !waves && !eyeOnly) out.state |= STATE_CASTS;
+
+    out.fixedState = 0;
+    if (fixed) {
+        out.fixedState = FIXED_KEPT;
+        if (out.state & STATE_DRAWN) out.fixedState |= FIXED_DRAWN;
+        if (out.state & STATE_CASTS) out.fixedState |= FIXED_CASTS;
+        if (out.notTheEye)           out.fixedState |= FIXED_NOT_EYE;
+        if (in.lods && in.lods->contains(entityIdx) && !in.lods->get(entityIdx).levels.empty()) {
+            out.fixedState |= FIXED_LOD_SELECT;
+        }
+        if (hasWorld) out.fixedState |= FIXED_WORLD;
+    }
+    return true;
+}
+
+/**
+ * @brief Whether a kept fixed mesh's entity still has the components it was worked out from.
+ *
+ * @param in    What it is worked out from.
+ * @param index Its place in the Mesh storage.
+ * @param fixed What m_fixed keeps for it.
+ * @return False when it gained or lost a Transform, a WorldTransform or a picking LOD.
+ */
+bool keepsItsComponents(const ObjectInputs& in, uint32_t index, uint8_t fixed) {
+    const uint32_t entityIdx = in.meshes.keyAt(index);
+    const bool world = in.worldTransforms && in.worldTransforms->contains(entityIdx);
+    const bool picks = in.lods && in.lods->contains(entityIdx) && !in.lods->get(entityIdx).levels.empty();
+    return in.transforms.contains(entityIdx) && world == ((fixed & FIXED_WORLD) != 0)
+        && picks == ((fixed & FIXED_LOD_SELECT) != 0);
 }
 
 } // namespace
@@ -175,6 +308,10 @@ void VisibilitySystem::update(FrameContext& ctx) {
     objects.visible.clear();
     objects.scene.clear();
     objects.casterCount = 0;
+    // An early return below leaves the columns as they were but untracked: whole, both now and
+    // on the next frame that writes them.
+    objects.changed.clear();
+    objects.allChanged = true;
     m_result.hasCamera    = false;
     m_result.cameraEntity = {};
 
@@ -192,6 +329,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
             LOG_WARNING("No active camera found for visibility");
             m_noCameraLogged = true;
         }
+        m_sourcesValid = false;
         ctx.visibility = &m_result;
         return;
     }
@@ -228,6 +366,7 @@ void VisibilitySystem::update(FrameContext& ctx) {
     const auto* worldTransformStorage = ctx.scene.storage<WorldTransform>();
 
     if (!meshStorage || !transformStorage) {
+        m_sourcesValid = false;
         ctx.visibility = &m_result;
         return;
     }
@@ -237,16 +376,6 @@ void VisibilitySystem::update(FrameContext& ctx) {
     const auto& resources = ctx.resources;
     const auto* lodStorage = ctx.scene.storage<LOD>();
     const PoseBuffer* poses = ctx.poses;
-
-    // Persistent: a steady scene allocates nothing. Each index has one writer, so no atomics.
-    m_state.resize(meshCount);
-    objects.models.resize(meshCount);
-    objects.bounds.resize(meshCount);
-    objects.draws.resize(meshCount);
-    objects.skinFirst.resize(meshCount);
-    m_result.entities.resize(meshCount);
-
-    std::memset(m_state.data(), 0, meshCount);
 
     // A `waves` surface the scene's ocean moves is carried past its mesh's box by as far as the
     // sea moves water, and casts no shadow: a held shadow tile would picture one moment of it.
@@ -259,78 +388,182 @@ void VisibilitySystem::update(FrameContext& ctx) {
     // A weapon held nearer than the world's near plane is still in its own projection's view.
     const Math::Frustum viewmodelFrustum = Math::extractFrustum(eye.viewmodelViewProjection);
 
+    // What every object's columns are made from beyond its components. A material is read only
+    // for whether it rides a sea, so pulsing one changes nothing here while there is none.
+    const ObjectSources sources{
+        ctx.scene.epoch(),
+        resources.epoch(),
+        resources.revisionOf<MeshAsset>(),
+        sea ? resources.revisionOf<MaterialAsset>() : 0,
+        sea,
+        throughAnEye
+    };
+    const ObjectMemberships memberships{
+        transformStorage->structure(),
+        worldTransformStorage ? worldTransformStorage->structure() : 0,
+        lodStorage ? lodStorage->structure() : 0
+    };
+    // Last frame's columns compare index by index while the world and the asset graph hold; an
+    // index whose stamp moved holds another Mesh, added or moved there by a removal.
+    const bool comparable = m_sourcesValid && sources.sceneEpoch == m_sources.sceneEpoch
+        && sources.assetEpoch == m_sources.assetEpoch;
+    // A world the host may edit keeps nothing: the author moves fixed meshes too.
+    const bool authoring = ctx.chrome.authoring();
+    const bool keep      = comparable && sources == m_sources && !authoring;
+    const bool recheck   = memberships != m_memberships;
+    // The indices last frame's columns cover, as far as they compare.
+    const uint32_t covered   = static_cast<uint32_t>(std::min<size_t>(m_stamps.size(), meshCount));
+    const uint32_t lastCount = comparable ? covered : 0u;
+
+    // A fixed mesh listed at an index past the end is gone, which no index below says.
+    bool fixedGone = false;
+    for (size_t i = meshCount; comparable && i < m_stamps.size(); ++i) {
+        fixedGone = fixedGone || ((m_state[i] & STATE_LISTED) && objects.draws[i].fixed);
+    }
+
+    // Persistent: a steady scene allocates nothing. Each index's columns have one writer.
+    m_state.resize(meshCount);
+    m_fixed.resize(meshCount);
+    m_stamps.resize(meshCount);
+    objects.models.resize(meshCount);
+    objects.bounds.resize(meshCount);
+    objects.draws.resize(meshCount);
+    objects.skinFirst.resize(meshCount);
+    m_result.entities.resize(meshCount);
+
+    const ObjectInputs inputs{
+        ctx.scene,
+        resources,
+        *meshStorage,
+        *transformStorage,
+        worldTransformStorage,
+        lodStorage,
+        poses,
+        context,
+        sea,
+        swell,
+        throughAnEye
+    };
+    const uint32_t checkPhase = m_checkPhase;
+    m_checkPhase = (m_checkPhase + 1) % FIXED_CHECK_STRIDE;
+    std::atomic<bool> fixedMoved{false};
+    std::atomic<bool> fixedChanged{fixedGone};
+
     {
         PROFILE_SCOPE("Visibility/Cull");
         parallelFor(meshCount, [&](size_t i) {
-            const auto idx = static_cast<uint32_t>(i);
-            const uint32_t entityIdx = meshStorage->keyAt(idx);
-            const Mesh& mesh = meshStorage->dataAt(idx);
+            const auto     idx   = static_cast<uint32_t>(i);
+            const uint64_t stamp = meshStorage->stampAt(idx);
+            // What this index held last frame, which may have been another Mesh.
+            const bool    held   = i < lastCount && m_stamps[i] == stamp;
+            const uint8_t listed = i < lastCount ? (m_state[i] & STATE_LISTED) : 0;
 
-            if (!mesh.visible) return;
-            // Nothing to shade it with draws and casts nothing, decided once for every list.
-            if (!mesh.mesh || !mesh.material) return;
-            if (!transformStorage->contains(entityIdx)) return;
+            uint8_t fixed = keep && held ? m_fixed[i] : 0;
+            if ((fixed & FIXED_KEPT) && recheck && !keepsItsComponents(inputs, idx, fixed)) fixed = 0;
 
-            const auto& meshAsset = resources.get(mesh.mesh);
-            if (!meshAsset.bounds().valid()) return;
-
-            const Transform& transform = transformStorage->get(entityIdx);
-
-            const bool hasWorld = worldTransformStorage && worldTransformStorage->contains(entityIdx);
-            const glm::mat4 modelMatrix = hasWorld
-                ? worldTransformStorage->get(entityIdx).model
-                : Transform::computeModelMatrix(transform);
-
-            // The pose sizes a skinned mesh's box; an unskinned one keeps its bind bounds.
-            const bool skinned = poses && !meshAsset.skin.empty();
-            const PoseSlice* slice = skinned ? poses->sliceOf(ctx.scene.entityAt(entityIdx)) : nullptr;
-            glm::vec3 localMin, localMax;
-            poseLocalBounds(meshAsset, slice, localMin, localMax);
-
-            Math::AABB world = Math::transform(modelMatrix, {localMin, localMax});
-            const MaterialAsset* surface = resources.tryGet(mesh.material);
-            const bool           waves   = sea && surface && surface->waves;
-            if (waves) {
-                world.min -= glm::vec3(swell.x, swell.y, swell.x);
-                world.max += glm::vec3(swell.x, swell.y, swell.x);
+            if (fixed & FIXED_KEPT) {
+                if (idx % FIXED_CHECK_STRIDE == checkPhase) {
+                    ObjectColumns now;
+                    const bool lodPicks = (fixed & FIXED_LOD_SELECT) != 0;
+                    if (!computeObject(inputs, idx, now) || now.fixedState != fixed
+                        || now.model != objects.models[i] || now.draw.material != objects.draws[i].material
+                        || (!lodPicks && now.draw.mesh != objects.draws[i].mesh)
+                        || now.bounds.min != objects.bounds[i].min
+                        || now.bounds.max != objects.bounds[i].max) {
+                        fixedMoved.store(true, std::memory_order_relaxed);
+                    }
+                }
+                uint8_t state = 0;
+                if (fixed & FIXED_DRAWN) state |= STATE_DRAWN;
+                if (fixed & FIXED_CASTS) state |= STATE_CASTS;
+                const Math::AABB& world = objects.bounds[i];
+                if (fixed & FIXED_LOD_SELECT) {
+                    const MeshHandle level = selectLOD(
+                        meshStorage->dataAt(idx),
+                        lodStorage,
+                        meshStorage->keyAt(idx),
+                        world.min,
+                        world.max,
+                        context
+                    );
+                    if (level != objects.draws[i].mesh) {
+                        objects.draws[i].mesh = level;
+                        state |= STATE_CHANGED;
+                        fixedChanged.store(true, std::memory_order_relaxed);
+                    }
+                }
+                if (!(fixed & FIXED_NOT_EYE) && Math::frustumIntersectsAABB(context.frustum, world)
+                    && Culling::isNearEnough(world, context) && Culling::isLargeEnough(world, context)) {
+                    state |= STATE_VISIBLE;
+                }
+                m_state[i] = state;
+                return;
             }
 
-            // Every valid mesh, not just visible ones, so the scene-wide gather reaches
-            // off-screen occluders.
-            objects.models[i]      = modelMatrix;
-            objects.bounds[i]      = world;
-            const bool viewmodel = throughAnEye && mesh.seenBy == SeenBy::Viewmodel;
-            objects.draws[i]       = ObjectDraw{
-                selectLOD(mesh, lodStorage, entityIdx, world.min, world.max, context),
-                mesh.material,
-                slice ? slice->count : 0u,
-                waves,
-                viewmodel
-            };
-            objects.skinFirst[i]   = slice ? slice->first : 0u;
-            m_result.entities[i]   = ctx.scene.entityAt(entityIdx);
+            m_stamps[i] = stamp;
+            ObjectColumns now;
+            if (!computeObject(inputs, idx, now)) {
+                // Hidden now: a change while the index was listed, though its columns stay as they were.
+                m_state[i] = listed ? STATE_CHANGED : 0;
+                m_fixed[i] = 0;
+                if (listed && objects.draws[i].fixed) fixedChanged.store(true, std::memory_order_relaxed);
+                return;
+            }
 
-            const bool eyeOnly   = viewmodel || (throughAnEye && mesh.seenBy == SeenBy::EyeOnly);
-            const bool notTheEye = throughAnEye && mesh.seenBy == SeenBy::AllButEye;
-            uint8_t state = eyeOnly ? 0 : STATE_DRAWN;
-            if (mesh.castShadows && !waves && !eyeOnly) state |= STATE_CASTS;
+            // Last frame's columns are only comparable while their sources hold; when they do not,
+            // RenderObjects::allChanged says so and nothing is listed. Another Mesh's never are.
+            const bool differs = !held || now.model != objects.models[i] || now.draw != objects.draws[i]
+                || now.skinFirst != objects.skinFirst[i] || now.bounds.min != objects.bounds[i].min
+                || now.bounds.max != objects.bounds[i].max;
+            const bool changed = comparable && differs;
+            const bool wasFixed = i < lastCount && objects.draws[i].fixed;
 
-            const Math::Frustum& frustum = viewmodel ? viewmodelFrustum : context.frustum;
-            if (!notTheEye && Math::frustumIntersectsAABB(frustum, world)
-                && Culling::isNearEnough(world, context)
-                && Culling::isLargeEnough(world, context)) {
+            objects.models[i]    = now.model;
+            objects.bounds[i]    = now.bounds;
+            objects.draws[i]     = now.draw;
+            objects.skinFirst[i] = now.skinFirst;
+            m_result.entities[i] = now.entity;
+            m_fixed[i]           = authoring ? 0 : now.fixedState;
+
+            const Math::Frustum& frustum = now.draw.viewmodel ? viewmodelFrustum : context.frustum;
+            uint8_t state = now.state;
+            // Shown or hidden, or a caster no longer, is a change too: the lists hold it or not.
+            if (changed || (comparable && ((state & STATE_LISTED) != listed))) state |= STATE_CHANGED;
+            if ((state & STATE_CHANGED) && (wasFixed || now.draw.fixed)) {
+                fixedChanged.store(true, std::memory_order_relaxed);
+            }
+            if (!now.notTheEye && Math::frustumIntersectsAABB(frustum, now.bounds)
+                && Culling::isNearEnough(now.bounds, context)
+                && Culling::isLargeEnough(now.bounds, context)) {
                 state |= STATE_VISIBLE;
             }
             m_state[i] = state;
         });
     }
 
+    if (fixedMoved.load(std::memory_order_relaxed)) {
+        // Kept until the next frame, which works every object out again; the warning, once a world.
+        if (m_fixedMovedEpoch != sources.sceneEpoch) {
+            LOG_WARNING("A Mesh with movable off moved or changed while the world ran; kept state rebuilt");
+            m_fixedMovedEpoch = sources.sceneEpoch;
+        }
+        m_sourcesValid = false;
+    } else {
+        m_sources      = sources;
+        m_memberships  = memberships;
+        m_sourcesValid = true;
+    }
+
     // Casters first, as the prefix RenderObjects::casterCount counts.
     PROFILE_SCOPE("Visibility/Gather");
+    objects.allChanged = !comparable;
+    ++objects.serial;
+    if (objects.allChanged || fixedChanged.load(std::memory_order_relaxed)) ++objects.fixedSerial;
     for (uint32_t i = 0; i < meshCount; ++i) {
         const uint8_t state = m_state[i];
         if (state & STATE_VISIBLE) objects.visible.push_back(i);
         if ((state & (STATE_DRAWN | STATE_CASTS)) == (STATE_DRAWN | STATE_CASTS)) objects.scene.push_back(i);
+        if (state & STATE_CHANGED) objects.changed.push_back(i);
     }
     objects.casterCount = static_cast<uint32_t>(objects.scene.size());
     for (uint32_t i = 0; i < meshCount; ++i) {

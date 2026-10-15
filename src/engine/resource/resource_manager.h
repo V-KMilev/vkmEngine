@@ -167,6 +167,7 @@ class ResourceManager {
             dropNameIndex(slot, res.m_name, handle.key.index);
             storageOf<T>(slot).remove(handle.key.index);
             slot.allocator.free(handle.key);
+            touch(slot);
         }
 
         /**
@@ -308,6 +309,7 @@ class ResourceManager {
             swap(target.m_hidden,  value.m_hidden);
             swap(target.m_name,    value.m_name);
             ++target.m_version;
+            touch(slot);
         }
 
         /**
@@ -326,6 +328,7 @@ class ResourceManager {
             auto& slot = getSlot<T>();
             VKM_ASSERT(slot.allocator.has(handle.key), "ResourceManager::commit invalid handle");
             ++storageOf<T>(slot).get(handle.key.index).m_version;
+            touch(slot);
         }
 
         /**
@@ -420,13 +423,47 @@ class ResourceManager {
          */
         uint64_t epoch() const { return m_epoch; }
 
+        /**
+         * @brief Moved by every commit, swap, replacement and removal of an asset, and every swap of
+         *        the graph.
+         *
+         * What a cache of values derived from assets - a mesh's box in world space - compares: one
+         * number for every asset, where each asset's version is its own.
+         *
+         * @return The count of such changes so far.
+         */
+        uint64_t revision() const { return m_revision; }
+
+        /**
+         * @brief revision() narrowed to @p T: moved by every commit, swap, replacement and removal
+         *        of one of its assets.
+         *
+         * For a cache that reads one kind of asset, which a change to another kind leaves standing.
+         * A swap of the graph brings the other graph's count, so compare epoch() too.
+         *
+         * @tparam T The asset type.
+         * @return The count of such changes so far; 0 for a type never registered.
+         */
+        template<typename T>
+        uint64_t revisionOf() const {
+            const TypedSlot* slot = trySlot<T>();
+            return slot ? slot->revision : 0;
+        }
+
     private:
         struct TypedSlot {
             SlotAllocator                   allocator;
             std::unique_ptr<ISparseSet>     storage;
             /// name -> storage index.
             std::unordered_map<std::string, uint32_t> nameIndex;
+            uint64_t                        revision = 0;  ///< See revisionOf().
         };
+
+        /// Record a change to one of @p slot's assets, in its revision and the graph's.
+        void touch(TypedSlot& slot) {
+            ++slot.revision;
+            ++m_revision;
+        }
 
     private:
         /**
@@ -521,6 +558,7 @@ class ResourceManager {
             target.m_name    = std::move(name);
             target.m_uid     = mintUid();
             target.m_version = version + 1;
+            touch(slot);
             return Handle<T>{slot.allocator.handleAt(index)};
         }
 
@@ -561,6 +599,7 @@ class ResourceManager {
 
         /// Starts at 1, so a cache can hold 0 as "never synced".
         uint64_t m_epoch = 1;
+        uint64_t m_revision = 1;  ///< See revision(); from 1 for the same reason.
 };
 
 } // namespace Vkm::Engine

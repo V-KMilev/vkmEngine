@@ -52,7 +52,8 @@ void Engine::run() {
             m_input,
             m_net,
             m_chrome,
-            m_render
+            m_render,
+            m_projectRender
         };
 
         m_window.updateInput();

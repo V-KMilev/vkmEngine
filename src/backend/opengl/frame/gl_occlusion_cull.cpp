@@ -11,7 +11,6 @@
 #include "gl_target.h"
 #include "convention/gl_bindings.h"
 #include "frame/gl_instance_batcher.h"
-#include "resource/resource_manager.h"
 #include "system/render/data/render_objects.h"
 
 namespace Vkm::Engine {
@@ -67,12 +66,7 @@ GLOcclusionCull::GLOcclusionCull()
 
 GLOcclusionCull::~GLOcclusionCull() = default;
 
-bool GLOcclusionCull::prepare(
-    const GLInstanceBatcher& batch,
-    const RenderObjects& objects,
-    const ResourceManager& resources,
-    Vkm::GL::StreamRing& stream
-) {
+bool GLOcclusionCull::prepare(const GLInstanceBatcher& batch, const RenderObjects& objects) {
     const GLDrawList&               list      = batch.list();
     const std::vector<uint32_t>&    instances = list.instances();
     const std::vector<DrawCommand>& commands  = list.commands();
@@ -81,16 +75,6 @@ bool GLOcclusionCull::prepare(
     m_source        = list.instanceSpan();
     if (m_instanceCount == 0 || m_commandCount == 0 || !m_source) return false;
 
-    // A command is one mesh: its local box, empty for a run that leaves it.
-    m_bounds.resize(m_commandCount);
-    for (uint32_t c = 0; c < m_commandCount; ++c) {
-        const ObjectDraw& draw   = objects.draws[instances[commands[c].baseInstance]];
-        const MeshAsset*  mesh   = resources.tryGet(draw.mesh);
-        const bool        always = !mesh || draw.skinCount > 0 || draw.waves;
-        m_bounds[c].lo = glm::vec4(always ? glm::vec3(1.0f) : mesh->boundsMin, 0.0f);
-        m_bounds[c].hi = glm::vec4(always ? glm::vec3(-1.0f) : mesh->boundsMax, 0.0f);
-    }
-
     // Each set starts as the batch's commands with no instances.
     m_commands.resize(static_cast<size_t>(m_commandCount) * SET_COUNT);
     for (int set = 0; set < SET_COUNT; ++set) {
@@ -98,8 +82,6 @@ bool GLOcclusionCull::prepare(
     }
     for (DrawCommand& command : m_commands) command.instanceCount = 0;
 
-    const auto boundsBytes = static_cast<uint32_t>(m_bounds.size() * sizeof(CommandBounds));
-    m_boundsSpan = stream.write(m_bounds.data(), boundsBytes);
     // Counted into by the GPU, so not streamed; grown with headroom as the batch grows.
     const auto commandBytes = static_cast<uint32_t>(m_commands.size() * sizeof(DrawCommand));
     ensureBytes(m_commandBuffer, commandBytes, Contents::Undefined, GL_STREAM_DRAW);
@@ -117,7 +99,6 @@ bool GLOcclusionCull::prepare(
 
 void GLOcclusionCull::bindBuffers() const {
     namespace SSBO = GLBindings::SSBOBindingPoints;
-    Vkm::GL::bindRange(GL_SHADER_STORAGE_BUFFER, SSBO::CULL_BOUNDS, m_boundsSpan);
     Vkm::GL::bindRange(GL_SHADER_STORAGE_BUFFER, SSBO::CULL_SOURCE, m_source);
     VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::CULL_VISIBLE, m_visibleBuffer->getID()));
     VKM_GL_CHECK(glBindBufferBase(GL_SHADER_STORAGE_BUFFER, SSBO::CULL_COMMANDS, m_commandBuffer->getID()));

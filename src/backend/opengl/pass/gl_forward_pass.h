@@ -11,6 +11,8 @@
 
 namespace Vkm::Engine {
 
+class GLMaterial;
+
 /**
  * @brief The lit forward draw of the scene's geometry.
  *
@@ -19,13 +21,16 @@ namespace Vkm::Engine {
  * are culled (materials are single-sided). Each surface fogs at its own depth (see
  * GLPass::bindFog).
  *
- * Skinned runs sort after static ones, so a bucket switches program once. One place sets both
- * programs' uniforms: one set on only one would silently go missing on characters.
+ * Four programs: static and skinned, each whole and plain - compiled without the optional
+ * features a GLMaterial::plain material never reads (shaders/forward/pbr_plain). Skinned runs
+ * sort after static ones; within each the program follows the material. One place sets every
+ * program's uniforms (forEachProgram): one set on only some would silently go missing on whatever
+ * draws with the rest.
  */
 class GLForwardPass : public GLPass {
     public:
         /**
-         * @brief Draws the static runs with @p pbr, which it borrows.
+         * @brief Draws the static runs of whole materials with @p pbr, which it borrows.
          *
          * @param pbr The scene capture's program (GLSceneCapture::pbrProgram), whose uniforms are
          *            the last caller's: the pass sets every one it reads each frame.
@@ -42,6 +47,15 @@ class GLForwardPass : public GLPass {
     public:
         void execute(GLFrameContext& ctx) override;
 
+        /**
+         * @brief Whether a run of @p material draws with the plain program.
+         *
+         * @param material The run's material; null takes the whole program, which reads every
+         *                 feature's default.
+         * @return True for a GLMaterial::plain material.
+         */
+        static bool drawsPlain(const GLMaterial* material);
+
     private:
         /// Which of the three buckets a set of frame uniforms is for.
         enum class Bucket {
@@ -53,9 +67,9 @@ class GLForwardPass : public GLPass {
         /**
          * @brief Submit a batch's draws.
          *
-         * Switches program at the skinned boundary and rebinds material state only when the
-         * material changes; each draw is one multi-draw. Material bindings are context state, so
-         * they survive the program switch.
+         * Switches program where skinning or the material's plain() changes, and rebinds material
+         * state only when the material changes; each draw is one multi-draw. Material bindings are
+         * context state, so they survive the program switch.
          *
          * @param ctx     For the GPU mirror and the context.
          * @param batch   The draws to submit.
@@ -75,33 +89,50 @@ class GLForwardPass : public GLPass {
         void drawWireframe(GLFrameContext& ctx, bool posed);
 
         /**
-         * @brief Bind @p shader and give it this frame's uniforms.
+         * @brief Give @p shader this frame's uniforms.
          *
          * Once per program per frame, as uniform state is per program. The textures bindAmbient
-         * and bindFog bind are context state, bound again for the second program.
+         * and bindFog bind are context state, bound again for each program.
          *
-         * @param shader Program to bind and fill.
+         * @param shader Program to fill.
          * @param ctx    For the settings and pass products.
          */
         void bindFrameUniforms(Vkm::GL::Shader& shader, GLFrameContext& ctx) const;
 
         /**
-         * @brief Bind @p shader and tell it which bucket draws next.
+         * @brief Tell @p shader which bucket draws next.
          *
          * Only the opaque bucket is in the prepass GTAO reads, so only it is told it has AO;
          * elsewhere the texel is the surface behind, or the sky. The refraction grab is live only
          * for Transparent, drawn after the copy; alpha-to-coverage only for AlphaMask on a
          * multisample target, else the shader cuts at half coverage.
          *
-         * @param shader Program to bind and fill.
+         * @param shader Program to fill.
          * @param ctx    For the pass products and the target.
          * @param bucket The bucket about to draw with it.
          */
         void bindBucketUniforms(Vkm::GL::Shader& shader, GLFrameContext& ctx, Bucket bucket) const;
 
+        /**
+         * @brief Call @p fn with each program the frame draws with.
+         *
+         * @param posed Whether skinned runs draw, so the skinned programs are in use.
+         * @param fn    Called with each program in turn.
+         */
+        template<typename Fn>
+        void forEachProgram(bool posed, Fn&& fn) {
+            fn(m_shader);
+            fn(m_plainShader);
+            if (!posed) return;
+            fn(m_skinnedShader);
+            fn(m_plainSkinnedShader);
+        }
+
     private:
-        Vkm::GL::Shader&  m_shader;         ///< Static geometry; borrowed, see the constructor.
-        Vkm::GL::Shader   m_skinnedShader;  ///< Skinned, posed by the frame's palette.
+        Vkm::GL::Shader&  m_shader;              ///< Static geometry; borrowed, see the constructor.
+        Vkm::GL::Shader   m_skinnedShader;       ///< Skinned, posed by the frame's palette.
+        Vkm::GL::Shader   m_plainShader;         ///< Static, for a plain material.
+        Vkm::GL::Shader   m_plainSkinnedShader;  ///< Skinned, for a plain material.
         GLInstanceBatcher m_batcher;
 
         // Back-to-front, refilled each frame with capacity kept. The opaque bucket is the context's.

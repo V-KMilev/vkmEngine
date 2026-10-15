@@ -18,7 +18,7 @@ class WindowManager;
 class HostChrome {
     public:
         /**
-         * @brief A rect in framebuffer pixels, origin at the bottom left.
+         * @brief A rect in framebuffer pixels, origin at the top left.
          */
         struct ViewportRect {
             uint32_t x      = 0;
@@ -89,10 +89,29 @@ class HostChrome {
          */
         bool capturesKeyboard() const { return m_captureKeyboard; }
 
+        /**
+         * @brief Declare whether the host may change the world this frame: an editor outside a
+         *        running session, or with its panels shown.
+         *
+         * A world being authored keeps nothing between frames on the strength of a Mesh being
+         * fixed (Mesh::movable): the author moves fixed things too.
+         *
+         * @param authoring Whether the world is open to the host's edits.
+         */
+        void setAuthoring(bool authoring) { m_authoring = authoring; }
+
+        /**
+         * @brief Whether the host may change the world this frame.
+         *
+         * @return The last setAuthoring() flag; false in a host that never sets it.
+         */
+        bool authoring() const { return m_authoring; }
+
     private:
         ViewportRect m_viewport;
         bool m_capturePointer  = false;
         bool m_captureKeyboard = false;
+        bool m_authoring       = false;
 };
 
 } // namespace Vkm::Engine

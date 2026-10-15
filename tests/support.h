@@ -180,18 +180,19 @@ struct TestFrame {
     NetSession      ownedNet;
     HostChrome      chrome;
     RenderSettings  render;
+    RenderSettings  projectRender;
     FrameContext    ctx;
 
     explicit TestFrame(Scene& scene)
-        : ctx{scene, resources, clock, events, window, input, ownedNet, chrome, render} {}
+        : ctx{scene, resources, clock, events, window, input, ownedNet, chrome, render, projectRender} {}
 
     // For the networking suites: the context refers to the test's own session.
     TestFrame(Scene& scene, NetSession& session)
-        : ctx{scene, resources, clock, events, window, input, session, chrome, render} {}
+        : ctx{scene, resources, clock, events, window, input, session, chrome, render, projectRender} {}
 
     // For components naming assets the test made before the frame.
     TestFrame(Scene& scene, ResourceManager& assets)
-        : ctx{scene, assets, clock, events, window, input, ownedNet, chrome, render} {}
+        : ctx{scene, assets, clock, events, window, input, ownedNet, chrome, render, projectRender} {}
 };
 
 inline bool sameDirection(const glm::vec3& a, const glm::vec3& b) {

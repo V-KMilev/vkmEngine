@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,8 @@
 #include "egl_context.h"
 
 #include "gl_backend.h"
+#include "asset/gl_material.h"
+#include "pass/gl_forward_pass.h"
 #include "frame/gl_occlusion_cull.h"
 #include "offline/gl_ibl_baker.h"
 #include "offline/gl_irradiance_baker.h"
@@ -961,7 +964,8 @@ std::vector<unsigned char> render(
     const UIDrawData* ui = nullptr,
     const RenderSettings& settings = RenderSettings{},
     const SplashFrame* splash = nullptr,
-    int frames = FRAMES
+    int frames = FRAMES,
+    const std::function<void(int frame, const Visibility& seen)>& afterFrame = {}
 ) {
     Clock          clock;
     EventBus       events;
@@ -970,7 +974,8 @@ std::vector<unsigned char> render(
     NetSession     net;
     HostChrome     chrome;
     RenderSettings tuning = settings;
-    FrameContext   ctx{s.scene, s.resources, clock, events, window, input, net, chrome, tuning};
+    RenderSettings project = settings;
+    FrameContext   ctx{s.scene, s.resources, clock, events, window, input, net, chrome, tuning, project};
 
     SkySystem        sky;
     OceanSystem      ocean;
@@ -988,6 +993,7 @@ std::vector<unsigned char> render(
         visibility.update(ctx);
         view.build(s.scene, *ctx.visibility, ui, splash, nullptr, &s.particles, ctx.ocean);
         backend.render(view, s.resources);
+        if (afterFrame) afterFrame(frame, *ctx.visibility);
     }
 
     std::vector<unsigned char> image;
@@ -1800,6 +1806,84 @@ void testAViewmodelShadesNothingBehindIt(int& failures) {
     expect("  and darkens no wall round it", darkest <= 3, failures);
 }
 
+// The penumbra scene with soft shadows off, against the same scene with a sun of no size: every
+// shadow takes the hard path whatever the light's source. With them on, the penumbra shows.
+void testSoftShadowsOffDrawTheHardPath(int& failures) {
+    std::printf("Soft shadows turned off:\n");
+    RenderSettings hard;
+    hard.msaaSamples = 1;
+    hard.softShadows = false;
+    RenderSettings soft;
+    soft.msaaSamples = 1;
+
+    restoreContextDefaults();
+    WindowManager window;
+    std::vector<unsigned char> frames[3];
+    for (int i = 0; i < 3; ++i) {
+        restoreContextDefaults();
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        buildPenumbra(s);
+        if (i == 2) s.scene.forEach<Light>([](EntityId, Light& light) { light.sourceRadius = 0.0f; });
+        frames[i] = render(s, backend, nullptr, i == 0 ? hard : soft);
+    }
+    const float off = differingShare(frames[0], frames[2].data());
+    const float on  = differingShare(frames[1], frames[2].data());
+    std::printf("      off %.2f%%, on %.2f%% of pixels unlike a sun of no size\n", off * 100.0f, on * 100.0f);
+    expect("soft shadows off draw the frame a sun of no size draws", off <= PIXEL_TOLERANCE, failures);
+    expect("  where soft ones draw another", on > PIXEL_TOLERANCE, failures);
+}
+
+// The penumbra scene at half the viewport's resolution on each axis: the composite scales it up
+// over the whole frame, close to the full-resolution one but not it. A UI clip over it lands on
+// the viewport's own pixels, as at full resolution.
+void testAHalfScaleSceneFillsTheFrame(int& failures) {
+    std::printf("A scene rendered at half scale:\n");
+    RenderSettings full;
+    full.msaaSamples = 1;
+    RenderSettings half = full;
+    half.renderScale = 0.5f;
+
+    UIDrawData ui;
+    solidQuad(ui, {0.0f, 0.0f}, {float(WIDTH), float(HEIGHT)}, glm::vec4(1.0f));
+    ui.commands.push_back(UIDrawCmd{0, 6, UIRect{{10.5f, 20.5f}, {30.2f, 40.2f}}, {}});
+
+    restoreContextDefaults();
+    WindowManager window;
+    std::vector<unsigned char> frames[2];
+    std::vector<unsigned char> clipped;
+    for (int i = 0; i < 2; ++i) {
+        restoreContextDefaults();
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        buildPenumbra(s);
+        frames[i] = render(s, backend, nullptr, i == 0 ? full : half);
+        if (i == 1) clipped = render(s, backend, &ui, half);
+    }
+    double sum = 0.0;
+    for (size_t at = 0; at < frames[0].size(); ++at) sum += std::abs(int(frames[0][at]) - int(frames[1][at]));
+    const double mean = sum / static_cast<double>(frames[0].size());
+    const float differing = differingShare(frames[1], frames[0].data());
+    std::printf("      %.2f levels apart on average, %.2f%% of pixels differ\n", mean, 100.0f * differing);
+    expect("it fills the frame, close to the full-resolution one", mean < 4.0, failures);
+    expect("  and is the scene at fewer pixels, not that one", mean > 0.0, failures);
+
+    const auto white = [&](int x, int y) { return pixel(clipped, x, y) == glm::ivec3(255); };
+    expect(
+        "a UI clip over it keeps the viewport's own pixels",
+        white(10, 20) && white(40, 60) && !white(41, 30) && !white(20, 61) && !white(9, 30) && !white(20, 19),
+        failures
+    );
+}
+
 // Two walls a centimetre apart, a kilometre out, through a 10 cm near plane: the nearer is seen
 // at every pixel. A 24-bit depth buffer, reversed or not, rounds the two to one depth there, and
 // whichever draws last is seen; the eye's float depth, reversed, holds them apart
@@ -1844,6 +1928,339 @@ void testTwoWallsACentimetreApartAKilometreOutDoNotFight(int& failures) {
     }
     std::printf("      %d of %d pixels show the farther wall\n", farther, 2 * WIDTH * HEIGHT);
     expect("the nearer wall is seen at every pixel, made first or last", farther == 0, failures);
+}
+
+// The reflections scene with a ray every two by two pixels: the resolve gathers each pixel's
+// reflection from the hits on its own surface, so the frame is close to the full-resolution
+// one, though not it.
+void testHalfResolutionReflectionsAreCloseToFull(int& failures) {
+    std::printf("Reflections traced at half resolution:\n");
+    RenderSettings full;
+    full.msaaSamples = 1;
+    RenderSettings half = full;
+    half.ssrHalfResolution = true;
+
+    restoreContextDefaults();
+    WindowManager window;
+    std::vector<unsigned char> frames[2];
+    for (int i = 0; i < 2; ++i) {
+        restoreContextDefaults();
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        buildReflections(s);
+        frames[i] = render(s, backend, nullptr, i == 0 ? full : half);
+    }
+    double sum = 0.0;
+    for (size_t at = 0; at < frames[0].size(); ++at) sum += std::abs(int(frames[0][at]) - int(frames[1][at]));
+    const double mean = sum / static_cast<double>(frames[0].size());
+    const float differing = differingShare(frames[1], frames[0].data());
+    std::printf("      %.2f levels apart on average, %.2f%% of pixels differ\n", mean, 100.0f * differing);
+    expect("they are close to the full-resolution ones", mean < 1.0 && differing < 0.02f, failures);
+    expect("  and are traced at fewer pixels, not those", mean > 0.0, failures);
+}
+
+// The plain program draws a plain material as the whole one would: the materials scene as it is,
+// every material plain, and again with each given a clearcoat too faint for the shader to draw,
+// which takes the whole program (GLForwardPass::drawsPlain). The frames are the same but for a few
+// highlight pixels the two compilations round apart; a feature lost from the plain program is
+// thousands of pixels.
+void testAPlainMaterialDrawsAsTheWholeProgramWould(int& failures) {
+    std::printf("Plain materials by the plain program and by the whole one:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+
+    restoreContextDefaults();
+    WindowManager window;
+    std::vector<unsigned char> frames[2];
+    for (int i = 0; i < 2; ++i) {
+        restoreContextDefaults();
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        buildMaterials(s);
+        if (i == 1) {
+            s.scene.forEach<Mesh>([&](EntityId, Mesh& mesh) {
+                s.resources.edit(mesh.material).clearcoat = 1e-6f;
+            });
+        }
+        frames[i] = render(s, backend, nullptr, settings);
+    }
+    double sum = 0.0;
+    for (size_t at = 0; at < frames[0].size(); ++at) sum += std::abs(int(frames[0][at]) - int(frames[1][at]));
+    const double mean = sum / static_cast<double>(frames[0].size());
+    const float differing = differingShare(frames[1], frames[0].data());
+    std::printf("      %.3f levels apart on average, %.3f%% of pixels differ\n", mean, 100.0f * differing);
+    expect("the frames are the same", mean < 0.01 && differing < 0.0005f, failures);
+}
+
+// Each optional feature alone takes a material off the plain program, which would drop it; with
+// none the material stays on it.
+void testEveryOptionalFeatureTakesTheWholeProgram(int& failures) {
+    std::printf("Which materials the plain program draws:\n");
+    Scenery s;
+    TextureAsset bumps;
+    bumps.params.width  = 1;
+    bumps.params.height = 1;
+    bumps.pixelData     = {128, 128, 128, 255};
+    const TextureHandle height = s.resources.add(std::move(bumps), "golden:bumps");
+
+    const auto plain = [](const MaterialAsset& asset) { return GLMaterial(asset).plain(); };
+    expect("a material with none is plain", plain(MaterialAsset{}), failures);
+    const GLMaterial none{MaterialAsset{}};
+    expect("  and draws with the plain program", GLForwardPass::drawsPlain(&none), failures);
+    expect("  a run with no material takes the whole program", !GLForwardPass::drawsPlain(nullptr), failures);
+
+    const std::pair<const char*, void (*)(MaterialAsset&)> features[] = {
+        {"anisotropy",   [](MaterialAsset& m) { m.anisotropy = 0.5f; }},
+        {"subsurface",   [](MaterialAsset& m) { m.subsurface = 0.5f; }},
+        {"transmission", [](MaterialAsset& m) { m.transmission = 0.5f; }},
+        {"clearcoat",    [](MaterialAsset& m) { m.clearcoat = 0.5f; }},
+        {"sheen",        [](MaterialAsset& m) { m.sheenColor = {0.0f, 0.0f, 0.5f}; }},
+    };
+    for (const auto& [name, add] : features) {
+        MaterialAsset asset;
+        add(asset);
+        const GLMaterial whole{asset};
+        expect((std::string("  one with ") + name + " is not").c_str(), !whole.plain(), failures);
+        expect("    and draws with the whole program", !GLForwardPass::drawsPlain(&whole), failures);
+    }
+
+    MaterialAsset parallax;
+    parallax.heightTexture = height;
+    expect("  one with a height map at no scale is", plain(parallax), failures);
+    parallax.heightScale = 0.05f;
+    expect("  one with a height map at a scale is not", !plain(parallax), failures);
+    parallax.heightTexture = {};
+    expect("  one with a scale and no map is", plain(parallax), failures);
+}
+
+// Meshes that never move beside one that does, which moves mid-session: the backend refreshes the
+// moved object's copy alone (RenderObjects::changed), and the frame must be the one a fresh backend
+// draws of the moved scene.
+void testAMovedObjectIsDrawnWhereItWent(int& failures) {
+    std::printf("A mesh moved among fixed ones, mid-session:\n");
+    const auto build = [](Scenery& s, float moverX) {
+        base(s);
+        const MaterialHandle stone = material(s, "golden:fixed_stone", {0.6f, 0.6f, 0.6f}, 0.8f, 0.0f);
+        const MaterialHandle red   = material(s, "golden:mover_red", {0.8f, 0.1f, 0.1f}, 0.5f, 0.0f);
+        place(s, s.cube, stone, {0.0f, -0.5f, 0.0f}, {12.0f, 1.0f, 12.0f});
+        for (int i = -2; i <= 2; ++i) {
+            place(s, s.cube, stone, {static_cast<float>(i) * 1.5f, 0.5f, -2.0f}, glm::vec3(1.0f));
+        }
+        s.scene.forEach<Mesh>([](EntityId, Mesh& mesh) { mesh.movable = false; });
+        place(s, s.sphere, red, {moverX, 0.5f, 1.0f}, glm::vec3(1.0f));
+        sunAndCamera(s, {0.0f, 4.0f, 8.0f}, {0.0f, 0.0f, 0.0f});
+    };
+    RenderSettings plain;
+    plain.msaaSamples = 1;
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend fresh;
+    if (!fresh.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery there;
+    build(there, 2.0f);
+    const std::vector<unsigned char> want = render(there, fresh, nullptr, plain);
+
+    restoreContextDefaults();
+    GLBackend moved;
+    if (!moved.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery s;
+    build(s, -2.0f);
+    // Moved after FRAMES frames, then watched in the frame that sees it.
+    bool named = false;
+    const auto moveAndWatch = [&](int frame, const Visibility& seen) {
+        if (frame == FRAMES - 1) {
+            s.scene.forEach<Mesh>([&](EntityId entity, Mesh& mesh) {
+                if (mesh.movable) s.scene.get<Transform>(entity).position.x = 2.0f;
+            });
+        }
+        if (frame == FRAMES) named = !seen.objects.allChanged && seen.objects.changed.size() == 1;
+    };
+    const std::vector<unsigned char> got = render(
+        s,
+        moved,
+        nullptr,
+        plain,
+        nullptr,
+        2 * FRAMES,
+        moveAndWatch
+    );
+
+    const float differing = differingShare(got, want.data());
+    std::printf("      %.2f%% of pixels unlike a fresh backend's frame\n", differing * 100.0f);
+    expect("the move is named alone, the rest kept", named, failures);
+    expect("  and the frame is the fresh backend's", differing <= PIXEL_TOLERANCE, failures);
+}
+
+// A fixed mesh destroyed and two spawned mid-session: the backend's copies grow, the mesh moved
+// into the destroyed one's place and the spawned ones are refreshed alone
+// (RenderObjects::changed), and the frame must be the one a fresh backend draws of the scene as it
+// ends.
+void testASpawnAndARemovalAreDrawnAsTheyEnd(int& failures) {
+    std::printf("A fixed mesh destroyed and two spawned, mid-session:\n");
+    const auto build = [](Scenery& s) {
+        base(s);
+        const MaterialHandle stone = material(s, "golden:fixed_stone", {0.6f, 0.6f, 0.6f}, 0.8f, 0.0f);
+        material(s, "golden:spawned_red", {0.8f, 0.1f, 0.1f}, 0.5f, 0.0f);
+        place(s, s.cube, stone, {0.0f, -0.5f, 0.0f}, {12.0f, 1.0f, 12.0f});
+        for (int i = -2; i <= 2; ++i) {
+            place(s, s.cube, stone, {static_cast<float>(i) * 1.5f, 0.5f, -2.0f}, glm::vec3(1.0f));
+        }
+        s.scene.forEach<Mesh>([](EntityId, Mesh& mesh) { mesh.movable = false; });
+        sunAndCamera(s, {0.0f, 4.0f, 8.0f}, {0.0f, 0.0f, 0.0f});
+    };
+    // The leftmost cube goes, so the last in the storage moves into its place; two spheres come.
+    const auto change = [](Scenery& s) {
+        EntityId gone;
+        s.scene.forEach<Mesh>([&](EntityId entity, Mesh&) {
+            if (s.scene.get<Transform>(entity).position.x == -3.0f) gone = entity;
+        });
+        s.scene.destroyEntity(gone);
+        const MaterialHandle red = s.resources.findByName<MaterialAsset>("golden:spawned_red");
+        place(s, s.sphere, red, {1.0f, 0.5f, 1.0f}, glm::vec3(1.0f));
+        place(s, s.sphere, red, {-1.5f, 0.5f, 1.0f}, glm::vec3(1.0f));
+    };
+    // Twice: the second with the occlusion cull on, whose world boxes grow in place too.
+    for (const bool culled : {false, true}) {
+        RenderSettings settings;
+        settings.msaaSamples      = 1;
+        settings.occlusionCulling = culled;
+
+        restoreContextDefaults();
+        WindowManager window;
+        GLBackend fresh;
+        if (!fresh.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery ended;
+        build(ended);
+        change(ended);
+        const std::vector<unsigned char> want = render(ended, fresh, nullptr, settings);
+
+        restoreContextDefaults();
+        GLBackend changed;
+        if (!changed.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        build(s);
+        bool named = false;
+        const auto changeAndWatch = [&](int frame, const Visibility& seen) {
+            if (frame == FRAMES - 1) change(s);
+            if (frame == FRAMES) named = !seen.objects.allChanged && seen.objects.changed.size() == 3;
+        };
+        const std::vector<unsigned char> got = render(
+            s,
+            changed,
+            nullptr,
+            settings,
+            nullptr,
+            2 * FRAMES,
+            changeAndWatch
+        );
+
+        const float differing = differingShare(got, want.data());
+        const char* how = culled ? ", culled" : "";
+        std::printf("      %.2f%% of pixels unlike a fresh backend's frame%s\n", differing * 100.0f, how);
+        expect("the moved and the spawned are named alone, the rest kept", named, failures);
+        expect("  and the frame is the fresh backend's", differing <= PIXEL_TOLERANCE, failures);
+    }
+}
+
+// A sphere moving through fixed scenery under the sun, a spot and a bulb: the tiles and faces it
+// crosses are signed anew and drawn again, the rest keep last frame's batch. Once it stops, the
+// frame must be the one a fresh backend draws of the scene as it ends.
+void testAMoverOverFixedScenery(int& failures) {
+    std::printf("A sphere moving over fixed scenery, under the sun, a spot and a bulb:\n");
+    constexpr float START = -1.2f;
+    constexpr float STEP  = 0.15f;
+    constexpr int   MOVES = 2 * FRAMES - 2;  // The last two frames hold still.
+    const auto build = [](Scenery& s, float sphereX) {
+        base(s);
+        const MaterialHandle stone = material(s, "golden:fixed_stone", {0.7f, 0.66f, 0.6f}, 0.8f, 0.0f);
+        const MaterialHandle red   = material(s, "golden:mover_red", {0.8f, 0.1f, 0.1f}, 0.5f, 0.0f);
+        place(s, s.cube, stone, {0.0f, -0.5f, 0.0f}, {14.0f, 1.0f, 14.0f});
+        place(s, s.cube, stone, {0.0f, 1.5f, -2.5f}, {8.0f, 3.0f, 0.4f});
+        for (float x : {-2.0f, 0.0f, 2.0f}) place(s, s.cube, stone, {x, 0.6f, -0.8f}, {0.5f, 1.2f, 0.5f});
+        s.scene.forEach<Mesh>([](EntityId, Mesh& mesh) { mesh.movable = false; });
+        place(s, s.sphere, red, {sphereX, 0.6f, 0.6f}, glm::vec3(0.8f));
+
+        const EntityId lamp = s.scene.createEntity();
+        Transform lampPose;
+        lampPose.position = {0.0f, 4.0f, 0.5f};
+        lampPose.rotation = glm::quatLookAt(glm::vec3(0.0f, -1.0f, 0.0f), glm::vec3(0.0f, 0.0f, -1.0f));
+        s.scene.add(lamp, std::move(lampPose));
+        Light spot;
+        spot.type           = LightType::Spot;
+        spot.intensity      = 40.0f;
+        spot.radius         = 10.0f;
+        spot.outerConeAngle = 1.0f;
+        spot.innerConeAngle = 0.8f;
+        spot.castShadows    = true;
+        s.scene.add(lamp, std::move(spot));
+
+        const EntityId bulb = s.scene.createEntity();
+        Transform bulbPose;
+        bulbPose.position = {1.5f, 1.4f, 1.6f};
+        s.scene.add(bulb, std::move(bulbPose));
+        Light point;
+        point.type        = LightType::Point;
+        point.intensity   = 20.0f;
+        point.radius      = 8.0f;
+        point.castShadows = true;
+        s.scene.add(bulb, std::move(point));
+        sunAndCamera(s, {0.0f, 4.0f, 7.0f}, {0.0f, 0.5f, 0.0f});
+    };
+    RenderSettings plain;
+    plain.msaaSamples = 1;
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend fresh;
+    if (!fresh.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery ended;
+    build(ended, START + STEP * static_cast<float>(MOVES));
+    const std::vector<unsigned char> want = render(ended, fresh, nullptr, plain);
+
+    restoreContextDefaults();
+    GLBackend lived;
+    if (!lived.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery s;
+    build(s, START);
+    const auto move = [&](int frame, const Visibility&) {
+        if (frame >= MOVES) return;
+        const float x = START + STEP * static_cast<float>(frame + 1);
+        s.scene.forEach<Mesh>([&](EntityId entity, Mesh& mesh) {
+            if (mesh.movable) s.scene.get<Transform>(entity).position.x = x;
+        });
+    };
+    const std::vector<unsigned char> got = render(s, lived, nullptr, plain, nullptr, 2 * FRAMES, move);
+
+    const float differing = differingShare(got, want.data());
+    std::printf("      %.2f%% of pixels unlike a fresh backend's frame\n", differing * 100.0f);
+    expect("the frame is the fresh backend's", differing <= PIXEL_TOLERANCE, failures);
 }
 
 void testTheUIOverlayLandsOnItsPixels(int& failures) {
@@ -2181,6 +2598,44 @@ void testAWeaponHeldIntoAWallIsNotCulled(int& failures) {
         const char* what = samples > 1 ? "the weapon shows as without the cull" : "  and at one sample";
         expect(what, share <= PIXEL_TOLERANCE, failures);
     }
+}
+
+// A pool of the ocean's water behind a wall: its box is the CPU cull's, reaching as far as the sea
+// moves a wave, so the occlusion cull hides it as it hides anything else.
+void testWaterBehindAWallIsCulled(int& failures) {
+    std::printf("A pool of moving water behind a wall, with the occlusion cull on:\n");
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend culled;
+    if (!culled.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery s;
+    base(s);
+    const MaterialHandle ground  = material(s, "golden:ground", {0.45f, 0.42f, 0.38f}, 0.9f, 0.0f);
+    const MaterialHandle plaster = material(s, "golden:plaster", {0.7f, 0.68f, 0.64f}, 0.9f, 0.0f);
+    MaterialAsset sea;
+    sea.albedo = glm::vec4(0.01f, 0.02f, 0.04f, 1.0f);
+    sea.waves  = true;
+    const MaterialHandle water = s.resources.add(std::move(sea), "golden:pool");
+    place(s, s.cube, ground, {0.0f, -0.5f, 0.0f}, {40.0f, 1.0f, 40.0f});
+    place(s, s.cube, water, {0.0f, 0.1f, -5.0f}, {3.0f, 0.2f, 3.0f});
+    place(s, s.cube, plaster, {0.0f, 3.0f, 0.0f}, {16.0f, 6.0f, 0.4f});
+    const EntityId oceanId = s.scene.createEntity();
+    s.scene.add(oceanId, Transform{});
+    Ocean ocean;
+    ocean.windSpeed = 2.0f;
+    s.scene.add(oceanId, ocean);
+    sunAndCamera(s, {0.0f, 1.5f, 6.0f}, {0.0f, 1.0f, -4.0f});
+
+    RenderSettings culling;
+    culling.occlusionCulling = true;
+    render(s, culled, nullptr, culling);
+    const uint32_t shown = culled.occlusionCull().countIn(GLOcclusionCull::Set::Shown);
+    std::printf("      %u shown\n", shown);
+    expect("the ground and the wall are shown, the water behind it not", shown == 2, failures);
 }
 
 // A box seen face-on, its face filling an orthographic frame, is tested against the depth it laid
@@ -2856,7 +3311,15 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     for (const Golden& golden : goldens) compare(golden.name, golden.build, gl.renderer(), failures, true);
 
     testTheUIOverlayLandsOnItsPixels(failures);
+    testSoftShadowsOffDrawTheHardPath(failures);
+    testAHalfScaleSceneFillsTheFrame(failures);
     testTwoWallsACentimetreApartAKilometreOutDoNotFight(failures);
+    testHalfResolutionReflectionsAreCloseToFull(failures);
+    testAMovedObjectIsDrawnWhereItWent(failures);
+    testASpawnAndARemovalAreDrawnAsTheyEnd(failures);
+    testAMoverOverFixedScenery(failures);
+    testAPlainMaterialDrawsAsTheWholeProgramWould(failures);
+    testEveryOptionalFeatureTakesTheWholeProgram(failures);
     testAViewmodelShadesNothingBehindIt(failures);
     testABackendDropsWhatTheSceneNoLongerAsksFor(failures);
     testAFrameWithNoCameraKeepsTheProbesBaked(failures);
@@ -2864,6 +3327,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testWhatTheCullHidDrawsTheFrameItComesOut(failures);
     testAWeaponHeldIntoAWallIsNotCulled(failures);
     testAFaceFillingTheFrameIsNotCulledByItsOwnDepth(failures);
+    testWaterBehindAWallIsCulled(failures);
     testADriftingSunIsFollowedOverFrames(failures);
     testASplashFadesLinearlyOnTheGlass(failures);
     testAnOpenFloorIsNotOccluded(failures);

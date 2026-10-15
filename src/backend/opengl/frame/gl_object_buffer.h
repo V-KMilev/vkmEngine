@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include "gl_stream_ring.h"
@@ -21,11 +22,11 @@ inline constexpr uint32_t INSTANCE_FLAG_VIEWMODEL = 1u;
 inline constexpr float VIEWMODEL_DEPTH_SHARE = 0.05f;
 
 /**
- * @brief Every object's model matrix, its flags, and first bone when the frame posed, for instanced draws.
+ * @brief Every object's model matrix, its flags, its first bone when the frame posed and its world
+ *        box when the GPU cull reads one, for instanced draws.
  *
- * The whole set goes up each frame at each object's own index, so a draw carries only object
- * indices through the instance attribute. Whole, since there is no record of what changed to
- * trust (engine.md, dirty flags).
+ * Each object at its own index, so a draw carries only object indices through the instance
+ * attribute.
  */
 class GLObjectBuffer {
     public:
@@ -40,13 +41,18 @@ class GLObjectBuffer {
 
     public:
         /**
-         * @brief Write model matrices and flags, and first bones when @p posed, into @p stream.
+         * @brief Write model matrices and flags, first bones when @p posed and world boxes when
+         *        @p boxed, into @p stream.
+         *
+         * Only the objects RenderObjects::changed names, while the copies are of the frame before;
+         * every one when they are not, or when the objects say all changed.
          *
          * @param objects The objects this frame's index lists address.
          * @param posed   Whether the frame has a bone palette; without one no first bone is read.
+         * @param boxed   Whether the GPU occlusion cull runs; without it no world box is read.
          * @param stream  The frame's streaming memory (GLView::stream).
          */
-        void upload(const RenderObjects& objects, bool posed, Vkm::GL::StreamRing& stream);
+        void upload(const RenderObjects& objects, bool posed, bool boxed, Vkm::GL::StreamRing& stream);
 
         /**
          * @brief Bind the buffers to their storage points.
@@ -56,18 +62,24 @@ class GLObjectBuffer {
         void bind() const;
 
     private:
-        // Read by every pass that draws objects, so copied into video memory once a frame.
+        /// Past this many runs of changed objects a whole upload is the cheaper: a run is a patch
+        /// per stream.
+        static constexpr size_t MAX_PATCH_RUNS = 64;
+
+    private:
+        // Read by every pass that draws objects, so kept in video memory.
         Vkm::GL::DeviceStream m_modelStream;
         Vkm::GL::DeviceStream m_skinFirstStream;
         Vkm::GL::DeviceStream m_flagStream;
-
-        Vkm::GL::BufferSpan m_models;
-        Vkm::GL::BufferSpan m_skinFirst;
-        Vkm::GL::BufferSpan m_flags;  ///< An INSTANCE_FLAG_* word an object.
+        Vkm::GL::DeviceStream m_boxStream;
 
         std::vector<uint32_t> m_flagScratch;  ///< The flags as uploaded; capacity kept across frames.
+        std::vector<std::pair<uint32_t, uint32_t>> m_runs;  ///< This frame's [first, end) patches.
 
-        bool m_posed = false;  ///< The last upload carried first bones.
+        uint64_t m_serial = 0;      ///< RenderObjects::serial of the frame the copies are of.
+        uint32_t m_count  = 0;      ///< Objects the copies hold.
+        bool     m_posed  = false;  ///< The last upload carried first bones.
+        bool     m_boxed  = false;  ///< The last upload carried world boxes.
 };
 
 } // namespace Vkm::Engine

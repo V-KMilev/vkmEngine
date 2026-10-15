@@ -122,17 +122,15 @@ void visitPreferenceFields(Prefs& p, Fn&& f) {
  * the rest lives in `project.json` - see `visitShippedRenderFields` in
  * system/render/render_settings.h. Same single-list contract as visitScalarFields.
  *
- * @tparam Settings RenderSettings for load, const RenderSettings for save.
- * @tparam Fn       Called as f(key, member) per field.
- * @param r Whose view fields are visited.
- * @param f The read or the write.
+ * @tparam Fn Called as f(key, pointer to the RenderSettings member) per field.
+ * @param f The read, the write or the copy.
  */
-template <typename Settings, typename Fn>
-void visitRenderFields(Settings& r, Fn&& f) {
-    f("renderMode", r.renderMode);
-    f("gridAxisX",  r.gridAxisX);
-    f("gridAxisY",  r.gridAxisY);
-    f("gridAxisZ",  r.gridAxisZ);
+template <typename Fn>
+void visitRenderFields(Fn&& f) {
+    f("renderMode", &RenderSettings::renderMode);
+    f("gridAxisX",  &RenderSettings::gridAxisX);
+    f("gridAxisY",  &RenderSettings::gridAxisY);
+    f("gridAxisZ",  &RenderSettings::gridAxisZ);
 }
 
 /**
@@ -331,7 +329,7 @@ bool load(EditorState& state, RenderSettings& render) {
     // The editor's own view state; the game's look lives in project.json.
     if (j.contains("renderSettings")) {
         const auto& rs = j["renderSettings"];
-        visitRenderFields(render, [&](const char* key, auto& member) { readField(rs, key, member); });
+        visitRenderFields([&](const char* key, auto field) { readField(rs, key, render.*field); });
     }
 
     // Project-relative, so the list moves with it; a gone file's entry is dropped,
@@ -365,13 +363,17 @@ void applyViewDefaults(RenderSettings& render) {
     render.gridAxisZ = true;
 }
 
+void copyViewFields(const RenderSettings& from, RenderSettings& to) {
+    visitRenderFields([&](const char*, auto field) { to.*field = from.*field; });
+}
+
 bool save(const EditorState& state, const RenderSettings& render) {
     json j;
     j["version"] = FILE_VERSION;
     visitScalarFields(state, [&](const char* key, const auto& member) { writeField(j, key, member); });
 
     json rs;
-    visitRenderFields(render, [&](const char* key, const auto& member) { writeField(rs, key, member); });
+    visitRenderFields([&](const char* key, auto field) { writeField(rs, key, render.*field); });
     j["renderSettings"] = std::move(rs);
 
     json recents = json::array();

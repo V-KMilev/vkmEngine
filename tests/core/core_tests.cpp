@@ -25,6 +25,7 @@
 #include "core/math/easing.h"
 #include "io/json_file.h"
 #include "io/project_paths.h"
+#include "platform/window/window_manager.h"
 #include "platform/process/child_process.h"
 #include "platform/threading/thread_pool.h"
 #include "platform/window/frame_limiter.h"
@@ -1257,6 +1258,26 @@ void testAProgramEndsWhenItsHostDies() {
 }
 #endif
 
+// A settings screen's render resolutions: of a monitor's video modes, those that fit on it, largest
+// first, each once. GLFW lists a size once per colour depth and refresh rate, depth first, so its
+// list repeats sizes and is not in size order; these modes do both, with two too large for the
+// monitor and an empty one.
+void testTheRenderResolutionsAreTheModesThatFit() {
+    std::printf("The render resolutions a settings screen offers:\n");
+    const std::vector<WindowSize> modes = {
+        {1280, 720},
+        {2560, 1440},
+        {1920, 1080},
+        {1280, 720},
+        {1600, 900},
+        {1920, 1200},
+        {0, 0},
+    };
+    const std::vector<WindowSize> fit  = fittingWindowSizes(modes, {1920, 1080});
+    const std::vector<WindowSize> want = {{1920, 1080}, {1600, 900}, {1280, 720}};
+    check("the modes that fit on the monitor, largest first, each once", fit == want);
+}
+
 } // namespace
 
 TypeId typeIdOfCoreTestsProbe() {
@@ -1276,6 +1297,7 @@ TypeId typeIdOfCoreTestsConstantsProbe() {
 
 void runCoreTests() {
     testMathConvention();
+    testTheRenderResolutionsAreTheModesThatFit();
     testARayFindsTheLevelItPointsAt();
     testARotationReadFromAMatrixHasOneAnswer();
     testTickRate();

@@ -30,6 +30,7 @@
 #include "resource/resource_manager.h"
 #include "resource/generate/default_scene.h"
 #include "input/camera_controller_system.h"
+#include "system/render/render_settings.h"
 #include "system/script/behavior_system.h"
 #include "ui/editor_style.h"
 #include "ui/editor_dialogs.h"
@@ -378,6 +379,8 @@ bool SceneIOController::captureSnapshot(FrameContext& ctx, EditorState& state) {
     // The session's steps address the copy Stop discards; see
     // docs/reference/editor.md, "A play session owns the scene".
     state.commands.park();
+    // What Stop puts back, whatever a game's settings screen writes in the session.
+    ctx.projectRender = ctx.render;
     ctx.input.reset();
 
     // A partial cook does not stop Play, by the same rule the save follows: the
@@ -412,6 +415,8 @@ void SceneIOController::restoreSnapshot(FrameContext& ctx, EditorState& state) {
         // names it, and only a scene the editor wrote and cannot read gets here.
         return;
     }
+
+    ctx.render = ctx.projectRender;
 
     // Both are read out first because afterSceneReplace releases the snapshot.
     const bool dirtyAtCapture = m_play.dirtyAtCapture();

@@ -224,7 +224,7 @@ uint32_t GLPreview::render(
 
     // No palette: the preview draws shaders/forward/pbr only, so a character
     // thumbnails in bind pose.
-    m_objectBuffer.upload(m_object, false, glView.stream());
+    m_objectBuffer.upload(m_object, false, false, glView.stream());
     m_objectBuffer.bind();
     const std::vector<InstanceDraw>& draws = m_batcher.buildGrouped(m_object.visible, m_object, glView, 0);
     material->bind(GLBindings::UBOBindingPoints::MATERIAL);

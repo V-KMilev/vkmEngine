@@ -47,10 +47,19 @@ layout(location = OUT_REFLECT_ENV) out vec4 ReflectEnv;  // rgb: that weight x t
 #include "../../shadows.glsl"
 #include "../../ocean.glsl"
 
+// Whether the optional features - anisotropy, subsurface, transmission, clearcoat, sheen and
+// parallax - are compiled in. The plain variant (forward/pbr_plain) leaves them out, for a material
+// that uses none (GLMaterial::plain).
+#ifdef PLAIN
+const bool FEATURES = false;
+#else
+const bool FEATURES = true;
+#endif
+
 // The material's own subsurface lobe: the scene's ocean's water scatters by oceanScatter instead,
 // and with no ocean a `waves` material is an ordinary one.
 bool hasSubsurface() {
-    return u_material.subsurface > 0.001 && (u_material.waves == 0 || !oceanPresent());
+    return FEATURES && u_material.subsurface > 0.001 && (u_material.waves == 0 || !oceanPresent());
 }
 
 // The ocean's ripple fields (GLOceanFields), repeating, a layer each, the longest ripples in 0.
@@ -236,7 +245,7 @@ float sheenTaken(float NdotX) {
 }
 
 bool hasSheen() {
-    return sheenStrength() > 0.0;
+    return FEATURES && sheenStrength() > 0.0;
 }
 
 // The GGX alpha along an anisotropic material's direction, from @p a across it
@@ -374,7 +383,7 @@ vec3 evaluateLight(
     // sphereNorm; Ls is L for a point source. specNoL is the cosine the lobe takes.
     float D, Vis;
     float specNoL = NdotL;
-    if (u_material.anisotropy > 0.001) {
+    if (FEATURES && u_material.anisotropy > 0.001) {
         vec3 aT = anisotropyTangent(T, B, N);
         vec3 aB = cross(N, aT);   // unit: N and aT are unit and perpendicular
         float at = max(anisotropicAlpha(a), 1e-3);
@@ -407,7 +416,7 @@ vec3 evaluateLight(
     // Thin transmission trades front diffuse for a back-lit term, tinted by
     // Beer-Lambert absorption when a volume is declared.
     vec3 transmitted = vec3(0.0);
-    if (s.transmission > 0.001) {
+    if (FEATURES && s.transmission > 0.001) {
         float kt = s.transmission * (1.0 - s.metallic);
         diffuse *= (1.0 - kt);
         transmitted = kt * s.albedo / PI * max(dot(-N, L), 0.0);
@@ -436,7 +445,7 @@ vec3 evaluateLight(
     vec3 ccContrib = vec3(0.0);
     float underCoat = 1.0;
     float ccStrength = s.clearcoat;
-    if (ccStrength > 0.001) {
+    if (FEATURES && ccStrength > 0.001) {
         // On the geometric normal: the coat is smooth over the base's bumps (KHR_materials_clearcoat
         // without a coat normal map), so lacquer over bumpy wood keeps a mirror top.
         float cNoL = max(dot(Ng, L), 0.0);
@@ -550,7 +559,7 @@ void main() {
     vec2 uv   = vUV;
     vec2 uvDx = dFdx(vUV);
     vec2 uvDy = dFdy(vUV);
-    if (hasTex(MATERIAL_SLOT_HEIGHT) && u_material.heightScale > 0.0) {
+    if (FEATURES && hasTex(MATERIAL_SLOT_HEIGHT) && u_material.heightScale > 0.0) {
         vec3 viewTS = normalize(transpose(TBN) * V);
         uv = parallax(uv, viewTS, uvDx, uvDy);
     }
@@ -624,7 +633,7 @@ void main() {
     vec3 energyCompensation = 1.0 + f0 * (1.0 / max(dfg.x + dfg.y, 1e-4) - 1.0);
 
     // Only these light a fragment from behind; others skip such a light before its shadow.
-    bool hasBack = hasSubsurface() || (s.transmission > 0.001) || water;
+    bool hasBack = hasSubsurface() || (FEATURES && s.transmission > 0.001) || water;
 
     vec3 Lo = vec3(0.0);
 
@@ -726,7 +735,8 @@ void main() {
         visibility *= surfaceShadow(type, int(light.spot.w), vWorldPos, Ng, dot(Ng, L), screenShadow);
 
         // POM self-shadowing for the sun alone, bounding the trace cost.
-        if (type == LIGHT_DIRECTIONAL
+        if (FEATURES
+            && type == LIGHT_DIRECTIONAL
             && hasTex(MATERIAL_SLOT_HEIGHT)
             && u_material.heightScale > 0.0
             && visibility > 0.0) {
@@ -802,7 +812,7 @@ void main() {
     // so a strong one keeps this reflection rather than one about the wrong normal.
     vec3  R             = reflect(-V, N);
     float lobeRoughness = sqrt(anisotropicAlpha(s.roughness * s.roughness));  // its widest axis
-    if (u_material.anisotropy > 0.001) {
+    if (FEATURES && u_material.anisotropy > 0.001) {
         vec3  aB     = cross(N, anisotropyTangent(T, B, N));
         vec3  across = cross(cross(aB, V), aB);
         float bend   = 1.0 - u_material.anisotropy * (1.0 - s.roughness);
@@ -832,7 +842,7 @@ void main() {
     // replaces (ReflectEnv) carries specOcc.
     vec3  reflectWeight = FssEss;
     float underSheen    = hasSheen() ? 1.0 - sheenTaken(NdotV) : 1.0;
-    bool  hasCoat       = s.clearcoat > 0.001;
+    bool  hasCoat       = FEATURES && s.clearcoat > 0.001;
     float coatNoV       = max(dot(Ng, V), 1e-4);
     float coatFresnel   = hasCoat ? fresnelSchlick(coatNoV, vec3(COAT_F0)).x * s.clearcoat : 0.0;
     vec3  Rc            = reflect(-V, Ng);  // the coat's, on its smooth top
@@ -956,7 +966,7 @@ void main() {
     // Screen-space refraction. What the surface reflects stays whole and only the rest blends
     // toward the scene behind, itself dimmed by the reflected share (Filament), so glass keeps
     // its reflections and highlights.
-    if (u_hasSceneColor == 1 && s.transmission > 0.0) {
+    if (FEATURES && u_hasSceneColor == 1 && s.transmission > 0.0) {
         vec3 rdir = refract(-V, N, 1.0 / max(u_material.ior, 1.0));
         if (dot(rdir, rdir) > 0.0) {
             float thickness = (u_material.thicknessFactor > 0.0) ? u_material.thicknessFactor : 0.5;

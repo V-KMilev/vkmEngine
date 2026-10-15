@@ -257,7 +257,9 @@ void parallelFor(size_t count, size_t grain, Function&& function) {
 /**
  * @brief parallelFor with an auto-chosen grain, inline below MIN_PARALLEL items.
  *
- * Larger ranges split evenly across the workers plus the calling thread.
+ * Larger ranges split into CHUNKS_PER_THREAD chunks for each worker and the calling thread, so a
+ * thread the OS preempts or a slower core leaves its share to the others rather than stretching
+ * the join.
  *
  * @tparam Function Callable taking a size_t index, or no arguments.
  * @param count    Number of indices, counted from 0.
@@ -271,10 +273,13 @@ void parallelFor(size_t count, Function&& function) {
     // grain == count sweeps serially.
     constexpr size_t MIN_PARALLEL = 2048;
 
-    // The +1 is the calling thread, which runs a chunk too.
+    // Each chunk is one claim on the pool's lock.
+    constexpr size_t CHUNKS_PER_THREAD = 8;
+
+    // The +1 is the calling thread, which runs chunks too.
     const size_t grain = (count < MIN_PARALLEL)
         ? count
-        : count / (pool.threadCount() + 1);
+        : std::max<size_t>(count / ((pool.threadCount() + 1) * CHUNKS_PER_THREAD), 1);
 
     parallelFor(count, grain, function);
 }

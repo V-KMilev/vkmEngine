@@ -84,12 +84,15 @@ class SparseSet : public ISparseSet {
                 m_data[dataIdx] = std::move(m_data[lastIdx]);
 
                 m_dataId[dataIdx]              = m_dataId[lastIdx];
+                m_stamps[dataIdx]              = m_stamps[lastIdx];
                 m_dataIndex[m_dataId[dataIdx]] = dataIdx;
             }
 
             m_data.pop_back();
             m_dataId.pop_back();
+            m_stamps.pop_back();
             m_dataIndex[key] = EMPTY;
+            ++m_structure;
         }
 
         /**
@@ -165,7 +168,9 @@ class SparseSet : public ISparseSet {
         void clear() {
             m_data.clear();
             m_dataId.clear();
+            m_stamps.clear();
             std::fill(m_dataIndex.begin(), m_dataIndex.end(), EMPTY);
+            ++m_structure;
         }
 
         /**
@@ -197,6 +202,26 @@ class SparseSet : public ISparseSet {
          * @return The key at that slot.
          */
         uint32_t keyAt(uint32_t denseIndex) const { return m_dataId[denseIndex]; }
+
+        /**
+         * @brief Moved by every add, remove and clear: what a cache keyed on dense indices compares.
+         *
+         * Not by a value changing in place, which no structure records.
+         *
+         * @return The count of structural changes so far.
+         */
+        uint64_t structure() const { return m_structure; }
+
+        /**
+         * @brief Which add put the element at a dense index there, unique for the set's life.
+         *
+         * Swap-and-pop carries it with its element, so a cache keyed on dense indices keeps what an
+         * index held while its stamp holds, through adds and removes of others.
+         *
+         * @param denseIndex Position in packed order (< size()).
+         * @return The element's stamp.
+         */
+        uint64_t stampAt(uint32_t denseIndex) const { return m_stamps[denseIndex]; }
 
         /**
          * @brief Access the element stored at a dense index.
@@ -242,14 +267,17 @@ class SparseSet : public ISparseSet {
             m_data.emplace_back(std::forward<Args>(args)...);
             m_dataId.push_back(key);
             m_dataIndex[key] = dataIdx;
+            m_stamps.push_back(++m_structure);
 
             return m_data[dataIdx];
         }
 
     private:
-        std::vector<uint32_t> m_dataIndex; ///< Sparse to dense; EMPTY = absent.
-        std::vector<uint32_t> m_dataId;    ///< Dense to sparse.
+        std::vector<uint32_t> m_dataIndex;      ///< Sparse to dense; EMPTY = absent.
+        std::vector<uint32_t> m_dataId;         ///< Dense to sparse.
         std::vector<T>        m_data;
+        std::vector<uint64_t> m_stamps;         ///< Dense: see stampAt().
+        uint64_t              m_structure = 0;  ///< See structure().
 };
 
 } // namespace Vkm::Engine

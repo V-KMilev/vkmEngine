@@ -972,10 +972,18 @@ void testAGraphicsPresetSetsWhatCostsAndKeepsTheLook() {
     project.bloomStrength = 0.2f;
     const RenderSettings low   = withPreset(project, GraphicsPreset::Low);
     const RenderSettings ultra = withPreset(RenderSettings{}, GraphicsPreset::Ultra);
-    check("low turns the costly passes off", low.msaaSamples == 1 && !low.gtao && !low.ssr && !low.bloom);
+    check(
+        "low turns the costly passes off",
+        low.msaaSamples == 1 && !low.gtao && !low.ssr && !low.bloom && !low.softShadows
+    );
+    check(
+        "  and renders the scene at fewer pixels, never past the floor",
+        low.renderScale < 1.0f && low.renderScale >= RenderSettings::MIN_RENDER_SCALE
+    );
     check(
         "  ultra has them all, at the most",
         ultra.msaaSamples == 8 && ultra.gtao && ultra.ssr && ultra.shadowResolution == 4096
+            && ultra.softShadows && ultra.renderScale == 1.0f && !ultra.ssrHalfResolution
     );
     check("  each sample count one the renderer takes", RenderSettings::isMsaaSampleCount(low.msaaSamples));
     check(
@@ -987,15 +995,28 @@ void testAGraphicsPresetSetsWhatCostsAndKeepsTheLook() {
     for (int tier = 1; tier < static_cast<int>(GraphicsPreset::Count); ++tier) {
         const RenderSettings next = withPreset(RenderSettings{}, static_cast<GraphicsPreset>(tier));
         rising = rising && next.msaaSamples >= under.msaaSamples
-            && next.shadowResolution >= under.shadowResolution;
+            && next.shadowResolution >= under.shadowResolution && next.renderScale >= under.renderScale
+            && (next.softShadows || !under.softShadows)
+            && (!next.ssrHalfResolution || under.ssrHalfResolution);
         under = next;
     }
     check("  each tier at least the one under it", rising);
 
+    // A resolution chosen on a settings screen, as a scale of the viewport it fills.
+    check(
+        "a render resolution is the share of the viewport's height, within the scale's range",
+        std::abs(RenderSettings::renderScaleFor(720, 1080) - 2.0f / 3.0f) < 1e-6f
+            && RenderSettings::renderScaleFor(2160, 1080) == 1.0f
+            && RenderSettings::renderScaleFor(360, 1080) == RenderSettings::MIN_RENDER_SCALE
+            && RenderSettings::renderScaleFor(720, 0) == 1.0f
+    );
+
     // An effect the project turned off for its look stays off at any tier.
     RenderSettings plain;
     plain.bloom = false;
-    check("an effect the project turned off stays off", !withPreset(plain, GraphicsPreset::Ultra).bloom);
+    plain.softShadows = false;
+    const RenderSettings plainUltra = withPreset(plain, GraphicsPreset::Ultra);
+    check("an effect the project turned off stays off", !plainUltra.bloom && !plainUltra.softShadows);
 }
 
 // A scene's render tuning: a camera's widest blur, a light's normal bias, a volume's

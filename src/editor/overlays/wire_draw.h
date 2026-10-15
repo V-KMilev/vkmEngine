@@ -30,7 +30,7 @@ inline float nearPlaneSide(const glm::vec4& clip) {
 /**
  * @brief Map a clip-space point in front of the near plane to screen pixels in the viewport rect.
  *
- * NDC spans the viewport rect, so it maps to vpMin + (0..vpSize) directly.
+ * NDC spans the viewport rect at any render scale, so it maps to vpMin + (0..vpSize) directly.
  *
  * @param clip   The point in clip space, in front of the near plane.
  * @param vpMin  Viewport rect's top-left, screen pixels.

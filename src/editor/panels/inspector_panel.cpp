@@ -1309,6 +1309,13 @@ void InspectorPanel::drawMeshSection(EditorContext& ec, EntityId id) {
             "weapon, in the camera alone; Viewmodel - as Eye Only, at the camera's Viewmodel FOV "
             "and never into a wall. The editor's own view draws everything";
         changed |= propEnumCombo("Seen By", mesh.seenBy, seenByTooltip);
+        changed |= propCheckbox(
+            "Movable",
+            &mesh.movable,
+            "Off for scenery that never moves, changes or hides while the game runs: the renderer "
+            "then keeps what it works out about it instead of redoing it every frame. Moved anyway, "
+            "it is noticed and logged"
+        );
 
         if (const MeshAsset* held = resources.tryGet(mesh.mesh)) {
             const MeshAsset& asset = *held;

@@ -35,7 +35,7 @@ namespace Vkm::Engine {
     X(SSBOBindingPoints,      INSTANCE_SKIN_BASE,    6,  SSBO_INSTANCE_SKIN_BASE,             Per object: its first bone in SKIN_PALETTE)                          \
     X(SSBOBindingPoints,      INSTANCE_FLAGS,        7,  SSBO_INSTANCE_FLAGS,                 Per object: how the eye draws it (shaders/viewmodel.glsl))           \
     X(SSBOBindingPoints,      INSTANCE_MODELS,       10, SSBO_INSTANCE_MODELS,                Per object: its model matrix)                                        \
-    X(SSBOBindingPoints,      CULL_BOUNDS,           11, SSBO_CULL_BOUNDS,                    Per opaque command: its mesh local box (GPU cull))                   \
+    X(SSBOBindingPoints,      INSTANCE_BOXES,        11, SSBO_INSTANCE_BOXES,                 Per object: its world box from the CPU cull (read by the GPU cull))  \
     X(SSBOBindingPoints,      CULL_VISIBLE,          12, SSBO_CULL_VISIBLE,                   Per object: whether the last cull saw it)                            \
     X(SSBOBindingPoints,      CULL_COMMANDS,         13, SSBO_CULL_COMMANDS,                  The culled draws: a command list per set)                            \
     X(SSBOBindingPoints,      CULL_INSTANCES,        14, SSBO_CULL_INSTANCES,                 The culled instances: an object list per set)                        \

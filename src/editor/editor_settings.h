@@ -80,6 +80,15 @@ bool saveUser(const EditorState& state);
 void applyViewDefaults(RenderSettings& render);
 
 /**
+ * @brief Copy the render fields that are the editor's view state - the debug view, the grid -
+ *        from @p from onto @p to, leaving the game's look as @p to has it.
+ *
+ * @param from Whose view fields are copied.
+ * @param to   Takes them.
+ */
+void copyViewFields(const RenderSettings& from, RenderSettings& to);
+
+/**
  * @brief Filesystem path the loader and saver operate on.
  *
  * Recomposed from the open project's root on each call, so it follows a switch.

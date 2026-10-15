@@ -83,8 +83,9 @@ The PBR fragment shader (`shaders/forward/pbr/`) implements:
   so a bulb's glint on a polished floor is as wide as the bulb's reflection
   rather than a sub-pixel firefly no temporal filter averages, and one radius
   sizes the highlight and the penumbra alike. A radius of zero is the point.
-- **Optional lobes**, gated at runtime by each material's feature flags
-  (one shared PBR program, no compiled `#ifdef` variants): transmission,
+- **Optional lobes**, gated at runtime by each material's values (one PBR
+  program, and a plain variant for a material that uses none of them but alpha
+  test - `GLMaterial::plain`): transmission,
   volume (absorption), clearcoat, anisotropy, subsurface, sheen,
   parallax/height, alpha test. Transmission blends only what the surface does
   not reflect toward the scene behind it, itself dimmed by the reflected share
@@ -340,7 +341,7 @@ Shadow rendering goes through `GLShadowPass`, which:
   with nothing in it is still cleared, so it reads as lit, and the atlas
   and cubes start cleared to the far plane for the same reason. The 2D
   half returns early only on an empty job list and the cube half loops
-  over whatever cube jobs exist. A spot tile or a cube face is kept between frames when it would
+  over whatever cube jobs exist. A tile or a cube face is kept between frames when it would
   be the same picture: the cull signs each batch with a hash of the
   matrix it was culled against and every survivor's mesh id, geometry upload
   (`GLMesh::uploadId`, so a mesh re-cooked under the same handle is a new
@@ -356,14 +357,14 @@ Shadow rendering goes through `GLShadowPass`, which:
   `GLBackend::onWorldReplaced`), and so does a shader reload
   (`GLBackend::reloadChangedShaders`), since a held tile was drawn by the old
   program. A posed survivor leaves the
-  batch unsigned, since its picture is in its bones, and the sun's
-  cascades are never signed: they move with the camera, so one is the same
-  picture only while the camera holds still, and a frame that must afford
-  redrawing them as it moves saves nothing it budgets for when it does not.
+  batch unsigned, since its picture is in its bones. The fixed casters
+  (`Mesh::movable` off) are signed all at once by `RenderObjects::fixedSerial`,
+  the moving ones each, so the sun's cascades are signed too and a still view
+  redraws no shadow; with no object changed, a tile culled against the same
+  matrix keeps its batch.
   A cascade is drawn with `GL_DEPTH_CLAMP` on and culled with no near plane,
   so a caster nearer the sun than the cascade's near plane is flattened onto
   it and still shadows, rather than being clipped away.
-  On a still map with static lights only the sun's cascades redraw;
   `Shadow/TilesDrawn` plots how many tiles a frame draws.
 - Cuts an alpha-masked caster's shadow by its material: such a caster draws
   through `shadow/depth_masked` (and its skinned twin), which tests the
@@ -411,15 +412,21 @@ Shadow rendering goes through `GLShadowPass`, which:
   (why these, [engine.md](../guides/engine.md#4-what-has-already-been-decided)).
 
   **Soft shadows.** The sun and spot lights cast percentage-closer soft
-  shadows (Fernando 2005), sized by the light's own `sourceRadius` - the one
-  control, with no switch beside it: a source of zero is a hard shadow and
-  takes the 3x3 path. A 16-tap blocker search through the raw
+  shadows (Fernando 2005), sized by the light's own `sourceRadius`: a source
+  of zero is a hard shadow and takes the 3x3 path, and so does every light
+  with `RenderSettings::softShadows` off, which the Low and Medium presets turn
+  off for the forward pass's time. A 16-tap blocker search through the raw
   atlas, each tap a gather of four texels weighted bilinearly so the result
   does not step from texel to texel, finds the average depth of what
   shadows the point; the distance behind it, scaled by the source's size,
   is the penumbra; and a Vogel disk of hardware compares that wide filters
   it. A point far behind its blocker gets a wide, soft edge and a contact
-  stays sharp, which is what a light of that size does. The taps grow with
+  stays sharp, which is what a light of that size does. A point whose
+  every search tap found a blocker is in the umbra - the filter's disk lies
+  inside the searched one - and skips the filter (`SOFT_UMBRA`): in
+  a game scene that took 8% off the forward pass at High and Ultra, no golden
+  moving. The cascades' fallback search of the own tile, whose filter may
+  reach past it, does not skip. The taps grow with
   the disk - 12 for a narrow penumbra, up to 64 for the widest - so they stay
   `SOFT_TAP_SPACING` (1.25) texels apart and each tap's 2x2 compare overlaps
   its neighbours'. The disk is the same at every pixel: turned per pixel on

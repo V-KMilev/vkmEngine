@@ -45,17 +45,18 @@ class GLReflectionPass : public GLPass {
 
     private:
         /**
-         * @brief (Re)allocate the colour chain and the trace target for a viewport size.
+         * @brief (Re)allocate the colour chain and the trace target for a scene size.
          *
-         * @param width  Viewport width in pixels.
-         * @param height Viewport height in pixels.
+         * @param width  The scene's width in pixels.
+         * @param height The scene's height in pixels.
+         * @param step   Pixels a hit stands for on each axis: 1, or 2 at half resolution.
          */
-        void ensureTargets(uint32_t width, uint32_t height);
+        void ensureTargets(uint32_t width, uint32_t height, uint32_t step);
 
     private:
         Vkm::GL::ComputeShader m_source;      ///< Lit colour -> chain base.
         Vkm::GL::ComputeShader m_downsample;  ///< Each chain level from the one before.
-        Vkm::GL::Shader        m_trace;       ///< Per-pixel ray march.
+        Vkm::GL::Shader        m_trace;       ///< Ray march, a hit a pixel or a 2x2 block.
         Vkm::GL::Shader        m_resolve;     ///< Hits -> the colour chain's next link.
 
         Vkm::GL::MipChainTexture m_chain;  ///< The lit scene, filtered down.

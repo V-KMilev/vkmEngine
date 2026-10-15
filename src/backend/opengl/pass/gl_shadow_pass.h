@@ -151,12 +151,13 @@ class GLShadowPass : public GLPass {
     private:
         DepthProgram m_programs[4];  ///< Indexed cut * 2 + posed.
 
-        const Vkm::GL::Shader* m_bound = nullptr;  ///< The program that is current, reset each execute().
+        const Vkm::GL::Shader* m_bound = nullptr;    ///< The program that is current, reset each execute().
         glm::mat4              m_lightVP{1.0f};      ///< The tile being drawn's, as it rasterises.
         glm::vec2              m_ditherShift{0.0f};  ///< Its beginTile() dither shift.
+
         /// Counts beginTile() calls; never reset, so no program holds a stale one.
-        uint64_t               m_tile = 0;
-        uint32_t               m_tilesDrawn = 0;   ///< Tiles and faces drawn this frame; the rest were held.
+        uint64_t m_tile       = 0;
+        uint32_t m_tilesDrawn = 0;  ///< Tiles and faces drawn this frame; the rest were held.
 
         /// The drawn tiles' and faces' caster lists, end to end, and a command per run.
         GLDrawList              m_list;
