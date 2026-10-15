@@ -243,10 +243,11 @@ A mistake in one of these is never local:
   seam is deliberate: `EditorRenderHooks` (`system/render/editor_render_hooks.h`)
   is offscreen rendering for authoring tools - thumbnails, material previews -
   that a shipped game never asks for, and the renderer of the editor's own ImGui.
-  `GLBackend` implements both and opts in by overriding
-  `RenderBackend::editorHooks()`; the editor will not start without them. It lives
-  in `system/render` because the backend must implement it and cannot see editor
-  code. An authoring-side GPU need extends this seam rather than inventing a third.
+  `GLBackend` implements both and offers them by returning itself from
+  `RenderBackend::editorHooks()` (null offers none); the editor will not start
+  without them. It lives in `system/render` because the backend must implement
+  it and cannot see editor code. An authoring-side GPU need extends this seam
+  rather than inventing a third.
 - **`WindowSurface`** (`platform/window/window_surface.h`) - what a backend asks of
   the window: the hints before it exists, attaching to it, presenting, the swap
   interval. A host hands one to `setupEngineApp` beside its backend

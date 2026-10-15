@@ -1145,12 +1145,24 @@ void testTheCallerRunsWhatNoWorkerHasTaken() {
     check("  and the call finishes while the workers are still busy", finishedFirst);
 }
 
-// A backend that draws nothing and reads back a made-up frame - a red top row over
-// blue - all the screenshot path asks.
-struct ReadBackBackend : RenderBackend {
+// A backend that draws nothing, reads back nothing and offers nothing.
+struct NullBackend : RenderBackend {
     bool init(WindowManager& window) override { return true; }
     void render(const RenderView& view, const ResourceManager& resources) override {}
 
+    bool readFrame(const RenderView& view, std::vector<uint8_t>& pixels) override {
+        pixels.clear();
+        return false;
+    }
+    uint32_t reloadChangedShaders() override { return 0; }
+    uint32_t maxAnisotropy() const override { return 1; }
+    bool holdsPixels(const Handle<TextureAsset>& texture, uint64_t version) const override { return false; }
+    EditorRenderHooks* editorHooks() override { return nullptr; }
+};
+
+// A backend that reads back a made-up frame - a red top row over blue - all the
+// screenshot path asks.
+struct ReadBackBackend : NullBackend {
     bool readFrame(const RenderView& view, std::vector<uint8_t>& pixels) override {
         pixels.assign(static_cast<size_t>(view.viewportWidth) * view.viewportHeight * 3, 0);
         for (size_t texel = 0; texel < pixels.size() / 3; ++texel) {
@@ -1208,9 +1220,8 @@ void testAScreenshotIsTheFrameTheBackendDrew() {
 }
 
 // A backend the device cannot run.
-struct RefusingBackend : RenderBackend {
+struct RefusingBackend : NullBackend {
     bool init(WindowManager& window) override { return false; }
-    void render(const RenderView& view, const ResourceManager& resources) override {}
 };
 
 // A backend that fails to init stops the host: kept, the window would run black.

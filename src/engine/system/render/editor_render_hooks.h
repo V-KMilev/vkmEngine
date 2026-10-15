@@ -58,8 +58,8 @@ using GpuTextureId = uint64_t;
  * Asset thumbnails, GPU mirrors of textures, the host chrome's images and the
  * renderer of the editor's own ImGui - none of which a shipped game asks for.
  * Here, not in the editor, because the backend implements it. A backend offers it
- * by inheriting this and overriding RenderBackend::editorHooks(); the editor will
- * not start without it.
+ * by inheriting this and returning itself from RenderBackend::editorHooks() (null
+ * offers none); the editor will not start without it.
  */
 class EditorRenderHooks {
     public:
