@@ -25,6 +25,18 @@ const int MAX_STEPS = 48;
 const int MIN_STEPS = 16;
 const int REFINE    = 6;
 
+// How much the scene's depth changes across one texel at @p texel, along the surface: the smaller
+// one-sided difference on each axis, so an edge's jump on one side is not taken for its slope.
+// @p last is the picture's last texel.
+float depthSpanAt(ivec2 texel, ivec2 last) {
+    const float here  = sceneDepthAt(texel);
+    const float left  = abs(here - sceneDepthAt(max(texel - ivec2(1, 0), ivec2(0))));
+    const float right = abs(sceneDepthAt(min(texel + ivec2(1, 0), last)) - here);
+    const float down  = abs(here - sceneDepthAt(max(texel - ivec2(0, 1), ivec2(0))));
+    const float up    = abs(sceneDepthAt(min(texel + ivec2(0, 1), last)) - here);
+    return max(min(left, right), min(down, up));
+}
+
 // View depth at screen fraction t, interpolated through 1/w so perspective is exact.
 float rayDepth(float z0, float z1, float k0, float k1, float t) {
     return mix(z0, z1, t) / mix(k0, k1, t);
@@ -113,7 +125,9 @@ void main() {
         const float hitZ     = rayDepth(z0, z1, k0, k1, hi);
         const float gap      = hitZ - sceneDepthAt(hitTexel);
         const float step     = hitZ - rayDepth(z0, z1, k0, k1, lo);
-        if (gap > 2.0 * abs(step) + hitZ * 0.004) continue;
+        // The texel's own depth span too: on a surface seen edge-on it outgrows the bisected step,
+        // and where in the texel the bisection stopped would otherwise decide hit or miss.
+        if (gap > 2.0 * abs(step) + depthSpanAt(hitTexel, last) + hitZ * 0.004) continue;
 
         // A surface facing away is a back the frame does not show. One with no
         // normal is taken as it is.

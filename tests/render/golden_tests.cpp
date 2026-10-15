@@ -3183,6 +3183,45 @@ void testHazeBendsAndARibbonCovers(int& failures) {
     expect("  and not those off it", untouched, failures);
 }
 
+// A glossy floor under a white ceiling and a lamp, seen across the room: its reflection of the
+// ceiling, met edge-on, is traced as one surface, not as rows of hits and misses that would
+// differ from one row of pixels to the next far more than from one column to the next.
+void testAGlossyFloorReflectsInNoRows(int& failures) {
+    std::printf("A glossy floor reflecting the ceiling across a room:\n");
+    const auto build = [](Scenery& s) {
+        base(s);
+        s.scene.environment().sky.sunElevation = -20.0f;
+        const MaterialHandle floor = material(s, "golden:polished", {0.05f, 0.05f, 0.06f}, 0.06f, 0.0f);
+        const MaterialHandle white = material(s, "golden:plaster", {0.8f, 0.8f, 0.8f}, 0.9f, 0.0f);
+        place(s, s.cube, floor, {0.0f, -0.5f, 0.0f}, {12.0f, 1.0f, 16.0f});
+        place(s, s.cube, white, {0.0f, 3.5f, 0.0f}, {12.0f, 1.0f, 16.0f});
+        place(s, s.cube, white, {-6.5f, 1.5f, 0.0f}, {1.0f, 3.0f, 16.0f});
+        place(s, s.cube, white, {6.5f, 1.5f, 0.0f}, {1.0f, 3.0f, 16.0f});
+        place(s, s.cube, white, {0.0f, 1.5f, -8.5f}, {12.0f, 3.0f, 1.0f});
+        addLamp(s, {0.0f, 2.0f, -2.0f}, 20.0f, 12.0f, false);
+        sunAndCamera(s, {0.0f, 1.6f, 6.0f}, {0.0f, 0.9f, -3.0f});
+    };
+    const std::vector<unsigned char> frame = freshFrame(build, RenderSettings{}, failures);
+    if (frame.empty()) return;
+
+    // The floor in front of the camera: the lower three tenths of the frame, its middle three fifths.
+    const auto grey = [&](int x, int y) {
+        const glm::ivec3 c = pixel(frame, x, y);
+        return static_cast<float>(c.x + c.y + c.z) / 3.0f;
+    };
+    double acrossRows = 0.0;
+    double acrossColumns = 0.0;
+    for (int y = HEIGHT * 7 / 10; y < HEIGHT - 2; ++y) {
+        for (int x = WIDTH / 5; x < WIDTH * 4 / 5; ++x) {
+            acrossRows    += std::abs(grey(x, y + 1) - grey(x, y));
+            acrossColumns += std::abs(grey(x + 1, y) - grey(x, y));
+        }
+    }
+    const double ratio = acrossRows / std::max(acrossColumns, 1.0);
+    std::printf("      row to row %.2f times column to column\n", ratio);
+    expect("the floor's reflection runs in no rows", ratio < 3.0, failures);
+}
+
 // A puff of smoke at the centre of the frame under an overhead sun, with a roof over it and
 // without: an alpha-blended particle scatters the light reaching it, so the roof's shadow darkens
 // it; an additive one emits, so the roof leaves it as it was.
@@ -3511,6 +3550,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testSmokeIsShadowedAndSparksAreNot(failures);
     testHazeBendsAndARibbonCovers(failures);
     testAFlatNormalMapFacesThePuffToTheEye(failures);
+    testAGlossyFloorReflectsInNoRows(failures);
     testADecalIsLitAsTheFloorUnderIt(failures);
     testSmokeIsLitWhereItIs(failures);
     testTwoLampsLightARibbonAsOneTwiceAsBright(failures);
