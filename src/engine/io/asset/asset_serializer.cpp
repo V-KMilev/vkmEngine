@@ -284,23 +284,28 @@ nlohmann::json saveAssetsForEntities(
     for (EntityId id : entities) collectAssetRefs(scene, id, resources, collected);
     const ComponentSerializer::AssetRefs& refs = collected.handles;
 
-    for (const MeshHandle& h : refs.meshes)             emit(h);
-    for (const MaterialHandle& h : refs.materials) {
-        // Its textures too, so the loader recreates them first - unless hidden: a thumbnail material must
-        // not drag its textures into the user's scene.
-        const MaterialAsset* material = emit(h);
-        if (!material || material->isHidden()) continue;
+    // A material's textures too, so the loader recreates them first - unless hidden: a thumbnail material
+    // must not drag its textures into the user's scene.
+    const auto emitTextures = [&](const MaterialAsset* material) {
+        if (!material || material->isHidden()) return;
         for (const auto& f : MATERIAL_TEXTURE_FIELDS) emit(material->*f.member);
-    }
+    };
+
+    for (const MeshHandle& h : refs.meshes)             emit(h);
+    for (const MaterialHandle& h : refs.materials)      emitTextures(emit(h));
     for (const SkeletonHandle& h : refs.skeletons)      emit(h);
     for (const AnimationClipHandle& h : refs.clips)     emit(h);
     for (const AudioClipHandle& h : refs.sounds)        emit(h);
     for (const TextureHandle& h : refs.textures)        emit(h);
 
-    // Flat, by name: with no handle to walk into, a material named this way arrives without its textures.
+    // Flat, by name. A material named this way that is loaded brings its textures, as one held by handle
+    // does: without them the next load leaves its maps empty, and the save after writes its recipe so.
     for (const auto& [type, name] : collected.names) {
         if (type == AssetType::Count) continue;
         emitNamedRef(sections[static_cast<size_t>(type)].entries, name);
+        if (type == AssetType::Material) {
+            emitTextures(resources.tryGet(resources.findByName<MaterialAsset>(name)));
+        }
     }
 
     // A section is keyed by its kind's library directory name, one list for both.
