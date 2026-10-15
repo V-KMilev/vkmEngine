@@ -13,6 +13,7 @@
 #include "ecs/scene.h"
 #include "ecs/component/core/transform.h"
 #include "ecs/component/physics/collider.h"
+#include "ecs/component/physics/ragdoll.h"
 #include "ecs/component/physics/rigidbody.h"
 #include "system/physics/body_pose.h"
 #include "system/physics/collision/mesh_bvh.h"
@@ -538,6 +539,16 @@ bool passesMobility(const Rigidbody& rb, const QueryFilter& filter) {
     return rb.motion == RigidbodyMotion::Dynamic ? filter.hitDynamic : filter.hitStatic;
 }
 
+// filter.ignore, or a bone of its Ragdoll (QueryFilter).
+bool isIgnored(EntityId id, const QueryFilter& filter, const Ragdoll* ignoredRagdoll) {
+    if (id == filter.ignore) return true;
+    if (!ignoredRagdoll) return false;
+    for (const RagdollBone& bone : ignoredRagdoll->bones) {
+        if (bone.body == id) return true;
+    }
+    return false;
+}
+
 template <typename PartTest>
 bool sweepBodies(
     Scene& scene,
@@ -555,10 +566,11 @@ bool sweepBodies(
     float bestDistance = maxDistance;
     bool found = false;
 
+    const Ragdoll* ignoredRagdoll = filter.ignore ? scene.tryGet<Ragdoll>(filter.ignore) : nullptr;
     const uint32_t count = static_cast<uint32_t>(rbStorage->size());
     for (uint32_t i = 0; i < count; ++i) {
         const EntityId id = scene.entityAt(rbStorage->keyAt(i));
-        if (id == filter.ignore) continue;
+        if (isIgnored(id, filter, ignoredRagdoll)) continue;
 
         const Transform* transform = scene.tryGet<Transform>(id);
         const Collider*  collider  = scene.tryGet<Collider>(id);
