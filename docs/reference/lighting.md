@@ -171,8 +171,8 @@ The atlas is read both compared and as raw depth (blocker search, the
 `GLScreenShadowPass` finds in the depth buffer what the cascades are too coarse
 for - a foot on the floor, the crease under a ledge - for the cascaded sun alone
 (`GLShadowData::sunLight`). It is Bend Studio's method (`shaders/screen_shadow`,
-under its Apache-2.0 notice): each pixel marches a fixed number of pixels
-(`SAMPLE_COUNT`) toward the light
+under its Apache-2.0 notice): each pixel marches toward the light the pixels a
+contact's reach spans at its depth (`CONTACT_REACH`), at most `SAMPLE_COUNT`
 ([engine.md](../guides/engine.md#4-what-has-already-been-decided)).
 
 It is a contact shadow, not a replacement for the cascades. The viewmodel band

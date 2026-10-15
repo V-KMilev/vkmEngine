@@ -2983,6 +2983,39 @@ void buildPebble(Scenery& s) {
     place(s, s.cube, pebble, {0.0f, 0.03f, 0.0f}, glm::vec3(0.06f));
 }
 
+// A post 12 m off under a low sun, its shadow running metres across the frame, through the
+// screen-shadow view: the pass grounds the post at its foot and leaves the rest of the shadow to
+// the cascades. A reach fixed in pixels would trace a far shadow metres long, and a thin thing's
+// as a slab beside it.
+void testAFarPostIsGroundedNotTraced(int& failures) {
+    std::printf("Screen-space shadows from a far post:\n");
+    const auto build = [](Scenery& s) {
+        base(s);
+        s.scene.environment().sky.sunElevation = 20.0f;
+        s.scene.environment().sky.sunAzimuth   = 90.0f;
+        const MaterialHandle open = material(s, "golden:open", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
+        const MaterialHandle post = material(s, "golden:post", {0.4f, 0.42f, 0.48f}, 0.6f, 0.0f);
+        place(s, s.cube, open, {0.0f, -0.5f, 0.0f}, {60.0f, 1.0f, 60.0f});
+        place(s, s.cube, post, {0.0f, 1.0f, 0.0f}, {0.15f, 2.0f, 0.15f});
+        sunAndCamera(s, {0.0f, 1.7f, 12.0f}, {0.0f, 0.5f, 0.0f});
+    };
+    RenderSettings settings;
+    settings.renderMode = RenderMode::ScreenShadows;
+    const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+    if (frame.empty()) return;
+
+    // The sun stands toward +X, the camera's right, so the shadow runs left from the post's foot.
+    int reach = 0;
+    for (int y = 0; y < HEIGHT; ++y) {
+        for (int x = 0; x < WIDTH / 2; ++x) {
+            if (pixel(frame, x, y).x < 128) reach = std::max(reach, WIDTH / 2 - x);
+        }
+    }
+    std::printf("      screen shadow %d px left of the post's middle\n", reach);
+    expect("the post is grounded", reach > 0, failures);
+    expect("  and its shadow not traced metres out", reach < WIDTH / 20, failures);
+}
+
 // A pebble on the floor under a low sun: a shadow a few centimetres long, which the screen-space
 // pass finds whether GTAO, whose target it shares, ran or not, and through an orthographic camera;
 // with the pass off, none.
@@ -3542,6 +3575,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testAnOrthographicViewIsOccluded(failures);
     testAnOpenFloorCastsNoScreenShadow(failures);
     testAPebbleCastsAScreenShadow(failures);
+    testAFarPostIsGroundedNotTraced(failures);
     testAScreenShadowFacingTheSunFallsTowardTheEye(failures);
     testGTAOReachesAsFarEveryWay(failures);
     testAWallBesideTheEyeIsOpen(failures);
