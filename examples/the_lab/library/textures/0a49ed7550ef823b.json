@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/dutch_ship_medium/textures/dutch_ship_medium_sails_rgba_1k.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/dutch_ship_medium/textures/dutch_ship_medium_sails_rgba_1k.png",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

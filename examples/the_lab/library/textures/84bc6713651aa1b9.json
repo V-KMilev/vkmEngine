@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/island_tree_02/island_tree_02_leaves_diff_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/island_tree_02/island_tree_02_leaves_diff_1k.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

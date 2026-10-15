@@ -1,0 +1,8 @@
+{
+  "name": "assets/models/ocean_buoy/ocean_buoy_1k.gltf:mesh0:lod3",
+  "source": {
+    "base": "assets/models/ocean_buoy/ocean_buoy_1k.gltf:mesh0",
+    "kind": "decimate",
+    "ratio": 0.03125
+  }
+}

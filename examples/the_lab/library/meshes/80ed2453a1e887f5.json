@@ -1,0 +1,13 @@
+{
+  "name": "mesh:generator:plane:202.0:162:210.0:168",
+  "source": {
+    "kind": "generator",
+    "params": {
+      "depth": 202.0,
+      "depthSegments": 162,
+      "width": 210.0,
+      "widthSegments": 168
+    },
+    "type": "plane"
+  }
+}

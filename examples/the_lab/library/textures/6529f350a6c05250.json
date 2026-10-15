@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/street_lamp_01/textures/street_lamp_01_rgba_1k.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/street_lamp_01/textures/street_lamp_01_rgba_1k.png",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

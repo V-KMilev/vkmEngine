@@ -792,7 +792,7 @@ void testTheSceneOfRecordStillOpens() {
     // engine.md names obstacle_course.json the scene of record that a format change
     // must round-trip; this does it here rather than in front of an author.
     const std::filesystem::path scene =
-        std::filesystem::path(VKM_EXAMPLES_DIR) / "physics_lab" / "scenes" / "obstacle_course.json";
+        std::filesystem::path(VKM_EXAMPLES_DIR) / "the_lab" / "scenes" / "obstacle_course.json";
 
     std::error_code ec;
     if (!std::filesystem::exists(scene, ec)) {

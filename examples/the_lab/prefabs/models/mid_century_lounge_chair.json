@@ -1,0 +1,116 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/mid_century_lounge_chair/mid_century_lounge_chair_1k.gltf:mat0"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/mid_century_lounge_chair/mid_century_lounge_chair_1k.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/mid_century_lounge_chair/mid_century_lounge_chair_1k.gltf:mesh0:lod1"
+      },
+      {
+        "name": "assets/models/mid_century_lounge_chair/mid_century_lounge_chair_1k.gltf:mesh0:lod2"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/mid_century_lounge_chair/textures/mid_century_lounge_chair_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/mid_century_lounge_chair/textures/mid_century_lounge_chair_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/mid_century_lounge_chair/textures/mid_century_lounge_chair_arm_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "mid_century_lounge_chair_1k"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 4.276334762573242,
+              "mesh": "assets/models/mid_century_lounge_chair/mid_century_lounge_chair_1k.gltf:mesh0"
+            },
+            {
+              "maxDistance": 38.14686965942383,
+              "mesh": "assets/models/mid_century_lounge_chair/mid_century_lounge_chair_1k.gltf:mesh0:lod1"
+            },
+            {
+              "maxDistance": 76.29373931884766,
+              "mesh": "assets/models/mid_century_lounge_chair/mid_century_lounge_chair_1k.gltf:mesh0:lod2"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/mid_century_lounge_chair/mid_century_lounge_chair_1k.gltf:mat0",
+          "mesh": "assets/models/mid_century_lounge_chair/mid_century_lounge_chair_1k.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mid_century_lounge_chair"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    }
+  ],
+  "nextUid": 2,
+  "version": 3
+}

@@ -1,0 +1,9 @@
+{
+  "name": "assets/textures/arrow.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/arrow.png",
+    "usage": "Color"
+  }
+}

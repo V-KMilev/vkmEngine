@@ -1,0 +1,221 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/island_tree_02_far/island_tree_02_far.gltf:mat0"
+      },
+      {
+        "name": "assets/models/island_tree_02_far/island_tree_02_far.gltf:mat1"
+      },
+      {
+        "name": "assets/models/island_tree_02_far/island_tree_02_far.gltf:mat2"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/island_tree_02_far/island_tree_02_far.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/island_tree_02_far/island_tree_02_far.gltf:mesh1"
+      },
+      {
+        "name": "assets/models/island_tree_02_far/island_tree_02_far.gltf:mesh2"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/island_tree_02/island_tree_02_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/island_tree_02/island_tree_02_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/island_tree_02/island_tree_02_arm_1k.jpg"
+      },
+      {
+        "name": "assets/models/island_tree_02/island_tree_02_leaves_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/island_tree_02/island_tree_02_leaves_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/island_tree_02/island_tree_02_leaves_arm_1k.jpg"
+      },
+      {
+        "name": "assets/models/island_tree_02/island_tree_02_branches_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/island_tree_02/island_tree_02_branches_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/island_tree_02/island_tree_02_branches_arm_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "island_tree_02_far"
+        },
+        "NetLocal": {},
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "Name": {
+          "value": "island_tree_02_LOD0"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/island_tree_02_far/island_tree_02_far.gltf:mat0",
+          "mesh": "assets/models/island_tree_02_far/island_tree_02_far.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh0"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 1,
+      "uid": 2
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/island_tree_02_far/island_tree_02_far.gltf:mat1",
+          "mesh": "assets/models/island_tree_02_far/island_tree_02_far.gltf:mesh1",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh1"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 1,
+      "uid": 3
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/island_tree_02_far/island_tree_02_far.gltf:mat2",
+          "mesh": "assets/models/island_tree_02_far/island_tree_02_far.gltf:mesh2",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh2"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 1,
+      "uid": 4
+    }
+  ],
+  "nextUid": 5,
+  "version": 3
+}

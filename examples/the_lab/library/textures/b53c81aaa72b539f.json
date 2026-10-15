@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/barrel_03/textures/barrel_03_nor_gl_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/barrel_03/textures/barrel_03_nor_gl_1k.jpg",
+    "usage": "Normal",
+    "wrap": "repeat"
+  }
+}

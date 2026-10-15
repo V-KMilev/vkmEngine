@@ -1,0 +1,177 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mat0"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh0:lod1"
+      },
+      {
+        "name": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh0:lod2"
+      },
+      {
+        "name": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh1"
+      },
+      {
+        "name": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh1:lod1"
+      },
+      {
+        "name": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh1:lod2"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/wooden_ladder/textures/wooden_ladder_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/wooden_ladder/textures/wooden_ladder_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/wooden_ladder/textures/wooden_ladder_arm_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "wooden_ladder_1k"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 0.16621455550193787,
+              "mesh": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh0"
+            },
+            {
+              "maxDistance": 46.57819366455078,
+              "mesh": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh0:lod1"
+            },
+            {
+              "maxDistance": 93.15638732910156,
+              "mesh": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh0:lod2"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mat0",
+          "mesh": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "wooden_ladder_supports"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            1.1048070192337036,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 0.20110976696014404,
+              "mesh": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh1"
+            },
+            {
+              "maxDistance": 18.182863235473633,
+              "mesh": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh1:lod1"
+            },
+            {
+              "maxDistance": 36.365726470947266,
+              "mesh": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh1:lod2"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mat0",
+          "mesh": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh1",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "wooden_ladder_steps"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            1.1048070192337036,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 2
+    }
+  ],
+  "nextUid": 3,
+  "version": 3
+}

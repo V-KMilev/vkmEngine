@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/rusty_metal_02_nor_gl.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/rusty_metal_02_nor_gl.jpg",
+    "usage": "Normal",
+    "wrap": "repeat"
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "name": "assets/effects/fire.wav",
+  "source": {
+    "kind": "file",
+    "path": "assets/effects/fire.wav"
+  }
+}

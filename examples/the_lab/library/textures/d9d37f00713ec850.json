@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/shrub_02/shrub_02_diff_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/shrub_02/shrub_02_diff_1k.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

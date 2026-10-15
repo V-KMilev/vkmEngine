@@ -275,7 +275,7 @@ overwrites the earlier with a warning. Write
 `using namespace Vkm::Engine;` once inside your namespace, as above. Module
 entry points are `extern "C"` at global scope, so they qualify names or open
 with a function-scope `using namespace Vkm::Engine;`
-(`examples/physics_lab/src/module.cpp`).
+(`examples/the_lab/src/module.cpp`).
 
 ### Field types
 

@@ -1,0 +1,9 @@
+{
+  "name": "assets/textures/rock_n.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/rock_n.png",
+    "usage": "Normal"
+  }
+}

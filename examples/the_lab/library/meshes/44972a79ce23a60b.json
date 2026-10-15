@@ -1,0 +1,8 @@
+{
+  "name": "assets/models/coast_rocks_03/coast_rocks_03_1k.gltf:mesh0:scatter",
+  "source": {
+    "base": "assets/models/coast_rocks_03/coast_rocks_03_1k.gltf:mesh0",
+    "kind": "decimate",
+    "ratio": 0.009999999776482582
+  }
+}

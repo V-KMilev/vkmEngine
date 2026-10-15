@@ -1,0 +1,10 @@
+{
+  "name": "mesh:generator:sphere:8",
+  "source": {
+    "kind": "generator",
+    "params": {
+      "resolution": 8
+    },
+    "type": "sphere"
+  }
+}

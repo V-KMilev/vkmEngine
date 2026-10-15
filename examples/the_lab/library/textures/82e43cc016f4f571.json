@@ -1,0 +1,11 @@
+{
+  "name": "assets/models/lantern_chandelier_01/textures/lantern_chandelier_01_glass_arm_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/lantern_chandelier_01/textures/lantern_chandelier_01_glass_arm_1k.jpg",
+    "roughnessNormal": "assets/models/lantern_chandelier_01/textures/lantern_chandelier_01_glass_nor_gl_1k.jpg",
+    "usage": "Data",
+    "wrap": "repeat"
+  }
+}

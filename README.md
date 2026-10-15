@@ -25,7 +25,7 @@ Write C++ that reloads like a script, runs like native code, and ships with one 
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-vkmEngine-3fb950?style=for-the-badge" alt="vkmEngine License"></a>
 </p>
 
-<img src="assets/docs/physics_lab.jpg" alt="The physics lab example: four characters on the start pad in evening light" width="100%">
+<img src="assets/docs/the_lab.jpg" alt="The lab example: the plaza at dusk, a campfire, a bronze statue and string lights, a ship beyond the pier" width="100%">
 
 </div>
 
@@ -102,11 +102,11 @@ controller that takes steps and slides along walls.</sub>
 material and render-settings panels, an asset browser and a cooker.</sub>
 </td>
 <td valign="top">
-<img src="assets/docs/course.jpg" alt="The physics lab obstacle course" width="100%">
+<img src="assets/docs/course.jpg" alt="The lab's obstacle course" width="100%">
 
 **Multiplayer**<br>
 <sub>Client-server over UDP with snapshot interpolation, lag compensation and
-delta-compressed replication. The physics lab is also the multiplayer sample.</sub>
+delta-compressed replication. The lab is also the multiplayer sample.</sub>
 </td>
 <td valign="top">
 <img src="assets/docs/dominoes.jpg" alt="A line of dominoes" width="100%">
@@ -141,7 +141,7 @@ build fetches the compiler, CMake and Ninja it was built with - GCC by default, 
 ready to play. Then open **vkmEngine** from your app menu, or:
 
 ```bash
-vkm new mygame                   # or: vkm new lab -t physics_lab, a copy of an example
+vkm new mygame                   # or: vkm new lab -t the_lab, a copy of an example
 cd mygame
 vkm run                          # build, cook and play
 vkm package                      # the game a player gets
@@ -157,14 +157,15 @@ where it is.
 git clone --recursive https://github.com/V-KMilev/vkmEngine
 cd vkmEngine
 cmake -B build -G Ninja && cmake --build build
-./tools/vkm run examples/physics_lab             # build its module, cook, and play
-./build/bin/vkm_editor examples/physics_lab      # or open it in the editor
+./tools/vkm run examples/the_lab                 # build its module, cook, and play
+./build/bin/vkm_editor examples/the_lab          # or open it in the editor
 ```
 
 Four executables share one project directory: `vkm_editor` authors it, `vkm_runtime` plays it,
 `vkm_cook` bakes its assets, and `vkm_server` serves it to players. `examples/` holds four
-complete projects: a physics sandbox that is also the multiplayer sample, an endless runner,
-a stress arena, and a city walked at street level for the GPU occlusion cull.
+complete projects: the lab, a world to play in that shows the engine and is also the multiplayer
+sample; an endless runner; a stress arena; and a city walked at street level for the GPU occlusion
+cull.
 [Building](docs/reference/building.md) lists the prerequisites, the targets, and how CI and
 releases build both SDKs.
 
@@ -198,7 +199,7 @@ src/
   editor/          ImGui editor (command, session, chrome, panels, overlays, input, ui)
   tools/           Asset import, the cooker, the image/font loaders and the host prologue
 app/               The four executables, and the bootstrap (setupEngineApp) the three that build an Engine share
-examples/          Projects: Potion Runner, Physics Lab, Stress Arena, City Block - gameplay lives here
+examples/          Projects: Potion Runner, The Lab, Stress Arena, City Block - gameplay lives here
 modules/
   vkmGL            Submodule: GL object wrappers + shader loading (vendors GLEW)
   vkmLog           Submodule: logging + VKM_ASSERT

@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/factory_brick_arm.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/factory_brick_arm.jpg",
+    "usage": "Data",
+    "wrap": "repeat"
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "name": "lab:bouncy",
+  "source": {
+    "albedo": [
+      0.44999998807907104,
+      0.800000011920929,
+      0.25,
+      1.0
+    ],
+    "alphaCutoff": 0.5,
+    "anisotropy": 0.0,
+    "anisotropyDirection": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "ao": 1.0,
+    "attenuationColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "attenuationDistance": 1.0,
+    "boxMapping": 1.0,
+    "clearcoat": 0.0,
+    "clearcoatRoughness": 0.0,
+    "doubleSided": false,
+    "emission": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "emissiveStrength": 1.0,
+    "heightScale": 0.0,
+    "ior": 1.5,
+    "metallic": 1.0,
+    "normalScale": 1.0,
+    "roughness": 1.0,
+    "sheenColor": [
+      0.6000000238418579,
+      1.0,
+      0.4000000059604645
+    ],
+    "sheenRoughness": 0.5,
+    "subsurface": 0.0,
+    "subsurfaceColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "textures": {
+      "albedo": "assets/textures/rubber_tiles_diff.jpg",
+      "aoMetallicRoughness": "assets/textures/rubber_tiles_arm.jpg",
+      "normal": "assets/textures/rubber_tiles_nor_gl.jpg"
+    },
+    "thicknessFactor": 0.0,
+    "transmission": 0.0,
+    "type": "Opaque",
+    "uvOffset": [
+      0.0,
+      0.0
+    ],
+    "uvScale": [
+      1.0,
+      1.0
+    ],
+    "waves": false
+  }
+}

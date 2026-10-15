@@ -443,7 +443,7 @@ void testADamagedSceneLoadsOrIsRefused() {
     // or an absurd size does - what a hand-edited or hostile file carries.
     nlohmann::json doc = nlohmann::json::parse(text);
     // The shipped scene of record, when present: more component kinds than the crates.
-    std::ifstream record(std::filesystem::path(VKM_EXAMPLES_DIR) / "physics_lab/scenes/obstacle_course.json");
+    std::ifstream record(std::filesystem::path(VKM_EXAMPLES_DIR) / "the_lab/scenes/obstacle_course.json");
     if (record) doc = nlohmann::json::parse(record, nullptr, false);
     if (doc.is_discarded()) doc = nlohmann::json::parse(text);
     std::vector<nlohmann::json::json_pointer> leaves;

@@ -1,0 +1,11 @@
+{
+  "name": "assets/models/potted_plant_02/textures/potted_plant_02_leaves_rough_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/potted_plant_02/textures/potted_plant_02_leaves_rough_1k.jpg",
+    "roughnessNormal": "assets/models/potted_plant_02/textures/potted_plant_02_leaves_nor_gl_1k.jpg",
+    "usage": "Data",
+    "wrap": "repeat"
+  }
+}

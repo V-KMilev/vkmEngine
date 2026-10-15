@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/brown_mud_02_diff.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/brown_mud_02_diff.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

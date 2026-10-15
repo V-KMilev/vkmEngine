@@ -1,0 +1,235 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mat0"
+      },
+      {
+        "name": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mat1"
+      },
+      {
+        "name": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mat2"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh0:lod1"
+      },
+      {
+        "name": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh0:lod2"
+      },
+      {
+        "name": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh0:lod3"
+      },
+      {
+        "name": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh1"
+      },
+      {
+        "name": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh2"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/street_lamp_01/textures/street_lamp_01_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/street_lamp_01/textures/street_lamp_01_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/street_lamp_01/textures/street_lamp_01_arm_1k.jpg"
+      },
+      {
+        "name": "assets/models/street_lamp_01/textures/street_lamp_01_rgba_1k.png"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "street_lamp_01_1k"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "Name": {
+          "value": "street_lamp_01"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 1.2076958417892456,
+              "mesh": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh0"
+            },
+            {
+              "maxDistance": 7.6751227378845215,
+              "mesh": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh0:lod1"
+            },
+            {
+              "maxDistance": 42.332462310791016,
+              "mesh": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh0:lod2"
+            },
+            {
+              "maxDistance": 84.66492462158203,
+              "mesh": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh0:lod3"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mat0",
+          "mesh": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh0"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 1,
+      "uid": 2
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mat1",
+          "mesh": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh1",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh1"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 1,
+      "uid": 3
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mat2",
+          "mesh": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh2",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh2"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 1,
+      "uid": 4
+    }
+  ],
+  "nextUid": 5,
+  "version": 3
+}

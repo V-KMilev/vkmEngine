@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/marble_01_diff.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/marble_01_diff.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

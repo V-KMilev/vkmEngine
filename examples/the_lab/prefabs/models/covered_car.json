@@ -1,0 +1,271 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/covered_car/covered_car_1k.gltf:mat0"
+      },
+      {
+        "name": "assets/models/covered_car/covered_car_1k.gltf:mat1"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/covered_car/covered_car_1k.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/covered_car/covered_car_1k.gltf:mesh1"
+      },
+      {
+        "name": "assets/models/covered_car/covered_car_1k.gltf:mesh2"
+      },
+      {
+        "name": "assets/models/covered_car/covered_car_1k.gltf:mesh3"
+      },
+      {
+        "name": "assets/models/covered_car/covered_car_1k.gltf:mesh4"
+      },
+      {
+        "name": "assets/models/covered_car/covered_car_1k.gltf:mesh4:lod1"
+      },
+      {
+        "name": "assets/models/covered_car/covered_car_1k.gltf:mesh4:lod2"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/covered_car/textures/covered_car_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/covered_car/textures/covered_car_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/covered_car/textures/covered_car_arm_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "covered_car_1k"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/covered_car/covered_car_1k.gltf:mat0",
+          "mesh": "assets/models/covered_car/covered_car_1k.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "covered_car_wheel_01"
+        },
+        "Transform": {
+          "position": [
+            0.7576000690460205,
+            0.30000001192092896,
+            1.2806000709533691
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/covered_car/covered_car_1k.gltf:mat1",
+          "mesh": "assets/models/covered_car/covered_car_1k.gltf:mesh1",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "covered_car_wheel_02"
+        },
+        "Transform": {
+          "position": [
+            -0.6823999881744385,
+            0.30000001192092896,
+            1.2806000709533691
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 2
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/covered_car/covered_car_1k.gltf:mat1",
+          "mesh": "assets/models/covered_car/covered_car_1k.gltf:mesh2",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "covered_car_wheel_03"
+        },
+        "Transform": {
+          "position": [
+            -0.6724001169204712,
+            0.30000001192092896,
+            -1.299399971961975
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 3
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/covered_car/covered_car_1k.gltf:mat0",
+          "mesh": "assets/models/covered_car/covered_car_1k.gltf:mesh3",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "covered_car_wheel_04"
+        },
+        "Transform": {
+          "position": [
+            0.7475999593734741,
+            0.30000001192092896,
+            -1.2993998527526855
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 4
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 28.231325149536133,
+              "mesh": "assets/models/covered_car/covered_car_1k.gltf:mesh4"
+            },
+            {
+              "maxDistance": 197.73849487304688,
+              "mesh": "assets/models/covered_car/covered_car_1k.gltf:mesh4:lod1"
+            },
+            {
+              "maxDistance": 395.47698974609375,
+              "mesh": "assets/models/covered_car/covered_car_1k.gltf:mesh4:lod2"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/covered_car/covered_car_1k.gltf:mat1",
+          "mesh": "assets/models/covered_car/covered_car_1k.gltf:mesh4",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "covered_car"
+        },
+        "Transform": {
+          "position": [
+            0.037599992007017136,
+            0.0,
+            0.037599992007017136
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 5
+    }
+  ],
+  "nextUid": 6,
+  "version": 3
+}

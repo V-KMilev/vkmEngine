@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/Barrel_01/textures/Barrel_01_explosive_diff_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/Barrel_01/textures/Barrel_01_explosive_diff_1k.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

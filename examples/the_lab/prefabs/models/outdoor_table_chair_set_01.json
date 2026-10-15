@@ -1,0 +1,213 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mat0"
+      },
+      {
+        "name": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mat1"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mesh0:lod1"
+      },
+      {
+        "name": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mesh1"
+      },
+      {
+        "name": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mesh2"
+      },
+      {
+        "name": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mesh2:lod1"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/outdoor_table_chair_set_01/textures/outdoor_table_chair_set_01_chair_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/outdoor_table_chair_set_01/textures/outdoor_table_chair_set_01_chair_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/outdoor_table_chair_set_01/textures/outdoor_table_chair_set_01_chair_arm_1k.jpg"
+      },
+      {
+        "name": "assets/models/outdoor_table_chair_set_01/textures/outdoor_table_chair_set_01_table_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/outdoor_table_chair_set_01/textures/outdoor_table_chair_set_01_table_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/outdoor_table_chair_set_01/textures/outdoor_table_chair_set_01_table_arm_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "outdoor_table_chair_set_01_1k"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 23.006423950195313,
+              "mesh": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mesh0"
+            },
+            {
+              "maxDistance": 46.012847900390625,
+              "mesh": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mesh0:lod1"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mat0",
+          "mesh": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "outdoor_table_chair_set_01_chair_01"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.9926403164863586,
+            0.0,
+            0.12110016494989395,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mat1",
+          "mesh": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mesh1",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "outdoor_table_chair_set_01_table"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 2
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 24.07042121887207,
+              "mesh": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mesh2"
+            },
+            {
+              "maxDistance": 48.14084243774414,
+              "mesh": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mesh2:lod1"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mat0",
+          "mesh": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mesh2",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "outdoor_table_chair_set_01_chair_02"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.991024374961853,
+            0.0,
+            0.13368111848831177,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 3
+    }
+  ],
+  "nextUid": 4,
+  "version": 3
+}

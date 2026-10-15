@@ -1,0 +1,11 @@
+{
+  "name": "assets/models/island_tree_02/island_tree_02_leaves_arm_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/island_tree_02/island_tree_02_leaves_arm_1k.jpg",
+    "roughnessNormal": "assets/models/island_tree_02/island_tree_02_leaves_nor_gl_1k.jpg",
+    "usage": "Data",
+    "wrap": "repeat"
+  }
+}

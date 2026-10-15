@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/gothic_statue/textures/gothic_statue_diff_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/gothic_statue/textures/gothic_statue_diff_1k.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

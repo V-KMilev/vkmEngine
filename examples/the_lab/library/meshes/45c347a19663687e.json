@@ -1,0 +1,10 @@
+{
+  "name": "mesh:generator:sphere:32",
+  "source": {
+    "kind": "generator",
+    "params": {
+      "resolution": 32
+    },
+    "type": "sphere"
+  }
+}

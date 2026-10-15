@@ -1,0 +1,7 @@
+{
+  "name": "assets/audio/click.wav",
+  "source": {
+    "kind": "file",
+    "path": "assets/audio/click.wav"
+  }
+}

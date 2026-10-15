@@ -1,0 +1,8 @@
+{
+  "name": "assets/models/chess_set/chess_set_1k.gltf:mesh24:lod2",
+  "source": {
+    "base": "assets/models/chess_set/chess_set_1k.gltf:mesh24",
+    "kind": "decimate",
+    "ratio": 0.125
+  }
+}

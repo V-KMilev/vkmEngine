@@ -1,0 +1,8 @@
+{
+  "name": "assets/models/chess_set/chess_set_1k.gltf:mesh25",
+  "source": {
+    "kind": "model",
+    "mesh": 25,
+    "path": "assets/models/chess_set/chess_set_1k.gltf"
+  }
+}

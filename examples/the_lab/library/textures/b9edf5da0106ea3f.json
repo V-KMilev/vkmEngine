@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/wicker_basket_01/textures/wicker_basket_01_nor_gl_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/wicker_basket_01/textures/wicker_basket_01_nor_gl_1k.jpg",
+    "usage": "Normal",
+    "wrap": "repeat"
+  }
+}

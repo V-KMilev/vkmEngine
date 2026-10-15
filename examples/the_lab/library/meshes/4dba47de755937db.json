@@ -1,0 +1,8 @@
+{
+  "name": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mesh0:lod1",
+  "source": {
+    "base": "assets/models/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf:mesh0",
+    "kind": "decimate",
+    "ratio": 0.5
+  }
+}

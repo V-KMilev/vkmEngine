@@ -1,0 +1,123 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/lifebuoy/lifebuoy_1k.gltf:mat0"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/lifebuoy/lifebuoy_1k.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/lifebuoy/lifebuoy_1k.gltf:mesh0:lod1"
+      },
+      {
+        "name": "assets/models/lifebuoy/lifebuoy_1k.gltf:mesh0:lod2"
+      },
+      {
+        "name": "assets/models/lifebuoy/lifebuoy_1k.gltf:mesh0:lod3"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/lifebuoy/textures/lifebuoy_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/lifebuoy/textures/lifebuoy_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/lifebuoy/textures/lifebuoy_arm_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "lifebuoy_1k"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 1.434336543083191,
+              "mesh": "assets/models/lifebuoy/lifebuoy_1k.gltf:mesh0"
+            },
+            {
+              "maxDistance": 9.957527160644531,
+              "mesh": "assets/models/lifebuoy/lifebuoy_1k.gltf:mesh0:lod1"
+            },
+            {
+              "maxDistance": 39.311519622802734,
+              "mesh": "assets/models/lifebuoy/lifebuoy_1k.gltf:mesh0:lod2"
+            },
+            {
+              "maxDistance": 78.62303924560547,
+              "mesh": "assets/models/lifebuoy/lifebuoy_1k.gltf:mesh0:lod3"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/lifebuoy/lifebuoy_1k.gltf:mat0",
+          "mesh": "assets/models/lifebuoy/lifebuoy_1k.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "lifebuoy"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    }
+  ],
+  "nextUid": 2,
+  "version": 3
+}

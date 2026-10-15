@@ -1,0 +1,961 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "effects:scorch"
+      }
+    ],
+    "meshes": [],
+    "skeletons": [],
+    "sounds": [
+      {
+        "name": "assets/effects/boom.wav"
+      }
+    ],
+    "textures": [
+      {
+        "name": "assets/effects/scorch.png"
+      },
+      {
+        "name": "assets/effects/smoke.png"
+      },
+      {
+        "name": "assets/effects/smoke_normal.png"
+      },
+      {
+        "name": "assets/effects/fireball.png"
+      },
+      {
+        "name": "assets/effects/shockwave.png"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "Explosion"
+        },
+        "NetLocal": {},
+        "ParticleEmitter": {
+          "acceleration": [
+            0.699999988079071,
+            2.0999999046325684,
+            0.25
+          ],
+          "angle": 0.4363323152065277,
+          "blend": "Alpha",
+          "bounce": 0.30000001192092896,
+          "burst": 26,
+          "collide": false,
+          "color": {
+            "keys": [
+              {
+                "color": [
+                  0.15000000596046448,
+                  0.14399999380111694,
+                  0.1379999965429306,
+                  0.8999999761581421
+                ],
+                "time": 0.0
+              },
+              {
+                "color": [
+                  0.18000000715255737,
+                  0.18000000715255737,
+                  0.18000000715255737,
+                  0.5400000214576721
+                ],
+                "time": 0.44999998807907104
+              },
+              {
+                "color": [
+                  0.20999999344348907,
+                  0.20999999344348907,
+                  0.20999999344348907,
+                  0.0
+                ],
+                "time": 1.0
+              }
+            ]
+          },
+          "destroyWhenSpent": true,
+          "distortion": 0.029999999329447746,
+          "drag": 1.100000023841858,
+          "emission": 0.0,
+          "emitting": false,
+          "fromSurface": false,
+          "halfExtents": [
+            0.5,
+            0.5,
+            0.5
+          ],
+          "inheritVelocity": 0.0,
+          "intensity": 1.0,
+          "lifeLostOnHit": 0.0,
+          "lifetime": {
+            "max": 6.5,
+            "min": 4.0
+          },
+          "lightColor": [
+            1.0,
+            0.6000000238418579,
+            0.30000001192092896
+          ],
+          "lightIntensity": 0.0,
+          "lightRadius": 8.0,
+          "maxParticles": 32,
+          "normalMap": "assets/effects/smoke_normal.png",
+          "radius": 0.8999999761581421,
+          "randomFrame": false,
+          "rate": 0.0,
+          "ratePerMetre": 0.0,
+          "render": "Billboard",
+          "rotation": {
+            "max": 6.283199787139893,
+            "min": 0.0
+          },
+          "seenBy": "All",
+          "shape": "Hemisphere",
+          "sheetBlend": true,
+          "sheetColumns": 8,
+          "sheetFps": 0.0,
+          "sheetRows": 8,
+          "size": {
+            "max": 2.0,
+            "min": 1.2999999523162842
+          },
+          "sizeOverLife": {
+            "keys": [
+              {
+                "time": 0.0,
+                "value": 0.44999998807907104
+              },
+              {
+                "time": 0.4000000059604645,
+                "value": 1.2999999523162842
+              },
+              {
+                "time": 1.0,
+                "value": 2.299999952316284
+              }
+            ]
+          },
+          "softness": 1.0,
+          "speed": {
+            "max": 2.200000047683716,
+            "min": 0.6000000238418579
+          },
+          "spin": {
+            "max": 0.30000001192092896,
+            "min": -0.30000001192092896
+          },
+          "stretch": 0.05000000074505806,
+          "texture": "assets/effects/smoke.png",
+          "trailLength": 0.30000001192092896,
+          "turbulence": 0.5,
+          "turbulenceScale": 2.5
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "Name": {
+          "value": "Fireball"
+        },
+        "ParticleEmitter": {
+          "acceleration": [
+            0.0,
+            2.200000047683716,
+            0.0
+          ],
+          "angle": 0.4363323152065277,
+          "blend": "Alpha",
+          "bounce": 0.30000001192092896,
+          "burst": 18,
+          "collide": false,
+          "color": {
+            "keys": [
+              {
+                "color": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "time": 0.0
+              },
+              {
+                "color": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  0.949999988079071
+                ],
+                "time": 0.6000000238418579
+              },
+              {
+                "color": [
+                  0.44999998807907104,
+                  0.41999998688697815,
+                  0.4000000059604645,
+                  0.75
+                ],
+                "time": 0.8500000238418579
+              },
+              {
+                "color": [
+                  0.25,
+                  0.23999999463558197,
+                  0.23000000417232513,
+                  0.0
+                ],
+                "time": 1.0
+              }
+            ]
+          },
+          "destroyWhenSpent": true,
+          "distortion": 0.029999999329447746,
+          "drag": 2.799999952316284,
+          "emission": 1.0,
+          "emitting": false,
+          "fromSurface": false,
+          "halfExtents": [
+            0.5,
+            0.5,
+            0.5
+          ],
+          "inheritVelocity": 0.0,
+          "intensity": 2.5999999046325684,
+          "lifeLostOnHit": 0.0,
+          "lifetime": {
+            "max": 2.0,
+            "min": 1.2999999523162842
+          },
+          "lightColor": [
+            1.0,
+            0.550000011920929,
+            0.25
+          ],
+          "lightIntensity": 6.0,
+          "lightRadius": 16.0,
+          "maxParticles": 32,
+          "normalMap": "",
+          "radius": 0.699999988079071,
+          "randomFrame": false,
+          "rate": 0.0,
+          "ratePerMetre": 0.0,
+          "render": "Billboard",
+          "rotation": {
+            "max": 6.283199787139893,
+            "min": 0.0
+          },
+          "seenBy": "All",
+          "shape": "Sphere",
+          "sheetBlend": true,
+          "sheetColumns": 8,
+          "sheetFps": 0.0,
+          "sheetRows": 8,
+          "size": {
+            "max": 2.200000047683716,
+            "min": 1.399999976158142
+          },
+          "sizeOverLife": {
+            "keys": [
+              {
+                "time": 0.0,
+                "value": 0.4000000059604645
+              },
+              {
+                "time": 0.25,
+                "value": 1.0
+              },
+              {
+                "time": 1.0,
+                "value": 1.5
+              }
+            ]
+          },
+          "softness": 1.0,
+          "speed": {
+            "max": 3.799999952316284,
+            "min": 1.2000000476837158
+          },
+          "spin": {
+            "max": 0.0,
+            "min": 0.0
+          },
+          "stretch": 0.05000000074505806,
+          "texture": "assets/effects/fireball.png",
+          "trailLength": 0.30000001192092896,
+          "turbulence": 0.0,
+          "turbulenceScale": 1.0
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.8999999761581421,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    },
+    {
+      "components": {
+        "Name": {
+          "value": "Dust Ring"
+        },
+        "ParticleEmitter": {
+          "acceleration": [
+            0.0,
+            0.30000001192092896,
+            0.0
+          ],
+          "angle": 0.4363323152065277,
+          "blend": "Alpha",
+          "bounce": 0.30000001192092896,
+          "burst": 26,
+          "collide": false,
+          "color": {
+            "keys": [
+              {
+                "color": [
+                  0.5199999809265137,
+                  0.46000000834465027,
+                  0.3700000047683716,
+                  0.699999988079071
+                ],
+                "time": 0.0
+              },
+              {
+                "color": [
+                  0.6000000238418579,
+                  0.550000011920929,
+                  0.4699999988079071,
+                  0.0
+                ],
+                "time": 1.0
+              }
+            ]
+          },
+          "destroyWhenSpent": true,
+          "distortion": 0.029999999329447746,
+          "drag": 2.200000047683716,
+          "emission": 0.0,
+          "emitting": false,
+          "fromSurface": true,
+          "halfExtents": [
+            0.5,
+            0.5,
+            0.5
+          ],
+          "inheritVelocity": 0.0,
+          "intensity": 1.0,
+          "lifeLostOnHit": 0.0,
+          "lifetime": {
+            "max": 3.5999999046325684,
+            "min": 2.0
+          },
+          "lightColor": [
+            1.0,
+            0.6000000238418579,
+            0.30000001192092896
+          ],
+          "lightIntensity": 0.0,
+          "lightRadius": 8.0,
+          "maxParticles": 32,
+          "normalMap": "assets/effects/smoke_normal.png",
+          "radius": 0.4000000059604645,
+          "randomFrame": false,
+          "rate": 0.0,
+          "ratePerMetre": 0.0,
+          "render": "Billboard",
+          "rotation": {
+            "max": 6.283199787139893,
+            "min": 0.0
+          },
+          "seenBy": "All",
+          "shape": "Disc",
+          "sheetBlend": true,
+          "sheetColumns": 8,
+          "sheetFps": 0.0,
+          "sheetRows": 8,
+          "size": {
+            "max": 1.399999976158142,
+            "min": 0.8999999761581421
+          },
+          "sizeOverLife": {
+            "keys": [
+              {
+                "time": 0.0,
+                "value": 0.6000000238418579
+              },
+              {
+                "time": 1.0,
+                "value": 2.200000047683716
+              }
+            ]
+          },
+          "softness": 1.0,
+          "speed": {
+            "max": 9.0,
+            "min": 5.0
+          },
+          "spin": {
+            "max": 0.30000001192092896,
+            "min": -0.30000001192092896
+          },
+          "stretch": 0.05000000074505806,
+          "texture": "assets/effects/smoke.png",
+          "trailLength": 0.30000001192092896,
+          "turbulence": 0.0,
+          "turbulenceScale": 1.0
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.25,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 2
+    },
+    {
+      "components": {
+        "Name": {
+          "value": "Sparks"
+        },
+        "ParticleEmitter": {
+          "acceleration": [
+            0.0,
+            -9.8100004196167,
+            0.0
+          ],
+          "angle": 0.4363323152065277,
+          "blend": "Additive",
+          "bounce": 0.25,
+          "burst": 28,
+          "collide": true,
+          "color": {
+            "keys": [
+              {
+                "color": [
+                  1.0,
+                  0.7200000286102295,
+                  0.3799999952316284,
+                  1.0
+                ],
+                "time": 0.0
+              },
+              {
+                "color": [
+                  1.0,
+                  0.41999998688697815,
+                  0.10000000149011612,
+                  1.0
+                ],
+                "time": 0.3499999940395355
+              },
+              {
+                "color": [
+                  0.6000000238418579,
+                  0.11999999731779099,
+                  0.029999999329447746,
+                  0.0
+                ],
+                "time": 1.0
+              }
+            ]
+          },
+          "destroyWhenSpent": true,
+          "distortion": 0.029999999329447746,
+          "drag": 0.6000000238418579,
+          "emission": 0.0,
+          "emitting": false,
+          "fromSurface": false,
+          "halfExtents": [
+            0.5,
+            0.5,
+            0.5
+          ],
+          "inheritVelocity": 0.0,
+          "intensity": 3.0,
+          "lifeLostOnHit": 0.30000001192092896,
+          "lifetime": {
+            "max": 1.399999976158142,
+            "min": 0.4000000059604645
+          },
+          "lightColor": [
+            1.0,
+            0.6000000238418579,
+            0.30000001192092896
+          ],
+          "lightIntensity": 0.0,
+          "lightRadius": 8.0,
+          "maxParticles": 64,
+          "normalMap": "",
+          "radius": 0.30000001192092896,
+          "randomFrame": false,
+          "rate": 0.0,
+          "ratePerMetre": 0.0,
+          "render": "Stretched",
+          "rotation": {
+            "max": 0.0,
+            "min": 0.0
+          },
+          "seenBy": "All",
+          "shape": "Hemisphere",
+          "sheetBlend": false,
+          "sheetColumns": 1,
+          "sheetFps": 0.0,
+          "sheetRows": 1,
+          "size": {
+            "max": 0.02199999988079071,
+            "min": 0.012000000104308128
+          },
+          "sizeOverLife": {
+            "keys": [
+              {
+                "time": 0.0,
+                "value": 1.0
+              },
+              {
+                "time": 1.0,
+                "value": 0.30000001192092896
+              }
+            ]
+          },
+          "softness": 0.4000000059604645,
+          "speed": {
+            "max": 13.0,
+            "min": 4.0
+          },
+          "spin": {
+            "max": 0.0,
+            "min": 0.0
+          },
+          "stretch": 0.012000000104308128,
+          "texture": "",
+          "trailLength": 0.30000001192092896,
+          "turbulence": 0.0,
+          "turbulenceScale": 1.0
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.800000011920929,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 3
+    },
+    {
+      "components": {
+        "Name": {
+          "value": "Debris"
+        },
+        "ParticleEmitter": {
+          "acceleration": [
+            0.0,
+            -9.8100004196167,
+            0.0
+          ],
+          "angle": 0.4363323152065277,
+          "blend": "Alpha",
+          "bounce": 0.15000000596046448,
+          "burst": 34,
+          "collide": true,
+          "color": {
+            "keys": [
+              {
+                "color": [
+                  0.12999999523162842,
+                  0.10000000149011612,
+                  0.07999999821186066,
+                  1.0
+                ],
+                "time": 0.0
+              },
+              {
+                "color": [
+                  0.12999999523162842,
+                  0.10000000149011612,
+                  0.07999999821186066,
+                  1.0
+                ],
+                "time": 0.8500000238418579
+              },
+              {
+                "color": [
+                  0.12999999523162842,
+                  0.10000000149011612,
+                  0.07999999821186066,
+                  0.0
+                ],
+                "time": 1.0
+              }
+            ]
+          },
+          "destroyWhenSpent": true,
+          "distortion": 0.029999999329447746,
+          "drag": 0.25,
+          "emission": 0.0,
+          "emitting": false,
+          "fromSurface": false,
+          "halfExtents": [
+            0.5,
+            0.5,
+            0.5
+          ],
+          "inheritVelocity": 0.0,
+          "intensity": 1.0,
+          "lifeLostOnHit": 0.0,
+          "lifetime": {
+            "max": 3.0,
+            "min": 1.7999999523162842
+          },
+          "lightColor": [
+            1.0,
+            0.6000000238418579,
+            0.30000001192092896
+          ],
+          "lightIntensity": 0.0,
+          "lightRadius": 8.0,
+          "maxParticles": 40,
+          "normalMap": "",
+          "radius": 0.4000000059604645,
+          "randomFrame": false,
+          "rate": 0.0,
+          "ratePerMetre": 0.0,
+          "render": "Billboard",
+          "rotation": {
+            "max": 6.283199787139893,
+            "min": 0.0
+          },
+          "seenBy": "All",
+          "shape": "Hemisphere",
+          "sheetBlend": false,
+          "sheetColumns": 1,
+          "sheetFps": 0.0,
+          "sheetRows": 1,
+          "size": {
+            "max": 0.07999999821186066,
+            "min": 0.03500000014901161
+          },
+          "sizeOverLife": {
+            "keys": [
+              {
+                "time": 0.0,
+                "value": 1.0
+              },
+              {
+                "time": 1.0,
+                "value": 1.0
+              }
+            ]
+          },
+          "softness": 0.15000000596046448,
+          "speed": {
+            "max": 11.0,
+            "min": 4.0
+          },
+          "spin": {
+            "max": 8.0,
+            "min": -8.0
+          },
+          "stretch": 0.05000000074505806,
+          "texture": "",
+          "trailLength": 0.30000001192092896,
+          "turbulence": 0.0,
+          "turbulenceScale": 1.0
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.6000000238418579,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 4
+    },
+    {
+      "components": {
+        "Name": {
+          "value": "Shockwave"
+        },
+        "ParticleEmitter": {
+          "acceleration": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "angle": 0.4363323152065277,
+          "blend": "Distortion",
+          "bounce": 0.30000001192092896,
+          "burst": 1,
+          "collide": false,
+          "color": {
+            "keys": [
+              {
+                "color": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  1.0
+                ],
+                "time": 0.0
+              },
+              {
+                "color": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  0.0
+                ],
+                "time": 1.0
+              }
+            ]
+          },
+          "destroyWhenSpent": true,
+          "distortion": 0.05000000074505806,
+          "drag": 0.0,
+          "emission": 0.0,
+          "emitting": false,
+          "fromSurface": false,
+          "halfExtents": [
+            0.5,
+            0.5,
+            0.5
+          ],
+          "inheritVelocity": 0.0,
+          "intensity": 1.0,
+          "lifeLostOnHit": 0.0,
+          "lifetime": {
+            "max": 0.44999998807907104,
+            "min": 0.44999998807907104
+          },
+          "lightColor": [
+            1.0,
+            0.6000000238418579,
+            0.30000001192092896
+          ],
+          "lightIntensity": 0.0,
+          "lightRadius": 8.0,
+          "maxParticles": 1,
+          "normalMap": "",
+          "radius": 0.0,
+          "randomFrame": false,
+          "rate": 0.0,
+          "ratePerMetre": 0.0,
+          "render": "Billboard",
+          "rotation": {
+            "max": 0.0,
+            "min": 0.0
+          },
+          "seenBy": "All",
+          "shape": "Point",
+          "sheetBlend": false,
+          "sheetColumns": 1,
+          "sheetFps": 0.0,
+          "sheetRows": 1,
+          "size": {
+            "max": 0.6000000238418579,
+            "min": 0.6000000238418579
+          },
+          "sizeOverLife": {
+            "keys": [
+              {
+                "time": 0.0,
+                "value": 0.30000001192092896
+              },
+              {
+                "time": 1.0,
+                "value": 14.0
+              }
+            ]
+          },
+          "softness": 1.0,
+          "speed": {
+            "max": 0.0,
+            "min": 0.0
+          },
+          "spin": {
+            "max": 0.0,
+            "min": 0.0
+          },
+          "stretch": 0.05000000074505806,
+          "texture": "assets/effects/shockwave.png",
+          "trailLength": 0.30000001192092896,
+          "turbulence": 0.0,
+          "turbulenceScale": 1.0
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 5
+    },
+    {
+      "components": {
+        "Decal": {
+          "angleFade": 0.5,
+          "enabled": true,
+          "material": "effects:scorch",
+          "opacity": 0.8999999761581421
+        },
+        "Name": {
+          "value": "Scorch"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.30000001192092896,
+            0.0
+          ],
+          "rotation": [
+            0.7071067690849304,
+            -0.7071067690849304,
+            -0.0,
+            -0.0
+          ],
+          "scale": [
+            4.0,
+            4.0,
+            1.2000000476837158
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 6
+    },
+    {
+      "components": {
+        "AudioSource": {
+          "clip": "assets/effects/boom.wav",
+          "loop": false,
+          "maxDistance": 80.0,
+          "minDistance": 4.0,
+          "pitch": 1.0,
+          "playOnStart": true,
+          "priority": 1,
+          "rolloff": "Inverse",
+          "spatial": true,
+          "volume": 1.0
+        },
+        "Name": {
+          "value": "Boom"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 7
+    }
+  ],
+  "nextUid": 8,
+  "version": 3
+}

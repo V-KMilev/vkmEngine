@@ -12,7 +12,7 @@ Or from a terminal:
 
 ```sh
 vkm new mygame                  # a project from the default template
-vkm new lab -t physics_lab      # a copy of an example
+vkm new lab -t the_lab          # a copy of an example
 cd mygame
 vkm run                         # build, cook and play it
 vkm edit                        # open it in the editor

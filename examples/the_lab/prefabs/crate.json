@@ -1,0 +1,154 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "lab:post_wood"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/lab_props/lab_props.gltf:mesh58"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/textures/rough_wood_arm.jpg"
+      },
+      {
+        "name": "assets/textures/rough_wood_diff.jpg"
+      },
+      {
+        "name": "assets/textures/rough_wood_nor_gl.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Collider": {
+          "enabled": true,
+          "isTrigger": false,
+          "parts": [
+            {
+              "center": [
+                0.0,
+                0.0,
+                0.0
+              ],
+              "halfExtents": [
+                0.25,
+                0.25,
+                0.25
+              ],
+              "halfHeight": 0.5,
+              "mesh": "",
+              "meshScale": [
+                1.0,
+                1.0,
+                1.0
+              ],
+              "radius": 0.5,
+              "shape": "Box"
+            }
+          ]
+        },
+        "Name": {
+          "value": "Thrown Crate"
+        },
+        "Rigidbody": {
+          "angularDamping": 0.05000000074505806,
+          "angularVelocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "canSleep": true,
+          "collidesWith": -1,
+          "freezeRotation": false,
+          "friction": 0.6000000238418579,
+          "gravityScale": 1.0,
+          "layer": 1,
+          "linearDamping": 0.009999999776482582,
+          "linearVelocity": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "mass": 2.0,
+          "motion": "Dynamic",
+          "restitution": 0.20000000298023224
+        },
+        "Script": {
+          "behaviors": [
+            {
+              "properties": {
+                "impact": "prefabs/impact.json",
+                "lifetime": 6.0
+              },
+              "type": "LabCrate"
+            }
+          ]
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "lab:post_wood",
+          "mesh": "assets/models/lab_props/lab_props.gltf:mesh58",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "Crate Mesh"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            0.5,
+            0.5,
+            0.5
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    }
+  ],
+  "nextUid": 2,
+  "version": 3
+}

@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/grass_bermuda_01/grass_bermuda_01_diff_rgba_1k.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/grass_bermuda_01/grass_bermuda_01_diff_rgba_1k.png",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

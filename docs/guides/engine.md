@@ -291,7 +291,7 @@ commit what an old file will do. If the answer must be "refuse it", that changes
 what the gate does and belongs with the owner.
 
 Round-trip any format change against what ships:
-`examples/physics_lab/scenes/obstacle_course.json` is the saved scene of record.
+`examples/the_lab/scenes/obstacle_course.json` is the saved scene of record.
 It is ported with the change, and must load and save back unchanged
 ([implementation.md](implementation.md#7-changing-a-shape-its-users-rely-on)).
 

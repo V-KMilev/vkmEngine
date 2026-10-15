@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/metal_plate_arm.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/metal_plate_arm.jpg",
+    "usage": "Data",
+    "wrap": "repeat"
+  }
+}

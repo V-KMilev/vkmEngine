@@ -1,0 +1,7 @@
+{
+  "name": "assets/audio/boing.wav",
+  "source": {
+    "kind": "file",
+    "path": "assets/audio/boing.wav"
+  }
+}

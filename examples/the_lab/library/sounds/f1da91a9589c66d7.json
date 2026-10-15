@@ -1,0 +1,7 @@
+{
+  "name": "assets/effects/boom.wav",
+  "source": {
+    "kind": "file",
+    "path": "assets/effects/boom.wav"
+  }
+}

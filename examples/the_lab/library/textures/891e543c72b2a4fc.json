@@ -1,0 +1,9 @@
+{
+  "name": "assets/textures/planks_n.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/planks_n.png",
+    "usage": "Normal"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/concrete_floor_worn_001_diff.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/concrete_floor_worn_001_diff.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

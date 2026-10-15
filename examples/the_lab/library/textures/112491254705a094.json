@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/rusty_metal_02_diff.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/rusty_metal_02_diff.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

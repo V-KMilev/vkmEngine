@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/concrete.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/concrete.png",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

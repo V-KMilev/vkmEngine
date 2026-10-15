@@ -1,0 +1,9 @@
+{
+  "name": "assets/textures/foliage.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/foliage.png",
+    "usage": "Color"
+  }
+}

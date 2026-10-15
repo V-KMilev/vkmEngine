@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/metal_tool_chest/textures/metal_tool_chest_nor_gl_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/metal_tool_chest/textures/metal_tool_chest_nor_gl_1k.jpg",
+    "usage": "Normal",
+    "wrap": "repeat"
+  }
+}

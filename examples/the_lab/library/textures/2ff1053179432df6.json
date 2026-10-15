@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/weathered_planks_arm.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/weathered_planks_arm.jpg",
+    "usage": "Data",
+    "wrap": "repeat"
+  }
+}

@@ -1,0 +1,139 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [],
+    "meshes": [],
+    "skeletons": [],
+    "sounds": [],
+    "textures": []
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "Tracer"
+        },
+        "ParticleEmitter": {
+          "acceleration": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "angle": 0.0,
+          "blend": "Additive",
+          "bounce": 0.30000001192092896,
+          "burst": 1,
+          "collide": false,
+          "color": {
+            "keys": [
+              {
+                "color": [
+                  1.0,
+                  0.8999999761581421,
+                  0.6000000238418579,
+                  1.0
+                ],
+                "time": 0.0
+              },
+              {
+                "color": [
+                  1.0,
+                  0.699999988079071,
+                  0.30000001192092896,
+                  1.0
+                ],
+                "time": 1.0
+              }
+            ]
+          },
+          "destroyWhenSpent": true,
+          "distortion": 0.029999999329447746,
+          "drag": 0.0,
+          "emission": 0.0,
+          "emitting": false,
+          "fromSurface": false,
+          "halfExtents": [
+            0.5,
+            0.5,
+            0.5
+          ],
+          "inheritVelocity": 0.0,
+          "intensity": 12.0,
+          "lifeLostOnHit": 0.0,
+          "lifetime": {
+            "max": 0.20000000298023224,
+            "min": 0.20000000298023224
+          },
+          "maxParticles": 1,
+          "normalMap": "",
+          "radius": 0.0,
+          "randomFrame": false,
+          "rate": 30.0,
+          "ratePerMetre": 0.0,
+          "render": "Stretched",
+          "rotation": {
+            "max": 0.0,
+            "min": 0.0
+          },
+          "seenBy": "All",
+          "shape": "Cone",
+          "sheetBlend": false,
+          "sheetColumns": 1,
+          "sheetFps": 0.0,
+          "sheetRows": 1,
+          "size": {
+            "max": 0.05000000074505806,
+            "min": 0.05000000074505806
+          },
+          "sizeOverLife": {
+            "keys": [
+              {
+                "time": 0.0,
+                "value": 1.0
+              },
+              {
+                "time": 1.0,
+                "value": 1.0
+              }
+            ]
+          },
+          "softness": 1.0,
+          "speed": {
+            "max": 90.0,
+            "min": 90.0
+          },
+          "spin": {
+            "max": 0.0,
+            "min": 0.0
+          },
+          "stretch": 0.03999999910593033,
+          "texture": "",
+          "trailLength": 0.30000001192092896,
+          "turbulence": 0.0,
+          "turbulenceScale": 1.0
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    }
+  ],
+  "nextUid": 1,
+  "version": 3
+}

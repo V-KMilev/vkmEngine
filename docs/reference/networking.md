@@ -81,9 +81,9 @@ and on a server what that entity's player sent, in order; an entity no player
 drives reads as nothing held.
 
 Offline `isSimulated()` and `isMine()` answer yes for every character, so a
-scene authored with four would move all four from one keyboard. physics_lab
+scene authored with four would move all four from one keyboard. the_lab
 answers it with a question of its own (`isOfflineSeat`,
-`examples/physics_lab/src/lab_walker.h`).
+`examples/the_lab/src/lab_seat.h`).
 
 ### Messages
 

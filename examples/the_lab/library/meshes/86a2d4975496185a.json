@@ -1,0 +1,8 @@
+{
+  "name": "assets/models/covered_car/covered_car_1k.gltf:mesh3",
+  "source": {
+    "kind": "model",
+    "mesh": 3,
+    "path": "assets/models/covered_car/covered_car_1k.gltf"
+  }
+}

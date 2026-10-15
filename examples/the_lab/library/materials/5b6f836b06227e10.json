@@ -1,0 +1,59 @@
+{
+  "name": "lab:foliage",
+  "source": {
+    "albedo": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "alphaCutoff": 0.5,
+    "anisotropy": 0.0,
+    "anisotropyDirection": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "ao": 1.0,
+    "attenuationColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "attenuationDistance": 1.0,
+    "clearcoat": 0.0,
+    "clearcoatRoughness": 0.0,
+    "doubleSided": false,
+    "emission": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "emissiveStrength": 1.0,
+    "heightScale": 0.0,
+    "ior": 1.5,
+    "metallic": 0.0,
+    "normalScale": 1.0,
+    "roughness": 0.8500000238418579,
+    "sheenColor": [
+      0.11999999731779099,
+      0.20000000298023224,
+      0.05000000074505806
+    ],
+    "sheenRoughness": 0.5,
+    "subsurface": 0.3499999940395355,
+    "subsurfaceColor": [
+      0.44999998807907104,
+      0.699999988079071,
+      0.20000000298023224
+    ],
+    "textures": {
+      "albedo": "assets/textures/foliage.png",
+      "normal": "assets/textures/foliage_n.png"
+    },
+    "thicknessFactor": 0.0,
+    "transmission": 0.0,
+    "type": "Opaque",
+    "waves": false
+  }
+}

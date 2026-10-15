@@ -223,8 +223,8 @@ toast.
 Layout containers (rows / stacks), 9-slice sprites, atlas regions on `UIImage`,
 a scrollbar (build one from a held `UIButton` and `UIScroll`'s sizes), controls
 beyond slider, toggle and choice, keyboard focus and navigation, UI animation,
-world-space UI (pin a label each frame with `ScreenView::toCanvas`), and a
-visual 2D edit mode.
+world-space UI (pin a label each frame with `ScreenView::toCanvas`, as
+`examples/the_lab/src/lab_sign.h` does), and a visual 2D edit mode.
 
 ---
 

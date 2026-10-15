@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/painted_wooden_bench/textures/painted_wooden_bench_nor_gl_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/painted_wooden_bench/textures/painted_wooden_bench_nor_gl_1k.jpg",
+    "usage": "Normal",
+    "wrap": "repeat"
+  }
+}

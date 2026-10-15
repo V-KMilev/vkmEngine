@@ -1,0 +1,69 @@
+{
+  "name": "lab:sand_wet",
+  "source": {
+    "albedo": [
+      0.85,
+      0.82,
+      0.78,
+      1.0
+    ],
+    "alphaCutoff": 0.5,
+    "anisotropy": 0.0,
+    "anisotropyDirection": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "ao": 1.0,
+    "attenuationColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "attenuationDistance": 1.0,
+    "boxMapping": 3.0,
+    "clearcoat": 0.0,
+    "clearcoatRoughness": 0.0,
+    "doubleSided": false,
+    "emission": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "emissiveStrength": 1.0,
+    "heightScale": 0.0,
+    "ior": 1.5,
+    "metallic": 1.0,
+    "normalScale": 0.4000000059604645,
+    "roughness": 1.0,
+    "sheenColor": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "sheenRoughness": 0.30000001192092896,
+    "subsurface": 0.0,
+    "subsurfaceColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "textures": {
+      "albedo": "assets/textures/damp_beach_sand_diff.jpg",
+      "normal": "assets/textures/damp_beach_sand_nor_gl.jpg",
+      "aoMetallicRoughness": "assets/textures/damp_beach_sand_arm.jpg"
+    },
+    "thicknessFactor": 0.0,
+    "transmission": 0.0,
+    "type": "Opaque",
+    "uvOffset": [
+      0.0,
+      0.0
+    ],
+    "uvScale": [
+      1.0,
+      1.0
+    ],
+    "waves": false
+  }
+}

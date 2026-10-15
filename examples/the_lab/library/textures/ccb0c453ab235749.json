@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/rubber_tiles_arm.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/rubber_tiles_arm.jpg",
+    "usage": "Data",
+    "wrap": "repeat"
+  }
+}

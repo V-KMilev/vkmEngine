@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/white_planks_clean_diff.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/white_planks_clean_diff.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

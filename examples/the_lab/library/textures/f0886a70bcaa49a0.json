@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/white_planks_clean_arm.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/white_planks_clean_arm.jpg",
+    "usage": "Data",
+    "wrap": "repeat"
+  }
+}

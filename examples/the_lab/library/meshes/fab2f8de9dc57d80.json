@@ -1,0 +1,12 @@
+{
+  "name": "mesh:generator:cylinder:1.0:0.5:24",
+  "source": {
+    "kind": "generator",
+    "params": {
+      "height": 1.0,
+      "radius": 0.5,
+      "segments": 24
+    },
+    "type": "cylinder"
+  }
+}

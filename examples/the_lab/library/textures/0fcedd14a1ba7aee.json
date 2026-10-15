@@ -1,0 +1,9 @@
+{
+  "name": "assets/textures/perforated.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/perforated.png",
+    "usage": "Color"
+  }
+}
