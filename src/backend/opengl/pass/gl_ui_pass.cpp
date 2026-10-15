@@ -1,5 +1,7 @@
 #include "pass/gl_ui_pass.h"
 
+#include <cstddef>
+
 #include <GL/glew.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -8,8 +10,8 @@
 #include "gl_context.h"
 #include "gl_frame_buffer.h"
 #include "gl_vertex_array.h"
-#include "gl_vertex_buffer.h"
-#include "gl_vertex_buffer_layout.h"
+#include "gl_error_handle.h"
+#include "gl_stream_ring.h"
 #include "gl_texture.h"
 
 #include "gl_frame_context.h"
@@ -21,6 +23,13 @@
 #include "system/ui/ui_draw_data.h"
 
 namespace Vkm::Engine {
+
+namespace {
+
+// The vertex buffer binding point the attributes read, a namespace apart from their locations.
+constexpr uint32_t VERTEX_BINDING = 0;
+
+} // namespace
 
 GLUIPass::GLUIPass()
     : m_shader("shaders/ui")
@@ -38,46 +47,44 @@ GLUIPass::GLUIPass()
     params.generateMipmaps = false;
     params.data            = &zero;
     m_noAtlas = std::make_unique<Vkm::GL::Texture2D>("ui_no_atlas", params);
+
+    // The vertex formats once; each frame's vertices are bound from the frame's stream.
+    static_assert(
+        sizeof(UIVertex) == (2 + 2 + 4 + 4 + 4 + 1) * sizeof(float),
+        "UIVertex no longer matches the attributes below"
+    );
+    const GLuint vao       = m_vao->getID();
+    const auto   attribute = [vao](uint32_t index, GLint count, uint32_t at) {
+        VKM_GL_CHECK(glEnableVertexArrayAttrib(vao, index));
+        VKM_GL_CHECK(glVertexArrayAttribFormat(vao, index, count, GL_FLOAT, GL_FALSE, at));
+        VKM_GL_CHECK(glVertexArrayAttribBinding(vao, index, VERTEX_BINDING));
+    };
+    attribute(0, 2, offsetof(UIVertex, pos));
+    attribute(1, 2, offsetof(UIVertex, uv));
+    attribute(2, 4, offsetof(UIVertex, color));
+    attribute(3, 4, offsetof(UIVertex, shape));   // quad size, corner radius, border width
+    attribute(4, 4, offsetof(UIVertex, border));  // border colour
+    attribute(5, 1, offsetof(UIVertex, image));   // whether a solid samples its run's image
 }
 
 GLUIPass::~GLUIPass() = default;
-
-void GLUIPass::ensureCapacity(uint32_t vertexCount) {
-    if (vertexCount <= m_capacity) return;
-
-    // Grow geometrically so a steadily busier UI does not reallocate every frame.
-    uint32_t capacity = m_capacity ? m_capacity : 256;
-    while (capacity < vertexCount) capacity *= 2;
-
-    m_vbo = std::make_unique<Vkm::GL::VertexBuffer>(
-        nullptr,
-        capacity * static_cast<uint32_t>(sizeof(UIVertex)),
-        GL_DYNAMIC_DRAW
-    );
-
-    static_assert(
-        sizeof(UIVertex) == (2 + 2 + 4 + 4 + 4 + 1) * sizeof(float),
-        "UIVertex no longer matches the layout pushed below"
-    );
-    Vkm::GL::VertexBufferLayout layout;
-    layout.push<float>(2);  // pos   -> location 0
-    layout.push<float>(2);  // uv    -> location 1
-    layout.push<float>(4);  // color -> location 2
-    layout.push<float>(4);  // shape -> location 3: quad size, corner radius, border width
-    layout.push<float>(4);  // border colour -> location 4
-    layout.push<float>(1);  // image         -> location 5: whether a solid samples its run's image
-    m_vao->addBuffer(*m_vbo, layout);
-
-    m_capacity = capacity;
-}
 
 void GLUIPass::execute(GLFrameContext& ctx) {
     const RenderView& view = ctx.view;
     if (!view.ui || view.ui->vertices.empty() || view.ui->commands.empty()) return;
     const UIDrawData& ui = *view.ui;
 
-    ensureCapacity(static_cast<uint32_t>(ui.vertices.size()));
-    m_vbo->update(ui.vertices.data(), static_cast<uint32_t>(ui.vertices.size() * sizeof(UIVertex)));
+    const auto                bytes    = static_cast<uint32_t>(ui.vertices.size() * sizeof(UIVertex));
+    const Vkm::GL::BufferSpan vertices = ctx.resources.stream().write(ui.vertices.data(), bytes);
+    VKM_GL_CHECK(
+        glVertexArrayVertexBuffer(
+            m_vao->getID(),
+            VERTEX_BINDING,
+            vertices.buffer,
+            vertices.offset,
+            sizeof(UIVertex)
+        )
+    );
 
     // Draw into the same backbuffer rect Composite resolved to.
     bindBackbufferViewport(ctx);

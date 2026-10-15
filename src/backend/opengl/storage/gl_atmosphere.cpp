@@ -69,12 +69,12 @@ void GLAtmosphere::unbindFbo() const {
 }
 
 void GLAtmosphere::attachTransmittance(const Vkm::GL::Context& gl) const {
-    m_fbo->attachTexture2D(GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_transmittance->getID(), 0);
+    m_fbo->attachTexture(GL_COLOR_ATTACHMENT0, m_transmittance->getID());
     gl.setViewport(0, 0, TRANSMITTANCE_WIDTH, TRANSMITTANCE_HEIGHT);
 }
 
 void GLAtmosphere::attachMultiScattering(const Vkm::GL::Context& gl) const {
-    m_fbo->attachTexture2D(GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_multiScattering->getID(), 0);
+    m_fbo->attachTexture(GL_COLOR_ATTACHMENT0, m_multiScattering->getID());
     gl.setViewport(0, 0, MULTISCATTERING_SIZE, MULTISCATTERING_SIZE);
 }
 

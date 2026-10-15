@@ -5,7 +5,7 @@ engine rather than *with* it, read [building.md](reference/building.md) instead.
 
 ## What you need
 
-- Linux or Windows on x86-64, and a GPU and driver supporting OpenGL 4.3.
+- Linux or Windows on x86-64, and a GPU and driver supporting OpenGL 4.5.
 - On Linux, the C library's headers, which most distributions install with
   their compiler: `sudo apt install libc6-dev` (Debian, Ubuntu), `glibc-devel`
   (Fedora). `vkm doctor` says when they are missing.

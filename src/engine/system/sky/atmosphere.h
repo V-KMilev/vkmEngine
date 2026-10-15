@@ -11,8 +11,8 @@ struct SkySettings;
 namespace Vkm::Engine::Atmosphere {
 
 // The procedural sky's atmosphere: an Earth-like planet under Rayleigh, Mie and ozone
-// layers, in metres. The one statement of it: the GPU reads it through
-// `GLBackend::shaderConstants`, so sky and sunlight agree.
+// layers, in metres. The one statement of it: the backend writes it into every shader's
+// prelude, so sky and sunlight agree.
 
 constexpr float PLANET_RADIUS = 6371000.0f;  ///< Sea level, from the planet's centre.
 constexpr float TOP_RADIUS    = 6471000.0f;  ///< Where the atmosphere ends.

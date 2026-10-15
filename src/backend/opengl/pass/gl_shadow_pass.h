@@ -141,8 +141,8 @@ class GLShadowPass : public GLPass {
          * @brief Make @p program current, and give it this tile's matrix, and a cutting one the
          *        dither's shift, if it lacks them.
          *
-         * A program must be bound to take a uniform, and matrices go out per tile and face, so the
-         * current program is tracked across the pass rather than rebound per tile.
+         * Matrices go out per tile and face, so the current program is tracked across the pass
+         * rather than rebound per tile.
          *
          * @param program The program to make current.
          */
@@ -152,7 +152,7 @@ class GLShadowPass : public GLPass {
         DepthProgram m_programs[4];  ///< Indexed cut * 2 + posed.
 
         const Vkm::GL::Shader* m_bound = nullptr;  ///< The program that is current, reset each execute().
-        glm::mat4              m_lightVP{1.0f};      ///< The matrix of the tile being drawn.
+        glm::mat4              m_lightVP{1.0f};      ///< The tile being drawn's, as it rasterises.
         glm::vec2              m_ditherShift{0.0f};  ///< Its beginTile() dither shift.
         /// Counts beginTile() calls; never reset, so no program holds a stale one.
         uint64_t               m_tile = 0;

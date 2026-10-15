@@ -1,10 +1,9 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
 #include <vector>
 
-#include "gl_vertex_buffer.h"
+#include "gl_stream_ring.h"
 
 #include "asset/gl_mesh.h"
 
@@ -14,10 +13,9 @@ namespace Vkm::Engine {
  * @brief The two lists a multi-draw reads: object indices, and the commands that slice them.
  *
  * A GLMesh::command per run of instances sharing a mesh, its baseInstance where the run starts.
- * draw() submits commands of one vertex layout as one glMultiDrawElementsIndirect: on this
- * driver a draw costs the validation after a state change, paid once per multi-draw, not per
- * mesh. The command buffer is a vertex buffer bound to the indirect target; vkmGL has no
- * indirect one.
+ * draw() submits commands of one vertex layout as one glMultiDrawElementsIndirect: a draw costs
+ * the validation after a state change, paid once per multi-draw, not per mesh. Both lists go into
+ * the frame's stream ring, the commands bound to the indirect target.
  */
 class GLDrawList {
     public:
@@ -35,11 +33,13 @@ class GLDrawList {
         void clear();
 
         /**
-         * @brief Send both lists to the GPU, growing their buffers when needed.
+         * @brief Write both lists into @p stream.
          *
-         * Once per fill, before the first draw().
+         * Once per fill, before the first draw(), in the frame it draws in.
+         *
+         * @param stream The frame's streaming memory (GLView::stream).
          */
-        void upload();
+        void upload(Vkm::GL::StreamRing& stream);
 
         /**
          * @brief Submit @p count commands from @p first as one multi-draw.
@@ -54,8 +54,8 @@ class GLDrawList {
         std::vector<uint32_t>& instances() { return m_instances; }
         const std::vector<uint32_t>& instances() const { return m_instances; }
 
-        /// The instances as upload() sent them; null before the first.
-        const Vkm::GL::VertexBuffer* instanceBuffer() const { return m_instanceBuffer.get(); }
+        /// The instances where upload() wrote them; empty before the first.
+        const Vkm::GL::BufferSpan& instanceSpan() const { return m_instanceSpan; }
 
         /// One command per run of instances sharing a mesh.
         std::vector<DrawCommand>& commands() { return m_commands; }
@@ -65,10 +65,8 @@ class GLDrawList {
         std::vector<uint32_t>    m_instances;
         std::vector<DrawCommand> m_commands;
 
-        std::unique_ptr<Vkm::GL::VertexBuffer> m_instanceBuffer;
-        std::unique_ptr<Vkm::GL::VertexBuffer> m_commandBuffer;
-        uint32_t m_instanceCapacity = 0;  ///< Bytes m_instanceBuffer holds.
-        uint32_t m_commandCapacity  = 0;  ///< Bytes m_commandBuffer holds.
+        Vkm::GL::BufferSpan m_instanceSpan;
+        Vkm::GL::BufferSpan m_commandSpan;
 };
 
 } // namespace Vkm::Engine

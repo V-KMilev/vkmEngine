@@ -175,7 +175,7 @@ non-zero cook.
 | Condition | `vkm_runtime` | `vkm_editor` | `vkm_cook` |
 |-----------|---------------|--------------|------------|
 | Log file cannot be opened | exit 1 | exit 1 | exit 1 |
-| Window / GL context cannot be created | exit 1 (throws) | exit 1 (throws) | n/a - headless |
+| Window / graphics surface cannot be created | exit 1 (throws) | exit 1 (throws) | n/a - headless |
 | No gameplay module in the project's `bin/` | exit 1 | opens, logs WARNING | n/a |
 | Module present but will not load (version, entry, unreadable) | exit 1 | opens, logs ERROR | n/a |
 | Entry scene named but will not load (`SceneBoot::Failed`) | exit 1 | opens on the default scene; error toast and an Errors panel entry | exit 1 |

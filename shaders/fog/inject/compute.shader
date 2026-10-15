@@ -47,7 +47,7 @@ void main() {
     // Froxel centre -> view space -> world.
     vec2  uv    = (vec2(froxel.xy) + 0.5) / vec2(float(u_froxelDims.x), float(u_froxelDims.y));
     float depth = sliceToViewDepth(float(froxel.z) + 0.5, u_camera.zNear, u_fogDepth, float(u_froxelDims.z));
-    vec4  clip  = vec4(uv * 2.0 - 1.0, -1.0, 1.0);
+    vec4  clip  = vec4(uv * 2.0 - 1.0, NEAR_DEPTH, 1.0);
     vec4  nearH = u_camera.invProjection * clip;
     vec3  ray   = nearH.xyz / nearH.w;  // near-plane point (the perspective divide matters)
     vec3  viewP = cameraIsPerspective()

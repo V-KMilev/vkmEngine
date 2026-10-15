@@ -29,7 +29,7 @@ struct UIVertex {
     float     image;   ///< Solid only: 1 when tinted by its run's image, 0 when flat.
 };
 
-/// A glyph's corner radius: negative, as no solid's is. See GLBackend::shaderConstants.
+/// A glyph's corner radius: negative, as no solid's is. The backend's shader prelude names it.
 constexpr float UI_TEXT_MARK = -1.0f;
 
 /**

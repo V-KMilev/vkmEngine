@@ -13,6 +13,7 @@
 #include "gl_sampler.h"
 #include "gl_texture.h"
 #include "gl_texture_cube_array.h"
+#include "convention/gl_depth.h"
 #include "core/engine_config.h"
 
 namespace Vkm::Engine {
@@ -114,7 +115,7 @@ void GLShadowAtlas::init(Vkm::GL::Context& gl, uint32_t tileRes) {
     }
 
     m_fbo2D.bind();
-    m_fbo2D.attachTexture2D(GL_DEPTH_ATTACHMENT, m_atlas2D->getID());
+    m_fbo2D.attachTexture(GL_DEPTH_ATTACHMENT, m_atlas2D->getID());
     m_fbo2D.setDrawBuffer(GL_NONE);
     m_fbo2D.setReadBuffer(GL_NONE);
     if (!m_fbo2D.isComplete()) {
@@ -124,7 +125,7 @@ void GLShadowAtlas::init(Vkm::GL::Context& gl, uint32_t tileRes) {
     // held. The cubes likewise.
     gl.setDepthWrite(true);
     gl.setViewport(0, 0, static_cast<int32_t>(atlasW), static_cast<int32_t>(atlasH));
-    gl.clear(false, true, false);
+    gl.clear(false, true, false, GLDepth::SHADOW_CLEAR);
     m_fbo2D.unbind();
 
     // Cubes use SHADOW_CUBE_RES, so they and their FBO are built once; a 2D resize leaves them be.
@@ -145,8 +146,8 @@ void GLShadowAtlas::init(Vkm::GL::Context& gl, uint32_t tileRes) {
         gl.setViewport(0, 0, static_cast<int32_t>(SHADOW_CUBE_RES), static_cast<int32_t>(SHADOW_CUBE_RES));
         for (int layer = 0; layer < static_cast<int>(Config::MAX_SHADOW_CASTERS_CUBE); ++layer) {
             for (int face = 0; face < 6; ++face) {
-                m_cubes->attachFace(GL_DEPTH_ATTACHMENT, layer, face, 0);
-                gl.clear(false, true, false);
+                m_fboCube.attachLayer(GL_DEPTH_ATTACHMENT, m_cubes->getID(), 0, layer * 6 + face);
+                gl.clear(false, true, false, GLDepth::SHADOW_CLEAR);
             }
         }
         m_fboCube.unbind();
@@ -220,7 +221,7 @@ void GLShadowAtlas::beginTile(Vkm::GL::Context& gl, uint32_t slot, uint64_t sign
     // picture from an earlier frame that nothing this frame will redraw.
     gl.setScissor(x, y, tile, tile);
     gl.enableScissor(true);
-    gl.clear(false, true, false);
+    gl.clear(false, true, false, GLDepth::SHADOW_CLEAR);
     gl.enableScissor(false);
 }
 
@@ -247,9 +248,9 @@ void GLShadowAtlas::beginCubeFace(
     if (!m_cubes || slot >= Config::MAX_SHADOW_CASTERS_CUBE) return;
     m_faceSignature[static_cast<size_t>(slot) * 6 + face] = signature;
     m_fboCube.bind();
-    m_cubes->attachFace(GL_DEPTH_ATTACHMENT, static_cast<int>(slot), static_cast<int>(face), 0);
+    m_fboCube.attachLayer(GL_DEPTH_ATTACHMENT, m_cubes->getID(), 0, static_cast<int>(slot * 6 + face));
     gl.setViewport(0, 0, static_cast<int32_t>(SHADOW_CUBE_RES), static_cast<int32_t>(SHADOW_CUBE_RES));
-    gl.clear(false, true, false);
+    gl.clear(false, true, false, GLDepth::SHADOW_CLEAR);
 }
 
 void GLShadowAtlas::bind2D(uint32_t unit) const {

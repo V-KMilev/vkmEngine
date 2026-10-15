@@ -703,7 +703,7 @@ void MaterialEditorPanel::drawPreview(EditorContext& ec, MaterialHandle target, 
 
 bool MaterialEditorPanel::mapTile(
     ResourceManager& resources,
-    EditorRenderHooks* backend,
+    EditorRenderHooks& hooks,
     MaterialHandle owner,
     MaterialAsset& mat,
     const char* label,
@@ -719,7 +719,7 @@ bool MaterialEditorPanel::mapTile(
     ImGui::BeginGroup();
 
     // 0 when not resident yet or empty; the live preview syncs a bound slot within a frame.
-    const GpuTextureId texId = (slot && backend) ? backend->textureId(slot) : 0;
+    const GpuTextureId texId = slot ? hooks.textureId(slot) : 0;
 
     // An empty slot wears the kind's glyph faintly.
     ImVec4 glyph = EditorStyle::Accent::MAT_TEXTURE;
@@ -808,7 +808,7 @@ bool MaterialEditorPanel::mapTile(
 
 bool MaterialEditorPanel::drawMaps(
     ResourceManager& resources,
-    EditorRenderHooks* backend,
+    EditorRenderHooks& hooks,
     MaterialHandle target,
     MaterialAsset& mat
 ) {
@@ -829,7 +829,7 @@ bool MaterialEditorPanel::drawMaps(
         // Before the tile: a SameLine left pending would pull the card's next row up beside it.
         if (shown % columns != 0) ImGui::SameLine(0.0f, gap);
         else if (shown > 0)       ImGui::Dummy(ImVec2(0.0f, gap - ImGui::GetStyle().ItemSpacing.y));
-        changed |= mapTile(resources, backend, target, mat, map.label, map.member, map.usage, map.hint, face);
+        changed |= mapTile(resources, hooks, target, mat, map.label, map.member, map.usage, map.hint, face);
         ++shown;
     }
 
@@ -892,7 +892,7 @@ bool MaterialEditorPanel::drawMaps(
 
 bool MaterialEditorPanel::drawParameters(
     ResourceManager& resources,
-    EditorRenderHooks* backend,
+    EditorRenderHooks& hooks,
     MaterialHandle target,
     MaterialAsset& mat
 ) {
@@ -1011,7 +1011,7 @@ bool MaterialEditorPanel::drawParameters(
     // Maps last, so an added lobe sits under the rows it extends, not below the grid.
     ImGui::Spacing();
     if (beginComponentCard("Maps", EditorStyle::Accent::MAT_TEXTURE, true)) {
-        changed |= drawMaps(resources, backend, target, mat);
+        changed |= drawMaps(resources, hooks, target, mat);
 
         // Each scale shows only with its map: it multiplies the texture.
         if (mat.normalTexture) {
@@ -1168,8 +1168,7 @@ void MaterialEditorPanel::draw(EditorContext& ec) {
             // change only after making it.
             MaterialAsset&      mat    = resources.edit(target);
             const MaterialAsset before = mat;
-            EditorRenderHooks* hooks = editorRenderHooks(ec.renderSystem.backend());
-            if (drawParameters(resources, hooks, target, mat)) {
+            if (drawParameters(resources, ec.hooks, target, mat)) {
                 resources.commit(target);
                 auto edit = std::make_unique<MaterialEditCommand>(
                     resources,

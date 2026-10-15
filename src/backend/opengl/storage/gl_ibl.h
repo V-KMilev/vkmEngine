@@ -141,12 +141,7 @@ class GLIBL {
          * @param gl Live GL context whose viewport is set to the LUT size.
          */
         void attachBrdf(const Vkm::GL::Context& gl) const {
-            m_captureFbo->attachTexture2D(
-                GL_COLOR_ATTACHMENT0,
-                GL_TEXTURE_2D,
-                m_brdf ? m_brdf->getID() : 0,
-                0
-            );
+            m_captureFbo->attachTexture(GL_COLOR_ATTACHMENT0, m_brdf ? m_brdf->getID() : 0);
             gl.setViewport(0, 0, BRDF_SIZE, BRDF_SIZE);
         }
 

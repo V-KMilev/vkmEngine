@@ -5,7 +5,7 @@
 - CMake 3.25+ and Ninja
 - Python 3.8+, for `tools/vkm`; on Windows a Windows build of it (MSYS2's
   `mingw-w64-ucrt-x86_64-python`, or python.org's)
-- OpenGL 4.3 capable GPU and drivers
+- OpenGL 4.5 capable GPU and drivers
 
 No compiler: a configure that names none builds with a compiler releases are built
 with - the pinned GCC, or with `-DVKM_COMPILER=clang` the pinned Clang - which
@@ -252,7 +252,7 @@ half a smoke test turns on.
 | `<project>_module` | Shared lib | One per project (`potion_runner_module`, `physics_lab_module`, `stress_arena_module`, `city_block_module`): that project's gameplay sources built by `vkm_add_gameplay_module()` as `game.dll`/`libgame.so` into the project's own `bin/`. The engine ships no gameplay of its own |
 | `vkm_runtime_app` | Executable | Bare engine, no editor. Includes `app/engine_app.h` for the shared bootstrap; links no model importer and no ImGui. Runs as `vkm_runtime` |
 | `vkm_editor_app` | Executable | Engine libs + `vkm_editor` + `vkm_cook`; loads the open project's module for hot-reload. Runs as `vkm_editor` |
-| `vkm_cook_app` | Executable | Headless asset cook: `vkm_cook` with no window, no GL context and no `Engine`, so it runs over SSH and on CI. Runs as `vkm_cook` |
+| `vkm_cook_app` | Executable | Headless asset cook: `vkm_cook` with no window, no graphics context and no `Engine`, so it runs over SSH and on CI. Runs as `vkm_cook` |
 | `vkm_server_app` | Executable | The refereeing host: the same system stack a client runs, with no window and no render backend. Runs as `vkm_server` |
 | `vkm_gl_tests` | Executable | vkmGL's context-free suite, registered with CTest as `vkm_gl`. Built by default; not installed. See [Tests](#tests) |
 | `vkm_engine_tests` | Executable | The engine's own context-free suite, one file per suite under `tests/<area>/`, registered as `vkm_engine`. Takes suite names as arguments. Not installed |
@@ -381,7 +381,7 @@ rebuilds a tag that already exists, replacing assets of the same name.
 
 ```
 vkm_editor_app (executable)             vkm_runtime_app (executable)
-  |-- vkm_core                            |-- vkm_core (glm, vkm_log, nlohmann_json; glfw, glew, stb, miniaudio private)
+  |-- vkm_core                            |-- vkm_core (glm, vkm_log, nlohmann_json; glfw, stb, miniaudio private)
   |-- vkm_render -- vkm_core              |-- vkm_render -- vkm_core
   |-- vkm_tools -- vkm_core               |-- vkm_tools -- vkm_core (registration, loader/, project_boot; no importer)
   |-- vkm_backend_gl -- vkm_gl, ...       |-- vkm_backend_gl -- vkm_gl, vkm_render, vkm_tools
@@ -389,12 +389,12 @@ vkm_editor_app (executable)             vkm_runtime_app (executable)
   |     vkm_tools (+ cgltf, ufbx, mikktspace, meshoptimizer, stb_image_resize, bc7e private)
   |-- vkm_editor -- vkm_core,           vkm_cook_app (executable)
   |     vkm_tools, vkm_cook,              |-- vkm_cook -- vkm_core, vkm_tools
-  |     imgui, vkm_gl                     |-- vkm_build_info
+  |     imgui                             |-- vkm_build_info
   |-- vkm_build_info                      (no window, no GL, no Engine)
 
 vkm_server_app (executable)
   |-- vkm_core, vkm_render, vkm_tools, vkm_build_info
-  (no window, no render backend; still links GL and X11 through vkm_core's glfw)
+  (no window, no render backend; still links glfw through vkm_core)
 
 vkm_editor_app, vkm_runtime_app and vkm_server_app #include app/engine_app.h
 for Vkm::App::setupEngineApp (no EngineApp lib). vkm_cook_app does not: it
@@ -497,8 +497,8 @@ nothing on Linux.
 
 `src/engine/platform/window/glfw_include.h` is the same idea for GLFW: it pulls
 the Windows headers in through the header above, then defines
-`GLFW_INCLUDE_NONE` so GLEW owns the GL function declarations rather than GLFW's
-own header.
+`GLFW_INCLUDE_NONE` so a backend's loader owns the API's declarations rather than
+GLFW's own header.
 
 Neither is enforced by anything. A new file that includes `<windows.h>` or
 `<GLFW/glfw3.h>` directly compiles on Linux and fails on Windows, in a place

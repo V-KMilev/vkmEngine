@@ -317,7 +317,7 @@ inline uint64_t textureLevelBytes(const TextureParams& params, uint32_t level) {
 /**
  * @brief Whether the backend builds the mip chain from level 0 when it uploads.
  *
- * Never for a block format, which GL cannot generate levels of.
+ * Never for a block format, whose levels a GPU cannot generate.
  *
  * @param params The texture's description.
  * @return True when generateMipmaps is set and level 0 is uncompressed and alone.
@@ -329,7 +329,8 @@ inline bool buildsMipsAtUpload(const TextureParams& params) {
 /**
  * @brief Whether the texture is sampled through a mip chain, carried or built at upload.
  *
- * Decides the minification filter: a mipmap filter over level 0 alone samples black in GL.
+ * Decides the minification filter: a mipmap filter over level 0 alone leaves the texture
+ * incomplete, which samples black.
  *
  * @param params The texture's description.
  * @return True when there will be levels below 0.

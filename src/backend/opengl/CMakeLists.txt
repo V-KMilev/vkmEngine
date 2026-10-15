@@ -11,5 +11,6 @@ target_link_libraries(vkm_backend_gl
         vkm_render
         vkm_tools
     PRIVATE
+        imgui_opengl3      # the editor hooks draw ImGui
         vkm_warnings
 )

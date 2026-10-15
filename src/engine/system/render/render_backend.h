@@ -21,9 +21,13 @@ class EditorRenderHooks;
  * Generic strings: another backend changes them, never the call site.
  */
 struct BackendInfo {
-    std::string api;     ///< e.g. "OpenGL 4.6"
-    std::string device;  ///< e.g. "NVIDIA GeForce RTX 3080"
+    std::string api;     ///< The graphics API and its version.
+    std::string device;  ///< The GPU, as its driver names it.
 };
+
+/// The widest texture edge every backend takes, in texels: one that cannot refuses to init, so a
+/// bake may count on it.
+inline constexpr uint32_t BACKEND_MIN_TEXTURE_EDGE = 16384;
 
 /**
  * @brief The frame's seam between the engine and the graphics API.

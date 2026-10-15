@@ -10,7 +10,6 @@ target_link_libraries(vkm_editor PUBLIC
     vkm_tools
     vkm_cook           # model import + asset cooking (editor-only heavy deps)
     imgui
-    vkm_gl
 )
 target_link_libraries(vkm_editor PRIVATE
     vkm_render         # RenderSystem::backend(), the way to the editor hooks; headers only forward-declare it

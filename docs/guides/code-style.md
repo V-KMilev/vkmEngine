@@ -101,10 +101,11 @@ Always include the **module path**, never the bare filename:
 ```
 
 **Engine code never reaches into `backend/`.** It sees the GPU only through
-`RenderBackend` and `EditorRenderHooks` in `system/render/`
-([engine.md](engine.md#absolutes)). A host constructing `GLBackend` is not an
-exception but the point: the host is the composition root, the one place that
-picks which backend the engine gets, or none.
+`RenderBackend` and `EditorRenderHooks` in `system/render/`, and the window's
+`WindowSurface` in `platform/window/` ([engine.md](engine.md#absolutes)). A host
+constructing `GLBackend` and `GLWindowSurface` is not an exception but the point:
+the host is the composition root, the one place that picks which backend the
+engine gets, or none.
 
 Within a file, includes come in groups separated by one blank line:
 
@@ -485,13 +486,13 @@ No comment goes inside an argument list:
 
 ```cpp
 // bad
-setupEngineApp(engine, AppConfig{title.c_str(), /*startPaused=*/false, /*logFps=*/true});
+setupEngineApp(engine, AppConfig{title.c_str(), /*startPaused=*/false, /*logFps=*/true}, surface);
 
 // good
 AppConfig config;
 config.windowTitle = title.c_str();
 config.logFps      = true;
-setupEngineApp(engine, config);
+setupEngineApp(engine, config, surface);
 ```
 
 A comment there is one more thing to keep in step with the parameter it names,

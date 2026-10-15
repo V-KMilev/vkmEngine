@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <memory>
 #include <system_error>
 
 #include "core/engine.h"
@@ -65,15 +66,9 @@ struct AppConfig {
     bool        logFps      = false;
 
     /**
-     * @brief Run with no window at all.
+     * @brief Frames a second a host with no window holds itself to; ignored with one.
      *
-     * Same system stack; skips the window, its icon, the UI font bake and the
-     * audio device. The frame cap stays: with no vsync, nothing else blocks.
-     */
-    bool headless = false;
-
-    /**
-     * @brief Frames a second a headless host holds itself to; ignored with a window.
+     * The cap stands in for vsync: with no window, nothing else blocks.
      */
     uint32_t headlessFrameRate = 128;
 };
@@ -96,21 +91,29 @@ struct AppSystems {
  * The caller owns the rest: the render backend (or none), gameplay registration
  * before any scene I/O, the world (bootProjectWorld), extra systems and the run loop.
  *
- * @param engine The engine to populate.
- * @param config What this host does differently.
+ * @param engine  The engine to populate.
+ * @param config  What this host does differently.
+ * @param surface What the host's render backend draws into the window through; none for a host with
+ *                no window at all, which keeps the system stack and skips the window, its icon, the
+ *                UI font bake and the audio device.
  * @return The systems a host may still configure.
  */
-inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config) {
-    auto& window = engine.getWindow();
-    if (config.headless) {
+inline AppSystems setupEngineApp(
+    Engine::Engine& engine,
+    const AppConfig& config,
+    std::unique_ptr<Engine::WindowSurface> surface
+) {
+    const bool headless = surface == nullptr;
+    auto&      window   = engine.getWindow();
+    if (headless) {
         window.setFramerate(config.headlessFrameRate);
     } else {
-        window.createWindow(config.windowTitle);
+        window.createWindow(config.windowTitle, std::move(surface));
         window.setFramerate(0);
     }
     const std::filesystem::path projectIcon = Engine::ProjectPaths::assets() / "logo" / "icon.png";
     std::error_code iconEc;
-    if (!config.headless) {
+    if (!headless) {
         const std::filesystem::path icon = std::filesystem::exists(projectIcon, iconEc)
             ? projectIcon
             : Engine::ProjectPaths::engineAssets() / "logo" / "vkm_engine_icon.png";
@@ -151,8 +154,8 @@ inline AppSystems setupEngineApp(Engine::Engine& engine, const AppConfig& config
 
     // A host that presents nothing needs neither: a lone server need not carry the
     // engine's font file, and the device would mix for an empty room.
-    if (config.headless) audioSystem.setSilent();
-    else                 ensureDefaultUIFont(engine.getResources(), engine.getWindow().displayHeight());
+    if (headless) audioSystem.setSilent();
+    else          ensureDefaultUIFont(engine.getResources(), engine.getWindow().displayHeight());
 
     engine.getClock().setPaused(config.startPaused);
     engine.setFPSLog(config.logFps);

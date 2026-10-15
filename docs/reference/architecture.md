@@ -14,7 +14,7 @@ cmake --build build
 ./build/bin/vkm_runtime examples/potion_runner   # play it
 ```
 
-CMake 3.25+, Ninja, C++17, OpenGL 4.3 core. The build produces four executables
+CMake 3.25+, Ninja, C++17, OpenGL 4.5 core. The build produces four executables
 - `vkm_editor`, `vkm_runtime`, and the headless `vkm_cook` and `vkm_server`. The
 three that build an `Engine` share a header-only bootstrap (`setupEngineApp` in
 `app/engine_app.h`); `vkm_cook` builds none.
@@ -67,7 +67,7 @@ Engine
   Clock             (real + sim time, play / pause / step / time-scale)
   EventBus          (typed pub/sub, flushed at the top of Simulation)
   InputMap          (named actions, resolved once per frame)
-  WindowManager     (GLFW window, input handle, frame limiter)
+  WindowManager     (GLFW window, its WindowSurface, input handle, frame limiter)
   NetSession        (the wire; brackets the frame, offline until told otherwise)
   HostChrome        (what an authoring host says about the frame)
   RenderSettings    (the one copy of the quality the frame is drawn at)
@@ -236,7 +236,7 @@ Engine code, single include root `src/engine/`:
 | `io/scene/`                | `SceneSerializer`, `ComponentSerializer`                                  |
 | `net/`                     | `NetSession` and the wire it speaks - schema, snapshots, commands, prediction, interpolation (see [networking.md](networking.md)). Engine-owned infrastructure like `EventBus`, not a `System` |
 | `platform/`                | `windows_api` - the one door Windows headers come through, so `NOGDI` and the `far`/`near`/`ERROR` macros are dealt with once |
-| `platform/window/`         | `WindowManager`, `FrameLimiter`                                          |
+| `platform/window/`         | `WindowManager`, `FrameLimiter`, `WindowSurface` (the backend's hold on the window) |
 | `platform/input/`          | `InputHandle` (raw keyboard/mouse state), `InputMap`, `InputBinding`, `InputSource`, `InputCommand`, `InputActions`. The map answers the same four queries for a frame or for a tick's command, and carries the pointer and the wheel - neither is an action a binding could name |
 | `platform/net/`            | `UdpSocket`, `winsock_init` (the sockets `net/` speaks over)             |
 | `platform/threading/`      | `ThreadPool` + `parallelFor` (shared-deque pool, see [threading.md](threading.md)) |

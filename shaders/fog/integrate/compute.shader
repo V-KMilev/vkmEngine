@@ -28,7 +28,7 @@ void main() {
     float rayPerDepth = 1.0;
     if (cameraIsPerspective()) {
         vec2 uv    = (vec2(col) + 0.5) / vec2(u_froxelDims.xy);
-        vec4 nearH = u_camera.invProjection * vec4(uv * 2.0 - 1.0, -1.0, 1.0);
+        vec4 nearH = u_camera.invProjection * vec4(uv * 2.0 - 1.0, NEAR_DEPTH, 1.0);
         vec3 ray   = nearH.xyz / nearH.w;
         rayPerDepth = length(ray) / abs(ray.z);
     }

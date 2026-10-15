@@ -15,9 +15,9 @@ void GLIBL::createTargets() {
     // RGBA16F: rendered into, and GL makes RGB16F colour-renderable only optionally. Not
     // R11F_G11F_B10F: this cube is an HDR sky's skybox, and a sky gradient bands at 6-bit mantissas.
     for (Cubes& set : m_cubes) {
-        set.env.create(ENV_SIZE, ENV_MIPS, GL_RGBA16F, GL_RGBA, GL_FLOAT, true);
-        set.irradiance.create(IRRADIANCE_SIZE, 1, GL_RGBA16F, GL_RGBA, GL_FLOAT, false);
-        set.prefilter.create(PREFILTER_SIZE, PREFILTER_MIPS, GL_RGBA16F, GL_RGBA, GL_FLOAT, true);
+        set.env.create(ENV_SIZE, ENV_MIPS, GL_RGBA16F, true);
+        set.irradiance.create(IRRADIANCE_SIZE, 1, GL_RGBA16F, false);
+        set.prefilter.create(PREFILTER_SIZE, PREFILTER_MIPS, GL_RGBA16F, true);
     }
 
     LOG_INFO(
@@ -45,8 +45,7 @@ void GLIBL::attachFace(
     int mip,
     int size
 ) const {
-    const GLenum target = GL_TEXTURE_CUBE_MAP_POSITIVE_X + static_cast<GLenum>(face);
-    m_captureFbo->attachTexture2D(GL_COLOR_ATTACHMENT0, target, cube.getID(), mip);
+    m_captureFbo->attachLayer(GL_COLOR_ATTACHMENT0, cube.getID(), mip, face);
     gl.setViewport(0, 0, size, size);
 }
 

@@ -1,14 +1,11 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
 #include <vector>
 
 #include <glm/glm.hpp>
 
-namespace Vkm::GL {
-    class ShaderStorageBuffer;
-}
+#include "gl_stream_ring.h"
 
 namespace Vkm::Engine {
 
@@ -32,11 +29,12 @@ class GLSkinPalette {
 
     public:
         /**
-         * @brief Upload this frame's palettes, growing the buffer when needed.
+         * @brief Write this frame's palettes into @p stream.
          *
          * @param matrices RenderView::skinMatrices, indexed by skinFirst; null when nothing posed.
+         * @param stream   The frame's streaming memory (GLView::stream).
          */
-        void update(const std::vector<glm::mat4>* matrices);
+        void update(const std::vector<glm::mat4>* matrices, Vkm::GL::StreamRing& stream);
 
         /**
          * @brief Bind the palettes to their SSBO point.
@@ -50,9 +48,8 @@ class GLSkinPalette {
         uint32_t count() const { return m_count; }
 
     private:
-        std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_buffer;
-        uint32_t m_capacity = 0;  ///< Bytes allocated.
-        uint32_t m_count    = 0;
+        Vkm::GL::DeviceStream m_device;  ///< Read by every skinned draw, so in video memory.
+        uint32_t              m_count = 0;
 };
 
 } // namespace Vkm::Engine

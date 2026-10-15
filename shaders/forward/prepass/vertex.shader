@@ -1,5 +1,5 @@
-// Depth + G-buffer prepass. Position must be bit-identical to the forward
-// vertex shader (same math + invariant) so depth matches under LEQUAL.
+// Depth + G-buffer prepass. Position must be bit-identical to the forward vertex shader (same
+// math + invariant) so depth matches under GLDepth::EYE_TEST_EQUAL.
 // SKINNED (forward/prepass_skinned) poses position and normal by the bone palette first.
 layout(location = ATTR_POSITION) in vec3 aPos;
 layout(location = ATTR_NORMAL) in vec3 aNormal;

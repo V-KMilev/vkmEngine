@@ -5,7 +5,7 @@ backend-agnostic `RenderView` each frame. The backend half syncs its GPU
 resources to that view and runs a **fixed, ordered list of passes** to produce
 the image. There is **no engine-level render graph**, and **no pass abstraction is
 exposed to the engine** - passes (`GLPass`) live entirely inside the backend as
-an OpenGL implementation detail.
+an implementation detail.
 
 The renderer has no TAA, FXAA, motion blur, lens flare or auto-exposure, and
 no shader variant cache ([engine.md](../guides/engine.md#4-what-has-already-been-decided)).
@@ -20,6 +20,7 @@ What it does have is listed below.
 - `src/engine/system/render/editor_render_hooks.h` - EditorRenderHooks, the authoring-only second seam (thumbnails, material previews); see [engine.md](../guides/engine.md#5-what-everything-else-stands-on)
 - `src/engine/system/render/render_settings.h` - RenderSettings + RenderMode (editable tuning)
 - `src/engine/system/render/render_backend.h` - RenderBackend (the abstract seam)
+- `src/engine/platform/window/window_surface.h` - WindowSurface, what a backend asks of the window (context, present, swap interval)
 - `src/engine/ecs/environment.h` - Environment (sky, night sky, fog), a scene-level struct
 - `src/backend/opengl/` - the OpenGL backend
 
@@ -212,9 +213,12 @@ backend and writes as a PNG (`debug/screenshot.h`). So a screenshot is the game'
 view - the scene and its UI - without the editor's panels around it, and a host
 that renders nothing writes none. The editor's offscreen renders -
 `renderPreview` for material and asset thumbnails, and the texture and chrome
-image lookups - are on the second seam, `EditorRenderHooks`, which a backend
-opts into by overriding `editorHooks()`. One implementation exists (OpenGL), and
-a second is not planned - see
+image lookups, and the renderer of the editor's own ImGui - are on the second
+seam, `EditorRenderHooks`, which a backend opts into by overriding
+`editorHooks()`. The window reaches the API through a third, `WindowSurface`: the
+host creates the window with the backend's surface (`GLWindowSurface`), which
+hints the context, makes it current, loads GL and presents. One backend exists
+(OpenGL); a second is planned - see
 [engine.md](../guides/engine.md#4-what-has-already-been-decided).
 
 ## OpenGL backend
@@ -222,7 +226,12 @@ a second is not planned - see
 `GLBackend` owns:
 
 - `Vkm::GL::Context` - GLEW state + draw helpers (from vkmGL)
-- `GLView` - the GPU resource synchronizer, and the `GLMeshPool` every mesh lives in
+- `GLView` - the GPU resource synchronizer, the `GLMeshPool` every mesh lives in, and the
+  frame's streaming memory (`stream()`, a `Vkm::GL::StreamRing`): the per-frame lists -
+  draw lists, matrices, bone palettes, particles - are written into a persistently mapped
+  buffer of three fenced regions, so the CPU neither waits on the GPU nor has the driver
+  copy. What every pass reads - the matrices, flags and palettes - is then copied once into
+  video memory (`DeviceStream`). `GLBackend::render` fences the region at the frame's end
 - Render targets: `m_sceneHDR` (the geometry target: colour + depth + G-buffer),
   `m_sceneMS` (multisample twin when MSAA is on), `m_postA`/`m_postB`
   (colour-only post ping-pong scratches), `m_ao` (GTAO, sized by its pass once
@@ -258,6 +267,18 @@ resolved colour holds. When it is off, the geometry passes render straight into 
 two resolve passes no-op, and the multisample storage is released rather than
 kept against the setting coming back - at 4x it is the largest allocation in the
 frame.
+
+**Depth.** Clip z runs 0..w (`glClipControl`), and the eye's depth is
+reversed - 1 at the near plane, 0 at the far - in a 32-bit float buffer
+(`convention/gl_depth.h`). Perspective packs depth toward the near plane and a
+float packs its precision toward zero, so reversed the two cancel: two surfaces
+a centimetre apart a kilometre out stay apart, where a 24-bit buffer rounds them
+to one depth past a few hundred metres. The engine's projections are glm's;
+`GLCamera` remaps the camera block's matrices on the way in, and every shader
+reads depth through `shaders/depth.glsl` (`FAR_DEPTH`, `isFarDepth`,
+`nearerDepth`, ...). Shadow maps keep near 0, far 1
+(`GLDepth::shadowProjection`): most are orthographic, whose depth is linear and
+gains nothing reversed.
 
 Post passes do not blit results back into `m_sceneHDR`: the frame context
 carries a colour chain (`colorSrc`/`colorDst` + `flipColor()`). A pass samples
@@ -479,7 +500,7 @@ slopes add past one, so the surface never folds over.
 A surface whose material is `waves` rides them - in a scene with an ocean,
 windless or not; without one it is an ordinary surface, and casts as one. The
 depth prepass and the forward pass move each vertex by `shaders/ocean.glsl`'s
-sum, both, so depth matches under LEQUAL, and hand the fragment the surface's
+sum, both, so depth matches under GEQUAL, and hand the fragment the surface's
 tangents there. The spectrum on below `minWavelength`, down to `shortestRipple`
 (`OceanRipples`), is too short for any vertex: the Ocean pass draws it once a
 frame into three repeating fields of 512 texels square, the band split evenly
@@ -657,7 +678,7 @@ squashes its depth into the nearest `VIEWMODEL_DEPTH_SHARE` of the range
 about that share of the near plane beyond it can then draw over it, and the near
 plane sits inside the character's capsule, so a weapon pushed into a wall stays
 in front of it. The same formula in both passes keeps their depths equal under
-`LEQUAL`.
+`GEQUAL`.
 
 What reads the depth afterwards reads the squashed one, as about the near
 plane, and each reader is answered:
@@ -758,7 +779,7 @@ them. That is what lets a run of different meshes go out as one
 `glMultiDrawElementsIndirect` (core in 4.3): a `GLDrawList` holds the object
 indices and a command per run - the mesh's `firstIndex` and `baseVertex`, and a
 `baseInstance` that slices the object list through the divisor-1 attribute,
-since 4.3 core has no `gl_BaseInstance`. A pass binds program and material state
+since 4.5 core has no `gl_BaseInstance`. A pass binds program and material state
 between multi-draws and nothing between the commands of one, which is the point
 on a driver whose cost is the validation after each state change. A full stream
 grows by doubling and copies on the GPU; a mesh's range is offsets, so nothing

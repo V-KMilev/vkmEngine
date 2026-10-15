@@ -9,7 +9,7 @@ namespace Vkm::Engine {
 /**
  * @brief Decoded 8-bit RGBA pixels, and nothing else.
  *
- * Not an asset: the splash runs before a project's assets load. Rows run bottom-up, GL's order.
+ * Not an asset: the splash runs before a project's assets load. Rows run bottom-up, the engine's order.
  */
 struct DecodedImage {
     uint32_t             width  = 0;
@@ -31,7 +31,7 @@ struct DecodedImage {
 DecodedImage decodeImageRGBA(const std::string& filePath);
 
 /**
- * @brief Make stb decode bottom-up on the calling thread, GL's row order.
+ * @brief Make stb decode bottom-up on the calling thread, the engine's row order.
  *
  * Call before each such decode. Per thread, not stb's process-wide flag: the window icon decodes
  * the other way round (see WindowManager), and a decode may run on any thread.

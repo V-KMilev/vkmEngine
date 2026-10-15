@@ -1008,6 +1008,8 @@ std::string readFile(const std::filesystem::path& path) {
 // assuming GL starts at defaults, never reading them. What the last scene left - a
 // front-face cull, depth writes off - the next backend would take for defaults and skip.
 void restoreContextDefaults() {
+    glClipControl(GL_LOWER_LEFT, GL_NEGATIVE_ONE_TO_ONE);
+    glClearDepth(1.0);
     glDisable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
     glDepthMask(GL_TRUE);
@@ -1796,6 +1798,52 @@ void testAViewmodelShadesNothingBehindIt(int& failures) {
     std::printf("      %d wall pixels round it, the most it darkened one: %d of 765\n", ring, darkest);
     expect("the block shows", ring > 50, failures);
     expect("  and darkens no wall round it", darkest <= 3, failures);
+}
+
+// Two walls a centimetre apart, a kilometre out, through a 10 cm near plane: the nearer is seen
+// at every pixel. A 24-bit depth buffer, reversed or not, rounds the two to one depth there, and
+// whichever draws last is seen; the eye's float depth, reversed, holds them apart
+// (convention/gl_depth.h). Made in both orders, so neither wins by being drawn last.
+void testTwoWallsACentimetreApartAKilometreOutDoNotFight(int& failures) {
+    std::printf("Two walls a centimetre apart, a kilometre out:\n");
+    restoreContextDefaults();
+    WindowManager window;
+    RenderSettings plain;
+    plain.msaaSamples     = 1;
+    plain.cullMaxDistance = 0.0f;  // drawn however far
+
+    int farther = 0;
+    for (const bool nearFirst : {true, false}) {
+        restoreContextDefaults();
+        GLBackend backend;
+        if (!backend.init(window)) {
+            expect("the backend starts", false, failures);
+            return;
+        }
+        Scenery s;
+        base(s);
+        const auto wall = [&](const char* name, glm::vec3 emission, float z) {
+            const MaterialHandle lit = material(s, name, glm::vec3(0.0f), 1.0f, 0.0f, emission);
+            place(s, s.cube, lit, {0.0f, 0.0f, z}, {4000.0f, 3000.0f, 0.001f});
+        };
+        if (nearFirst) wall("golden:near_wall", {0.0f, 4.0f, 0.0f}, -999.99f);
+        wall("golden:far_wall", {4.0f, 0.0f, 0.0f}, -1000.0f);
+        if (!nearFirst) wall("golden:near_wall", {0.0f, 4.0f, 0.0f}, -999.99f);
+        camera(s, glm::vec3(0.0f), {0.0f, 0.0f, -1.0f});
+        s.scene.forEach<Camera>([](EntityId, Camera& lens) {
+            lens.zNear = 0.1f;
+            lens.zFar  = 2000.0f;
+        });
+        const std::vector<unsigned char> frame = render(s, backend, nullptr, plain);
+        for (int y = 0; y < HEIGHT; ++y) {
+            for (int x = 0; x < WIDTH; ++x) {
+                const glm::ivec3 p = pixel(frame, x, y);
+                if (p.r >= p.g) ++farther;
+            }
+        }
+    }
+    std::printf("      %d of %d pixels show the farther wall\n", farther, 2 * WIDTH * HEIGHT);
+    expect("the nearer wall is seen at every pixel, made first or last", farther == 0, failures);
 }
 
 void testTheUIOverlayLandsOnItsPixels(int& failures) {
@@ -2808,6 +2856,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     for (const Golden& golden : goldens) compare(golden.name, golden.build, gl.renderer(), failures, true);
 
     testTheUIOverlayLandsOnItsPixels(failures);
+    testTwoWallsACentimetreApartAKilometreOutDoNotFight(failures);
     testAViewmodelShadesNothingBehindIt(failures);
     testABackendDropsWhatTheSceneNoLongerAsksFor(failures);
     testAFrameWithNoCameraKeepsTheProbesBaked(failures);

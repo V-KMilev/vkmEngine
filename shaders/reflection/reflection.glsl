@@ -32,6 +32,6 @@ vec3 sceneNormalAt(ivec2 texel) {
 vec3 sceneViewPosAt(ivec2 texel, vec2 size) {
     const vec2  uv    = (vec2(texel) + 0.5) / size;
     const float depth = texelFetch(u_sceneDepth, texel, 0).r;
-    const vec4  p     = u_camera.invProjection * vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+    const vec4  p     = u_camera.invProjection * vec4(uv * 2.0 - 1.0, depth, 1.0);
     return p.xyz / p.w;
 }

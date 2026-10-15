@@ -15,7 +15,7 @@
 namespace Vkm::Engine {
 
 /**
- * @brief The material's texture maps, once, as (serialized key, member, GL slot).
+ * @brief The material's texture maps, once, as (serialized key, member, texture slot).
  *
  * A table with editorial order or wording does not expand this one; it asserts
  * against MATERIAL_MAP_COUNT instead. The fourth column documents each map and

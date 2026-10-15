@@ -43,14 +43,14 @@ void main() {
     if (!tracesReflection(weight, u_maxRoughness)) return;
 
     const float depth = texelFetch(u_sceneDepth, texel, 0).r;
-    if (depth >= 1.0 || !sceneHasNormal(texel)) return;
+    if (isFarDepth(depth) || !sceneHasNormal(texel)) return;
     // A viewmodel's squashed depth puts it at the lens, not where it is: it keeps the probe or sky
     // reflection the forward pass gave it.
     if (inViewmodelBand(depth)) return;
 
     const vec2 size  = vec2(textureSize(u_sceneDepth, 0));
     const vec2 uv    = (vec2(texel) + 0.5) / size;
-    const vec4 clip  = u_camera.invProjection * vec4(uv * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+    const vec4 clip  = u_camera.invProjection * vec4(uv * 2.0 - 1.0, depth, 1.0);
     const vec3 n     = sceneNormalAt(texel);
     const vec3 toEye = cameraIsPerspective() ? normalize(-clip.xyz / clip.w) : vec3(0.0, 0.0, 1.0);
     const vec3 dir   = reflect(-toEye, n);

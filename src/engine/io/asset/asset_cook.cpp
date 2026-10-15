@@ -569,7 +569,8 @@ bool readTexture(const std::filesystem::path& path, TextureAsset& out) {
         return false;
     }
 
-    // One level, or every level to 1x1: a mipmap filter over a partial chain samples as black in GL.
+    // One level, or every level to 1x1: a mipmap filter over a partial chain leaves a texture
+    // incomplete, which samples black.
     const uint32_t chain = mipChainLength(tp.width, tp.height);
     if (chain == 0 || (tp.mipLevels != 1 && tp.mipLevels != chain)) {
         LOG_ERROR(

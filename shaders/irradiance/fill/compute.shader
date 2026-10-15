@@ -10,7 +10,7 @@
  * bits. Cells count X fastest.
  */
 
-layout(local_size_x = 64) in;
+layout(local_size_x = GROUP_FILL) in;
 
 layout(std430, binding = SSBO_IRRADIANCE_FILL) readonly buffer FillBlock {
     uint data[];

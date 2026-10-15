@@ -38,7 +38,7 @@ uniform float u_opacity;
 void main() {
     vec2  uv = gl_FragCoord.xy / u_camera.viewport;
     float d  = texture(u_sceneDepth, uv).r;
-    if (d >= 1.0) discard;  // background: nothing to project onto
+    if (isFarDepth(d)) discard;  // background: nothing to project onto
 
     vec3 worldPos = worldPosFromDepth(uv, d, u_camera.invViewProjection);
 

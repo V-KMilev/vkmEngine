@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <stdexcept>
 
-#include <GL/glew.h>
 #include "platform/window/glfw_include.h"
 
 #include "platform/input/input_handle.h"
@@ -95,17 +94,17 @@ WindowManager::~WindowManager() {
     LOG_TRACE("Destructed Window '%s'", m_title.c_str());
 }
 
-void WindowManager::createWindow(const std::string& title) {
+void WindowManager::createWindow(const std::string& title, std::unique_ptr<WindowSurface> surface) {
     m_title = title;
+    if (!surface) throw std::runtime_error("A window needs the surface a backend draws through");
+    m_surface = std::move(surface);
 
     if (!glfwInit()) {
         LOG_ERROR("Failed to initialize GLFW: %s", glfwErrorDescription());
         throw std::runtime_error("Failed to initialize GLFW");
     }
 
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, OPENGL_MAJOR_VERSION);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, OPENGL_MINOR_VERSION);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    m_surface->hint();
 
     // Null monitor = windowed mode.
     m_windowHandle = glfwCreateWindow(
@@ -117,29 +116,18 @@ void WindowManager::createWindow(const std::string& title) {
     );
 
     if (!m_windowHandle) {
-        // Usually no core context, but also no display or a missing platform; GLFW's text tells.
+        // Usually a surface the driver cannot give, but also no display or a missing platform;
+        // GLFW's text tells.
         LOG_ERROR(
-            "Failed to create window (requested OpenGL %d.%d core): %s",
-            OPENGL_MAJOR_VERSION,
-            OPENGL_MINOR_VERSION,
+            "Failed to create window (requested %s): %s",
+            m_surface->describe().c_str(),
             glfwErrorDescription()
         );
         throw std::runtime_error("Failed to create window");
     }
 
-    // Required before glewInit and glfwSwapInterval below.
-    glfwMakeContextCurrent(m_windowHandle);
-
-    if (const GLenum glewError = glewInit(); glewError != GLEW_OK) {
-        LOG_ERROR(
-            "Failed to initialize GLEW: %s",
-            reinterpret_cast<const char*>(glewGetErrorString(glewError))
-        );
-        throw std::runtime_error("Failed to initialize GLEW");
-    }
-
-    // VSync off at creation.
-    glfwSwapInterval(0);
+    // Its context current and its API loaded, with vsync off until setVSync.
+    m_surface->attach(m_windowHandle);
 
     glfwGetFramebufferSize(m_windowHandle, &m_width, &m_height);
 
@@ -266,7 +254,7 @@ void WindowManager::swapBuffers() {
     {
         // A CPU outrunning the GPU blocks here: a fat zone means a GPU-bound frame.
         PROFILE_SCOPE("SwapBuffers");
-        if (m_windowHandle) glfwSwapBuffers(m_windowHandle);
+        if (m_windowHandle) m_surface->present(m_windowHandle);
     }
 
     {
@@ -348,8 +336,7 @@ void WindowManager::setVSync(bool enabled) {
     // Independent of the software FPS cap.
     if (!m_windowHandle) return;
 
-    glfwMakeContextCurrent(m_windowHandle);
-    glfwSwapInterval(enabled ? 1 : 0);
+    m_surface->setVSync(m_windowHandle, enabled);
     m_vsync = enabled;
     LOG_INFO("VSync %s", enabled ? "ON" : "OFF");
 }

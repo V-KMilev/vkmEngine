@@ -1,4 +1,4 @@
-# vkm_cook - bakes a project's assets with no window and no GL context, so a
+# vkm_cook - bakes a project's assets with no window and no graphics context, so a
 # release build needs neither a GUI step nor a GPU. Links vkm_cook, which holds
 # the importers.
 add_executable(vkm_cook_app main.cpp)

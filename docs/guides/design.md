@@ -211,7 +211,7 @@ enforces none of them:
 
 ### 2.6 A render pass
 
-Passes are an OpenGL detail and stay in the backend
+Passes are a backend detail and stay in the backend
 ([engine.md](engine.md#3-what-the-engine-refuses)), so the whole procedure is in
 `src/backend/opengl/`:
 
@@ -237,6 +237,15 @@ Passes are an OpenGL detail and stay in the backend
    their draws did. Scene geometry goes out through a `GLDrawList` - a batch's,
    or the pass's own - as one multi-draw per change of program or material,
    never a draw per mesh.
+7. **Per-frame data goes through the frame's stream** (`ctx.resources.stream()`,
+   a `Vkm::GL::StreamRing`), not a buffer of the pass's own refilled each frame:
+   the ring neither waits on the GPU nor has the driver copy (a buffer the GPU
+   writes, as the occlusion cull's commands are, stays its owner's). GL objects are
+   edited by name, as vkmGL does - a pass binds only to draw or sample.
+8. **Depth has one convention, reversed for the eye.** Clear, test and read it
+   through `convention/gl_depth.h` and `shaders/depth.glsl` (`EYE_CLEAR`,
+   `EYE_TEST`, `isFarDepth`, `nearerDepth`...), never a literal `1.0` or
+   `GL_LESS`; a shadow map keeps near 0, far 1 through `GLDepth::shadowProjection`.
 
 A new shader folder uses the loader's filenames (`vertex.shader`,
 `fragment.shader`, `compute.shader` -

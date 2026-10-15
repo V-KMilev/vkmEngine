@@ -25,7 +25,7 @@ out vec3  vAlongZ;
 out float vLingering;    // the foam a crest left there (oceanLingering)
 flat out uint vViewmodel; // drawn through the viewmodel projection: its lights are found by vWorldPos
 
-// Bit-exact with the depth prepass so the two agree under LEQUAL early-Z.
+// Bit-exact with the depth prepass so the two agree under GLDepth::EYE_TEST_EQUAL.
 invariant gl_Position;
 
 void main() {

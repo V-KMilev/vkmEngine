@@ -64,7 +64,7 @@ void GLIrradianceVolume::download(ProbeGridSH& sh) const {
             continue;
         }
         sh[i].resize(cells);
-        m_sh[i]->download(sh[i].data());
+        m_sh[i]->download(sh[i].data(), static_cast<uint32_t>(cells * sizeof(sh[i][0])));
     }
 }
 

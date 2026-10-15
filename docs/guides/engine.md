@@ -10,9 +10,11 @@ well, this one says what you are building and inside which limits.
 
 Breaking one of these is a design problem to raise, not a tradeoff to make.
 
-- **Engine code never includes a `gl_*` header.** The GPU is reached only
-  through the abstract interfaces in `system/render/` - `RenderBackend` for the
-  frame, `EditorRenderHooks` for authoring-only work (section 5).
+- **Engine code never names a graphics API.** The GPU is reached only through
+  abstract interfaces - `RenderBackend` for the frame, `EditorRenderHooks` for
+  authoring-only work, `WindowSurface` for the window it draws into (section 5).
+  No `gl_*` header, GL loader or API version in `src/engine/`, `src/editor/` or
+  `src/tools/`; a host names the backend it picks.
 - **`Scene` is never edited to "support" a component.** Any plain struct is a
   component already; `scene.add<T>(entity, ...)` is the whole mechanism.
 - **Components hold `Handle<T>`, never asset pointers or copies.** Serialization
@@ -31,7 +33,7 @@ Breaking one of these is a design problem to raise, not a tradeoff to make.
 
 ## 1. What this is
 
-A C++17 engine with an OpenGL 4.3 backend, for Windows and Linux, that **runs
+A C++17 engine with an OpenGL 4.5 backend, for Windows and Linux, that **runs
 projects**. It holds no game of its own. A game is a directory - a
 `project.json`, its scenes and assets, and gameplay code built into its own
 module - and the same four executables (`vkm_editor`, `vkm_runtime`, `vkm_cook`,
@@ -90,10 +92,10 @@ Positions, not preferences, each with its reason:
   temporal filter are off the table with it (section 4).
 - **No speculative abstraction.** No flag, virtual or interface without a
   concrete second user you can name today.
-- **No engine-level render pass abstraction.** Passes are an OpenGL detail inside
-  the backend. The engine's view of rendering is `RenderBackend`, the
-  backend-agnostic `RenderView` it is handed, and `EditorRenderHooks`. No fourth
-  without the owner.
+- **No engine-level render pass abstraction.** Passes are a backend detail. The
+  engine's view of rendering is `RenderBackend`, the backend-agnostic `RenderView`
+  it is handed, `EditorRenderHooks`, and the `WindowSurface` the window presents
+  through. No fifth without the owner.
 - **No bulk recovery of pre-refactor code.** A rewritten subsystem is not mined
   for the missing feature; it is written fresh against the new shape. Recovered
   code carries the assumptions of the design it came from.
@@ -130,7 +132,14 @@ the reason, and - where there is one - what would reopen it.
 | An ocean of Gerstner waves drawn from a spectrum | Adopted, as Unreal's water system ships it: up to 64 waves from JONSWAP (TMA where shallow), summed per vertex on the GPU and by the same arithmetic on the CPU, so a float's query is exact and immediate. The state of the art for open ocean is Tessendorf's FFT of the same spectrum in two or three tiled cascades (HDRP, Crest): thousands of waves, but each gameplay query wants a GPU readback a frame late or a CPU FFT, and the tiles repeat. The spectrum below the waves, which nothing afloat asks about, is FFT's: three tiled cascades, every wavenumber of each one's band a ripple, transformed once a frame in shared memory and read once each a pixel, the longest B-spline filtered in four taps - 0.15 ms in a game's menu view. Before it, 48 sines summed into lattice-snapped fields cost 0.4 ms and still wove a visible pattern; summed per pixel, 32 cost 1.3-1.5 ms of forward pass at Ultra. Waterline foam is read off a world-space shore - the scene drawn looking down over the sea ahead of the eye, then a distance transform - for 0.07 ms: read off the screen's depth instead, it foamed only what the camera saw, hung below things in a straight-sided curtain, and spending 0.8 ms on taps only stepped where they stopped. Revisit when a project's sea is seen from high above or out to the horizon, where 64 waves read as regular. Moving a game's sea off the CPU took about 1.4 ms off its frame's CPU (the shaping and the 1.6 MB upload), for 0.01 ms of vertex work. |
 | Shader permutations | Built, measured, reverted: no win. One ubershader branches on material flags at run time. |
 | Draw-sort hoisting | Built, measured, reverted: no win. |
-| Buffer-stall fixes | Built, measured, reverted: no win. |
+| Buffer-stall fixes | Built, measured, reverted: no win. The persistently mapped ring of 1.0.7 did win where they did not (see the GL floor below): it removes the driver's copy, not a stall. |
+| A radix sort of the batch keys | Built, measured, reverted: no win on city_block's 63k objects. The batch's cost is building the keys, not sorting them. |
+| Hashing shadow signatures a word at a time | Built, measured, reverted: no win against the byte-wise FNV-1a; the signature is a sliver of the shadow prepare. |
+| `KHR_parallel_shader_compile` | Built, measured, reverted: NVIDIA's 535 driver still compiles on the calling thread, so a cold start stayed 26.4 s; Mesa's is 4 s anyway. Shortening it means compiling on worker threads with shared contexts, a change of its own. |
+| A no-error context (`KHR_no_error`) | Built, measured, reverted: city_block's backend frame 3.37 ms with it, 3.36 without. The driver's validation is not where this backend's CPU goes. |
+| A subgroup-scalarised light loop | Built, measured, reverted: the forward loop taking each wave's lights one shared index at a time (`ARB_shader_ballot`, which llvmpipe has too) made stress_arena's 220-light forward pass 12% slower on NVIDIA, 4.16 -> 4.67 ms. Uniform loads are not what NVIDIA's divergent loop lacks. |
+| Bindless textures | Not built. llvmpipe, which CI renders on, has no `ARB_bindless_texture`, so the bound-texture path would stay beside it for ever - two ways to give a material its maps. Materials in one buffer with draw IDs waits on it: without bindless every material's maps still split the multi-draw. |
+| The sun's cascades culled on the GPU | Declined. The shadow cull already runs on the workers; what stays on the render thread is preparing the casters' keys and upload signatures, which batching and the shadow-tile cache need whoever culls. A GPU cull would also lose the cache's skip of a tile whose casters did not change. |
 | Multi-draw indirect | Adopted. Every mesh lives in one `GLMeshPool`, so a run of different meshes goes out as one `glMultiDrawElementsIndirect` (core 4.3) per change of program or material. Six interleaved runs a side: on a shooter's map the shadow pass's CPU fell 0.71 -> 0.34 ms, the depth prepass 0.40 -> 0.18 and the forward pass 0.98 -> 0.75, the backend's whole frame 3.78 -> 2.88 ms, with GPU time within 1% either way; on stress_arena, whose few meshes were already instanced, 0.02-0.06 ms a pass. The forward pass binds a material per run, for its textures; the prepass binds only its block, for a `waves` surface's vertices. |
 | A glm precompiled header | Rejected while `ccache` is active: a one-file rebuild takes 10.8 s without the PCH and 15.4 s with it, because ccache caches a PCH compile badly. Without ccache it is a ~25% win - revisit if ccache goes. |
 | TCP for the wire | Rejected. In-order delivery stalls the snapshot describing the present behind one describing the past, and retransmission resends state the next packet supersedes. The design survives loss instead ([networking.md](../reference/networking.md)): a snapshot says again whatever the receiver has not confirmed, so what must arrive - an entity gone, a prefab spawned - is state the next snapshot repeats, not a message a channel resends. |
@@ -140,8 +149,8 @@ the reason, and - where there is one - what would reopen it.
 | Fixed gains for client tick pacing | Rejected. Gains tuned at 30 ms overshot on every round trip of a 200 ms link and swung between the two bounds about a hundred times a minute; the gains scale with the measured round trip and the tick rate. |
 | GJK replacing the narrowphase | Rejected. The hand-written primitive pairs return up to four contact points, which resting stability needs; GJK+EPA returns one. GJK answers overlap alone, for a mesh triangle before its manifold is built, and there is no EPA. |
 | A render graph | Rejected. A render graph solves barriers and transient-memory aliasing; OpenGL has neither problem to solve - the driver tracks hazards and there is no aliasing API. The fixed, hand-ordered pass list *is* the design. Revisit only alongside a second backend. |
-| A second graphics backend | Not planned. Its real cost is not the port but that every simplification a single backend allows - the pass list, the state model, `RenderView` itself - becomes an abstraction. Revisit if a target platform drops GL, a needed feature exists only in Vulkan, or driver divergence costs more than the port would. |
-| Raising the GL floor to 4.5/4.6 | Deferred with a trigger. Direct state access, `glClipControl` and SPIR-V would each delete code, but the value is in *using* 4.5, not requesting it, and using it is a backend rewrite verified only by looking at frames. Do it in one pass, in its own release, at a display - a half-converted backend is two state models at once. |
+| A second graphics backend | Planned, not started: Vulkan as the default, OpenGL kept to switch to. The engine already names no API (the absolute above), so the work is the backend itself. What to keep in view: what one backend lets stay simple - the fixed pass list, the state model - stays inside each backend rather than becoming an engine abstraction. |
+| The GL floor | 4.5 core, used, not just asked for: vkmGL edits every object by name (direct state access), textures take immutable storage, per-frame data goes through a persistently mapped ring (`Vkm::GL::StreamRing`), and depth is reversed through `glClipControl`. Not 4.6: Mesa's llvmpipe, which CI renders on, offers 4.5, and what 4.6 would add - draw parameters, parallel compile, no-error contexts - is an extension there and on NVIDIA. The ring took city_block's object upload from 1.03 to 0.68 ms and its frames up 4%, GPU time unchanged. |
 | A scripting language | Rejected. Gameplay is a native module built against the SDK and hot-reloaded by swapping the library. A second language brings a second toolchain, a marshalling layer and a second debugger, for authors this engine does not have. |
 | Thread pool sized by physical cores | Adopted in 1.0.6: one worker fewer than the physical cores, a core's SMT siblings counted once ([threading.md](../reference/threading.md#threadpool)). On an 8-thread 4-module FX-8320, seven workers - one fewer than the logical CPUs - left the main thread waiting a scheduler slice 20-35 times in 40 s of a game scene, three workers 0-9 times, at the same frame rate, with 1% lows of 88-96 fps where they were 80-85. That measures how many threads were runnable beside the driver's, the audio's and the OS's, not how much a `parallelFor` gains from a core's second thread; the stress arena's CPU-bound frame took 6.0-6.2 ms with three workers and 6.1 with seven. Revisit on a many-core SMT machine - a 16-core one now runs 15 workers where it ran 31 - if its parallel stages slow.
 | A fiber or DAG job system | Rejected. The engines that run a task graph - Unreal, Bevy, Naughty Dog's fibers - have a render thread or frames in flight to order against the game. This frame is one thread with fork-join `parallelFor` on its hot loops, and a graph buys nothing until there are dependencies to express. |
@@ -216,11 +225,15 @@ A mistake in one of these is never local:
 - **`RenderBackend`** - the frame-path seam between engine and GPU. The second
   seam is deliberate: `EditorRenderHooks` (`system/render/editor_render_hooks.h`)
   is offscreen rendering for authoring tools - thumbnails, material previews -
-  that a shipped game never asks for. `GLBackend` implements both and opts in by
-  overriding `RenderBackend::editorHooks()`; the editor shows placeholders when
-  the answer is null. It lives in `system/render` because the backend must
-  implement it and cannot see editor code. An authoring-side GPU need extends
-  this seam rather than inventing a third.
+  that a shipped game never asks for, and the renderer of the editor's own ImGui.
+  `GLBackend` implements both and opts in by overriding
+  `RenderBackend::editorHooks()`; the editor will not start without them. It lives
+  in `system/render` because the backend must implement it and cannot see editor
+  code. An authoring-side GPU need extends this seam rather than inventing a third.
+- **`WindowSurface`** (`platform/window/window_surface.h`) - what a backend asks of
+  the window: the hints before it exists, attaching to it, presenting, the swap
+  interval. A host hands one to `setupEngineApp` beside its backend
+  (`GLWindowSurface` with `GLBackend`); a host that draws nothing hands none.
 - **Stage order** - Input, Simulation, Transform, Visibility, Render, Editor. A
   system is placed by responsibility and relies on ordering, never on manual
   sequencing.

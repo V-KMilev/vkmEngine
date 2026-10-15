@@ -15,7 +15,6 @@
 #include "io/json_file.h"
 #include "io/project.h"
 #include "io/project_paths.h"
-#include "system/render/editor_render_hooks.h"
 #include "system/render/render_backend.h"
 #include "system/render/render_system.h"
 #include "ui/editor_dialogs.h"
@@ -391,16 +390,7 @@ void StartScreen::drawHeader(EditorContext& ec, float width) {
     const float top  = ImGui::GetCursorPosY();
     const float side = ImGui::GetTextLineHeight() * 2.6f;
 
-    // The engine's mark, through the render seam; UVs flip as the decode is bottom-up.
-    if (EditorRenderHooks* hooks = editorRenderHooks(ec.renderSystem.backend())) {
-        const GpuTextureId mark = hooks->chromeImage(
-            (ProjectPaths::engineAssets() / "logo" / "vkm_engine_mark.png").string()
-        );
-        if (mark) {
-            ImGui::Image(imTexture(mark), ImVec2(side, side), ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.0f));
-            ImGui::SameLine(0.0f, px(14.0f));
-        }
-    }
+    if (drawEngineMark(ec.hooks, side)) ImGui::SameLine(0.0f, px(14.0f));
 
     ImGui::BeginGroup();
     ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 1.45f);

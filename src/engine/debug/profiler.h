@@ -4,8 +4,8 @@
  * @brief CPU profiler facade over Tracy, independent of any render backend.
  *
  * Engine code never includes Tracy directly. Every macro is a free no-op when
- * VKM_PROFILER is unset. GPU zones live in gl_profiler.h, as Tracy's OpenGL
- * header inlines GL calls into the caller's TU.
+ * VKM_PROFILER is unset. GPU zones are the backend's, as Tracy's GPU
+ * headers inline API calls into the caller's TU.
  *
  *   PROFILE_FRAME_MARK();                 // once per frame, end of loop
  *   PROFILE_SCOPE("StageName");           // string literal

@@ -18,7 +18,6 @@
 #include "editor_actions.h"
 #include "input/view_framing.h"
 #include "io/project_paths.h"
-#include "system/render/editor_render_hooks.h"
 #include "system/render/render_backend.h"
 #include "system/render/render_system.h"
 #include "ui/editor_style.h"
@@ -309,24 +308,7 @@ void EditorMenuBar::draw(EditorContext& ec, SceneIOController& sceneIO) {
     FrameContext& ctx   = ec.frame;
     EditorState&  state = ec.state;
 
-    // Through the render seam, not a texture of the editor's own: the mark is the
-    // engine's, so it must not land in the project's asset library. The UVs flip
-    // because the decode is bottom-up and ImGui's are not.
-    if (EditorRenderHooks* hooks = editorRenderHooks(ec.renderSystem.backend())) {
-        const GpuTextureId mark = hooks->chromeImage(
-            (ProjectPaths::engineAssets() / "logo" / "vkm_engine_mark.png").string()
-        );
-        if (mark) {
-            const float sz = ImGui::GetTextLineHeight();
-            ImGui::Image(
-                imTexture(mark),
-                ImVec2(sz * 1.5f, sz * 1.5f),
-                ImVec2(0.0f, 1.0f),
-                ImVec2(1.0f, 0.0f)
-            );
-            ImGui::SameLine();
-        }
-    }
+    if (drawEngineMark(ec.hooks, ImGui::GetTextLineHeight() * 1.5f)) ImGui::SameLine();
 
     // The start screen has no scene, panels or entities to act on.
     drawFileMenu(ec, sceneIO);

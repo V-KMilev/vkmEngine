@@ -9,10 +9,10 @@ namespace Vkm::Engine::Math {
 /**
  * @brief World basis vectors.
  *
- * Right-handed, +Y up, **forward is -Z** (glm's and OpenGL view space's
- * convention), so screen-right is +X: `glm::cross(forward, up)` gives it, and
- * `glm::quatLookAt` needs no negation. +Z forward would put right at -X and
- * silently mirror the intuitive code.
+ * Right-handed, +Y up, **forward is -Z** (glm's convention), so screen-right is
+ * +X: `glm::cross(forward, up)` gives it, and `glm::quatLookAt` needs no
+ * negation. +Z forward would put right at -X and silently mirror the intuitive
+ * code.
  *
  * Use these only as axes; ask about an orientation with computeForward /
  * computeRight / computeUp.

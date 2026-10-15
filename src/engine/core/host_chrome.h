@@ -18,7 +18,7 @@ class WindowManager;
 class HostChrome {
     public:
         /**
-         * @brief A rect in framebuffer pixels: the unit glViewport takes.
+         * @brief A rect in framebuffer pixels, origin at the bottom left.
          */
         struct ViewportRect {
             uint32_t x      = 0;

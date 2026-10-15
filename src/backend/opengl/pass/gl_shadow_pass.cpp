@@ -11,6 +11,7 @@
 #include "asset/gl_material.h"
 #include "asset/gl_mesh.h"
 #include "convention/gl_bindings.h"
+#include "convention/gl_depth.h"
 #include "debug/profiler.h"
 #include "frame/gl_object_buffer.h"
 #include "frame/gl_shadow_data.h"
@@ -47,7 +48,7 @@ void GLShadowPass::execute(GLFrameContext& ctx) {
         return;
     }
 
-    ctx.gl.setDepthFunc(GL_LESS);
+    ctx.gl.setDepthFunc(GLDepth::SHADOW_TEST);
 
     // Uploaded before the pass loop; a frame that posed nothing has none.
     if (ctx.skinPalette.count() > 0) ctx.skinPalette.bind();
@@ -98,7 +99,7 @@ bool GLShadowPass::uploadCasters(GLFrameContext& ctx) {
     if (m_tilesDrawn == 0) return false;
 
     // Object indices; every transform went up once for the frame, so nothing else uploads here.
-    m_list.upload();
+    m_list.upload(ctx.resources.stream());
     ctx.objects.bind();
     return true;
 }
@@ -182,7 +183,7 @@ void GLShadowPass::renderCube(GLFrameContext& ctx) {
 }
 
 void GLShadowPass::beginTile(const glm::mat4& lightVP, const glm::vec2& ditherShift) {
-    m_lightVP     = lightVP;
+    m_lightVP     = GLDepth::shadowProjection(lightVP);
     m_ditherShift = ditherShift;
     ++m_tile;
 }

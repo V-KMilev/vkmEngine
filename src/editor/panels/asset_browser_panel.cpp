@@ -338,16 +338,14 @@ GpuTextureId meshThumb(TileContext& tc, StorageIndex key, uint64_t version) {
 GpuTextureId textureThumb(TileContext& tc, StorageIndex key, uint64_t) {
     // The tile samples the renderer's mirror; nothing is copied. A re-upload keeps its id,
     // so the version is unused.
-    EditorRenderHooks* backend = editorRenderHooks(tc.ec.renderSystem.backend());
-    if (!backend) return 0;
-
+    EditorRenderHooks& hooks = tc.ec.hooks;
     const TextureHandle handle{key};
-    if (const GpuTextureId resident = backend->textureId(handle)) return resident;
+    if (const GpuTextureId resident = hooks.textureId(handle)) return resident;
 
     // Not resident, and never will be on its own; see EditorRenderHooks::textureId.
     if (tc.uploads <= 0) return 0;
     --tc.uploads;
-    return backend->ensureTexture(handle, tc.ec.frame.resources);
+    return hooks.ensureTexture(handle, tc.ec.frame.resources);
 }
 
 // Assignment, through an EditScope: an undo step, and a prefab override on an instance.

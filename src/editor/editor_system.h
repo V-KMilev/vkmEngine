@@ -38,6 +38,7 @@ struct EditorContext;
 class AudioSystem;
 class BehaviorSystem;
 class CameraControllerSystem;
+class EditorRenderHooks;
 class Scene;
 class UISystem;
 class RenderSystem;
@@ -88,8 +89,8 @@ class EditorSystem : public System {
          * @brief Save the editor's settings and tear ImGui down.
          *
          * Not in the destructor because both halves need a live window: the settings
-         * write reads the render system's state, and the ImGui backends hold a GL
-         * context and a GLFW window.
+         * write reads the render system's state, and ImGui's renderer and platform
+         * halves hold the window.
          */
         void shutdown() override;
 
@@ -256,6 +257,7 @@ class EditorSystem : public System {
     private:
         CameraControllerSystem& m_cameraController;
         RenderSystem&           m_renderSystem;
+        EditorRenderHooks&      m_hooks;
         RenderSettings&         m_render;
         AudioSystem&            m_audioSystem;
         BehaviorSystem&         m_behaviorSystem;

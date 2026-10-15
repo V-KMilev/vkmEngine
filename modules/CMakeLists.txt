@@ -178,7 +178,6 @@ add_library(imgui STATIC
     imgui/imgui_demo.cpp
     imgui/misc/cpp/imgui_stdlib.cpp
     imgui/backends/imgui_impl_glfw.cpp
-    imgui/backends/imgui_impl_opengl3.cpp
     imgui/misc/freetype/imgui_freetype.cpp
 )
 
@@ -194,6 +193,11 @@ target_link_libraries(imgui PUBLIC
     glfw
     freetype
 )
+
+# ImGui's OpenGL renderer, apart so only the OpenGL backend links it. It loads GL
+# through its own loader, not GLEW.
+add_library(imgui_opengl3 STATIC imgui/backends/imgui_impl_opengl3.cpp)
+target_link_libraries(imgui_opengl3 PUBLIC imgui)
 
 # Tracy, only when VKM_PROFILER is on. On demand and on localhost alone, so a game
 # that carries it costs nothing until a profiler connects and opens no port to

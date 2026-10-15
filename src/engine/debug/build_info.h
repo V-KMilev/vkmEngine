@@ -7,8 +7,8 @@ namespace Vkm::Engine {
 /**
  * @brief Log the build banner: this binary, and each vkm module's hash.
  *
- * Reads the APP_* and VKM* macros CMake defines; call once at startup. The GL
- * strings are logged by the backend, as no context exists yet.
+ * Reads the APP_* and VKM* macros CMake defines; call once at startup. The graphics
+ * API's strings are logged by the backend, which has a device to ask.
  */
 inline void printBuildInfo() {
     LOG_INFO_C("BUILD", "------- Build Information -------");

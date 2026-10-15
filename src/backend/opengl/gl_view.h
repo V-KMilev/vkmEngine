@@ -14,6 +14,7 @@
 #include "asset/gl_mesh.h"
 #include "asset/gl_material.h"
 #include "asset/gl_asset_texture.h"
+#include "gl_stream_ring.h"
 
 namespace Vkm::GL {
     class Texture2D;
@@ -170,6 +171,16 @@ class GLView {
          */
         GLMeshPool& meshPool() { return m_meshPool; }
 
+        /**
+         * @brief The frame's streaming memory: per-frame lists and matrices go through it.
+         *
+         * Not the view's resource state, so a reader holding the view const streams too. The
+         * backend ends each frame on it (StreamRing::endFrame).
+         *
+         * @return The ring; it lives as long as this mirror.
+         */
+        Vkm::GL::StreamRing& stream() const { return m_stream; }
+
     private:
         /**
          * @brief Upload or refresh a single asset into its table, version-gated.
@@ -224,6 +235,8 @@ class GLView {
         GLResourceTable<GLTexture>  m_textures;
         /// SDF atlases by FontHandle; fonts carry pixels, not TextureAssets.
         GLResourceTable<GLTexture>  m_fontAtlases;
+        /// The frame's streaming memory; see stream().
+        mutable Vkm::GL::StreamRing m_stream;
 
         // Outside the tables: it belongs to no asset, and must survive a graph swap, when things go missing.
         mutable std::unique_ptr<Vkm::GL::Texture2D> m_missingTexture;

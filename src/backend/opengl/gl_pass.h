@@ -65,32 +65,32 @@ class GLPass {
         static int32_t backbufferBottom(const RenderView& view, int32_t top, int32_t height);
 
         /**
-         * @brief Give the bound @p shader this frame's froxel fog and the sky's air in front of the view.
+         * @brief Give @p shader this frame's froxel fog and the sky's air in front of the view.
          *
          * For a shader including shaders/fog.glsl: binds each volume only when its compute filled
          * it this frame - the fog pass, the atmosphere pass - and sets u_hasFog and u_hasAir to
          * match.
          *
          * @param ctx    For the volumes and whether each is ready.
-         * @param shader The program that draws; it must be bound.
+         * @param shader The program that draws.
          * @param air    False for the sky, which holds its own: the froxel fog alone.
          */
         void bindFog(GLFrameContext& ctx, const Vkm::GL::Shader& shader, bool air = true) const;
 
         /**
-         * @brief Give the bound @p shader this frame's GTAO and screen shadow, or tell it there are none.
+         * @brief Give @p shader this frame's GTAO and screen shadow, or tell it there are none.
          *
          * Binds the AO target only when the GTAO pass or the screen-shadow pass filled it this
          * frame, and sets u_hasAO and u_hasScreenShadow to match.
          *
          * @param ctx     For the AO target and whether it is ready.
-         * @param shader  The program that draws; it must be bound.
+         * @param shader  The program that draws.
          * @param sampled False tells the shader there is none even so: a draw GTAO did not see.
          */
         void bindAO(GLFrameContext& ctx, const Vkm::GL::Shader& shader, bool sampled = true) const;
 
         /**
-         * @brief Give the bound @p shader the sky's irradiance cube, the reflection probes and the
+         * @brief Give @p shader the sky's irradiance cube, the reflection probes and the
          *        baked irradiance volume.
          *
          * For a shader including shaders/ambient.glsl. Binds what the frame has and sets
@@ -98,7 +98,7 @@ class GLPass {
          * match. The probes' boxes and arrays the backend binds once a frame.
          *
          * @param ctx    For the baked environment, the probes and the volume.
-         * @param shader The program that draws or dispatches; it must be bound.
+         * @param shader The program that draws or dispatches.
          * @param probes False leaves the probes out, for a shader reading the environment too
          *               often to loop over them.
          */

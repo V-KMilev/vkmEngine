@@ -23,8 +23,10 @@
 #include "gl_frame_context.h"
 #include "gl_pass.h"
 #include "gl_profiler.h"
+#include "gl_window_surface.h"
 #include "asset/gl_asset_texture.h"
 #include "asset/gl_material.h"
+#include "convention/gl_depth.h"
 #include "pass/gl_shadow_pass.h"
 #include "pass/gl_depth_prepass.h"
 #include "pass/gl_resolve_pass.h"
@@ -120,6 +122,10 @@ uint64_t lightingDigest(const std::vector<LightData>& lights) {
 
 } // namespace
 
+std::unique_ptr<WindowSurface> GLBackend::windowSurface() {
+    return std::make_unique<GLWindowSurface>();
+}
+
 std::string GLBackend::shaderConstants() {
     using CullSet = GLOcclusionCull::Set;
     std::ostringstream out;
@@ -153,6 +159,8 @@ std::string GLBackend::shaderConstants() {
         << "const int   CULL_SET_REVEALED       = " << static_cast<int>(CullSet::Revealed) << ";\n"
         << "const int   CULL_SET_SHOWN          = " << static_cast<int>(CullSet::Shown) << ";\n"
         << "const float VIEWMODEL_DEPTH_SHARE   = " << std::to_string(VIEWMODEL_DEPTH_SHARE) << ";\n"
+        << "const float NEAR_DEPTH              = " << std::to_string(GLDepth::EYE_NEAR) << ";\n"
+        << "const float FAR_DEPTH               = " << std::to_string(GLDepth::EYE_CLEAR) << ";\n"
         << "const vec2  TRANSMITTANCE_LUT_SIZE  = vec2("
         << GLAtmosphere::TRANSMITTANCE_WIDTH << ".0, " << GLAtmosphere::TRANSMITTANCE_HEIGHT << ".0);\n"
         << "const vec2  MULTISCATTERING_LUT_SIZE = vec2("
@@ -274,7 +282,33 @@ bool GLBackend::init(WindowManager& window) {
         return false;
     }
 
+    // Likewise every storage-buffer binding point it numbers.
+    GLint storageBindings = 0;
+    VKM_GL_CHECK(glGetIntegerv(GL_MAX_SHADER_STORAGE_BUFFER_BINDINGS, &storageBindings));
+    if (storageBindings <= static_cast<GLint>(GLBindings::highestSSBOBinding())) {
+        LOG_ERROR(
+            "This GPU has %d storage-buffer binding points; the renderer binds up to %u",
+            storageBindings,
+            GLBindings::highestSSBOBinding() + 1
+        );
+        return false;
+    }
+
+    GLint textureEdge = 0;
+    VKM_GL_CHECK(glGetIntegerv(GL_MAX_TEXTURE_SIZE, &textureEdge));
+    if (textureEdge < static_cast<GLint>(BACKEND_MIN_TEXTURE_EDGE)) {
+        LOG_ERROR(
+            "This GPU's textures are at most %d texels across; the engine bakes up to %u",
+            textureEdge,
+            BACKEND_MIN_TEXTURE_EDGE
+        );
+        return false;
+    }
+
     m_context.setDefaultState();
+
+    // Clip z in 0..w: the depth convention/gl_depth.h states, the eye's reversed.
+    VKM_GL_CHECK(glClipControl(GL_LOWER_LEFT, GL_ZERO_TO_ONE));
 
     // Uploads are tightly packed in a file's own channel count, so a row need not be a multiple
     // of four bytes; at GL's default alignment such a texture uploads sheared and overreads.
@@ -331,8 +365,12 @@ bool GLBackend::init(WindowManager& window) {
 }
 
 void GLBackend::render(const RenderView& view, const ResourceManager& resources) {
-    // A minimised window or collapsed viewport has no pixels; stopping here spares every pass.
-    if (view.viewportWidth == 0 || view.viewportHeight == 0) return;
+    // A minimised window or collapsed viewport has no pixels; stopping here spares every pass. The
+    // stream's frame still ends: an editor preview may have written into it.
+    if (view.viewportWidth == 0 || view.viewportHeight == 0) {
+        m_view.stream().endFrame();
+        return;
+    }
 
     PROFILE_SCOPE("GLBackend::render");
     PROFILE_GPU_SCOPE("GPU.Frame");
@@ -429,13 +467,13 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     // Before the object upload and the batch, which both ask whether the frame posed anything.
     {
         PROFILE_SCOPE("Render/SkinPalette");
-        m_skinPalette.update(view.skinMatrices);
+        m_skinPalette.update(view.skinMatrices, m_view.stream());
     }
 
     // Every object's transform, once: an index list names objects in it.
     {
         PROFILE_SCOPE("Render/Objects");
-        m_objects.upload(*view.objects, m_skinPalette.count() > 0);
+        m_objects.upload(*view.objects, m_skinPalette.count() > 0, m_view.stream());
     }
 
     // ...and batch the opaque bucket once too (see GLFrameContext::opaqueBatch).
@@ -474,7 +512,9 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     ctx.sky    = sky ? &*sky : nullptr;
     if (view.settings.occlusionCulling && view.hasCamera) {
         PROFILE_SCOPE("Render/OcclusionPrepare");
-        if (m_occlusion.prepare(m_opaqueBatcher, *view.objects, resources)) ctx.occlusion = &m_occlusion;
+        if (m_occlusion.prepare(m_opaqueBatcher, *view.objects, resources, m_view.stream())) {
+            ctx.occlusion = &m_occlusion;
+        }
     }
     m_oceanFields.beginFrame();
 
@@ -503,7 +543,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         // Context caches these, so an agreeing pass pays nothing.
         m_context.setDepthTest(true);
         m_context.setDepthWrite(true);
-        m_context.setDepthFunc(GL_LEQUAL);
+        m_context.setDepthFunc(GLDepth::EYE_TEST_EQUAL);
         m_context.setBlending(false);
         m_context.setFaceCulling(false);
 
@@ -525,6 +565,9 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
 
     // A frame with no camera gathered nothing to bake from.
     if (view.hasCamera) bakeCaptures(view, resources);
+
+    // Every command reading what the frame streamed is issued: fence its region.
+    m_view.stream().endFrame();
 
     PROFILE_GPU_COLLECT();
 }

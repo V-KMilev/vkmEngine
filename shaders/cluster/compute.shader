@@ -20,7 +20,7 @@ layout(local_size_x = GROUP_CLUSTERS) in;
 // Screen pixel -> a point on the near plane in view space (a ray from the eye).
 vec3 screenToView(vec2 px) {
     vec2 ndc  = px / u_camera.viewport * 2.0 - 1.0;
-    vec4 clip = vec4(ndc, -1.0, 1.0);
+    vec4 clip = vec4(ndc, NEAR_DEPTH, 1.0);
     vec4 view = u_camera.invProjection * clip;
     return view.xyz / view.w;
 }

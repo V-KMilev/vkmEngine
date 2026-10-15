@@ -14,7 +14,6 @@
 #include "project_boot.h"
 #include "system/script/script_module.h"
 #include "gl_backend.h"
-#include "gl_debug.h"
 
 #include "app/engine_app.h"
 
@@ -101,9 +100,8 @@ int main(int argc, char** argv) {
         Vkm::App::AppConfig config;
         config.windowTitle = project.name.c_str();
         config.logFps      = true;
-        auto sys = Vkm::App::setupEngineApp(engine, config);
+        auto sys = Vkm::App::setupEngineApp(engine, config, Vkm::Engine::GLBackend::windowSurface());
 
-        Vkm::GL::enableGLDebugLogging(false);
         sys.render.setBackend(std::make_unique<Vkm::Engine::GLBackend>(), engine.getWindow());
         sys.render.releaseUploadedPixels(true);
 
