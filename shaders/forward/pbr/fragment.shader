@@ -76,6 +76,13 @@ uniform int u_alphaToCoverage;  // 1 while alpha-to-coverage is on for a cutout
 // A clear coat is a dielectric of index 1.5.
 const float COAT_F0 = 0.04;
 
+// The share of a lobe of @p roughness the one reflection trace, at @p traceLobe, stands for: all of
+// the sharper lobe, and none of one TRACE_LOBE_GAP rougher, which keeps its environment's blur.
+const float TRACE_LOBE_GAP = 0.25;
+float traceShare(float roughness, float traceLobe) {
+    return clamp(1.0 - (roughness - traceLobe) / TRACE_LOBE_GAP, 0.0, 1.0);
+}
+
 // The fragment's frame and what every light it takes reads.
 struct Shading {
     vec3  V;                   // toward the viewer
@@ -487,9 +494,11 @@ vec3 environmentLight(
     vec3  Rd  = normalize(mix(N, R, (1.0 - rdA) * (sqrt(1.0 - rdA) + rdA)));
     float specOcc = specularOcclusion(sh.NdotV, ao, s.roughness * s.roughness) * horizon * horizon;
 
-    // The single-scatter half, dimmed by a clear coat's Fresnel and a sheen's share. Not occluded:
-    // a trace that hits has found the occluder itself, so only the environment it replaces
-    // (ReflectEnv) carries specOcc.
+    // The single-scatter half, dimmed by a clear coat's Fresnel and a sheen's share, plus the coat's
+    // own mirror, each by its share of the one trace (traceShare): traced at the sharper lobe, a
+    // coated surface shows no probe reflection over the traced one, and a rough base under a
+    // sharp coat keeps its own blur. Not occluded: a trace that hits has found the occluder
+    // itself, so only the environment it replaces (ReflectEnv) carries the occlusion.
     vec3  reflectWeight = FssEss;
     float underSheen    = hasSheen() ? 1.0 - sheenTaken(sh.NdotV) : 1.0;
     bool  hasCoat       = FEATURES && s.clearcoat > 0.001;
@@ -498,8 +507,10 @@ vec3 environmentLight(
     vec3  Rc            = reflect(-V, Ng);
     // The coat's top is never below its own horizon, so it takes no horizon term.
     float coatOcc       = specularOcclusion(coatNoV, ao, s.clearcoatRoughness * s.clearcoatRoughness);
-    reflectWeight *= (1.0 - coatFresnel) * underSheen;
-    ReflectWeight = vec4(reflectWeight, lobeRoughness);
+    float traceLobe  = hasCoat ? min(lobeRoughness, s.clearcoatRoughness) : lobeRoughness;
+    reflectWeight *= (1.0 - coatFresnel) * underSheen * traceShare(lobeRoughness, traceLobe);
+    float coatWeight = coatFresnel * traceShare(s.clearcoatRoughness, traceLobe);
+    ReflectWeight = vec4(reflectWeight + vec3(coatWeight), traceLobe);
 
     // Without a baked sky: no reflection and a flat floor, which probes and the
     // irradiance volume still replace where they cover.
@@ -580,7 +591,7 @@ vec3 environmentLight(
     }
 
     // Zero where nothing was read, so a trace there only adds.
-    ReflectEnv = vec4(reflectWeight * specOcc * prefiltered, 1.0);
+    ReflectEnv = vec4(reflectWeight * specOcc * prefiltered + coat * (coatWeight * coatOcc), 1.0);
     return ambient;
 }
 
