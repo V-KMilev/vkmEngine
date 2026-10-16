@@ -27,6 +27,7 @@
 #include "asset/gl_asset_texture.h"
 #include "asset/gl_material.h"
 #include "convention/gl_depth.h"
+#include "offline/gl_capture_lighting.h"
 #include "pass/gl_shadow_pass.h"
 #include "pass/gl_depth_prepass.h"
 #include "pass/gl_resolve_pass.h"
@@ -63,68 +64,6 @@
 #include "system/sky/atmosphere.h"
 
 namespace Vkm::Engine {
-
-namespace {
-
-static_assert(sizeof(LightData) == 116, "a field added to LightData goes in lightingDigest, or says why not");
-
-/**
- * @brief A digest of what a capture reads of @p lights, field by field (no padding).
- *
- * Per type, what the irradiance relight and a probe capture read: a directional's slot and shadow
- * too, since the lowest-slot caster is the shadowed sun; no other light casts in a capture, and a
- * directional has no position, so a sun parented to a mover lights nothing anew. shadowDistance and
- * shadowPriority are left out, as a capture fits and keeps its own map; a flicker's wave, as a
- * capture takes a wavering light once rather than every frame; and a transient light whole.
- *
- * @param lights The frame's lights.
- * @return Their digest; equal digests light a capture alike.
- */
-uint64_t lightingDigest(const std::vector<LightData>& lights) {
-    uint64_t digest = FNV1A_OFFSET_BASIS;
-    const auto mix = [&digest](const auto& field) { digest = fnv1a64Bytes(&field, sizeof(field), digest); };
-    for (const LightData& light : lights) {
-        if (light.transient) continue;
-        mix(light.type);
-        mix(light.color);
-        mix(light.intensity);
-        mix(light.sourceRadius);
-        switch (light.type) {
-            case LightType::Directional:
-                mix(light.entitySlot);
-                mix(light.direction);
-                mix(light.castShadows);
-                mix(light.shadowBias);
-                mix(light.shadowNormalBias);
-                break;
-            case LightType::Point:
-                mix(light.position);
-                mix(light.radius);
-                break;
-            case LightType::Spot:
-                mix(light.position);
-                mix(light.radius);
-                mix(light.direction);
-                mix(light.innerConeAngle);
-                mix(light.outerConeAngle);
-                break;
-            case LightType::Rect:
-            case LightType::Disk:
-                mix(light.position);
-                mix(light.direction);
-                mix(light.radius);
-                mix(light.axisU);
-                mix(light.axisV);
-                mix(light.twoSided);
-                break;
-            case LightType::Count:
-                break;
-        }
-    }
-    return digest;
-}
-
-} // namespace
 
 std::unique_ptr<WindowSurface> GLBackend::windowSurface() {
     return std::make_unique<GLWindowSurface>();
@@ -615,9 +554,11 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
 }
 
 void GLBackend::bakeCaptures(const RenderView& view, const ResourceManager& resources) {
-    const uint64_t lights = lightingDigest(view.lights);
-
-    // The lights or the sky changing light the volume's surfels again, its geometry kept.
+    // The lights that reach the volume, or the sky, changing light its surfels again, its geometry
+    // kept; a lamp moving outside it does not.
+    const IrradianceVolumeData& box = view.irradianceVolume;
+    const Math::AABB within{box.center - box.halfExtents, box.center + box.halfExtents};
+    const uint64_t   lights = lightingDigest(view.lights, view.hasIrradianceVolume ? &within : nullptr);
     const CaptureLighting volumeLighting{lights, m_ibl.version(), m_ibl.isReady()};
     m_irradianceBaker.update(m_context, m_irradiance, view, m_view, resources, m_ibl, volumeLighting);
 
@@ -628,13 +569,12 @@ void GLBackend::bakeCaptures(const RenderView& view, const ResourceManager& reso
     if (!view.settings.probes) return;
     const bool                lit    = view.hasIrradianceVolume && m_irradiance.isReady();
     const GLIrradianceVolume* volume = lit ? &m_irradiance : nullptr;
-    const CaptureLighting probeLighting{
-        lights,
-        m_ibl.version(),
-        m_ibl.isReady(),
-        volume ? volume->lightId() : 0u,
-        volume ? view.irradianceVolume.intensity : 0.0f
-    };
+    // Its lights are each probe's own, those that reach it (GLProbeManager::update).
+    CaptureLighting probeLighting;
+    probeLighting.sky             = m_ibl.version();
+    probeLighting.skyReady        = m_ibl.isReady();
+    probeLighting.volumeLight     = volume ? volume->lightId() : 0u;
+    probeLighting.volumeIntensity = volume ? view.irradianceVolume.intensity : 0.0f;
     m_probes.update(m_context, view, m_view, resources, m_ibl, volume, probeLighting);
 }
 

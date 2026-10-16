@@ -37,6 +37,7 @@
 #include "offline/gl_ibl_baker.h"
 #include "offline/gl_irradiance_baker.h"
 #include "offline/gl_probe_baker.h"
+#include "storage/gl_probe_manager.h"
 #include "core/clock.h"
 #include "core/event/event_bus.h"
 #include "core/host_chrome.h"
@@ -1426,6 +1427,49 @@ void testAProbeFollowsItsLight(int& failures) {
     const float share = differingShare(seen, want.data());
     std::printf("      %.2f%% of pixels differ\n", share * 100.0f);
     expect("  and once it is, the frame is a fresh backend's", share <= PIXEL_TOLERANCE, failures);
+}
+
+// A refreshed probe rests before it follows its light again (GLProbeManager::REFRESH_REST): a sun
+// that rises again the frame after a refresh is captured once the rest is over, not a refresh
+// later, and the sky's bake of it, which ends after that refresh, once the next rest is.
+void testARefreshedProbeRests(int& failures) {
+    std::printf("A reflection probe whose sun rises again after a refresh:\n");
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend lived;
+    if (!lived.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery setting;
+    buildProbe(setting);
+    render(setting, lived);
+    // The refresh to the low sun runs a step a frame, and ends on the last of them.
+    const int   steps = GLProbeBaker::refreshSteps(PROBE_RESOLUTION);
+    const float noon  = setting.scene.environment().sky.sunElevation;
+    setting.scene.environment().sky.sunElevation = 4.0f;
+    const auto over = [&](int frames) {
+        return render(setting, lived, nullptr, RenderSettings{}, nullptr, frames);
+    };
+    over(steps);
+
+    setting.scene.environment().sky.sunElevation = noon;
+    const int rest = static_cast<int>(std::ceil(GLProbeManager::REFRESH_REST / FRAME_SECONDS));
+    const std::vector<unsigned char> early   = over(1);
+    const std::vector<unsigned char> resting = over(steps);
+    const std::vector<unsigned char> seen    = over(2 * (rest + steps) + FRAMES);
+
+    // Without the rest, the refresh would be through by now.
+    const float kept = differingShare(resting, early.data());
+    std::printf("      %.2f%% of pixels differ a refresh's length on\n", kept * 100.0f);
+    expect("a refresh's length on, the probe shows the capture it had", kept <= PIXEL_TOLERANCE, failures);
+
+    const std::vector<unsigned char> want = freshFrame(buildProbe, RenderSettings{}, failures);
+    if (want.empty()) return;
+    const float share = differingShare(seen, want.data());
+    std::printf("      %.2f%% of pixels differ\n", share * 100.0f);
+    expect("  and after its rests, it follows", share <= PIXEL_TOLERANCE, failures);
 }
 
 // A frame with no camera gathers no probes; the scene has not lost them. A noon capture
@@ -3620,6 +3664,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testABackendDropsWhatTheSceneNoLongerAsksFor(failures);
     testAFrameWithNoCameraKeepsTheProbesBaked(failures);
     testAProbeFollowsItsLight(failures);
+    testARefreshedProbeRests(failures);
     testWhatTheCullHidDrawsTheFrameItComesOut(failures);
     testAWeaponHeldIntoAWallIsNotCulled(failures);
     testAFaceFillingTheFrameIsNotCulledByItsOwnDepth(failures);

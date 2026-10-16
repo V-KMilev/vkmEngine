@@ -116,6 +116,7 @@ void GLProbeManager::update(
 ) {
     if (!m_baker || !m_array) return;
     ++m_frame;
+    m_seconds += view.frameSeconds;
 
     // The layers bind() assigned this frame, from this same view.
     const size_t n = std::min(view.probes.size(), m_layerOf.size());
@@ -136,11 +137,18 @@ void GLProbeManager::update(
         m_baker->endRefresh();
     }
 
-    // How long each probe has held its place and box, every frame, whichever bakes below.
+    // How long each probe has held its place and box, every frame, whichever bakes below; and the
+    // lights that reach it, within half its width of its box: a lamp moving across the world does
+    // not keep every probe refreshing.
+    m_lighting.assign(n, lighting);
     for (size_t i = 0; i < n; ++i) {
         if (m_layerOf[i] < 0) continue;
         const ProbeData& pd = view.probes[i];
         m_state[static_cast<size_t>(m_layerOf[i])].seen.see({pd.position, pd.halfExtents});
+        const float      half  = glm::max(pd.halfExtents.x, glm::max(pd.halfExtents.y, pd.halfExtents.z));
+        const glm::vec3  reach = pd.halfExtents + glm::vec3(half);
+        const Math::AABB within{pd.position - reach, pd.position + reach};
+        m_lighting[i].lights = lightingDigest(view.lights, &within);
     }
 
     // Throttled so several probes changing at once don't hitch the frame.
@@ -165,14 +173,14 @@ void GLProbeManager::update(
         st.placed     = here;
         st.version    = pd.bakeVersion;
         st.volumeBake = volumeBake;
-        st.lighting   = lighting;
+        st.lighting   = m_lighting[i];
         st.captured   = m_frame;
         ++rebakes;
     }
 
     // A bake is the frame's capture, and ended any refresh (GLProbeBaker::bake).
     if (rebakes > 0) return;
-    refresh(gl, view, glView, resources, ibl, volume, lighting);
+    refresh(gl, view, glView, resources, ibl, volume);
 }
 
 void GLProbeManager::refresh(
@@ -181,8 +189,7 @@ void GLProbeManager::refresh(
     GLView& glView,
     const ResourceManager& resources,
     const GLIBL& ibl,
-    const GLIrradianceVolume* volume,
-    const CaptureLighting& lighting
+    const GLIrradianceVolume* volume
 ) {
     const size_t n = std::min(view.probes.size(), m_layerOf.size());
 
@@ -207,14 +214,15 @@ void GLProbeManager::refresh(
     }
 
     // Else the one captured under other light that has waited longest for how near the eye it is
-    // (REFRESH_NEAR).
+    // (REFRESH_NEAR), of those not resting from their last refresh (REFRESH_REST).
     if (m_refreshLayer < 0) {
         float best = 0.0f;
         for (size_t i = 0; i < n; ++i) {
             const int layer = m_layerOf[i];
             if (layer < 0) continue;
             const BakeState& st = m_state[static_cast<size_t>(layer)];
-            if (!st.baked || st.lighting == lighting || !inPlace(i, st)) continue;
+            if (!st.baked || st.lighting == m_lighting[i] || !inPlace(i, st)) continue;
+            if (m_seconds - st.refreshed < REFRESH_REST) continue;
             const float waited   = static_cast<float>(m_frame - st.captured);
             const float distance = glm::distance(view.camera.position, view.probes[i].position);
             const float score    = waited / (1.0f + distance / REFRESH_NEAR);
@@ -225,7 +233,7 @@ void GLProbeManager::refresh(
         }
         if (probe == n) return;
         m_refreshLayer    = m_layerOf[probe];
-        m_refreshLighting = lighting;
+        m_refreshLighting = m_lighting[probe];
         m_baker->beginRefresh(*m_array);
     }
 
@@ -236,8 +244,9 @@ void GLProbeManager::refresh(
 
     // Under the light it began under: one that changed since takes another refresh.
     BakeState& refreshed = m_state[static_cast<size_t>(m_refreshLayer)];
-    refreshed.lighting = m_refreshLighting;
-    refreshed.captured = m_frame;
+    refreshed.lighting  = m_refreshLighting;
+    refreshed.captured  = m_frame;
+    refreshed.refreshed = m_seconds;
     m_refreshLayer = -1;
 }
 

@@ -89,16 +89,18 @@ volume covers it, and from the sky only outside it:
   enters a room through its doorways and windows only. Inside the box there is
   no fade at the faces. How many gathers:
   [engine.md](../guides/engine.md#4-what-has-already-been-decided).
-- **The volume follows its lights and sky.** When the frame's lights
+- **The volume follows its lights and sky.** When the lights that reach its box
   (`lightingDigest`) or the sky (`GLIBL::version`) differ from what it was lit
   by, its surfels are relit a gather a frame, the result swapped in whole.
 - **Probes are captured after the volume**, lit by it where it covers them, and
   baked again at once, as a new probe is, when the volume is re-baked
   (`GLIrradianceVolume::bakeId`). A probe captured under other light
   (`CaptureLighting`) is refreshed a step a frame (`GLProbeBaker::advance`),
-  swapped in whole. The lights compared are the whole scene's, not those near a
-  capture, so a light animated anywhere keeps the volume relighting and the
-  probes refreshing for as long as it moves.
+  swapped in whole, then rests (`GLProbeManager::REFRESH_REST`): under a light
+  that never holds still, its capture follows a little behind. The lights
+  compared are those whose radius reaches within half a probe's width of its
+  box, and a directional: a lamp moving across the world refreshes the probes it
+  can light, not every one.
 - **Shadows:** a capture is shadowed by `lowestSlotDirectionalCaster` alone
   ([rendering.md](rendering.md#bakes)).
 

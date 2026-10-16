@@ -45,6 +45,7 @@
 #include "storage/gl_shadow_atlas.h"
 #include "core/engine_config.h"
 #include "frame/gl_lights.h"
+#include "offline/gl_capture_lighting.h"
 #include "frame/gl_shadow_data.h"
 #include "frame/gl_camera.h"
 #include "frame/gl_ocean.h"
@@ -660,6 +661,36 @@ void testASpotsTileFollowsItsShareOfTheScreen() {
         && sizes[2] == FULL && sizes[3] == FULL / 2;
     check("  the nearest three at the largest tile, the last at half", halved);
     check("and every tile fits the atlas", area <= GLShadowAtlas::capacity(FULL));
+}
+
+// A capture is out of date when a light that reaches it changes, not when one elsewhere does: a lamp
+// moving across the world refreshes the probes it can light, not every one. The sun reaches all.
+void testACaptureComparesTheLightsThatReachIt() {
+    std::printf("What makes a capture out of date:\n");
+
+    using namespace Vkm::Engine;
+    LightData sun{};
+    sun.type      = LightType::Directional;
+    sun.direction = glm::vec3(0.0f, -1.0f, 0.0f);
+    sun.intensity = 3.0f;
+    LightData lamp{};
+    lamp.type      = LightType::Point;
+    lamp.position  = glm::vec3(50.0f, 1.0f, 0.0f);
+    lamp.radius    = 5.0f;
+    lamp.intensity = 10.0f;
+    std::vector<LightData> lights = {sun, lamp};
+    const Math::AABB here{glm::vec3(-2.0f), glm::vec3(2.0f)};
+    const uint64_t   before = lightingDigest(lights, &here);
+    const uint64_t   world  = lightingDigest(lights);
+
+    lights[1].position.x = 60.0f;
+    check("a lamp moving far off leaves it as it was", lightingDigest(lights, &here) == before);
+    check("  though the whole scene's lights differ", lightingDigest(lights) != world);
+    lights[1].position.x = 6.0f;
+    check("a lamp moving within reach of it does not", lightingDigest(lights, &here) != before);
+    lights[1].position.x = 60.0f;
+    lights[0].intensity = 4.0f;
+    check("  nor does the sun, wherever it is", lightingDigest(lights, &here) != before);
 }
 
 // When more spots cast than the atlas holds, the nearest keep their shadows, and a raised
@@ -2382,6 +2413,7 @@ int runTests() {
     testAnAtlasLaysOutTilesOfEverySize();
     testASpotsTileFollowsItsShareOfTheScreen();
     testShadowsGoToTheNearestAndThePrioritised();
+    testACaptureComparesTheLightsThatReachIt();
     testAShadowCubeIsBoundForComparison();
     testEveryShippedShaderCompiles();
     testABackendInstallsItsConstantsBeforeItCompilesAnything();
