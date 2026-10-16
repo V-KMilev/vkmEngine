@@ -182,9 +182,8 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
          * taking that for a scene without them would drop and re-bake every capture.
          *
          * @param view Supplies the volume, the probes and the scene.
-         * @param resources Resolves what the captures draw.
          */
-        void bakeCaptures(const RenderView& view, const ResourceManager& resources);
+        void bakeCaptures(const RenderView& view);
 
         /**
          * @brief Bake the IBL product set again, from an equirectangular HDR.

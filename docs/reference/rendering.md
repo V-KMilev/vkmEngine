@@ -379,8 +379,10 @@ visible and scene-wide objects, decals, particle textures, UI commands - and
 uploads only what moved on ([resources.md](resources.md) has the versions).
 Every list must be walked, because some are gathered scene-wide (an off-screen
 caster's mesh, a decal's material) and a pass silently skips a draw whose GPU
-object it cannot resolve. A scene load from a file swaps the whole asset graph,
-which no per-asset check sees, so the backend drops every mirror
+object it cannot resolve. The scene-wide objects' meshes and materials are
+uploaded with the scene, not when the camera first turns to them: that frame
+would pay for their textures. A scene load from a file swaps the whole asset
+graph, which no per-asset check sees, so the backend drops every mirror
 (`GLView::invalidate`) when `ResourceManager::epoch()` moves
 ([resources.md](resources.md#versioning)).
 

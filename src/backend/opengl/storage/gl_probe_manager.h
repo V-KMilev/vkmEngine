@@ -22,7 +22,6 @@ class GLCubeConvolver;
 class GLView;
 class GLIBL;
 class GLIrradianceVolume;
-class ResourceManager;
 class GLProbeBaker;
 class GLProbeArray;
 class GLSceneCapture;
@@ -96,22 +95,20 @@ class GLProbeManager {
          * begin again in its turn. Run after the passes:
          * the baker rebinds the camera UBO and the lights SSBO.
          *
-         * @param gl        Live GL context the bake draws through.
-         * @param view      Supplies the probes and the scene.
-         * @param glView    GPU mirror the captures draw from.
-         * @param resources Resolves what the captures draw.
-         * @param ibl       The global environment, the captures' backdrop.
-         * @param volume    The baked irradiance volume, at the view's box, lighting what the
-         *                  captures see of it; null for none.
-         * @param lighting  What lights the captures now but for the lights, which are each probe's
-         *                  own: those whose radius reaches within half its width of its box. A
-         *                  probe captured under other light is refreshed.
+         * @param gl       Live GL context the bake draws through.
+         * @param view     Supplies the probes and the scene.
+         * @param glView   GPU mirror the captures draw from.
+         * @param ibl      The global environment, the captures' backdrop.
+         * @param volume   The baked irradiance volume, at the view's box, lighting what the
+         *                 captures see of it; null for none.
+         * @param lighting What lights the captures now but for the lights, which are each probe's
+         *                 own: those whose radius reaches within half its width of its box. A
+         *                 probe captured under other light is refreshed.
          */
         void update(
             Vkm::GL::Context& gl,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const GLIBL& ibl,
             const GLIrradianceVolume* volume,
             const CaptureLighting& lighting
@@ -174,18 +171,16 @@ class GLProbeManager {
         /**
          * @brief Take a step of refreshing a probe captured under other light than @p lighting.
          *
-         * @param gl        Live GL context the step draws through.
-         * @param view      Supplies the probes and the scene.
-         * @param glView    GPU mirror the captures draw from.
-         * @param resources Resolves what the captures draw.
-         * @param ibl       The global environment, the captures' backdrop.
-         * @param volume    The irradiance volume lighting what the captures see; null for none.
+         * @param gl     Live GL context the step draws through.
+         * @param view   Supplies the probes and the scene.
+         * @param glView GPU mirror the captures draw from.
+         * @param ibl    The global environment, the captures' backdrop.
+         * @param volume The irradiance volume lighting what the captures see; null for none.
          */
         void refresh(
             Vkm::GL::Context& gl,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const GLIBL& ibl,
             const GLIrradianceVolume* volume
         );

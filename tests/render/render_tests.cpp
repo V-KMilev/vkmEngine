@@ -1577,6 +1577,48 @@ void testACutoutsMapIsPartOfItsShadow() {
     check("with no GL error behind any of it", noGlError());
 }
 
+// The scene's materials upload with it, not the frame the camera first turns to them: a prop
+// behind the eye, casting nothing, has its material ready before it is ever seen.
+void testASceneUploadsWhatTheCameraHasNotSeen() {
+    using namespace Vkm::Engine;
+    std::printf("What a sync uploads:\n");
+
+    ResourceManager resources;
+    TextureAsset map;
+    map.params.width  = 2;
+    map.params.height = 2;
+    map.pixelData.assign(2 * 2 * 4, 255);
+    const TextureHandle paint = resources.add(std::move(map), "test:paint");
+    MaterialAsset seenAsset;
+    MaterialAsset unseenAsset;
+    unseenAsset.albedoTexture = paint;
+    const MaterialHandle seen   = resources.add(std::move(seenAsset), "test:seen");
+    const MaterialHandle unseen = resources.add(std::move(unseenAsset), "test:unseen");
+    const MeshHandle     cube   = resources.add(generateCube(), "test:cube");
+
+    RenderObjects objects;
+    const MaterialHandle materials[2] = {seen, unseen};
+    for (uint32_t i = 0; i < 2; ++i) {
+        const glm::vec3 at(0.0f, 0.5f, i == 0 ? -4.0f : 12.0f);
+        objects.models.push_back(glm::translate(glm::mat4(1.0f), at));
+        objects.bounds.push_back({at - glm::vec3(0.5f), at + glm::vec3(0.5f)});
+        objects.draws.push_back({cube, materials[i], 0});
+        objects.skinFirst.push_back(0);
+        objects.scene.push_back(i);
+    }
+    objects.visible.push_back(0);
+    objects.casterCount = 0;
+
+    RenderView view;
+    view.objects = &objects;
+    GLView glView;
+    glView.sync(view, resources);
+    check("the material in view is uploaded", glView.getMaterial(seen) != nullptr);
+    check("  and so is the one behind the eye", glView.getMaterial(unseen) != nullptr);
+    check("  its map with it", glView.getTexture(paint) != nullptr);
+    check("with no GL error behind it", noGlError());
+}
+
 // A transparent caster's shadow is cut by its alpha too, so it is planned as a cutout is: a run
 // a material, and its map part of the tile's picture - a decal's see-through surround casts none.
 void testATransparentCastersShadowIsCutByItsAlpha() {
@@ -2424,6 +2466,7 @@ int runTests() {
     testAnAreaLightsFormFactorHoldsStraightDownTheNormal();
     testACutoutsMapIsPartOfItsShadow();
     testATransparentCastersShadowIsCutByItsAlpha();
+    testASceneUploadsWhatTheCameraHasNotSeen();
     testATilesRunsKeepEachLayoutTogether();
     testACutoutElsewhereLeavesAHeldTileHeld();
     testACasterAboveTheCascadesIsKept();

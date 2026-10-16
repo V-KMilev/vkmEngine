@@ -68,7 +68,6 @@ void GLSceneCapture::begin(
     Vkm::GL::Context& gl,
     const RenderView& view,
     GLView& glView,
-    const ResourceManager& resources,
     const GLIBL& ibl,
     float faceSize,
     const Math::AABB& region
@@ -76,7 +75,7 @@ void GLSceneCapture::begin(
     m_glView = &glView;
     m_ibl    = &ibl;
 
-    gatherScene(view, glView, resources);
+    gatherScene(view, glView);
 
     // Grouped once for every face of every cube after this. No palette: the capture draws
     // shaders/forward/pbr only, so a character bakes into GI in bind pose.
@@ -152,37 +151,24 @@ void GLSceneCapture::beginLighting(
     Vkm::GL::Context& gl,
     const RenderView& view,
     GLView& glView,
-    const ResourceManager& resources,
     const Math::AABB& region
 ) {
     m_glView = &glView;
     if (m_shadow.useKept(view, region, m_lights)) return;
     const bool castersOnly = true;
-    gatherScene(view, glView, resources, castersOnly);
+    gatherScene(view, glView, castersOnly);
     m_shadow.draw(gl, view, glView, m_objects, m_casters, region, m_lights);
 }
 
-void GLSceneCapture::gatherScene(
-    const RenderView& view,
-    GLView& glView,
-    const ResourceManager& resources,
-    bool castersOnly
-) {
-    // The whole scene, not the camera's: a capture looks every way. GLView::sync leaves most
-    // scene-list materials out, so they are synced here on the frames a capture runs.
+void GLSceneCapture::gatherScene(const RenderView& view, const GLView& glView, bool castersOnly) {
+    // The whole scene, not the camera's: a capture looks every way.
     const RenderObjects& objects = *view.objects;
     const size_t casterCount = std::min<size_t>(objects.casterCount, objects.scene.size());
     m_opaque.clear();
     m_casters.clear();
-    MaterialHandle lastMaterial;
     for (size_t i = 0; i < (castersOnly ? casterCount : objects.scene.size()); ++i) {
-        const uint32_t        object = objects.scene[i];
-        const MaterialHandle& handle = objects.draws[object].material;
-        if (handle != lastMaterial) {
-            lastMaterial = handle;
-            glView.ensureMaterial(handle, resources);
-        }
-        const GLMaterial* material = glView.getMaterial(handle);
+        const uint32_t    object   = objects.scene[i];
+        const GLMaterial* material = glView.getMaterial(objects.draws[object].material);
         if (!material) continue;
         // Casters lead the scene list, and the sun's map draws each as the live map does,
         // a transparent one by its alpha; the faces draw only what is opaque.

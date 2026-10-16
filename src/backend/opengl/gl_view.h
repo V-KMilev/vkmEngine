@@ -64,11 +64,10 @@ class GLView {
         /**
          * @brief Upload / refresh every asset `view` references.
          *
-         * Every RenderView list naming a handle is walked: the camera's objects (mesh, material,
-         * its textures), scene-wide objects (mesh; material and textures for shadow casters,
-         * since a cutout casts through its albedo), decals, and the UI's commands (font atlas,
-         * image). A non-casting scene-wide object's material is left out; an offline capture
-         * that shades one calls ensureMaterial (see GLSceneCapture).
+         * Every RenderView list naming a handle is walked: the camera's objects and the
+         * scene-wide ones (mesh, material and its textures - every material, so an object first
+         * turned to uploads nothing that frame), decals, particle textures, and the UI's commands
+         * (font atlas, image).
          *
          * A missing GPU object skips a draw silently, so the walk names every RenderView member:
          * one added there fails to compile here until it has been classified.

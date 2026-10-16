@@ -71,24 +71,22 @@ class GLSceneCapture {
         /**
          * @brief Prepare the scene the captures after it draw.
          *
-         * Takes the view's scene-wide objects, not the camera's, syncing their materials into
-         * @p glView (GLView::sync skips most), and draws the sun's map fitted to @p region.
+         * Takes the view's scene-wide objects, not the camera's, as GLView::sync readied them in
+         * @p glView this frame, and draws the sun's map fitted to @p region.
          * The captured surfaces take their ambient from the sky until setAmbientVolume().
          *
-         * @param gl        Live GL context the shadow map is drawn on.
-         * @param view      Supplies the objects and the lights.
-         * @param glView    GPU resource mirror the capture draws through.
-         * @param resources Resolves the materials the frame has not synced.
-         * @param ibl       Global IBL: the ambient term while capturing, and the background.
-         * @param faceSize  Face resolution, every face camera's viewport.
-         * @param region    World box the captures describe (a probe's influence box, an irradiance
-         *                  volume), which the sun's shadow covers; outside is unshadowed.
+         * @param gl       Live GL context the shadow map is drawn on.
+         * @param view     Supplies the objects and the lights.
+         * @param glView   GPU resource mirror the capture draws through.
+         * @param ibl      Global IBL: the ambient term while capturing, and the background.
+         * @param faceSize Face resolution, every face camera's viewport.
+         * @param region   World box the captures describe (a probe's influence box, an irradiance
+         *                 volume), which the sun's shadow covers; outside is unshadowed.
          */
         void begin(
             Vkm::GL::Context& gl,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const GLIBL& ibl,
             float faceSize,
             const Math::AABB& region
@@ -101,17 +99,15 @@ class GLSceneCapture {
          * For a pass that lights what was captured before (GLIrradianceBaker::relight). A map
          * kept for the same sun and region is bound, not drawn again (GLCaptureShadow).
          *
-         * @param gl        Live GL context the shadow map is drawn on.
-         * @param view      Supplies the lights and the casters.
-         * @param glView    GPU resource mirror the casters draw through.
-         * @param resources Resolves the materials the frame has not synced.
-         * @param region    World box the sun's shadow covers.
+         * @param gl     Live GL context the shadow map is drawn on.
+         * @param view   Supplies the lights and the casters.
+         * @param glView GPU resource mirror the casters draw through.
+         * @param region World box the sun's shadow covers.
          */
         void beginLighting(
             Vkm::GL::Context& gl,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const Math::AABB& region
         );
 
@@ -233,17 +229,11 @@ class GLSceneCapture {
          * @brief Gather the scene-wide objects a capture draws and the sun's map casts.
          *
          * @param view        Supplies the objects.
-         * @param glView      GPU resource mirror whose materials are synced.
-         * @param resources   Resolves the materials the frame has not synced.
+         * @param glView      GPU resource mirror whose materials sort them.
          * @param castersOnly Gather the casters alone, the scene list's lead, for a map and no
          *                    capture.
          */
-        void gatherScene(
-            const RenderView& view,
-            GLView& glView,
-            const ResourceManager& resources,
-            bool castersOnly = false
-        );
+        void gatherScene(const RenderView& view, const GLView& glView, bool castersOnly = false);
 
         /**
          * @brief Attach face @p face, clear it, and put the camera on it.

@@ -109,7 +109,6 @@ void GLProbeManager::update(
     Vkm::GL::Context& gl,
     const RenderView& view,
     GLView& glView,
-    const ResourceManager& resources,
     const GLIBL& ibl,
     const GLIrradianceVolume* volume,
     const CaptureLighting& lighting
@@ -168,7 +167,7 @@ void GLProbeManager::update(
         // A probe being moved or resized bakes once it holds still; a new version is a request
         // to bake now, and a new lighting or a first bake does not wait either.
         if (st.baked && !forced && !relit && !(moved && st.seen.settled())) continue;
-        m_baker->bake(gl, *m_array, layer, pd, view, glView, resources, ibl, volume);
+        m_baker->bake(gl, *m_array, layer, pd, view, glView, ibl, volume);
         st.baked      = true;
         st.placed     = here;
         st.version    = pd.bakeVersion;
@@ -180,14 +179,13 @@ void GLProbeManager::update(
 
     // A bake is the frame's capture, and ended any refresh (GLProbeBaker::bake).
     if (rebakes > 0) return;
-    refresh(gl, view, glView, resources, ibl, volume);
+    refresh(gl, view, glView, ibl, volume);
 }
 
 void GLProbeManager::refresh(
     Vkm::GL::Context& gl,
     const RenderView& view,
     GLView& glView,
-    const ResourceManager& resources,
     const GLIBL& ibl,
     const GLIrradianceVolume* volume
 ) {
@@ -240,7 +238,7 @@ void GLProbeManager::refresh(
     PROFILE_SCOPE("Render/ProbeRefresh");
     PROFILE_GPU_SCOPE("Render/ProbeRefresh");
     const ProbeData& pd = view.probes[probe];
-    if (!m_baker->advance(gl, *m_array, m_refreshLayer, pd, view, glView, resources, ibl, volume)) return;
+    if (!m_baker->advance(gl, *m_array, m_refreshLayer, pd, view, glView, ibl, volume)) return;
 
     // Under the light it began under: one that changed since takes another refresh.
     BakeState& refreshed = m_state[static_cast<size_t>(m_refreshLayer)];

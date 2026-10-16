@@ -446,10 +446,10 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         m_opaqueBatcher.buildGrouped(m_opaque, *view.objects, m_view, m_skinPalette.count());
     }
 
-    // The mirrors' pictures see more than the camera does: what they draw is readied with the assets.
+    // What each mirror sees, out of the scene list whose materials the sync readied.
     {
         PROFILE_SCOPE("Render/PlanarPrepare");
-        m_planar->prepare(view, m_view, resources);
+        m_planar->prepare(view, m_view);
     }
 
     // Each pass binds and clears its own target.
@@ -545,7 +545,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     PROFILE_PLOT("Render/Exposure", static_cast<double>(ctx.exposure));
 
     // A frame with no camera gathered nothing to bake from.
-    if (view.hasCamera) bakeCaptures(view, resources);
+    if (view.hasCamera) bakeCaptures(view);
 
     // Every command reading what the frame streamed is issued: fence its region.
     m_view.stream().endFrame();
@@ -553,14 +553,14 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     PROFILE_GPU_COLLECT();
 }
 
-void GLBackend::bakeCaptures(const RenderView& view, const ResourceManager& resources) {
+void GLBackend::bakeCaptures(const RenderView& view) {
     // The lights that reach the volume, or the sky, changing light its surfels again, its geometry
     // kept; a lamp moving outside it does not.
     const IrradianceVolumeData& box = view.irradianceVolume;
     const Math::AABB within{box.center - box.halfExtents, box.center + box.halfExtents};
     const uint64_t   lights = lightingDigest(view.lights, view.hasIrradianceVolume ? &within : nullptr);
     const CaptureLighting volumeLighting{lights, m_ibl.version(), m_ibl.isReady()};
-    m_irradianceBaker.update(m_context, m_irradiance, view, m_view, resources, m_ibl, volumeLighting);
+    m_irradianceBaker.update(m_context, m_irradiance, view, m_view, m_ibl, volumeLighting);
 
     // Re-bake probes that are new, version-bumped, moved or resized and holding still, or lit by
     // an older volume, after the volume, which lights what they capture of it; refresh those
@@ -575,7 +575,7 @@ void GLBackend::bakeCaptures(const RenderView& view, const ResourceManager& reso
     probeLighting.skyReady        = m_ibl.isReady();
     probeLighting.volumeLight     = volume ? volume->lightId() : 0u;
     probeLighting.volumeIntensity = volume ? view.irradianceVolume.intensity : 0.0f;
-    m_probes.update(m_context, view, m_view, resources, m_ibl, volume, probeLighting);
+    m_probes.update(m_context, view, m_view, m_ibl, volume, probeLighting);
 }
 
 void GLBackend::bakeEnvironment(const std::string& path) {

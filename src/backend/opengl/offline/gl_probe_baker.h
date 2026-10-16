@@ -15,7 +15,6 @@ class GLIrradianceVolume;
 class GLProbeArray;
 class GLSceneCapture;
 class GLView;
-class ResourceManager;
 struct ProbeData;
 struct RenderView;
 
@@ -69,7 +68,6 @@ class GLProbeBaker {
          * @param probe     Where it stands and what box it covers.
          * @param view      Supplies the scene and its lights.
          * @param glView    GPU mirror the capture draws from.
-         * @param resources Resolves what the capture draws.
          * @param globalIBL The environment, the capture's backdrop and ambient.
          * @param volume    The baked irradiance volume, at the view's box, lighting the captured
          *                  surfaces it covers; null for none.
@@ -81,7 +79,6 @@ class GLProbeBaker {
             const ProbeData& probe,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const GLIBL& globalIBL,
             const GLIrradianceVolume* volume
         );
@@ -112,7 +109,6 @@ class GLProbeBaker {
          * @param probe     Where it stands and what box it covers.
          * @param view      Supplies the scene and its lights.
          * @param glView    GPU mirror the capture draws from.
-         * @param resources Resolves what the capture draws.
          * @param globalIBL The environment, the capture's backdrop and ambient.
          * @param volume    The irradiance volume lighting the captured surfaces; null for none.
          * @return Whether that was the last step, and @p layer now holds the refresh.
@@ -124,7 +120,6 @@ class GLProbeBaker {
             const ProbeData& probe,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const GLIBL& globalIBL,
             const GLIrradianceVolume* volume
         );
@@ -147,7 +142,6 @@ class GLProbeBaker {
          * @param probe     The probe captured.
          * @param view      Supplies the scene and its lights.
          * @param glView    GPU mirror the capture draws from.
-         * @param resources Resolves what the capture draws.
          * @param globalIBL The environment, the capture's backdrop and ambient.
          * @param volume    The irradiance volume lighting the captured surfaces; null for none.
          */
@@ -157,7 +151,6 @@ class GLProbeBaker {
             const ProbeData& probe,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const GLIBL& globalIBL,
             const GLIrradianceVolume* volume
         );
@@ -168,7 +161,6 @@ class GLProbeBaker {
             const ProbeData& probe,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const GLIBL& globalIBL,
             const GLIrradianceVolume* volume
         );

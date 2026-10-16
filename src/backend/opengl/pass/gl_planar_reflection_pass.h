@@ -24,7 +24,6 @@ class GLCamera;
 class GLParticlePass;
 class GLSceneCapture;
 class GLView;
-class ResourceManager;
 struct RenderView;
 
 /**
@@ -39,8 +38,8 @@ struct RenderView;
  * filtered as the reflection pass's own is, so a rough surface reads it blurred. No GTAO, screen
  * shadows, fog, decals or distortion: those are the camera's screen.
  *
- * prepare() runs before the passes, with the assets: it picks, culls and readies the materials
- * the mirrored camera sees, which the frame's sync leaves out. execute() draws after the shadows.
+ * prepare() runs before the passes, with the assets: it picks the reflectors and culls what each
+ * mirrored camera sees. execute() draws after the shadows.
  */
 class GLPlanarReflectionPass : public GLPass {
     public:
@@ -68,11 +67,11 @@ class GLPlanarReflectionPass : public GLPass {
         /**
          * @brief Pick this frame's reflectors and what each mirrored camera sees.
          *
-         * @param view      The frame.
-         * @param glView    GPU mirror; the materials the mirrors see are readied in it.
-         * @param resources Resolves those materials.
+         * @param view   The frame.
+         * @param glView GPU mirror, synced for @p view: its materials sort what is seen into
+         *               opaque and glass.
          */
-        void prepare(const RenderView& view, GLView& glView, const ResourceManager& resources);
+        void prepare(const RenderView& view, const GLView& glView);
 
         /// Draws the pictures, and leaves them for the reflection pass (GLFrameContext::planarPictures).
         void execute(GLFrameContext& ctx) override;

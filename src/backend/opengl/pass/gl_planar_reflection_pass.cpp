@@ -68,11 +68,7 @@ GLPlanarReflectionPass::GLPlanarReflectionPass(
 
 GLPlanarReflectionPass::~GLPlanarReflectionPass() = default;
 
-void GLPlanarReflectionPass::prepare(
-    const RenderView& view,
-    GLView& glView,
-    const ResourceManager& resources
-) {
+void GLPlanarReflectionPass::prepare(const RenderView& view, const GLView& glView) {
     m_count = 0;
     if (!view.hasCamera || view.planarReflectors.empty()) return;
 
@@ -124,17 +120,11 @@ void GLPlanarReflectionPass::prepare(
         const Math::Frustum mirrored = Math::extractFrustum(drawn.camera.viewProjection);
         drawn.objects.clear();
         drawn.glass.clear();
-        MaterialHandle lastMaterial;
         for (const uint32_t object : view.objects->scene) {
             if (draws[object].viewmodel) continue;
             if (reachInFront(bounds[object], drawn.plane) <= CLIP_OFFSET) continue;
             if (!Math::frustumIntersectsAABB(mirrored, bounds[object])) continue;
-            const MaterialHandle& handle = draws[object].material;
-            if (handle != lastMaterial) {
-                lastMaterial = handle;
-                glView.ensureMaterial(handle, resources);
-            }
-            const GLMaterial* material = glView.getMaterial(handle);
+            const GLMaterial* material = glView.getMaterial(draws[object].material);
             if (!material) continue;
             const bool glass = material->getType() == MaterialType::Transparent;
             (glass ? drawn.glass : drawn.objects).push_back(object);

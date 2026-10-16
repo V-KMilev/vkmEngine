@@ -170,38 +170,34 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
         // Props are placed in runs, so a handle is mostly the one before it: checked once a run.
         MeshHandle     runMesh;
         MaterialHandle runMaterial;
-        const auto ensureDraw = [&](const ObjectDraw& draw, bool material) {
+        const auto ensureDraw = [&](const ObjectDraw& draw) {
             if (draw.mesh != runMesh) {
                 ensure(m_meshes, draw.mesh, resources);
                 runMesh = draw.mesh;
             }
-            if (material && draw.material != runMaterial) {
+            if (draw.material != runMaterial) {
                 ensureMaterial(draw.material, resources);
                 runMaterial = draw.material;
             }
         };
         {
             PROFILE_SCOPE("SyncAssets/Drawables");
-            for (const uint32_t object : objects->visible) ensureDraw(draws[object], true);
+            for (const uint32_t object : objects->visible) ensureDraw(draws[object]);
         }
 
-        // The scene list's materials are left out (see GLSceneCapture), but
-        // for the casters, which lead the list: a cutout casts through its map. Walked whole only
-        // when the objects or the assets changed: otherwise every one was checked at its asset's
-        // version already, and the objects that changed are walked alone.
+        // The whole scene's meshes and materials, not only what the camera sees, so an object first
+        // turned to uploads nothing that frame. Walked whole when the objects or the assets changed
+        // (any ResourceManager commit, swap or replace); otherwise only the changed objects.
         {
-            PROFILE_SCOPE("SyncAssets/SceneMeshes");
+            PROFILE_SCOPE("SyncAssets/Scene");
             const bool whole = objects->allChanged || objects->serial != m_syncedSerial + 1
                 || resources.revision() != m_syncedRevision;
             m_syncedSerial = objects->serial;
             if (whole) {
-                const size_t casters = std::min<size_t>(objects->casterCount, objects->scene.size());
-                for (size_t i = 0; i < objects->scene.size(); ++i) {
-                    ensureDraw(draws[objects->scene[i]], i < casters);
-                }
+                for (const uint32_t object : objects->scene) ensureDraw(draws[object]);
                 m_syncedRevision = resources.revision();
             } else {
-                for (const uint32_t object : objects->changed) ensureDraw(draws[object], true);
+                for (const uint32_t object : objects->changed) ensureDraw(draws[object]);
             }
         }
     }
