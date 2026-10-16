@@ -50,8 +50,10 @@ constexpr std::array<TexField, MATERIAL_MAP_COUNT> MATERIAL_TEXTURE_FIELDS = {{
 }};
 #undef VKM_MATERIAL_MAP_FIELD
 
+using ::Vkm::Engine::detail::vec2ToJson;
 using ::Vkm::Engine::detail::vec3ToJson;
 using ::Vkm::Engine::detail::vec4ToJson;
+using ::Vkm::Engine::detail::jsonToVec2;
 using ::Vkm::Engine::detail::jsonToVec3;
 using ::Vkm::Engine::detail::jsonToVec4;
 
@@ -65,6 +67,7 @@ nlohmann::json materialToRecipe(const MaterialAsset& m, const ResourceManager& r
     Reflect::forEachField(m, [&](std::string_view name, const auto& val) {
         using V = std::decay_t<decltype(val)>;
         if      constexpr (std::is_same_v<V, MaterialType>) src[std::string(name)] = Reflect::enumName(val);
+        else if constexpr (std::is_same_v<V, glm::vec2>)    src[std::string(name)] = vec2ToJson(val);
         else if constexpr (std::is_same_v<V, glm::vec3>)    src[std::string(name)] = vec3ToJson(val);
         else if constexpr (std::is_same_v<V, glm::vec4>)    src[std::string(name)] = vec4ToJson(val);
         else                                                src[std::string(name)] = val;
@@ -111,6 +114,8 @@ MaterialAsset materialFromRecipe(const nlohmann::json& src, const ResourceManage
                     Reflect::enumName(val)
                 );
             }
+        } else if constexpr (std::is_same_v<V, glm::vec2>) {
+            val = jsonToVec2(src.value(key, nlohmann::json{}), val);
         } else if constexpr (std::is_same_v<V, glm::vec3>) {
             val = jsonToVec3(src.value(key, nlohmann::json{}), val);
         } else if constexpr (std::is_same_v<V, glm::vec4>) {

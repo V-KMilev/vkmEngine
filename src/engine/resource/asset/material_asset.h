@@ -111,6 +111,11 @@ struct MaterialAsset : public Resource {
 
     /// Parallax-occlusion depth scale (0: off; 0.02-0.1 typical)
     float heightScale = 0.0f;
+
+    /// Every map is read at uv * uvScale + uvOffset: how many times it repeats across the mesh's
+    /// UVs on each axis, and how far it slides - 200 lays a texture two hundred times along a field.
+    glm::vec2 uvScale  = {1.0f, 1.0f};
+    glm::vec2 uvOffset = {0.0f, 0.0f};
     /// Moved by the scene's Ocean: the surface rides its waves, the maps lie over the water by its
     /// detailScale, crests whiten with its foam, and it casts no shadow (see rendering.md, "The
     /// ocean"). With no ocean in the scene it draws, and casts, as an ordinary surface.
@@ -153,5 +158,7 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::MaterialAsset)
     VKM_F(attenuationDistance)
     VKM_F(attenuationColor)
     VKM_F(heightScale)
+    VKM_F(uvScale)
+    VKM_F(uvOffset)
     VKM_F(waves)
 VKM_REFLECT_END()

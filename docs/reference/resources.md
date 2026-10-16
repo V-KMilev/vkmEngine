@@ -150,7 +150,10 @@ A full PBR material: scalar properties (albedo, emission, metallic, roughness,
 IOR, transmission, alpha cutoff, double-sided, clearcoat, sheen, subsurface,
 anisotropy, parallax) and texture handles for each map. `MaterialType` is
 `Opaque`, `Transparent`, `Unlit` or `AlphaMask`; which bucket each draws in, and
-in what order, is [Rendering](rendering.md#the-passes-fixed-order)'s.
+in what order, is [Rendering](rendering.md#the-passes-fixed-order)'s. Every map
+is read at `uv * uvScale + uvOffset` (`materialUV` in `shaders/material.glsl`),
+so a ground texture repeats across a field; a glTF's `KHR_texture_transform` on
+its base colour imports as these, without its rotation.
 
 ### FontAsset
 

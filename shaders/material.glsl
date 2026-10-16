@@ -12,6 +12,7 @@ layout(std140, binding = UBO_MATERIAL) uniform MaterialBlock {
     vec4 sheenColor;           // rgb + sheenRoughness
     vec4 subsurfaceColor;      // rgb
     vec4 attenuationColor;     // rgb + attenuationDistance
+    vec4 uvTransform;          // uvScale in xy, uvOffset in zw
 
     float metallic;
     float roughness;
@@ -30,6 +31,11 @@ layout(std140, binding = UBO_MATERIAL) uniform MaterialBlock {
     int   textureFlags;
     int   waves;  // 1: the scene's ocean moves the surface (ocean.glsl)
 } u_material;
+
+// Where a mesh's uv reads the material's maps: repeated by uvScale, slid by uvOffset.
+vec2 materialUV(vec2 uv) {
+    return uv * u_material.uvTransform.xy + u_material.uvTransform.zw;
+}
 
 // Whether the material binds a map: textureFlags carries one bit per MATERIAL_SLOT_*.
 bool hasTex(int slot) {

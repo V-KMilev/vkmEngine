@@ -46,7 +46,7 @@ void main() {
     // A mirroring model turns the cross product the fragment rebuilds B with, so it turns the sign.
     vHandedness = aTangent.w * sign(determinant(mat3(model)));
 
-    vUV   = aUV;
+    vUV   = materialUV(aUV);
     vRest   = worldPos.xz;
     vHeight = 0.0;
     vAlongX = vec3(1.0, 0.0, 0.0);

@@ -6,6 +6,8 @@
 #include <nlohmann/json.hpp>
 
 #include "debug/engine_error_log.h"
+#include "io/asset/asset_serializer.h"
+#include "resource/asset/material_asset.h"
 #include "resource/asset/font_asset.h"
 #include "resource/asset_source_kind.h"
 #include "resource/texture_format.h"
@@ -427,6 +429,28 @@ void testABoneIsFoundWhateverItsRigsNamespace() {
 
 } // namespace
 
+// A material's tiling is part of its recipe: a field textured two hundred times across saves and loads
+// as such, and an old recipe without it reads untiled.
+void testAMaterialsTilingIsInItsRecipe() {
+    std::printf("A material's tiling, saved and read back:\n");
+    ResourceManager resources;
+    MaterialAsset field;
+    field.uvScale  = {200.0f, 120.0f};
+    field.uvOffset = {0.25f, -0.5f};
+    const nlohmann::json recipe = AssetSerializer::materialToRecipe(field, resources);
+    const MaterialAsset read = AssetSerializer::materialFromRecipe(recipe, resources);
+    check("the repeats come back", read.uvScale == field.uvScale);
+    check("  and the slide", read.uvOffset == field.uvOffset);
+    nlohmann::json old = recipe;
+    old.erase("uvScale");
+    old.erase("uvOffset");
+    const MaterialAsset untiled = AssetSerializer::materialFromRecipe(old, resources);
+    check(
+        "a recipe without them reads untiled",
+        untiled.uvScale == glm::vec2(1.0f) && untiled.uvOffset == glm::vec2(0.0f)
+    );
+}
+
 void runResourceTests() {
     testHandlesAndNames();
     testAHandleOutlivingItsAsset();
@@ -440,4 +464,5 @@ void runResourceTests() {
     testEveryImageDecodesToFormatsThatAgree();
     testFontsStayWhenTheGraphIsTraded();
     testABoneIsFoundWhateverItsRigsNamespace();
+    testAMaterialsTilingIsInItsRecipe();
 }

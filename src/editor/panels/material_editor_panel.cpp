@@ -1040,6 +1040,25 @@ bool MaterialEditorPanel::drawParameters(
                 "Parallax depth the height map displaces by. 0.02 to 0.1 is typical"
             );
         }
+        ImGui::Spacing();
+        changed |= propDrag2(
+            "Tiling",
+            &mat.uvScale.x,
+            0.05f,
+            -10000.0f,
+            10000.0f,
+            "%.2f",
+            "How many times every map repeats across the mesh's UVs, on each axis"
+        );
+        changed |= propDrag2(
+            "Offset",
+            &mat.uvOffset.x,
+            0.01f,
+            -10000.0f,
+            10000.0f,
+            "%.3f",
+            "How far every map slides, in repeats"
+        );
     }
     endComponentCard();
 

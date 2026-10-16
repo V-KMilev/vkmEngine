@@ -40,6 +40,7 @@ struct MaterialUBO {
     glm::vec4 sheenColor;           ///< rgb + sheenRoughness in w
     glm::vec4 subsurfaceColor;      ///< rgb, w unused
     glm::vec4 attenuationColor;     ///< rgb + attenuationDistance in w
+    glm::vec4 uvTransform;          ///< uvScale in xy, uvOffset in zw
 
     float metallic;
     float roughness;
@@ -58,7 +59,7 @@ struct MaterialUBO {
     int   textureFlags;  ///< Bit `1 << slot` set for each bound map (GLBindings::TextureSlots)
     int   waves;         ///< 1 where the scene's ocean moves the surface (shaders/ocean.glsl)
 };
-static_assert(sizeof(MaterialUBO) == 160, "MaterialUBO must match the std140 MaterialBlock layout");
+static_assert(sizeof(MaterialUBO) == 176, "MaterialUBO must match the std140 MaterialBlock layout");
 
 /**
  * @brief GPU copy of a material: the full PBR UBO plus its texture handles.

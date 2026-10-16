@@ -338,6 +338,16 @@ class GltfReader {
             mapTexture(out, material->emissive_texture, &MaterialAsset::emissionTexture, TextureUsage::Color);
             if (material->normal_texture.texture) v.normalScale = material->normal_texture.scale;
 
+            // KHR_texture_transform: the material reads every map at one uv, so the base colour's
+            // transform stands for all of them; a rotation is not carried. Its offset is glTF's, along
+            // a V that runs down the image, so it is turned for the flipped V the mesh is read with.
+            const cgltf_texture_view& base =
+                pbr.base_color_texture.texture ? pbr.base_color_texture : material->normal_texture;
+            if (base.has_transform) {
+                v.uvScale  = glm::make_vec2(base.transform.scale);
+                v.uvOffset = {base.transform.offset[0], 1.0f - v.uvScale.y - base.transform.offset[1]};
+            }
+
             if (material->has_emissive_strength) {
                 v.emissiveStrength = material->emissive_strength.emissive_strength;
             }

@@ -214,6 +214,20 @@ inline bool propDragInt(
     return propRow(label, tooltip, [&] { return ImGui::DragInt("##v", v, speed, lo, hi, "%d", PROP_CLAMP); });
 }
 
+inline bool propDrag2(
+    const char* label,
+    float* v,
+    float speed,
+    float lo,
+    float hi,
+    const char* fmt = "%.3f",
+    const char* tooltip = nullptr
+) {
+    return propRow(label, tooltip, [&] {
+        return ImGui::DragFloat2("##v", v, speed, lo, hi, fmt, PROP_CLAMP);
+    });
+}
+
 inline bool propDrag3(
     const char* label,
     float* v,

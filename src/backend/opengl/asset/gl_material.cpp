@@ -66,6 +66,7 @@ void GLMaterial::update(const MaterialAsset& material) {
     data.sheenColor          = glm::vec4(material.sheenColor, material.sheenRoughness);
     data.subsurfaceColor     = glm::vec4(material.subsurfaceColor, 0.0f);
     data.attenuationColor    = glm::vec4(material.attenuationColor, material.attenuationDistance);
+    data.uvTransform         = glm::vec4(material.uvScale, material.uvOffset);
 
     data.metallic           = material.metallic;
     data.roughness          = material.roughness;
