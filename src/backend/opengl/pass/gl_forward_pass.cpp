@@ -235,7 +235,9 @@ void GLForwardPass::bindFrameUniforms(Vkm::GL::Shader& shader, GLFrameContext& c
 void GLForwardPass::bindBucketUniforms(Vkm::GL::Shader& shader, GLFrameContext& ctx, Bucket bucket) const {
     // GTAO saw only what the prepass drew.
     bindAO(ctx, shader, bucket == Bucket::Opaque);
-    shader.setUniform1i("u_hasSceneColor", bucket == Bucket::Transparent ? 1 : 0);
+    // The plain programs are built without transmission, so they have nothing to refract.
+    const bool plain = &shader == &m_plainShader || &shader == &m_plainSkinnedShader;
+    if (!plain) shader.setUniform1i("u_hasSceneColor", bucket == Bucket::Transparent ? 1 : 0);
     shader.setUniform1i(
         "u_alphaToCoverage",
         (bucket == Bucket::AlphaMask && ctx.sceneRender.samples() > 1) ? 1 : 0
