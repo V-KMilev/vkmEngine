@@ -51,6 +51,7 @@ void buildLights(RenderView& view, const Scene& scene) {
         data.entitySlot = id.slot();
         data.color      = light.color;
         data.intensity  = light.intensity;
+        data.wave       = flickerWave(light, view.worldSeconds, id.slot());
         data.position   = position;
         data.direction  = Math::computeForward(rotation);
 
@@ -381,6 +382,7 @@ void RenderView::build(
             surfaceW,
             surfaceH,
             seconds,
+            worldClock,
             cameraData,
             cameraPresent,
             objectLists,

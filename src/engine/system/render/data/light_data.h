@@ -28,6 +28,7 @@ struct LightData {
     uint32_t  entitySlot = 0;
     glm::vec3 color;
     float     intensity;
+    float     wave = 1.0f;  ///< The share of intensity it shines with this frame (flickerWave)
     glm::vec3 position;
 
     glm::vec3 direction;    ///< Travel direction; used by directional/spot

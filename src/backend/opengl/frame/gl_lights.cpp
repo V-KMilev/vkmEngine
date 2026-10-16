@@ -26,7 +26,7 @@ void GLLights::update(const std::vector<LightData>& lights, LightSlots shadowSlo
         GpuLight& gpu = data.lights[i];
 
         gpu.position  = glm::vec4(light.position, static_cast<float>(light.type));
-        gpu.color     = glm::vec4(light.color, light.intensity);
+        gpu.color     = glm::vec4(light.color, light.intensity * light.wave);
         gpu.direction = glm::vec4(light.direction, light.radius);
         // w: the atlas slot this light's depth map lives in, or -1 - a
         // directional's cascade base, a spot's 2D slot, a point's cube.

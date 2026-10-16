@@ -29,7 +29,7 @@
     X("play",        runPlayTests,           "the editor play/stop snapshot, and who has the input") \
     X("undo",        runUndoTests,           "the editor's undo history")                  \
     X("culling",     runCullingTests,        "frustum and box tests, fixed meshes, the shadowed sun") \
-    X("sky",         runSkyTests,            "the sun: where the key light points, and its colour") \
+    X("sky",         runSkyTests,            "the sun: where the key light points, its colour; flicker") \
     X("ocean",       runOceanTests,          "the sea: how high the wind raises it, and where its water is") \
     X("animation",   runAnimationTests,      "AnimationTrack sampling and its boundaries") \
     X("particle",    runParticleTests,       "emitter spawn accounting")                   \

@@ -1551,6 +1551,12 @@ void InspectorPanel::drawLightSection(EditorContext& ec, EntityId id) {
                 sourceRadiusTooltip
             );
         }
+        if (light.type != LightType::Directional) {
+            const char* flickerTooltip =
+                "How deep the light wavers, as a fire's does: 0 holds it steady, 1 dips it to "
+                "dark. Shading alone - the intensity stays, and probes bake it steady";
+            changed |= propDrag("Flicker", &light.flicker, 0.01f, 0.0f, 1.0f, "%.2f", flickerTooltip);
+        }
         changed |= propCheckbox("Enabled", &light.enabled);
 
         return changed;

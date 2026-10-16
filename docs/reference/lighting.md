@@ -18,6 +18,12 @@ faces when `twoSided`).
 radians, a point or spot's emitter radius in metres. It sizes both the highlight
 and the shadow's penumbra; zero is a point source with hard shadows.
 
+`flicker` wavers a light as a fire does, by the world's clock (`flickerWave`),
+so every end of a networked game sees it alike. It scales the light as it is
+shaded, `LightData::wave`, never `intensity`: gameplay reads and the scene saves
+the steady value, and the probes and the irradiance volume, which rebake when a
+light changes, do not rebake every frame for it.
+
 The **key light** is `findKeyLight`: the lowest-slot enabled directional light.
 The sun a shadow is drawn for is `lowestSlotDirectionalCaster`, the lowest-slot
 directional light that casts - not always the key light.

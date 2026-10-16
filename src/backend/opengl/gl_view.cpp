@@ -135,6 +135,7 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
         surfaceWidth,
         surfaceHeight,
         frameSeconds,
+        worldSeconds,
         camera,
         hasCamera,
         objects,

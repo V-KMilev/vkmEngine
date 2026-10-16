@@ -66,7 +66,7 @@ namespace Vkm::Engine {
 
 namespace {
 
-static_assert(sizeof(LightData) == 108, "a field added to LightData goes in lightingDigest, or says why not");
+static_assert(sizeof(LightData) == 112, "a field added to LightData goes in lightingDigest, or says why not");
 
 /**
  * @brief A digest of what a capture reads of @p lights, field by field (no padding).
@@ -74,7 +74,8 @@ static_assert(sizeof(LightData) == 108, "a field added to LightData goes in ligh
  * Per type, what the irradiance relight and a probe capture read: a directional's slot and shadow
  * too, since the lowest-slot caster is the shadowed sun; no other light casts in a capture, and a
  * directional has no position, so a sun parented to a mover lights nothing anew. shadowDistance and
- * shadowPriority are left out, as a capture fits and keeps its own map.
+ * shadowPriority are left out, as a capture fits and keeps its own map, and a flicker's wave, as a
+ * capture takes a wavering light once rather than every frame.
  *
  * @param lights The frame's lights.
  * @return Their digest; equal digests light a capture alike.

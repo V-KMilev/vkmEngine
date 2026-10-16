@@ -51,6 +51,9 @@ struct RenderView {
     /// over time (auto-exposure) steps by.
     float frameSeconds = 0.0f;
 
+    /// The world's clock, as NetSession::worldTime gives it: what a flickering light wavers by.
+    double worldSeconds = 0.0;
+
     CameraData camera;  ///< The view Visibility culled for: the scene's camera or a host's.
     /**
      * @brief Whether a camera resolved this frame.

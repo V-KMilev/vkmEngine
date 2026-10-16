@@ -44,6 +44,7 @@ which resolves the handles it names); a backend consumes exactly this.
 | `viewportX` / `viewportY` / `viewportWidth` / `viewportHeight` | `uint32_t` | Scene render rect |
 | `surfaceWidth` / `surfaceHeight` | `uint32_t` | The backbuffer the viewport sits within |
 | `frameSeconds` | `float` | Wall-clock seconds since the last frame, for what adapts over time |
+| `worldSeconds` | `double` | The world's clock (`NetSession::worldTime`), which a light's `flicker` wavers by |
 | `camera` | `CameraData` | The view `Visibility` rendered through - the scene's camera or a host's ([visibility.md](visibility.md#where-the-view-comes-from)) |
 | `hasCamera` | `bool` | Without one the scene's lists stay empty, so a backend keeps what it baked |
 | `objects` | `const RenderObjects*` | Borrowed from `Visibility`. `visible` is what the camera sees, unsorted; `scene` is every drawn mesh, casters first (`casterCount`). Passes draw indices into it |
