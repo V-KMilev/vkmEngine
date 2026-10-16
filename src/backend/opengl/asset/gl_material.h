@@ -58,8 +58,10 @@ struct MaterialUBO {
     int   type;          ///< MaterialType as int (the shader branches on Unlit / AlphaMask)
     int   textureFlags;  ///< Bit `1 << slot` set for each bound map (GLBindings::TextureSlots)
     int   waves;         ///< 1 where the scene's ocean moves the surface (shaders/ocean.glsl)
+    float boxMapping;    ///< MaterialAsset::boxMapping: metres a repeat, 0 for the mesh's UVs
+    float pad0, pad1, pad2;
 };
-static_assert(sizeof(MaterialUBO) == 176, "MaterialUBO must match the std140 MaterialBlock layout");
+static_assert(sizeof(MaterialUBO) == 192, "MaterialUBO must match the std140 MaterialBlock layout");
 
 /**
  * @brief GPU copy of a material: the full PBR UBO plus its texture handles.

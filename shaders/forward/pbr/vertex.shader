@@ -47,6 +47,14 @@ void main() {
     vHandedness = aTangent.w * sign(determinant(mat3(model)));
 
     vUV   = materialUV(aUV);
+#ifndef SKINNED
+    if (u_material.boxMapping > 0.0) {
+        vec3 faceTangent;
+        vUV         = materialUV(boxUV(model, aPos, aNormal, faceTangent));
+        vTangent    = normalize(mat3(model) * faceTangent);
+        vHandedness = sign(determinant(mat3(model)));
+    }
+#endif
     vRest   = worldPos.xz;
     vHeight = 0.0;
     vAlongX = vec3(1.0, 0.0, 0.0);

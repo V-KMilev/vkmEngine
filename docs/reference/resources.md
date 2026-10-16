@@ -150,10 +150,17 @@ A full PBR material: scalar properties (albedo, emission, metallic, roughness,
 IOR, transmission, alpha cutoff, double-sided, clearcoat, sheen, subsurface,
 anisotropy, parallax) and texture handles for each map. `MaterialType` is
 `Opaque`, `Transparent`, `Unlit` or `AlphaMask`; which bucket each draws in, and
-in what order, is [Rendering](rendering.md#the-passes-fixed-order)'s. Every map
-is read at `uv * uvScale + uvOffset` (`materialUV` in `shaders/material.glsl`),
-so a ground texture repeats across a field; a glTF's `KHR_texture_transform` on
-its base colour imports as these, without its rotation.
+in what order, is [Rendering](rendering.md#the-passes-fixed-order)'s. A mesh's
+maps are read at `uv * uvScale + uvOffset` (`materialUV` in
+`shaders/material.glsl`), so a ground texture repeats across a field - its
+texture's recipe needs `"wrap": "repeat"`, as a file's clamps by default; a
+glTF's `KHR_texture_transform` on its base colour (else its normal map) imports
+as these, without its rotation. A decal and an ocean's surface lay their maps
+their own way. `boxMapping` reads the uv off the object's own box instead
+(`boxUV`): where a point lies in its frame at the size it is drawn, on the face
+its normal most nearly turns to, so a cube stretched into a beam keeps its
+texture square and the texture moves with it. It suits boxes and faceted
+meshes; a smooth one shows seams.
 
 ### FontAsset
 

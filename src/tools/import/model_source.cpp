@@ -339,7 +339,8 @@ class GltfReader {
             if (material->normal_texture.texture) v.normalScale = material->normal_texture.scale;
 
             // KHR_texture_transform: the material reads every map at one uv, so the base colour's
-            // transform stands for all of them; a rotation is not carried. Its offset is glTF's, along
+            // transform stands for all of them - the normal map's, with no base colour; a rotation
+            // is not carried. Its offset is glTF's, along
             // a V that runs down the image, so it is turned for the flipped V the mesh is read with.
             const cgltf_texture_view& base =
                 pbr.base_color_texture.texture ? pbr.base_color_texture : material->normal_texture;

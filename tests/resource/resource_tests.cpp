@@ -427,8 +427,6 @@ void testABoneIsFoundWhateverItsRigsNamespace() {
     check("  and a bone the rig lacks is -1", rig.indexOfUnqualified("Head") == -1);
 }
 
-} // namespace
-
 // A material's tiling is part of its recipe: a field textured two hundred times across saves and loads
 // as such, and an old recipe without it reads untiled.
 void testAMaterialsTilingIsInItsRecipe() {
@@ -437,10 +435,12 @@ void testAMaterialsTilingIsInItsRecipe() {
     MaterialAsset field;
     field.uvScale  = {200.0f, 120.0f};
     field.uvOffset = {0.25f, -0.5f};
+    field.boxMapping = 2.5f;
     const nlohmann::json recipe = AssetSerializer::materialToRecipe(field, resources);
     const MaterialAsset read = AssetSerializer::materialFromRecipe(recipe, resources);
     check("the repeats come back", read.uvScale == field.uvScale);
     check("  and the slide", read.uvOffset == field.uvOffset);
+    check("  and the box it is mapped by", read.boxMapping == 2.5f);
     nlohmann::json old = recipe;
     old.erase("uvScale");
     old.erase("uvOffset");
@@ -450,6 +450,8 @@ void testAMaterialsTilingIsInItsRecipe() {
         untiled.uvScale == glm::vec2(1.0f) && untiled.uvOffset == glm::vec2(0.0f)
     );
 }
+
+} // namespace
 
 void runResourceTests() {
     testHandlesAndNames();

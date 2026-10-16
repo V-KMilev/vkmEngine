@@ -16,5 +16,9 @@ void main() {
     vWorldPos   = worldPos.xyz;
     vNormal     = normalize(normalMatrix(instanceModel()) * aNormal);
     vUV         = materialUV(aUV);
+    if (u_material.boxMapping > 0.0) {
+        vec3 faceTangent;
+        vUV = materialUV(boxUV(instanceModel(), aPos, aNormal, faceTangent));
+    }
     gl_Position = u_camera.viewProjection * worldPos;
 }

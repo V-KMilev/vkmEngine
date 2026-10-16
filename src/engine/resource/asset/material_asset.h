@@ -112,10 +112,19 @@ struct MaterialAsset : public Resource {
     /// Parallax-occlusion depth scale (0: off; 0.02-0.1 typical)
     float heightScale = 0.0f;
 
-    /// Every map is read at uv * uvScale + uvOffset: how many times it repeats across the mesh's
-    /// UVs on each axis, and how far it slides - 200 lays a texture two hundred times along a field.
+    /// A mesh's maps are read at uv * uvScale + uvOffset: how many times they repeat across its UVs
+    /// on each axis, and how far they slide - 200 lays a texture two hundred times along a field. A
+    /// decal, which lays its maps over its box, and an ocean's surface (waves) read neither.
     glm::vec2 uvScale  = {1.0f, 1.0f};
     glm::vec2 uvOffset = {0.0f, 0.0f};
+
+    /// Metres one repeat of the maps spans when box-mapped: the uv is read off where a point lies
+    /// in its object's own frame, at the size the object is drawn, on the face its normal most nearly
+    /// turns to - so a stretched cube is not a stretched texture, and the texture stays on the object
+    /// as it moves. 0 reads the mesh's UVs. Made for boxes and faceted meshes: a smooth one shows a
+    /// seam where its normal turns from one face to the next. Unskinned meshes; a skinned one keeps
+    /// its UVs.
+    float boxMapping = 0.0f;
     /// Moved by the scene's Ocean: the surface rides its waves, the maps lie over the water by its
     /// detailScale, crests whiten with its foam, and it casts no shadow (see rendering.md, "The
     /// ocean"). With no ocean in the scene it draws, and casts, as an ordinary surface.
@@ -160,5 +169,6 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::MaterialAsset)
     VKM_F(heightScale)
     VKM_F(uvScale)
     VKM_F(uvOffset)
+    VKM_F(boxMapping)
     VKM_F(waves)
 VKM_REFLECT_END()
