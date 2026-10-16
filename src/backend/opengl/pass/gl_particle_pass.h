@@ -80,8 +80,9 @@ class GLParticlePass : public GLPass {
          * @param shader    The program drawing the run.
          * @param texture   ParticleData::params.z: 0 for none, else 1 + its place in the list.
          * @param normalMap ParticleData::uvNext.w, the same way; billboards alone read one.
+         * @return False while the run's texture is still loading: the run is not drawn.
          */
-        void bindTexture(GLFrameContext& ctx, Vkm::GL::Shader& shader, float texture, float normalMap = 0.0f);
+        bool bindTexture(GLFrameContext& ctx, Vkm::GL::Shader& shader, float texture, float normalMap = 0.0f);
 
         /**
          * @brief Upload @p batch to the instance SSBO and draw it, an instanced quad call a run.

@@ -154,6 +154,19 @@ class GLView {
         uint64_t textureUploadId(const TextureHandle& handle) const;
 
         /**
+         * @brief Whether @p handle settled with no pixels: its decode failed or its file is gone.
+         *
+         * It stays so until the graph is invalidated, pixels that come later or not: ask
+         * getTexture() first.
+         *
+         * @param handle The texture asked about.
+         * @return False while it is still loading.
+         */
+        bool textureFailed(const TextureHandle& handle) const {
+            return m_reportedMissing.count(handle.id()) > 0;
+        }
+
+        /**
          * @brief The magenta/black checkerboard bound wherever a real texture should be but isn't.
          *
          * Built on first use.
@@ -251,7 +264,7 @@ class GLView {
         // Outside the tables: it belongs to no asset, and must survive a graph swap, when things go missing.
         mutable std::unique_ptr<Vkm::GL::Texture2D> m_missingTexture;
 
-        /// Texture ids already warned about, so the log stays one line per asset.
+        /// Texture ids that settled with no pixels, each warned about once.
         std::unordered_set<uint32_t> m_reportedMissing;
 
         /// The filtering and anisotropy every texture was last given.

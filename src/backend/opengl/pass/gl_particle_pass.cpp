@@ -65,23 +65,28 @@ void GLParticlePass::sortBillboards(
     for (size_t i = 0; i < m_order.size(); ++i) m_sorted[i] = particles[m_order[i].index];
 }
 
-void GLParticlePass::bindTexture(
+bool GLParticlePass::bindTexture(
     GLFrameContext& ctx,
     Vkm::GL::Shader& shader,
     float texture,
     float normalMap
 ) {
-    // 0 is none; a texture loading or failed shows the missing checker, as a map would.
+    // 0 is none. A failed texture shows the missing checker, as a map would; one still loading
+    // answers false, since a checker square in a puff of smoke would flash for the frames it takes.
     const auto bind = [&](float place, const char* flag, uint32_t slot) {
         const auto index = static_cast<size_t>(place);
-        shader.setUniform1i(flag, index > 0 ? 1 : 0);
-        if (index == 0 || index > ctx.view.particleTextures.size()) return;
-        const Vkm::GL::Texture2D* image = ctx.resources.getTexture(ctx.view.particleTextures[index - 1]);
-        if (!image) image = &ctx.resources.missingTexture();
-        image->bindSlot(slot);
+        const bool listed = index > 0 && index <= ctx.view.particleTextures.size();
+        const TextureHandle handle = listed ? ctx.view.particleTextures[index - 1] : TextureHandle{};
+        const Vkm::GL::Texture2D* image = listed ? ctx.resources.getTexture(handle) : nullptr;
+        if (listed && !image && ctx.resources.textureFailed(handle)) image = &ctx.resources.missingTexture();
+        shader.setUniform1i(flag, image ? 1 : 0);
+        if (image) image->bindSlot(slot);
+        return image || !listed;
     };
-    bind(texture, "u_textured", GLBindings::ParticleTextureSlots::SPRITE);
+    if (!bind(texture, "u_textured", GLBindings::ParticleTextureSlots::SPRITE)) return false;
+    // A normal map still loading is left out: the run is lit as a ball until it comes.
     if (&shader == &m_shader) bind(normalMap, "u_normalMapped", GLBindings::ParticleTextureSlots::NORMAL);
+    return true;
 }
 
 void GLParticlePass::drawBillboards(GLFrameContext& ctx, const std::vector<ParticleData>& batch) {
@@ -95,18 +100,20 @@ void GLParticlePass::drawBillboards(GLFrameContext& ctx, const std::vector<Parti
     Vkm::GL::bindRange(GL_SHADER_STORAGE_BUFFER, GLBindings::SSBOBindingPoints::PARTICLES, instances);
 
     // Attribute-less: per-particle data is read from the SSBO by gl_InstanceID plus the run's
-    // first, and core profile still wants a VAO bound to draw. A run per texture in a row.
+    // first, and core profile still wants a VAO bound to draw. A run per texture and normal map in a
+    // row.
     m_shader.bind();
     ctx.screenTri.bind();
     for (uint32_t first = 0; first < count;) {
         uint32_t end = first + 1;
         while (end < count && batch[end].params.z == batch[first].params.z
-               && batch[end].uvNext.w == batch[first].uvNext.w) {
+            && batch[end].uvNext.w == batch[first].uvNext.w) {
             ++end;
         }
-        bindTexture(ctx, m_shader, batch[first].params.z, batch[first].uvNext.w);
-        m_shader.setUniform1i("u_firstInstance", static_cast<int>(first));
-        VKM_GL_CHECK(glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, static_cast<GLsizei>(end - first)));
+        if (bindTexture(ctx, m_shader, batch[first].params.z, batch[first].uvNext.w)) {
+            m_shader.setUniform1i("u_firstInstance", static_cast<int>(first));
+            VKM_GL_CHECK(glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, static_cast<GLsizei>(end - first)));
+        }
         first = end;
     }
 }
@@ -141,15 +148,16 @@ void GLParticlePass::drawStrips(GLFrameContext& ctx, const std::vector<ParticleS
             m_counts.push_back(static_cast<int32_t>(m_strips[end].count * 2));
             ++end;
         }
-        bindTexture(ctx, m_strip, m_strips[first].texture);
-        VKM_GL_CHECK(
-            glMultiDrawArrays(
-                GL_TRIANGLE_STRIP,
-                m_firsts.data(),
-                m_counts.data(),
-                static_cast<GLsizei>(m_firsts.size())
-            )
-        );
+        if (bindTexture(ctx, m_strip, m_strips[first].texture)) {
+            VKM_GL_CHECK(
+                glMultiDrawArrays(
+                    GL_TRIANGLE_STRIP,
+                    m_firsts.data(),
+                    m_counts.data(),
+                    static_cast<GLsizei>(m_firsts.size())
+                )
+            );
+        }
         first = end;
     }
 }

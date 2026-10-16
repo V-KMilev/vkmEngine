@@ -3145,6 +3145,47 @@ void testAFlatNormalMapFacesThePuffToTheEye(int& failures) {
     expect("a flat normal map shades the puff as the ball's middle", alike, failures);
 }
 
+// A particle whose sprite is still loading is not drawn, where the missing-texture checker would
+// show for a frame; one whose sprite settled with no pixels shows the checker.
+void testAParticleWaitsForItsSprite(int& failures) {
+    std::printf("A puff whose sprite has no pixels:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    enum class Sprite { None, Loading, Failed };
+    std::vector<unsigned char> frames[3];
+    for (const Sprite sprite : {Sprite::None, Sprite::Loading, Sprite::Failed}) {
+        const auto build = [sprite](Scenery& s) {
+            base(s);
+            if (sprite != Sprite::None) {
+                TextureAsset empty;
+                empty.params.width  = 8;
+                empty.params.height = 8;
+                empty.loading       = sprite == Sprite::Loading;
+                ParticleEmitter puff;
+                puff.blend   = ParticleBlend::Alpha;
+                puff.texture = s.resources.add(std::move(empty), "golden:empty");
+                holdLook(puff, glm::vec4(1.0f));
+                Particle p;
+                p.position = {0.0f, 1.2f, 0.0f};
+                p.size     = 0.6f;
+                addEmitter(s, puff).push_back(p);
+            }
+            sunAndCamera(s, {0.0f, 1.2f, 4.0f}, {0.0f, 1.2f, 0.0f});
+        };
+        frames[static_cast<int>(sprite)] = freshFrame(build, settings, failures);
+        if (frames[static_cast<int>(sprite)].empty()) return;
+    }
+    const float loading = differingShare(frames[1], frames[0].data());
+    const float failed  = differingShare(frames[2], frames[0].data());
+    std::printf(
+        "      %.2f%% of pixels differ while it loads, %.2f%% once it failed\n",
+        loading * 100.0f,
+        failed * 100.0f
+    );
+    expect("a puff whose sprite is loading is not drawn", loading <= PIXEL_TOLERANCE, failures);
+    expect("  and one whose sprite failed shows the checker", failed > PIXEL_TOLERANCE, failures);
+}
+
 // Haze moves the wall behind it and adds no light; a ribbon covers the pixels between its points.
 // Behaviour, not pixels: any device judges it, not only the one the goldens were made on.
 void testHazeBendsAndARibbonCovers(int& failures) {
@@ -3584,6 +3625,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testSmokeIsShadowedAndSparksAreNot(failures);
     testHazeBendsAndARibbonCovers(failures);
     testAFlatNormalMapFacesThePuffToTheEye(failures);
+    testAParticleWaitsForItsSprite(failures);
     testAGlossyFloorReflectsInNoRows(failures);
     testADecalIsLitAsTheFloorUnderIt(failures);
     testSmokeIsLitWhereItIs(failures);
