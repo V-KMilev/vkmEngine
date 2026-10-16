@@ -157,6 +157,9 @@ if(NOT VKM_SHIPPING)
     endforeach()
     install(DIRECTORY ${CMAKE_SOURCE_DIR}/templates ${CMAKE_SOURCE_DIR}/examples DESTINATION . ${_vkm_skip})
 
+    # What the editor's Create > Effect copies into a project: packs laid out as a project is.
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/content DESTINATION .)
+
     # The engine's license, and what to do first, at the SDK root.
     install(FILES ${CMAKE_SOURCE_DIR}/LICENSE DESTINATION .)
     install(FILES ${CMAKE_SOURCE_DIR}/tools/install/sdk_readme.md DESTINATION . RENAME README.md)

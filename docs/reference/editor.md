@@ -364,6 +364,25 @@ share one mesh and one `material:default`. A material of its own comes from
 **Duplicate** or **New**, which copy the default rather than rename it -
 renaming would pull `material:default` from under everything that names it.
 
+### What Create > Effect brings into the project
+
+The engine ships effects - an explosion, a campfire, a torch, a plume of smoke -
+as a pack under `ProjectPaths::engineContent()`, `content/effects/`, laid out as
+a project is: textures and sounds in `assets/effects/`, prefabs in
+`prefabs/effects/`, their recipes in `library/`. The menu lists the pack's
+prefabs; choosing one copies each file of the pack the project lacks to the same
+path in the project, then places the prefab as **Prefab** does
+(`EditorActions::placeEffect`).
+
+- **The project owns its copy.** It cooks, ships and edits it as its own; a
+  file it already has is never overwritten, so an edited effect stays edited
+  and an engine update does not reach it. Delete a file to take the engine's
+  again.
+- **An effect cleans up after itself.** Each root is `NetLocal` - every end of a
+  game spawns its own - and a one-off is rooted on its longest-lived emitter,
+  whose `destroyWhenSpent` takes the rest with it, the explosion's scorch mark
+  included.
+
 ## Prefabs
 
 ### What an instance will not let you do
@@ -547,7 +566,7 @@ Every directory under `src/editor/` is one responsibility:
 |---|---|
 | *(root)* | `EditorSystem`, `EditorState`, `EditorContext`, `EditorSettings`, and `editor_actions` - the scene mutations panels invoke |
 | `command/` | Undo: `Command`, `CommandStack`, the commands, `EditScope`/`editStep`/`pushEdit`, `CommandHost::pushStep`, prefab-override bookkeeping. Reaches the editor through `CommandHost`, so it tests without a window |
-| `session/` | What outlives a frame: `SceneIOController`, `ProjectController`, `PlaySnapshot`, `BuildController`, the material preview cache |
+| `session/` | What outlives a frame, and the project's files: `SceneIOController`, `ProjectController`, `PlaySnapshot`, `BuildController`, the material preview cache, `ContentPack` (the engine's packs brought into a project) |
 | `panels/` | One file per panel, owning only its own widget state |
 | `overlays/` | Drawn over the viewport: gizmo, tool strip and view bar, playbar, navigation axes |
 | `chrome/` | Drawn around the panels: menu bar, status bar, default layout, and the menus' dialogs, drawn at the menu bar's scope so a closing menu does not take them |

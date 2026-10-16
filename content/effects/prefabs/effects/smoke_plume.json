@@ -1,0 +1,156 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [],
+    "meshes": [],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/effects/smoke.png"
+      },
+      {
+        "name": "assets/effects/smoke_normal.png"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "Smoke Plume"
+        },
+        "NetLocal": {},
+        "ParticleEmitter": {
+          "acceleration": [
+            0.3499999940395355,
+            0.550000011920929,
+            0.10000000149011612
+          ],
+          "angle": 0.4363323152065277,
+          "blend": "Alpha",
+          "bounce": 0.30000001192092896,
+          "burst": 0,
+          "collide": false,
+          "color": {
+            "keys": [
+              {
+                "color": [
+                  0.07000000029802322,
+                  0.06719999760389328,
+                  0.06440000236034393,
+                  0.550000011920929
+                ],
+                "time": 0.0
+              },
+              {
+                "color": [
+                  0.08399999886751175,
+                  0.08399999886751175,
+                  0.08399999886751175,
+                  0.33000001311302185
+                ],
+                "time": 0.44999998807907104
+              },
+              {
+                "color": [
+                  0.09799999743700027,
+                  0.09799999743700027,
+                  0.09799999743700027,
+                  0.0
+                ],
+                "time": 1.0
+              }
+            ]
+          },
+          "destroyWhenSpent": false,
+          "distortion": 0.029999999329447746,
+          "drag": 0.30000001192092896,
+          "emission": 0.0,
+          "emitting": true,
+          "fromSurface": false,
+          "halfExtents": [
+            0.5,
+            0.5,
+            0.5
+          ],
+          "inheritVelocity": 0.0,
+          "intensity": 1.0,
+          "lifeLostOnHit": 0.0,
+          "lifetime": {
+            "max": 8.0,
+            "min": 5.0
+          },
+          "maxParticles": 40,
+          "normalMap": "assets/effects/smoke_normal.png",
+          "radius": 0.17499999701976776,
+          "randomFrame": false,
+          "rate": 1.75,
+          "ratePerMetre": 0.0,
+          "render": "Billboard",
+          "rotation": {
+            "max": 6.283199787139893,
+            "min": 0.0
+          },
+          "seenBy": "All",
+          "shape": "Disc",
+          "sheetBlend": true,
+          "sheetColumns": 8,
+          "sheetFps": 0.0,
+          "sheetRows": 8,
+          "size": {
+            "max": 0.8500000238418579,
+            "min": 0.5
+          },
+          "sizeOverLife": {
+            "keys": [
+              {
+                "time": 0.0,
+                "value": 0.5
+              },
+              {
+                "time": 1.0,
+                "value": 3.4000000953674316
+              }
+            ]
+          },
+          "softness": 1.0,
+          "speed": {
+            "max": 0.8999999761581421,
+            "min": 0.5
+          },
+          "spin": {
+            "max": 0.30000001192092896,
+            "min": -0.30000001192092896
+          },
+          "stretch": 0.05000000074505806,
+          "texture": "assets/effects/smoke.png",
+          "trailLength": 0.30000001192092896,
+          "turbulence": 0.25,
+          "turbulenceScale": 2.5
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    }
+  ],
+  "nextUid": 1,
+  "version": 3
+}

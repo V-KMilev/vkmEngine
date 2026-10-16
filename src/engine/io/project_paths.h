@@ -109,6 +109,8 @@ std::string toProjectRelative(const std::string& path);
 inline std::filesystem::path engineShaders() { return engineRoot() / "shaders"; }
 inline std::filesystem::path engineAssets()  { return engineRoot() / "assets"; }
 inline std::filesystem::path engineFonts()   { return engineAssets() / "fonts"; }
+/// The engine's content packs (see ContentPack).
+inline std::filesystem::path engineContent() { return engineRoot() / "content"; }
 
 /**
  * @brief Directory the project keeps its built gameplay module in.

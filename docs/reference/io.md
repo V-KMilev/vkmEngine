@@ -49,7 +49,7 @@ owns them:
 
 | Root | Owns | Helpers |
 |------|------|---------|
-| `engineRoot()` | What ships with the engine, read-only to a game. One copy serves every project | `engineShaders()`, `engineAssets()`, `engineFonts()` |
+| `engineRoot()` | What ships with the engine, read-only to a game. One copy serves every project | `engineShaders()`, `engineAssets()`, `engineFonts()`, `engineContent()` (packs the editor copies into a project, never read in place) |
 | `projectRoot()` | The game being made: its content, its code, its asset database | `assets()`, `scenes()`, `prefabs()`, `envs()`, `library()`, `cooked()`, `projectBin()` |
 | `userRoot()` | How one person likes their tools, across every project and every engine install | `userLogs()`, a sibling under the platform's *state* directory rather than a child of this root |
 | `playerRoot(game)` | What a game writes for its player - settings, a profile, saves - in a folder of the game's own name beside the engine's own user folder | |
