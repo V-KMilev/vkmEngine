@@ -738,12 +738,27 @@ void testASheetPlaysOnceOverALifeOrAtItsRate() {
     ParticleEmitter e;
     e.sheetColumns = 2;
     e.sheetRows    = 2;
-    const bool once = sheetFrameAt(e, 0.0f, 4.0f, 0) == 0 && sheetFrameAt(e, 1.5f, 4.0f, 0) == 1
-        && sheetFrameAt(e, 3.9f, 4.0f, 0) == 3 && sheetFrameAt(e, 4.0f, 4.0f, 0) == 3;
+    const auto frameAt = [&](float age, uint32_t start) { return sheetFrameAt(e, age, 4.0f, start).frame; };
+    const bool once = frameAt(0.0f, 0) == 0 && frameAt(1.5f, 0) == 1 && frameAt(3.9f, 0) == 3
+        && frameAt(4.0f, 0) == 3;
     check("over a life, a quarter of it each, held on the last", once);
-    check("  from the frame it was born on, round the sheet", sheetFrameAt(e, 1.5f, 4.0f, 3) == 0);
+    check("  from the frame it was born on, round the sheet", frameAt(1.5f, 3) == 0);
+
+    // Cross-faded, a life of four frames spans three fades and ends on the last frame whole.
+    e.sheetBlend = true;
+    const SheetFrame mid = sheetFrameAt(e, 2.0f, 4.0f, 0);
+    const SheetFrame end = sheetFrameAt(e, 4.0f, 4.0f, 0);
+    const bool halfway = mid.frame == 1 && mid.next == 2 && std::abs(mid.blend - 0.5f) < 1e-5f;
+    check("cross-faded, halfway through a life is halfway from frame 1 into 2", halfway);
+    check("  and its end is the last frame, faded into nothing", end.frame == 3 && end.blend == 0.0f);
+    e.sheetBlend = false;
+
     e.sheetFps = 10.0f;
-    check("at a rate, looping", sheetFrameAt(e, 0.25f, 4.0f, 0) == 2 && sheetFrameAt(e, 0.45f, 4.0f, 0) == 0);
+    check("at a rate, looping", frameAt(0.25f, 0) == 2 && frameAt(0.45f, 0) == 0);
+    e.sheetBlend = true;
+    const SheetFrame wrap = sheetFrameAt(e, 0.35f, 4.0f, 0);
+    const bool round = wrap.frame == 3 && wrap.next == 0 && std::abs(wrap.blend - 0.5f) < 1e-4f;
+    check("  cross-faded, the last frame into the first", round);
     e.sheetColumns = 0;
     check("a sheet of no columns is one column", sheetFrames(e) == 2);
 }

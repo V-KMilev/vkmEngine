@@ -54,7 +54,7 @@ which resolves the handles it names); a backend consumes exactly this.
 | `particlesAdditive` / `particlesAlpha` / `particlesDistortion` | `vector<ParticleData>` | Billboards and streaks split by blend, unsorted |
 | `stripPoints` | `vector<StripPoint>` | Every ribbon's and trail's points, each strip's run in turn |
 | `stripsAdditive` / `stripsAlpha` / `stripsDistortion` | `vector<ParticleStrip>` | Each strip's run of `stripPoints`, split by blend |
-| `particleTextures` | `vector<TextureHandle>` | Each particle texture once; a billboard names its own by `params.z`, a strip by `ParticleStrip::texture` (0 is the soft shape) |
+| `particleTextures` | `vector<TextureHandle>` | Each particle texture once; a billboard names its own by `params.z` and its normal map by `uvNext.w`, a strip by `ParticleStrip::texture` (0 is none: the soft shape, or no normal map) |
 | `ocean` | `OceanData` | The sea at the frame's moment - [The ocean](#the-ocean) |
 | `irradianceVolume` / `hasIrradianceVolume` | `IrradianceVolumeData` + `bool` | The scene's one baked-GI volume (`findIrradianceVolume`) |
 | `settings` | `RenderSettings` | Copied each frame |
@@ -312,6 +312,10 @@ lists the pass reads. The fields are documented in
 - **A sub-emitter is a child.** A child entity with a `ParticleEmitter` and a
   `ParticleTrigger` spawns where its parent's particles are born, die or strike,
   and never by its own rate or burst; no entity reference is saved.
+- **A flipbook** is a texture read as a sheet of frames. `sheetBlend` fades
+  each frame into the next, so a sheet of a few dozen frames plays slowly
+  without stepping. An alpha emitter's `normalMap` is a second sheet, frame for
+  frame, that lights each puff by its own folds instead of as a ball.
 - **A one-off puff** is an emitter with `emitting` off, a `burst` and
   `destroyWhenSpent`: the burst spawns whole, and the entity is destroyed once
   the last particle dies. An emitter is spent only once it has fired.

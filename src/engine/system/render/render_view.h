@@ -75,11 +75,12 @@ struct RenderView {
     std::vector<ParticleData>         particlesAlpha;       ///< Unsorted; the backend orders them.
     std::vector<ParticleData>         particlesDistortion;  ///< Unsorted; the backend orders them.
     std::vector<StripPoint>           stripPoints;          ///< Every strip's points, a strip's together.
-    std::vector<ParticleStrip>        stripsAdditive;       ///< Ribbons and trails, blended as particles.
+    std::vector<ParticleStrip>        stripsAdditive;       ///< Ribbons and trails; order-independent.
     std::vector<ParticleStrip>        stripsAlpha;          ///< Unsorted; the backend orders them.
     std::vector<ParticleStrip>        stripsDistortion;     ///< Unsorted; the backend orders them.
 
-    /// What they show, by ParticleData::params.z or ParticleStrip::texture, less one.
+    /// What they show, by ParticleData::params.z or ParticleStrip::texture, less one, and an alpha
+    /// billboard's normal map by ParticleData::uvNext.w.
     std::vector<TextureHandle> particleTextures;
 
     /**

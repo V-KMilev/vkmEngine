@@ -19,6 +19,8 @@ struct Particle {
                         // w = 1 on the viewmodel layer
     vec4 uvRect;        // its sheet frame: xy = the corner at (-1,-1), zw = the size
     vec4 trail;         // xyz = where it streaks to behind it, world space; w = emission or bend
+    vec4 uvNext;        // xy = the next sheet frame's corner, z = how far it faded into it,
+                        // w = its normal map (0 none)
 };
 
 layout(std430, binding = SSBO_PARTICLES) readonly buffer ParticleBlock {
@@ -39,7 +41,9 @@ out vec2  vCorner;
 flat out vec2 vAxisX;  // the card's own x, then y, in the view's right and up: turned, or streaked
 flat out vec2 vAxisY;
 out vec2  vUV;
+out vec2  vUVNext;     // the same corner of the next frame
 flat out vec4 vFrame;  // the sheet frame's rect, which the fragment keeps its reads inside
+flat out vec3 vNext;   // xy = the next frame's corner, which its reads keep inside; z = the fade
 out vec4  vColor;
 out float vSoftness;
 out float vSize;       // half the billboard's width, how deep its fade runs
@@ -56,6 +60,8 @@ void main() {
     vec2 corner = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1)) * 2.0 - 1.0;
     vCorner   = corner;
     vUV       = p.uvRect.xy + (corner * 0.5 + 0.5) * p.uvRect.zw;
+    vUVNext   = p.uvNext.xy + (corner * 0.5 + 0.5) * p.uvRect.zw;
+    vNext     = p.uvNext.xyz;
     vFrame    = p.uvRect;
     vColor    = p.color;
     vSoftness = p.params.x;

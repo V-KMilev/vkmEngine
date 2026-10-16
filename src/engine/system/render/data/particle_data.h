@@ -9,7 +9,7 @@ namespace Vkm::Engine {
 /**
  * @brief One billboard particle for the frame, flattened from the emitters.
  *
- * Five vec4s so it uploads straight into a std430 SSBO indexed by instance.
+ * Six vec4s so it uploads straight into a std430 SSBO indexed by instance.
  * Size, colour, angle and sheet frame are already evaluated from age.
  */
 struct ParticleData {
@@ -24,6 +24,10 @@ struct ParticleData {
     /// xyz = where it streaks to behind it, world space, zero for none; w = the share of its
     /// colour an alpha particle gives off, or how far a distortion one bends the view.
     glm::vec4 trail;
+
+    /// xy = the next sheet frame's corner, z = how far it has faded into it; w = its normal map,
+    /// as params.z, 0 for none.
+    glm::vec4 uvNext;
 };
 
 /**

@@ -2104,6 +2104,14 @@ void InspectorPanel::drawParticleSection(EditorContext& ec, EntityId id) {
                 );
                 const char* randomFrameTooltip = "Each particle starts on a frame of its own";
                 changed |= propCheckbox("Random Frame", &e.randomFrame, randomFrameTooltip);
+                const char* blendTooltip = "Each frame fades into the next: a slow flipbook moves smoothly";
+                changed |= propCheckbox("Sheet Blend", &e.sheetBlend, blendTooltip);
+            }
+        }
+        if (e.blend == ParticleBlend::Alpha && !strip) {
+            changed |= pickAsset<TextureAsset>("##ParticleNormalPick", "Normal Map", resources, e.normalMap);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Laid over the sheet frame for frame: each puff is lit by its folds");
             }
         }
 

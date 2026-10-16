@@ -3063,6 +3063,55 @@ void testAScreenShadowFacingTheSunFallsTowardTheEye(int& failures) {
     expect("facing the sun, the shadow falls toward the eye", toward, failures);
 }
 
+// A smoke puff's normal map stores x and y, its z rebuilt where read (TextureUsage::Normal): a flat
+// one faces the eye, shading the puff as the middle of the ball it would be without one.
+void testAFlatNormalMapFacesThePuffToTheEye(int& failures) {
+    std::printf("A puff with a flat normal map:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    std::vector<unsigned char> frames[2];
+    for (const bool mapped : {false, true}) {
+        const auto build = [mapped](Scenery& s) {
+            base(s);
+            ParticleEmitter puff;
+            puff.blend = ParticleBlend::Alpha;
+            holdLook(puff, {0.8f, 0.8f, 0.8f, 1.0f});
+            if (mapped) {
+                constexpr uint32_t SIZE = 8;
+                TextureAsset flat;
+                flat.params.width          = SIZE;
+                flat.params.height         = SIZE;
+                flat.params.internalFormat = TextureInternalFormat::RG8;
+                flat.params.format         = inferFormat(2);
+                flat.pixelData.assign(SIZE * SIZE * 2, 128);
+                puff.normalMap = s.resources.add(std::move(flat), "golden:flat");
+            }
+            Particle p;
+            p.position = {0.0f, 1.2f, 0.0f};
+            p.size     = 0.6f;
+            addEmitter(s, puff).push_back(p);
+            // The sun behind the eye: a puff facing it is lit full, one turned aside half.
+            const glm::vec3 toSun = s.scene.environment().sunDirection();
+            sunAndCamera(s, p.position + 4.0f * toSun, p.position);
+        };
+        frames[mapped ? 1 : 0] = freshFrame(build, settings, failures);
+        if (frames[mapped ? 1 : 0].empty()) return;
+    }
+    const glm::ivec3 ball = pixel(frames[0], WIDTH / 2, HEIGHT / 2);
+    const glm::ivec3 flat = pixel(frames[1], WIDTH / 2, HEIGHT / 2);
+    std::printf(
+        "      the ball's middle (%d %d %d), the flat map's (%d %d %d)\n",
+        ball.x,
+        ball.y,
+        ball.z,
+        flat.x,
+        flat.y,
+        flat.z
+    );
+    const bool alike = glm::all(glm::lessThanEqual(glm::abs(flat - ball), glm::ivec3(3)));
+    expect("a flat normal map shades the puff as the ball's middle", alike, failures);
+}
+
 // Haze moves the wall behind it and adds no light; a ribbon covers the pixels between its points.
 // Behaviour, not pixels: any device judges it, not only the one the goldens were made on.
 void testHazeBendsAndARibbonCovers(int& failures) {
@@ -3461,6 +3510,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testAnOrthographicViewTracesItsReflections(failures);
     testSmokeIsShadowedAndSparksAreNot(failures);
     testHazeBendsAndARibbonCovers(failures);
+    testAFlatNormalMapFacesThePuffToTheEye(failures);
     testADecalIsLitAsTheFloorUnderIt(failures);
     testSmokeIsLitWhereItIs(failures);
     testTwoLampsLightARibbonAsOneTwiceAsBright(failures);

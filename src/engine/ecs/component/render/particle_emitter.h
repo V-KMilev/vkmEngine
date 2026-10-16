@@ -121,11 +121,16 @@ struct ParticleEmitter {
     /// particle reads it as a normal map, so it is imported with TextureUsage::Normal.
     TextureHandle texture;
 
+    /// Alpha: a normal map laid over the sheet frame for frame, lighting each puff by its own folds
+    /// rather than as a ball.
+    TextureHandle normalMap;
+
     /// The texture as a sheet of frames, columns by rows, read left to right from the top.
     uint32_t sheetColumns = 1;
     uint32_t sheetRows    = 1;
     float    sheetFps     = 0.0f;   ///< Frames a second, looping; 0 plays the sheet once over a life.
     bool     randomFrame  = false;  ///< Each particle starts on a frame of its own.
+    bool     sheetBlend   = false;  ///< Each frame fades into the next: a slow flipbook moves smoothly.
 
     /// Strike the physics world's bodies along each step. A strike counts - for lifeLostOnHit
     /// and a Collision trigger - only when it comes in faster than settling would bring it.
@@ -164,26 +169,45 @@ inline uint32_t sheetFrames(const ParticleEmitter& emitter) {
 }
 
 /**
- * @brief The sheet frame a particle shows at @p age: once through over its life, or at sheetFps.
+ * @brief Where in its sheet a particle is: the frame it shows, and how far it has faded into the next.
+ */
+struct SheetFrame {
+    uint32_t frame = 0;     ///< The frame it shows.
+    uint32_t next  = 0;     ///< The frame after it.
+    float    blend = 0.0f;  ///< How far it has faded into next, 0..1; 0 unless sheetBlend.
+};
+
+/**
+ * @brief Where in the sheet a particle is at @p age: once through over its life, or at sheetFps.
+ *
+ * Cross-faded, a life ends on the last frame, not part way into it.
  *
  * @param emitter  The emitter it came from.
  * @param age      Seconds since it was born.
  * @param lifetime Seconds it lives.
  * @param start    The frame it was born on.
- * @return The frame, 0 .. sheetFrames(emitter) - 1.
+ * @return The frames, 0 .. sheetFrames(emitter) - 1, and the fade between them.
  */
-inline uint32_t sheetFrameAt(const ParticleEmitter& emitter, float age, float lifetime, uint32_t start) {
+inline SheetFrame sheetFrameAt(const ParticleEmitter& emitter, float age, float lifetime, uint32_t start) {
     const uint32_t frames = sheetFrames(emitter);
     const auto     count  = static_cast<float>(frames);
-    uint32_t       ahead  = 0;
-    if (emitter.sheetFps > 0.0f) {
-        ahead = static_cast<uint32_t>(std::fmod(std::max(age * emitter.sheetFps, 0.0f), count));
+    const bool     loops  = emitter.sheetFps > 0.0f;
+    float position = 0.0f;
+    if (loops) {
+        position = std::fmod(std::max(age * emitter.sheetFps, 0.0f), count);
     } else {
-        // Held on the last frame at the very end of a life, where the share reaches one.
         const float share = lifetime > 0.0f ? std::clamp(age / lifetime, 0.0f, 1.0f) : 1.0f;
-        ahead = std::min(static_cast<uint32_t>(share * count), frames - 1);
+        position = share * (emitter.sheetBlend ? count - 1.0f : count);
     }
-    return (start + std::min(ahead, frames - 1)) % frames;
+    // Held on the last frame at the very end of a life, where the share reaches one.
+    const uint32_t ahead = std::min(static_cast<uint32_t>(position), frames - 1);
+    const uint32_t after = loops ? (ahead + 1) % frames : std::min(ahead + 1, frames - 1);
+
+    SheetFrame sheet;
+    sheet.frame = (start + ahead) % frames;
+    sheet.next  = (start + after) % frames;
+    sheet.blend = emitter.sheetBlend && after != ahead ? position - static_cast<float>(ahead) : 0.0f;
+    return sheet;
 }
 
 } // namespace Vkm::Engine
@@ -226,10 +250,12 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::ParticleEmitter)
     VKM_F(stretch)
     VKM_F(trailLength)
     VKM_F(texture)
+    VKM_F(normalMap)
     VKM_F(sheetColumns)
     VKM_F(sheetRows)
     VKM_F(sheetFps)
     VKM_F(randomFrame)
+    VKM_F(sheetBlend)
     VKM_F(collide)
     VKM_F(bounce)
     VKM_F(lifeLostOnHit)

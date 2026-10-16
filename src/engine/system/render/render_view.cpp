@@ -186,13 +186,16 @@ void buildParticles(RenderView& view, const Scene& scene, const LiveParticles* p
         const bool viewmodel = throughAnEye && emitter.seenBy == SeenBy::Viewmodel;
 
         // A few emitters a frame, so a walk finds a texture's place.
-        float texture = 0.0f;
-        if (emitter.texture) {
+        const auto placeOf = [&](const TextureHandle& handle) {
+            if (!handle) return 0.0f;
             auto& textures = view.particleTextures;
-            const auto found = std::find(textures.begin(), textures.end(), emitter.texture);
-            texture = static_cast<float>(found - textures.begin()) + 1.0f;
-            if (found == textures.end()) textures.push_back(emitter.texture);
-        }
+            const auto found = std::find(textures.begin(), textures.end(), handle);
+            const float place = static_cast<float>(found - textures.begin()) + 1.0f;
+            if (found == textures.end()) textures.push_back(handle);
+            return place;
+        };
+        const float texture   = placeOf(emitter.texture);
+        const float normalMap = emitter.blend == ParticleBlend::Alpha ? placeOf(emitter.normalMap) : 0.0f;
         const float extra = emitter.blend == ParticleBlend::Alpha ? emitter.emission
             : emitter.blend == ParticleBlend::Distortion           ? emitter.distortion
             : 0.0f;
@@ -281,13 +284,15 @@ void buildParticles(RenderView& view, const Scene& scene, const LiveParticles* p
         const bool      stretched = emitter.render == ParticleRender::Stretched;
         const float     layer     = viewmodel ? 1.0f : 0.0f;
 
-        for (const Particle& p : pool->particles) {
-            // The sheet's top row first; an image loads bottom row first (image_loaders.cpp).
-            const uint32_t frame = sheetFrameAt(emitter, p.age, p.lifetime, p.frame);
-            const glm::vec2 corner(
+        // The sheet's top row first; an image loads bottom row first (image_loaders.cpp).
+        const auto cornerOf = [&](uint32_t frame) {
+            return glm::vec2(
                 static_cast<float>(frame % columns) * frameSize.x,
                 1.0f - static_cast<float>(frame / columns + 1) * frameSize.y
             );
+        };
+        for (const Particle& p : pool->particles) {
+            const SheetFrame sheet = sheetFrameAt(emitter, p.age, p.lifetime, p.frame);
             // A streak lies along its trail, turned by nothing.
             const float     angle  = stretched ? 0.0f : p.angle + p.spin * p.age;
             const glm::vec3 streak = stretched ? -p.velocity * std::max(emitter.stretch, 0.0f) : glm::vec3();
@@ -295,8 +300,9 @@ void buildParticles(RenderView& view, const Scene& scene, const LiveParticles* p
                 glm::vec4(p.position, sizeOf(p)),
                 colorOf(p),
                 glm::vec4(emitter.softness, angle, texture, layer),
-                glm::vec4(corner, frameSize),
+                glm::vec4(cornerOf(sheet.frame), frameSize),
                 glm::vec4(streak, extra),
+                glm::vec4(cornerOf(sheet.next), sheet.blend, normalMap),
             });
         }
     });

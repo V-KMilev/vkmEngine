@@ -318,6 +318,7 @@ void load(const nlohmann::json& j, ParticleEmitter& e, const ResourceManager& re
 }
 void emitAssetRefs(const ParticleEmitter& e, AssetRefs& refs) {
     if (e.texture) refs.textures.push_back(e.texture);
+    if (e.normalMap) refs.textures.push_back(e.normalMap);
 }
 
 nlohmann::json save(const ReflectionProbe& p)          { return saveReflected(p); }

@@ -54,7 +54,7 @@ struct LiveParticles {
         /**
          * @brief The trail points of particle @p index, newest first.
          *
-         * @param index Its place in particles; the pool keeps a trail for each.
+         * @param index Its place in particles; a Trail emitter's pool keeps a trail for each.
          * @return Its first point; particles[index].trailCount of them are filled.
          */
         const glm::vec3* trailOf(size_t index) const { return trails.data() + index * TRAIL_POINTS; }

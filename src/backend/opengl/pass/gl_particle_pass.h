@@ -74,13 +74,14 @@ class GLParticlePass : public GLPass {
         void sortBillboards(const RenderView& view, const std::vector<ParticleData>& particles, bool byDepth);
 
         /**
-         * @brief Bind what a run shows to @p shader, and tell it whether that is a texture.
+         * @brief Bind what a run shows, and its normal map, to @p shader, and tell it which it has.
          *
-         * @param ctx     The frame: its view's texture list, and the uploads.
-         * @param shader  The program drawing the run.
-         * @param texture ParticleData::params.z: 0 for none, else 1 + its place in the list.
+         * @param ctx       The frame: its view's texture list, and the uploads.
+         * @param shader    The program drawing the run.
+         * @param texture   ParticleData::params.z: 0 for none, else 1 + its place in the list.
+         * @param normalMap ParticleData::uvNext.w, the same way; billboards alone read one.
          */
-        void bindTexture(GLFrameContext& ctx, Vkm::GL::Shader& shader, float texture);
+        void bindTexture(GLFrameContext& ctx, Vkm::GL::Shader& shader, float texture, float normalMap = 0.0f);
 
         /**
          * @brief Upload @p batch to the instance SSBO and draw it, an instanced quad call a run.

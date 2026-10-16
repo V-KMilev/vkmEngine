@@ -52,7 +52,7 @@ void GLParticlePass::sortBillboards(
         // By texture, a draw each; the blend comes out the same in any order.
         m_sorted = particles;
         std::stable_sort(m_sorted.begin(), m_sorted.end(), [](const ParticleData& a, const ParticleData& b) {
-            return a.params.z < b.params.z;
+            return a.params.z != b.params.z ? a.params.z < b.params.z : a.uvNext.w < b.uvNext.w;
         });
         return;
     }
@@ -65,14 +65,23 @@ void GLParticlePass::sortBillboards(
     for (size_t i = 0; i < m_order.size(); ++i) m_sorted[i] = particles[m_order[i].index];
 }
 
-void GLParticlePass::bindTexture(GLFrameContext& ctx, Vkm::GL::Shader& shader, float texture) {
+void GLParticlePass::bindTexture(
+    GLFrameContext& ctx,
+    Vkm::GL::Shader& shader,
+    float texture,
+    float normalMap
+) {
     // 0 is none; a texture loading or failed shows the missing checker, as a map would.
-    const auto index = static_cast<size_t>(texture);
-    shader.setUniform1i("u_textured", index > 0 ? 1 : 0);
-    if (index == 0 || index > ctx.view.particleTextures.size()) return;
-    const Vkm::GL::Texture2D* sprite = ctx.resources.getTexture(ctx.view.particleTextures[index - 1]);
-    if (!sprite) sprite = &ctx.resources.missingTexture();
-    sprite->bindSlot(GLBindings::ParticleTextureSlots::SPRITE);
+    const auto bind = [&](float place, const char* flag, uint32_t slot) {
+        const auto index = static_cast<size_t>(place);
+        shader.setUniform1i(flag, index > 0 ? 1 : 0);
+        if (index == 0 || index > ctx.view.particleTextures.size()) return;
+        const Vkm::GL::Texture2D* image = ctx.resources.getTexture(ctx.view.particleTextures[index - 1]);
+        if (!image) image = &ctx.resources.missingTexture();
+        image->bindSlot(slot);
+    };
+    bind(texture, "u_textured", GLBindings::ParticleTextureSlots::SPRITE);
+    if (&shader == &m_shader) bind(normalMap, "u_normalMapped", GLBindings::ParticleTextureSlots::NORMAL);
 }
 
 void GLParticlePass::drawBillboards(GLFrameContext& ctx, const std::vector<ParticleData>& batch) {
@@ -91,8 +100,11 @@ void GLParticlePass::drawBillboards(GLFrameContext& ctx, const std::vector<Parti
     ctx.screenTri.bind();
     for (uint32_t first = 0; first < count;) {
         uint32_t end = first + 1;
-        while (end < count && batch[end].params.z == batch[first].params.z) ++end;
-        bindTexture(ctx, m_shader, batch[first].params.z);
+        while (end < count && batch[end].params.z == batch[first].params.z
+               && batch[end].uvNext.w == batch[first].uvNext.w) {
+            ++end;
+        }
+        bindTexture(ctx, m_shader, batch[first].params.z, batch[first].uvNext.w);
         m_shader.setUniform1i("u_firstInstance", static_cast<int>(first));
         VKM_GL_CHECK(glDrawArraysInstanced(GL_TRIANGLE_STRIP, 0, 4, static_cast<GLsizei>(end - first)));
         first = end;

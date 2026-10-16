@@ -2033,6 +2033,7 @@ void testTheSharedBlocksAgreeWithTheirStructs() {
             && bufferMemberAt(billboards, "ParticleBlock.particles[0].params", offsetof(ParticleData, params))
             && bufferMemberAt(billboards, "ParticleBlock.particles[0].uvRect", offsetof(ParticleData, uvRect))
             && bufferMemberAt(billboards, "ParticleBlock.particles[0].trail", offsetof(ParticleData, trail))
+            && bufferMemberAt(billboards, "ParticleBlock.particles[0].uvNext", offsetof(ParticleData, uvNext))
     );
 
     const Vkm::GL::Shader strip("shaders/particle_strip");
