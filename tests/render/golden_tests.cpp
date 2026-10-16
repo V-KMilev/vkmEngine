@@ -3245,6 +3245,66 @@ void testAParticleWaitsForItsSprite(int& failures) {
     expect("  and one whose sprite failed shows the checker", failed > PIXEL_TOLERANCE, failures);
 }
 
+// A layered material blends its layers by its weights' channels at the mesh's uv: a slab weighted
+// all to its first layer at one end and its second at the other shows the first's colour there,
+// from its map, which reaches the shader through an array, and the second's at the other.
+void testALayeredMaterialBlendsItsLayers(int& failures) {
+    std::printf("A slab of two layered materials:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    const auto build = [](Scenery& s) {
+        base(s);
+        TextureAsset red;
+        red.params.width  = 4;
+        red.params.height = 4;
+        red.pixelData.resize(4 * 4 * 4);
+        for (size_t i = 0; i < red.pixelData.size(); i += 4) {
+            red.pixelData[i]     = 220;
+            red.pixelData[i + 1] = 30;
+            red.pixelData[i + 2] = 30;
+            red.pixelData[i + 3] = 255;
+        }
+        MaterialAsset first;
+        first.albedoTexture = s.resources.add(std::move(red), "golden:red");
+        first.roughness     = 0.9f;
+        const MaterialHandle mapped = s.resources.add(std::move(first), "golden:layer_red");
+        const MaterialHandle flat   = material(s, "golden:layer_blue", {0.1f, 0.2f, 0.9f}, 0.9f, 0.0f);
+
+        // All the first layer in the first texel, all the second in the second.
+        TextureAsset weights;
+        weights.params.width  = 2;
+        weights.params.height = 1;
+        weights.pixelData     = {255, 0, 0, 0, 0, 255, 0, 0};
+        MaterialAsset layered;
+        layered.layers       = {mapped, flat};
+        layered.layerWeights = s.resources.add(std::move(weights), "golden:weights");
+        const MaterialHandle slab = s.resources.add(std::move(layered), "golden:layered");
+        place(s, s.cube, slab, {0.0f, 0.0f, 0.0f}, {4.0f, 0.1f, 4.0f});
+        sunAndCamera(s, {0.0f, 6.0f, 0.01f}, {0.0f, 0.0f, 0.0f});
+    };
+    const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+    if (frame.empty()) return;
+
+    // A quarter of the slab in from either end of its uv's u, whichever way the top face lies.
+    const int reach = HEIGHT / 8;
+    const glm::ivec3 ends[4] = {
+        pixel(frame, WIDTH / 2 - reach, HEIGHT / 2),
+        pixel(frame, WIDTH / 2 + reach, HEIGHT / 2),
+        pixel(frame, WIDTH / 2, HEIGHT / 2 - reach),
+        pixel(frame, WIDTH / 2, HEIGHT / 2 + reach),
+    };
+    const auto red  = [](glm::ivec3 c) { return c.x > c.z + 60 && c.x > c.y + 60; };
+    const auto blue = [](glm::ivec3 c) { return c.z > c.x + 60 && c.z > c.y + 60; };
+    bool across = false;
+    for (int axis = 0; axis < 2; ++axis) {
+        const glm::ivec3 a = ends[2 * axis];
+        const glm::ivec3 b = ends[2 * axis + 1];
+        std::printf("      (%d %d %d) and (%d %d %d)\n", a.x, a.y, a.z, b.x, b.y, b.z);
+        across = across || (red(a) && blue(b)) || (blue(a) && red(b));
+    }
+    expect("one end shows the first layer's map, the other the second layer", across, failures);
+}
+
 // Haze moves the wall behind it and adds no light; a ribbon covers the pixels between its points.
 // Behaviour, not pixels: any device judges it, not only the one the goldens were made on.
 void testHazeBendsAndARibbonCovers(int& failures) {
@@ -3686,6 +3746,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testHazeBendsAndARibbonCovers(failures);
     testAFlatNormalMapFacesThePuffToTheEye(failures);
     testAParticleWaitsForItsSprite(failures);
+    testALayeredMaterialBlendsItsLayers(failures);
     testAGlossyFloorReflectsInNoRows(failures);
     testADecalIsLitAsTheFloorUnderIt(failures);
     testSmokeIsLitWhereItIs(failures);

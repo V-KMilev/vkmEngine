@@ -11,8 +11,10 @@
 #include "logger.h"
 #include "debug/profiler.h"
 
+#include "gl_compute_shader.h"
 #include "gl_texture.h"
 
+#include "core/fnv1a.h"
 #include "resource/resource_manager.h"
 #include "system/render/render_view.h"
 
@@ -116,12 +118,44 @@ void GLView::ensureMaterial(const MaterialHandle& handle, const ResourceManager&
     // Its maps were checked with it the first time this stamp reached it.
     if (!ensure(m_materials, handle, resources)) return;
 
-    const GLMaterial* material = getMaterial(handle);
+    GLMaterial* material = m_materials.slots[handle.id()].gl.get();
     if (!material) return;
     for (const auto& binding : material->getTextureBindings()) {
         ensure(m_textures, binding.handle, resources);
         reportIfMissing(binding.handle, resources);
     }
+    if (material->layered()) readyLayers(resources.get(handle), *material, resources);
+}
+
+void GLView::readyLayers(const MaterialAsset& asset, GLMaterial& material, const ResourceManager& resources) {
+    std::array<const MaterialAsset*, MaterialAsset::MAX_LAYERS>  values{};
+    std::array<GLLayerMaps::Layer, MaterialAsset::MAX_LAYERS>    maps{};
+    uint64_t key = fnv1a64Bytes(nullptr, 0);
+    const auto mix = [&](uint64_t value) { key = fnv1a64Bytes(&value, sizeof(value), key); };
+    mix(asset.version());
+    for (size_t i = 0; i < asset.layers.size(); ++i) {
+        const MaterialHandle& layer = asset.layers[i];
+        mix(layer ? layer.id() + 1u : 0u);
+        if (!layer) continue;
+        // Its maps upload with it; a layer's own layers, were it layered, are not read.
+        ensureMaterial(layer, resources);
+        const MaterialAsset& value   = resources.get(layer);
+        const TextureHandle  combined = value.aoMetallicRoughnessTexture;
+        const TextureHandle  surface  = combined ? combined : value.metallicRoughnessTexture;
+        values[i] = &value;
+        maps[i]   = {
+            getTexture(value.albedoTexture),
+            getTexture(value.normalTexture),
+            getTexture(surface),
+            !combined && static_cast<bool>(surface)
+        };
+        mix(value.version());
+        mix(textureUploadId(value.albedoTexture));
+        mix(textureUploadId(value.normalTexture));
+        mix(textureUploadId(surface));
+    }
+    if (!m_layerCopy) m_layerCopy = std::make_unique<Vkm::GL::ComputeShader>("shaders/material/layer_copy");
+    material.updateLayers(asset, values, maps, key, *m_layerCopy);
 }
 
 void GLView::sync(const RenderView& view, const ResourceManager& resources) {

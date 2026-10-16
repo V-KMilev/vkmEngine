@@ -58,8 +58,10 @@ uint32_t floatsIn(GLenum type) {
 
 GLSceneCapture::GLSceneCapture(const GLMesh& cube, const GLObjectBuffer& objects)
     : m_pbr("shaders/forward/pbr")
+    , m_layered("shaders/forward/pbr_layered")
     , m_skybox("shaders/skybox")
     , m_surfels("shaders/irradiance/surfels")
+    , m_surfelsLayered("shaders/irradiance/surfels_layered")
     , m_cube(cube)
     , m_objects(objects) {}
 
@@ -84,17 +86,24 @@ void GLSceneCapture::begin(
     m_faceSize = faceSize;
     m_volume   = nullptr;
     resetPbr();
+    bindOfflinePbrUniforms(m_layered, ibl);
     bindOfflinePbrUniforms(m_pbr, ibl);
+    m_pbr.setUniform1i("u_hasSceneColor", 0);
 }
 
 void GLSceneCapture::resetPbr() {
-    m_pbr.bind();
+    resetProgram(m_layered, m_layeredPlain);
+    resetProgram(m_pbr, m_pbrPlain);
+}
+
+void GLSceneCapture::resetProgram(Vkm::GL::Shader& shader, PlainUniforms& plain) {
+    shader.bind();
     GLint program = 0;
     VKM_GL_CHECK(glGetIntegerv(GL_CURRENT_PROGRAM, &program));
-    if (static_cast<uint32_t>(program) != m_pbrListed) {
+    if (static_cast<uint32_t>(program) != plain.listed) {
         // Listed again after a hot reload links another program.
-        m_pbrListed = static_cast<uint32_t>(program);
-        m_pbrUniforms.clear();
+        plain.listed = static_cast<uint32_t>(program);
+        plain.uniforms.clear();
         GLint active = 0;
         VKM_GL_CHECK(glGetProgramiv(program, GL_ACTIVE_UNIFORMS, &active));
         for (GLint i = 0; i < active; ++i) {
@@ -103,20 +112,22 @@ void GLSceneCapture::resetPbr() {
             GLenum type  = 0;
             VKM_GL_CHECK(glGetActiveUniform(program, i, sizeof(name), nullptr, &count, &type, name));
             const GLint location = glGetUniformLocation(program, name);
-            if (location >= 0 && floatsIn(type) > 0) m_pbrUniforms.push_back({location, count, type});
+            if (location >= 0 && floatsIn(type) > 0) plain.uniforms.push_back({location, count, type});
         }
         // Zeros enough for the largest, kept, so a reset allocates nothing.
         size_t most = 0;
-        for (const PlainUniform& u : m_pbrUniforms) most = std::max<size_t>(most, u.count * floatsIn(u.type));
-        m_pbrZeros.assign(most, 0.0f);
-        m_pbrIntZeros.assign(most, 0);
-        m_pbrUintZeros.assign(most, 0u);
+        for (const PlainUniform& u : plain.uniforms) {
+            most = std::max<size_t>(most, u.count * floatsIn(u.type));
+        }
+        plain.zeros.assign(most, 0.0f);
+        plain.intZeros.assign(most, 0);
+        plain.uintZeros.assign(most, 0u);
     }
 
-    const GLfloat* zeros = m_pbrZeros.data();
-    const GLint*   ints  = m_pbrIntZeros.data();
-    const GLuint*  uints = m_pbrUintZeros.data();
-    for (const PlainUniform& u : m_pbrUniforms) {
+    const GLfloat* zeros = plain.zeros.data();
+    const GLint*   ints  = plain.intZeros.data();
+    const GLuint*  uints = plain.uintZeros.data();
+    for (const PlainUniform& u : plain.uniforms) {
         const GLsizei n = u.count;
         switch (u.type) {
             case GL_FLOAT:             glProgramUniform1fv(program, u.location, n, zeros); break;
@@ -245,12 +256,14 @@ void GLSceneCapture::captureFace(
 ) {
     const glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, CAPTURE_NEAR, farPlane);
 
-    // Uniforms persist on m_pbr through the skybox draw below.
-    m_pbr.bind();
-    if (m_volume) {
-        m_volume->bindForShading(m_pbr, m_volumeBox);
-    } else {
-        m_pbr.setUniform1i("u_hasIrradianceVolume", 0);
+    // Uniforms persist on the programs through the skybox draw below.
+    for (Vkm::GL::Shader* program : {&m_layered, &m_pbr}) {
+        program->bind();
+        if (m_volume) {
+            m_volume->bindForShading(*program, m_volumeBox);
+        } else {
+            program->setUniform1i("u_hasIrradianceVolume", 0);
+        }
     }
 
     beginFace(gl, face, position, proj, attach);
@@ -272,9 +285,15 @@ void GLSceneCapture::captureFace(
         if (Math::frustumIntersectsAABB(seen, m_drawn->bounds[object])) m_faceOpaque.push_back(object);
     }
 
-    const GLMaterial* boundMaterial = nullptr;
+    const GLMaterial*      boundMaterial = nullptr;
+    const Vkm::GL::Shader* boundProgram  = &m_pbr;
     for (const InstanceDraw& draw : m_faceBatcher.buildGrouped(m_faceOpaque, *m_drawn, *m_glView, 0)) {
         const GLMaterial* material = m_glView->getMaterial(draw.material);
+        Vkm::GL::Shader&  program  = material && material->layered() ? m_layered : m_pbr;
+        if (&program != boundProgram) {
+            program.bind();
+            boundProgram = &program;
+        }
         if (material && material != boundMaterial) {
             material->bind(GLBindings::UBOBindingPoints::MATERIAL);
             material->bindTextures(*m_glView);
@@ -300,7 +319,6 @@ void GLSceneCapture::captureSurfels(
     gl.setBlending(false);
     // Off whatever the material: a back face is how a probe learns it is inside a solid.
     gl.setFaceCulling(false);
-    m_surfels.bind();
     m_objects.bind();
 
     // Grouped once a begin(), for every probe's six faces after it; bind pose, as captureFace.
@@ -316,13 +334,21 @@ void GLSceneCapture::captureSurfels(
             glm::vec2(m_faceSize)
         );
 
-        const GLMaterial* boundMaterial = nullptr;
+        const GLMaterial*      boundMaterial = nullptr;
+        const Vkm::GL::Shader* boundProgram  = &m_surfels;
+        m_surfels.bind();
         for (const InstanceDraw& draw : draws) {
             const GLMaterial* material = m_glView->getMaterial(draw.material);
+            Vkm::GL::Shader&  program  = material && material->layered() ? m_surfelsLayered : m_surfels;
+            if (&program != boundProgram) {
+                program.bind();
+                boundProgram  = &program;
+                boundMaterial = nullptr;
+            }
             if (material && material != boundMaterial) {
                 material->bind(GLBindings::UBOBindingPoints::MATERIAL);
                 material->bindTextures(*m_glView);
-                m_surfels.setUniform1i("u_doubleSided", material->doubleSided() ? 1 : 0);
+                program.setUniform1i("u_doubleSided", material->doubleSided() ? 1 : 0);
                 boundMaterial = material;
             }
             m_batcher.draw(gl, draw);
@@ -344,7 +370,6 @@ void bindOfflinePbrUniforms(Vkm::GL::Shader& pbr, const GLIBL& ibl) {
     ibl.bindBrdf(GLBindings::IBLTextureSlots::BRDF_LUT);
     pbr.setUniform1i("u_hasAO", 0);
     pbr.setUniform1i("u_hasScreenShadow", 0);
-    pbr.setUniform1i("u_hasSceneColor", 0);
     pbr.setUniform1i("u_probeCount", 0);
     pbr.setUniform1i("u_useClusters", 0);
     pbr.setUniform1i("u_hardShadows", 1);

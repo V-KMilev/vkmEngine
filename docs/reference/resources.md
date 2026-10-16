@@ -162,6 +162,16 @@ its normal most nearly turns to, so a cube stretched into a beam keeps its
 texture square and the texture moves with it. It suits boxes and faceted
 meshes; a smooth one shows seams.
 
+A **layered** material (`MaterialAsset::layers`) draws up to four other
+materials in its place, blended by `layerWeights`' R, G, B and A at the mesh's
+uv, each layer's albedo, normal and AO/roughness/metallic maps read at its own
+tiling of that uv. Where a layer's colour would repeat densely on screen it is
+read again at a far larger scale and blended in, so a far slope shows no grid of
+one tile. It is derived, never saved: a terrain makes the one it draws
+with. The backend copies the layers' maps into an array texture apiece
+(`GLLayerMaps`) and draws with a program built for it
+(`shaders/forward/pbr_layered`).
+
 ### FontAsset
 
 A baked SDF glyph atlas with its metrics and glyph table. It owns its texels

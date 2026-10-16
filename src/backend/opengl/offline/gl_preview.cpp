@@ -208,6 +208,7 @@ uint32_t GLPreview::render(
     gl.setFaceCulling(true);
     gl.setCullFace(GL_BACK);
     bindOfflinePbrUniforms(m_capture.pbrProgram(), ibl);
+    m_capture.pbrProgram().setUniform1i("u_hasSceneColor", 0);
     m_capture.pbrProgram().setUniform1f("u_iblIntensity", scene.skyIntensity);
 
     // Transparent materials blend over the backdrop. One mesh, so no sorting or

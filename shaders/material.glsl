@@ -34,6 +34,11 @@ layout(std140, binding = UBO_MATERIAL) uniform MaterialBlock {
     float pad0;
     float pad1;
     float pad2;
+
+    // A layered material's layers (MaterialAsset::layers), read by the LAYERED programs alone.
+    vec4 layerTint[MATERIAL_MAX_LAYERS];     // albedo factor; w the normal scale
+    vec4 layerUV[MATERIAL_MAX_LAYERS];       // uvScale in xy, uvOffset in zw
+    vec4 layerSurface[MATERIAL_MAX_LAYERS];  // ao, roughness and metallic factors
 } u_material;
 
 // Where a mesh's uv reads the material's maps: repeated by uvScale, slid by uvOffset.
