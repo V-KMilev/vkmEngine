@@ -27,7 +27,7 @@ class GLIrradianceVolume;
 class GLMesh;
 class GLObjectBuffer;
 class GLView;
-class ResourceManager;
+struct RenderObjects;
 struct RenderView;
 
 /**
@@ -40,11 +40,10 @@ struct RenderView;
  *
  * begin() prepares what every face of every position shares, and captureCube() draws one cube
  * per call - or captureFace() one face, captureSurfels() what an irradiance probe sees as
- * surfaces - so a probe grid batches the scene once; the caller owns the FBO and the state around
- * the loop. beginLighting() prepares the lights and the sun's map alone, for a relight of
- * what was captured. Lent to every consumer (see GLBackend): the PBR ubershader is the engine's
- * most expensive program. It binds its own camera, lights and shadow blocks and the 2D shadow
- * slot, so capture at the end of a frame.
+ * surfaces; the caller owns the FBO and the state around the loop. beginLighting() prepares the
+ * lights and the sun's map alone, for a relight of what was captured. Lent to every consumer (see
+ * GLBackend): the PBR ubershader is the engine's most expensive program. It binds its own camera,
+ * lights and shadow blocks and the 2D shadow slot, so capture at the end of a frame.
  */
 class GLSceneCapture {
     public:
@@ -263,10 +262,12 @@ class GLSceneCapture {
         GLCamera          m_camera;         ///< Per-face camera UBO.
         GLOcean           m_ocean;          ///< No sea: a `waves` surface is an ordinary one here.
         GLLights          m_lights;         ///< The frame's lights, the sun alone shadowed.
-        GLInstanceBatcher m_batcher;        ///< Instanced capture draws.
+        GLInstanceBatcher m_batcher;        ///< The surfel captures' draws.
+        GLInstanceBatcher m_faceBatcher;    ///< One cube face's draws: what its frustum holds.
         GLCaptureShadow   m_shadow;         ///< The sun's map over what is captured.
 
         std::vector<uint32_t> m_opaque;      ///< begin()'s opaque scene-wide objects.
+        std::vector<uint32_t> m_faceOpaque;  ///< Those a probe face sees.
         std::vector<uint32_t> m_casters;     ///< The scene-wide casters, the sun's map's.
 
         std::vector<PlainUniform> m_pbrUniforms;     ///< m_pbr's plain uniforms, listed once a link.
@@ -276,6 +277,8 @@ class GLSceneCapture {
         std::vector<GLuint>       m_pbrUintZeros;    ///< The same, as unsigned ints.
 
         const GLView* m_glView   = nullptr;  ///< begin()'s scene, drawn by the captures after it.
+        const RenderObjects* m_drawn = nullptr;  ///< begin()'s objects, which m_opaque indexes.
+        bool m_surfelsBatched = false;  ///< m_batcher holds m_opaque's draws.
         const GLIBL*  m_ibl      = nullptr;
         float         m_faceSize = 0.0f;     ///< begin()'s face resolution: every face camera's viewport.
 

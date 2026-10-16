@@ -70,7 +70,7 @@ void main() {
         float atten = punctualAttenuation(light, type, worldPos, L);
         float ndotl = dot(worldN, L);
         if (atten <= 0.0 || ndotl <= 0.0) continue;
-        atten *= surfaceShadow(type, int(light.spot.w), worldPos, worldN, ndotl, screenShadow);
+        atten *= surfaceShadow(type, int(light.spot.w), worldPos, worldN, ndotl, screenShadow, CSM_SOFT);
         direct += lightCol * atten * ndotl / PI;
     }
 

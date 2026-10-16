@@ -46,6 +46,10 @@ class GLPlanarReflectionPass : public GLPass {
         /// The most reflectors drawn in a frame: each is a drawing of the scene.
         static constexpr int MAX_DRAWN = 2;
 
+        /// How far the resolve reads a picture off its place, as a share of the screen, for a normal
+        /// leaning one unit off the plane's: a ripple or a normal map moves the reflection with it.
+        static constexpr float PICTURE_BEND = 0.08f;
+
     public:
         /**
          * @brief Draws with the capture's PBR program and its sky.
@@ -83,6 +87,7 @@ class GLPlanarReflectionPass : public GLPass {
             glm::vec4             plane{0.0f};  ///< World: unit normal, then -dot(normal, center).
             CameraData            camera;
             glm::uvec2            size{0u};
+            glm::vec4             rect{0.0f};   ///< The part of its picture drawn: x0, y0, x1, y1 in [0, 1].
             std::vector<uint32_t> objects;      ///< Opaque or cut out.
             std::vector<uint32_t> glass;        ///< Transparent.
         };

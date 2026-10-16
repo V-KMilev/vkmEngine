@@ -64,7 +64,8 @@ const float WIRE_ALPHA = 0.55;
 // Opaque + sky copy for transmission refraction, transparent bucket only.
 layout(binding = POST_SLOT_SCENE_COLOR) uniform sampler2D u_sceneColor;
 uniform int u_hasSceneColor;
-uniform int u_useClusters;      // 1 = per-cluster light list, 0 = full list (GLSceneCapture)
+uniform int u_useClusters;      // 1 = per-cluster light list; 0 = every light, for an eye without clusters
+uniform int u_hardShadows;      // 1 = the 3x3 compare for the sun and spots, no blocker search
 uniform int u_alphaToCoverage;  // 1 while alpha-to-coverage is on for a cutout
 
 // GTAO for the indirect term, the cascaded sun's screen shadow. Each flag is set for the opaque bucket
@@ -391,6 +392,12 @@ vec3 directLight(
         Light light = u_lights.lights[li];
         int   type  = int(light.position.w);
 
+        // Without clusters, a light out of its radius is passed over here, as a cluster leaves it out.
+        if (u_useClusters == 0 && type != LIGHT_DIRECTIONAL) {
+            vec3 away = vWorldPos - light.position.xyz;
+            if (dot(away, away) > light.direction.w * light.direction.w) continue;
+        }
+
         if (type == LIGHT_RECT || type == LIGHT_DISK) {
             Lo += areaLight(sh, s, light, type);
             continue;
@@ -403,7 +410,15 @@ vec3 directLight(
 
         // The bias follows the geometric surface, not the normal map.
         float ndotlGeo   = dot(sh.Ng, L);
-        float visibility = surfaceShadow(type, int(light.spot.w), vWorldPos, sh.Ng, ndotlGeo, screenShadow);
+        float visibility = surfaceShadow(
+            type,
+            int(light.spot.w),
+            vWorldPos,
+            sh.Ng,
+            ndotlGeo,
+            screenShadow,
+            u_hardShadows == 0
+        );
 
         // POM self-shadowing for the sun alone, bounding the trace cost.
         if (FEATURES

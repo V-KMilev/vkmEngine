@@ -228,6 +228,7 @@ void GLForwardPass::bindFrameUniforms(Vkm::GL::Shader& shader, GLFrameContext& c
     bindFog(ctx, shader);
 
     shader.setUniform1i("u_useClusters", 1);
+    shader.setUniform1i("u_hardShadows", 0);
     shader.setUniform1i("u_renderMode", static_cast<int>(view.settings.renderMode));
     shader.setUniform1i("u_wirePass", 0);
 }

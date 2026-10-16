@@ -32,6 +32,7 @@ struct PlanarUniforms {
     const char* axisU;
     const char* axisV;
     const char* lod;
+    const char* rect;
     uint32_t    slot;
 };
 static_assert(
@@ -45,6 +46,7 @@ constexpr PlanarUniforms PLANAR_UNIFORMS[GLPlanarReflectionPass::MAX_DRAWN] = {
         "u_planarU[0]",
         "u_planarV[0]",
         "u_planarLod[0]",
+        "u_planarRect[0]",
         Slots::PLANAR_0
     },
     {
@@ -53,6 +55,7 @@ constexpr PlanarUniforms PLANAR_UNIFORMS[GLPlanarReflectionPass::MAX_DRAWN] = {
         "u_planarU[1]",
         "u_planarV[1]",
         "u_planarLod[1]",
+        "u_planarRect[1]",
         Slots::PLANAR_1
     },
 };
@@ -144,6 +147,7 @@ void GLReflectionPass::bindPlanar(GLFrameContext& ctx) {
         const PlanarUniforms&           names   = PLANAR_UNIFORMS[i];
         const Vkm::GL::MipChainTexture& picture = *ctx.planarPictures[i].picture;
         m_resolve.setUniform1f(names.lod, static_cast<float>(picture.mipCount() - 1));
+        m_resolve.setUniform4fv(names.rect, ctx.planarPictures[i].rect);
         picture.bindSlot(names.slot);
     }
 }

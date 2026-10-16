@@ -29,18 +29,22 @@ uniform float u_maxLod;  // the colour chain's last level; the trace stored hit 
 uniform int   u_traceStep;  // pixels a hit stands for on each axis: 1, or 2 at half resolution
 uniform int   u_traced;     // 1 when the trace ran; 0 leaves all but the planar reflectors as they are
 
-// Each planar reflector's picture's last chain level; where they lie is reflection.glsl's.
+// Each planar reflector's picture's last chain level, and the part of it drawn (x0, y0, x1, y1 in
+// [0, 1], black round it); where they lie is reflection.glsl's.
 uniform float u_planarLod[MAX_PLANAR_REFLECTORS];
-
-// How far the picture is shifted, as a share of the screen, for a normal leaning one unit off the
-// plane's: a ripple or a normal map moves the reflection with it.
-const float PLANAR_BEND = 0.08;
+uniform vec4  u_planarRect[MAX_PLANAR_REFLECTORS];
 
 #include "../reflection.glsl"
 
-// Planar reflector @p i's picture at @p uv, at chain level @p lod.
+// Planar reflector @p i's picture at @p uv, at chain level @p lod: held half a texel of the coarser
+// level read inside the part drawn, so a blurred read takes in none of the black round it.
 vec3 planarPicture(int i, vec2 uv, float lod) {
-    return i == 0 ? textureLod(u_planar0, uv, lod).rgb : textureLod(u_planar1, uv, lod).rgb;
+    const int  level = int(ceil(lod));
+    const vec2 texel = 1.0 / vec2(i == 0 ? textureSize(u_planar0, level) : textureSize(u_planar1, level));
+    const vec4 rect  = u_planarRect[i];
+    const vec2 inset = min(0.5 * texel, 0.5 * (rect.zw - rect.xy));
+    const vec2 at    = clamp(uv, rect.xy + inset, rect.zw - inset);
+    return i == 0 ? textureLod(u_planar0, at, lod).rgb : textureLod(u_planar1, at, lod).rgb;
 }
 
 void main() {
@@ -66,7 +70,7 @@ void main() {
     if (planar >= 0) {
         const vec2  uv  = (vec2(texel) + 0.5) / size + (n.xy - u_planarPlane[planar].xy) * PLANAR_BEND;
         const float lod = clamp(log2(1.0 + roughness * roughness * 256.0), 0.0, u_planarLod[planar]);
-        const vec3  seen = planarPicture(planar, clamp(uv, vec2(0.0), vec2(1.0)), lod);
+        const vec3  seen = planarPicture(planar, uv, lod);
         FragColor.rgb = max(scene.rgb + (weight.rgb * seen - added) * glossy, vec3(0.0));
         return;
     }

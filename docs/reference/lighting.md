@@ -101,7 +101,8 @@ volume covers it, and from the sky only outside it:
   compared are those whose radius reaches within half a probe's width of its
   box, and a directional: a lamp moving across the world refreshes the probes it
   can light, not every one.
-- **Shadows:** a capture is shadowed by `lowestSlotDirectionalCaster` alone
+- **Shadows:** a capture is shadowed by `lowestSlotDirectionalCaster` alone,
+  hard: the convolution blurs a penumbra away
   ([rendering.md](rendering.md#bakes)).
 
 A volume filling a room wants its box out to the middle of the walls and a

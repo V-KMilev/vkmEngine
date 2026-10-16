@@ -98,6 +98,8 @@ std::string GLBackend::shaderConstants() {
         << "const int   MAX_PROBES              = "
         << GLBindings::ProbeTextureSlots::MAX_PROBES << ";\n"
         << "const int   MAX_PLANAR_REFLECTORS   = " << GLPlanarReflectionPass::MAX_DRAWN << ";\n"
+        << "const float PLANAR_BEND             = "
+        << std::to_string(GLPlanarReflectionPass::PICTURE_BEND) << ";\n"
         // A LOD index, so one less than the mip count each cube carries.
         << "const float MAX_REFLECTION_LOD      = " << (GLIBL::PREFILTER_MIPS - 1)   << ".0;\n"
         << "const float MAX_PROBE_LOD           = " << (GLProbeArray::PREFILTER_MIPS - 1) << ".0;\n"

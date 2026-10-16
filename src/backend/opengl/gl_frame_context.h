@@ -41,6 +41,7 @@ struct PlanarReflectorData;
 struct GLPlanarPicture {
     const PlanarReflectorData*      reflector = nullptr;
     const Vkm::GL::MipChainTexture* picture   = nullptr;  ///< Its filtered chain.
+    glm::vec4                       rect{0.0f};           ///< The part drawn: x0, y0, x1, y1 in [0, 1].
 };
 
 /**

@@ -340,12 +340,14 @@ what is behind the eye, off the screen, or facing away, which is any mirror that
 faces the viewer.
 
 - **It is a second drawing of the scene.** Opaque meshes, then transparent ones
-  refracting a copy of that, then additive and alpha particles, all lit by
-  every light rather than the camera's clusters; without GTAO, screen shadows,
-  fog, decals or distortion; at `renderScale` of the frame's size. The sun's
-  shadow in it reaches only what the camera's cascades cover. A frame draws the
-  few covering the most of the screen; the rest fall back to the trace and the
-  probes. The trace skips pixels on a drawn reflector.
+  refracting a copy of that, then additive and alpha particles, all lit by every
+  light rather than the camera's clusters; without GTAO, screen shadows, fog,
+  decals or distortion; at `renderScale` of the frame's size. The sun's shadow
+  in it reaches only what the camera's cascades cover. Only the part of the
+  screen the reflector covers is drawn, and only what that part shows of the
+  scene. A frame draws the few covering the most of the screen, none covering
+  less than `MIN_SCREEN_SHARE`; the rest fall back to the trace and the probes.
+  The trace skips pixels on a drawn reflector.
 - **The plane is the entity's position.** Put it on the reflecting face, not
   inside a slab: what lies a centimetre in front of the plane and behind is
   clipped, and the face itself is in the clipped part.

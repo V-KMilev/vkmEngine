@@ -44,6 +44,45 @@ glm::mat4 mirrorIn(const glm::vec4& plane) {
     return m;
 }
 
+/// Of the screen's width and height, the margin round a reflector's rectangle that its picture is drawn
+/// over too: as far as the resolve's bend reads off it.
+constexpr float PICTURE_MARGIN = GLPlanarReflectionPass::PICTURE_BEND;
+
+/// The share of the screen below which a reflector is left to the trace and the probes: a picture a few
+/// pixels across is not worth a second drawing of the scene.
+constexpr float MIN_SCREEN_SHARE = 0.0005f;
+
+/// Where reflector @p r lies on the screen @p viewProjection draws: x0, y0, x1, y1 in [0, 1]. The whole
+/// screen while a corner is behind the eye.
+glm::vec4 screenRectOf(const PlanarReflectorData& r, const glm::mat4& viewProjection) {
+    glm::vec2 lo(1.0f);
+    glm::vec2 hi(0.0f);
+    for (const float u : {-1.0f, 1.0f}) {
+        for (const float v : {-1.0f, 1.0f}) {
+            const glm::vec3 along  = r.axisU * (u * r.halfExtents.x) + r.axisV * (v * r.halfExtents.y);
+            const glm::vec4 clip   = viewProjection * glm::vec4(r.center + along, 1.0f);
+            if (clip.w <= 1e-4f) return {0.0f, 0.0f, 1.0f, 1.0f};
+            const glm::vec2 at = glm::vec2(clip) / clip.w * 0.5f + 0.5f;
+            lo = glm::min(lo, at);
+            hi = glm::max(hi, at);
+        }
+    }
+    return {glm::clamp(lo, 0.0f, 1.0f), glm::clamp(hi, 0.0f, 1.0f)};
+}
+
+/// @p projection narrowed to @p rect of its screen, for culling to what that part of the screen shows.
+glm::mat4 narrowedTo(const glm::mat4& projection, const glm::vec4& rect) {
+    const glm::vec2 lo   = glm::vec2(rect.x, rect.y) * 2.0f - 1.0f;
+    const glm::vec2 hi   = glm::vec2(rect.z, rect.w) * 2.0f - 1.0f;
+    const glm::vec2 span = glm::max(hi - lo, glm::vec2(1e-4f));
+    glm::mat4 crop(1.0f);
+    crop[0][0] = 2.0f / span.x;
+    crop[1][1] = 2.0f / span.y;
+    crop[3][0] = -(hi.x + lo.x) / span.x;
+    crop[3][1] = -(hi.y + lo.y) / span.y;
+    return crop * projection;
+}
+
 /// How far @p box reaches in front of @p plane: its farthest corner's signed distance.
 float reachInFront(const Math::AABB& box, const glm::vec4& plane) {
     const glm::vec3 n(plane);
@@ -72,7 +111,8 @@ void GLPlanarReflectionPass::prepare(const RenderView& view, const GLView& glVie
     m_count = 0;
     if (!view.hasCamera || view.planarReflectors.empty()) return;
 
-    // The ones the camera sees from their front, the most of the screen first.
+    // The ones the camera sees from their front, the most of the screen first; one too small to
+    // matter not at all (MIN_SCREEN_SHARE).
     const glm::vec3     eye   = view.camera.position;
     const Math::Frustum seen  = Math::extractFrustum(view.camera.viewProjection);
     std::array<std::pair<float, int>, MAX_DRAWN> best{};
@@ -83,10 +123,9 @@ void GLPlanarReflectionPass::prepare(const RenderView& view, const GLView& glVie
         if (front <= 0.01f) continue;
         const glm::vec3 reach = glm::abs(r.axisU) * r.halfExtents.x + glm::abs(r.axisV) * r.halfExtents.y;
         if (!Math::frustumIntersectsAABB(seen, Math::AABB{r.center - reach, r.center + reach})) continue;
-        // Its area as the eye sees it: facing, over the distance squared.
-        const glm::vec3 toward = r.center - eye;
-        const float     dist2  = std::max(glm::dot(toward, toward), 1e-4f);
-        const float     cover  = 4.0f * r.halfExtents.x * r.halfExtents.y * front / std::sqrt(dist2) / dist2;
+        const glm::vec4 rect  = screenRectOf(r, view.camera.viewProjection);
+        const float     cover = (rect.z - rect.x) * (rect.w - rect.y);
+        if (cover < MIN_SCREEN_SHARE) continue;
         for (int slot = 0; slot < MAX_DRAWN; ++slot) {
             if (best[slot].second >= 0 && cover <= best[slot].first) continue;
             for (int k = MAX_DRAWN - 1; k > slot; --k) best[k] = best[k - 1];
@@ -116,8 +155,14 @@ void GLPlanarReflectionPass::prepare(const RenderView& view, const GLView& glVie
             glm::uvec2(16u)
         );
 
+        // Its picture is read where the eye sees the reflector, so only that part of the screen is
+        // drawn, and only what that part shows of the scene.
+        const glm::vec4 margin(-PICTURE_MARGIN, -PICTURE_MARGIN, PICTURE_MARGIN, PICTURE_MARGIN);
+        drawn.rect = glm::clamp(screenRectOf(r, view.camera.viewProjection) + margin, 0.0f, 1.0f);
+
         // What that camera sees in front of the plane.
-        const Math::Frustum mirrored = Math::extractFrustum(drawn.camera.viewProjection);
+        const glm::mat4     narrowed = narrowedTo(drawn.camera.projection, drawn.rect);
+        const Math::Frustum mirrored = Math::extractFrustum(narrowed * drawn.camera.view);
         drawn.objects.clear();
         drawn.glass.clear();
         for (const uint32_t object : view.objects->scene) {
@@ -136,7 +181,7 @@ void GLPlanarReflectionPass::execute(GLFrameContext& ctx) {
     if (m_count == 0) return;
     for (int i = 0; i < m_count; ++i) {
         draw(ctx, i);
-        m_pictures[i] = {&m_drawn[i].reflector, &m_chains[i]};
+        m_pictures[i] = {&m_drawn[i].reflector, &m_chains[i], m_drawn[i].rect};
     }
     ctx.planarPictures = m_pictures.data();
     ctx.planarCount    = m_count;
@@ -166,6 +211,10 @@ void GLPlanarReflectionPass::draw(GLFrameContext& ctx, int i) {
     ctx.gl.setClearColor({0.0f, 0.0f, 0.0f, 1.0f});
     ctx.gl.clear(true, true, false, GLDepth::EYE_CLEAR);
     m_camera.update(drawn.camera, glm::vec2(width, height));
+    const glm::ivec2 from(glm::floor(glm::vec2(drawn.rect.x, drawn.rect.y) * glm::vec2(drawn.size)));
+    const glm::ivec2 to(glm::ceil(glm::vec2(drawn.rect.z, drawn.rect.w) * glm::vec2(drawn.size)));
+    ctx.gl.enableScissor(true);
+    ctx.gl.setScissor(from.x, from.y, to.x - from.x, to.y - from.y);
 
     // The sky behind it all, where depth is still clear.
     if (ctx.ibl.isReady()) {
@@ -196,6 +245,7 @@ void GLPlanarReflectionPass::draw(GLFrameContext& ctx, int i) {
         program->setUniform1i("u_hasAO", 0);
         program->setUniform1i("u_hasScreenShadow", 0);
         program->setUniform1i("u_useClusters", 0);
+        program->setUniform1i("u_hardShadows", 0);
         program->setUniform1i("u_renderMode", 0);
         program->setUniform1i("u_wirePass", 0);
         program->setUniform1i("u_hasSceneColor", 0);
@@ -236,6 +286,7 @@ void GLPlanarReflectionPass::draw(GLFrameContext& ctx, int i) {
     }
     VKM_GL_CHECK(glDisable(GL_CLIP_DISTANCE0));
     VKM_GL_CHECK(glFrontFace(GL_CCW));
+    ctx.gl.enableScissor(false);
 
     // Filtered down, as the reflection pass filters the scene, so a rough surface reads it blurred.
     Vkm::GL::MipChainTexture& chain = m_chains[i];
