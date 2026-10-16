@@ -24,6 +24,10 @@ flat out uint vViewmodel; // drawn through the viewmodel projection: its lights 
 // Bit-exact with the depth prepass so the two agree under GLDepth::EYE_TEST_EQUAL.
 invariant gl_Position;
 
+// A planar reflection's plane (GLPlanarReflectionPass): what lies behind it is clipped while
+// GL_CLIP_DISTANCE0 is on. Unread otherwise.
+uniform vec4 u_clipPlane;
+
 void main() {
     const mat4 model = instanceModel();
     vec4 worldPos = instanceWorldPosition();
@@ -68,4 +72,5 @@ void main() {
     vViewmodel = instanceIsViewmodel() ? 1u : 0u;
 
     gl_Position = eyeClip(worldPos);
+    gl_ClipDistance[0] = dot(vec4(worldPos.xyz, 1.0), u_clipPlane);
 }

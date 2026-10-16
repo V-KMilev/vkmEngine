@@ -7,6 +7,7 @@
 
 #include "system/render/data/camera_data.h"
 #include "system/render/data/light_data.h"
+#include "system/render/data/planar_reflector_data.h"
 #include "system/render/data/probe_data.h"
 #include "system/render/data/render_objects.h"
 #include "system/render/data/decal_data.h"
@@ -68,6 +69,7 @@ struct RenderView {
 
     std::vector<LightData>            lights;  ///< The enabled ones, in world space.
     std::vector<ProbeData>            probes;
+    std::vector<PlanarReflectorData>  planarReflectors;  ///< The enabled ones; the backend picks.
     std::vector<DecalData>            decals;  ///< Every enabled one in the scene: not culled to the camera.
     std::vector<ParticleData>         particlesAdditive;    ///< Order-independent.
     std::vector<ParticleData>         particlesAlpha;       ///< Unsorted; the backend orders them.

@@ -11,6 +11,8 @@
 
 namespace Vkm::Engine {
 
+class GLPlanarReflectionPass;
+
 /**
  * @brief Screen-space reflections: the lit scene a glossy pixel's ray meets replaces its probe
  *        or sky reflection.
@@ -27,7 +29,13 @@ namespace Vkm::Engine {
  */
 class GLReflectionPass : public GLPass {
     public:
-        GLReflectionPass();
+        /**
+         * @brief Lays @p planar's pictures over the surfaces on its reflectors, where the trace
+         *        and the probes cannot see.
+         *
+         * @param planar The backend's planar reflection pass, run before this one.
+         */
+        explicit GLReflectionPass(const GLPlanarReflectionPass& planar);
         ~GLReflectionPass() override;
 
         GLReflectionPass(const GLReflectionPass& other) = delete;
@@ -45,6 +53,21 @@ class GLReflectionPass : public GLPass {
 
     private:
         /**
+         * @brief Fill the colour chain and march each glossy pixel's ray into the hits.
+         *
+         * @param ctx  The frame.
+         * @param step Pixels a hit stands for on each axis.
+         */
+        void trace(GLFrameContext& ctx, int step);
+
+        /**
+         * @brief Tell the resolve where this frame's planar reflectors are, and bind their pictures.
+         *
+         * @param ctx The frame, whose camera they are placed for.
+         */
+        void bindPlanar(GLFrameContext& ctx);
+
+        /**
          * @brief (Re)allocate the colour chain and the trace target for a scene size.
          *
          * @param width  The scene's width in pixels.
@@ -58,6 +81,8 @@ class GLReflectionPass : public GLPass {
         Vkm::GL::ComputeShader m_downsample;  ///< Each chain level from the one before.
         Vkm::GL::Shader        m_trace;       ///< Ray march, a hit a pixel or a 2x2 block.
         Vkm::GL::Shader        m_resolve;     ///< Hits -> the colour chain's next link.
+
+        const GLPlanarReflectionPass& m_planar;
 
         Vkm::GL::MipChainTexture m_chain;  ///< The lit scene, filtered down.
 

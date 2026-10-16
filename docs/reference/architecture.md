@@ -140,7 +140,7 @@ Engine code, single include root `src/engine/`:
 | `core/event/`              | `EventBus` (typed pub/sub) and the `EventSender` view behaviors get |
 | `ecs/`                     | `Scene`, `EntityId`, `Environment`, `PhysicsSettings`, `EntityResolver` and `EntityNamer` (in `entity_mapping.h`), `HierarchyOperations` (free functions) |
 | `ecs/component/core/`      | `Transform`, `WorldTransform`, `Hierarchy`, `Name`                       |
-| `ecs/component/render/`    | `Mesh`, `Light`, `Camera`, `Decal`, `LOD`, `ParticleEmitter`, `ParticleTrigger`, `ReflectionProbe`, `IrradianceVolume`, `Ocean` |
+| `ecs/component/render/`    | `Mesh`, `Light`, `Camera`, `Decal`, `LOD`, `ParticleEmitter`, `ParticleTrigger`, `ReflectionProbe`, `PlanarReflector`, `IrradianceVolume`, `Ocean` |
 | `ecs/component/animation/` | `Animation`, `Animator`, `BoneSocket`, `AnimationTrack`                  |
 | `ecs/component/audio/`     | `AudioSource`, `AudioListener`                                           |
 | `ecs/component/physics/`   | `Rigidbody`, `Collider`, `CharacterController`, `Joint`, `Ragdoll`       |

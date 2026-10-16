@@ -32,6 +32,7 @@
 #include "pass/gl_resolve_pass.h"
 #include "pass/gl_cluster_pass.h"
 #include "pass/gl_fog_pass.h"
+#include "pass/gl_planar_reflection_pass.h"
 #include "pass/gl_reflection_pass.h"
 #include "pass/gl_dof_pass.h"
 #include "pass/gl_decal_pass.h"
@@ -155,6 +156,7 @@ std::string GLBackend::shaderConstants() {
         << "const float EXPOSURE_MAX_LOG        = " << std::to_string(Exposure::MAX_LOG) << ";\n"
         << "const int   MAX_PROBES              = "
         << GLBindings::ProbeTextureSlots::MAX_PROBES << ";\n"
+        << "const int   MAX_PLANAR_REFLECTORS   = " << GLPlanarReflectionPass::MAX_DRAWN << ";\n"
         // A LOD index, so one less than the mip count each cube carries.
         << "const float MAX_REFLECTION_LOD      = " << (GLIBL::PREFILTER_MIPS - 1)   << ".0;\n"
         << "const float MAX_PROBE_LOD           = " << (GLProbeArray::PREFILTER_MIPS - 1) << ".0;\n"
@@ -339,12 +341,15 @@ bool GLBackend::init(WindowManager& window) {
     m_passes.push_back({"ClusterCull",    std::make_unique<GLClusterPass>()});
     m_passes.push_back({"FogCompute",     std::make_unique<GLFogPass>()});
     m_passes.push_back({"Atmosphere",     std::make_unique<GLAtmospherePass>()});
+    auto planar = std::make_unique<GLPlanarReflectionPass>(m_sceneCapture, m_camera);
+    m_planar = planar.get();
+    m_passes.push_back({"PlanarReflections", std::move(planar)});
     m_passes.push_back({"Skybox",         std::make_unique<GLSkyboxPass>()});
     m_passes.push_back({"Ocean",          std::make_unique<GLOceanPass>()});
     m_passes.push_back({"Forward",        std::make_unique<GLForwardPass>(m_sceneCapture.pbrProgram())});
     m_passes.push_back({"Particles",      std::make_unique<GLParticlePass>()});
     m_passes.push_back({"ResolveColor",   std::make_unique<GLResolvePass>(GLResolvePass::Scope::Color)});
-    m_passes.push_back({"Reflections",    std::make_unique<GLReflectionPass>()});
+    m_passes.push_back({"Reflections",    std::make_unique<GLReflectionPass>(*m_planar)});
     m_passes.push_back({"Decals",         std::make_unique<GLDecalPass>()});
     m_passes.push_back({"DoF",            std::make_unique<GLDoFPass>()});
     m_passes.push_back({"Bloom",          std::make_unique<GLBloomPass>()});
@@ -407,8 +412,9 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
             static_cast<float>(view.settings.textureAnisotropy)
         );
     }
-    // The reflection inputs exist only while the reflection pass reads them.
-    const bool reflect = view.settings.ssr;
+    // The reflection inputs exist while the reflection pass may read them: ssr is on, or a planar
+    // reflector may be drawn.
+    const bool reflect = view.settings.ssr || !view.planarReflectors.empty();
     m_sceneHDR.resize(view.sceneWidth(), view.sceneHeight(), 1, reflect);
     m_postA.resize(view.sceneWidth(), view.sceneHeight());
     m_postB.resize(view.sceneWidth(), view.sceneHeight());
@@ -496,6 +502,12 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     {
         PROFILE_SCOPE("Render/OpaqueBatch");
         m_opaqueBatcher.buildGrouped(m_opaque, *view.objects, m_view, m_skinPalette.count());
+    }
+
+    // The mirrors' pictures see more than the camera does: what they draw is readied with the assets.
+    {
+        PROFILE_SCOPE("Render/PlanarPrepare");
+        m_planar->prepare(view, m_view, resources);
     }
 
     // Each pass binds and clears its own target.

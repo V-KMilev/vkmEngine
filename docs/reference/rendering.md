@@ -49,6 +49,7 @@ which resolves the handles it names); a backend consumes exactly this.
 | `skinMatrices` | `const vector<mat4>*` | The frame's bone palettes; each object carries its range (`skinFirst`, `ObjectDraw::skinCount`). Null when nothing is posed |
 | `lights` | `vector<LightData>` | Enabled lights, world space, each with its entity slot |
 | `probes` | `vector<ProbeData>` | Reflection probes |
+| `planarReflectors` | `vector<PlanarReflectorData>` | Enabled planar reflectors, world space; the backend picks which it draws |
 | `decals` | `vector<DecalData>` | Scene-wide, not camera-culled |
 | `particlesAdditive` / `particlesAlpha` / `particlesDistortion` | `vector<ParticleData>` | Billboards and streaks split by blend, unsorted |
 | `stripPoints` | `vector<StripPoint>` | Every ribbon's and trail's points, each strip's run in turn |
@@ -165,19 +166,20 @@ after everything it reads.
 | 6 | ClusterCull | Compute: lights into the Forward+ cluster grid |
 | 7 | FogCompute | Compute: the froxel fog volume, before anything lit reads it ([Fog](#fog)) |
 | 8 | Atmosphere | Compute, procedural sky only: sky-view table and aerial perspective ([lighting.md](lighting.md#image-based-lighting-ibl)) |
-| 9 | Skybox | The background, before geometry so transparents blend over it; with no sky, the fog over a black background |
-| 10 | Ocean | The sea's ripple fields and its shore capture ([The ocean](#the-ocean)) |
-| 11 | Forward | The PBR ubershader: opaque, alpha-mask (alpha-to-coverage under MSAA), then transparents. Writes the reflection inputs while `ssr` is on |
-| 12 | Particles | Billboards and strips, depth-tested, never depth-writing, soft against scene depth: additive, alpha, then distortion over a copy of the colour ([Particles](#particles)) |
-| 13 | ResolveColor | MSAA only: colour and reflection inputs, tonemap-weighted, and depth again now that alpha-masked geometry is in it |
-| 14 | Reflections | Screen-space reflections: replaces the probe / sky reflection where a trace hits (chain) |
-| 15 | Decals | Projected boxes into the colour chain, lit diffusely as the surface under them. After the reflections, so a glossy floor's reflection does not cover them |
-| 16 | DoF | Disk blur from the camera's focus distance (chain) |
-| 17 | Bloom | Compute: bright-pass and mip down/upsample; the composite adds it |
-| 18 | Composite | Bloom, exposure, tonemap and sRGB encode to the backbuffer viewport, or a debug buffer per `renderMode` |
-| 19 | Grid | The editor's grid and axes, after the tonemap so the axes keep `Math::AXIS_COLORS` |
-| 20 | UI | The screen-space UI ([ui.md](ui.md)) |
-| 21 | Splash | The startup logo over black, covering the frame. Gets paths and an opacity from `SplashSystem`, since the engine core cannot decode a file |
+| 9 | PlanarReflections | Each seen `PlanarReflector`, at most `GLPlanarReflectionPass::MAX_DRAWN`: the opaque scene from the mirrored camera, clipped at its plane, with every light, the shadows, probes and sky, filtered into a chain ([Planar reflections](#planar-reflections)) |
+| 10 | Skybox | The background, before geometry so transparents blend over it; with no sky, the fog over a black background |
+| 11 | Ocean | The sea's ripple fields and its shore capture ([The ocean](#the-ocean)) |
+| 12 | Forward | The PBR ubershader: opaque, alpha-mask (alpha-to-coverage under MSAA), then transparents. Writes the reflection inputs while `ssr` is on or a planar reflector is |
+| 13 | Particles | Billboards and strips, depth-tested, never depth-writing, soft against scene depth: additive, alpha, then distortion over a copy of the colour ([Particles](#particles)) |
+| 14 | ResolveColor | MSAA only: colour and reflection inputs, tonemap-weighted, and depth again now that alpha-masked geometry is in it |
+| 15 | Reflections | Replaces the probe / sky reflection with a planar reflector's picture on its rectangle, else where a screen-space trace hits (chain) |
+| 16 | Decals | Projected boxes into the colour chain, lit diffusely as the surface under them. After the reflections, so a glossy floor's reflection does not cover them |
+| 17 | DoF | Disk blur from the camera's focus distance (chain) |
+| 18 | Bloom | Compute: bright-pass and mip down/upsample; the composite adds it |
+| 19 | Composite | Bloom, exposure, tonemap and sRGB encode to the backbuffer viewport, or a debug buffer per `renderMode` |
+| 20 | Grid | The editor's grid and axes, after the tonemap so the axes keep `Math::AXIS_COLORS` |
+| 21 | UI | The screen-space UI ([ui.md](ui.md)) |
+| 22 | Splash | The startup logo over black, covering the frame. Gets paths and an opacity from `SplashSystem`, since the engine core cannot decode a file |
 
 **The forward programs.** One fragment file, `shaders/forward/pbr`, built four
 ways: `pbr` and `pbr_skinned` (differing only in the vertex stage), and a plain
@@ -313,6 +315,25 @@ lists the pass reads. The fields are documented in
 - **A one-off puff** is an emitter with `emitting` off, a `burst` and
   `destroyWhenSpent`: the burst spawns whole, and the entity is destroyed once
   the last particle dies. An emitter is spent only once it has fired.
+
+### Planar reflections
+
+A `PlanarReflector` is a rectangle facing its entity's +Y. While the camera sees
+it from its front, glossy pixels lying on it - within the depth's resolution of
+the plane, facing its way - take its picture: the scene mirrored in the plane,
+read at the pixel's own place on the screen, shifted by how far the pixel's
+normal leans off the plane's (a ripple, a normal map) and blurred by its
+roughness. It shows what the screen-space trace cannot: what is behind the eye,
+off the screen, or facing away, which is any mirror that faces the viewer.
+
+- **It is a second drawing of the scene.** Opaque and cut-out meshes only, lit
+  by every light rather than the camera's clusters, without GTAO, screen
+  shadows, fog or particles; at `resolution` of the frame's size. A frame draws
+  the few covering the most of the screen; the rest fall back to the trace and
+  the probes.
+- **The plane is the entity's position.** Put it on the reflecting face, not
+  inside a slab: what lies a centimetre in front of the plane and behind is
+  clipped, and the face itself is in the clipped part.
 
 ### The viewmodel
 

@@ -140,6 +140,7 @@ void GLView::sync(const RenderView& view, const ResourceManager& resources) {
         objects,
         lights,
         probes,
+        planarReflectors,
         decals,
         particlesAdditive,
         particlesAlpha,

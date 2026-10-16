@@ -59,6 +59,7 @@ Each header documents its fields.
 | `CharacterController` | `component/physics/character_controller.h` | Move, jump, climb and crouch input in; ground contact out ([Physics](physics.md))                     |
 | `Rigidbody`           | `component/physics/rigidbody.h`            | A Dynamic, Kinematic or Static body, plus the support and blocking outputs                            |
 | `ReflectionProbe`     | `component/render/reflection_probe.h`      | Local IBL probe over an influence box                                                                 |
+| `PlanarReflector`     | `component/render/planar_reflector.h`      | A flat mirror: glossy surfaces on its rectangle reflect the scene drawn again from the mirrored camera |
 | `AudioSource`         | `component/audio/audio_source.h`           | A clip to play, spatial or not; `playing` is runtime state ([Audio](audio.md#starting-and-stopping-a-sound-from-gameplay)) |
 | `AudioListener`       | `component/audio/audio_listener.h`         | The ear every spatial source is heard relative to                                                     |
 | `Decal`               | `component/render/decal.h`                 | A material projected onto whatever its box covers                                                     |

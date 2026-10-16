@@ -34,6 +34,7 @@
 #include "ecs/component/render/lod.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/component/render/particle_emitter.h"
+#include "ecs/component/render/planar_reflector.h"
 #include "ecs/component/render/reflection_probe.h"
 #include "ecs/component/ui/ui_button.h"
 #include "ecs/component/ui/ui_canvas.h"
@@ -325,6 +326,7 @@ class ScriptEditCommand : public Command {
     X(Joint,               joint)               \
     X(Ragdoll,             ragdoll)             \
     X(ReflectionProbe,     reflectionProbe)     \
+    X(PlanarReflector,     planarReflector)     \
     X(IrradianceVolume,    irradianceVolume)    \
     X(Ocean,               ocean)               \
     X(Decal,               decal)               \

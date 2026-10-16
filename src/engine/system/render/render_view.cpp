@@ -16,6 +16,7 @@
 #include "ecs/component/render/irradiance_volume.h"
 #include "ecs/component/render/light.h"
 #include "ecs/component/render/particle_emitter.h"
+#include "ecs/component/render/planar_reflector.h"
 #include "ecs/component/render/reflection_probe.h"
 #include "ecs/environment.h"
 #include "system/animation/pose_buffer.h"
@@ -105,6 +106,36 @@ void buildProbes(RenderView& view, const Scene& scene) {
                 probe.resolution,
                 probe.bakeVersion,
                 id.slot()
+            });
+        }
+    );
+}
+
+/**
+ * @brief Snapshot every enabled planar reflector into world space.
+ *
+ * @param view  The view being refilled.
+ * @param scene Scene whose PlanarReflector components are gathered.
+ */
+void buildPlanarReflectors(RenderView& view, const Scene& scene) {
+    view.planarReflectors.clear();
+
+    scene.forEach<PlanarReflector, Transform>(
+        [&](EntityId id, const PlanarReflector& reflector, const Transform& transform) {
+            if (!reflector.enabled) return;
+            const glm::mat4 model = resolvedWorldMatrix(scene, id, transform);
+            const glm::vec3 up(model[1]);
+            const glm::vec3 across(model[0]);
+            if (glm::length(up) < 1e-6f || glm::length(across) < 1e-6f) return;
+            const glm::vec3 normal = glm::normalize(up);
+            const glm::vec3 axisU  = glm::normalize(across - normal * glm::dot(across, normal));
+            view.planarReflectors.push_back({
+                glm::vec3(model[3]),
+                normal,
+                axisU,
+                glm::cross(axisU, normal),
+                glm::max(reflector.halfExtents, glm::vec2(0.0f)),
+                glm::clamp(reflector.resolution, 0.1f, 1.0f)
             });
         }
     );
@@ -343,6 +374,7 @@ void RenderView::build(
             objectLists,
             lightList,
             probeList,
+            planarList,
             decalList,
             particlesAdd,
             particlesBlend,
@@ -366,6 +398,7 @@ void RenderView::build(
         cameraPresent = false;
         lightList.clear();
         probeList.clear();
+        planarList.clear();
         decalList.clear();
         particlesAdd.clear();
         particlesBlend.clear();
@@ -385,6 +418,7 @@ void RenderView::build(
     camera = visibility.camera;
     buildLights(*this, scene);
     buildProbes(*this, scene);
+    buildPlanarReflectors(*this, scene);
     buildDecals(*this, scene);
     buildParticles(*this, scene, particles, static_cast<bool>(visibility.cameraEntity));
     buildIrradianceVolume(*this, scene);

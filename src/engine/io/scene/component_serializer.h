@@ -26,6 +26,7 @@
 #include "ecs/component/render/irradiance_volume.h"
 #include "ecs/component/render/light.h"
 #include "ecs/component/render/lod.h"
+#include "ecs/component/render/planar_reflector.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/component/render/ocean.h"
 #include "ecs/component/render/particle_emitter.h"
@@ -79,6 +80,7 @@ class ResourceManager;
     P(IrradianceVolume,    "IrradianceVolume")    \
     P(Ocean,               "Ocean")               \
     P(ReflectionProbe,     "ReflectionProbe")     \
+    P(PlanarReflector,     "PlanarReflector")     \
     P(Animation,           "Animation")           \
     R(Animator,            "Animator")            \
     P(BoneSocket,          "BoneSocket")          \
@@ -220,6 +222,8 @@ namespace ComponentSerializer {
 
     nlohmann::json save(const ReflectionProbe&);
     void load(const nlohmann::json&, ReflectionProbe&);
+    nlohmann::json save(const PlanarReflector&);
+    void load(const nlohmann::json&, PlanarReflector&);
 
     nlohmann::json save(const UICanvas&);
     void load(const nlohmann::json&, UICanvas&);

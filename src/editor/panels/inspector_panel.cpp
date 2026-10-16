@@ -37,6 +37,7 @@
 #include "ecs/component/render/particle_emitter.h"
 #include "system/particle/live_particles.h"
 #include "system/particle/particle_system.h"
+#include "ecs/component/render/planar_reflector.h"
 #include "ecs/component/render/reflection_probe.h"
 #include "ecs/component/ui/ui_button.h"
 #include "ecs/component/ui/ui_canvas.h"
@@ -1180,6 +1181,7 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         addItem(ParticleEmitter{});
         addItem(ParticleTrigger{});
         addItem(ReflectionProbe{});
+        addItem(PlanarReflector{});
         addItem(IrradianceVolume{});
         addItem(Ocean{});
 
@@ -1874,6 +1876,28 @@ void InspectorPanel::drawReflectionProbeSection(EditorContext& ec, EntityId id) 
         if (ImGui::IsItemHovered())
             ImGui::SetTooltip("Captures the scene from the entity's Transform position");
 
+        return changed;
+    });
+}
+
+void InspectorPanel::drawPlanarReflectorSection(EditorContext& ec, EntityId id) {
+    editComponentCard<PlanarReflector>(ec, id, [&](PlanarReflector& reflector) {
+        bool changed = false;
+        const char* enabledTooltip = "Off leaves its surfaces to the trace and the probes";
+        changed |= propCheckbox("Enabled", &reflector.enabled, enabledTooltip);
+        const char* sizeTooltip = "The rectangle along the entity's X and Z; it faces the entity's +Y";
+        changed |= propRow("Half Size", sizeTooltip, [&] {
+            float* size = glm::value_ptr(reflector.halfExtents);
+            return ImGui::DragFloat2("##v", size, 0.05f, 0.0f, 1000.0f, "%.2f m", PROP_CLAMP);
+        });
+        changed |= propSlider(
+            "Resolution",
+            &reflector.resolution,
+            0.1f,
+            1.0f,
+            "%.2f",
+            "Its picture's size, a share of the frame's: a second drawing of the scene each frame"
+        );
         return changed;
     });
 }

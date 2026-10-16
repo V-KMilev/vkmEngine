@@ -72,6 +72,8 @@ namespace Vkm::Engine {
     X(ReflectionTextureSlots, ENV,                   1,  REFLECT_SLOT_ENV,                    That weight times the probe / sky radiance)                          \
     X(ReflectionTextureSlots, TRACE,                 2,  REFLECT_SLOT_TRACE,                  Each pixel hit: uv + trust + the chain level its lobe spans)         \
     X(ReflectionTextureSlots, CHAIN,                 3,  REFLECT_SLOT_CHAIN,                  The lit scene as a filtered mip chain that a hit reads)              \
+    X(ReflectionTextureSlots, PLANAR_0,              4,  REFLECT_SLOT_PLANAR_0,               The first planar reflector picture as a filtered mip chain)           \
+    X(ReflectionTextureSlots, PLANAR_1,              5,  REFLECT_SLOT_PLANAR_1,               The second planar reflector picture)                                 \
     X(PostTextureSlots,       SCENE_COLOR,           18, POST_SLOT_SCENE_COLOR,               Scene colour: refraction backdrop and a post pass source)            \
     X(PostTextureSlots,       SCENE_DEPTH,           19, POST_SLOT_SCENE_DEPTH,               Scene depth texture)                                                 \
     X(PostTextureSlots,       SCENE_GBUFFER,         20, POST_SLOT_SCENE_GBUFFER,             Scene G-buffer: the oct view-normal)                                 \

@@ -322,6 +322,8 @@ void emitAssetRefs(const ParticleEmitter& e, AssetRefs& refs) {
 
 nlohmann::json save(const ReflectionProbe& p)          { return saveReflected(p); }
 void load(const nlohmann::json& j, ReflectionProbe& p) { loadReflected(j, p); }
+nlohmann::json save(const PlanarReflector& p)          { return saveReflected(p); }
+void load(const nlohmann::json& j, PlanarReflector& p) { loadReflected(j, p); }
 
 nlohmann::json save(const AudioSource& s, const ResourceManager& resources) {
     return saveReflected(s, resources);

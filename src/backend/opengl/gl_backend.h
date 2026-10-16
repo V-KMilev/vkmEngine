@@ -48,6 +48,7 @@
 namespace Vkm::Engine {
 
 class GLPass;
+class GLPlanarReflectionPass;
 class WindowSurface;
 struct Environment;
 
@@ -292,6 +293,7 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         std::vector<uint32_t> m_transparent;
 
         std::vector<PassEntry> m_passes;
+        GLPlanarReflectionPass* m_planar = nullptr;  ///< In m_passes; readied before they run.
 
         /// HDR path of the currently baked IBL; empty when none (or the sky is procedural).
         std::string m_bakedEnvPath;
