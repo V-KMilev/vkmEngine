@@ -296,7 +296,7 @@ lists the pass reads. The fields are documented in
   emitter afterwards leaves its particles where they are.
 - **`blend` splits the draw and says what the colour is.** An additive particle
   emits (fire, sparks): unsorted, its colour the radiance it adds, past 1 a
-  bloom, and it lights nothing - a fire's light is a `Light`. An alpha one
+  bloom; the scene round it is lit by the emitter's light, below. An alpha one
   scatters (smoke, dust): its colour an albedo lit by its cluster's lights
   through their shadows and by the environment, plus the share it gives off; a
   card is lit as a ball, a strip as a card. A distortion one (heat haze) adds no
@@ -318,6 +318,12 @@ lists the pass reads. The fields are documented in
   each frame into the next, so a sheet of a few dozen frames plays slowly
   without stepping. An alpha emitter's `normalMap` is a second sheet, frame for
   frame, that lights each puff by its own folds instead of as a ball.
+- **An emitter's light** (`lightIntensity`, `lightColor`, `lightRadius`) is one
+  point light its live particles give off together, at their middle, each
+  adding its share by its colour's alpha: a fireball's flash fades and dies with
+  it, and a muzzle flash lights the wall whoever draws the flash. It is
+  `LightData::transient`: it casts no shadow, and a capture gives it nothing, so
+  no probe bakes a flash in or rebakes for one.
 - **A one-off puff** is an emitter with `emitting` off, a `burst` and
   `destroyWhenSpent`: the burst spawns whole, and the entity is destroyed once
   the last particle dies. An emitter is spent only once it has fired.

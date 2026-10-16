@@ -167,6 +167,54 @@ void buildDecals(RenderView& view, const Scene& scene) {
 }
 
 /**
+ * @brief Add the light @p emitter's live particles give off together (ParticleEmitter::lightIntensity).
+ *
+ * At their middle, weighted by each one's alpha, as large as they are spread, which softens its
+ * highlight: the whole fades and dies as they do.
+ *
+ * @param view    The view being refilled.
+ * @param id      The emitter's entity.
+ * @param emitter Its light.
+ * @param live    Its particles.
+ */
+void addParticleLight(
+    RenderView& view,
+    EntityId id,
+    const ParticleEmitter& emitter,
+    const std::vector<Particle>& live
+) {
+    const auto alphaOf = [&](const Particle& p) {
+        const float life = p.lifetime > 0.0f ? p.age / p.lifetime : 1.0f;
+        return std::max(emitter.color.at(life).a, 0.0f);
+    };
+    float     shine = 0.0f;
+    glm::vec3 middle(0.0f);
+    for (const Particle& p : live) {
+        shine  += alphaOf(p);
+        middle += p.position * alphaOf(p);
+    }
+    if (shine <= 0.0f) return;
+    middle /= shine;
+    float spread = 0.0f;
+    for (const Particle& p : live) {
+        const glm::vec3 off = p.position - middle;
+        spread += glm::dot(off, off) * alphaOf(p);
+    }
+
+    LightData light{};
+    light.type         = LightType::Point;
+    light.entitySlot   = id.slot();
+    light.color        = emitter.lightColor;
+    light.intensity    = emitter.lightIntensity * shine;
+    light.position     = middle;
+    light.direction    = glm::vec3(0.0f, -1.0f, 0.0f);
+    light.radius       = std::max(emitter.lightRadius, 0.01f);
+    light.sourceRadius = std::min(std::sqrt(spread / shine), 0.5f * light.radius);
+    light.transient    = true;
+    view.lights.push_back(light);
+}
+
+/**
  * @brief Flatten every emitter's live particles into the frame's billboards and strips, each list
  *        by its blend, unsorted.
  *
@@ -188,6 +236,8 @@ void buildParticles(RenderView& view, const Scene& scene, const LiveParticles* p
 
     scene.forEach<ParticleEmitter>([&](EntityId id, const ParticleEmitter& emitter) {
         const LiveParticles::Pool* pool = particles ? particles->poolOf(id) : nullptr;
+        // Lighting what is round it whoever draws the particles: a muzzle flash lights the wall.
+        if (pool && emitter.lightIntensity > 0.0f) addParticleLight(view, id, emitter, pool->particles);
         const bool hidden = throughAnEye && emitter.seenBy == SeenBy::AllButEye;
         if (!pool || pool->particles.empty() || hidden) return;
         const bool viewmodel = throughAnEye && emitter.seenBy == SeenBy::Viewmodel;

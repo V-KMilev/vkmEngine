@@ -113,12 +113,20 @@ struct ParticleEmitter {
     float         emission   = 0.0f;   ///< Alpha: the share of its colour it gives off - fire in smoke.
     float         distortion = 0.03f;  ///< Distortion: how far it bends what is behind, in view heights.
 
+    /// A point light its live particles give off together, at their middle: this much intensity for
+    /// each one at full alpha, summed by its colour's alpha, so it fades and dies as they do - a
+    /// fireball's flash, a fire's glow. 0 gives none. It casts no shadow, and no capture bakes it: a
+    /// fire the probes should see is a flickering Light.
+    float     lightIntensity = 0.0f;
+    glm::vec3 lightColor{1.0f, 0.6f, 0.3f};  ///< The light's colour.
+    float     lightRadius = 8.0f;            ///< Metres the light reaches.
+
     ParticleRender render      = ParticleRender::Billboard;
     float          stretch     = 0.05f;  ///< Stretched: seconds of its travel the card spans.
     float          trailLength = 0.3f;   ///< Trail: seconds of where it was the strip spans.
 
     /// What each particle shows, tinted by its colour; none draws the soft disc. A Distortion
-    /// particle reads it as a normal map, so it is imported with TextureUsage::Normal.
+    /// particle reads it as a normal map, so import it with TextureUsage::Normal.
     TextureHandle texture;
 
     /// Alpha: a normal map laid over the sheet frame for frame, lighting each puff by its own folds
@@ -138,9 +146,10 @@ struct ParticleEmitter {
     float bounce        = 0.3f;   ///< The share of its speed into the surface it keeps, turned back.
     float lifeLostOnHit = 0.0f;   ///< The share of its whole life a strike takes; 1 ends it.
 
-    /// Who draws its particles, as for a Mesh. Particles cast no shadow and are in no capture, so
-    /// through a scene camera AllButEye draws none and EyeOnly draws as All; Viewmodel lines a muzzle
-    /// flash up with the weapon in hand and shows it in front of it.
+    /// Who draws its particles, as for a Mesh. Particles cast no shadow and no probe captures them,
+    /// and a planar reflection draws those the eye does, less the viewmodel layer, so through a
+    /// scene camera AllButEye draws none and EyeOnly draws as All; Viewmodel lines a muzzle flash
+    /// up with the weapon in hand and shows it in front of it.
     SeenBy seenBy = SeenBy::All;
 };
 
@@ -246,6 +255,9 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::ParticleEmitter)
     VKM_F(blend)
     VKM_F(emission)
     VKM_F(distortion)
+    VKM_F(lightIntensity)
+    VKM_F(lightColor)
+    VKM_F(lightRadius)
     VKM_F(render)
     VKM_F(stretch)
     VKM_F(trailLength)

@@ -2170,9 +2170,27 @@ void InspectorPanel::drawParticleSection(EditorContext& ec, EntityId id) {
             );
         }
 
+        sectionLabel("Light");
+        changed |= propDrag(
+            "Light Intensity",
+            &e.lightIntensity,
+            0.1f,
+            0.0f,
+            10000.0f,
+            "%.1f",
+            "What each live particle at full alpha gives off; summed at their middle, the light fades and "
+            "dies with them. 0 gives none. It casts no shadow"
+        );
+        if (e.lightIntensity > 0.0f) {
+            changed |= propColor3("Light Color", glm::value_ptr(e.lightColor));
+            const char* radiusTooltip = "Metres it reaches";
+            changed |= propDrag("Light Radius", &e.lightRadius, 0.1f, 0.1f, 200.0f, "%.1f m", radiusTooltip);
+        }
+
         const char* seenByTooltip =
-            "Who draws its particles, through a scene camera, as for a Mesh. Particles cast no shadow "
-            "and are in no capture, so All But Eye draws none and Eye Only draws as All; Viewmodel - "
+            "Who draws its particles, through a scene camera, as for a Mesh. Particles cast no shadow, "
+            "no probe captures them and a mirror draws what the eye does, so All But Eye draws none "
+            "and Eye Only draws as All; Viewmodel - "
             "at the camera's Viewmodel FOV, a muzzle flash lined up with the weapon and in front of it. "
             "The editor's own view draws everything";
         changed |= propEnumCombo("Seen By", e.seenBy, seenByTooltip);

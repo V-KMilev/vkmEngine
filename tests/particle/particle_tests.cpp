@@ -835,8 +835,48 @@ void testAParticleIsHandedOnAsItsFrameTurnedOrStreaked() {
     check("a haze particle carries how far it bends", view.particlesDistortion[0].trail.w == 0.05f);
 }
 
+// An emitter's light is its live particles' together: at their middle as their alpha weighs them,
+// as bright as they are by their alpha, gone with the last of them, and never baked or shadowed.
+void testAnEmittersLightIsItsParticlesTogether() {
+    std::printf("The light an emitter's particles give off:\n");
+
+    Scene scene;
+    LiveParticles live;
+    ParticleEmitter flash;
+    flash.lightIntensity = 10.0f;
+    flash.lightColor     = {1.0f, 0.5f, 0.2f};
+    flash.lightRadius    = 6.0f;
+    flash.color.keys     = {{0.0f, {1.0f, 1.0f, 1.0f, 1.0f}}, {1.0f, {1.0f, 1.0f, 1.0f, 0.0f}}};
+    Particle young;
+    young.position = {2.0f, 1.0f, 0.0f};
+    young.lifetime = 2.0f;
+    Particle old = young;
+    old.position = {-2.0f, 1.0f, 0.0f};
+    old.age      = 1.5f;
+    const EntityId id = addEmitter(scene, live, flash, young);
+    live.pools[id.slot()].particles.push_back(old);
+    addEmitter(scene, live, ParticleEmitter{}, Particle{});
+
+    Visibility seen;
+    seen.hasCamera = true;
+    RenderView view;
+    view.build(scene, seen, nullptr, nullptr, nullptr, &live, nullptr);
+    check("one light, the emitter's", view.lights.size() == 1);
+    if (view.lights.size() != 1) return;
+    const LightData& light = view.lights[0];
+    // Alphas 1 and 0.25: 12.5 in all, its middle four fifths of the way to the young one.
+    check("  as bright as its particles by their alpha", std::abs(light.intensity - 12.5f) < 1e-4f);
+    check("  at their middle by the same", closeTo(light.position, {1.2f, 1.0f, 0.0f}));
+    check("  in its colour, as far as its radius", light.color == flash.lightColor && light.radius == 6.0f);
+    check("  a moment's: no shadow, no capture", light.transient && !light.castShadows);
+
+    live.pools[id.slot()].particles.clear();
+    view.build(scene, seen, nullptr, nullptr, nullptr, &live, nullptr);
+    check("gone with the last of them", view.lights.empty());
+}
+
 // An emitter's seenBy reads as a mesh's, through a scene camera alone; particles are drawn by the
-// eye and nothing else, so one seen by all but the eye is drawn nowhere.
+// eye and the mirrors it sees, so one seen by all but the eye is drawn nowhere.
 void testAnEmitterIsSeenByAsAMeshIs() {
     std::printf("Who sees an emitter's particles:\n");
 
@@ -911,5 +951,6 @@ void runParticleTests() {
     testASheetPlaysOnceOverALifeOrAtItsRate();
     testAParticleIsHandedOnAsItsFrameTurnedOrStreaked();
     testAnEmitterIsSeenByAsAMeshIs();
+    testAnEmittersLightIsItsParticlesTogether();
     testParticlesAreBornOnFramesAndAnglesOfTheirOwn();
 }

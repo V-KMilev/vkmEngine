@@ -81,6 +81,13 @@
             "max": 8.0,
             "min": 5.0
           },
+          "lightColor": [
+            1.0,
+            0.6000000238418579,
+            0.30000001192092896
+          ],
+          "lightIntensity": 0.0,
+          "lightRadius": 8.0,
           "maxParticles": 40,
           "normalMap": "assets/effects/smoke_normal.png",
           "radius": 0.17499999701976776,

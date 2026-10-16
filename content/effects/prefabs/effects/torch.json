@@ -87,6 +87,13 @@
             "max": 0.6000000238418579,
             "min": 0.3499999940395355
           },
+          "lightColor": [
+            1.0,
+            0.6000000238418579,
+            0.2800000011920929
+          ],
+          "lightIntensity": 0.25,
+          "lightRadius": 5.0,
           "maxParticles": 128,
           "normalMap": "",
           "radius": 0.05999999865889549,
@@ -216,6 +223,13 @@
             "max": 1.399999976158142,
             "min": 0.800000011920929
           },
+          "lightColor": [
+            1.0,
+            0.6000000238418579,
+            0.2800000011920929
+          ],
+          "lightIntensity": 0.0,
+          "lightRadius": 5.0,
           "maxParticles": 128,
           "normalMap": "",
           "radius": 0.05000000074505806,
@@ -285,59 +299,8 @@
       },
       "parent": 0,
       "uid": 1
-    },
-    {
-      "components": {
-        "Light": {
-          "areaHeight": 1.0,
-          "areaRadius": 0.5,
-          "areaWidth": 1.0,
-          "castShadows": false,
-          "color": [
-            1.0,
-            0.550000011920929,
-            0.2199999988079071
-          ],
-          "enabled": true,
-          "flicker": 0.30000001192092896,
-          "innerConeAngle": 0.5,
-          "intensity": 1.600000023841858,
-          "outerConeAngle": 0.7850000262260437,
-          "radius": 5.0,
-          "shadowBias": 0.5,
-          "shadowDistance": 100.0,
-          "shadowNormalBias": 1.0,
-          "shadowPriority": 0,
-          "sourceRadius": 0.05000000074505806,
-          "twoSided": false,
-          "type": "Point"
-        },
-        "Name": {
-          "value": "Torch Light"
-        },
-        "Transform": {
-          "position": [
-            0.0,
-            0.15000000596046448,
-            0.0
-          ],
-          "rotation": [
-            1.0,
-            0.0,
-            0.0,
-            0.0
-          ],
-          "scale": [
-            1.0,
-            1.0,
-            1.0
-          ]
-        }
-      },
-      "parent": 0,
-      "uid": 2
     }
   ],
-  "nextUid": 3,
+  "nextUid": 2,
   "version": 3
 }

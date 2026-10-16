@@ -16,7 +16,7 @@ namespace Vkm::Engine {
 GLLights::GLLights()  = default;
 GLLights::~GLLights() = default;
 
-void GLLights::update(const std::vector<LightData>& lights, LightSlots shadowSlots) {
+void GLLights::update(const std::vector<LightData>& lights, LightSlots shadowSlots, bool steady) {
     LightsBuffer data{};
 
     const int count = static_cast<int>(std::min<size_t>(lights.size(), Config::MAX_LIGHTS));
@@ -26,7 +26,10 @@ void GLLights::update(const std::vector<LightData>& lights, LightSlots shadowSlo
         GpuLight& gpu = data.lights[i];
 
         gpu.position  = glm::vec4(light.position, static_cast<float>(light.type));
-        gpu.color     = glm::vec4(light.color, light.intensity * light.wave);
+        const float shine = !steady ? light.intensity * light.wave
+            : light.transient       ? 0.0f
+            : light.intensity;
+        gpu.color     = glm::vec4(light.color, shine);
         gpu.direction = glm::vec4(light.direction, light.radius);
         // w: the atlas slot this light's depth map lives in, or -1 - a
         // directional's cascade base, a spot's 2D slot, a point's cube.

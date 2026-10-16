@@ -79,7 +79,8 @@ void GLCaptureShadow::use(int slot, const RenderView& view, GLLights& lights) {
         const auto index = static_cast<size_t>(sun - view.lights.data());
         if (index < lightCount) m_lightSlots[index] = 0;
     }
-    lights.update(view.lights, {m_lightSlots.data(), static_cast<uint32_t>(lightCount)});
+    const bool steady = true;
+    lights.update(view.lights, {m_lightSlots.data(), static_cast<uint32_t>(lightCount)}, steady);
     if (!shadow.casts) return;
 
     shadow.ubo->bindBase(GLBindings::UBOBindingPoints::SHADOW);
