@@ -59,7 +59,8 @@ class GizmoOverlay {
         void drawCameraGizmos(EditorContext& ec);
 
         /**
-         * @brief Draw each reflection probe's influence box and marker, and each irradiance volume's box.
+         * @brief Draw each reflection probe's influence box and marker, each planar reflector's
+         *        rectangle and marker, and each irradiance volume's box.
          *
          * The selected volume also shows its probe grid, up to a cap.
          *

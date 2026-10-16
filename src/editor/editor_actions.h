@@ -39,6 +39,7 @@ enum class EntityKind {
     DiskLight,
     Camera,
     ReflectionProbe,
+    PlanarReflector,
     IrradianceVolume,
     Decal,
     ParticleEmitter,

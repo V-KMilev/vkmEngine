@@ -26,7 +26,8 @@ layout(std430, binding = SSBO_STRIP_POINTS) readonly buffer StripBlock {
 #include "../ambient.glsl"
 #include "../particle/light.glsl"
 
-uniform int u_blend;  // PARTICLE_*: only an alpha one is lit
+uniform int u_blend;       // PARTICLE_*: only an alpha one is lit
+uniform vec4 u_clipPlane;  // a planar reflection's plane, while GL_CLIP_DISTANCE0 is on
 
 out vec2  vUV;         // x along the strip, y across it, 0 to 1
 out vec4  vColor;
@@ -64,6 +65,7 @@ void main() {
     } else {
         gl_Position = u_camera.viewProjection * vec4(world, 1.0);
     }
+    gl_ClipDistance[0] = dot(vec4(world, 1.0), u_clipPlane);
 
     vLight = vec3(1.0);
     if (u_blend == PARTICLE_ALPHA) vLight = particleCardLightAt(here);

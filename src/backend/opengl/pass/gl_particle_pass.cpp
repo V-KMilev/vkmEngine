@@ -31,20 +31,19 @@ GLParticlePass::GLParticlePass()
 GLParticlePass::~GLParticlePass() = default;
 
 template <typename PositionOf>
-void GLParticlePass::orderByDepth(const RenderView& view, uint32_t count, PositionOf&& positionOf) {
+void GLParticlePass::orderByDepth(const CameraData& eye, uint32_t count, PositionOf&& positionOf) {
     // By view depth, not distance: the quads lie in planes facing the view, and by distance a
     // pair near the screen's edge sorts the wrong way round under a wide field of view.
-    const glm::vec3 eye     = view.camera.position;
-    const glm::vec3 forward = glm::vec3(view.camera.invView[2]) * -1.0f;
+    const glm::vec3 forward = glm::vec3(eye.invView[2]) * -1.0f;
     m_order.resize(count);
-    for (uint32_t i = 0; i < count; ++i) m_order[i] = { glm::dot(positionOf(i) - eye, forward), i };
+    for (uint32_t i = 0; i < count; ++i) m_order[i] = { glm::dot(positionOf(i) - eye.position, forward), i };
     std::sort(m_order.begin(), m_order.end(), [](const DepthOrder& a, const DepthOrder& b) {
         return a.depth > b.depth;
     });
 }
 
 void GLParticlePass::sortBillboards(
-    const RenderView& view,
+    const CameraData& eye,
     const std::vector<ParticleData>& particles,
     bool byDepth
 ) {
@@ -59,7 +58,7 @@ void GLParticlePass::sortBillboards(
 
     PROFILE_SCOPE("Particles/Sort");
     const auto at = [&](uint32_t i) { return glm::vec3(particles[i].positionSize); };
-    orderByDepth(view, static_cast<uint32_t>(particles.size()), at);
+    orderByDepth(eye, static_cast<uint32_t>(particles.size()), at);
 
     m_sorted.resize(particles.size());
     for (size_t i = 0; i < m_order.size(); ++i) m_sorted[i] = particles[m_order[i].index];
@@ -118,7 +117,12 @@ void GLParticlePass::drawBillboards(GLFrameContext& ctx, const std::vector<Parti
     }
 }
 
-void GLParticlePass::drawStrips(GLFrameContext& ctx, const std::vector<ParticleStrip>& strips, bool byDepth) {
+void GLParticlePass::drawStrips(
+    GLFrameContext& ctx,
+    const CameraData& eye,
+    const std::vector<ParticleStrip>& strips,
+    bool byDepth
+) {
     if (strips.empty()) return;
     const RenderView& view = ctx.view;
 
@@ -128,7 +132,7 @@ void GLParticlePass::drawStrips(GLFrameContext& ctx, const std::vector<ParticleS
         const auto head = [&](uint32_t i) {
             return glm::vec3(view.stripPoints[strips[i].first].positionWidth);
         };
-        orderByDepth(view, static_cast<uint32_t>(strips.size()), head);
+        orderByDepth(eye, static_cast<uint32_t>(strips.size()), head);
         for (const DepthOrder& order : m_order) m_strips.push_back(strips[order.index]);
     } else {
         m_strips = strips;
@@ -164,6 +168,7 @@ void GLParticlePass::drawStrips(GLFrameContext& ctx, const std::vector<ParticleS
 
 void GLParticlePass::drawBlend(
     GLFrameContext& ctx,
+    const CameraData& eye,
     ParticleBlend blend,
     const std::vector<ParticleData>& billboards,
     const std::vector<ParticleStrip>& strips
@@ -174,9 +179,9 @@ void GLParticlePass::drawBlend(
     m_shader.setUniform1i("u_blend", static_cast<int>(blend));
     m_strip.setUniform1i("u_blend", static_cast<int>(blend));
 
-    sortBillboards(ctx.view, billboards, !additive);
+    sortBillboards(eye, billboards, !additive);
     drawBillboards(ctx, m_sorted);
-    drawStrips(ctx, strips, !additive);
+    drawStrips(ctx, eye, strips, !additive);
 }
 
 void GLParticlePass::execute(GLFrameContext& ctx) {
@@ -192,7 +197,7 @@ void GLParticlePass::execute(GLFrameContext& ctx) {
     m_depthCopy.blitDepthFrom(ctx.sceneRender);
     m_depthCopy.bindTexture(GLTarget::Attachment::Depth, GLBindings::PostTextureSlots::SCENE_DEPTH);
 
-    // Every strip's points, once a frame.
+    // Every strip's points, once each time they draw: here and for each mirror (drawMirrored).
     if (!view.stripPoints.empty()) {
         const auto bytes = static_cast<uint32_t>(view.stripPoints.size() * sizeof(StripPoint));
         const Vkm::GL::BufferSpan points = ctx.resources.stream().write(view.stripPoints.data(), bytes);
@@ -210,6 +215,7 @@ void GLParticlePass::execute(GLFrameContext& ctx) {
         program->bind();
         bindFog(ctx, *program);
         bindAmbient(ctx, *program);
+        program->setUniform1i("u_useClusters", 1);
     }
 
     // An alpha-blended particle is lit as it draws: the lights by its cluster, through their
@@ -221,17 +227,90 @@ void GLParticlePass::execute(GLFrameContext& ctx) {
 
     // Additive first (its blend is commutative), then alpha far to near, then what bends the
     // scene as all of them left it.
-    drawBlend(ctx, ParticleBlend::Additive, view.particlesAdditive, view.stripsAdditive);
-    drawBlend(ctx, ParticleBlend::Alpha, view.particlesAlpha, view.stripsAlpha);
+    drawBlend(ctx, view.camera, ParticleBlend::Additive, view.particlesAdditive, view.stripsAdditive);
+    drawBlend(ctx, view.camera, ParticleBlend::Alpha, view.particlesAlpha, view.stripsAlpha);
     if (!view.particlesDistortion.empty() || !view.stripsDistortion.empty()) {
         // Into the post chain's free scratch, as the forward pass's refraction does: nothing
         // reads it until the post passes draw over it.
         ctx.colorDst->blitColorFrom(ctx.sceneRender);
         ctx.colorDst->bindTexture(GLTarget::Attachment::Color, GLBindings::PostTextureSlots::SCENE_COLOR);
         ctx.sceneRender.bindForwardPass(ctx.gl);  // the blit left the scratch bound
-        drawBlend(ctx, ParticleBlend::Distortion, view.particlesDistortion, view.stripsDistortion);
+        drawBlend(
+            ctx,
+            view.camera,
+            ParticleBlend::Distortion,
+            view.particlesDistortion,
+            view.stripsDistortion
+        );
     }
     setReflectRoughnessWritable(true);
+}
+
+void GLParticlePass::drawMirrored(
+    GLFrameContext& ctx,
+    GLTarget& target,
+    glm::uvec2 size,
+    const CameraData& eye,
+    const glm::vec4& clip
+) {
+    // What the mirror sees: the viewmodel layer is the camera's own.
+    const RenderView& view = ctx.view;
+    using Billboards = std::vector<ParticleData>;
+    using Strips     = std::vector<ParticleStrip>;
+    const auto offLayer = [](const Billboards& from, Billboards& into) {
+        into.clear();
+        for (const ParticleData& p : from) {
+            if (p.params.w < 0.5f) into.push_back(p);
+        }
+    };
+    const auto offLayerStrips = [&](const Strips& from, Strips& into) {
+        into.clear();
+        for (const ParticleStrip& s : from) {
+            if (view.stripPoints[s.first].look.z < 0.5f) into.push_back(s);
+        }
+    };
+    offLayer(view.particlesAdditive, m_seenAdditive);
+    offLayer(view.particlesAlpha, m_seenAlpha);
+    offLayerStrips(view.stripsAdditive, m_seenStrips[0]);
+    offLayerStrips(view.stripsAlpha, m_seenStrips[1]);
+    if (m_seenAdditive.empty() && m_seenAlpha.empty() && m_seenStrips[0].empty() && m_seenStrips[1].empty()) {
+        return;
+    }
+    PROFILE_SCOPE("Particles/Mirrored");
+
+    m_mirrorDepth.resize(size.x, size.y, 1, false);
+    m_mirrorDepth.blitDepthFrom(target);
+    m_mirrorDepth.bindTexture(GLTarget::Attachment::Depth, GLBindings::PostTextureSlots::SCENE_DEPTH);
+    if (!view.stripPoints.empty()) {
+        const auto bytes = static_cast<uint32_t>(view.stripPoints.size() * sizeof(StripPoint));
+        const Vkm::GL::BufferSpan points = ctx.resources.stream().write(view.stripPoints.data(), bytes);
+        Vkm::GL::bindRange(GL_SHADER_STORAGE_BUFFER, GLBindings::SSBOBindingPoints::STRIP_POINTS, points);
+    }
+
+    // The mirror turns the front face; a billboard faces its eye either way.
+    target.bind(ctx.gl);
+    ctx.gl.setFaceCulling(false);
+    ctx.gl.setDepthWrite(false);
+    ctx.gl.setBlending(true);
+    for (Vkm::GL::Shader* program : {&m_shader, &m_strip}) {
+        program->bind();
+        program->setUniform1i("u_hasFog", 0);
+        program->setUniform1i("u_hasAir", 0);
+        bindAmbient(ctx, *program);
+        program->setUniform1i("u_useClusters", 0);
+        program->setUniform4fv("u_clipPlane", clip);
+    }
+
+    drawBlend(ctx, eye, ParticleBlend::Additive, m_seenAdditive, m_seenStrips[0]);
+    drawBlend(ctx, eye, ParticleBlend::Alpha, m_seenAlpha, m_seenStrips[1]);
+
+    // Unclipped again for the camera's draw.
+    for (Vkm::GL::Shader* program : {&m_shader, &m_strip}) {
+        program->bind();
+        program->setUniform4fv("u_clipPlane", glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+    }
+    ctx.gl.setBlending(false);
+    ctx.gl.setDepthWrite(true);
 }
 
 } // namespace Vkm::Engine

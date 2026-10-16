@@ -34,6 +34,10 @@ struct PlanarUniforms {
     const char* lod;
     uint32_t    slot;
 };
+static_assert(
+    GLPlanarReflectionPass::MAX_DRAWN == 2,
+    "a planar reflector the resolve has no uniforms, slot or sampler for"
+);
 constexpr PlanarUniforms PLANAR_UNIFORMS[GLPlanarReflectionPass::MAX_DRAWN] = {
     {
         "u_planarPlane[0]",
@@ -55,12 +59,11 @@ constexpr PlanarUniforms PLANAR_UNIFORMS[GLPlanarReflectionPass::MAX_DRAWN] = {
 
 } // namespace
 
-GLReflectionPass::GLReflectionPass(const GLPlanarReflectionPass& planar)
+GLReflectionPass::GLReflectionPass()
     : m_source("shaders/reflection/source")
     , m_downsample("shaders/reflection/downsample")
     , m_trace("shaders/reflection/trace")
-    , m_resolve("shaders/reflection/resolve")
-    , m_planar(planar) {}
+    , m_resolve("shaders/reflection/resolve") {}
 
 GLReflectionPass::~GLReflectionPass() = default;
 
@@ -87,7 +90,7 @@ void GLReflectionPass::execute(GLFrameContext& ctx) {
     // With no sky baked the forward pass still writes the reflection weight,
     // and an environment reflection of zero: the traced one only adds.
     const bool traced = view.settings.ssr;
-    if (!traced && m_planar.count() == 0) return;
+    if (!traced && ctx.planarCount == 0) return;
 
     const int step = view.settings.ssrHalfResolution ? 2 : 1;
     ensureTargets(view.sceneWidth(), view.sceneHeight(), static_cast<uint32_t>(step));
@@ -98,8 +101,9 @@ void GLReflectionPass::execute(GLFrameContext& ctx) {
     ctx.sceneHDR.bindTexture(GLTarget::Attachment::ReflectWeight, Slots::WEIGHT);
     if (traced) trace(ctx, step);
 
-    // The traced colour in place of the environment's, into the chain's next
-    // link. The depth, G-buffer, weight and chain are still bound from above.
+    // The traced colour and the planar pictures in place of the environment's, into the chain's
+    // next link. The depth, G-buffer and weight are still bound from above, and the chain when
+    // traced.
     ctx.colorDst->bind(ctx.gl);
     m_resolve.bind();
     m_resolve.setUniform1f("u_maxRoughness", view.settings.ssrMaxRoughness);
@@ -115,25 +119,32 @@ void GLReflectionPass::execute(GLFrameContext& ctx) {
     ctx.flipColor();
 }
 
-void GLReflectionPass::bindPlanar(GLFrameContext& ctx) {
+void GLReflectionPass::placePlanar(GLFrameContext& ctx, Vkm::GL::Shader& shader) const {
     // Each reflector in view space, its rectangle's axes over its half-extents, so a pixel on it
     // reads within one along each.
     const glm::mat4& toView = ctx.view.camera.view;
-    const int count = m_planar.count();
-    m_resolve.setUniform1i("u_planarCount", count);
-    for (int i = 0; i < count; ++i) {
-        const PlanarReflectorData& r = m_planar.reflector(i);
+    shader.setUniform1i("u_planarCount", ctx.planarCount);
+    for (int i = 0; i < ctx.planarCount; ++i) {
+        const PlanarReflectorData& r = *ctx.planarPictures[i].reflector;
         const glm::vec3 center = glm::vec3(toView * glm::vec4(r.center, 1.0f));
         const glm::vec3 normal = glm::normalize(glm::mat3(toView) * r.normal);
         const glm::vec3 axisU  = glm::mat3(toView) * r.axisU / std::max(r.halfExtents.x, 1e-4f);
         const glm::vec3 axisV  = glm::mat3(toView) * r.axisV / std::max(r.halfExtents.y, 1e-4f);
         const PlanarUniforms& names = PLANAR_UNIFORMS[i];
-        m_resolve.setUniform4fv(names.plane, glm::vec4(normal, -glm::dot(normal, center)));
-        m_resolve.setUniform3fv(names.center, center);
-        m_resolve.setUniform3fv(names.axisU, axisU);
-        m_resolve.setUniform3fv(names.axisV, axisV);
-        m_resolve.setUniform1f(names.lod, static_cast<float>(m_planar.picture(i).mipCount() - 1));
-        m_planar.picture(i).bindSlot(names.slot);
+        shader.setUniform4fv(names.plane, glm::vec4(normal, -glm::dot(normal, center)));
+        shader.setUniform3fv(names.center, center);
+        shader.setUniform3fv(names.axisU, axisU);
+        shader.setUniform3fv(names.axisV, axisV);
+    }
+}
+
+void GLReflectionPass::bindPlanar(GLFrameContext& ctx) {
+    placePlanar(ctx, m_resolve);
+    for (int i = 0; i < ctx.planarCount; ++i) {
+        const PlanarUniforms&           names   = PLANAR_UNIFORMS[i];
+        const Vkm::GL::MipChainTexture& picture = *ctx.planarPictures[i].picture;
+        m_resolve.setUniform1f(names.lod, static_cast<float>(picture.mipCount() - 1));
+        picture.bindSlot(names.slot);
     }
 }
 
@@ -174,6 +185,7 @@ void GLReflectionPass::trace(GLFrameContext& ctx, int step) {
     m_trace.setUniform1f("u_maxDistance",  view.settings.ssrMaxDistance);
     m_trace.setUniform1f("u_maxLod",       maxLod);
     m_trace.setUniform1i("u_traceStep",    step);
+    placePlanar(ctx, m_trace);
     ctx.screenTri.emit();
 }
 

@@ -16,9 +16,13 @@ namespace Vkm::Engine {
  * covering the most of the screen and leaves the rest to the trace and the probes.
  */
 struct PlanarReflector {
+    static constexpr float MIN_RENDER_SCALE = 0.1f;  ///< The smallest picture, a share of the frame's.
+    static constexpr float MAX_RENDER_SCALE = 1.0f;  ///< The largest: the frame's own size.
+
     bool      enabled     = true;
-    glm::vec2 halfExtents = glm::vec2(2.0f);  ///< Along the entity's X and Z, metres; not scaled.
-    float     resolution  = 0.5f;             ///< Its picture's size, a share of the frame's.
+    /// Along the entity's X and Z, metres; not scaled. 0 on either reflects nothing.
+    glm::vec2 halfExtents = glm::vec2(2.0f);
+    float     renderScale = 0.5f;  ///< Its picture's size, a share of the frame's.
 };
 
 } // namespace Vkm::Engine
@@ -26,5 +30,5 @@ struct PlanarReflector {
 VKM_REFLECT_BEGIN(::Vkm::Engine::PlanarReflector)
     VKM_F(enabled)
     VKM_F(halfExtents)
-    VKM_F(resolution)
+    VKM_F(renderScale)
 VKM_REFLECT_END()

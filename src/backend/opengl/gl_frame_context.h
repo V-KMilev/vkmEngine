@@ -10,6 +10,7 @@
 
 namespace Vkm::GL {
     class Context;
+    class MipChainTexture;
 }
 
 namespace Vkm::Engine {
@@ -31,6 +32,16 @@ class GLSkinPalette;
 class GLObjectBuffer;
 class GLOceanFields;
 struct SkyParams;
+struct PlanarReflectorData;
+
+/**
+ * @brief A planar reflection's picture this frame (GLPlanarReflectionPass), for the reflection pass
+ *        to lay over the surfaces on its rectangle.
+ */
+struct GLPlanarPicture {
+    const PlanarReflectorData*      reflector = nullptr;
+    const Vkm::GL::MipChainTexture* picture   = nullptr;  ///< Its filtered chain.
+};
 
 /**
  * @brief Everything a GLPass needs for one frame.
@@ -133,6 +144,10 @@ struct GLFrameContext {
      * Boxes and layers are in the ProbeBlock UBO, cubes in the probe arrays.
      */
     int probeCount = 0;
+
+    /// The planar reflections drawn this frame, planarCount of them; left by GLPlanarReflectionPass.
+    const GLPlanarPicture* planarPictures = nullptr;
+    int                    planarCount    = 0;
 
     /**
      * @brief Direction TO the sun, from the Environment's sun angles.

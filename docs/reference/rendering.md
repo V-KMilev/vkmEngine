@@ -22,6 +22,7 @@ RenderSystem::update(FrameContext)
         |-- air tables / bake IBL, or a drifting sun's step a frame
         |-- shadow plan       atlas slots; caster cull forked onto the thread pool
         |-- per-frame UBOs, partitionDrawables, skin palette, object buffer, opaque batch
+        |-- planar reflectors: pick them, and ready what each mirror sees
         |-- run the passes in order
         |-- measure the exposure (autoExposure)
         |-- irradiance volume: bake, or relight a gather a frame
@@ -166,7 +167,7 @@ after everything it reads.
 | 6 | ClusterCull | Compute: lights into the Forward+ cluster grid |
 | 7 | FogCompute | Compute: the froxel fog volume, before anything lit reads it ([Fog](#fog)) |
 | 8 | Atmosphere | Compute, procedural sky only: sky-view table and aerial perspective ([lighting.md](lighting.md#image-based-lighting-ibl)) |
-| 9 | PlanarReflections | Each seen `PlanarReflector`, at most `GLPlanarReflectionPass::MAX_DRAWN`: the opaque scene from the mirrored camera, clipped at its plane, with every light, the shadows, probes and sky, filtered into a chain ([Planar reflections](#planar-reflections)) |
+| 9 | PlanarReflections | Each seen `PlanarReflector`, at most `GLPlanarReflectionPass::MAX_DRAWN`: the scene and its particles from the mirrored camera, clipped at its plane, with every light, the shadows, probes and sky, filtered into a chain ([Planar reflections](#planar-reflections)) |
 | 10 | Skybox | The background, before geometry so transparents blend over it; with no sky, the fog over a black background |
 | 11 | Ocean | The sea's ripple fields and its shore capture ([The ocean](#the-ocean)) |
 | 12 | Forward | The PBR ubershader: opaque, alpha-mask (alpha-to-coverage under MSAA), then transparents. Writes the reflection inputs while `ssr` is on or a planar reflector is |
@@ -323,18 +324,21 @@ lists the pass reads. The fields are documented in
 ### Planar reflections
 
 A `PlanarReflector` is a rectangle facing its entity's +Y. While the camera sees
-it from its front, glossy pixels lying on it - within the depth's resolution of
-the plane, facing its way - take its picture: the scene mirrored in the plane,
-read at the pixel's own place on the screen, shifted by how far the pixel's
-normal leans off the plane's (a ripple, a normal map) and blurred by its
-roughness. It shows what the screen-space trace cannot: what is behind the eye,
-off the screen, or facing away, which is any mirror that faces the viewer.
+it from its front, glossy pixels lying on it - smoother than `ssrMaxRoughness`,
+within the depth's resolution of the plane, facing its way - take its picture:
+the scene mirrored in the plane, read at the pixel's own place on the screen,
+shifted by how far the pixel's normal leans off the plane's (a ripple, a normal
+map) and blurred by its roughness. It shows what the screen-space trace cannot:
+what is behind the eye, off the screen, or facing away, which is any mirror that
+faces the viewer.
 
-- **It is a second drawing of the scene.** Opaque and cut-out meshes only, lit
-  by every light rather than the camera's clusters, without GTAO, screen
-  shadows, fog or particles; at `resolution` of the frame's size. A frame draws
-  the few covering the most of the screen; the rest fall back to the trace and
-  the probes.
+- **It is a second drawing of the scene.** Opaque meshes, then transparent ones
+  refracting a copy of that, then additive and alpha particles, all lit by
+  every light rather than the camera's clusters; without GTAO, screen shadows,
+  fog, decals or distortion; at `renderScale` of the frame's size. The sun's
+  shadow in it reaches only what the camera's cascades cover. A frame draws the
+  few covering the most of the screen; the rest fall back to the trace and the
+  probes. The trace skips pixels on a drawn reflector.
 - **The plane is the entity's position.** Put it on the reflecting face, not
   inside a slab: what lies a centimetre in front of the plane and behind is
   clipped, and the face itself is in the clipped part.

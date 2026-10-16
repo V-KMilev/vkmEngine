@@ -199,9 +199,10 @@ Keys, while the cursor is not captured: `Q` Select, `W` Move, `E` Rotate, `R`
 Scale, `X` Local / World - rebindable in Preferences > Keybinds.
 
 Everything with no mesh draws an authoring marker (`gizmo_overlay_draw.cpp`):
-lights, cameras, probes and irradiance volumes, decals, particle emitters, audio
-sources and listeners. **View > Show** toggles each kind (`GizmoVisibility`, per
-project in `editor_settings.json`); a hidden kind cannot be picked.
+lights, cameras, probes, planar reflectors and irradiance volumes, decals,
+particle emitters, audio sources and listeners. **View > Show** toggles each
+kind (`GizmoVisibility`, per project in `editor_settings.json`); a hidden kind
+cannot be picked.
 
 ### Entity selection and shortcuts
 

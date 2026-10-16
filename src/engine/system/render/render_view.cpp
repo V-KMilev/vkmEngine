@@ -122,7 +122,9 @@ void buildPlanarReflectors(RenderView& view, const Scene& scene) {
 
     scene.forEach<PlanarReflector, Transform>(
         [&](EntityId id, const PlanarReflector& reflector, const Transform& transform) {
-            if (!reflector.enabled) return;
+            if (!reflector.enabled || reflector.halfExtents.x <= 0.0f || reflector.halfExtents.y <= 0.0f) {
+                return;
+            }
             const glm::mat4 model = resolvedWorldMatrix(scene, id, transform);
             const glm::vec3 up(model[1]);
             const glm::vec3 across(model[0]);
@@ -134,8 +136,12 @@ void buildPlanarReflectors(RenderView& view, const Scene& scene) {
                 normal,
                 axisU,
                 glm::cross(axisU, normal),
-                glm::max(reflector.halfExtents, glm::vec2(0.0f)),
-                glm::clamp(reflector.resolution, 0.1f, 1.0f)
+                reflector.halfExtents,
+                glm::clamp(
+                    reflector.renderScale,
+                    PlanarReflector::MIN_RENDER_SCALE,
+                    PlanarReflector::MAX_RENDER_SCALE
+                )
             });
         }
     );

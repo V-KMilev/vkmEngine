@@ -4,7 +4,8 @@
  * reflects the interpolated G-buffer normal: one ray per pixel turns a normal
  * map into a speckle of hits and misses.
  *
- * Zero trust where the ray found nothing.
+ * Zero trust where the ray found nothing, and no ray from a pixel on a planar reflector: the resolve
+ * gives it the reflector's picture.
  */
 
 out vec4 Hit;  // xy: hit uv; z: trust; w: chain level over the last (the target is unorm)
@@ -60,11 +61,12 @@ void main() {
     const vec2 size  = vec2(textureSize(u_sceneDepth, 0));
     const vec3 at    = sceneViewPosAt(texel, size);
     const vec3 n     = sceneNormalAt(texel);
+    if (planarAt(at, n) >= 0) return;
     const vec3 toEye = cameraIsPerspective() ? normalize(-at) : vec3(0.0, 0.0, 1.0);
     const vec3 dir   = reflect(-toEye, n);
 
     // Lifted off its own surface by what the depth can resolve there.
-    vec3 p0 = at + n * (0.01 + 0.002 * -at.z);
+    vec3 p0 = at + n * depthTolerance(at);
 
     // Cut short of the near plane: a point behind the eye projects onto the
     // wrong side of the screen.

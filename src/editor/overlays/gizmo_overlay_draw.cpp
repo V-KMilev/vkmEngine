@@ -32,6 +32,7 @@
 #include "ecs/component/render/decal.h"
 #include "ecs/component/render/irradiance_volume.h"
 #include "ecs/component/render/particle_emitter.h"
+#include "ecs/component/render/planar_reflector.h"
 #include "ecs/component/render/reflection_probe.h"
 #include "ecs/component/ui/ui_element.h"
 #include "core/host_chrome.h"
@@ -405,6 +406,26 @@ void GizmoOverlay::drawProbeGizmos(EditorContext& ec) {
         if (scope.project(pos, sp)) markEntity(dl, EditorIcon::Probe, id, sp, pos, col);
     };
     ec.frame.scene.forEach<ReflectionProbe, Transform>(drawProbe);
+
+    // A planar reflector's rectangle, and the way it faces.
+    const auto drawReflector = [&](EntityId id, const PlanarReflector& reflector, const Transform& tf) {
+        const bool  selected = (ec.state.isSelected(id));
+        const ImU32 col = selected ? EditorStyle::HIGHLIGHT_U32 : IM_COL32(77, 158, 235, 200);
+
+        const glm::vec3 pos = resolvedWorldPosition(ec.frame.scene, id, tf);
+        const glm::quat rot = resolvedWorldRotation(ec.frame.scene, id, tf);
+        const glm::vec3 e(reflector.halfExtents.x, 0.0f, reflector.halfExtents.y);
+        scope.box(pos, rot, e, col, EditorStyle::px(selected ? 2.0f : 1.5f));
+
+        ImVec2 a, b;
+        if (!scope.project(pos, a)) return;
+        const float facing = 0.25f * std::min(reflector.halfExtents.x, reflector.halfExtents.y);
+        if (scope.project(pos + rot * glm::vec3(0.0f, facing, 0.0f), b)) {
+            dl->AddLine(a, b, col, EditorStyle::px(selected ? 2.0f : 1.5f));
+        }
+        markEntity(dl, EditorIcon::Probe, id, a, pos, col);
+    };
+    ec.frame.scene.forEach<PlanarReflector, Transform>(drawReflector);
 
     const auto drawVolume = [&](EntityId id, const IrradianceVolume& volume, const Transform& tf) {
         const bool  selected = (ec.state.isSelected(id));

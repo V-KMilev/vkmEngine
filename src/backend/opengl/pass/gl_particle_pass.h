@@ -9,6 +9,7 @@
 #include "gl_target.h"
 
 #include "ecs/component/render/particle_emitter.h"
+#include "system/render/data/camera_data.h"
 #include "system/render/data/particle_data.h"
 
 namespace Vkm::Engine {
@@ -18,13 +19,14 @@ struct RenderView;
 /**
  * @brief Draws the frame's particles: billboards and strips, each blend in turn.
  *
- * Runs after the forward pass, depth-tested without writing depth. Additive particles draw first,
- * grouped by texture, then alpha ones, which arrive unsorted and are sorted back-to-front here,
- * then distortion ones, sorted the same, over a copy of the scene they bend. Strips - ribbons and
- * trails - follow the billboards of their blend: additive ones grouped by texture, the others
- * sorted back-to-front by their heads. Attribute-less: billboards and strip points live in SSBOs,
- * each uploaded once a blend and once a frame, drawn as an instanced draw for each run of one
- * texture and a multi-draw for each run of strips.
+ * Runs after the forward pass, depth-tested without writing depth, and before it into each planar
+ * reflection's picture (drawMirrored). Additive particles draw first, grouped by texture, then
+ * alpha ones, which arrive unsorted and are sorted back-to-front here, then distortion ones, sorted
+ * the same, over a copy of the scene they bend. Strips - ribbons and trails - follow the billboards
+ * of their blend: additive ones grouped by texture, the others sorted back-to-front by their heads.
+ * Attribute-less: billboards and strip points live in SSBOs, each uploaded once a blend and once
+ * each time they draw, drawn as an instanced draw for each run of one texture and normal map, and a
+ * multi-draw for each run of strips.
  */
 class GLParticlePass : public GLPass {
     public:
@@ -40,6 +42,28 @@ class GLParticlePass : public GLPass {
     public:
         void execute(GLFrameContext& ctx) override;
 
+        /**
+         * @brief Draw the frame's additive and alpha particles into a planar reflection's picture.
+         *
+         * Seen by @p eye, which the camera block already holds, over @p target's scene and fading
+         * on its depth, clipped at @p clip while GL_CLIP_DISTANCE0 is on. Lit by every light: the
+         * clusters are the camera's. No fog or aerial perspective, which are the camera's, no
+         * distortion, which bends the camera's screen, and nothing on the viewmodel layer.
+         *
+         * @param ctx    The frame: its particles, with the shadow atlas bound.
+         * @param target The picture, drawn opaque already.
+         * @param size   Its size.
+         * @param eye    The mirrored camera.
+         * @param clip   The plane, as the PBR program takes it.
+         */
+        void drawMirrored(
+            GLFrameContext& ctx,
+            GLTarget& target,
+            glm::uvec2 size,
+            const CameraData& eye,
+            const glm::vec4& clip
+        );
+
     private:
         /**
          * @brief One sorted particle's or strip's place in the far-to-near order.
@@ -54,24 +78,24 @@ class GLParticlePass : public GLPass {
 
     private:
         /**
-         * @brief Fill m_order with @p count indices, far to near from @p view's eye.
+         * @brief Fill m_order with @p count indices, far to near from @p eye.
          *
          * @tparam PositionOf Callable taking an index and returning a world position.
-         * @param view       The eye they are sorted from.
+         * @param eye        The eye they are sorted from.
          * @param count      How many there are to sort.
          * @param positionOf Where the one at an index sits, in world space.
          */
         template <typename PositionOf>
-        void orderByDepth(const RenderView& view, uint32_t count, PositionOf&& positionOf);
+        void orderByDepth(const CameraData& eye, uint32_t count, PositionOf&& positionOf);
 
         /**
          * @brief Order @p particles far-to-near into m_sorted, or by texture for an order-free blend.
          *
-         * @param view      The eye they are sorted from.
+         * @param eye       The eye they are sorted from.
          * @param particles The billboards of one blend.
          * @param byDepth   Far to near; otherwise grouped by texture, a draw a texture.
          */
-        void sortBillboards(const RenderView& view, const std::vector<ParticleData>& particles, bool byDepth);
+        void sortBillboards(const CameraData& eye, const std::vector<ParticleData>& particles, bool byDepth);
 
         /**
          * @brief Bind what a run shows, and its normal map, to @p shader, and tell it which it has.
@@ -96,16 +120,24 @@ class GLParticlePass : public GLPass {
          * @brief Draw @p strips, a triangle strip each through the frame's strip points, a draw
          *        call for each run of one texture.
          *
-         * @param ctx     The frame: the view's points, uploaded once a frame, and the textures.
+         * @param ctx     The frame: the view's points, uploaded as this draw began, and the
+         *                textures.
+         * @param eye     The eye they are sorted from.
          * @param strips  The strips of one blend.
          * @param byDepth Far to near, by each strip's head; otherwise grouped by texture.
          */
-        void drawStrips(GLFrameContext& ctx, const std::vector<ParticleStrip>& strips, bool byDepth);
+        void drawStrips(
+            GLFrameContext& ctx,
+            const CameraData& eye,
+            const std::vector<ParticleStrip>& strips,
+            bool byDepth
+        );
 
         /**
          * @brief Draw one blend: its billboards, then its strips.
          *
-         * @param ctx        The frame: its eye, its strip points, and the GL state the blend is set on.
+         * @param ctx        The frame: its strip points, and the GL state the blend is set on.
+         * @param eye        The eye drawing: the camera's, or a mirror's.
          * @param blend      Which blend: the blend function, the shaders' u_blend, and whether to sort
          *                   by depth.
          * @param billboards The view's billboards of @p blend, unsorted.
@@ -113,6 +145,7 @@ class GLParticlePass : public GLPass {
          */
         void drawBlend(
             GLFrameContext& ctx,
+            const CameraData& eye,
             ParticleBlend blend,
             const std::vector<ParticleData>& billboards,
             const std::vector<ParticleStrip>& strips
@@ -130,6 +163,14 @@ class GLParticlePass : public GLPass {
 
         /// The scene's depth, copied: the particles test against it attached and fade on it here.
         GLTarget m_depthCopy{GLTarget::Layout::ColorDepth, GL_R8};
+
+        /// A planar reflection's picture's depth, copied the same way.
+        GLTarget m_mirrorDepth{GLTarget::Layout::ColorDepth, GL_R8};
+
+        /// What a mirror sees, off the viewmodel layer: additive billboards, alpha ones, and strips of each.
+        std::vector<ParticleData>  m_seenAdditive;
+        std::vector<ParticleData>  m_seenAlpha;
+        std::vector<ParticleStrip> m_seenStrips[2];
 };
 
 } // namespace Vkm::Engine

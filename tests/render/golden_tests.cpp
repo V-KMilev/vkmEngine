@@ -1801,19 +1801,19 @@ void testAVolumeShowsItsGridUntilItsRelightIsThrough(int& failures) {
 
 // The overlay drawn by the real pass over a real frame, asserted per pixel, not against
 // a golden: where its edges land is arithmetic that holds on any GPU.
-// GTAO reads a viewmodel's squashed depth as sky: as near as it is drawn, it would shade the wall
-// it is held against with a halo. Against the same wall with the block hidden in it, the wall
-// round the block's outline keeps its shade.
 // A mirror facing the eye, and a red ball behind the eye: no ray the screen holds reaches the ball,
-// so only a planar reflector shows it in the mirror - and with it off, the mirror shows none.
+// so only a planar reflector shows it in the mirror - and with it off, the mirror shows none. A
+// particle behind the eye shows in the mirror with the ball.
 void testAMirrorShowsWhatIsBehindTheEye(int& failures) {
     std::printf("A planar mirror facing the eye:\n");
     RenderSettings settings;
     settings.msaaSamples = 1;
-    float red[2]   = {};
-    float green[2] = {};
-    for (const bool reflector : {false, true}) {
-        const auto build = [reflector](Scenery& s) {
+    // Bare, reflecting, and reflecting with a green glow between the eye and the ball.
+    float red[3]   = {};
+    float green[3] = {};
+    for (const int shown : {0, 1, 2}) {
+        const bool reflector = shown > 0;
+        const auto build = [reflector, shown](Scenery& s) {
             base(s);
             place(
                 s,
@@ -1845,25 +1845,40 @@ void testAMirrorShowsWhatIsBehindTheEye(int& failures) {
             mirror.enabled     = reflector;
             mirror.halfExtents = {2.0f, 1.5f};
             s.scene.add(glass, std::move(mirror));
+            if (shown == 2) {
+                ParticleEmitter glow;
+                glow.blend = ParticleBlend::Additive;
+                holdLook(glow, {0.1f, 1.0f, 0.1f, 1.0f}, 2.0f);
+                Particle p;
+                p.position = {0.0f, 1.5f, 4.2f};
+                p.size     = 0.6f;
+                addEmitter(s, glow).push_back(p);
+            }
             sunAndCamera(s, {0.0f, 1.5f, 3.0f}, {0.0f, 1.5f, -3.0f});
         };
         const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
         if (frame.empty()) return;
         const glm::ivec3 c = pixel(frame, WIDTH / 2, HEIGHT / 2);
-        red[reflector ? 1 : 0]   = static_cast<float>(c.x);
-        green[reflector ? 1 : 0] = static_cast<float>(c.y);
+        red[shown]   = static_cast<float>(c.x);
+        green[shown] = static_cast<float>(c.y);
     }
     std::printf(
-        "      mirror centre: %.0f/%.0f red/green bare, %.0f/%.0f reflecting\n",
+        "      mirror centre: %.0f/%.0f red/green bare, %.0f/%.0f reflecting, %.0f/%.0f with a glow\n",
         red[0],
         green[0],
         red[1],
-        green[1]
+        green[1],
+        red[2],
+        green[2]
     );
     expect("a planar reflector shows the ball behind the eye", red[1] > 2.0f * green[1] + 20.0f, failures);
     expect("  which the trace and the sky alone do not", red[0] < 1.5f * green[0] + 10.0f, failures);
+    expect("  and a particle behind the eye too", green[2] > green[1] + 40.0f, failures);
 }
 
+// GTAO reads a viewmodel's squashed depth as sky: as near as it is drawn, it would shade the wall
+// it is held against with a halo. Against the same wall with the block hidden in it, the wall
+// round the block's outline keeps its shade.
 void testAViewmodelShadesNothingBehindIt(int& failures) {
     std::printf("A weapon held into a wall, and the wall round it:\n");
 

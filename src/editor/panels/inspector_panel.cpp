@@ -1886,15 +1886,13 @@ void InspectorPanel::drawPlanarReflectorSection(EditorContext& ec, EntityId id) 
         const char* enabledTooltip = "Off leaves its surfaces to the trace and the probes";
         changed |= propCheckbox("Enabled", &reflector.enabled, enabledTooltip);
         const char* sizeTooltip = "The rectangle along the entity's X and Z; it faces the entity's +Y";
-        changed |= propRow("Half Size", sizeTooltip, [&] {
-            float* size = glm::value_ptr(reflector.halfExtents);
-            return ImGui::DragFloat2("##v", size, 0.05f, 0.0f, 1000.0f, "%.2f m", PROP_CLAMP);
-        });
+        float* size = &reflector.halfExtents.x;
+        changed |= propDrag2("Half Size", size, 0.05f, 0.01f, 1000.0f, "%.2f m", sizeTooltip);
         changed |= propSlider(
-            "Resolution",
-            &reflector.resolution,
-            0.1f,
-            1.0f,
+            "Render Scale",
+            &reflector.renderScale,
+            PlanarReflector::MIN_RENDER_SCALE,
+            PlanarReflector::MAX_RENDER_SCALE,
             "%.2f",
             "Its picture's size, a share of the frame's: a second drawing of the scene each frame"
         );

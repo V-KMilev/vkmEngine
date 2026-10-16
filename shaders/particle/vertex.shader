@@ -36,6 +36,7 @@ layout(std430, binding = SSBO_PARTICLES) readonly buffer ParticleBlock {
 
 uniform int u_firstInstance;  // the run's first particle: gl_InstanceID starts at 0 every draw
 uniform int u_blend;          // PARTICLE_*: only an alpha one is lit
+uniform vec4 u_clipPlane;     // a planar reflection's plane, while GL_CLIP_DISTANCE0 is on
 
 out vec2  vCorner;
 flat out vec2 vAxisX;  // the card's own x, then y, in the view's right and up: turned, or streaked
@@ -102,6 +103,7 @@ void main() {
     } else {
         gl_Position = u_camera.viewProjection * vec4(world, 1.0);
     }
+    gl_ClipDistance[0] = dot(vec4(world, 1.0), u_clipPlane);
 
     vAmbient    = vec3(1.0);
     vLightColor = vec3(0.0);

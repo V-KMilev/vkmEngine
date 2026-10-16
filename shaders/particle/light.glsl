@@ -6,6 +6,8 @@
  * Needs camera.glsl, lights.glsl (through area_light.glsl), shadows.glsl and ambient.glsl first.
  */
 
+uniform int u_useClusters;  // 1 = the camera's cluster lists; 0 = every light, for another eye
+
 // The light at a billboard, as a ball takes it: ambient from all round, plus the lights that agree
 // on a way and that way, which a sphere normal turns toward or away from.
 struct ParticleLight {
@@ -30,13 +32,19 @@ void gatherParticleLight(vec3 p, out vec3 ambient, out vec3 sum, out vec3 toward
     sum     = vec3(0.0);
     toward  = vec3(0.0);
 
-    // Its cluster is where it is in the world, whichever projection draws it.
-    float depth = max(viewDepthOf(p), u_camera.zNear);
-    int   ci    = clusterIndex(screenUvOf(p), depth, u_camera.zNear, u_camera.zFar);
-
-    uint count = u_clusters.clusters[ci].count;
+    // Its cluster is where it is in the world, whichever projection draws it. A planar
+    // reflection's eye is not the one the clusters were built for: it takes every light.
+    int  ci = 0;
+    uint count;
+    if (u_useClusters == 1) {
+        float depth = max(viewDepthOf(p), u_camera.zNear);
+        ci    = clusterIndex(screenUvOf(p), depth, u_camera.zNear, u_camera.zFar);
+        count = u_clusters.clusters[ci].count;
+    } else {
+        count = uint(min(u_lights.lightCount, MAX_LIGHTS));
+    }
     for (uint k = 0u; k < count; ++k) {
-        Light light    = u_lights.lights[u_clusters.clusters[ci].indices[k]];
+        Light light    = u_lights.lights[u_useClusters == 1 ? u_clusters.clusters[ci].indices[k] : k];
         vec3  lightCol = light.color.xyz * light.color.w;
         int   type     = int(light.position.w);
 

@@ -17,6 +17,8 @@
 #include "frame/gl_object_buffer.h"
 #include "frame/gl_skin_palette.h"
 #include "offline/gl_scene_capture.h"
+#include "pass/gl_particle_pass.h"
+#include "pass/gl_reflection_pass.h"
 #include "storage/gl_ibl.h"
 #include "storage/gl_ocean_fields.h"
 #include "storage/gl_shadow_atlas.h"
@@ -27,9 +29,6 @@
 namespace Vkm::Engine {
 
 namespace {
-
-/// Levels the picture's chain holds, as the reflection pass's own.
-constexpr int MAX_CHAIN_MIPS = 9;
 
 /// Metres in front of the plane the picture starts: the reflecting surface itself is clipped.
 constexpr float CLIP_OFFSET = 0.01f;
@@ -53,9 +52,14 @@ float reachInFront(const Math::AABB& box, const glm::vec4& plane) {
 
 } // namespace
 
-GLPlanarReflectionPass::GLPlanarReflectionPass(GLSceneCapture& capture, GLCamera& camera)
+GLPlanarReflectionPass::GLPlanarReflectionPass(
+    GLSceneCapture& capture,
+    GLCamera& camera,
+    GLParticlePass& particles
+)
     : m_capture(capture)
     , m_camera(camera)
+    , m_particles(particles)
     , m_skinned("shaders/forward/pbr_skinned")
     , m_source("shaders/reflection/source")
     , m_downsample("shaders/reflection/downsample") {
@@ -69,7 +73,6 @@ void GLPlanarReflectionPass::prepare(
     GLView& glView,
     const ResourceManager& resources
 ) {
-    PROFILE_SCOPE("PlanarReflections/Prepare");
     m_count = 0;
     if (!view.hasCamera || view.planarReflectors.empty()) return;
 
@@ -113,13 +116,14 @@ void GLPlanarReflectionPass::prepare(
             glm::vec3(mirror * glm::vec4(eye, 1.0f))
         );
         drawn.size = glm::max(
-            glm::uvec2(glm::vec2(view.sceneWidth(), view.sceneHeight()) * r.resolution),
+            glm::uvec2(glm::vec2(view.sceneWidth(), view.sceneHeight()) * r.renderScale),
             glm::uvec2(16u)
         );
 
-        // What that camera sees in front of the plane, opaque or cut out.
+        // What that camera sees in front of the plane.
         const Math::Frustum mirrored = Math::extractFrustum(drawn.camera.viewProjection);
         drawn.objects.clear();
+        drawn.glass.clear();
         MaterialHandle lastMaterial;
         for (const uint32_t object : view.objects->scene) {
             if (draws[object].viewmodel) continue;
@@ -131,16 +135,21 @@ void GLPlanarReflectionPass::prepare(
                 glView.ensureMaterial(handle, resources);
             }
             const GLMaterial* material = glView.getMaterial(handle);
-            if (!material || material->getType() == MaterialType::Transparent) continue;
-            drawn.objects.push_back(object);
+            if (!material) continue;
+            const bool glass = material->getType() == MaterialType::Transparent;
+            (glass ? drawn.glass : drawn.objects).push_back(object);
         }
     }
 }
 
 void GLPlanarReflectionPass::execute(GLFrameContext& ctx) {
     if (m_count == 0) return;
-    PROFILE_SCOPE("PlanarReflections");
-    for (int i = 0; i < m_count; ++i) draw(ctx, i);
+    for (int i = 0; i < m_count; ++i) {
+        draw(ctx, i);
+        m_pictures[i] = {&m_drawn[i].reflector, &m_chains[i]};
+    }
+    ctx.planarPictures = m_pictures.data();
+    ctx.planarCount    = m_count;
 
     // The frame's camera back, for every pass after.
     const RenderView& view = ctx.view;
@@ -227,6 +236,8 @@ void GLPlanarReflectionPass::draw(GLFrameContext& ctx, int i) {
         }
         m_batcher.draw(ctx.gl, run);
     }
+    if (!drawn.glass.empty()) drawGlass(ctx, i);
+    m_particles.drawMirrored(ctx, target, drawn.size, drawn.camera, clip);
 
     // Unclipped again for whoever draws with these programs next.
     for (Vkm::GL::Shader* program : {&pbr, &m_skinned}) {
@@ -242,7 +253,7 @@ void GLPlanarReflectionPass::draw(GLFrameContext& ctx, int i) {
         || chain.mipHeight(0) != static_cast<int>(height)) {
         const int w = static_cast<int>(width);
         const int h = static_cast<int>(height);
-        const int levels = mipLevelsDownToTwo(w, h, MAX_CHAIN_MIPS);
+        const int levels = mipLevelsDownToTwo(w, h, GLReflectionPass::MAX_CHAIN_MIPS);
         chain.create(w, h, levels, GL_RGBA16F, GL_LINEAR_MIPMAP_LINEAR, GL_LINEAR);
     }
     constexpr uint32_t TARGET_UNIT = 0;
@@ -264,6 +275,74 @@ void GLPlanarReflectionPass::draw(GLFrameContext& ctx, int i) {
         chain.bindLevel(mip - 1, GLBindings::ReflectionTextureSlots::CHAIN);
         dispatchLevel(m_downsample, mip);
     }
+}
+
+void GLPlanarReflectionPass::drawGlass(GLFrameContext& ctx, int i) {
+    const RenderView& view   = ctx.view;
+    const GLView&     glView = ctx.resources;
+    Drawn&            drawn  = m_drawn[i];
+    GLTarget&         target = *m_targets[i];
+
+    // Far to near from the mirror's eye, so the blend composes.
+    const std::vector<glm::mat4>& models = view.objects->models;
+    const glm::vec3 eye = drawn.camera.position;
+    const auto away = [&](uint32_t object) {
+        const glm::vec3 to = eye - glm::vec3(models[object][3]);
+        return glm::dot(to, to);
+    };
+    std::sort(drawn.glass.begin(), drawn.glass.end(), [&](uint32_t a, uint32_t b) {
+        return away(a) > away(b);
+    });
+
+    // What is behind the glass, to refract: the picture so far.
+    m_backdrop.resize(drawn.size.x, drawn.size.y, 1, false);
+    m_backdrop.blitColorFrom(target);
+    target.bind(ctx.gl);
+    m_backdrop.bindTexture(GLTarget::Attachment::Color, GLBindings::PostTextureSlots::SCENE_COLOR);
+
+    Vkm::GL::Shader& pbr   = m_capture.pbrProgram();
+    const bool       posed = ctx.skinPalette.count() > 0;
+    for (Vkm::GL::Shader* program : {&pbr, &m_skinned}) {
+        if (program == &m_skinned && !posed) continue;
+        program->bind();
+        program->setUniform1i("u_hasSceneColor", 1);
+    }
+    ctx.gl.setBlending(true);
+    ctx.gl.setBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    ctx.gl.setDepthWrite(false);
+    ctx.gl.setFaceCulling(true);
+
+    const GLMaterial*      boundMaterial = nullptr;
+    const Vkm::GL::Shader* boundProgram  = nullptr;
+    const uint32_t bones = ctx.skinPalette.count();
+    for (const InstanceDraw& run : m_batcher.buildSequential(drawn.glass, *view.objects, glView, bones)) {
+        Vkm::GL::Shader& program = run.skinned ? m_skinned : pbr;
+        if (&program != boundProgram) {
+            program.bind();
+            boundProgram = &program;
+        }
+        const GLMaterial* material = glView.getMaterial(run.material);
+        if (material && material != boundMaterial) {
+            material->bind(GLBindings::UBOBindingPoints::MATERIAL);
+            material->bindTextures(glView);
+            boundMaterial = material;
+        }
+        // Blending does not sort a mesh's own faces: the far side first, then the near.
+        if (material && material->doubleSided()) {
+            ctx.gl.setCullFace(GL_FRONT);
+            m_batcher.draw(ctx.gl, run);
+            ctx.gl.setCullFace(GL_BACK);
+        }
+        m_batcher.draw(ctx.gl, run);
+    }
+
+    for (Vkm::GL::Shader* program : {&pbr, &m_skinned}) {
+        if (program == &m_skinned && !posed) continue;
+        program->bind();
+        program->setUniform1i("u_hasSceneColor", 0);
+    }
+    ctx.gl.setBlending(false);
+    ctx.gl.setDepthWrite(true);
 }
 
 } // namespace Vkm::Engine

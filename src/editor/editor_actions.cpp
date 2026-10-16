@@ -31,6 +31,7 @@
 #include "ecs/component/render/light.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/component/render/particle_emitter.h"
+#include "ecs/component/render/planar_reflector.h"
 #include "ecs/component/render/reflection_probe.h"
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
@@ -177,6 +178,7 @@ const char* defaultName(EntityKind k) {
         case EntityKind::DiskLight:        return "Disk Light";
         case EntityKind::Camera:           return "Camera";
         case EntityKind::ReflectionProbe:  return "Reflection Probe";
+        case EntityKind::PlanarReflector:  return "Planar Reflector";
         case EntityKind::IrradianceVolume: return "Irradiance Volume";
         case EntityKind::Decal:            return "Decal";
         case EntityKind::ParticleEmitter:  return "Particle Emitter";
@@ -275,6 +277,9 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
         }
         case EntityKind::ReflectionProbe:
             scene.add(entity, ReflectionProbe{});
+            break;
+        case EntityKind::PlanarReflector:
+            scene.add(entity, PlanarReflector{});
             break;
         case EntityKind::IrradianceVolume:
             scene.add(entity, IrradianceVolume{});
@@ -632,6 +637,7 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
         ImGui::Separator();
         item(EditorIcon::Camera,   "Camera",            EntityKind::Camera);
         item(EditorIcon::Probe,    "Reflection Probe",  EntityKind::ReflectionProbe);
+        item(EditorIcon::Probe,    "Planar Reflector",  EntityKind::PlanarReflector);
         item(EditorIcon::Volume,   "Irradiance Volume", EntityKind::IrradianceVolume);
         item(EditorIcon::Decal,    "Decal",             EntityKind::Decal);
         item(EditorIcon::Particle, "Particle Emitter",  EntityKind::ParticleEmitter);
