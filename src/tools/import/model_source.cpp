@@ -321,6 +321,7 @@ class GltfReader {
             v.roughness = 1.0f;
             if (!material) return out;
 
+            const char* named = material->name ? material->name : "a material";
             const cgltf_pbr_metallic_roughness& pbr = material->pbr_metallic_roughness;
             v.albedo    = glm::make_vec4(pbr.base_color_factor);
             v.metallic  = pbr.metallic_factor;
@@ -340,13 +341,44 @@ class GltfReader {
 
             // KHR_texture_transform: the material reads every map at one uv, so the base colour's
             // transform stands for all of them - the normal map's, with no base colour; a rotation
-            // is not carried. Its offset is glTF's, along
-            // a V that runs down the image, so it is turned for the flipped V the mesh is read with.
+            // or a texCoord override is not carried. Its offset is glTF's, along a V that runs down
+            // the image, so it is turned for the flipped V the mesh is read with.
             const cgltf_texture_view& base =
                 pbr.base_color_texture.texture ? pbr.base_color_texture : material->normal_texture;
             if (base.has_transform) {
                 v.uvScale  = glm::make_vec2(base.transform.scale);
                 v.uvOffset = {base.transform.offset[0], 1.0f - v.uvScale.y - base.transform.offset[1]};
+            }
+            // A map's transform as it applies: none is the identity.
+            const auto applied = [](const cgltf_texture_view& view) {
+                cgltf_texture_transform identity{};
+                identity.scale[0] = 1.0f;
+                identity.scale[1] = 1.0f;
+                return view.has_transform ? view.transform : identity;
+            };
+            const cgltf_texture_transform common = applied(base);
+            const auto apart = [&](const cgltf_texture_view& view) {
+                if (!view.texture) return false;
+                if (view.has_transform && view.transform.has_texcoord) return true;
+                const cgltf_texture_transform own = applied(view);
+                return own.rotation != 0.0f
+                    || own.scale[0] != common.scale[0] || own.scale[1] != common.scale[1]
+                    || own.offset[0] != common.offset[0] || own.offset[1] != common.offset[1];
+            };
+            const cgltf_texture_view* views[] = {
+                &pbr.base_color_texture,
+                &pbr.metallic_roughness_texture,
+                &material->normal_texture,
+                &material->occlusion_texture,
+                &material->emissive_texture
+            };
+            const auto differs = [&](const cgltf_texture_view* view) { return apart(*view); };
+            if (std::any_of(std::begin(views), std::end(views), differs)) {
+                LOG_WARNING(
+                    "%s: a map's texture transform rotates, overrides its texCoord or differs from the "
+                    "base colour's, which stands for all of them",
+                    named
+                );
             }
 
             if (material->has_emissive_strength) {
@@ -385,7 +417,6 @@ class GltfReader {
             // MaterialAsset has no sheen or anisotropy texture: their factors, and the anisotropy's
             // rotation, come across.
             // The direction turns from the tangent toward the bitangent by that rotation.
-            const char* named = material->name ? material->name : "a material";
             if (material->has_sheen) {
                 v.sheenColor     = glm::make_vec3(material->sheen.sheen_color_factor);
                 v.sheenRoughness = material->sheen.sheen_roughness_factor;
@@ -825,8 +856,9 @@ const char* describe(cgltf_result result) {
  * @return Empty when it reads; otherwise the reason, for the log.
  */
 std::string unreadableReason(const cgltf_data& data) {
-    // Allowed because cgltf's readers decode it: normalised integers in place of floats.
-    constexpr const char* DECODED_EXTENSIONS[] = {"KHR_mesh_quantization"};
+    // Allowed because they are read: normalised integers in place of floats (cgltf decodes them),
+    // and a map's texture transform (readMaterial).
+    constexpr const char* DECODED_EXTENSIONS[] = {"KHR_mesh_quantization", "KHR_texture_transform"};
     for (cgltf_size e = 0; e < data.extensions_required_count; ++e) {
         const std::string name = data.extensions_required[e];
         const auto decoded = [&](const char* known) { return name == known; };
