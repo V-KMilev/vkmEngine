@@ -351,8 +351,10 @@ On a miss the recipe is imported through the `AssetFactory` seam
 (`io/asset/asset_factory.h`), one import per kind, which the editor and
 `vkm_cook` install (`registerRecipeAssetFactories`) and the runtime and server
 leave null. A material has no cooked file: `AssetSerializer::materialFromRecipe`
-builds it from its recipe. A name with no manifest row still loads from a recipe
-on disk, so a lost manifest costs a re-cook.
+builds it from its recipe, after loading the maps the recipe names that the
+graph lacks, so a map the document does not list still resolves. A name with no
+manifest row still loads from a recipe on disk, so a lost manifest costs a
+re-cook.
 
 `finalizeAsyncLoads` / `awaitAsyncLoads` (`system/async/async_loader_system.h`)
 land async decodes without a frame - drain once, and drain until quiet. The

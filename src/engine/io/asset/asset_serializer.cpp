@@ -303,8 +303,7 @@ nlohmann::json saveAssetsForEntities(
     for (const AudioClipHandle& h : refs.sounds)        emit(h);
     for (const TextureHandle& h : refs.textures)        emit(h);
 
-    // Flat, by name. A material named this way that is loaded brings its textures, as one held by handle
-    // does: without them the next load leaves its maps empty, and the save after writes its recipe so.
+    // Flat, by name. A material named this way that is loaded lists its textures, as one held by handle does.
     for (const auto& [type, name] : collected.names) {
         if (type == AssetType::Count) continue;
         emitNamedRef(sections[static_cast<size_t>(type)].entries, name);
@@ -478,6 +477,36 @@ std::pair<size_t, size_t> loadAssetSection(
     const char* sectionKey,
     ResourceManager& resources,
     LoadMode mode
+);
+
+/**
+ * @brief Load the maps material @p name's recipe names that the graph lacks, as a textures section.
+ *
+ * A document lists what it uses, but a map named only in the recipe would otherwise resolve to
+ * nothing, and the next save would drop it.
+ *
+ * @param name      The material.
+ * @param resources The asset graph to build into.
+ */
+void loadMaterialMaps(const std::string& name, ResourceManager& resources) {
+    nlohmann::json recipe;
+    if (!AssetLibrary::readRecipe(AssetType::Material, name, recipe)) return;
+    const auto refs = recipe.find("textures");
+    if (refs == recipe.end() || !refs->is_object()) return;
+    nlohmann::json maps = nlohmann::json::array();
+    for (const auto& [slot, ref] : refs->items()) {
+        if (ref.is_string() && !ref.get<std::string>().empty()) maps.push_back({{"name", ref}});
+    }
+    if (maps.empty()) return;
+    loadAssetSection<TextureAsset>({{"textures", maps}}, "textures", resources, LoadMode::Create);
+}
+
+template<typename Asset>
+std::pair<size_t, size_t> loadAssetSection(
+    const nlohmann::json& assetsJson,
+    const char* sectionKey,
+    ResourceManager& resources,
+    LoadMode mode
 ) {
     constexpr AssetType TYPE = ASSET_TYPE<Asset>;
     const char* what = Reflect::enumName(TYPE);
@@ -504,6 +533,7 @@ std::pair<size_t, size_t> loadAssetSection(
         const size_t held = resources.countOfType<Asset>();
         Handle<Asset> h;
         try {
+            if constexpr (std::is_same_v<Asset, MaterialAsset>) loadMaterialMaps(name, resources);
             h = loadFromLibrary<Asset>(name, resources);
         } catch (const std::exception& e) {
             reportError(
