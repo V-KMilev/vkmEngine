@@ -812,6 +812,24 @@ void testWhatIsTooSmallIsNotDrawn() {
     );
 }
 
+// The draw distance is to a box's nearest point: a field the camera stands on is near, however far
+// its middle lies, and a box wholly past the distance is not.
+void testTheDrawDistanceIsToTheNearestPoint() {
+    std::printf("What the draw distance removes:\n");
+
+    VisibilityContext context{};
+    context.cameraPosition     = glm::vec3(0.0f, 2.0f, 0.0f);
+    context.maxDistance        = 500.0f;
+    context.maxDistanceSquared = 500.0f * 500.0f;
+
+    const Math::AABB field{glm::vec3(-2000.0f, -1.0f, -2000.0f), glm::vec3(2000.0f, 0.0f, 50.0f)};
+    check("a field the camera stands on is kept, its middle far off", Culling::isNearEnough(field, context));
+    const Math::AABB beyond{glm::vec3(-1.0f, 0.0f, -601.0f), glm::vec3(1.0f, 2.0f, -599.0f)};
+    check("  and a box wholly past the distance is not", !Culling::isNearEnough(beyond, context));
+    context.maxDistance = 0.0f;
+    check("  unless there is no distance", Culling::isNearEnough(beyond, context));
+}
+
 // A world of two meshes - one that never moves, one that does - seen from the origin.
 struct FixedWorld {
     Scene          scene;
@@ -1065,6 +1083,7 @@ void testAnAssetChangeReworksOnlyWhatReadsIt() {
 } // namespace
 
 void runCullingTests() {
+    testTheDrawDistanceIsToTheNearestPoint();
     testTheChangedObjectsAreNamed();
     testAFixedMeshThatMovesIsNoticed();
     testAMeshHiddenOrShownIsNamed();
