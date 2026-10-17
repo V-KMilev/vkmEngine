@@ -121,6 +121,8 @@ int main(int argc, char** argv) {
             LOG_ERROR("Project '%s' has no world of its own to play", project.name.c_str());
             return EXIT_FAILURE;
         }
+        // What a game's restartScene() starts over while it has loaded no scene of its own.
+        sys.behaviors.setPlayedScene(boot.path);
 
         // After the scene, which a spawner may reference, and the module, which holds the entry.
         // Set up whether or not the command line joins a game, so the game can join one from

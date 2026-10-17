@@ -168,6 +168,7 @@ struct EditorState : CommandHost {
     bool requestModelImport = false;  ///< Consumed by ModelImportDialog
     bool requestPlacePrefab = false;  ///< Consumed by PlacePrefabDialog
     bool requestScriptReload = false; ///< Consumed by EditorSystem (hot-reload)
+    bool requestRestart      = false; ///< Consumed by EditorSystem: a game asked to start play over
     bool requestNewProject   = false; ///< Consumed by NewProjectDialog
     std::string newProjectTemplate;   ///< The project it copies; empty for templates/default
 

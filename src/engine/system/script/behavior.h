@@ -59,6 +59,7 @@ struct BehaviorContext {
     const HostChrome*      chrome           = nullptr;  ///< Where in the window the scene is drawn.
     std::vector<EntityId>* pendingDestroy   = nullptr;
     std::string*           pendingSceneLoad = nullptr;
+    bool*                  pendingRestart   = nullptr;
     const OceanData*       ocean            = nullptr;  ///< OceanSystem's, this tick's or frame's.
 };
 
@@ -643,6 +644,15 @@ class Behavior {
          * @param scenePath Scene file, relative to the project root.
          */
         void loadScene(const std::string& scenePath) { *m_ctx->pendingSceneLoad = scenePath; }
+
+        /**
+         * @brief Start the scene being played over: the file loadScene last loaded, else the scene
+         *        the host began play with - its entry scene, or under the editor the scene as Play
+         *        found it, unsaved edits and all.
+         *
+         * Deferred as loadScene is; a loadScene asked in the same pass wins.
+         */
+        void restartScene() { *m_ctx->pendingRestart = true; }
 
         /**
          * @brief Listen for an event until the behavior is destroyed or the session ends.

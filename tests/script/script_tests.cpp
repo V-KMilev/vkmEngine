@@ -12,6 +12,7 @@
 
 #include "core/event/event_bus.h"
 #include "io/asset/asset_serializer.h"
+#include "io/scene/scene_serializer.h"
 #include "platform/library/dynamic_library.h"
 #include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/material_asset.h"
@@ -151,6 +152,18 @@ class Quitter : public ReflectedBehavior<Quitter> {
 
     public:
         int destroys = 0;
+};
+
+// Asks once, on its first update, for the scene being played to start over.
+class Restarter : public ReflectedBehavior<Restarter> {
+    public:
+        void onUpdate(float) override {
+            if (!asked) restartScene();
+            asked = true;
+        }
+
+    public:
+        bool asked = false;
 };
 
 // A settings screen: a tier picked each update, built over the project's settings.
@@ -311,6 +324,9 @@ VKM_REFLECT_BEGIN(Builder)
 VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(Quitter)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Restarter)
 VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(Partner)
@@ -631,6 +647,43 @@ void testASceneRequestIsDrainedEvenWhilePaused() {
         "  and a load that cannot happen leaves the world alone",
         scene.isAlive(entity) && scene.entityCount() == 1
     );
+}
+
+// A restart starts over the scene the host began play with: the file it names, or, for a host whose
+// scene is held in memory - the editor's - the host's own handler.
+void testARestartStartsTheSceneBeingPlayedOver() {
+    std::printf("A game that asks to start over:\n");
+
+    const ScratchProject project("vkm_restart");
+    std::error_code made;
+    std::filesystem::create_directories(project.root() / "scenes", made);
+    Scene authored;
+    authored.createEntity();
+    authored.createEntity();
+    ResourceManager unused;
+    const std::string path = (project.root() / "scenes" / "start.json").string();
+    check("a scene file to begin from", SceneSerializer::save(authored, unused, path));
+
+    Scene played;
+    attach<Restarter>(played, played.createEntity());
+    for (int i = 0; i < 3; ++i) played.createEntity();  // what play made since
+    {
+        ScriptFrame run(played);
+        run.system.setPlayedScene("scenes/start.json");
+        for (int i = 0; i < 4; ++i) run.tick();
+    }
+    check("the file the host began with is put back", played.entityCount() == 2);
+
+    Scene held;
+    attach<Restarter>(held, held.createEntity());
+    int asked = 0;
+    {
+        ScriptFrame run(held);
+        run.system.setRestartHandler([&asked] { ++asked; });
+        for (int i = 0; i < 4; ++i) run.tick();
+    }
+    check("a host holding its scene is asked to put it back itself", asked == 1);
+    check("  and the world is left for it to replace", held.entityCount() == 1);
 }
 
 void testAThrowingBehaviorIsDisabledNotFatal() {
@@ -1263,6 +1316,7 @@ void runScriptTests() {
     testSpawnUnderAParent();
     testBehaviorsAreFoundAndAddedByType();
     testASceneRequestIsDrainedEvenWhilePaused();
+    testARestartStartsTheSceneBeingPlayedOver();
     testAThrowingBehaviorIsDisabledNotFatal();
     testAThrowingListenerIsReportedNotFatal();
     testEndSessionTearsDownWhatPlayStarted();

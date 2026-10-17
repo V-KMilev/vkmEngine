@@ -203,6 +203,22 @@ void BehaviorSystem::drainPendingDestroy(Scene& scene) {
 }
 
 void BehaviorSystem::drainPendingSceneLoad(FrameContext& ctx) {
+    // A restart is a load of the scene being played; a load asked in the same pass wins.
+    const bool restart = m_pendingRestart;
+    m_pendingRestart   = false;
+    if (restart && m_pendingSceneLoad.empty()) {
+        if (!m_loadedScene.empty()) {
+            m_pendingSceneLoad = m_loadedScene;
+        } else if (m_restartHandler) {
+            m_restartHandler();
+            return;
+        } else if (!m_playedScene.empty()) {
+            m_pendingSceneLoad = m_playedScene;
+        } else {
+            LOG_ERROR("A restart was asked for, but this scene came from no file the host kept");
+            return;
+        }
+    }
     if (m_pendingSceneLoad.empty()) return;
 
     // Taken before endSession clears the queue; a load an outgoing onDestroy asks for
@@ -216,6 +232,7 @@ void BehaviorSystem::drainPendingSceneLoad(FrameContext& ctx) {
     const std::filesystem::path scenePath = ProjectPaths::projectRoot() / path;
     if (SceneSerializer::load(ctx.scene, ctx.resources, scenePath.string())) {
         LOG_INFO("Loaded scene '%s' on request", path.c_str());
+        m_loadedScene = path;
         // Nothing starts on a frozen frame, and the behavior that could resume the clock
         // went with the old scene.
         if (ctx.clock.isPaused() || ctx.clock.getTimeScale() <= 0.0f) {
@@ -349,6 +366,8 @@ void BehaviorSystem::endSession(Scene& scene) {
     // Last, so a request an onDestroy made goes with the rest.
     m_pendingDestroy.clear();
     m_pendingSceneLoad.clear();
+    m_pendingRestart = false;
+    m_loadedScene.clear();
 }
 
 } // namespace Vkm::Engine

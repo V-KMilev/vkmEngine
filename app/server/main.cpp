@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
         Vkm::App::AppConfig config;
         config.windowTitle       = project.name.c_str();
         config.headlessFrameRate = project.tickRate;
-        Vkm::App::setupEngineApp(engine, config, nullptr);
+        auto sys = Vkm::App::setupEngineApp(engine, config, nullptr);
 
         const Vkm::Engine::SceneBootResult boot = Vkm::Engine::bootProjectWorld(
             project,
@@ -85,6 +85,8 @@ int main(int argc, char** argv) {
             LOG_ERROR("Project '%s' has no world of its own to serve", project.name.c_str());
             return EXIT_FAILURE;
         }
+        // What a game's restartScene() starts over while it has loaded no scene of its own.
+        sys.behaviors.setPlayedScene(boot.path);
 
         if (!scriptModule.setupNetwork(engine.getNet())) {
             LOG_ERROR(

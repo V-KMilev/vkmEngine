@@ -37,6 +37,7 @@
 #include "system/ui/ui_draw_data.h"
 #include "system/render/editor_render_hooks.h"
 #include "system/render/render_system.h"
+#include "system/script/behavior_system.h"
 #include "system/script/script_module.h"
 #include "ui/editor_theme.h"
 #include "io/project_paths.h"
@@ -148,6 +149,9 @@ EditorSystem::EditorSystem(
     , m_materialPreviews(m_hooks)
     , m_sceneIO(cameraController, m_materialPreviews, behaviorSystem)
 {
+    // The editor's scene is held in memory, so a game's restart is Stop and Play, at a point of
+    // the frame that may replace the world.
+    behaviorSystem.setRestartHandler([this] { m_state.requestRestart = true; });
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
 
@@ -181,6 +185,7 @@ EditorSystem::EditorSystem(
 }
 
 void EditorSystem::shutdown() {
+    m_behaviorSystem.setRestartHandler(nullptr);
     LOG_TRACE("Shutting down, saving settings");
     setErrorSink(nullptr);
     if (m_state.projectOpen) {
@@ -621,6 +626,10 @@ void EditorSystem::update(FrameContext& ctx) {
 
     serviceFrame(ctx);
     resolveSceneAction(ec);
+    if (m_state.requestRestart) {
+        m_state.requestRestart = false;
+        m_playbar.restart(ec, m_sceneIO);
+    }
 
     // After the game's systems, and not while the editor's view holds the cursor.
     if (!m_cameraController.isLooking()) m_sceneIO.holdEjectedCursorFree(ctx);

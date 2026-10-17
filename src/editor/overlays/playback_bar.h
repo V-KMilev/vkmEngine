@@ -59,6 +59,15 @@ class PlaybackBar {
          */
         bool isHovered() const { return m_hovered; }
 
+        /**
+         * @brief Start the running session over, as a game's restartScene() asks: Stop puts back
+         *        the scene as Play found it, and Play takes it again.
+         *
+         * @param ec For the clock and the audio device.
+         * @param sceneIO Restores and snapshots the scene.
+         */
+        void restart(EditorContext& ec, SceneIOController& sceneIO);
+
     private:
         /**
          * @brief The first button: start a running session, or pause or resume the current one.

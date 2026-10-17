@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include <type_traits>
 #include <vector>
 
@@ -30,6 +32,7 @@ class BehaviorSystem : public System, public ISceneObserver {
         BehaviorSystem() {
             m_context.pendingDestroy   = &m_pendingDestroy;
             m_context.pendingSceneLoad = &m_pendingSceneLoad;
+            m_context.pendingRestart   = &m_pendingRestart;
         }
         ~BehaviorSystem() override = default;
 
@@ -61,6 +64,24 @@ class BehaviorSystem : public System, public ISceneObserver {
          * @param entity The entity being destroyed.
          */
         void onEntityDestroyed(EntityId entity) override;
+
+        /**
+         * @brief The file a host began play with, which a restart reloads while no loadScene has
+         *        replaced it: a runtime's or a server's entry scene.
+         *
+         * @param path Scene file, absolute or relative to the project root.
+         */
+        void setPlayedScene(std::string path) { m_playedScene = std::move(path); }
+
+        /**
+         * @brief Hand a restart of the host's own scene to @p restart, which puts it back itself.
+         *
+         * For a host whose scene is held in memory rather than a file: the editor's, the scene as
+         * Play found it. Called inside the frame; the host acts where it can replace the world.
+         *
+         * @param restart Asked to start play over; null hands restarts back to setPlayedScene.
+         */
+        void setRestartHandler(std::function<void()> restart) { m_restartHandler = std::move(restart); }
 
         /**
          * @brief End the session: onDestroy on every started behavior, reset, and discard queued requests.
@@ -127,7 +148,8 @@ class BehaviorSystem : public System, public ISceneObserver {
         void drainPendingDestroy(Scene& scene);
 
         /**
-         * @brief Load the scene a behavior asked for, if one did.
+         * @brief Load the scene a behavior asked for, or start the scene being played over, if one
+         *        did.
          *
          * @param ctx Frame context whose scene and resources are replaced.
          */
@@ -177,6 +199,10 @@ class BehaviorSystem : public System, public ISceneObserver {
         /// Walked by drainPendingDestroy; a member for its capacity.
         std::vector<EntityId> m_destroying;
         std::string           m_pendingSceneLoad;  ///< Scene a behavior asked for; empty when none.
+        bool                  m_pendingRestart = false;  ///< A behavior asked to start the scene over.
+        std::string           m_loadedScene;   ///< The file loadScene last loaded this session, if any.
+        std::string           m_playedScene;   ///< The file the host began play with; see setPlayedScene.
+        std::function<void()> m_restartHandler;  ///< The host's restart; see setRestartHandler.
 
         BehaviorContext m_context;
 };

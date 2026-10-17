@@ -67,6 +67,12 @@ void PlaybackBar::playOrPause(EditorContext& ec, SceneIOController& sceneIO) {
     else         audio.resumeAllVoices();
 }
 
+void PlaybackBar::restart(EditorContext& ec, SceneIOController& sceneIO) {
+    if (!sceneIO.isPlaying()) return;
+    sceneIO.stopPlaySession(ec.frame, ec.state);
+    playOrPause(ec, sceneIO);
+}
+
 void PlaybackBar::processKeys(EditorContext& ec, SceneIOController& sceneIO) {
     const EditorKeybinds& kb = ec.state.prefs.keybinds;
     if (isPressed(kb.playStop, false)) {
