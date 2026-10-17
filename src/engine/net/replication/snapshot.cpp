@@ -67,20 +67,12 @@ struct Candidate {
     EntityId             entity;       ///< Which occupant of the slot this is.
     uint32_t             slot  = 0;
     uint32_t             mask  = 0;
+    uint32_t             removed = 0;  ///< The types the receiver holds and the entity no longer does.
     std::vector<Encoded> components;
     uint32_t             bits  = 0;
     uint32_t             age   = 0;    ///< Snapshots since last confirmed.
     bool                 owner = false;
 };
-
-/**
- * @brief The most one component may occupy on the wire, per entity per snapshot.
- *
- * A bound on the *packet*: one big component would starve every other entity.
- * Past it the component is dropped for that snapshot, and logged. A spawn
- * sets it: the longest path plus NET_SPAWN_MAX_SLOTS slots.
- */
-constexpr uint32_t MAX_COMPONENT_BYTES = 512;
 
 static_assert(
     NET_SPAWN_MAX_BYTES <= MAX_COMPONENT_BYTES,
@@ -131,8 +123,12 @@ bool buildCandidate(
         const bool     isSpawn = static_cast<int>(type) == spawnType;
         if (silenced && !isSpawn) continue;
 
-        // Asked first, so a type the entity lacks costs no encode.
-        if (!row.has(scene, entity)) continue;
+        // Asked first, so a type the entity lacks costs no encode. One the receiver was told of
+        // and the entity has lost is said to be gone, so the receiver takes it away too.
+        if (!row.has(scene, entity)) {
+            if (baseline.find(entity, type)) out.removed |= 1u << type;
+            continue;
+        }
 
         BitWriter writer(scratch, MAX_COMPONENT_BYTES);
         row.encode(scene, entity, writer);
@@ -162,9 +158,10 @@ bool buildCandidate(
         out.components.push_back({scratch, static_cast<uint32_t>(writer.bitCount()), type});
     }
 
-    if (out.mask == 0) return false;
+    if (out.mask == 0 && out.removed == 0) return false;
     out.age   = oldest;
-    out.bits += typeCount;
+    // The mask, the bit that says whether removals follow, and their mask.
+    out.bits += typeCount + 1 + (out.removed != 0 ? typeCount : 0);
     return true;
 }
 
@@ -256,6 +253,13 @@ void writeChosen(
         previous = candidate->slot;
 
         writer.bits(candidate->mask, typeCount);
+        writer.boolean(candidate->removed != 0);
+        if (candidate->removed != 0) writer.bits(candidate->removed, typeCount);
+        for (uint32_t type = 0; type < typeCount; ++type) {
+            if (candidate->removed & (1u << type)) {
+                pending.changes.push_back({candidate->entity, candidate->slot, type, {}, true});
+            }
+        }
         // Moved: the candidates die with this snapshot.
         for (Candidate::Encoded& component : candidate->components) {
             writer.append(component.bytes.data(), component.bits);
@@ -300,13 +304,15 @@ void NetBaseline::confirm(uint16_t sequence) {
         Confirmed& confirmed = record.components[change.type];
 
         // A bounded distance, not plain newer-than: a component idle past half
-        // the sequence space would invert it and be resent forever.
+        // the sequence space would invert it and be resent forever. A removal is
+        // a change like any: a late older one must not bring the component back.
         const uint16_t heldIsNewerBy = static_cast<uint16_t>(confirmed.sequence - found->sequence);
-        if (confirmed.held && heldIsNewerBy != 0 && heldIsNewerBy <= ACK_WINDOW) continue;
+        if (confirmed.folded && heldIsNewerBy != 0 && heldIsNewerBy <= ACK_WINDOW) continue;
 
         confirmed.bytes    = std::move(change.bytes);
         confirmed.sequence = found->sequence;
-        confirmed.held     = true;
+        confirmed.held     = !change.removed;
+        confirmed.folded   = true;
     }
     // Only the reported occupant: whatever took the slot since may be confirmed.
     for (EntityId gone : found->forgotten) {
@@ -476,12 +482,17 @@ bool readSnapshot(
         const uint32_t slot = previous + readGap(reader);
         previous = slot;
 
-        const uint32_t mask = reader.bits(typeCount);
+        const uint32_t mask    = reader.bits(typeCount);
+        const uint32_t removed = reader.boolean() ? reader.bits(typeCount) : 0;
         if (reader.failed()) return false;
 
         // Made, not refused: the server may have made it since.
         const EntityId entity = names.claim(scene, slot);
         if (!entity) return false;
+
+        for (uint32_t type = 0; type < typeCount; ++type) {
+            if (removed & (1u << type)) schema.types()[type].remove(scene, entity);
+        }
 
         for (uint32_t type = 0; type < typeCount; ++type) {
             if (!(mask & (1u << type))) continue;

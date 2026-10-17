@@ -1148,6 +1148,104 @@ void testAClientsOwnEntityIsNeverWrittenOver() {
     check("  and the client's own stays", match.clientWorld().isAlive(own));
 }
 
+// A component the server takes away goes from every client too, and one put back comes back.
+void testAComponentTakenAwayIsTakenAwayEverywhere() {
+    std::printf("A component the server takes away:\n");
+
+    NetSchema schema;
+    registerEngineNetTypes(schema);
+    Scene server;
+    const EntityId crate = buildCrates(server, 1).front();
+
+    NetBaseline baseline;
+    NetBudget budget;
+    std::vector<uint8_t> body;
+    Scene client;
+    NetNames clientNames;
+
+    writeSnapshotTo(server, schema, 1, budget, baseline, body);
+    readSnapshotFrom(client, schema, body, clientNames);
+    baseline.confirm(1);
+    const EntityId mirrored = client.entityAt(crate.slot());
+    check("the client holds what the server does", client.has<Rigidbody>(mirrored));
+
+    server.remove<Rigidbody>(crate);
+    const NetSnapshotStats gone = writeSnapshotTo(server, schema, 2, budget, baseline, body);
+    check("taking it away is news", gone.entitiesWritten == 1);
+    check("  that the client acts on", readSnapshotFrom(client, schema, body, clientNames));
+    check("  taking it away too", !client.has<Rigidbody>(mirrored) && client.has<Transform>(mirrored));
+    baseline.confirm(2);
+    const NetSnapshotStats quiet = writeSnapshotTo(server, schema, 3, budget, baseline, body);
+    check("once confirmed, it is not said again", quiet.entitiesWritten == 0);
+
+    server.add(crate, Rigidbody{});
+    writeSnapshotTo(server, schema, 4, budget, baseline, body);
+    readSnapshotFrom(client, schema, body, clientNames);
+    check("put back, it comes back", client.has<Rigidbody>(mirrored));
+}
+
+// A late acknowledgement of a snapshot from before a removal must not have the server believe the
+// client holds the component again, or putting it back as it was would never be sent.
+void testALateAcknowledgementDoesNotBringARemovalBack() {
+    std::printf("An old acknowledgement arriving after a removal's:\n");
+
+    NetSchema schema;
+    registerEngineNetTypes(schema);
+    Scene server;
+    const EntityId crate = buildCrates(server, 1).front();
+
+    NetBaseline baseline;
+    NetBudget budget;
+    std::vector<uint8_t> body;
+
+    writeSnapshotTo(server, schema, 9, budget, baseline, body);
+    baseline.confirm(9);
+    server.get<Rigidbody>(crate).linearVelocity = {1.0f, 0.0f, 0.0f};
+    writeSnapshotTo(server, schema, 10, budget, baseline, body);  // the new velocity, unconfirmed
+    const Rigidbody moving = server.get<Rigidbody>(crate);
+    server.remove<Rigidbody>(crate);
+    writeSnapshotTo(server, schema, 11, budget, baseline, body);  // said gone
+    baseline.confirm(11);
+    baseline.confirm(10);  // late, and older than the removal
+
+    server.add(crate, moving);
+    const NetSnapshotStats back = writeSnapshotTo(server, schema, 12, budget, baseline, body);
+    check("the component put back is still sent", back.componentsWritten == 1);
+}
+
+// Both ends load the same scene. A joiner's first snapshot describes every entity, but one the server
+// has not moved is the one the client already holds exactly: its quantised copy would only shift it.
+void testAnAuthoredPoseIsKeptExactOnJoin() {
+    std::printf("A joiner's world, as its scene file wrote it:\n");
+
+    NetSchema schema;
+    registerEngineNetTypes(schema);
+    const glm::vec3 AUTHORED{1.2345678f, 2.2f, -3.3333333f};
+    const auto build = [&](Scene& world) {
+        const std::vector<EntityId> crates = buildCrates(world, 2);
+        for (const EntityId crate : crates) world.get<Transform>(crate).position = AUTHORED;
+        return crates;
+    };
+    Scene server;
+    Scene client;
+    const std::vector<EntityId> crates = build(server);
+    build(client);
+    server.get<Transform>(crates[1]).position.x += 5.0f;
+
+    NetBaseline baseline;
+    NetBudget budget;
+    std::vector<uint8_t> body;
+    NetNames clientNames;
+    clientNames.adoptWorld(client);
+    writeSnapshotTo(server, schema, 1, budget, baseline, body);
+    check("the whole world is described", readSnapshotFrom(client, schema, body, clientNames));
+
+    const glm::vec3 kept  = client.get<Transform>(client.entityAt(crates[0].slot())).position;
+    const glm::vec3 moved = client.get<Transform>(client.entityAt(crates[1].slot())).position;
+    check("an entity the server has not moved keeps its exact pose", kept == AUTHORED);
+    check("  and one it moved takes the server's", std::abs(moved.x - (AUTHORED.x + 5.0f)) < 0.002f);
+}
+
 } // namespace
 
 void runNetReplicationTests() {
@@ -1169,6 +1267,9 @@ void runNetReplicationTests() {
     testWhatEachEndRunsItselfIsNeverSent();
     testASlotSpawnedIntoAgainBuildsTheNewThing();
     testAClientsOwnEntityIsNeverWrittenOver();
+    testAComponentTakenAwayIsTakenAwayEverywhere();
+    testALateAcknowledgementDoesNotBringARemovalBack();
+    testAnAuthoredPoseIsKeptExactOnJoin();
     testAClientJoiningAgainBuildsTheServersThingsOnce();
     testAWorldReplacedMidSessionIsAdoptedAgain();
 }

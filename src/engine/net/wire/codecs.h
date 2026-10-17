@@ -58,6 +58,15 @@ constexpr const char* NET_SPAWN_TYPE = "NetSpawn";
 glm::vec3 netScale(const glm::vec3& scale);
 
 /**
+ * @brief A held pose the wire cannot tell from the server's takes its scale all the same: scale
+ *        travels exact, and a server holds its own to the wire (netScale).
+ *
+ * @param held     The pose this end holds, kept but for its scale.
+ * @param incoming The pose the snapshot carried.
+ */
+void netKeep(Transform& held, const Transform& incoming);
+
+/**
  * @brief A transform, as the wire carries it.
  *
  * Scale only when it is not one. Local, not world: the hierarchy runs on both

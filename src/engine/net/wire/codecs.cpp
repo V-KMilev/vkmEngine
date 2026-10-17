@@ -116,6 +116,10 @@ glm::vec3 netScale(const glm::vec3& scale) {
     return glm::clamp(scale, glm::vec3(-NET_MAX_SCALE), glm::vec3(NET_MAX_SCALE));
 }
 
+void netKeep(Transform& held, const Transform& incoming) {
+    held.scale = incoming.scale;
+}
+
 void netEncode(const Transform& value, BitWriter& out) {
     Quantize::writePosition(out, value.position.x);
     Quantize::writePosition(out, value.position.y);

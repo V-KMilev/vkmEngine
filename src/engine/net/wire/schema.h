@@ -11,6 +11,48 @@
 namespace Vkm::Engine {
 
 /**
+ * @brief The most one component may occupy on the wire, per entity per snapshot.
+ *
+ * A bound on the *packet*: one big component would starve every other entity.
+ * Past it the component is dropped for that snapshot, and logged. A spawn
+ * sets it: the longest path plus NET_SPAWN_MAX_SLOTS slots.
+ */
+inline constexpr uint32_t MAX_COMPONENT_BYTES = 512;
+
+/**
+ * @brief Whether @p a and @p b encode to the same bits: the wire cannot tell them apart.
+ *
+ * @param a One value.
+ * @param b The other.
+ * @return True when their encodings match bit for bit.
+ */
+template <typename T>
+bool sameOnWire(const T& a, const T& b) {
+    std::vector<uint8_t> first;
+    std::vector<uint8_t> second;
+    BitWriter one(first, MAX_COMPONENT_BYTES);
+    BitWriter two(second, MAX_COMPONENT_BYTES);
+    netEncode(a, one);
+    netEncode(b, two);
+    one.finish();
+    two.finish();
+    return one.bitCount() == two.bitCount() && first == second;
+}
+
+/**
+ * @brief What a held value takes of an incoming one the wire cannot tell from it: nothing, unless
+ *        the type's codec carries a field exactly, which a type says by an overload of its own.
+ *
+ * @param held     The value this end holds, kept.
+ * @param incoming The value the snapshot carried.
+ */
+template <typename T>
+void netKeep(T& held, const T& incoming) {
+    (void)held;
+    (void)incoming;
+}
+
+/**
  * @brief One replicated component type, reduced to what the wire needs.
  *
  * Type-erased: a game module registers types after the runtime was built.
@@ -26,6 +68,9 @@ struct NetType {
 
     /// Decode onto this entity, adding the component when it is missing.
     bool (*decode)(Scene&, EntityId, BitReader&) = nullptr;
+
+    /// Take this entity's component away: the server holds it no longer.
+    void (*remove)(Scene&, EntityId) = nullptr;
 };
 
 /**
@@ -131,12 +176,22 @@ void NetSchema::replicate(std::string name) {
         netEncode(scene.get<T>(entity), writer);
     };
     type.decode = [](Scene& scene, EntityId entity, BitReader& reader) {
-        // Added, not required: a client learns of a component by being sent one.
         T* held = scene.tryGet<T>(entity);
-        if (!held) held = &scene.add<T>(entity, T{});
-        netDecode(*held, reader);
-        return !reader.failed();
+        if (!held) {
+            // Added, not required: a client learns of a component by being sent one.
+            netDecode(scene.add<T>(entity, T{}), reader);
+            return !reader.failed();
+        }
+        // A value the wire cannot tell from the one held stays as held: a scene's authored
+        // position is exact, and its quantised copy would only move it by a rounding.
+        T incoming = *held;
+        netDecode(incoming, reader);
+        if (reader.failed()) return false;
+        if (sameOnWire(*held, incoming)) netKeep(*held, incoming);
+        else                             *held = std::move(incoming);
+        return true;
     };
+    type.remove = [](Scene& scene, EntityId entity) { scene.remove<T>(entity); };
 
     add(std::move(type));
 }
