@@ -2,6 +2,37 @@
 
 Notable changes to vkmEngine, newest first. Each release is tagged `vX.Y.Z`.
 
+## 1.0.15
+
+Terrain: ground sculpted, painted and planted in the editor, and the lab rebuilt on it.
+
+- **Terrain**: a heightmap asset kept in a `.terrain` file, drawn by a `Terrain` component in
+  chunks at four levels of detail, painted with up to four materials, and grown with plants
+  from painted density - the same plants on every load and every end of a networked game. A
+  `Terrain` collider part walks on it as drawn. `TerrainBrush` makes the editor's edits from
+  gameplay too: a crater, a dug trench. A terrain regrids to a new resolution keeping its
+  shape, paint and plants.
+- **Layered materials**: a material can blend up to four materials by a weight map, each at
+  its own tiling.
+- **The Terrain window** (Window > Terrain, Ctrl+5; Create > Terrain opens it): tools to raise,
+  lower, smooth, flatten, paint and grow, the brush and its profile, the layers and plants as
+  tiles, and the grid's size and resolution. `[` and `]` size the brush and Esc puts it down;
+  each stroke is one undo step, and Stop puts back whatever a play session dug. Key
+  bindings print as their keys (`[`, `Esc`).
+- **`Behavior::restartScene()`** starts the scene being played over: the file `loadScene`
+  last loaded, else the entry scene, or under the editor the scene as Play found it.
+- **Networking**: a component the server takes away goes from every client, and a joiner
+  keeps the exact pose of what the server never moved rather than its quantised copy.
+  `NET_PROTOCOL_VERSION` is 12, so a 1.0.14 build cannot join a 1.0.15 one.
+- **`the_lab`** replaces `physics_lab`: a world at the head of a cove on one terrain - the
+  obstacle course, a plaza round a campfire, a material gallery, a demolition range on the
+  beach, a pier and a ship - every part of it an engine feature at work.
+- **Fixed**:
+  - A client whose first frame runs long - a bake, a load - no longer gives up on the
+    server before it has said Hello; one frame adds at most a quarter second of silence.
+  - No editor key acts while a gizmo drag or a brush stroke is held, so undo, save and
+    Play never land on half a gesture.
+
 ## 1.0.14
 
 Effects: particles rebuilt around what effects are made of, drawn as cards, ribbons, trails,
