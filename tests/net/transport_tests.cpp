@@ -171,6 +171,10 @@ void testAConversationKnowsWhatArrived() {
     // a peer that stops answering is noticed even while the world is paused.
     check("a fresh connection is not timed out", !bob.timedOut());
     bob.advance(NetConnection::TIMEOUT_SECONDS + 0.1f);
+    check("nor is one whose own frame stalled past the timeout", !bob.timedOut());
+    for (float waited = 0.0f; waited < NetConnection::TIMEOUT_SECONDS; waited += 1.0f / 60.0f) {
+        bob.advance(1.0f / 60.0f);
+    }
     check("but one that has heard nothing for the timeout is", bob.timedOut());
 }
 

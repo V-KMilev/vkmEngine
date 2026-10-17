@@ -45,6 +45,10 @@ class NetConnection {
         /// How long silence lasts before a peer is given up on.
         static constexpr float TIMEOUT_SECONDS = 5.0f;
 
+        /// The most silence one advance adds: a frame this end spent stalled - a load, a bake - is its
+        /// own, not the peer's, whose packets wait in the socket to be read.
+        static constexpr float MAX_SILENCE_A_FRAME = 0.25f;
+
         /**
          * @brief The sequence number nothing ever sends, so a header can say "nothing".
          *
@@ -103,7 +107,8 @@ class NetConnection {
          */
         void refuse();
 
-        /// Age the silence timer and every unacknowledged packet by @p seconds of wall clock.
+        /// Age every unacknowledged packet by @p seconds of wall clock, and the silence timer by as
+        /// much up to MAX_SILENCE_A_FRAME.
         void advance(float seconds);
 
         bool timedOut() const { return m_silent > TIMEOUT_SECONDS; }

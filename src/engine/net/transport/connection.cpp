@@ -165,7 +165,7 @@ void NetConnection::recordTrip(uint16_t acknowledged, std::vector<uint16_t>& rep
 }
 
 void NetConnection::advance(float seconds) {
-    m_silent += seconds;
+    m_silent += std::min(seconds, MAX_SILENCE_A_FRAME);
     for (Sent& sent : m_sent) sent.age += seconds;
 }
 
