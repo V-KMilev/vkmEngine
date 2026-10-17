@@ -2,6 +2,44 @@
 
 Notable changes to vkmEngine, newest first. Each release is tagged `vX.Y.Z`.
 
+## 1.0.14
+
+Effects: particles rebuilt around what effects are made of, drawn as cards, ribbons, trails,
+lit smoke and heat haze; mirrors and still water reflect the scene; and the engine ships an
+effects pack.
+
+- **Particles**: emission shapes, per-particle ranges, curves and gradients over a life,
+  drag and swirl, a rate per metre travelled, collision with bounce and life lost, and
+  `ParticleTrigger` sub-emitters on birth, death and strike. Flipbooks fade frame into frame
+  and take a normal map, so smoke is lit by its own folds; an emitter can light what is round
+  it. A scene saved with the old start and end fields is refused; re-save it.
+- **Drawn as strips**: a ribbon through an emitter's particles or a trail behind each,
+  additive, alpha or as heat haze. Alpha particles are lit by their cluster's lights through
+  their shadows.
+- **Planar reflections**: a `PlanarReflector` draws the scene mirrored in its plane, glass
+  and particles included, for mirrors and still water; the screen trace covers the rest.
+- **Materials** repeat and slide (`uvScale`, `uvOffset`, read from a glTF's
+  `KHR_texture_transform`) and can be box-mapped, a map read off the object's own box so a
+  stretched cube keeps its texture square.
+- **A light flickers as a fire does** (`Light::flicker`), without rebaking the probes.
+- **Create > Effect** copies an explosion, a campfire, a torch or a plume of smoke from the
+  engine's `content/effects` into the project and places it. The emitter card edits curves,
+  gradients and ranges.
+- **`QueryParts`** gathers a filter's parts once and answers many rays as `raycast` does.
+  `SkeletonAsset::indexOfUnqualified` finds a bone with or without its rig's namespace.
+  `RenderSettings::SHADOW_RESOLUTIONS` names the shadow atlas sizes.
+- **Faster**: a probe refreshes only for the lights that reach it, and rests between
+  refreshes; a mirror draws only the screen it covers and a capture only what each face
+  holds; a scene's materials upload with it rather than when first seen.
+- **Fixed**:
+  - A material a behavior names keeps its textures, and a library material its maps.
+  - A reflection hit counts the depth span of its texel, so glossy floors show no dashes.
+  - Screen shadows reach a contact's length, not a run of pixels.
+  - A traced reflection stands for a clear coat's reflection too.
+  - A particle whose sprite is still loading is not drawn as the checker.
+  - The draw distance is measured to a box's nearest point.
+  - A glTF requiring `KHR_texture_transform` imports.
+
 ## 1.0.13
 
 The engine designed for itself: every second way to say one thing removed, and its users
