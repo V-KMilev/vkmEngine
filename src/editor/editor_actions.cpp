@@ -10,6 +10,7 @@
 
 #include <imgui.h>
 #include <glm/glm.hpp>
+#include <nlohmann/json.hpp>
 
 #include "io/project_paths.h"
 #include "command/editor_commands.h"
@@ -33,13 +34,16 @@
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/component/render/planar_reflector.h"
 #include "ecs/component/render/reflection_probe.h"
+#include "ecs/component/render/terrain.h"
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
 #include "ecs/component/ui/ui_scroll.h"
 #include "ecs/hierarchy_operations.h"
 #include "io/scene/prefab.h"
+#include "resource/asset_source_kind.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/material_asset.h"
+#include "resource/asset/terrain_asset.h"
 #include "resource/generate/light_generators.h"
 #include "resource/generate/mesh_generators.h"
 #include "resource/generate/material_generators.h"
@@ -182,6 +186,25 @@ MaterialHandle createNewMaterial(ResourceManager& resources, EditorState& state)
     return h;
 }
 
+TerrainHandle createNewTerrain(ResourceManager& resources) {
+    // A path neither a loaded terrain nor a file on disk holds.
+    std::string name;
+    for (int n = 1;; ++n) {
+        name = "assets/terrain/terrain" + (n == 1 ? std::string{} : "_" + std::to_string(n)) + ".terrain";
+        std::error_code ec;
+        const bool onDisk = std::filesystem::exists(ProjectPaths::resolveProjectPath(name), ec);
+        if (!resources.findByName<TerrainAsset>(name) && !onDisk) break;
+    }
+    TerrainAsset terrain;
+    const size_t vertices = static_cast<size_t>(terrain.resolution) * terrain.resolution;
+    terrain.heights.assign(vertices, 0.0f);
+    terrain.weights.assign(vertices * 4, 0);
+    for (size_t v = 0; v < vertices; ++v) terrain.weights[v * 4] = 255;
+    terrain.layers[0] = generateDefaultMaterial(resources);
+    terrain.sourceJson() = {{AssetSourceKey::KIND, AssetSourceKind::FILE}, {AssetSourceKey::PATH, name}};
+    return resources.add(std::move(terrain), name);
+}
+
 namespace {
 const char* defaultName(EntityKind k) {
     switch (k) {
@@ -212,6 +235,7 @@ const char* defaultName(EntityKind k) {
         case EntityKind::UIButton:         return "UI Button";
         case EntityKind::Character:        return "Character";
         case EntityKind::StaticBody:       return "Static Body";
+        case EntityKind::Terrain:          return "Terrain";
     }
     return "Entity";
 }
@@ -281,6 +305,21 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
             body.motion = RigidbodyMotion::Static;
             scene.add(entity, std::move(body));
             scene.add(entity, Collider{});
+            break;
+        }
+        case EntityKind::Terrain: {
+            // Walked on as drawn: a static body whose collider is its grid.
+            scene.add(entity, Terrain{createNewTerrain(resources)});
+            Rigidbody body;
+            body.motion = RigidbodyMotion::Static;
+            scene.add(entity, std::move(body));
+            ColliderPart part;
+            part.shape = ColliderShape::Terrain;
+            Collider collider;
+            collider.parts = {part};
+            scene.add(entity, std::move(collider));
+            // A new terrain is for sculpting: the window with the brushes comes forward.
+            state.openTerrain(entity);
             break;
         }
         case EntityKind::Cube:     addMesh(generateCube());     break;
@@ -712,6 +751,7 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
             item(EditorIcon::Triangle, "Triangle", EntityKind::Triangle);
             ImGui::EndMenu();
         }
+        item(EditorIcon::Terrain, "Terrain", EntityKind::Terrain);
         if (ImGui::BeginMenu("Physics")) {
             item(EditorIcon::Character, "Character",   EntityKind::Character);
             item(EditorIcon::Colliders, "Static Body", EntityKind::StaticBody);

@@ -9,8 +9,9 @@ built from ([rendering.md](rendering.md)) and what the editor picks with.
 
 `Visibility` (`visibility.h`) holds the frame's `RenderObjects`
 (`system/render/data/render_objects.h`): parallel per-object columns (model,
-world box, draw, skin range), indexed by the Mesh's storage index, and three
-index lists:
+world box, draw, skin range), indexed by the Mesh's storage index, then the
+terrains' chunks and plants after them ([terrain.md](terrain.md#how-it-works-inside)),
+and three index lists:
 
 - **`visible`** - what the camera sees, unsorted.
 - **`scene`** - every drawn mesh, shadow casters first (`casterCount` of them).

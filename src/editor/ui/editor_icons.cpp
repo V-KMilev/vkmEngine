@@ -81,6 +81,13 @@ ImWchar iconCodepoint(EditorIcon icon) {
         case EditorIcon::Joint:      return 0xe103;  // link-2
         case EditorIcon::Prefab:     return 0xe129;  // package
         case EditorIcon::Socket:     return 0xe12d;  // paperclip
+        case EditorIcon::Terrain:    return 0xe231;  // mountain
+        case EditorIcon::Raise:      return 0xe1e4;  // arrow-big-up
+        case EditorIcon::Lower:      return 0xe1e1;  // arrow-big-down
+        case EditorIcon::Smooth:     return 0xe38b;  // spline
+        case EditorIcon::Flatten:    return 0xe43c;  // fold-vertical
+        case EditorIcon::Paint:      return 0xe2e7;  // paintbrush
+        case EditorIcon::Plants:     return 0xe1eb;  // sprout
     }
     return 0;
 }

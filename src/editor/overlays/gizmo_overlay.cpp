@@ -26,6 +26,7 @@
 #include "ecs/component/core/world_transform.h"
 #include "ecs/hierarchy_operations.h"
 #include "overlays/mesh_pick.h"
+#include "overlays/terrain_tool.h"
 #include "overlays/wire_draw.h"
 
 namespace Vkm::Engine {
@@ -82,8 +83,8 @@ void GizmoOverlay::drawTransformGizmo(EditorContext& ec) {
     float  vpHeight       = ec.viewportSize.y;
 
     // Not the camera the frame renders through (the drag is measured in its view), not
-    // the Select tool, and not while the game has the viewport's clicks.
-    const bool canManipulate = state.tool != EditorTool::Select
+    // the Select tool, not a terrain being brushed, and not while the game has the viewport's clicks.
+    const bool canManipulate = state.tool != EditorTool::Select && !terrainToolApplies(ec)
         && !ec.input.gameHasViewport()
         && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)
         && ctx.visibility && ctx.visibility->hasCamera

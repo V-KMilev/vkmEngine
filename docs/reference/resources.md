@@ -225,6 +225,13 @@ and channel count (only a mono clip can be positioned). Its `ClipSamples` is the
 one shared payload in the engine, because a voice reads it on the audio thread
 while a scene load may free the asset on the main thread. See [Audio](audio.md).
 
+### TerrainAsset
+
+A square grid of heights, each vertex's share of four layer materials, and the
+plant layers it grows, kept in a `.terrain` file and named for its path. Its
+meshes, weight map and layered material are derived by `TerrainSystem` and never
+saved. See [Terrain](terrain.md).
+
 ## Importing and cooking
 
 Recipe imports live in `src/tools/`, outside the engine; which hosts install

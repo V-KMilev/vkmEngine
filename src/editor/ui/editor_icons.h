@@ -23,7 +23,8 @@ enum class EditorIcon {
     Cube, Sphere, Plane, Pyramid, Cone, Triangle,
     Empty, Import, Colliders, Material, Texture, Skeleton,
     Character, Ragdoll, Joint, Prefab, Socket,
-    FrameAll, Perspective, Orthographic
+    FrameAll, Perspective, Orthographic,
+    Terrain, Raise, Lower, Smooth, Flatten, Paint, Plants
 };
 
 /**

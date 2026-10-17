@@ -52,6 +52,7 @@ enum class EntityKind {
     UIButton,
     Character,
     StaticBody,
+    Terrain,
 };
 
 /**
@@ -243,6 +244,17 @@ MaterialHandle duplicateMaterial(ResourceManager& resources, MaterialHandle sour
  * @return The new handle, or a null handle on failure.
  */
 MaterialHandle createNewMaterial(ResourceManager& resources, EditorState& state);
+
+/**
+ * @brief Create a flat terrain, painted all with its first layer, kept in a new .terrain file.
+ *
+ * Named for the file it is saved to, under assets/terrain/, at a path no loaded terrain and no
+ * file holds; the file is written at the next save or Play (writeTerrainFiles).
+ *
+ * @param resources Where the terrain is registered.
+ * @return The new handle.
+ */
+TerrainHandle createNewTerrain(ResourceManager& resources);
 
 /**
  * @brief Rename an asset, report the name it actually got, and make it undoable.

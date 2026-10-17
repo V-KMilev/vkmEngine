@@ -588,6 +588,7 @@ InputSignals EditorSystem::inputSignals(const FrameContext& ctx) const {
             || m_viewportOverlay.isHovered();
         signals.gizmoHovered    = m_gizmoOverlay.isGizmoOver();
         signals.gizmoDragging   = m_gizmoOverlay.isGizmoUsing();
+        signals.stroking        = m_terrainTool.stroking();
     } else {
         // Hidden, the scene is the whole window, under nothing but a modal.
         signals.viewportHovered = !signals.popupOpen;
@@ -808,6 +809,9 @@ void EditorSystem::drawPanels(EditorContext& ec) {
     const ImVec2 sidePad(EditorStyle::px(6.0f), EditorStyle::px(6.0f));
     const ImVec2 panelPad(EditorStyle::px(8.0f), EditorStyle::px(6.0f));
 
+    // Before the viewport's brush reads it.
+    followTerrainSelection(m_state, ec.frame.scene);
+
     if (m_state.showHierarchy) {
         PROFILE_SCOPE("Panel/Hierarchy");
         if (beginPanel(HIERARCHY_WINDOW, sidePad)) m_hierarchy.draw(ec, m_sceneIO);
@@ -835,6 +839,18 @@ void EditorSystem::drawPanels(EditorContext& ec) {
         }
         ImGui::End();
     }
+
+    if (m_state.showTerrain) {
+        if (m_state.revealTerrain) ImGui::SetNextWindowFocus();
+        // A layout saved before the window existed has no place for it: beside the Inspector.
+        dockBesideOnFirstUse(INSPECTOR_WINDOW);
+        if (beginPanel(TERRAIN_WINDOW, panelPad)) {
+            PROFILE_SCOPE("Panel/Terrain");
+            m_terrainEditor.draw(ec);
+        }
+        ImGui::End();
+    }
+    m_state.revealTerrain = false;
 
     // A run brings the bottom row and its Build tab forward.
     const bool revealBuild = m_build.takeReveal();
@@ -926,7 +942,8 @@ void EditorSystem::drawViewport(EditorContext& ec) {
             inset + ViewportToolbar::toolStripWidth() + EditorStyle::overlayGroupGap(),
             vpSize.x - inset - ViewportToolbar::viewBarWidth() - EditorStyle::overlayGroupGap()
         );
-        m_gizmoOverlay.handleViewportPick(ec);
+        // A click the brush takes picks nothing.
+        if (!m_terrainTool.update(ec)) m_gizmoOverlay.handleViewportPick(ec);
     } else {
         m_viewportHovered = nextViewportHover(m_viewportHovered, false, ec.input);
     }

@@ -1,6 +1,9 @@
 #include "support.h"
 
 #include <algorithm>
+#include <filesystem>
+#include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -11,6 +14,7 @@
 #include "command/prefab_overrides.h"
 #include "editor_state.h"
 #include "session/play_snapshot.h"
+#include "session/terrain_files.h"
 
 #include "ecs/component/prefab/prefab_entity.h"
 #include "ecs/component/prefab/prefab_instance.h"
@@ -1150,8 +1154,94 @@ void testARedonePlacementGoesBackUnderItsParent() {
     );
 }
 
-// Undoing a placement takes the whole instance away; an entity selected inside it
-// goes with it, as it does for a deleted subtree.
+// A stroke's step holds only the region it touched, and puts back exactly what was there - a
+// plant layer it grew from nothing included - leaving the rest of the terrain alone.
+void testAStrokeIsUndoneWhereItTouched() {
+    std::printf("A terrain stroke taken back:\n");
+
+    Scene           scene;
+    ResourceManager resources;
+    RecordingHost   host;
+    TerrainAsset    flat;
+    flat.resolution = 33;
+    flat.size       = 32.0f;
+    flat.heights.assign(33 * 33, 0.0f);
+    flat.weights.assign(33 * 33 * 4, 0);
+    for (size_t v = 0; v < flat.heights.size(); ++v) flat.weights[v * 4] = 255;
+    flat.foliage.emplace_back();
+    flat.heights[0] = 3.0f;  // outside the stroke, and kept there
+    const TerrainHandle handle = resources.add(std::move(flat), "test:terrain");
+
+    const TerrainAsset before(resources.get(handle));
+    TerrainBrush::Dab dab;
+    dab.radius = 4.0f;
+    TerrainBrush::Region touched = TerrainBrush::raise(resources.edit(handle), dab, 1.5f);
+    touched.add(TerrainBrush::paint(resources.edit(handle), dab, 1));
+    touched.add(TerrainBrush::grow(resources.edit(handle), dab, 0, 1.0f));
+    const TerrainAsset after(resources.get(handle));
+    auto stroke = std::make_unique<TerrainStrokeCommand>(
+        resources,
+        handle,
+        touched,
+        TerrainStrokeCommand::Patch::cut(before, touched),
+        TerrainStrokeCommand::Patch::cut(after, touched),
+        "Raise Terrain"
+    );
+    host.stack.push(std::move(stroke));
+
+    host.stack.undo(scene, host);
+    const TerrainAsset& undone = resources.get(handle);
+    const auto zero      = [](float h) { return h == 0.0f; };
+    const bool flatAgain = std::all_of(undone.heights.begin() + 1, undone.heights.end(), zero);
+    check("undo lowers what the stroke raised", flatAgain);
+    check("  repaints what it painted", undone.weights == before.weights);
+    const auto& density = undone.foliage[0].density;
+    const bool bare = std::all_of(density.begin(), density.end(), [](uint8_t d) { return d == 0; });
+    check("  clears what it grew", bare);
+    check("  and leaves what it never reached", undone.heights[0] == 3.0f);
+
+    host.stack.redo(scene, host);
+    const TerrainAsset& redone = resources.get(handle);
+    check("redo puts the stroke back", redone.heights == after.heights && redone.weights == after.weights);
+}
+
+// Play writes each terrain to its file and Stop reads it back, so what a session dug goes and
+// the handle still names the terrain; one with no file is left as it is.
+void testStopPutsATerrainBackAsPlayWroteIt() {
+    std::printf("A terrain across a play session:\n");
+
+    const ScratchProject project("vkm_terrain_files");
+    ResourceManager      resources;
+    const auto flat = [] {
+        TerrainAsset terrain;
+        terrain.resolution = 33;
+        terrain.size       = 32.0f;
+        terrain.heights.assign(33 * 33, 0.0f);
+        terrain.weights.assign(33 * 33 * 4, 0);
+        for (size_t v = 0; v < terrain.heights.size(); ++v) terrain.weights[v * 4] = 255;
+        return terrain;
+    };
+    const std::string   name   = "assets/terrain/ground.terrain";
+    const TerrainHandle handle = resources.add(flat(), name);
+    check("Play writes the terrain to its file", writeTerrainFiles(resources));
+    check("  where its name says", std::filesystem::exists(project.root() / name));
+
+    TerrainBrush::Dab dab;
+    dab.radius = 4.0f;
+    TerrainBrush::raise(resources.edit(handle), dab, 2.0f);
+    resources.commit(handle);
+    const TerrainHandle unsaved = resources.add(flat(), "assets/terrain/made_in_play.terrain");
+    TerrainBrush::raise(resources.edit(unsaved), dab, 2.0f);
+
+    readTerrainFiles(resources);
+    const auto zero = [](float h) { return h == 0.0f; };
+    const std::vector<float>& heights = resources.get(handle).heights;
+    check("Stop puts back what the session dug", std::all_of(heights.begin(), heights.end(), zero));
+    const bool same = resources.findByName<TerrainAsset>(name) == handle;
+    check("  in place: the name still finds the same handle", same);
+    const std::vector<float>& kept = resources.get(unsaved).heights;
+    check("a terrain with no file is left as it is", !std::all_of(kept.begin(), kept.end(), zero));
+}
 
 } // namespace
 
@@ -1181,4 +1271,6 @@ void runUndoTests() {
     testAStepRefusesAnEntityItWasNotMadeAgainst();
     testSetAsMainCameraInsideAnInstanceIsKept();
     testARedonePlacementGoesBackUnderItsParent();
+    testAStrokeIsUndoneWhereItTouched();
+    testStopPutsATerrainBackAsPlayWroteIt();
 }

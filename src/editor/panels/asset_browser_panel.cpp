@@ -17,12 +17,14 @@
 #include "system/render/editor_render_hooks.h"
 #include "core/system.h"
 #include "ecs/component/render/mesh.h"
+#include "ecs/component/render/terrain.h"
 #include "ecs/scene.h"
 #include "editor_context.h"
 #include "editor_state.h"
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/skeleton_asset.h"
+#include "resource/asset/terrain_asset.h"
 #include "resource/asset/texture_asset.h"
 #include "resource/resource_manager.h"
 #include "ui/editor_icons.h"
@@ -89,7 +91,7 @@ struct TileContext {
 };
 
 // Which import or create action a kind's primary verb raises.
-enum class Verb { NewMaterial, ImportModel, ImportTexture, ImportSound };
+enum class Verb { NewMaterial, NewTerrain, ImportModel, ImportTexture, ImportSound };
 
 using RowsFn   = void (*)(const ResourceManager&, const RowSink&);
 using DetailFn = void (*)(const ResourceManager&, StorageIndex, bool, char*, size_t);
@@ -195,6 +197,23 @@ void meshDetail(const ResourceManager& resources, StorageIndex key, bool verbose
         snprintf(out, n, "%zu tris . %zu verts%s", tris, mesh.vertices.size(), skin);
     } else {
         snprintf(out, n, "%zu tris%s", tris, skin);
+    }
+}
+
+void terrainDetail(const ResourceManager& resources, StorageIndex key, bool verbose, char* out, size_t n) {
+    const TerrainAsset& terrain = resources.get(TerrainHandle{key});
+    if (verbose) {
+        snprintf(
+            out,
+            n,
+            "%u x %u vertices . %.0f m . %zu plant layer(s)",
+            terrain.resolution,
+            terrain.resolution,
+            static_cast<double>(terrain.size),
+            terrain.foliage.size()
+        );
+    } else {
+        snprintf(out, n, "%.0f m", static_cast<double>(terrain.size));
     }
 }
 
@@ -379,6 +398,13 @@ void assignClip(EditorContext& ec, EntityId id, StorageIndex key) {
 
 bool audioTarget(const Scene& scene, EntityId id) { return scene.has<AudioSource>(id); }
 
+bool terrainTarget(const Scene& scene, EntityId id) { return scene.has<Terrain>(id); }
+
+void assignTerrain(EditorContext& ec, EntityId id, StorageIndex key) {
+    EditScope<Terrain> terrain(ec.frame.scene, ec.frame.resources, ec.state, id, "Assign Terrain");
+    terrain->terrain = TerrainHandle{key};
+}
+
 void assignSound(EditorContext& ec, EntityId id, StorageIndex key) {
     EditScope<AudioSource> source(ec.frame.scene, ec.frame.resources, ec.state, id, "Assign Sound");
     source->clip = AudioClipHandle{key};
@@ -417,10 +443,32 @@ void markReferenced(
 
 void materialsInUse(const EntityRefs& refs, const Scene&, const ResourceManager& resources, UsedSlots& used) {
     markReferenced(refs.handles.materials, refs, resources, used);
+    // A terrain names its layers and plants in the asset, which no entity walk sees.
+    resources.forEachOfType<TerrainAsset>([&](TerrainHandle, const TerrainAsset& terrain) {
+        for (const MaterialHandle& layer : terrain.layers) {
+            if (layer) used.mark(layer.id());
+        }
+        for (const TerrainFoliage& plant : terrain.foliage) {
+            for (const TerrainPlantPart& part : plant.parts) {
+                if (part.material) used.mark(part.material.id());
+            }
+        }
+    });
 }
 
 void meshesInUse(const EntityRefs& refs, const Scene&, const ResourceManager& resources, UsedSlots& used) {
     markReferenced(refs.handles.meshes, refs, resources, used);
+    resources.forEachOfType<TerrainAsset>([&](TerrainHandle, const TerrainAsset& terrain) {
+        for (const TerrainFoliage& plant : terrain.foliage) {
+            for (const TerrainPlantPart& part : plant.parts) {
+                if (part.mesh) used.mark(part.mesh.id());
+            }
+        }
+    });
+}
+
+void terrainsInUse(const EntityRefs& refs, const Scene&, const ResourceManager& resources, UsedSlots& used) {
+    markReferenced(refs.handles.terrains, refs, resources, used);
 }
 
 void texturesInUse(const EntityRefs& refs, const Scene&, const ResourceManager& resources, UsedSlots& used) {
@@ -601,13 +649,37 @@ AssetKind soundKind() {
     return kind;
 }
 
+AssetKind terrainKind() {
+    AssetKind kind{};
+    kind.type        = AssetType::Terrain;
+    kind.label       = "Terrains";
+    kind.empty       = "No terrains yet. New makes a flat one to sculpt.";
+    kind.icon        = EditorIcon::Terrain;
+    kind.accent      = &EditorStyle::Accent::TERRAIN;
+    kind.verb        = "New";
+    kind.verbHint    = "Create a terrain entity on a new terrain and open the Terrain window";
+    kind.verbAction  = Verb::NewTerrain;
+    kind.assignLabel = "Assign to selected entity";
+    kind.assignHint  = "(select a terrain entity to assign)";
+    // Its name is the path of the file it is saved to.
+    kind.noRename    = "(a terrain's name is the path of its .terrain file)";
+    kind.rows        = &KindOps<TerrainAsset>::rows;
+    kind.detail      = &terrainDetail;
+    kind.target      = &terrainTarget;
+    kind.assign      = &assignTerrain;
+    kind.used        = &terrainsInUse;
+    kind.remove      = &KindOps<TerrainAsset>::remove;
+    return kind;
+}
+
 const AssetKind KINDS[] = {
     materialKind(),
     textureKind(),
     meshKind(),
     skeletonKind(),
     clipKind(),
-    soundKind()
+    soundKind(),
+    terrainKind()
 };
 
 const AssetKind& kindOf(AssetType type) {
@@ -723,6 +795,16 @@ void AssetBrowserPanel::drawToolbar(EditorContext& ec) {
                     ec.state.openMaterial(h);
                 }
                 break;
+            case Verb::NewTerrain: {
+                const EntityId made = EditorActions::createEntity(
+                    ec.frame.scene,
+                    ec.frame.resources,
+                    ec.state,
+                    EditorActions::EntityKind::Terrain
+                );
+                ec.state.selectEntity(made);
+                break;
+            }
             case Verb::ImportModel:   ec.state.requestModelImport = true; break;
             case Verb::ImportTexture: openTextureImport(); break;
             case Verb::ImportSound:   openSoundImport();   break;

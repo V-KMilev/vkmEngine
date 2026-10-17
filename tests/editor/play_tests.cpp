@@ -267,6 +267,17 @@ void testASessionOwnsItsViewportsInput() {
     );
     check("  and the host holds the pointer, so the game's UI does not scroll", editing.hostHoldsPointer());
 
+    InputSignals stroking = overScene;
+    stroking.stroking = true;
+    const InputOwnership held = resolveInputOwnership(stroking);
+    check(
+        "a held terrain stroke keeps every editor key from acting, undo and Play included",
+        !held.editorHasKeys() && !held.editorHasSessionKeys()
+    );
+    InputSignals heldDrag = overScene;
+    heldDrag.gizmoDragging = true;
+    check("  as a held gizmo drag does", !resolveInputOwnership(heldDrag).editorHasKeys());
+
     InputSignals overPanel = playing;
     overPanel.viewportHovered = false;
     const InputOwnership onPanel = resolveInputOwnership(overPanel);

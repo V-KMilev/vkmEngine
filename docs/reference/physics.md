@@ -30,12 +30,14 @@ and default, and [ecs.md](ecs.md) lists them all.
   pressed against a wall is *held* by the floor and *blocked* by the wall. A
   body that touched nothing reports world up for both.
 - **`Collider`** - one or more `ColliderPart`s in the entity's `Transform` frame,
-  each a `Box`, `Capsule` or `Mesh`. The solver ignores `Transform` scale; "Fit to
+  each a `Box`, `Capsule`, `Mesh` or `Terrain`. The solver ignores `Transform` scale; "Fit to
   Mesh" bakes it into the parts. A capsule runs along local **+Y**; capsules are
   what characters wear, because a box catches on every seam between floor boxes.
   A mesh part names its mesh by handle and `syncMeshCollider` builds the
   triangles when needed; **one mesh part per collider** (extra ones collide as
-  the first, and the log says so). `isTrigger` reports without pushing;
+  the first, and the log says so). A `Terrain` part collides the entity's terrain
+  the same way, its triangles rebuilt as a brush moves it
+  ([terrain.md](terrain.md#how-it-works-inside)). `isTrigger` reports without pushing;
   `enabled = false` takes the collider out entirely, for pooled objects.
 - **`CharacterController`** - `moveInput` (world-space horizontal velocity),
   `jumpRequested`, `climbing` and `crouching` in; tuning; `grounded`,

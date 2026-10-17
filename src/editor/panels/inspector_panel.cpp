@@ -64,6 +64,7 @@
 #include "editor_context.h"
 #include "editor_state.h"
 #include "resource/asset/material_asset.h"
+#include "ui/asset_combo.h"
 #include "ui/curve_widgets.h"
 #include "ui/editor_icons.h"
 #include "ui/editor_style.h"
@@ -315,48 +316,6 @@ bool pickAssetByName(
         ImGui::PopStyleColor();
     }
 
-    ImGui::EndCombo();
-    return picked;
-}
-
-// Pick which loaded Asset a handle points at; the list is snapshotted for ImGuiListClipper.
-// Returns true if the selection changed.
-template <typename Asset, typename Handle>
-bool pickAsset(const char* comboId, const char* label, ResourceManager& resources, Handle& currentHandle) {
-    const Asset* current = resources.tryGet(currentHandle);
-    const std::string cur = current ? current->name() : std::string("(none)");
-    drawPropertyLabel(label);
-    ImGui::SetNextItemWidth(-1.0f);
-    if (!beginCombo(comboId, cur.empty() ? "(unnamed)" : cur.c_str()))
-        return false;
-
-    std::vector<std::pair<Handle, const Asset*>> rows;
-    resources.forEachOfType<Asset>([&](Handle h, const Asset& a) {
-        if (a.isHidden()) return;
-        rows.emplace_back(h, &a);
-    });
-
-    bool picked = false;
-
-    if (ImGui::Selectable("(none)", !currentHandle)) {
-        currentHandle = Handle{};
-        picked = true;
-    }
-
-    ImGuiListClipper clipper;
-    clipper.Begin(static_cast<int>(rows.size()));
-    while (clipper.Step()) {
-        for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
-            const auto& [h, a] = rows[i];
-            ImGui::PushID(static_cast<int>(h.id()));
-            const bool sel = currentHandle == h;
-            if (ImGui::Selectable(a->name().empty() ? "(unnamed)" : a->name().c_str(), sel)) {
-                currentHandle = h;
-                picked = true;
-            }
-            ImGui::PopID();
-        }
-    }
     ImGui::EndCombo();
     return picked;
 }
@@ -2639,6 +2598,33 @@ void InspectorPanel::drawOceanSection(EditorContext& ec, EntityId id) {
     });
 }
 
+void InspectorPanel::drawTerrainSection(EditorContext& ec, EntityId id) {
+    ResourceManager& resources = ec.frame.resources;
+    EditorState&     state     = ec.state;
+
+    editComponentCard<Terrain>(ec, id, [&](Terrain& component) {
+        bool changed = false;
+        changed |= pickAsset<TerrainAsset>("##TerrainPick", "Terrain", resources, component.terrain);
+        changed |= propCheckbox("Cast Shadows", &component.castShadows);
+
+        const TerrainAsset* terrain = resources.tryGet(component.terrain);
+        if (!terrain) {
+            ImGui::TextColored(EditorStyle::DANGER, "No terrain: this draws nothing.");
+            return changed;
+        }
+        ImGui::TextDisabled(
+            "%u x %u vertices over %.0f m, %.2f m apart",
+            terrain->resolution,
+            terrain->resolution,
+            terrain->size,
+            terrain->spacing()
+        );
+        // Its brushes, layers and plants are the Terrain window's.
+        if (ImGui::Button("Edit Terrain", ImVec2(-1.0f, 0.0f))) state.openTerrain(id);
+        return changed;
+    });
+}
+
 void InspectorPanel::drawRigidbodySection(EditorContext& ec, EntityId id) {
     Scene& scene = ec.frame.scene;
 
@@ -2713,7 +2699,10 @@ void InspectorPanel::drawColliderSection(EditorContext& ec, EntityId id) {
         if (col.parts.size() == 1) {
             ColliderPart& part = col.parts[0];
             changed |= propEnumCombo("Shape", part.shape);
-            changed |= drawVec3Control("Center", glm::value_ptr(part.center), 0.0f, 0.05f);
+            // A terrain's part lies where the terrain is drawn.
+            if (part.shape != ColliderShape::Terrain) {
+                changed |= drawVec3Control("Center", glm::value_ptr(part.center), 0.0f, 0.05f);
+            }
             switch (part.shape) {
                 case ColliderShape::Capsule:
                     // Along local +Y; total height 2*(halfHeight + radius).

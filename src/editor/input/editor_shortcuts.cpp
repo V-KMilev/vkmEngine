@@ -1,5 +1,7 @@
 #include "input/editor_shortcuts.h"
 
+#include <algorithm>
+
 #include <imgui.h>
 
 #include "editor_context.h"
@@ -11,8 +13,16 @@
 #include "input/view_framing.h"
 #include "core/system.h"
 #include "input/camera_controller_system.h"
+#include "overlays/terrain_tool.h"
 
 namespace Vkm::Engine::EditorShortcuts {
+
+namespace {
+
+/// What one press of a brush-size key multiplies or divides the radius by.
+constexpr float TERRAIN_BRUSH_STEP = 1.25f;
+
+} // namespace
 
 void process(EditorContext& ec, SceneIOController& sceneIO) {
     FrameContext& ctx = ec.frame;
@@ -32,6 +42,7 @@ void process(EditorContext& ec, SceneIOController& sceneIO) {
     if (isPressed(kb.newScene, false)) state.requestSceneAction(EditorState::SceneAction::New);
 
     if (isPressed(kb.toggleRenderSettings, false)) state.showRenderSettings = !state.showRenderSettings;
+    if (isPressed(kb.toggleTerrain, false))        state.showTerrain        = !state.showTerrain;
 
     // One or the other, should a rebind give both the same combo.
     if (isPressed(kb.redo))      EditorActions::redo(ctx.scene, state);
@@ -40,8 +51,10 @@ void process(EditorContext& ec, SceneIOController& sceneIO) {
     if (isPressed(kb.deleteEntity) && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)) {
         EditorActions::deleteSelection(ctx.scene, state);
     }
+    // With a terrain brush up, the first press puts it down and keeps the selection.
     if (isPressed(kb.deselect)) {
-        state.deselect();
+        if (terrainToolApplies(ec)) state.terrainTool.tool = TerrainTool::None;
+        else                        state.deselect();
     }
     if (isPressed(kb.duplicate) && state.selectedEntity && ctx.scene.isAlive(state.selectedEntity)) {
         EditorActions::duplicateSelection(ctx.scene, ctx.resources, state);
@@ -64,6 +77,13 @@ void process(EditorContext& ec, SceneIOController& sceneIO) {
         if (isPressed(kb.gizmoScale))       state.tool = EditorTool::Scale;
         if (isPressed(kb.gizmoToggleSpace)) {
             state.gizmoMode = (state.gizmoMode == GizmoMode::Local) ? GizmoMode::World : GizmoMode::Local;
+        }
+        // A quarter larger or smaller a press: from a path to a hill in ten.
+        TerrainToolSettings& brush = state.terrainTool;
+        if (terrainToolApplies(ec)) {
+            if (isPressed(kb.terrainBrushSmaller)) brush.radius /= TERRAIN_BRUSH_STEP;
+            if (isPressed(kb.terrainBrushLarger))  brush.radius *= TERRAIN_BRUSH_STEP;
+            brush.radius = std::clamp(brush.radius, TERRAIN_BRUSH_MIN_RADIUS, TERRAIN_BRUSH_MAX_RADIUS);
         }
     }
 }

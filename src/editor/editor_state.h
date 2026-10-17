@@ -15,6 +15,7 @@
 #include "io/project.h"
 #include "input/camera_controller_system.h"
 #include "input/editor_keybinds.h"
+#include "overlays/terrain_tool.h"
 #include "overlays/transform_gizmo.h"
 #include "platform/window/window_manager.h"
 #include "resource/asset/material_asset.h"
@@ -134,6 +135,8 @@ struct EditorState : CommandHost {
 
     EditorTool     tool           = EditorTool::Translate;
     GizmoMode      gizmoMode      = GizmoMode::Local;
+    /// The terrain brush; while the Terrain window is open with a tool picked, a drag brushes.
+    TerrainToolSettings terrainTool;
 
     Preferences prefs;
 
@@ -142,6 +145,7 @@ struct EditorState : CommandHost {
     bool showHierarchy   = true;
     bool showInspector   = true;
     bool showAssets      = true;
+    bool showTerrain     = false;  ///< The Terrain window, docked with the Inspector.
 
     bool showPreferences = false;
     /// What the Material window edits (else: the selected entity's)
@@ -153,6 +157,7 @@ struct EditorState : CommandHost {
      */
     EntityId materialPinnedAt{};
     bool revealMaterial    = false;             ///< Bring the Material window to the front
+    bool revealTerrain     = false;             ///< Bring the Terrain window to the front
     bool showRenderSettings = false;
     bool showProjectSettings = false;
     GizmoVisibility gizmos;                     ///< What the viewport draws over the scene
@@ -240,6 +245,17 @@ struct EditorState : CommandHost {
         materialPinnedAt     = selectedEntity;
         showInspector        = true;
         revealMaterial       = true;
+    }
+
+    /**
+     * @brief Ask for the Terrain window, editing @p terrain.
+     *
+     * @param terrain An entity with a Terrain, or null to keep the one it edits.
+     */
+    void openTerrain(EntityId terrain) {
+        if (terrain) terrainTool.target = terrain;
+        showTerrain   = true;
+        revealTerrain = true;
     }
 
     /**

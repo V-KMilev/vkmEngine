@@ -114,6 +114,7 @@ namespace Accent {
     inline const ImVec4 UI          = ImVec4(0.95f, 0.62f, 0.30f, 1.0f);  // amber
     inline const ImVec4 PREFAB      = ImVec4(0.52f, 0.45f, 0.95f, 1.0f);  // indigo
     inline const ImVec4 AUDIO       = ImVec4(0.88f, 0.38f, 0.80f, 1.0f);  // magenta (not SCRIPT's rose)
+    inline const ImVec4 TERRAIN     = ImVec4(0.66f, 0.74f, 0.36f, 1.0f);  // olive
 
     inline const ImVec4 MAT_BASE    = ImVec4(0.90f, 0.55f, 0.25f, 1.0f);  // warm
     inline const ImVec4 MAT_TEXTURE = ImVec4(0.28f, 0.74f, 0.74f, 1.0f);  // teal

@@ -15,6 +15,7 @@ writing a behavior, and shipping. Then whichever of these you need:
 | read a key, a button, or the mouse | [input.md](reference/input.md) |
 | build a HUD or a menu | [ui.md](reference/ui.md) |
 | make things fall, collide, or walk | [physics.md](reference/physics.md) |
+| shape the ground, paint it, grow grass on it | [terrain.md](reference/terrain.md) |
 | play a sound | [audio.md](reference/audio.md) |
 | play an animation | [animation.md](reference/animation.md) |
 | let two people play together | [networking.md](reference/networking.md) |
