@@ -26,27 +26,26 @@ class ThreadPool {
          * @brief A run of tasks addressed by index, queued as one entry.
          *
          * The task is borrowed, not copied, so a batch of any size allocates nothing. The batch
-         * and its task must outlive the matching waitForBatch().
+         * and its task must outlive the matching waitForBatch(). Queued again once waited for, a
+         * batch is a member made once, never one rebuilt each frame.
          */
         class Batch {
             public:
                 /**
-                 * @brief A batch of @p count tasks, each a call of @p task with its index.
+                 * @brief A batch whose every index is a call of @p task; addBatch says how many.
                  *
                  * @tparam Fn Callable taking a size_t index.
-                 * @param count How many indices, counted from 0.
                  * @param task Called once per index, on a worker or in waitForBatch; borrowed, not copied.
                  */
                 template<typename Fn>
-                Batch(size_t count, const Fn& task)
+                explicit Batch(const Fn& task)
                     : m_run([](const void* body, size_t index) { (*static_cast<const Fn*>(body))(index); })
                     , m_task(&task)
-                    , m_count(count)
                 {}
 
                 /// Refused: a temporary task is gone before a worker reaches it.
                 template<typename Fn>
-                Batch(size_t count, const Fn && task) = delete;
+                explicit Batch(const Fn && task) = delete;
 
                 ~Batch() = default;
 
@@ -62,7 +61,7 @@ class ThreadPool {
             private:
                 void (*m_run)(const void* task, size_t index);
                 const void* m_task;
-                size_t      m_count;
+                size_t      m_count   = 0;          ///< Indices of the run queued last; set by addBatch.
                 size_t      m_claimed = 0;          ///< Indices handed out; guarded by the pool's mutex.
                 std::exception_ptr m_error;         ///< First an index threw; guarded by the pool's mutex.
 
@@ -94,13 +93,15 @@ class ThreadPool {
         void addTask(std::function<void()> && task);
 
         /**
-         * @brief Queue every index of @p batch as one entry and wake all workers.
+         * @brief Queue indices 0 to @p count of @p batch as one entry and wake all workers.
          *
          * Refused after shutdown() with the counter left at zero, so waitForBatch() returns.
          *
-         * @param batch The batch to run; it and its task must outlive waitForBatch().
+         * @param batch The batch to run; it and its task must outlive waitForBatch(), and the run
+         *        it queued last must have been waited for.
+         * @param count How many indices, counted from 0; none queues nothing.
          */
-        void addBatch(Batch& batch);
+        void addBatch(Batch& batch, size_t count);
 
         /**
          * @brief Block the caller until every index of @p batch has retired.
@@ -227,9 +228,9 @@ void parallelFor(size_t count, size_t grain, Function&& function) {
         for (size_t index = chunk * grain; index < end; ++index) function(index);
     };
     const auto runQueued = [&](size_t task) { runChunk(task + 1); };
-    ThreadPool::Batch batch(chunks - 1, runQueued);
+    ThreadPool::Batch batch(runQueued);
 
-    pool.addBatch(batch);
+    pool.addBatch(batch, chunks - 1);
 
     // Queued indices reach into this frame, so join before the caller's exception leaves it;
     // that exception, not a queued chunk's, propagates.

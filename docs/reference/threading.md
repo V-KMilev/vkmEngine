@@ -40,11 +40,12 @@ too and the driver, audio and OS need room (a row in
   `ResourceManager`, the `EventBus` (main thread only) or a `Scene`'s storage. A
   decode posts its result to `AsyncLoadQueue`, and `AsyncLoaderSystem` lands it
   on the main thread ([io.md](io.md)).
-- `addBatch(batch)` / `waitForBatch(batch)` - a `ThreadPool::Batch` is a count
-  and a task called per index. The caller owns both and they must outlive the
-  wait; the pool borrows them, so submitting allocates nothing. The waiter first
-  runs every index no worker has taken, then sleeps; the first exception any
-  index threw is rethrown by `waitForBatch`.
+- `addBatch(batch, count)` / `waitForBatch(batch)` - a `ThreadPool::Batch` is
+  a task called per index, queued with how many indices to run. The caller owns
+  both and they must outlive the wait; the pool borrows them, so submitting
+  allocates nothing, and a batch waited for is queued again, so it is a member
+  made once. The waiter first runs every index no worker has taken, then sleeps;
+  the first exception any index threw is rethrown by `waitForBatch`.
 - `shutdown()` - joins the workers. `Engine::run` calls it when the main loop
   exits, because the pool is a function-local static that would otherwise die
   after singletons an in-flight decode still writes to. Afterwards `parallelFor`

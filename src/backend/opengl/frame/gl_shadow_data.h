@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <memory>
-#include <optional>
 #include <vector>
 
 #include <glm/glm.hpp>
@@ -478,10 +477,10 @@ class GLShadowData {
         std::vector<uint8_t>               m_recull;
 
         // The forked cull: the view it reads, the task body the pool borrows,
-        // and the batch in flight until finishCull.
+        // and the batch the pool runs it as, waited for by finishCull.
         const RenderView*                  m_cullView = nullptr;
         CullTaskBody                       m_cullTaskBody{this};
-        std::optional<ThreadPool::Batch>   m_cullBatch;
+        ThreadPool::Batch                  m_cullBatch{m_cullTaskBody};
 };
 
 } // namespace Vkm::Engine
