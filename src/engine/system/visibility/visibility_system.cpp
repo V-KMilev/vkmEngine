@@ -27,6 +27,7 @@
 #include "system/animation/pose_buffer.h"
 #include "system/ocean/ocean_data.h"
 #include "system/render/render_settings.h"
+#include "system/terrain/terrain_frame.h"
 #include "system/visibility/culling.h"
 #include "system/visibility/host_view.h"
 
@@ -360,12 +361,14 @@ void VisibilitySystem::update(FrameContext& ctx) {
         .perspective           = perspective,
     };
 
-    // The sparse sets directly: the cull iterates them by index, in parallel.
-    auto*       meshStorage           = ctx.scene.storage<Mesh>();
-    auto*       transformStorage      = ctx.scene.storage<Transform>();
+    // The sparse sets directly: the cull iterates them by index, in parallel. A world of terrain
+    // alone has no meshes, which is none to cull.
+    static const SparseSet<Mesh> NO_MESHES;
+    const auto* meshStorage           = ctx.scene.storage<Mesh>() ? ctx.scene.storage<Mesh>() : &NO_MESHES;
+    const auto* transformStorage      = ctx.scene.storage<Transform>();
     const auto* worldTransformStorage = ctx.scene.storage<WorldTransform>();
 
-    if (!meshStorage || !transformStorage) {
+    if (!transformStorage) {
         m_sourcesValid = false;
         ctx.visibility = &m_result;
         return;
@@ -421,15 +424,22 @@ void VisibilitySystem::update(FrameContext& ctx) {
         fixedGone = fixedGone || ((m_state[i] & STATE_LISTED) && objects.draws[i].fixed);
     }
 
-    // Persistent: a steady scene allocates nothing. Each index's columns have one writer.
-    m_state.resize(meshCount);
+    // The terrains' chunks follow the meshes, then their plants (TerrainSystem's product).
+    const TerrainFrame* terrains   = ctx.terrain;
+    const auto          chunkCount = terrains ? static_cast<uint32_t>(terrains->chunks.size()) : 0u;
+    const auto          plantCount = terrains ? static_cast<uint32_t>(terrains->plants.size()) : 0u;
+    const uint32_t      total      = meshCount + chunkCount + plantCount;
+
+    // Persistent: a steady scene allocates nothing. Each index's columns have one writer. What is
+    // kept of a Mesh between frames covers the meshes alone.
+    m_state.resize(total);
     m_fixed.resize(meshCount);
     m_stamps.resize(meshCount);
-    objects.models.resize(meshCount);
-    objects.bounds.resize(meshCount);
-    objects.draws.resize(meshCount);
-    objects.skinFirst.resize(meshCount);
-    m_result.entities.resize(meshCount);
+    objects.models.resize(total);
+    objects.bounds.resize(total);
+    objects.draws.resize(total);
+    objects.skinFirst.resize(total);
+    m_result.entities.resize(total);
 
     const ObjectInputs inputs{
         ctx.scene,
@@ -541,6 +551,86 @@ void VisibilitySystem::update(FrameContext& ctx) {
         });
     }
 
+    // Each chunk at the level its distance from the eye picks. Fixed, as a terrain lies still: a
+    // chunk remade, re-levelled or gone is a change of what the fixed objects draw.
+    if (comparable && total < m_lastTotal) fixedChanged.store(true, std::memory_order_relaxed);
+    for (uint32_t c = 0; c < chunkCount; ++c) {
+        const TerrainChunk& chunk = terrains->chunks[c];
+        const uint32_t      i     = meshCount + c;
+        const glm::vec3     onBox = glm::clamp(context.cameraPosition, chunk.bounds.min, chunk.bounds.max);
+        const float         reach = glm::distance(context.cameraPosition, onBox) * context.lodDistanceScale;
+
+        ObjectDraw draw;
+        draw.mesh     = chunk.levels[TerrainChunks::levelAt(reach, chunk.width)];
+        draw.material = chunk.material;
+        draw.fixed    = true;
+        uint8_t state = chunk.castShadows ? STATE_DRAWN | STATE_CASTS : STATE_DRAWN;
+        const bool differs = i >= m_lastTotal || draw != objects.draws[i] || chunk.model != objects.models[i]
+            || chunk.bounds.min != objects.bounds[i].min || chunk.bounds.max != objects.bounds[i].max;
+        if (comparable && differs) {
+            state |= STATE_CHANGED;
+            fixedChanged.store(true, std::memory_order_relaxed);
+        }
+        objects.models[i]    = chunk.model;
+        objects.bounds[i]    = chunk.bounds;
+        objects.draws[i]     = draw;
+        objects.skinFirst[i] = 0;
+        m_result.entities[i] = chunk.entity;
+        const bool inView = Math::frustumIntersectsAABB(context.frustum, chunk.bounds);
+        if (inView && Culling::isNearEnough(chunk.bounds, context)) state |= STATE_VISIBLE;
+        m_state[i] = state;
+    }
+    // Each plant listed always, so its index holds; seen within its layer's distance. Written only
+    // when TerrainSystem listed them anew or they moved index; else each chunk's group is tested
+    // first, and a plant only in a group in view.
+    const uint32_t plantFirst = meshCount + chunkCount;
+    const bool     plantsHeld = comparable && plantCount > 0 && terrains->plantsRevision == m_plantsRevision
+        && plantFirst == m_plantFirst && plantCount == m_plantCount;
+    const auto seenPlant = [&](const TerrainPlantDraw& plant) {
+        const glm::vec3 centre  = 0.5f * (plant.bounds.min + plant.bounds.max);
+        const bool      inReach = glm::distance(centre, context.cameraPosition) <= plant.maxDistance;
+        return inReach && Math::frustumIntersectsAABB(context.frustum, plant.bounds);
+    };
+    if (plantsHeld) {
+        for (const TerrainPlantGroup& group : terrains->plantGroups) {
+            const glm::vec3 onBox   = glm::clamp(context.cameraPosition, group.bounds.min, group.bounds.max);
+            const bool      inReach = glm::distance(onBox, context.cameraPosition) <= group.maxDistance;
+            const bool      inView  = inReach && Math::frustumIntersectsAABB(context.frustum, group.bounds);
+            for (uint32_t p = group.first; p < group.first + group.count; ++p) {
+                const uint32_t i     = plantFirst + p;
+                const uint8_t  state = m_state[i] & ~(STATE_VISIBLE | STATE_CHANGED);
+                m_state[i] = inView && seenPlant(terrains->plants[p]) ? state | STATE_VISIBLE : state;
+            }
+        }
+    } else {
+        for (uint32_t p = 0; p < plantCount; ++p) {
+            const TerrainPlantDraw& plant = terrains->plants[p];
+            const uint32_t          i     = plantFirst + p;
+
+            ObjectDraw draw;
+            draw.mesh     = plant.mesh;
+            draw.material = plant.material;
+            draw.fixed    = true;
+            uint8_t    state   = plant.castShadows ? STATE_DRAWN | STATE_CASTS : STATE_DRAWN;
+            const bool moved   = draw != objects.draws[i] || plant.model != objects.models[i];
+            const bool differs = i >= m_lastTotal || moved;
+            if (comparable && differs) {
+                state |= STATE_CHANGED;
+                fixedChanged.store(true, std::memory_order_relaxed);
+            }
+            objects.models[i]    = plant.model;
+            objects.bounds[i]    = plant.bounds;
+            objects.draws[i]     = draw;
+            objects.skinFirst[i] = 0;
+            m_result.entities[i] = plant.entity;
+            m_state[i]           = seenPlant(plant) ? state | STATE_VISIBLE : state;
+        }
+    }
+    m_plantsRevision = terrains ? terrains->plantsRevision : 0;
+    m_plantFirst     = plantFirst;
+    m_plantCount     = plantCount;
+    m_lastTotal      = total;
+
     if (fixedMoved.load(std::memory_order_relaxed)) {
         // Kept until the next frame, which works every object out again; the warning, once a world.
         if (m_fixedMovedEpoch != sources.sceneEpoch) {
@@ -559,14 +649,14 @@ void VisibilitySystem::update(FrameContext& ctx) {
     objects.allChanged = !comparable;
     ++objects.serial;
     if (objects.allChanged || fixedChanged.load(std::memory_order_relaxed)) ++objects.fixedSerial;
-    for (uint32_t i = 0; i < meshCount; ++i) {
+    for (uint32_t i = 0; i < total; ++i) {
         const uint8_t state = m_state[i];
         if (state & STATE_VISIBLE) objects.visible.push_back(i);
         if ((state & (STATE_DRAWN | STATE_CASTS)) == (STATE_DRAWN | STATE_CASTS)) objects.scene.push_back(i);
         if (state & STATE_CHANGED) objects.changed.push_back(i);
     }
     objects.casterCount = static_cast<uint32_t>(objects.scene.size());
-    for (uint32_t i = 0; i < meshCount; ++i) {
+    for (uint32_t i = 0; i < total; ++i) {
         if ((m_state[i] & (STATE_DRAWN | STATE_CASTS)) == STATE_DRAWN) objects.scene.push_back(i);
     }
 

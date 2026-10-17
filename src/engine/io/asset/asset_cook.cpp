@@ -11,6 +11,8 @@
 #include <utility>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "logger.h"
 
 #include "core/fnv1a.h"
@@ -18,7 +20,11 @@
 #include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
+#include "resource/asset/terrain_asset.h"
 #include "resource/asset/texture_asset.h"
+#include "resource/asset_source_kind.h"
+#include "io/asset/terrain_file.h"
+#include "io/project_paths.h"
 
 namespace Vkm::Engine::AssetCook {
 
@@ -31,6 +37,7 @@ constexpr uint16_t KIND_TEXTURE    = 2;
 constexpr uint16_t KIND_SKELETON   = 3;
 constexpr uint16_t KIND_CLIP       = 4;
 constexpr uint16_t KIND_AUDIO      = 5;
+constexpr uint16_t KIND_TERRAIN    = 6;
 
 // Field by field, never as a struct, so padding cannot leak into the format:
 // magic[4] + sentinel + kind + version + payloadBytes.
@@ -146,6 +153,7 @@ uint16_t cookedKind(AssetType type) {
         case AssetType::Skeleton:      return KIND_SKELETON;
         case AssetType::AnimationClip: return KIND_CLIP;
         case AssetType::AudioClip:     return KIND_AUDIO;
+        case AssetType::Terrain:       return KIND_TERRAIN;
         case AssetType::Material:
         case AssetType::Count:         break;
     }
@@ -1150,6 +1158,48 @@ bool readAudioClip(const std::filesystem::path& path, AudioClipAsset& out) {
     out.channels   = channels;
     out.loopStart  = loopStart;
     out.samples    = ClipSamples(std::move(samples));
+    return true;
+}
+
+bool writeTerrain(const std::filesystem::path& path, const TerrainAsset& terrain) {
+    const std::string p = path.string();
+    if (!terrain.hasSource()) {
+        LOG_ERROR("Cooked terrain '%s': it has no .terrain file to cook from", p.c_str());
+        return false;
+    }
+    const std::string ref = terrain.sourceJson().value(AssetSourceKey::PATH, std::string{});
+    std::vector<uint8_t> body;
+    std::string          error;
+    TerrainAsset         read;
+    TerrainFile::Names   names;
+    if (!TerrainFile::readBody(ProjectPaths::resolveProjectPath(ref), body, error)
+        || !TerrainFile::decode(body.data(), body.size(), read, names, error)) {
+        LOG_ERROR("Cooked terrain '%s': its file '%s' %s", p.c_str(), ref.c_str(), error.c_str());
+        return false;
+    }
+    std::ofstream os = openCookedWrite(path, "terrain");
+    if (!os) return false;
+    writeHeader(os, KIND_TERRAIN, body.size());
+    writeBulk(os, body);
+    if (!os) {
+        LOG_ERROR("Cooked terrain '%s': write failed", p.c_str());
+        return false;
+    }
+    return commitCookedWrite(os, path, "terrain");
+}
+
+bool readTerrain(const std::filesystem::path& path, TerrainAsset& out, TerrainFile::Names& names) {
+    const std::string p = path.string();
+    std::ifstream     is;
+    uint64_t          payloadBytes = 0;
+    if (!openCookedRead(is, path, KIND_TERRAIN, 0, "terrain", payloadBytes)) return false;
+    std::vector<uint8_t> body;
+    readBulk(is, body, payloadBytes);
+    std::string error;
+    if (!is || !TerrainFile::decode(body.data(), body.size(), out, names, error)) {
+        LOG_ERROR("Cooked terrain '%s': %s", p.c_str(), is ? error.c_str() : "body read failed");
+        return false;
+    }
     return true;
 }
 

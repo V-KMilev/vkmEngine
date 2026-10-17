@@ -13,6 +13,7 @@
 #include "resource/texture_format.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
+#include "resource/asset/terrain_asset.h"
 #include "resource/asset/texture_asset.h"
 #include "resource/generate/mesh_generators.h"
 #include "resource/generate/texture_generators.h"
@@ -451,6 +452,49 @@ void testAMaterialsTilingIsInItsRecipe() {
     );
 }
 
+// A terrain's height between its grid vertices is the triangle's there, split along each square's
+// diagonal from (i, j) to (i + 1, j + 1) as its meshes and collider are; a plane comes back exact.
+void testATerrainsHeightIsItsTriangles() {
+    std::printf("A terrain's surface between its vertices:\n");
+    TerrainAsset terrain;
+    terrain.resolution = TerrainAsset::MIN_RESOLUTION;
+    terrain.size       = 32.0f;
+    const int n = static_cast<int>(terrain.resolution);
+    terrain.heights.resize(static_cast<size_t>(n) * n);
+    for (int j = 0; j < n; ++j) {
+        for (int i = 0; i < n; ++i) terrain.heights[static_cast<size_t>(j) * n + i] = 0.5f * i + 0.25f * j;
+    }
+    // Vertex (i, j) at (i - 16, j - 16): the grid is centred, a metre apart.
+    const auto plane = [](float x, float z) { return 0.5f * (x + 16.0f) + 0.25f * (z + 16.0f); };
+    bool exact = true;
+    for (const glm::vec2 at : {glm::vec2(0.3f, -2.7f), glm::vec2(-15.9f, 15.2f), glm::vec2(7.5f, 7.5f)}) {
+        exact = exact && std::abs(terrain.heightAt(at.x, at.y) - plane(at.x, at.y)) < 1e-4f;
+    }
+    check("a slope's height comes back exact anywhere on it", exact);
+    const float edge = terrain.heightAt(40.0f, 0.0f);
+    check("  and past its edge, its edge's", std::abs(edge - plane(16.0f, 0.0f)) < 1e-4f);
+    const glm::vec3 up    = terrain.normalAt(10, 10);
+    const glm::vec3 slope = glm::normalize(glm::vec3(-0.5f, 1.0f, -0.25f));
+    check("  its normal leans back up the slope", glm::length(up - slope) < 1e-4f);
+
+    std::fill(terrain.heights.begin(), terrain.heights.end(), 0.0f);
+    terrain.heights[static_cast<size_t>(10) * n + 10] = 1.0f;
+    // Vertex (10, 10) is at (-6, -6).
+    check("a raised vertex stands at its height", std::abs(terrain.heightAt(-6.0f, -6.0f) - 1.0f) < 1e-5f);
+    const float diagonal = terrain.heightAt(-5.5f, -5.5f);
+    check("  half of it halfway along its square's diagonal", std::abs(diagonal - 0.5f) < 1e-5f);
+    check("  and halfway along its edge", std::abs(terrain.heightAt(-5.5f, -6.0f) - 0.5f) < 1e-5f);
+    const float beside = terrain.heightAt(-6.5f, -5.5f);
+    check("  none on the diagonal of a square it is a side corner of", std::abs(beside) < 1e-5f);
+
+    check("a grid of 2^n + 1 a side is a terrain's", TerrainAsset::validResolution(129));
+    check("  one of 2^n is not", !TerrainAsset::validResolution(128));
+    check(
+        "  nor one smaller than a chunk or larger than the most",
+        !TerrainAsset::validResolution(17) && !TerrainAsset::validResolution(2049)
+    );
+}
+
 } // namespace
 
 void runResourceTests() {
@@ -467,4 +511,5 @@ void runResourceTests() {
     testFontsStayWhenTheGraphIsTraded();
     testABoneIsFoundWhateverItsRigsNamespace();
     testAMaterialsTilingIsInItsRecipe();
+    testATerrainsHeightIsItsTriangles();
 }

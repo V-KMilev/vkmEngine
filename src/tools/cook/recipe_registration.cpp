@@ -18,6 +18,7 @@
 #include "resource/generate/mesh_generators.h"
 #include "resource/generate/texture_generators.h"
 #include "import/audio_loaders.h"
+#include "import/terrain_loaders.h"
 #include "import/texture_loaders.h"
 #include "import/model_loaders.h"
 #include "cook/lod_generator.h"
@@ -167,18 +168,26 @@ AudioClipHandle createRecipeAudioClip(const nlohmann::json& source, ResourceMana
     return refuseKind<AudioClipAsset>("sound", source);
 }
 
+TerrainHandle createRecipeTerrain(const nlohmann::json& source, ResourceManager& resources) {
+    if (source.value(AssetSourceKey::KIND, std::string{}) == AssetSourceKind::FILE) {
+        return loadTerrainFile(source.value(AssetSourceKey::PATH, std::string{}), resources);
+    }
+    return refuseKind<TerrainAsset>("terrain", source);
+}
+
 } // namespace
 
 void registerRecipeAssetFactories() {
     LOG_INFO(
         "Registering recipe asset factories (meshes: generator/model/decimate, "
-        "textures: file/solid/model-image, skeletons + clips: model, sounds: file)"
+        "textures: file/solid/model-image, skeletons + clips: model, sounds and terrains: file)"
     );
     assetFactory().createMesh          = &createRecipeMesh;
     assetFactory().createTexture       = &createRecipeTexture;
     assetFactory().createSkeleton      = &createRecipeSkeleton;
     assetFactory().createAnimationClip = &createRecipeAnimationClip;
     assetFactory().createAudioClip     = &createRecipeAudioClip;
+    assetFactory().createTerrain       = &createRecipeTerrain;
     assetFactory().decodeTexture       = &decodeTextureFile;
 }
 

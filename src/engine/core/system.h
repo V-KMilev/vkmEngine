@@ -21,6 +21,7 @@ struct UIDrawData;
 struct SplashFrame;
 struct LiveParticles;
 struct OceanData;
+struct TerrainFrame;
 
 /**
  * @brief Named per-frame execution stages.
@@ -75,6 +76,7 @@ struct FrameContext {
     const SplashFrame*   splash     = nullptr;  ///< From SplashSystem.
     const LiveParticles* particles  = nullptr;  ///< From ParticleSystem.
     const OceanData*     ocean      = nullptr;  ///< From OceanSystem.
+    const TerrainFrame*  terrain    = nullptr;  ///< From TerrainSystem.
 };
 
 /**

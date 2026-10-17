@@ -296,8 +296,22 @@ nlohmann::json saveAssetsForEntities(
         for (const auto& f : MATERIAL_TEXTURE_FIELDS) emit(material->*f.member);
     };
 
+    // A terrain's layers and plants too, which it names: without them its next load draws nothing
+    // where they were painted.
+    const auto emitTerrain = [&](const TerrainAsset* terrain) {
+        if (!terrain) return;
+        for (const MaterialHandle& layer : terrain->layers) emitTextures(emit(layer));
+        for (const TerrainFoliage& layer : terrain->foliage) {
+            for (const TerrainPlantPart& part : layer.parts) {
+                emit(part.mesh);
+                emitTextures(emit(part.material));
+            }
+        }
+    };
+
     for (const MeshHandle& h : refs.meshes)             emit(h);
     for (const MaterialHandle& h : refs.materials)      emitTextures(emit(h));
+    for (const TerrainHandle& h : refs.terrains)        emitTerrain(emit(h));
     for (const SkeletonHandle& h : refs.skeletons)      emit(h);
     for (const AnimationClipHandle& h : refs.clips)     emit(h);
     for (const AudioClipHandle& h : refs.sounds)        emit(h);
@@ -309,6 +323,9 @@ nlohmann::json saveAssetsForEntities(
         emitNamedRef(sections[static_cast<size_t>(type)].entries, name);
         if (type == AssetType::Material) {
             emitTextures(resources.tryGet(resources.findByName<MaterialAsset>(name)));
+        }
+        if (type == AssetType::Terrain) {
+            emitTerrain(resources.tryGet(resources.findByName<TerrainAsset>(name)));
         }
     }
 
@@ -417,6 +434,7 @@ Handle<Asset> loadCooked(const std::string& name, ResourceManager& rm) {
     else if constexpr (std::is_same_v<Asset, SkeletonAsset>)      return loadCookedSkeleton(name, rm);
     else if constexpr (std::is_same_v<Asset, AnimationClipAsset>) return loadCookedAnimationClip(name, rm);
     else if constexpr (std::is_same_v<Asset, AudioClipAsset>)     return loadCookedAudioClip(name, rm);
+    else if constexpr (std::is_same_v<Asset, TerrainAsset>)       return loadCookedTerrain(name, rm);
     else static_assert(Reflect::DEPENDENT_FALSE<Asset>, "loadCooked: this kind has no cooked load");
 }
 

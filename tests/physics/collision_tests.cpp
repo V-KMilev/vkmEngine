@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "ecs/component/physics/ragdoll.h"
+#include "ecs/component/render/terrain.h"
 #include "system/physics/authoring/collider_fit.h"
 #include "resource/generate/mesh_generators.h"
 #include "system/physics/authoring/ragdoll_build.h"
@@ -529,6 +530,73 @@ void testOffsetMeshPartCollides() {
     const float y = scene.get<Transform>(faller).position.y;
     check("  a body lands on it where the offset puts it", y > 2.0f && y < 3.0f);
     check("  rather than falling through it", y > 0.0f);
+}
+
+// A terrain collides where its triangles are, the surface TerrainAsset::heightAt reads, and
+// where a brush moved them as soon as it has.
+void testATerrainCollidesAsItsHeights() {
+    std::printf("A terrain collider:\n");
+
+    // A slope rising along X, a bump in its middle: no two squares alike.
+    TerrainAsset terrain;
+    terrain.resolution = 33;
+    terrain.size       = 16.0f;
+    terrain.heights.resize(33 * 33);
+    terrain.weights.assign(33 * 33 * 4, 0);
+    for (int j = 0; j < 33; ++j) {
+        for (int i = 0; i < 33; ++i) {
+            const float x = static_cast<float>(i - 16);
+            const float z = static_cast<float>(j - 16);
+            const float bump = 1.5f * std::exp(-(x * x + z * z) / 20.0f);
+            terrain.heights[static_cast<size_t>(j) * 33 + i] = 0.1f * x + bump;
+        }
+    }
+    const TerrainHandle handle = meshLibrary().add(TerrainAsset(terrain), "test:terrain");
+
+    Scene scene;
+    const EntityId ground = scene.createEntity();
+    Transform at;
+    at.position = {0.0f, 1.0f, 0.0f};
+    scene.add<Transform>(ground, std::move(at));
+    Rigidbody still;
+    still.motion = RigidbodyMotion::Static;
+    scene.add<Rigidbody>(ground, std::move(still));
+    ColliderPart part;
+    part.shape = ColliderShape::Terrain;
+    Collider collider;
+    collider.parts = {part};
+    scene.add<Collider>(ground, std::move(collider));
+    Terrain component;
+    component.terrain = handle;
+    scene.add<Terrain>(ground, std::move(component));
+
+    const EntityId box = addFallingBody(scene, {2.3f, 6.0f, -1.7f}, 0.3f);
+    simulate(scene, 300);
+    const Collider& built = scene.get<Collider>(ground);
+    check("a terrain is collided as its squares' triangles", built.meshPoints.size() == 32 * 32 * 2 * 3);
+
+    // Resting on a slope, a box's centre sits about its half-size above the surface under it.
+    const glm::vec3 rest  = scene.get<Transform>(box).position;
+    const float     floor = 1.0f + terrain.heightAt(rest.x, rest.z);
+    std::printf("      rests at %.3f over a surface at %.3f\n", rest.y, floor);
+    check("  a body lands on it", rest.y > floor + 0.2f && rest.y < floor + 0.6f);
+
+    // Between grid vertices, on either triangle of a square.
+    RayHit hit;
+    for (const glm::vec2 xz : {glm::vec2(3.3f, -2.6f), glm::vec2(3.6f, -2.3f), glm::vec2(-5.1f, 4.2f)}) {
+        const bool met = raycast(scene, {xz.x, 10.0f, xz.y}, {0, -1, 0}, 20.0f, hit);
+        const float surface = 1.0f + terrain.heightAt(xz.x, xz.y);
+        check("  a ray down meets it at heightAt", met && std::abs(hit.point.y - surface) < 1e-3f);
+    }
+
+    // A brush stroke: a pit dug under where the ray went.
+    TerrainAsset dug = meshLibrary().get(handle);
+    for (float& h : dug.heights) h -= 2.0f;
+    meshLibrary().swapValue(handle, dug);
+    simulate(scene, 1);
+    const bool  met    = raycast(scene, {-5.1f, 10.0f, 4.2f}, {0, -1, 0}, 20.0f, hit);
+    const float bottom = 1.0f + meshLibrary().get(handle).heightAt(-5.1f, 4.2f);
+    check("  and where it was dug once it is", met && std::abs(hit.point.y - bottom) < 1e-3f);
 }
 
 // The median split built only from steps the standard defines: widest axis, then a
@@ -1170,6 +1238,7 @@ void runPhysicsCollisionTests() {
     testALedgeRiserDoesNotLaunchWhatBrushesIt();
     testOffsetMeshPartCollides();
     testAMeshColliderFollowsItsMesh();
+    testATerrainCollidesAsItsHeights();
     testAMeshBuildsOneTreeEverywhere();
     testAPairIsOrderedByItsBodiesNotByWhereTheyAre();
     testStaticTriggerSeesKinematic();

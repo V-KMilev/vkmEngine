@@ -122,8 +122,8 @@ The suites are split by what each one needs to run:
 and the list below agree. The suites are `core`, `ecs`, `hierarchy`, `query`,
 `collision`, `solver`, `joint`, `ragdoll`, `character`, `resource`, `async`,
 `cook`, `import`, `authoring`, `prefab`, `scene`, `play`, `undo`, `culling`,
-`sky`, `ocean`, `animation`, `particle`, `wire`, `transport`, `replication`, `prediction`,
-`session`, `ui`, `audio`, `script`, `hostile`, `docs`.
+`sky`, `ocean`, `terrain`, `animation`, `particle`, `wire`, `transport`,
+`replication`, `prediction`, `session`, `ui`, `audio`, `script`, `hostile`, `docs`.
 
 ```bash
 ./build/bin/vkm_engine_tests --list      # what there is

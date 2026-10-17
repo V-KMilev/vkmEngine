@@ -722,6 +722,10 @@ void GizmoOverlay::drawColliderGizmos(EditorContext& ec) {
                     drawMeshColliderWires(scope, col, center, r, color);
                     break;
 
+                // The terrain it is shows where it collides.
+                case ColliderShape::Terrain:
+                    break;
+
                 case ColliderShape::Box:
                     scope.box(center, rot, part.halfExtents, color);
                     break;

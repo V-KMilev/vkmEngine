@@ -10,6 +10,7 @@
 #include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
+#include "resource/asset/terrain_asset.h"
 #include "resource/asset/texture_asset.h"
 
 namespace Vkm::Engine {
@@ -50,6 +51,7 @@ struct AssetFactory {
     RecipeImport<SkeletonAsset>      createSkeleton      = nullptr;
     RecipeImport<AnimationClipAsset> createAnimationClip = nullptr;
     RecipeImport<AudioClipAsset>     createAudioClip     = nullptr;
+    RecipeImport<TerrainAsset>       createTerrain       = nullptr;
     TextureDecode                    decodeTexture       = nullptr;
 };
 
@@ -74,6 +76,7 @@ RecipeImport<Asset> recipeImport() {
     else if constexpr (std::is_same_v<Asset, SkeletonAsset>)      return factory.createSkeleton;
     else if constexpr (std::is_same_v<Asset, AnimationClipAsset>) return factory.createAnimationClip;
     else if constexpr (std::is_same_v<Asset, AudioClipAsset>)     return factory.createAudioClip;
+    else if constexpr (std::is_same_v<Asset, TerrainAsset>)       return factory.createTerrain;
     else static_assert(Reflect::DEPENDENT_FALSE<Asset>, "recipeImport: this kind has no import slot");
 }
 

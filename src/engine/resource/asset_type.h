@@ -23,7 +23,8 @@ namespace Vkm::Engine {
     X(Material,      MaterialAsset,      "material",      "materials")  \
     X(Skeleton,      SkeletonAsset,      "skeleton",      "skeletons")  \
     X(AnimationClip, AnimationClipAsset, "animationClip", "clips")      \
-    X(AudioClip,     AudioClipAsset,     "audioClip",     "sounds")
+    X(AudioClip,     AudioClipAsset,     "audioClip",     "sounds")     \
+    X(Terrain,       TerrainAsset,       "terrain",       "terrains")
 
 /**
  * @brief The asset kinds that live in the library, one enumerator per row of VKM_ASSET_KINDS.
@@ -47,7 +48,8 @@ VKM_ASSET_KINDS(VKM_ASSET_FORWARD_DECL)
  * @brief The order the kinds load and cook in, each after the kinds it names.
  *
  * Textures before the materials that resolve them by name; rigs before the clips whose bone indices
- * address them and the meshes skinned to them.
+ * address them and the meshes skinned to them; materials and meshes before the terrains whose
+ * layers and plants name them.
  */
 inline constexpr AssetType ASSET_DEPENDENCY_ORDER[] = {
     AssetType::Texture,
@@ -56,6 +58,7 @@ inline constexpr AssetType ASSET_DEPENDENCY_ORDER[] = {
     AssetType::AnimationClip,
     AssetType::Mesh,
     AssetType::AudioClip,
+    AssetType::Terrain,
 };
 
 namespace detail {

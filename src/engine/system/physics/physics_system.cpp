@@ -20,12 +20,14 @@
 #include "ecs/component/physics/collider.h"
 #include "ecs/component/physics/joint.h"
 #include "ecs/component/physics/rigidbody.h"
+#include "ecs/component/render/terrain.h"
 #include "ecs/hierarchy_operations.h"
 #include "core/event/event_bus.h"
 #include "net/net_session.h"
 #include "core/math/axes.h"
 #include "core/math/rotation.h"
 #include "platform/threading/thread_pool.h"
+#include "resource/resource_manager.h"
 #include "system/physics/authoring/mesh_collider.h"
 #include "system/physics/body_pose.h"
 #include "system/physics/inertia.h"
@@ -64,7 +66,7 @@ float inverseMassOf(const Rigidbody& rb, RigidbodyMotion motion) {
 template <typename Fn>
 void forEachMeshPart(const ColliderProxy& proxy, Fn&& fn) {
     for (const ColliderPart& part : proxy.collider->parts) {
-        if (part.shape == ColliderShape::Mesh) fn(*proxy.collider, part);
+        if (isTriangles(part.shape)) fn(*proxy.collider, part);
     }
 }
 
@@ -169,7 +171,8 @@ void expandSubShapes(
                 enclose(capsuleBounds.back());
                 break;
             }
-            case ColliderShape::Mesh: {
+            case ColliderShape::Mesh:
+            case ColliderShape::Terrain: {
                 // See ColliderProxy: only its tree's root bound, placed like a box, joins the proxy's.
                 const Math::AABB local = partLocalBounds(*p.collider, part);
                 const glm::vec3 middle = (local.min + local.max) * 0.5f;
@@ -295,7 +298,11 @@ bool PhysicsSystem::gatherBodies(Scene& scene, const ResourceManager& resources,
 
         Rigidbody& rb = rbStorage->dataAt(i);
         Collider* collider = scene.tryGet<Collider>(id);
-        if (collider) syncMeshCollider(*collider, resources);
+        if (collider) {
+            syncMeshCollider(*collider, resources);
+            const Terrain* terrain = scene.tryGet<Terrain>(id);
+            syncTerrainCollider(*collider, terrain ? resources.tryGet(terrain->terrain) : nullptr);
+        }
 
         if (rb.motion == RigidbodyMotion::Dynamic && rb.mass <= 0.0f && m_massless.report()) {
             const Name* name = scene.tryGet<Name>(id);

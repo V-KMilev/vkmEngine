@@ -282,6 +282,7 @@ constant:
 | `project.json` | `io/project.cpp` `engineVersion`                      | Nothing. It warns: it is provenance, not a format version, and refusing to open a project would be worse. |
 | Asset manifest | `io/asset/asset_library.cpp` `MANIFEST_VERSION`       | Anything but an exact match, either direction. The library then starts empty, every name loads from its recipe - whose path needs no row - and the next cook records it again: total recovery of derived data, refused whole rather than half-understood. |
 | Library recipe | None - `library/<type>/<uid>.json` carries no version | Nothing past its shape: one with no `source`, or of a `kind` no factory dispatches, does not load. An unknown key is ignored, a missing one reads as its default, and a key of the wrong type costs that one asset, reported, never the scene. The next cook rewrites the recipe in the current form. It is version-controlled source, so a change to a key's meaning alters authored data: say in the commit what an old recipe reads as. |
+| `.terrain` file | `io/asset/terrain_file.h` `TerrainFile::VERSION`   | Anything but an exact match. It is authored source, not derived: a bump leaves every project's terrains unreadable until a one-off pass re-writes them. Its cooked copy is the body alone, behind `COOKER_VERSION`. |
 
 For scenes and prefabs, **bumping the constant does not stop an old file
 loading.** The gate refuses the future, not the past: an older file is read by

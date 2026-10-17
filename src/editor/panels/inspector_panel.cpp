@@ -39,6 +39,7 @@
 #include "system/particle/particle_system.h"
 #include "ecs/component/render/planar_reflector.h"
 #include "ecs/component/render/reflection_probe.h"
+#include "ecs/component/render/terrain.h"
 #include "ecs/component/ui/ui_button.h"
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_choice.h"
@@ -2768,6 +2769,14 @@ void InspectorPanel::drawColliderSection(EditorContext& ec, EntityId id) {
                         0.001f,
                         1000.0f
                     );
+                    break;
+
+                case ColliderShape::Terrain:
+                    if (!scene.has<Terrain>(id)) {
+                        ImGui::TextColored(EditorStyle::DANGER, "No Terrain: this collides with nothing.");
+                        break;
+                    }
+                    ImGui::TextDisabled("%zu triangle(s) from its Terrain", col.meshPoints.size() / 3);
                     break;
 
                 case ColliderShape::Count:

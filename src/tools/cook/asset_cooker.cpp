@@ -29,6 +29,7 @@
 #include "resource/resource_manager.h"
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/audio_clip_asset.h"
+#include "resource/asset/terrain_asset.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
@@ -201,6 +202,7 @@ bool hasContent(const TextureAsset& texture)    { return !texture.loading && !te
 bool hasContent(const SkeletonAsset& skeleton)  { return !skeleton.bones.empty(); }
 bool hasContent(const AnimationClipAsset& clip) { return !clip.bones.empty(); }
 bool hasContent(const AudioClipAsset& clip)     { return clip.sampleCount() > 0; }
+bool hasContent(const TerrainAsset& terrain)    { return !terrain.heights.empty(); }
 
 // Write each kind's artifact and say what was baked. A mesh is reordered on a copy: the asset is
 // the graph's, and the cook only reads it.
@@ -263,6 +265,17 @@ bool writeCooked(const std::filesystem::path& path, const AnimationClipAsset& cl
         clip.name().c_str(),
         static_cast<double>(clip.duration),
         clip.bones.size()
+    );
+    return true;
+}
+
+bool writeCooked(const std::filesystem::path& path, const TerrainAsset& terrain) {
+    if (!AssetCook::writeTerrain(path, terrain)) return false;
+    LOG_INFO(
+        "Cooked terrain '%s' (%u vertices a side, %.0f m)",
+        terrain.name().c_str(),
+        terrain.resolution,
+        static_cast<double>(terrain.size)
     );
     return true;
 }
@@ -448,6 +461,7 @@ bool importRecipe(const StaleAsset& stale, ResourceManager& resources) {
         case AssetType::Skeleton:      return importAs<SkeletonAsset>(stale, resources);
         case AssetType::AnimationClip: return importAs<AnimationClipAsset>(stale, resources);
         case AssetType::AudioClip:     return importAs<AudioClipAsset>(stale, resources);
+        case AssetType::Terrain:       return importAs<TerrainAsset>(stale, resources);
         case AssetType::Material:      // its recipe is its runtime form; never stale
         case AssetType::Count:         break;
     }

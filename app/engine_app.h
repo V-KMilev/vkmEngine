@@ -21,6 +21,7 @@
 #include "system/physics/ragdoll_system.h"
 #include "system/physics/character/character_controller_system.h"
 #include "system/hierarchy/hierarchy_system.h"
+#include "system/terrain/terrain_system.h"
 #include "system/splash/splash_system.h"
 #include "system/ui/ui_system.h"
 #include "system/visibility/visibility_system.h"
@@ -144,6 +145,7 @@ inline AppSystems setupEngineApp(
     // frame rather than one behind its bone.
     engine.addSystem<Engine::BoneSocketSystem>(Engine::SystemStage::Transform);
     engine.addSystem<Engine::HierarchySystem>(Engine::SystemStage::Transform);
+    engine.addSystem<Engine::TerrainSystem>(Engine::SystemStage::Transform);
     engine.addSystem<Engine::UISystem>(Engine::SystemStage::Transform);
     // After the world resolve; see docs/reference/audio.md, "Per-frame flow".
     auto& audioSystem = engine.addSystem<Engine::AudioSystem>(Engine::SystemStage::Transform);

@@ -9,6 +9,7 @@
 namespace Vkm::Engine {
 
 class ResourceManager;
+struct TerrainAsset;
 
 /**
  * @brief Give @p collider a triangle-mesh part made from @p mesh.
@@ -40,12 +41,28 @@ uint32_t addMeshCollider(
  *
  * Rebuilt when the mesh, its version or the scale differ from Collider::meshBuiltFrom, emptied when
  * there is no mesh part or it does not resolve, so a late-loading or re-imported mesh is collided as it
- * now is. Costs a handle lookup when nothing changed.
+ * now is. Costs a handle lookup when nothing changed. A collider whose triangles are a terrain's is
+ * syncTerrainCollider's, and left as it is.
  *
  * @param collider  Collider to bring up to date.
  * @param resources Where its mesh resolves.
  * @return True when the triangles were rebuilt or emptied.
  */
 bool syncMeshCollider(Collider& collider, const ResourceManager& resources);
+
+/**
+ * @brief Bring the triangles of @p collider's terrain part up to date with its entity's terrain.
+ *
+ * The grid's squares, split as TerrainAsset::heightAt reads them, rebuilt when the asset or its
+ * version differs from Collider::meshBuiltFrom: a brush stroke is collided as soon as it is made.
+ * Called by whatever holds the entity, which the collider does not name: PhysicsSystem each tick,
+ * TerrainSystem each frame. Does nothing to a collider with no terrain part; a terrain part's
+ * centre is kept at zero, so it lies where the terrain is drawn.
+ *
+ * @param collider Collider to bring up to date.
+ * @param terrain  The entity's terrain; null when it has none, which empties the triangles.
+ * @return True when the triangles were rebuilt or emptied.
+ */
+bool syncTerrainCollider(Collider& collider, const TerrainAsset* terrain);
 
 } // namespace Vkm::Engine
