@@ -60,10 +60,12 @@ jobs:
         if: runner.os == 'Windows'
         run: git config --global core.autocrlf false
 
+      # The images and models the SDK ships are LFS files: without them it ships their pointers.
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref }}
           submodules: recursive
+          lfs: true
 
       # Windows needs nothing.
       - name: Install the window system's headers
