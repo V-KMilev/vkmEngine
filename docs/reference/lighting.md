@@ -18,6 +18,12 @@ faces when `twoSided`).
 radians, a point or spot's emitter radius in metres. It sizes both the highlight
 and the shadow's penumbra; zero is a point source with hard shadows.
 
+`flicker` wavers a point, spot or area light as a fire does, by the world's
+clock (`flickerWave`). It scales the light as it is shaded, `LightData::wave`,
+never `intensity`: gameplay reads and the scene saves the steady value, and a
+capture takes the light steady, so the probes and the irradiance volume, which
+rebake when a light changes, do not rebake for it.
+
 The **key light** is `findKeyLight`: the lowest-slot enabled directional light.
 The sun a shadow is drawn for is `lowestSlotDirectionalCaster`, the lowest-slot
 directional light that casts - not always the key light.
@@ -83,17 +89,20 @@ volume covers it, and from the sky only outside it:
   enters a room through its doorways and windows only. Inside the box there is
   no fade at the faces. How many gathers:
   [engine.md](../guides/engine.md#4-what-has-already-been-decided).
-- **The volume follows its lights and sky.** When the frame's lights
+- **The volume follows its lights and sky.** When the lights that reach its box
   (`lightingDigest`) or the sky (`GLIBL::version`) differ from what it was lit
   by, its surfels are relit a gather a frame, the result swapped in whole.
 - **Probes are captured after the volume**, lit by it where it covers them, and
   baked again at once, as a new probe is, when the volume is re-baked
   (`GLIrradianceVolume::bakeId`). A probe captured under other light
   (`CaptureLighting`) is refreshed a step a frame (`GLProbeBaker::advance`),
-  swapped in whole. The lights compared are the whole scene's, not those near a
-  capture, so a light animated anywhere keeps the volume relighting and the
-  probes refreshing for as long as it moves.
-- **Shadows:** a capture is shadowed by `lowestSlotDirectionalCaster` alone
+  swapped in whole, then rests (`GLProbeManager::REFRESH_REST`): under a light
+  that never holds still, its capture follows a little behind. The lights
+  compared are those whose radius reaches within half a probe's width of its
+  box, and a directional: a lamp moving across the world refreshes the probes it
+  can light, not every one.
+- **Shadows:** a capture is shadowed by `lowestSlotDirectionalCaster` alone,
+  hard: the convolution blurs a penumbra away
   ([rendering.md](rendering.md#bakes)).
 
 A volume filling a room wants its box out to the middle of the walls and a
@@ -171,8 +180,8 @@ The atlas is read both compared and as raw depth (blocker search, the
 `GLScreenShadowPass` finds in the depth buffer what the cascades are too coarse
 for - a foot on the floor, the crease under a ledge - for the cascaded sun alone
 (`GLShadowData::sunLight`). It is Bend Studio's method (`shaders/screen_shadow`,
-under its Apache-2.0 notice): each pixel marches a fixed number of pixels
-(`SAMPLE_COUNT`) toward the light
+under its Apache-2.0 notice): each pixel marches toward the light the pixels a
+contact's reach spans at its depth (`CONTACT_REACH`), at most `SAMPLE_COUNT`
 ([engine.md](../guides/engine.md#4-what-has-already-been-decided)).
 
 It is a contact shadow, not a replacement for the cascades. The viewmodel band

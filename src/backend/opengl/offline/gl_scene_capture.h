@@ -27,7 +27,7 @@ class GLIrradianceVolume;
 class GLMesh;
 class GLObjectBuffer;
 class GLView;
-class ResourceManager;
+struct RenderObjects;
 struct RenderView;
 
 /**
@@ -40,11 +40,10 @@ struct RenderView;
  *
  * begin() prepares what every face of every position shares, and captureCube() draws one cube
  * per call - or captureFace() one face, captureSurfels() what an irradiance probe sees as
- * surfaces - so a probe grid batches the scene once; the caller owns the FBO and the state around
- * the loop. beginLighting() prepares the lights and the sun's map alone, for a relight of
- * what was captured. Lent to every consumer (see GLBackend): the PBR ubershader is the engine's
- * most expensive program. It binds its own camera, lights and shadow blocks and the 2D shadow
- * slot, so capture at the end of a frame.
+ * surfaces; the caller owns the FBO and the state around the loop. beginLighting() prepares the
+ * lights and the sun's map alone, for a relight of what was captured. Lent to every consumer (see
+ * GLBackend): the PBR ubershader is the engine's most expensive program. It binds its own camera,
+ * lights and shadow blocks and the 2D shadow slot, so capture at the end of a frame.
  */
 class GLSceneCapture {
     public:
@@ -71,24 +70,22 @@ class GLSceneCapture {
         /**
          * @brief Prepare the scene the captures after it draw.
          *
-         * Takes the view's scene-wide objects, not the camera's, syncing their materials into
-         * @p glView (GLView::sync skips most), and draws the sun's map fitted to @p region.
+         * Takes the view's scene-wide objects, not the camera's, as GLView::sync readied them in
+         * @p glView this frame, and draws the sun's map fitted to @p region.
          * The captured surfaces take their ambient from the sky until setAmbientVolume().
          *
-         * @param gl        Live GL context the shadow map is drawn on.
-         * @param view      Supplies the objects and the lights.
-         * @param glView    GPU resource mirror the capture draws through.
-         * @param resources Resolves the materials the frame has not synced.
-         * @param ibl       Global IBL: the ambient term while capturing, and the background.
-         * @param faceSize  Face resolution, every face camera's viewport.
-         * @param region    World box the captures describe (a probe's influence box, an irradiance
-         *                  volume), which the sun's shadow covers; outside is unshadowed.
+         * @param gl       Live GL context the shadow map is drawn on.
+         * @param view     Supplies the objects and the lights.
+         * @param glView   GPU resource mirror the capture draws through.
+         * @param ibl      Global IBL: the ambient term while capturing, and the background.
+         * @param faceSize Face resolution, every face camera's viewport.
+         * @param region   World box the captures describe (a probe's influence box, an irradiance
+         *                 volume), which the sun's shadow covers; outside is unshadowed.
          */
         void begin(
             Vkm::GL::Context& gl,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const GLIBL& ibl,
             float faceSize,
             const Math::AABB& region
@@ -101,17 +98,15 @@ class GLSceneCapture {
          * For a pass that lights what was captured before (GLIrradianceBaker::relight). A map
          * kept for the same sun and region is bound, not drawn again (GLCaptureShadow).
          *
-         * @param gl        Live GL context the shadow map is drawn on.
-         * @param view      Supplies the lights and the casters.
-         * @param glView    GPU resource mirror the casters draw through.
-         * @param resources Resolves the materials the frame has not synced.
-         * @param region    World box the sun's shadow covers.
+         * @param gl     Live GL context the shadow map is drawn on.
+         * @param view   Supplies the lights and the casters.
+         * @param glView GPU resource mirror the casters draw through.
+         * @param region World box the sun's shadow covers.
          */
         void beginLighting(
             Vkm::GL::Context& gl,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const Math::AABB& region
         );
 
@@ -233,17 +228,11 @@ class GLSceneCapture {
          * @brief Gather the scene-wide objects a capture draws and the sun's map casts.
          *
          * @param view        Supplies the objects.
-         * @param glView      GPU resource mirror whose materials are synced.
-         * @param resources   Resolves the materials the frame has not synced.
+         * @param glView      GPU resource mirror whose materials sort them.
          * @param castersOnly Gather the casters alone, the scene list's lead, for a map and no
          *                    capture.
          */
-        void gatherScene(
-            const RenderView& view,
-            GLView& glView,
-            const ResourceManager& resources,
-            bool castersOnly = false
-        );
+        void gatherScene(const RenderView& view, const GLView& glView, bool castersOnly = false);
 
         /**
          * @brief Attach face @p face, clear it, and put the camera on it.
@@ -273,10 +262,12 @@ class GLSceneCapture {
         GLCamera          m_camera;         ///< Per-face camera UBO.
         GLOcean           m_ocean;          ///< No sea: a `waves` surface is an ordinary one here.
         GLLights          m_lights;         ///< The frame's lights, the sun alone shadowed.
-        GLInstanceBatcher m_batcher;        ///< Instanced capture draws.
+        GLInstanceBatcher m_batcher;        ///< The surfel captures' draws.
+        GLInstanceBatcher m_faceBatcher;    ///< One cube face's draws: what its frustum holds.
         GLCaptureShadow   m_shadow;         ///< The sun's map over what is captured.
 
         std::vector<uint32_t> m_opaque;      ///< begin()'s opaque scene-wide objects.
+        std::vector<uint32_t> m_faceOpaque;  ///< Those a probe face sees.
         std::vector<uint32_t> m_casters;     ///< The scene-wide casters, the sun's map's.
 
         std::vector<PlainUniform> m_pbrUniforms;     ///< m_pbr's plain uniforms, listed once a link.
@@ -286,6 +277,8 @@ class GLSceneCapture {
         std::vector<GLuint>       m_pbrUintZeros;    ///< The same, as unsigned ints.
 
         const GLView* m_glView   = nullptr;  ///< begin()'s scene, drawn by the captures after it.
+        const RenderObjects* m_drawn = nullptr;  ///< begin()'s objects, which m_opaque indexes.
+        bool m_surfelsBatched = false;  ///< m_batcher holds m_opaque's draws.
         const GLIBL*  m_ibl      = nullptr;
         float         m_faceSize = 0.0f;     ///< begin()'s face resolution: every face camera's viewport.
 

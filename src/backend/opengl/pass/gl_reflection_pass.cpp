@@ -1,5 +1,7 @@
 #include "pass/gl_reflection_pass.h"
 
+#include <algorithm>
+
 #include <GL/glew.h>
 
 #include "gl_compute_shader.h"
@@ -12,6 +14,7 @@
 #include "convention/gl_bindings.h"
 #include "storage/gl_ibl.h"
 #include "gl_mip_levels.h"
+#include "pass/gl_planar_reflection_pass.h"
 #include "system/render/render_view.h"
 
 namespace Vkm::Engine {
@@ -20,6 +23,42 @@ namespace {
 
 namespace Post  = GLBindings::PostTextureSlots;
 namespace Slots = GLBindings::ReflectionTextureSlots;
+
+/// One planar reflector's uniform names and picture slot: the trace takes its place, the resolve that
+/// and its picture.
+struct PlanarUniforms {
+    const char* plane;
+    const char* center;
+    const char* axisU;
+    const char* axisV;
+    const char* lod;
+    const char* rect;
+    uint32_t    slot;
+};
+static_assert(
+    GLPlanarReflectionPass::MAX_DRAWN == 2,
+    "a planar reflector the resolve has no uniforms, slot or sampler for"
+);
+constexpr PlanarUniforms PLANAR_UNIFORMS[GLPlanarReflectionPass::MAX_DRAWN] = {
+    {
+        "u_planarPlane[0]",
+        "u_planarCenter[0]",
+        "u_planarU[0]",
+        "u_planarV[0]",
+        "u_planarLod[0]",
+        "u_planarRect[0]",
+        Slots::PLANAR_0
+    },
+    {
+        "u_planarPlane[1]",
+        "u_planarCenter[1]",
+        "u_planarU[1]",
+        "u_planarV[1]",
+        "u_planarLod[1]",
+        "u_planarRect[1]",
+        Slots::PLANAR_1
+    },
+};
 
 } // namespace
 
@@ -53,12 +92,68 @@ void GLReflectionPass::execute(GLFrameContext& ctx) {
     const RenderView& view = ctx.view;
     // With no sky baked the forward pass still writes the reflection weight,
     // and an environment reflection of zero: the traced one only adds.
-    if (!view.settings.ssr) return;
+    const bool traced = view.settings.ssr;
+    if (!traced && ctx.planarCount == 0) return;
 
     const int step = view.settings.ssrHalfResolution ? 2 : 1;
     ensureTargets(view.sceneWidth(), view.sceneHeight(), static_cast<uint32_t>(step));
     ctx.gl.setDepthTest(false);
     ctx.screenTri.bind();
+    ctx.sceneHDR.bindTexture(GLTarget::Attachment::Depth, Post::SCENE_DEPTH);
+    ctx.sceneHDR.bindTexture(GLTarget::Attachment::GBuffer, Post::SCENE_GBUFFER);
+    ctx.sceneHDR.bindTexture(GLTarget::Attachment::ReflectWeight, Slots::WEIGHT);
+    if (traced) trace(ctx, step);
+
+    // The traced colour and the planar pictures in place of the environment's, into the chain's
+    // next link. The depth, G-buffer and weight are still bound from above, and the chain when
+    // traced.
+    ctx.colorDst->bind(ctx.gl);
+    m_resolve.bind();
+    m_resolve.setUniform1f("u_maxRoughness", view.settings.ssrMaxRoughness);
+    m_resolve.setUniform1f("u_maxLod",       static_cast<float>(m_chain.mipCount() - 1));
+    m_resolve.setUniform1i("u_traceStep",    step);
+    m_resolve.setUniform1i("u_traced",       traced ? 1 : 0);
+    bindPlanar(ctx);
+    ctx.colorSrc->bindTexture(GLTarget::Attachment::Color, Post::SCENE_COLOR);
+    ctx.sceneHDR.bindTexture(GLTarget::Attachment::ReflectEnv, Slots::ENV);
+    m_hits.bindTexture(GLTarget::Attachment::Color, Slots::TRACE);
+    ctx.screenTri.emit();
+
+    ctx.flipColor();
+}
+
+void GLReflectionPass::placePlanar(GLFrameContext& ctx, Vkm::GL::Shader& shader) const {
+    // Each reflector in view space, its rectangle's axes over its half-extents, so a pixel on it
+    // reads within one along each.
+    const glm::mat4& toView = ctx.view.camera.view;
+    shader.setUniform1i("u_planarCount", ctx.planarCount);
+    for (int i = 0; i < ctx.planarCount; ++i) {
+        const PlanarReflectorData& r = *ctx.planarPictures[i].reflector;
+        const glm::vec3 center = glm::vec3(toView * glm::vec4(r.center, 1.0f));
+        const glm::vec3 normal = glm::normalize(glm::mat3(toView) * r.normal);
+        const glm::vec3 axisU  = glm::mat3(toView) * r.axisU / std::max(r.halfExtents.x, 1e-4f);
+        const glm::vec3 axisV  = glm::mat3(toView) * r.axisV / std::max(r.halfExtents.y, 1e-4f);
+        const PlanarUniforms& names = PLANAR_UNIFORMS[i];
+        shader.setUniform4fv(names.plane, glm::vec4(normal, -glm::dot(normal, center)));
+        shader.setUniform3fv(names.center, center);
+        shader.setUniform3fv(names.axisU, axisU);
+        shader.setUniform3fv(names.axisV, axisV);
+    }
+}
+
+void GLReflectionPass::bindPlanar(GLFrameContext& ctx) {
+    placePlanar(ctx, m_resolve);
+    for (int i = 0; i < ctx.planarCount; ++i) {
+        const PlanarUniforms&           names   = PLANAR_UNIFORMS[i];
+        const Vkm::GL::MipChainTexture& picture = *ctx.planarPictures[i].picture;
+        m_resolve.setUniform1f(names.lod, static_cast<float>(picture.mipCount() - 1));
+        m_resolve.setUniform4fv(names.rect, ctx.planarPictures[i].rect);
+        picture.bindSlot(names.slot);
+    }
+}
+
+void GLReflectionPass::trace(GLFrameContext& ctx, int step) {
+    const RenderView& view = ctx.view;
 
     const float maxLod = static_cast<float>(m_chain.mipCount() - 1);
 
@@ -94,24 +189,8 @@ void GLReflectionPass::execute(GLFrameContext& ctx) {
     m_trace.setUniform1f("u_maxDistance",  view.settings.ssrMaxDistance);
     m_trace.setUniform1f("u_maxLod",       maxLod);
     m_trace.setUniform1i("u_traceStep",    step);
-    ctx.sceneHDR.bindTexture(GLTarget::Attachment::Depth, Post::SCENE_DEPTH);
-    ctx.sceneHDR.bindTexture(GLTarget::Attachment::GBuffer, Post::SCENE_GBUFFER);
-    ctx.sceneHDR.bindTexture(GLTarget::Attachment::ReflectWeight, Slots::WEIGHT);
+    placePlanar(ctx, m_trace);
     ctx.screenTri.emit();
-
-    // The traced colour in place of the environment's, into the chain's next
-    // link. The depth, G-buffer, weight and chain are still bound from above.
-    ctx.colorDst->bind(ctx.gl);
-    m_resolve.bind();
-    m_resolve.setUniform1f("u_maxRoughness", view.settings.ssrMaxRoughness);
-    m_resolve.setUniform1f("u_maxLod",       maxLod);
-    m_resolve.setUniform1i("u_traceStep",    step);
-    ctx.colorSrc->bindTexture(GLTarget::Attachment::Color, Post::SCENE_COLOR);
-    ctx.sceneHDR.bindTexture(GLTarget::Attachment::ReflectEnv, Slots::ENV);
-    m_hits.bindTexture(GLTarget::Attachment::Color, Slots::TRACE);
-    ctx.screenTri.emit();
-
-    ctx.flipColor();
 }
 
 } // namespace Vkm::Engine

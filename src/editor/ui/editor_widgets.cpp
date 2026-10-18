@@ -34,6 +34,7 @@
 #include "ecs/component/render/lod.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/component/render/particle_emitter.h"
+#include "ecs/component/render/planar_reflector.h"
 #include "ecs/component/render/reflection_probe.h"
 #include "ecs/component/ui/ui_button.h"
 #include "ecs/component/ui/ui_canvas.h"
@@ -553,6 +554,7 @@ EntityLabel entityLabelOf(const Scene& scene, EntityId id) {
     }
     if (scene.has<Animation>(id))        return {"Animation", EditorIcon::Anim};
     if (scene.has<ReflectionProbe>(id))  return {"Probe",     EditorIcon::Probe};
+    if (scene.has<PlanarReflector>(id))  return {"Mirror",    EditorIcon::Probe};
     if (scene.has<IrradianceVolume>(id)) return {"GI Volume", EditorIcon::Volume};
     if (scene.has<Decal>(id))            return {"Decal",     EditorIcon::Decal};
     if (scene.has<ParticleEmitter>(id))  return {"Emitter",   EditorIcon::Particle};

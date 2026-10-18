@@ -1,0 +1,9 @@
+{
+  "name": "assets/effects/fireball.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/effects/fireball.png",
+    "usage": "Color"
+  }
+}

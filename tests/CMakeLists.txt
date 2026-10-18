@@ -14,7 +14,8 @@ list(FILTER VKM_TEST_SOURCES EXCLUDE REGEX "/tests/render/[^/]+$")
 # scene, a resource manager and the serializers; the undo machinery is a scene
 # and a CommandHost, the seam it asks the editor for rather than the editor's
 # whole state; the editor's view is a System over an
-# InputMap of its own. Compiled in here so each is tested without a window.
+# InputMap of its own; a content pack is files copied. Compiled in here so each is
+# tested without a window.
 #
 # Nothing else from src/editor belongs here. A file that needs ImGui is a file
 # this binary cannot take, and that is the line: this one runs on a build
@@ -33,6 +34,7 @@ add_executable(vkm_engine_tests
     ${CMAKE_CURRENT_SOURCE_DIR}/main.cpp
     ${VKM_TEST_SOURCES}
     ${CMAKE_SOURCE_DIR}/src/editor/input/camera_controller_system.cpp
+    ${CMAKE_SOURCE_DIR}/src/editor/session/content_pack.cpp
     ${CMAKE_SOURCE_DIR}/src/editor/session/play_snapshot.cpp
     ${CMAKE_SOURCE_DIR}/src/editor/command/command_stack.cpp
     ${CMAKE_SOURCE_DIR}/src/editor/command/editor_commands.cpp

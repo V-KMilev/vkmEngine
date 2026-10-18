@@ -778,22 +778,25 @@ void StressArena::buildEmitters() {
         ParticleEmitter emitter;
         // Half additive sparks, half alpha smoke: the blend modes sort and draw separately.
         const bool sparks = (i % 2) == 0;
-        emitter.additive     = sparks;
-        emitter.rate         = sparks ? frand(60.0f, 140.0f) : frand(20.0f, 50.0f);
-        emitter.lifetime     = sparks ? frand(0.8f, 1.8f) : frand(2.5f, 4.5f);
-        emitter.maxParticles = sparks ? 320 : 200;
-        emitter.velocity     = sparks ? glm::vec3(0.0f, 5.0f, 0.0f) : glm::vec3(0.0f, 1.6f, 0.0f);
-        emitter.spread       = sparks ? 2.4f : 0.8f;
-        emitter.acceleration = sparks ? glm::vec3(0.0f, -6.0f, 0.0f) : glm::vec3(0.0f, 0.5f, 0.0f);
-        emitter.startColor   = sparks
-            ? glm::vec4(1.0f, 0.75f, 0.30f, 1.0f)
-            : glm::vec4(0.55f, 0.58f, 0.65f, 0.5f);
-        emitter.endColor     = sparks
-            ? glm::vec4(1.0f, 0.20f, 0.05f, 0.0f)
-            : glm::vec4(0.30f, 0.32f, 0.38f, 0.0f);
-        emitter.startSize    = sparks ? 0.18f : 1.2f;
-        emitter.endSize      = sparks ? 0.02f : 3.4f;
-        emitter.softness     = sparks ? 0.3f : 1.0f;
+        // Drawn in this order, which the rest of the arena's scatter follows.
+        const float rate = sparks ? frand(60.0f, 140.0f) : frand(20.0f, 50.0f);
+        const float life = sparks ? frand(0.8f, 1.8f) : frand(2.5f, 4.5f);
+        const float size = sparks ? 0.18f : 1.2f;
+        emitter.blend             = sparks ? ParticleBlend::Additive : ParticleBlend::Alpha;
+        emitter.rate              = rate;
+        emitter.lifetime          = {life, life};
+        emitter.maxParticles      = sparks ? 320 : 200;
+        emitter.angle             = glm::radians(sparks ? 28.0f : 22.0f);
+        emitter.speed             = sparks ? Math::FloatRange{4.5f, 5.5f} : Math::FloatRange{1.3f, 1.9f};
+        emitter.acceleration      = sparks ? glm::vec3(0.0f, -6.0f, 0.0f) : glm::vec3(0.0f, 0.5f, 0.0f);
+        emitter.size              = {size, size};
+        emitter.sizeOverLife.keys = {{0.0f, 1.0f}, {1.0f, sparks ? 0.11f : 2.83f}};
+        emitter.softness          = sparks ? 0.3f : 1.0f;
+        if (sparks) {
+            emitter.color.keys = {{0.0f, {1.0f, 0.75f, 0.3f, 1.0f}}, {1.0f, {1.0f, 0.2f, 0.05f, 0.0f}}};
+        } else {
+            emitter.color.keys = {{0.0f, {0.55f, 0.58f, 0.65f, 0.5f}}, {1.0f, {0.3f, 0.32f, 0.38f, 0.0f}}};
+        }
         scene().add(entity, std::move(emitter));
 
         EntityId source = spawnMesh(

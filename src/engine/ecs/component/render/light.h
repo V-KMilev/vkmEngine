@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 #include <glm/glm.hpp>
 
 #include "core/reflect.h"
@@ -84,8 +86,32 @@ struct Light {
      */
     float sourceRadius = glm::radians(0.5f);
 
+    /**
+     * @brief How deep the light wavers, as a fire's does: 0 holds it steady, 1 dips it to dark.
+     *
+     * Shading alone, by the world's clock (flickerWave): the intensity stays what the scene
+     * saves and gameplay reads, and a probe or the irradiance volume bakes it steady. A
+     * directional light does not flicker.
+     */
+    float flicker = 0.0f;
+
     bool enabled = true;
 };
+
+/**
+ * @brief The share of its intensity @p light shines with at @p seconds: 1 when steady or
+ *        directional, down to 1 - flicker as it wavers.
+ *
+ * Three sines at rates no two of which share a short beat - together they repeat only every
+ * 100/6 seconds - and each light runs ahead by its entity's @p slot, so two fires do not flicker as
+ * one.
+ *
+ * @param light   Its flicker.
+ * @param seconds The world's clock, as NetSession::worldTime gives it.
+ * @param slot    The light's entity slot.
+ * @return The share, in [1 - flicker, 1].
+ */
+float flickerWave(const Light& light, double seconds, uint32_t slot);
 
 /**
  * @brief The scene's key light: the lowest-slot entity carrying an enabled directional Light.
@@ -119,5 +145,6 @@ VKM_REFLECT_BEGIN(::Vkm::Engine::Light)
     VKM_F(shadowDistance)
     VKM_F(shadowPriority)
     VKM_F(sourceRadius)
+    VKM_F(flicker)
     VKM_F(enabled)
 VKM_REFLECT_END()

@@ -22,6 +22,7 @@ RenderSystem::update(FrameContext)
         |-- air tables / bake IBL, or a drifting sun's step a frame
         |-- shadow plan       atlas slots; caster cull forked onto the thread pool
         |-- per-frame UBOs, partitionDrawables, skin palette, object buffer, opaque batch
+        |-- planar reflectors: pick them, and ready what each mirror sees
         |-- run the passes in order
         |-- measure the exposure (autoExposure)
         |-- irradiance volume: bake, or relight a gather a frame
@@ -43,15 +44,19 @@ which resolves the handles it names); a backend consumes exactly this.
 | `viewportX` / `viewportY` / `viewportWidth` / `viewportHeight` | `uint32_t` | Scene render rect |
 | `surfaceWidth` / `surfaceHeight` | `uint32_t` | The backbuffer the viewport sits within |
 | `frameSeconds` | `float` | Wall-clock seconds since the last frame, for what adapts over time |
+| `worldSeconds` | `double` | The world's clock (`NetSession::worldTime`), which a light's `flicker` wavers by |
 | `camera` | `CameraData` | The view `Visibility` rendered through - the scene's camera or a host's ([visibility.md](visibility.md#where-the-view-comes-from)) |
 | `hasCamera` | `bool` | Without one the scene's lists stay empty, so a backend keeps what it baked |
 | `objects` | `const RenderObjects*` | Borrowed from `Visibility`. `visible` is what the camera sees, unsorted; `scene` is every drawn mesh, casters first (`casterCount`). Passes draw indices into it |
 | `skinMatrices` | `const vector<mat4>*` | The frame's bone palettes; each object carries its range (`skinFirst`, `ObjectDraw::skinCount`). Null when nothing is posed |
 | `lights` | `vector<LightData>` | Enabled lights, world space, each with its entity slot |
 | `probes` | `vector<ProbeData>` | Reflection probes |
+| `planarReflectors` | `vector<PlanarReflectorData>` | Enabled planar reflectors, world space; the backend picks which it draws |
 | `decals` | `vector<DecalData>` | Scene-wide, not camera-culled |
-| `particlesAdditive` / `particlesAlpha` | `vector<ParticleData>` | Billboards split by blend, unsorted |
-| `particleTextures` | `vector<TextureHandle>` | Each particle texture once; a particle names its own by `params.z` (0 is the soft disc) |
+| `particlesAdditive` / `particlesAlpha` / `particlesDistortion` | `vector<ParticleData>` | Billboards and streaks split by blend, unsorted |
+| `stripPoints` | `vector<StripPoint>` | Every ribbon's and trail's points, each strip's run in turn |
+| `stripsAdditive` / `stripsAlpha` / `stripsDistortion` | `vector<ParticleStrip>` | Each strip's run of `stripPoints`, split by blend |
+| `particleTextures` | `vector<TextureHandle>` | Each particle texture once; a billboard names its own by `params.z` and its normal map by `uvNext.w`, a strip by `ParticleStrip::texture` (0 is none: the soft shape, or no normal map) |
 | `ocean` | `OceanData` | The sea at the frame's moment - [The ocean](#the-ocean) |
 | `irradianceVolume` / `hasIrradianceVolume` | `IrradianceVolumeData` + `bool` | The scene's one baked-GI volume (`findIrradianceVolume`) |
 | `settings` | `RenderSettings` | Copied each frame |
@@ -163,19 +168,20 @@ after everything it reads.
 | 6 | ClusterCull | Compute: lights into the Forward+ cluster grid |
 | 7 | FogCompute | Compute: the froxel fog volume, before anything lit reads it ([Fog](#fog)) |
 | 8 | Atmosphere | Compute, procedural sky only: sky-view table and aerial perspective ([lighting.md](lighting.md#image-based-lighting-ibl)) |
-| 9 | Skybox | The background, before geometry so transparents blend over it; with no sky, the fog over a black background |
-| 10 | Ocean | The sea's ripple fields and its shore capture ([The ocean](#the-ocean)) |
-| 11 | Forward | The PBR ubershader: opaque, alpha-mask (alpha-to-coverage under MSAA), then transparents. Writes the reflection inputs while `ssr` is on |
-| 12 | Particles | Billboards, depth-tested, never depth-writing, soft against scene depth ([Particles](#particles)) |
-| 13 | ResolveColor | MSAA only: colour and reflection inputs, tonemap-weighted, and depth again now that alpha-masked geometry is in it |
-| 14 | Reflections | Screen-space reflections: replaces the probe / sky reflection where a trace hits (chain) |
-| 15 | Decals | Projected boxes into the colour chain, lit diffusely as the surface under them. After the reflections, so a glossy floor's reflection does not cover them |
-| 16 | DoF | Disk blur from the camera's focus distance (chain) |
-| 17 | Bloom | Compute: bright-pass and mip down/upsample; the composite adds it |
-| 18 | Composite | Bloom, exposure, tonemap and sRGB encode to the backbuffer viewport, or a debug buffer per `renderMode` |
-| 19 | Grid | The editor's grid and axes, after the tonemap so the axes keep `Math::AXIS_COLORS` |
-| 20 | UI | The screen-space UI ([ui.md](ui.md)) |
-| 21 | Splash | The startup logo over black, covering the frame. Gets paths and an opacity from `SplashSystem`, since the engine core cannot decode a file |
+| 9 | PlanarReflections | Each seen `PlanarReflector`, at most `GLPlanarReflectionPass::MAX_DRAWN`: the scene and its particles from the mirrored camera, clipped at its plane, with every light, the shadows, probes and sky, filtered into a chain ([Planar reflections](#planar-reflections)) |
+| 10 | Skybox | The background, before geometry so transparents blend over it; with no sky, the fog over a black background |
+| 11 | Ocean | The sea's ripple fields and its shore capture ([The ocean](#the-ocean)) |
+| 12 | Forward | The PBR ubershader: opaque, alpha-mask (alpha-to-coverage under MSAA), then transparents. Writes the reflection inputs while `ssr` is on or a planar reflector is |
+| 13 | Particles | Billboards and strips, depth-tested, never depth-writing, soft against scene depth: additive, alpha, then distortion over a copy of the colour ([Particles](#particles)) |
+| 14 | ResolveColor | MSAA only: colour and reflection inputs, tonemap-weighted, and depth again now that alpha-masked geometry is in it |
+| 15 | Reflections | Replaces the probe / sky reflection with a planar reflector's picture on its rectangle, else where a screen-space trace hits (chain) |
+| 16 | Decals | Projected boxes into the colour chain, lit diffusely as the surface under them. After the reflections, so a glossy floor's reflection does not cover them |
+| 17 | DoF | Disk blur from the camera's focus distance (chain) |
+| 18 | Bloom | Compute: bright-pass and mip down/upsample; the composite adds it |
+| 19 | Composite | Bloom, exposure, tonemap and sRGB encode to the backbuffer viewport, or a debug buffer per `renderMode` |
+| 20 | Grid | The editor's grid and axes, after the tonemap so the axes keep `Math::AXIS_COLORS` |
+| 21 | UI | The screen-space UI ([ui.md](ui.md)) |
+| 22 | Splash | The startup logo over black, covering the frame. Gets paths and an opacity from `SplashSystem`, since the engine core cannot decode a file |
 
 **The forward programs.** One fragment file, `shaders/forward/pbr`, built four
 ways: `pbr` and `pbr_skinned` (differing only in the vertex stage), and a plain
@@ -281,21 +287,70 @@ water but not moved. Its mesh wants vertices closer than half `minWavelength`.
 
 `ParticleSystem` steps every `ParticleEmitter` on the CPU into pools of its own,
 published as `FrameContext::particles`; `RenderView::build` evaluates each
-particle's colour and size ramp and flattens them into the two lists the pass
-reads. The fields are documented in `ecs/component/render/particle_emitter.h`.
-What is easy to get wrong:
+particle's size curve and colour gradient at its age and flattens them into the
+lists the pass reads. The fields are documented in
+`ecs/component/render/particle_emitter.h`. What is easy to get wrong:
 
-- **Particles are world-space and never re-based.** A particle starts at the
-  emitter's resolved world position and moves on its own; moving the emitter
-  afterwards does not drag it. That is a trail.
-- **`additive` splits the draw and says what the colour is.** An additive
-  particle emits (fire, sparks): unsorted, its colour the radiance it adds, and
-  it lights nothing - a fire's light is a `Light`. An alpha one scatters (smoke,
-  dust): sorted back to front by `GLParticlePass`, its colour an albedo lit by
-  its cluster's lights through their shadows and by the environment.
+- **Particles are world-space and never re-based.** A particle starts on the
+  emitter's shape, in its resolved world frame, and moves on its own; moving the
+  emitter afterwards leaves its particles where they are.
+- **`blend` splits the draw and says what the colour is.** An additive particle
+  emits (fire, sparks): unsorted, its colour the radiance it adds, past 1 a
+  bloom; the scene round it is lit by the emitter's light, below. An alpha one
+  scatters (smoke, dust): its colour an albedo lit by its cluster's lights
+  through their shadows and by the environment, plus the share it gives off; a
+  card is lit as a ball, a strip as a card. A distortion one (heat haze) adds no
+  colour: it bends a copy of the frame drawn so far - the additive and alpha
+  particles, but no other haze - and leaves the reflection under it be. Alpha
+  and distortion draw back to front, their billboards and then their strips,
+  each sorted among themselves: a strip and a card of one blend do not
+  interleave.
+- **A ribbon or trail is a strip, not a card.** A ribbon runs through an
+  emitter's particles newest first; a trail runs behind each particle through
+  where it was. Each is widened square to the view along its length.
+- **Collision is a ray a step.** A colliding particle asks the physics world's
+  bodies along its step's travel, so a thin body is not passed through, and the
+  emitter's own entity is never struck.
+- **A sub-emitter is a child.** A child entity with a `ParticleEmitter` and a
+  `ParticleTrigger` spawns where its parent's particles are born, die or strike,
+  and never by its own rate or burst; no entity reference is saved.
+- **A flipbook** is a texture read as a sheet of frames. `sheetBlend` fades
+  each frame into the next, so a sheet of a few dozen frames plays slowly
+  without stepping. An alpha emitter's `normalMap` is a second sheet, frame for
+  frame, that lights each puff by its own folds instead of as a ball.
+- **An emitter's light** (`lightIntensity`, `lightColor`, `lightRadius`) is one
+  point light its live particles give off together, at their middle, each
+  adding its share by its colour's alpha: a fireball's flash fades and dies with
+  it, and a muzzle flash lights the wall whoever draws the flash. It is
+  `LightData::transient`: it casts no shadow, and a capture gives it nothing, so
+  no probe bakes a flash in or rebakes for one.
 - **A one-off puff** is an emitter with `emitting` off, a `burst` and
   `destroyWhenSpent`: the burst spawns whole, and the entity is destroyed once
   the last particle dies. An emitter is spent only once it has fired.
+
+### Planar reflections
+
+A `PlanarReflector` is a rectangle facing its entity's +Y. While the camera sees
+it from its front, glossy pixels lying on it - smoother than `ssrMaxRoughness`,
+within the depth's resolution of the plane, facing its way - take its picture:
+the scene mirrored in the plane, read at the pixel's own place on the screen,
+shifted by how far the pixel's normal leans off the plane's (a ripple, a normal
+map) and blurred by its roughness. It shows what the screen-space trace cannot:
+what is behind the eye, off the screen, or facing away, which is any mirror that
+faces the viewer.
+
+- **It is a second drawing of the scene.** Opaque meshes, then transparent ones
+  refracting a copy of that, then additive and alpha particles, all lit by every
+  light rather than the camera's clusters; without GTAO, screen shadows, fog,
+  decals or distortion; at `renderScale` of the frame's size. The sun's shadow
+  in it reaches only what the camera's cascades cover. Only the part of the
+  screen the reflector covers is drawn, and only what that part shows of the
+  scene. A frame draws the few covering the most of the screen, none covering
+  less than `MIN_SCREEN_SHARE`; the rest fall back to the trace and the probes.
+  The trace skips pixels on a drawn reflector.
+- **The plane is the entity's position.** Put it on the reflecting face, not
+  inside a slab: what lies a centimetre in front of the plane and behind is
+  clipped, and the face itself is in the clipped part.
 
 ### The viewmodel
 
@@ -326,8 +381,10 @@ visible and scene-wide objects, decals, particle textures, UI commands - and
 uploads only what moved on ([resources.md](resources.md) has the versions).
 Every list must be walked, because some are gathered scene-wide (an off-screen
 caster's mesh, a decal's material) and a pass silently skips a draw whose GPU
-object it cannot resolve. A scene load from a file swaps the whole asset graph,
-which no per-asset check sees, so the backend drops every mirror
+object it cannot resolve. The scene-wide objects' meshes and materials are
+uploaded with the scene, not when the camera first turns to them: that frame
+would pay for their textures. A scene load from a file swaps the whole asset
+graph, which no per-asset check sees, so the backend drops every mirror
 (`GLView::invalidate`) when `ResourceManager::epoch()` moves
 ([resources.md](resources.md#versioning)).
 

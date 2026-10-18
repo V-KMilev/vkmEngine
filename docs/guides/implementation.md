@@ -184,8 +184,9 @@ shape carries its users with it, in one pass:
 
 1. **Change the engine** to the shape it should have. Delete the old one; keep
    no alias, overload, fallback or second spelling for anyone.
-2. **Find every user**: `src/`, `app/`, `tests/`, `templates/`, `examples/` and
-   the docs - their code and their saved scenes, prefabs and recipes.
+2. **Find every user**: `src/`, `app/`, `tests/`, `templates/`, `examples/`,
+   `content/` and the docs - their code and their saved scenes, prefabs and
+   recipes.
 3. **Port each one.** Code moves to the new shape. A saved file is re-saved in
    the new format, by the editor or a one-off script that is not committed; the
    engine gains no reader for the old one

@@ -1,5 +1,8 @@
 #include "support.h"
 
+#include <algorithm>
+#include <cmath>
+
 #include "core/math/rotation.h"
 #include "ecs/component/render/light.h"
 #include "ecs/hierarchy_operations.h"
@@ -222,6 +225,35 @@ void testTheSkyAimsTheLightThatIsLit() {
     );
 }
 
+// A flickering light wavers within its depth, by the clock alone, and two lights do not waver as
+// one; a steady one never moves, nor does a sun.
+void testAFlickeringLightWaversWithinItsDepth() {
+    std::printf("A light that flickers:\n");
+
+    Light steady;
+    steady.type = LightType::Point;
+    Light fire = steady;
+    fire.flicker = 0.4f;
+    Light sun = fire;
+    sun.type = LightType::Directional;
+    float lowest     = 1.0f;
+    float highest    = 0.0f;
+    bool  steadyHeld = true;
+    int   apart      = 0;
+    for (int i = 0; i < 600; ++i) {
+        const double now  = 1000.0 + static_cast<double>(i) / 60.0;
+        const float  wave = flickerWave(fire, now, 3);
+        lowest     = std::min(lowest, wave);
+        highest    = std::max(highest, wave);
+        steadyHeld = steadyHeld && flickerWave(steady, now, 3) == 1.0f && flickerWave(sun, now, 3) == 1.0f;
+        apart     += std::abs(wave - flickerWave(fire, now, 4)) > 0.05f ? 1 : 0;
+    }
+    check("it stays within its depth", lowest >= 0.6f - 1e-5f && highest <= 1.0f + 1e-5f);
+    check("  and wavers over most of it", highest - lowest > 0.3f);
+    check("  apart from another light's", apart > 300);
+    check("a steady light never wavers, nor a sun", steadyHeld);
+}
+
 // Each axis of the fog grid is bounded, and so is the whole: every axis at its
 // maximum would be two volumes of a gigabyte each.
 void testTheFogGridIsBoundedWhole() {
@@ -251,5 +283,6 @@ void runSkyTests() {
     testOzoneTakesTheGreenFromALowSun();
     testTheSkyIsLitByTheScenesSun();
     testTheSkyAimsTheLightThatIsLit();
+    testAFlickeringLightWaversWithinItsDepth();
     testTheFogGridIsBoundedWhole();
 }

@@ -37,6 +37,7 @@
 #include "offline/gl_ibl_baker.h"
 #include "offline/gl_irradiance_baker.h"
 #include "offline/gl_probe_baker.h"
+#include "storage/gl_probe_manager.h"
 #include "core/clock.h"
 #include "core/event/event_bus.h"
 #include "core/host_chrome.h"
@@ -51,6 +52,7 @@
 #include "ecs/component/render/mesh.h"
 #include "ecs/component/render/ocean.h"
 #include "ecs/component/render/particle_emitter.h"
+#include "ecs/component/render/planar_reflector.h"
 #include "ecs/component/render/reflection_probe.h"
 #include "net/net_session.h"
 #include "platform/input/input_map.h"
@@ -163,15 +165,27 @@ void base(Scenery& s) {
     s.sphere = s.resources.add(generateSphere(), "golden:sphere");
 }
 
-// An emitter at the origin, with the pool ParticleSystem would keep for it: the particles it
-// returns are what the frame draws.
-std::vector<Particle>& addEmitter(Scenery& s, ParticleEmitter emitter) {
+// An emitter at the origin, with the pool ParticleSystem would keep for it: what the scene puts
+// in the pool is what the frame draws.
+LiveParticles::Pool& addEmitterPool(Scenery& s, ParticleEmitter emitter) {
     const EntityId id = s.scene.createEntity();
     s.scene.add(id, Transform{});
     s.scene.add(id, std::move(emitter));
     LiveParticles::Pool& pool = s.particles.pools[id.slot()];
     pool.emitter = id;
-    return pool.particles;
+    return pool;
+}
+
+// The same, for an emitter whose pool holds particles alone.
+std::vector<Particle>& addEmitter(Scenery& s, ParticleEmitter emitter) {
+    return addEmitterPool(s, std::move(emitter)).particles;
+}
+
+// One look over a whole life: @p color, brightened by @p intensity, at the size each particle has.
+void holdLook(ParticleEmitter& emitter, glm::vec4 color, float intensity = 1.0f) {
+    emitter.color.keys = {{0.0f, color}};
+    emitter.sizeOverLife.keys.clear();
+    emitter.intensity = intensity;
 }
 
 // A point lamp at @p at, returned for what else a scene sets on it.
@@ -310,14 +324,14 @@ void buildSmoke(Scenery& s) {
     );
 
     ParticleEmitter emitter;
-    emitter.additive   = false;
-    emitter.startColor = glm::vec4(0.35f, 0.35f, 0.37f, 0.8f);
-    emitter.startSize  = 0.7f;
-    emitter.softness   = 0.6f;
+    emitter.blend    = ParticleBlend::Alpha;
+    emitter.softness = 0.6f;
+    holdLook(emitter, {0.35f, 0.35f, 0.37f, 0.8f});
     std::vector<Particle>& smoke = addEmitter(s, std::move(emitter));
     for (int i = 0; i < 7; ++i) {
         Particle p;
         p.position = {-2.4f + 0.8f * static_cast<float>(i), 0.25f, -0.6f};
+        p.size     = 0.7f;
         smoke.push_back(p);
     }
     sunAndCamera(s, {0.0f, 1.2f, 3.5f}, {0.0f, 0.0f, -1.5f});
@@ -360,19 +374,16 @@ void buildSprites(Scenery& s) {
     const TextureHandle frames = s.resources.add(std::move(sheet), "golden:sheet");
 
     ParticleEmitter cards;
-    cards.additive     = false;
+    cards.blend        = ParticleBlend::Alpha;
     cards.texture      = frames;
     cards.sheetColumns = 2;
     cards.sheetRows    = 2;
-    cards.startColor   = glm::vec4(1.0f);
-    cards.endColor     = glm::vec4(1.0f);
-    cards.startSize    = 0.3f;
-    cards.endSize      = 0.3f;
-    cards.lifetime     = 4.0f;
+    holdLook(cards, glm::vec4(1.0f));
     std::vector<Particle>& card = addEmitter(s, cards);
     for (int i = 0; i < 5; ++i) {
         Particle p;
         p.position = {-2.6f + 0.75f * static_cast<float>(i), 1.0f, 0.0f};
+        p.size     = 0.3f;
         p.lifetime = 4.0f;
         p.age      = i < 4 ? 0.5f + static_cast<float>(i) : 0.5f;
         p.angle    = i < 4 ? 0.0f : glm::quarter_pi<float>();
@@ -380,31 +391,104 @@ void buildSprites(Scenery& s) {
     }
 
     ParticleEmitter puff;
-    puff.additive   = false;
-    puff.startColor = glm::vec4(0.9f, 0.8f, 0.2f, 1.0f);
-    puff.endColor   = puff.startColor;
-    puff.startSize  = 0.25f;
-    puff.endSize    = 0.25f;
+    puff.blend = ParticleBlend::Alpha;
+    holdLook(puff, {0.9f, 0.8f, 0.2f, 1.0f});
     Particle disc;
     disc.position = {-1.5f, 0.45f, 0.3f};
+    disc.size     = 0.25f;
     addEmitter(s, puff).push_back(disc);
 
     ParticleEmitter sparks;
-    sparks.startColor = glm::vec4(3.0f, 1.6f, 0.4f, 1.0f);
-    sparks.endColor   = sparks.startColor;
-    sparks.startSize  = 0.05f;
-    sparks.endSize    = 0.05f;
-    sparks.softness   = 0.3f;
-    sparks.stretch    = 0.1f;
+    sparks.render   = ParticleRender::Stretched;
+    sparks.softness = 0.3f;
+    sparks.stretch  = 0.1f;
+    holdLook(sparks, {1.0f, 1.6f / 3.0f, 0.4f / 3.0f, 1.0f}, 3.0f);
     std::vector<Particle>& spark = addEmitter(s, sparks);
     const glm::vec3 headings[3] = {{8.0f, 0.0f, 0.0f}, {0.0f, 8.0f, 0.0f}, {0.0f, 0.0f, 8.0f}};
     for (int i = 0; i < 3; ++i) {
         Particle p;
         p.position = {1.8f + 0.8f * static_cast<float>(i), 1.0f, 0.0f};
+        p.size     = 0.05f;
         p.velocity = headings[i];
         spark.push_back(p);
     }
     sunAndCamera(s, {0.0f, 1.3f, 4.0f}, {0.0f, 1.0f, 0.0f});
+}
+
+// A wall of @p stripes upright stripes, light and dark by turns, from @p firstX rightward, at
+// height @p y.
+void addStripedWall(Scenery& s, int stripes, float firstX, float y) {
+    const MaterialHandle light = material(s, "golden:chalk", {0.8f, 0.8f, 0.75f}, 0.8f, 0.0f);
+    const MaterialHandle dark  = material(s, "golden:ink", {0.05f, 0.08f, 0.2f}, 0.8f, 0.0f);
+    for (int i = 0; i < stripes; ++i) {
+        const float x = firstX + 0.3f * static_cast<float>(i);
+        place(s, s.cube, i % 2 == 0 ? light : dark, {x, y, -1.5f}, {0.3f, 3.0f, 0.2f});
+    }
+}
+
+// What draws past a card. Before a wall of upright stripes, left to right: an additive ribbon
+// arching through eight particles, thinning as they age; an additive trail behind one particle
+// along a curve, narrowing and fading; a heat-haze card bending the stripes behind it; and a puff
+// of smoke beside a lamp, shaded round as a ball rather than flat as a card.
+void buildVfx(Scenery& s) {
+    base(s);
+    place(
+        s,
+        s.cube,
+        material(s, "golden:slate", {0.12f, 0.12f, 0.13f}, 0.8f, 0.0f),
+        {0.0f, -0.5f, 0.0f},
+        {20.0f, 1.0f, 20.0f}
+    );
+    addStripedWall(s, 24, -3.45f, 1.5f);
+
+    ParticleEmitter ribbon;
+    ribbon.render = ParticleRender::Ribbon;
+    holdLook(ribbon, {1.0f, 0.45f, 0.1f, 1.0f}, 2.0f);
+    ribbon.sizeOverLife.keys = {{0.0f, 1.0f}, {1.0f, 0.2f}};
+    std::vector<Particle>& arch = addEmitter(s, ribbon);
+    for (int i = 0; i < 8; ++i) {
+        const float t = static_cast<float>(i) / 7.0f;
+        Particle p;
+        p.position = {-2.8f + 1.2f * t, 0.6f + std::sin(t * glm::pi<float>()) * 1.0f, 0.0f};
+        p.size     = 0.08f;
+        p.lifetime = 1.0f;
+        p.age      = 1.0f - t;  // the oldest first, at the arch's left foot
+        arch.push_back(p);
+    }
+
+    ParticleEmitter trail;
+    trail.render = ParticleRender::Trail;
+    holdLook(trail, {0.2f, 0.8f, 1.0f, 1.0f}, 2.0f);
+    LiveParticles::Pool& streak = addEmitterPool(s, trail);
+    Particle head;
+    head.position   = {-0.4f, 1.8f, 0.0f};
+    head.size       = 0.06f;
+    head.trailCount = LiveParticles::TRAIL_POINTS;
+    streak.particles.push_back(head);
+    for (uint32_t k = 0; k < LiveParticles::TRAIL_POINTS; ++k) {
+        const float t = (static_cast<float>(k) + 1.0f) / static_cast<float>(LiveParticles::TRAIL_POINTS);
+        streak.trails.push_back(head.position + glm::vec3(-0.6f * t + 0.3f * t * t, -1.2f * t, 0.0f));
+    }
+
+    ParticleEmitter haze;
+    haze.blend      = ParticleBlend::Distortion;
+    haze.distortion = 0.04f;
+    holdLook(haze, glm::vec4(1.0f));
+    Particle shimmer;
+    shimmer.position = {0.9f, 1.2f, 0.0f};
+    shimmer.size     = 0.6f;
+    addEmitter(s, haze).push_back(shimmer);
+
+    ParticleEmitter smoke;
+    smoke.blend = ParticleBlend::Alpha;
+    holdLook(smoke, {0.45f, 0.45f, 0.45f, 1.0f});
+    Particle ball;
+    ball.position = {2.4f, 1.2f, 0.0f};
+    ball.size     = 0.5f;
+    addEmitter(s, smoke).push_back(ball);
+    addLamp(s, {3.4f, 1.2f, 0.0f}, 1.5f, 2.5f, false);
+
+    sunAndCamera(s, {0.0f, 1.3f, 4.0f}, {0.0f, 1.2f, 0.0f});
 }
 
 // A weapon held into a wall. The eye stands 0.4 m from a wall, wide (100 degrees); two blocks are
@@ -455,14 +539,12 @@ void buildViewmodel(Scenery& s) {
     buildHeld(s, SeenBy::Viewmodel, -0.55f);
 
     ParticleEmitter flash;
-    flash.seenBy     = SeenBy::Viewmodel;
-    flash.startColor = glm::vec4(4.0f, 2.4f, 0.8f, 1.0f);
-    flash.endColor   = flash.startColor;
-    flash.startSize  = 0.05f;
-    flash.endSize    = 0.05f;
-    flash.softness   = 0.5f;
+    flash.seenBy   = SeenBy::Viewmodel;
+    flash.softness = 0.5f;
+    holdLook(flash, {1.0f, 0.6f, 0.2f, 1.0f}, 4.0f);
     Particle spark;
     spark.position = glm::vec3(0.22f, 1.45f, -0.9f);
+    spark.size     = 0.05f;
     addEmitter(s, std::move(flash)).push_back(spark);
 }
 
@@ -1347,6 +1429,49 @@ void testAProbeFollowsItsLight(int& failures) {
     expect("  and once it is, the frame is a fresh backend's", share <= PIXEL_TOLERANCE, failures);
 }
 
+// A refreshed probe rests before it follows its light again (GLProbeManager::REFRESH_REST): a sun
+// that rises again the frame after a refresh is captured once the rest is over, not a refresh
+// later, and the sky's bake of it, which ends after that refresh, once the next rest is.
+void testARefreshedProbeRests(int& failures) {
+    std::printf("A reflection probe whose sun rises again after a refresh:\n");
+
+    restoreContextDefaults();
+    WindowManager window;
+    GLBackend lived;
+    if (!lived.init(window)) {
+        expect("the backend starts", false, failures);
+        return;
+    }
+    Scenery setting;
+    buildProbe(setting);
+    render(setting, lived);
+    // The refresh to the low sun runs a step a frame, and ends on the last of them.
+    const int   steps = GLProbeBaker::refreshSteps(PROBE_RESOLUTION);
+    const float noon  = setting.scene.environment().sky.sunElevation;
+    setting.scene.environment().sky.sunElevation = 4.0f;
+    const auto over = [&](int frames) {
+        return render(setting, lived, nullptr, RenderSettings{}, nullptr, frames);
+    };
+    over(steps);
+
+    setting.scene.environment().sky.sunElevation = noon;
+    const int rest = static_cast<int>(std::ceil(GLProbeManager::REFRESH_REST / FRAME_SECONDS));
+    const std::vector<unsigned char> early   = over(1);
+    const std::vector<unsigned char> resting = over(steps);
+    const std::vector<unsigned char> seen    = over(2 * (rest + steps) + FRAMES);
+
+    // Without the rest, the refresh would be through by now.
+    const float kept = differingShare(resting, early.data());
+    std::printf("      %.2f%% of pixels differ a refresh's length on\n", kept * 100.0f);
+    expect("a refresh's length on, the probe shows the capture it had", kept <= PIXEL_TOLERANCE, failures);
+
+    const std::vector<unsigned char> want = freshFrame(buildProbe, RenderSettings{}, failures);
+    if (want.empty()) return;
+    const float share = differingShare(seen, want.data());
+    std::printf("      %.2f%% of pixels differ\n", share * 100.0f);
+    expect("  and after its rests, it follows", share <= PIXEL_TOLERANCE, failures);
+}
+
 // A frame with no camera gathers no probes; the scene has not lost them. A noon capture
 // still shows at sunset after cameraless frames, as with a backend that drew every
 // frame through one until its refresh, a step a frame, is through; dropped and baked
@@ -1720,6 +1845,81 @@ void testAVolumeShowsItsGridUntilItsRelightIsThrough(int& failures) {
 
 // The overlay drawn by the real pass over a real frame, asserted per pixel, not against
 // a golden: where its edges land is arithmetic that holds on any GPU.
+// A mirror facing the eye, and a red ball behind the eye: no ray the screen holds reaches the ball,
+// so only a planar reflector shows it in the mirror - and with it off, the mirror shows none. A
+// particle behind the eye shows in the mirror with the ball.
+void testAMirrorShowsWhatIsBehindTheEye(int& failures) {
+    std::printf("A planar mirror facing the eye:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    // Bare, reflecting, and reflecting with a green glow between the eye and the ball.
+    float red[3]   = {};
+    float green[3] = {};
+    for (const int shown : {0, 1, 2}) {
+        const bool reflector = shown > 0;
+        const auto build = [reflector, shown](Scenery& s) {
+            base(s);
+            place(
+                s,
+                s.cube,
+                material(s, "golden:floor", {0.4f, 0.4f, 0.4f}, 0.8f, 0.0f),
+                {0.0f, -0.5f, 0.0f},
+                {20.0f, 1.0f, 20.0f}
+            );
+            place(
+                s,
+                s.cube,
+                material(s, "golden:mirror", {0.95f, 0.95f, 0.95f}, 0.02f, 1.0f),
+                {0.0f, 1.5f, -3.0f},
+                {4.0f, 3.0f, 0.05f}
+            );
+            place(
+                s,
+                s.sphere,
+                material(s, "golden:red", {0.9f, 0.05f, 0.05f}, 0.6f, 0.0f),
+                {0.0f, 1.5f, 6.0f},
+                glm::vec3(3.0f)
+            );
+            const EntityId glass = s.scene.createEntity();
+            Transform at;
+            at.position = {0.0f, 1.5f, -2.975f};
+            at.rotation = glm::angleAxis(glm::half_pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+            s.scene.add(glass, std::move(at));
+            PlanarReflector mirror;
+            mirror.enabled     = reflector;
+            mirror.halfExtents = {2.0f, 1.5f};
+            s.scene.add(glass, std::move(mirror));
+            if (shown == 2) {
+                ParticleEmitter glow;
+                glow.blend = ParticleBlend::Additive;
+                holdLook(glow, {0.1f, 1.0f, 0.1f, 1.0f}, 2.0f);
+                Particle p;
+                p.position = {0.0f, 1.5f, 4.2f};
+                p.size     = 0.6f;
+                addEmitter(s, glow).push_back(p);
+            }
+            sunAndCamera(s, {0.0f, 1.5f, 3.0f}, {0.0f, 1.5f, -3.0f});
+        };
+        const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+        if (frame.empty()) return;
+        const glm::ivec3 c = pixel(frame, WIDTH / 2, HEIGHT / 2);
+        red[shown]   = static_cast<float>(c.x);
+        green[shown] = static_cast<float>(c.y);
+    }
+    std::printf(
+        "      mirror centre: %.0f/%.0f red/green bare, %.0f/%.0f reflecting, %.0f/%.0f with a glow\n",
+        red[0],
+        green[0],
+        red[1],
+        green[1],
+        red[2],
+        green[2]
+    );
+    expect("a planar reflector shows the ball behind the eye", red[1] > 2.0f * green[1] + 20.0f, failures);
+    expect("  which the trace and the sky alone do not", red[0] < 1.5f * green[0] + 10.0f, failures);
+    expect("  and a particle behind the eye too", green[2] > green[1] + 40.0f, failures);
+}
+
 // GTAO reads a viewmodel's squashed depth as sky: as near as it is drawn, it would shade the wall
 // it is held against with a halo. Against the same wall with the block hidden in it, the wall
 // round the block's outline keeps its shade.
@@ -2842,6 +3042,39 @@ void buildPebble(Scenery& s) {
     place(s, s.cube, pebble, {0.0f, 0.03f, 0.0f}, glm::vec3(0.06f));
 }
 
+// A post 12 m off under a low sun, its shadow running metres across the frame, through the
+// screen-shadow view: the pass grounds the post at its foot and leaves the rest of the shadow to
+// the cascades. A reach fixed in pixels would trace a far shadow metres long, and a thin thing's
+// as a slab beside it.
+void testAFarPostIsGroundedNotTraced(int& failures) {
+    std::printf("Screen-space shadows from a far post:\n");
+    const auto build = [](Scenery& s) {
+        base(s);
+        s.scene.environment().sky.sunElevation = 20.0f;
+        s.scene.environment().sky.sunAzimuth   = 90.0f;
+        const MaterialHandle open = material(s, "golden:open", {0.5f, 0.5f, 0.5f}, 0.8f, 0.0f);
+        const MaterialHandle post = material(s, "golden:post", {0.4f, 0.42f, 0.48f}, 0.6f, 0.0f);
+        place(s, s.cube, open, {0.0f, -0.5f, 0.0f}, {60.0f, 1.0f, 60.0f});
+        place(s, s.cube, post, {0.0f, 1.0f, 0.0f}, {0.15f, 2.0f, 0.15f});
+        sunAndCamera(s, {0.0f, 1.7f, 12.0f}, {0.0f, 0.5f, 0.0f});
+    };
+    RenderSettings settings;
+    settings.renderMode = RenderMode::ScreenShadows;
+    const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+    if (frame.empty()) return;
+
+    // The sun stands toward +X, the camera's right, so the shadow runs left from the post's foot.
+    int reach = 0;
+    for (int y = 0; y < HEIGHT; ++y) {
+        for (int x = 0; x < WIDTH / 2; ++x) {
+            if (pixel(frame, x, y).x < 128) reach = std::max(reach, WIDTH / 2 - x);
+        }
+    }
+    std::printf("      screen shadow %d px left of the post's middle\n", reach);
+    expect("the post is grounded", reach > 0, failures);
+    expect("  and its shadow not traced metres out", reach < WIDTH / 20, failures);
+}
+
 // A pebble on the floor under a low sun: a shadow a few centimetres long, which the screen-space
 // pass finds whether GTAO, whose target it shares, ran or not, and through an orthographic camera;
 // with the pass off, none.
@@ -2922,6 +3155,206 @@ void testAScreenShadowFacingTheSunFallsTowardTheEye(int& failures) {
     expect("facing the sun, the shadow falls toward the eye", toward, failures);
 }
 
+// A smoke puff's normal map stores x and y, its z rebuilt where read (TextureUsage::Normal): a flat
+// one faces the eye, shading the puff as the middle of the ball it would be without one.
+void testAFlatNormalMapFacesThePuffToTheEye(int& failures) {
+    std::printf("A puff with a flat normal map:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    std::vector<unsigned char> frames[2];
+    for (const bool mapped : {false, true}) {
+        const auto build = [mapped](Scenery& s) {
+            base(s);
+            ParticleEmitter puff;
+            puff.blend = ParticleBlend::Alpha;
+            holdLook(puff, {0.8f, 0.8f, 0.8f, 1.0f});
+            if (mapped) {
+                constexpr uint32_t SIZE = 8;
+                TextureAsset flat;
+                flat.params.width          = SIZE;
+                flat.params.height         = SIZE;
+                flat.params.internalFormat = TextureInternalFormat::RG8;
+                flat.params.format         = inferFormat(2);
+                flat.pixelData.assign(SIZE * SIZE * 2, 128);
+                puff.normalMap = s.resources.add(std::move(flat), "golden:flat");
+            }
+            Particle p;
+            p.position = {0.0f, 1.2f, 0.0f};
+            p.size     = 0.6f;
+            addEmitter(s, puff).push_back(p);
+            // The sun behind the eye: a puff facing it is lit full, one turned aside half.
+            const glm::vec3 toSun = s.scene.environment().sunDirection();
+            sunAndCamera(s, p.position + 4.0f * toSun, p.position);
+        };
+        frames[mapped ? 1 : 0] = freshFrame(build, settings, failures);
+        if (frames[mapped ? 1 : 0].empty()) return;
+    }
+    const glm::ivec3 ball = pixel(frames[0], WIDTH / 2, HEIGHT / 2);
+    const glm::ivec3 flat = pixel(frames[1], WIDTH / 2, HEIGHT / 2);
+    std::printf(
+        "      the ball's middle (%d %d %d), the flat map's (%d %d %d)\n",
+        ball.x,
+        ball.y,
+        ball.z,
+        flat.x,
+        flat.y,
+        flat.z
+    );
+    const bool alike = glm::all(glm::lessThanEqual(glm::abs(flat - ball), glm::ivec3(3)));
+    expect("a flat normal map shades the puff as the ball's middle", alike, failures);
+}
+
+// A particle whose sprite is still loading is not drawn, where the missing-texture checker would
+// show for a frame; one whose sprite settled with no pixels shows the checker.
+void testAParticleWaitsForItsSprite(int& failures) {
+    std::printf("A puff whose sprite has no pixels:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    enum class Sprite { None, Loading, Failed };
+    std::vector<unsigned char> frames[3];
+    for (const Sprite sprite : {Sprite::None, Sprite::Loading, Sprite::Failed}) {
+        const auto build = [sprite](Scenery& s) {
+            base(s);
+            if (sprite != Sprite::None) {
+                TextureAsset empty;
+                empty.params.width  = 8;
+                empty.params.height = 8;
+                empty.loading       = sprite == Sprite::Loading;
+                ParticleEmitter puff;
+                puff.blend   = ParticleBlend::Alpha;
+                puff.texture = s.resources.add(std::move(empty), "golden:empty");
+                holdLook(puff, glm::vec4(1.0f));
+                Particle p;
+                p.position = {0.0f, 1.2f, 0.0f};
+                p.size     = 0.6f;
+                addEmitter(s, puff).push_back(p);
+            }
+            sunAndCamera(s, {0.0f, 1.2f, 4.0f}, {0.0f, 1.2f, 0.0f});
+        };
+        frames[static_cast<int>(sprite)] = freshFrame(build, settings, failures);
+        if (frames[static_cast<int>(sprite)].empty()) return;
+    }
+    const float loading = differingShare(frames[1], frames[0].data());
+    const float failed  = differingShare(frames[2], frames[0].data());
+    std::printf(
+        "      %.2f%% of pixels differ while it loads, %.2f%% once it failed\n",
+        loading * 100.0f,
+        failed * 100.0f
+    );
+    expect("a puff whose sprite is loading is not drawn", loading <= PIXEL_TOLERANCE, failures);
+    expect("  and one whose sprite failed shows the checker", failed > PIXEL_TOLERANCE, failures);
+}
+
+// Haze moves the wall behind it and adds no light; a ribbon covers the pixels between its points.
+// Behaviour, not pixels: any device judges it, not only the one the goldens were made on.
+void testHazeBendsAndARibbonCovers(int& failures) {
+    std::printf("Haze and a ribbon before a striped wall:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    enum class Shown { Nothing, Haze, Ribbon };
+    std::vector<unsigned char> frames[3];
+    for (const Shown shown : {Shown::Nothing, Shown::Haze, Shown::Ribbon}) {
+        const auto build = [shown](Scenery& s) {
+            base(s);
+            addStripedWall(s, 16, -2.25f, 1.2f);
+            ParticleEmitter emitter;
+            if (shown == Shown::Haze) {
+                emitter.blend      = ParticleBlend::Distortion;
+                emitter.distortion = 0.12f;
+                holdLook(emitter, glm::vec4(1.0f));
+                Particle p;
+                p.position = {0.0f, 1.2f, 0.0f};
+                p.size     = 0.6f;
+                addEmitter(s, emitter).push_back(p);
+            } else if (shown == Shown::Ribbon) {
+                emitter.render = ParticleRender::Ribbon;
+                holdLook(emitter, {1.0f, 0.5f, 0.1f, 1.0f}, 4.0f);
+                std::vector<Particle>& points = addEmitter(s, emitter);
+                for (int i = 0; i < 4; ++i) {
+                    Particle p;
+                    p.position = {-0.6f + 0.4f * static_cast<float>(i), 1.2f, 0.0f};
+                    p.size     = 0.05f;
+                    points.push_back(p);
+                }
+            }
+            sunAndCamera(s, {0.0f, 1.2f, 4.0f}, {0.0f, 1.2f, 0.0f});
+        };
+        frames[static_cast<int>(shown)] = freshFrame(build, settings, failures);
+        if (frames[static_cast<int>(shown)].empty()) return;
+    }
+
+    // Over the haze's middle: how many pixels moved, and the light there before and after.
+    const int reach = HEIGHT / 8;
+    int   moved = 0;
+    int   total = 0;
+    float before = 0.0f;
+    float after  = 0.0f;
+    for (int y = HEIGHT / 2 - reach; y < HEIGHT / 2 + reach; ++y) {
+        for (int x = WIDTH / 2 - reach; x < WIDTH / 2 + reach; ++x) {
+            const glm::ivec3 bare = pixel(frames[0], x, y);
+            const glm::ivec3 bent = pixel(frames[1], x, y);
+            moved  += glm::any(glm::greaterThan(glm::abs(bent - bare), glm::ivec3(12))) ? 1 : 0;
+            before += static_cast<float>(bare.x + bare.y + bare.z);
+            after  += static_cast<float>(bent.x + bent.y + bent.z);
+            ++total;
+        }
+    }
+    const float share = static_cast<float>(moved) / static_cast<float>(total);
+    const float light = after / before;
+    std::printf("      haze moved %.0f%% of its middle; its light is %.3f of it\n", 100.0f * share, light);
+    expect("haze bends the wall behind it", share > 0.05f, failures);
+    expect("  and adds no light of its own", std::abs(light - 1.0f) < 0.05f, failures);
+
+    // The ribbon runs across the middle, 1.2 m long: on it at the middle, and off it a sixth of the
+    // frame away.
+    const glm::ivec3 bare   = pixel(frames[0], WIDTH / 2, HEIGHT / 2);
+    const glm::ivec3 lit    = pixel(frames[2], WIDTH / 2, HEIGHT / 2);
+    const glm::ivec3 beside = pixel(frames[2], WIDTH / 2, HEIGHT / 2 + HEIGHT / 6);
+    const glm::ivec3 under  = pixel(frames[0], WIDTH / 2, HEIGHT / 2 + HEIGHT / 6);
+    expect("a ribbon covers the pixels between its points", lit.x > bare.x + 40, failures);
+    const bool untouched = glm::all(glm::lessThanEqual(glm::abs(beside - under), glm::ivec3(2)));
+    expect("  and not those off it", untouched, failures);
+}
+
+// A glossy floor under a white ceiling and a lamp, seen across the room: its reflection of the
+// ceiling, met edge-on, is traced as one surface, not as rows of hits and misses that would
+// differ from one row of pixels to the next far more than from one column to the next.
+void testAGlossyFloorReflectsInNoRows(int& failures) {
+    std::printf("A glossy floor reflecting the ceiling across a room:\n");
+    const auto build = [](Scenery& s) {
+        base(s);
+        s.scene.environment().sky.sunElevation = -20.0f;
+        const MaterialHandle floor = material(s, "golden:polished", {0.05f, 0.05f, 0.06f}, 0.06f, 0.0f);
+        const MaterialHandle white = material(s, "golden:plaster", {0.8f, 0.8f, 0.8f}, 0.9f, 0.0f);
+        place(s, s.cube, floor, {0.0f, -0.5f, 0.0f}, {12.0f, 1.0f, 16.0f});
+        place(s, s.cube, white, {0.0f, 3.5f, 0.0f}, {12.0f, 1.0f, 16.0f});
+        place(s, s.cube, white, {-6.5f, 1.5f, 0.0f}, {1.0f, 3.0f, 16.0f});
+        place(s, s.cube, white, {6.5f, 1.5f, 0.0f}, {1.0f, 3.0f, 16.0f});
+        place(s, s.cube, white, {0.0f, 1.5f, -8.5f}, {12.0f, 3.0f, 1.0f});
+        addLamp(s, {0.0f, 2.0f, -2.0f}, 20.0f, 12.0f, false);
+        sunAndCamera(s, {0.0f, 1.6f, 6.0f}, {0.0f, 0.9f, -3.0f});
+    };
+    const std::vector<unsigned char> frame = freshFrame(build, RenderSettings{}, failures);
+    if (frame.empty()) return;
+
+    // The floor in front of the camera: the lower three tenths of the frame, its middle three fifths.
+    const auto grey = [&](int x, int y) {
+        const glm::ivec3 c = pixel(frame, x, y);
+        return static_cast<float>(c.x + c.y + c.z) / 3.0f;
+    };
+    double acrossRows = 0.0;
+    double acrossColumns = 0.0;
+    for (int y = HEIGHT * 7 / 10; y < HEIGHT - 2; ++y) {
+        for (int x = WIDTH / 5; x < WIDTH * 4 / 5; ++x) {
+            acrossRows    += std::abs(grey(x, y + 1) - grey(x, y));
+            acrossColumns += std::abs(grey(x + 1, y) - grey(x, y));
+        }
+    }
+    const double ratio = acrossRows / std::max(acrossColumns, 1.0);
+    std::printf("      row to row %.2f times column to column\n", ratio);
+    expect("the floor's reflection runs in no rows", ratio < 3.0, failures);
+}
+
 // A puff of smoke at the centre of the frame under an overhead sun, with a roof over it and
 // without: an alpha-blended particle scatters the light reaching it, so the roof's shadow darkens
 // it; an additive one emits, so the roof leaves it as it was.
@@ -2952,12 +3385,12 @@ void testSmokeIsShadowedAndSparksAreNot(int& failures) {
                     );
                 }
                 ParticleEmitter emitter;
-                emitter.additive   = additive;
-                emitter.startColor = glm::vec4(0.6f, 0.6f, 0.6f, 1.0f);
-                emitter.startSize  = 0.5f;
-                emitter.softness   = 0.2f;
+                emitter.blend    = additive ? ParticleBlend::Additive : ParticleBlend::Alpha;
+                emitter.softness = 0.2f;
+                holdLook(emitter, {0.6f, 0.6f, 0.6f, 1.0f});
                 Particle p;
                 p.position = {0.0f, 1.0f, 0.0f};
+                p.size     = 0.5f;
                 addEmitter(s, std::move(emitter)).push_back(p);
                 sunAndCamera(s, {0.0f, 1.0f, 3.0f}, {0.0f, 1.0f, 0.0f});
             };
@@ -3042,11 +3475,11 @@ void testSmokeIsLitWhereItIs(int& failures) {
                 addLamp(s, at + glm::vec3(1.0f, 1.0f, 0.0f), 20.0f, 1.1f, false);
             }
             ParticleEmitter emitter;
-            emitter.additive   = false;
-            emitter.startColor = glm::vec4(0.6f, 0.6f, 0.6f, 1.0f);
-            emitter.startSize  = 0.7f;
+            emitter.blend = ParticleBlend::Alpha;
+            holdLook(emitter, {0.6f, 0.6f, 0.6f, 1.0f});
             Particle p;
             p.position = at;
+            p.size     = 0.7f;
             addEmitter(s, std::move(emitter)).push_back(p);
             sunAndCamera(s, at + glm::vec3(0.0f, 0.0f, 3.0f), at);
         };
@@ -3056,6 +3489,50 @@ void testSmokeIsLitWhereItIs(int& failures) {
     }
     std::printf("      %.0f without the lamp, %.0f with it\n", centre[0], centre[1]);
     expect("a lamp that does not reach a puff lights none of it", centre[1] <= centre[0] + 2.0f, failures);
+}
+
+// An alpha ribbon at night under a lamp above it, under that lamp and its twin below, and under one
+// lamp above twice as bright: a strip is lit as a card, from every way alike, so the twin adds as
+// much light as doubling the one.
+void testTwoLampsLightARibbonAsOneTwiceAsBright(int& failures) {
+    std::printf("An alpha ribbon under one lamp and under two:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    enum class Lit { One, Two, Doubled };
+    float centre[3] = {};
+    for (const Lit lit : {Lit::One, Lit::Two, Lit::Doubled}) {
+        const auto build = [lit](Scenery& s) {
+            base(s);
+            s.scene.environment().sky.sunElevation = -30.0f;
+            const glm::vec3 at(0.0f, 2.0f, 0.0f);
+            const glm::vec3 above(0.0f, 1.0f, 0.0f);
+            addLamp(s, at + above, lit == Lit::Doubled ? 20.0f : 10.0f, 4.0f, false);
+            if (lit == Lit::Two) addLamp(s, at - above, 10.0f, 4.0f, false);
+            ParticleEmitter emitter;
+            emitter.blend  = ParticleBlend::Alpha;
+            emitter.render = ParticleRender::Ribbon;
+            holdLook(emitter, {0.5f, 0.5f, 0.5f, 1.0f});
+            std::vector<Particle>& points = addEmitter(s, std::move(emitter));
+            for (int i = 0; i < 4; ++i) {
+                Particle p;
+                p.position = at + glm::vec3(-0.6f + 0.4f * static_cast<float>(i), 0.0f, 0.0f);
+                p.size     = 0.2f;
+                points.push_back(p);
+            }
+            sunAndCamera(s, at + glm::vec3(0.0f, 0.0f, 3.0f), at);
+        };
+        const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+        if (frame.empty()) return;
+        centre[static_cast<int>(lit)] = centreGrey(frame);
+    }
+    std::printf(
+        "      %.0f under one lamp, %.0f under two, %.0f under one twice as bright\n",
+        centre[0],
+        centre[1],
+        centre[2]
+    );
+    expect("a second lamp lights it more", centre[1] > centre[0] + 8.0f, failures);
+    expect("  as much as doubling the first", std::abs(centre[1] - centre[2]) < 3.0f, failures);
 }
 
 // Velvet and brushed metal under a sun 25 degrees up: the velvet's sheen glows at its rim, lit and in the
@@ -3153,6 +3630,7 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
         {"smoke",       buildSmoke},
         {"sprites",     buildSprites},
         {"viewmodel",   buildViewmodel},
+        {"vfx",         buildVfx},
         {"cutout",      buildCutout},
         {"decals",      buildDecals},
         {"fog",         buildFog},
@@ -3182,9 +3660,11 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testAPlainMaterialDrawsAsTheWholeProgramWould(failures);
     testEveryOptionalFeatureTakesTheWholeProgram(failures);
     testAViewmodelShadesNothingBehindIt(failures);
+    testAMirrorShowsWhatIsBehindTheEye(failures);
     testABackendDropsWhatTheSceneNoLongerAsksFor(failures);
     testAFrameWithNoCameraKeepsTheProbesBaked(failures);
     testAProbeFollowsItsLight(failures);
+    testARefreshedProbeRests(failures);
     testWhatTheCullHidDrawsTheFrameItComesOut(failures);
     testAWeaponHeldIntoAWallIsNotCulled(failures);
     testAFaceFillingTheFrameIsNotCulledByItsOwnDepth(failures);
@@ -3196,14 +3676,20 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testAnOrthographicViewIsOccluded(failures);
     testAnOpenFloorCastsNoScreenShadow(failures);
     testAPebbleCastsAScreenShadow(failures);
+    testAFarPostIsGroundedNotTraced(failures);
     testAScreenShadowFacingTheSunFallsTowardTheEye(failures);
     testGTAOReachesAsFarEveryWay(failures);
     testAWallBesideTheEyeIsOpen(failures);
     testAutoExposureBringsDayAndNightTogether(failures);
     testAnOrthographicViewTracesItsReflections(failures);
     testSmokeIsShadowedAndSparksAreNot(failures);
+    testHazeBendsAndARibbonCovers(failures);
+    testAFlatNormalMapFacesThePuffToTheEye(failures);
+    testAParticleWaitsForItsSprite(failures);
+    testAGlossyFloorReflectsInNoRows(failures);
     testADecalIsLitAsTheFloorUnderIt(failures);
     testSmokeIsLitWhereItIs(failures);
+    testTwoLampsLightARibbonAsOneTwiceAsBright(failures);
     testAMovedProbeBakesOnceItSettles(failures);
     testASheenAddsNoLight(failures);
     testAProbeBakedUnderADebugViewHoldsTheScene(failures);

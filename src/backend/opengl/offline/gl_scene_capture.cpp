@@ -18,6 +18,7 @@
 #include "asset/gl_mesh.h"
 #include "frame/gl_object_buffer.h"
 #include "gl_view.h"
+#include "core/math/frustum.h"
 #include "system/render/data/camera_data.h"
 #include "system/ocean/ocean_data.h"
 #include "system/render/render_view.h"
@@ -68,19 +69,15 @@ void GLSceneCapture::begin(
     Vkm::GL::Context& gl,
     const RenderView& view,
     GLView& glView,
-    const ResourceManager& resources,
     const GLIBL& ibl,
     float faceSize,
     const Math::AABB& region
 ) {
     m_glView = &glView;
     m_ibl    = &ibl;
+    m_drawn  = view.objects;
 
-    gatherScene(view, glView, resources);
-
-    // Grouped once for every face of every cube after this. No palette: the capture draws
-    // shaders/forward/pbr only, so a character bakes into GI in bind pose.
-    m_batcher.buildGrouped(m_opaque, *view.objects, glView, 0);
+    gatherScene(view, glView);
 
     m_shadow.draw(gl, view, glView, m_objects, m_casters, region, m_lights);
 
@@ -152,37 +149,25 @@ void GLSceneCapture::beginLighting(
     Vkm::GL::Context& gl,
     const RenderView& view,
     GLView& glView,
-    const ResourceManager& resources,
     const Math::AABB& region
 ) {
     m_glView = &glView;
     if (m_shadow.useKept(view, region, m_lights)) return;
     const bool castersOnly = true;
-    gatherScene(view, glView, resources, castersOnly);
+    gatherScene(view, glView, castersOnly);
     m_shadow.draw(gl, view, glView, m_objects, m_casters, region, m_lights);
 }
 
-void GLSceneCapture::gatherScene(
-    const RenderView& view,
-    GLView& glView,
-    const ResourceManager& resources,
-    bool castersOnly
-) {
-    // The whole scene, not the camera's: a capture looks every way. GLView::sync leaves most
-    // scene-list materials out, so they are synced here on the frames a capture runs.
+void GLSceneCapture::gatherScene(const RenderView& view, const GLView& glView, bool castersOnly) {
+    // The whole scene, not the camera's: a capture looks every way.
     const RenderObjects& objects = *view.objects;
     const size_t casterCount = std::min<size_t>(objects.casterCount, objects.scene.size());
     m_opaque.clear();
     m_casters.clear();
-    MaterialHandle lastMaterial;
+    m_surfelsBatched = false;
     for (size_t i = 0; i < (castersOnly ? casterCount : objects.scene.size()); ++i) {
-        const uint32_t        object = objects.scene[i];
-        const MaterialHandle& handle = objects.draws[object].material;
-        if (handle != lastMaterial) {
-            lastMaterial = handle;
-            glView.ensureMaterial(handle, resources);
-        }
-        const GLMaterial* material = glView.getMaterial(handle);
+        const uint32_t    object   = objects.scene[i];
+        const GLMaterial* material = glView.getMaterial(objects.draws[object].material);
         if (!material) continue;
         // Casters lead the scene list, and the sun's map draws each as the live map does,
         // a transparent one by its alpha; the faces draw only what is opaque.
@@ -279,8 +264,16 @@ void GLSceneCapture::captureFace(
     m_pbr.bind();
     m_objects.bind();
 
+    // What this face's frustum holds: a face drawing the whole scene paid for the five others'.
+    // No palette: the capture draws shaders/forward/pbr only, so a character bakes in bind pose.
+    const Math::Frustum seen = Math::extractFrustum(proj * GLCubemap::faceView(face, position));
+    m_faceOpaque.clear();
+    for (const uint32_t object : m_opaque) {
+        if (Math::frustumIntersectsAABB(seen, m_drawn->bounds[object])) m_faceOpaque.push_back(object);
+    }
+
     const GLMaterial* boundMaterial = nullptr;
-    for (const InstanceDraw& draw : m_batcher.draws()) {
+    for (const InstanceDraw& draw : m_faceBatcher.buildGrouped(m_faceOpaque, *m_drawn, *m_glView, 0)) {
         const GLMaterial* material = m_glView->getMaterial(draw.material);
         if (material && material != boundMaterial) {
             material->bind(GLBindings::UBOBindingPoints::MATERIAL);
@@ -288,7 +281,7 @@ void GLSceneCapture::captureFace(
             boundMaterial = material;
             gl.setFaceCulling(!material->doubleSided());
         }
-        m_batcher.draw(gl, draw);
+        m_faceBatcher.draw(gl, draw);
     }
     gl.setFaceCulling(true);
 }
@@ -310,6 +303,11 @@ void GLSceneCapture::captureSurfels(
     m_surfels.bind();
     m_objects.bind();
 
+    // Grouped once a begin(), for every probe's six faces after it; bind pose, as captureFace.
+    if (!m_surfelsBatched) {
+        m_batcher.buildGrouped(m_opaque, *m_drawn, *m_glView, 0);
+        m_surfelsBatched = true;
+    }
     const std::vector<InstanceDraw>& draws = m_batcher.draws();
     for (int face = 0; face < 6; ++face) {
         attach(face);
@@ -349,6 +347,7 @@ void bindOfflinePbrUniforms(Vkm::GL::Shader& pbr, const GLIBL& ibl) {
     pbr.setUniform1i("u_hasSceneColor", 0);
     pbr.setUniform1i("u_probeCount", 0);
     pbr.setUniform1i("u_useClusters", 0);
+    pbr.setUniform1i("u_hardShadows", 1);
     pbr.setUniform1i("u_hasIrradianceVolume", 0);
     pbr.setUniform1i("u_hasFog", 0);
 }

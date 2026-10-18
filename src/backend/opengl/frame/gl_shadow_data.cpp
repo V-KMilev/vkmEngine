@@ -478,8 +478,7 @@ void GLShadowData::cullCasters(const RenderView& view, const GLView& glView) {
     }
 
     // One queue entry lending one task: nothing is allocated per tile or face.
-    m_cullBatch.emplace(taskCount, m_cullTaskBody);
-    pool.addBatch(*m_cullBatch);
+    pool.addBatch(m_cullBatch, taskCount);
 }
 
 void GLShadowData::cullTask(size_t task) {
@@ -521,9 +520,8 @@ void GLShadowData::cullTask(size_t task) {
 }
 
 void GLShadowData::finishCull() {
-    if (!m_cullBatch) return;
-    ThreadPool::get().waitForBatch(*m_cullBatch);
-    m_cullBatch.reset();
+    // Returns at once for a cull swept serially, which queued nothing.
+    ThreadPool::get().waitForBatch(m_cullBatch);
 }
 
 // Directional sun: N frustum-fit cascades into the first 2D slots.

@@ -1,12 +1,17 @@
 #pragma once
 
+#include <vector>
+
 #include <glm/glm.hpp>
 
+#include "core/math/bounds.h"
 #include "ecs/entity.h"
 
 namespace Vkm::Engine {
 
 class Scene;
+struct Collider;
+struct ColliderPart;
 
 /**
  * @brief What a query struck: which entity, where, and the surface it hit.
@@ -44,7 +49,8 @@ struct QueryFilter {
  *
  * Sees entities with a Rigidbody and an enabled Collider, plus animation-driven ragdoll bones; a
  * Collider without a Rigidbody is in no query. Reads the scene directly, so the answer is where bodies
- * are now, at the cost of walking every body per call; a mesh's own tree is walked along the ray.
+ * are now, at the cost of walking every body per call; a mesh's own tree is walked along the ray. Many
+ * rays in one moment go through QueryParts instead.
  *
  * @param scene       Scene whose bodies are asked.
  * @param origin      World-space start of the ray.
@@ -87,5 +93,66 @@ bool spherecast(
     RayHit& out,
     const QueryFilter& filter = {}
 );
+
+/**
+ * @brief The parts a QueryFilter lets queries see, placed once for many rays in one moment.
+ *
+ * raycast walks every body per call, which suits gameplay's few casts. A caller casting many at
+ * once gathers the parts around where its rays run, once, and casts against those. It answers as
+ * raycast would at gather(): a body moved since is struck where it was, and no Collider may be
+ * added, removed or edited before the last cast, for it holds them.
+ */
+class QueryParts {
+    public:
+        QueryParts() = default;
+        ~QueryParts() = default;
+
+        QueryParts(const QueryParts& other) = default;
+        QueryParts& operator=(const QueryParts& other) = default;
+
+        QueryParts(QueryParts && other) noexcept = default;
+        QueryParts& operator=(QueryParts && other) noexcept = default;
+
+        /**
+         * @brief Place every part @p filter lets through whose world bound meets @p around.
+         *
+         * @param scene  Scene whose bodies are asked.
+         * @param filter Which bodies may be hit.
+         * @param around Where the rays will run, in world space.
+         */
+        void gather(Scene& scene, const QueryFilter& filter, const Math::AABB& around);
+
+        /**
+         * @brief Cast a ray against the gathered parts, as raycast casts it against the scene.
+         *
+         * @param origin      World-space start of the ray.
+         * @param direction   Any non-zero vector; normalized internally.
+         * @param maxDistance How far to look, in metres; non-positive finds nothing.
+         * @param[out] out    The nearest hit, ties to the lower entity slot; untouched on false.
+         * @return True when something was struck within @p maxDistance.
+         */
+        bool raycast(
+            const glm::vec3& origin,
+            const glm::vec3& direction,
+            float maxDistance,
+            RayHit& out
+        ) const;
+
+        bool empty() const { return m_parts.empty(); }
+
+    private:
+        struct Placed {
+            EntityId            entity;
+            const Collider*     collider = nullptr;
+            const ColliderPart* part     = nullptr;
+            glm::vec3           center{0.0f};
+            glm::mat3           basis{1.0f};
+            glm::vec3           mid{0.0f};   ///< Centre of its world bound.
+            glm::vec3           half{0.0f};  ///< Half its world bound's size, contact tolerance included.
+        };
+
+    private:
+        std::vector<Placed> m_parts;
+};
 
 } // namespace Vkm::Engine

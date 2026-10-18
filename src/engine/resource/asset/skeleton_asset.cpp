@@ -9,6 +9,21 @@ int32_t SkeletonAsset::indexOf(std::string_view name) const {
     return -1;
 }
 
+int32_t SkeletonAsset::indexOfUnqualified(std::string_view name) const {
+    const int32_t exact = indexOf(name);
+    if (exact >= 0) return exact;
+    for (size_t i = 0; i < bones.size(); ++i) {
+        if (unqualifiedBoneName(bones[i].name) == name) return static_cast<int32_t>(i);
+    }
+    return -1;
+}
+
+std::string_view unqualifiedBoneName(std::string_view name) {
+    const size_t colon = name.rfind(':');
+    if (colon == std::string_view::npos || colon + 1 >= name.size()) return name;
+    return name.substr(colon + 1);
+}
+
 std::string findSkeletonFault(const SkeletonAsset& skeleton) {
     const size_t count = skeleton.bones.size();
     if (skeleton.inverseBind.size() != count || skeleton.bindPose.size() != count) {

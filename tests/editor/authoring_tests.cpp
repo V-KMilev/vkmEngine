@@ -1,5 +1,6 @@
 #include "support.h"
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -7,10 +8,17 @@
 #include <iterator>
 #include <string>
 
+#include "ecs/component/core/net_local.h"
+#include "ecs/component/render/decal.h"
+#include "ecs/component/render/particle_emitter.h"
+#include "ecs/hierarchy_operations.h"
+#include "io/scene/prefab.h"
+#include "resource/resource_manager.h"
 #include "system/render/probe_fill.h"
 
 #include "overlays/gizmo_snap.h"
 #include "overlays/mesh_pick.h"
+#include "session/content_pack.h"
 #include "ui/field_label.h"
 
 namespace {
@@ -205,6 +213,55 @@ void testABehaviorFieldIsLabelledInWords() {
     check("  and nothing else is", !namesAColor("colorful") && !namesAColor("velocity"));
 }
 
+// Create > Effect brings the engine's effects pack in whole the first time and leaves the project's
+// copies as they are after; each effect builds off the wire, and a one-off goes with the part that
+// lasts longest, its scorch mark too.
+void testAnEffectBringsTheEnginesPackInOnce() {
+    std::printf("The engine's effects, brought into a project:\n");
+    ScratchProject project("effects_pack");
+    const std::filesystem::path    pack    = ContentPack::shipped("effects");
+    const std::vector<std::string> effects = ContentPack::prefabsIn(pack, "effects");
+    check(
+        "the engine ships an explosion among its effects",
+        effects.size() >= 4 && std::find(effects.begin(), effects.end(), "explosion.json") != effects.end()
+    );
+
+    int files = 0;
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(pack, ec)) {
+        files += entry.is_regular_file(ec) ? 1 : 0;
+    }
+    std::string error;
+    check("the first brings every file in", ContentPack::bringInto(pack, project.root(), error) == files);
+
+    Scene          scene;
+    ResourceManager resources;
+    bool  built   = true;
+    bool  offWire = true;
+    for (const std::string& effect : effects) {
+        const EntityId root = Prefab::instantiate(scene, resources, "prefabs/effects/" + effect);
+        built   = built && static_cast<bool>(root);
+        offWire = offWire && root && scene.has<NetLocal>(root);
+    }
+    check("  each effect builds", built);
+    check("  off the wire, every end its own", offWire);
+
+    const EntityId blast = Prefab::instantiate(scene, resources, "prefabs/effects/explosion.json");
+    const ParticleEmitter* longest = scene.tryGet<ParticleEmitter>(blast);
+    const EntityId scorch = HierarchyOperations::findInSelfOrDescendants<Decal>(scene, blast);
+    check(
+        "  the explosion goes with its longest-lived part, scorch and all",
+        longest && longest->destroyWhenSpent && static_cast<bool>(scorch)
+    );
+
+    const std::filesystem::path mine = project.root() / "assets" / "effects" / "scorch.png";
+    std::ofstream(mine, std::ios::trunc) << "mine";
+    check("a second brings nothing", ContentPack::bringInto(pack, project.root(), error) == 0);
+    std::ifstream kept(mine);
+    const std::string held((std::istreambuf_iterator<char>(kept)), std::istreambuf_iterator<char>());
+    check("  leaving a file the project edited as it is", held == "mine");
+}
+
 } // namespace
 
 void runAuthoringTests() {
@@ -213,4 +270,5 @@ void runAuthoringTests() {
     testAPickLandsOnTrianglesNotOnABox();
     testTheDefaultLayoutNamesTabsAsImGuiDoes();
     testABehaviorFieldIsLabelledInWords();
+    testAnEffectBringsTheEnginesPackInOnce();
 }

@@ -31,6 +31,7 @@
 #include "ecs/component/render/light.h"
 #include "ecs/component/render/mesh.h"
 #include "ecs/component/render/particle_emitter.h"
+#include "ecs/component/render/planar_reflector.h"
 #include "ecs/component/render/reflection_probe.h"
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_element.h"
@@ -42,10 +43,31 @@
 #include "resource/generate/light_generators.h"
 #include "resource/generate/mesh_generators.h"
 #include "resource/generate/material_generators.h"
+#include "session/content_pack.h"
 #include "ui/editor_widgets.h"
 
 namespace Vkm::Engine {
 namespace EditorActions {
+
+namespace {
+
+/// A prefab file as a menu reads it: "smoke_plume.json" is "Smoke Plume".
+std::string effectLabel(const std::string& file) {
+    std::string label = std::filesystem::path(file).stem().string();
+    bool wordStart = true;
+    for (char& c : label) {
+        if (c == '_') {
+            c = ' ';
+            wordStart = true;
+        } else if (wordStart) {
+            c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+            wordStart = false;
+        }
+    }
+    return label;
+}
+
+} // namespace
 
 void reparentKeepingWorld(
     Scene& scene,
@@ -177,6 +199,7 @@ const char* defaultName(EntityKind k) {
         case EntityKind::DiskLight:        return "Disk Light";
         case EntityKind::Camera:           return "Camera";
         case EntityKind::ReflectionProbe:  return "Reflection Probe";
+        case EntityKind::PlanarReflector:  return "Planar Reflector";
         case EntityKind::IrradianceVolume: return "Irradiance Volume";
         case EntityKind::Decal:            return "Decal";
         case EntityKind::ParticleEmitter:  return "Particle Emitter";
@@ -275,6 +298,9 @@ EntityId createEntity(Scene& scene, ResourceManager& resources, EditorState& sta
         }
         case EntityKind::ReflectionProbe:
             scene.add(entity, ReflectionProbe{});
+            break;
+        case EntityKind::PlanarReflector:
+            scene.add(entity, PlanarReflector{});
             break;
         case EntityKind::IrradianceVolume:
             scene.add(entity, IrradianceVolume{});
@@ -597,6 +623,27 @@ EntityId placePrefab(Scene& scene, ResourceManager& resources, EditorState& stat
     return root;
 }
 
+std::vector<std::string> shippedEffects() {
+    return ContentPack::prefabsIn(ContentPack::shipped("effects"), "effects");
+}
+
+EntityId placeEffect(Scene& scene, ResourceManager& resources, EditorState& state, const std::string& file) {
+    const std::filesystem::path pack = ContentPack::shipped("effects");
+    std::string error;
+    const int copied = ContentPack::bringInto(pack, ProjectPaths::projectRoot(), error);
+    if (copied < 0) {
+        state.pushToast(ToastKind::Error, "Could not bring the engine's effects in: " + error);
+        return {};
+    }
+    if (copied > 0) {
+        state.pushToast(
+            ToastKind::Info,
+            "Brought the engine's effects into the project (" + std::to_string(copied) + " files)"
+        );
+    }
+    return placePrefab(scene, resources, state, "prefabs/effects/" + file);
+}
+
 void deleteEntity(Scene& scene, EditorState& state, EntityId entity) {
     warnDeleteInsideInstance(scene, state, entity);
 
@@ -632,6 +679,7 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
         ImGui::Separator();
         item(EditorIcon::Camera,   "Camera",            EntityKind::Camera);
         item(EditorIcon::Probe,    "Reflection Probe",  EntityKind::ReflectionProbe);
+        item(EditorIcon::Probe,    "Planar Reflector",  EntityKind::PlanarReflector);
         item(EditorIcon::Volume,   "Irradiance Volume", EntityKind::IrradianceVolume);
         item(EditorIcon::Decal,    "Decal",             EntityKind::Decal);
         item(EditorIcon::Particle, "Particle Emitter",  EntityKind::ParticleEmitter);
@@ -645,6 +693,14 @@ void drawCreateEntityMenu(Scene& scene, ResourceManager& resources, EditorState&
             item(EditorIcon::LightSpot,  "Spot",        EntityKind::SpotLight);
             item(EditorIcon::LightRect,  "Rect",        EntityKind::RectLight);
             item(EditorIcon::LightDisk,  "Disk",        EntityKind::DiskLight);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Effect")) {
+            for (const std::string& file : shippedEffects()) {
+                if (iconMenuItem(EditorIcon::Particle, effectLabel(file).c_str())) {
+                    placeEffect(scene, resources, state, file);
+                }
+            }
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Primitive")) {

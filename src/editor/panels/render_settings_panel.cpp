@@ -227,11 +227,10 @@ void RenderSettingsPanel::draw(EditorContext& ec) {
 
     if (beginComponentCard("Shadows", EditorStyle::Accent::EFFECT, true)) {
         static const char* const SHADOW_RES_LABELS[] = { "Low (1024)", "Medium (2048)", "High (4096)" };
-        static const uint32_t    SHADOW_RES_VALUES[] = { 1024u, 2048u, 4096u };
         propValueCombo(
             "Atlas Resolution",
             SHADOW_RES_LABELS,
-            SHADOW_RES_VALUES,
+            RenderSettings::SHADOW_RESOLUTIONS,
             &s.shadowResolution,
             "The largest shadow tile, the sun's near cascades'"
         );

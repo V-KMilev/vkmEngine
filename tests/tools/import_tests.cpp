@@ -162,6 +162,14 @@ void testAGltfThisImporterCannotDecodeIsRefused() {
         )
     );
     check(
+        "a file that requires texture transforms parses, as they are read",
+        parsesAs(
+            R"("asset": {"version": "2.0"},)",
+            R"("asset": {"version": "2.0"}, "extensionsUsed": ["KHR_texture_transform"],)"
+            R"( "extensionsRequired": ["KHR_texture_transform"],)"
+        )
+    );
+    check(
         "a file that requires a compression extension is refused",
         !parsesAs(
             R"("asset": {"version": "2.0"},)",

@@ -51,7 +51,29 @@ struct SkeletonAsset : public Resource {
      * @return Index into `bones`, or -1.
      */
     int32_t indexOf(std::string_view name) const;
+
+    /**
+     * @brief The index of the bone called @p name, in whatever namespace the rig's exporter gave it.
+     *
+     * For code that names a joint the same on every rig: "Hips" finds "mixamorig:Hips". A bone named
+     * exactly @p name wins; otherwise the first whose unqualifiedBoneName is @p name. Linear, as
+     * indexOf is.
+     *
+     * @param name Bone name to look for, with or without a namespace.
+     * @return Index into `bones`, or -1.
+     */
+    int32_t indexOfUnqualified(std::string_view name) const;
 };
+
+/**
+ * @brief A bone's name without its rig's namespace: "mixamorig:Hips" is "Hips".
+ *
+ * The namespace is everything up to the last colon; a name ending in a colon is kept whole.
+ *
+ * @param name Bone name as the rig spells it.
+ * @return The part after the namespace, a view into @p name.
+ */
+std::string_view unqualifiedBoneName(std::string_view name);
 
 /**
  * @brief Why @p skeleton cannot be posed, or an empty string when it can.

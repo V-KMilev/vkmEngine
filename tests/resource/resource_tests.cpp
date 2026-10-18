@@ -6,10 +6,13 @@
 #include <nlohmann/json.hpp>
 
 #include "debug/engine_error_log.h"
+#include "io/asset/asset_serializer.h"
+#include "resource/asset/material_asset.h"
 #include "resource/asset/font_asset.h"
 #include "resource/asset_source_kind.h"
 #include "resource/texture_format.h"
 #include "resource/asset/mesh_asset.h"
+#include "resource/asset/skeleton_asset.h"
 #include "resource/asset/texture_asset.h"
 #include "resource/generate/mesh_generators.h"
 #include "resource/generate/texture_generators.h"
@@ -407,6 +410,47 @@ void testFontsStayWhenTheGraphIsTraded() {
     check("  and keeps the font, as a swap does", bool(live.findByName<FontAsset>("ui:test")));
 }
 
+void testABoneIsFoundWhateverItsRigsNamespace() {
+    std::printf("A bone looked up without its rig's namespace:\n");
+
+    SkeletonAsset rig;
+    rig.bones = {{"mixamorig:Hips", -1}, {"mixamorig:Spine", 0}, {"Spine", 1}, {"tip:", 2}};
+
+    check("the namespace is dropped from a name", unqualifiedBoneName("mixamorig:Hips") == "Hips");
+    check("  a name with none is itself", unqualifiedBoneName("Hips") == "Hips");
+    check("  and one ending in a colon is kept whole", unqualifiedBoneName("tip:") == "tip:");
+
+    check("indexOf wants the namespace", rig.indexOf("Hips") == -1);
+    check("indexOfUnqualified finds the bone without it", rig.indexOfUnqualified("Hips") == 0);
+    check("  a bone named exactly that wins over a namespaced one", rig.indexOfUnqualified("Spine") == 2);
+    check("  a full name still finds its own bone", rig.indexOfUnqualified("mixamorig:Spine") == 1);
+    check("  and a bone the rig lacks is -1", rig.indexOfUnqualified("Head") == -1);
+}
+
+// A material's tiling is part of its recipe: a field textured two hundred times across saves and loads
+// as such, and an old recipe without it reads untiled.
+void testAMaterialsTilingIsInItsRecipe() {
+    std::printf("A material's tiling, saved and read back:\n");
+    ResourceManager resources;
+    MaterialAsset field;
+    field.uvScale  = {200.0f, 120.0f};
+    field.uvOffset = {0.25f, -0.5f};
+    field.boxMapping = 2.5f;
+    const nlohmann::json recipe = AssetSerializer::materialToRecipe(field, resources);
+    const MaterialAsset read = AssetSerializer::materialFromRecipe(recipe, resources);
+    check("the repeats come back", read.uvScale == field.uvScale);
+    check("  and the slide", read.uvOffset == field.uvOffset);
+    check("  and the box it is mapped by", read.boxMapping == 2.5f);
+    nlohmann::json old = recipe;
+    old.erase("uvScale");
+    old.erase("uvOffset");
+    const MaterialAsset untiled = AssetSerializer::materialFromRecipe(old, resources);
+    check(
+        "a recipe without them reads untiled",
+        untiled.uvScale == glm::vec2(1.0f) && untiled.uvOffset == glm::vec2(0.0f)
+    );
+}
+
 } // namespace
 
 void runResourceTests() {
@@ -421,4 +465,6 @@ void runResourceTests() {
     testGeneratedMeshesFaceAndMapTheWayTheirVerticesSay();
     testEveryImageDecodesToFormatsThatAgree();
     testFontsStayWhenTheGraphIsTraded();
+    testABoneIsFoundWhateverItsRigsNamespace();
+    testAMaterialsTilingIsInItsRecipe();
 }

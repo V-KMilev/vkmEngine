@@ -15,7 +15,6 @@ class GLIrradianceVolume;
 class GLProbeArray;
 class GLSceneCapture;
 class GLView;
-class ResourceManager;
 struct ProbeData;
 struct RenderView;
 
@@ -30,7 +29,8 @@ struct RenderView;
  *
  * bake() does it at once. beginRefresh() and advance() do it a step a frame - a face of the
  * capture, then GLCubeConvolver::slices's steps - into the arrays' staging layer, copied into the
- * probe's after the last: how a probe follows a change of light without a frame paying for it.
+ * probe's after the last: how a probe follows a change of light without one frame paying for all
+ * of it.
  *
  * The capture and convolver are the backend's, borrowed: both hold expensive programs. bake() and
  * advance() bind their own camera, lights and shadow blocks, so run them at the end of a frame.
@@ -68,7 +68,6 @@ class GLProbeBaker {
          * @param probe     Where it stands and what box it covers.
          * @param view      Supplies the scene and its lights.
          * @param glView    GPU mirror the capture draws from.
-         * @param resources Resolves what the capture draws.
          * @param globalIBL The environment, the capture's backdrop and ambient.
          * @param volume    The baked irradiance volume, at the view's box, lighting the captured
          *                  surfaces it covers; null for none.
@@ -80,7 +79,6 @@ class GLProbeBaker {
             const ProbeData& probe,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const GLIBL& globalIBL,
             const GLIrradianceVolume* volume
         );
@@ -111,7 +109,6 @@ class GLProbeBaker {
          * @param probe     Where it stands and what box it covers.
          * @param view      Supplies the scene and its lights.
          * @param glView    GPU mirror the capture draws from.
-         * @param resources Resolves what the capture draws.
          * @param globalIBL The environment, the capture's backdrop and ambient.
          * @param volume    The irradiance volume lighting the captured surfaces; null for none.
          * @return Whether that was the last step, and @p layer now holds the refresh.
@@ -123,7 +120,6 @@ class GLProbeBaker {
             const ProbeData& probe,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const GLIBL& globalIBL,
             const GLIrradianceVolume* volume
         );
@@ -146,7 +142,6 @@ class GLProbeBaker {
          * @param probe     The probe captured.
          * @param view      Supplies the scene and its lights.
          * @param glView    GPU mirror the capture draws from.
-         * @param resources Resolves what the capture draws.
          * @param globalIBL The environment, the capture's backdrop and ambient.
          * @param volume    The irradiance volume lighting the captured surfaces; null for none.
          */
@@ -156,7 +151,6 @@ class GLProbeBaker {
             const ProbeData& probe,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const GLIBL& globalIBL,
             const GLIrradianceVolume* volume
         );
@@ -167,7 +161,6 @@ class GLProbeBaker {
             const ProbeData& probe,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const GLIBL& globalIBL,
             const GLIrradianceVolume* volume
         );

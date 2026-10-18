@@ -37,7 +37,7 @@ struct VisibilityContext {
 namespace Culling {
 
 /**
- * @brief Distance culling: whether the AABB's centre is within maxDistance of the camera.
+ * @brief Distance culling: whether the AABB's nearest point is within maxDistance of the camera.
  *
  * @param bounds  World-space AABB.
  * @param context Supplies cameraPosition and maxDistance (0 or below disables).
@@ -46,7 +46,10 @@ namespace Culling {
 inline bool isNearEnough(const Math::AABB& bounds, const VisibilityContext& context) {
     if (context.maxDistance <= 0.0f) return true;
 
-    const glm::vec3 delta = bounds.center() - context.cameraPosition;
+    // To the box's nearest point, not its centre: a field the camera stands on is near, wherever
+    // its middle lies.
+    const glm::vec3 nearest = glm::clamp(context.cameraPosition, bounds.min, bounds.max);
+    const glm::vec3 delta   = nearest - context.cameraPosition;
     return glm::dot(delta, delta) <= context.maxDistanceSquared;
 }
 

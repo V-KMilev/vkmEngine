@@ -6,12 +6,11 @@
  * faces the view, turned by the particle's angle; one that streaks lies along its trail as the
  * view sees it instead, from its head back to where the trail ends.
  *
- * An alpha-blended particle scatters the light reaching it - smoke, dust, steam - so it is lit
- * here, its colour an albedo: as a diffuse card facing each light, through the light's shadow,
- * plus the environment's mean radiance, since a puff has no normal of its own. An additive one
- * emits, so its colour is its radiance. It is lit at its centre - a streak's middle - each corner
- * taking the same light: a corner lies off the puff, past a wall or in a lamp's reach the puff is not,
- * and turns with the view.
+ * An alpha-blended particle scatters the light reaching it - smoke, dust, steam - so its colour is
+ * an albedo, lit as a ball: the light at its centre (shaders/particle/light.glsl) goes to the
+ * fragment stage, which turns a sphere's normal to it. Every corner takes the light of its
+ * centre: a corner lies off the puff, past a wall or in a lamp's reach the puff is not, and turns
+ * with the view.
  */
 struct Particle {
     vec4 positionSize;  // xyz = world position, w = half the billboard's width
@@ -19,7 +18,9 @@ struct Particle {
     vec4 params;        // x = edge softness (0 hard .. 1 soft), y = angle, z = its texture (0 none),
                         // w = 1 on the viewmodel layer
     vec4 uvRect;        // its sheet frame: xy = the corner at (-1,-1), zw = the size
-    vec4 trail;         // xyz = where it streaks to behind it, world space
+    vec4 trail;         // xyz = where it streaks to behind it, world space; w = emission or bend
+    vec4 uvNext;        // xy = the next sheet frame's corner, z = how far it faded into it,
+                        // w = its normal map (0 none)
 };
 
 layout(std430, binding = SSBO_PARTICLES) readonly buffer ParticleBlock {
@@ -31,63 +32,27 @@ layout(std430, binding = SSBO_PARTICLES) readonly buffer ParticleBlock {
 #include "../area_light.glsl"
 #include "../shadows.glsl"
 #include "../ambient.glsl"
+#include "light.glsl"
 
 uniform int u_firstInstance;  // the run's first particle: gl_InstanceID starts at 0 every draw
-uniform int u_additive;       // 1 while the additive half draws: it emits, so it is not lit
+uniform int u_blend;          // PARTICLE_*: only an alpha one is lit
+uniform vec4 u_clipPlane;     // a planar reflection's plane, while GL_CLIP_DISTANCE0 is on
 
 out vec2  vCorner;
+flat out vec2 vAxisX;  // the card's own x, then y, in the view's right and up: turned, or streaked
+flat out vec2 vAxisY;
 out vec2  vUV;
+out vec2  vUVNext;     // the same corner of the next frame
 flat out vec4 vFrame;  // the sheet frame's rect, which the fragment keeps its reads inside
+flat out vec3 vNext;   // xy = the next frame's corner, which its reads keep inside; z = the fade
 out vec4  vColor;
 out float vSoftness;
-out float vSize;      // half the billboard's width (the authored size), how deep its fade runs
+out float vSize;       // half the billboard's width, how deep its fade runs
 flat out int vViewmodel;  // drawn as a Viewmodel mesh is: its depth is the squashed band, so no fade
-out vec3  vLight;     // the radiance it scatters over its albedo; 1 for an additive one
-
-// The environment's mean radiance at p: its irradiance over PI averaged over the six axes, which
-// is what an isotropic scatterer takes from all round.
-vec3 meanAmbient(vec3 p) {
-    vec3 sum = environmentIrradiance(p, vec3(1.0, 0.0, 0.0)) + environmentIrradiance(p, vec3(-1.0, 0.0, 0.0))
-        + environmentIrradiance(p, vec3(0.0, 1.0, 0.0)) + environmentIrradiance(p, vec3(0.0, -1.0, 0.0))
-        + environmentIrradiance(p, vec3(0.0, 0.0, 1.0)) + environmentIrradiance(p, vec3(0.0, 0.0, -1.0));
-    return sum / 6.0;
-}
-
-// What lights a particle at p, over its albedo: each of its cluster's lights as on a diffuse card
-// facing it, through the light's hard shadow at that point, and the environment.
-vec3 scatteredLight(vec3 p) {
-    vec3 radiance = meanAmbient(p);
-
-    // Its cluster is where it is in the world, whichever projection draws it.
-    float depth = max(viewDepthOf(p), u_camera.zNear);
-    int   ci    = clusterIndex(screenUvOf(p), depth, u_camera.zNear, u_camera.zFar);
-
-    uint count = u_clusters.clusters[ci].count;
-    for (uint k = 0u; k < count; ++k) {
-        Light light     = u_lights.lights[u_clusters.clusters[ci].indices[k]];
-        vec3  lightCol  = light.color.xyz * light.color.w;
-        int   type      = int(light.position.w);
-
-        // An area light as the small source it is from far enough: its point-equivalent intensity
-        // over the squared distance, by how squarely its face turns to the particle.
-        if (type == LIGHT_RECT || type == LIGHT_DISK) {
-            float side, window;
-            if (!areaReaches(light, p, side, window)) continue;
-            vec3  toParticle = p - light.position.xyz;
-            float dist       = length(toParticle);
-            vec3  face       = areaPlaneNormal(light.axisU.xyz, light.axisV.xyz);
-            float facing     = abs(dot(toParticle / max(dist, 1e-4), face));
-            radiance += lightCol * window * facing / max(dist * dist, 1e-4) / PI;
-            continue;
-        }
-
-        vec3  L;
-        float atten = punctualAttenuation(light, type, p, L);
-        if (atten <= 0.0) continue;
-        radiance += lightCol * atten * pointShadow(type, int(light.spot.w), p) / PI;
-    }
-    return radiance;
-}
+flat out float vExtra;    // the share of its colour it gives off, or how far it bends the view
+flat out vec3 vAmbient;   // the light at its centre, for an alpha one
+flat out vec3 vLightColor;
+flat out vec3 vLightDir;
 
 void main() {
     Particle p = u_particles.particles[u_firstInstance + gl_InstanceID];
@@ -96,15 +61,17 @@ void main() {
     vec2 corner = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1)) * 2.0 - 1.0;
     vCorner   = corner;
     vUV       = p.uvRect.xy + (corner * 0.5 + 0.5) * p.uvRect.zw;
+    vUVNext   = p.uvNext.xy + (corner * 0.5 + 0.5) * p.uvRect.zw;
+    vNext     = p.uvNext.xyz;
     vFrame    = p.uvRect;
     vColor    = p.color;
     vSoftness = p.params.x;
     vSize     = p.positionSize.w;
+    vExtra    = p.trail.w;
 
-    // The view matrix's rows are the camera's right, up and back in world space.
-    vec3 camRight = vec3(u_camera.view[0][0], u_camera.view[1][0], u_camera.view[2][0]);
-    vec3 camUp    = vec3(u_camera.view[0][1], u_camera.view[1][1], u_camera.view[2][1]);
-    vec3 camBack  = vec3(u_camera.view[0][2], u_camera.view[1][2], u_camera.view[2][2]);
+    vec3 camRight = cameraRight();
+    vec3 camUp    = cameraUp();
+    vec3 camBack  = cameraBack();
     float size = p.positionSize.w;
 
     // The trail as the view sees it: what runs toward the eye does not lengthen the streak.
@@ -119,10 +86,14 @@ void main() {
         vec3 across = normalize(cross(camBack, along));
         centre = p.positionSize.xyz + p.trail.xyz * 0.5;
         world  = centre + across * (corner.x * size) + along * (-corner.y * (span * 0.5 + size));
+        vAxisX = vec2(dot(across, camRight), dot(across, camUp));
+        vAxisY = -vec2(dot(along, camRight), dot(along, camUp));
     } else {
         float c = cos(p.params.y);
         float s = sin(p.params.y);
-        vec2 turned = vec2(c * corner.x - s * corner.y, s * corner.x + c * corner.y);
+        vAxisX = vec2(c, s);
+        vAxisY = vec2(-s, c);
+        vec2 turned = vAxisX * corner.x + vAxisY * corner.y;
         world = p.positionSize.xyz + (camRight * turned.x + camUp * turned.y) * size;
     }
     // On the viewmodel layer, projected as shaders/viewmodel.glsl's eyeClip projects the weapon.
@@ -132,6 +103,15 @@ void main() {
     } else {
         gl_Position = u_camera.viewProjection * vec4(world, 1.0);
     }
+    gl_ClipDistance[0] = dot(vec4(world, 1.0), u_clipPlane);
 
-    vLight = u_additive == 1 ? vec3(1.0) : scatteredLight(centre);
+    vAmbient    = vec3(1.0);
+    vLightColor = vec3(0.0);
+    vLightDir   = vec3(0.0, 1.0, 0.0);
+    if (u_blend == PARTICLE_ALPHA) {
+        ParticleLight lit = particleLightAt(centre);
+        vAmbient    = lit.ambient;
+        vLightColor = lit.color;
+        vLightDir   = lit.direction;
+    }
 }

@@ -1904,6 +1904,42 @@ void testALoadNeverRenamesAnAssetThatWasAlreadyThere() {
     assetFactory().createTexture = previousFactory;
 }
 
+// A stand-in import: a map of one texel for any recipe.
+TextureHandle importAMap(const nlohmann::json&, ResourceManager& resources) {
+    TextureAsset map;
+    map.pixelData = {10, 20, 30, 255};
+    return resources.add(std::move(map));
+}
+
+// A material brings the maps its recipe names, though the document loading it lists the material
+// alone: a map named nowhere else would otherwise resolve to nothing, and the next save drop it.
+void testAMaterialBringsTheMapsItNames() {
+    std::printf("A material whose map no document lists:\n");
+
+    const ScratchProject project("vkm_material_maps");
+    const auto previousFactory = assetFactory().createTexture;
+    assetFactory().createTexture = &importAMap;
+
+    const nlohmann::json map = {
+        {AssetSourceKey::KIND, AssetSourceKind::FILE},
+        {AssetSourceKey::PATH, "ground.png"}
+    };
+    check("the map's recipe writes", AssetLibrary::writeRecipe(AssetType::Texture, "ground.png", map));
+    const nlohmann::json material = {{"textures", {{"albedo", "ground.png"}}}};
+    const bool written = AssetLibrary::writeRecipe(AssetType::Material, "lab:ground", material);
+    check("the material's recipe writes", written);
+
+    ResourceManager resources;
+    const nlohmann::json document = {{"materials", nlohmann::json::array({{{"name", "lab:ground"}}})}};
+    AssetSerializer::loadAssets(document, resources);
+    const MaterialHandle ground = resources.findByName<MaterialAsset>("lab:ground");
+    const TextureHandle  albedo = ground ? resources.get(ground).albedoTexture : TextureHandle{};
+    check("the material loads", static_cast<bool>(ground));
+    check("  with the map it names", albedo && resources.get(albedo).name() == "ground.png");
+
+    assetFactory().createTexture = previousFactory;
+}
+
 // What the cooker at this COOKER_VERSION makes of the fixed inputs below. The version
 // is in every artifact's name, so a bump strands old artifacts and the next cook bakes
 // new ones; changing the bytes without a bump leaves every project serving the old
@@ -2242,6 +2278,7 @@ void testATexturesWrapAndFilterReadWhatTheyWrite() {
 } // namespace
 
 void runCookTests() {
+    testAMaterialBringsTheMapsItNames();
     testAMeshSurvivesTheRoundTrip();
     testAnUnskinnedMeshCarriesNoSkin();
     testASkeletonAndAClipSurviveTheRoundTrip();

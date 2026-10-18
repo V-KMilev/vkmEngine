@@ -31,6 +31,7 @@ namespace Vkm::Engine {
     X(SSBOBindingPoints,      CLUSTER_GRID,          1,  SSBO_CLUSTER_GRID,                   Per-cluster light lists)                                             \
     X(SSBOBindingPoints,      PARTICLES,             2,  SSBO_PARTICLES,                      Billboard particle instances)                                        \
     X(SSBOBindingPoints,      IRRADIANCE_FILL,       3,  SSBO_IRRADIANCE_FILL,                How an irradiance bake repairs the probes it refused)                \
+    X(SSBOBindingPoints,      STRIP_POINTS,          4,  SSBO_STRIP_POINTS,                   Particle strip points: ribbons and trails)                           \
     X(SSBOBindingPoints,      SKIN_PALETTE,          5,  SSBO_SKIN_PALETTE,                   Every skinned item palette end to end)                               \
     X(SSBOBindingPoints,      INSTANCE_SKIN_BASE,    6,  SSBO_INSTANCE_SKIN_BASE,             Per object: its first bone in SKIN_PALETTE)                          \
     X(SSBOBindingPoints,      INSTANCE_FLAGS,        7,  SSBO_INSTANCE_FLAGS,                 Per object: how the eye draws it (shaders/viewmodel.glsl))           \
@@ -59,6 +60,7 @@ namespace Vkm::Engine {
     X(BakeTextureSlots,       MULTISCATTERING,       2,  BAKE_SLOT_MULTISCATTERING,           The atmosphere multiple-scattering table (u_multiScattering))        \
     X(SkyTextureSlots,        VIEW,                  0,  SKY_SLOT_VIEW,                       The sky-view table the skybox draws the sky from (u_skyViewLut))     \
     X(ParticleTextureSlots,   SPRITE,                0,  PARTICLE_SLOT_SPRITE,                What a run of particles shows (u_sprite) - a free material unit)     \
+    X(ParticleTextureSlots,   NORMAL,                1,  PARTICLE_SLOT_NORMAL,                The normal map an alpha run lights its puffs by (u_normalMap))       \
     X(OverlayTextureSlots,    UI_ATLAS,              0,  UI_SLOT_ATLAS,                       The UI font atlas or the empty one a run without text reads (u_tex)) \
     X(OverlayTextureSlots,    UI_IMAGE,              1,  UI_SLOT_IMAGE,                       The picture a UIImage run shows (u_image))                           \
     X(OverlayTextureSlots,    SPLASH_LOGO,           0,  SPLASH_SLOT_LOGO,                    The splash logo (u_logo))                                            \
@@ -71,6 +73,8 @@ namespace Vkm::Engine {
     X(ReflectionTextureSlots, ENV,                   1,  REFLECT_SLOT_ENV,                    That weight times the probe / sky radiance)                          \
     X(ReflectionTextureSlots, TRACE,                 2,  REFLECT_SLOT_TRACE,                  Each pixel hit: uv + trust + the chain level its lobe spans)         \
     X(ReflectionTextureSlots, CHAIN,                 3,  REFLECT_SLOT_CHAIN,                  The lit scene as a filtered mip chain that a hit reads)              \
+    X(ReflectionTextureSlots, PLANAR_0,              4,  REFLECT_SLOT_PLANAR_0,               The first planar reflector picture as a filtered mip chain)           \
+    X(ReflectionTextureSlots, PLANAR_1,              5,  REFLECT_SLOT_PLANAR_1,               The second planar reflector picture)                                 \
     X(PostTextureSlots,       SCENE_COLOR,           18, POST_SLOT_SCENE_COLOR,               Scene colour: refraction backdrop and a post pass source)            \
     X(PostTextureSlots,       SCENE_DEPTH,           19, POST_SLOT_SCENE_DEPTH,               Scene depth texture)                                                 \
     X(PostTextureSlots,       SCENE_GBUFFER,         20, POST_SLOT_SCENE_GBUFFER,             Scene G-buffer: the oct view-normal)                                 \

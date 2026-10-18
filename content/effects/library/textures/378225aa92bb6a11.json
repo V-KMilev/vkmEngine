@@ -1,0 +1,9 @@
+{
+  "name": "assets/effects/smoke.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/effects/smoke.png",
+    "usage": "Color"
+  }
+}

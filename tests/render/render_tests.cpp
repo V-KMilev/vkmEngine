@@ -45,6 +45,7 @@
 #include "storage/gl_shadow_atlas.h"
 #include "core/engine_config.h"
 #include "frame/gl_lights.h"
+#include "offline/gl_capture_lighting.h"
 #include "frame/gl_shadow_data.h"
 #include "frame/gl_camera.h"
 #include "frame/gl_ocean.h"
@@ -660,6 +661,36 @@ void testASpotsTileFollowsItsShareOfTheScreen() {
         && sizes[2] == FULL && sizes[3] == FULL / 2;
     check("  the nearest three at the largest tile, the last at half", halved);
     check("and every tile fits the atlas", area <= GLShadowAtlas::capacity(FULL));
+}
+
+// A capture is out of date when a light that reaches it changes, not when one elsewhere does: a lamp
+// moving across the world refreshes the probes it can light, not every one. The sun reaches all.
+void testACaptureComparesTheLightsThatReachIt() {
+    std::printf("What makes a capture out of date:\n");
+
+    using namespace Vkm::Engine;
+    LightData sun{};
+    sun.type      = LightType::Directional;
+    sun.direction = glm::vec3(0.0f, -1.0f, 0.0f);
+    sun.intensity = 3.0f;
+    LightData lamp{};
+    lamp.type      = LightType::Point;
+    lamp.position  = glm::vec3(50.0f, 1.0f, 0.0f);
+    lamp.radius    = 5.0f;
+    lamp.intensity = 10.0f;
+    std::vector<LightData> lights = {sun, lamp};
+    const Math::AABB here{glm::vec3(-2.0f), glm::vec3(2.0f)};
+    const uint64_t   before = lightingDigest(lights, &here);
+    const uint64_t   world  = lightingDigest(lights);
+
+    lights[1].position.x = 60.0f;
+    check("a lamp moving far off leaves it as it was", lightingDigest(lights, &here) == before);
+    check("  though the whole scene's lights differ", lightingDigest(lights) != world);
+    lights[1].position.x = 6.0f;
+    check("a lamp moving within reach of it does not", lightingDigest(lights, &here) != before);
+    lights[1].position.x = 60.0f;
+    lights[0].intensity = 4.0f;
+    check("  nor does the sun, wherever it is", lightingDigest(lights, &here) != before);
 }
 
 // When more spots cast than the atlas holds, the nearest keep their shadows, and a raised
@@ -1546,6 +1577,48 @@ void testACutoutsMapIsPartOfItsShadow() {
     check("with no GL error behind any of it", noGlError());
 }
 
+// The scene's materials upload with it, not the frame the camera first turns to them: a prop
+// behind the eye, casting nothing, has its material ready before it is ever seen.
+void testASceneUploadsWhatTheCameraHasNotSeen() {
+    using namespace Vkm::Engine;
+    std::printf("What a sync uploads:\n");
+
+    ResourceManager resources;
+    TextureAsset map;
+    map.params.width  = 2;
+    map.params.height = 2;
+    map.pixelData.assign(2 * 2 * 4, 255);
+    const TextureHandle paint = resources.add(std::move(map), "test:paint");
+    MaterialAsset seenAsset;
+    MaterialAsset unseenAsset;
+    unseenAsset.albedoTexture = paint;
+    const MaterialHandle seen   = resources.add(std::move(seenAsset), "test:seen");
+    const MaterialHandle unseen = resources.add(std::move(unseenAsset), "test:unseen");
+    const MeshHandle     cube   = resources.add(generateCube(), "test:cube");
+
+    RenderObjects objects;
+    const MaterialHandle materials[2] = {seen, unseen};
+    for (uint32_t i = 0; i < 2; ++i) {
+        const glm::vec3 at(0.0f, 0.5f, i == 0 ? -4.0f : 12.0f);
+        objects.models.push_back(glm::translate(glm::mat4(1.0f), at));
+        objects.bounds.push_back({at - glm::vec3(0.5f), at + glm::vec3(0.5f)});
+        objects.draws.push_back({cube, materials[i], 0});
+        objects.skinFirst.push_back(0);
+        objects.scene.push_back(i);
+    }
+    objects.visible.push_back(0);
+    objects.casterCount = 0;
+
+    RenderView view;
+    view.objects = &objects;
+    GLView glView;
+    glView.sync(view, resources);
+    check("the material in view is uploaded", glView.getMaterial(seen) != nullptr);
+    check("  and so is the one behind the eye", glView.getMaterial(unseen) != nullptr);
+    check("  its map with it", glView.getTexture(paint) != nullptr);
+    check("with no GL error behind it", noGlError());
+}
+
 // A transparent caster's shadow is cut by its alpha too, so it is planned as a cutout is: a run
 // a material, and its map part of the tile's picture - a decal's see-through surround casts none.
 void testATransparentCastersShadowIsCutByItsAlpha() {
@@ -1911,6 +1984,9 @@ void testTheSharedBlocksAgreeWithTheirStructs() {
     const auto strideOf = [](GLuint program, const char* name) {
         return programResource(program, GL_BUFFER_VARIABLE, name, GL_TOP_LEVEL_ARRAY_STRIDE);
     };
+    const auto bufferMemberAt = [](GLuint program, const char* name, size_t offset) {
+        return programResource(program, GL_BUFFER_VARIABLE, name, GL_OFFSET) == static_cast<GLint>(offset);
+    };
 
     check(
         "the shadow block is the size of ShadowUBOData",
@@ -2025,9 +2101,25 @@ void testTheSharedBlocksAgreeWithTheirStructs() {
             == static_cast<GLint>(sizeof(ParticleData))
     );
     check(
-        "  with its parameters where ParticleData has them",
-        programResource(billboards, GL_BUFFER_VARIABLE, "ParticleBlock.particles[0].params", GL_OFFSET)
-            == static_cast<GLint>(offsetof(ParticleData, params))
+        "  with each member where ParticleData has it",
+        bufferMemberAt(billboards, "ParticleBlock.particles[0].color", offsetof(ParticleData, color))
+            && bufferMemberAt(billboards, "ParticleBlock.particles[0].params", offsetof(ParticleData, params))
+            && bufferMemberAt(billboards, "ParticleBlock.particles[0].uvRect", offsetof(ParticleData, uvRect))
+            && bufferMemberAt(billboards, "ParticleBlock.particles[0].trail", offsetof(ParticleData, trail))
+            && bufferMemberAt(billboards, "ParticleBlock.particles[0].uvNext", offsetof(ParticleData, uvNext))
+    );
+
+    const Vkm::GL::Shader strip("shaders/particle_strip");
+    const GLuint strips = linkedProgram(strip);
+    check(
+        "a strip point is a StripPoint wide",
+        strideOf(strips, "StripBlock.points[0].positionWidth") == static_cast<GLint>(sizeof(StripPoint))
+    );
+    check(
+        "  with each member where StripPoint has it",
+        bufferMemberAt(strips, "StripBlock.points[0].color", offsetof(StripPoint, color))
+            && bufferMemberAt(strips, "StripBlock.points[0].params", offsetof(StripPoint, params))
+            && bufferMemberAt(strips, "StripBlock.points[0].look", offsetof(StripPoint, look))
     );
     check("with no GL error behind any of it", noGlError());
 }
@@ -2363,6 +2455,7 @@ int runTests() {
     testAnAtlasLaysOutTilesOfEverySize();
     testASpotsTileFollowsItsShareOfTheScreen();
     testShadowsGoToTheNearestAndThePrioritised();
+    testACaptureComparesTheLightsThatReachIt();
     testAShadowCubeIsBoundForComparison();
     testEveryShippedShaderCompiles();
     testABackendInstallsItsConstantsBeforeItCompilesAnything();
@@ -2373,6 +2466,7 @@ int runTests() {
     testAnAreaLightsFormFactorHoldsStraightDownTheNormal();
     testACutoutsMapIsPartOfItsShadow();
     testATransparentCastersShadowIsCutByItsAlpha();
+    testASceneUploadsWhatTheCameraHasNotSeen();
     testATilesRunsKeepEachLayoutTogether();
     testACutoutElsewhereLeavesAHeldTileHeld();
     testACasterAboveTheCascadesIsKept();

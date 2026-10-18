@@ -90,8 +90,11 @@ class GLLights {
          * @param lights      The frame's lights, capped at Config::MAX_LIGHTS.
          * @param shadowSlots Each light's slot in the shadow atlas; a default one
          *                    means "none of them cast".
+         * @param steady      For a capture: a flickering light shines steady, and a transient one
+         *                    with nothing, keeping its place, so what a probe bakes holds after
+         *                    the flash has gone and whatever the flame was doing.
          */
-        void update(const std::vector<LightData>& lights, LightSlots shadowSlots = {});
+        void update(const std::vector<LightData>& lights, LightSlots shadowSlots = {}, bool steady = false);
 
     private:
         std::unique_ptr<Vkm::GL::ShaderStorageBuffer> m_ssbo;

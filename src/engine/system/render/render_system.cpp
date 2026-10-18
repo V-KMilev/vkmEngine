@@ -16,6 +16,7 @@
 #include "debug/profiler.h"
 #include "core/clock.h"
 #include "debug/screenshot.h"
+#include "net/net_session.h"
 
 namespace Vkm::Engine {
 
@@ -33,6 +34,7 @@ void RenderSystem::update(FrameContext& ctx) {
     m_view.surfaceHeight  = static_cast<uint32_t>(ctx.window.getHeight());
     m_view.settings       = ctx.render;
     m_view.frameSeconds   = ctx.clock.getDeltaTime();
+    m_view.worldSeconds   = ctx.net.worldTime(ctx.clock);
 
     m_view.build(ctx.scene, *ctx.visibility, ctx.ui, ctx.splash, ctx.poses, ctx.particles, ctx.ocean);
     m_backend->render(m_view, ctx.resources);

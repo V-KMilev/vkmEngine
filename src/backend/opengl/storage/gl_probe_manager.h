@@ -22,7 +22,6 @@ class GLCubeConvolver;
 class GLView;
 class GLIBL;
 class GLIrradianceVolume;
-class ResourceManager;
 class GLProbeBaker;
 class GLProbeArray;
 class GLSceneCapture;
@@ -51,6 +50,11 @@ struct ProbeBlock {
  * counter.
  */
 class GLProbeManager {
+    public:
+        /// Seconds a refreshed probe rests before it may be refreshed again, so a light that never
+        /// holds still does not keep one probe refreshing back to back.
+        static constexpr double REFRESH_REST = 1.0;
+
     public:
         GLProbeManager();
         ~GLProbeManager();
@@ -91,21 +95,20 @@ class GLProbeManager {
          * begin again in its turn. Run after the passes:
          * the baker rebinds the camera UBO and the lights SSBO.
          *
-         * @param gl        Live GL context the bake draws through.
-         * @param view      Supplies the probes and the scene.
-         * @param glView    GPU mirror the captures draw from.
-         * @param resources Resolves what the captures draw.
-         * @param ibl       The global environment, the captures' backdrop.
-         * @param volume    The baked irradiance volume, at the view's box, lighting what the
-         *                  captures see of it; null for none.
-         * @param lighting  What lights the captures now. A probe captured under other light is
-         *                  refreshed.
+         * @param gl       Live GL context the bake draws through.
+         * @param view     Supplies the probes and the scene.
+         * @param glView   GPU mirror the captures draw from.
+         * @param ibl      The global environment, the captures' backdrop.
+         * @param volume   The baked irradiance volume, at the view's box, lighting what the
+         *                 captures see of it; null for none.
+         * @param lighting What lights the captures now but for the lights, which are each probe's
+         *                 own: those whose radius reaches within half its width of its box. A
+         *                 probe captured under other light is refreshed.
          */
         void update(
             Vkm::GL::Context& gl,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const GLIBL& ibl,
             const GLIrradianceVolume* volume,
             const CaptureLighting& lighting
@@ -147,6 +150,7 @@ class GLProbeManager {
             uint32_t  version    = 0;                ///< bakeVersion the layer was last baked at.
             uint32_t  volumeBake = 0;                ///< The irradiance volume's bakeId it was lit by.
             uint64_t  captured   = 0;                ///< The update() it was last captured in.
+            double    refreshed  = -REFRESH_REST;    ///< m_seconds its last refresh ended at.
             CaptureLighting lighting;                ///< What lit it when it was captured.
             /// Where the probe stands, so one being moved bakes once it settles, not every
             /// frame it moves.
@@ -167,22 +171,18 @@ class GLProbeManager {
         /**
          * @brief Take a step of refreshing a probe captured under other light than @p lighting.
          *
-         * @param gl        Live GL context the step draws through.
-         * @param view      Supplies the probes and the scene.
-         * @param glView    GPU mirror the captures draw from.
-         * @param resources Resolves what the captures draw.
-         * @param ibl       The global environment, the captures' backdrop.
-         * @param volume    The irradiance volume lighting what the captures see; null for none.
-         * @param lighting  What lights the captures now (see update()).
+         * @param gl     Live GL context the step draws through.
+         * @param view   Supplies the probes and the scene.
+         * @param glView GPU mirror the captures draw from.
+         * @param ibl    The global environment, the captures' backdrop.
+         * @param volume The irradiance volume lighting what the captures see; null for none.
          */
         void refresh(
             Vkm::GL::Context& gl,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const GLIBL& ibl,
-            const GLIrradianceVolume* volume,
-            const CaptureLighting& lighting
+            const GLIrradianceVolume* volume
         );
 
     private:
@@ -202,9 +202,13 @@ class GLProbeManager {
         /// Last uploaded block, for gating the upload.
         ProbeBlock                              m_lastBlock{};
 
+        /// What lights each of the view's probes now, its own lights among it (update()).
+        std::vector<CaptureLighting>            m_lighting;
+
         int             m_refreshLayer = -1;  ///< The layer a refresh under way replaces; -1 for none.
         CaptureLighting m_refreshLighting;    ///< What lit the scene when it began.
         uint64_t        m_frame        = 0;   ///< Counts update()s, for BakeState::captured.
+        double          m_seconds      = 0.0; ///< Sums the views' frameSeconds, for REFRESH_REST.
 };
 
 } // namespace Vkm::Engine

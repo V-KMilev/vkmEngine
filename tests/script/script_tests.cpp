@@ -14,6 +14,8 @@
 #include "io/asset/asset_serializer.h"
 #include "platform/library/dynamic_library.h"
 #include "resource/asset/audio_clip_asset.h"
+#include "resource/asset/material_asset.h"
+#include "resource/asset/texture_asset.h"
 #include "resource/asset_ref.h"
 #include "system/physics/physics_system.h"
 #include "system/script/behavior.h"
@@ -187,6 +189,12 @@ class Singer : public ReflectedBehavior<Singer> {
         AssetRef<AudioClipAsset> song;
 };
 
+// Names a material by its name alone, as a behavior that spawns decals does.
+class Painter : public ReflectedBehavior<Painter> {
+    public:
+        AssetRef<MaterialAsset> paint;
+};
+
 // Throws from an event listener, reaching gameplay through the bus rather than
 // BehaviorSystem.
 class EventThrower : public ReflectedBehavior<EventThrower> {
@@ -316,6 +324,10 @@ VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(Singer)
     VKM_F(song)
+VKM_REFLECT_END()
+
+VKM_REFLECT_BEGIN(Painter)
+    VKM_F(paint)
 VKM_REFLECT_END()
 
 VKM_REFLECT_BEGIN(EventThrower)
@@ -978,6 +990,32 @@ void testABehaviorsAssetFieldIsAReference() {
     );
 }
 
+// A material a behavior names brings its maps into the assets block, as one a Mesh holds does.
+void testAMaterialABehaviorNamesBringsItsTextures() {
+    std::printf("A material a behavior names:\n");
+
+    Scene scene;
+    ResourceManager resources;
+    const TextureHandle picture = resources.add(TextureAsset{}, "test:scorch.png");
+    MaterialAsset paint;
+    paint.albedoTexture = picture;
+    resources.add(std::move(paint), "test:scorch");
+
+    const EntityId entity = scene.createEntity();
+    attach<Painter>(scene, entity).paint.name = "test:scorch";
+
+    const nlohmann::json assets = AssetSerializer::saveAssetsForEntities(scene, {entity}, resources);
+    const auto listed = [&](const char* section, const char* name) {
+        if (!assets.contains(section)) return false;
+        for (const nlohmann::json& entry : assets[section]) {
+            if (entry.value("name", std::string{}) == name) return true;
+        }
+        return false;
+    };
+    check("the material is listed", listed("materials", "test:scorch"));
+    check("  and so is its albedo map", listed("textures", "test:scorch.png"));
+}
+
 // Whether DynamicLibrary::unload unmaps. Tracy's client makes dlclose a no-op so
 // recorded zone names stay readable, so a profiler build keeps every copy mapped.
 // These checks expect whichever holds; that the module CAN be unmapped is checked on
@@ -1237,4 +1275,5 @@ void runScriptTests() {
     testAMistypedFieldCostsOneValueNotTheScene();
     testVectorFieldsRoundTrip();
     testABehaviorsAssetFieldIsAReference();
+    testAMaterialABehaviorNamesBringsItsTextures();
 }

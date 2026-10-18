@@ -16,6 +16,7 @@
 #include "ecs/component/physics/joint.h"
 #include "ecs/component/physics/ragdoll.h"
 #include "ecs/component/render/mesh.h"
+#include "ecs/component/render/particle_emitter.h"
 #include "ecs/entity_mapping.h"
 #include "ecs/hierarchy_operations.h"
 #include "io/project.h"
@@ -387,6 +388,49 @@ void testComponentRoundTrip() {
         "  and built into the same triangles, with nothing to rebuild",
         back.meshPoints == collider.meshPoints && !back.meshNodes.empty()
     );
+}
+
+// An emitter's curves, gradient and ranges are lists and pairs, and its enums are names: each
+// comes back as it went, and none takes the default it was loaded over.
+void testAnEmitterRoundTrips() {
+    std::printf("Round-tripping an emitter and a sub-emitter's trigger:\n");
+
+    ResourceManager resources;
+    ParticleEmitter before;
+    before.shape             = EmitShape::Box;
+    before.blend             = ParticleBlend::Distortion;
+    before.render            = ParticleRender::Trail;
+    before.seenBy            = SeenBy::Viewmodel;
+    before.lifetime          = {0.5f, 2.5f};
+    before.rotation          = {-1.0f, 1.0f};
+    before.sizeOverLife.keys = {{0.0f, 0.5f}, {0.3f, 2.0f}, {1.0f, 0.0f}};
+    before.color.keys        = {{0.0f, {0.1f, 0.2f, 0.3f, 0.4f}}};
+    before.angle             = 0.75f;
+
+    const nlohmann::json saved = ComponentSerializer::save(before, resources);
+    check("its enums are written by name", saved.dump().find("\"Distortion\"") != std::string::npos);
+    ParticleEmitter after;
+    ComponentSerializer::load(saved, after, resources);
+    const bool enums = after.shape == EmitShape::Box && after.blend == ParticleBlend::Distortion
+        && after.render == ParticleRender::Trail && after.seenBy == SeenBy::Viewmodel;
+    check("  and read back", enums);
+    check(
+        "its ranges come back",
+        after.lifetime.min == 0.5f && after.lifetime.max == 2.5f
+            && after.rotation.min == -1.0f && after.angle == 0.75f
+    );
+    const auto& keys = after.sizeOverLife.keys;
+    check("  its curve, key for key", keys.size() == 3 && keys[1].time == 0.3f && keys[1].value == 2.0f);
+    check(
+        "  and its gradient, the default's two keys gone",
+        after.color.keys.size() == 1 && after.color.keys[0].color == glm::vec4(0.1f, 0.2f, 0.3f, 0.4f)
+    );
+
+    ParticleTrigger trigger{ParticleEvent::Collision, 7};
+    ParticleTrigger loaded;
+    ComponentSerializer::load(ComponentSerializer::save(trigger), loaded);
+    const bool kept = loaded.event == ParticleEvent::Collision && loaded.count == 7;
+    check("a trigger keeps its event and count", kept);
 }
 
 // Joint, Ragdoll and Hierarchy references save as slots and load back. A component
@@ -1090,6 +1134,7 @@ void runSceneTests() {
     testASceneWithANonFiniteNumberStillRoundTrips();
     testImportedHierarchy();
     testComponentRoundTrip();
+    testAnEmitterRoundTrips();
     testSceneRoundTripKeepsReferences();
     testUnknownBehaviorsSurviveASave();
     testAProjectSurvivesBeingWritten();

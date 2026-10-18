@@ -24,7 +24,6 @@ namespace Vkm::Engine {
 class GLIBL;
 class GLSceneCapture;
 class GLView;
-class ResourceManager;
 struct RenderView;
 
 /**
@@ -93,7 +92,6 @@ class GLIrradianceBaker {
          * @param volume    The grid the frame reads, resized to a bake's.
          * @param view      Frame snapshot supplying the volume, the geometry and the lights.
          * @param glView    GPU resource mirror for material/mesh lookups.
-         * @param resources Resolves the materials the capture syncs.
          * @param globalIBL Baked environment: lights the surfels + fills the background.
          * @param lighting  What lights the surfels now.
          */
@@ -102,7 +100,6 @@ class GLIrradianceBaker {
             GLIrradianceVolume& volume,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const GLIBL& globalIBL,
             const CaptureLighting& lighting
         );
@@ -147,7 +144,6 @@ class GLIrradianceBaker {
          * @param data      The volume's world box + grid resolution.
          * @param view      Frame snapshot supplying the geometry + lights to capture.
          * @param glView    GPU resource mirror for material/mesh lookups.
-         * @param resources Resolves the materials the capture syncs.
          * @param globalIBL Baked environment: lights the surfels + fills the background.
          */
         void bake(
@@ -156,7 +152,6 @@ class GLIrradianceBaker {
             const IrradianceVolumeData& data,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const GLIBL& globalIBL
         );
 
@@ -175,7 +170,6 @@ class GLIrradianceBaker {
          * @param data      The box + grid the bake captured.
          * @param view      Frame snapshot supplying the lights and the shadowed sun's casters.
          * @param glView    GPU resource mirror for the casters' meshes.
-         * @param resources Resolves the materials the capture syncs.
          * @param globalIBL Baked environment: lights the surfels + fills the background.
          */
         void relight(
@@ -184,7 +178,6 @@ class GLIrradianceBaker {
             const IrradianceVolumeData& data,
             const RenderView& view,
             GLView& glView,
-            const ResourceManager& resources,
             const GLIBL& globalIBL
         );
 

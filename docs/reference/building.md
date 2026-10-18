@@ -207,6 +207,7 @@ cmake --install build --prefix /path/to/sdk
                     gameplay-module recipe it includes
 <prefix>/shaders/   engine shaders
 <prefix>/assets/    the editor's font and logo - engine chrome, not anyone's art
+<prefix>/content/   the packs the editor's Create > Effect copies into a project
 <prefix>/templates/ <prefix>/examples/   what `vkm new` copies, less what running
                     them wrote (tools/generated.txt)
 <prefix>/python/    the pinned Python vkm runs on, when VKM_PYTHON names it
@@ -307,7 +308,7 @@ shaders/
   exposure/     # histogram/, bins.glsl  (auto-exposure)
   ocean/        # ripples and shore fields
   gtao/  screen_shadow/  cluster/  fog/  reflection/
-  bloom/  dof/  decal/  particle/
+  bloom/  dof/  decal/  particle/  particle_strip/
   skybox/  grid/  composite/  ui/  splash/
 ```
 

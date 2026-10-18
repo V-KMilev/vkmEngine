@@ -32,6 +32,7 @@
 #include "ecs/component/render/decal.h"
 #include "ecs/component/render/irradiance_volume.h"
 #include "ecs/component/render/particle_emitter.h"
+#include "ecs/component/render/planar_reflector.h"
 #include "ecs/component/render/reflection_probe.h"
 #include "ecs/component/ui/ui_element.h"
 #include "core/host_chrome.h"
@@ -406,6 +407,26 @@ void GizmoOverlay::drawProbeGizmos(EditorContext& ec) {
     };
     ec.frame.scene.forEach<ReflectionProbe, Transform>(drawProbe);
 
+    // A planar reflector's rectangle, and the way it faces.
+    const auto drawReflector = [&](EntityId id, const PlanarReflector& reflector, const Transform& tf) {
+        const bool  selected = (ec.state.isSelected(id));
+        const ImU32 col = selected ? EditorStyle::HIGHLIGHT_U32 : IM_COL32(77, 158, 235, 200);
+
+        const glm::vec3 pos = resolvedWorldPosition(ec.frame.scene, id, tf);
+        const glm::quat rot = resolvedWorldRotation(ec.frame.scene, id, tf);
+        const glm::vec3 e(reflector.halfExtents.x, 0.0f, reflector.halfExtents.y);
+        scope.box(pos, rot, e, col, EditorStyle::px(selected ? 2.0f : 1.5f));
+
+        ImVec2 a, b;
+        if (!scope.project(pos, a)) return;
+        const float facing = 0.25f * std::min(reflector.halfExtents.x, reflector.halfExtents.y);
+        if (scope.project(pos + rot * glm::vec3(0.0f, facing, 0.0f), b)) {
+            dl->AddLine(a, b, col, EditorStyle::px(selected ? 2.0f : 1.5f));
+        }
+        markEntity(dl, EditorIcon::Probe, id, a, pos, col);
+    };
+    ec.frame.scene.forEach<PlanarReflector, Transform>(drawReflector);
+
     const auto drawVolume = [&](EntityId id, const IrradianceVolume& volume, const Transform& tf) {
         const bool  selected = (ec.state.isSelected(id));
         const ImU32 col = selected ? EditorStyle::HIGHLIGHT_U32 : IRRADIANCE_VOLUME_COL;
@@ -481,15 +502,19 @@ void GizmoOverlay::drawEffectGizmos(EditorContext& ec) {
         const bool  selected = (ec.state.isSelected(id));
         const ImU32 col = selected ? EditorStyle::HIGHLIGHT_U32 : EMITTER_COL;
 
-        const glm::vec3 pos = resolvedWorldPosition(ec.frame.scene, id, tf);
+        const glm::mat4 model = resolvedWorldMatrix(ec.frame.scene, id, tf);
+        const glm::vec3 pos(model[3]);
         ImVec2 sp;
         if (!scope.project(pos, sp)) return;
 
-        // Under the marker, so the glyph sits on the line's start.
-        const float speed = glm::length(e.velocity);
-        if (speed > 1e-4f) {
+        // The way a cone, a box or a hemisphere sends its particles, its +Y; under the marker, so
+        // the glyph sits on the line's start.
+        const glm::vec3 up(model[1]);
+        const bool      aimed = e.shape == EmitShape::Cone || e.shape == EmitShape::Box
+            || e.shape == EmitShape::Hemisphere;
+        if (aimed && glm::length(up) > 1e-4f) {
             ImVec2 tip;
-            if (scope.project(pos + (e.velocity / speed) * 0.75f, tip))
+            if (scope.project(pos + glm::normalize(up) * 0.75f, tip))
                 dl->AddLine(sp, tip, col, EditorStyle::px(selected ? 2.0f : 1.5f));
         }
         markEntity(dl, EditorIcon::Particle, id, sp, pos, col);

@@ -107,7 +107,7 @@ struct GizmoVisibility {
     bool lights    = true;
     bool cameras   = true;
     bool audio     = true;   ///< Sources and listeners.
-    bool probes    = true;   ///< Reflection probes and irradiance volumes.
+    bool probes    = true;   ///< Reflection probes, planar reflectors and irradiance volumes.
     bool effects   = true;   ///< Decals and particle emitters.
     bool colliders = false;  ///< Colliders and joints.
     bool bounds    = false;  ///< Each drawn object's world box.

@@ -64,11 +64,10 @@ class GLView {
         /**
          * @brief Upload / refresh every asset `view` references.
          *
-         * Every RenderView list naming a handle is walked: the camera's objects (mesh, material,
-         * its textures), scene-wide objects (mesh; material and textures for shadow casters,
-         * since a cutout casts through its albedo), decals, and the UI's commands (font atlas,
-         * image). A non-casting scene-wide object's material is left out; an offline capture
-         * that shades one calls ensureMaterial (see GLSceneCapture).
+         * Every RenderView list naming a handle is walked: the camera's objects and the
+         * scene-wide ones (mesh, material and its textures - every material, so an object first
+         * turned to uploads nothing that frame), decals, particle textures, and the UI's commands
+         * (font atlas, image).
          *
          * A missing GPU object skips a draw silently, so the walk names every RenderView member:
          * one added there fails to compile here until it has been classified.
@@ -152,6 +151,19 @@ class GLView {
          * @return The upload, or 0 while getTexture() would answer null.
          */
         uint64_t textureUploadId(const TextureHandle& handle) const;
+
+        /**
+         * @brief Whether @p handle settled with no pixels: its decode failed or its file is gone.
+         *
+         * It stays so until the graph is invalidated, pixels that come later or not: ask
+         * getTexture() first.
+         *
+         * @param handle The texture asked about.
+         * @return False while it is still loading.
+         */
+        bool textureFailed(const TextureHandle& handle) const {
+            return m_reportedMissing.count(handle.id()) > 0;
+        }
 
         /**
          * @brief The magenta/black checkerboard bound wherever a real texture should be but isn't.
@@ -251,7 +263,7 @@ class GLView {
         // Outside the tables: it belongs to no asset, and must survive a graph swap, when things go missing.
         mutable std::unique_ptr<Vkm::GL::Texture2D> m_missingTexture;
 
-        /// Texture ids already warned about, so the log stays one line per asset.
+        /// Texture ids that settled with no pixels, each warned about once.
         std::unordered_set<uint32_t> m_reportedMissing;
 
         /// The filtering and anisotropy every texture was last given.

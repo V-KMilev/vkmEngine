@@ -17,6 +17,7 @@
 #include "ecs/component/physics/rigidbody.h"
 #include "system/physics/body_pose.h"
 #include "system/physics/collision/mesh_bvh.h"
+#include "system/physics/collision/part_bounds.h"
 #include "system/physics/collision/triangle.h"
 #include "system/physics/tolerance.h"
 
@@ -549,22 +550,18 @@ bool isIgnored(EntityId id, const QueryFilter& filter, const Ragdoll* ignoredRag
     return false;
 }
 
-template <typename PartTest>
-bool sweepBodies(
-    Scene& scene,
-    const glm::vec3& origin,
-    const glm::vec3& dir,
-    float maxDistance,
-    const QueryFilter& filter,
-    RayHit& out,
-    PartTest testPart
-) {
+/**
+ * @brief Walk every part @p filter lets through, placed in the world.
+ *
+ * @tparam Fn Any callable of the shape @p fn names.
+ * @param scene  Scene whose bodies are walked.
+ * @param filter Which bodies may be hit.
+ * @param fn     Called as fn(entity, collider, part, centre, basis).
+ */
+template <typename Fn>
+void forEachPart(Scene& scene, const QueryFilter& filter, Fn&& fn) {
     auto* rbStorage = scene.storage<Rigidbody>();
-    if (!rbStorage) return false;
-
-    RayHit best;
-    float bestDistance = maxDistance;
-    bool found = false;
+    if (!rbStorage) return;
 
     const Ragdoll* ignoredRagdoll = filter.ignore ? scene.tryGet<Ragdoll>(filter.ignore) : nullptr;
     const uint32_t count = static_cast<uint32_t>(rbStorage->size());
@@ -583,34 +580,56 @@ bool sweepBodies(
 
         const BodyPose pose = worldPoseOf(scene, id, *transform);
         const glm::mat3 basis = glm::mat3_cast(pose.rotation);
-
         for (const ColliderPart& part : collider->parts) {
-            const glm::vec3 center = pose.position + basis * part.center;
-
-            float     hitDistance = 0.0f;
-            glm::vec3 hitNormal   = {0.0f, 1.0f, 0.0f};
-            const bool hit = testPart(*collider, part, center, basis, bestDistance, hitDistance, hitNormal);
-            if (!hit) continue;
-            if (hitDistance > bestDistance) continue;
-            // A tie goes to the lower slot, so every end names the same body.
-            if (found && hitDistance == bestDistance && id.slot() > best.entity.slot()) continue;
-
-            // No surface named (started inside, or on an axis): facing the caster lets it push back out.
-            if (glm::dot(hitNormal, hitNormal) <= glm::epsilon<float>()) {
-                hitNormal = -dir;
-            }
-
-            bestDistance  = hitDistance;
-            best.entity   = id;
-            best.distance = hitDistance;
-            best.normal   = hitNormal;
-            best.point    = origin + dir * hitDistance;
-            found = true;
+            fn(id, *collider, part, pose.position + basis * part.center, basis);
         }
     }
+}
 
-    if (found) out = best;
-    return found;
+// The nearest hit offered along one ray. A tie goes to the lower slot, so every end names the same body.
+struct Nearest {
+    glm::vec3 origin;
+    glm::vec3 dir;
+    float     limit;
+    RayHit    best{};
+    bool      found = false;
+
+    void offer(EntityId id, float distance, glm::vec3 normal) {
+        if (distance > limit) return;
+        if (found && distance == limit && id.slot() > best.entity.slot()) return;
+        // No surface named (started inside, or on an axis): facing the caster lets it push back out.
+        if (glm::dot(normal, normal) <= glm::epsilon<float>()) normal = -dir;
+        limit = distance;
+        best  = {id, distance, origin + dir * distance, normal};
+        found = true;
+    }
+};
+
+template <typename PartTest>
+bool sweepBodies(
+    Scene& scene,
+    const glm::vec3& origin,
+    const glm::vec3& dir,
+    float maxDistance,
+    const QueryFilter& filter,
+    RayHit& out,
+    PartTest testPart
+) {
+    Nearest nearest{origin, dir, maxDistance};
+    const auto test = [&](
+        EntityId id,
+        const Collider& collider,
+        const ColliderPart& part,
+        const glm::vec3& center,
+        const glm::mat3& basis
+    ) {
+        float     t = 0.0f;
+        glm::vec3 normal(0.0f, 1.0f, 0.0f);
+        if (testPart(collider, part, center, basis, nearest.limit, t, normal)) nearest.offer(id, t, normal);
+    };
+    forEachPart(scene, filter, test);
+    if (nearest.found) out = nearest.best;
+    return nearest.found;
 }
 
 bool prepareSweep(const glm::vec3& direction, float maxDistance, glm::vec3& dir) {
@@ -685,6 +704,64 @@ bool spherecast(
     // sweepBodies reports the centre; the surface is one radius further.
     if (found) out.point -= out.normal * radius;
     return found;
+}
+
+void QueryParts::gather(Scene& scene, const QueryFilter& filter, const Math::AABB& around) {
+    m_parts.clear();
+    const auto place = [&](
+        EntityId id,
+        const Collider& collider,
+        const ColliderPart& part,
+        const glm::vec3& center,
+        const glm::mat3& basis
+    ) {
+        // The part's own bound turned into the world, grown by what a mesh's walk tolerates.
+        const Math::AABB local = partLocalBounds(collider, part);
+        const glm::vec3  mid   = center + basis * ((local.min + local.max) * 0.5f);
+        glm::mat3 reach;
+        for (int c = 0; c < 3; ++c) reach[c] = glm::abs(basis[c]);
+        const glm::vec3 grown = glm::vec3(Physics::CONTACT_TOLERANCE);
+        const glm::vec3 half  = reach * ((local.max - local.min) * 0.5f) + grown;
+        const bool meets = glm::all(glm::lessThanEqual(mid - half, around.max))
+            && glm::all(glm::greaterThanEqual(mid + half, around.min));
+        if (meets) m_parts.push_back({id, &collider, &part, center, basis, mid, half});
+    };
+    forEachPart(scene, filter, place);
+}
+
+bool QueryParts::raycast(
+    const glm::vec3& origin,
+    const glm::vec3& direction,
+    float maxDistance,
+    RayHit& out
+) const {
+    glm::vec3 dir(0.0f);
+    if (!prepareSweep(direction, maxDistance, dir)) return false;
+
+    Nearest nearest{origin, dir, maxDistance};
+    for (const Placed& placed : m_parts) {
+        // Its bound first: most gathered parts lie off any one ray.
+        float     t = 0.0f;
+        glm::vec3 normal(0.0f);
+        if (!rayBox(origin - placed.mid, dir, placed.half, nearest.limit, t, normal)) continue;
+
+        normal = glm::vec3(0.0f, 1.0f, 0.0f);
+        const bool hit = castPart(
+            *placed.collider,
+            *placed.part,
+            placed.center,
+            placed.basis,
+            origin,
+            dir,
+            0.0f,
+            nearest.limit,
+            t,
+            normal
+        );
+        if (hit) nearest.offer(placed.entity, t, normal);
+    }
+    if (nearest.found) out = nearest.best;
+    return nearest.found;
 }
 
 } // namespace Vkm::Engine

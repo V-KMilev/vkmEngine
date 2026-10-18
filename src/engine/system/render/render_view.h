@@ -7,6 +7,7 @@
 
 #include "system/render/data/camera_data.h"
 #include "system/render/data/light_data.h"
+#include "system/render/data/planar_reflector_data.h"
 #include "system/render/data/probe_data.h"
 #include "system/render/data/render_objects.h"
 #include "system/render/data/decal_data.h"
@@ -50,6 +51,9 @@ struct RenderView {
     /// over time (auto-exposure) steps by.
     float frameSeconds = 0.0f;
 
+    /// The world's clock, as NetSession::worldTime gives it: what a flickering light wavers by.
+    double worldSeconds = 0.0;
+
     CameraData camera;  ///< The view Visibility culled for: the scene's camera or a host's.
     /**
      * @brief Whether a camera resolved this frame.
@@ -68,10 +72,19 @@ struct RenderView {
 
     std::vector<LightData>            lights;  ///< The enabled ones, in world space.
     std::vector<ProbeData>            probes;
+    std::vector<PlanarReflectorData>  planarReflectors;  ///< The enabled ones; the backend picks.
     std::vector<DecalData>            decals;  ///< Every enabled one in the scene: not culled to the camera.
-    std::vector<ParticleData>         particlesAdditive;  ///< Order-independent.
-    std::vector<ParticleData>         particlesAlpha;     ///< Unsorted; the backend orders them.
-    std::vector<TextureHandle>        particleTextures;   ///< What they show, by ParticleData::params.z - 1.
+    std::vector<ParticleData>         particlesAdditive;    ///< Order-independent.
+    std::vector<ParticleData>         particlesAlpha;       ///< Unsorted; the backend orders them.
+    std::vector<ParticleData>         particlesDistortion;  ///< Unsorted; the backend orders them.
+    std::vector<StripPoint>           stripPoints;          ///< Every strip's points, a strip's together.
+    std::vector<ParticleStrip>        stripsAdditive;       ///< Ribbons and trails; order-independent.
+    std::vector<ParticleStrip>        stripsAlpha;          ///< Unsorted; the backend orders them.
+    std::vector<ParticleStrip>        stripsDistortion;     ///< Unsorted; the backend orders them.
+
+    /// What they show, by ParticleData::params.z or ParticleStrip::texture, less one, and an alpha
+    /// billboard's normal map by ParticleData::uvNext.w.
+    std::vector<TextureHandle> particleTextures;
 
     /**
      * @brief The scene's baked-GI volume, meaningful while @ref hasIrradianceVolume.

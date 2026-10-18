@@ -24,6 +24,10 @@ flat out uint vViewmodel; // drawn through the viewmodel projection: its lights 
 // Bit-exact with the depth prepass so the two agree under GLDepth::EYE_TEST_EQUAL.
 invariant gl_Position;
 
+// A planar reflection's plane (GLPlanarReflectionPass): what lies behind it is clipped while
+// GL_CLIP_DISTANCE0 is on. Unread otherwise.
+uniform vec4 u_clipPlane;
+
 void main() {
     const mat4 model = instanceModel();
     vec4 worldPos = instanceWorldPosition();
@@ -42,7 +46,15 @@ void main() {
     // A mirroring model turns the cross product the fragment rebuilds B with, so it turns the sign.
     vHandedness = aTangent.w * sign(determinant(mat3(model)));
 
-    vUV   = aUV;
+    vUV   = materialUV(aUV);
+#ifndef SKINNED
+    if (u_material.boxMapping > 0.0) {
+        vec3 faceTangent;
+        vUV         = materialUV(boxUV(model, aPos, aNormal, faceTangent));
+        vTangent    = normalize(mat3(model) * faceTangent);
+        vHandedness = sign(determinant(mat3(model)));
+    }
+#endif
     vRest   = worldPos.xz;
     vHeight = 0.0;
     vAlongX = vec3(1.0, 0.0, 0.0);
@@ -68,4 +80,5 @@ void main() {
     vViewmodel = instanceIsViewmodel() ? 1u : 0u;
 
     gl_Position = eyeClip(worldPos);
+    gl_ClipDistance[0] = dot(vec4(worldPos.xyz, 1.0), u_clipPlane);
 }

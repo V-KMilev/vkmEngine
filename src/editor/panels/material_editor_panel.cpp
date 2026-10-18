@@ -1040,6 +1040,36 @@ bool MaterialEditorPanel::drawParameters(
                 "Parallax depth the height map displaces by. 0.02 to 0.1 is typical"
             );
         }
+        ImGui::Spacing();
+        changed |= propDrag2(
+            "Tiling",
+            &mat.uvScale.x,
+            0.05f,
+            -10000.0f,
+            10000.0f,
+            "%.2f",
+            "How many times the maps repeat across the mesh's UVs, on each axis. A texture must wrap "
+            "(Repeat) to repeat"
+        );
+        changed |= propDrag2(
+            "Offset",
+            &mat.uvOffset.x,
+            0.01f,
+            -10000.0f,
+            10000.0f,
+            "%.3f",
+            "How far the maps slide, in repeats"
+        );
+        changed |= propDrag(
+            "Box Mapping",
+            &mat.boxMapping,
+            0.05f,
+            0.0f,
+            1000.0f,
+            "%.2f m",
+            "Metres one repeat spans, read off the object's own box at its drawn size, so a stretched "
+            "cube keeps its texture square. 0 reads the mesh's UVs"
+        );
     }
     endComponentCard();
 

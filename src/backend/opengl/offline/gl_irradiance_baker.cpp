@@ -82,7 +82,6 @@ void GLIrradianceBaker::update(
     GLIrradianceVolume& volume,
     const RenderView& view,
     GLView& glView,
-    const ResourceManager& resources,
     const GLIBL& globalIBL,
     const CaptureLighting& lighting
 ) {
@@ -104,7 +103,7 @@ void GLIrradianceBaker::update(
     const bool settled = asked || m_asked.settled() || !m_bakedFrom.baked();
     if (settled && m_bakedFrom.changed(want)) {
         volume.resize(data.resolutionX, data.resolutionY, data.resolutionZ);
-        bake(gl, volume, data, view, glView, resources, globalIBL);
+        bake(gl, volume, data, view, glView, globalIBL);
         m_litBy.changed(lighting);
         m_relightAsked = false;
         return;
@@ -122,7 +121,7 @@ void GLIrradianceBaker::update(
     PROFILE_SCOPE("Render/IrradianceRelight");
     PROFILE_GPU_SCOPE("Render/IrradianceRelight");
     if (!relighting()) m_relightAsked = false;
-    relight(gl, volume, data, view, glView, resources, globalIBL);
+    relight(gl, volume, data, view, glView, globalIBL);
 }
 
 void GLIrradianceBaker::release(GLIrradianceVolume& volume) {
@@ -143,7 +142,6 @@ void GLIrradianceBaker::bake(
     const IrradianceVolumeData& data,
     const RenderView& view,
     GLView& glView,
-    const ResourceManager& resources,
     const GLIBL& globalIBL
 ) {
     // Down until this bake succeeds: every early way out leaves the grid not holding this volume.
@@ -159,7 +157,7 @@ void GLIrradianceBaker::bake(
 
     // The shadowed sun's map covers the volume's box: every probe sits inside it.
     const Math::AABB box{data.center - data.halfExtents, data.center + data.halfExtents};
-    m_capture.begin(gl, view, glView, resources, globalIBL, static_cast<float>(FACE_SIZE), box);
+    m_capture.begin(gl, view, glView, globalIBL, static_cast<float>(FACE_SIZE), box);
     captureSurfels(gl, data);
     listLights(view, data, glView);
     if (!light(volume, data, globalIBL)) {
@@ -195,11 +193,10 @@ void GLIrradianceBaker::relight(
     const IrradianceVolumeData& data,
     const RenderView& view,
     GLView& glView,
-    const ResourceManager& resources,
     const GLIBL& globalIBL
 ) {
     const Math::AABB box{data.center - data.halfExtents, data.center + data.halfExtents};
-    m_capture.beginLighting(gl, view, glView, resources, box);
+    m_capture.beginLighting(gl, view, glView, box);
     listLights(view, data, glView);
     gather(m_nextBounce, data, globalIBL);
     repair(m_scratch[m_nextBounce % 2]);

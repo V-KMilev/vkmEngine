@@ -4,7 +4,8 @@
  * reflects the interpolated G-buffer normal: one ray per pixel turns a normal
  * map into a speckle of hits and misses.
  *
- * Zero trust where the ray found nothing.
+ * Zero trust where the ray found nothing, and no ray from a pixel on a planar reflector: the resolve
+ * gives it the reflector's picture.
  */
 
 out vec4 Hit;  // xy: hit uv; z: trust; w: chain level over the last (the target is unorm)
@@ -24,6 +25,18 @@ uniform int   u_traceStep;     // pixels a hit stands for on each axis: 1, or 2 
 const int MAX_STEPS = 48;
 const int MIN_STEPS = 16;
 const int REFINE    = 6;
+
+// How much the scene's depth changes across one texel at @p texel, along the surface: the smaller
+// one-sided difference on each axis, so an edge's jump on one side is not taken for its slope.
+// @p last is the picture's last texel.
+float depthSpanAt(ivec2 texel, ivec2 last) {
+    const float here  = sceneDepthAt(texel);
+    const float left  = abs(here - sceneDepthAt(max(texel - ivec2(1, 0), ivec2(0))));
+    const float right = abs(sceneDepthAt(min(texel + ivec2(1, 0), last)) - here);
+    const float down  = abs(here - sceneDepthAt(max(texel - ivec2(0, 1), ivec2(0))));
+    const float up    = abs(sceneDepthAt(min(texel + ivec2(0, 1), last)) - here);
+    return max(min(left, right), min(down, up));
+}
 
 // View depth at screen fraction t, interpolated through 1/w so perspective is exact.
 float rayDepth(float z0, float z1, float k0, float k1, float t) {
@@ -48,11 +61,12 @@ void main() {
     const vec2 size  = vec2(textureSize(u_sceneDepth, 0));
     const vec3 at    = sceneViewPosAt(texel, size);
     const vec3 n     = sceneNormalAt(texel);
+    if (planarAt(at, n) >= 0) return;
     const vec3 toEye = cameraIsPerspective() ? normalize(-at) : vec3(0.0, 0.0, 1.0);
     const vec3 dir   = reflect(-toEye, n);
 
     // Lifted off its own surface by what the depth can resolve there.
-    vec3 p0 = at + n * (0.01 + 0.002 * -at.z);
+    vec3 p0 = at + n * depthTolerance(at);
 
     // Cut short of the near plane: a point behind the eye projects onto the
     // wrong side of the screen.
@@ -113,7 +127,9 @@ void main() {
         const float hitZ     = rayDepth(z0, z1, k0, k1, hi);
         const float gap      = hitZ - sceneDepthAt(hitTexel);
         const float step     = hitZ - rayDepth(z0, z1, k0, k1, lo);
-        if (gap > 2.0 * abs(step) + hitZ * 0.004) continue;
+        // The texel's own depth span too: on a surface seen edge-on it outgrows the bisected step,
+        // and where in the texel the bisection stopped would otherwise decide hit or miss.
+        if (gap > 2.0 * abs(step) + depthSpanAt(hitTexel, last) + hitZ * 0.004) continue;
 
         // A surface facing away is a back the frame does not show. One with no
         // normal is taken as it is.

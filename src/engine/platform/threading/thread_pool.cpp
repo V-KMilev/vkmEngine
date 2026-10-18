@@ -96,14 +96,15 @@ void ThreadPool::addTask(std::function<void()> && task) {
     m_tasksCV.notify_one();
 }
 
-void ThreadPool::addBatch(Batch& batch) {
-    if (batch.m_count == 0) return;
+void ThreadPool::addBatch(Batch& batch, size_t count) {
+    if (count == 0) return;
     {
         std::lock_guard<std::mutex> lock(m_tasksMutex);
         if (!m_running) {
             LOG_WARNING("ThreadPool::addBatch after shutdown; the batch is dropped");
             return;
         }
+        batch.m_count   = count;
         batch.m_claimed = 0;
         batch.m_error   = nullptr;
         batch.m_pending += batch.m_count;

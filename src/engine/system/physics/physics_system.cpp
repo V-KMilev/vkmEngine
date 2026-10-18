@@ -33,6 +33,7 @@
 #include "system/physics/ragdoll_system.h"
 #include "system/physics/collision/mesh_bvh.h"
 #include "system/physics/collision/narrowphase.h"
+#include "system/physics/collision/part_bounds.h"
 #include "core/math/bounds.h"
 
 namespace Vkm::Engine {
@@ -65,28 +66,6 @@ void forEachMeshPart(const ColliderProxy& proxy, Fn&& fn) {
     for (const ColliderPart& part : proxy.collider->parts) {
         if (part.shape == ColliderShape::Mesh) fn(*proxy.collider, part);
     }
-}
-
-// One part's bound in its own frame, about its centre. A mesh's is its tree's root.
-Math::AABB partLocalBounds(const Collider& collider, const ColliderPart& part) {
-    switch (part.shape) {
-        case ColliderShape::Box:
-            return {-part.halfExtents, part.halfExtents};
-
-        case ColliderShape::Capsule: {
-            const glm::vec3 reach(part.radius, part.halfHeight + part.radius, part.radius);
-            return {-reach, reach};
-        }
-
-        case ColliderShape::Mesh:
-            // Over the same points the narrowphase places about the part's centre.
-            if (collider.meshNodes.empty()) return {glm::vec3(0.0f), glm::vec3(0.0f)};
-            return {collider.meshNodes[0].min, collider.meshNodes[0].max};
-
-        case ColliderShape::Count:
-            break;
-    }
-    return {-part.halfExtents, part.halfExtents};
 }
 
 // Every part's bound in the body's own frame, together. Empty collider: a point.

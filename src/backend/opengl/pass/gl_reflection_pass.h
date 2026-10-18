@@ -13,7 +13,10 @@ namespace Vkm::Engine {
 
 /**
  * @brief Screen-space reflections: the lit scene a glossy pixel's ray meets replaces its probe
- *        or sky reflection.
+ *        or sky reflection; and a planar reflection's picture, on its rectangle.
+ *
+ * Runs while `ssr` is on or a planar reflection was drawn (GLFrameContext::planarPictures). On a
+ * reflector's rectangle the resolve lays its picture, and the trace skips the pixels there.
  *
  * The lit colour goes into a mip chain filtered by shaders/downsample.glsl, so a glossy surface
  * reads the scene blurred to its lobe. A trace marches each glossy pixel's ray through the depth
@@ -26,6 +29,11 @@ namespace Vkm::Engine {
  * replacement is fogged as the surface is.
  */
 class GLReflectionPass : public GLPass {
+    public:
+        /// The colour chain's most levels: enough for a lobe at the roughness limit to span most of
+        /// the screen. A planar reflection's chain is capped at the same.
+        static constexpr int MAX_CHAIN_MIPS = 8;
+
     public:
         GLReflectionPass();
         ~GLReflectionPass() override;
@@ -40,10 +48,29 @@ class GLReflectionPass : public GLPass {
         void execute(GLFrameContext& ctx) override;
 
     private:
-        /// Enough for a lobe at the roughness limit to span most of the screen.
-        static constexpr int MAX_CHAIN_MIPS = 8;
+        /**
+         * @brief Fill the colour chain and march each glossy pixel's ray into the hits.
+         *
+         * @param ctx  The frame.
+         * @param step Pixels a hit stands for on each axis.
+         */
+        void trace(GLFrameContext& ctx, int step);
 
-    private:
+        /**
+         * @brief Tell @p shader where this frame's planar reflectors are, in view space.
+         *
+         * @param ctx    The frame, whose camera they are placed for.
+         * @param shader The trace, which skips them, or the resolve, which lays their pictures.
+         */
+        void placePlanar(GLFrameContext& ctx, Vkm::GL::Shader& shader) const;
+
+        /**
+         * @brief Tell the resolve where this frame's planar reflectors are, and bind their pictures.
+         *
+         * @param ctx The frame, whose camera they are placed for.
+         */
+        void bindPlanar(GLFrameContext& ctx);
+
         /**
          * @brief (Re)allocate the colour chain and the trace target for a scene size.
          *

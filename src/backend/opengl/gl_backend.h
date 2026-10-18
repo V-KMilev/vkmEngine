@@ -48,6 +48,7 @@
 namespace Vkm::Engine {
 
 class GLPass;
+class GLPlanarReflectionPass;
 class WindowSurface;
 struct Environment;
 
@@ -181,9 +182,8 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
          * taking that for a scene without them would drop and re-bake every capture.
          *
          * @param view Supplies the volume, the probes and the scene.
-         * @param resources Resolves what the captures draw.
          */
-        void bakeCaptures(const RenderView& view, const ResourceManager& resources);
+        void bakeCaptures(const RenderView& view);
 
         /**
          * @brief Bake the IBL product set again, from an equirectangular HDR.
@@ -292,6 +292,7 @@ class GLBackend : public RenderBackend, public EditorRenderHooks {
         std::vector<uint32_t> m_transparent;
 
         std::vector<PassEntry> m_passes;
+        GLPlanarReflectionPass* m_planar = nullptr;  ///< In m_passes; readied before they run.
 
         /// HDR path of the currently baked IBL; empty when none (or the sky is procedural).
         std::string m_bakedEnvPath;

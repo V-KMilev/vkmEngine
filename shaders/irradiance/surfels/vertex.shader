@@ -4,6 +4,7 @@ layout(location = ATTR_NORMAL) in vec3 aNormal;
 layout(location = ATTR_UV) in vec2 aUV;
 
 #include "../../instancing.glsl"
+#include "../../material.glsl"
 #include "../../camera.glsl"
 
 out vec3 vWorldPos;
@@ -14,6 +15,10 @@ void main() {
     const vec4 worldPos = instanceWorldPosition();
     vWorldPos   = worldPos.xyz;
     vNormal     = normalize(normalMatrix(instanceModel()) * aNormal);
-    vUV         = aUV;
+    vUV         = materialUV(aUV);
+    if (u_material.boxMapping > 0.0) {
+        vec3 faceTangent;
+        vUV = materialUV(boxUV(instanceModel(), aPos, aNormal, faceTangent));
+    }
     gl_Position = u_camera.viewProjection * worldPos;
 }

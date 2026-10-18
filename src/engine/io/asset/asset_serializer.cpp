@@ -50,8 +50,10 @@ constexpr std::array<TexField, MATERIAL_MAP_COUNT> MATERIAL_TEXTURE_FIELDS = {{
 }};
 #undef VKM_MATERIAL_MAP_FIELD
 
+using ::Vkm::Engine::detail::vec2ToJson;
 using ::Vkm::Engine::detail::vec3ToJson;
 using ::Vkm::Engine::detail::vec4ToJson;
+using ::Vkm::Engine::detail::jsonToVec2;
 using ::Vkm::Engine::detail::jsonToVec3;
 using ::Vkm::Engine::detail::jsonToVec4;
 
@@ -65,6 +67,7 @@ nlohmann::json materialToRecipe(const MaterialAsset& m, const ResourceManager& r
     Reflect::forEachField(m, [&](std::string_view name, const auto& val) {
         using V = std::decay_t<decltype(val)>;
         if      constexpr (std::is_same_v<V, MaterialType>) src[std::string(name)] = Reflect::enumName(val);
+        else if constexpr (std::is_same_v<V, glm::vec2>)    src[std::string(name)] = vec2ToJson(val);
         else if constexpr (std::is_same_v<V, glm::vec3>)    src[std::string(name)] = vec3ToJson(val);
         else if constexpr (std::is_same_v<V, glm::vec4>)    src[std::string(name)] = vec4ToJson(val);
         else                                                src[std::string(name)] = val;
@@ -111,6 +114,8 @@ MaterialAsset materialFromRecipe(const nlohmann::json& src, const ResourceManage
                     Reflect::enumName(val)
                 );
             }
+        } else if constexpr (std::is_same_v<V, glm::vec2>) {
+            val = jsonToVec2(src.value(key, nlohmann::json{}), val);
         } else if constexpr (std::is_same_v<V, glm::vec3>) {
             val = jsonToVec3(src.value(key, nlohmann::json{}), val);
         } else if constexpr (std::is_same_v<V, glm::vec4>) {
@@ -284,23 +289,27 @@ nlohmann::json saveAssetsForEntities(
     for (EntityId id : entities) collectAssetRefs(scene, id, resources, collected);
     const ComponentSerializer::AssetRefs& refs = collected.handles;
 
-    for (const MeshHandle& h : refs.meshes)             emit(h);
-    for (const MaterialHandle& h : refs.materials) {
-        // Its textures too, so the loader recreates them first - unless hidden: a thumbnail material must
-        // not drag its textures into the user's scene.
-        const MaterialAsset* material = emit(h);
-        if (!material || material->isHidden()) continue;
+    // A material's textures too, so the loader recreates them first - unless hidden: a thumbnail material
+    // must not drag its textures into the user's scene.
+    const auto emitTextures = [&](const MaterialAsset* material) {
+        if (!material || material->isHidden()) return;
         for (const auto& f : MATERIAL_TEXTURE_FIELDS) emit(material->*f.member);
-    }
+    };
+
+    for (const MeshHandle& h : refs.meshes)             emit(h);
+    for (const MaterialHandle& h : refs.materials)      emitTextures(emit(h));
     for (const SkeletonHandle& h : refs.skeletons)      emit(h);
     for (const AnimationClipHandle& h : refs.clips)     emit(h);
     for (const AudioClipHandle& h : refs.sounds)        emit(h);
     for (const TextureHandle& h : refs.textures)        emit(h);
 
-    // Flat, by name: with no handle to walk into, a material named this way arrives without its textures.
+    // Flat, by name. A material named this way that is loaded lists its textures, as one held by handle does.
     for (const auto& [type, name] : collected.names) {
         if (type == AssetType::Count) continue;
         emitNamedRef(sections[static_cast<size_t>(type)].entries, name);
+        if (type == AssetType::Material) {
+            emitTextures(resources.tryGet(resources.findByName<MaterialAsset>(name)));
+        }
     }
 
     // A section is keyed by its kind's library directory name, one list for both.
@@ -468,6 +477,36 @@ std::pair<size_t, size_t> loadAssetSection(
     const char* sectionKey,
     ResourceManager& resources,
     LoadMode mode
+);
+
+/**
+ * @brief Load the maps material @p name's recipe names that the graph lacks, as a textures section.
+ *
+ * A document lists what it uses, but a map named only in the recipe would otherwise resolve to
+ * nothing, and the next save would drop it.
+ *
+ * @param name      The material.
+ * @param resources The asset graph to build into.
+ */
+void loadMaterialMaps(const std::string& name, ResourceManager& resources) {
+    nlohmann::json recipe;
+    if (!AssetLibrary::readRecipe(AssetType::Material, name, recipe)) return;
+    const auto refs = recipe.find("textures");
+    if (refs == recipe.end() || !refs->is_object()) return;
+    nlohmann::json maps = nlohmann::json::array();
+    for (const auto& [slot, ref] : refs->items()) {
+        if (ref.is_string() && !ref.get<std::string>().empty()) maps.push_back({{"name", ref}});
+    }
+    if (maps.empty()) return;
+    loadAssetSection<TextureAsset>({{"textures", maps}}, "textures", resources, LoadMode::Create);
+}
+
+template<typename Asset>
+std::pair<size_t, size_t> loadAssetSection(
+    const nlohmann::json& assetsJson,
+    const char* sectionKey,
+    ResourceManager& resources,
+    LoadMode mode
 ) {
     constexpr AssetType TYPE = ASSET_TYPE<Asset>;
     const char* what = Reflect::enumName(TYPE);
@@ -494,6 +533,7 @@ std::pair<size_t, size_t> loadAssetSection(
         const size_t held = resources.countOfType<Asset>();
         Handle<Asset> h;
         try {
+            if constexpr (std::is_same_v<Asset, MaterialAsset>) loadMaterialMaps(name, resources);
             h = loadFromLibrary<Asset>(name, resources);
         } catch (const std::exception& e) {
             reportError(

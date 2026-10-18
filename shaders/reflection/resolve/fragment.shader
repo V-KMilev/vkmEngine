@@ -6,6 +6,11 @@
  * A glossy pixel also reads its neighbours' rays, further apart the rougher it
  * is, each only as far as it lies on the same surface - one ray per pixel made
  * a lobe, and the edge of found rays a fade, with no temporal filter.
+ *
+ * A pixel lying on a planar reflector's rectangle takes its picture instead
+ * (GLPlanarReflectionPass): the scene mirrored in the plane, at the same place on
+ * the screen, bent by how far the pixel's normal leans off the plane's, and read
+ * blurred as far as its roughness spreads.
  */
 
 out vec4 FragColor;
@@ -16,12 +21,31 @@ layout(binding = REFLECT_SLOT_WEIGHT)     uniform sampler2D u_weight;
 layout(binding = REFLECT_SLOT_ENV)        uniform sampler2D u_env;
 layout(binding = REFLECT_SLOT_TRACE)      uniform sampler2D u_hits;
 layout(binding = REFLECT_SLOT_CHAIN)      uniform sampler2D u_chain;
+layout(binding = REFLECT_SLOT_PLANAR_0)   uniform sampler2D u_planar0;
+layout(binding = REFLECT_SLOT_PLANAR_1)   uniform sampler2D u_planar1;
 
 uniform float u_maxRoughness;
 uniform float u_maxLod;  // the colour chain's last level; the trace stored hit levels over it
 uniform int   u_traceStep;  // pixels a hit stands for on each axis: 1, or 2 at half resolution
+uniform int   u_traced;     // 1 when the trace ran; 0 leaves all but the planar reflectors as they are
+
+// Each planar reflector's picture's last chain level, and the part of it drawn (x0, y0, x1, y1 in
+// [0, 1], black round it); where they lie is reflection.glsl's.
+uniform float u_planarLod[MAX_PLANAR_REFLECTORS];
+uniform vec4  u_planarRect[MAX_PLANAR_REFLECTORS];
 
 #include "../reflection.glsl"
+
+// Planar reflector @p i's picture at @p uv, at chain level @p lod: held half a texel of the coarser
+// level read inside the part drawn, so a blurred read takes in none of the black round it.
+vec3 planarPicture(int i, vec2 uv, float lod) {
+    const int  level = int(ceil(lod));
+    const vec2 texel = 1.0 / vec2(i == 0 ? textureSize(u_planar0, level) : textureSize(u_planar1, level));
+    const vec4 rect  = u_planarRect[i];
+    const vec2 inset = min(0.5 * texel, 0.5 * (rect.zw - rect.xy));
+    const vec2 at    = clamp(uv, rect.xy + inset, rect.zw - inset);
+    return i == 0 ? textureLod(u_planar0, at, lod).rgb : textureLod(u_planar1, at, lod).rgb;
+}
 
 void main() {
     const ivec2 texel = ivec2(gl_FragCoord.xy);
@@ -37,6 +61,21 @@ void main() {
     const ivec2 last   = textureSize(u_hits, 0) - 1;
     const vec3  p      = sceneViewPosAt(texel, size);
     const vec3  n      = sceneNormalAt(texel);
+
+    // Faded toward the roughness limit, not cut, so a roughness map draws no contour.
+    const float glossy = 1.0 - smoothstep(0.75 * u_maxRoughness, u_maxRoughness, roughness);
+    const vec3  added   = texelFetch(u_env, texel, 0).rgb;
+
+    const int planar = planarAt(p, n);
+    if (planar >= 0) {
+        const vec2  uv  = (vec2(texel) + 0.5) / size + (n.xy - u_planarPlane[planar].xy) * PLANAR_BEND;
+        const float lod = clamp(log2(1.0 + roughness * roughness * 256.0), 0.0, u_planarLod[planar]);
+        const vec3  seen = planarPicture(planar, uv, lod);
+        FragColor.rgb = max(scene.rgb + (weight.rgb * seen - added) * glossy, vec3(0.0));
+        return;
+    }
+    if (u_traced == 0) return;
+
     const float spread = roughness / u_maxRoughness;
     // Traced at half resolution, a mirror gathers too: the hits about it, from the pixels on its
     // own surface, are its upsampling.
@@ -69,8 +108,6 @@ void main() {
     }
     if (found <= 0.0) return;
 
-    // Faded toward the roughness limit, not cut, so a roughness map draws no contour.
-    const float trust = found / total * (1.0 - smoothstep(0.75 * u_maxRoughness, u_maxRoughness, roughness));
-    const vec3  added = texelFetch(u_env, texel, 0).rgb;
+    const float trust = found / total * glossy;
     FragColor.rgb = max(scene.rgb + (weight.rgb * traced / found - added) * trust, vec3(0.0));
 }

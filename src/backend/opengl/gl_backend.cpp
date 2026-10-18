@@ -27,11 +27,13 @@
 #include "asset/gl_asset_texture.h"
 #include "asset/gl_material.h"
 #include "convention/gl_depth.h"
+#include "offline/gl_capture_lighting.h"
 #include "pass/gl_shadow_pass.h"
 #include "pass/gl_depth_prepass.h"
 #include "pass/gl_resolve_pass.h"
 #include "pass/gl_cluster_pass.h"
 #include "pass/gl_fog_pass.h"
+#include "pass/gl_planar_reflection_pass.h"
 #include "pass/gl_reflection_pass.h"
 #include "pass/gl_dof_pass.h"
 #include "pass/gl_decal_pass.h"
@@ -52,6 +54,7 @@
 #include "core/fnv1a.h"
 #include "ecs/environment.h"
 #include "ecs/component/render/light.h"
+#include "ecs/component/render/particle_emitter.h"
 #include "platform/window/window_manager.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/material_asset.h"
@@ -61,66 +64,6 @@
 #include "system/sky/atmosphere.h"
 
 namespace Vkm::Engine {
-
-namespace {
-
-static_assert(sizeof(LightData) == 108, "a field added to LightData goes in lightingDigest, or says why not");
-
-/**
- * @brief A digest of what a capture reads of @p lights, field by field (no padding).
- *
- * Per type, what the irradiance relight and a probe capture read: a directional's slot and shadow
- * too, since the lowest-slot caster is the shadowed sun; no other light casts in a capture, and a
- * directional has no position, so a sun parented to a mover lights nothing anew. shadowDistance and
- * shadowPriority are left out, as a capture fits and keeps its own map.
- *
- * @param lights The frame's lights.
- * @return Their digest; equal digests light a capture alike.
- */
-uint64_t lightingDigest(const std::vector<LightData>& lights) {
-    uint64_t digest = FNV1A_OFFSET_BASIS;
-    const auto mix = [&digest](const auto& field) { digest = fnv1a64Bytes(&field, sizeof(field), digest); };
-    for (const LightData& light : lights) {
-        mix(light.type);
-        mix(light.color);
-        mix(light.intensity);
-        mix(light.sourceRadius);
-        switch (light.type) {
-            case LightType::Directional:
-                mix(light.entitySlot);
-                mix(light.direction);
-                mix(light.castShadows);
-                mix(light.shadowBias);
-                mix(light.shadowNormalBias);
-                break;
-            case LightType::Point:
-                mix(light.position);
-                mix(light.radius);
-                break;
-            case LightType::Spot:
-                mix(light.position);
-                mix(light.radius);
-                mix(light.direction);
-                mix(light.innerConeAngle);
-                mix(light.outerConeAngle);
-                break;
-            case LightType::Rect:
-            case LightType::Disk:
-                mix(light.position);
-                mix(light.direction);
-                mix(light.radius);
-                mix(light.axisU);
-                mix(light.axisV);
-                mix(light.twoSided);
-                break;
-            case LightType::Count:
-                break;
-        }
-    }
-    return digest;
-}
-
-} // namespace
 
 std::unique_ptr<WindowSurface> GLBackend::windowSurface() {
     return std::make_unique<GLWindowSurface>();
@@ -154,6 +97,9 @@ std::string GLBackend::shaderConstants() {
         << "const float EXPOSURE_MAX_LOG        = " << std::to_string(Exposure::MAX_LOG) << ";\n"
         << "const int   MAX_PROBES              = "
         << GLBindings::ProbeTextureSlots::MAX_PROBES << ";\n"
+        << "const int   MAX_PLANAR_REFLECTORS   = " << GLPlanarReflectionPass::MAX_DRAWN << ";\n"
+        << "const float PLANAR_BEND             = "
+        << std::to_string(GLPlanarReflectionPass::PICTURE_BEND) << ";\n"
         // A LOD index, so one less than the mip count each cube carries.
         << "const float MAX_REFLECTION_LOD      = " << (GLIBL::PREFILTER_MIPS - 1)   << ".0;\n"
         << "const float MAX_PROBE_LOD           = " << (GLProbeArray::PREFILTER_MIPS - 1) << ".0;\n"
@@ -229,20 +175,27 @@ std::string GLBackend::shaderConstants() {
             << "const int   ATMOSPHERE_TRANSMITTANCE_STEPS = " << A::TRANSMITTANCE_STEPS << ";\n";
     }
 
-    // The light and material types the shaders switch on, from the enums.
-    out << "const int   LIGHT_DIRECTIONAL = " << static_cast<int>(LightType::Directional) << ";\n"
-        << "const int   LIGHT_POINT       = " << static_cast<int>(LightType::Point)       << ";\n"
-        << "const int   LIGHT_SPOT        = " << static_cast<int>(LightType::Spot)        << ";\n"
-        << "const int   LIGHT_RECT        = " << static_cast<int>(LightType::Rect)        << ";\n"
-        << "const int   LIGHT_DISK        = " << static_cast<int>(LightType::Disk)        << ";\n"
-        << "const int   MAT_OPAQUE        = " << static_cast<int>(MaterialType::Opaque)      << ";\n"
-        << "const int   MAT_TRANSPARENT   = " << static_cast<int>(MaterialType::Transparent) << ";\n"
-        << "const int   MAT_UNLIT         = " << static_cast<int>(MaterialType::Unlit)       << ";\n"
-        << "const int   MAT_ALPHA_MASK    = " << static_cast<int>(MaterialType::AlphaMask)   << ";\n";
+    // The light and material types and particle blends the shaders switch on, from the enums.
+    out << "const int   LIGHT_DIRECTIONAL   = " << static_cast<int>(LightType::Directional)    << ";\n"
+        << "const int   LIGHT_POINT         = " << static_cast<int>(LightType::Point)          << ";\n"
+        << "const int   LIGHT_SPOT          = " << static_cast<int>(LightType::Spot)           << ";\n"
+        << "const int   LIGHT_RECT          = " << static_cast<int>(LightType::Rect)           << ";\n"
+        << "const int   LIGHT_DISK          = " << static_cast<int>(LightType::Disk)           << ";\n"
+        << "const int   MAT_OPAQUE          = " << static_cast<int>(MaterialType::Opaque)      << ";\n"
+        << "const int   MAT_TRANSPARENT     = " << static_cast<int>(MaterialType::Transparent) << ";\n"
+        << "const int   MAT_UNLIT           = " << static_cast<int>(MaterialType::Unlit)       << ";\n"
+        << "const int   MAT_ALPHA_MASK      = " << static_cast<int>(MaterialType::AlphaMask)   << ";\n"
+        << "const int   PARTICLE_ADDITIVE   = " << static_cast<int>(ParticleBlend::Additive)   << ";\n"
+        << "const int   PARTICLE_ALPHA      = " << static_cast<int>(ParticleBlend::Alpha)      << ";\n"
+        << "const int   PARTICLE_DISTORTION = " << static_cast<int>(ParticleBlend::Distortion) << ";\n";
     static_assert(static_cast<int>(LightType::Count) == 5, "A light type the shaders are not told about");
     static_assert(
         static_cast<int>(MaterialType::Count) == 4,
         "A material type the shaders are not told about"
+    );
+    static_assert(
+        static_cast<int>(ParticleBlend::Count) == 3,
+        "A particle blend the shaders are not told about"
     );
 
     return out.str();
@@ -331,10 +284,14 @@ bool GLBackend::init(WindowManager& window) {
     m_passes.push_back({"ClusterCull",    std::make_unique<GLClusterPass>()});
     m_passes.push_back({"FogCompute",     std::make_unique<GLFogPass>()});
     m_passes.push_back({"Atmosphere",     std::make_unique<GLAtmospherePass>()});
+    auto particles = std::make_unique<GLParticlePass>();
+    auto planar    = std::make_unique<GLPlanarReflectionPass>(m_sceneCapture, m_camera, *particles);
+    m_planar = planar.get();
+    m_passes.push_back({"PlanarReflections", std::move(planar)});
     m_passes.push_back({"Skybox",         std::make_unique<GLSkyboxPass>()});
     m_passes.push_back({"Ocean",          std::make_unique<GLOceanPass>()});
     m_passes.push_back({"Forward",        std::make_unique<GLForwardPass>(m_sceneCapture.pbrProgram())});
-    m_passes.push_back({"Particles",      std::make_unique<GLParticlePass>()});
+    m_passes.push_back({"Particles",      std::move(particles)});
     m_passes.push_back({"ResolveColor",   std::make_unique<GLResolvePass>(GLResolvePass::Scope::Color)});
     m_passes.push_back({"Reflections",    std::make_unique<GLReflectionPass>()});
     m_passes.push_back({"Decals",         std::make_unique<GLDecalPass>()});
@@ -399,8 +356,9 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
             static_cast<float>(view.settings.textureAnisotropy)
         );
     }
-    // The reflection inputs exist only while the reflection pass reads them.
-    const bool reflect = view.settings.ssr;
+    // The reflection inputs exist while the reflection pass may read them: ssr is on, or a planar
+    // reflector may be drawn.
+    const bool reflect = view.settings.ssr || !view.planarReflectors.empty();
     m_sceneHDR.resize(view.sceneWidth(), view.sceneHeight(), 1, reflect);
     m_postA.resize(view.sceneWidth(), view.sceneHeight());
     m_postB.resize(view.sceneWidth(), view.sceneHeight());
@@ -490,6 +448,12 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
         m_opaqueBatcher.buildGrouped(m_opaque, *view.objects, m_view, m_skinPalette.count());
     }
 
+    // What each mirror sees, out of the scene list whose materials the sync readied.
+    {
+        PROFILE_SCOPE("Render/PlanarPrepare");
+        m_planar->prepare(view, m_view);
+    }
+
     // Each pass binds and clears its own target.
     GLFrameContext ctx{
         view,
@@ -567,7 +531,9 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     PROFILE_PLOT("Render/SceneMeshes", static_cast<int64_t>(view.objects->scene.size()));
     PROFILE_PLOT(
         "Render/Particles",
-        static_cast<int64_t>(view.particlesAdditive.size() + view.particlesAlpha.size())
+        static_cast<int64_t>(
+            view.particlesAdditive.size() + view.particlesAlpha.size() + view.particlesDistortion.size()
+        )
     );
     PROFILE_PLOT("Render/Probes",      static_cast<int64_t>(ctx.probeCount));
     PROFILE_PLOT("Render/SkinBones",   static_cast<int64_t>(m_skinPalette.count()));
@@ -581,7 +547,7 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     PROFILE_PLOT("Render/Exposure", static_cast<double>(ctx.exposure));
 
     // A frame with no camera gathered nothing to bake from.
-    if (view.hasCamera) bakeCaptures(view, resources);
+    if (view.hasCamera) bakeCaptures(view);
 
     // Every command reading what the frame streamed is issued: fence its region.
     m_view.stream().endFrame();
@@ -589,12 +555,14 @@ void GLBackend::render(const RenderView& view, const ResourceManager& resources)
     PROFILE_GPU_COLLECT();
 }
 
-void GLBackend::bakeCaptures(const RenderView& view, const ResourceManager& resources) {
-    const uint64_t lights = lightingDigest(view.lights);
-
-    // The lights or the sky changing light the volume's surfels again, its geometry kept.
+void GLBackend::bakeCaptures(const RenderView& view) {
+    // The lights that reach the volume, or the sky, changing light its surfels again, its geometry
+    // kept; a lamp moving outside it does not.
+    const IrradianceVolumeData& box = view.irradianceVolume;
+    const Math::AABB within{box.center - box.halfExtents, box.center + box.halfExtents};
+    const uint64_t   lights = lightingDigest(view.lights, view.hasIrradianceVolume ? &within : nullptr);
     const CaptureLighting volumeLighting{lights, m_ibl.version(), m_ibl.isReady()};
-    m_irradianceBaker.update(m_context, m_irradiance, view, m_view, resources, m_ibl, volumeLighting);
+    m_irradianceBaker.update(m_context, m_irradiance, view, m_view, m_ibl, volumeLighting);
 
     // Re-bake probes that are new, version-bumped, moved or resized and holding still, or lit by
     // an older volume, after the volume, which lights what they capture of it; refresh those
@@ -603,14 +571,13 @@ void GLBackend::bakeCaptures(const RenderView& view, const ResourceManager& reso
     if (!view.settings.probes) return;
     const bool                lit    = view.hasIrradianceVolume && m_irradiance.isReady();
     const GLIrradianceVolume* volume = lit ? &m_irradiance : nullptr;
-    const CaptureLighting probeLighting{
-        lights,
-        m_ibl.version(),
-        m_ibl.isReady(),
-        volume ? volume->lightId() : 0u,
-        volume ? view.irradianceVolume.intensity : 0.0f
-    };
-    m_probes.update(m_context, view, m_view, resources, m_ibl, volume, probeLighting);
+    // Its lights are each probe's own, those that reach it (GLProbeManager::update).
+    CaptureLighting probeLighting;
+    probeLighting.sky             = m_ibl.version();
+    probeLighting.skyReady        = m_ibl.isReady();
+    probeLighting.volumeLight     = volume ? volume->lightId() : 0u;
+    probeLighting.volumeIntensity = volume ? view.irradianceVolume.intensity : 0.0f;
+    m_probes.update(m_context, view, m_view, m_ibl, volume, probeLighting);
 }
 
 void GLBackend::bakeEnvironment(const std::string& path) {

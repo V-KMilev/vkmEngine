@@ -18,21 +18,27 @@
  * Changed from the original: GLSL; reversed depth (near 1, far 0) hard-coded; texelFetch with a
  * bounds test for its clamp-to-border sampler; a shared flag for its wave-intrinsic early-out; the
  * viewmodel's depth band read as far; an orthographic camera's span fixed; a thicker
- * surface, with edge pixels casting nothing; the result written into one channel of an existing
- * target.
+ * surface, with edge pixels casting nothing; a reach in metres at the pixel's depth; the result
+ * written into one channel of an existing target.
  *
  * Each group is one wavefront of WAVE_SIZE pixels in a line toward the light. Its depths go to
  * shared memory, divided by their screen distance to the light so every ray is parallel there;
- * each pixel then compares the next SAMPLE_COUNT along its ray to its own. No noise and no
- * history: a still frame shades the same every time (docs/guides/engine.md section 4).
+ * each pixel then compares the pixels CONTACT_REACH spans along its ray, between
+ * HARD_SHADOW_SAMPLES + FADE_OUT_SAMPLES and SAMPLE_COUNT, to its own. No noise and no history: a
+ * still frame shades the same every time (docs/guides/engine.md section 4).
  */
 layout(local_size_x = GROUP_SCREEN_SHADOW) in;
 
 const int WAVE_SIZE           = GROUP_SCREEN_SHADOW;
-const int SAMPLE_COUNT        = 60;  // the shadow's reach, in pixels
+const int SAMPLE_COUNT        = 60;  // the most pixels a shadow reaches
 const int HARD_SHADOW_SAMPLES = 4;   // the nearest, each able to shadow the pixel alone
-const int FADE_OUT_SAMPLES    = 8;   // the farthest, faded so the reach has no hard edge
+const int FADE_OUT_SAMPLES    = 8;   // the farthest within the reach, faded so it has no hard edge
+
 const int READ_COUNT          = SAMPLE_COUNT / WAVE_SIZE + 2;
+
+// How far toward the light a contact reaches, in metres: the pass grounds what the cascades are
+// too coarse for, and a reach fixed in pixels would draw a far thin thing's shadow long and solid.
+const float CONTACT_REACH = 0.3;
 
 // What a sample's depth stands for behind its surface, as a share of its depth's distance to the
 // far plane: a sample up to about twice this share of the view distance in front of a ray shadows
@@ -167,6 +173,17 @@ void main() {
     barrier();
     if (skip) return;
 
+    // Contacts only: as many pixels as CONTACT_REACH spans at this depth, within the samples' bounds.
+    const float viewDepth = cameraIsPerspective()
+        ? linearSceneDepth(samplingDepth[0], u_camera.invProjection)
+        : 1.0;
+    const float perMetre  = u_camera.projection[1][1] * 0.5 * float(imageSize(u_target).y) / viewDepth;
+    const int   reach     = int(clamp(
+        CONTACT_REACH * perMetre,
+        float(HARD_SHADOW_SAMPLES + FADE_OUT_SAMPLES),
+        float(SAMPLE_COUNT)
+    ));
+
     // Scaled so the shadow window is one wide: the projection's divide undone, the thickness a
     // share of this depth's span, and a minimum width close to the light.
     const float scale = min(sampleDistance[0] + direction, 1.0 / SURFACE_THICKNESS)
@@ -182,12 +199,11 @@ void main() {
         hard = min(hard, abs(start - s_depth[first + i] * scale));
     }
     // The rest, into four interleaved minima averaged below, so one sample cannot shadow alone.
-    for (int i = HARD_SHADOW_SAMPLES; i < SAMPLE_COUNT - FADE_OUT_SAMPLES; ++i) {
+    for (int i = HARD_SHADOW_SAMPLES; i < reach - FADE_OUT_SAMPLES; ++i) {
         shadow[i & 3] = min(shadow[i & 3], abs(start - s_depth[first + i] * scale));
     }
-    for (int i = SAMPLE_COUNT - FADE_OUT_SAMPLES; i < SAMPLE_COUNT; ++i) {
-        const float fade = float(i + 1 - (SAMPLE_COUNT - FADE_OUT_SAMPLES))
-            / float(FADE_OUT_SAMPLES + 1) * 0.75;
+    for (int i = reach - FADE_OUT_SAMPLES; i < reach; ++i) {
+        const float fade = float(i + 1 - (reach - FADE_OUT_SAMPLES)) / float(FADE_OUT_SAMPLES + 1) * 0.75;
         shadow[i & 3] = min(shadow[i & 3], abs(start - s_depth[first + i] * scale) + fade);
     }
 

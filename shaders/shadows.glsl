@@ -574,13 +574,16 @@ float sampleCube(int slot, vec3 worldPos, vec3 N, float ndotl) {
     return filterCube(rel, N, T, B, layer, radius, texel, slide, nearPlane, farPlane);
 }
 
-// A light's shadow on a surface: the sun's soft cascades darkened by @p screenShadow (its
-// contacts, the AO target's alpha), a spot's soft tile, a point light's cube; lit for a light with
-// no shadow slot. @p Ng is the geometric normal, which the biases follow.
-float surfaceShadow(int type, int slot, vec3 worldPos, vec3 Ng, float ndotl, float screenShadow) {
+// A light's shadow on a surface: the sun's cascades darkened by @p screenShadow (its contacts, the
+// AO target's alpha), a spot's tile, a point light's cube; lit for a light with no shadow slot. The
+// sun's and a spot's are soft while @p soft, else the 3x3 compare; a cube is soft either way. @p Ng
+// is the geometric normal, which the biases follow.
+float surfaceShadow(int type, int slot, vec3 worldPos, vec3 Ng, float ndotl, float screenShadow, bool soft) {
     if (slot < 0) return 1.0;
-    if (type == LIGHT_DIRECTIONAL) return sampleCSM(worldPos, Ng, ndotl, CSM_SOFT) * screenShadow;
-    if (type == LIGHT_SPOT)        return sample2DSlotSoft(slot, worldPos, Ng, ndotl);
+    if (type == LIGHT_DIRECTIONAL) return sampleCSM(worldPos, Ng, ndotl, soft) * screenShadow;
+    if (type == LIGHT_SPOT) {
+        return soft ? sample2DSlotSoft(slot, worldPos, Ng, ndotl) : sample2DSlot(slot, worldPos, Ng, ndotl);
+    }
     if (type == LIGHT_POINT)       return sampleCube(slot, worldPos, Ng, ndotl);
     return 1.0;
 }

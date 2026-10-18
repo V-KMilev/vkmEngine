@@ -29,6 +29,7 @@
 #include "ecs/component/render/mesh.h"
 #include "ecs/component/render/ocean.h"
 #include "ecs/component/render/particle_emitter.h"
+#include "ecs/component/render/planar_reflector.h"
 #include "ecs/component/render/reflection_probe.h"
 #include "ecs/component/ui/ui_button.h"
 #include "ecs/component/ui/ui_canvas.h"
@@ -73,11 +74,13 @@ class ResourceManager;
     R(LOD,                 "LOD")                 \
     R(Decal,               "Decal")               \
     R(ParticleEmitter,     "ParticleEmitter")     \
+    P(ParticleTrigger,     "ParticleTrigger")     \
     R(AudioSource,         "AudioSource")         \
     P(AudioListener,       "AudioListener")       \
     P(IrradianceVolume,    "IrradianceVolume")    \
     P(Ocean,               "Ocean")               \
     P(ReflectionProbe,     "ReflectionProbe")     \
+    P(PlanarReflector,     "PlanarReflector")     \
     P(Animation,           "Animation")           \
     R(Animator,            "Animator")            \
     P(BoneSocket,          "BoneSocket")          \
@@ -196,6 +199,9 @@ namespace ComponentSerializer {
     nlohmann::json save(const ParticleEmitter&, const ResourceManager&);
     void load(const nlohmann::json&, ParticleEmitter&, const ResourceManager&);
 
+    nlohmann::json save(const ParticleTrigger&);
+    void load(const nlohmann::json&, ParticleTrigger&);
+
     /**
      * @brief AudioSource: the clip it names and how it should be heard.
      *
@@ -216,6 +222,8 @@ namespace ComponentSerializer {
 
     nlohmann::json save(const ReflectionProbe&);
     void load(const nlohmann::json&, ReflectionProbe&);
+    nlohmann::json save(const PlanarReflector&);
+    void load(const nlohmann::json&, PlanarReflector&);
 
     nlohmann::json save(const UICanvas&);
     void load(const nlohmann::json&, UICanvas&);

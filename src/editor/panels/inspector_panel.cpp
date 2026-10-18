@@ -36,6 +36,8 @@
 #include "ecs/component/render/light.h"
 #include "ecs/component/render/particle_emitter.h"
 #include "system/particle/live_particles.h"
+#include "system/particle/particle_system.h"
+#include "ecs/component/render/planar_reflector.h"
 #include "ecs/component/render/reflection_probe.h"
 #include "ecs/component/ui/ui_button.h"
 #include "ecs/component/ui/ui_canvas.h"
@@ -61,6 +63,7 @@
 #include "editor_context.h"
 #include "editor_state.h"
 #include "resource/asset/material_asset.h"
+#include "ui/curve_widgets.h"
 #include "ui/editor_icons.h"
 #include "ui/editor_style.h"
 #include "ui/editor_widgets.h"
@@ -1176,7 +1179,9 @@ void InspectorPanel::drawAddComponentMenu(Scene& scene, EditorState& state, Enti
         addItem(Decal{});
         addItem(LOD{});
         addItem(ParticleEmitter{});
+        addItem(ParticleTrigger{});
         addItem(ReflectionProbe{});
+        addItem(PlanarReflector{});
         addItem(IrradianceVolume{});
         addItem(Ocean{});
 
@@ -1546,6 +1551,12 @@ void InspectorPanel::drawLightSection(EditorContext& ec, EntityId id) {
                 sourceRadiusTooltip
             );
         }
+        if (light.type != LightType::Directional) {
+            const char* flickerTooltip =
+                "How deep the light wavers, as a fire's does: 0 holds it steady, 1 dips it to "
+                "dark. Shading alone - the intensity stays, and probes bake it steady";
+            changed |= propDrag("Flicker", &light.flicker, 0.01f, 0.0f, 1.0f, "%.2f", flickerTooltip);
+        }
         changed |= propCheckbox("Enabled", &light.enabled);
 
         return changed;
@@ -1875,6 +1886,26 @@ void InspectorPanel::drawReflectionProbeSection(EditorContext& ec, EntityId id) 
     });
 }
 
+void InspectorPanel::drawPlanarReflectorSection(EditorContext& ec, EntityId id) {
+    editComponentCard<PlanarReflector>(ec, id, [&](PlanarReflector& reflector) {
+        bool changed = false;
+        const char* enabledTooltip = "Off leaves its surfaces to the trace and the probes";
+        changed |= propCheckbox("Enabled", &reflector.enabled, enabledTooltip);
+        const char* sizeTooltip = "The rectangle along the entity's X and Z; it faces the entity's +Y";
+        float* size = &reflector.halfExtents.x;
+        changed |= propDrag2("Half Size", size, 0.05f, 0.01f, 1000.0f, "%.2f m", sizeTooltip);
+        changed |= propSlider(
+            "Render Scale",
+            &reflector.renderScale,
+            PlanarReflector::MIN_RENDER_SCALE,
+            PlanarReflector::MAX_RENDER_SCALE,
+            "%.2f",
+            "Its picture's size, a share of the frame's: a second drawing of the scene each frame"
+        );
+        return changed;
+    });
+}
+
 void InspectorPanel::drawDecalSection(EditorContext& ec, EntityId id) {
     ResourceManager& resources = ec.frame.resources;
 
@@ -1907,67 +1938,161 @@ void InspectorPanel::drawDecalSection(EditorContext& ec, EntityId id) {
 void InspectorPanel::drawParticleSection(EditorContext& ec, EntityId id) {
     ResourceManager& resources = ec.frame.resources;
 
+    const bool sub = ec.frame.scene.has<ParticleTrigger>(id);
+
     editComponentCard<ParticleEmitter>(ec, id, [&](ParticleEmitter& e) {
         bool changed = false;
 
-        changed |= propCheckbox("Emitting", &e.emitting);
-        changed |= propDrag("Rate", &e.rate, 0.5f, 0.0f, 2000.0f, "%.1f");
-        changed |= propDrag("Lifetime", &e.lifetime, 0.05f, 0.01f, 60.0f, "%.2f");
+        sectionLabel("Emission");
+        if (sub) {
+            // Its own emission goes unread (ParticleTrigger): only its cap still holds.
+            const char* fired = triggeringEmitter(ec.frame.scene, id)
+                ? "A sub-emitter: its parent's particles fire it (Particle Trigger)."
+                : "A sub-emitter with no emitter parent: nothing fires it (Particle Trigger).";
+            ImGui::TextDisabled("%s", fired);
+            changed |= propDragU32("Max Particles", &e.maxParticles, 1.0f, 1u, 50000u);
+        } else {
+            changed |= propCheckbox("Emitting", &e.emitting);
+            changed |= propDrag("Rate", &e.rate, 0.5f, 0.0f, 5000.0f, "%.1f /s");
+            changed |= propDrag(
+                "Rate Per Metre",
+                &e.ratePerMetre,
+                0.1f,
+                0.0f,
+                1000.0f,
+                "%.1f /m",
+                "Particles a metre the emitter travels, besides the rate - for trails left behind a mover"
+            );
+            changed |= propDragU32("Max Particles", &e.maxParticles, 1.0f, 1u, 50000u);
+            changed |= propDragU32(
+                "Burst",
+                &e.burst,
+                1.0f,
+                0u,
+                50000u,
+                "Particles spawned at once on the next update, besides the rates; spent as they are"
+            );
+            changed |= propCheckbox(
+                "Destroy When Spent",
+                &e.destroyWhenSpent,
+                "Once it has fired, neither emits nor holds a burst, and its last particle has died,\n"
+                "the entity and everything under it go"
+            );
+        }
 
-        changed |= propDragU32("Max Particles", &e.maxParticles, 1.0f, 1u, 20000u);
-        changed |= propDragU32(
-            "Burst",
-            &e.burst,
-            1.0f,
-            0u,
-            20000u,
-            "Particles spawned at once on the next update, besides the rate; spent as they are"
-        );
-        changed |= propDrag3(
-            "Half Extents",
-            glm::value_ptr(e.halfExtents),
-            0.01f,
+        sectionLabel("Shape");
+        changed |= propEnumCombo("Shape", e.shape, "Where particles are born, and which way they leave");
+        if (e.shape == EmitShape::Box) {
+            changed |= propDrag3(
+                "Half Extents",
+                glm::value_ptr(e.halfExtents),
+                0.01f,
+                0.0f,
+                100.0f,
+                "%.2f m"
+            );
+        } else if (e.shape != EmitShape::Point) {
+            changed |= propDrag("Radius", &e.radius, 0.01f, 0.0f, 100.0f, "%.2f m");
+        }
+        if (e.shape == EmitShape::Cone || e.shape == EmitShape::Box) {
+            const char* angleTooltip = "The widest off +Y a particle leaves; 0 sends each straight up";
+            changed |= propAngleDrag("Angle", &e.angle, 0.5f, 0.0f, 180.0f, angleTooltip);
+        }
+        if (e.shape != EmitShape::Point) {
+            changed |= propCheckbox(
+                "From Surface",
+                &e.fromSurface,
+                "Born on the shape's surface or rim, not inside it"
+            );
+        }
+
+        sectionLabel("Motion");
+        changed |= propRange("Lifetime", e.lifetime, 0.02f, 0.01f, 60.0f, "%.2f s");
+        changed |= propRange("Speed", e.speed, 0.05f, 0.0f, 200.0f, "%.2f m/s");
+        changed |= propSlider(
+            "Inherit Velocity",
+            &e.inheritVelocity,
             0.0f,
-            100.0f,
-            "%.2f m",
-            "Half the size of the box, world axes, particles are born in; zero is a point"
+            1.0f,
+            "%.2f",
+            sub ? "The share of the parent particle's velocity each is born with"
+                : "The share of the emitter's own velocity a particle is born with"
         );
-        changed |= propCheckbox(
-            "Destroy When Spent",
-            &e.destroyWhenSpent,
-            "Once it has fired, neither emits nor holds a burst, and its last particle has died,\n"
-            "the entity and everything under it go"
-        );
-
-        ImGui::Spacing();
-        changed |= propDrag3("Velocity", glm::value_ptr(e.velocity), 0.05f, -100.0f, 100.0f, "%.2f");
-        changed |= propDrag("Spread", &e.spread, 0.02f, 0.0f, 50.0f, "%.2f");
         changed |= propDrag3("Acceleration", glm::value_ptr(e.acceleration), 0.05f, -100.0f, 100.0f, "%.2f");
+        const char* dragTooltip = "It keeps exp(-drag) of its velocity a second";
+        changed |= propDrag("Drag", &e.drag, 0.02f, 0.0f, 50.0f, "%.2f /s", dragTooltip);
+        const char* turbulenceTooltip = "How hard the swirls push";
+        changed |= propDrag("Turbulence", &e.turbulence, 0.05f, 0.0f, 200.0f, "%.2f", turbulenceTooltip);
+        if (e.turbulence > 0.0f) {
+            changed |= propDrag("Turbulence Scale", &e.turbulenceScale, 0.02f, 0.01f, 100.0f, "%.2f m");
+        }
 
-        ImGui::Spacing();
-        changed |= propColor4("Start Color", glm::value_ptr(e.startColor));
-        changed |= propColor4("End Color", glm::value_ptr(e.endColor));
-        changed |= propDrag("Start Size", &e.startSize, 0.005f, 0.0f, 20.0f, "%.3f");
-        changed |= propDrag("End Size", &e.endSize, 0.005f, 0.0f, 20.0f, "%.3f");
-        changed |= propCheckbox(
-            "Additive",
-            &e.additive,
-            "Additive: the particle gives off its colour, for sparks and fire. Alpha: its colour is lit by "
-            "the scene's lights and shadows, for smoke and dust"
+        sectionLabel("Look");
+        changed |= propEnumCombo(
+            "Blend",
+            e.blend,
+            "Additive: gives off its colour, for sparks and fire. Alpha: lit by the scene's lights and "
+            "shadows, for smoke and dust. Distortion: bends the scene behind it, for heat haze"
         );
-
-        ImGui::Spacing();
-        changed |= pickAsset<TextureAsset>("##ParticleTexPick", "Texture", resources, e.texture);
-        if (!e.texture) {
+        changed |= propRange("Size", e.size, 0.005f, 0.0f, 50.0f, "%.3f m");
+        changed |= propCurve(
+            "Size Over Life",
+            e.sizeOverLife,
+            0.0f,
+            10.0f,
+            "Multiplies the size it was born with"
+        );
+        if (e.blend == ParticleBlend::Distortion) {
+            const char* bendTooltip = "Its alpha over its life fades its bend; the colour is unread";
+            changed |= propGradient("Color", e.color, bendTooltip);
+        } else {
+            changed |= propGradient("Color", e.color, "Its colour over its life; alpha fades it");
+            changed |= propDrag(
+                "Intensity",
+                &e.intensity,
+                0.05f,
+                0.0f,
+                1000.0f,
+                "%.2f",
+                "Multiplies the colour; past 1 an additive particle blooms"
+            );
+        }
+        if (e.blend == ParticleBlend::Alpha) {
             changed |= propSlider(
-                "Softness",
-                &e.softness,
+                "Emission",
+                &e.emission,
                 0.0f,
                 1.0f,
                 "%.2f",
-                "Edge falloff: 1 = soft blob, 0 = hard-edged crisp disc"
+                "The share of its colour it gives off"
             );
-        } else {
+        }
+        if (e.blend == ParticleBlend::Distortion) {
+            changed |= propDrag(
+                "Distortion",
+                &e.distortion,
+                0.002f,
+                0.0f,
+                0.5f,
+                "%.3f",
+                "How far it bends the view"
+            );
+        }
+        // A streak lies along its travel and a strip along its points: only a card turns.
+        const bool card = e.render == ParticleRender::Billboard;
+        if (card) {
+            changed |= propAngleRange("Rotation", e.rotation, 1.0f, -360.0f, 360.0f, "%.0f deg");
+            changed |= propAngleRange("Spin", e.spin, 1.0f, -3600.0f, 3600.0f, "%.0f deg/s");
+        }
+
+        changed |= pickAsset<TextureAsset>("##ParticleTexPick", "Texture", resources, e.texture);
+        const bool strip = e.render == ParticleRender::Ribbon || e.render == ParticleRender::Trail;
+        if (!e.texture) {
+            const char* softnessTooltip = strip
+                ? "Falloff across its width: 1 soft, 0 a hard edge"
+                : "Edge falloff: 1 soft, 0 a hard disc";
+            changed |= propSlider("Softness", &e.softness, 0.0f, 1.0f, "%.2f", softnessTooltip);
+        } else if (!strip) {
             const char* sheetTooltip = "The texture as a sheet of frames, read left to right from the top";
             changed |= propDragU32("Sheet Columns", &e.sheetColumns, 0.1f, 1u, 64u, sheetTooltip);
             changed |= propDragU32("Sheet Rows", &e.sheetRows, 0.1f, 1u, 64u, sheetTooltip);
@@ -1983,36 +2108,126 @@ void InspectorPanel::drawParticleSection(EditorContext& ec, EntityId id) {
                 );
                 const char* randomFrameTooltip = "Each particle starts on a frame of its own";
                 changed |= propCheckbox("Random Frame", &e.randomFrame, randomFrameTooltip);
+                const char* blendTooltip = "Each frame fades into the next: a slow flipbook moves smoothly";
+                changed |= propCheckbox("Sheet Blend", &e.sheetBlend, blendTooltip);
             }
         }
-        changed |= propDrag(
-            "Stretch",
-            &e.stretch,
-            0.005f,
-            0.0f,
-            2.0f,
-            "%.3f s",
-            "Seconds of its travel a particle streaks behind it, along its velocity - sparks, rain"
-        );
-        if (e.stretch <= 0.0f) {
-            changed |= propDrag("Spin", &e.spin, 0.05f, -50.0f, 50.0f, "%.2f rad/s", "How fast each turns");
-            const char* rotationTooltip = "Each particle starts at an angle of its own";
-            changed |= propCheckbox("Random Rotation", &e.randomRotation, rotationTooltip);
+        if (e.blend == ParticleBlend::Alpha && !strip) {
+            changed |= pickAsset<TextureAsset>("##ParticleNormalPick", "Normal Map", resources, e.normalMap);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Laid over the sheet frame for frame: each puff is lit by its folds");
+            }
         }
+
+        sectionLabel("Draw");
+        changed |= propEnumCombo(
+            "Render",
+            e.render,
+            "Billboard: a card facing the view. Stretched: along its velocity. Ribbon: one strip through "
+            "the emitter's particles. Trail: a strip behind each particle"
+        );
+        if (e.render == ParticleRender::Stretched) {
+            changed |= propDrag(
+                "Stretch",
+                &e.stretch,
+                0.002f,
+                0.0f,
+                2.0f,
+                "%.3f s",
+                "Seconds of its travel it spans"
+            );
+        }
+        if (e.render == ParticleRender::Trail) {
+            changed |= propDrag(
+                "Trail Length",
+                &e.trailLength,
+                0.01f,
+                0.01f,
+                10.0f,
+                "%.2f s",
+                "Seconds it trails"
+            );
+        }
+
+        sectionLabel("Collision");
+        changed |= propCheckbox("Collide", &e.collide, "Strike the physics world's bodies, each step a ray");
+        if (e.collide) {
+            changed |= propSlider(
+                "Bounce",
+                &e.bounce,
+                0.0f,
+                1.0f,
+                "%.2f",
+                "The share of its speed into a surface it keeps"
+            );
+            changed |= propSlider(
+                "Life Lost On Hit",
+                &e.lifeLostOnHit,
+                0.0f,
+                1.0f,
+                "%.2f",
+                "The share of its whole life a strike takes; 1 ends it"
+            );
+        }
+
+        sectionLabel("Light");
+        changed |= propDrag(
+            "Light Intensity",
+            &e.lightIntensity,
+            0.1f,
+            0.0f,
+            10000.0f,
+            "%.1f",
+            "What each live particle at full alpha gives off; summed at their middle, the light fades and "
+            "dies with them. 0 gives none. It casts no shadow"
+        );
+        if (e.lightIntensity > 0.0f) {
+            changed |= propColor3("Light Color", glm::value_ptr(e.lightColor));
+            const char* radiusTooltip = "Metres it reaches";
+            changed |= propDrag("Light Radius", &e.lightRadius, 0.1f, 0.1f, 200.0f, "%.1f m", radiusTooltip);
+        }
+
         const char* seenByTooltip =
-            "Who draws its particles, through a scene camera, as for a Mesh. Particles cast no shadow "
-            "and are in no capture, so All But Eye draws none and Eye Only draws as All; Viewmodel - "
+            "Who draws its particles, through a scene camera, as for a Mesh. Particles cast no shadow, "
+            "no probe captures them and a mirror draws what the eye does, so All But Eye draws none "
+            "and Eye Only draws as All; Viewmodel - "
             "at the camera's Viewmodel FOV, a muzzle flash lined up with the weapon and in front of it. "
             "The editor's own view draws everything";
         changed |= propEnumCombo("Seen By", e.seenBy, seenByTooltip);
 
-        const std::vector<Particle>* live = ec.frame.particles ? ec.frame.particles->of(id) : nullptr;
-        ImGui::TextDisabled("Live: %d particle(s).", live ? static_cast<int>(live->size()) : 0);
+        const LiveParticles::Pool* live = ec.frame.particles ? ec.frame.particles->poolOf(id) : nullptr;
+        ImGui::TextDisabled("Live: %d particle(s).", live ? static_cast<int>(live->particles.size()) : 0);
         // Particles run off the sim delta, so Live is 0 in Edit mode.
         if (ec.frame.clock.getSimDelta() <= 0.0f) {
             ImGui::TextDisabled("The world is not running - press Play to see them.");
         }
 
+        return changed;
+    });
+}
+
+void InspectorPanel::drawParticleTriggerSection(EditorContext& ec, EntityId id) {
+    editComponentCard<ParticleTrigger>(ec, id, [&](ParticleTrigger& t) {
+        bool changed = false;
+        changed |= propEnumCombo("Event", t.event, "What befalls a particle of the parent emitter");
+        changed |= propDragU32(
+            "Count",
+            &t.count,
+            0.2f,
+            0u,
+            1000u,
+            "Particles born each time, where it happened"
+        );
+
+        Scene& scene = ec.frame.scene;
+        const EntityId parent = triggeringEmitter(scene, id);
+        if (!scene.has<ParticleEmitter>(id)) {
+            ImGui::TextColored(EditorStyle::DANGER, "No Particle Emitter here: nothing to spawn");
+        } else if (!parent) {
+            ImGui::TextColored(EditorStyle::DANGER, "Its parent has no Particle Emitter: nothing fires it");
+        } else if (t.event == ParticleEvent::Collision && !scene.get<ParticleEmitter>(parent).collide) {
+            ImGui::TextColored(EditorStyle::DANGER, "Its parent does not Collide: no strike fires it");
+        }
         return changed;
     });
 }

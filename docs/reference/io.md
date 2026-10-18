@@ -49,7 +49,7 @@ owns them:
 
 | Root | Owns | Helpers |
 |------|------|---------|
-| `engineRoot()` | What ships with the engine, read-only to a game. One copy serves every project | `engineShaders()`, `engineAssets()`, `engineFonts()` |
+| `engineRoot()` | What ships with the engine, read-only to a game. One copy serves every project | `engineShaders()`, `engineAssets()`, `engineFonts()`, `engineContent()` (packs the editor copies into a project, never read in place) |
 | `projectRoot()` | The game being made: its content, its code, its asset database | `assets()`, `scenes()`, `prefabs()`, `envs()`, `library()`, `cooked()`, `projectBin()` |
 | `userRoot()` | How one person likes their tools, across every project and every engine install | `userLogs()`, a sibling under the platform's *state* directory rather than a child of this root |
 | `playerRoot(game)` | What a game writes for its player - settings, a profile, saves - in a folder of the game's own name beside the engine's own user folder | |
@@ -351,8 +351,10 @@ On a miss the recipe is imported through the `AssetFactory` seam
 (`io/asset/asset_factory.h`), one import per kind, which the editor and
 `vkm_cook` install (`registerRecipeAssetFactories`) and the runtime and server
 leave null. A material has no cooked file: `AssetSerializer::materialFromRecipe`
-builds it from its recipe. A name with no manifest row still loads from a recipe
-on disk, so a lost manifest costs a re-cook.
+builds it from its recipe, after loading the maps the recipe names that the
+graph lacks, so a map the document does not list still resolves. A name with no
+manifest row still loads from a recipe on disk, so a lost manifest costs a
+re-cook.
 
 `finalizeAsyncLoads` / `awaitAsyncLoads` (`system/async/async_loader_system.h`)
 land async decodes without a frame - drain once, and drain until quiet. The

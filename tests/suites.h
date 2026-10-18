@@ -23,13 +23,13 @@
     X("async",       runAsyncTests,          "the async load queue: what lands, what is dropped") \
     X("cook",        runCookTests,           "the cooked-asset format and what a cook re-bakes") \
     X("import",      runImportTests,         "what a model file imports as: its unit, its V, its tangents") \
-    X("authoring",   runAuthoringTests,      "probe fill, gizmo snap, picking, the default layout's tabs") \
+    X("authoring",   runAuthoringTests,      "probe fill, snap, picking, layout tabs, the effects pack") \
     X("prefab",      runPrefabTests,         "the prefab file: what it round-trips, what it refuses") \
     X("scene",       runSceneTests,          "scene")                                      \
     X("play",        runPlayTests,           "the editor play/stop snapshot, and who has the input") \
     X("undo",        runUndoTests,           "the editor's undo history")                  \
     X("culling",     runCullingTests,        "frustum and box tests, fixed meshes, the shadowed sun") \
-    X("sky",         runSkyTests,            "the sun: where the key light points, and its colour") \
+    X("sky",         runSkyTests,            "the sun: where the key light points, its colour; flicker") \
     X("ocean",       runOceanTests,          "the sea: how high the wind raises it, and where its water is") \
     X("animation",   runAnimationTests,      "AnimationTrack sampling and its boundaries") \
     X("particle",    runParticleTests,       "emitter spawn accounting")                   \

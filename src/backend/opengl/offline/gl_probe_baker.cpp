@@ -62,12 +62,11 @@ void GLProbeBaker::bake(
     const ProbeData& probe,
     const RenderView& view,
     GLView& glView,
-    const ResourceManager& resources,
     const GLIBL& globalIBL,
     const GLIrradianceVolume* volume
 ) {
     endRefresh();
-    captureFaces(gl, arr, probe, view, glView, resources, globalIBL, volume);
+    captureFaces(gl, arr, probe, view, glView, globalIBL, volume);
     convolve(gl, arr, layer);
     LOG_INFO(
         "Reflection probe baked: layer %d at (%.1f, %.1f, %.1f)",
@@ -84,13 +83,12 @@ void GLProbeBaker::beginCapture(
     const ProbeData& probe,
     const RenderView& view,
     GLView& glView,
-    const ResourceManager& resources,
     const GLIBL& globalIBL,
     const GLIrradianceVolume* volume
 ) {
     // The reflection is parallax-corrected to the influence box, so the capture must get it right.
     const Math::AABB box{probe.position - probe.halfExtents, probe.position + probe.halfExtents};
-    m_capture.begin(gl, view, glView, resources, globalIBL, static_cast<float>(arr.resolution()), box);
+    m_capture.begin(gl, view, glView, globalIBL, static_cast<float>(arr.resolution()), box);
     m_capture.setAmbientVolume(volume, view.irradianceVolume);
 }
 
@@ -100,11 +98,10 @@ void GLProbeBaker::captureFaces(
     const ProbeData& probe,
     const RenderView& view,
     GLView& glView,
-    const ResourceManager& resources,
     const GLIBL& globalIBL,
     const GLIrradianceVolume* volume
 ) {
-    beginCapture(gl, arr, probe, view, glView, resources, globalIBL, volume);
+    beginCapture(gl, arr, probe, view, glView, globalIBL, volume);
 
     arr.bindCaptureFbo();
     m_capture.captureCube(gl, probe.position, CAPTURE_FAR, [&](int face) { arr.attachEnvFace(gl, face); });
@@ -133,7 +130,6 @@ bool GLProbeBaker::advance(
     const ProbeData& probe,
     const RenderView& view,
     GLView& glView,
-    const ResourceManager& resources,
     const GLIBL& globalIBL,
     const GLIrradianceVolume* volume
 ) {
@@ -142,7 +138,7 @@ bool GLProbeBaker::advance(
     // A face of the capture a step, then the convolution's, into the staging layer.
     const int step = m_next++;
     if (step < CAPTURE_STEPS) {
-        beginCapture(gl, arr, probe, view, glView, resources, globalIBL, volume);
+        beginCapture(gl, arr, probe, view, glView, globalIBL, volume);
         arr.bindCaptureFbo();
         const GLSceneCapture::AttachFace attach = [&](int face) { arr.attachEnvFace(gl, face); };
         m_capture.captureFace(gl, step, probe.position, CAPTURE_FAR, attach);

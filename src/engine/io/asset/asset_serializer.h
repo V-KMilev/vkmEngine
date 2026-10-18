@@ -119,6 +119,8 @@ namespace AssetSerializer {
     /**
      * @brief Recreate the assets a document names into @p resources.
      *
+     * A material brings the maps its recipe names, listed in the document or not.
+     *
      * @param assetsJson An assets block, from any of the save functions above.
      * @param resources The asset graph to build into.
      * @param mode What to do about a name the graph already holds; see LoadMode.

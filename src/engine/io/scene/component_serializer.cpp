@@ -307,6 +307,9 @@ void emitAssetRefs(const Decal& d, AssetRefs& refs) {
     if (d.material) refs.materials.push_back(d.material);
 }
 
+nlohmann::json save(const ParticleTrigger& t)          { return saveReflected(t); }
+void load(const nlohmann::json& j, ParticleTrigger& t) { loadReflected(j, t); }
+
 nlohmann::json save(const ParticleEmitter& e, const ResourceManager& resources) {
     return saveReflected(e, resources);
 }
@@ -315,10 +318,13 @@ void load(const nlohmann::json& j, ParticleEmitter& e, const ResourceManager& re
 }
 void emitAssetRefs(const ParticleEmitter& e, AssetRefs& refs) {
     if (e.texture) refs.textures.push_back(e.texture);
+    if (e.normalMap) refs.textures.push_back(e.normalMap);
 }
 
 nlohmann::json save(const ReflectionProbe& p)          { return saveReflected(p); }
 void load(const nlohmann::json& j, ReflectionProbe& p) { loadReflected(j, p); }
+nlohmann::json save(const PlanarReflector& p)          { return saveReflected(p); }
+void load(const nlohmann::json& j, PlanarReflector& p) { loadReflected(j, p); }
 
 nlohmann::json save(const AudioSource& s, const ResourceManager& resources) {
     return saveReflected(s, resources);

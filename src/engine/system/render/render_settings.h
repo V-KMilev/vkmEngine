@@ -177,7 +177,7 @@ struct RenderSettings {
     uint32_t textureAnisotropy = 16;
 
     // Shadows
-    /// The largest shadow tile's edge (1024/2048/4096), the sun's near cascades'; costly to raise.
+    /// The largest shadow tile's edge, one of SHADOW_RESOLUTIONS, the sun's near cascades'; costly to raise.
     uint32_t shadowResolution = 4096;
     /**
      * @brief Shadows soft as each light's sourceRadius makes them (PCSS); off, every shadow takes
@@ -209,6 +209,7 @@ struct RenderSettings {
     static constexpr float MAX_GTAO_RADIUS = 5.0f;
 
     static constexpr uint32_t MSAA_SAMPLE_COUNTS[] = {1, 2, 4, 8};  ///< 1 is off.
+    static constexpr uint32_t SHADOW_RESOLUTIONS[] = {1024, 2048, 4096};  ///< What shadowResolution may be.
 
     /// Below half, the upscale is a blur no tier wants.
     static constexpr float MIN_RENDER_SCALE = 0.5f;

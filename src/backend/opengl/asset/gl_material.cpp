@@ -66,6 +66,7 @@ void GLMaterial::update(const MaterialAsset& material) {
     data.sheenColor          = glm::vec4(material.sheenColor, material.sheenRoughness);
     data.subsurfaceColor     = glm::vec4(material.subsurfaceColor, 0.0f);
     data.attenuationColor    = glm::vec4(material.attenuationColor, material.attenuationDistance);
+    data.uvTransform         = glm::vec4(material.uvScale, material.uvOffset);
 
     data.metallic           = material.metallic;
     data.roughness          = material.roughness;
@@ -83,6 +84,7 @@ void GLMaterial::update(const MaterialAsset& material) {
     data.type               = static_cast<int>(material.type);
     data.textureFlags       = flags;
     data.waves              = material.waves ? 1 : 0;
+    data.boxMapping         = material.boxMapping;
 
     if (m_ubo) m_ubo->update(&data, sizeof(data));
     else       m_ubo = std::make_unique<Vkm::GL::UniformBuffer>(&data, sizeof(data), GL_DYNAMIC_DRAW);
