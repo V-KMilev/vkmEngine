@@ -1,0 +1,94 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/shrub_02/shrub_02.gltf:mat0"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/shrub_02/shrub_02.gltf:mesh2"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/shrub_02/shrub_02_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/shrub_02/shrub_02_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/shrub_02/shrub_02_arm_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "shrub_02_c"
+        },
+        "NetLocal": {},
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/shrub_02/shrub_02.gltf:mat0",
+          "mesh": "assets/models/shrub_02/shrub_02.gltf:mesh2",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "shrub_02_c"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            0.5657898783683777,
+            0.12648986279964447,
+            -0.7129753232002258,
+            0.3943961560726166
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    }
+  ],
+  "nextUid": 2,
+  "version": 3
+}

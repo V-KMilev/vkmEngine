@@ -6,9 +6,11 @@
 
 #include <glm/glm.hpp>
 
+#include "asset/gl_layer_maps.h"
 #include "resource/asset/material_asset.h"
 
 namespace Vkm::GL {
+    class ComputeShader;
     class UniformBuffer;
 }
 
@@ -60,8 +62,13 @@ struct MaterialUBO {
     int   waves;         ///< 1 where the scene's ocean moves the surface (shaders/ocean.glsl)
     float boxMapping;    ///< MaterialAsset::boxMapping: metres a repeat, 0 for the mesh's UVs
     float pad0, pad1, pad2;
+
+    // A layered material's layers (MaterialAsset::layers); zero for any other.
+    glm::vec4 layerTint[MaterialAsset::MAX_LAYERS];     ///< albedo factor; w the normal scale
+    glm::vec4 layerUV[MaterialAsset::MAX_LAYERS];       ///< uvScale in xy, uvOffset in zw
+    glm::vec4 layerSurface[MaterialAsset::MAX_LAYERS];  ///< ao, roughness and metallic factors
 };
-static_assert(sizeof(MaterialUBO) == 192, "MaterialUBO must match the std140 MaterialBlock layout");
+static_assert(sizeof(MaterialUBO) == 384, "MaterialUBO must match the std140 MaterialBlock layout");
 
 /**
  * @brief GPU copy of a material: the full PBR UBO plus its texture handles.
@@ -132,6 +139,29 @@ class GLMaterial {
          */
         bool plain() const { return m_plain; }
 
+        /**
+         * @brief Whether it blends layers (MaterialAsset::layers), so draws with the LAYERED
+         *        program (shaders/forward/pbr_layered), whatever plain() says.
+         */
+        bool layered() const { return m_layered; }
+
+        /**
+         * @brief Take a layered material's layers: their factors, and their maps as arrays.
+         *
+         * @param layered The layered material, whose tiling each layer takes.
+         * @param layers  Each layer's material, null for none.
+         * @param maps    Each layer's maps, as GLView holds them.
+         * @param key     Names what they are built from; equal keys skip the rebuild.
+         * @param copy    The layer copy program the arrays are filled with.
+         */
+        void updateLayers(
+            const MaterialAsset& layered,
+            const std::array<const MaterialAsset*, MaterialAsset::MAX_LAYERS>& layers,
+            const std::array<GLLayerMaps::Layer, MaterialAsset::MAX_LAYERS>& maps,
+            uint64_t key,
+            const Vkm::GL::ComputeShader& copy
+        );
+
         const std::vector<TextureBinding>& getTextureBindings() const { return m_textureBindings; }
 
         /**
@@ -143,11 +173,15 @@ class GLMaterial {
 
     private:
         std::unique_ptr<Vkm::GL::UniformBuffer> m_ubo;
+        MaterialUBO                             m_data{};  ///< What m_ubo holds.
+        std::unique_ptr<GLLayerMaps>            m_layerMaps;  ///< A layered one's layers' maps.
+        uint64_t                                m_layersKey = 0;  ///< What m_layerMaps was built from.
         std::vector<TextureBinding>             m_textureBindings;
         MaterialType                            m_type = MaterialType::Opaque;
         bool                                    m_doubleSided = false;
         bool                                    m_cutsShadow = false;  ///< See cutsItsShadow().
         bool                                    m_plain = true;        ///< See plain().
+        bool                                    m_layered = false;     ///< See layered().
         uint64_t                                m_uploadId = 0;
 };
 

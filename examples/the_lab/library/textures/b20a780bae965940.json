@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/grass_cards/grass_cards_rgba.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/grass_cards/grass_cards_rgba.png",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

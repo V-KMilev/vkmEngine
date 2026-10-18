@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/potted_plant_02/textures/potted_plant_02_leaves_rgba_1k.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/potted_plant_02/textures/potted_plant_02_leaves_rgba_1k.png",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

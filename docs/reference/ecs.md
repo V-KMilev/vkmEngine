@@ -55,7 +55,7 @@ Each header documents its fields.
 | `Hierarchy`           | `component/core/hierarchy.h`               | Parent, first/last child and sibling links ([below](#hierarchy))                                      |
 | `Name`                | `component/core/name.h`                    | `char value[64]` - the entity's display name, in the editor and in log lines                          |
 | `NetLocal`            | `component/core/net_local.h`               | Nothing - its presence keeps the entity and everything below it off the wire ([Networking](networking.md#what-does-not-replicate)) |
-| `Collider`            | `component/physics/collider.h`             | One or more `ColliderPart`s (Box, Capsule or Mesh) + `isTrigger` + `enabled`                          |
+| `Collider`            | `component/physics/collider.h`             | One or more `ColliderPart`s (Box, Capsule, Mesh or Terrain) + `isTrigger` + `enabled`                 |
 | `CharacterController` | `component/physics/character_controller.h` | Move, jump, climb and crouch input in; ground contact out ([Physics](physics.md))                     |
 | `Rigidbody`           | `component/physics/rigidbody.h`            | A Dynamic, Kinematic or Static body, plus the support and blocking outputs                            |
 | `ReflectionProbe`     | `component/render/reflection_probe.h`      | Local IBL probe over an influence box                                                                 |
@@ -66,6 +66,7 @@ Each header documents its fields.
 | `LOD`                 | `component/render/lod.h`                   | Mesh levels, each with a `maxDistance`, chosen by the camera's distance and `bias`                    |
 | `IrradianceVolume`    | `component/render/irradiance_volume.h`     | The baked SH-L1 grid indirect diffuse comes from                                                      |
 | `Ocean`               | `component/render/ocean.h`                 | The spectrum a `waves` material's surface moves by. One a scene (`findOcean`); see [rendering.md](rendering.md#the-ocean) |
+| `Terrain`             | `component/render/terrain.h`               | The terrain drawn where the entity stands, and whether it casts shadows ([Terrain](terrain.md))      |
 | `ParticleEmitter`     | `component/render/particle_emitter.h`      | How particles are emitted; the live particles are `ParticleSystem`'s                                  |
 | `ParticleTrigger`     | `component/render/particle_emitter.h`      | Makes a child's emitter spawn on its parent's particles' births, deaths or strikes                    |
 | `Joint`               | `component/physics/joint.h`                | A `JointType` constraint to the `connected` entity                                                    |

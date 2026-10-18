@@ -1,0 +1,281 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [],
+    "meshes": [],
+    "skeletons": [],
+    "sounds": [
+      {
+        "name": "assets/audio/hit.wav"
+      }
+    ],
+    "textures": []
+  },
+  "entities": [
+    {
+      "components": {
+        "AudioSource": {
+          "clip": "assets/audio/hit.wav",
+          "loop": false,
+          "maxDistance": 35.0,
+          "minDistance": 2.0,
+          "pitch": 1.0,
+          "playOnStart": true,
+          "priority": 0,
+          "rolloff": "Inverse",
+          "spatial": true,
+          "volume": 0.8999999761581421
+        },
+        "Name": {
+          "value": "Shot Hit"
+        },
+        "ParticleEmitter": {
+          "acceleration": [
+            0.0,
+            -9.8100004196167,
+            0.0
+          ],
+          "angle": 0.4363323152065277,
+          "blend": "Additive",
+          "bounce": 0.30000001192092896,
+          "burst": 40,
+          "collide": true,
+          "color": {
+            "keys": [
+              {
+                "color": [
+                  1.0,
+                  0.949999988079071,
+                  0.699999988079071,
+                  1.0
+                ],
+                "time": 0.0
+              },
+              {
+                "color": [
+                  1.0,
+                  0.44999998807907104,
+                  0.10000000149011612,
+                  0.0
+                ],
+                "time": 1.0
+              }
+            ]
+          },
+          "destroyWhenSpent": true,
+          "distortion": 0.029999999329447746,
+          "drag": 0.5,
+          "emission": 0.0,
+          "emitting": false,
+          "fromSurface": false,
+          "halfExtents": [
+            0.5,
+            0.5,
+            0.5
+          ],
+          "inheritVelocity": 0.0,
+          "intensity": 8.0,
+          "lifeLostOnHit": 0.0,
+          "lifetime": {
+            "max": 0.699999988079071,
+            "min": 0.30000001192092896
+          },
+          "maxParticles": 48,
+          "normalMap": "",
+          "radius": 0.019999999552965164,
+          "randomFrame": false,
+          "rate": 30.0,
+          "ratePerMetre": 0.0,
+          "render": "Stretched",
+          "rotation": {
+            "max": 0.0,
+            "min": 0.0
+          },
+          "seenBy": "All",
+          "shape": "Hemisphere",
+          "sheetBlend": false,
+          "sheetColumns": 1,
+          "sheetFps": 0.0,
+          "sheetRows": 1,
+          "size": {
+            "max": 0.03999999910593033,
+            "min": 0.02500000037252903
+          },
+          "sizeOverLife": {
+            "keys": [
+              {
+                "time": 0.0,
+                "value": 1.0
+              },
+              {
+                "time": 1.0,
+                "value": 0.30000001192092896
+              }
+            ]
+          },
+          "softness": 1.0,
+          "speed": {
+            "max": 7.0,
+            "min": 3.0
+          },
+          "spin": {
+            "max": 0.0,
+            "min": 0.0
+          },
+          "stretch": 0.019999999552965164,
+          "texture": "",
+          "trailLength": 0.30000001192092896,
+          "turbulence": 0.0,
+          "turbulenceScale": 1.0
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "Name": {
+          "value": "Puff"
+        },
+        "ParticleEmitter": {
+          "acceleration": [
+            0.0,
+            0.30000001192092896,
+            0.0
+          ],
+          "angle": 0.4363323152065277,
+          "blend": "Alpha",
+          "bounce": 0.30000001192092896,
+          "burst": 8,
+          "collide": false,
+          "color": {
+            "keys": [
+              {
+                "color": [
+                  0.44999998807907104,
+                  0.4300000071525574,
+                  0.4000000059604645,
+                  0.550000011920929
+                ],
+                "time": 0.0
+              },
+              {
+                "color": [
+                  0.44999998807907104,
+                  0.4300000071525574,
+                  0.4000000059604645,
+                  0.0
+                ],
+                "time": 1.0
+              }
+            ]
+          },
+          "destroyWhenSpent": true,
+          "distortion": 0.029999999329447746,
+          "drag": 2.5,
+          "emission": 0.0,
+          "emitting": false,
+          "fromSurface": false,
+          "halfExtents": [
+            0.5,
+            0.5,
+            0.5
+          ],
+          "inheritVelocity": 0.0,
+          "intensity": 1.0,
+          "lifeLostOnHit": 0.0,
+          "lifetime": {
+            "max": 1.0,
+            "min": 0.6000000238418579
+          },
+          "maxParticles": 8,
+          "normalMap": "",
+          "radius": 0.05000000074505806,
+          "randomFrame": false,
+          "rate": 30.0,
+          "ratePerMetre": 0.0,
+          "render": "Billboard",
+          "rotation": {
+            "max": 6.28000020980835,
+            "min": 0.0
+          },
+          "seenBy": "All",
+          "shape": "Hemisphere",
+          "sheetBlend": false,
+          "sheetColumns": 1,
+          "sheetFps": 0.0,
+          "sheetRows": 1,
+          "size": {
+            "max": 0.14000000059604645,
+            "min": 0.07999999821186066
+          },
+          "sizeOverLife": {
+            "keys": [
+              {
+                "time": 0.0,
+                "value": 0.6000000238418579
+              },
+              {
+                "time": 1.0,
+                "value": 2.0
+              }
+            ]
+          },
+          "softness": 1.0,
+          "speed": {
+            "max": 0.800000011920929,
+            "min": 0.30000001192092896
+          },
+          "spin": {
+            "max": 0.0,
+            "min": 0.0
+          },
+          "stretch": 0.05000000074505806,
+          "texture": "",
+          "trailLength": 0.30000001192092896,
+          "turbulence": 0.0,
+          "turbulenceScale": 1.0
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.05000000074505806,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    }
+  ],
+  "nextUid": 2,
+  "version": 3
+}

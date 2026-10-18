@@ -36,6 +36,7 @@
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/component/render/planar_reflector.h"
 #include "ecs/component/render/reflection_probe.h"
+#include "ecs/component/render/terrain.h"
 #include "ecs/component/ui/ui_button.h"
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_choice.h"
@@ -547,6 +548,7 @@ EntityLabel entityLabelOf(const Scene& scene, EntityId id) {
     // Before Mesh: an Animator makes it the rig (its meshes are children); a socket likewise.
     if (scene.has<Animator>(id)) return {"Rig", EditorIcon::Anim};
     if (scene.has<BoneSocket>(id)) return {"Socket", EditorIcon::Socket};
+    if (scene.has<Terrain>(id)) return {"Terrain", EditorIcon::Terrain};
     if (scene.has<Mesh>(id)) {
         if (scene.has<Animation>(id)) return {"Animated Mesh", EditorIcon::Mesh};
         if (scene.has<LOD>(id))       return {"LOD Mesh",      EditorIcon::Mesh};

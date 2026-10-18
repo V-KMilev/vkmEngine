@@ -6,6 +6,7 @@
 #include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
+#include "resource/asset/terrain_asset.h"
 #include "resource/asset/texture_asset.h"
 
 namespace Vkm::Engine {
@@ -40,5 +41,18 @@ TextureHandle loadCookedTexture(const std::string& name, ResourceManager& resour
 SkeletonHandle      loadCookedSkeleton     (const std::string& name, ResourceManager& resources);
 AnimationClipHandle loadCookedAnimationClip(const std::string& name, ResourceManager& resources);
 AudioClipHandle     loadCookedAudioClip    (const std::string& name, ResourceManager& resources);
+
+/**
+ * @brief Load a cooked terrain by its library name, synchronously, its layers' materials and its
+ *        plants' meshes and materials found by name in @p resources (TerrainFile::resolve).
+ *
+ * Loaded after the materials and meshes it names (ASSET_DEPENDENCY_ORDER), which must be in
+ * @p resources already.
+ *
+ * @param name      The asset's library name.
+ * @param resources The graph the asset is added to.
+ * @return The asset, or an invalid handle as loadCookedSkeleton's.
+ */
+TerrainHandle loadCookedTerrain(const std::string& name, ResourceManager& resources);
 
 } // namespace Vkm::Engine

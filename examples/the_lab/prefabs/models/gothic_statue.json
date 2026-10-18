@@ -1,0 +1,116 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/gothic_statue/gothic_statue_1k.gltf:mat0"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/gothic_statue/gothic_statue_1k.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/gothic_statue/gothic_statue_1k.gltf:mesh0:lod1"
+      },
+      {
+        "name": "assets/models/gothic_statue/gothic_statue_1k.gltf:mesh0:lod2"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/gothic_statue/textures/gothic_statue_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/gothic_statue/textures/gothic_statue_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/gothic_statue/textures/gothic_statue_arm_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "gothic_statue_1k"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 8.100913047790527,
+              "mesh": "assets/models/gothic_statue/gothic_statue_1k.gltf:mesh0"
+            },
+            {
+              "maxDistance": 81.2894058227539,
+              "mesh": "assets/models/gothic_statue/gothic_statue_1k.gltf:mesh0:lod1"
+            },
+            {
+              "maxDistance": 162.5788116455078,
+              "mesh": "assets/models/gothic_statue/gothic_statue_1k.gltf:mesh0:lod2"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/gothic_statue/gothic_statue_1k.gltf:mat0",
+          "mesh": "assets/models/gothic_statue/gothic_statue_1k.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "gothic_statue"
+        },
+        "Transform": {
+          "position": [
+            -0.028923194855451584,
+            1.1918599605560303,
+            0.2721009850502014
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    }
+  ],
+  "nextUid": 2,
+  "version": 3
+}

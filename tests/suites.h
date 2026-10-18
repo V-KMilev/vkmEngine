@@ -31,6 +31,7 @@
     X("culling",     runCullingTests,        "frustum and box tests, fixed meshes, the shadowed sun") \
     X("sky",         runSkyTests,            "the sun: where the key light points, its colour; flicker") \
     X("ocean",       runOceanTests,          "the sea: how high the wind raises it, and where its water is") \
+    X("terrain",     runTerrainTests,        "terrains: their chunks, their brushes, the plants they grow") \
     X("animation",   runAnimationTests,      "AnimationTrack sampling and its boundaries") \
     X("particle",    runParticleTests,       "emitter spawn accounting")                   \
     X("wire",        runNetWireTests,        "net wire")                                   \

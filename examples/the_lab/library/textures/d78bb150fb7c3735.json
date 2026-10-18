@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/weathered_planks_diff.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/weathered_planks_diff.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

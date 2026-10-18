@@ -1,0 +1,8 @@
+{
+  "name": "assets/models/concrete_road_barrier_02/concrete_road_barrier_02_1k.gltf:mesh0:lod2",
+  "source": {
+    "base": "assets/models/concrete_road_barrier_02/concrete_road_barrier_02_1k.gltf:mesh0",
+    "kind": "decimate",
+    "ratio": 0.125
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "mesh:generator:pyramid:1.0:1.0",
+  "source": {
+    "kind": "generator",
+    "params": {
+      "baseSize": 1.0,
+      "height": 1.0
+    },
+    "type": "pyramid"
+  }
+}

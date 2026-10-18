@@ -17,6 +17,7 @@
 #include "gl_stream_ring.h"
 
 namespace Vkm::GL {
+    class ComputeShader;
     class Texture2D;
 }
 
@@ -205,6 +206,16 @@ class GLView {
 
     private:
         /**
+         * @brief Ready a layered material's layers - each with its maps - and build its arrays from
+         *        them (GLMaterial::updateLayers).
+         *
+         * @param asset     The layered material.
+         * @param material  Its GPU copy.
+         * @param resources Resolves its layers and their maps.
+         */
+        void readyLayers(const MaterialAsset& asset, GLMaterial& material, const ResourceManager& resources);
+
+        /**
          * @brief Upload or refresh a single asset into its table, version-gated.
          *
          * A recycled slot's new asset also starts at version 1, so an in-place update() needs the
@@ -254,6 +265,8 @@ class GLView {
         GLMeshPool                  m_meshPool;
         GLResourceTable<GLMesh>     m_meshes;
         GLResourceTable<GLMaterial> m_materials;
+        /// Fills a layered material's arrays (GLLayerMaps); made the first time one is readied.
+        std::unique_ptr<Vkm::GL::ComputeShader> m_layerCopy;
         GLResourceTable<GLTexture>  m_textures;
         /// SDF atlases by FontHandle; fonts carry pixels, not TextureAssets.
         GLResourceTable<GLTexture>  m_fontAtlases;

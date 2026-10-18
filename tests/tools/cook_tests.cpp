@@ -35,11 +35,13 @@
 #include "io/asset/asset_library.h"
 #include "io/asset/asset_serializer.h"
 #include "io/asset/cooked_loader.h"
+#include "io/asset/terrain_file.h"
 #include "io/project_paths.h"
 #include "io/scene/scene_serializer.h"
 #include "resource/asset/animation_clip_asset.h"
 #include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/skeleton_asset.h"
+#include "resource/asset/terrain_asset.h"
 #include "resource/asset_source_kind.h"
 #include "resource/generate/mesh_generators.h"
 
@@ -243,6 +245,46 @@ void testATextureAndASoundSurviveTheRoundTrip() {
     std::error_code ec;
     std::filesystem::remove(texPath, ec);
     std::filesystem::remove(wav, ec);
+}
+
+// A terrain cooks from its .terrain file, and the cooked copy names its layers as the file did.
+void testATerrainCooksFromItsFile() {
+    std::printf("A cooked terrain:\n");
+
+    ResourceManager resources;
+    TerrainAsset    terrain;
+    terrain.resolution = TerrainAsset::MIN_RESOLUTION;
+    terrain.size       = 16.0f;
+    const size_t vertices = static_cast<size_t>(terrain.resolution) * terrain.resolution;
+    terrain.heights.resize(vertices);
+    for (size_t v = 0; v < vertices; ++v) terrain.heights[v] = 0.01f * static_cast<float>(v % 97);
+    terrain.weights.assign(vertices * 4, 0);
+    for (size_t v = 0; v < vertices; ++v) terrain.weights[v * 4 + v % 4] = 255;
+    MaterialAsset sand;
+    terrain.layers[1] = resources.add(std::move(sand), "test:sand");
+
+    const std::filesystem::path cooked = scratch("vkm_cook_terrain.vkmc");
+    check("a terrain with no file to cook from is refused", !AssetCook::writeTerrain(cooked, terrain));
+
+    const std::filesystem::path file = scratch("vkm_cook.terrain");
+    check("its file writes", TerrainFile::write(file, terrain, resources));
+    terrain.sourceJson() = {
+        {AssetSourceKey::KIND, AssetSourceKind::FILE},
+        {AssetSourceKey::PATH, file.string()}
+    };
+    check("it cooks from the file", AssetCook::writeTerrain(cooked, terrain));
+
+    TerrainAsset       read;
+    TerrainFile::Names names;
+    check("and reads", AssetCook::readTerrain(cooked, read, names));
+    check("  its grid as it was", read.resolution == terrain.resolution && read.heights == terrain.heights);
+    check("  its shares as they were", read.weights == terrain.weights);
+    const bool named = names.layers[1] == "test:sand" && names.layers[0].empty();
+    check("  naming the layer it was painted with", named);
+
+    std::error_code ec;
+    std::filesystem::remove(cooked, ec);
+    std::filesystem::remove(file, ec);
 }
 
 // A decoded texture whose texels all differ, so a level built from the wrong place shows.
@@ -2283,6 +2325,7 @@ void runCookTests() {
     testAnUnskinnedMeshCarriesNoSkin();
     testASkeletonAndAClipSurviveTheRoundTrip();
     testATextureAndASoundSurviveTheRoundTrip();
+    testATerrainCooksFromItsFile();
     testAMipChainHasALevelPerHalving();
     testACompressedTextureSurvivesTheRoundTrip();
     testTheBlocksHoldTheTexelsTheyWereMadeFrom();

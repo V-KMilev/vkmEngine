@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/barrel_03/textures/barrel_03_diff_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/barrel_03/textures/barrel_03_diff_1k.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

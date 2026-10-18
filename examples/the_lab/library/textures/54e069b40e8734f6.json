@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/green_metal_rust_nor_gl.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/green_metal_rust_nor_gl.jpg",
+    "usage": "Normal",
+    "wrap": "repeat"
+  }
+}

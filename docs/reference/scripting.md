@@ -213,6 +213,7 @@ class Behavior {
         void     destroy();             // this entity and its subtree, after the hook pass
         void     destroy(EntityId);     // that one and its subtree, same deferral
         void     loadScene(const std::string& scenePath);  // deferred to the end of the frame's hooks
+        void     restartScene();        // the scene being played, over again; same deferral
         template<typename T> T* findBehavior();          // its behavior of type T, or null
         template<typename T> T* findBehavior(EntityId);  // another entity's
         template<typename T> T* findInScene();           // the scene's one T
@@ -241,7 +242,12 @@ class Behavior {
 - **`destroy()`** takes the entity's whole subtree and is deferred to after the
   current hook pass, so a behavior may destroy its own entity. **`loadScene()`**
   is deferred to the end of the frame's hooks, so a behavior may ask for the
-  scene that destroys it; the path is project-relative.
+  scene that destroys it; the path is project-relative. **`restartScene()`**
+  starts the scene being played over: the file `loadScene` last loaded, else
+  what the host began play with - a runtime's or server's entry scene
+  (`BehaviorSystem::setPlayedScene`), or under the editor the scene as Play
+  found it, which the editor puts back by Stop and Play
+  (`BehaviorSystem::setRestartHandler`).
 - **Spawning.** `spawn(name, parent)` parents through
   `HierarchyOperations::setParent`, UI elements included. A spawn is local to
   this end; what every end should see is `NetSession::spawn`, on the server
@@ -269,7 +275,7 @@ overwrites the earlier with a warning. Write
 `using namespace Vkm::Engine;` once inside your namespace, as above. Module
 entry points are `extern "C"` at global scope, so they qualify names or open
 with a function-scope `using namespace Vkm::Engine;`
-(`examples/physics_lab/src/module.cpp`).
+(`examples/the_lab/src/module.cpp`).
 
 ### Field types
 

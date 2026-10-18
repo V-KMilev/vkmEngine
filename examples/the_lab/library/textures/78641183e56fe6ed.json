@@ -1,0 +1,9 @@
+{
+  "name": "assets/textures/meadow.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/meadow.png",
+    "usage": "Color"
+  }
+}

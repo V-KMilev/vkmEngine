@@ -1,0 +1,7 @@
+{
+  "name": "assets/audio/zap.wav",
+  "source": {
+    "kind": "file",
+    "path": "assets/audio/zap.wav"
+  }
+}

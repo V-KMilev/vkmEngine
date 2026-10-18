@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/lantern_chandelier_01/textures/lantern_chandelier_01_glass_rgba_1k.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/lantern_chandelier_01/textures/lantern_chandelier_01_glass_rgba_1k.png",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

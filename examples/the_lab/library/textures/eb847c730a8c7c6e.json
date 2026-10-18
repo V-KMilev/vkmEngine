@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/stone_fire_pit/stone_fire_pit_diff_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/stone_fire_pit/stone_fire_pit_diff_1k.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

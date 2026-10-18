@@ -185,6 +185,14 @@ std::string GLBackend::shaderConstants() {
         << "const int   MAT_TRANSPARENT     = " << static_cast<int>(MaterialType::Transparent) << ";\n"
         << "const int   MAT_UNLIT           = " << static_cast<int>(MaterialType::Unlit)       << ";\n"
         << "const int   MAT_ALPHA_MASK      = " << static_cast<int>(MaterialType::AlphaMask)   << ";\n"
+        << "const int   MATERIAL_MAX_LAYERS = " << MaterialAsset::MAX_LAYERS                  << ";\n"
+        << "const int   LAYER_COPY_FILL     = " << static_cast<int>(GLLayerMaps::Copy::Fill)   << ";\n"
+        << "const int   LAYER_COPY_ALBEDO   = " << static_cast<int>(GLLayerMaps::Copy::Albedo) << ";\n"
+        << "const int   LAYER_COPY_NORMAL   = " << static_cast<int>(GLLayerMaps::Copy::Normal) << ";\n"
+        << "const int   LAYER_COPY_AO_ROUGHNESS_METALLIC = "
+        << static_cast<int>(GLLayerMaps::Copy::AoRoughnessMetallic) << ";\n"
+        << "const int   LAYER_COPY_ROUGHNESS_METALLIC = "
+        << static_cast<int>(GLLayerMaps::Copy::RoughnessMetallic) << ";\n"
         << "const int   PARTICLE_ADDITIVE   = " << static_cast<int>(ParticleBlend::Additive)   << ";\n"
         << "const int   PARTICLE_ALPHA      = " << static_cast<int>(ParticleBlend::Alpha)      << ";\n"
         << "const int   PARTICLE_DISTORTION = " << static_cast<int>(ParticleBlend::Distortion) << ";\n";
@@ -196,6 +204,10 @@ std::string GLBackend::shaderConstants() {
     static_assert(
         static_cast<int>(ParticleBlend::Count) == 3,
         "A particle blend the shaders are not told about"
+    );
+    static_assert(
+        static_cast<int>(GLLayerMaps::Copy::Count) == 5,
+        "A layer copy the shaders are not told about"
     );
 
     return out.str();
@@ -290,7 +302,11 @@ bool GLBackend::init(WindowManager& window) {
     m_passes.push_back({"PlanarReflections", std::move(planar)});
     m_passes.push_back({"Skybox",         std::make_unique<GLSkyboxPass>()});
     m_passes.push_back({"Ocean",          std::make_unique<GLOceanPass>()});
-    m_passes.push_back({"Forward",        std::make_unique<GLForwardPass>(m_sceneCapture.pbrProgram())});
+    auto forward   = std::make_unique<GLForwardPass>(
+        m_sceneCapture.pbrProgram(),
+        m_sceneCapture.layeredProgram()
+    );
+    m_passes.push_back({"Forward",        std::move(forward)});
     m_passes.push_back({"Particles",      std::move(particles)});
     m_passes.push_back({"ResolveColor",   std::make_unique<GLResolvePass>(GLResolvePass::Scope::Color)});
     m_passes.push_back({"Reflections",    std::make_unique<GLReflectionPass>()});

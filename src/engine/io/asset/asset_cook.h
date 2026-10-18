@@ -11,7 +11,12 @@ struct AnimationClipAsset;
 struct AudioClipAsset;
 struct MeshAsset;
 struct SkeletonAsset;
+struct TerrainAsset;
 struct TextureAsset;
+
+namespace TerrainFile {
+    struct Names;
+}
 
 /**
  * @brief Cooked binary asset format (derived cache).
@@ -19,7 +24,7 @@ struct TextureAsset;
  * Host-endian; an endian sentinel rejects a file written on a differently-endianed machine. Cooked
  * files are regenerable and keyed to their recipe by name (see cacheKey). Readers validate every
  * count against the file length before allocating. Materials load straight from JSON and are not
- * cooked; meshes, textures, skeletons, animation clips and sounds are.
+ * cooked; meshes, textures, skeletons, animation clips, sounds and terrains are.
  */
 namespace AssetCook {
 
@@ -83,6 +88,18 @@ constexpr uint32_t MAX_AUDIO_SAMPLE_RATE = 384000;
 [[nodiscard]] bool writeAudioClip    (const std::filesystem::path& path, const AudioClipAsset&     audio);
 
 /**
+ * @brief Cook @p terrain from its .terrain file (TerrainFile), the body copied once it reads soundly.
+ *
+ * From the file, not the asset: the body keeps the names of what the asset holds by handle, which
+ * only a graph can give. The editor writes the file before it cooks.
+ *
+ * @param path    Where the file goes, already named for its key.
+ * @param terrain The terrain, whose recipe names its file.
+ * @return False when the file is missing or unsound, or on any IO error.
+ */
+[[nodiscard]] bool writeTerrain(const std::filesystem::path& path, const TerrainAsset& terrain);
+
+/**
  * @brief Whether the cooked file at @p path can still serve @p type.
  *
  * Reads the header and measures the file, nothing more. Not current: absent, not a cooked asset, another
@@ -107,6 +124,20 @@ constexpr uint32_t MAX_AUDIO_SAMPLE_RATE = 384000;
 [[nodiscard]] bool readSkeleton     (const std::filesystem::path& path, SkeletonAsset&      out);
 [[nodiscard]] bool readAnimationClip(const std::filesystem::path& path, AnimationClipAsset& out);
 [[nodiscard]] bool readAudioClip    (const std::filesystem::path& path, AudioClipAsset&     out);
+
+/**
+ * @brief Read a cooked terrain: its handles empty, what they name in @p names (TerrainFile::resolve).
+ *
+ * @param path  The cooked file.
+ * @param out   Filled on success.
+ * @param names What its layers and plants name.
+ * @return False, logging the reason, on any header mismatch or an unsound body.
+ */
+[[nodiscard]] bool readTerrain(
+    const std::filesystem::path& path,
+    TerrainAsset& out,
+    TerrainFile::Names& names
+);
 
 } // namespace AssetCook
 

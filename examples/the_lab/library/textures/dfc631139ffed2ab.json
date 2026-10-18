@@ -1,0 +1,9 @@
+{
+  "name": "assets/effects/shockwave.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/effects/shockwave.png",
+    "usage": "Normal"
+  }
+}

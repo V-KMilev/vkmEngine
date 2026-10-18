@@ -1,0 +1,8 @@
+{
+  "name": "assets/models/wooden_crate_01/wooden_crate_01_1k.gltf:mesh1:lod3",
+  "source": {
+    "base": "assets/models/wooden_crate_01/wooden_crate_01_1k.gltf:mesh1",
+    "kind": "decimate",
+    "ratio": 0.03125
+  }
+}

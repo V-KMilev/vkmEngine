@@ -81,9 +81,9 @@ and on a server what that entity's player sent, in order; an entity no player
 drives reads as nothing held.
 
 Offline `isSimulated()` and `isMine()` answer yes for every character, so a
-scene authored with four would move all four from one keyboard. physics_lab
+scene authored with four would move all four from one keyboard. the_lab
 answers it with a question of its own (`isOfflineSeat`,
-`examples/physics_lab/src/lab_walker.h`).
+`examples/the_lab/src/lab_seat.h`).
 
 ### Messages
 
@@ -303,6 +303,15 @@ settled world goes quiet.
 - **What has gone is reported by occupant, not by slot**, so an entity destroyed
   and replaced between two sends is not missed. The client applies losses before
   entries.
+- **A component taken away is said gone**: an entry carries the types the
+  connection holds and the entity no longer does, and the client removes them.
+  A removal is confirmed like any change, so a late acknowledgement of an older
+  snapshot cannot have the server believe the client holds it again.
+- **A value the wire cannot tell from the one held is kept as held**
+  (`sameOnWire`), so a joiner keeps the exact pose its scene file gave an entity
+  the server never moved, rather than its quantised copy. A type whose codec
+  carries a field exactly takes that field all the same (`netKeep`; a
+  `Transform` takes its scale).
 - **The connection's own entity is written every snapshot**, unchanged or not,
   and never deferred: the receiver holds its own prediction, not what it was
   told, and reconciles against it.
@@ -456,7 +465,10 @@ gets `Mismatch` and anything else from it is dropped unread.
 
 The client says hello from the frame loop, not `connect()`, because actions are
 defined in a behavior's `onStart`, inside the first tick; it repeats at the
-command rate until answered. Snapshots wait for the first `Command`.
+command rate until answered. Snapshots wait for the first `Command`. So a
+client's behaviors start before anything the server holds has arrived: one that
+acts on a replicated value changing takes the first value it sees as where it
+stands, or what the server counted before the join arrives as news.
 
 **Security.** Every message carries a 64-bit token, and the token is the seat; a
 source address is trivially forged. A `Hello` without the right token gets a

@@ -1,0 +1,9 @@
+{
+  "name": "assets/effects/scorch.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/effects/scorch.png",
+    "usage": "Color"
+  }
+}

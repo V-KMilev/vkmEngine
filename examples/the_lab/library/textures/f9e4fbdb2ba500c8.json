@@ -1,0 +1,11 @@
+{
+  "name": "assets/models/concrete_road_barrier_02/textures/concrete_road_barrier_02_arm_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/concrete_road_barrier_02/textures/concrete_road_barrier_02_arm_1k.jpg",
+    "roughnessNormal": "assets/models/concrete_road_barrier_02/textures/concrete_road_barrier_02_nor_gl_1k.jpg",
+    "usage": "Data",
+    "wrap": "repeat"
+  }
+}

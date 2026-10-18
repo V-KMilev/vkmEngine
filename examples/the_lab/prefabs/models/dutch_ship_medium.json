@@ -1,0 +1,246 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mat0"
+      },
+      {
+        "name": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mat1"
+      },
+      {
+        "name": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mat2"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh0:lod1"
+      },
+      {
+        "name": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh0:lod2"
+      },
+      {
+        "name": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh1"
+      },
+      {
+        "name": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh1:lod1"
+      },
+      {
+        "name": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh1:lod2"
+      },
+      {
+        "name": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh1:lod3"
+      },
+      {
+        "name": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh2"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/dutch_ship_medium/textures/dutch_ship_medium_rigging_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/dutch_ship_medium/textures/dutch_ship_medium_rigging_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/dutch_ship_medium/textures/dutch_ship_medium_rigging_arm_1k.jpg"
+      },
+      {
+        "name": "assets/models/dutch_ship_medium/textures/dutch_ship_medium_hull_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/dutch_ship_medium/textures/dutch_ship_medium_hull_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/dutch_ship_medium/textures/dutch_ship_medium_hull_arm_1k.jpg"
+      },
+      {
+        "name": "assets/models/dutch_ship_medium/textures/dutch_ship_medium_sails_rgba_1k.png"
+      },
+      {
+        "name": "assets/models/dutch_ship_medium/textures/dutch_ship_medium_sails_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/dutch_ship_medium/textures/dutch_ship_medium_sails_arm_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "dutch_ship_medium_1k"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 34.488800048828125,
+              "mesh": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh0"
+            },
+            {
+              "maxDistance": 1070.4910888671875,
+              "mesh": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh0:lod1"
+            },
+            {
+              "maxDistance": 2140.982177734375,
+              "mesh": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh0:lod2"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mat0",
+          "mesh": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "dutch_ship_medium_rigging"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 13.018190383911133,
+              "mesh": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh1"
+            },
+            {
+              "maxDistance": 420.3624267578125,
+              "mesh": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh1:lod1"
+            },
+            {
+              "maxDistance": 983.7783203125,
+              "mesh": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh1:lod2"
+            },
+            {
+              "maxDistance": 1967.556640625,
+              "mesh": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh1:lod3"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mat1",
+          "mesh": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh1",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "dutch_ship_medium_hull"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 2
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mat2",
+          "mesh": "assets/models/dutch_ship_medium/dutch_ship_medium_1k.gltf:mesh2",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "dutch_ship_medium_sails"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 3
+    }
+  ],
+  "nextUid": 4,
+  "version": 3
+}

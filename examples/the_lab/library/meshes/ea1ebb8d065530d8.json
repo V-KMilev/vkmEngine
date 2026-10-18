@@ -1,0 +1,8 @@
+{
+  "name": "assets/models/wooden_military_crate/wooden_military_crate_1k.gltf:mesh0:lod2",
+  "source": {
+    "base": "assets/models/wooden_military_crate/wooden_military_crate_1k.gltf:mesh0",
+    "kind": "decimate",
+    "ratio": 0.125
+  }
+}

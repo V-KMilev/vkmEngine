@@ -411,7 +411,7 @@ def cmd_package(args) -> int:
         with step("archiving"):
             archive = Path(shutil.make_archive(str(out), kind, root_dir=out.parent, base_dir=out.name))
 
-    # Quoted for a POSIX shell, so "Physics Lab" pastes.
+    # Quoted for a POSIX shell, so "The Lab" pastes.
     quote = (lambda p: str(p)) if os.name == "nt" else (lambda p: shlex.quote(str(p)))
     print()
     say(f"packaged {name} in {time.monotonic() - start:.1f} s")

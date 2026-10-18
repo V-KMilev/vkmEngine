@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/propane_tank/textures/propane_tank_diff_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/propane_tank/textures/propane_tank_diff_1k.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

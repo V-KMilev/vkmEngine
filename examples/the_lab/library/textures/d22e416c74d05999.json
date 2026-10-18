@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/rough_wood_nor_gl.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/rough_wood_nor_gl.jpg",
+    "usage": "Normal",
+    "wrap": "repeat"
+  }
+}

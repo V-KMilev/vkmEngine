@@ -43,7 +43,7 @@ editor_settings.json
 /cooked/
 /library/
 # A project's own source art, which the root-anchored `assets/*` above does not
-# reach. physics_lab is the exception below - its world is authored rather than
+# reach. the_lab is the exception below - its world is authored rather than
 # built at play time, so its art is source.
 examples/*/assets/
 
@@ -65,11 +65,11 @@ scratchpad/
 # file.
 docs/notes/
 
-# The physics lab is the one example whose world is authored rather than built
+# The lab is the one example whose world is authored rather than built
 # at play time, so unlike the others it cannot make its own contents. Its source
 # art and its asset recipes are both source: the scene stores names, and the
 # recipes under library/ are what turn those names back into assets. Without
 # either, a clone opens the project to an empty world. The cooked binaries
 # beside them stay ignored - those are a cache the cooker rebuilds.
-!examples/physics_lab/assets/
-!examples/physics_lab/library/
+!examples/the_lab/assets/
+!examples/the_lab/library/

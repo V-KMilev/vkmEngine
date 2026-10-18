@@ -1,0 +1,7 @@
+{
+  "name": "assets/audio/wind.wav",
+  "source": {
+    "kind": "file",
+    "path": "assets/audio/wind.wav"
+  }
+}

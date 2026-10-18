@@ -1,0 +1,9 @@
+{
+  "name": "assets/effects/smoke_normal.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/effects/smoke_normal.png",
+    "usage": "Normal"
+  }
+}

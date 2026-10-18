@@ -326,6 +326,16 @@ void load(const nlohmann::json& j, ReflectionProbe& p) { loadReflected(j, p); }
 nlohmann::json save(const PlanarReflector& p)          { return saveReflected(p); }
 void load(const nlohmann::json& j, PlanarReflector& p) { loadReflected(j, p); }
 
+nlohmann::json save(const Terrain& t, const ResourceManager& resources) {
+    return saveReflected(t, resources);
+}
+void load(const nlohmann::json& j, Terrain& t, const ResourceManager& resources) {
+    loadReflected(j, t, resources);
+}
+void emitAssetRefs(const Terrain& t, AssetRefs& refs) {
+    if (t.terrain) refs.terrains.push_back(t.terrain);
+}
+
 nlohmann::json save(const AudioSource& s, const ResourceManager& resources) {
     return saveReflected(s, resources);
 }

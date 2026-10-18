@@ -1,0 +1,12 @@
+{
+  "name": "mesh:generator:ring:0.4000000059604645:0.5:40",
+  "source": {
+    "kind": "generator",
+    "params": {
+      "innerRadius": 0.4000000059604645,
+      "outerRadius": 0.5,
+      "segments": 40
+    },
+    "type": "ring"
+  }
+}

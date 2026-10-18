@@ -126,6 +126,12 @@ bool hasSheen() {
 // The geometric normal, or the normal map through the TBN. Maps hold x and y
 // alone (BC5 or RG8), so z is rebuilt.
 vec3 getNormal(vec2 uv, vec3 Ng, mat3 tbn) {
+#ifdef LAYERED
+    vec3 n;
+    n.xy = layeredNormalXY(uv);
+    n.z  = sqrt(max(0.0, 1.0 - dot(n.xy, n.xy)));
+    return normalize(tbn * normalize(n));
+#else
     if (!hasTex(MATERIAL_SLOT_NORMAL)) {
         return Ng;
     }
@@ -134,6 +140,7 @@ vec3 getNormal(vec2 uv, vec3 Ng, mat3 tbn) {
     n.z  = sqrt(max(0.0, 1.0 - dot(n.xy, n.xy)));
     n.xy *= u_material.normalScale;
     return normalize(tbn * normalize(n));
+#endif
 }
 
 // Geometric specular antialiasing (Karis / Filament): roughness rises with

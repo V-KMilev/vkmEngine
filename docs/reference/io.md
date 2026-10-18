@@ -210,7 +210,7 @@ per-entity component shape a scene uses:
 {"version": PREFAB_FORMAT_VERSION, "nextUid": 3,
  "entities": [{"uid": 0, "components": {...}}, {"uid": 1, "parent": 0, "components": {...}}],
  "assets": {"textures": [...], "meshes": [...], "materials": [...],
-            "skeletons": [...], "clips": [...], "sounds": [...]}}
+            "skeletons": [...], "clips": [...], "sounds": [...], "terrains": [...]}}
 ```
 
 - The `assets` block is a scene's, for this subtree; it is what makes a prefab
@@ -282,7 +282,7 @@ A model file's parts are named by the file and the part
 | `kind`                 | Read by          | Resolves to                                         |
 |------------------------|------------------|-----------------------------------------------------|
 | `generator` / `decimate` | editor, cooker | Procedural / LOD meshes                             |
-| `file` / `model` / `model-image` | editor, cooker | stb texture import and sound decode; cgltf / ufbx mesh, rig and clip import (a clip recipe also carries its authored `markers`) |
+| `file` / `model` / `model-image` | editor, cooker | stb texture import and sound decode; a `.terrain` file; cgltf / ufbx mesh, rig and clip import (a clip recipe also carries its authored `markers`) |
 | `solid`                | editor, cooker   | Single-colour textures                              |
 
 A material's recipe has no `kind`: it is the material's values and its texture
@@ -301,7 +301,8 @@ but trusted by the runtime and server (`AssetLibrary::Truth`), because
 `vkm package` ships `cooked/`, the manifest and `library/materials/` - no other
 recipe, and no file a row lists under `sources`.
 
-**When cooking happens.** Save and Play in the editor record every non-hidden
+**When cooking happens.** Save and Play in the editor write each terrain's file
+([terrain.md](terrain.md#the-asset)), then record every non-hidden
 asset (recipe and manifest row) before they return, which is what makes a saved
 name resolve; the slow bake of a texture or mesh goes to the `ThreadPool`, and
 loads use the recipe until it lands. `vkm_cook` re-bakes everything stale,

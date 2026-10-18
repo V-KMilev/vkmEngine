@@ -54,11 +54,13 @@
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/component/render/planar_reflector.h"
 #include "ecs/component/render/reflection_probe.h"
+#include "ecs/component/render/terrain.h"
 #include "net/net_session.h"
 #include "platform/input/input_map.h"
 #include "platform/window/window_manager.h"
 #include "resource/resource_manager.h"
 #include "resource/asset/material_asset.h"
+#include "resource/asset/terrain_asset.h"
 #include "resource/asset/texture_asset.h"
 #include "resource/texture_format.h"
 #include "resource/generate/mesh_generators.h"
@@ -68,6 +70,7 @@
 #include "system/ui/ui_draw_data.h"
 #include "system/ocean/ocean_system.h"
 #include "system/sky/sky_system.h"
+#include "system/terrain/terrain_system.h"
 #include "system/visibility/visibility_system.h"
 
 namespace Vkm::Test {
@@ -1064,6 +1067,7 @@ std::vector<unsigned char> render(
 
     SkySystem        sky;
     OceanSystem      ocean;
+    TerrainSystem    terrain;
     VisibilitySystem visibility;
     RenderView       view;
     view.viewportWidth  = WIDTH;
@@ -1076,6 +1080,7 @@ std::vector<unsigned char> render(
     for (int frame = 0; frame < frames; ++frame) {
         sky.update(ctx);
         ocean.update(ctx);
+        terrain.update(ctx);
         visibility.update(ctx);
         view.build(s.scene, *ctx.visibility, ui, splash, nullptr, &s.particles, ctx.ocean);
         backend.render(view, s.resources);
@@ -3245,6 +3250,109 @@ void testAParticleWaitsForItsSprite(int& failures) {
     expect("  and one whose sprite failed shows the checker", failed > PIXEL_TOLERANCE, failures);
 }
 
+// A layered material blends its layers by its weights' channels at the mesh's uv: a slab weighted
+// all to its first layer at one end and its second at the other shows the first's colour there,
+// from its map, which reaches the shader through an array, and the second's at the other.
+void testALayeredMaterialBlendsItsLayers(int& failures) {
+    std::printf("A slab of two layered materials:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    const auto build = [](Scenery& s) {
+        base(s);
+        TextureAsset red;
+        red.params.width  = 4;
+        red.params.height = 4;
+        red.pixelData.resize(4 * 4 * 4);
+        for (size_t i = 0; i < red.pixelData.size(); i += 4) {
+            red.pixelData[i]     = 220;
+            red.pixelData[i + 1] = 30;
+            red.pixelData[i + 2] = 30;
+            red.pixelData[i + 3] = 255;
+        }
+        MaterialAsset first;
+        first.albedoTexture = s.resources.add(std::move(red), "golden:red");
+        first.roughness     = 0.9f;
+        const MaterialHandle mapped = s.resources.add(std::move(first), "golden:layer_red");
+        const MaterialHandle flat   = material(s, "golden:layer_blue", {0.1f, 0.2f, 0.9f}, 0.9f, 0.0f);
+
+        // All the first layer in the first texel, all the second in the second.
+        TextureAsset weights;
+        weights.params.width  = 2;
+        weights.params.height = 1;
+        weights.pixelData     = {255, 0, 0, 0, 0, 255, 0, 0};
+        MaterialAsset layered;
+        layered.layers       = {mapped, flat};
+        layered.layerWeights = s.resources.add(std::move(weights), "golden:weights");
+        const MaterialHandle slab = s.resources.add(std::move(layered), "golden:layered");
+        place(s, s.cube, slab, {0.0f, 0.0f, 0.0f}, {4.0f, 0.1f, 4.0f});
+        sunAndCamera(s, {0.0f, 6.0f, 0.01f}, {0.0f, 0.0f, 0.0f});
+    };
+    const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+    if (frame.empty()) return;
+
+    // A quarter of the slab in from either end of its uv's u, whichever way the top face lies.
+    const int reach = HEIGHT / 8;
+    const glm::ivec3 ends[4] = {
+        pixel(frame, WIDTH / 2 - reach, HEIGHT / 2),
+        pixel(frame, WIDTH / 2 + reach, HEIGHT / 2),
+        pixel(frame, WIDTH / 2, HEIGHT / 2 - reach),
+        pixel(frame, WIDTH / 2, HEIGHT / 2 + reach),
+    };
+    const auto red  = [](glm::ivec3 c) { return c.x > c.z + 60 && c.x > c.y + 60; };
+    const auto blue = [](glm::ivec3 c) { return c.z > c.x + 60 && c.z > c.y + 60; };
+    bool across = false;
+    for (int axis = 0; axis < 2; ++axis) {
+        const glm::ivec3 a = ends[2 * axis];
+        const glm::ivec3 b = ends[2 * axis + 1];
+        std::printf("      (%d %d %d) and (%d %d %d)\n", a.x, a.y, a.z, b.x, b.y, b.z);
+        across = across || (red(a) && blue(b)) || (blue(a) && red(b));
+    }
+    expect("one end shows the first layer's map, the other the second layer", across, failures);
+}
+
+// A terrain draws its heights with the layer painted at each vertex.
+void testATerrainDrawsItsPaintedLayers(int& failures) {
+    std::printf("A terrain painted with two layers:\n");
+    RenderSettings settings;
+    settings.msaaSamples = 1;
+    const auto build = [](Scenery& s) {
+        base(s);
+        TerrainAsset terrain;
+        terrain.resolution = 33;
+        terrain.size       = 8.0f;
+        terrain.heights.assign(33 * 33, 0.0f);
+        terrain.weights.assign(33 * 33 * 4, 0);
+        for (int j = 0; j < 33; ++j) {
+            for (int i = 0; i < 33; ++i) {
+                // A ridge along Z down the middle, the first layer to its -X side, the second to its +X.
+                const size_t at   = static_cast<size_t>(j) * 33 + i;
+                terrain.heights[at] = std::max(0.0f, 1.0f - std::abs(static_cast<float>(i) - 16.0f) / 8.0f);
+                terrain.weights[at * 4 + (i < 16 ? 0 : 1)] = 255;
+            }
+        }
+        terrain.layers = {
+            material(s, "golden:sand", {0.9f, 0.15f, 0.1f}, 0.9f, 0.0f),
+            material(s, "golden:grass", {0.1f, 0.2f, 0.9f}, 0.9f, 0.0f)
+        };
+        const EntityId id = s.scene.createEntity();
+        s.scene.add(id, Transform{});
+        Terrain component;
+        component.terrain = s.resources.add(std::move(terrain), "golden:terrain");
+        s.scene.add(id, std::move(component));
+        // Down the ridge from above its +Z end: -X lies to the left.
+        sunAndCamera(s, {0.0f, 7.0f, 6.0f}, {0.0f, 0.0f, 0.0f});
+    };
+    const std::vector<unsigned char> frame = freshFrame(build, settings, failures);
+    if (frame.empty()) return;
+
+    // Either side of the ridge, halfway out to the terrain's edge.
+    const glm::ivec3 left  = pixel(frame, WIDTH / 2 - WIDTH / 8, HEIGHT / 2);
+    const glm::ivec3 right = pixel(frame, WIDTH / 2 + WIDTH / 8, HEIGHT / 2);
+    std::printf("      (%d %d %d) and (%d %d %d)\n", left.x, left.y, left.z, right.x, right.y, right.z);
+    expect("the -X side shows the first layer", left.x > left.z + 60 && left.x > left.y + 60, failures);
+    expect("the +X side shows the second", right.z > right.x + 60 && right.z > right.y + 60, failures);
+}
+
 // Haze moves the wall behind it and adds no light; a ribbon covers the pixels between its points.
 // Behaviour, not pixels: any device judges it, not only the one the goldens were made on.
 void testHazeBendsAndARibbonCovers(int& failures) {
@@ -3686,6 +3794,8 @@ void testTheFramesMatchTheirGoldens(GLContext& gl, int& failures) {
     testHazeBendsAndARibbonCovers(failures);
     testAFlatNormalMapFacesThePuffToTheEye(failures);
     testAParticleWaitsForItsSprite(failures);
+    testALayeredMaterialBlendsItsLayers(failures);
+    testATerrainDrawsItsPaintedLayers(failures);
     testAGlossyFloorReflectsInNoRows(failures);
     testADecalIsLitAsTheFloorUnderIt(failures);
     testSmokeIsLitWhereItIs(failures);

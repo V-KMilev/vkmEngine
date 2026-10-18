@@ -28,7 +28,7 @@ git submodule update --init --recursive
 
 The engine's own `assets/` is ignored except for `logo/`, `fonts/` and `docs/`,
 so a clone carries no models and no environment maps; it builds and runs
-without them. `examples/physics_lab/assets/` and `examples/physics_lab/library/`
+without them. `examples/the_lab/assets/` and `examples/the_lab/library/`
 are named exceptions in `.gitignore`.
 
 ## Build Commands
@@ -44,7 +44,7 @@ cmake --build build
 ./build/bin/vkm_editor examples/potion_runner    # edit a project
 ./build/bin/vkm_runtime examples/potion_runner   # play it
 ./build/bin/vkm_cook examples/potion_runner      # bake its assets, no window
-./build/bin/vkm_server examples/physics_lab      # serve it to players, no window
+./build/bin/vkm_server examples/the_lab          # serve it to players, no window
 build\bin\vkm_editor.exe                         # Windows
 ```
 
@@ -52,9 +52,9 @@ Those run what was built last. `tools/vkm` builds the project's module and cooks
 its assets first:
 
 ```bash
-./tools/vkm run examples/physics_lab               # build, cook and play
-./tools/vkm run examples/physics_lab --players 2   # with a local server
-./tools/vkm package examples/physics_lab           # a standalone game under its dist/
+./tools/vkm run examples/the_lab                # build, cook and play
+./tools/vkm run examples/the_lab --players 2    # with a local server
+./tools/vkm package examples/the_lab            # a standalone game under its dist/
 ```
 
 [getting-started.md](../getting-started.md#the-commands) lists every command.
@@ -83,7 +83,7 @@ refuse to load, or load and disagree with the engine about the code they share.
 
 ## The examples build the way a game does
 
-`examples/potion_runner`, `examples/physics_lab`, `examples/stress_arena` and
+`examples/potion_runner`, `examples/the_lab`, `examples/stress_arena` and
 `examples/city_block` are projects, and one `CMakeLists.txt` each serves two
 ways of building them. Configured on its own (`./tools/vkm build
 examples/potion_runner`) it calls `find_package(vkmEngine)` against the engine's
@@ -122,8 +122,8 @@ The suites are split by what each one needs to run:
 and the list below agree. The suites are `core`, `ecs`, `hierarchy`, `query`,
 `collision`, `solver`, `joint`, `ragdoll`, `character`, `resource`, `async`,
 `cook`, `import`, `authoring`, `prefab`, `scene`, `play`, `undo`, `culling`,
-`sky`, `ocean`, `animation`, `particle`, `wire`, `transport`, `replication`, `prediction`,
-`session`, `ui`, `audio`, `script`, `hostile`, `docs`.
+`sky`, `ocean`, `terrain`, `animation`, `particle`, `wire`, `transport`,
+`replication`, `prediction`, `session`, `ui`, `audio`, `script`, `hostile`, `docs`.
 
 ```bash
 ./build/bin/vkm_engine_tests --list      # what there is

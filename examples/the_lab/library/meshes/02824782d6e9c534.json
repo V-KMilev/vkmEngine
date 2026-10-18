@@ -1,0 +1,8 @@
+{
+  "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh1",
+  "source": {
+    "kind": "model",
+    "mesh": 1,
+    "path": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf"
+  }
+}

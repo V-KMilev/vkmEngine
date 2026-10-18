@@ -131,6 +131,10 @@ class VisibilitySystem : public System {
         ObjectMemberships m_memberships;  ///< Last frame's.
         bool              m_sourcesValid = false;
         uint32_t          m_checkPhase   = 0;  ///< Which residue mod FIXED_CHECK_STRIDE is checked.
+        uint32_t          m_lastTotal    = 0;  ///< Objects last frame, the terrains' chunks among them.
+        uint64_t          m_plantsRevision = 0;  ///< TerrainFrame::plantsRevision of the plants written.
+        uint32_t          m_plantFirst     = 0;  ///< The index they began at.
+        uint32_t          m_plantCount     = 0;
 
         /// Scene::epoch() a moved fixed mesh was logged in.
         uint64_t m_fixedMovedEpoch = UINT64_MAX;

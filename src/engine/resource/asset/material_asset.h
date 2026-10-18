@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -58,6 +59,9 @@ enum class MaterialType : uint8_t {
     Count
 };
 
+struct MaterialAsset;
+using MaterialHandle = Handle<MaterialAsset>;
+
 /**
  * @brief A complete PBR material.
  *
@@ -65,6 +69,9 @@ enum class MaterialType : uint8_t {
  * bound. Fields here and shader support move in lockstep.
  */
 struct MaterialAsset : public Resource {
+    /// The most materials a layered one blends (layers).
+    static constexpr uint32_t MAX_LAYERS = 4;
+
     MaterialType type = MaterialType::Opaque;
     /// AlphaMask: discard below this albedo alpha (glTF default 0.5)
     float alphaCutoff = 0.5f;
@@ -133,9 +140,29 @@ struct MaterialAsset : public Resource {
 #define VKM_MATERIAL_MAP_MEMBER(key, member, slot, doc) TextureHandle member;
     VKM_MATERIAL_MAPS(VKM_MATERIAL_MAP_MEMBER)
 #undef VKM_MATERIAL_MAP_MEMBER
-};
 
-using MaterialHandle = Handle<MaterialAsset>;
+    /**
+     * @brief Materials blended in its place, by layerWeights: what a terrain draws with.
+     *
+     * Each layer's albedo, normal and AO/roughness/metallic maps and factors, read at its own tiling
+     * of the mesh's uv, weighted by layerWeights' R, G, B and A at that uv; every other field of this
+     * material is unread. Derived, not saved: a terrain makes and owns the material it draws with
+     * (TerrainSystem).
+     */
+    std::array<MaterialHandle, MAX_LAYERS> layers{};
+    TextureHandle                          layerWeights;  ///< Each layer's share, read at the mesh's uv.
+    /// Each layer's repeats across the mesh's uv, read in place of the layer's own uvScale, zero for
+    /// once: a terrain tiles each layer at its own size in metres.
+    std::array<glm::vec2, MAX_LAYERS> layerTiling{};
+
+    /// Whether it blends layers, as a terrain's does.
+    bool layered() const {
+        for (const MaterialHandle& layer : layers) {
+            if (layer) return true;
+        }
+        return false;
+    }
+};
 
 } // namespace Vkm::Engine
 

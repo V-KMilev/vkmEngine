@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/white_planks_clean_nor_gl.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/white_planks_clean_nor_gl.jpg",
+    "usage": "Normal",
+    "wrap": "repeat"
+  }
+}

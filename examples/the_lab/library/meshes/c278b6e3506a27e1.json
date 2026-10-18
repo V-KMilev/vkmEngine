@@ -1,0 +1,8 @@
+{
+  "name": "assets/models/lab_props/lab_props.gltf:mesh32",
+  "source": {
+    "kind": "model",
+    "mesh": 32,
+    "path": "assets/models/lab_props/lab_props.gltf"
+  }
+}

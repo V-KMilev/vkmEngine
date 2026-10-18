@@ -19,6 +19,8 @@
 #include "ecs/component/core/transform.h"
 #include "ecs/component/render/camera.h"
 #include "ecs/scene.h"
+#include "editor_actions.h"
+#include "session/terrain_files.h"
 #include "editor_state.h"
 #include "session/material_preview_session.h"
 #include "io/asset/asset_serializer.h"
@@ -152,8 +154,11 @@ bool SceneIOController::writeScene(FrameContext& ctx, EditorState& state, const 
 
     // A partial cook does not stop the save: the scene itself is still worth
     // writing, and the toast below says which half went wrong. The binaries bake
-    // after the save returns; the scene needs only the records.
-    const bool cooked = AssetCooker::cookAllAssets(ctx.resources, AssetCooker::Bake::InBackground);
+    // after the save returns; the scene needs only the records. A terrain's file is
+    // what its cook reads, so it is written first.
+    const bool terrains = writeTerrainFiles(ctx.resources);
+    const bool cooked   = AssetCooker::cookAllAssets(ctx.resources, AssetCooker::Bake::InBackground)
+        && terrains;
 
     const std::string shown = std::filesystem::path(path).filename().string();
     if (!SceneSerializer::save(ctx.scene, ctx.resources, path)) {
@@ -365,8 +370,11 @@ void SceneIOController::afterSceneReplace(
 bool SceneIOController::captureSnapshot(FrameContext& ctx, EditorState& state) {
     // The snapshot is the scene file format, so it names assets the library has
     // to be able to hand back - an unrecorded import would come back empty. A
-    // recorded one whose bake has not landed comes back from its recipe.
-    const bool cooked = AssetCooker::cookAllAssets(ctx.resources, AssetCooker::Bake::InBackground);
+    // recorded one whose bake has not landed comes back from its recipe; a terrain, from
+    // the file written here.
+    const bool terrains = writeTerrainFiles(ctx.resources);
+    const bool cooked   = AssetCooker::cookAllAssets(ctx.resources, AssetCooker::Bake::InBackground)
+        && terrains;
 
     if (!m_play.capture(ctx.scene, ctx.resources, state.sceneDirty)) {
         LOG_ERROR("SceneIOController::captureSnapshot: failed to serialize scene");
@@ -414,6 +422,8 @@ void SceneIOController::restoreSnapshot(FrameContext& ctx, EditorState& state) {
     }
 
     ctx.render = ctx.projectRender;
+    // The terrains as Play wrote them: what the session dug or brushed goes too.
+    readTerrainFiles(ctx.resources);
 
     // Both are read out first because afterSceneReplace releases the snapshot.
     const bool dirtyAtCapture = m_play.dirtyAtCapture();

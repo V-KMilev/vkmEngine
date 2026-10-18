@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/hazard.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/hazard.png",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "assets/models/Barrel_01/textures/Barrel_01_explosive_arm_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/Barrel_01/textures/Barrel_01_explosive_arm_1k.jpg",
+    "roughnessNormal": "assets/models/Barrel_01/textures/Barrel_01_explosive_nor_gl_1k.jpg",
+    "usage": "Data",
+    "wrap": "repeat"
+  }
+}

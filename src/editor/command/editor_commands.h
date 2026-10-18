@@ -36,6 +36,7 @@
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/component/render/planar_reflector.h"
 #include "ecs/component/render/reflection_probe.h"
+#include "ecs/component/render/terrain.h"
 #include "ecs/component/ui/ui_button.h"
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_choice.h"
@@ -48,6 +49,8 @@
 #include "ecs/component/ui/ui_text.h"
 #include "io/scene/prefab.h"
 #include "resource/asset/material_asset.h"
+#include "resource/asset/terrain_asset.h"
+#include "system/terrain/terrain_brush.h"
 
 #include "command/command.h"
 
@@ -329,6 +332,7 @@ class ScriptEditCommand : public Command {
     X(PlanarReflector,     planarReflector)     \
     X(IrradianceVolume,    irradianceVolume)    \
     X(Ocean,               ocean)               \
+    X(Terrain,             terrain)             \
     X(Decal,               decal)               \
     X(ParticleEmitter,     particleEmitter)     \
     X(ParticleTrigger,     particleTrigger)     \
@@ -855,6 +859,140 @@ class MaterialEditCommand : public Command {
         MaterialAsset    m_before;
         MaterialAsset    m_after;
         const char*      m_label;
+};
+
+/**
+ * @brief Undoable edit of a terrain's settings: its layers, their tiling, its plants and its grid.
+ *
+ * As MaterialEditCommand, over the whole asset; a brush stroke is a TerrainStrokeCommand, which
+ * holds only what it touched.
+ */
+class TerrainEditCommand : public Command {
+    public:
+        /**
+         * @brief Record a terrain edit that has already been applied.
+         *
+         * @param resources Manager owning the asset.
+         * @param handle    Terrain edited.
+         * @param before    It before the edit.
+         * @param after     It now.
+         * @param label     History entry text.
+         */
+        TerrainEditCommand(
+            ResourceManager& resources,
+            TerrainHandle handle,
+            TerrainAsset before,
+            TerrainAsset after,
+            const char* label
+        )
+            : m_resources(&resources)
+            , m_handle(handle)
+            , m_before(std::move(before))
+            , m_after(std::move(after))
+            , m_label(label)
+        {}
+        ~TerrainEditCommand() override = default;
+
+        TerrainEditCommand(const TerrainEditCommand& other) = delete;
+        TerrainEditCommand& operator=(const TerrainEditCommand& other) = delete;
+
+        TerrainEditCommand(TerrainEditCommand && other) = delete;
+        TerrainEditCommand& operator=(TerrainEditCommand && other) = delete;
+
+    public:
+        void redo(Scene&, CommandHost&) override;
+        void undo(Scene&, CommandHost&) override;
+        const char* label() const override { return m_label; }
+        bool tryMerge(Command& incoming) override;
+
+    private:
+        /// Put @p value back on the live asset and commit.
+        void step(const TerrainAsset& value);
+
+    private:
+        ResourceManager* m_resources;
+        TerrainHandle    m_handle;
+        TerrainAsset     m_before;
+        TerrainAsset     m_after;
+        const char*      m_label;
+};
+
+/**
+ * @brief Undoable brush stroke: the grid region it touched, before and after.
+ *
+ * Only the region is held, so strokes over a large terrain stay small on the stack. No-ops on a
+ * terrain since deleted or given another grid.
+ */
+class TerrainStrokeCommand : public Command {
+    public:
+        /**
+         * @brief A region's heights, layer shares and plant densities, row by row.
+         */
+        struct Patch {
+            std::vector<float>                heights;
+            std::vector<uint8_t>              weights;  ///< Four a vertex.
+            std::vector<std::vector<uint8_t>> density;  ///< A plant layer each; empty for one with none.
+
+            /**
+             * @brief What @p terrain holds in @p region.
+             *
+             * @param terrain A terrain whose arrays hold its grid.
+             * @param region  Within its grid.
+             * @return The patch.
+             */
+            static Patch cut(const TerrainAsset& terrain, const TerrainBrush::Region& region);
+        };
+
+    public:
+        /**
+         * @brief Record a stroke that has already been applied.
+         *
+         * @param resources Manager owning the asset.
+         * @param handle    Terrain stroked.
+         * @param region    What the stroke touched.
+         * @param before    The region before it.
+         * @param after     The region now.
+         * @param label     History entry text.
+         */
+        TerrainStrokeCommand(
+            ResourceManager& resources,
+            TerrainHandle handle,
+            TerrainBrush::Region region,
+            Patch before,
+            Patch after,
+            const char* label
+        )
+            : m_resources(&resources)
+            , m_handle(handle)
+            , m_region(region)
+            , m_before(std::move(before))
+            , m_after(std::move(after))
+            , m_label(label)
+        {}
+        ~TerrainStrokeCommand() override = default;
+
+        TerrainStrokeCommand(const TerrainStrokeCommand& other) = delete;
+        TerrainStrokeCommand& operator=(const TerrainStrokeCommand& other) = delete;
+
+        TerrainStrokeCommand(TerrainStrokeCommand && other) = delete;
+        TerrainStrokeCommand& operator=(TerrainStrokeCommand && other) = delete;
+
+    public:
+        void redo(Scene&, CommandHost&) override;
+        void undo(Scene&, CommandHost&) override;
+        const char* label() const override { return m_label; }
+
+    private:
+        /// Write @p patch back into the live asset's region and commit.
+        void step(const Patch& patch);
+
+    private:
+        ResourceManager*     m_resources;
+        TerrainHandle        m_handle;
+        TerrainBrush::Region m_region;
+        Patch                m_before;
+        Patch                m_after;
+        const char*          m_label;
 };
 
 /**

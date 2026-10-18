@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/outdoor_table_chair_set_01/textures/outdoor_table_chair_set_01_table_diff_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/outdoor_table_chair_set_01/textures/outdoor_table_chair_set_01_table_diff_1k.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

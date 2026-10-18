@@ -1,0 +1,9 @@
+{
+  "name": "assets/textures/stripes_blue.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/stripes_blue.png",
+    "usage": "Color"
+  }
+}

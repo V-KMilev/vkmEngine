@@ -31,6 +31,7 @@
 #include "ecs/component/render/particle_emitter.h"
 #include "ecs/component/render/planar_reflector.h"
 #include "ecs/component/render/reflection_probe.h"
+#include "ecs/component/render/terrain.h"
 #include "ecs/component/ui/ui_button.h"
 #include "ecs/component/ui/ui_canvas.h"
 #include "ecs/component/ui/ui_choice.h"
@@ -81,6 +82,7 @@ class ResourceManager;
     P(Ocean,               "Ocean")               \
     P(ReflectionProbe,     "ReflectionProbe")     \
     P(PlanarReflector,     "PlanarReflector")     \
+    R(Terrain,             "Terrain")             \
     P(Animation,           "Animation")           \
     R(Animator,            "Animator")            \
     P(BoneSocket,          "BoneSocket")          \
@@ -225,6 +227,9 @@ namespace ComponentSerializer {
     nlohmann::json save(const PlanarReflector&);
     void load(const nlohmann::json&, PlanarReflector&);
 
+    nlohmann::json save(const Terrain&, const ResourceManager&);
+    void load(const nlohmann::json&, Terrain&, const ResourceManager&);
+
     nlohmann::json save(const UICanvas&);
     void load(const nlohmann::json&, UICanvas&);
 
@@ -303,6 +308,7 @@ namespace ComponentSerializer {
         std::vector<TextureHandle>       textures;
         std::vector<AnimationClipHandle> clips;
         std::vector<AudioClipHandle>     sounds;
+        std::vector<TerrainHandle>       terrains;
     };
 
     /**
@@ -317,6 +323,7 @@ namespace ComponentSerializer {
     void emitAssetRefs(const Decal&,       AssetRefs&);
     void emitAssetRefs(const ParticleEmitter&, AssetRefs&);
     void emitAssetRefs(const AudioSource&, AssetRefs&);
+    void emitAssetRefs(const Terrain&, AssetRefs&);
     void emitAssetRefs(const Animator&,    AssetRefs&);
     void emitAssetRefs(const UIImage&,     AssetRefs&);
 

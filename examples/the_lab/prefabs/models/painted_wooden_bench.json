@@ -1,0 +1,93 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/painted_wooden_bench/painted_wooden_bench_1k.gltf:mat0"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/painted_wooden_bench/painted_wooden_bench_1k.gltf:mesh0"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/painted_wooden_bench/textures/painted_wooden_bench_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/painted_wooden_bench/textures/painted_wooden_bench_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/painted_wooden_bench/textures/painted_wooden_bench_arm_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "painted_wooden_bench_1k"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/painted_wooden_bench/painted_wooden_bench_1k.gltf:mat0",
+          "mesh": "assets/models/painted_wooden_bench/painted_wooden_bench_1k.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "painted_wooden_bench"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    }
+  ],
+  "nextUid": 2,
+  "version": 3
+}

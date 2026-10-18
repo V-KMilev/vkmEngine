@@ -23,6 +23,7 @@ inline Math::AABB partLocalBounds(const Collider& collider, const ColliderPart& 
         }
 
         case ColliderShape::Mesh:
+        case ColliderShape::Terrain:
             if (collider.meshNodes.empty()) return {glm::vec3(0.0f), glm::vec3(0.0f)};
             return {collider.meshNodes[0].min, collider.meshNodes[0].max};
 

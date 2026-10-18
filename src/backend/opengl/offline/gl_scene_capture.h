@@ -208,21 +208,46 @@ class GLSceneCapture {
          */
         Vkm::GL::Shader& pbrProgram() { return m_pbr; }
 
+        /**
+         * @brief The rig's program for a layered material (GLMaterial::layered), lent as
+         *        pbrProgram() is.
+         *
+         * @return The capture's layered PBR program.
+         */
+        Vkm::GL::Shader& layeredProgram() { return m_layered; }
+
     private:
-        /// A uniform of m_pbr's outside a block and not a sampler, which resetPbr() zeroes.
+        /// A uniform outside a block and not a sampler, which resetPbr() zeroes.
         struct PlainUniform {
             int32_t  location = -1;
             int32_t  count    = 0;  ///< Its array's length, 1 for a single value.
             uint32_t type     = 0;  ///< Its GL type.
         };
 
+        /// One program's plain uniforms, listed once a link, and zeros enough for the largest.
+        struct PlainUniforms {
+            std::vector<PlainUniform> uniforms;
+            uint32_t                  listed = 0;  ///< The program they list, 0 for none.
+            std::vector<GLfloat>      zeros;
+            std::vector<GLint>        intZeros;
+            std::vector<GLuint>       uintZeros;
+        };
+
         /**
-         * @brief Bind m_pbr and put every plain uniform back as linked: zero, as no shader
-         *        gives one another value.
+         * @brief Put every plain uniform of m_pbr and m_layered back as linked - zero, as no shader
+         *        gives one another value - leaving m_pbr bound.
          *
-         * Whatever else drew with the program last left its own there (pbrProgram()).
+         * Whatever else drew with the programs last left its own there (pbrProgram()).
          */
         void resetPbr();
+
+        /**
+         * @brief Put @p program's plain uniforms back as linked.
+         *
+         * @param program The program, bound by this.
+         * @param plain   Its uniforms, listed again when its link changed.
+         */
+        static void resetProgram(Vkm::GL::Shader& program, PlainUniforms& plain);
 
         /**
          * @brief Gather the scene-wide objects a capture draws and the sun's map casts.
@@ -252,9 +277,11 @@ class GLSceneCapture {
         );
 
     private:
-        Vkm::GL::Shader m_pbr;           ///< Capture geometry (full forward PBR).
-        Vkm::GL::Shader m_skybox;        ///< Capture background.
-        Vkm::GL::Shader m_surfels;       ///< Capture what a probe sees, as surfels.
+        Vkm::GL::Shader m_pbr;             ///< Capture geometry (full forward PBR).
+        Vkm::GL::Shader m_layered;         ///< The same, for a layered material.
+        Vkm::GL::Shader m_skybox;          ///< Capture background.
+        Vkm::GL::Shader m_surfels;         ///< Capture what a probe sees, as surfels.
+        Vkm::GL::Shader m_surfelsLayered;  ///< The same, for a layered material.
 
         const GLMesh&         m_cube;     ///< Unit cube the skybox draws; the backend's.
         const GLObjectBuffer& m_objects;  ///< The frame's transforms the batch indexes; the backend's.
@@ -270,11 +297,8 @@ class GLSceneCapture {
         std::vector<uint32_t> m_faceOpaque;  ///< Those a probe face sees.
         std::vector<uint32_t> m_casters;     ///< The scene-wide casters, the sun's map's.
 
-        std::vector<PlainUniform> m_pbrUniforms;     ///< m_pbr's plain uniforms, listed once a link.
-        uint32_t                  m_pbrListed = 0;   ///< The program m_pbrUniforms lists, 0 for none.
-        std::vector<GLfloat>      m_pbrZeros;        ///< Zeros enough for the largest of them.
-        std::vector<GLint>        m_pbrIntZeros;     ///< The same, as ints.
-        std::vector<GLuint>       m_pbrUintZeros;    ///< The same, as unsigned ints.
+        PlainUniforms m_pbrPlain;      ///< m_pbr's plain uniforms.
+        PlainUniforms m_layeredPlain;  ///< m_layered's.
 
         const GLView* m_glView   = nullptr;  ///< begin()'s scene, drawn by the captures after it.
         const RenderObjects* m_drawn = nullptr;  ///< begin()'s objects, which m_opaque indexes.
@@ -289,12 +313,15 @@ class GLSceneCapture {
 /**
  * @brief Bind @p pbr and set the uniforms every offline draw shares.
  *
- * The per-frame inputs (AO, scene colour copy, clusters, probes, irradiance volume, fog) exist
- * for no offscreen draw, so each is off - the volume until GLSceneCapture::setAmbientVolume lends
- * one; u_probeCount = 0 also stops probe bakes recursing.
+ * The per-frame inputs (AO, clusters, probes, irradiance volume, fog) exist for no offscreen
+ * draw, so each is off - the volume until GLSceneCapture::setAmbientVolume lends one;
+ * u_probeCount = 0 also stops probe bakes recursing.
  * u_iblIntensity is one, not the scene's: the shader scales probe and volume reads by it, so a
  * capture would carry it twice. Set, because unset is 0 and drops the indirect term. The render
  * size is the camera's (GLCamera::update).
+ *
+ * The scene colour a transmissive surface reads is left to the caller: a PLAIN program, as the
+ * layered one is, has no such read.
  *
  * @param pbr Forward PBR program the offline draw uses.
  * @param ibl Global IBL, bound as the ambient term once it is ready.

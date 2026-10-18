@@ -1,0 +1,8 @@
+{
+  "name": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mesh2:lod2",
+  "source": {
+    "base": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mesh2",
+    "kind": "decimate",
+    "ratio": 0.125
+  }
+}

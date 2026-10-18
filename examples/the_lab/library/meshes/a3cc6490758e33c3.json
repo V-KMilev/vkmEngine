@@ -1,0 +1,8 @@
+{
+  "name": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh0:lod1",
+  "source": {
+    "base": "assets/models/street_lamp_01/street_lamp_01_1k.gltf:mesh0",
+    "kind": "decimate",
+    "ratio": 0.5
+  }
+}

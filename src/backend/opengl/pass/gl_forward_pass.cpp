@@ -25,8 +25,9 @@
 
 namespace Vkm::Engine {
 
-GLForwardPass::GLForwardPass(Vkm::GL::Shader& pbr)
+GLForwardPass::GLForwardPass(Vkm::GL::Shader& pbr, Vkm::GL::Shader& layered)
     : m_shader(pbr)
+    , m_layeredShader(layered)
     , m_skinnedShader("shaders/forward/pbr_skinned")
     , m_plainShader("shaders/forward/pbr_plain")
     , m_plainSkinnedShader("shaders/forward/pbr_plain_skinned") {}
@@ -163,10 +164,11 @@ void GLForwardPass::drawBatch(GLFrameContext& ctx, const GLInstanceBatcher& batc
         // Grouped batches sort skinned runs together; a sequential (transparent)
         // batch may alternate, to keep its depth order.
         const GLMaterial* material = glView.getMaterial(draw.material);
-        const bool plain = drawsPlain(material);
+        const bool plain   = drawsPlain(material);
+        const bool layered = material && material->layered() && !draw.skinned;
         Vkm::GL::Shader& program = draw.skinned
             ? (plain ? m_plainSkinnedShader : m_skinnedShader)
-            : (plain ? m_plainShader : m_shader);
+            : (layered ? m_layeredShader : plain ? m_plainShader : m_shader);
         if (&program != boundProgram) {
             program.bind();
             boundProgram = &program;
@@ -236,8 +238,9 @@ void GLForwardPass::bindFrameUniforms(Vkm::GL::Shader& shader, GLFrameContext& c
 void GLForwardPass::bindBucketUniforms(Vkm::GL::Shader& shader, GLFrameContext& ctx, Bucket bucket) const {
     // GTAO saw only what the prepass drew.
     bindAO(ctx, shader, bucket == Bucket::Opaque);
-    // The plain programs are built without transmission, so they have nothing to refract.
-    const bool plain = &shader == &m_plainShader || &shader == &m_plainSkinnedShader;
+    // The plain and layered programs are built without transmission, so have nothing to refract.
+    const bool plain = &shader == &m_plainShader || &shader == &m_plainSkinnedShader
+        || &shader == &m_layeredShader;
     if (!plain) shader.setUniform1i("u_hasSceneColor", bucket == Bucket::Transparent ? 1 : 0);
     shader.setUniform1i(
         "u_alphaToCoverage",

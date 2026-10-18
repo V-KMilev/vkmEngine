@@ -1,0 +1,9 @@
+{
+  "name": "assets/textures/grime.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/grime.png",
+    "usage": "Color"
+  }
+}

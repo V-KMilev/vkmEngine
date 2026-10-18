@@ -1,0 +1,834 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat0"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat1"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat2"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat3"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat4"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat5"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat6"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat7"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat8"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat9"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat10"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat11"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh1"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh2"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh3"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh4"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh5"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh6"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh7"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh8"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh9"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh10"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh11"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh12"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh13"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh14"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh15"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/wine_bottles_01/textures/wine_bottles_01_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/textures/wine_bottles_01_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/textures/wine_bottles_01_arm_1k.jpg"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/textures/wine_bottles_01_rgba_1k.png"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/textures/wine_bottles_01_label_ftero_vinea_01_rgba_1k.png"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/textures/wine_bottles_01_paper_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/textures/wine_bottles_01_label_ftero_vinea_01_arm_1k.jpg"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/textures/wine_bottles_01_label_clearwater_crystals_01_rgba_1k.png"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/textures/wine_bottles_01_label_clearwater_crystals_01_arm_1k.jpg"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/textures/wine_bottles_01_label_intertwine_01_rgba_1k.png"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/textures/wine_bottles_01_label_intertwine_01_arm_1k.jpg"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/textures/wine_bottles_01_label_ftero_vinea_02_rgba_1k.png"
+      },
+      {
+        "name": "assets/models/wine_bottles_01/textures/wine_bottles_01_label_ftero_vinea_02_arm_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "wine_bottles_01_1k"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "Name": {
+          "value": "wine_bottles_01_bordeaux"
+        },
+        "Transform": {
+          "position": [
+            0.20999999344348907,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    },
+    {
+      "components": {
+        "Name": {
+          "value": "wine_bottles_01_alsace"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 2
+    },
+    {
+      "components": {
+        "Name": {
+          "value": "wine_bottles_01_burgundy"
+        },
+        "Transform": {
+          "position": [
+            0.4099999964237213,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 3
+    },
+    {
+      "components": {
+        "Name": {
+          "value": "wine_bottles_01_champagne"
+        },
+        "Transform": {
+          "position": [
+            0.5999999642372131,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 4
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat0",
+          "mesh": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh0"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 1,
+      "uid": 5
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat1",
+          "mesh": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh1",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh1"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 1,
+      "uid": 6
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat2",
+          "mesh": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh2",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh2"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 1,
+      "uid": 7
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat3",
+          "mesh": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh3",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh3"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 1,
+      "uid": 8
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat4",
+          "mesh": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh4",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh4"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 2,
+      "uid": 9
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat1",
+          "mesh": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh5",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh5"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 2,
+      "uid": 10
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat5",
+          "mesh": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh6",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh6"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 2,
+      "uid": 11
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat6",
+          "mesh": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh7",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh7"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 2,
+      "uid": 12
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat7",
+          "mesh": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh8",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh8"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 3,
+      "uid": 13
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat1",
+          "mesh": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh9",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh9"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 3,
+      "uid": 14
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat8",
+          "mesh": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh10",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh10"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 3,
+      "uid": 15
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat9",
+          "mesh": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh11",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh11"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 3,
+      "uid": 16
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat10",
+          "mesh": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh12",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh12"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 4,
+      "uid": 17
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat1",
+          "mesh": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh13",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh13"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 4,
+      "uid": 18
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat2",
+          "mesh": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh14",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh14"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 4,
+      "uid": 19
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat11",
+          "mesh": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mesh15",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh15"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 4,
+      "uid": 20
+    }
+  ],
+  "nextUid": 21,
+  "version": 3
+}

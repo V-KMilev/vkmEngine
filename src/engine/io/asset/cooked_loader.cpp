@@ -7,6 +7,7 @@
 
 #include "io/asset/asset_cook.h"
 #include "io/asset/asset_library.h"
+#include "io/asset/terrain_file.h"
 #include "platform/threading/thread_pool.h"
 #include "resource/asset_source_kind.h"
 #include "resource/resource_manager.h"
@@ -101,6 +102,19 @@ AnimationClipHandle loadCookedAnimationClip(const std::string& name, ResourceMan
 
 AudioClipHandle loadCookedAudioClip(const std::string& name, ResourceManager& resources) {
     return loadNow<AudioClipAsset>(name, resources, &AssetCook::readAudioClip);
+}
+
+TerrainHandle loadCookedTerrain(const std::string& name, ResourceManager& resources) {
+    if (const TerrainHandle resident = resources.findByName<TerrainAsset>(name)) return resident;
+    const std::filesystem::path path = currentCookedFile<TerrainAsset>(name);
+    if (path.empty()) return {};
+
+    TerrainAsset       decoded;
+    TerrainFile::Names names;
+    if (!AssetCook::readTerrain(path, decoded, names)) return {};
+    TerrainFile::resolve(decoded, names, resources);
+    decoded.sourceJson() = cookedSource();
+    return resources.add(std::move(decoded), name);
 }
 
 } // namespace Vkm::Engine

@@ -1,0 +1,12 @@
+{
+  "name": "mesh:generator:cone:1.0:0.5:8",
+  "source": {
+    "kind": "generator",
+    "params": {
+      "height": 1.0,
+      "radius": 0.5,
+      "segments": 8
+    },
+    "type": "cone"
+  }
+}

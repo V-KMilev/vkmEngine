@@ -235,8 +235,9 @@ void GLPlanarReflectionPass::draw(GLFrameContext& ctx, int i) {
 
     // Clipped where the plane is: what lies behind it is not in the mirror.
     const glm::vec4 clip(glm::vec3(drawn.plane), drawn.plane.w - CLIP_OFFSET);
-    Vkm::GL::Shader& pbr = m_capture.pbrProgram();
-    for (Vkm::GL::Shader* program : {&pbr, &m_skinned}) {
+    Vkm::GL::Shader& pbr     = m_capture.pbrProgram();
+    Vkm::GL::Shader& layered = m_capture.layeredProgram();
+    for (Vkm::GL::Shader* program : {&pbr, &layered, &m_skinned}) {
         if (program == &m_skinned && !posed) continue;
         program->bind();
         bindAmbient(ctx, *program);
@@ -248,7 +249,8 @@ void GLPlanarReflectionPass::draw(GLFrameContext& ctx, int i) {
         program->setUniform1i("u_hardShadows", 0);
         program->setUniform1i("u_renderMode", 0);
         program->setUniform1i("u_wirePass", 0);
-        program->setUniform1i("u_hasSceneColor", 0);
+        // The layered program is built without transmission, so is told of no backdrop.
+        if (program != &layered) program->setUniform1i("u_hasSceneColor", 0);
         program->setUniform1i("u_alphaToCoverage", 0);
         program->setUniform4fv("u_oceanShore", ctx.oceanFields.shore());
         program->setUniform4fv("u_clipPlane", clip);
@@ -262,12 +264,14 @@ void GLPlanarReflectionPass::draw(GLFrameContext& ctx, int i) {
     const Vkm::GL::Shader* boundProgram  = nullptr;
     const uint32_t bones = ctx.skinPalette.count();
     for (const InstanceDraw& run : m_batcher.buildGrouped(drawn.objects, *view.objects, glView, bones)) {
-        Vkm::GL::Shader& program = run.skinned ? m_skinned : pbr;
+        const GLMaterial* material = glView.getMaterial(run.material);
+        Vkm::GL::Shader&  program  = run.skinned ? m_skinned
+            : material && material->layered() ? layered
+            : pbr;
         if (&program != boundProgram) {
             program.bind();
             boundProgram = &program;
         }
-        const GLMaterial* material = glView.getMaterial(run.material);
         if (material && material != boundMaterial) {
             material->bind(GLBindings::UBOBindingPoints::MATERIAL);
             material->bindTextures(glView);
@@ -280,7 +284,7 @@ void GLPlanarReflectionPass::draw(GLFrameContext& ctx, int i) {
     m_particles.drawMirrored(ctx, target, drawn.size, drawn.camera, clip);
 
     // Unclipped again for whoever draws with these programs next.
-    for (Vkm::GL::Shader* program : {&pbr, &m_skinned}) {
+    for (Vkm::GL::Shader* program : {&pbr, &layered, &m_skinned}) {
         if (program == &m_skinned && !posed) continue;
         program->setUniform4fv("u_clipPlane", glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
     }

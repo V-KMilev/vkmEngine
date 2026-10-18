@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/street_lamp_01/textures/street_lamp_01_diff_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/street_lamp_01/textures/street_lamp_01_diff_1k.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

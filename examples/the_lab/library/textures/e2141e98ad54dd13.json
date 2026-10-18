@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/mantel_clock_01/textures/mantel_clock_01_nor_gl_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/mantel_clock_01/textures/mantel_clock_01_nor_gl_1k.jpg",
+    "usage": "Normal",
+    "wrap": "repeat"
+  }
+}

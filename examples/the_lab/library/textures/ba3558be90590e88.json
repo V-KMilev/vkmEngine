@@ -1,0 +1,11 @@
+{
+  "name": "assets/models/wooden_crate_01/textures/wooden_crate_01_arm_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/wooden_crate_01/textures/wooden_crate_01_arm_1k.jpg",
+    "roughnessNormal": "assets/models/wooden_crate_01/textures/wooden_crate_01_nor_gl_1k.jpg",
+    "usage": "Data",
+    "wrap": "repeat"
+  }
+}

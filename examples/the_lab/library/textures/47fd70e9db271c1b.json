@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/bark_brown_02_arm.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/bark_brown_02_arm.jpg",
+    "usage": "Data",
+    "wrap": "repeat"
+  }
+}

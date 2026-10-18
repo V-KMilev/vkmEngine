@@ -18,9 +18,10 @@ class Scene;
  * @brief What one connection is known to hold, so the next snapshot says less.
  *
  * A component is sent, whole, when its encoded bits differ from what this
- * connection has *confirmed receiving*: the delta is on presence, never on
- * values, so every entry decodes from the packet alone and a joiner's first
- * snapshot is the whole world by the same rule.
+ * connection has *confirmed receiving*, and said gone when the entity lost one
+ * the connection holds: the delta is on presence, never on values, so every
+ * entry decodes from the packet alone and a joiner's first snapshot is the
+ * whole world by the same rule.
  *
  * Confirmed, not sent, or a lost packet would never be resent: what a snapshot
  * said is held until acknowledged. Per connection, since clients lose
@@ -31,8 +32,9 @@ class NetBaseline {
         /// One component of one entity, as this connection last confirmed it.
         struct Confirmed {
             std::vector<uint8_t> bytes;
-            uint16_t             sequence = 0;  ///< Which snapshot established it.
-            bool                 held     = false;
+            uint16_t             sequence = 0;      ///< Which snapshot established it.
+            bool                 held     = false;  ///< The receiver holds the component.
+            bool                 folded   = false;  ///< A change, a removal included, is confirmed.
         };
 
         /// What a written snapshot claimed, held until it is acknowledged.
@@ -42,6 +44,7 @@ class NetBaseline {
                 uint32_t             slot = 0;
                 uint32_t             type = 0;
                 std::vector<uint8_t> bytes;
+                bool                 removed = false;  ///< Said gone: the receiver no longer holds it.
             };
 
             uint16_t              sequence = 0;

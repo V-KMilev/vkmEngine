@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/damp_beach_sand_arm.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/damp_beach_sand_arm.jpg",
+    "usage": "Data",
+    "wrap": "repeat"
+  }
+}

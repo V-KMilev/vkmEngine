@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/rough_wood_diff.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/rough_wood_diff.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

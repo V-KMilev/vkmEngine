@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/rubber_tiles_diff.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/rubber_tiles_diff.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

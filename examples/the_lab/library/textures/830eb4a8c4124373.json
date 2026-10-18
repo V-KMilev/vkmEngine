@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/field_grass.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/field_grass.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

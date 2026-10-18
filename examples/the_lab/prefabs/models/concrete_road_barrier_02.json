@@ -1,0 +1,123 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/concrete_road_barrier_02/concrete_road_barrier_02_1k.gltf:mat0"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/concrete_road_barrier_02/concrete_road_barrier_02_1k.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/concrete_road_barrier_02/concrete_road_barrier_02_1k.gltf:mesh0:lod1"
+      },
+      {
+        "name": "assets/models/concrete_road_barrier_02/concrete_road_barrier_02_1k.gltf:mesh0:lod2"
+      },
+      {
+        "name": "assets/models/concrete_road_barrier_02/concrete_road_barrier_02_1k.gltf:mesh0:lod3"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/concrete_road_barrier_02/textures/concrete_road_barrier_02_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/concrete_road_barrier_02/textures/concrete_road_barrier_02_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/concrete_road_barrier_02/textures/concrete_road_barrier_02_arm_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "concrete_road_barrier_02_1k"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 2.0216827392578125,
+              "mesh": "assets/models/concrete_road_barrier_02/concrete_road_barrier_02_1k.gltf:mesh0"
+            },
+            {
+              "maxDistance": 7.5353593826293945,
+              "mesh": "assets/models/concrete_road_barrier_02/concrete_road_barrier_02_1k.gltf:mesh0:lod1"
+            },
+            {
+              "maxDistance": 33.34038543701172,
+              "mesh": "assets/models/concrete_road_barrier_02/concrete_road_barrier_02_1k.gltf:mesh0:lod2"
+            },
+            {
+              "maxDistance": 66.68077087402344,
+              "mesh": "assets/models/concrete_road_barrier_02/concrete_road_barrier_02_1k.gltf:mesh0:lod3"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/concrete_road_barrier_02/concrete_road_barrier_02_1k.gltf:mat0",
+          "mesh": "assets/models/concrete_road_barrier_02/concrete_road_barrier_02_1k.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "concrete_road_barrier_02"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    }
+  ],
+  "nextUid": 2,
+  "version": 3
+}

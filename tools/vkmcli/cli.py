@@ -25,7 +25,7 @@ A project is a directory holding a project.json. Every command but `new` takes
 its path, or finds it from the current directory - from any folder inside it.
 
 Make
-  new <name>    make a project from a template or an example (-t physics_lab)
+  new <name>    make a project from a template or an example (-t the_lab)
 
 Work on it
   run           build, cook and play it            --players N: with a local server
@@ -83,7 +83,7 @@ def main() -> int:
 
     p = subcommand(sub, [common], "new", "make a project from a template or an example", (
         "  vkm new mygame              a folder mygame/ here, then: cd mygame && vkm run\n"
-        "  vkm new lab -t physics_lab  a copy of an example, yours to change\n"
+        "  vkm new lab -t the_lab      a copy of an example, yours to change\n"
     ), cmd_new, project=False)
     p.add_argument("name", help="the folder to make, whose name the game takes")
     p.add_argument(
@@ -95,7 +95,7 @@ def main() -> int:
 
     p = subcommand(sub, [common, builds], "run", "build, cook and play the project", (
         "  vkm run                     play the project you are in\n"
-        "  vkm run examples/physics_lab\n"
+        "  vkm run examples/the_lab\n"
         "  vkm run --players 2         a local server and two players, to test multiplayer\n"
         "  vkm run --connect 10.0.0.5  join a game someone is serving\n"
     ), cmd_run)

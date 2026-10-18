@@ -222,6 +222,7 @@ void EditorMenuBar::drawWindowMenu(EditorState& state) {
         ImGui::MenuItem("Hierarchy",    keyLabel(state.prefs.keybinds.toggleHierarchy), &state.showHierarchy);
         ImGui::MenuItem("Inspector",    keyLabel(state.prefs.keybinds.toggleInspector), &state.showInspector);
         ImGui::MenuItem("Assets",       keyLabel(state.prefs.keybinds.toggleAssets), &state.showAssets);
+        ImGui::MenuItem("Terrain",      keyLabel(state.prefs.keybinds.toggleTerrain), &state.showTerrain);
         ImGui::Separator();
         ImGui::MenuItem(
             "Render Settings",

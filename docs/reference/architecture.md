@@ -69,7 +69,7 @@ that needs more speed parallelises its own loop on the `ThreadPool`
 |------------|---------------------------------------------------------------------------------|
 | Input      | `CameraControllerSystem` (**editor binary only** - the editor's view, published as `ctx.hostView`) |
 | Simulation | (EventBus flush), `SplashSystem`, `AsyncLoaderSystem`, `OceanSystem`, `BehaviorSystem`, `AnimationSystem`, `SkeletalAnimationSystem`, `RagdollSystem` (after the pose it reads, before the bodies it writes), `PhysicsSystem`, `CharacterControllerSystem`, `SkySystem` |
-| Transform  | `BoneSocketSystem`, `HierarchySystem`, `UISystem` (runs in **every** host), `AudioSystem` and `ParticleSystem` (both after the world resolve they read poses from) |
+| Transform  | `BoneSocketSystem`, `HierarchySystem`, `TerrainSystem`, `UISystem` (runs in **every** host), `AudioSystem` and `ParticleSystem` (both after the world resolve they read poses from) |
 | Visibility | `VisibilitySystem`                                                            |
 | Render     | `RenderSystem`                                                                |
 | Editor     | `EditorSystem` (editor binary only)                                           |
@@ -140,7 +140,7 @@ Engine code, single include root `src/engine/`:
 | `core/event/`              | `EventBus` (typed pub/sub) and the `EventSender` view behaviors get |
 | `ecs/`                     | `Scene`, `EntityId`, `Environment`, `PhysicsSettings`, `EntityResolver` and `EntityNamer` (in `entity_mapping.h`), `HierarchyOperations` (free functions) |
 | `ecs/component/core/`      | `Transform`, `WorldTransform`, `Hierarchy`, `Name`                       |
-| `ecs/component/render/`    | `Mesh`, `Light`, `Camera`, `Decal`, `LOD`, `ParticleEmitter`, `ParticleTrigger`, `ReflectionProbe`, `PlanarReflector`, `IrradianceVolume`, `Ocean` |
+| `ecs/component/render/`    | `Mesh`, `Light`, `Camera`, `Decal`, `LOD`, `ParticleEmitter`, `ParticleTrigger`, `ReflectionProbe`, `PlanarReflector`, `IrradianceVolume`, `Ocean`, `Terrain` |
 | `ecs/component/animation/` | `Animation`, `Animator`, `BoneSocket`, `AnimationTrack`                  |
 | `ecs/component/audio/`     | `AudioSource`, `AudioListener`                                           |
 | `ecs/component/physics/`   | `Rigidbody`, `Collider`, `CharacterController`, `Joint`, `Ragdoll`       |
@@ -156,11 +156,12 @@ Engine code, single include root `src/engine/`:
 | `system/render/`           | `RenderSystem`, `RenderBackend`, `RenderView`, `RenderSettings`, `data/` |
 | `system/script/`           | `BehaviorSystem`, `Behavior`, `ReflectedBehavior`, `BehaviorRegistry`, `ScriptComponent`, `ScriptModule` (see [scripting.md](scripting.md)) |
 | `system/sky/`              | `SkySystem` |
+| `system/terrain/`          | `TerrainSystem`, `TerrainChunks`, `TerrainPlants`, `TerrainBrush` (see [terrain.md](terrain.md)) |
 | `system/splash/`           | `SplashSystem`                                                           |
 | `system/ui/`               | `UISystem`, `UIDrawData` (see [ui.md](ui.md))                            |
 | `system/visibility/`       | `VisibilitySystem`, `Visibility`, `HostView`, `VisibilityContext` and `Culling` (AABB helpers are `core/math/bounds.h`) |
 | `resource/`                | `ResourceManager`, `Resource`, `Handle`, `texture_format`               |
-| `resource/asset/`          | `MeshAsset`, `MaterialAsset`, `TextureAsset`, `FontAsset`, `SkeletonAsset`, `AnimationClipAsset`, `AudioClipAsset` |
+| `resource/asset/`          | `MeshAsset`, `MaterialAsset`, `TextureAsset`, `FontAsset`, `SkeletonAsset`, `AnimationClipAsset`, `AudioClipAsset`, `TerrainAsset` |
 | `resource/generate/`       | `generateCube` and its siblings - meshes, textures and materials built in code |
 | `io/`                      | `json_vec`, `project_paths` (shared I/O helpers)                          |
 | `io/asset/`                | `AssetLibrary`, `AssetFactory`, `AssetCook` (the cooked binary format), `AssetSerializer`, `cooked_loader`. The cooker is a tool, in `src/tools/cook/` |

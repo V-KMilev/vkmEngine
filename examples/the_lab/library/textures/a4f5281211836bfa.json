@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/rustic_stone_wall_arm.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/rustic_stone_wall_arm.jpg",
+    "usage": "Data",
+    "wrap": "repeat"
+  }
+}

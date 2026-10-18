@@ -1,0 +1,11 @@
+{
+  "name": "assets/models/mid_century_lounge_chair/textures/mid_century_lounge_chair_arm_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/mid_century_lounge_chair/textures/mid_century_lounge_chair_arm_1k.jpg",
+    "roughnessNormal": "assets/models/mid_century_lounge_chair/textures/mid_century_lounge_chair_nor_gl_1k.jpg",
+    "usage": "Data",
+    "wrap": "repeat"
+  }
+}

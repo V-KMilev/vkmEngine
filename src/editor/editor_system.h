@@ -20,6 +20,8 @@
 #include "overlays/gizmo_overlay.h"
 #include "overlays/viewport_toolbar.h"
 #include "overlays/playback_bar.h"
+#include "overlays/terrain_tool.h"
+#include "panels/terrain_editor_panel.h"
 #include "panels/hierarchy_panel.h"
 #include "panels/inspector_panel.h"
 #include "panels/animation_panel.h"
@@ -313,10 +315,12 @@ class EditorSystem : public System {
         AnimationPanel       m_animation;
         ViewportOverlay      m_viewportOverlay;
         GizmoOverlay         m_gizmoOverlay;
+        TerrainToolOverlay   m_terrainTool;
         ViewportToolbar      m_viewportToolbar;
         PlaybackBar          m_playbar;
         PreferencesPanel     m_preferences;
         MaterialEditorPanel  m_materialEditor;
+        TerrainEditorPanel   m_terrainEditor;
         RenderSettingsPanel  m_renderSettings;
         ProjectSettingsPanel m_projectSettings;
         StartScreen          m_startScreen;   ///< Drawn instead of the workspace when there is no project.

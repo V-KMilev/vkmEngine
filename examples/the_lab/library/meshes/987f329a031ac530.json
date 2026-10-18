@@ -1,0 +1,8 @@
+{
+  "name": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh1:lod1",
+  "source": {
+    "base": "assets/models/wooden_ladder/wooden_ladder_1k.gltf:mesh1",
+    "kind": "decimate",
+    "ratio": 0.5
+  }
+}

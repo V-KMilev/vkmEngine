@@ -29,6 +29,7 @@ struct InputSignals {
     bool overlayHovered  = false;  ///< As PointerOwner::Overlay.
     bool gizmoHovered    = false;
     bool gizmoDragging   = false;  ///< Wherever the pointer has gone.
+    bool stroking        = false;  ///< A terrain stroke is held, wherever the pointer has gone.
     bool gameUIHovered   = false;  ///< A blocking game UI element is under the pointer.
     bool cursorCaptured  = false;  ///< Hidden, grabbed and re-centred.
     bool playing         = false;
@@ -52,6 +53,8 @@ struct InputOwnership {
     bool         typing    = false;
     bool         popupOpen = false;
     bool         rebinding = false;
+    /// An edit is held under the button - a gizmo drag or a terrain stroke - its undo step not yet pushed.
+    bool         held      = false;
 
     /**
      * @brief Whether the viewport shows the game: a session, not ejected.
@@ -78,19 +81,21 @@ struct InputOwnership {
     /**
      * @brief Whether the editor's shortcuts may act on this frame's keys.
      *
-     * @return true when neither the game nor the editor's own UI has the keyboard.
+     * Not while an edit is held: an undo, a save or Play then would act on half a gesture.
+     *
+     * @return true when neither the game nor the editor's own UI has the keyboard, and no edit is held.
      */
-    bool editorHasKeys() const { return !gameHasKeyboard() && !keysHeldByUI(); }
+    bool editorHasKeys() const { return !gameHasKeyboard() && !keysHeldByUI() && !held; }
 
     /**
      * @brief Whether the play transport and editor toggle keys may act.
      *
      * They are the way out of a session that grabbed the keys, so only the
-     * editor's own UI stops them.
+     * editor's own UI stops them, and an edit held in the editor's view.
      *
-     * @return true unless a field, a popup or a rebind has the keyboard.
+     * @return true unless a field, a popup or a rebind has the keyboard, or an edit is held.
      */
-    bool editorHasSessionKeys() const { return !keysHeldByUI(); }
+    bool editorHasSessionKeys() const { return !keysHeldByUI() && !held; }
 
     /**
      * @brief Whether the editor's own UI holds the pointer, so a panel drag
@@ -173,6 +178,7 @@ inline InputOwnership resolveInputOwnership(const InputSignals& signals) {
     owner.typing    = signals.typing;
     owner.popupOpen = signals.popupOpen;
     owner.rebinding = signals.rebinding;
+    owner.held      = signals.gizmoDragging || signals.stroking;
 
     if (signals.cursorCaptured)        owner.pointer = PointerOwner::Captured;
     else if (signals.gizmoDragging)    owner.pointer = PointerOwner::GizmoHandle;

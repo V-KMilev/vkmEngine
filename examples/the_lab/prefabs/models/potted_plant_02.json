@@ -1,0 +1,241 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mat0"
+      },
+      {
+        "name": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mat1"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh0:lod1"
+      },
+      {
+        "name": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh0:lod2"
+      },
+      {
+        "name": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh0:lod3"
+      },
+      {
+        "name": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh1"
+      },
+      {
+        "name": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh2"
+      },
+      {
+        "name": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh2:lod1"
+      },
+      {
+        "name": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh2:lod2"
+      },
+      {
+        "name": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh2:lod3"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/potted_plant_02/textures/potted_plant_02_pot_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/potted_plant_02/textures/potted_plant_02_pot_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/potted_plant_02/textures/potted_plant_02_pot_rough_1k.jpg"
+      },
+      {
+        "name": "assets/models/potted_plant_02/textures/potted_plant_02_leaves_rgba_1k.png"
+      },
+      {
+        "name": "assets/models/potted_plant_02/textures/potted_plant_02_leaves_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/potted_plant_02/textures/potted_plant_02_leaves_rough_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "potted_plant_02_1k"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 1.9836009740829468,
+              "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh0"
+            },
+            {
+              "maxDistance": 8.705835342407227,
+              "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh0:lod1"
+            },
+            {
+              "maxDistance": 21.977317810058594,
+              "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh0:lod2"
+            },
+            {
+              "maxDistance": 43.95463562011719,
+              "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh0:lod3"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mat0",
+          "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "potted_plant_02_pot"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mat1",
+          "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh1",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "potted_plant_02_leaves"
+        },
+        "Transform": {
+          "position": [
+            -0.0029038283973932266,
+            0.30528968572616577,
+            0.0006859108689241111
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 2
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 2.859837532043457,
+              "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh2"
+            },
+            {
+              "maxDistance": 9.803290367126465,
+              "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh2:lod1"
+            },
+            {
+              "maxDistance": 19.358850479125977,
+              "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh2:lod2"
+            },
+            {
+              "maxDistance": 38.71770095825195,
+              "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh2:lod3"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mat0",
+          "mesh": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh2",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "potted_plant_02_dirt"
+        },
+        "Transform": {
+          "position": [
+            -0.12862031161785126,
+            0.31752803921699524,
+            -0.13355804979801178
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 3
+    }
+  ],
+  "nextUid": 4,
+  "version": 3
+}

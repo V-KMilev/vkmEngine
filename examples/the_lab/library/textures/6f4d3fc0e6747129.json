@@ -1,0 +1,9 @@
+{
+  "name": "assets/textures/rock.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/rock.png",
+    "usage": "Color"
+  }
+}

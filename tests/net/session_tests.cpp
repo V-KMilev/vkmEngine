@@ -1356,6 +1356,52 @@ void testAJoinAcrossAWindowsTurnIsStillSeated() {
     server.close();
 }
 
+// A client's first frame can run long - a bake, a load - past the timeout. That is this end
+// stalled, not the server silent: its Challenge waits in the socket to be read.
+void testAJoinWhoseFirstFrameStallsIsStillSeated() {
+    std::printf("A join whose first frame stalls past the timeout:\n");
+
+    const ScopedEngineSchema wire;
+    ResourceManager resources;
+
+    Scene serverWorld;
+    NetSession server;
+    server.onSpawn(
+        [](Scene& scene, ResourceManager&, PlayerId) { return scene.createEntity(); },
+        [](Scene& scene, ResourceManager&, PlayerId, EntityId e) { scene.destroyEntity(e); }
+    );
+    check("a server binds", server.host(0, 4, TEST_TICK_RATE));
+
+    Scene clientWorld;
+    NetSession client;
+    client.setWorld(0, clientWorld);
+    client.connect(NetAddress{0x7F000001u, server.localAddress().port}, TEST_TICK_RATE);
+    client.beginTick(1, InputCommand{}, 3, TEST_ACTION_NAMES);
+    client.advance(1.0f / 60.0f);
+    client.send(clientWorld, 1);              // Hello
+    server.receive(serverWorld, resources);   // Challenge
+    client.advance(NetConnection::TIMEOUT_SECONDS + 1.0f);
+    client.receive(clientWorld, resources);   // the Challenge, after the stall
+    check("the client still holds the connection", !client.isOffline() && client.lastError().empty());
+
+    uint32_t tick = 1;
+    const auto frame = [&]() {
+        server.receive(serverWorld, resources);
+        client.receive(clientWorld, resources);
+        ++tick;
+        server.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        client.beginTick(tick, InputCommand{}, 3, TEST_ACTION_NAMES);
+        server.send(serverWorld, tick);
+        client.send(clientWorld, tick);
+        server.advance(1.0f / 60.0f);
+        client.advance(1.0f / 60.0f);
+    };
+    check("  and finishes joining", pumpUntil(frame, [&]() { return client.isPlaying(); }, 20));
+
+    client.close();
+    server.close();
+}
+
 // A snapshot header cut short reads as zeros, and server tick zero is the one value
 // that disables the guard against unreachable ticks. Believed, the next snapshot can
 // claim any tick, sending the draw clock where no real sample reaches.
@@ -2031,6 +2077,7 @@ void runNetSessionTests() {
     testAHelloThatNeverAnswersTakesNoSeat();
     testAFloodOfHellosCrowdsOutNoRealJoin();
     testAJoinAcrossAWindowsTurnIsStillSeated();
+    testAJoinWhoseFirstFrameStallsIsStillSeated();
     testASnapshotCutShortIsNotBelieved();
     testAServerThatHasBeenUpAWhileStillTakesAJoin();
     testStandingIsToldRatherThanGuessed();

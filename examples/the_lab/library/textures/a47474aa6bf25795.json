@@ -1,0 +1,9 @@
+{
+  "name": "assets/textures/planks.png",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/planks.png",
+    "usage": "Color"
+  }
+}

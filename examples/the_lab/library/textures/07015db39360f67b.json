@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/brushed_concrete_nor_gl.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/brushed_concrete_nor_gl.jpg",
+    "usage": "Normal",
+    "wrap": "repeat"
+  }
+}

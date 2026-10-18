@@ -1,0 +1,230 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mat0"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mesh1"
+      },
+      {
+        "name": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mesh2"
+      },
+      {
+        "name": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mesh2:lod1"
+      },
+      {
+        "name": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mesh2:lod2"
+      },
+      {
+        "name": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mesh3"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/wine_barrel_01/textures/wine_barrel_01_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/wine_barrel_01/textures/wine_barrel_01_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/wine_barrel_01/textures/wine_barrel_01_arm_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "wine_barrel_01_1k"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mat0",
+          "mesh": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "wine_barrel_01_Lid"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mat0",
+          "mesh": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mesh1",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "wine_barrel_01_bung"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 2
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 6.0601487159729,
+              "mesh": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mesh2"
+            },
+            {
+              "maxDistance": 40.66259002685547,
+              "mesh": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mesh2:lod1"
+            },
+            {
+              "maxDistance": 81.32518005371094,
+              "mesh": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mesh2:lod2"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mat0",
+          "mesh": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mesh2",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "wine_barrel_01"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 3
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mat0",
+          "mesh": "assets/models/wine_barrel_01/wine_barrel_01_1k.gltf:mesh3",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "wine_barrel_01_base"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 4
+    }
+  ],
+  "nextUid": 5,
+  "version": 3
+}

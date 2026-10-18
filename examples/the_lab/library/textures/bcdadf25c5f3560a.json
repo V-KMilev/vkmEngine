@@ -1,0 +1,11 @@
+{
+  "name": "assets/models/covered_car/textures/covered_car_arm_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/covered_car/textures/covered_car_arm_1k.jpg",
+    "roughnessNormal": "assets/models/covered_car/textures/covered_car_nor_gl_1k.jpg",
+    "usage": "Data",
+    "wrap": "repeat"
+  }
+}

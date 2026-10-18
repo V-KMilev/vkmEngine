@@ -70,7 +70,7 @@ it. Building and cooking are no-ops when nothing changed, so
 To start from one of the examples instead, copy it:
 
 ```sh
-vkm new lab -t physics_lab      # or potion_runner, stress_arena, city_block
+vkm new lab -t the_lab          # or potion_runner, stress_arena, city_block
 ```
 
 The editor runs the same commands - New Project, File > Build Scripts and
@@ -112,7 +112,7 @@ engine is never rebuilt for your game.
 
 | | |
 |---|---|
-| `vkm new <name>` | make a project from the template; `-t physics_lab` copies an example |
+| `vkm new <name>` | make a project from the template; `-t the_lab` copies an example |
 | `vkm run` | build, cook and play it |
 | `vkm run --players N` | the same, as a local server with N players joined to it - multiplayer from one terminal |
 | `vkm run --connect HOST[:PORT]` | join a game someone is serving |

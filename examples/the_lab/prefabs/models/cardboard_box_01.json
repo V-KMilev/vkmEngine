@@ -1,0 +1,123 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/cardboard_box_01/cardboard_box_01_1k.gltf:mat0"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/cardboard_box_01/cardboard_box_01_1k.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/cardboard_box_01/cardboard_box_01_1k.gltf:mesh0:lod1"
+      },
+      {
+        "name": "assets/models/cardboard_box_01/cardboard_box_01_1k.gltf:mesh0:lod2"
+      },
+      {
+        "name": "assets/models/cardboard_box_01/cardboard_box_01_1k.gltf:mesh0:lod3"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/cardboard_box_01/textures/cardboard_box_01_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/cardboard_box_01/textures/cardboard_box_01_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/cardboard_box_01/textures/cardboard_box_01_arm_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "cardboard_box_01_1k"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 0.49963638186454773,
+              "mesh": "assets/models/cardboard_box_01/cardboard_box_01_1k.gltf:mesh0"
+            },
+            {
+              "maxDistance": 2.9633824825286865,
+              "mesh": "assets/models/cardboard_box_01/cardboard_box_01_1k.gltf:mesh0:lod1"
+            },
+            {
+              "maxDistance": 12.131513595581055,
+              "mesh": "assets/models/cardboard_box_01/cardboard_box_01_1k.gltf:mesh0:lod2"
+            },
+            {
+              "maxDistance": 24.26302719116211,
+              "mesh": "assets/models/cardboard_box_01/cardboard_box_01_1k.gltf:mesh0:lod3"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/cardboard_box_01/cardboard_box_01_1k.gltf:mat0",
+          "mesh": "assets/models/cardboard_box_01/cardboard_box_01_1k.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "cardboard_box_01"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.17664676904678345,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    }
+  ],
+  "nextUid": 2,
+  "version": 3
+}

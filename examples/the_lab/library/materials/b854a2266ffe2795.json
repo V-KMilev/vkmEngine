@@ -1,0 +1,69 @@
+{
+  "name": "assets/models/wine_bottles_01/wine_bottles_01_1k.gltf:mat9",
+  "source": {
+    "albedo": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "alphaCutoff": 0.5,
+    "anisotropy": 0.0,
+    "anisotropyDirection": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "ao": 1.0,
+    "attenuationColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "attenuationDistance": 1.0,
+    "boxMapping": 0.0,
+    "clearcoat": 0.0,
+    "clearcoatRoughness": 0.0,
+    "doubleSided": true,
+    "emission": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "emissiveStrength": 1.0,
+    "heightScale": 0.0,
+    "ior": 1.5,
+    "metallic": 1.0,
+    "normalScale": 0.4000000059604645,
+    "roughness": 1.0,
+    "sheenColor": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "sheenRoughness": 0.30000001192092896,
+    "subsurface": 0.0,
+    "subsurfaceColor": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "textures": {
+      "albedo": "assets/models/wine_bottles_01/textures/wine_bottles_01_label_intertwine_01_rgba_1k.png",
+      "aoMetallicRoughness": "assets/models/wine_bottles_01/textures/wine_bottles_01_label_intertwine_01_arm_1k.jpg",
+      "normal": "assets/models/wine_bottles_01/textures/wine_bottles_01_paper_nor_gl_1k.jpg"
+    },
+    "thicknessFactor": 0.0,
+    "transmission": 0.0,
+    "type": "AlphaMask",
+    "uvOffset": [
+      0.0,
+      0.0
+    ],
+    "uvScale": [
+      1.0,
+      1.0
+    ],
+    "waves": false
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/lantern_chandelier_01/textures/lantern_chandelier_01_diff_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/lantern_chandelier_01/textures/lantern_chandelier_01_diff_1k.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

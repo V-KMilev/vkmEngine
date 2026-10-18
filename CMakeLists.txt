@@ -230,7 +230,7 @@ if(NOT VKM_SHIPPING)
     # which is the path a user's own project takes.
     add_subdirectory(examples/potion_runner)
     add_subdirectory(examples/stress_arena)
-    add_subdirectory(examples/physics_lab)
+    add_subdirectory(examples/the_lab)
     add_subdirectory(examples/city_block)
 endif()
 

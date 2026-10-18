@@ -1,0 +1,7 @@
+{
+  "name": "assets/audio/thud.wav",
+  "source": {
+    "kind": "file",
+    "path": "assets/audio/thud.wav"
+  }
+}

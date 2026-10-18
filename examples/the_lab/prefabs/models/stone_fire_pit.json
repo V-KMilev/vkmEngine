@@ -1,0 +1,124 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/stone_fire_pit/stone_fire_pit.gltf:mat0"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/stone_fire_pit/stone_fire_pit.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/stone_fire_pit/stone_fire_pit.gltf:mesh0:lod1"
+      },
+      {
+        "name": "assets/models/stone_fire_pit/stone_fire_pit.gltf:mesh0:lod2"
+      },
+      {
+        "name": "assets/models/stone_fire_pit/stone_fire_pit.gltf:mesh0:lod3"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/stone_fire_pit/stone_fire_pit_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/stone_fire_pit/stone_fire_pit_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/stone_fire_pit/stone_fire_pit_arm_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "stone_fire_pit"
+        },
+        "NetLocal": {},
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 11.816896438598633,
+              "mesh": "assets/models/stone_fire_pit/stone_fire_pit.gltf:mesh0"
+            },
+            {
+              "maxDistance": 52.8650016784668,
+              "mesh": "assets/models/stone_fire_pit/stone_fire_pit.gltf:mesh0:lod1"
+            },
+            {
+              "maxDistance": 66.8604736328125,
+              "mesh": "assets/models/stone_fire_pit/stone_fire_pit.gltf:mesh0:lod2"
+            },
+            {
+              "maxDistance": 133.720947265625,
+              "mesh": "assets/models/stone_fire_pit/stone_fire_pit.gltf:mesh0:lod3"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/stone_fire_pit/stone_fire_pit.gltf:mat0",
+          "mesh": "assets/models/stone_fire_pit/stone_fire_pit.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "stone_fire_pit"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    }
+  ],
+  "nextUid": 2,
+  "version": 3
+}

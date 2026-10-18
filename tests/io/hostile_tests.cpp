@@ -1,18 +1,21 @@
 #include "net/net_support.h"
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <functional>
 #include <iterator>
 #include <string>
 #include <vector>
 
+#include <glm/gtc/matrix_transform.hpp>
 #include <nlohmann/json.hpp>
 
 #include "core/math/random.h"
 #include "ecs/component/core/name.h"
 #include "ecs/component/core/transform.h"
 #include "io/asset/asset_cook.h"
+#include "io/asset/terrain_file.h"
 #include "io/scene/scene_serializer.h"
 #include "net/prediction/command.h"
 #include "net/wire/bit_stream.h"
@@ -21,6 +24,7 @@
 #include "resource/asset/audio_clip_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
+#include "resource/asset/terrain_asset.h"
 #include "resource/asset/texture_asset.h"
 #include "resource/resource_manager.h"
 
@@ -76,6 +80,27 @@ std::vector<uint8_t> damage(const std::vector<uint8_t>& good, Math::Rng& rng) {
         }
     }
     return bytes;
+}
+
+// The smallest terrain, its heights a slope, its weights all the first layer, with a foliage layer of
+// one part whose density rises across it.
+TerrainAsset aTerrain() {
+    TerrainAsset terrain;
+    terrain.resolution = TerrainAsset::MIN_RESOLUTION;
+    terrain.size       = 32.0f;
+    const size_t vertices = static_cast<size_t>(terrain.resolution) * terrain.resolution;
+    terrain.heights.resize(vertices);
+    terrain.weights.assign(vertices * 4, 0);
+    for (size_t v = 0; v < vertices; ++v) {
+        terrain.heights[v]     = 0.1f * static_cast<float>(v % terrain.resolution);
+        terrain.weights[v * 4] = 255;
+    }
+    TerrainFoliage grass;
+    grass.parts.push_back({});
+    grass.density.resize(vertices);
+    for (size_t v = 0; v < vertices; ++v) grass.density[v] = static_cast<uint8_t>(v % 256);
+    terrain.foliage.push_back(grass);
+    return terrain;
 }
 
 // Runs @p read over damaged copies of @p good and counts accepted results @p sound
@@ -279,9 +304,100 @@ void testDamagedCookedFilesAreRefusedOrSound() {
     );
     check("  no sound is read with a partial frame", sounds == 0);
 
+    // A terrain's body, as its .terrain file and its cooked file carry it.
+    const ResourceManager        unnamed;
+    const std::filesystem::path terrainFile = scratch("vkm_hostile_good.terrain");
+    check("a terrain file writes", TerrainFile::write(terrainFile, aTerrain(), unnamed));
+    const size_t terrains = acceptedButUnsound<TerrainAsset>(
+        "vkm_hostile_terrain.terrain",
+        readBytes(terrainFile),
+        [](const std::filesystem::path& path, TerrainAsset& out) {
+            std::vector<uint8_t> body;
+            std::string          error;
+            TerrainFile::Names   names;
+            return TerrainFile::readBody(path, body, error)
+                && TerrainFile::decode(body.data(), body.size(), out, names, error);
+        },
+        [](const TerrainAsset& t) {
+            const size_t vertices = static_cast<size_t>(t.resolution) * t.resolution;
+            bool sound = TerrainAsset::validResolution(t.resolution) && t.heights.size() == vertices
+                && t.weights.size() == vertices * 4 && t.foliage.size() <= TerrainAsset::MAX_FOLIAGE;
+            for (const float height : t.heights) sound = sound && std::isfinite(height);
+            for (const TerrainFoliage& layer : t.foliage) {
+                sound = sound && layer.density.size() == vertices
+                    && layer.parts.size() <= TerrainAsset::MAX_PLANT_PARTS
+                    && std::isfinite(layer.perSquareMetre) && layer.perSquareMetre >= 0.0f
+                    && std::isfinite(layer.maxDistance) && layer.maxDistance >= 0.0f
+                    && layer.minScale > 0.0f && layer.minScale <= layer.maxScale
+                    && std::isfinite(layer.maxScale);
+                for (const TerrainPlantPart& part : layer.parts) {
+                    const float* local = &part.local[0][0];
+                    sound = sound && std::all_of(local, local + 16, [](float v) { return std::isfinite(v); });
+                }
+            }
+            return sound;
+        },
+        accepted
+    );
+    check("  no terrain is read whose maps do not fit its grid", terrains == 0);
+
     std::printf("      %zu damaged files were read, and every one was sound\n", accepted);
     std::error_code ec;
     std::filesystem::remove(good, ec);
+    std::filesystem::remove(terrainFile, ec);
+}
+
+// A terrain's file keeps its grid, its maps and its plants, and what it holds by handle by name: read
+// back against a graph holding those assets, it holds the same ones; against one without them, none.
+void testATerrainFileKeepsWhatItNames() {
+    std::printf("A terrain written to its file and read back:\n");
+
+    ResourceManager      resources;
+    const MaterialHandle sand  = resources.add(MaterialAsset{}, "test:sand");
+    const MaterialHandle grass = resources.add(MaterialAsset{}, "test:grass");
+    const MeshHandle     blade = resources.add(MeshAsset{}, "test:blade");
+    TerrainAsset terrain = aTerrain();
+    terrain.layers                  = {sand, grass};
+    terrain.layerTiling             = {2.0f, 6.0f, 4.0f, 4.0f};
+    const glm::mat4 lifted = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f));
+    terrain.foliage[0].parts[0]     = {blade, grass, lifted};
+    terrain.foliage[0].maxDistance  = 40.0f;
+    terrain.foliage[0].seed         = 7;
+    terrain.foliage[0].castShadows  = true;
+
+    const std::filesystem::path path = scratch("vkm_terrain_round.terrain");
+    check("it writes", TerrainFile::write(path, terrain, resources));
+    std::vector<uint8_t> body;
+    std::string          error;
+    TerrainAsset         read;
+    TerrainFile::Names   names;
+    const bool decoded = TerrainFile::readBody(path, body, error)
+        && TerrainFile::decode(body.data(), body.size(), read, names, error);
+    check("  and reads back", decoded);
+    if (!decoded) return;
+    check(
+        "  its grid and maps as they were",
+        read.resolution == terrain.resolution && read.size == terrain.size && read.heights == terrain.heights
+            && read.weights == terrain.weights
+    );
+    TerrainAsset elsewhere = read;
+    TerrainFile::resolve(read, names, resources);
+    const bool layers = read.layers == terrain.layers && read.layerTiling == terrain.layerTiling;
+    check("  its layers the same materials, tiled as they were", layers);
+    const TerrainFoliage& plants = read.foliage[0];
+    check(
+        "  its plant the same mesh and material, placed and spread as it was",
+        plants.parts[0].mesh == blade && plants.parts[0].material == grass
+            && plants.parts[0].local == terrain.foliage[0].parts[0].local
+            && plants.density == terrain.foliage[0].density && plants.maxDistance == 40.0f && plants.seed == 7
+            && plants.castShadows
+    );
+    const ResourceManager empty;
+    TerrainFile::resolve(elsewhere, names, empty);
+    const bool none = !elsewhere.layers[0] && !elsewhere.foliage[0].parts[0].mesh;
+    check("against a graph without them, it holds none", none);
+    std::error_code ec;
+    std::filesystem::remove(path, ec);
 }
 
 void testADamagedSceneLoadsOrIsRefused() {
@@ -327,7 +443,7 @@ void testADamagedSceneLoadsOrIsRefused() {
     // or an absurd size does - what a hand-edited or hostile file carries.
     nlohmann::json doc = nlohmann::json::parse(text);
     // The shipped scene of record, when present: more component kinds than the crates.
-    std::ifstream record(std::filesystem::path(VKM_EXAMPLES_DIR) / "physics_lab/scenes/obstacle_course.json");
+    std::ifstream record(std::filesystem::path(VKM_EXAMPLES_DIR) / "the_lab/scenes/obstacle_course.json");
     if (record) doc = nlohmann::json::parse(record, nullptr, false);
     if (doc.is_discarded()) doc = nlohmann::json::parse(text);
     std::vector<nlohmann::json::json_pointer> leaves;
@@ -667,6 +783,7 @@ void testASpawnCannotNameAFileOutsideTheProject() {
 
 void runHostileTests() {
     testDamagedCookedFilesAreRefusedOrSound();
+    testATerrainFileKeepsWhatItNames();
     testADamagedSceneLoadsOrIsRefused();
     testDamagedDatagramsAreRefusedOrBounded();
     testDamagedSnapshotsNeverStopAClient();

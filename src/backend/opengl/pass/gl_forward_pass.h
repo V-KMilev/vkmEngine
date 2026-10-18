@@ -21,21 +21,25 @@ class GLMaterial;
  * are culled, except for a MaterialAsset::doubleSided material: an opaque one draws unculled, a
  * transparent one twice, back faces first. Each surface fogs at its own depth (see GLPass::bindFog).
  *
- * Four programs: static and skinned, each whole and plain - compiled without the optional
- * features a GLMaterial::plain material never reads (shaders/forward/pbr_plain). Skinned runs
- * sort after static ones; within each the program follows the material. One place sets every
+ * Five programs: static and skinned, each whole and plain - compiled without the optional
+ * features a GLMaterial::plain material never reads (shaders/forward/pbr_plain) - and static for a
+ * GLMaterial::layered one (shaders/forward/pbr_layered). Skinned runs sort after static ones;
+ * within each the program follows the material. One place sets every
  * program's uniforms (forEachProgram): one set on only some would silently go missing on whatever
  * draws with the rest.
  */
 class GLForwardPass : public GLPass {
     public:
         /**
-         * @brief Draws the static runs of whole materials with @p pbr, which it borrows.
+         * @brief Draws the static runs of whole and of layered materials with @p pbr and
+         *        @p layered, which it borrows.
          *
-         * @param pbr The scene capture's program (GLSceneCapture::pbrProgram), whose uniforms are
-         *            the last caller's: the pass sets every one it reads each frame.
+         * @param pbr     The scene capture's program (GLSceneCapture::pbrProgram), whose uniforms are
+         *                the last caller's: the pass sets every one it reads each frame.
+         * @param layered The scene capture's layered program (GLSceneCapture::layeredProgram), the
+         *                same.
          */
-        explicit GLForwardPass(Vkm::GL::Shader& pbr);
+        GLForwardPass(Vkm::GL::Shader& pbr, Vkm::GL::Shader& layered);
         ~GLForwardPass() override;
 
         GLForwardPass(const GLForwardPass& other) = delete;
@@ -123,6 +127,7 @@ class GLForwardPass : public GLPass {
         void forEachProgram(bool posed, Fn&& fn) {
             fn(m_shader);
             fn(m_plainShader);
+            fn(m_layeredShader);
             if (!posed) return;
             fn(m_skinnedShader);
             fn(m_plainSkinnedShader);
@@ -130,6 +135,7 @@ class GLForwardPass : public GLPass {
 
     private:
         Vkm::GL::Shader&  m_shader;              ///< Static geometry; borrowed, see the constructor.
+        Vkm::GL::Shader&  m_layeredShader;       ///< Static, for a layered material; borrowed too.
         Vkm::GL::Shader   m_skinnedShader;       ///< Skinned, posed by the frame's palette.
         Vkm::GL::Shader   m_plainShader;         ///< Static, for a plain material.
         Vkm::GL::Shader   m_plainSkinnedShader;  ///< Skinned, for a plain material.

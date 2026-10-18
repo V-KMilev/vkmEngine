@@ -1,0 +1,283 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/brass_goblets/brass_goblets_1k.gltf:mat0"
+      },
+      {
+        "name": "assets/models/brass_goblets/brass_goblets_1k.gltf:mat1"
+      },
+      {
+        "name": "assets/models/brass_goblets/brass_goblets_1k.gltf:mat2"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh0:lod1"
+      },
+      {
+        "name": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh0:lod2"
+      },
+      {
+        "name": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh0:lod3"
+      },
+      {
+        "name": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh1"
+      },
+      {
+        "name": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh1:lod1"
+      },
+      {
+        "name": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh1:lod2"
+      },
+      {
+        "name": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh1:lod3"
+      },
+      {
+        "name": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh2"
+      },
+      {
+        "name": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh2:lod1"
+      },
+      {
+        "name": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh2:lod2"
+      },
+      {
+        "name": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh2:lod3"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/brass_goblets/textures/brass_goblet_01_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/brass_goblets/textures/brass_goblet_01_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/brass_goblets/textures/brass_goblet_01_arm_1k.jpg"
+      },
+      {
+        "name": "assets/models/brass_goblets/textures/brass_goblet_02_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/brass_goblets/textures/brass_goblet_02_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/brass_goblets/textures/brass_goblet_02_arm_1k.jpg"
+      },
+      {
+        "name": "assets/models/brass_goblets/textures/brass_goblet_03_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/brass_goblets/textures/brass_goblet_03_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/brass_goblets/textures/brass_goblet_03_arm_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "brass_goblets_1k"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 1.2567543983459473,
+              "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh0"
+            },
+            {
+              "maxDistance": 5.511364936828613,
+              "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh0:lod1"
+            },
+            {
+              "maxDistance": 12.547998428344727,
+              "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh0:lod2"
+            },
+            {
+              "maxDistance": 25.095996856689453,
+              "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh0:lod3"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/brass_goblets/brass_goblets_1k.gltf:mat0",
+          "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "brass_goblet_01"
+        },
+        "Transform": {
+          "position": [
+            -0.00032767606899142265,
+            0.004920530132949352,
+            0.12025979906320572
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 1.0469884872436523,
+              "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh1"
+            },
+            {
+              "maxDistance": 5.733097553253174,
+              "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh1:lod1"
+            },
+            {
+              "maxDistance": 12.268630027770996,
+              "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh1:lod2"
+            },
+            {
+              "maxDistance": 24.537260055541992,
+              "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh1:lod3"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/brass_goblets/brass_goblets_1k.gltf:mat1",
+          "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh1",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "brass_goblet_02"
+        },
+        "Transform": {
+          "position": [
+            -0.14954441785812378,
+            0.005822327919304371,
+            -0.030845999717712402
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 2
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 1.0832722187042236,
+              "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh2"
+            },
+            {
+              "maxDistance": 8.191549301147461,
+              "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh2:lod1"
+            },
+            {
+              "maxDistance": 12.528826713562012,
+              "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh2:lod2"
+            },
+            {
+              "maxDistance": 25.057653427124023,
+              "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh2:lod3"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/brass_goblets/brass_goblets_1k.gltf:mat2",
+          "mesh": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh2",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "brass_goblet_03"
+        },
+        "Transform": {
+          "position": [
+            0.15866722166538239,
+            0.006193193141371012,
+            -0.027895381674170494
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 3
+    }
+  ],
+  "nextUid": 4,
+  "version": 3
+}

@@ -478,7 +478,8 @@ bool castPart(
             return rayCapsule(origin, dir, center - up, center + up, part.radius + radius, t, normal);
         }
 
-        case ColliderShape::Mesh: {
+        case ColliderShape::Mesh:
+        case ColliderShape::Terrain: {
             if (collider.meshNodes.empty()) return false;
 
             // Into the tree's frame, walked along the segment rather than through its box.

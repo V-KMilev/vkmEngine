@@ -19,8 +19,20 @@ enum class ColliderShape : uint8_t {
     Box     = 0,   ///< Oriented box; reads center + halfExtents.
     Capsule = 1,   ///< Swept segment along local +Y; reads center + radius + halfHeight.
     Mesh    = 2,   ///< Triangle soup; reads center + mesh + meshScale.
+    Terrain = 3,   ///< The entity's Terrain grid as a triangle soup, at the entity: its centre stays zero.
     Count          ///< Sentinel; keep last. Drives the VKM_ENUM_NAMES check.
 };
+
+/**
+ * @brief Whether a part of @p shape collides as Collider::meshPoints: a mesh's triangles, or a
+ *        terrain's.
+ *
+ * @param shape The part's shape.
+ * @return True for Mesh and Terrain.
+ */
+inline bool isTriangles(ColliderShape shape) {
+    return shape == ColliderShape::Mesh || shape == ColliderShape::Terrain;
+}
 
 /**
  * @brief One primitive of a collider, in the entity's local frame.
@@ -58,7 +70,7 @@ struct MeshNode {
  * @brief What a Collider's triangles were built from, so a change to any of it rebuilds them.
  */
 struct MeshColliderSource {
-    uint64_t  uid     = 0;                    ///< The mesh asset, by Resource::uid; zero for none.
+    uint64_t  uid     = 0;                    ///< The mesh or terrain asset, by Resource::uid; zero for none.
     uint64_t  version = 0;                    ///< Its Resource::version when built.
     glm::vec3 scale   = {0.0f, 0.0f, 0.0f};   ///< The part's meshScale when built.
 };
@@ -74,11 +86,12 @@ struct Collider {
     std::vector<ColliderPart> parts = { ColliderPart{} };
 
     /**
-     * @brief The mesh part's triangle corners, three a triangle, in the part's frame, scaled by meshScale.
+     * @brief The mesh or terrain part's triangle corners, three a triangle, in the part's frame; a
+     *        mesh's scaled by meshScale.
      *
-     * Derived: syncMeshCollider (system/physics/authoring/mesh_collider.h) rebuilds them whenever the
-     * mesh or scale differs from meshBuiltFrom; a scene file holds only the mesh's name. Kept here
-     * because a query is handed the scene alone.
+     * Derived: syncMeshCollider and syncTerrainCollider (system/physics/authoring/mesh_collider.h)
+     * rebuild them whenever their source differs from meshBuiltFrom; a scene file holds only the
+     * mesh's name. Kept here because a query is handed the scene alone.
      */
     std::vector<glm::vec3> meshPoints;
 
@@ -92,7 +105,7 @@ struct Collider {
 
 } // namespace Vkm::Engine
 
-VKM_ENUM_NAMES(::Vkm::Engine::ColliderShape, "Box", "Capsule", "Mesh")
+VKM_ENUM_NAMES(::Vkm::Engine::ColliderShape, "Box", "Capsule", "Mesh", "Terrain")
 
 // Every shape's fields are reflected whatever the tag, so switching a part's shape and back keeps
 // what it was authored with.

@@ -1,0 +1,10 @@
+{
+  "name": "assets/textures/metal_plate_nor_gl.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/textures/metal_plate_nor_gl.jpg",
+    "usage": "Normal",
+    "wrap": "repeat"
+  }
+}

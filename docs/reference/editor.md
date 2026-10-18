@@ -45,8 +45,10 @@ are constants in `chrome/dock_layout.h`. Multi-viewport is off.
 - **What is shown is the editor's.** Window > Hierarchy, Inspector and Assets
   (Ctrl+1 to Ctrl+3) show and hide the groups the default layout docks together:
   the Hierarchy; the Inspector and Material editor; Assets, Animation, Errors and
-  Build. Persisted per project in `editor_settings.json`. Windows have no close
-  box, so a toggle is the one way to hide one and to get it back.
+  Build. Window > Terrain (Ctrl+5) shows the Terrain window, a tab beside the
+  Inspector (`dockBesideOnFirstUse` puts it there under a layout saved before it).
+  Persisted per project in `editor_settings.json`. Windows have no close box, so a
+  toggle is the one way to hide one and to get it back.
 - **Where it is, is per person**: `io.IniFilename` is `imgui.ini` in
   `ProjectPaths::userRoot()`, so the layout follows the person across projects
   ([io.md](io.md#which-root-owns-a-path)). Popups, dialogs and the root window
@@ -61,6 +63,7 @@ are constants in `chrome/dock_layout.h`. Multi-viewport is off.
 | Animation           | `panels/animation_panel.cpp`          | Transport, three-lane keyframe timeline, a table per track |
 | Render Settings     | `panels/render_settings_panel.cpp`    | Floating window over `RenderSettings` (Window > Render Settings) |
 | Material Editor     | `panels/material_editor_panel.cpp`    | The **Material** window: one material under a live preview |
+| Terrain Editor      | `panels/terrain_editor_panel.cpp`     | The **Terrain** window: tools, brush, layers and plants ([terrain.md](terrain.md#making-one)) |
 | Asset Browser       | `panels/asset_browser_panel.cpp`      | The **Assets** window: one library for every asset kind |
 | Project Settings    | `panels/project_settings_panel.cpp`   | Floating window over `project.json` (File > Settings...) |
 | Preferences         | `panels/preferences_panel.cpp`        | Floating editor settings window (Edit > Preferences, Ctrl+,) |
@@ -145,6 +148,11 @@ edit:
 - **Audio Source** - `auditionTransport` plays the clip **through the device, not
   `AudioSource::playing`**, whose write would be a scene edit
   ([audio.md](audio.md#the-cursor-is-the-devices-not-the-components)).
+- **Terrain** - the asset, shadows and Edit Terrain, which opens the Terrain
+  window. There the brush is editor state (`TerrainToolSettings`, its `target` the
+  terrain edited); layers and plants are the asset's, each change a
+  `TerrainEditCommand`, and a stroke a `TerrainStrokeCommand` holding the region
+  it touched ([terrain.md](terrain.md#making-one)).
 
 **The identity header** shows the entity's wire slot and which components
 replicate, or warns that it is off the wire and why (`netSilence`)
@@ -197,6 +205,10 @@ value keeps its offset.
 
 Keys, while the cursor is not captured: `Q` Select, `W` Move, `E` Rotate, `R`
 Scale, `X` Local / World - rebindable in Preferences > Keybinds.
+
+While the Terrain window is open with a tool picked, a left drag over the terrain
+it edits brushes (`TerrainToolOverlay`) and no gizmo is drawn; a click that misses
+it picks as ever, and Esc puts the tool down before it deselects.
 
 Everything with no mesh draws an authoring marker (`gizmo_overlay_draw.cpp`):
 lights, cameras, probes, planar reflectors and irradiance volumes, decals,
@@ -289,11 +301,13 @@ holds wins:
 | Over the tool strip, the view bar, the playbar or the navigation axes | `Overlay` | The overlay |
 | Over a gizmo handle | `GizmoHandle` | The handle |
 | Over a blocking element of the game's UI | `GameUI` | Selected, unless the game has the viewport - then the game's |
-| Anywhere else on the viewport | `Scene` | The picker |
+| Anywhere else on the viewport | `Scene` | The picker - or, over the terrain with a Terrain tool up, the brush first |
 
 While a field is typed into, a menu, popup or dialog is open, or Preferences
 waits for a key to rebind, no keybind answers and the fly camera hears nothing
-(`InputOwnership::keysHeldByUI`).
+(`InputOwnership::keysHeldByUI`). While an edit is held under the button - a
+gizmo drag or a terrain stroke, its undo step not yet pushed - no keybind
+answers either, Play and undo included (`InputOwnership::held`).
 
 **A play session's viewport is the game's.** With the pointer on the viewport,
 or the cursor grabbed by the game, keys and mouse buttons go to the game: no
@@ -321,7 +335,7 @@ of offering undo: a re-added asset takes a new slot, so every handle to the old
 one stays dead.
 
 **Import.** The toolbar's first control is the kind's primary verb - `New` for
-materials, `Import...` for the rest. Meshes, skeletons and clips raise
+materials and terrains, `Import...` for the rest. Meshes, skeletons and clips raise
 `EditorState::requestModelImport`, since all three come out of one model. **A
 texture imports as colour (`TextureUsage::Color`)**; data and normal maps come
 with their model or through the Material Editor slot, which knows the usage. A
@@ -331,10 +345,12 @@ a taken name replaces that asset in place.
 **"In use"** - the strip on every tile, and Delete's guard - is
 `AssetSerializer::collectAssetRefs` (`io/asset/asset_serializer.h`), the walk a
 scene save builds its `assets` block from, so an asset a save would name is in
-use. Three kinds also count references that walk does not see:
+use. Five kinds also count references that walk does not see:
 
 | Kind      | Also referenced by |
 |-----------|--------------------|
+| Materials | every terrain's layers and plants |
+| Meshes    | every terrain's plants |
 | Textures  | every `TextureHandle` slot on **every** `MaterialAsset`, drawn or not (`VKM_MATERIAL_MAPS`) |
 | Skeletons | a skinned mesh's `MeshAsset::skeleton` and `AnimationClipAsset::skeleton`, resolved from their **name** strings |
 | Clips     | every `Animator`'s `fadeFrom` - session state, but a fading clip is still sampled |
@@ -352,8 +368,8 @@ to a framebuffer that is not sRGB-encoded.
 **Inside**, the browser is a `KINDS[]` table of `AssetKind` descriptors, one per
 `AssetType`, each a set of function pointers; the only place a C++ asset type
 appears is `KindOps<Asset>`. `rename` is null for skeletons, whose name meshes
-and clips carry as a string. `FontAsset` is not a kind: the library does not
-hold it.
+and clips carry as a string, and for terrains, whose name is their file's path.
+`FontAsset` is not a kind: the library does not hold it.
 
 ### What Create > Primitive puts in the asset graph
 
@@ -515,8 +531,10 @@ During a session the ECS holds the simulation's copy, and every panel stays live
 - **The viewport is framed** in the warning colour, captioned PLAY MODE.
 - **Stop warns** when the session took an undo step or dirtied a scene that was
   clean at Play.
-- **Stop restores the scene and the materials, not other assets**: a mesh,
-  texture, rig, clip or sound edited during play keeps the edit.
+- **Stop restores the scene, the materials and the terrains, not other
+  assets**: a terrain comes back from the file Play wrote it to
+  (`readTerrainFiles`, `session/terrain_files.h`); a mesh, texture, rig, clip
+  or sound edited during play keeps the edit.
 - **Stop restores the render settings**, which a game's settings screen may
   have written.
 
@@ -566,7 +584,7 @@ Every directory under `src/editor/` is one responsibility:
 |---|---|
 | *(root)* | `EditorSystem`, `EditorState`, `EditorContext`, `EditorSettings`, and `editor_actions` - the scene mutations panels invoke |
 | `command/` | Undo: `Command`, `CommandStack`, the commands, `EditScope`/`editStep`/`pushEdit`, `CommandHost::pushStep`, prefab-override bookkeeping. Reaches the editor through `CommandHost`, so it tests without a window |
-| `session/` | What outlives a frame, and the project's files: `SceneIOController`, `ProjectController`, `PlaySnapshot`, `BuildController`, the material preview cache, `ContentPack` (the engine's packs brought into a project) |
+| `session/` | What outlives a frame, and the project's files: `SceneIOController`, `ProjectController`, `PlaySnapshot`, `BuildController`, the material preview cache, `ContentPack` (the engine's packs brought into a project), the terrains' files (`terrain_files.h`) |
 | `panels/` | One file per panel, owning only its own widget state |
 | `overlays/` | Drawn over the viewport: gizmo, tool strip and view bar, playbar, navigation axes |
 | `chrome/` | Drawn around the panels: menu bar, status bar, default layout, and the menus' dialogs, drawn at the menu bar's scope so a closing menu does not take them |

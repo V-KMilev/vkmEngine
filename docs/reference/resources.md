@@ -162,6 +162,16 @@ its normal most nearly turns to, so a cube stretched into a beam keeps its
 texture square and the texture moves with it. It suits boxes and faceted
 meshes; a smooth one shows seams.
 
+A **layered** material (`MaterialAsset::layers`) draws up to four other
+materials in its place, blended by `layerWeights`' R, G, B and A at the mesh's
+uv, each layer's albedo, normal and AO/roughness/metallic maps read at its own
+tiling of that uv. Where a layer's colour would repeat densely on screen it is
+read again at a far larger scale and blended in, so a far slope shows no grid of
+one tile. It is derived, never saved: a terrain makes the one it draws
+with. The backend copies the layers' maps into an array texture apiece
+(`GLLayerMaps`) and draws with a program built for it
+(`shaders/forward/pbr_layered`).
+
 ### FontAsset
 
 A baked SDF glyph atlas with its metrics and glyph table. It owns its texels
@@ -214,6 +224,13 @@ A sound decoded in full at load: 16-bit interleaved PCM at the source's rate
 and channel count (only a mono clip can be positioned). Its `ClipSamples` is the
 one shared payload in the engine, because a voice reads it on the audio thread
 while a scene load may free the asset on the main thread. See [Audio](audio.md).
+
+### TerrainAsset
+
+A square grid of heights, each vertex's share of four layer materials, and the
+plant layers it grows, kept in a `.terrain` file and named for its path. Its
+meshes, weight map and layered material are derived by `TerrainSystem` and never
+saved. See [Terrain](terrain.md).
 
 ## Importing and cooking
 

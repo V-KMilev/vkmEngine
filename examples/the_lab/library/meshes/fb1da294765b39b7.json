@@ -1,0 +1,8 @@
+{
+  "name": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh2:lod1",
+  "source": {
+    "base": "assets/models/potted_plant_02/potted_plant_02_1k.gltf:mesh2",
+    "kind": "decimate",
+    "ratio": 0.5
+  }
+}

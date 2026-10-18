@@ -1,0 +1,10 @@
+{
+  "name": "assets/models/coast_rocks_03/textures/coast_rocks_03_diff_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/coast_rocks_03/textures/coast_rocks_03_diff_1k.jpg",
+    "usage": "Color",
+    "wrap": "repeat"
+  }
+}

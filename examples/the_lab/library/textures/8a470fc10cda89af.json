@@ -1,0 +1,11 @@
+{
+  "name": "assets/models/shrub_01/shrub_01_arm_1k.jpg",
+  "source": {
+    "generateMipmaps": true,
+    "kind": "file",
+    "path": "assets/models/shrub_01/shrub_01_arm_1k.jpg",
+    "roughnessNormal": "assets/models/shrub_01/shrub_01_nor_gl_1k.jpg",
+    "usage": "Data",
+    "wrap": "repeat"
+  }
+}

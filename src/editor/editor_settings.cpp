@@ -76,6 +76,7 @@ void visitScalarFields(State& state, Fn&& f) {
     f("showHierarchy",     state.showHierarchy);
     f("showInspector",     state.showInspector);
     f("showAssets",        state.showAssets);
+    f("showTerrain",       state.showTerrain);
     f("tool",              state.tool);
     f("gizmoMode",         state.gizmoMode);
     f("showLights",        state.gizmos.lights);

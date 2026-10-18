@@ -1,0 +1,853 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh1"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh2"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh3"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh4"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh5"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh6"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh7"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh8"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh9"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh10"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh11"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh12"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh13"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh14"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh15"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh16"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh17"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh18"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh19"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh20"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/grass_bermuda_01/grass_bermuda_01_arm_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "grass_bermuda_01"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_dead_a"
+        },
+        "Transform": {
+          "position": [
+            -0.5927864909172058,
+            0.0007589152082800865,
+            -0.0017063836567103863
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh1",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_dead_b"
+        },
+        "Transform": {
+          "position": [
+            -0.5395382642745972,
+            0.0005264685023576021,
+            -0.0014924663119018078
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 2
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh2",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_flattened_a"
+        },
+        "Transform": {
+          "position": [
+            -0.6884512901306152,
+            -0.0003332803025841713,
+            -0.0038146707229316235
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 3
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh3",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_medium_a"
+        },
+        "Transform": {
+          "position": [
+            -0.7426877021789551,
+            -0.0007399478927254677,
+            -0.002644236432388425
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 4
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh4",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_medium_b"
+        },
+        "Transform": {
+          "position": [
+            0.7379401326179504,
+            0.0014649808872491121,
+            0.008286217227578163
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 5
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh5",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_medium_c"
+        },
+        "Transform": {
+          "position": [
+            0.07156552374362946,
+            -0.002195997629314661,
+            0.0010710246860980988
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 6
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh6",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_medium_d"
+        },
+        "Transform": {
+          "position": [
+            0.8339244723320007,
+            0.00045594293624162674,
+            0.009924020618200302
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 7
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh7",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_medium_e"
+        },
+        "Transform": {
+          "position": [
+            0.16164429485797882,
+            -0.002678921911865473,
+            0.0013983789831399918
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 8
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh8",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_medium_f"
+        },
+        "Transform": {
+          "position": [
+            0.24350793659687042,
+            -0.0023800195194780827,
+            0.0017635039985179901
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 9
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh9",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_seedling_a"
+        },
+        "Transform": {
+          "position": [
+            0.348913311958313,
+            -0.0019972086884081364,
+            0.0022334307432174683
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 10
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh10",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_seedling_b"
+        },
+        "Transform": {
+          "position": [
+            0.46332934498786926,
+            -0.00414243945851922,
+            0.0025088563561439514
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 11
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh11",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_seedling_c"
+        },
+        "Transform": {
+          "position": [
+            0.5535324215888977,
+            -0.0019972086884081364,
+            0.003077588975429535
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 12
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh12",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_seedling_d"
+        },
+        "Transform": {
+          "position": [
+            0.6350690126419067,
+            -0.004774367902427912,
+            0.0032197758555412292
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 13
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh13",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_single_a"
+        },
+        "Transform": {
+          "position": [
+            0.9164353013038635,
+            -0.002277171704918146,
+            0.0038117244839668274
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 14
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh14",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_single_b"
+        },
+        "Transform": {
+          "position": [
+            0.9258216023445129,
+            -0.0022326470352709293,
+            0.0038545429706573486
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 15
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh15",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_small_a"
+        },
+        "Transform": {
+          "position": [
+            -0.43225741386413574,
+            -0.0004870869452133775,
+            0.005144219845533371
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 16
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh16",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_small_b"
+        },
+        "Transform": {
+          "position": [
+            -0.2115013599395752,
+            0.0048597389832139015,
+            0.0006084572523832321
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 17
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh17",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_small_c"
+        },
+        "Transform": {
+          "position": [
+            -0.1329820305109024,
+            9.676162153482437e-05,
+            0.00043730437755584717
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 18
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh18",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_small_d"
+        },
+        "Transform": {
+          "position": [
+            -0.02666320651769638,
+            0.0018245438113808632,
+            0.0009970404207706451
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 19
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh19",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_small_e"
+        },
+        "Transform": {
+          "position": [
+            -0.34815514087677,
+            -4.6996516175568104e-05,
+            -0.0004998203366994858
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 20
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mat0",
+          "mesh": "assets/models/grass_bermuda_01/grass_bermuda_01.gltf:mesh20",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_bermuda_01_small_f"
+        },
+        "Transform": {
+          "position": [
+            -0.2808748185634613,
+            -0.002777969930320978,
+            -0.00035902485251426697
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 21
+    }
+  ],
+  "nextUid": 22,
+  "version": 3
+}

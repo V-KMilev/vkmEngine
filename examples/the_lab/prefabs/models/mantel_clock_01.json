@@ -1,0 +1,167 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mat0"
+      },
+      {
+        "name": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mat1"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mesh0:lod1"
+      },
+      {
+        "name": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mesh0:lod2"
+      },
+      {
+        "name": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mesh0:lod3"
+      },
+      {
+        "name": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mesh1"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/mantel_clock_01/textures/mantel_clock_01_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/mantel_clock_01/textures/mantel_clock_01_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/mantel_clock_01/textures/mantel_clock_01_arm_1k.jpg"
+      },
+      {
+        "name": "assets/models/mantel_clock_01/textures/mantel_clock_01_rgba_1k.png"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "mantel_clock_01_1k"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 0.1611417680978775,
+              "mesh": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mesh0"
+            },
+            {
+              "maxDistance": 1.8165953159332275,
+              "mesh": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mesh0:lod1"
+            },
+            {
+              "maxDistance": 12.45590877532959,
+              "mesh": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mesh0:lod2"
+            },
+            {
+              "maxDistance": 24.91181755065918,
+              "mesh": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mesh0:lod3"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mat0",
+          "mesh": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mantel_clock_01"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mat1",
+          "mesh": "assets/models/mantel_clock_01/mantel_clock_01_1k.gltf:mesh1",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mantel_clock_01_glass"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.09149909764528275,
+            0.05647554621100426
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 2
+    }
+  ],
+  "nextUid": 3,
+  "version": 3
+}

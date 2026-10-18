@@ -1,0 +1,237 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mat0"
+      },
+      {
+        "name": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mat1"
+      },
+      {
+        "name": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mat2"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mesh0:lod1"
+      },
+      {
+        "name": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mesh0:lod2"
+      },
+      {
+        "name": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mesh1"
+      },
+      {
+        "name": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mesh2"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "textures": [
+      {
+        "name": "assets/models/lantern_chandelier_01/textures/lantern_chandelier_01_diff_1k.jpg"
+      },
+      {
+        "name": "assets/models/lantern_chandelier_01/textures/lantern_chandelier_01_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/lantern_chandelier_01/textures/lantern_chandelier_01_arm_1k.jpg"
+      },
+      {
+        "name": "assets/models/lantern_chandelier_01/textures/lantern_chandelier_01_glass_rgba_1k.png"
+      },
+      {
+        "name": "assets/models/lantern_chandelier_01/textures/lantern_chandelier_01_glass_nor_gl_1k.jpg"
+      },
+      {
+        "name": "assets/models/lantern_chandelier_01/textures/lantern_chandelier_01_glass_arm_1k.jpg"
+      },
+      {
+        "name": "assets/models/lantern_chandelier_01/textures/lantern_chandelier_01_glass_alpha_1k.jpg"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "lantern_chandelier_01_1k"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "Name": {
+          "value": "lantern_chandelier_01"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            0.686111569404602,
+            0.686111569404602,
+            0.686111569404602
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    },
+    {
+      "components": {
+        "LOD": {
+          "bias": 1.0,
+          "levels": [
+            {
+              "maxDistance": 10.678391456604004,
+              "mesh": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mesh0"
+            },
+            {
+              "maxDistance": 59.21034622192383,
+              "mesh": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mesh0:lod1"
+            },
+            {
+              "maxDistance": 118.42069244384766,
+              "mesh": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mesh0:lod2"
+            }
+          ]
+        },
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mat0",
+          "mesh": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh0"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 1,
+      "uid": 2
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mat1",
+          "mesh": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mesh1",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh1"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 1,
+      "uid": 3
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mat2",
+          "mesh": "assets/models/lantern_chandelier_01/lantern_chandelier_01_1k.gltf:mesh2",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "mesh2"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 1,
+      "uid": 4
+    }
+  ],
+  "nextUid": 5,
+  "version": 3
+}

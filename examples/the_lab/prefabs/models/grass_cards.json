@@ -1,0 +1,278 @@
+{
+  "assets": {
+    "clips": [],
+    "materials": [
+      {
+        "name": "assets/models/grass_cards/grass_cards.gltf:mat0"
+      }
+    ],
+    "meshes": [
+      {
+        "name": "assets/models/grass_cards/grass_cards.gltf:mesh0"
+      },
+      {
+        "name": "assets/models/grass_cards/grass_cards.gltf:mesh1"
+      },
+      {
+        "name": "assets/models/grass_cards/grass_cards.gltf:mesh2"
+      },
+      {
+        "name": "assets/models/grass_cards/grass_cards.gltf:mesh3"
+      },
+      {
+        "name": "assets/models/grass_cards/grass_cards.gltf:mesh4"
+      },
+      {
+        "name": "assets/models/grass_cards/grass_cards.gltf:mesh5"
+      }
+    ],
+    "skeletons": [],
+    "sounds": [],
+    "terrains": [],
+    "textures": [
+      {
+        "name": "assets/models/grass_cards/grass_cards_rgba.png"
+      }
+    ]
+  },
+  "entities": [
+    {
+      "components": {
+        "Name": {
+          "value": "grass_cards"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "uid": 0
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_cards/grass_cards.gltf:mat0",
+          "mesh": "assets/models/grass_cards/grass_cards.gltf:mesh0",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_cards_0"
+        },
+        "Transform": {
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 1
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_cards/grass_cards.gltf:mat0",
+          "mesh": "assets/models/grass_cards/grass_cards.gltf:mesh1",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_cards_1"
+        },
+        "Transform": {
+          "position": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 2
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_cards/grass_cards.gltf:mat0",
+          "mesh": "assets/models/grass_cards/grass_cards.gltf:mesh2",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_cards_2"
+        },
+        "Transform": {
+          "position": [
+            2.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 3
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_cards/grass_cards.gltf:mat0",
+          "mesh": "assets/models/grass_cards/grass_cards.gltf:mesh3",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_cards_3"
+        },
+        "Transform": {
+          "position": [
+            3.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 4
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_cards/grass_cards.gltf:mat0",
+          "mesh": "assets/models/grass_cards/grass_cards.gltf:mesh4",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_cards_4"
+        },
+        "Transform": {
+          "position": [
+            4.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 5
+    },
+    {
+      "components": {
+        "Mesh": {
+          "castShadows": true,
+          "material": "assets/models/grass_cards/grass_cards.gltf:mat0",
+          "mesh": "assets/models/grass_cards/grass_cards.gltf:mesh5",
+          "movable": true,
+          "seenBy": "All",
+          "visible": true
+        },
+        "Name": {
+          "value": "grass_cards_5"
+        },
+        "Transform": {
+          "position": [
+            5.0,
+            0.0,
+            0.0
+          ],
+          "rotation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "scale": [
+            1.0,
+            1.0,
+            1.0
+          ]
+        }
+      },
+      "parent": 0,
+      "uid": 6
+    }
+  ],
+  "nextUid": 7,
+  "version": 3
+}

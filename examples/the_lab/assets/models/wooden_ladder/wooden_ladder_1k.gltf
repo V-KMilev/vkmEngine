@@ -1,0 +1,246 @@
+{
+  "asset": {
+    "generator": "Khronos glTF Blender I/O v5.1.20",
+    "version": "2.0"
+  },
+  "scene": 0,
+  "scenes": [
+    {
+      "name": "Scene",
+      "nodes": [
+        0,
+        1
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "mesh": 0,
+      "name": "wooden_ladder_supports",
+      "translation": [
+        0,
+        1.1048070192337036,
+        0
+      ]
+    },
+    {
+      "mesh": 1,
+      "name": "wooden_ladder_steps",
+      "translation": [
+        0,
+        1.1048070192337036,
+        0
+      ]
+    }
+  ],
+  "materials": [
+    {
+      "doubleSided": true,
+      "name": "wooden_ladder",
+      "normalTexture": {
+        "index": 0
+      },
+      "pbrMetallicRoughness": {
+        "baseColorTexture": {
+          "index": 1
+        },
+        "metallicRoughnessTexture": {
+          "index": 2
+        }
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "wooden_step_ladder_02",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0,
+            "NORMAL": 1,
+            "TEXCOORD_0": 2
+          },
+          "indices": 3,
+          "material": 0
+        }
+      ]
+    },
+    {
+      "name": "wooden_step_ladder_01",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 4,
+            "NORMAL": 5,
+            "TEXCOORD_0": 6
+          },
+          "indices": 7,
+          "material": 0
+        }
+      ]
+    }
+  ],
+  "textures": [
+    {
+      "sampler": 0,
+      "source": 0
+    },
+    {
+      "sampler": 0,
+      "source": 1
+    },
+    {
+      "sampler": 0,
+      "source": 2
+    }
+  ],
+  "images": [
+    {
+      "mimeType": "image/jpeg",
+      "name": "wooden_ladder_nor_gl",
+      "uri": "textures/wooden_ladder_nor_gl_1k.jpg"
+    },
+    {
+      "mimeType": "image/jpeg",
+      "name": "wooden_ladder_diff",
+      "uri": "textures/wooden_ladder_diff_1k.jpg"
+    },
+    {
+      "mimeType": "image/jpeg",
+      "name": "wooden_ladder_metal-wooden_ladder_rough",
+      "uri": "textures/wooden_ladder_arm_1k.jpg"
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 3878,
+      "max": [
+        0.4742986559867859,
+        0.11051149666309357,
+        0.24849681556224823
+      ],
+      "min": [
+        -0.010417871177196503,
+        -1.1048070192337036,
+        -0.24849684536457062
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5126,
+      "count": 3878,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5126,
+      "count": 3878,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5123,
+      "count": 14424,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5126,
+      "count": 3348,
+      "max": [
+        0.09187832474708557,
+        0.23011624813079834,
+        0.2500000596046448
+      ],
+      "min": [
+        -0.4848731458187103,
+        -1.1048070192337036,
+        -0.24999995529651642
+      ],
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 5,
+      "componentType": 5126,
+      "count": 3348,
+      "type": "VEC3"
+    },
+    {
+      "bufferView": 6,
+      "componentType": 5126,
+      "count": 3348,
+      "type": "VEC2"
+    },
+    {
+      "bufferView": 7,
+      "componentType": 5123,
+      "count": 11052,
+      "type": "SCALAR"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteLength": 46536,
+      "byteOffset": 0,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 46536,
+      "byteOffset": 46536,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 31024,
+      "byteOffset": 93072,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 28848,
+      "byteOffset": 124096,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteLength": 40176,
+      "byteOffset": 152944,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 40176,
+      "byteOffset": 193120,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 26784,
+      "byteOffset": 233296,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteLength": 22104,
+      "byteOffset": 260080,
+      "target": 34963
+    }
+  ],
+  "samplers": [
+    {
+      "magFilter": 9729,
+      "minFilter": 9987
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 282184,
+      "uri": "wooden_ladder.bin"
+    }
+  ]
+}

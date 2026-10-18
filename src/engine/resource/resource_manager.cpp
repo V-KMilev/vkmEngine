@@ -9,6 +9,7 @@
 #include "resource/asset/material_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/skeleton_asset.h"
+#include "resource/asset/terrain_asset.h"
 #include "resource/asset/texture_asset.h"
 
 namespace Vkm::Engine {

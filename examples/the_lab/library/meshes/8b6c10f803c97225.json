@@ -1,0 +1,8 @@
+{
+  "name": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh0:lod1",
+  "source": {
+    "base": "assets/models/brass_goblets/brass_goblets_1k.gltf:mesh0",
+    "kind": "decimate",
+    "ratio": 0.5
+  }
+}

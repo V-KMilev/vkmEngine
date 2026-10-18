@@ -17,6 +17,7 @@
 #include "io/scene/component_serializer.h"
 #include "io/scene/prefab.h"
 #include "resource/asset/material_asset.h"
+#include "resource/asset/terrain_asset.h"
 #include "resource/resource_manager.h"
 #include "command/command_host.h"
 #include "command/command_stack.h"
@@ -215,6 +216,102 @@ bool MaterialEditCommand::tryMerge(Command& incoming) {
     // the manager, so the identity the constructor leaves defaulted is nobody's.
     m_after = MaterialAsset(p->m_after);
     return true;
+}
+
+void TerrainEditCommand::step(const TerrainAsset& value) {
+    if (!m_resources->isAlive(m_handle)) return;
+    TerrainAsset next = value;
+    m_resources->swapValue(m_handle, next);
+}
+
+void TerrainEditCommand::redo(Scene&, CommandHost&) {
+    step(m_after);
+}
+
+void TerrainEditCommand::undo(Scene&, CommandHost&) {
+    step(m_before);
+}
+
+bool TerrainEditCommand::tryMerge(Command& incoming) {
+    auto* p = dynamic_cast<TerrainEditCommand*>(&incoming);
+    if (!p || p->m_handle != m_handle || std::strcmp(p->m_label, m_label) != 0) return false;
+    // Moved, not copied: a terrain's grid is megabytes, and the incoming step is spent.
+    m_after = std::move(p->m_after);
+    return true;
+}
+
+namespace {
+
+/// Whether @p patch was cut from a region of @p terrain's grid as it is now.
+bool fits(
+    const TerrainAsset& terrain,
+    const TerrainBrush::Region& region,
+    const TerrainStrokeCommand::Patch& patch
+) {
+    const auto   side  = static_cast<int>(terrain.resolution);
+    const size_t count = static_cast<size_t>(region.i1 - region.i0 + 1) * (region.j1 - region.j0 + 1);
+    return !region.empty() && region.i0 >= 0 && region.j0 >= 0 && region.i1 < side && region.j1 < side
+        && terrain.heights.size() == static_cast<size_t>(side) * side
+        && terrain.weights.size() == terrain.heights.size() * 4 && patch.heights.size() == count
+        && patch.weights.size() == count * 4 && patch.density.size() == terrain.foliage.size();
+}
+
+} // namespace
+
+TerrainStrokeCommand::Patch TerrainStrokeCommand::Patch::cut(
+    const TerrainAsset& terrain,
+    const TerrainBrush::Region& region
+) {
+    Patch patch;
+    patch.density.resize(terrain.foliage.size());
+    for (int j = region.j0; j <= region.j1; ++j) {
+        const size_t row   = static_cast<size_t>(j) * terrain.resolution;
+        const size_t first = row + region.i0;
+        const size_t last  = row + region.i1 + 1;
+        const auto heights = terrain.heights.begin();
+        patch.heights.insert(patch.heights.end(), heights + first, heights + last);
+        patch.weights.insert(
+            patch.weights.end(),
+            terrain.weights.begin() + first * 4,
+            terrain.weights.begin() + last * 4
+        );
+        // A layer with no map has none anywhere, which a stroke may grow.
+        for (size_t f = 0; f < terrain.foliage.size(); ++f) {
+            const std::vector<uint8_t>& density = terrain.foliage[f].density;
+            std::vector<uint8_t>&       out     = patch.density[f];
+            if (density.size() != terrain.heights.size()) out.insert(out.end(), last - first, 0);
+            else out.insert(out.end(), density.begin() + first, density.begin() + last);
+        }
+    }
+    return patch;
+}
+
+void TerrainStrokeCommand::step(const Patch& patch) {
+    if (!m_resources->isAlive(m_handle)) return;
+    TerrainAsset& terrain = m_resources->edit(m_handle);
+    if (!fits(terrain, m_region, patch)) return;
+    const size_t width = static_cast<size_t>(m_region.i1 - m_region.i0 + 1);
+    for (int j = m_region.j0; j <= m_region.j1; ++j) {
+        const size_t from = static_cast<size_t>(j - m_region.j0) * width;
+        const size_t to   = static_cast<size_t>(j) * terrain.resolution + m_region.i0;
+        std::copy_n(patch.heights.begin() + from, width, terrain.heights.begin() + to);
+        std::copy_n(patch.weights.begin() + from * 4, width * 4, terrain.weights.begin() + to * 4);
+        for (size_t f = 0; f < terrain.foliage.size(); ++f) {
+            std::vector<uint8_t>& density = terrain.foliage[f].density;
+            if (patch.density[f].empty()) continue;
+            density.resize(terrain.heights.size(), 0);
+            std::copy_n(patch.density[f].begin() + from, width, density.begin() + to);
+        }
+    }
+    m_resources->commit(m_handle);
+}
+
+void TerrainStrokeCommand::redo(Scene&, CommandHost&) {
+    step(m_after);
+}
+
+void TerrainStrokeCommand::undo(Scene&, CommandHost&) {
+    step(m_before);
 }
 
 template <typename HandleType>

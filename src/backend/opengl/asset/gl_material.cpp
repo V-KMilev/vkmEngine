@@ -41,7 +41,9 @@ void GLMaterial::update(const MaterialAsset& material) {
     m_doubleSided = material.doubleSided;
     const bool seeThrough = material.albedo.a < 1.0f || static_cast<bool>(material.albedoTexture);
     m_cutsShadow  = m_type == MaterialType::AlphaMask || (m_type == MaterialType::Transparent && seeThrough);
-    m_plain       = material.anisotropy == 0.0f
+    m_layered     = material.layered();
+    m_plain       = !m_layered
+        && material.anisotropy == 0.0f
         && material.subsurface == 0.0f
         && material.transmission == 0.0f
         && material.clearcoat == 0.0f
@@ -50,16 +52,24 @@ void GLMaterial::update(const MaterialAsset& material) {
 
     m_textureBindings.clear();
 
+    // A layered material's own maps are unread: its layers are read in their place, and their
+    // shares where its roughness map would be (shaders/surface.glsl).
     int flags = 0;
-    for (const auto& map : MATERIAL_MAPS) {
-        const TextureHandle& handle = material.*map.handle;
-        if (handle) {
-            m_textureBindings.push_back({handle, map.slot});
-            flags |= 1 << map.slot;
+    if (m_layered) {
+        const TextureHandle weights = material.layerWeights;
+        if (weights) m_textureBindings.push_back({weights, GLBindings::TextureSlots::ROUGHNESS});
+    } else {
+        for (const auto& map : MATERIAL_MAPS) {
+            const TextureHandle& handle = material.*map.handle;
+            if (handle) {
+                m_textureBindings.push_back({handle, map.slot});
+                flags |= 1 << map.slot;
+            }
         }
+        m_layerMaps.reset();
     }
 
-    MaterialUBO data;
+    MaterialUBO& data = m_data;
     data.albedo              = material.albedo;
     data.emission            = glm::vec4(material.emission, material.emissiveStrength);
     data.anisotropyDirection = glm::vec4(material.anisotropyDirection, 0.0f);
@@ -90,6 +100,34 @@ void GLMaterial::update(const MaterialAsset& material) {
     else       m_ubo = std::make_unique<Vkm::GL::UniformBuffer>(&data, sizeof(data), GL_DYNAMIC_DRAW);
 }
 
+void GLMaterial::updateLayers(
+    const MaterialAsset& layered,
+    const std::array<const MaterialAsset*, MaterialAsset::MAX_LAYERS>& layers,
+    const std::array<GLLayerMaps::Layer, MaterialAsset::MAX_LAYERS>& maps,
+    uint64_t key,
+    const Vkm::GL::ComputeShader& copy
+) {
+    if (m_layerMaps && key == m_layersKey) return;
+    m_layersKey = key;
+    for (size_t i = 0; i < layers.size(); ++i) {
+        const MaterialAsset* layer = layers[i];
+        // An empty layer is black: a share painted for it draws black.
+        if (!layer) {
+            m_data.layerTint[i]    = glm::vec4(0.0f);
+            m_data.layerUV[i]      = glm::vec4(1.0f, 1.0f, 0.0f, 0.0f);
+            m_data.layerSurface[i] = glm::vec4(1.0f);
+            continue;
+        }
+        m_data.layerTint[i]    = glm::vec4(glm::vec3(layer->albedo), layer->normalScale);
+        const glm::vec2 tiling = layered.layerTiling[i];
+        m_data.layerUV[i]      = glm::vec4(tiling == glm::vec2(0.0f) ? glm::vec2(1.0f) : tiling, 0.0f, 0.0f);
+        m_data.layerSurface[i] = glm::vec4(layer->ao, layer->roughness, layer->metallic, 0.0f);
+    }
+    if (m_ubo) m_ubo->update(&m_data, sizeof(m_data));
+    if (!m_layerMaps) m_layerMaps = std::make_unique<GLLayerMaps>();
+    m_layerMaps->build(maps, key, copy);
+}
+
 TextureHandle GLMaterial::albedoMap() const {
     for (const TextureBinding& binding : m_textureBindings) {
         if (binding.slot == GLBindings::TextureSlots::ALBEDO) return binding.handle;
@@ -107,6 +145,7 @@ void GLMaterial::bindTextures(const GLView& view) const {
         if (!texture) texture = &view.missingTexture();
         texture->bindSlot(binding.slot);
     }
+    if (m_layerMaps) m_layerMaps->bind();
 }
 
 } // namespace Vkm::Engine
