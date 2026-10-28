@@ -19,32 +19,47 @@ namespace Vkm::Engine {
 
 namespace {
 
+/// Grid vertices i0..i1 by j0..j1, ends included; it may reach off the grid, which clamps it.
+struct Span {
+    int i0 = 0;
+    int i1 = 0;
+    int j0 = 0;
+    int j1 = 0;
+};
+
+/// The vertices chunk @p cx, @p cz is built from: its own and a ring round them, which its normals read.
+Span builtFrom(uint32_t cx, uint32_t cz) {
+    const auto n = static_cast<int>(TerrainChunks::CELLS);
+    const int  i = static_cast<int>(cx) * n;
+    const int  j = static_cast<int>(cz) * n;
+    return {i - 1, i + n + 1, j - 1, j + n + 1};
+}
+
+/// The corners of the squares chunk @p cx, @p cz's plants stand on.
+Span grownFrom(uint32_t cx, uint32_t cz) {
+    const auto n = static_cast<int>(TerrainChunks::CELLS);
+    const int  i = static_cast<int>(cx) * n;
+    const int  j = static_cast<int>(cz) * n;
+    return {i, i + n, j, j + n};
+}
+
 /**
- * @brief Whether grid vertices @p fromI..@p toI by @p fromJ..@p toJ hold the same heights in @p was
- *        as in @p now; clamped to the grid.
+ * @brief Whether @p span holds the same values in @p was as in @p now, clamped to the grid.
  *
- * @param was  The heights a chunk was built from; empty for none.
- * @param now  The heights now.
+ * @param was  What was built from; empty for none.
+ * @param now  The values now.
  * @param side Grid vertices a side.
- * @param fromI First column, which may lie off the grid.
- * @param toI   Last column, which may too.
- * @param fromJ First row.
- * @param toJ   Last row.
- * @return True when nothing in the region moved.
+ * @param span The vertices compared.
+ * @return True when nothing in it moved.
  */
-bool sameRegion(
-    const std::vector<float>& was,
-    const std::vector<float>& now,
-    int side,
-    int fromI,
-    int toI,
-    int fromJ,
-    int toJ
-) {
+template<typename T>
+bool sameRegion(const std::vector<T>& was, const std::vector<T>& now, int side, const Span& span) {
     if (was.size() != now.size()) return false;
-    const int i0 = std::max(fromI, 0);
-    const int i1 = std::min(toI, side - 1);
-    for (int j = std::max(fromJ, 0); j <= std::min(toJ, side - 1); ++j) {
+    // Not a grid - a plant layer never painted is empty - so nothing in it to compare.
+    if (now.size() != static_cast<size_t>(side) * side) return true;
+    const int i0 = std::max(span.i0, 0);
+    const int i1 = std::min(span.i1, side - 1);
+    for (int j = std::max(span.j0, 0); j <= std::min(span.j1, side - 1); ++j) {
         const size_t row = static_cast<size_t>(j) * side;
         const auto   at  = was.begin() + row;
         if (!std::equal(at + i0, at + i1 + 1, now.begin() + row + i0)) return false;
@@ -52,7 +67,28 @@ bool sameRegion(
     return true;
 }
 
+/// Copy @p span of @p now over @p was, clamped to the grid; the whole of it when they differ in size.
+template<typename T>
+void copyRegion(std::vector<T>& was, const std::vector<T>& now, int side, const Span& span) {
+    const size_t grid = static_cast<size_t>(side) * side;
+    if (was.size() != grid || now.size() != grid) {
+        was = now;
+        return;
+    }
+    const int i0 = std::max(span.i0, 0);
+    const int i1 = std::min(span.i1, side - 1);
+    for (int j = std::max(span.j0, 0); j <= std::min(span.j1, side - 1); ++j) {
+        const size_t row = static_cast<size_t>(j) * side;
+        std::copy(now.begin() + row + i0, now.begin() + row + i1 + 1, was.begin() + row + i0);
+    }
+}
+
 } // namespace
+
+glm::mat4 terrainModel(const Scene& scene, EntityId entity, const Transform& local) {
+    return glm::translate(glm::mat4(1.0f), resolvedWorldPosition(scene, entity, local))
+        * glm::mat4_cast(resolvedWorldRotation(scene, entity, local));
+}
 
 void TerrainSystem::update(FrameContext& ctx) {
     PROFILE_SCOPE("TerrainSystem");
@@ -83,9 +119,7 @@ void TerrainSystem::update(FrameContext& ctx) {
         }
         if (made.chunks.empty()) return;
 
-        // Placed and turned as its entity, unscaled, as the solver places its collider.
-        const glm::mat4 model = glm::translate(glm::mat4(1.0f), resolvedWorldPosition(ctx.scene, id, local))
-            * glm::mat4_cast(resolvedWorldRotation(ctx.scene, id, local));
+        const glm::mat4 model = terrainModel(ctx.scene, id, local);
         made.model       = model;
         made.entity      = id;
         made.castShadows = terrain.castShadows;
@@ -179,8 +213,7 @@ void TerrainSystem::listPlants(const ResourceManager& resources, const Scene& sc
                     draw.maxDistance = foliage.maxDistance;
                     draw.castShadows = foliage.castShadows && made->castShadows;
                     if (group.count == 0) group.bounds = draw.bounds;
-                    group.bounds.min  = glm::min(group.bounds.min, draw.bounds.min);
-                    group.bounds.max  = glm::max(group.bounds.max, draw.bounds.max);
+                    group.bounds.expand(draw.bounds);
                     group.maxDistance = std::max(group.maxDistance, draw.maxDistance);
                     ++group.count;
                     m_frame.plants.push_back(draw);
@@ -213,18 +246,17 @@ void TerrainSystem::remake(ResourceManager& resources, Made& made, TerrainHandle
 
     const std::string name = "terrain:" + std::to_string(slot) + ":";
     const uint32_t    per  = TerrainChunks::perSide(terrain);
-    const auto        n    = static_cast<int>(TerrainChunks::CELLS);
-    made.chunks.resize(static_cast<size_t>(per) * per);
-    made.bounds.resize(made.chunks.size());
+    const auto        s    = static_cast<int>(side);
+    const size_t      all  = static_cast<size_t>(per) * per;
+    made.chunks.resize(all);
+    made.bounds.resize(all);
+    // A chunk whose heights are unchanged is as it was.
+    std::vector<uint8_t> moved(all, regrid ? 1 : 0);
     for (uint32_t cz = 0; cz < per; ++cz) {
         for (uint32_t cx = 0; cx < per; ++cx) {
-            // Its heights, and their neighbours', which its normals read: unchanged, it is as it was.
-            const int  i0   = static_cast<int>(cx) * n - 1;
-            const int  j0   = static_cast<int>(cz) * n - 1;
-            const int  s    = static_cast<int>(side);
-            const bool same = sameRegion(made.heights, terrain.heights, s, i0, i0 + n + 2, j0, j0 + n + 2);
-            if (!regrid && same) continue;
             const size_t c = static_cast<size_t>(cz) * per + cx;
+            if (!regrid && sameRegion(made.heights, terrain.heights, s, builtFrom(cx, cz))) continue;
+            moved[c] = 1;
             for (uint32_t level = 0; level < TerrainChunks::LEVELS; ++level) {
                 MeshAsset mesh = TerrainChunks::build(terrain, cx, cz, level);
                 if (level == 0) made.bounds[c] = mesh.bounds();
@@ -238,7 +270,18 @@ void TerrainSystem::remake(ResourceManager& resources, Made& made, TerrainHandle
             }
         }
     }
-    made.heights = terrain.heights;
+    // What they were built from, kept: the regions that moved, or all of it anew.
+    if (made.heights.size() != terrain.heights.size()) {
+        made.heights = terrain.heights;
+    } else {
+        for (uint32_t cz = 0; cz < per; ++cz) {
+            for (uint32_t cx = 0; cx < per; ++cx) {
+                if (moved[static_cast<size_t>(cz) * per + cx]) {
+                    copyRegion(made.heights, terrain.heights, s, builtFrom(cx, cz));
+                }
+            }
+        }
+    }
 
     // Its weights as a map the layered material reads, a texel a grid vertex. Compared with a copy
     // of its own: the map's pixels may be let go once uploaded.
@@ -252,22 +295,59 @@ void TerrainSystem::remake(ResourceManager& resources, Made& made, TerrainHandle
         made.weights = terrain.weights;
     }
 
-    // Chunk by chunk, so the cull passes over each chunk's plants in one test.
-    TerrainPlants::scatter(terrain, made.plants);
-    const float toGrid = 1.0f / terrain.spacing();
-    const auto  cellOf = [&](float local) {
-        const auto cell = static_cast<uint32_t>(std::max((local + 0.5f * terrain.size) * toGrid, 0.0f));
-        return std::min(cell / TerrainChunks::CELLS, per - 1);
-    };
-    const auto chunkOf = [&](const TerrainPlants::Plant& plant) {
-        return cellOf(plant.local[3].z) * per + cellOf(plant.local[3].x);
-    };
-    std::stable_sort(made.plants.begin(), made.plants.end(), [&](const auto& a, const auto& b) {
-        return chunkOf(a) < chunkOf(b);
-    });
-    made.plantRuns.assign(static_cast<size_t>(per) * per + 1, 0);
-    for (const TerrainPlants::Plant& plant : made.plants) ++made.plantRuns[chunkOf(plant) + 1];
-    for (size_t c = 1; c < made.plantRuns.size(); ++c) made.plantRuns[c] += made.plantRuns[c - 1];
+    // Its plants chunk by chunk, so the cull passes over each chunk's in one test: grown again
+    // where a chunk's heights or density moved, or everywhere once a layer scatters otherwise.
+    const std::vector<TerrainFoliage>& foliage = terrain.foliage;
+    bool everywhere = regrid || made.plantRuns.size() != all + 1 || made.foliage.size() != foliage.size();
+    for (size_t l = 0; !everywhere && l < foliage.size(); ++l) {
+        everywhere = !TerrainPlants::sameScatter(made.foliage[l], foliage[l]);
+    }
+    std::vector<uint8_t> grows(all, everywhere ? 1 : 0);
+    bool                 any = everywhere;
+    for (uint32_t cz = 0; cz < per; ++cz) {
+        for (uint32_t cx = 0; cx < per; ++cx) {
+            const size_t c = static_cast<size_t>(cz) * per + cx;
+            for (size_t l = 0; !grows[c] && l < foliage.size(); ++l) {
+                grows[c] = !sameRegion(made.foliage[l].density, foliage[l].density, s, grownFrom(cx, cz));
+            }
+            grows[c] = grows[c] || moved[c];
+            any      = any || grows[c];
+        }
+    }
+    if (any) {
+        std::vector<TerrainPlants::Plant> plants;
+        plants.reserve(made.plants.size());
+        std::vector<uint32_t> runs(all + 1, 0);
+        for (uint32_t cz = 0; cz < per; ++cz) {
+            for (uint32_t cx = 0; cx < per; ++cx) {
+                const size_t c = static_cast<size_t>(cz) * per + cx;
+                if (grows[c]) {
+                    // Its squares: the corners' span short of its last row and column.
+                    const Span on = grownFrom(cx, cz);
+                    TerrainPlants::grow(terrain, on.i0, on.i1, on.j0, on.j1, plants);
+                } else {
+                    const auto held = made.plants.begin();
+                    plants.insert(plants.end(), held + made.plantRuns[c], held + made.plantRuns[c + 1]);
+                }
+                runs[c + 1] = static_cast<uint32_t>(plants.size());
+            }
+        }
+        made.plants.swap(plants);
+        made.plantRuns.swap(runs);
+    }
+    // What they were grown from, kept as the heights are.
+    if (everywhere) {
+        made.foliage = foliage;
+    } else if (any) {
+        for (uint32_t cz = 0; cz < per; ++cz) {
+            for (uint32_t cx = 0; cx < per; ++cx) {
+                if (!grows[static_cast<size_t>(cz) * per + cx]) continue;
+                for (size_t l = 0; l < foliage.size(); ++l) {
+                    copyRegion(made.foliage[l].density, foliage[l].density, s, grownFrom(cx, cz));
+                }
+            }
+        }
+    }
 
     MaterialAsset material;
     material.layers       = terrain.layers;

@@ -27,6 +27,7 @@ MeshAsset build(const TerrainAsset& terrain, uint32_t cx, uint32_t cz, uint32_t 
 
     MeshAsset mesh;
     mesh.vertices.reserve(static_cast<size_t>(n) * n + 4 * n);
+    mesh.lightmapUVs.reserve(static_cast<size_t>(n) * n + 4 * n);
     for (uint32_t b = 0; b < n; ++b) {
         for (uint32_t a = 0; a < n; ++a) {
             const uint32_t i = fromI + a * step;
@@ -43,6 +44,8 @@ MeshAsset build(const TerrainAsset& terrain, uint32_t cx, uint32_t cz, uint32_t 
             // from, so the handedness turns it.
             v.tangent = glm::vec4(glm::normalize(glm::vec3(1.0f, 0.0f, 0.0f) - v.normal * v.normal.x), -1.0f);
             mesh.vertices.push_back(v);
+            // The chunk's grid as its lightmap, alike at every level.
+            mesh.lightmapUVs.emplace_back(glm::vec2(a * step, b * step) / static_cast<float>(CELLS));
         }
     }
 
@@ -76,6 +79,7 @@ MeshAsset build(const TerrainAsset& terrain, uint32_t cx, uint32_t cz, uint32_t 
             Vertex v = mesh.vertices[rim(k)];
             v.position.y -= drop;
             mesh.vertices.push_back(v);
+            mesh.lightmapUVs.push_back(mesh.lightmapUVs[rim(k)]);
         }
         for (uint32_t k = 0; k + 1 < n; ++k) {
             const uint32_t top0 = rim(k);

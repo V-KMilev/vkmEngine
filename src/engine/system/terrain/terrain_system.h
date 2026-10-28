@@ -5,7 +5,10 @@
 #include <unordered_map>
 #include <vector>
 
+#include <glm/glm.hpp>
+
 #include "core/system.h"
+#include "ecs/entity.h"
 #include "resource/asset/material_asset.h"
 #include "resource/asset/mesh_asset.h"
 #include "resource/asset/terrain_asset.h"
@@ -14,6 +17,20 @@
 #include "system/terrain/terrain_plants.h"
 
 namespace Vkm::Engine {
+
+class Scene;
+struct Transform;
+
+/**
+ * @brief Where a terrain lies: its entity's world position and turn, unscaled, as the
+ *        solver places its collider.
+ *
+ * @param scene  Holds the entity.
+ * @param entity The terrain's entity.
+ * @param local  Its Transform.
+ * @return The terrain's model matrix.
+ */
+glm::mat4 terrainModel(const Scene& scene, EntityId entity, const Transform& local);
 
 /**
  * @brief Makes each Terrain's meshes, layer weights and layered material from its asset, scatters
@@ -53,6 +70,7 @@ class TerrainSystem : public System {
             MaterialHandle          material;
             std::vector<float>      heights;  ///< What the chunks were built from.
             std::vector<uint8_t>    weights;  ///< What the weight map was made from.
+            std::vector<TerrainFoliage> foliage;  ///< What the plants were grown from.
             std::vector<TerrainPlants::Plant> plants;  ///< Where its plants stand, local, chunk by chunk.
             std::vector<uint32_t>   plantRuns;  ///< Per chunk, where its plants begin; then their end.
             glm::mat4               model{1.0f};  ///< Where it lies this frame.

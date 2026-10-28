@@ -143,7 +143,7 @@ void testPlantsGrowWherePainted() {
         for (uint32_t i = 0; i < 65; ++i) terrain.heights[static_cast<size_t>(j) * 65 + i] = 0.1f * i;
     }
     TerrainFoliage grass;
-    grass.parts.push_back({resources.add(generateCube(), "test:blade"), {}, glm::mat4(1.0f)});
+    grass.parts.push_back({resources.add(generateCube(), "test:blade"), {}, glm::mat4(1.0f), {}, {}});
     grass.perSquareMetre = 2.0f;
     grass.density.assign(terrain.heights.size(), 0);
     terrain.foliage.push_back(grass);
@@ -228,7 +228,7 @@ void testPlantsAreListedInGroupsWhenTheyChange() {
     ResourceManager& resources = frame.resources;
     TerrainAsset     terrain   = flatTerrain(65, 64.0f);
     TerrainFoliage   grass;
-    grass.parts.push_back({resources.add(generateCube(), "test:blade"), {}, glm::mat4(1.0f)});
+    grass.parts.push_back({resources.add(generateCube(), "test:blade"), {}, glm::mat4(1.0f), {}, {}});
     grass.perSquareMetre = 0.5f;
     grass.density.assign(terrain.heights.size(), 255);
     terrain.foliage.push_back(grass);
@@ -271,6 +271,112 @@ void testPlantsAreListedInGroupsWhenTheyChange() {
     scene.get<Terrain>(id).castShadows = false;
     system.update(frame.ctx);
     check("  until its Terrain casts none", std::none_of(made.plants.begin(), made.plants.end(), casts));
+}
+
+// After strokes, a terrain's plants are those a fresh system grows: grown again where the heights
+// or the density moved, the rest as they stood.
+void testAStrokeRegrowsThePlantsAFreshSystemWould() {
+    std::printf("A terrain's plants after strokes:\n");
+    Scene     scene;
+    TestFrame frame(scene);
+    ResourceManager& resources = frame.resources;
+    TerrainAsset     terrain   = flatTerrain(129, 128.0f);
+    TerrainFoliage   grass;
+    grass.parts.push_back({resources.add(generateCube(), "test:blade"), {}, glm::mat4(1.0f), {}, {}});
+    grass.perSquareMetre = 0.3f;
+    grass.seed           = 5;
+    grass.density.assign(terrain.heights.size(), 0);
+    for (size_t v = 0; v < grass.density.size(); v += 3) grass.density[v] = 200;
+    terrain.foliage.push_back(grass);
+    const TerrainHandle handle = resources.add(std::move(terrain), "test:terrain");
+    const EntityId      id     = scene.createEntity();
+    scene.add(id, Transform{});
+    scene.add(id, Terrain{handle});
+    TerrainSystem system;
+    system.update(frame.ctx);
+
+    // A raise in the first chunk, the density painted full in the last, the layers painted between.
+    TerrainBrush::Dab dab;
+    dab.centre = {-56.0f, -56.0f};
+    dab.radius = 4.0f;
+    TerrainAsset& edited = resources.edit(handle);
+    TerrainBrush::raise(edited, dab, 1.0f);
+    for (uint32_t j = 110; j < 120; ++j) {
+        for (uint32_t i = 110; i < 120; ++i) edited.foliage[0].density[size_t(j) * 129 + i] = 255;
+    }
+    dab.centre = {0.0f, 0.0f};
+    TerrainBrush::paint(edited, dab, 1);
+    resources.commit(handle);
+    system.update(frame.ctx);
+
+    Scene     fresh;
+    TestFrame freshFrame(fresh);
+    const TerrainHandle copy  = freshFrame.resources.add(TerrainAsset(resources.get(handle)), "test:copy");
+    const EntityId      again = fresh.createEntity();
+    fresh.add(again, Transform{});
+    fresh.add(again, Terrain{copy});
+    TerrainSystem anew;
+    anew.update(freshFrame.ctx);
+
+    const std::vector<TerrainPlantDraw>& grown = frame.ctx.terrain->plants;
+    const std::vector<TerrainPlantDraw>& want  = freshFrame.ctx.terrain->plants;
+    bool same = !want.empty() && grown.size() == want.size();
+    for (size_t p = 0; same && p < want.size(); ++p) same = grown[p].model == want[p].model;
+    std::printf("      %zu plants, a fresh system's %zu\n", grown.size(), want.size());
+    check("the plants are a fresh system's, in its order", same);
+}
+
+// A plant layer added and not yet painted holds no density at all; a stroke beside it compares and
+// copies the layers it holds, and must take that one as unchanged, then as painted once it is.
+void testAnUnpaintedPlantLayerSurvivesAStroke() {
+    std::printf("A terrain with a plant layer never painted:\n");
+    Scene     scene;
+    TestFrame frame(scene);
+    ResourceManager& resources = frame.resources;
+    TerrainAsset     terrain   = flatTerrain(65, 64.0f);
+    TerrainFoliage   grass;
+    grass.parts.push_back({resources.add(generateCube(), "test:blade"), {}, glm::mat4(1.0f), {}, {}});
+    grass.perSquareMetre = 0.3f;
+    grass.density.assign(terrain.heights.size(), 200);
+    terrain.foliage.push_back(grass);
+    TerrainFoliage unpainted = grass;
+    unpainted.density.clear();
+    terrain.foliage.push_back(unpainted);
+    const TerrainHandle handle = resources.add(std::move(terrain), "test:terrain");
+    const EntityId      id     = scene.createEntity();
+    scene.add(id, Transform{});
+    scene.add(id, Terrain{handle});
+    TerrainSystem system;
+    system.update(frame.ctx);
+
+    TerrainBrush::Dab dab;
+    dab.radius = 4.0f;
+    TerrainBrush::raise(resources.edit(handle), dab, 1.0f);
+    resources.commit(handle);
+    system.update(frame.ctx);
+    check("a stroke beside it regrows without reading it", !frame.ctx.terrain->plants.empty());
+
+    TerrainAsset& painted = resources.edit(handle);
+    painted.foliage[1].density.assign(painted.heights.size(), 0);
+    for (uint32_t j = 40; j < 50; ++j) {
+        for (uint32_t i = 40; i < 50; ++i) painted.foliage[1].density[size_t(j) * 65 + i] = 255;
+    }
+    resources.commit(handle);
+    system.update(frame.ctx);
+
+    Scene     fresh;
+    TestFrame freshFrame(fresh);
+    const TerrainHandle copy  = freshFrame.resources.add(TerrainAsset(resources.get(handle)), "test:copy");
+    const EntityId      again = fresh.createEntity();
+    fresh.add(again, Transform{});
+    fresh.add(again, Terrain{copy});
+    TerrainSystem anew;
+    anew.update(freshFrame.ctx);
+    const std::vector<TerrainPlantDraw>& grown = frame.ctx.terrain->plants;
+    const std::vector<TerrainPlantDraw>& want  = freshFrame.ctx.terrain->plants;
+    bool same = grown.size() == want.size();
+    for (size_t p = 0; same && p < want.size(); ++p) same = grown[p].model == want[p].model;
+    check("  and once painted grows as a fresh system would", same);
 }
 
 // Regridding keeps the shape where both grids have a vertex, the paint summing to full and the plants
@@ -328,5 +434,7 @@ void runTerrainTests() {
     testPlantsGrowWherePainted();
     testTheSystemRemakesWhatAStrokeTouched();
     testPlantsAreListedInGroupsWhenTheyChange();
+    testAStrokeRegrowsThePlantsAFreshSystemWould();
+    testAnUnpaintedPlantLayerSurvivesAStroke();
     testRegriddingKeepsTheShapeThePaintAndThePlants();
 }

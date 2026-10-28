@@ -138,9 +138,22 @@ Region raise(TerrainAsset& terrain, const Dab& dab, float metres) {
 }
 
 Region smooth(TerrainAsset& terrain, const Dab& dab) {
-    // Each mean from the heights before the dab, so the result is the same in any visiting order.
-    const std::vector<float> before = terrain.heights;
+    // Each mean from the heights before the dab, so the result is the same in any visiting order:
+    // those under it, and a vertex round them, which their means read.
+    const Region under = reach(terrain, dab);
+    if (under.empty()) return under;
     const int side = static_cast<int>(terrain.resolution);
+    const int a0   = std::max(under.i0 - 1, 0);
+    const int a1   = std::min(under.i1 + 1, side - 1);
+    const int b0   = std::max(under.j0 - 1, 0);
+    const int b1   = std::min(under.j1 + 1, side - 1);
+    const int wide = a1 - a0 + 1;
+    std::vector<float> before(static_cast<size_t>(wide) * (b1 - b0 + 1));
+    for (int b = b0; b <= b1; ++b) {
+        const auto row = terrain.heights.begin() + static_cast<ptrdiff_t>(b) * side;
+        std::copy(row + a0, row + a1 + 1, before.begin() + static_cast<ptrdiff_t>(b - b0) * wide);
+    }
+    const auto was = [&](int a, int b) { return before[static_cast<size_t>(b - b0) * wide + (a - a0)]; };
     return eachUnder(terrain, dab, [&](size_t at, float share) {
         const int i = static_cast<int>(at % terrain.resolution);
         const int j = static_cast<int>(at / terrain.resolution);
@@ -148,11 +161,11 @@ Region smooth(TerrainAsset& terrain, const Dab& dab) {
         int   count = 0;
         for (int b = std::max(j - 1, 0); b <= std::min(j + 1, side - 1); ++b) {
             for (int a = std::max(i - 1, 0); a <= std::min(i + 1, side - 1); ++a) {
-                sum += before[static_cast<size_t>(b) * side + a];
+                sum += was(a, b);
                 ++count;
             }
         }
-        terrain.heights[at] += (sum / static_cast<float>(count) - before[at]) * std::min(share, 1.0f);
+        terrain.heights[at] += (sum / static_cast<float>(count) - was(i, j)) * std::min(share, 1.0f);
     });
 }
 
