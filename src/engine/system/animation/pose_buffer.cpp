@@ -1,7 +1,8 @@
 #include "system/animation/pose_buffer.h"
 
 #include <algorithm>
-#include <limits>
+
+#include "core/math/bounds.h"
 
 namespace Vkm::Engine {
 
@@ -52,14 +53,12 @@ void finishSlice(const PoseWrite& out) {
         return;
     }
 
-    glm::vec3 originMin(std::numeric_limits<float>::max());
-    glm::vec3 originMax(std::numeric_limits<float>::lowest());
+    Math::AABB origins = Math::AABB::empty();
     float maxScale = 1.0f;
 
     for (uint32_t i = 0; i < slice.count; ++i) {
         const glm::mat4& bone = out.global[i];
-        originMin = glm::min(originMin, glm::vec3(bone[3]));
-        originMax = glm::max(originMax, glm::vec3(bone[3]));
+        origins.expand(glm::vec3(bone[3]));
 
         // Accumulated, not local: the total stretches the skin. Floored at 1, because an under-sized
         // bound deletes visible geometry.
@@ -71,8 +70,8 @@ void finishSlice(const PoseWrite& out) {
         });
     }
 
-    slice.originMin    = originMin;
-    slice.originMax    = originMax;
+    slice.originMin    = origins.min;
+    slice.originMax    = origins.max;
     slice.maxBoneScale = maxScale;
 }
 

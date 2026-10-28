@@ -27,7 +27,8 @@ struct RagdollBodyPose {
  * @brief Read every bone body's world pose for one ragdoll.
  *
  * Walks the hierarchy itself: HierarchySystem resolves WorldTransform after the pose is composed. A
- * bone whose body is dead or missing is marked unsimulated.
+ * bone whose body is dead or missing is marked unsimulated. A live, pinned ragdoll's are read
+ * relative to its root as pinned, not as the root stands now.
  *
  * @param scene Scene holding the bodies.
  * @param ragdoll Mapping from bones to bodies.

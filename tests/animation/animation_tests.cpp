@@ -473,6 +473,37 @@ void testAOneShotFadingOutClampsRatherThanWrapping() {
     );
 }
 
+// A character flicking from a run to a jump and straight back must not restart its stride: the fade
+// turns round, the run resuming at its own head from the weight it had.
+void testAFadeBackToTheClipLeavingTurnsRound() {
+    std::printf("A crossfade back to the clip on its way out:\n");
+
+    MarkerWorld world(1.0f, {});
+    AnimationClipAsset jump;
+    jump.skeleton = "rig";
+    jump.duration = 1.0f;
+    jump.bones.resize(1);
+    const AnimationClipHandle jumpAsset = world.frame.resources.add(std::move(jump), "jump");
+    const AnimationClipHandle run       = world.animator().clip;
+
+    world.tick(30);   // half a second into the run
+    Animator::crossFadeTo(world.animator(), jumpAsset, 0.2f, LOOPING);
+    world.tick(3);    // a twentieth of a second: a quarter of the way to the jump
+    const Animator before = world.animator();
+    Animator::crossFadeTo(world.animator(), run, 0.2f, LOOPING);
+    const Animator& after = world.animator();
+
+    const float jumpWeight = 1.0f - before.fadeRemaining / before.fadeDuration;
+    const float runWeight  = 1.0f - after.fadeRemaining / after.fadeDuration;
+    check("the run plays again", after.clip == run && after.playing);
+    check("  from where its head had gone, not its start", nearly(after.time, before.fadeTime));
+    check("  the jump fading out from where it stood", after.fadeFrom == jumpAsset);
+    check("  the blend at the run's weight, so the pose does not jump", nearly(runWeight, 1.0f - jumpWeight));
+
+    world.tick(30);
+    check("the fade back ends", !world.animator().fadeFrom && world.animator().clip == run);
+}
+
 // A finished one-shot still names its clip, so "already playing it" asked of the name
 // alone would leave a second flinch frozen on the first one's last frame, for good.
 void testAFinishedOneShotAskedForAgainPlaysAgain() {
@@ -630,6 +661,23 @@ void testASocketRidesItsBone() {
     check(
         "  and a bone the rig does not have places nothing",
         scene.get<Transform>(socket).position == glm::vec3(0.0f)
+    );
+
+    // The rig re-imported under its handle with a joint before the hand: every index shifts.
+    scene.get<BoneSocket>(socket).bone = "hand";
+    sockets.update(frame.ctx);
+    SkeletonAsset grown;
+    grown.bones = {Bone{"root", -1}, Bone{"hand", 0}};
+    grown.inverseBind.assign(2, glm::mat4(1.0f));
+    Transform lifted;
+    lifted.position = {0.0f, 3.0f, 0.0f};
+    grown.bindPose = {Transform{}, lifted};
+    frame.resources.swapValue(rigAsset, grown);
+    animation.update(frame.ctx);
+    sockets.update(frame.ctx);
+    check(
+        "a rig re-imported with a joint inserted, the socket finds its bone again",
+        nearly(scene.get<Transform>(socket).position.y, 3.0f)
     );
 }
 
@@ -810,6 +858,15 @@ void testAnAdjustBendsABoneInModelSpace() {
     stray.rotation = bend.rotation;
     scene.get<Animator>(rig).adjust = {stray};
     check("a bone index past the rig adjusts nothing", at(origin(2), 0.0f, 2.0f, 0.0f));
+
+    // Hips scaled to nothing hold the rig at their origin: a bend and an offset below them do not
+    // make the pose undefined.
+    BoneAdjust vanish;
+    vanish.bone  = 0;
+    vanish.scale = 0.0f;
+    bend.offset  = {0.5f, 0.0f, 0.0f};
+    scene.get<Animator>(rig).adjust = {vanish, bend};
+    check("under hips scaled to nothing, the rig stays at their origin", at(origin(2), 0.0f, 0.0f, 0.0f));
 }
 
 // A loadScene swaps the world mid-frame, after its ticks, rebuilding at the old slots.
@@ -973,6 +1030,7 @@ void runAnimationTests() {
     testAScrubbedHeadAnnouncesNothingAndAStoppedOneNeither();
     testACrossfadeAnnouncesOnlyTheIncomingClip();
     testAOneShotFadingOutClampsRatherThanWrapping();
+    testAFadeBackToTheClipLeavingTurnsRound();
     testAFinishedOneShotAskedForAgainPlaysAgain();
     testAOneShotPlayedBackwardsStartsFromItsEnd();
     testTwoRigsOnOneClipAnnounceOnTheirOwnPhase();
