@@ -1,6 +1,6 @@
 {
   "description": "A small seaside world that shows the engine and plays as a game: a builder's yard of physics, a plaza of real models round a campfire, a gallery of materials under area lights with planar mirrors, a demolition range on the beach, a ship off the pier, tokens to find - and the multiplayer sample.",
-  "engineVersion": "1.0.15",
+  "engineVersion": "1.1.0",
   "entryScene": "scenes/obstacle_course.json",
   "maxPlayers": 4,
   "name": "The Lab",

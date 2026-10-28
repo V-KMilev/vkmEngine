@@ -2,6 +2,99 @@
 
 Notable changes to vkmEngine, newest first. Each release is tagged `vX.Y.Z`.
 
+## 1.1.0
+
+Water and a faster engine: lakes, rivers and pools beside a spectral sea, baked shadows for
+fixed lights, sound the walls shape, debug drawing in the world, a start that never shows
+black, an editor that works as other editors do, and every frame doing less for the same
+picture.
+
+- **Water**: a material's `water` is one kind - `None`, `Body` or `Sea` - replacing `waves`.
+  A body (a lake, a river, a pool) is its own mesh at its own level, running at its flow
+  along its UVs and as deep as its material says; the sea rides the `Ocean`'s swell. Both
+  shade from one set of ripple fields. `WaterSystem` answers where water is and how it moves
+  (`Behavior::water()`), and a `Buoyancy` body floats on whichever water it is in, carried
+  by a river. A material saying `"waves"` reads as no water; re-save it with its `water`.
+- **The sea's swell is spectral**: an FFT of an `OceanShape` over up to three cascades,
+  drawn on the GPU and answered by the same sum on the CPU, so a float rides the waves drawn.
+  Crests sharpen and foam where the water squeezes, and the foam a crest left fades to lace.
+- **Baked shadows**: a fixed light's shadows bake into lightmaps, from lightmap coordinates
+  the cook unwraps. The bake runs a step a frame out of sight and redoes only what a fixed
+  mesh, material or light changed.
+- **Starting**: shaders compile on the driver's threads behind a live loading screen that
+  names the step; the splash is an ident - a comet struck across the engine's mark, its heat
+  glowing as a bloom - and the loading screen is water seen from above, a slow current the
+  pointer stirs, its bar a wave. A world arriving is covered until its light is baked, and
+  runs no tick until its meshes have loaded, so nothing falls through a floor not yet there.
+  The editor opens a project the same way.
+- **A project's own loading screen**: `project.json`'s `loading` block gives tips shown
+  under the bar in turn, a prefab of UI canvases drawn over the water, and whether the water
+  shows at all; Project Settings edits it.
+- **Sound follows the building**: the world's colliders shape what is heard. A sound behind
+  a wall comes through quieter and muffled and opens up again through a doorway, and a hall
+  rings where open ground stays dry, the reverb following the listener from room to room. On
+  in every scene; the scene's Acoustics settings turn it off or scale the reverb, and a
+  source or a one-shot request that must cut through can opt out.
+- **Debug drawing**: `debugDraw()` draws lines, shapes and pulses into the world from a
+  behavior, a system on any thread or the editor - lasting a frame, a tick or some seconds,
+  depth-tested with dotted ghosts behind walls, glowing through the bloom if asked. The
+  editor's world gizmos (colliders, lights' reach, probes, cameras, rigs, emitters, sound
+  spheres, bounds) are drawn by it now, a game on the development engine turns any of them
+  on with `setShown`, and a shipped game draws none.
+  - View > Show > Acoustics draws the rays the ear casts: the room's, pulsing out and off
+    what they strike, and those to each sound, red where a wall stops one.
+  - View > Show > Contacts draws where bodies touch: a dot at each contact and an arrow
+    along its normal, longer the harder the solver pushed there.
+- **Networking**: a server takes its players to the next scene; a joiner still loading is
+  waited for, and a command made for the world before is not run in the next.
+  `NET_PROTOCOL_VERSION` is 14, so a 1.0.15 build cannot join a 1.1.0 one.
+- **Scripting**: a behavior says the common things in one call - `isAuthority()`,
+  `worldTime()`, `worldPosition()`, `playSound`, `instantiate` here or everywhere,
+  `findInScene`, `forEachBehavior` - and names a prefab with a `PrefabRef`.
+- **The editor**:
+  - Navigates, selects and drags as other editors do: orbit, pan and dolly, frame the
+    selection, snap, Alt-drag a copy, range-select and reorder in the Hierarchy, copy, cut
+    and paste entities between scenes, and keep unsaved changes through a crash.
+  - Assets open in windows of their own - a mesh, a texture, a material with its preview
+    beside its values, a clip playing on its rig - and any panel floats out of the main
+    window. The docked Material tab is gone.
+  - One Console holds the log, the errors and the build; toasts stack and lead to it, and
+    the status bar points at what wants a look.
+  - Assets come in from the library and the desktop, drop onto the Hierarchy and select
+    their users; a prefab instance applies, reverts and unpacks from its card.
+  - Create > Sea, Water and UI controls; an LOD's levels, the startup logos and fonts, and a
+    previewed quality tier are edited in place.
+- **Faster**: mirrors and captures draw only what they show and an irradiance probe's face
+  only what it sees; the sun's last cascade keeps its fixed casters in a layer; a shadow tile
+  seen as before tests only what moved; the forward shaders compile in far less time; a
+  covered frame draws no world under it; the CPU swell runs on the thread pool; a world with
+  no water walks no mesh for it.
+- **vkmGL 1.1.1**: every OpenGL call goes through it, and a docs test holds the backend to
+  that; a host checks its programs one at a time, so no frame waits on them all.
+- **Fixed**:
+  - A body turns about its centre of mass; fast bodies, thin ones and probes collide both
+    ways round, and a swept capsule is met only within the sweep.
+  - A character stays grounded over slopes and crests, and a jump is a state of its own.
+  - A clip moving a Kinematic body gives it its velocity and takes it back when the clip
+    stops, so a lift carries what stands on it and stops with it.
+  - A crossfade back to a leaving clip resumes it; a live ragdoll is drawn where its bodies
+    are.
+  - A cold start shows the splash, not seconds of black, and the splash never waits on a
+    program being built.
+  - A world's light is baked once its meshes and textures have landed, not over a world
+    half-made on a fast first frame, and the bakes under a covered frame draw with the
+    shadows bound.
+  - A project's loading screen shows each of its pictures once it has decoded.
+  - A fixed light reads its baked shadows only as they were baked; a mirror reads them too.
+  - A cook rewrites no recipe that already says what it would write, and numbers are written
+    the same in any locale.
+  - A second click quick enough to share a frame is a click.
+  - Audits of the editor, saving and cooking, replication, mirrors and bakes, input and audio
+    fixed what each found.
+
+Breaking: a material's `waves` is now `water`; `Behavior` finds the scene's one behavior with
+`findInScene`; a behavior's prefab field is a `PrefabRef`; the Material tab is gone.
+
 ## 1.0.15
 
 Terrain: ground sculpted, painted and planted in the editor, and the lab rebuilt on it.
