@@ -1,5 +1,5 @@
-# Shared dependencies the ENGINE owns, added before vkmGL, which requires them
-# as targets (modules/vkmGL/modules/CMakeLists.txt). glm is in behaviour-facing
+# Shared dependencies the ENGINE owns, added before vkmGL, which requires glm and
+# vkmLog as targets (modules/vkmGL/modules/CMakeLists.txt). glm is in behaviour-facing
 # engine headers and the image decoder is engine-wide, so neither can sit behind
 # a backend: a second one would either vendor its own glm and risk a version
 # skew across the module boundary, or reach through the GL backend for it.
@@ -48,6 +48,26 @@ if(NOT TARGET stb)
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/stb>
         $<INSTALL_INTERFACE:include>
     )
+endif()
+
+# stb's PNG writer and font rasterizer, compiled the same way. The writer is the
+# tests' (the engine's screenshot keeps a private copy, its settings its own);
+# the rasterizer and its rect packer are the font baker's (src/tools).
+if(NOT TARGET stb_image_write)
+    set(_stbiw_impl ${CMAKE_CURRENT_BINARY_DIR}/stb_image_write_impl.c)
+    file(WRITE ${_stbiw_impl} "#define STB_IMAGE_WRITE_IMPLEMENTATION\n#include \"stb_image_write.h\"\n")
+    add_library(stb_image_write STATIC ${_stbiw_impl})
+    target_include_directories(stb_image_write SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/stb)
+endif()
+
+if(NOT TARGET stb_truetype)
+    set(_stbtt_impl ${CMAKE_CURRENT_BINARY_DIR}/stb_truetype_impl.c)
+    file(WRITE ${_stbtt_impl}
+        "#define STB_RECT_PACK_IMPLEMENTATION\n#include \"stb_rect_pack.h\"\n"
+        "#define STB_TRUETYPE_IMPLEMENTATION\n#include \"stb_truetype.h\"\n"
+    )
+    add_library(stb_truetype STATIC ${_stbtt_impl})
+    target_include_directories(stb_truetype SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/stb)
 endif()
 
 # The texture cook's two halves, each compiled once into a static lib the
@@ -132,8 +152,7 @@ if(NOT TARGET miniaudio)
 endif()
 
 # vkmGL: the OpenGL layer. Adds glew, and defers to the targets above. Its test
-# suite defaults to "on only when vkm_gl is the top-level project", which as a
-# submodule here means never, so it is asked for explicitly.
+# suite is off unless a consumer asks, so it is asked for explicitly.
 set(VKM_GL_BUILD_TESTS ON CACHE BOOL "" FORCE)
 if(NOT TARGET vkm_gl)
     add_subdirectory(vkmGL)
@@ -154,6 +173,19 @@ endif()
 set(MESHOPT_INSTALL OFF CACHE BOOL "" FORCE)
 if(NOT TARGET meshoptimizer)
     add_subdirectory(meshoptimizer SYSTEM)
+endif()
+
+# xatlas: the lightmap UVs a baked mesh is unwrapped into. A cook-time dependency like
+# meshoptimizer, and optimised in a Debug build for the reason the cook's encoders are:
+# an unwrap is a long inner loop nobody steps through. Single-threaded: its own pool, started
+# inside each of the cook's workers, put a few dozen threads on a few cores.
+if(NOT TARGET xatlas)
+    add_library(xatlas STATIC xatlas/source/xatlas/xatlas.cpp)
+    target_include_directories(xatlas SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/xatlas/source/xatlas)
+    target_compile_definitions(xatlas PRIVATE XA_MULTITHREADED=0)
+    if(NOT MSVC)
+        target_compile_options(xatlas PRIVATE $<$<CONFIG:Debug>:-O2>)
+    endif()
 endif()
 
 # FreeType (font rasterizer for ImGui), vendored so the build does not depend on

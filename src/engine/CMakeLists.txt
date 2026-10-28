@@ -83,9 +83,11 @@ if(VKM_ASSERTS)
     target_compile_options(vkm_core PUBLIC $<IF:$<CXX_COMPILER_ID:MSVC>,/UNDEBUG,-UNDEBUG>)
 endif()
 
-# A module built against a shipping engine keeps its debug info too.
+# A module built against a shipping engine keeps its debug info too. The engine itself draws no
+# debug lines (engine.cpp).
 if(VKM_SHIPPING)
     target_compile_options(vkm_core PUBLIC $<$<CXX_COMPILER_ID:GNU,Clang>:-g>)
+    target_compile_definitions(vkm_core PRIVATE VKM_SHIPPING=1)
 endif()
 
 # Winsock, for platform/net. It is not linked by anything else the engine

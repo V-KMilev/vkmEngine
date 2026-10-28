@@ -29,8 +29,9 @@
 # vkm_cook, never by the runtime: a shipped game imports nothing. cgltf reads
 # glTF and GLB, ufbx reads FBX and OBJ, MikkTSpace gives imported meshes the
 # tangents normal maps are baked against, meshoptimizer simplifies LOD levels
-# and orders every cooked mesh for the GPU, and basis_universal supplies its
-# scalar BC7 encoder - one file of it is compiled, so it is cloned shallow.
+# and orders every cooked mesh for the GPU, xatlas unwraps lightmap UVs, and
+# basis_universal supplies its scalar BC7 encoder - one file of it is compiled,
+# so it is cloned shallow.
 [submodule "modules/imgui"]
 	path = modules/imgui
 	url = https://github.com/ocornut/imgui.git
@@ -47,6 +48,9 @@
 [submodule "modules/meshoptimizer"]
 	path = modules/meshoptimizer
 	url = https://github.com/zeux/meshoptimizer.git
+[submodule "modules/xatlas"]
+	path = modules/xatlas
+	url = https://github.com/jpcy/xatlas.git
 [submodule "modules/basis_universal"]
 	path = modules/basis_universal
 	url = https://github.com/BinomialLLC/basis_universal.git
