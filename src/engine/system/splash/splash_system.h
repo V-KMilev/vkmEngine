@@ -42,7 +42,21 @@ class SplashSystem : public System {
         void add(const std::string& path, float hold, const std::string& caption = {});
 
         /**
-         * @brief Set the fade at each end of every entry.
+         * @brief Append an ident to the sequence: a logo in the dark, lit by a comet's light that
+         *        strikes it and leaves it red hot, rather than faded in; its caption coming in with
+         *        the strike (SplashFrame::reveal).
+         *
+         * The comet's path is laid along the engine's mark (assets/logo/vkm_engine_logo_mono.png,
+         * shaders/splash): another logo is shown, but the light flies the mark's path over it. It
+         * lasts IDENT_SECONDS, its fades included.
+         *
+         * @param path    As add's; the comet flies its fixed path over whatever image it is.
+         * @param caption As add's.
+         */
+        void addIdent(const std::string& path, const std::string& caption = {});
+
+        /**
+         * @brief Set the fade at each end of every entry; an ident's is at most half IDENT_SECONDS.
          *
          * @param seconds Fade length, in and out; zero cuts.
          */
@@ -51,9 +65,27 @@ class SplashSystem : public System {
     private:
         struct Entry {
             std::string path;
-            float       hold = 0.0f;
+            float       hold = 0.0f;  ///< An image's; an ident holds what IDENT_SECONDS leaves its fades.
             std::string caption;
+            bool        reveal = false;  ///< An ident's.
         };
+
+    private:
+        /// Seconds each of @p entry's fades lasts.
+        float fadeOf(const Entry& entry) const;
+
+        /// Seconds @p entry shows, its fades included.
+        float spanOf(const Entry& entry) const;
+
+        /**
+         * @brief Append an image entry, or warn and skip a path that is not there.
+         *
+         * @param path    As add's.
+         * @param hold    As add's.
+         * @param caption As add's.
+         * @param reveal  Whether it is an ident's (addIdent).
+         */
+        void addEntry(const std::string& path, float hold, const std::string& caption, bool reveal);
 
     private:
         std::vector<Entry> m_entries;

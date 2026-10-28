@@ -1,7 +1,8 @@
 # vkm_runtime - the engine with no editor, which is what a shipped game runs.
 add_executable(vkm_runtime_app main.cpp)
 
-set_target_properties(vkm_runtime_app PROPERTIES OUTPUT_NAME vkm_runtime)
+# On Windows a windowed program, as the editor is: a game opens no terminal behind it.
+set_target_properties(vkm_runtime_app PROPERTIES OUTPUT_NAME vkm_runtime WIN32_EXECUTABLE ON)
 
 target_link_libraries(vkm_runtime_app PRIVATE
     vkm_core

@@ -52,6 +52,7 @@ int main(int argc, char** argv) {
             sys.render,
             engine.getRenderSettings(),
             sys.audio,
+            *sys.loading,
             sys.behaviors,
             scriptModule
         );

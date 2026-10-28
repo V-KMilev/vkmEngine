@@ -108,6 +108,7 @@ int main(int argc, char** argv) {
             const std::string image = Vkm::Engine::ProjectPaths::resolveProjectPath(entry.image).string();
             sys.splash.add(image, entry.seconds);
         }
+        sys.loading->setScreen(project.loading);
 
         const Vkm::Engine::SceneBootResult boot = Vkm::Engine::bootProjectWorld(
             project,
